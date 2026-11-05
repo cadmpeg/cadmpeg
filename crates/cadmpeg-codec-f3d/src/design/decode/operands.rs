@@ -5824,12 +5824,18 @@ fn parse_edge_operand(
     };
     let surface_patch_recipe_structure =
         if scope.kind() == crate::records::feature::scope::DesignFeatureKind::SurfacePatch {
-            surface_patch_recipe_structure(&parsed.recipe_program, parsed.recipe_references.len())
+            surface_patch_recipe_structure(
+                &parsed.recipe_program,
+                crate::records::dimensions::reference_lanes(&parsed.recipe_references).len(),
+            )
         } else {
             None
         };
     let local_topology_references = recipe_structure.as_ref().and_then(|structure| {
-        edge_recipe_local_topology_references(structure, parsed.recipe_references.len())
+        edge_recipe_local_topology_references(
+            structure,
+            crate::records::dimensions::reference_lanes(&parsed.recipe_references).len(),
+        )
     });
     let id = design_record_id(
         stream

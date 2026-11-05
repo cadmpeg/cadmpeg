@@ -86,7 +86,7 @@ fn standard_recipe_references_refuse_nested_items_and_token_text() {
 }
 
 #[test]
-fn counted_recipe_operands_keep_one_reference_per_operand() {
+fn counted_recipe_operands_keep_every_name_in_one_operand_lane() {
     // Two operands: the first names its face once, the second three times.
     let name = |prefix: &mut Vec<u8>, lead: u32, token: &[u8], reference: u32| {
         prefix.extend_from_slice(&lead.to_le_bytes());
@@ -123,25 +123,37 @@ fn counted_recipe_operands_keep_one_reference_per_operand() {
         .iter()
         .map(|reference| {
             (
-                reference.selector_offset,
+                reference.operand_offset,
                 reference.token.as_str(),
                 reference.design_reference,
             )
         })
         .collect();
+    let (first, second) = (
+        Some(1_000 + u64_from_index(first)),
+        Some(1_000 + u64_from_index(second)),
+    );
     assert_eq!(
         read,
         [
-            (1_000 + u64_from_index(first), "2", 303),
-            (1_000 + u64_from_index(second), "4", 301),
+            (first, "2", 303),
+            (second, "4", 301),
+            (second, "4", 316),
+            (second, "10", 303),
         ]
+    );
+    assert_eq!(
+        crate::records::topology::face::prefix_operand_ordinals(&references),
+        Some(vec![0, 1, 1, 1])
     );
 
     // A truncated second operand is not a counted frame.
     let mut short = prefix[..prefix.len() - 4].to_vec();
     short.truncate(short.len() - 4);
     assert!(
-        crate::design::decode::dimension_frames::decode_recipe_references(&short, 0).len() != 2
+        crate::design::decode::dimension_frames::decode_recipe_references(&short, 0)
+            .iter()
+            .all(|reference| reference.operand_offset.is_none())
     );
 }
 

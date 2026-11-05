@@ -7,12 +7,19 @@
 //! regions are the bounded faces of the arrangement of every
 //! non-construction Sketch curve. A region whose interior lies inside the cap
 //! is selected; the selection is admitted only when the selected regions
-//! cover the cap's area exactly.
+//! cover the cap's area and their outline lies on the cap's boundary.
+//!
+//! Each cap edge is drawn from a proven carrier: a straight edge whose curve
+//! axis runs along its chord, or a circle where the cap meets a cylinder whose
+//! axis is parallel to the cap normal. A cap with any other edge proves
+//! nothing.
 
 use std::collections::HashMap;
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
+use std::f64::consts::TAU;
+
 use cadmpeg_ir::math::{Point2, Point3};
 
 use super::ResolvedProfileSelection;
@@ -31,12 +38,90 @@ const SAMPLE_GRID: u32 = 24;
 const AREA_AGREEMENT: f64 = 1e-3;
 /// How far from parallel, as a cosine, a cap's plane normal may be to the sketch normal.
 const PARALLEL_CAP: f64 = 1e-9;
+/// Largest sine of the angle between a straight edge's carrier axis and its chord.
+const STRAIGHT_CARRIER: f64 = 1e-9;
+/// How many linear tolerances either side of a region boundary segment its
+/// two sides are sampled at.
+const SIDE_OFFSET: f64 = 4.0;
 /// Most loops and loop edges one cap may have.
 const CAP_EDGES: usize = 4096;
 
-/// One planar cap: its loops as closed sketch-plane polylines.
+/// One proven piece of a cap loop, in sketch coordinates.
+enum Piece {
+    Line(Point2, Point2),
+    /// From `start` radians through `sweep` radians; a negative sweep turns
+    /// clockwise.
+    Arc {
+        center: Point2,
+        radius: f64,
+        start: f64,
+        sweep: f64,
+    },
+}
+
+impl Piece {
+    fn distance(&self, point: Point2) -> f64 {
+        match *self {
+            Piece::Line(start, end) => point_segment_distance(point, (start, end)),
+            Piece::Arc {
+                center,
+                radius,
+                start,
+                sweep,
+            } => {
+                let angle = (point.v - center.v).atan2(point.u - center.u);
+                let along = if sweep >= 0.0 {
+                    (angle - start).rem_euclid(TAU)
+                } else {
+                    (start - angle).rem_euclid(TAU)
+                };
+                if along <= sweep.abs() {
+                    ((point.u - center.u).hypot(point.v - center.v) - radius).abs()
+                } else {
+                    let at = |angle: f64| {
+                        Point2::new(
+                            center.u + radius * angle.cos(),
+                            center.v + radius * angle.sin(),
+                        )
+                    };
+                    distance(point, at(start)).min(distance(point, at(start + sweep)))
+                }
+            }
+        }
+    }
+
+    /// Appends the piece's polyline, without its end, to `ring`.
+    fn push(&self, ring: &mut Vec<Point2>) {
+        match *self {
+            Piece::Line(start, _) => ring.push(start),
+            Piece::Arc {
+                center,
+                radius,
+                start,
+                sweep,
+            } => {
+                for k in 0..ARC_SEGMENTS {
+                    let angle = start + sweep * f64::from(k) / f64::from(ARC_SEGMENTS);
+                    ring.push(Point2::new(
+                        center.u + radius * angle.cos(),
+                        center.v + radius * angle.sin(),
+                    ));
+                }
+            }
+        }
+    }
+}
+
+fn distance(a: Point2, b: Point2) -> f64 {
+    (a.u - b.u).hypot(a.v - b.v)
+}
+
+/// One planar cap: its loops as closed sketch-plane polylines, the proven
+/// pieces they are drawn from, and the loop vertices.
 struct Cap {
     loops: Vec<Vec<Point2>>,
+    pieces: Vec<Piece>,
+    corners: Vec<Point2>,
     area: f64,
 }
 
@@ -48,6 +133,13 @@ impl Cap {
             .count()
             % 2
             == 1
+    }
+
+    fn boundary_distance(&self, point: Point2) -> f64 {
+        self.pieces
+            .iter()
+            .map(|piece| piece.distance(point))
+            .fold(f64::INFINITY, f64::min)
     }
 }
 
@@ -101,15 +193,19 @@ pub(super) fn cap_profile_selection(
     let mut selected = Vec::new();
     for cap in &caps {
         let mut covered = 0.0;
+        let mut inside = Vec::new();
         for (index, region) in sampled.iter().enumerate() {
             if cap.contains(region.point) {
                 covered += region.area;
+                inside.push(index);
                 if !selected.contains(&index) {
                     selected.push(index);
                 }
             }
         }
-        if (covered - cap.area).abs() > AREA_AGREEMENT * cap.area.max(1.0) {
+        if (covered - cap.area).abs() > AREA_AGREEMENT * cap.area.max(1.0)
+            || !outlines_agree(cap, &sampled, &inside, tolerance)
+        {
             return Ok(None);
         }
     }
@@ -157,6 +253,59 @@ pub(super) fn cap_profile_selection(
         out.push(region);
     }
     Ok(Some(ResolvedProfileSelection::Regions(out)))
+}
+
+/// Whether the outline of the union of the `chosen` regions lies on the
+/// cap's boundary and every cap vertex lies on that outline.
+///
+/// A region boundary segment is on the outline when the union holds one of
+/// its sides and not the other; both its ends, which lie on sketch curves,
+/// must then lie on a proven cap piece.
+fn outlines_agree(cap: &Cap, sampled: &[Sampled<'_>], chosen: &[usize], tolerance: f64) -> bool {
+    let in_union = |point: Point2| {
+        chosen.iter().any(|index| {
+            let region = &sampled[*index];
+            point_in_polygon(point, &region.region.polyline)
+                && !region
+                    .nested
+                    .iter()
+                    .any(|nested| point_in_polygon(point, &sampled[*nested].region.polyline))
+        })
+    };
+    let rings = chosen
+        .iter()
+        .flat_map(|index| std::iter::once(*index).chain(sampled[*index].nested.iter().copied()));
+    let offset = SIDE_OFFSET * tolerance;
+    let mut outline = Vec::new();
+    for ring in rings {
+        let ring = &sampled[ring].region.polyline;
+        for k in 0..ring.len() {
+            let (start, end) = (ring[k], ring[(k + 1) % ring.len()]);
+            let length = distance(start, end);
+            if length <= tolerance {
+                continue;
+            }
+            let middle = Point2::new(f64::midpoint(start.u, end.u), f64::midpoint(start.v, end.v));
+            let (du, dv) = (
+                -(end.v - start.v) / length * offset,
+                (end.u - start.u) / length * offset,
+            );
+            let left = in_union(Point2::new(middle.u + du, middle.v + dv));
+            let right = in_union(Point2::new(middle.u - du, middle.v - dv));
+            if left == right {
+                continue;
+            }
+            if cap.boundary_distance(start) > tolerance || cap.boundary_distance(end) > tolerance {
+                return false;
+            }
+            outline.push((start, end));
+        }
+    }
+    cap.corners.iter().all(|corner| {
+        outline
+            .iter()
+            .any(|segment| point_segment_distance(*corner, *segment) <= tolerance)
+    })
 }
 
 fn unique_state(
@@ -219,14 +368,17 @@ fn far_caps(
     (!caps.is_empty()).then_some(caps)
 }
 
-/// Every loop of `face` as a sketch-plane polyline: lines through their
-/// ends, circles and arcs through their ends and carrier midpoint.
+/// Every loop of `face` as a sketch-plane polyline drawn from its proven
+/// pieces. `None` when a loop does not close or an edge has no proven
+/// carrier.
 fn face_cap(
     sketch: &cadmpeg_ir::sketches::Sketch,
     topology: &AsmHistoricalTopology,
     face: i64,
     tolerance: f64,
 ) -> Option<Cap> {
+    let (_, normal, _) = sketch.resolved_placement()?;
+    let normal = normal.get();
     let position = |vertex: i64| -> Option<Point3> {
         let point = topology
             .vertex_points
@@ -242,6 +394,8 @@ fn face_cap(
         )
     };
     let mut loops = Vec::new();
+    let mut pieces = Vec::new();
+    let mut corners = Vec::new();
     let mut edges_seen = 0usize;
     for loop_ in relation(&topology.face_loops, face)? {
         let coedges = relation(&topology.loop_coedges, *loop_)?;
@@ -249,42 +403,49 @@ fn face_cap(
         if coedges.is_empty() || edges_seen > CAP_EDGES {
             return None;
         }
-        let mut ring: Vec<Point2> = Vec::new();
-        let mut previous_end: Option<i64> = None;
+        let mut ends = Vec::new();
         for coedge in coedges {
             let edge = topology
                 .coedge_topology
                 .iter()
                 .find(|row| row.coedge == *coedge)?
                 .edge;
-            let ends = topology.edge_vertices.iter().find(|row| row.edge == edge)?;
-            let (start, end) = match previous_end {
-                Some(vertex) if vertex == ends.end_vertex && vertex != ends.start_vertex => {
-                    (ends.end_vertex, ends.start_vertex)
-                }
-                Some(vertex) if vertex != ends.start_vertex => {
-                    // The first edge's direction was a guess; turn it round.
-                    if ring.len() > 1 || coedges.len() < 2 {
+            ends.push(topology.edge_vertices.iter().find(|row| row.edge == edge)?);
+        }
+        // Orient every edge, the first one by the edge after it, before
+        // drawing any of them.
+        let mut steps: Vec<(i64, i64, i64)> = Vec::new();
+        for (index, edge) in ends.iter().enumerate() {
+            let (from, to) = (edge.start_vertex, edge.end_vertex);
+            let step = match steps.last() {
+                Some(&(_, _, previous)) if previous == from => (from, to),
+                Some(&(_, _, previous)) if previous == to => (to, from),
+                Some(_) => return None,
+                None if ends.len() == 1 => (from, to),
+                None => {
+                    let next = ends.get(index + 1)?;
+                    let next = [next.start_vertex, next.end_vertex];
+                    if next.contains(&to) {
+                        (from, to)
+                    } else if next.contains(&from) {
+                        (to, from)
+                    } else {
                         return None;
                     }
-                    ring.reverse();
-                    if vertex == ends.end_vertex {
-                        (ends.end_vertex, ends.start_vertex)
-                    } else {
-                        (ends.start_vertex, ends.end_vertex)
-                    }
                 }
-                _ => (ends.start_vertex, ends.end_vertex),
             };
-            let from = project_to_sketch(sketch, position(start)?)?;
-            let to = project_to_sketch(sketch, position(end)?)?;
-            let mid = topology
-                .edge_samples
-                .iter()
-                .find(|row| row.edge == edge)
-                .and_then(|row| project_to_sketch(sketch, row.interior));
-            push_edge(&mut ring, from, mid, to, tolerance)?;
-            previous_end = Some(end);
+            steps.push((edge.edge, step.0, step.1));
+        }
+        if steps.first()?.1 != steps.last()?.2 {
+            return None;
+        }
+        let mut ring: Vec<Point2> = Vec::new();
+        for (edge, from, to) in steps {
+            let (from, to) = (position(from)?, position(to)?);
+            let piece = edge_piece(sketch, topology, face, edge, (from, to), normal, tolerance)?;
+            corners.push(project_to_sketch(sketch, from)?);
+            piece.push(&mut ring);
+            pieces.push(piece);
         }
         if ring.len() < 3 {
             return None;
@@ -299,93 +460,135 @@ fn face_cap(
         .map(|(index, _)| index)?;
     let outer_area = areas.swap_remove(outer);
     let area = outer_area - areas.iter().sum::<f64>();
-    (area > tolerance * tolerance).then_some(Cap { loops, area })
+    (area > tolerance * tolerance).then_some(Cap {
+        loops,
+        pieces,
+        corners,
+        area,
+    })
 }
 
-/// Appends the polyline of one edge, without its end, to `ring`.
-fn push_edge(
-    ring: &mut Vec<Point2>,
-    from: Point2,
-    mid: Option<Point2>,
-    to: Point2,
+/// The proven piece of the cap `face`'s `edge` between its two ends: a line
+/// when the edge's curve axis runs along its chord through both ends, or a
+/// circle where the cap meets a cylinder about an axis parallel to the cap
+/// normal. `None` for any other carrier.
+fn edge_piece(
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    topology: &AsmHistoricalTopology,
+    face: i64,
+    edge: i64,
+    (from, to): (Point3, Point3),
+    normal: cadmpeg_ir::math::Vector3,
     tolerance: f64,
-) -> Option<()> {
-    let near = |a: Point2, b: Point2| (a.u - b.u).hypot(a.v - b.v) <= tolerance;
-    let Some(mid) = mid else {
-        // No carrier sample: only a straight edge is drawn.
-        if near(from, to) {
-            return None;
+) -> Option<Piece> {
+    let start = project_to_sketch(sketch, from)?;
+    let end = project_to_sketch(sketch, to)?;
+    let interior = topology
+        .edge_samples
+        .iter()
+        .find(|row| row.edge == edge)
+        .map(|row| row.interior);
+    let closed = distance(start, end) <= tolerance;
+    let curve = topology
+        .edge_curves
+        .iter()
+        .find(|binding| binding.entity == edge)
+        .and_then(|binding| binding.carrier);
+    if !closed {
+        if let Some(axis) =
+            curve.and_then(|curve| topology.curve_axes.iter().find(|row| row.curve == curve))
+        {
+            let chord = to.vector_from(from);
+            let direction = axis.direction;
+            let off_line = |point: Point3| {
+                point.vector_from(axis.origin).cross(direction).norm() / direction.norm()
+            };
+            if direction.cross(chord).norm() <= STRAIGHT_CARRIER * direction.norm() * chord.norm()
+                && off_line(from) <= tolerance
+                && off_line(to) <= tolerance
+            {
+                return match interior.map(|point| project_to_sketch(sketch, point)) {
+                    Some(Some(point))
+                        if point_segment_distance(point, (start, end)) > tolerance =>
+                    {
+                        None
+                    }
+                    Some(None) => None,
+                    _ => Some(Piece::Line(start, end)),
+                };
+            }
         }
-        ring.push(from);
-        return Some(());
-    };
-    if near(from, to) {
-        // A closed circle through its seam and the far end of its diameter.
-        let center = Point2::new(f64::midpoint(from.u, mid.u), f64::midpoint(from.v, mid.v));
-        let radius = (from.u - center.u).hypot(from.v - center.v);
-        if radius <= tolerance {
-            return None;
-        }
-        let start = (from.v - center.v).atan2(from.u - center.u);
-        for k in 0..ARC_SEGMENTS {
-            let angle = start + std::f64::consts::TAU * f64::from(k) / f64::from(ARC_SEGMENTS);
-            ring.push(Point2::new(
-                center.u + radius * angle.cos(),
-                center.v + radius * angle.sin(),
-            ));
-        }
-        return Some(());
     }
-    if point_segment_distance(mid, (from, to)) <= tolerance {
-        ring.push(from);
-        return Some(());
+    let surfaces: Vec<i64> = topology
+        .coedge_topology
+        .iter()
+        .filter(|row| row.edge == edge)
+        .filter_map(|row| {
+            topology
+                .face_loops
+                .iter()
+                .find(|relation| relation.member_refs.contains(&row.owner_loop))
+                .map(|relation| relation.owner_ref)
+        })
+        .filter(|owner| *owner != face)
+        .filter_map(|owner| {
+            topology
+                .face_surfaces
+                .iter()
+                .find(|binding| binding.entity == owner)
+                .map(|binding| binding.carrier)
+        })
+        .collect();
+    let mut cylinders = topology.surface_cylinders.iter().filter(|cylinder| {
+        surfaces.contains(&cylinder.surface)
+            && (cylinder.axis.dot(normal).abs() / cylinder.axis.norm() - 1.0).abs() <= PARALLEL_CAP
+    });
+    let cylinder = cylinders.next()?;
+    let center = project_to_sketch(sketch, cylinder.origin)?;
+    let radius = cylinder.radius;
+    if cylinders.any(|other| {
+        project_to_sketch(sketch, other.origin)
+            .is_none_or(|other_center| distance(other_center, center) > tolerance)
+            || (other.radius - radius).abs() > tolerance
+    }) {
+        return None;
     }
-    let center = circle_through(from, mid, to)?;
-    let radius = (from.u - center.u).hypot(from.v - center.v);
-    let angle = |p: Point2| (p.v - center.v).atan2(p.u - center.u);
-    let (a0, am, a1) = (angle(from), angle(mid), angle(to));
-    let tau = std::f64::consts::TAU;
-    let ccw = |a: f64, b: f64| (b - a).rem_euclid(tau);
-    let sweep = if ccw(a0, am) <= ccw(a0, a1) {
-        ccw(a0, a1)
+    let on_circle = |point: Point2| (distance(point, center) - radius).abs() <= tolerance;
+    if radius <= tolerance || !on_circle(start) || !on_circle(end) {
+        return None;
+    }
+    let angle = |point: Point2| (point.v - center.v).atan2(point.u - center.u);
+    let first = angle(start);
+    if closed {
+        return Some(Piece::Arc {
+            center,
+            radius,
+            start: first,
+            sweep: TAU,
+        });
+    }
+    let middle = project_to_sketch(sketch, interior?)?;
+    if !on_circle(middle) {
+        return None;
+    }
+    let counterclockwise = (angle(end) - first).rem_euclid(TAU);
+    let sweep = if (angle(middle) - first).rem_euclid(TAU) < counterclockwise {
+        counterclockwise
     } else {
-        -ccw(a1, a0)
+        counterclockwise - TAU
     };
-    for k in 0..ARC_SEGMENTS {
-        let angle = a0 + sweep * f64::from(k) / f64::from(ARC_SEGMENTS);
-        ring.push(Point2::new(
-            center.u + radius * angle.cos(),
-            center.v + radius * angle.sin(),
-        ));
-    }
-    Some(())
+    Some(Piece::Arc {
+        center,
+        radius,
+        start: first,
+        sweep,
+    })
 }
 
-/// The members of the one row `owner` owns in `rows`.
 fn relation(rows: &[crate::history_records::AsmHistoricalRelation], owner: i64) -> Option<&[i64]> {
     let mut rows = rows.iter().filter(|row| row.owner_ref == owner);
     let row = rows.next()?;
     rows.next().is_none().then_some(row.member_refs.as_slice())
-}
-
-fn circle_through(first: Point2, second: Point2, third: Point2) -> Option<Point2> {
-    let det = 2.0
-        * (first.u * (second.v - third.v)
-            + second.u * (third.v - first.v)
-            + third.u * (first.v - second.v));
-    if det.abs() <= f64::EPSILON {
-        return None;
-    }
-    let sq = |point: Point2| point.u * point.u + point.v * point.v;
-    let center_u = (sq(first) * (second.v - third.v)
-        + sq(second) * (third.v - first.v)
-        + sq(third) * (first.v - second.v))
-        / det;
-    let center_v = (sq(first) * (third.u - second.u)
-        + sq(second) * (first.u - third.u)
-        + sq(third) * (second.u - first.u))
-        / det;
-    (center_u.is_finite() && center_v.is_finite()).then(|| Point2::new(center_u, center_v))
 }
 
 fn polygon_area(ring: &[Point2]) -> f64 {
@@ -547,3 +750,6 @@ fn covered_regions(
             .collect(),
     ))
 }
+
+#[cfg(test)]
+mod tests;
