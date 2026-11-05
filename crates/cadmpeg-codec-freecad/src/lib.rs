@@ -929,6 +929,13 @@ impl CodecBackend for FcstdCodec {
                 scan.object_declarations.as_ref(),
                 Some(stages),
             )?;
+            persistence::give_up_missing_geometry(
+                ctx,
+                &mut parts,
+                document_view,
+                &mut graph,
+                &scan.data,
+            )?;
             container::parts::append(ctx, parts, &mut ir, &mut source_fidelity, &mut part_losses)?;
             let namespace = ir.native.namespace_mut("fcstd");
             scan.losses.extend(graph.losses);

@@ -165,13 +165,13 @@ pub fn document_local_sha256_without_carried(
 ///
 /// The check owns a throwaway decode session under `limits`; its budget never
 /// touches the caller's session.
-pub fn retained_image_replays(
+pub fn retained_image_replays<E>(
     image: &[u8],
     decode_digest: &digest::Sha256Digest,
     current_hash: &str,
     scope: ContentScope,
     limits: ResourceLimits,
-    decode_fresh: impl FnOnce(&DecodeContext<'_>, View<'_>) -> Result<String, CodecError>,
+    decode_fresh: impl FnOnce(&DecodeContext<'_>, View<'_>) -> Result<String, E>,
 ) -> bool {
     if digest::Sha256Digest::digest(image).as_str() != decode_digest.as_str() {
         return false;
@@ -326,6 +326,30 @@ mod tests {
     use crate::native::{Native, NativeRecord};
     use crate::unknown::UnknownRecord;
     use cadmpeg_core::CodecError;
+
+    #[test]
+    fn replay_declines_a_decoder_error_and_accepts_a_matching_digest() {
+        let image = b"retained image";
+        let digest = super::digest::Sha256Digest::digest(image);
+        let scope = cadmpeg_core::decode::ContentScope::full();
+        let limits = cadmpeg_core::decode::ResourceLimits::desktop();
+        assert!(!super::retained_image_replays(
+            image,
+            &digest,
+            "current",
+            scope,
+            limits,
+            |_, _| Err::<String, ()>(())
+        ));
+        assert!(super::retained_image_replays(
+            image,
+            &digest,
+            "current",
+            scope,
+            limits,
+            |_, _| Ok::<_, ()>("current".to_owned())
+        ));
+    }
 
     #[test]
     fn canonical_json_sha256_matches_json_larger_than_the_buffer() {

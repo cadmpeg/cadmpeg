@@ -8,6 +8,8 @@ use cadmpeg_ir::sketches::{SketchEntityId, SketchGeometryDefinition, SketchId};
 use super::presentation::{GeneratedDesignRegistry, GeneratedDesignType};
 use super::records::{encode_design_metastream, native_lp_ascii, native_lp_utf16};
 
+const EPS_FULL_TURN_TO_CIRCLE: f64 = 1.0e-9;
+
 pub(super) struct SketchStream {
     pub(super) bulk: Vec<u8>,
     pub(super) meta: Vec<u8>,
@@ -63,10 +65,14 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
         let origin = origin.get();
         let normal = normal.get();
         let axis = axis.get();
-        if normal.norm() != 1.0
-            || axis.norm() != 1.0
-            || normal.dot(axis) != 0.0
-            || sketch.native_ref.is_some()
+        let v_axis = normal.cross(axis);
+        let frame = [
+            [axis.x, v_axis.x, normal.x, origin.x / 10.0],
+            [axis.y, v_axis.y, normal.y, origin.y / 10.0],
+            [axis.z, v_axis.z, normal.z, origin.z / 10.0],
+            [0.0, 0.0, 0.0, 1.0],
+        ];
+        if crate::records::sketch_placement::SketchPlacementMatrix::try_from(frame).is_err()
             || sketch.configuration.is_some()
             || sketch.visible.is_some()
             || target
@@ -85,7 +91,6 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
             .collect::<Vec<_>>();
         if members.iter().any(|row| {
             row.construction
-                || row.native_ref.is_some()
                 || row.geometry_ref.is_some()
                 || !row.endpoint_refs.is_empty()
                 || match row.geometry.definition() {
@@ -97,10 +102,26 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
                         let length = (end.u - start.u).hypot(end.v - start.v);
                         !length.is_finite() || length <= f64::EPSILON
                     }
+                    SketchGeometryDefinition::Arc {
+                        center,
+                        radius,
+                        start_angle,
+                        end_angle,
+                    } => {
+                        let sweep = (end_angle.get() - start_angle.get()).abs();
+                        let center = center.get();
+                        !sweep.is_finite()
+                            || sweep >= std::f64::consts::TAU - EPS_FULL_TURN_TO_CIRCLE
+                            || [start_angle.get(), end_angle.get()]
+                                .into_iter()
+                                .any(|angle| {
+                                    !(center.u + radius.get() * angle.cos()).is_finite()
+                                        || !(center.v + radius.get() * angle.sin()).is_finite()
+                                })
+                    }
                     _ => true,
                 }
-        }) || has_closed_line_chain(&members, target.tolerances.linear.get())
-        {
+        }) {
             continue;
         }
         let count = u32::try_from(members.len())
@@ -121,33 +142,12 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
         if member_indices.len() != members.len() {
             break;
         }
-        let mut circle_profiles = members
-            .iter()
-            .zip(&member_indices)
-            .filter_map(|(member, (index, _))| {
-                matches!(
-                    member.geometry.definition(),
-                    SketchGeometryDefinition::Circle { .. }
-                )
-                .then(|| {
-                    (
-                        crate::ids::neutral_sketch_curve_id(&sketch.id, u64::from(*index), 0),
-                        member.id().clone(),
-                    )
-                })
-            })
-            .collect::<Vec<_>>();
-        circle_profiles.sort_by(|a, b| a.0.cmp(&b.0));
-        let expected_profiles = circle_profiles
-            .into_iter()
-            .map(|(_, entity)| {
-                vec![cadmpeg_ir::sketches::SketchEntityUse {
-                    entity,
-                    reversed: false,
-                }]
-            })
-            .collect::<Vec<_>>();
-        if sketch.profiles.as_slice() != expected_profiles {
+        if !profiles_match(
+            sketch,
+            &members,
+            &member_indices,
+            target.tolerances.linear.get(),
+        ) {
             continue;
         }
         mark(&mut primary, container, bulk.len())?;
@@ -179,25 +179,7 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
         mark(&mut primary, head, bulk.len())?;
         header(&mut bulk, "258", head)?;
         bulk.extend_from_slice(&[0; 11]);
-        let v_axis = normal.cross(axis);
-        for value in [
-            axis.x,
-            v_axis.x,
-            normal.x,
-            origin.x / 10.0,
-            axis.y,
-            v_axis.y,
-            normal.y,
-            origin.y / 10.0,
-            axis.z,
-            v_axis.z,
-            normal.z,
-            origin.z / 10.0,
-            0.0,
-            0.0,
-            0.0,
-            1.0,
-        ] {
+        for value in frame.into_iter().flatten() {
             bulk.extend_from_slice(&value.to_le_bytes());
         }
         bulk.extend_from_slice(&[0, 1]);
@@ -205,9 +187,19 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
         containers.push(u64::from(container));
         heads.push(u64::from(head));
         for (member, (point, companion)) in members.iter().zip(member_indices) {
-            if let SketchGeometryDefinition::Circle { center, radius } =
-                member.geometry.definition()
-            {
+            let circular = match member.geometry.definition() {
+                SketchGeometryDefinition::Circle { center, radius } => {
+                    Some((*center, *radius, 0.0, std::f64::consts::TAU))
+                }
+                SketchGeometryDefinition::Arc {
+                    center,
+                    radius,
+                    start_angle,
+                    end_angle,
+                } => Some((*center, *radius, start_angle.get(), end_angle.get())),
+                _ => None,
+            };
+            if let Some((center, radius, start_angle, end_angle)) = circular {
                 let center = center.get();
                 mark(&mut primary, point, bulk.len())?;
                 curve_header(&mut bulk, "262", point)?;
@@ -222,8 +214,8 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
                     0.0,
                     0.0,
                     radius.get() / 10.0,
-                    0.0,
-                    std::f64::consts::TAU,
+                    start_angle,
+                    end_angle,
                 ] {
                     bulk.extend_from_slice(&value.to_le_bytes());
                 }
@@ -422,33 +414,159 @@ fn allocate(occupied: &mut std::collections::BTreeSet<u32>, next: &mut u32) -> O
     Some(id)
 }
 
-fn has_closed_line_chain(members: &[&cadmpeg_ir::sketches::SketchEntity], tolerance: f64) -> bool {
+fn profiles_match(
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    members: &[&cadmpeg_ir::sketches::SketchEntity],
+    indices: &[(u32, u32)],
+    tolerance: f64,
+) -> bool {
+    use cadmpeg_ir::sketches::SketchEntityUse;
     let mut endpoints = Vec::new();
-    for member in members {
-        if let SketchGeometryDefinition::Line { start, end } = member.geometry.definition() {
-            endpoints.push(start.get());
-            endpoints.push(end.get());
+    let mut edges = Vec::new();
+    let mut profiles = Vec::new();
+    for (member, (index, _)) in members.iter().zip(indices) {
+        let rank = crate::ids::neutral_sketch_curve_id(&sketch.id, u64::from(*index), 0);
+        let pair = match member.geometry.definition() {
+            SketchGeometryDefinition::Line { start, end } => Some([start.get(), end.get()]),
+            SketchGeometryDefinition::Arc {
+                center,
+                radius,
+                start_angle,
+                end_angle,
+            } => {
+                let center = center.get();
+                let position = |angle: f64| {
+                    cadmpeg_ir::math::Point2::new(
+                        center.u + radius.get() * angle.cos(),
+                        center.v + radius.get() * angle.sin(),
+                    )
+                };
+                Some([position(start_angle.get()), position(end_angle.get())])
+            }
+            SketchGeometryDefinition::Circle { .. } => {
+                profiles.push((
+                    rank.clone(),
+                    vec![SketchEntityUse {
+                        entity: member.id().clone(),
+                        reversed: false,
+                    }],
+                ));
+                None
+            }
+            _ => None,
+        };
+        if let Some(pair) = pair {
+            endpoints.extend(pair);
+            edges.push((rank, member.id().clone()));
         }
     }
     let mut parents = (0..endpoints.len()).collect::<Vec<_>>();
-    for i in 0..endpoints.len() {
-        for j in 0..i {
-            if (endpoints[i].u - endpoints[j].u).hypot(endpoints[i].v - endpoints[j].v) <= tolerance
-            {
-                join(&mut parents, i, j);
+    let mut cells = std::collections::HashMap::<(i64, i64), Vec<usize>>::new();
+    for (i, point) in endpoints.iter().copied().enumerate() {
+        let Some(u) = cadmpeg_core::convert::truncate_f64_to_i64((point.u / tolerance).floor())
+        else {
+            return sketch.profiles.is_empty();
+        };
+        let Some(v) = cadmpeg_core::convert::truncate_f64_to_i64((point.v / tolerance).floor())
+        else {
+            return sketch.profiles.is_empty();
+        };
+        for du in -1..=1 {
+            for dv in -1..=1 {
+                let Some(u) = u.checked_add(du) else {
+                    continue;
+                };
+                let Some(v) = v.checked_add(dv) else {
+                    continue;
+                };
+                for &j in cells.get(&(u, v)).into_iter().flatten() {
+                    if (point.u - endpoints[j].u).hypot(point.v - endpoints[j].v) <= tolerance {
+                        join(&mut parents, i, j);
+                    }
+                }
             }
         }
+        cells.entry((u, v)).or_default().push(i);
     }
-    let mut graph = (0..endpoints.len()).collect::<Vec<_>>();
-    for i in (0..endpoints.len()).step_by(2) {
-        let a = root(&parents, i);
-        let b = root(&parents, i + 1);
-        if root(&graph, a) == root(&graph, b) {
-            return true;
+    let nodes = (0..edges.len())
+        .map(|i| [root(&parents, i * 2), root(&parents, i * 2 + 1)])
+        .collect::<Vec<_>>();
+    let mut adjacency = std::collections::BTreeMap::<usize, Vec<usize>>::new();
+    let mut pairs = std::collections::BTreeSet::new();
+    for (edge, [a, b]) in nodes.iter().copied().enumerate() {
+        if !pairs.insert((a.min(b), a.max(b))) {
+            return false;
         }
-        join(&mut graph, a, b);
+        adjacency.entry(a).or_default().push(edge);
+        adjacency.entry(b).or_default().push(edge);
     }
-    false
+    if adjacency.values().any(|incident| incident.len() > 2) {
+        return false;
+    }
+    let mut visited = (0..edges.len()).map(|_| false).collect::<Vec<_>>();
+    let mut order = (0..edges.len()).collect::<Vec<_>>();
+    order.sort_by(|a, b| edges[*a].0.cmp(&edges[*b].0));
+    for first in order {
+        if visited[first] {
+            continue;
+        }
+        let mut component = Vec::new();
+        let mut pending = vec![first];
+        while let Some(edge) = pending.pop() {
+            if visited[edge] {
+                continue;
+            }
+            visited[edge] = true;
+            component.push(edge);
+            for node in nodes[edge] {
+                pending.extend(adjacency[&node].iter().copied());
+            }
+        }
+        if component
+            .iter()
+            .flat_map(|edge| nodes[*edge])
+            .any(|node| adjacency[&node].len() != 2)
+        {
+            continue;
+        }
+        let start = nodes[first][0];
+        let mut current = nodes[first][1];
+        let mut profile = vec![SketchEntityUse {
+            entity: edges[first].1.clone(),
+            reversed: false,
+        }];
+        let mut used = std::collections::BTreeSet::from([first]);
+        while current != start {
+            let Some(next) = adjacency[&current]
+                .iter()
+                .copied()
+                .find(|edge| !used.contains(edge))
+            else {
+                return false;
+            };
+            let reversed = nodes[next][1] == current;
+            current = if reversed {
+                nodes[next][0]
+            } else {
+                nodes[next][1]
+            };
+            used.insert(next);
+            profile.push(SketchEntityUse {
+                entity: edges[next].1.clone(),
+                reversed,
+            });
+        }
+        if used.len() != component.len() {
+            return false;
+        }
+        profiles.push((edges[first].0.clone(), profile));
+    }
+    profiles.sort_by(|a, b| a.0.cmp(&b.0));
+    sketch.profiles.as_slice()
+        == profiles
+            .into_iter()
+            .map(|(_, profile)| profile)
+            .collect::<Vec<_>>()
 }
 
 fn root(parents: &[usize], mut index: usize) -> usize {

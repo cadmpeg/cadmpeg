@@ -50,6 +50,9 @@ pub(crate) fn transfer(
 ) -> Result<bool, CodecError> {
     let mut transferred = false;
     for property in properties {
+        if property.body.is_none() {
+            continue;
+        }
         let geometry_kind = match property.type_name.as_str() {
             "Mesh::PropertyMeshKernel" => GeometryKind::Mesh,
             "Points::PropertyPointKernel" => GeometryKind::Points,
