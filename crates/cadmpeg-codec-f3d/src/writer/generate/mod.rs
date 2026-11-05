@@ -6,8 +6,9 @@ use std::collections::BTreeSet;
 use std::io::{Seek, SeekFrom, Write};
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::codec::write::{ArenaDisposition, ArenaDispositions};
+use cadmpeg_ir::codec::write::{ArenaDisposition, ArenaDispositions, ExportLossCode};
 use cadmpeg_ir::document::CadIr;
+use cadmpeg_ir::report::loss::LossNote;
 
 use crate::manifest::{self, GENERATED_DESIGN_ASSET_FOLDER as DESIGN_FOLDER};
 use crate::writer::primitives::{
@@ -42,7 +43,7 @@ use smbh::encode_smbh;
 pub(crate) fn write_new(
     target: &CadIr,
     writer: &mut dyn Write,
-) -> Result<ArenaDispositions, CodecError> {
+) -> Result<(ArenaDispositions, Vec<LossNote>), CodecError> {
     // `subset_int_cur` states its interval and cache on the parameter of the
     // curve it trims.
     let lowered = cadmpeg_ir::codec::write::subset_lowering::lower_subset_curves(target, |_| true)?;
@@ -69,15 +70,87 @@ pub(crate) fn write_new(
     let act_segments = act::encode(&native)?;
     let design_bindings = validate_source_less_design_bindings(&native)?;
     let mut parameter_bytes = Vec::new();
+    let mut parameter_meta = None;
+    let mut residual_losses = Vec::new();
     if has_native {
         validate_configuration_projection(target, &native)?;
         validate_source_less_history_graph(target, &native)?;
-        parameter_bytes = encode_document_parameters(&native.design_parameters)?;
-        parameter_links::encode(
-            &mut parameter_bytes,
-            &native.design_parameter_owners,
-            &native.design_parameter_companions,
-        )?;
+        if !native.design_parameter_owners.is_empty()
+            || !native.design_parameter_companions.is_empty()
+        {
+            return Err(CodecError::UnsupportedContent(
+                "source-less F3D parameter ownership requires a same-segment scope".into(),
+            ));
+        }
+        if !native.design_parameters.is_empty() {
+            let collection_index = native
+                .design_parameters
+                .iter()
+                .map(|parameter| parameter.record_index)
+                .max()
+                .and_then(|index| index.checked_add(1))
+                .ok_or_else(|| {
+                    CodecError::InvalidInput("F3D parameter collection index exceeds u32".into())
+                })?;
+            let mut primary = Vec::new();
+            let mut indices = Vec::new();
+            for parameter in &native.design_parameters {
+                primary.push(crate::metastream::RecordIndexEntry {
+                    entity_id: u64::from(parameter.record_index),
+                    bulk_offset: u64::try_from(parameter_bytes.len()).map_err(|_| {
+                        CodecError::InvalidInput("F3D parameter stream too large".into())
+                    })?,
+                });
+                indices.push(parameter.record_index);
+                parameter_bytes.extend_from_slice(&encode_document_parameters(
+                    std::slice::from_ref(parameter),
+                    collection_index,
+                )?);
+            }
+            primary.push(crate::metastream::RecordIndexEntry {
+                entity_id: u64::from(collection_index),
+                bulk_offset: u64::try_from(parameter_bytes.len()).map_err(|_| {
+                    CodecError::InvalidInput("F3D parameter stream too large".into())
+                })?,
+            });
+            parameters::encode_collection(&mut parameter_bytes, "257", collection_index, &indices)?;
+            residual_losses.push(collection_residual(
+                "FusionDesignSegmentType2",
+                collection_index,
+            ));
+            let registry = GeneratedDesignRegistry {
+                types: [
+                    (
+                        "7A6A3D31-BE74-4E19-9115-20642944C2E4",
+                        "63D6AD42-466A-40B7-9CCD-EB21BC500EF6",
+                        5,
+                        indices.iter().map(|index| u64::from(*index)).collect(),
+                    ),
+                    (
+                        "B0556F58-EE09-46A7-B18F-E296F48E5B13",
+                        "A7AEA631-985B-4DD1-8CE2-DE2C-14B54081",
+                        3,
+                        vec![u64::from(collection_index)],
+                    ),
+                ]
+                .into_iter()
+                .map(|(guid, base, version, entity_ids)| {
+                    Ok(presentation::GeneratedDesignType {
+                        type_guid: guid.to_owned().try_into().map_err(CodecError::Malformed)?,
+                        base_type_guid: Some(
+                            base.to_owned().try_into().map_err(CodecError::Malformed)?,
+                        ),
+                        version,
+                        module: "CommonData".into(),
+                        entity_ids,
+                    })
+                })
+                .collect::<Result<_, CodecError>>()?,
+                body_map: None,
+                browser_nodes: None,
+            };
+            parameter_meta = encode_design_metastream(&registry, &primary, &[])?;
+        }
         validate_source_less_design_ownership(&native)?;
         validate_source_less_sketch_graph(&native)?;
         validate_source_less_recipes(&native)?;
@@ -147,6 +220,19 @@ pub(crate) fn write_new(
                 CodecError::malformed(format_args!("cannot create F3D parameter stream: {error}"))
             })?;
         archive.write_all(&parameter_bytes)?;
+        if let Some(meta) = parameter_meta {
+            archive
+                .start_file(
+                    format!("{DESIGN_FOLDER}/FusionDesignSegmentType2/MetaStream.dat"),
+                    options,
+                )
+                .map_err(|error| {
+                    CodecError::malformed(format_args!(
+                        "cannot create F3D parameter metadata: {error}"
+                    ))
+                })?;
+            archive.write_all(&meta)?;
+        }
     }
     for segment in act_segments {
         archive
@@ -173,7 +259,7 @@ pub(crate) fn write_new(
     let primary_records = design_bulk.as_ref().map_or(&[][..], |bulk_stream| {
         bulk_stream.primary_records.as_slice()
     });
-    if let Some(meta_stream) = encode_design_metastream(&design_registry, primary_records)? {
+    if let Some(meta_stream) = encode_design_metastream(&design_registry, primary_records, &[])? {
         archive
             .start_file(format!("{DESIGN_FOLDER}/Design1/MetaStream.dat"), options)
             .map_err(|error| {
@@ -181,9 +267,13 @@ pub(crate) fn write_new(
             })?;
         archive.write_all(&meta_stream)?;
     }
-    let mut feature_count = 0;
-    if let Some((bulk, meta, count)) = features::encode(target)? {
-        feature_count = count;
+    let mut written_features = Vec::new();
+    if let Some((bulk, meta, ids, collection_index)) = features::encode(target)? {
+        written_features = ids;
+        residual_losses.push(collection_residual(
+            "FusionDesignSegmentType3",
+            collection_index,
+        ));
         for (name, data) in [("BulkStream.dat", bulk), ("MetaStream.dat", meta)] {
             archive
                 .start_file(
@@ -212,10 +302,48 @@ pub(crate) fn write_new(
     staged.seek(SeekFrom::Start(0))?;
     std::io::copy(&mut staged, writer)?;
     let mut dispositions = coverage(has_native, target, &native);
-    if feature_count != 0 && feature_count == target.model.features.len() {
-        dispositions.features = ArenaDisposition::Written;
+    if !written_features.is_empty() {
+        let mut partial = false;
+        for feature in &target.model.features {
+            if !written_features.contains(&feature.id) {
+                partial = true;
+                residual_losses.push(crate::loss::F3dLossCode::WriterDesignRecordsOmitted.note(
+                    format!("feature {} has no supported F3D encoding", feature.id),
+                ));
+                continue;
+            }
+            if feature.needs_recompute {
+                partial = true;
+                residual_losses.push(crate::loss::F3dLossCode::WriterDesignRecordsOmitted.note(
+                    format!(
+                        "feature {} retains its operation; its recompute state is not encoded",
+                        feature.id
+                    ),
+                ));
+            }
+            if !feature.evaluation.outputs().is_empty() {
+                partial = true;
+                residual_losses.push(crate::loss::F3dLossCode::WriterDesignRecordsOmitted.note(
+                    format!(
+                        "feature {} retains its operation; its output-body links are not encoded",
+                        feature.id
+                    ),
+                ));
+            }
+        }
+        dispositions.features = if partial {
+            ArenaDisposition::Reported
+        } else {
+            ArenaDisposition::Written
+        };
     }
-    Ok(dispositions)
+    Ok((dispositions, residual_losses))
+}
+
+fn collection_residual(segment: &str, index: u32) -> LossNote {
+    ExportLossCode::RecordResidualUnavailable.note(format!(
+        "{DESIGN_FOLDER}/{segment}/BulkStream.dat:parameter-collection#{index} has unspecified control and reference fields"
+    ))
 }
 
 fn source_brep_name(native: &crate::native::F3dNative, requires_body_map: bool) -> &str {

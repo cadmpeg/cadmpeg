@@ -73,3 +73,48 @@ fn record_targets_name_the_first_linked_neutral_record() {
     assert!(AttributeTarget::record_for(&ir.model, "test:native:object#absent").is_none());
     assert!(AppearanceTarget::record_for(&ir.model, "test:native:object#absent").is_none());
 }
+
+#[test]
+fn input_operand_links_resolve_to_the_containing_topology() {
+    use crate::features::{
+        FeatureId, FeatureInputOperand, FeatureInputOperandDefinition, FeatureInputTopology,
+        SelectionReference,
+    };
+    use crate::ids::{FeatureInputOperandId, FeatureInputTopologyId};
+
+    let mut model = crate::document::Model::default();
+    let operand_id = FeatureInputOperandId::mint("test:model:input-operand#one").unwrap();
+    let topology_id = FeatureInputTopologyId::mint("test:model:input-topology#one").unwrap();
+    let native = "test:native:operand#one";
+    model.feature_input_topologies.push(FeatureInputTopology {
+        id: topology_id.clone(),
+        input_of: FeatureId::mint("test:model:feature#one").unwrap(),
+        bodies: Default::default(),
+        faces: Default::default(),
+        edges: Default::default(),
+        vertices: Default::default(),
+        operands: vec![FeatureInputOperand {
+            id: operand_id.clone(),
+            definition: FeatureInputOperandDefinition::Native,
+            native_ref: SelectionReference::new(native.into()).unwrap(),
+        }]
+        .try_into()
+        .unwrap(),
+        edge_geometry: Vec::new(),
+        native_ref: None,
+    });
+    let mut links = Vec::new();
+    visit_native_references(&model, &mut |_, _, id, target| {
+        if target == Some(native) {
+            links.push(id.to_owned());
+        }
+    });
+    assert_eq!(links, [operand_id.to_string()]);
+    assert_eq!(
+        linking_record(&model, native),
+        Some((
+            ArenaName::parse("feature_input_topologies").unwrap(),
+            topology_id.to_string()
+        ))
+    );
+}

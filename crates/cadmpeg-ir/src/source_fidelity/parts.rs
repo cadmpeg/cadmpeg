@@ -55,6 +55,16 @@ impl PartSpec {
         self
     }
 
+    /// Identity of the stub retained if this part is unreadable.
+    pub fn unreadable_id(
+        &self,
+        codec: CodecFormat,
+        extent: View<'_>,
+    ) -> Result<UnknownId, CodecError> {
+        let stream = self.stream.as_ref().map_or("", StreamName::as_str);
+        part_id(codec, self.label, stream, u64_from_index(extent.start()))
+    }
+
     /// Narrow the classes that the part's bytes can hold.
     #[must_use]
     pub fn holding(mut self, classes: impl IntoIterator<Item = ArenaClass>) -> Self {
@@ -285,7 +295,7 @@ fn give_up(
     let offset = u64_from_index(extent.start());
     let bytes = extent.window();
     let stream = spec.stream.as_ref().map_or("", StreamName::as_str);
-    let id = part_id(output.codec, spec.label, stream, offset)?;
+    let id = spec.unreadable_id(output.codec, extent)?;
     let mut links = Vec::new();
     if let Some(containing) = spec.containing.as_ref() {
         if !native_contains(&output.native, containing.as_str()) {
