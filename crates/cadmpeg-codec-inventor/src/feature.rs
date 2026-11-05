@@ -3933,13 +3933,11 @@ fn project_fillet(
         let PmDcFeaturePropertyKind::FilletEdgeSet { radius, .. } = &operand.set.kind else {
             return None;
         };
-        let Some(radius) = reference_binding(
+        let radius = reference_binding(
             source.identity.segment_token.as_str(),
             radius.index(),
             index,
-        ) else {
-            return None;
-        };
+        )?;
         groups.push(FilletGroup {
             edges: if operand.direct {
                 edge_selection::resolve(operand.collection, index)
