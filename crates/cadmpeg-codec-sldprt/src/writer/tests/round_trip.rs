@@ -69,7 +69,11 @@ fn source_less_spatial_line(start: Point3, end: Point3) -> cadmpeg_ir::CadIr {
     ir
 }
 
-fn check_spatial_point_line_distance_reaches_output(construction: bool, point_construction: bool) {
+fn check_spatial_point_line_distance_reaches_output(
+    construction: bool,
+    point_construction: bool,
+    second_point_construction: bool,
+) {
     use cadmpeg_ir::codec::write::Encoder;
     use cadmpeg_ir::features::{DesignParameter, Dimension, ParameterId, ParameterValue};
     use cadmpeg_ir::sketches::{
@@ -193,7 +197,7 @@ fn check_spatial_point_line_distance_reaches_output(construction: bool, point_co
         .spatial_sketch_entities
         .last_mut()
         .unwrap()
-        .construction = point_construction;
+        .construction = second_point_construction;
     ir.model.parameters.push(DesignParameter {
         product_definition: None,
         id: second_parameter.clone(),
@@ -280,6 +284,13 @@ fn check_spatial_point_line_distance_reaches_output(construction: bool, point_co
             .iter()
             .find(|name| name.id == scalar.name)
             .unwrap();
+        let point_ref = relation.operands[0].entity_ref.as_deref().unwrap();
+        let expected_y = if name.value == "D2" { 7.0 } else { 4.0 };
+        assert!(output.ir().model.spatial_sketch_entities.iter().any(|entity| {
+            entity.native_ref.as_deref() == Some(point_ref)
+                && matches!(entity.geometry.definition(), SpatialSketchGeometryDefinition::Point { position }
+                    if position.get() == Point3::new(3.0, expected_y, 0.0))
+        }), "{} point operand selects the authored point", name.value);
         line_refs.insert(name.value.as_str(), line_ref);
     }
     assert_eq!(line_refs["D1"], line_refs["D2"]);
@@ -306,7 +317,8 @@ fn check_spatial_point_line_distance_reaches_output(construction: bool, point_co
     ] {
         assert!(output.ir().model.spatial_sketch_constraints.iter().any(|constraint| {
             let SpatialSketchConstraintDefinitionInput::PointLineDistance { point, line, parameter } = constraint.definition.kind() else { return false };
-            let point_ok = output.ir().model.spatial_sketch_entities.iter().any(|entity| entity.id() == point && entity.construction == point_construction && matches!(entity.geometry.definition(), SpatialSketchGeometryDefinition::Point { position: actual } if actual.get() == position));
+            let expected_construction = if position.y == 7.0 { second_point_construction } else { point_construction };
+            let point_ok = output.ir().model.spatial_sketch_entities.iter().any(|entity| entity.id() == point && entity.construction == expected_construction && matches!(entity.geometry.definition(), SpatialSketchGeometryDefinition::Point { position: actual } if actual.get() == position));
             let line_ok = output.ir().model.spatial_sketch_entities.iter().any(|entity| entity.id() == line && entity.construction == construction && matches!(entity.geometry.definition(), SpatialSketchGeometryDefinition::Line { start, end } if start.get() == line_start && end.get() == line_end));
             let value_ok = parameter.parameter().and_then(|id| output.ir().model.parameters.iter().find(|candidate| &candidate.id == id)).and_then(|parameter| parameter.value.as_ref()).is_some_and(|value| matches!(value, ParameterValue::Length(value) if value.get() == distance));
             point_ok && line_ok && value_ok
@@ -342,17 +354,23 @@ fn check_spatial_point_line_distance_reaches_output(construction: bool, point_co
 
 #[test]
 fn source_less_spatial_point_line_distance_reaches_output() {
-    check_spatial_point_line_distance_reaches_output(false, false);
+    check_spatial_point_line_distance_reaches_output(false, false, false);
 }
 
 #[test]
 fn source_less_spatial_construction_line_distance_reaches_output() {
-    check_spatial_point_line_distance_reaches_output(true, false);
+    check_spatial_point_line_distance_reaches_output(true, false, false);
 }
 
 #[test]
 fn source_less_spatial_construction_point_distance_reaches_output() {
-    check_spatial_point_line_distance_reaches_output(true, true);
+    check_spatial_point_line_distance_reaches_output(true, true, true);
+}
+
+#[test]
+fn source_less_spatial_mixed_point_roles_reach_output() {
+    check_spatial_point_line_distance_reaches_output(true, true, false);
+    check_spatial_point_line_distance_reaches_output(true, false, true);
 }
 
 #[test]
