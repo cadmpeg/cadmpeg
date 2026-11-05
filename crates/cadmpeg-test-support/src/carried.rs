@@ -462,7 +462,9 @@ mod tests {
 
     #[test]
     fn observation_recognizes_variants_in_a_complete_document() {
-        let document = serde_json::to_value(cadmpeg_ir::examples::unit_cube().unwrap()).unwrap();
+        let document =
+            serde_json::to_value(cadmpeg_ir::examples::unit_cube().expect("build unit cube"))
+                .expect("serialize unit cube");
         let observed = super::observe_carried(&[document]);
         assert!(
             observed.variants.contains("BodyKind::Solid"),
