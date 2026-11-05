@@ -65,6 +65,25 @@ fn cut_first_global_card_gives_up_the_incomplete_field() {
 }
 
 #[test]
+fn cut_before_global_gives_up_its_empty_section() {
+    let original = crate::test_support::compressed_parts::points(false, false);
+    let global = b"1H,,1H;";
+    let start = original
+        .windows(global.len())
+        .position(|window| window == global)
+        .unwrap();
+    let decoded = crate::test_support::decode(original[..start].to_vec());
+    assert_eq!(
+        crate::test_support::given_up_count(decoded.report(), "iges.global_section"),
+        1
+    );
+    let parts = crate::test_support::given_up_parts(decoded.source_fidelity());
+    assert_eq!(parts.len(), 1);
+    assert_eq!(parts[0].byte_len(), 0);
+    assert_eq!(parts[0].offset(), u64::try_from(start).unwrap());
+}
+
+#[test]
 fn actual_data_callback_records_match_the_existing_parameter_grammar_without_reparsing_on_decode() {
     let original = crate::test_support::compressed_parts::points(false, false);
     let mut bytes = b"prefix:".to_vec();

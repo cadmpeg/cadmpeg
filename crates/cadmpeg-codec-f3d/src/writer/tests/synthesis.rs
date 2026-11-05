@@ -1144,4 +1144,36 @@ fn synthesis_preserves_brep_record_indices_when_curves_follow_topology() {
     assert_eq!(original.edge_ownerships, written.edge_ownerships);
     assert_eq!(original.edge_continuities, written.edge_continuities);
     assert_eq!(original.vertex_ownerships, written.vertex_ownerships);
+
+    let mut edited = decoded.ir().clone();
+    let old = edited.model.edges[0].id.clone();
+    let renamed = cadmpeg_ir::ids::EdgeId::mint("authored:model:edge#renamed").unwrap();
+    edited.model.edges[0].id = renamed.clone();
+    for coedge in &mut edited.model.coedges {
+        if coedge.edge == old {
+            coedge.edge = renamed.clone();
+        }
+    }
+    let (output, _) = super::source_less_analytic::synthesize_document(&edited, None);
+    assert_eq!(
+        original.edge_ownerships,
+        f3d_native(output.ir()).edge_ownerships
+    );
+}
+
+#[test]
+fn brep_index_framing_uses_caller_entity_limit() {
+    use crate::test_support::smbh_geometry_test::synthetic_geometry_with_degenerate_curve_smbh;
+    use crate::test_support::zip_test::f3d_with_smbh;
+
+    let source = f3d_with_smbh(&synthetic_geometry_with_degenerate_curve_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode synthetic BREP");
+    let mut input = EncodeInput::new(decoded.ir(), None);
+    input.limits.max_entities = 0;
+    assert!(matches!(
+        F3dCodec.plan(input, TargetRequest::Inherit),
+        Err(cadmpeg_ir::codec::write::EncodeError::ResourceLimit(_))
+    ));
 }
