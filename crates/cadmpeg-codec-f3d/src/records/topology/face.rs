@@ -816,7 +816,7 @@ pub(crate) struct DesignFaceRecipeStructure {
 /// when a packed-token reference has no preceding operand to extend.
 pub(crate) fn prefix_operand_ordinals(references: &[DesignRecipeReference]) -> Option<Vec<usize>> {
     let mut fields = Vec::<((u64, u64), usize)>::new();
-    let mut ordinals = Vec::with_capacity(references.len());
+    let mut ordinals = Vec::new();
     let mut operand_count = 0;
     for reference in references {
         let field = (reference.selector_offset, reference.token_offset);
