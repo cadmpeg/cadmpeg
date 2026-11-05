@@ -757,7 +757,7 @@ impl From<DesignParameter> for DesignParameterSerde {
             evaluated_value,
             evaluated_value_offset,
             comment_offset: parameter.comment.as_ref().map(|field| field.offset),
-            comment: parameter.comment.map(|field| field.value.to_string()),
+            comment: parameter.comment.map(|field| field.value.clone()),
             driven: parameter.flags.driven,
             favorite: parameter.flags.favorite,
             text_value_offset: parameter.text_value.as_ref().map(|field| field.offset),
