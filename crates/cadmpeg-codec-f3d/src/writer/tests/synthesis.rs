@@ -14,6 +14,7 @@ mod box_placement;
 mod configuration_features;
 mod cylinder_radius;
 mod limits;
+mod mesh_sentinel;
 mod neutral_text;
 mod reductions;
 mod sketch_constraints;
