@@ -115,7 +115,7 @@ pub(super) fn admit(
                 .map_or(0.0, PositiveReal::get);
             let allowance = ir
                 .tolerances
-                .linear
+                .linear_or_default()
                 .get()
                 .max(COINCIDENCE_TOLERANCE)
                 .max(edge.tolerance.map_or(0.0, PositiveReal::get))

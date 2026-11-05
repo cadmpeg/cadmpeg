@@ -1654,7 +1654,12 @@ fn encode_declares_the_document_linear_tolerance_as_minimum_resolution() {
     let context = global.length_context().unwrap();
     assert_eq!(
         context.minimum_resolution_mm(),
-        decoded.ir().tolerances.linear.get()
+        decoded
+            .ir()
+            .tolerances
+            .linear
+            .expect("stated linear tolerance")
+            .get()
     );
 
     let round_trip = IgesCodec

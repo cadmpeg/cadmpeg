@@ -65,7 +65,7 @@ fn directory_pattern_number_is_written_from_typed_display() {
         &entities,
         &BTreeMap::new(),
         crate::IgesVersion::V5_3,
-        ir.tolerances.linear.get(),
+        Some(ir.tolerances.linear.expect("stated linear tolerance").get()),
     )
     .expect("typed directory pattern encodes");
     let directory = bytes
@@ -117,7 +117,7 @@ fn reemitted_font_definition_uses_current_directory_pointer() {
         &entities,
         &BTreeMap::new(),
         crate::IgesVersion::V5_3,
-        ir.tolerances.linear.get(),
+        Some(ir.tolerances.linear.expect("stated linear tolerance").get()),
     )
     .expect("current font definition encodes");
     let directory = bytes
@@ -456,7 +456,7 @@ fn reemitted_node_carries_its_subscript_into_the_directory() {
         &entities,
         &BTreeMap::new(),
         crate::IgesVersion::V5_3,
-        ir.tolerances.linear.get(),
+        Some(ir.tolerances.linear.expect("stated linear tolerance").get()),
     )
     .expect("finite-element node encodes");
     let cards: Vec<_> = bytes
