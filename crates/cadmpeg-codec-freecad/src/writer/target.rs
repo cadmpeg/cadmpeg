@@ -254,7 +254,7 @@ fn admit_unedited(
                 crate::fidelity::SOURCE_IMAGE,
             )?;
             hash_ctx.finish_session()?;
-            Ok(fresh_hash)
+            Ok::<_, CodecError>(fresh_hash)
         },
     );
     if !replays {
