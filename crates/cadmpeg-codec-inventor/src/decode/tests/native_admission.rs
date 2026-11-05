@@ -965,9 +965,6 @@ fn external_references_stream() -> Vec<u8> {
 #[test]
 fn protein_admission_keeps_assets_and_gives_up_rejected_instances() {
     use cadmpeg_core::decode::View;
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
-        .expect("build the decode context");
     fn asset(ordinal: u64) -> cadmpeg_protein::DecodedRecord {
         serde_json::from_value(serde_json::json!({
             "ordinal": ordinal, "logical_offset": 0, "schema": "GenericSchema",
@@ -975,6 +972,9 @@ fn protein_admission_keeps_assets_and_gives_up_rejected_instances() {
         }))
         .expect("Protein asset fixture")
     }
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+        .expect("build the decode context");
     let instances = vec![
         (
             crate::protein::ProteinInstanceRecords {
