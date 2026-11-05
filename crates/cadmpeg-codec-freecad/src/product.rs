@@ -206,6 +206,10 @@ pub(crate) fn transfer_neutral(
     bodies: &[Body],
 ) -> Result<(Vec<ProductDefinition>, Vec<Occurrence>), CodecError> {
     let record_by_object = product_record_index(records)?;
+    let object_by_id = objects
+        .iter()
+        .map(|object| (object.id().as_str(), object))
+        .collect::<HashMap<_, _>>();
     // An assembly lists its joints and its joint group among its members;
     // they constrain the components and are not components themselves.
     let constraint_objects = joints
@@ -261,6 +265,13 @@ pub(crate) fn transfer_neutral(
         }
         for name in record.element_objects() {
             component_objects.push(name);
+            if matches!(record.node, ProductNode::LinkGroup { .. })
+                && object_by_id.contains_key(name.as_str())
+                && !occurrence_objects.contains(name.as_str())
+                && !constraint_objects.contains(name.as_str())
+            {
+                placed_objects.insert(name.as_str());
+            }
         }
     }
     for joint in joints {
@@ -386,6 +397,7 @@ pub(crate) fn transfer_neutral(
         for member in record
             .members()
             .iter()
+            .chain(record.element_objects().iter())
             .filter(|member| !constraint_objects.contains(member.as_str()))
         {
             let member = member.as_str();
@@ -549,10 +561,6 @@ pub(crate) fn transfer_neutral(
         }
     }
 
-    let mut object_by_id = HashMap::new();
-    for object in objects {
-        object_by_id.insert(object.id().as_str(), object);
-    }
     let mut definitions = Vec::new();
     for &object in &component_objects {
         let record = record_by_object.get(object).copied();
