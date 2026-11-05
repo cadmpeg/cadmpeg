@@ -23,6 +23,17 @@ fn physically_dependent_point_retains_source_without_becoming_a_free_vertex() {
         .unwrap();
     assert_eq!(result.ir().model.points.len(), 1);
     assert!(result.ir().model.vertices.is_empty());
+    assert!(result.ir().model.attributes.iter().any(|attribute| {
+        attribute.target
+            == cadmpeg_ir::attributes::AttributeTarget::Point(
+                result.ir().model.points[0].id.clone(),
+            )
+            && attribute.name == "name"
+            && attribute.values
+                == [Some(cadmpeg_ir::attributes::AttributeValue::String(
+                    "SUPPORT".into(),
+                ))]
+    }));
     let source = result.ir().model.points[0].source_object.as_ref().unwrap();
     assert_eq!(source.object_id.as_str(), "D1");
     assert_eq!(

@@ -207,7 +207,6 @@ pub(super) fn write_semantic_at(
         &mut normalized.model.configurations,
         &mut normalization_losses,
     );
-    normalized.model.configurations = configurations_for_write(&normalized);
     sort_arenas(&mut normalized);
     // Export precondition on the normalized input. Keeps full validate_neutral:
     // writer refusal depends on non-core Checks (e.g. Counts for duplicate
@@ -822,13 +821,6 @@ fn push_xml_attribute_value(output: &mut String, value: &str) {
             _ => output.push(character),
         }
     }
-}
-
-/// The document's configuration snapshots are content regardless of how they were authored.
-pub(crate) fn configurations_for_write(
-    ir: &CadIr,
-) -> Vec<cadmpeg_ir::features::DesignConfiguration> {
-    ir.model.configurations.clone()
 }
 
 fn sort_arenas(ir: &mut CadIr) {
@@ -3919,7 +3911,7 @@ pub(crate) fn brep_body(
     };
     for point in &ir.model.points {
         tag(&mut out, 0x1d);
-        be16(&mut out, points[&point.id]);
+        pointer_u16(&mut out, points[&point.id]);
         be32(&mut out, 0);
         out.extend_from_slice(&[0; 8]);
         for value in [
@@ -3932,10 +3924,10 @@ pub(crate) fn brep_body(
     }
     for vertex in &ir.model.vertices {
         tag(&mut out, 0x12);
-        be16(&mut out, vertices[&vertex.id]);
+        pointer_u16(&mut out, vertices[&vertex.id]);
         be32(&mut out, 0);
         for value in [0, 0, 0, 0, points[&vertex.point]] {
-            be16(&mut out, value);
+            pointer_u16(&mut out, value);
         }
         if let Some(tolerance) = vertex.tolerance {
             let value = tolerance.get() * length_scale;
@@ -3949,7 +3941,7 @@ pub(crate) fn brep_body(
         } else {
             out.extend_from_slice(&MAGIC);
         }
-        be16(&mut out, vertex_owners[&vertex.id]);
+        pointer_u16(&mut out, vertex_owners[&vertex.id]);
     }
     for edge in &ir.model.edges {
         let owner = vertex_owners
@@ -3962,9 +3954,9 @@ pub(crate) fn brep_body(
             .into());
         }
         tag(&mut out, 0x10);
-        be16(&mut out, edges[&edge.id]);
+        pointer_u16(&mut out, edges[&edge.id]);
         be32(&mut out, 0);
-        be16(&mut out, 0);
+        pointer_u16(&mut out, 0);
         out.extend_from_slice(&MAGIC);
         for value in [
             0,
@@ -3977,9 +3969,9 @@ pub(crate) fn brep_body(
             0,
             0,
         ] {
-            be16(&mut out, value);
+            pointer_u16(&mut out, value);
         }
-        be16(&mut out, *owner);
+        pointer_u16(&mut out, *owner);
     }
     // XT selects an edge's canonical fin from its forward uses. A boundary
     // edge may survive with only a reversed document use after face reduction.
@@ -4004,7 +3996,7 @@ pub(crate) fn brep_body(
         .collect::<HashSet<_>>();
     for coedge in &ir.model.coedges {
         tag(&mut out, 0x11);
-        be16(&mut out, coedges[&coedge.id]);
+        pointer_u16(&mut out, coedges[&coedge.id]);
         let edge = ir
             .model
             .edges
@@ -4034,7 +4026,7 @@ pub(crate) fn brep_body(
             0,
             0,
         ] {
-            be16(&mut out, value);
+            pointer_u16(&mut out, value);
         }
         let native_forward = (reversed_edges.stored_sense(&coedge.edge, coedge.sense)
             == Sense::Forward)
@@ -4059,7 +4051,7 @@ pub(crate) fn brep_body(
             .nth(position + 1)
             .map_or(0, |id| loops[id]);
         tag(&mut out, 0x0f);
-        be16(&mut out, loops[&lp.id]);
+        pointer_u16(&mut out, loops[&lp.id]);
         be32(&mut out, 0);
         for value in [
             0,
@@ -4069,14 +4061,14 @@ pub(crate) fn brep_body(
             faces[&lp.face],
             next_loop,
         ] {
-            be16(&mut out, value);
+            pointer_u16(&mut out, value);
         }
     }
     for face in &ir.model.faces {
         tag(&mut out, 0x0e);
-        be16(&mut out, faces[&face.id]);
+        pointer_u16(&mut out, faces[&face.id]);
         be32(&mut out, 0);
-        be16(&mut out, face_owners[&face.id]);
+        pointer_u16(&mut out, face_owners[&face.id]);
         out.extend_from_slice(&MAGIC);
         let first = match face.loops.iter().next() {
             Some(first) => loops[first],
@@ -4099,7 +4091,7 @@ pub(crate) fn brep_body(
             }
         };
         for value in [0, 0, first, 0, surfaces[&face.surface]] {
-            be16(&mut out, value);
+            pointer_u16(&mut out, value);
         }
         out.push(if face.sense == Sense::Forward {
             0x2b
@@ -4188,7 +4180,7 @@ fn write_body_hierarchy(
             native_regions.push(native_region);
             let mut native_lumps = Vec::new();
             if body.kind == BodyKind::Sheet && region.shells.is_empty() {
-                entity51(out, 1, native_region, 0x001d, &[0; 6])?;
+                entity51(out, AttributeCount::One, native_region, 0x001d, &[0; 6]);
             }
             for shell_id in &region.shells {
                 let shell = shells.get(shell_id).ok_or_else(|| {
@@ -4216,25 +4208,49 @@ fn write_body_hierarchy(
                     if schema_32001 { 0x0015 } else { 0x0013 },
                 )?;
                 if body.kind == BodyKind::Sheet {
-                    entity51(out, 1, native_region, 0x001d, &[head, 0, 0, 0, 0, 0])?;
+                    entity51(
+                        out,
+                        AttributeCount::One,
+                        native_region,
+                        0x001d,
+                        &[head, 0, 0, 0, 0, 0],
+                    );
                     continue;
                 }
                 let lump = take_attr(next)?;
                 let shell_node = take_attr(next)?;
                 let shell_link = take_attr(next)?;
                 native_lumps.push(lump);
-                entity51(out, 2, lump, 0x001f, &[shell_node, 0, 0, 0, 0, 0])?;
-                entity51(out, 2, shell_node, 0x0021, &[shell_link, 0, 0, 0, 0, 0])?;
-                entity51(out, 2, shell_link, 0x0023, &[head, 0, 0, 0, 0, 0])?;
+                entity51(
+                    out,
+                    AttributeCount::Two,
+                    lump,
+                    0x001f,
+                    &[shell_node, 0, 0, 0, 0, 0],
+                );
+                entity51(
+                    out,
+                    AttributeCount::Two,
+                    shell_node,
+                    0x0021,
+                    &[shell_link, 0, 0, 0, 0, 0],
+                );
+                entity51(
+                    out,
+                    AttributeCount::Two,
+                    shell_link,
+                    0x0023,
+                    &[head, 0, 0, 0, 0, 0],
+                );
             }
             if body.kind != BodyKind::Sheet {
                 entity51(
                     out,
-                    1,
+                    AttributeCount::One,
                     native_region,
                     0x001b,
                     &fixed_refs(&native_lumps, "SLDPRT region has more than six shells")?,
-                )?;
+                );
             }
         }
         if native_regions.is_empty() {
@@ -4265,7 +4281,7 @@ fn write_body_hierarchy(
         } else {
             0x0015
         };
-        entity51(out, 1, *owner, disc, &refs)?;
+        entity51(out, AttributeCount::One, *owner, disc, &refs);
     }
     Ok(())
 }
@@ -4471,13 +4487,13 @@ fn write_typed_body_hierarchy(
 fn typed_prefix(out: &mut Vec<u8>, kind: u8, attr: u16, node_id: u32) {
     tag(out, kind);
     out.push(0xff);
-    be16(out, attr);
+    pointer_u16(out, attr);
     be32(out, node_id);
 }
 
 /// Emit one Parasolid XT pointer in its compact or extended two-cell form.
 ///
-/// The high bit of the first cell is the form discriminator, so `0x7fff` is
+/// The high bit of the first cell is the form discriminator, so `0x8000` is
 /// the first value that requires two cells. Two u16 cells provide 31 payload
 /// bits; refusing a larger value keeps the writer from emitting a truncated
 /// pointer.
@@ -4490,7 +4506,7 @@ fn typed_ref(out: &mut Vec<u8>, value: impl Into<u32>) -> Result<(), write_error
     if u64::from(value) > CAPACITY_FIELDS[31].limit {
         return Err(capacity());
     }
-    if value <= 0x7ffe {
+    if value <= 0x7fff {
         be16(out, u16::try_from(value).map_err(|_| capacity())?);
     } else {
         be16(
@@ -4526,7 +4542,7 @@ pub(crate) fn face_colors(ir: &CadIr) -> HashMap<cadmpeg_ir::ids::FaceId, Color>
 fn entity53(out: &mut Vec<u8>, attr: u16, color: Color) {
     tag(out, 0x53);
     be32(out, 3);
-    be16(out, attr);
+    pointer_u16(out, attr);
     for value in [color.r(), color.g(), color.b()] {
         bef64(out, f64::from(value));
     }
@@ -4536,16 +4552,16 @@ fn attribute_definition(out: &mut Vec<u8>, key_node: u16, definition_node: u16) 
     const FAMILY: &[u8; 15] = b"SDL/TYSA_COLOUR";
     tag(out, 0x4f);
     be32(out, 15);
-    be16(out, key_node);
+    pointer_u16(out, key_node);
     out.extend_from_slice(FAMILY);
     tag(out, 0x50);
     be32(out, 1);
-    be16(out, definition_node);
-    be16(out, 1);
-    be16(out, key_node);
+    pointer_u16(out, definition_node);
+    pointer_u16(out, 1);
+    pointer_u16(out, key_node);
     be32(out, 8001);
     out.extend([0; 8]);
-    be16(out, 1);
+    pointer_u16(out, 1);
     let mut legal_owners = [0; 14];
     legal_owners[4] = 1;
     out.extend(legal_owners);
@@ -4580,35 +4596,34 @@ fn write_attribute_list(
         if let Some(chunk) = chunks.get(index) {
             refs[1..=chunk.len()].copy_from_slice(chunk);
         }
-        entity51(out, 2, *attr, disc, &refs)?;
+        entity51(out, AttributeCount::Two, *attr, disc, &refs);
     }
     Ok(())
 }
 
-fn entity51(
-    out: &mut Vec<u8>,
-    flags: u8,
-    attr: u16,
-    disc: u16,
-    refs: &[u16; 6],
-) -> Result<(), CodecError> {
-    if !(1..=0x20).contains(&flags) {
-        return Err(CodecError::NotImplemented(
-            "SLDPRT ATTRIBUTE count is unsupported".into(),
-        ));
-    }
+enum AttributeCount {
+    One,
+    Two,
+}
+
+fn entity51(out: &mut Vec<u8>, count: AttributeCount, attr: u16, disc: u16, refs: &[u16; 6]) {
     tag(out, 0x51);
-    be32(out, u32::from(flags));
-    be16(out, attr);
+    be32(
+        out,
+        match count {
+            AttributeCount::One => 1,
+            AttributeCount::Two => 2,
+        },
+    );
+    pointer_u16(out, attr);
     be32(out, 1);
-    be16(out, disc);
+    pointer_u16(out, disc);
     for reference in refs {
-        be16(out, *reference);
+        pointer_u16(out, *reference);
     }
-    for _ in 1..flags {
-        be16(out, 1);
+    if matches!(count, AttributeCount::Two) {
+        pointer_u16(out, 1);
     }
-    Ok(())
 }
 
 pub(super) fn surface_values(
@@ -4774,11 +4789,16 @@ fn write_nurbs_curve(
     let unique = unique_knots(nurbs.knots())?;
     let knot_count = field_u32(&CAPACITY_FIELDS[19], unique.len())?;
     tag(out, 0x86);
-    be16(out, wrapper);
-    be16(out, descriptor);
-    out.extend_from_slice(&[0; 8]);
+    pointer_u16(out, wrapper);
+    be32(out, 1);
+    for _ in 0..5 {
+        pointer_u16(out, 1);
+    }
+    out.push(0x2b);
+    pointer_u16(out, descriptor);
+    pointer_u16(out, 1);
     tag(out, 0x88);
-    be16(out, descriptor);
+    pointer_u16(out, descriptor);
     be16(out, degree);
     be32(out, control_count);
     let rational = nurbs.weights().is_some();
@@ -4787,7 +4807,7 @@ fn write_nurbs_curve(
     out.push(0);
     out.extend_from_slice(&[u8::from(nurbs.periodic()), 0, u8::from(rational), 0]);
     for attr in [control, multiplicity, knots] {
-        be16(out, attr);
+        pointer_u16(out, attr);
     }
     let poles = homogeneous_poles(nurbs.pole_rows(), length_scale)?;
     f64_array(out, 0x2d, control, poles.into_iter())?;
@@ -4827,14 +4847,14 @@ fn write_nurbs_surface(
     let u_knots = take_attr(next)?;
     let v_knots = take_attr(next)?;
     tag(out, 0x7c);
-    be16(out, wrapper);
+    pointer_u16(out, wrapper);
     be32(out, 1);
     out.extend_from_slice(&[0; 10]);
     out.push(0x2b);
-    be16(out, descriptor);
+    pointer_u16(out, descriptor);
     be16(out, 0);
     tag(out, 0x7e);
-    be16(out, descriptor);
+    pointer_u16(out, descriptor);
     out.extend_from_slice(&[u8::from(nurbs.u_periodic()), u8::from(nurbs.v_periodic())]);
     be16(out, u_degree);
     be16(out, v_degree);
@@ -4848,7 +4868,7 @@ fn write_nurbs_surface(
     out.push(0x0c);
     be16(out, dimension);
     for attr in [control, u_multiplicity, v_multiplicity, u_knots, v_knots] {
-        be16(out, attr);
+        pointer_u16(out, attr);
     }
     f64_array(out, 0x2d, control, poles.into_iter())?;
     u16_array(
@@ -4986,7 +5006,7 @@ fn f64_array(
     tag(out, kind);
     out.push(0x2b);
     be32(out, count);
-    be16(out, attr);
+    pointer_u16(out, attr);
     for value in values {
         bef64(out, value);
     }
@@ -5002,7 +5022,7 @@ fn u16_array(
     tag(out, 0x7f);
     out.push(0x2b);
     be32(out, count);
-    be16(out, attr);
+    pointer_u16(out, attr);
     for value in values {
         be16(out, value);
     }
@@ -5174,7 +5194,7 @@ const CURVE_AGAINST_EDGES_MARKER: u8 = 0x2d;
 
 fn compact(out: &mut Vec<u8>, kind: u8, attr: u16, marker: u8, values: &[f64]) {
     tag(out, kind);
-    be16(out, attr);
+    pointer_u16(out, attr);
     be32(out, 0);
     out.extend_from_slice(&[0; 10]);
     out.push(marker);
@@ -5282,6 +5302,12 @@ fn field_u32(
 }
 fn tag(out: &mut Vec<u8>, kind: u8) {
     out.extend_from_slice(&[0, kind]);
+}
+fn pointer_u16(out: &mut Vec<u8>, value: u16) {
+    be16(out, value);
+    if value > 0x7fff {
+        be16(out, 1);
+    }
 }
 fn be16(out: &mut Vec<u8>, value: u16) {
     out.extend_from_slice(&value.to_be_bytes());
@@ -5443,10 +5469,37 @@ mod nurbs_write_tests {
     }
 
     #[test]
+    fn wide_spline_references_redecode() {
+        use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsPoles3};
+        let points = vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)];
+        let poles = NurbsPoles3::from_lanes(points, None).unwrap();
+        let curve = NurbsCurve::new(1, vec![0.0, 0.0, 1.0, 1.0], poles, false).unwrap();
+        let mut bytes = Vec::new();
+        super::write_nurbs_curve(&mut bytes, 0x8000, &curve, &mut 0x8001, 0.001).unwrap();
+        let decoded = crate::brep::spline::scan_curve_carriers(&bytes, &mut Vec::new());
+        assert!(decoded.contains_key(&0x8000));
+
+        let surface = NurbsSurface::from_lanes(
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+            cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
+                vec![vec![Point3::new(0.0, 0.0, 0.0); 2]; 2],
+                None,
+            ),
+            false,
+        )
+        .unwrap();
+        let mut bytes = Vec::new();
+        write_nurbs_surface(&mut bytes, 0x8000, &surface, &mut 0x8001, 0.001).unwrap();
+        let decoded = crate::brep::spline::scan_surface_carriers(&bytes, &mut Vec::new());
+        assert!(decoded.contains_key(&0x8000));
+    }
+
+    #[test]
     fn writes_typed_reference_boundaries() {
         for (value, expected) in [
             (0x7ffe_u32, vec![0x7f, 0xfe]),
-            (0x7fff_u32, vec![0xff, 0xff, 0, 0]),
+            (0x7fff_u32, vec![0x7f, 0xff]),
             (0x8000_u32, vec![0x80, 0, 0, 1]),
             (0x7fff_ffff_u32, vec![0xff, 0xff, 0xff, 0xff]),
         ] {
