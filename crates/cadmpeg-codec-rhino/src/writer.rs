@@ -6,6 +6,7 @@ use crate::mesh::FaceIndexWidth;
 mod attributes;
 mod compounds;
 mod conics;
+mod extrusion;
 mod loose;
 mod model;
 mod placement;
@@ -204,7 +205,50 @@ fn write_buffered<'budget>(
             written_curves: std::collections::BTreeSet::new(),
         });
     }
-    let mut plan = prepare_write(ctx, ir, version, session)?;
+    let extrusion = if ir.model.procedural_surfaces.iter().any(|surface| {
+        matches!(
+            surface.definition(),
+            cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Extrusion(_)
+        )
+    }) {
+        let materials = MaterialPlan::new(ir)?;
+        extrusion::admit(session, ir, version, &materials)?
+    } else {
+        None
+    };
+    let reduced = extrusion.as_ref().map(|_| {
+        let mut reduced = ir.clone();
+        reduced.model.bodies.clear();
+        reduced.model.regions.clear();
+        reduced.model.shells.clear();
+        reduced.model.faces.clear();
+        reduced.model.loops.clear();
+        reduced.model.coedges.clear();
+        reduced.model.edges.clear();
+        reduced.model.vertices.clear();
+        reduced.model.points.clear();
+        reduced.model.surfaces.clear();
+        reduced.model.curves.clear();
+        reduced.model.pcurves.clear();
+        reduced.model.procedural_curves.clear();
+        reduced.model.procedural_surfaces.clear();
+        reduced
+    });
+    let mut plan = prepare_write(ctx, reduced.as_ref().unwrap_or(ir), version, session)?;
+    if let Some((candidate, record)) = extrusion {
+        ctx.charge_entities(
+            1 + cadmpeg_core::decode::u64_from_index(candidate.profile_count),
+            "write Rhino extrusion records",
+        )?;
+        plan.brep_records
+            .append(&record, "retain Rhino extrusion record")?;
+        plan.brep_count += 1;
+        plan.written_bodies.insert(candidate.body_id);
+        plan.topology_points
+            .extend(ir.model.points.iter().map(|point| point.id.to_string()));
+        plan.written_curves
+            .extend(ir.model.curves.iter().map(|curve| curve.id.to_string()));
+    }
     plan.losses.splice(0..0, admit_losses);
     // The B-rep records are staged before the prefix, which names their
     // bodies. The prefix and the object table header are appended after the

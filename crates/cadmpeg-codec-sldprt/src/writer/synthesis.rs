@@ -692,7 +692,7 @@ pub(super) fn plan(
     coverage.features = ArenaDisposition::Reported;
     coverage.parameters = ArenaDisposition::Reported;
     coverage.sketch_constraints = ArenaDisposition::Reported;
-    coverage.spatial_sketch_constraints = ArenaDisposition::Dropped;
+    coverage.spatial_sketch_constraints = ArenaDisposition::Reported;
     if supported.len() != input.ir.model.bodies.len() {
         coverage.bodies = ArenaDisposition::Reported;
         coverage.regions = ArenaDisposition::Reported;
@@ -1302,6 +1302,9 @@ fn reduce_fields(
     for constraint in &mut ir.model.sketch_constraints {
         constraint.native_ref = None;
     }
+    for constraint in &mut ir.model.spatial_sketch_constraints {
+        constraint.native_ref = None;
+    }
     for coedge in &mut ir.model.coedges {
         coedge.pcurves.clear();
     }
@@ -1328,6 +1331,31 @@ fn reduce_design(
     losses: &mut Vec<LossNote>,
     repair: bool,
 ) -> Result<(), super::write_error::WriteError> {
+    for feature in &mut ir.model.features {
+        let mut omitted_weight = false;
+        feature.evaluation.edit(|definition, _| {
+            if let FeatureDefinition::Operation(FeatureOperation::FilledSurface {
+                continuity,
+                ..
+            }) = definition
+            {
+                if let Some(condition) = continuity.resolved().and_then(|value| value.uniform()) {
+                    if condition.weight().is_some() {
+                        *continuity = cadmpeg_ir::features::FilledSurfaceContinuityState::uniform(
+                            condition.continuity(),
+                        );
+                        omitted_weight = true;
+                    }
+                }
+            }
+        });
+        if omitted_weight {
+            losses.push(SldprtLossCode::WriterFieldsOmitted.note(format!(
+                "feature {}: filled-surface continuity weight omitted",
+                feature.id
+            )));
+        }
+    }
     let native = ir
         .native
         .namespace("sldprt")
