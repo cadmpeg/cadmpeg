@@ -82,7 +82,7 @@ fn reduced_rows_are_empty_for_step() {
     // round-trips at full precision (#232 §5.2).
     assert!(crate::writer::REDUCED_FIELDS.is_empty());
     let seed = seed_golden();
-    let encoder = &StepCodec::default() as &dyn Encoder;
+    let encoder: &dyn Encoder = &StepCodec::default();
     let redecode = |written: &[u8]| {
         let result = StepCodec::default()
             .decode(&mut Cursor::new(written), &DecodeOptions::default())

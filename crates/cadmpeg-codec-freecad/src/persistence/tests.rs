@@ -357,6 +357,20 @@ fn retains_nested_xlink_value_children_as_unreadable_source() {
             .arena_as::<crate::native::PropertyRecord>("properties")
             .expect("properties");
         assert!(properties[0].body.is_none());
+        let parts = crate::test_support::source_fidelity::given_up(decoded.source_fidelity());
+        let [(stub_id, _)] = parts.as_slice() else {
+            panic!("one failed value")
+        };
+        let unknowns = decoded
+            .ir()
+            .native
+            .namespace("fcstd")
+            .unwrap()
+            .arena_as::<cadmpeg_ir::NativeUnknownRecord>("unknowns")
+            .unwrap();
+        assert!(unknowns.iter().any(|stub| stub.id.as_str() == *stub_id
+            && stub.links.iter().any(|id| id.as_str() == properties[0].id)));
+
         assert!(
             decoded
                 .report()
@@ -861,9 +875,8 @@ fn property_value_xml_above_the_copy_bound_stays_strict_without_a_part() {
         &mut properties,
         &mut property_sources,
         &mut losses,
-        None,
-        &mut stages,
-        &[],
+        false,
+        (None, &mut stages, &[]),
     )
     .expect_err("a value copy above the bound stays strict without a value part");
     assert!(error.to_string().contains("value copy bound"), "{error:?}");

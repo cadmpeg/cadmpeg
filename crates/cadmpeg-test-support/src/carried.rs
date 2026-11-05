@@ -277,13 +277,6 @@ fn walk_variants(value: &Value, maps: &VariantMaps, found: &mut BTreeSet<String>
 /// document: evidence for the documented over-approximation.
 #[must_use]
 pub fn ambiguity_sample(document: &Value) -> BTreeMap<String, usize> {
-    let maps = variant_maps();
-    let mut ambiguous = BTreeMap::new();
-    let mut check = |spelling: &str, count: usize| {
-        if count > 1 {
-            *ambiguous.entry(spelling.to_owned()).or_default() += 1;
-        }
-    };
     fn walk(value: &Value, maps: &VariantMaps, check: &mut dyn FnMut(&str, usize)) {
         match value {
             Value::String(text) => {
@@ -316,6 +309,13 @@ pub fn ambiguity_sample(document: &Value) -> BTreeMap<String, usize> {
             _ => {}
         }
     }
+    let maps = variant_maps();
+    let mut ambiguous = BTreeMap::new();
+    let mut check = |spelling: &str, count: usize| {
+        if count > 1 {
+            *ambiguous.entry(spelling.to_owned()).or_default() += 1;
+        }
+    };
     walk(document, maps, &mut check);
     ambiguous
 }
@@ -462,7 +462,8 @@ mod tests {
 
     #[test]
     fn observation_recognizes_variants_in_a_complete_document() {
-        let document = serde_json::to_value(cadmpeg_ir::examples::unit_cube().unwrap()).unwrap();
+        let document = serde_json::to_value(cadmpeg_ir::examples::unit_cube().expect("unit cube"))
+            .expect("serialize cube");
         let observed = super::observe_carried(&[document]);
         assert!(
             observed.variants.contains("BodyKind::Solid"),
@@ -519,7 +520,7 @@ mod tests {
 
     #[test]
     fn ambiguity_reports_shared_spellings() {
-        let _ = ambiguity_sample(&json!({"kind": "plane"}));
+        drop(ambiguity_sample(&json!({"kind": "plane"})));
     }
 
     #[test]

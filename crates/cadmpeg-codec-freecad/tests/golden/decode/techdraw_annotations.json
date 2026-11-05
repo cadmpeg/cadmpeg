@@ -2404,6 +2404,7 @@
             "ArbitraryTolerances": "false",
             "Caption": "",
             "EqualTolerance": "true",
+            "ExpressionEngine": "[]",
             "ExtensionAngle": "0.0",
             "FormatSpecOverTolerance": "%+.2w",
             "FormatSpecUnderTolerance": "%+.2w",
@@ -2456,6 +2457,7 @@
           "order": 1,
           "parameters": {
             "Caption": "",
+            "ExpressionEngine": "[]",
             "Font": "osifont",
             "Label": "Note",
             "Label2": "",
@@ -2501,6 +2503,8 @@
           "order": 2,
           "parameters": {
             "Caption": "",
+            "EditableTexts": "[]",
+            "ExpressionEngine": "[]",
             "Label": "Symbol",
             "Label2": "",
             "LockPosition": "false",
@@ -2790,6 +2794,8 @@
           "gui_view_providers": 0,
           "joints": 0,
           "objects": 8,
+          "polygons3d": 0,
+          "polygons_on_triangulations": 0,
           "product_nodes": 0,
           "properties": 162,
           "shape_payloads": 1,
@@ -2799,20 +2805,22 @@
       },
       "__arena_sha256": {
         "fcstd": {
-          "annotations": "359358797c4a60e858618952cfcffc789d0dbc7e014a8792eed60c5a062db1d7",
-          "applications": "23e16a11390a3900af9e33f2f84f1cd281d5c61708277e0ebe87f550e748fc90",
+          "annotations": "83fbb3c734f6f031f68e1f3482d8a9580822e0015ccea2c12e15507e580d551e",
+          "applications": "26c030c4b609d47223d53af6945901e62791af2ebe9542285bc27978efd52fba",
           "carrier_census": "efa84ccb5acbee7f3408b19c2d98278e5324cb914eae7422f6137782c9f45aec",
           "design_census": "389b7225d9a487541f263a6ad1ee5d24993fb853ba6d5495efaf797613ad9983",
           "document": "49c32df2c71ab8d28178fc633c063765d5d41f35656d27686d0fabd47fb26485",
           "drawings": "efd7da12db41130568e33bb9b42336cfbca2cdb33f9b521d33d4886e487a9b1b",
           "element_maps": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-          "entries": "76bd1463480f2c6a5cea7efd1482254d9333bf9167fdf85f2ec1456aa7724182",
+          "entries": "1d5794a645d3c3fa6f4ca8134ab730f2fd8083f968b0c875781f879d6fe57739",
           "extensions": "19495cb0b8ceb84b1577dd5440e20cffa497654577f3a960f7b66e26b85b7405",
           "gui_documents": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "gui_properties": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "gui_view_providers": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "joints": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "objects": "0639e07557af7849b20719db99dc2cd4b37dee5f9ae4a94ed980ba8f41be14cb",
+          "polygons3d": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "polygons_on_triangulations": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "product_nodes": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "properties": "3763a80b635bd07791c9bdd6a26b72188717acad401bcc502a8dde0fc8b8d41c",
           "shape_payloads": "d371e79d860d5c655eb5abef73453c570b741dd9321fe278f5d840a709a687cf",
@@ -3012,86 +3020,6 @@
           "scope": "namespaced"
         },
         "message": "fcstd:native:object#Note: untyped font properties, alignment, colour, line spacing, rich text, captions and dimension presentation remain native",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#Dimension:BoxCorners (App::PropertyVectorList) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#Dimension:SavedGeometry (Part::PropertyTopoShapeList) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#Symbol:EditableTexts (App::PropertyStringList) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#Template:PageResult (App::PropertyFileIncluded) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#View:CenterLines (TechDraw::PropertyCenterLineList) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#View:CosmeticEdges (TechDraw::PropertyCosmeticEdgeList) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#View:CosmeticVertexes (TechDraw::PropertyCosmeticVertexList) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#View:GeomFormats (TechDraw::PropertyGeomFormatList) has no neutral attribute encoding; its admitted typed native values remain held",
         "severity": "warning"
       },
       {

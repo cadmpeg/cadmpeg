@@ -125,9 +125,7 @@ impl<'ir> Writer<'ir> {
         match &asset.content {
             AssetContent::External { uri } => {
                 if self.package.is_some() {
-                    self.unwritten
-                        .external_textures
-                        .insert(uri.to_string());
+                    self.unwritten.external_textures.insert(uri.to_string());
                 }
                 Some(uri.to_string())
             }

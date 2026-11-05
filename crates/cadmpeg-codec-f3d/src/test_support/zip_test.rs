@@ -20,25 +20,24 @@ use crate::test_support::protein_test::{
     generated_definition_catalog_for, generated_instance_properties_for,
     generated_schema_from_paged,
 };
+use crate::test_support::sketch_stream_test::generated_design_bulkstream;
 use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
 use crate::test_support::smbh_header_test::synthetic_smbh;
 use crate::test_support::smbh_revision_test::scrubbed_definition;
-use crate::test_support::sketch_stream_test::generated_design_bulkstream;
 use crate::test_support::streams_test::{
-    design_metastream_with_records_and_secondary,
-    generated_act_bulkstream, generated_act_metastream, generated_design_base_feature_bulkstream,
+    design_metastream_with_records_and_secondary, generated_act_bulkstream,
+    generated_act_metastream, generated_design_base_feature_bulkstream,
     generated_design_base_feature_metastream, generated_design_base_flange_bulkstream,
-    generated_design_base_flange_metastream,
-    generated_design_canvas_bulkstream, generated_design_canvas_metastream,
-    generated_design_copy_paste_bodies_bulkstream, generated_design_copy_paste_bodies_metastream,
-    generated_design_copy_paste_bulkstream, generated_design_copy_paste_metastream,
-    generated_design_form_bulkstream, generated_design_form_metastream,
-    generated_design_metastream, generated_design_remove_body_bulkstream,
-    generated_design_remove_body_metastream, generated_design_sketch_dimension_bulkstream,
-    generated_design_sketch_dimension_metastream, generated_design_surface_stitch_bulkstream,
-    generated_design_surface_stitch_metastream, generated_design_types,
-    generated_flat_pattern_settings_bulkstream, generated_flat_pattern_settings_metastream,
-    GeneratedDesignMetastreamVariant,
+    generated_design_base_flange_metastream, generated_design_canvas_bulkstream,
+    generated_design_canvas_metastream, generated_design_copy_paste_bodies_bulkstream,
+    generated_design_copy_paste_bodies_metastream, generated_design_copy_paste_bulkstream,
+    generated_design_copy_paste_metastream, generated_design_form_bulkstream,
+    generated_design_form_metastream, generated_design_metastream,
+    generated_design_remove_body_bulkstream, generated_design_remove_body_metastream,
+    generated_design_sketch_dimension_bulkstream, generated_design_sketch_dimension_metastream,
+    generated_design_surface_stitch_bulkstream, generated_design_surface_stitch_metastream,
+    generated_design_types, generated_flat_pattern_settings_bulkstream,
+    generated_flat_pattern_settings_metastream, GeneratedDesignMetastreamVariant,
 };
 use crate::F3dCodec;
 

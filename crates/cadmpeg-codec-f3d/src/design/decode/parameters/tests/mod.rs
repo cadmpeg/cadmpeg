@@ -24,8 +24,8 @@ use crate::test_support::manifest_test::write_synthetic_manifests;
 
 mod registered_tail;
 mod tail_forms;
-mod typed_forms;
 mod type_dispatch;
+mod typed_forms;
 mod unparsed_frames;
 
 struct ParameterTestOutput {
@@ -1170,13 +1170,7 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
         let metadata =
             crate::test_support::streams_test::design_metastream_with_records_and_secondary(
                 &[
-                    (
-                        super::PARAMETER_OWNER_TYPE_GUID,
-                        "",
-                        1,
-                        "Fusion",
-                        &entities,
-                    ),
+                    (super::PARAMETER_OWNER_TYPE_GUID, "", 1, "Fusion", &entities),
                     ("00000000-0000-0000-0000-000000000001", "", 1, "Fusion", &[]),
                 ],
                 primary,
@@ -1195,8 +1189,7 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
         let mut output =
             cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
         let owners =
-            super::decode_parameter_owners(&ctx, &scan, &mut parameters, &mut output)
-                .unwrap();
+            super::decode_parameter_owners(&ctx, &scan, &mut parameters, &mut output).unwrap();
         let (_, _, _, losses) = output.into_parts();
         (owners, parameters, losses)
     }

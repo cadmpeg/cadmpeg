@@ -505,7 +505,7 @@ pub(crate) struct Builder<'a> {
 /// `FILE_NAME` is the AP242 home for document metadata: the file name, the
 /// write timestamp, the author and organization lists, and the originating
 /// system. Each field admits the source names that denote it: the IGES
-/// document attribute names, the FreeCAD document property names, and the
+/// document attribute names, the `FreeCAD` document property names, and the
 /// names the STEP decoder projects from this same header. A field with no
 /// held attribute keeps the writer option, so a document without document
 /// attributes writes byte-identical output to before.
@@ -560,6 +560,16 @@ impl FileNameFields {
     }
 
     fn of(ir: &CadIr) -> Self {
+        // An alias is consumed only when the header carries its value back:
+        // any other held alias keeps its drop loss, which names it. An
+        // empty fold still writes one empty entry, which carries every held
+        // empty alias back.
+        fn consumed(held: &[(String, String)], carried: &[String]) -> Vec<String> {
+            held.iter()
+                .filter(|(_, value)| carried.iter().any(|kept| *kept == **value))
+                .map(|(id, _)| id.clone())
+                .collect()
+        }
         let label = Self::held(ir, Self::LABEL);
         let author = Self::held(ir, Self::AUTHOR);
         let organization = Self::held(ir, Self::ORGANIZATION);
@@ -587,16 +597,6 @@ impl FileNameFields {
                 .unwrap_or_default()
         });
         let system = (!sys.is_empty()).then(|| Self::first_non_empty(&sys));
-        // An alias is consumed only when the header carries its value back:
-        // any other held alias keeps its drop loss, which names it. An
-        // empty fold still writes one empty entry, which carries every held
-        // empty alias back.
-        fn consumed(held: &[(String, String)], carried: &[String]) -> Vec<String> {
-            held.iter()
-                .filter(|(_, value)| carried.iter().any(|kept| *kept == **value))
-                .map(|(id, _)| id.clone())
-                .collect()
-        }
         let empty_entry = vec![String::new()];
         let mut consumed_ids = consumed(&label, &name.clone().into_iter().collect::<Vec<_>>());
         consumed_ids.extend(consumed(
@@ -3392,10 +3392,10 @@ impl<'a> Builder<'a> {
                 if self.face_step_refs.contains_key(face_id.as_str()) {
                     continue;
                 }
-                let Some(face) = self.faces.get(face_id.as_str()).cloned() else {
+                let Some(face) = self.faces.get(face_id.as_str()).copied() else {
                     continue;
                 };
-                if !face.loops.is_empty() || !self.surface_is_self_bounded(&face) {
+                if !face.loops.is_empty() || !self.surface_is_self_bounded(face) {
                     continue;
                 }
                 let Some(surface) = self.emit_surface(face.surface.as_str()) else {
@@ -4016,7 +4016,7 @@ impl<'a> Builder<'a> {
                         _ => None,
                     })
                     .flatten()
-                    .map(|id| id.as_str()),
+                    .map(cadmpeg_ir::ids::PcurveId::as_str),
             )
             .collect();
         let mut pcurve_surfaces = BTreeMap::<&str, BTreeSet<&str>>::new();
@@ -5373,13 +5373,15 @@ impl<'a> Builder<'a> {
             .emitter
             .emit("PCURVE", &format!("'',{surface},{representation}"));
         match self.pcurve_supports.get(pcurve_id).copied() {
-            Some((first_id, first_surface)) if first_surface != surface => {
-                if self.split_pcurves.insert(pcurve_id) {
-                    self.loss(
-                        StepLossCode::PcurveSplitAcrossSurfaces,
-                        format!("pcurve {pcurve_id} was split between surfaces {first_id} and {surface_id}"),
-                    );
-                }
+            Some((first_id, first_surface))
+                if first_surface != surface && self.split_pcurves.insert(pcurve_id) =>
+            {
+                self.loss(
+                    StepLossCode::PcurveSplitAcrossSurfaces,
+                    format!(
+                        "pcurve {pcurve_id} was split between surfaces {first_id} and {surface_id}"
+                    ),
+                );
             }
             None => {
                 self.pcurve_supports
@@ -6416,12 +6418,12 @@ impl<'a> Builder<'a> {
             }
         }
         for annotation in &annotations {
-            if matches!(&annotation.definition, PmiDefinition::DatumTarget { .. }) {
-                if targets_exact(annotation) {
-                    self.written_pmi += 1;
-                    self.written_pmi_ids
-                        .insert(annotation.id.as_str().to_owned());
-                }
+            if matches!(&annotation.definition, PmiDefinition::DatumTarget { .. })
+                && targets_exact(annotation)
+            {
+                self.written_pmi += 1;
+                self.written_pmi_ids
+                    .insert(annotation.id.as_str().to_owned());
             }
         }
         for annotation in &annotations {
@@ -7631,10 +7633,11 @@ impl<'a> Builder<'a> {
             .coedges
             .iter()
             .flat_map(|coedge| {
-                coedge.pcurves.iter().filter_map(move |use_| {
-                    (!pcurves.contains_key(use_.pcurve.as_str()))
-                        .then(|| format!("{} -> {}", coedge.id, use_.pcurve))
-                })
+                coedge
+                    .pcurves
+                    .iter()
+                    .filter(move |use_| !pcurves.contains_key(use_.pcurve.as_str()))
+                    .map(move |use_| format!("{} -> {}", coedge.id, use_.pcurve))
             })
             .collect();
         if !missing_pcurves.is_empty() {
@@ -8225,7 +8228,7 @@ impl<'a> Builder<'a> {
             .model
             .occurrences
             .iter()
-            .map(|occurrence| {
+            .filter_map(|occurrence| {
                 let link_metadata = occurrence.link.as_ref().map_or(0, |link| {
                     usize::from(!link.linked_subelements().is_empty())
                         + usize::from(link.element_component().is_some())
@@ -8239,7 +8242,6 @@ impl<'a> Builder<'a> {
                 let count = usize::from(occurrence.visible.is_some()) + link_metadata;
                 (count > 0).then(|| (occurrence.id.to_string(), count))
             })
-            .flatten()
             .collect();
         if !occurrence_metadata.is_empty() {
             let count: usize = occurrence_metadata.iter().map(|(_, count)| count).sum();

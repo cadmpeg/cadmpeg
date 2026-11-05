@@ -1385,7 +1385,11 @@ fn disk_sheet_without_explicit_pcurve_classifies_trim_iso_zero() {
         panic!("disk Brep topology must remain valid")
     };
     assert_eq!(
-        brep.raw().trims.iter().map(|trim| trim.iso).collect::<Vec<_>>(),
+        brep.raw()
+            .trims
+            .iter()
+            .map(|trim| trim.iso)
+            .collect::<Vec<_>>(),
         [RawTrimIso::None]
     );
     let mut bytes = Vec::new();

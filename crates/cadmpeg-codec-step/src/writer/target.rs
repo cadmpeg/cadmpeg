@@ -20,6 +20,7 @@ pub(crate) fn plan(
     input: EncodeInput<'_>,
     resolved: &ResolvedWrite<'_>,
 ) -> Result<ExportBody, EncodeError> {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
     debug_assert!(
         crate::writer::CAPACITY_FIELDS.is_empty(),
         "STEP declares no capacity rows"
@@ -30,7 +31,6 @@ pub(crate) fn plan(
     );
     // Synthesis visits every input record, so the caller's entity ceiling
     // applies to the input record count before any building (#217 §5.0).
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
     let arena = DecodeArena::new();
     let policy = DecodePolicy {
         mode: cadmpeg_core::decode::DecodeMode::Salvage,

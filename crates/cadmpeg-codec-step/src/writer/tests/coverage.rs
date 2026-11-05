@@ -312,7 +312,7 @@ fn unbound_appearance_survives_on_written_surface() {
         physical_token: None,
         schema: None,
         category: None,
-        properties: Default::default(),
+        properties: std::collections::BTreeMap::default(),
         textures: Vec::new(),
     });
     let mut other = ir.model.appearances[0].clone();

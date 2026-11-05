@@ -197,9 +197,11 @@ pub(super) fn document<'source>(
                         ctx,
                         document,
                         view,
-                        "Document.xml",
-                        "recover FreeCAD document elements",
-                        "FreeCAD document XML tree",
+                        crate::xml_recovery::XmlSource {
+                            member: "Document.xml",
+                            scan_operation: "recover FreeCAD document elements",
+                            parse_operation: "FreeCAD document XML tree",
+                        },
                         &|name, ancestors| {
                             let parent = ancestors.first().copied().unwrap_or(b"".as_slice());
                             if name == b"Property" || name == b"_Property" {

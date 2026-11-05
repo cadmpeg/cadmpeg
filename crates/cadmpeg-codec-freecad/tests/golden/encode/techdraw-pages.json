@@ -2,13 +2,18 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 2980,
-      "payload_sha256": "467fe4722405c00d8d2d6be7f8918d1989baa5fea7c8ac88cba09a7d59a85fc1"
+      "payload_len": 13612,
+      "payload_sha256": "81b60cfc46b25cce104c491f892b9d83e76fbbdf23046b68705be76e2ccdf09b"
     },
     {
-      "name": "Cadmpeg.StringHasher.0.txt",
-      "payload_len": 22,
-      "payload_sha256": "fb6584f9f9e27a1800242afb8012578f820f423a4ae7fda4be20731580cbe0a1"
+      "name": "techdraw-template.svg",
+      "payload_len": 462,
+      "payload_sha256": "72d5cf7f1b02f68d56ddd6a29b9f4fe443c45be385234abfa923fd724054ec9b"
+    },
+    {
+      "name": "techdraw-template1.svg",
+      "payload_len": 462,
+      "payload_sha256": "72d5cf7f1b02f68d56ddd6a29b9f4fe443c45be385234abfa923fd724054ec9b"
     }
   ],
   "report": {
@@ -89,7 +94,7 @@
         "configurations": "dropped",
         "curves": "written",
         "declared_measures": "omitted",
-        "drawings": "dropped",
+        "drawings": "reported",
         "edges": "written",
         "faces": "written",
         "feature_input_topologies": "dropped",
@@ -111,7 +116,7 @@
         "product_definitions": "written",
         "regions": "written",
         "rigid_bodies": "omitted",
-        "semantic_annotations": "dropped",
+        "semantic_annotations": "reported",
         "shells": "written",
         "sketch_constraints": "written",
         "sketch_entities": "written",
@@ -123,7 +128,7 @@
         "spreadsheets": "written",
         "subds": "dropped",
         "surfaces": "written",
-        "tessellations": "dropped",
+        "tessellations": "reported",
         "vertices": "written",
         "view_presentations": "written"
       },
@@ -141,7 +146,7 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "FCStd does not represent 6 record(s) in neutral arena `drawings`",
+        "message": "drawing fcstd:model:drawing#First:entity contains fields the FCStd writer cannot regenerate",
         "severity": "warning"
       },
       {
@@ -151,7 +156,67 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "FCStd does not represent 2 record(s) in neutral arena `semantic_annotations`",
+        "message": "drawing fcstd:model:drawing#FirstNote:entity contains fields the FCStd writer cannot regenerate",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "arena.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "drawing fcstd:model:drawing#FirstTemplate:entity contains fields the FCStd writer cannot regenerate",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "arena.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "drawing fcstd:model:drawing#Second:entity contains fields the FCStd writer cannot regenerate",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "arena.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "drawing fcstd:model:drawing#SecondNote:entity contains fields the FCStd writer cannot regenerate",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "arena.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "drawing fcstd:model:drawing#SecondTemplate:entity contains fields the FCStd writer cannot regenerate",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "arena.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "annotation fcstd:model:semantic-annotation#FirstNote:content contains fields the FCStd writer cannot regenerate",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "arena.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "annotation fcstd:model:semantic-annotation#SecondNote:content contains fields the FCStd writer cannot regenerate",
         "severity": "warning"
       },
       {
@@ -171,16 +236,6 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 6 native record(s) from `fcstd.applications`: fcstd:native:application#First, fcstd:native:application#FirstNote, fcstd:native:application#FirstTemplate, fcstd:native:application#Second, fcstd:native:application#SecondNote, fcstd:native:application#SecondTemplate",
-        "severity": "info"
-      },
-      {
-        "code": {
-          "code": "native.records-omitted",
-          "kind": "record_not_typed",
-          "namespace": "export",
-          "scope": "namespaced"
-        },
         "message": "the fcstd write omits 6 native record(s) from `fcstd.drawings`: fcstd:native:drawing#First, fcstd:native:drawing#FirstNote, fcstd:native:drawing#FirstTemplate, fcstd:native:drawing#Second, fcstd:native:drawing#SecondNote, fcstd:native:drawing#SecondTemplate",
         "severity": "info"
       },
@@ -191,27 +246,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 2 native record(s) from `fcstd.entries`: fcstd:native:entry#techdraw-template.svg, fcstd:native:entry#techdraw-template1.svg",
-        "severity": "info"
-      },
-      {
-        "code": {
-          "code": "native.records-omitted",
-          "kind": "record_not_typed",
-          "namespace": "export",
-          "scope": "namespaced"
-        },
-        "message": "the fcstd write omits 6 native record(s) from `fcstd.objects`: fcstd:native:object#First, fcstd:native:object#FirstNote, fcstd:native:object#FirstTemplate, fcstd:native:object#Second, fcstd:native:object#SecondNote, fcstd:native:object#SecondTemplate",
-        "severity": "info"
-      },
-      {
-        "code": {
-          "code": "native.records-omitted",
-          "kind": "record_not_typed",
-          "namespace": "export",
-          "scope": "namespaced"
-        },
-        "message": "the fcstd write omits 78 native record(s) from `fcstd.properties`: fcstd:native:property#First:ExpressionEngine, fcstd:native:property#First:KeepUpdated, fcstd:native:property#First:Label, fcstd:native:property#First:Label2, fcstd:native:property#First:NextBalloonIndex, fcstd:native:property#First:ProjectionType, fcstd:native:property#First:Scale, fcstd:native:property#First:Template, fcstd:native:property#First:Views, fcstd:native:property#First:Visibility, fcstd:native:property#FirstNote:Caption, fcstd:native:property#FirstNote:ExpressionEngine, fcstd:native:property#FirstNote:Font, fcstd:native:property#FirstNote:Label, fcstd:native:property#FirstNote:Label2, fcstd:native:property#FirstNote:LineSpace, fcstd:native:property#FirstNote:LockPosition, fcstd:native:property#FirstNote:MaxWidth, fcstd:native:property#FirstNote:Owner, fcstd:native:property#FirstNote:Rotation, fcstd:native:property#FirstNote:Scale, fcstd:native:property#FirstNote:ScaleType, fcstd:native:property#FirstNote:Text, fcstd:native:property#FirstNote:TextColor, fcstd:native:property#FirstNote:TextSize, fcstd:native:property#FirstNote:TextStyle, fcstd:native:property#FirstNote:Visibility, fcstd:native:property#FirstNote:X, fcstd:native:property#FirstNote:Y, fcstd:native:property#FirstTemplate:EditableTexts, fcstd:native:property#FirstTemplate:ExpressionEngine, fcstd:native:property#FirstTemplate:Height, fcstd:native:property#FirstTemplate:Label, fcstd:native:property#FirstTemplate:Label2, fcstd:native:property#FirstTemplate:Orientation, fcstd:native:property#FirstTemplate:PageResult, fcstd:native:property#FirstTemplate:Template, fcstd:native:property#FirstTemplate:Visibility, fcstd:native:property#FirstTemplate:Width, fcstd:native:property#Second:ExpressionEngine, fcstd:native:property#Second:KeepUpdated, fcstd:native:property#Second:Label, fcstd:native:property#Second:Label2, fcstd:native:property#Second:NextBalloonIndex, fcstd:native:property#Second:ProjectionType, fcstd:native:property#Second:Scale, fcstd:native:property#Second:Template, fcstd:native:property#Second:Views, fcstd:native:property#Second:Visibility, fcstd:native:property#SecondNote:Caption, fcstd:native:property#SecondNote:ExpressionEngine, fcstd:native:property#SecondNote:Font, fcstd:native:property#SecondNote:Label, fcstd:native:property#SecondNote:Label2, fcstd:native:property#SecondNote:LineSpace, fcstd:native:property#SecondNote:LockPosition, fcstd:native:property#SecondNote:MaxWidth, fcstd:native:property#SecondNote:Owner, fcstd:native:property#SecondNote:Rotation, fcstd:native:property#SecondNote:Scale, fcstd:native:property#SecondNote:ScaleType, fcstd:native:property#SecondNote:Text, fcstd:native:property#SecondNote:TextColor, fcstd:native:property#SecondNote:TextSize, fcstd:native:property#SecondNote:TextStyle, fcstd:native:property#SecondNote:Visibility, fcstd:native:property#SecondNote:X, fcstd:native:property#SecondNote:Y, fcstd:native:property#SecondTemplate:EditableTexts, fcstd:native:property#SecondTemplate:ExpressionEngine, fcstd:native:property#SecondTemplate:Height, fcstd:native:property#SecondTemplate:Label, fcstd:native:property#SecondTemplate:Label2, fcstd:native:property#SecondTemplate:Orientation, fcstd:native:property#SecondTemplate:PageResult, fcstd:native:property#SecondTemplate:Template, fcstd:native:property#SecondTemplate:Visibility, fcstd:native:property#SecondTemplate:Width",
+        "message": "the fcstd write omits 1 native record(s) from `fcstd.string_tables`: fcstd:native:string-table#0",
         "severity": "info"
       }
     ],
@@ -223,7 +258,15 @@
               "disposition": "dropped"
             },
             "applications": {
-              "disposition": "dropped"
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:application#First": "regenerated",
+                "fcstd:native:application#FirstNote": "regenerated",
+                "fcstd:native:application#FirstTemplate": "regenerated",
+                "fcstd:native:application#Second": "regenerated",
+                "fcstd:native:application#SecondNote": "regenerated",
+                "fcstd:native:application#SecondTemplate": "regenerated"
+              }
             },
             "attachments": {
               "disposition": "dropped"
@@ -249,7 +292,9 @@
             "entries": {
               "disposition": "dropped",
               "records": {
-                "fcstd:native:entry#Document.xml": "regenerated"
+                "fcstd:native:entry#Document.xml": "regenerated",
+                "fcstd:native:entry#techdraw-template.svg": "regenerated",
+                "fcstd:native:entry#techdraw-template1.svg": "regenerated"
               }
             },
             "extensions": {
@@ -268,6 +313,23 @@
               "disposition": "dropped"
             },
             "objects": {
+              "disposition": "dropped",
+              "records": {
+                "fcstd:native:object#First": "written",
+                "fcstd:native:object#FirstNote": "written",
+                "fcstd:native:object#FirstTemplate": "written",
+                "fcstd:native:object#Second": "written",
+                "fcstd:native:object#SecondNote": "written",
+                "fcstd:native:object#SecondTemplate": "written"
+              }
+            },
+            "orphan_object_data": {
+              "disposition": "dropped"
+            },
+            "polygons3d": {
+              "disposition": "dropped"
+            },
+            "polygons_on_triangulations": {
               "disposition": "dropped"
             },
             "product_nodes": {
@@ -295,17 +357,92 @@
                 "fcstd:native:property#0:TransientDir": "written",
                 "fcstd:native:property#0:Uid": "regenerated",
                 "fcstd:native:property#0:UnitSystem": "regenerated",
-                "fcstd:native:property#0:UseHasher": "regenerated"
+                "fcstd:native:property#0:UseHasher": "regenerated",
+                "fcstd:native:property#First:ExpressionEngine": "written",
+                "fcstd:native:property#First:KeepUpdated": "written",
+                "fcstd:native:property#First:Label": "written",
+                "fcstd:native:property#First:Label2": "written",
+                "fcstd:native:property#First:NextBalloonIndex": "written",
+                "fcstd:native:property#First:ProjectionType": "regenerated",
+                "fcstd:native:property#First:Scale": "regenerated",
+                "fcstd:native:property#First:Template": "regenerated",
+                "fcstd:native:property#First:Views": "regenerated",
+                "fcstd:native:property#First:Visibility": "written",
+                "fcstd:native:property#FirstNote:Caption": "regenerated",
+                "fcstd:native:property#FirstNote:ExpressionEngine": "regenerated",
+                "fcstd:native:property#FirstNote:Font": "regenerated",
+                "fcstd:native:property#FirstNote:Label": "regenerated",
+                "fcstd:native:property#FirstNote:Label2": "regenerated",
+                "fcstd:native:property#FirstNote:LineSpace": "regenerated",
+                "fcstd:native:property#FirstNote:LockPosition": "regenerated",
+                "fcstd:native:property#FirstNote:MaxWidth": "regenerated",
+                "fcstd:native:property#FirstNote:Owner": "regenerated",
+                "fcstd:native:property#FirstNote:Rotation": "regenerated",
+                "fcstd:native:property#FirstNote:Scale": "regenerated",
+                "fcstd:native:property#FirstNote:ScaleType": "regenerated",
+                "fcstd:native:property#FirstNote:Text": "regenerated",
+                "fcstd:native:property#FirstNote:TextColor": "regenerated",
+                "fcstd:native:property#FirstNote:TextSize": "regenerated",
+                "fcstd:native:property#FirstNote:TextStyle": "regenerated",
+                "fcstd:native:property#FirstNote:Visibility": "regenerated",
+                "fcstd:native:property#FirstNote:X": "regenerated",
+                "fcstd:native:property#FirstNote:Y": "regenerated",
+                "fcstd:native:property#FirstTemplate:EditableTexts": "written",
+                "fcstd:native:property#FirstTemplate:ExpressionEngine": "written",
+                "fcstd:native:property#FirstTemplate:Height": "written",
+                "fcstd:native:property#FirstTemplate:Label": "written",
+                "fcstd:native:property#FirstTemplate:Label2": "written",
+                "fcstd:native:property#FirstTemplate:Orientation": "written",
+                "fcstd:native:property#FirstTemplate:PageResult": "written",
+                "fcstd:native:property#FirstTemplate:Template": "written",
+                "fcstd:native:property#FirstTemplate:Visibility": "written",
+                "fcstd:native:property#FirstTemplate:Width": "written",
+                "fcstd:native:property#Second:ExpressionEngine": "written",
+                "fcstd:native:property#Second:KeepUpdated": "written",
+                "fcstd:native:property#Second:Label": "written",
+                "fcstd:native:property#Second:Label2": "written",
+                "fcstd:native:property#Second:NextBalloonIndex": "written",
+                "fcstd:native:property#Second:ProjectionType": "regenerated",
+                "fcstd:native:property#Second:Scale": "regenerated",
+                "fcstd:native:property#Second:Template": "regenerated",
+                "fcstd:native:property#Second:Views": "regenerated",
+                "fcstd:native:property#Second:Visibility": "written",
+                "fcstd:native:property#SecondNote:Caption": "regenerated",
+                "fcstd:native:property#SecondNote:ExpressionEngine": "regenerated",
+                "fcstd:native:property#SecondNote:Font": "regenerated",
+                "fcstd:native:property#SecondNote:Label": "regenerated",
+                "fcstd:native:property#SecondNote:Label2": "regenerated",
+                "fcstd:native:property#SecondNote:LineSpace": "regenerated",
+                "fcstd:native:property#SecondNote:LockPosition": "regenerated",
+                "fcstd:native:property#SecondNote:MaxWidth": "regenerated",
+                "fcstd:native:property#SecondNote:Owner": "regenerated",
+                "fcstd:native:property#SecondNote:Rotation": "regenerated",
+                "fcstd:native:property#SecondNote:Scale": "regenerated",
+                "fcstd:native:property#SecondNote:ScaleType": "regenerated",
+                "fcstd:native:property#SecondNote:Text": "regenerated",
+                "fcstd:native:property#SecondNote:TextColor": "regenerated",
+                "fcstd:native:property#SecondNote:TextSize": "regenerated",
+                "fcstd:native:property#SecondNote:TextStyle": "regenerated",
+                "fcstd:native:property#SecondNote:Visibility": "regenerated",
+                "fcstd:native:property#SecondNote:X": "regenerated",
+                "fcstd:native:property#SecondNote:Y": "regenerated",
+                "fcstd:native:property#SecondTemplate:EditableTexts": "written",
+                "fcstd:native:property#SecondTemplate:ExpressionEngine": "written",
+                "fcstd:native:property#SecondTemplate:Height": "written",
+                "fcstd:native:property#SecondTemplate:Label": "written",
+                "fcstd:native:property#SecondTemplate:Label2": "written",
+                "fcstd:native:property#SecondTemplate:Orientation": "written",
+                "fcstd:native:property#SecondTemplate:PageResult": "written",
+                "fcstd:native:property#SecondTemplate:Template": "written",
+                "fcstd:native:property#SecondTemplate:Visibility": "written",
+                "fcstd:native:property#SecondTemplate:Width": "written"
               }
             },
             "shape_payloads": {
               "disposition": "dropped"
             },
             "string_tables": {
-              "disposition": "dropped",
-              "records": {
-                "fcstd:native:string-table#0": "written"
-              }
+              "disposition": "dropped"
             },
             "topology_uses": {
               "disposition": "dropped"

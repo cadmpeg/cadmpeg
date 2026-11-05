@@ -87,7 +87,9 @@ fn multiline_text_join_names_the_annotation() {
     let mut ir = CadIr::empty();
     let native_id = "rhino:document:annotation#multiline";
     ir.model.semantic_annotations.push(SemanticAnnotation {
-        id: "test:model:annotation#multiline".try_into().expect("identity"),
+        id: "test:model:annotation#multiline"
+            .try_into()
+            .expect("identity"),
         object: native_id.to_owned(),
         kind: SemanticAnnotationKind::Text,
         runtime_type: "rhino::annotations".to_owned(),
@@ -113,9 +115,10 @@ fn multiline_text_join_names_the_annotation() {
     )
     .expect("multiline annotation writes");
     assert!(
-        exported.losses.iter().any(|loss| loss
-            .message
-            .contains("test:model:annotation#multiline")),
+        exported
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains("test:model:annotation#multiline")),
         "{:?}",
         exported.losses
     );

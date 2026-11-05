@@ -279,8 +279,5 @@ fn carrier_resolution_loss_names_affected_coedges() {
         skipped: vec!["cadir:model:curve#placed"],
         coedges: Vec::new(),
     });
-    assert!(
-        !loss.message.contains("affecting coedge"),
-        "{loss:?}"
-    );
+    assert!(!loss.message.contains("affecting coedge"), "{loss:?}");
 }
