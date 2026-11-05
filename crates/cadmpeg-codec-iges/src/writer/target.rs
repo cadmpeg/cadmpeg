@@ -245,10 +245,10 @@ fn replay_bytes(input: EncodeInput<'_>) -> Result<Replay, CodecError> {
     // decline as unavailable before any comparison: replay needs the bytes
     // whatever the document holds. The digest agreement is the edit detector:
     // an edited document re-decodes to a different digest and synthesizes.
-    let current = crate::document_digest(ir, input.limits)?;
     let Some(data) = record.and_then(|record| record.data()) else {
         return Ok(Replay::Declined(DeclineReason::SourceImageUnavailable));
     };
+    let current = crate::document_digest(ir, input.limits)?;
     let replays = cadmpeg_ir::hash::retained_image_replays(
         data,
         expected,
