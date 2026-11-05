@@ -35,19 +35,20 @@ fn give_up_member(
     output: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
 ) -> Result<(), CodecError> {
     use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartSpec};
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let source = scan.member_view(&arena, path)?;
+    let source = scan.stored_entry_view(path)?;
     let mut spec = PartSpec::new("zip.entry").holding([
         cadmpeg_ir::document::ArenaClass::Model,
         cadmpeg_ir::document::ArenaClass::Design,
     ]);
     if source.location().space != cadmpeg_core::decode::SpaceId::ROOT {
         spec = spec.in_stream(
-            cadmpeg_ir::StreamName::try_from(path.to_owned()).map_err(CodecError::malformed)?,
+            scan.source_stream
+                .clone()
+                .ok_or_else(|| CodecError::malformed("nested F3Z source has no stream name"))?,
         );
     }
     ctx.decode_part(output, source, spec, |_| {
-        Err::<(), CodecError>(CodecError::malformed(error.to_owned()))
+        Err::<(), CodecError>(CodecError::malformed(format_args!("entry {path}: {error}")))
     })?;
     Ok(())
 }
