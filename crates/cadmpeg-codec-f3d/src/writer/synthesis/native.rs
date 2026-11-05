@@ -564,10 +564,8 @@ pub(super) fn repair_keys(target: &mut CadIr) -> Result<(), CodecError> {
 }
 
 /// Terminal §5.0 reduction: shed every native record the Design generator
-/// reads, keeping only the BREP-anchored carriers. The neutral parameters,
-/// configurations and joints those records projected are cleared with them,
-/// so no stale neutral record outlives its native copy. Every omission is
-/// reported through the dispositions the export wrapper charges.
+/// reads, keeping BREP-anchored carriers and feature-owned neutral parameters.
+/// Every omission is reported through the export dispositions.
 pub(super) fn shed_design(target: &mut CadIr) -> Result<(), CodecError> {
     let native = super::super::primitives::f3d_native(target)?.unwrap_or_default();
     let kept = F3dNative {
@@ -590,7 +588,10 @@ pub(super) fn shed_design(target: &mut CadIr) -> Result<(), CodecError> {
         lost_edge_references: native.lost_edge_references,
         ..F3dNative::default()
     };
-    target.model.parameters.clear();
+    target
+        .model
+        .parameters
+        .retain(|parameter| parameter.owner.is_some());
     target.model.configurations.clear();
     target.model.assembly_joints.clear();
     target.native.0.remove("f3d");
@@ -727,6 +728,7 @@ pub(super) fn coverage(
     original: &CadIr,
     written: &CadIr,
     invalidated_timestamps: &std::collections::BTreeSet<String>,
+    regenerated_parameters: &std::collections::BTreeSet<String>,
 ) -> NativeDispositions {
     let mut result = NativeDispositions::for_namespace(
         "f3d",
@@ -744,8 +746,7 @@ pub(super) fn coverage(
                 .and_then(|namespace| namespace.arenas().get(arena));
             if matches!(
                 arena.as_str(),
-                "design_parameters"
-                    | "design_configurations"
+                "design_configurations"
                     | "act_tables"
                     | "act_types"
                     | "act_entities"
@@ -759,6 +760,44 @@ pub(super) fn coverage(
                 continue;
             }
             for record in before {
+                let regenerated_document_parameter = arena.as_str() == "design_parameters"
+                    && original.model.parameters.iter().any(|parameter| {
+                        parameter.owner.is_none()
+                            && parameter.native_ref.as_deref() == Some(record.id())
+                            && original
+                                .model
+                                .parameters
+                                .iter()
+                                .filter(|candidate| {
+                                    candidate.owner.is_none()
+                                        && candidate.name == parameter.name
+                                        && candidate.expression == parameter.expression
+                                        && candidate.value == parameter.value
+                                        && candidate.driving == parameter.driving
+                                })
+                                .count()
+                                == 1
+                            && written
+                                .model
+                                .parameters
+                                .iter()
+                                .filter(|candidate| {
+                                    candidate.owner.is_none()
+                                        && candidate.name == parameter.name
+                                        && candidate.expression == parameter.expression
+                                        && candidate.value == parameter.value
+                                        && candidate.driving == parameter.driving
+                                })
+                                .count()
+                                == 1
+                    });
+                if arena.as_str() == "design_parameters"
+                    && (regenerated_parameters.contains(record.id())
+                        || regenerated_document_parameter)
+                {
+                    result.set_record("f3d", arena, record.id(), NativeDisposition::Regenerated);
+                    continue;
+                }
                 if arena.as_str() == "creation_timestamps"
                     && invalidated_timestamps.contains(record.id())
                 {
