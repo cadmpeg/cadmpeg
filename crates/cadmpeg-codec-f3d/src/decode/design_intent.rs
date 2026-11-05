@@ -4,6 +4,8 @@
 //! Phase 2 reads the product prerequisites and the decoded geometry. It does
 //! not write the session; the caller merges [`DesignOutputs`].
 
+mod input_topologies;
+
 use cadmpeg_core::container::ContainerRole;
 use cadmpeg_core::decode::{DecodeContext, WorkBudget};
 use cadmpeg_core::CodecError;
@@ -734,6 +736,11 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &design.design_edge_operands,
         &scope_histories,
     );
+    input_topologies::project(
+        &design,
+        &model.features,
+        &mut model.feature_input_topologies,
+    )?;
     losses.extend(crate::history::bind_feature_outputs(
         &mut model.features,
         &design.design_parameter_scopes,
