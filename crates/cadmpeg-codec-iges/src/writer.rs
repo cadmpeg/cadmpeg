@@ -611,7 +611,16 @@ fn unapplied_body_placement_losses(ir: &CadIr, entities: &[Entity]) -> Vec<LossN
     losses
 }
 
+#[cfg(test)]
 fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, CodecError> {
+    synthesize_with_admission(ir, version, |_| Ok(()))
+}
+
+fn synthesize_with_admission(
+    ir: &CadIr,
+    version: crate::IgesVersion,
+    admit: impl FnOnce(&[Entity]) -> Result<(), CodecError>,
+) -> Result<Synthesis, CodecError> {
     let lowered = cadmpeg_ir::codec::write::subset_lowering::lower_subset_curves(ir, |curve| {
         curve
             .geometry
@@ -747,6 +756,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
     {
         coverage.bodies = ArenaDisposition::Reported;
     }
+    admit(&graph.entities)?;
     Ok(Synthesis {
         written_native: attribute_export.written,
         regenerated_native: attribute_export.regenerated,
@@ -1005,8 +1015,28 @@ fn synthesis_graph(ir: &CadIr, version: crate::IgesVersion) -> Result<SynthesisG
         }
         entities
     };
+    let emitted_loops = entities
+        .iter()
+        .flat_map(|entity| entity.source_targets.iter())
+        .cloned()
+        .collect::<BTreeSet<_>>();
     if let Some(remap) = ensure_version_support(&mut entities, version, &mut losses)? {
         remap_presentations(&mut body_presentations, &remap);
+        let retained = entities
+            .iter()
+            .flat_map(|entity| entity.source_targets.iter())
+            .collect::<BTreeSet<_>>();
+        for boundary in &ir.model.loops {
+            let id = boundary.id.to_string();
+            if emitted_loops.contains(&id) && !retained.contains(&id) {
+                for coedge in boundary.coedges() {
+                    losses.push(IgesLossCode::WriterEntityOmitted.note(format!(
+                        "IGES coedge {coedge} is omitted with loop {id} for {}",
+                        version.name()
+                    )));
+                }
+            }
+        }
     }
     Ok(SynthesisGraph {
         entities,
