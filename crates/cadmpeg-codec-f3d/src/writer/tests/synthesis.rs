@@ -359,6 +359,32 @@ fn unedited_typed_mesh_sentinel_replays() {
 }
 
 #[test]
+fn source_less_synthesis_preserves_native_brep_name() {
+    use crate::test_support::native_test::{f3d_native, f3d_native_mut};
+    use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
+    use crate::test_support::zip_test::f3d_with_smbh;
+    let source = f3d_with_smbh(&synthetic_geometry_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+        .unwrap();
+    let (output, _) = super::source_less_analytic::synthesize_document(decoded.ir(), None);
+    assert_eq!(
+        f3d_native(output.ir()).body_native_keys[0]
+            .source_brep
+            .as_deref(),
+        Some("Body1.smbh")
+    );
+    let mut ir = decoded.ir().clone();
+    f3d_native_mut(&mut ir).body_native_keys[0].source_brep = Some("BREP.synthetic.smbh".into());
+    let before = f3d_native(&ir).body_native_keys[0].source_brep.clone();
+    let (output, _) = super::source_less_analytic::synthesize_document(&ir, None);
+    assert_eq!(
+        f3d_native(output.ir()).body_native_keys[0].source_brep,
+        before
+    );
+}
+
+#[test]
 fn direct_opacity_reduces_color_without_dropping_geometry() {
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("cube");
     ir.model.bodies[0].color = Some(cadmpeg_ir::topology::Color::from_rgba8(10, 20, 30, 100));
