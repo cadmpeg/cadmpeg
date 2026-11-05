@@ -5,7 +5,7 @@ use super::streams_test::segment_metastream;
 use crate::test_support::{lp_ascii, lp_utf16};
 use cadmpeg_core::decode::u64_from_index;
 
-pub(super) fn generated_act_metastream(records: &[(u64, u64)]) -> Vec<u8> {
+pub(crate) fn generated_act_metastream(records: &[(u64, u64)]) -> Vec<u8> {
     let entity_1 = [1];
     let entity_2 = [2];
     let entity_7 = [7];
@@ -116,7 +116,7 @@ pub(super) fn generated_act_metastream(records: &[(u64, u64)]) -> Vec<u8> {
     )
 }
 
-pub(super) fn generated_act_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
+pub(crate) fn generated_act_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
     let mut out = Vec::new();
     let mut records = vec![(2, u64_from_index(out.len()))];
     lp_ascii(&mut out, "256");
