@@ -167,7 +167,9 @@ bodies. Keep an unestablished edge selection unresolved. This includes repeated 
 pairing, and repeated carrier spellings cannot select an aggregate change.
 In the NIST CTC-03 delta stream, four GROUP instances share XMT 2437 and
 type 90 across separate PMARK and map sections. A lookup by stream, XMT,
-and type merges those revisions. The map after PMARK 5898 names GROUP 2562.
+and type merges those revisions. The current PMARK 5892 has delta key 2481
+and names PMARK 5898 as its predecessor; that PMARK has delta key 2429. The
+map after PMARK 5898 names GROUP 2562.
 That GROUP instance precedes the PMARK section. The map key leaves the
 instance revision and the action on its members unresolved.
 The counts of map entries and typed PMARK-section instances can differ from
