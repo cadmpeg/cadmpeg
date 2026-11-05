@@ -4466,6 +4466,23 @@ fn write_body_hierarchy(
     Ok(())
 }
 
+const TYPED_NODE_ID_CAPACITY: cadmpeg_ir::codec::write::CapacityField =
+    cadmpeg_ir::codec::write::CapacityField {
+        field: "parasolid.typed_node_id",
+        limit: u32::MAX as u64,
+        source: "docs/formats/sldprt.md §3.3: typed XT node id u32 BE",
+        helper: "next_typed_node_id",
+    };
+
+fn next_typed_node_id(next: &mut u64) -> Result<u32, write_error::WriteError> {
+    let id = u32::try_from(*next).map_err(|_| write_error::WriteError::Capacity {
+        field: &TYPED_NODE_ID_CAPACITY,
+        value: *next,
+    })?;
+    *next += 1;
+    Ok(id)
+}
+
 /// Write the typed XT ownership graph used by the decoder for body membership.
 ///
 /// The compact topology records use the same transmit attributes as the
@@ -4481,6 +4498,7 @@ fn write_typed_body_hierarchy(
     next: &mut u16,
     out: &mut Vec<u8>,
 ) -> Result<(), write_error::WriteError> {
+    let mut node_id = 1_u64;
     let region_attrs = ir
         .model
         .regions
@@ -4505,7 +4523,7 @@ fn write_typed_body_hierarchy(
         }
     }
 
-    for (index, body) in ir.model.bodies.iter().enumerate() {
+    for body in &ir.model.bodies {
         let body_attr = body_attrs[&body.id];
         let first_region = body
             .regions
@@ -4522,15 +4540,7 @@ fn write_typed_body_hierarchy(
             out,
             0x0c,
             body_attr,
-            u32::try_from(index)
-                .ok()
-                .and_then(|index| 0x1000_0000_u32.checked_add(index))
-                .ok_or_else(|| {
-                    // (O-capacity): the target field cannot encode a value outside its width.
-                    CodecError::NotImplemented(
-                        "SLDPRT typed topology node index exceeds the 32-bit range".into(),
-                    )
-                })?,
+            next_typed_node_id(&mut node_id)?,
         );
         for value in [5_u32, 6, 1, 1, 1, 1] {
             typed_ref(out, value)?;
@@ -4557,7 +4567,7 @@ fn write_typed_body_hierarchy(
         }
     }
 
-    for (index, shell) in ir.model.shells.iter().enumerate() {
+    for shell in &ir.model.shells {
         let body = ir
             .model
             .regions
@@ -4575,22 +4585,14 @@ fn write_typed_body_hierarchy(
             out,
             0x0d,
             shell_attrs[&shell.id],
-            u32::try_from(index)
-                .ok()
-                .and_then(|index| 0x2000_0000_u32.checked_add(index))
-                .ok_or_else(|| {
-                    // (O-capacity): the target field cannot encode a value outside its width.
-                    CodecError::NotImplemented(
-                        "SLDPRT typed topology node index exceeds the 32-bit range".into(),
-                    )
-                })?,
+            next_typed_node_id(&mut node_id)?,
         );
         for value in [1, body_attrs[body], 1, 1, 1, 1, region_attrs[&region.id], 1] {
             typed_ref(out, value)?;
         }
     }
 
-    for (index, region) in ir.model.regions.iter().enumerate() {
+    for region in &ir.model.regions {
         let body = body_attrs[&region.body];
         let body_regions = ir
             .model
@@ -4616,15 +4618,7 @@ fn write_typed_body_hierarchy(
             out,
             0x13,
             region_attrs[&region.id],
-            u32::try_from(index)
-                .ok()
-                .and_then(|index| 0x3000_0000_u32.checked_add(index))
-                .ok_or_else(|| {
-                    // (O-capacity): the target field cannot encode a value outside its width.
-                    CodecError::NotImplemented(
-                        "SLDPRT typed topology node index exceeds the 32-bit range".into(),
-                    )
-                })?,
+            next_typed_node_id(&mut node_id)?,
         );
         for value in [1, body, next_region, previous_region, shell_head] {
             typed_ref(out, value)?;
@@ -4632,7 +4626,7 @@ fn write_typed_body_hierarchy(
         out.push(b'S');
     }
 
-    for (index, face) in ir.model.faces.iter().enumerate() {
+    for face in &ir.model.faces {
         let shell = face_shells
             .get(&face.id)
             .copied()
@@ -4641,15 +4635,7 @@ fn write_typed_body_hierarchy(
             out,
             0x0e,
             faces[&face.id],
-            u32::try_from(index)
-                .ok()
-                .and_then(|index| 0x4000_0000_u32.checked_add(index))
-                .ok_or_else(|| {
-                    // (O-capacity): the target field cannot encode a value outside its width.
-                    CodecError::NotImplemented(
-                        "SLDPRT typed topology node index exceeds the 32-bit range".into(),
-                    )
-                })?,
+            next_typed_node_id(&mut node_id)?,
         );
         typed_ref(out, 1_u32)?;
         out.extend_from_slice(&MAGIC);
