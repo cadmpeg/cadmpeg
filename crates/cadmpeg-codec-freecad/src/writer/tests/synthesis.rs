@@ -298,8 +298,10 @@ fn reversed_procedural_surface_ranges_use_the_solved_carrier() {
         let support_id = support.id.clone();
         ir.model.surfaces.push(support);
         let owner = ir.model.surfaces[index].id.clone();
+        let construction_id =
+            ProceduralSurfaceId::mint("cadir:model:procedural-surface#reversed-subset").unwrap();
         let construction = ProceduralSurface::new(
-            ProceduralSurfaceId::mint("cadir:model:procedural-surface#reversed-subset").unwrap(),
+            construction_id.clone(),
             ProceduralSurfaceDefinition::Subset(
                 SubsetSurfaceConstruction::try_new(
                     support_id,
@@ -326,6 +328,7 @@ fn reversed_procedural_surface_ranges_use_the_solved_carrier() {
             .any(
                 |loss| loss.code.local_code() == "geometry.procedural-reduced"
                     && loss.message.contains(owner.as_str())
+                    && loss.message.contains(construction_id.as_str())
             ));
         let mut bytes = Vec::new();
         plan.write_to(&mut bytes).unwrap();

@@ -46,6 +46,7 @@ pub(super) fn encode_smbh(
     target: &CadIr,
     native: &F3dNative,
     attributes: &AttributeIndex<'_>,
+    limits: cadmpeg_core::decode::ResourceLimits,
 ) -> Result<Vec<u8>, CodecError> {
     let topology = NativeGenerationIndex::new(target, native);
     if target.model.faces.is_empty() {
@@ -74,7 +75,7 @@ pub(super) fn encode_smbh(
         }
         return encode_wire_body_smbh(target, native, attributes, &topology);
     }
-    encode_face_topology_smbh(target, native, attributes, &topology)
+    encode_face_topology_smbh(target, native, attributes, &topology, limits)
 }
 
 #[derive(Debug)]
@@ -674,6 +675,7 @@ fn encode_face_topology_smbh(
     native: &F3dNative,
     attributes: &AttributeIndex<'_>,
     topology: &NativeGenerationIndex<'_>,
+    limits: cadmpeg_core::decode::ResourceLimits,
 ) -> Result<Vec<u8>, CodecError> {
     use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 
@@ -1436,6 +1438,8 @@ fn encode_face_topology_smbh(
     super::reindex::preserve_indices(
         &mut records,
         model,
+        topology,
+        limits,
         super::reindex::Starts {
             region: region_start,
             shell: shell_start,
@@ -1443,6 +1447,7 @@ fn encode_face_topology_smbh(
             loop_: loop_start,
             surface: surface_start,
             curve: curve_start,
+            pcurve: pcurve_start,
             coedge: coedge_start,
             edge: edge_start,
             vertex: vertex_start,
@@ -1470,7 +1475,7 @@ fn closed_edge_traversal(
     tolerance: f64,
 ) -> Result<[f64; 2], CodecError> {
     let no_traversal = || {
-        CodecError::NotImplemented(format!(
+        CodecError::UnsupportedContent(format!(
             "source-less F3D edge generation requires a parameter range for edge {}",
             edge.id
         ))
@@ -1479,10 +1484,31 @@ fn closed_edge_traversal(
         .solved()
         .filter(|_| edge.start == edge.end)
         .ok_or_else(no_traversal)?;
-    let range = geometry
-        .closed_traversal_range()
-        .ok_or_else(no_traversal)?
-        .endpoints();
+    let range = match geometry {
+        SolvedCurveGeometry::Circle(circle) => {
+            let frame = circle.frame();
+            let reference = *frame.reference().as_raw();
+            let transverse = frame.axis().as_raw().cross(reference);
+            let displacement = vertex.vector_from(circle.center().get());
+            let start = displacement
+                .dot(transverse)
+                .atan2(displacement.dot(reference));
+            [start, start + std::f64::consts::TAU]
+        }
+        SolvedCurveGeometry::Ellipse(ellipse) => {
+            let frame = ellipse.frame();
+            let reference = *frame.reference().as_raw();
+            let transverse = frame.axis().as_raw().cross(reference);
+            let displacement = vertex.vector_from(ellipse.center().get());
+            let start = (displacement.dot(transverse) / ellipse.minor_radius().get())
+                .atan2(displacement.dot(reference) / ellipse.major_radius().get());
+            [start, start + std::f64::consts::TAU]
+        }
+        _ => geometry
+            .closed_traversal_range()
+            .ok_or_else(no_traversal)?
+            .endpoints(),
+    };
     for parameter in range {
         let end = match cadmpeg_ir::eval::decode::curve_point_solved(
             EvaluationAdmission::Standard,
