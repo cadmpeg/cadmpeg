@@ -474,9 +474,7 @@ pub(crate) fn project_sketch_design(
                     && reference_direction.as_raw().z.abs()
                         <= EPS_SKETCH_PROJECT_PROJECT_SKETCH_DESIGN_E9 =>
                 {
-                    let Some(orientation) = sketch_normal_sign(normal.as_raw()) else {
-                        return None;
-                    };
+                    let orientation = sketch_normal_sign(normal.as_raw())?;
                     let phase = reference_direction
                         .as_raw()
                         .y
