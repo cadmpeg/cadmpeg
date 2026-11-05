@@ -394,6 +394,16 @@ pub(super) fn write_with_limits(
     staged.seek(SeekFrom::Start(0))?;
     std::io::copy(&mut staged, writer)?;
     let mut dispositions = coverage(has_native, target, &native);
+    if let Some(bulk) = &design_bulk {
+        if !bulk.written_materials.is_empty() {
+            dispositions.appearance_bindings =
+                if bulk.written_materials.len() == target.model.appearance_bindings.len() {
+                    ArenaDisposition::Written
+                } else {
+                    ArenaDisposition::Reported
+                };
+        }
+    }
     let mut omitted_owned_parameters = 0;
     for parameter in target
         .model
