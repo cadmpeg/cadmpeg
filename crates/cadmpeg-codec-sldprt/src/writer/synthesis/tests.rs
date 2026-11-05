@@ -29,7 +29,7 @@ fn cascade_names_each_feature_with_a_removed_regeneration_parent() {
             suppressed: Some(false),
             needs_recompute: false,
             dependencies: DistinctMembers::default(),
-            source_properties: Default::default(),
+            source_properties: std::collections::BTreeMap::default(),
             source_tag: None,
             source_text: None,
             source_content: FeatureContent::default(),
@@ -103,11 +103,11 @@ fn design_only_configuration_does_not_create_a_model_partition() {
         source_index: Some(0),
         name: Some("Default".into()),
         material: None,
-        properties: Default::default(),
+        properties: std::collections::BTreeMap::default(),
         bodies: None,
-        parameter_values: Default::default(),
-        parameter_overrides: Default::default(),
-        feature_states: Default::default(),
+        parameter_values: std::collections::BTreeMap::default(),
+        parameter_overrides: std::collections::BTreeMap::default(),
+        feature_states: std::collections::BTreeMap::default(),
         native_ref: None,
     });
     let plan = SldprtCodec
@@ -1432,11 +1432,11 @@ fn inactive_configuration_retains_its_sketch_feature_owner() {
         ordinal,
         name: Some("Sketch".into()),
         suppressed: Some(false),
-        dependencies: Default::default(),
-        source_properties: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        source_properties: std::collections::BTreeMap::default(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
         needs_recompute: false,
         evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
             FeatureDefinition::Operation(FeatureOperation::Sketch {
@@ -1514,11 +1514,11 @@ fn inactive_configuration_retains_its_sketch_feature_owner() {
             source_index: Some(index),
             name: Some(format!("Configuration {index}")),
             material: None,
-            properties: Default::default(),
+            properties: std::collections::BTreeMap::default(),
             bodies: Some(bodies.clone()),
-            parameter_values: Default::default(),
-            parameter_overrides: Default::default(),
-            feature_states: Default::default(),
+            parameter_values: std::collections::BTreeMap::default(),
+            parameter_overrides: std::collections::BTreeMap::default(),
+            feature_states: std::collections::BTreeMap::default(),
             native_ref: None,
         })
         .collect();
@@ -1546,7 +1546,7 @@ fn inactive_configuration_retains_its_sketch_feature_owner() {
             value: Some(cadmpeg_ir::features::ParameterValue::Length(
                 cadmpeg_ir::scalar::Length::new(10.0).unwrap(),
             )),
-            properties: Default::default(),
+            properties: std::collections::BTreeMap::default(),
             pmi: None,
             native_ref: None,
         });

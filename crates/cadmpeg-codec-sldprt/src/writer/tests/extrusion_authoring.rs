@@ -91,9 +91,9 @@ fn foreign_native_kind_keeps_history_and_document_properties_readable() {
         .evaluation
         .set_definition(FeatureDefinition::Operation(FeatureOperation::Native {
             kind: "Fem::FemAnalysis".into(),
-            parameters: Default::default(),
+            parameters: std::collections::BTreeMap::default(),
         }));
-    ir.model.features[0].source_content = Default::default();
+    ir.model.features[0].source_content = cadmpeg_ir::features::FeatureContent::default();
     ir.model.parameters.clear();
     ir.model.attributes.push(SourceAttribute {
         id: cadmpeg_ir::ids::AttributeId::mint("test:model:attribute#label").unwrap(),
@@ -182,7 +182,7 @@ fn source_less_extrusion_keeps_its_unresolved_extent() {
     use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, LinearTermination};
     let mut ir = source_less_extrusion();
     ir.model.parameters.clear();
-    ir.model.features[0].source_content = Default::default();
+    ir.model.features[0].source_content = cadmpeg_ir::features::FeatureContent::default();
     ir.model.features[0].evaluation.edit(|definition, _| {
         let FeatureDefinition::Operation(FeatureOperation::Extrude { extent, .. }) = definition
         else {
