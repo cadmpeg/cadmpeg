@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parse edge, face, and body operand frames and recipe structure.
 
+use crate::design::decode::meta::{cached_borrowed_primary_frames, cached_owned_primary_frames};
+use crate::metastream::PrimaryFrames;
 mod fillet_variable_groups;
 
 use crate::bytes::lp_utf16_bounded;
@@ -20,10 +22,7 @@ use crate::design::decode::dimension_frames::{
 use crate::design::decode::scopes::extrude::is_class_296_two_sided_to_faces_scope;
 use crate::design::decode::scopes::parameter_scope::payload_prologue;
 use crate::design::decode::scopes::shared_frames::marked_record_reference;
-use crate::design::decode::sketch::{
-    cached_borrowed_record_offsets, cached_owned_record_offsets, indexed_record_header_at,
-    IndexedRecordOffsets,
-};
+use crate::design::decode::sketch::indexed_record_header_at;
 use crate::design::decode::text::design_record_id;
 use crate::design::decode::text::relaxed_guid_end;
 use crate::design::{design_feature_family, DesignFeatureFamily};
@@ -133,7 +132,8 @@ pub(crate) fn decode_edge_operands(
     for offsets in stream_offsets.values_mut() {
         offsets.sort_unstable();
     }
-    let mut record_offset_index: HashMap<&str, IndexedRecordOffsets> = HashMap::new();
+    let mut record_offset_index: HashMap<&str, Vec<crate::metastream::PrimaryRecordFrame>> =
+        HashMap::new();
     let mut out = Vec::new();
     for scope in scopes
         .iter()
@@ -177,7 +177,7 @@ pub(crate) fn decode_edge_operands(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let Some(records) = cached_borrowed_record_offsets(
+        let Some(records) = cached_borrowed_primary_frames(
             &mut record_offset_index,
             stream,
             bytes,
@@ -250,7 +250,8 @@ pub(crate) fn decode_edge_treatment_vertex_operands(
         let key = (stream, header.record_index);
         header_index.insert(key, header);
     }
-    let mut record_offset_index: HashMap<&str, IndexedRecordOffsets> = HashMap::new();
+    let mut record_offset_index: HashMap<&str, Vec<crate::metastream::PrimaryRecordFrame>> =
+        HashMap::new();
     let mut out = Vec::new();
     for scope in scopes
         .iter()
@@ -264,7 +265,7 @@ pub(crate) fn decode_edge_treatment_vertex_operands(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let Some(records) = cached_borrowed_record_offsets(
+        let Some(records) = cached_borrowed_primary_frames(
             &mut record_offset_index,
             stream,
             bytes,
@@ -363,7 +364,8 @@ pub(crate) fn bind_work_point_input_carriers(
             .or_default()
             .insert(preceding_index, scope.record_index);
     }
-    let mut record_offset_index: HashMap<String, IndexedRecordOffsets> = HashMap::new();
+    let mut record_offset_index: HashMap<String, Vec<crate::metastream::PrimaryRecordFrame>> =
+        HashMap::new();
 
     for scope in scopes.iter_mut().filter(|scope| {
         scope.kind() == crate::records::feature::scope::DesignFeatureKind::WorkPoint
@@ -377,7 +379,7 @@ pub(crate) fn bind_work_point_input_carriers(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let Some(records) = cached_owned_record_offsets(
+        let Some(records) = cached_owned_primary_frames(
             &mut record_offset_index,
             &stream,
             bytes,
@@ -545,7 +547,8 @@ pub(crate) fn bind_work_plane_constructions(
         let key = (stream, header.record_index);
         header_index.insert(key, header);
     }
-    let mut record_offset_index: HashMap<String, IndexedRecordOffsets> = HashMap::new();
+    let mut record_offset_index: HashMap<String, Vec<crate::metastream::PrimaryRecordFrame>> =
+        HashMap::new();
 
     for scope in scopes.iter_mut().filter(|scope| {
         scope.kind() == crate::records::feature::scope::DesignFeatureKind::WorkPlane
@@ -562,7 +565,7 @@ pub(crate) fn bind_work_plane_constructions(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let Some(records) = cached_owned_record_offsets(
+        let Some(records) = cached_owned_primary_frames(
             &mut record_offset_index,
             &stream,
             bytes,
@@ -860,7 +863,8 @@ pub(crate) fn decode_face_operands(
     }
     let mut out = Vec::new();
     let mut seen = HashSet::new();
-    let mut record_offset_index: HashMap<&str, IndexedRecordOffsets> = HashMap::new();
+    let mut record_offset_index: HashMap<&str, Vec<crate::metastream::PrimaryRecordFrame>> =
+        HashMap::new();
     for group in groups {
         let Some(stream) = native_stream(&group.id) else {
             continue;
@@ -966,7 +970,7 @@ pub(crate) fn decode_face_operands(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let Some(records) = cached_borrowed_record_offsets(
+        let Some(records) = cached_borrowed_primary_frames(
             &mut record_offset_index,
             stream,
             bytes,
@@ -1053,7 +1057,7 @@ pub(crate) fn decode_face_operands(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let Some(records) = cached_borrowed_record_offsets(
+        let Some(records) = cached_borrowed_primary_frames(
             &mut record_offset_index,
             stream,
             bytes,
@@ -1124,7 +1128,8 @@ pub(crate) fn decode_face_source_groups(
     scopes: &[DesignParameterScope],
 ) -> Result<Vec<DesignFaceSourceGroup>, CodecError> {
     let mut out = Vec::new();
-    let mut record_offset_index: HashMap<&str, IndexedRecordOffsets> = HashMap::new();
+    let mut record_offset_index: HashMap<&str, Vec<crate::metastream::PrimaryRecordFrame>> =
+        HashMap::new();
     for scope in scopes
         .iter()
         .filter(|scope| scope.kind() == crate::records::feature::scope::DesignFeatureKind::Face)
@@ -1146,7 +1151,7 @@ pub(crate) fn decode_face_source_groups(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let Some(records) = cached_borrowed_record_offsets(
+        let Some(records) = cached_borrowed_primary_frames(
             &mut record_offset_index,
             stream,
             bytes,
@@ -1318,7 +1323,7 @@ fn face_source_reference_headers<'a, 'r>(
     bytes: &'a [u8],
     scope_start: usize,
     references: impl Iterator<Item = &'r u32>,
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
 ) -> Vec<Option<FaceSourceReferenceHeader<'a>>> {
     references
         .map(|record_index| {
@@ -1770,7 +1775,7 @@ pub(crate) fn bind_sketch_profiles(
         };
         let bytes = scan.entry_bytes(&entry.name)?;
         let Some(records) =
-            cached_owned_record_offsets(&mut record_offsets, stream, bytes, scan, &entry.name)?
+            cached_owned_primary_frames(&mut record_offsets, stream, bytes, scan, &entry.name)?
         else {
             continue;
         };
@@ -4019,7 +4024,7 @@ pub(crate) fn decode_entity_selection_operands(
         };
         let bytes = scan.entry_bytes(&entry.name)?;
         let Some(records) =
-            cached_borrowed_record_offsets(&mut record_offsets, stream, bytes, scan, &entry.name)?
+            cached_borrowed_primary_frames(&mut record_offsets, stream, bytes, scan, &entry.name)?
         else {
             continue;
         };
@@ -4056,7 +4061,7 @@ pub(crate) fn decode_entity_selection_operands(
 
 pub(super) fn parse_entity_selection_operand(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     group: &DesignConstructionOperandGroup,
     group_member_ordinal: u32,
     header: &DesignRecordHeader,
@@ -4222,7 +4227,7 @@ struct WorkPointSketchPointFrame {
 /// and the following point-data record.
 fn parse_work_point_sketch_point_frame(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     record_index: u32,
     byte_offset: u64,
 ) -> Option<WorkPointSketchPointFrame> {
@@ -4298,7 +4303,7 @@ fn parse_work_point_sketch_point_frame(
 /// Parse the nested persistent-entity frame without assigning group ownership.
 pub(super) fn parse_entity_selection_frame(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     record_index: u32,
     byte_offset: u64,
     class_tag: &str,
@@ -4454,7 +4459,8 @@ pub(crate) fn decode_body_recipe_operands(
     for stream_recipes in body_recipes_by_stream.values_mut() {
         stream_recipes.sort_by_key(|recipe| recipe.byte_offset);
     }
-    let mut record_offset_index: HashMap<&str, IndexedRecordOffsets> = HashMap::new();
+    let mut record_offset_index: HashMap<&str, Vec<crate::metastream::PrimaryRecordFrame>> =
+        HashMap::new();
     let mut out = Vec::new();
     for group in groups {
         let Some(stream) = native_stream(&group.id) else {
@@ -4472,7 +4478,7 @@ pub(crate) fn decode_body_recipe_operands(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let Some(records) = cached_borrowed_record_offsets(
+        let Some(records) = cached_borrowed_primary_frames(
             &mut record_offset_index,
             stream,
             bytes,
@@ -4530,7 +4536,7 @@ pub(crate) fn decode_body_recipe_operands(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let Some(records) = cached_borrowed_record_offsets(
+        let Some(records) = cached_borrowed_primary_frames(
             &mut record_offset_index,
             stream,
             bytes,
@@ -4644,13 +4650,13 @@ fn unique_body_recipe<'a>(
     header: &DesignRecordHeader,
     recipes: &'a [&'a ConstructionRecipe],
 ) -> Option<&'a ConstructionRecipe> {
-    let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
+    let records = crate::design::test_support::test_primary_frames(bytes);
     unique_body_recipe_with_index(bytes, &records, header, recipes)
 }
 
 fn unique_body_recipe_with_index<'a>(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     header: &DesignRecordHeader,
     recipes: &'a [&'a ConstructionRecipe],
 ) -> Option<&'a ConstructionRecipe> {
@@ -4691,12 +4697,12 @@ fn unique_body_recipe_with_index<'a>(
 /// candidate recipes against one header resolves it once.
 #[cfg(test)]
 fn body_recipe_prologue_end(bytes: &[u8], start: usize, record_index: u32) -> Option<usize> {
-    let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
+    let records = crate::design::test_support::test_primary_frames(bytes);
     body_recipe_prologue_end_with_index(&records, start, record_index)
 }
 
 fn body_recipe_prologue_end_with_index(
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     start: usize,
     record_index: u32,
 ) -> Option<usize> {
@@ -4727,13 +4733,13 @@ fn body_recipe_operand_end(
     record_index: u32,
     recipe_at: usize,
 ) -> Option<(u32, usize)> {
-    let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
+    let records = crate::design::test_support::test_primary_frames(bytes);
     body_recipe_operand_end_with_index(bytes, &records, prologue_end, record_index, recipe_at)
 }
 
 fn body_recipe_operand_end_with_index(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     prologue_end: usize,
     record_index: u32,
     recipe_at: usize,
@@ -4764,7 +4770,7 @@ fn parse_body_recipe_operand(
     header: &DesignRecordHeader,
     recipe: &ConstructionRecipe,
 ) -> Option<DesignBodyRecipeOperand> {
-    let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
+    let records = crate::design::test_support::test_primary_frames(bytes);
     parse_body_recipe_operand_with_index(
         bytes,
         &records,
@@ -4777,7 +4783,7 @@ fn parse_body_recipe_operand(
 
 fn parse_body_recipe_operand_with_index(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     group: &DesignConstructionOperandGroup,
     group_member_ordinal: u32,
     header: &DesignRecordHeader,
@@ -4798,7 +4804,7 @@ fn parse_body_recipe_operand_with_index(
 
 fn parse_body_recipe_operand_frame_with_index(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope_record_index: u32,
     owner: DesignOperandOwner,
     header: &DesignRecordHeader,
@@ -5476,7 +5482,7 @@ fn utf16_decimal_u64(bytes: &[u8], at: usize) -> Option<(u64, usize)> {
 
 pub(in crate::design) fn parse_sketch_profile(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     stream: &str,
     scope_reference_ordinal: u32,
     header: &DesignRecordHeader,
@@ -5576,7 +5582,7 @@ pub(in crate::design) fn parse_sketch_profile(
 
 fn parse_sketch_profile_region_selection(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     profile_record_index: u32,
     paired_at: usize,
 ) -> Option<DesignSketchProfileRegionSelection> {
@@ -5772,7 +5778,7 @@ enum RecipeOperandTerminator {
 /// Parse one exact persistent vertex-recipe envelope.
 fn parse_vertex_recipe(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     stream: &str,
     header: &DesignRecordHeader,
     recipes: &[ConstructionRecipe],
@@ -5815,7 +5821,7 @@ fn parse_vertex_recipe(
 /// Parse the indexed-record envelope shared by topology recipe operands.
 fn parse_recipe_operand(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     stream: &str,
     header: &DesignRecordHeader,
     recipes: &[ConstructionRecipe],
@@ -5944,7 +5950,7 @@ fn parse_recipe_operand(
 fn parse_edge_operand(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
     (scope_reference_ordinal, header): (u32, &DesignRecordHeader),
     recipes: &[ConstructionRecipe],
@@ -6729,7 +6735,7 @@ fn edge_recipe_topology_triplet(
 /// `N`. Select an expected continuation before applying that fallback.
 fn face_recipe_next_boundary(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     position: usize,
     record_index: u32,
     limit: Option<u64>,
@@ -6770,7 +6776,7 @@ pub(crate) struct FaceOperandFrame<'a> {
 pub(super) fn parse_face_operand(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     input: FaceOperandFrame<'_>,
     recipes: &[ConstructionRecipe],
 ) -> Option<Result<DesignFaceOperand, CodecError>> {
@@ -7012,7 +7018,7 @@ pub(crate) fn decode_profile_curve_selections(
             {
                 continue;
             }
-            let Some(records) = cached_borrowed_record_offsets(
+            let Some(records) = cached_borrowed_primary_frames(
                 &mut records_by_stream,
                 stream,
                 bytes,
@@ -7039,7 +7045,7 @@ pub(crate) fn decode_profile_curve_selections(
 /// Parse one typed profile selection and its chain records.
 fn parse_typed_profile_curve_selection_prefix(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     group: &DesignConstructionOperandGroup,
     group_member_ordinal: u32,
     header: &DesignRecordHeader,
@@ -7122,7 +7128,7 @@ fn parse_typed_profile_curve_selection_prefix(
 fn parse_typed_profile_curve_selection(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     group: &DesignConstructionOperandGroup,
     ordinal: u32,
     header: &DesignRecordHeader,

@@ -7,7 +7,6 @@ use super::shared_frames::exact_fixed_scalar;
 use super::shared_frames::extrude_operation_at;
 use super::shared_frames::marked_record_reference;
 use crate::bytes::f64s_at;
-use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::decode::text::fixed_guid_end;
 use crate::ids::native_stream;
 use crate::layout::named_solid_primitive_prologue as solid_prologue;
@@ -52,7 +51,7 @@ const EPS_FRAME_OFFSET_ZERO: f64 = 0.0;
 
 pub(super) fn exact_solid_primitive(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
     parameter_owners: &[DesignParameterOwner],
 ) -> Option<DesignSolidPrimitive> {
@@ -643,7 +642,7 @@ fn exact_owned_primitive_parameters<'a, const N: usize>(
 
 fn exact_primitive_diameter(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     record_index: u32,
 ) -> Option<(PositiveReal, u64)> {
     let scalar = exact_fixed_scalar(bytes, records, record_index)?;
