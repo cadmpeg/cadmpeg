@@ -25,6 +25,11 @@ fn encode(
         lenient,
         missing: Vec::new(),
     };
+    let boolean_feature = if arena == "boolean_trees" {
+        solids::apply_combine(ir, record, &mut fields)?
+    } else {
+        None
+    };
     let annotation = if arena == "annotations" {
         annotations::apply_text(ir, record, &mut fields)?
     } else {
@@ -199,6 +204,9 @@ fn encode(
             };
             owners.push(*index);
         }
+    }
+    if let Some(feature) = boolean_feature {
+        result.source_targets.push(feature);
     }
     if let Some(annotation) = annotation {
         result.source_targets.push(annotation);
