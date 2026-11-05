@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact coil placements, discriminators and coil extents.
 
+use crate::metastream::PrimaryFrames;
 use cadmpeg_core::decode::u64_from_index;
 
 use super::shared_frames::exact_indexed_header_at;
@@ -10,7 +11,6 @@ use crate::bytes::lp_ascii_filtered_view;
 use crate::design::decode::operands::parse_entity_selection_frame;
 use crate::design::decode::operands::parse_entity_selection_prefix;
 use crate::design::decode::operands::parse_face_operand;
-use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::ids::native_stream;
 use crate::layout::coil_compact_placement_identity_frame as coil_identity;
 use crate::layout::coil_compact_placement_matrix_frame as coil_matrix;
@@ -69,7 +69,7 @@ pub(super) struct CoilDiscriminators {
 pub(super) fn exact_coil_placement(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
     recipes: &[ConstructionRecipe],
 ) -> Result<Option<DesignCoilPlacement>, CodecError> {
@@ -444,7 +444,7 @@ fn exact_coil_legacy_identity_frame(
 fn exact_coil_face_selection(
     ctx: &DecodeContext<'_>,
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
     (selection_record_index, selection_start, selection_class_tag): (u32, usize, &str),
     transform_start: usize,

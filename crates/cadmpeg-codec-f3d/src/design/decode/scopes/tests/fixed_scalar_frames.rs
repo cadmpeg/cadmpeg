@@ -39,7 +39,7 @@ fn compact_scalar_frame(trailer: [u8; 2]) -> Vec<u8> {
 fn compact_fixed_scalar_admits_both_trailer_forms() {
     for trailer in [[0, 0], [1, 0], [1, 1]] {
         let bytes = compact_scalar_frame(trailer);
-        let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+        let records = crate::design::test_support::test_primary_frames(&bytes);
         let scalar = exact_fixed_scalar(&bytes, &records, 9294)
             .unwrap_or_else(|| panic!("trailer {trailer:?} admits the scalar frame"));
         assert_eq!(scalar.owner_record_index, Some(8622));
@@ -49,7 +49,7 @@ fn compact_fixed_scalar_admits_both_trailer_forms() {
     }
     for trailer in [[0, 1], [1, 2], [2, 0]] {
         let bytes = compact_scalar_frame(trailer);
-        let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+        let records = crate::design::test_support::test_primary_frames(&bytes);
         assert!(
             exact_fixed_scalar(&bytes, &records, 9294).is_none(),
             "trailer {trailer:?} is not a compact scalar-owner trailer"

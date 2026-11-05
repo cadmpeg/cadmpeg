@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact surface extend, offset, boundary, stitch and ruled-surface operation scopes.
 
+use crate::metastream::PrimaryFrames;
 use cadmpeg_core::decode::u64_from_index;
 
 use super::shared_frames::exact_fixed_scalar;
@@ -10,7 +11,6 @@ use crate::bytes::take_reference;
 use crate::design::decode::operands::parse_construction_operand_group;
 use crate::design::decode::operands::ConstructionOperandGroupParse;
 use crate::design::decode::operands::RecordFrame;
-use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::decode::text::fixed_relaxed_guid_text;
 use crate::design::design_feature_family;
 use crate::design::DesignFeatureFamily;
@@ -30,7 +30,7 @@ use std::collections::HashSet;
 
 pub(super) fn exact_surface_extend_operation(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
 ) -> Option<DesignSurfaceExtendOperation> {
     let operation = exact_surface_boundary_operation(
@@ -66,7 +66,7 @@ pub(super) fn exact_surface_extend_operation(
 
 pub(super) fn exact_surface_offset_operation(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
 ) -> Result<Option<DesignSurfaceOffsetOperation>, CodecError> {
     if let Some(operation) = exact_surface_offset_face_groups(bytes, records, scope)? {
@@ -100,7 +100,7 @@ pub(super) fn exact_surface_offset_operation(
 
 fn exact_surface_offset_face_groups(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
 ) -> Result<Option<DesignSurfaceOffsetOperation>, CodecError> {
     let parsed = (|| {
@@ -184,7 +184,7 @@ fn exact_surface_offset_face_groups(
 
 fn exact_construction_operand_group(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
     scope_reference_ordinal: u32,
     record_index: u32,
@@ -232,7 +232,7 @@ struct ExactSurfaceBoundaryOperation {
 
 fn exact_surface_boundary_operation(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
     family: DesignFeatureFamily,
     boundary_kind: u32,
@@ -396,7 +396,7 @@ fn exact_surface_boundary_operation(
 
 pub(super) fn exact_surface_stitch_operation(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope_record_index: u32,
     references: &[u32],
 ) -> Option<DesignSurfaceStitchOperation> {
