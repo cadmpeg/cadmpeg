@@ -17,6 +17,7 @@ pub(crate) struct Admission {
     pub(crate) losses: Vec<LossNote>,
     pub(crate) directory: Vec<DirectoryEntry>,
     pub(crate) parameters: crate::parameter::ParameterAssembly,
+    pub(crate) source_terminated: bool,
 }
 
 pub(crate) struct Normalized {
@@ -360,6 +361,7 @@ pub(crate) fn normalize(
             losses,
             directory,
             parameters,
+            source_terminated: terminate.is_some(),
         },
     })
 }
