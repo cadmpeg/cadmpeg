@@ -5,7 +5,6 @@ use cadmpeg_ir::codec::write::EncodeBuffer;
 use std::collections::BTreeSet;
 
 use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::topology::Edge;
@@ -488,8 +487,9 @@ fn curve_payload(
         }
         Some(SolvedCurveGeometry::Nurbs(nurbs)) => {
             let degree = usize::try_from(nurbs.degree()).map_err(|_| {
-                WriteError::Fail(CodecError::InvalidInput(
-                    "NURBS degree exceeds address space".into(),
+                WriteError::Omit(format!(
+                    "wire edge {} NURBS degree exceeds address space",
+                    edge.id
                 ))
             })?;
             let range = [lo.min(hi), lo.max(hi)];
@@ -609,7 +609,7 @@ fn curve_payload(
             .point(parameter)
             .map_err(|failure| match failure {
                 cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit) => {
-                    WriteError::Fail(CodecError::ResourceLimit(limit))
+                    WriteError::Encode(limit.into())
                 }
                 _ => WriteError::Omit(format!(
                     "wire edge {} endpoint evaluation has no supported finite result",
