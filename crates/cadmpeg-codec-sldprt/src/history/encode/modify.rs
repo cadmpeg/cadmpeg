@@ -893,9 +893,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 ScaleCenter::Native(reference) => !reference.is_empty(),
                 ScaleCenter::Point(_) | ScaleCenter::Centroid | ScaleCenter::ModelOrigin => true,
             });
-            let resolved_factors = !matches!(factors, ScaleFactors::Unresolved {});
-            if existing.is_none() && (selection.is_none() || center.is_none() || !resolved_factors)
-            {
+            if selection.is_none() && !matches!(bodies, BodySelection::Unresolved) {
                 return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} has unresolved scale construction",
                     feature.id
@@ -909,7 +907,18 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             }
             let mut parameters = self.base_parameters();
             match factors {
-                ScaleFactors::Unresolved {} => {}
+                ScaleFactors::Unresolved {} => {
+                    if existing.is_none()
+                        && ["Factor", "ScaleX", "ScaleY", "ScaleZ"]
+                            .iter()
+                            .any(|name| parameters.contains_key(*name))
+                    {
+                        return Err(CodecError::UnsupportedContent(format!(
+                            "SLDPRT feature {} has unresolved scale factors with native controls",
+                            feature.id
+                        )));
+                    }
+                }
                 ScaleFactors::Uniform { factor } => {
                     parameters.insert(
                         cadmpeg_core::nonblank_literal!("Factor"),
