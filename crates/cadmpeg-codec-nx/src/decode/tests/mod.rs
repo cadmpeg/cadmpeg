@@ -14,6 +14,7 @@ fn options_in(mode: DecodeMode, depth: DecodeDepth) -> DecodeOptions {
     }
 }
 
+mod attribute_lists;
 mod blend_contact;
 mod emission;
 mod metadata;
