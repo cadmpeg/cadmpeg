@@ -5845,7 +5845,7 @@ fn unsupported_model_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
     let losses = unsupported
         .into_iter()
         .filter(|(_, present, _)| *present)
-        .map(|(arena, _, ids)| {
+        .flat_map(|(arena, _, ids)| {
             let code = if matches!(
                 arena,
                 "features"
@@ -5865,10 +5865,8 @@ fn unsupported_model_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
             } else {
                 IgesLossCode::WriterArenaOmitted
             };
-            code.note(format!(
-                "IGES omits unsupported model arena {arena}: {}",
-                ids.join(", ")
-            ))
+            ids.into_iter()
+                .map(move |id| code.note(format!("IGES omits unsupported {arena} record {id}")))
         })
         .collect();
     for vertex in &ir.model.vertices {
