@@ -22,7 +22,7 @@ pub(super) fn project(
     ir: &mut CadIr,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
-    drop_degraded_features(scan, ir, losses)?;
+    drop_degraded_features(scan, ir, losses);
     let before = ir.model.entity_count();
     for section in &scan.framing.sections {
         if section.role() == SectionRole::Thumbnail {
@@ -78,10 +78,7 @@ pub(super) fn project(
                         return crate::identity::part_stub_id(label, section.offset())
                             .map(|id| id.as_str().to_owned());
                     }
-                    let namespace =
-                        crate::identity::section_namespace(section.name()).ok_or_else(|| {
-                            CodecError::malformed("thumbnail section without a namespace")
-                        })?;
+                    let namespace = crate::identity::section_namespace(section.name());
                     crate::identity::compose_checked::<UnknownId>(&namespace, offset)
                         .map(|id| id.as_str().to_owned())
                 })
@@ -176,8 +173,7 @@ pub(super) fn project(
         // `creo:family_info:driver_table#root` record, but no grammar is
         // defined for the binary driver-table entity it names. The section
         // framing the entity is retained untyped (§1.3); the loss names it.
-        let namespace = crate::identity::section_namespace(driver.name())
-            .ok_or_else(|| CodecError::malformed("driver-table section without a namespace"))?;
+        let namespace = crate::identity::section_namespace(driver.name());
         let retained = crate::identity::compose_checked::<UnknownId>(&namespace, driver.offset())
             .map(|id| id.as_str().to_owned())?;
         losses.push(CreoLossCode::ConfigurationDriverUnresolved.note(format!(
@@ -196,13 +192,9 @@ pub(super) fn project(
 /// Drop features that lost rows to a given-up part and still fell back to
 /// stored geometry: they need the failed part, so the transfer excludes
 /// them and the part loss names them (#215 rule 2).
-fn drop_degraded_features(
-    scan: &ContainerScan<'_>,
-    ir: &mut CadIr,
-    losses: &mut Vec<LossNote>,
-) -> Result<(), CodecError> {
+fn drop_degraded_features(scan: &ContainerScan<'_>, ir: &mut CadIr, losses: &mut [LossNote]) {
     if scan.framing.excluded_feature_owners.is_empty() {
-        return Ok(());
+        return;
     }
     let mut lost: std::collections::BTreeSet<u32> = std::collections::BTreeSet::new();
     for owners in scan.framing.excluded_feature_owners.values() {
@@ -234,7 +226,7 @@ fn drop_degraded_features(
         false
     });
     if dropped.is_empty() {
-        return Ok(());
+        return;
     }
     let mut by_section = std::collections::BTreeMap::<usize, Vec<String>>::new();
     for (number, id) in &dropped {
@@ -260,7 +252,7 @@ fn drop_degraded_features(
         let mut ids = ids.clone();
         ids.sort();
         ids.dedup();
-        loss.dropped = ids.clone();
+        loss.dropped.clone_from(&ids);
         loss.message = loss
             .message
             .strip_suffix("dropped=[]")
@@ -268,7 +260,6 @@ fn drop_degraded_features(
             .to_owned()
             + &format!("dropped=[{}]", ids.join(", "));
     }
-    Ok(())
 }
 
 #[cfg(test)]

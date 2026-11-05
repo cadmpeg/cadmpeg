@@ -225,9 +225,10 @@ pub(crate) fn operation<'a>(
     }
     let thickness = cadmpeg_ir::scalar::PositiveLength::try_from(*thickness)
         .map_err(|_| NativeReason::Slot(6))?;
-    let thickness = binding(source.properties.references()[6])
-        .map(cadmpeg_ir::features::Dimension::Parameter)
-        .unwrap_or(cadmpeg_ir::features::Dimension::Literal(thickness));
+    let thickness = binding(source.properties.references()[6]).map_or(
+        cadmpeg_ir::features::Dimension::Literal(thickness),
+        cadmpeg_ir::features::Dimension::Parameter,
+    );
     if offset {
         let distance = offset_distance(source, property, parameter, dimension)?;
         return Ok(FeatureOperation::MoveFace {
