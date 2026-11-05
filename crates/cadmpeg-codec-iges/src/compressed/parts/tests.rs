@@ -22,6 +22,7 @@ fn cut_global_card_keeps_readable_fields_and_gives_up_the_unfinished_field() {
         normalized.admission.global.native_file_name(),
         Some("part.igs")
     );
+    assert!(normalized.admission.losses.is_empty());
     let (_, _, fidelity, losses) = normalized.parts.into_parts();
     let parts = crate::test_support::given_up_parts(&fidelity);
     assert_eq!(parts.len(), 1);
@@ -34,6 +35,18 @@ fn cut_global_card_keeps_readable_fields_and_gives_up_the_unfinished_field() {
         crate::test_support::given_up_count(decoded.report(), "iges.global_field"),
         1
     );
+    let baseline = crate::test_support::decode(original);
+    for loss in &decoded.report().losses {
+        assert!(
+            loss.code.local_code() == "record.unreadable"
+                || baseline
+                    .report()
+                    .losses
+                    .iter()
+                    .any(|other| other.code == loss.code),
+            "{loss:?}"
+        );
+    }
 }
 
 #[test]
@@ -50,6 +63,7 @@ fn cut_first_global_card_gives_up_the_incomplete_field() {
         .expect("source session");
     let normalized = super::normalize(source, &ctx).expect("cut compressed source decodes");
     assert_eq!(normalized.admission.global.sender_product(), None);
+    assert!(normalized.admission.losses.is_empty());
     let (_, _, fidelity, losses) = normalized.parts.into_parts();
     let parts = crate::test_support::given_up_parts(&fidelity);
     assert_eq!(parts.len(), 1);
@@ -62,6 +76,18 @@ fn cut_first_global_card_gives_up_the_incomplete_field() {
         crate::test_support::given_up_count(decoded.report(), "iges.global_field"),
         1
     );
+    let baseline = crate::test_support::decode(original);
+    for loss in &decoded.report().losses {
+        assert!(
+            loss.code.local_code() == "record.unreadable"
+                || baseline
+                    .report()
+                    .losses
+                    .iter()
+                    .any(|other| other.code == loss.code),
+            "{loss:?}"
+        );
+    }
 }
 
 #[test]
