@@ -165,6 +165,11 @@ fn string_field(record: &NativeRecord, field: &str) -> Option<String> {
 }
 
 fn hollerith(value: &str) -> Result<String, String> {
+    if value.is_empty() {
+        return Err(
+            "an explicit empty string has no Parameter Data Hollerith representation".into(),
+        );
+    }
     if !value
         .bytes()
         .all(|byte| byte.is_ascii_graphic() || byte == b' ')
@@ -521,19 +526,27 @@ pub(super) fn append(
             );
             continue;
         }
-        let values = attribute
-            .values
-            .iter()
-            .flatten()
-            .map(|value| typed_value(value, &targets))
-            .collect::<Result<Vec<_>, _>>();
-        let emitted = values.and_then(|mut values| {
+        let mut values = Vec::new();
+        let mut rejected = Vec::new();
+        for (position, value) in attribute.values.iter().enumerate() {
+            if let Some(value) = value {
+                match typed_value(value, &targets) {
+                    Ok(value) => values.push(value),
+                    Err(reason) => rejected.push(format!("position {position}: {reason}")),
+                }
+            }
+        }
+        let emitted = (|| {
             if attribute.name.trim().is_empty() {
                 return Err("Generic Data needs a nonempty name".into());
             }
             if values.is_empty() {
-                if attribute.values.iter().any(Option::is_none) {
-                    return Err("no value remains after dropping unreadable positions".into());
+                if !attribute.values.is_empty() {
+                    return Err(if rejected.is_empty() {
+                        "no value remains after dropping unreadable positions".into()
+                    } else {
+                        rejected.join("; ")
+                    });
                 }
                 values.push((0, String::new()));
             }
@@ -551,10 +564,19 @@ pub(super) fn append(
                 &owners,
                 version,
             )
-        });
+        })();
         match emitted {
             Ok(_) => {
                 result.preserved.insert(attribute.id.to_string());
+                if !rejected.is_empty() {
+                    result
+                        .losses
+                        .push(IgesLossCode::WriterAttributeOmitted.note(format!(
+                            "IGES attribute {} loses values: {}",
+                            attribute.id,
+                            rejected.join("; ")
+                        )));
+                }
             }
             Err(reason) => omitted(&mut result.losses, attribute.id.as_str(), reason),
         }
