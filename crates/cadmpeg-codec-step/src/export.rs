@@ -3861,6 +3861,15 @@ impl<'a> Builder<'a> {
                     self.edges.get(id.as_str()).map(|edge| (emitted, *edge))
                 })
                 .collect::<Vec<_>>();
+            if edges.is_empty() && shell.faces().is_empty() {
+                self.loss(
+                    StepLossCode::WireShellNoWritableEdges,
+                    format!(
+                        "wire shell '{}' was omitted because it has no writable connected edge set",
+                        shell.id
+                    ),
+                );
+            }
             for component in wire::connected_components(&edges) {
                 connected_sets.push(
                     self.emitter
