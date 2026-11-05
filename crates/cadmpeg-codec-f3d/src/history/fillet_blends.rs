@@ -35,16 +35,19 @@ struct BlendRows<'a> {
     output_points: HashMap<i64, Option<Point3>>,
     planes: HashMap<i64, Option<(Point3, Vector3)>>,
     owners: HashMap<i64, Vec<i64>>,
+    output_faces: HashSet<i64>,
 }
 
 impl BlendRows<'_> {
-    /// The deleted preceding edge that a cylinder blend replaces when its
-    /// supports share no edge along its axis: the one edge on the preceding
-    /// boundary of a support that runs along the axis, lies farther than the
-    /// radius from the axis line and within the axial extent of the blend's
-    /// boundary, and has an owner face on a plane that touches the cylinder.
-    /// `None` when no edge or more than one qualifies, or when a row that
-    /// decides an edge is missing or unusable.
+    /// The preceding edge that a cylinder blend replaces when its supports
+    /// share no edge along its axis: the one edge on the preceding boundary of
+    /// a support that runs along the axis, lies farther than the radius from
+    /// the axis line and within the axial extent of the blend's boundary, and
+    /// has two owner faces: a support whose plane touches the cylinder, and a
+    /// face that the transition removes and that shares a preceding edge with
+    /// another support. Kept and deleted edges qualify alike. `None` when no
+    /// edge or more than one qualifies, or when a row that decides an edge is
+    /// missing or unusable.
     fn rounded_edge(
         &self,
         blend: i64,
@@ -62,12 +65,7 @@ impl BlendRows<'_> {
         let (low, high) = extent?;
         let mut pool = BTreeSet::new();
         for support in supports {
-            pool.extend(
-                self.input_boundaries
-                    .get(support)?
-                    .iter()
-                    .filter(|edge| self.deleted.contains(edge)),
-            );
+            pool.extend(self.input_boundaries.get(support)?);
         }
         let mut found = None;
         for edge in pool {
@@ -89,9 +87,15 @@ impl BlendRows<'_> {
             {
                 continue;
             }
+            let Some([first, second]) = self.owners.get(edge).map(Vec::as_slice) else {
+                continue;
+            };
             let (mut touching, mut unknown) = (false, false);
-            for owner in self.owners.get(edge).into_iter().flatten() {
-                let carrier = self.input_carriers.get(owner).copied().flatten()?;
+            for (near, far) in [(first, second), (second, first)] {
+                if !supports.contains(near) || !self.beside_support(*far, *near, supports) {
+                    continue;
+                }
+                let carrier = self.input_carriers.get(near).copied().flatten()?;
                 match self.planes.get(&carrier) {
                     Some(plane) => touching |= axis.touches(radius, (*plane)?)?,
                     None => unknown = true,
@@ -106,6 +110,22 @@ impl BlendRows<'_> {
             }
         }
         found
+    }
+
+    /// Whether the transition removes `face` and `face` shares a preceding
+    /// edge with a support other than `support`.
+    fn beside_support(&self, face: i64, support: i64, supports: &[i64]) -> bool {
+        let Some(boundary) = self.input_boundaries.get(&face) else {
+            return false;
+        };
+        !self.output_faces.contains(&face)
+            && supports.iter().any(|other| {
+                *other != support
+                    && self
+                        .input_boundaries
+                        .get(other)
+                        .is_some_and(|edges| !edges.is_disjoint(boundary))
+            })
     }
 }
 
@@ -195,6 +215,7 @@ fn transition_blends(
         output_points: edge_points(output),
         planes: plane_rows(input),
         owners,
+        output_faces: output.faces.iter().copied().collect(),
     };
     let axes = cylinder_axes(output);
     let mut blends = Vec::new();

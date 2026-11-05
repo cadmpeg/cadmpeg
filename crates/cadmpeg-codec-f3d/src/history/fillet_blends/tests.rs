@@ -190,11 +190,13 @@ fn plane(topology: &mut AsmHistoricalTopology, surface: i64, origin: Point3, nor
 
 /// A plate whose top face 10 (z = 0) meets the side face 11 (y = 0) of a rib
 /// at edge 17. Rib side 11 meets rib top 12 (z = 0.5) at edge 18. Both edges
-/// run along x.
+/// run along x; edges 19 and 20 cross it.
 fn rib() -> AsmHistoricalTopology {
     let mut topology = faces(&[(10, &[17, 19]), (11, &[17, 18]), (12, &[18, 20])]);
     line_at(&mut topology, 17, Point3::new(1.0, 0.0, 0.0), x());
     line_at(&mut topology, 18, Point3::new(1.0, 0.0, 0.5), x());
+    line_at(&mut topology, 19, Point3::new(0.0, -2.0, 0.0), y());
+    line_at(&mut topology, 20, Point3::new(0.0, 0.5, 0.5), y());
     plane(&mut topology, 110, Point3::new(0.0, 0.0, 0.0), z());
     plane(&mut topology, 111, Point3::new(0.0, 0.0, 0.0), y());
     plane(&mut topology, 112, Point3::new(0.0, 0.0, 0.5), z());
@@ -238,48 +240,34 @@ fn rib_edge() -> Vec<Blend> {
     }]
 }
 
-/// `rib()` with edge 21 through `at` along x on plate top 10.
-fn rib_with_plate_edge_21(at: Point3) -> AsmHistoricalTopology {
-    let mut topology = rib();
+/// Add edge `edge` to the loop of `face`.
+fn add_coedge(topology: &mut AsmHistoricalTopology, face: i64, edge: i64) {
+    let coedge = 10_000 * face + edge;
     topology
         .loop_coedges
         .iter_mut()
-        .find(|relation| relation.owner_ref == 1_010)
+        .find(|relation| relation.owner_ref == 1_000 + face)
         .unwrap()
         .member_refs
-        .push(100_021);
+        .push(coedge);
     topology.coedge_topology.push(AsmHistoricalCoedge {
-        coedge: 100_021,
-        owner_loop: 1_010,
-        edge: 21,
-        next: 100_021,
-        previous: 100_021,
-        radial_next: 100_021,
+        coedge,
+        owner_loop: 1_000 + face,
+        edge,
+        next: coedge,
+        previous: coedge,
+        radial_next: coedge,
     });
-    line_at(&mut topology, 21, at, x());
-    topology
 }
 
-/// `rib()` with edge 21 through `at` along x on rib top 12, which also bounds
-/// face 13.
-fn rib_with_edge_21(at: Point3) -> AsmHistoricalTopology {
+/// `rib()` with edge 21 through `at` along x between face `on` and face 13,
+/// which the fillet removes. Face 13 also meets face `beside` at edge 22,
+/// which crosses x, when `beside` is given.
+fn rib_with_edge_21(at: Point3, on: i64, beside: Option<i64>) -> AsmHistoricalTopology {
     let mut topology = rib();
-    topology
-        .loop_coedges
-        .iter_mut()
-        .find(|relation| relation.owner_ref == 1_012)
-        .unwrap()
-        .member_refs
-        .push(120_021);
-    topology.coedge_topology.push(AsmHistoricalCoedge {
-        coedge: 120_021,
-        owner_loop: 1_012,
-        edge: 21,
-        next: 120_021,
-        previous: 120_021,
-        radial_next: 120_021,
-    });
-    let extra = faces(&[(13, &[21])]);
+    add_coedge(&mut topology, on, 21);
+    let edges: &[i64] = if beside.is_some() { &[21, 22] } else { &[21] };
+    let extra = faces(&[(13, edges)]);
     topology.faces.extend(extra.faces);
     topology.surfaces.extend(extra.surfaces);
     topology.face_surfaces.extend(extra.face_surfaces);
@@ -287,17 +275,21 @@ fn rib_with_edge_21(at: Point3) -> AsmHistoricalTopology {
     topology.loop_coedges.extend(extra.loop_coedges);
     topology.coedge_topology.extend(extra.coedge_topology);
     line_at(&mut topology, 21, at, x());
+    if let Some(face) = beside {
+        add_coedge(&mut topology, face, 22);
+        line_at(&mut topology, 22, Point3::new(0.0, -4.0, 0.0), y());
+    }
     topology
 }
 
 #[test]
 fn a_cylinder_blend_whose_supports_share_no_edge_replaces_the_edge_on_its_touching_support() {
     assert_eq!(rib_blends(&rib(), &rib_fillet()), Some(rib_edge()));
-    let on_cylinder = rib_with_plate_edge_21(Point3::new(1.0, -(0.75_f64.sqrt()), 0.0));
+    let on_cylinder = rib_with_edge_21(Point3::new(1.0, -(0.75_f64.sqrt()), 0.0), 10, Some(12));
     assert_eq!(
         rib_blends(&on_cylinder, &rib_fillet()),
         Some(rib_edge()),
-        "edge 21 on touching plate top 10 lies on the cylinder"
+        "edge 21 beside touching plate top 10 lies on the cylinder"
     );
 }
 
@@ -308,7 +300,7 @@ fn a_cylinder_blend_states_no_edge_when_none_or_two_qualify() {
     assert_eq!(
         rib_blends(&lifted, &rib_fillet()),
         None,
-        "no owner of edge 17 touches the cylinder"
+        "no support that owns edge 17 touches the cylinder"
     );
     for position in [0.5, 2.0] {
         let mut beyond = rib();
@@ -321,46 +313,105 @@ fn a_cylinder_blend_states_no_edge_when_none_or_two_qualify() {
     }
     assert_eq!(
         rib_blends(
-            &rib_with_plate_edge_21(Point3::new(1.0, -2.0, 0.0)),
+            &rib_with_edge_21(Point3::new(1.0, -2.0, 0.0), 10, Some(12)),
             &rib_fillet()
         ),
         None,
-        "edge 21 on touching plate top 10 also qualifies"
+        "edge 21 between touching plate top 10 and removed face 13 beside rib top 12 also qualifies"
+    );
+}
+
+#[test]
+fn a_cylinder_blend_states_no_edge_that_its_other_support_does_not_reach() {
+    let mut unlinked = vec![
+        (
+            "face 13 meets no other support",
+            rib_with_edge_21(Point3::new(1.0, -2.0, 0.0), 10, None),
+        ),
+        (
+            "face 13 meets only plate top 10, which owns edge 21",
+            rib_with_edge_21(Point3::new(1.0, -2.0, 0.0), 10, Some(10)),
+        ),
+    ];
+    let mut persisting = rib_with_edge_21(Point3::new(1.0, -2.0, 0.0), 10, Some(12));
+    let mut result_13 = rib_fillet();
+    let extra = faces(&[(13, &[32])]);
+    result_13.faces.extend(extra.faces);
+    result_13.surfaces.extend(extra.surfaces);
+    result_13.face_surfaces.extend(extra.face_surfaces);
+    result_13.face_loops.extend(extra.face_loops);
+    result_13.loop_coedges.extend(extra.loop_coedges);
+    result_13.coedge_topology.extend(extra.coedge_topology);
+    for (case, mut input) in unlinked.drain(..) {
+        input.edge_samples[0].interior = Point3::new(2.0, 0.0, 0.0);
+        assert_eq!(rib_blends(&input, &rib_fillet()), None, "{case}");
+    }
+    persisting.edge_samples[0].interior = Point3::new(2.0, 0.0, 0.0);
+    assert_eq!(
+        rib_blends(&persisting, &result_13),
+        None,
+        "face 13 persists"
+    );
+}
+
+#[test]
+fn a_cylinder_blend_states_no_edge_when_a_kept_edge_qualifies() {
+    let kept = |input: &AsmHistoricalTopology| {
+        transition_blends(&transition(&[20], &[18, 21]), input, &rib_fillet())
+    };
+    assert_eq!(kept(&rib()), None, "edge 17 keeps its slot");
+    assert_eq!(
+        kept(&rib_with_edge_21(Point3::new(1.0, -2.0, 0.0), 10, Some(12))),
+        None,
+        "kept edge 17 and deleted edge 21 both qualify"
     );
 }
 
 #[test]
 fn a_cylinder_blend_states_nothing_when_a_row_that_decides_an_edge_is_unusable() {
-    let beside = || rib_with_edge_21(Point3::new(1.0, 1.0, 0.5));
-    let mut planar = beside();
-    plane(&mut planar, 113, Point3::new(0.0, 1.0, 0.0), y());
+    let beside = || rib_with_edge_21(Point3::new(1.0, 1.0, 0.5), 12, Some(10));
     assert_eq!(
-        rib_blends(&planar, &rib_fillet()),
+        rib_blends(&beside(), &rib_fillet()),
         Some(rib_edge()),
-        "no owner of edge 21 touches the cylinder"
+        "rib top 12, the support that owns edge 21, does not touch the cylinder"
     );
     let mut across = beside();
     across.curve_axes.retain(|row| row.curve != 121);
-    across.edge_samples.last_mut().unwrap().tangent = Some(y());
-    plane(&mut across, 113, Point3::new(0.0, 1.0, 0.0), y());
+    across
+        .edge_samples
+        .iter_mut()
+        .find(|row| row.edge == 21)
+        .unwrap()
+        .tangent = Some(y());
     assert_eq!(
         rib_blends(&across, &rib_fillet()),
         Some(rib_edge()),
         "the tangent of edge 21 runs across the axis"
     );
-    let mut unknown = vec![("face 13 has no plane row", beside())];
+    let mut unknown = Vec::new();
+    let mut unplanar = beside();
+    unplanar.surface_planes.retain(|row| row.surface != 112);
+    unknown.push(("rib top 12 has no plane row", unplanar));
     let mut duplicated = beside();
-    plane(&mut duplicated, 113, Point3::new(0.0, 1.0, 0.0), y());
-    plane(&mut duplicated, 113, Point3::new(0.0, 2.0, 0.0), y());
-    unknown.push(("face 13 has two plane rows", duplicated));
-    let mut flat = planar.clone();
-    flat.surface_planes.last_mut().unwrap().normal = Vector3::new(0.0, 0.0, 0.0);
-    unknown.push(("the plane of face 13 has no normal", flat));
-    let mut unclassified = planar.clone();
+    plane(&mut duplicated, 112, Point3::new(0.0, 0.0, 0.7), z());
+    unknown.push(("rib top 12 has two plane rows", duplicated));
+    let mut flat = beside();
+    flat.surface_planes
+        .iter_mut()
+        .find(|row| row.surface == 112)
+        .unwrap()
+        .normal = Vector3::new(0.0, 0.0, 0.0);
+    unknown.push(("the plane of rib top 12 has no normal", flat));
+    let mut unclassified = beside();
     unclassified.curve_axes.retain(|row| row.curve != 121);
     unknown.push(("edge 21 runs along x without an axis row", unclassified));
-    let mut unplaced = planar.clone();
-    unplaced.edge_samples.last_mut().unwrap().interior = Point3::new(f64::NAN, 1.0, 0.5);
+    let mut unplaced = beside();
+    unplaced
+        .edge_samples
+        .iter_mut()
+        .find(|row| row.edge == 21)
+        .unwrap()
+        .interior = Point3::new(f64::NAN, 1.0, 0.5);
     unknown.push(("edge 21 has no finite interior point", unplaced));
     for (case, input) in unknown {
         assert_eq!(rib_blends(&input, &rib_fillet()), None, "{case}");
