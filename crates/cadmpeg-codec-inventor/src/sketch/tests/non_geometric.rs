@@ -363,3 +363,12 @@ fn duplicate_native_members_and_relations_keep_the_sketch_unresolved() {
         assert!(projection(&inventory).sketches.is_empty());
     }
 }
+
+#[test]
+fn a_polygon_control_record_with_two_different_vertices_becomes_an_issue() {
+    let bytes = polygon_control_bytes(11, [4, 5, 6], [0, 0, 1]);
+    let admitted = inventory_with_record(POLYGON_CONTROL_TYPE, &bytes, DecodePolicy::service())
+        .expect("unequal polygon control becomes an issue");
+    assert!(admitted.constraints.is_empty());
+    assert_eq!(admitted.issues.len(), 1);
+}

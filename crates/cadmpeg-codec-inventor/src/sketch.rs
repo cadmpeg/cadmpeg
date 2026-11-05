@@ -1422,20 +1422,30 @@ fn parse_constraint(
         SketchConstraintTag::BlockGroup => PmDcSketchConstraintKind::BlockGroup {
             members: reference_list(&mut cursor, 2, "block group member list")?,
         },
-        SketchConstraintTag::PolygonControl => PmDcSketchConstraintKind::PolygonControl {
-            value: cursor.u32("polygon control value")?,
-            reference: cursor.reference("polygon control reference entity")?,
-            vertex: [
+        SketchConstraintTag::PolygonControl => {
+            let value = cursor.u32("polygon control value")?;
+            let reference = cursor.reference("polygon control reference entity")?;
+            let vertex = [
                 cursor.reference("polygon control vertex reference")?,
                 cursor.reference("polygon control second vertex reference")?,
-            ],
-            position: f64_array(&mut cursor, "polygon control vertex position")?,
-            flags: cadmpeg_ir::native::bytes::NativeBytes::new([
-                cursor.u8("polygon control first flag")?,
-                cursor.u8("polygon control second flag")?,
-                cursor.u8("polygon control third flag")?,
-            ]),
-        },
+            ];
+            if vertex[0] != vertex[1] {
+                return Err(CodecError::malformed(
+                    "Inventor PmDc polygon control relation names two different vertex points",
+                ));
+            }
+            PmDcSketchConstraintKind::PolygonControl {
+                value,
+                reference,
+                vertex,
+                position: f64_array(&mut cursor, "polygon control vertex position")?,
+                flags: cadmpeg_ir::native::bytes::NativeBytes::new([
+                    cursor.u8("polygon control first flag")?,
+                    cursor.u8("polygon control second flag")?,
+                    cursor.u8("polygon control third flag")?,
+                ]),
+            }
+        }
         SketchConstraintTag::PolygonRelation => PmDcSketchConstraintKind::PolygonRelation {
             first: cursor.reference("polygon relation first reference")?,
             second: cursor.reference("polygon relation second reference")?,
