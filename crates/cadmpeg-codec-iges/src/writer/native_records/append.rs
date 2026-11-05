@@ -582,7 +582,7 @@ impl Emitter<'_, '_> {
                 entity.status = status;
             }
         }
-        if matches!(
+        let label = if matches!(
             arena,
             "subfigure_definitions"
                 | "network_definitions"
@@ -590,14 +590,21 @@ impl Emitter<'_, '_> {
                 | "network_instances"
                 | "connect_points"
         ) {
-            if let Some(label) = source_directory_label(self.ir, record) {
-                entity.label = label;
-            }
-        } else if let Some(label) = self
-            .labels
-            .get(record.id())
-            .and_then(|name| directory_label(name))
+            source_directory_label(self.ir, record)
+        } else if self
+            .ir
+            .model
+            .features
+            .iter()
+            .any(|feature| feature.native_ref.as_deref() == Some(record.id()))
         {
+            self.labels
+                .get(record.id())
+                .and_then(|name| directory_label(name))
+        } else {
+            source_directory_label(self.ir, record)
+        };
+        if let Some(label) = label {
             entity.label = label;
         }
         let index = self.entities.len();
