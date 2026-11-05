@@ -1136,10 +1136,19 @@ fn generated_parameter_field_wider_than_a_card_is_refused() {
 #[test]
 fn card_capacity_helpers_admit_their_limits() {
     assert_eq!(super::capacity::CAPACITY_FIELDS.len(), 2);
-    let payload = vec![b' '; super::capacity::CAPACITY_FIELDS[0].limit as usize];
+    let payload = vec![
+        b' ';
+        usize::try_from(super::capacity::CAPACITY_FIELDS[0].limit)
+            .expect("payload limit fits usize")
+    ];
     assert!(card_payload(&payload).is_ok());
     assert!(card(&payload, b'S', 1).is_ok());
-    let overlong = vec![b' '; super::capacity::CAPACITY_FIELDS[0].limit as usize + 1];
+    let overlong = vec![
+        b' ';
+        usize::try_from(super::capacity::CAPACITY_FIELDS[0].limit)
+            .expect("payload limit fits usize")
+            + 1
+    ];
     assert!(card_payload(&overlong).is_err());
     assert!(card(&overlong, b'S', 1).is_err());
     let limit = super::capacity::CAPACITY_FIELDS[1].limit;
