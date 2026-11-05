@@ -834,6 +834,7 @@ fn persistent_reference_name(kind: PersistentReferenceKind) -> &'static [u8] {
 pub(super) fn encode_design_metastream(
     registry: &GeneratedDesignRegistry,
     primary_records: &[crate::metastream::RecordIndexEntry],
+    secondary_records: &[crate::metastream::RecordIndexEntry],
 ) -> Result<Option<Vec<u8>>, CodecError> {
     if registry.types.is_empty() {
         return Ok(None);
@@ -921,7 +922,17 @@ pub(super) fn encode_design_metastream(
         out.extend_from_slice(&record.entity_id.to_le_bytes());
         out.extend_from_slice(&record.bulk_offset.to_le_bytes());
     }
-    out.extend_from_slice(&0u32.to_le_bytes());
+    out.extend_from_slice(
+        &u32::try_from(secondary_records.len())
+            .map_err(|_| {
+                CodecError::InvalidInput("Design secondary index exceeds u32::MAX records".into())
+            })?
+            .to_le_bytes(),
+    );
+    for record in secondary_records {
+        out.extend_from_slice(&record.entity_id.to_le_bytes());
+        out.extend_from_slice(&record.bulk_offset.to_le_bytes());
+    }
     out.extend_from_slice(&next_entity_id.to_le_bytes());
     // Trailing flag and empty property block.
     out.extend_from_slice(&[0; 8]);
@@ -1012,7 +1023,7 @@ mod tests {
 
     #[test]
     fn metastream_rejects_overflowed_next_entity_id() {
-        let error = super::encode_design_metastream(&registry_with_entity(u64::MAX), &[])
+        let error = super::encode_design_metastream(&registry_with_entity(u64::MAX), &[], &[])
             .expect_err("the next identity cannot be represented");
         assert!(
             matches!(error, cadmpeg_core::CodecError::Malformed(ref message)
@@ -1022,7 +1033,7 @@ mod tests {
 
     #[test]
     fn metastream_preserves_largest_representable_next_entity_id() {
-        let bytes = super::encode_design_metastream(&registry_with_entity(u64::MAX - 1), &[])
+        let bytes = super::encode_design_metastream(&registry_with_entity(u64::MAX - 1), &[], &[])
             .unwrap()
             .unwrap();
         let next_offset = bytes.len() - 16;
