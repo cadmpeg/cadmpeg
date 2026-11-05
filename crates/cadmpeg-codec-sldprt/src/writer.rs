@@ -755,30 +755,32 @@ fn semantic_coverage(_patched: bool, retained_brep: bool) -> ArenaDispositions {
 
 fn assign_configuration_indices(
     configurations: &mut [cadmpeg_ir::features::DesignConfiguration],
-) -> Result<(), CodecError> {
+) -> Result<(), write_error::WriteError> {
     let mut used = HashSet::new();
     let mut names = HashSet::new();
     for configuration in configurations.iter() {
         let Some(name) = configuration.name.as_deref() else {
-            return Err(CodecError::Malformed(
-                "SLDPRT configuration has no resolved name".into(),
-            ));
+            return Err(
+                CodecError::Malformed("SLDPRT configuration has no resolved name".into()).into(),
+            );
         };
         if name.trim().is_empty() {
-            return Err(CodecError::Malformed(
-                "SLDPRT configuration has an empty name".into(),
-            ));
+            return Err(
+                CodecError::Malformed("SLDPRT configuration has an empty name".into()).into(),
+            );
         }
         if !names.insert(name) {
             return Err(CodecError::malformed(format_args!(
                 "SLDPRT repeats configuration name {name:?}"
-            )));
+            ))
+            .into());
         }
         if let Some(index) = configuration.source_index {
             if !used.insert(index) {
                 return Err(CodecError::malformed(format_args!(
                     "duplicate SLDPRT configuration source index {index}"
-                )));
+                ))
+                .into());
             }
         }
     }
@@ -1638,10 +1640,18 @@ fn configuration_partitions(
         .collect()
 }
 
+const CONFIGURATION_INDEX_CAPACITY: cadmpeg_ir::codec::write::CapacityField =
+    cadmpeg_ir::codec::write::CapacityField {
+        field: "configuration.source_index",
+        limit: u32::MAX as u64,
+        source: "docs/formats/sldprt.md §2: configuration source index u32",
+        helper: "reserve_configuration_index",
+    };
+
 pub(super) fn reserve_configuration_index(
     used: &mut HashSet<u32>,
     next: &mut u32,
-) -> Result<u32, CodecError> {
+) -> Result<u32, write_error::WriteError> {
     loop {
         let index = *next;
         if used.insert(index) {
@@ -1650,12 +1660,12 @@ pub(super) fn reserve_configuration_index(
             }
             return Ok(index);
         }
-        *next = index.checked_add(1).ok_or_else(|| {
-            // (O-capacity): the target field cannot encode a value outside its width.
-            CodecError::NotImplemented(
-                "SLDPRT configuration source index space is exhausted".into(),
-            )
-        })?;
+        *next = index
+            .checked_add(1)
+            .ok_or(write_error::WriteError::Capacity {
+                field: &CONFIGURATION_INDEX_CAPACITY,
+                value: u64::from(u32::MAX) + 1,
+            })?;
     }
 }
 
