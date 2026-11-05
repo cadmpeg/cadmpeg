@@ -40,25 +40,6 @@ pub(crate) fn plan(
         )?;
     }
     match resolved.target() {
-        ResolvedTarget::Preserved { .. } => match replay_bytes(input)? {
-            Replay::Replayed { bytes } => Ok(replayed_body(input.ir, bytes)),
-            Replay::Declined(reason) => {
-                let synthesis = resolved.for_synthesis().map_err(|error| match error {
-                    cadmpeg_ir::codec::write::EncodeError::UnsupportedTarget(refusal) => {
-                        CodecError::UnsupportedTarget(refusal)
-                    }
-                    error => CodecError::malformed(error.to_string()),
-                })?;
-                let version = crate::IgesVersion::ALL[synthesis.index()];
-                let mut body =
-                    synthesized_body(input, version, SynthesisCause::ReplayDeclined(reason))?;
-                if let Some(message) = synthesis.resolution().displacement_message() {
-                    body.losses
-                        .push(IgesLossCode::SourceDialectDisplaced.note(message));
-                }
-                Ok(body)
-            }
-        },
         ResolvedTarget::Explicit { index, .. }
         | ResolvedTarget::Inherited { index, .. }
         | ResolvedTarget::Default { index, .. } => {
