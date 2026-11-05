@@ -140,3 +140,65 @@ fn a_site_whose_deltas_stream_scans_scans_every_deltas_stream() {
         vec![None, None]
     );
 }
+
+/// A first-use Deltas analytic node: index, node ID, five status-paired
+/// pointers, the sense character, and the raw bytes of its value fields.
+fn deltas_analytic(kind: u8, index: u16, values: &[u8]) -> Vec<u8> {
+    let mut bytes = vec![0, kind, 255];
+    bytes.extend(index.to_be_bytes());
+    bytes.extend(7u32.to_be_bytes());
+    for _ in 0..5 {
+        bytes.extend(1u16.to_be_bytes());
+        bytes.push(1);
+    }
+    bytes.push(b'+');
+    bytes.extend(values);
+    bytes
+}
+
+#[test]
+fn a_deltas_analytic_fallback_names_deltas_framed_carriers() {
+    use crate::test_support::parasolid::line_carrier;
+    use cadmpeg_parasolid::test_support::test_pmarks;
+    let line: Vec<u8> = [0.0, 0.0, 0.0, 1.0, 0.0, 0.0f64]
+        .iter()
+        .flat_map(|value| value.to_be_bytes())
+        .collect();
+    let mut plane_values = line_carrier(90, [0.0; 3], [1.0, 0.0, 0.0]);
+    plane_values.resize(9 * 8, 0);
+    let mut payload = test_pmarks::prefix(1);
+    payload.extend(deltas_analytic(30, 20, &line));
+    payload.extend(deltas_analytic(50, 20, &plane_values));
+    let payload = test_pmarks::complete(payload);
+    let header = crate::parasolid::stream_header(&payload).unwrap().unwrap();
+    let spans = node_spans(&[(&payload, &header)])
+        .pop()
+        .flatten()
+        .expect("node-read Deltas stream");
+    let analytic: Vec<u32> = spans
+        .iter()
+        .filter(|span| span.tag == 30)
+        .map(|span| span.record)
+        .collect();
+    assert_eq!(analytic, [20]);
+}
+
+#[test]
+fn a_scanned_stream_names_the_analytic_carriers_of_its_role() {
+    use crate::test_support::parasolid::{
+        line_carrier, parasolid_with_body, prefixed_line_carrier,
+    };
+    let mut body = line_carrier(90, [0.0; 3], [1.0, 0.0, 0.0]);
+    body.extend(prefixed_line_carrier(91, [0.0; 3], [0.0, 1.0, 0.0]));
+    for (description, admitted) in [("partition body", 90), ("deltas body", 91)] {
+        let payload = parasolid_with_body(description, "SCH_SW_33103_11000", &body);
+        let header = crate::parasolid::stream_header(&payload).unwrap().unwrap();
+        let stream_body = &payload[header.body_offset..];
+        let analytic: Vec<u32> = super::scanned(stream_body, &header, false)
+            .iter()
+            .filter(|span| span.tag == 0x1e)
+            .map(|span| span.record)
+            .collect();
+        assert_eq!(analytic, [admitted], "{description}");
+    }
+}

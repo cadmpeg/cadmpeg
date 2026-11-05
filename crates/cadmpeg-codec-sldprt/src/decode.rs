@@ -107,7 +107,11 @@ impl crate::SldprtCodec {
             let site = stream.site_key();
             ledgers.push(match spans {
                 Some(spans) => crate::exact_ledger::ExactReadLedger::from_raw(&site, body, spans),
-                None => crate::exact_ledger::ExactReadLedger::collect(&site, body),
+                None => crate::exact_ledger::ExactReadLedger::from_raw(
+                    &site,
+                    body,
+                    crate::brep::read_ledger::scanned(body, stream.header, false),
+                ),
             });
         }
         for (site, stream) in all_local_body_streams(&scan) {
@@ -117,7 +121,11 @@ impl crate::SldprtCodec {
                 .flatten();
             ledgers.push(match spans {
                 Some(spans) => crate::exact_ledger::ExactReadLedger::from_raw(&site, body, spans),
-                None => crate::exact_ledger::ExactReadLedger::collect_plain(&site, body),
+                None => crate::exact_ledger::ExactReadLedger::from_raw(
+                    &site,
+                    body,
+                    crate::brep::read_ledger::scanned(body, stream.header, true),
+                ),
             });
         }
         ctx.finish_session()?;

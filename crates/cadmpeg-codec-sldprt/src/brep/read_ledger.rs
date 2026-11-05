@@ -39,10 +39,11 @@ impl RawSpan {
 }
 
 /// Every exact-read span of one Parasolid stream body, ordered by offset.
-/// `plain` reads a plain stream (spec §3.3).
-pub(crate) fn collect(stream_body: &[u8], plain: bool) -> Vec<RawSpan> {
+/// `plain` reads a plain stream (spec §3.3). `Some(deltas)` selects the
+/// analytic record framing of one stream role.
+pub(crate) fn collect(stream_body: &[u8], plain: bool, role: Option<bool>) -> Vec<RawSpan> {
     let mut spans = Vec::new();
-    spans.extend(super::analytic_spans(stream_body));
+    spans.extend(super::analytic_spans(stream_body, role));
     spans.extend(super::topology::topology_spans(stream_body, plain));
     spans.extend(super::spline::spline_spans(stream_body));
     spans.sort_by(|left, right| {
@@ -54,6 +55,20 @@ pub(crate) fn collect(stream_body: &[u8], plain: bool) -> Vec<RawSpan> {
         ))
     });
     spans
+}
+
+/// The exact-read spans of a stream body that the decoder scans, with the
+/// analytic record framing of the stream's role.
+pub(crate) fn scanned(
+    stream_body: &[u8],
+    header: &crate::parasolid::StreamHeader,
+    plain: bool,
+) -> Vec<RawSpan> {
+    collect(
+        stream_body,
+        plain,
+        Some(super::graph::is_deltas_stream(header)),
+    )
 }
 
 /// The exact-read spans of each stream of one site, in the order of
@@ -91,14 +106,14 @@ pub(crate) fn node_spans(
                 let nodes = nodes::consistent_deltas_nodes(records, &agreement);
                 super::typed::nodes::facts_of(nodes.iter(), offset)?;
                 let tables = nodes::deltas_tables(records, payload, offset, &agreement)?;
-                Some(admitted(&nodes, body, offset, &tables))
+                Some(admitted(&nodes, body, offset, &tables, Some(true)))
             })
         } else {
             nodes::sequence(payload).and_then(|records| {
                 let tables = nodes::tables(&records, payload, offset)?;
                 super::typed::nodes::facts(&records, offset)?;
                 let nodes: Vec<_> = records.nodes().collect();
-                Some(admitted(&nodes, body, offset, &tables))
+                Some(admitted(&nodes, body, offset, &tables, None))
             })
         };
         out.push(spans);
@@ -118,12 +133,14 @@ pub(crate) fn node_spans(
 }
 
 /// The spans of the admitted topology, analytic, and spatial NURBS nodes of
-/// one stream, in offset order.
+/// one stream, in offset order. `role` is the analytic record framing the
+/// decoder scans when the analytic node reader returns no result.
 fn admitted<N: cadmpeg_parasolid::records::NodeFields>(
     nodes: &[N],
     body: &[u8],
     body_offset: usize,
     tables: &super::topology::Tables,
+    role: Option<bool>,
 ) -> Vec<RawSpan> {
     use cadmpeg_parasolid::records::node_type::{
         BSPLINE_VERTICES, B_CURVE, B_SURFACE, EDGE, FACE, FIN, KNOT_MULT, KNOT_SET, LOOP,
@@ -151,7 +168,7 @@ fn admitted<N: cadmpeg_parasolid::records::NodeFields>(
             })
             .collect(),
         None => {
-            spans.extend(super::analytic_spans(body));
+            spans.extend(super::analytic_spans(body, role));
             std::collections::HashSet::new()
         }
     };

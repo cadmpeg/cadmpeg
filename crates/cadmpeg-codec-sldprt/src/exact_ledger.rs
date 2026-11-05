@@ -71,8 +71,10 @@ pub struct ExactReadLedger {
 
 impl ExactReadLedger {
     /// Collect the scan-rule spans of one decompressed Parasolid stream body:
-    /// the records the scan admits. The body is read-only input, and
-    /// collection changes no decode state.
+    /// the records the scan admits. The body carries no stream role, so
+    /// analytic carriers of both the partition and the Deltas record framing
+    /// enter. The body is read-only input, and collection changes no decode
+    /// state.
     pub fn collect(stream: &str, body: &[u8]) -> Self {
         Self::collect_stream(stream, body, false)
     }
@@ -84,7 +86,11 @@ impl ExactReadLedger {
     }
 
     fn collect_stream(stream: &str, body: &[u8], plain: bool) -> Self {
-        Self::from_raw(stream, body, crate::brep::read_ledger::collect(body, plain))
+        Self::from_raw(
+            stream,
+            body,
+            crate::brep::read_ledger::collect(body, plain, None),
+        )
     }
 
     /// The ledger of `body` over the body-relative spans `raw`.
