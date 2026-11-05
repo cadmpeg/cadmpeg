@@ -2477,7 +2477,8 @@ fn decode_sketch_points_with_parts(
             .map_err(CodecError::Malformed)
         };
         let point = if let Some((ctx, output, source)) = parts.as_mut() {
-            sketch_frame_part(ctx, output, *source, stream, frame.start..frame.end, parse)?.flatten()
+            sketch_frame_part(ctx, output, *source, stream, frame.start..frame.end, parse)?
+                .flatten()
         } else {
             parse()?
         };
@@ -2513,7 +2514,10 @@ pub(crate) fn decode_sketch_points(
             .entry_view(&entry.name)
             .ok_or_else(|| CodecError::malformed("F3D sketch stream has no source view"))?;
         out.extend(decode_sketch_points_with_parts(
-            bytes, &meta, &entry.name, Some((ctx, output, source)),
+            bytes,
+            &meta,
+            &entry.name,
+            Some((ctx, output, source)),
         )?);
     }
     Ok(out)
@@ -2626,10 +2630,24 @@ const SKETCH_TEXT_TYPE_GUIDS: [&str; 2] = [
 
 /// Decode sketch-text records carrying persistent identities, font metrics,
 /// UTF-16 content, and an owning-sketch reference.
+#[cfg(test)]
 fn decode_sketch_texts_from_stream(
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
     stream: &str,
+) -> Result<Vec<SketchText>, CodecError> {
+    decode_sketch_texts_with_parts(bytes, meta, stream, None)
+}
+
+fn decode_sketch_texts_with_parts(
+    bytes: &[u8],
+    meta: &crate::metastream::MetaStream,
+    stream: &str,
+    mut parts: Option<(
+        &cadmpeg_core::decode::DecodeContext<'_>,
+        &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
+        View<'_>,
+    )>,
 ) -> Result<Vec<SketchText>, CodecError> {
     let mut out = Vec::new();
     let Ok(frames) = design_primary_frames(bytes, meta) else {
@@ -2649,14 +2667,28 @@ fn decode_sketch_texts_from_stream(
             .map_err(|_| CodecError::Malformed("F3D sketch-text entity ID exceeds u32".into()))?;
         let class_tag = frame.class_tag;
         let payload = &bytes[frame.start..frame.end];
-        if let Some(text) = decode_sketch_text_record(
-            payload,
-            stream,
-            class_tag,
-            frame.design_type.version,
-            record_index,
-            frame.start,
-        )? {
+        let parse = || {
+            decode_sketch_text_record(
+                payload,
+                stream,
+                class_tag,
+                frame.design_type.version,
+                record_index,
+                frame.start,
+            )
+        };
+        let text = if let Some((ctx, output, source)) = parts.as_mut() {
+            sketch_frame_part(ctx, output, *source, stream, frame.start..frame.end, || {
+                parse()?.ok_or_else(|| {
+                    CodecError::malformed(format_args!(
+                        "F3D sketch text {record_index} has an invalid member sequence"
+                    ))
+                })
+            })?
+        } else {
+            parse()?
+        };
+        if let Some(text) = text {
             out.push(text);
         }
     }
@@ -2665,8 +2697,32 @@ fn decode_sketch_texts_from_stream(
 
 /// Decode sketch-text records carrying persistent identities, font metrics,
 /// UTF-16 content, and an owning-sketch reference.
-pub(crate) fn decode_sketch_texts(scan: &ContainerScan) -> Result<Vec<SketchText>, CodecError> {
-    decode_sketch_streams(scan, decode_sketch_texts_from_stream)
+pub(crate) fn decode_sketch_texts(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    output: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
+    scan: &ContainerScan,
+) -> Result<Vec<SketchText>, CodecError> {
+    let mut out = Vec::new();
+    for entry in scan
+        .entries
+        .iter()
+        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
+    {
+        let bytes = scan.entry_bytes(&entry.name)?;
+        let Some(meta) = metadata_for_bulk_stream(scan, &entry.name)? else {
+            continue;
+        };
+        let source = scan
+            .entry_view(&entry.name)
+            .ok_or_else(|| CodecError::malformed("F3D sketch stream has no source view"))?;
+        out.extend(decode_sketch_texts_with_parts(
+            bytes,
+            &meta,
+            &entry.name,
+            Some((ctx, output, source)),
+        )?);
+    }
+    Ok(out)
 }
 
 /// Whether a sketch-text record carries one of the two parameter-reference
