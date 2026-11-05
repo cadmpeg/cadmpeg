@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact work-plane, work-axis and joint-origin frames.
 
+use crate::metastream::PrimaryFrames;
 use cadmpeg_core::decode::u64_from_index;
 
 use super::shared_frames::exact_indexed_header_at;
 use super::shared_frames::marked_record_reference;
 use crate::bytes::{f64s_at, finite_reals_at};
-use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::layout::joint_origin_legacy_class_337_266_frame as joint_origin_class_337_266;
 use crate::layout::work_axis_direct_carrier_class_297 as work_axis_297;
 use crate::layout::work_axis_direct_carrier_class_335 as work_axis_335;
@@ -37,7 +37,7 @@ pub(super) struct ScopePlacementFrame {
 
 pub(super) fn exact_work_plane_frame(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
 ) -> Option<ScopePlacementFrame> {
     let mut candidate = None;
@@ -251,7 +251,7 @@ pub(super) fn exact_work_plane_frame(
 
 pub(super) fn exact_work_axis_construction(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
 ) -> Option<DesignWorkAxisConstruction> {
     if scope.kind() != scope::DesignFeatureKind::WorkAxis {
@@ -263,7 +263,7 @@ pub(super) fn exact_work_axis_construction(
 
 fn exact_two_point_work_axis_construction(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
 ) -> Option<DesignWorkAxisConstruction> {
     let [axis_record_index, _, first_point_record_index, _, second_point_record_index] =
@@ -338,7 +338,7 @@ fn exact_two_point_work_axis_construction(
 
 fn exact_direct_work_axis_construction(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
 ) -> Option<DesignWorkAxisConstruction> {
     let [carrier_record_index, support_record_index] = scope.reference_members().values_array()?;
@@ -450,7 +450,7 @@ fn exact_direct_work_axis_construction(
 
 pub(super) fn exact_joint_origin_frame(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
 ) -> Option<ScopePlacementFrame> {
     if scope.kind() != scope::DesignFeatureKind::JointOrigin

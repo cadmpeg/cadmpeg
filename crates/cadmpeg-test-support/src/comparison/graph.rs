@@ -39,6 +39,10 @@ impl Document {
                         append_document_metadata(&mut records, rows, removed)?;
                         continue;
                     }
+                    if namespace == "sldprt" && arena == "feature_input_lanes" {
+                        append_sketch_carriers(&mut records, rows, removed)?;
+                        continue;
+                    }
                     append(
                         &mut records,
                         &format!("native/{namespace}/{arena}"),
@@ -86,6 +90,72 @@ impl Document {
             }
         }
     }
+}
+
+fn append_sketch_carriers(
+    records: &mut Vec<Record>,
+    rows: &Value,
+    removed: &BTreeSet<String>,
+) -> Result<(), String> {
+    let mut lanes = rows.clone();
+    let lanes = lanes
+        .as_array_mut()
+        .ok_or("native/sldprt/feature_input_lanes is not an arena array")?;
+    for lane in lanes.iter_mut() {
+        let lane = lane
+            .as_object_mut()
+            .ok_or("native/sldprt/feature_input_lanes has a non-object record")?;
+        if lane
+            .get("id")
+            .and_then(Value::as_str)
+            .is_some_and(|id| removed.contains(id))
+        {
+            continue;
+        }
+        let Some(carriers) = lane.get_mut("nested_sketch_carriers") else {
+            continue;
+        };
+        for carrier in carriers
+            .as_array_mut()
+            .ok_or("nested_sketch_carriers is not an array")?
+        {
+            let carrier = carrier
+                .as_object_mut()
+                .ok_or("nested sketch carrier is not an object")?;
+            for field in ["points", "curves"] {
+                let Some(children) = carrier.get_mut(field) else {
+                    continue;
+                };
+                let identities = children
+                    .as_array()
+                    .ok_or_else(|| format!("nested sketch carrier {field} is not an array"))?
+                    .iter()
+                    .map(|child| {
+                        child
+                            .get("id")
+                            .and_then(Value::as_str)
+                            .map(|id| Value::String(id.to_owned()))
+                            .ok_or_else(|| {
+                                format!("nested sketch carrier {field} has a record without an id")
+                            })
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                append(
+                    records,
+                    &format!("native/sldprt/feature_input_lanes/nested_sketch_carriers/{field}"),
+                    children,
+                    removed,
+                )?;
+                *children = Value::Array(identities);
+            }
+        }
+    }
+    append(
+        records,
+        "native/sldprt/feature_input_lanes",
+        &Value::Array(std::mem::take(lanes)),
+        removed,
+    )
 }
 
 fn append_document_metadata(

@@ -4278,7 +4278,7 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let Some(records) = crate::design::decode::sketch::cached_borrowed_record_offsets(
+        let Some(records) = crate::design::decode::meta::cached_borrowed_primary_frames(
             &mut record_offsets,
             stream,
             bytes,

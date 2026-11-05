@@ -11,14 +11,14 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
-    target::ResolvedWrite, ArenaCoverage, EncodeError, EncodeInput, ExportBody, PatchConsumption,
+    target::ResolvedWrite, ArenaCoverage, EncodeInput, ExportBody, PatchConsumption,
     WritePath,
 };
 use cadmpeg_ir::document::CadIr;
 
 pub(super) mod projection;
 
-use super::write;
+use super::write_seekable;
 use crate::native::DocumentFacts;
 
 /// What resolving a [`cadmpeg_ir::codec::write::target::TargetRequest`] against the source decided.
@@ -121,27 +121,6 @@ pub(crate) fn plan(
         } else {
             reason = Some("the retained typed document layout is unavailable".into());
         }
-    }
-    let synthesis = resolved.for_synthesis().map_err(|error| match error {
-        EncodeError::UnsupportedTarget(refusal) => CodecError::UnsupportedTarget(refusal),
-        error => CodecError::malformed(error.to_string()),
-    })?;
-    let resolved = synthesis.resolution();
-    let synthesizable = [
-        crate::dialect::FcstdDialect::Schema2,
-        crate::dialect::FcstdDialect::Schema3,
-        crate::dialect::FcstdDialect::Schema4,
-    ];
-    if !synthesizable
-        .iter()
-        .any(|known| known.id().as_str() == resolved.target_id().as_str())
-    {
-        return Err(CodecError::UnsupportedTarget(Box::new(
-            cadmpeg_core::target::TargetRefusal::unknown_explicit(
-                resolved.target_id().as_str(),
-                cadmpeg_core::target::TargetCatalog::new(crate::dialect::TARGETS, Some(0)),
-            ),
-        )));
     }
     let schema = if *resolved.target_id() == crate::dialect::FcstdDialect::Schema2.id() {
         "2"
@@ -250,8 +229,9 @@ fn admit_unedited(
 /// [`admit_unedited`] admits only an unedited document; the fingerprint
 /// selects layout only.
 fn finish(resolution: &Resolution<'_>) -> Result<ExportBody, CodecError> {
-    let mut bytes = Vec::new();
-    let outcome = write(&mut bytes, resolution)?;
+    let mut output = std::io::Cursor::new(Vec::new());
+    let outcome = write_seekable(&mut output, resolution)?;
+    let bytes = output.into_inner();
     Ok(ExportBody {
         bytes,
         census: outcome.census,

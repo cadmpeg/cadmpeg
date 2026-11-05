@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+use crate::metastream::PrimaryFrames;
 use cadmpeg_core::decode::u64_from_index;
 
 use crate::design::decode::operands::bind_lost_edge_groups;
@@ -9,7 +10,7 @@ fn parse_entity_selection_operand(
     ordinal: u32,
     header: &DesignRecordHeader,
 ) -> Option<crate::records::topology::entity_selection::DesignEntitySelectionOperand> {
-    let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
+    let records = crate::design::test_support::test_primary_frames(bytes);
     crate::design::decode::operands::parse_entity_selection_operand(
         bytes, &records, group, ordinal, header,
     )
@@ -22,7 +23,7 @@ fn parse_sketch_profile(
     header: &DesignRecordHeader,
     entities: &[DesignEntityHeader],
 ) -> Option<crate::records::topology::sketch_profile::DesignSketchProfileOperand> {
-    let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
+    let records = crate::design::test_support::test_primary_frames(bytes);
     crate::design::decode::operands::parse_sketch_profile(
         bytes, &records, stream, ordinal, header, entities,
     )
@@ -32,7 +33,7 @@ fn parse_sketch_profile_region_selection(
     index: u32,
     paired: usize,
 ) -> Option<crate::records::topology::sketch_profile::DesignSketchProfileRegionSelection> {
-    let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
+    let records = crate::design::test_support::test_primary_frames(bytes);
     crate::design::decode::operands::parse_sketch_profile_region_selection(
         bytes, &records, index, paired,
     )
@@ -323,7 +324,7 @@ fn sketch_profile_resolves_a_leading_zero_entity_suffix() {
 #[test]
 fn generated_base_flange_profile_frame_resolves() {
     let (bytes, _) = crate::test_support::streams_test::generated_design_base_flange_bulkstream();
-    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let records = crate::design::test_support::test_primary_frames(&bytes);
     let profile_offset = records
         .offsets(1501)
         .first()
