@@ -250,13 +250,6 @@ pub(super) fn encode_design_bulkstream(
             target,
             assignment,
         )? {
-            losses.push(
-                crate::loss::F3dLossCode::WriterNativeRecordsOmitted.note(format!(
-                    "material assignment {} has no complete registered body presentation",
-                    assignment.id
-                )),
-            );
-        } else {
             if let Some(binding) = target.model.appearance_bindings.iter().find(|binding| {
                 binding.source_entity_id.as_deref() == Some(assignment.entity_id.as_str())
             }) {
@@ -265,6 +258,13 @@ pub(super) fn encode_design_bulkstream(
             losses.push(
                 cadmpeg_ir::codec::write::ExportLossCode::RecordResidualUnavailable.note(format!(
                     "material assignment {}: the physical asset identity is generated",
+                    assignment.id
+                )),
+            );
+        } else {
+            losses.push(
+                crate::loss::F3dLossCode::WriterNativeRecordsOmitted.note(format!(
+                    "material assignment {} has no complete registered body presentation",
                     assignment.id
                 )),
             );
