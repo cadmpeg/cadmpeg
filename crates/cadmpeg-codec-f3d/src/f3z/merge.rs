@@ -625,7 +625,7 @@ enum JointRebind {
 /// Complete the operand descent of the joints that bind after decode in a
 /// standalone document and bind their features. The document has no merged
 /// members, so a path that continues below an external placement does not
-/// complete: its joint is refused and its feature stays native.
+/// complete: its joint keeps its decoded operand and its feature stays native.
 pub(crate) fn bind_standalone_joints(
     ctx: &DecodeContext<'_>,
     ir: &mut cadmpeg_ir::CadIr,
@@ -787,14 +787,29 @@ fn rebind_joints(
         .map(|occurrence| &occurrence.id)
         .collect::<std::collections::BTreeSet<_>>();
     let mut refused = std::collections::BTreeSet::new();
+    let mut unresolved_scopes = std::collections::BTreeSet::new();
     for joint in model.joints.iter_mut() {
         let joint_id = joint.id.clone();
-        if joint
+        if let Some(scope) = joint
             .native_ref
-            .as_ref()
-            .is_some_and(|id| complete_scopes.contains(id))
+            .clone()
+            .filter(|id| complete_scopes.contains(id))
         {
-            if !retain_complete_joint(joint, complete_children, &instances, losses) {
+            if mode == JointRebind::CompleteScopes {
+                // A standalone document keeps a readable joint whose descent
+                // continues below an unmerged placement, with its operand as
+                // decoded; its feature stays native.
+                let mut descended = joint.clone();
+                if complete_joint_descent(&mut descended, complete_children, &instances) {
+                    *joint = descended;
+                } else {
+                    losses.push(F3dLossCode::AssemblyOperandDescentUnresolved.note(format!(
+                        "joint {}: the complete occurrence path continues below an unmerged placement; the joint keeps its decoded operand and its feature stays native",
+                        joint.id
+                    )));
+                    unresolved_scopes.insert(scope);
+                }
+            } else if !retain_complete_joint(joint, complete_children, &instances, losses) {
                 refused.insert(joint_id.clone());
             }
             continue;
@@ -845,7 +860,11 @@ fn rebind_joints(
         }
     }
     model.joints.retain(|joint| !refused.contains(&joint.id));
-    bind_retained_joint_features(model.features, model.joints, complete_scopes);
+    let bindable = complete_scopes
+        .difference(&unresolved_scopes)
+        .cloned()
+        .collect::<std::collections::BTreeSet<_>>();
+    bind_retained_joint_features(model.features, model.joints, &bindable);
 }
 
 /// Bind the features of joints that survived complete descent. A refused joint

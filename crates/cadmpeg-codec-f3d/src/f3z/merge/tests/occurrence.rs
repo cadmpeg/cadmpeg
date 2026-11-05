@@ -1644,10 +1644,11 @@ fn standalone_joint_of_a_complete_scope_binds_its_feature() {
 }
 
 #[test]
-fn standalone_joint_below_an_unmerged_placement_is_refused() {
+fn standalone_joint_below_an_unmerged_placement_keeps_its_decoded_operand() {
     use cadmpeg_ir::features::FeatureOperation;
     let (mut model, _) =
         standalone_joint_model(vec!["ffffffff-bbbb-4ccc-8ddd-eeeeeeeeeeee".into()]);
+    let decoded = model.assembly_joints.clone();
     let complete = std::collections::BTreeSet::from(["f3d:scope#standalone".to_owned()]);
     let children = std::collections::BTreeMap::new();
     let mut losses = Vec::new();
@@ -1663,7 +1664,7 @@ fn standalone_joint_below_an_unmerged_placement_is_refused() {
         super::super::JointRebind::CompleteScopes,
         &mut losses,
     );
-    assert!(model.assembly_joints.is_empty());
+    assert_eq!(model.assembly_joints, decoded);
     assert_eq!(losses.len(), 1);
     assert_eq!(
         losses[0].code,
