@@ -474,3 +474,42 @@ fn cross_mode_skips_the_native_namespaces() {
     let after = json!({"model":{},"native":{"iges":{"tables":[]}}});
     assert!(agree(&before, &after, &Allowances::default(), cross(&[])).is_ok());
 }
+
+#[test]
+fn retained_stub_reference_keeps_its_native_record_paired() {
+    let document = json!({"model": {}, "native": {"sldprt": {
+        "unknowns": [{"id": "stub"}],
+        "pmi_dimensions": [{"id": "dimension", "parent": "stub", "value": 0.025}]
+    }}});
+    let allowances = Allowances::export(&document, &json!({})).unwrap();
+    assert!(allowances
+        .removed_field_ids()
+        .contains(&("dimension".into(), "parent".into())));
+    assert!(
+        super::unpaired_after_allowances(&document, &document, &allowances)
+            .unwrap()
+            .is_empty()
+    );
+    let changed = json!({"model": {}, "native": {"sldprt": {
+        "unknowns": [{"id": "stub"}],
+        "pmi_dimensions": [{"id": "dimension", "parent": "different", "value": 0.025}]
+    }}});
+    assert!(agree(&document, &changed, &allowances, Mode::Same).is_err());
+}
+
+#[test]
+fn a_removed_stub_does_not_unpair_a_different_retained_reference() {
+    let before = json!({"model": {}, "native": {"sldprt": {
+        "unknowns": [{"id": "retained"}, {"id": "removed"}],
+        "pmi_dimensions": [{"id": "dimension", "parent": "retained", "value": 0.025}]
+    }}});
+    let after = json!({"model": {}, "native": {"sldprt": {
+        "unknowns": [{"id": "retained"}],
+        "pmi_dimensions": [{"id": "dimension", "parent": "retained", "value": 0.025}]
+    }}});
+    let allowances = Allowances::export(&before, &json!({})).unwrap();
+    assert_eq!(
+        super::unpaired_after_allowances(&before, &after, &allowances).unwrap(),
+        BTreeSet::from(["removed".to_owned()])
+    );
+}
