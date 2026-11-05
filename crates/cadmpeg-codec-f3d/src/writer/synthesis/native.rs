@@ -409,6 +409,7 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
         .retain(|header| reachable.contains(&header.record_index));
     // These native lanes select identities or add native-only display facts.
     // Geometry and visibility values are always authored from the neutral model.
+    super::design::reconcile_body_tags(target, &mut native);
     super::body_keys::reconcile(target, &mut native)?;
     native.body_native_keys.retain(|record| {
         target

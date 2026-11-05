@@ -382,14 +382,16 @@ fn walk_paths(value: &Value, prefix: &mut String, paths: &mut BTreeSet<String>) 
 }
 
 /// Observed carried sets of decoded documents: arenas and paths from JSON,
-/// variants from JSON through the registry.
+/// variants from JSON through the CADIR schema and registry.
 #[must_use]
 pub fn observe_carried(documents: &[Value]) -> Carried {
     let mut carried = Carried::default();
     for document in documents {
         carried.arenas.extend(observe_arenas(document));
         carried.paths.extend(observe_paths(document));
-        carried.variants.extend(json_variants(document));
+        carried
+            .variants
+            .extend(crate::cross_closure::typed_variants::document(document));
     }
     carried
 }
@@ -432,6 +434,47 @@ pub fn crate_scan(scan_json: &str) -> CrateScan {
 mod tests {
     use super::{ambiguity_sample, json_variants, observe_arenas, observe_paths};
     use serde_json::json;
+
+    #[test]
+    fn observation_attributes_a_tag_to_its_actual_enum() {
+        let document = json!({"model": {"drawings": [
+            {"id": "test:model:drawing#1", "kind": "dimension", "runtime_type": "view"}
+        ]}});
+        let observed = super::observe_carried(&[document]);
+        assert!(
+            observed.variants.contains("DrawingKind::Dimension"),
+            "{:?}",
+            observed.variants
+        );
+        assert!(
+            !observed
+                .variants
+                .contains("SemanticAnnotationKind::Dimension"),
+            "{:?}",
+            observed.variants
+        );
+        assert!(
+            !observed.variants.contains("DrawingKind::View"),
+            "{:?}",
+            observed.variants
+        );
+    }
+
+    #[test]
+    fn observation_recognizes_variants_in_a_complete_document() {
+        let document = serde_json::to_value(cadmpeg_ir::examples::unit_cube().unwrap()).unwrap();
+        let observed = super::observe_carried(&[document]);
+        assert!(
+            observed.variants.contains("BodyKind::Solid"),
+            "{:?}",
+            observed.variants
+        );
+        assert!(
+            observed.variants.contains("Sense::Forward"),
+            "{:?}",
+            observed.variants
+        );
+    }
 
     #[test]
     fn registry_reads_all_three_tag_styles() {
