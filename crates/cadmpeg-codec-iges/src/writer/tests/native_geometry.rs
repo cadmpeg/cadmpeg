@@ -118,3 +118,34 @@ fn canonical_type_108_plane_retains_its_directory_fields() {
         after.ir().model.surfaces[0].geometry
     );
 }
+
+#[test]
+fn native_level_definition_keeps_its_directory_order_and_pointer() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use std::io::Cursor;
+    let harness =
+        cadmpeg_test_support::golden::Harness::new(env!("CARGO_MANIFEST_DIR"), "igs", "unused");
+    let (_, bytes) = harness
+        .fixture_inputs()
+        .into_iter()
+        .find(|(name, _)| name == "definition_levels")
+        .unwrap();
+    let decoded = crate::IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let output = crate::writer::synthesize(decoded.ir(), crate::IgesVersion::V5_3).unwrap();
+    let after = crate::IgesCodec
+        .decode(&mut Cursor::new(output.bytes), &DecodeOptions::default())
+        .unwrap();
+    let native = after.ir().native.namespace("iges").unwrap();
+    let definition = &native.arenas()["definition_levels"][0];
+    assert_eq!(
+        definition.field("source_entity").unwrap(),
+        json!("iges:entity:directory#1")
+    );
+    let display = native.arenas()["display_attributes"]
+        .iter()
+        .find(|record| record.field("source_entity") == Some(json!("iges:entity:directory#3")))
+        .unwrap();
+    assert_eq!(display.field("level_definition").unwrap(), definition.id());
+}

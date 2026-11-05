@@ -3971,24 +3971,25 @@ fn project_mesh_bodies(
     }
     let mut bodies = Vec::new();
     let mut untyped = false;
+    let mut unresolved = std::collections::BTreeMap::new();
     for outcome in decoded.outcomes {
-        untyped |= matches!(
-            &outcome,
-            crate::design::decode::mesh::MeshContainerOutcome::Unjoined { .. }
-        );
         match outcome {
             crate::design::decode::mesh::MeshContainerOutcome::Joined(body) => bodies.push(body),
-            crate::design::decode::mesh::MeshContainerOutcome::Unjoined { entry_name } => push_loss_vec(
-                &mut report.losses, F3dLossCode::MeshContainerUnjoined,
-                format_args!("mesh geometry container `{entry_name}` decoded but has no complete Design body join"),
-            ),
+            crate::design::decode::mesh::MeshContainerOutcome::Unjoined { entry_name, container } => {
+                let (record, has_untyped) = unjoined_mesh_container(ctx, &entry_name, container, &mut unresolved)?;
+                untyped |= has_untyped;
+                native.mesh_containers.push(record);
+                push_loss_vec(
+                    &mut report.losses, F3dLossCode::MeshContainerUnjoined,
+                    format_args!("mesh geometry container `{entry_name}` decoded but has no complete Design body join"),
+                );
+            },
             crate::design::decode::mesh::MeshContainerOutcome::Missing { entry_name } => push_loss_vec(
                 &mut report.losses, F3dLossCode::MeshContainerMissing,
                 format_args!("Design mesh body names `{entry_name}`, but no unique geometry container joined it"),
             ),
         }
     }
-    let mut unresolved = std::collections::BTreeMap::new();
     let mut projection = MeshProjection {
         count: bodies.len(),
         untyped,
@@ -4070,6 +4071,96 @@ fn project_mesh_bodies(
     projection.untyped |= !unresolved.is_empty();
     report_unresolved_mesh_attributes(report, &unresolved);
     Ok((projection, part_fidelity))
+}
+
+fn unjoined_mesh_container(
+    ctx: &DecodeContext<'_>,
+    entry_name: &str,
+    container: crate::paramesh::MeshContainer,
+    unresolved: &mut std::collections::BTreeMap<crate::paramesh::MeshAttributeDomain, usize>,
+) -> Result<(crate::records::mesh_container::MeshContainerRecord, bool), CodecError> {
+    use crate::paramesh::MeshAttributeAddressing;
+    use crate::records::mesh_container::{
+        MeshContainerAddressing, MeshContainerAttribute, MeshContainerRecord, MeshContainerValues,
+    };
+    let mut attributes = ctx.alloc_filled(
+        container.attributes.len(),
+        MeshContainerAttribute {
+            resource_guid: None,
+            authored_name: None,
+            groups: Vec::new(),
+            values: MeshContainerValues::Untyped {
+                role: 0,
+                element_code: 0,
+                addressing: MeshContainerAddressing::Vertex,
+            },
+        },
+        "retain F3D mesh container attributes",
+    )?;
+    let mut untyped = false;
+    for (slot, attribute) in attributes.iter_mut().zip(&container.attributes) {
+        let mut channels = mesh_attribute_channels(
+            std::slice::from_ref(attribute),
+            container.vertices.len(),
+            &container.triangles,
+            unresolved,
+        )?;
+        let channel = channels.pop();
+        untyped |= channel.is_none();
+        let values = match channel {
+            Some(channel) => MeshContainerValues::Typed { channel },
+            None => {
+                let addressing = match &attribute.addressing {
+                    MeshAttributeAddressing::Vertex => MeshContainerAddressing::Vertex,
+                    MeshAttributeAddressing::Corner(positions) => MeshContainerAddressing::Corner {
+                        positions: positions.clone(),
+                    },
+                    MeshAttributeAddressing::UndecodedCorner => {
+                        MeshContainerAddressing::UndecodedCorner
+                    }
+                    MeshAttributeAddressing::Triangle => MeshContainerAddressing::Triangle,
+                };
+                MeshContainerValues::Untyped {
+                    role: attribute.role,
+                    element_code: attribute.element_code(),
+                    addressing,
+                }
+            }
+        };
+        *slot = MeshContainerAttribute {
+            resource_guid: attribute.resource_guid.clone(),
+            authored_name: attribute.authored_name.clone(),
+            groups: attribute.groups.to_vec(),
+            values,
+        };
+    }
+    let mut triangle_groups = ctx.alloc_filled(
+        container.triangle_groups.len(),
+        cadmpeg_ir::tessellation::TessellationTriangleGroup {
+            source_id: None,
+            triangles: Vec::new(),
+        },
+        "retain F3D mesh container groups",
+    )?;
+    for (slot, group) in triangle_groups.iter_mut().zip(container.triangle_groups) {
+        slot.source_id = Some(group.source_id);
+        slot.triangles = group.triangles;
+    }
+    Ok((
+        MeshContainerRecord {
+            id: crate::ids::native_scoped_id(entry_name, "mesh-container", 0),
+            fusion_uuid: container.fusion_uuid,
+            mesh_uuid: container.mesh_uuid,
+            container_vertices: container.vertices,
+            triangles: container.triangles,
+            feature_edges: container.feature_edges,
+            container_corner_normals: container.corner_normals,
+            triangle_groups,
+            texture_ids: container.texture_ids,
+            attributes,
+        },
+        untyped,
+    ))
 }
 
 /// Resolve one-based `tid` values through a Design texture table. Zero leaves
@@ -4680,11 +4771,13 @@ fn decode_result(
             .iter()
             .enumerate()
             .filter(|(_, part)| {
-                scan.belongs_to_design_asset(&part.name)
+                (scan.belongs_to_design_asset(&part.name)
                     && matches!(
                         crate::container::classify(&part.name),
                         ContainerRole::BrepSmbh | ContainerRole::BrepSmb | ContainerRole::BrepText
-                    )
+                    ))
+                    || (part.name == "ZIP local entry"
+                        && part.diagnostic == "truncated ZIP local entry header")
             });
         if let Some((ordinal, _)) = candidates.next().filter(|_| candidates.next().is_none()) {
             ir.tolerances.linear = None;
