@@ -1765,7 +1765,6 @@ fn detect_incomplete_sections(
                         && tail
                             .iter()
                             .all(|byte| byte.is_ascii_graphic() || *byte == b' ' || *byte == b'\t')
-                        && tail.iter().filter(|&&byte| byte == 0).count() < count as usize
                     {
                         truncated_strings = true;
                     }
