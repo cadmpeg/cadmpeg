@@ -413,7 +413,7 @@ mod tests {
         let dangling = standard_injections()
             .into_iter()
             .find(|injection| injection.name == "dangling-reference")
-            .unwrap();
+            .expect("dangling-reference injection exists");
         assert_eq!((dangling.inject)(&mut document), Some("edge#0".into()));
         assert_eq!(
             document["model"]["attributes"][0]["values"][0][0]["value"],
