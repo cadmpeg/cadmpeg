@@ -237,3 +237,28 @@ fn every_relation_checks_its_geometric_operand_slots_for_native_helpers() -> Tes
     }
     Ok(())
 }
+
+#[test]
+fn a_polygon_control_relation_must_name_one_vertex_point_twice() -> TestResult {
+    let null_reference = PmDcReference::from_packed(0);
+    let other_reference = PmDcReference::from_packed(0x8000_0002);
+    for (second, expected) in [(null_reference, false), (other_reference, true)] {
+        let mut wire = serde_json::to_value(crate::test_support::sketch_curves::spline_midpoint())?;
+        wire["header"]["content"]["context"] = serde_json::json!(null_reference);
+        wire["header"]["group"] = serde_json::json!(null_reference);
+        wire["kind"] = serde_json::json!({"form": "polygon_control", "value": 7,
+            "reference": null_reference, "vertex": [null_reference, second],
+            "position": [0.0, 0.0], "flags": "000001"});
+        wire["type_id"] = serde_json::json!("845c3bbfd2112ae960004bb38932edb0");
+        let source: crate::sketch::PmDcSketchConstraint = serde_json::from_value(wire)?;
+        let mut data = empty_data();
+        data.pm_dc_sketch_constraints.push(source);
+        let mut findings = Vec::new();
+        super::super::validate_sketches(&data, &cadmpeg_ir::CadIr::empty(), &mut findings);
+        let unequal = findings
+            .iter()
+            .any(|finding| finding.message.contains("two different vertex points"));
+        assert_eq!(unequal, expected, "{findings:?}");
+    }
+    Ok(())
+}
