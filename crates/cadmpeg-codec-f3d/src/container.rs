@@ -232,11 +232,6 @@ impl F3dContainerKind {
     }
 }
 
-/// The full result of reading a Fusion ZIP: the entry list plus decoded BREP
-/// facts. Shared by `inspect` and `decode`.
-///
-/// The `'a` lifetime is the session's root address space: stored entries are
-/// views borrowing the root without copying, and compressed entries are arena-backed views the
 /// An archive entry that could not be opened, with its stored byte span.
 /// Decode gives up each entry as a `zip.entry` part.
 #[derive(Debug, Clone)]
@@ -249,10 +244,15 @@ pub(crate) struct UnreadableEntryPart {
     pub diagnostic: String,
 }
 
-/// platform expander produced, so both live for the decode's duration.
+/// The scanned Fusion ZIP and its decoded BREP facts.
+/// Stored entries borrow the root; expanded entries borrow the decode arena.
 pub(crate) struct ContainerScan<'a> {
     /// Complete source archive retained for byte-exact native replay.
     pub(crate) source_image: &'a [u8],
+    /// Source archive view in its decode space.
+    pub(crate) source_view: View<'a>,
+    /// Name of the containing stream for an embedded archive.
+    pub(crate) source_stream: Option<cadmpeg_ir::StreamName>,
     /// Enumerated entries with classification.
     pub(crate) entries: Vec<ContainerEntry>,
     /// Directory lengths retained for archive-session member listing.
@@ -303,6 +303,8 @@ impl<'a> ContainerScan<'a> {
     pub(crate) fn fork(&self) -> Self {
         Self {
             source_image: self.source_image,
+            source_view: self.source_view,
+            source_stream: self.source_stream.clone(),
             entries: self.entries.clone(),
             archive_member_sizes: self.archive_member_sizes.clone(),
             breps: self.breps.clone(),
@@ -499,6 +501,28 @@ pub(crate) fn scan<'a>(
     let mut breps = Vec::new();
     let mut inflated_entries = BTreeMap::new();
     let mut unreadable_entries = Vec::new();
+    if let Some(range) = archive.recovery_tail() {
+        let start = usize::try_from(range.start).map_err(CodecError::malformed)?;
+        let end = usize::try_from(range.end).map_err(CodecError::malformed)?;
+        let start = root
+            .start()
+            .checked_add(start)
+            .ok_or_else(|| CodecError::malformed("ZIP tail start overflows"))?;
+        let end = root
+            .start()
+            .checked_add(end)
+            .ok_or_else(|| CodecError::malformed("ZIP tail end overflows"))?;
+        if root
+            .child(start, end)
+            .is_some_and(|tail| tail.window().starts_with(b"PK\x03\x04"))
+        {
+            unreadable_entries.push(UnreadableEntryPart {
+                name: "ZIP local entry".to_owned(),
+                range,
+                diagnostic: "truncated ZIP local entry header".to_owned(),
+            });
+        }
+    }
 
     for file in archive.entries() {
         let name = file.name.clone();
@@ -715,6 +739,8 @@ pub(crate) fn scan<'a>(
     let archive = matches!(kind, F3dContainerKind::MultiDocument { .. }).then_some(archive);
     let mut scan = ContainerScan {
         source_image,
+        source_view: root,
+        source_stream: None,
         entries,
         archive_member_sizes,
         breps,
