@@ -24,12 +24,15 @@ struct Blend {
     edge: i64,
 }
 
+/// The boundary edges of each face whose boundary rebuilds.
+type Boundaries = HashMap<i64, HashSet<i64>>;
+
 /// Rows of both states that locate the edge a blend replaces.
 struct BlendRows<'a> {
     edges: HashMap<i64, EdgeGeometry>,
     deleted: HashSet<i64>,
-    input_boundaries: &'a HashMap<i64, HashSet<i64>>,
-    output_boundaries: &'a HashMap<i64, HashSet<i64>>,
+    input_boundaries: &'a Boundaries,
+    output_boundaries: &'a Boundaries,
     input_carriers: &'a HashMap<i64, Option<i64>>,
     input_points: HashMap<i64, Option<Point3>>,
     output_points: HashMap<i64, Option<Point3>>,
@@ -38,7 +41,33 @@ struct BlendRows<'a> {
     output_faces: HashSet<i64>,
 }
 
-impl BlendRows<'_> {
+impl<'a> BlendRows<'a> {
+    fn new(
+        transition: &AsmHistoricalTransition,
+        (input, output): (&AsmHistoricalTopology, &AsmHistoricalTopology),
+        (input_boundaries, output_boundaries): (&'a Boundaries, &'a Boundaries),
+        input_carriers: &'a HashMap<i64, Option<i64>>,
+    ) -> Self {
+        let mut owners = HashMap::<i64, Vec<i64>>::new();
+        for (face, boundary) in input_boundaries {
+            for edge in boundary {
+                owners.entry(*edge).or_default().push(*face);
+            }
+        }
+        Self {
+            edges: edge_geometry(input),
+            deleted: transition.topology.edges.deleted.iter().copied().collect(),
+            input_boundaries,
+            output_boundaries,
+            input_carriers,
+            input_points: edge_points(input),
+            output_points: edge_points(output),
+            planes: plane_rows(input),
+            owners,
+            output_faces: output.faces.iter().copied().collect(),
+        }
+    }
+
     /// The preceding edge that a cylinder blend replaces when its supports
     /// share no edge along its axis: the one edge on the preceding boundary of
     /// a support that runs along the axis, lies farther than the radius from
@@ -199,24 +228,12 @@ fn transition_blends(
             .and_modify(|radius| *radius = None)
             .or_insert(Some(row.radius));
     }
-    let mut owners = HashMap::<i64, Vec<i64>>::new();
-    for (face, boundary) in &input_boundaries {
-        for edge in boundary {
-            owners.entry(*edge).or_default().push(*face);
-        }
-    }
-    let rows = BlendRows {
-        edges: edge_geometry(input),
-        deleted: transition.topology.edges.deleted.iter().copied().collect(),
-        input_boundaries: &input_boundaries,
-        output_boundaries: &output_boundaries,
-        input_carriers: &input_carriers,
-        input_points: edge_points(input),
-        output_points: edge_points(output),
-        planes: plane_rows(input),
-        owners,
-        output_faces: output.faces.iter().copied().collect(),
-    };
+    let rows = BlendRows::new(
+        transition,
+        (input, output),
+        (&input_boundaries, &output_boundaries),
+        &input_carriers,
+    );
     let axes = cylinder_axes(output);
     let mut blends = Vec::new();
     let mut replaced = HashSet::new();

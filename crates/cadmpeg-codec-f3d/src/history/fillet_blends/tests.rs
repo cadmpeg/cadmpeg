@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use super::{bind_fillet_groups, group_edges, transition_blends, Blend};
+use super::{bind_fillet_groups, group_edges, transition_blends, Blend, BlendRows};
 use crate::history_records::{
     AsmHistoricalCarrierBinding, AsmHistoricalCoedge, AsmHistoricalCurveAxis,
     AsmHistoricalCylinder, AsmHistoricalEdgeSample, AsmHistoricalEntityDelta,
@@ -351,6 +351,29 @@ fn a_cylinder_blend_states_no_edge_that_its_other_support_does_not_reach() {
         rib_blends(&persisting, &result_13),
         None,
         "face 13 persists"
+    );
+}
+
+#[test]
+fn a_cylinder_blend_states_no_edge_whose_touching_owner_is_not_a_support() {
+    let (input, mut output) = (rib(), rib_fillet());
+    output.faces.retain(|face| *face != 10);
+    let input_boundaries = crate::history::face_boundary_edge_index(&input);
+    let output_boundaries = crate::history::face_boundary_edge_index(&output);
+    let input_carriers = crate::history::unique_face_carriers(&input);
+    let rows = BlendRows::new(
+        &transition(&[20], &[17, 18]),
+        (&input, &output),
+        (&input_boundaries, &output_boundaries),
+        &input_carriers,
+    );
+    let spine = crate::history::blend_spine::blend_spines(&output)[&120];
+    let axis = crate::history::blend_spine::cylinder_axes(&output)[&120];
+    assert_eq!(rows.rounded_edge(20, spine, axis, 1.0, &[10, 12]), Some(17));
+    assert_eq!(
+        rows.rounded_edge(20, spine, axis, 1.0, &[11, 12]),
+        None,
+        "plate top 10 touches the cylinder but is not a support; removed rib side 11 is"
     );
 }
 
