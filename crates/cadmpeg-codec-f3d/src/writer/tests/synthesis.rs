@@ -1559,3 +1559,100 @@ fn source_less_sketch_arc_survives_synthesis() {
     assert_eq!(decoded.ir().model.sketch_entities[0].geometry, geometry);
     assert!(decoded.ir().model.sketches[0].profiles.is_empty());
 }
+
+#[test]
+fn source_less_sketch_horizontal_constraint_survives_synthesis() {
+    use cadmpeg_ir::math::{Point2, Point3, Vector3};
+    use cadmpeg_ir::sketches::{
+        Sketch, SketchConstraint, SketchConstraintDefinitionInput, SketchEntity, SketchGeometry,
+        SketchGeometryDefinition, SketchPlacement, SketchProfiles,
+    };
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let sketch_id = "authored:model:sketch#1".try_into().unwrap();
+    ir.model.sketches.push(Sketch {
+        id: sketch_id,
+        name: Some("Sketch_1".into()),
+        configuration: None,
+        visible: None,
+        placement: SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: SketchProfiles::default(),
+        native_ref: None,
+    });
+    let entity = "authored:model:sketch-entity#1".try_into().unwrap();
+    ir.model.sketch_entities.push(SketchEntity::new(
+        entity,
+        ir.model.sketches[0].id.clone(),
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
+            start: Point2::new(0.0, 0.0),
+            end: Point2::new(10.0, 0.0),
+        })
+        .unwrap(),
+    ));
+    ir.model.sketch_constraints.push(SketchConstraint {
+        id: "authored:model:sketch-constraint#1".try_into().unwrap(),
+        sketch: ir.model.sketches[0].id.clone(),
+        definition: SketchConstraintDefinitionInput::Horizontal {
+            entity: ir.model.sketch_entities[0].id().clone(),
+        }
+        .try_into()
+        .unwrap(),
+        name: None,
+        driving: None,
+        active: None,
+        virtual_space: None,
+        visible: None,
+        orientation: None,
+        label_distance: None,
+        label_position: None,
+        metadata: None,
+        native_ref: None,
+    });
+    let mut bytes = Vec::new();
+    let plan = F3dCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(!plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("sketch constraint")));
+    plan.write_to(&mut bytes).unwrap();
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(decoded.ir().model.sketch_constraints.len(), 1);
+    assert!(
+        matches!(decoded.ir().model.sketch_constraints[0].definition.kind(),
+        SketchConstraintDefinitionInput::Horizontal { entity } if entity == decoded.ir().model.sketch_entities[0].id())
+    );
+    let mut edited = decoded.ir().clone();
+    edited.model.sketch_entities[0].geometry =
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
+            start: Point2::new(0.0, 0.0),
+            end: Point2::new(0.0, 10.0),
+        })
+        .unwrap();
+    edited.model.sketch_constraints[0].definition = SketchConstraintDefinitionInput::Vertical {
+        entity: edited.model.sketch_entities[0].id().clone(),
+    }
+    .try_into()
+    .unwrap();
+    let mut bytes = Vec::new();
+    F3dCodec
+        .plan(EncodeInput::new(&edited, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .unwrap();
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(decoded.ir().model.sketch_constraints.len(), 1);
+    assert!(
+        matches!(decoded.ir().model.sketch_constraints[0].definition.kind(),
+        SketchConstraintDefinitionInput::Vertical { entity } if entity == decoded.ir().model.sketch_entities[0].id())
+    );
+}
