@@ -406,6 +406,100 @@ fn surface_trim_projects_body_target_and_curve_tool() {
 }
 
 #[test]
+fn surface_trim_projects_multiple_target_and_tool_members() {
+    let (mut scope, mut target_group, mut tool_group, body) = surface_trim_fixture();
+    scope
+        .try_edit(|draft| {
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![
+                1201, 1202, 1212, 1203, 1204, 1207, 1208,
+            ]);
+            draft.layout_fixture_references();
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 128);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    target_group
+        .try_set_members(vec![
+            crate::records::identity::Located {
+                value: 1202,
+                offset: 0,
+            },
+            crate::records::identity::Located {
+                value: 1212,
+                offset: 11,
+            },
+        ])
+        .unwrap();
+    tool_group.scope_reference_ordinal = 3;
+    tool_group
+        .try_set_members(vec![
+            crate::records::identity::Located {
+                value: 1204,
+                offset: 0,
+            },
+            crate::records::identity::Located {
+                value: 1207,
+                offset: 11,
+            },
+            crate::records::identity::Located {
+                value: 1208,
+                offset: 22,
+            },
+        ])
+        .unwrap();
+    let mut second = body.clone().into_draft();
+    second.id = "f3d:Design/BulkStream.dat:body-recipe#1212".into();
+    second.owner = DesignOperandOwner::Group {
+        group_record_index: 1201,
+        group_member_ordinal: 1,
+    };
+    second.record_index = 1212;
+    second.nested_record_index = 1215;
+    second.next_record_index = 1216;
+    second.resolved_face_slot = Some(21);
+    second.resolved_body_face_slots = vec![21];
+    let bodies = [body, DesignBodyRecipeOperand::try_new(second).unwrap()];
+
+    assert!(matches!(
+        project_surface_trim(&scope, &[target_group.clone(), tool_group.clone()], &bodies),
+        Some(FeatureDefinition::Operation(FeatureOperation::TrimSurface {
+            faces: FaceSelection::Historical { ref faces, .. },
+            tool: cadmpeg_ir::features::PathRef::Native(ref tool),
+            keep: cadmpeg_ir::features::TrimRegion::Unresolved,
+        })) if faces.len() == 2 && tool == &tool_group.id
+    ));
+
+    let mut wrong_ordinal = tool_group.clone();
+    wrong_ordinal.scope_reference_ordinal = 2;
+    assert!(
+        project_surface_trim(&scope, &[target_group.clone(), wrong_ordinal], &bodies).is_none()
+    );
+
+    let mut wrong_member = target_group.clone();
+    wrong_member
+        .try_set_members(vec![
+            crate::records::identity::Located {
+                value: 1202,
+                offset: 0,
+            },
+            crate::records::identity::Located {
+                value: 1213,
+                offset: 11,
+            },
+        ])
+        .unwrap();
+    assert!(project_surface_trim(&scope, &[wrong_member, tool_group.clone()], &bodies).is_none());
+
+    assert!(project_surface_trim(
+        &scope,
+        &[target_group.clone(), tool_group.clone(), target_group],
+        &bodies,
+    )
+    .is_none());
+}
+
+#[test]
 fn surface_trim_binds_selected_cells_without_inventing_a_side() {
     let scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#1200",

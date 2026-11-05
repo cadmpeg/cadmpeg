@@ -8241,7 +8241,7 @@ fn project_replace_face(
 /// Project the source selections of a `SurfaceTrim` scope.
 ///
 /// Fusion stores the surface target as a role-`0x04` body-recipe group and
-/// the trimming path as a role-`0x21` entity-selection group. The cell table
+/// the trimming path as a role-`0x21` operand group. The cell table
 /// that selects the cells to remove is decoded separately and bound to the
 /// projected operation after the source selections have been resolved.
 fn project_surface_trim(
@@ -8252,13 +8252,11 @@ fn project_surface_trim(
     use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PathRef, TrimRegion};
 
     if scope.kind() != crate::records::feature::scope::DesignFeatureKind::SurfaceTrim
-        || scope.reference_members().len() != 4
+        || scope.reference_members().len() < 4
     {
         return None;
     }
     let stream = native_stream(&scope.id)?;
-    let references = scope.reference_members().values_array::<4>();
-    let references = references?.map(|value| *value);
     let mut groups = construction_groups.iter().filter(|group| {
         native_stream(&group.id) == Some(stream) && group.scope_record_index == scope.record_index
     });
@@ -8271,22 +8269,30 @@ fn project_surface_trim(
         } else {
             (second, first)
         };
+    let tool_ordinal = target_group.members().len().checked_add(1)?;
+    let target_members = scope.reference_members().values_in(1..tool_ordinal)?;
+    let tool_record = *scope.reference_members().values().nth(tool_ordinal)?;
+    let tool_members = scope
+        .reference_members()
+        .values_in(tool_ordinal.checked_add(1)?..scope.reference_members().len())?;
     if target_group.scope_reference_ordinal != 0
-        || target_group.record_index != references[0]
+        || target_group.record_index != *scope.reference_members().values().next()?
         || target_group.role() != DesignOperandRole::BODIES_A
+        || target_group.members().is_empty()
         || !target_group
             .members()
             .iter()
             .map(|member| member.value)
-            .eq(references[1..2].iter().copied())
-        || tool_group.scope_reference_ordinal != 2
-        || tool_group.record_index != references[2]
+            .eq(target_members.copied())
+        || usize::try_from(tool_group.scope_reference_ordinal).ok()? != tool_ordinal
+        || tool_group.record_index != tool_record
         || tool_group.role() != DesignOperandRole::ROLE_0X21
+        || tool_group.members().is_empty()
         || !tool_group
             .members()
             .iter()
             .map(|member| member.value)
-            .eq(references[3..4].iter().copied())
+            .eq(tool_members.copied())
     {
         return None;
     }
