@@ -877,15 +877,11 @@ fn compact_custom_shape(attribute: &cadmpeg_ir::attributes::SourceAttribute) -> 
             attribute.values.first(),
             Some(Some(AttributeValue::Reference(_)))
         )
-        && attribute.values[1..].iter().all(|value| {
-            matches!(
-                value,
-                Some(
-                    AttributeValue::String(_)
-                        | AttributeValue::Integer(_)
-                        | AttributeValue::Float(_)
-                )
-            )
+        && attribute.values[1..].iter().all(|value| match value {
+            Some(AttributeValue::String(_) | AttributeValue::Integer(_)
+                | AttributeValue::Float(_) | AttributeValue::Boolean(_)) => true,
+            Some(AttributeValue::Vector(values)) => matches!(values.len(), 2 | 3),
+            _ => false,
         })
 }
 
@@ -1064,6 +1060,13 @@ fn native_compact_custom(
             Some(AttributeValue::String(value)) => native_string(records, value)?,
             Some(AttributeValue::Integer(value)) => native_i64(records, *value),
             Some(AttributeValue::Float(value)) => native_f64(records, value.get()),
+            Some(AttributeValue::Boolean(value)) => records.push(crate::writer::primitives::native_bool(*value)),
+            Some(AttributeValue::Vector(values)) if matches!(values.len(), 2 | 3) => {
+                records.push(if values.len() == 2 { 0x16 } else { 0x14 });
+                for value in values {
+                    records.extend_from_slice(&value.get().to_le_bytes());
+                }
+            }
             _ => {
                 return Err(CodecError::UnsupportedContent(
                     "unsupported compact F3D attribute value".into(),
