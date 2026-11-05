@@ -37,9 +37,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             let edges = &group.edges;
             let radius = &group.radius;
             let selection = edge_selection_value(edges);
-            if selection.is_none()
-                && !(matches!(edges, EdgeSelection::Unresolved) && existing.is_some())
-            {
+            if selection.is_none() && !matches!(edges, EdgeSelection::Unresolved) {
                 return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} changes unsupported fillet semantics",
                     feature.id
@@ -58,8 +56,8 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     .keys()
                     .any(|name| indexed_name(name.as_str(), "Radius"));
             match radius {
-                RadiusSpec::Unresolved { .. } => {
-                    if existing.is_none() {
+                RadiusSpec::Unresolved { form } => {
+                    if existing.is_none() && (form.is_some() || !parameters.is_empty()) {
                         return Err(CodecError::UnsupportedContent(format!(
                             "SLDPRT feature {} has an unresolved fillet radius law",
                             feature.id
@@ -163,9 +161,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 )));
             }
             let selection = edge_selection_value(edges);
-            if selection.is_none()
-                && !(matches!(edges, EdgeSelection::Unresolved) && existing.is_some())
-            {
+            if selection.is_none() && !matches!(edges, EdgeSelection::Unresolved) {
                 return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} changes unsupported chamfer semantics",
                     feature.id
@@ -186,8 +182,8 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     .get("D2")
                     .is_some_and(|value| parse_bounded_angle_rad(value).is_some());
             match spec {
-                ChamferSpec::Unresolved { .. } => {
-                    if existing.is_none() {
+                ChamferSpec::Unresolved { form } => {
+                    if existing.is_none() && (form.is_some() || !parameters.is_empty()) {
                         return Err(CodecError::UnsupportedContent(format!(
                             "SLDPRT feature {} has unresolved chamfer dimensions",
                             feature.id
