@@ -16,11 +16,7 @@ pub(crate) fn assert_one_parameter_field(
         &bytes[start + logical_start..start + logical_start + field.len()],
         field
     );
-    let native = result.ir().native.namespace("iges").unwrap();
-    assert!(native
-        .arenas()
-        .get("quarantined_parameter_records")
-        .is_none_or(Vec::is_empty));
+    crate::test_support::assert_given_up_homes(result);
     let fidelity = result.source_fidelity();
     let parts = crate::test_support::given_up_parts(fidelity);
     assert_eq!(parts.len(), 1);
