@@ -317,11 +317,17 @@ fn ensure_owners(ir: &mut CadIr) -> Result<(), CodecError> {
         }
     }
     for sketch in ir.model.sketches.clone() {
-        if !ir.model.features.iter().any(|feature| {
-            crate::resolved_features::write_prepare::feature_owns_planar_sketch(
-                ir, feature, &sketch.id,
-            )
-        }) {
+        if ir
+            .model
+            .sketch_constraints
+            .iter()
+            .any(|constraint| constraint.sketch == sketch.id)
+            && !ir.model.features.iter().any(|feature| {
+                crate::resolved_features::write_prepare::feature_owns_planar_sketch(
+                    ir, feature, &sketch.id,
+                )
+            })
+        {
             append_feature(
                 ir,
                 sketch.name.as_deref().unwrap_or("Sketch"),

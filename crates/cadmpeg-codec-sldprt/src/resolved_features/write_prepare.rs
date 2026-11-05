@@ -1248,25 +1248,18 @@ pub(crate) fn synthesize_feature_classes(
         .flat_map(|history| &history.features)
         .filter_map(crate::records::Feature::source_value)
         .collect::<std::collections::HashSet<_>>();
-    let mut next = 1u32;
+    let mut next = Some(1u32);
     for feature in native
         .feature_histories
         .iter_mut()
         .flat_map(|history| &mut history.features)
         .filter(|feature| feature.input_class.is_some() && feature.source_value().is_none())
     {
-        while used.contains(&next) {
-            next = next.checked_add(1).ok_or_else(|| {
-                cadmpeg_core::CodecError::malformed(
-                    "SLDPRT feature object identity space is exhausted",
-                )
-            })?;
-        }
-        let source = crate::records::FeatureSource::from_value(next).ok_or_else(|| {
-            cadmpeg_core::CodecError::malformed("SLDPRT feature object identity space is exhausted")
+        let id = crate::history::write::features::allocate_feature_source_id(&mut used, &mut next)?;
+        let source = crate::records::FeatureSource::from_value(id).ok_or_else(|| {
+            cadmpeg_core::CodecError::malformed("SLDPRT feature source identity is absent")
         })?;
         feature.source_id = Some(source);
-        used.insert(next);
     }
     let mut payload = Vec::new();
     for feature in native
@@ -1312,19 +1305,30 @@ fn source_less_lanes(
     let mut objects = Vec::<(String, u64, Vec<u8>)>::new();
     for sketch in &ir.model.sketches {
         let configuration = sketch.configuration.clone().unwrap_or_else(|| "0".into());
-        let owner = unique_planar_sketch_owner(ir, &sketch.id)?;
-        let owner_record = generated_sketch_owner_record(native, owner, sketch.id.as_str())?;
-        let object_id = generated_sketch_owner_id(owner_record, sketch.id.as_str())?;
+        let owner = if ir
+            .model
+            .features
+            .iter()
+            .any(|feature| feature_owns_planar_sketch(ir, feature, &sketch.id))
+        {
+            Some(unique_planar_sketch_owner(ir, &sketch.id)?)
+        } else {
+            None
+        };
         let mut payload = Vec::new();
-        append_generated_object_name(
-            &mut payload,
-            if owner_record.name.is_empty() {
-                sketch.name.as_deref().unwrap_or(sketch.id.as_str())
-            } else {
-                owner_record.name.as_str()
-            },
-            object_id,
-        )?;
+        if let Some(owner) = owner {
+            let owner_record = generated_sketch_owner_record(native, owner, sketch.id.as_str())?;
+            let object_id = generated_sketch_owner_id(owner_record, sketch.id.as_str())?;
+            append_generated_object_name(
+                &mut payload,
+                if owner_record.name.is_empty() {
+                    sketch.name.as_deref().unwrap_or(sketch.id.as_str())
+                } else {
+                    owner_record.name.as_str()
+                },
+                object_id,
+            )?;
+        }
         append_generated_sketch_markers(ir, sketch, &mut payload)?;
         let sketch_ir = sketch_brep(ir, sketch)?;
         let body = crate::writer::brep_body(&sketch_ir, 0.001, false)?;
@@ -1351,7 +1355,11 @@ fn source_less_lanes(
             crate::writer::field_u32(&crate::writer::CAPACITY_FIELDS[35], section.len())?;
         payload.extend_from_slice(&chain_len.to_le_bytes());
         payload.extend(section);
-        objects.push((configuration, owner.ordinal, payload));
+        objects.push((
+            configuration,
+            owner.map_or(0, |owner| owner.ordinal),
+            payload,
+        ));
     }
     for sketch in &ir.model.spatial_sketches {
         let configuration = sketch.configuration.clone().unwrap_or_else(|| "0".into());

@@ -2409,8 +2409,8 @@ struct F3dDecodeSession<'a> {
     mesh_part_fidelity: cadmpeg_ir::SourceFidelity,
     history_part_fidelity: cadmpeg_ir::SourceFidelity,
     history_part_stubs: Vec<cadmpeg_ir::NativeUnknownRecord>,
-    canvas_part_fidelity: cadmpeg_ir::SourceFidelity,
-    canvas_part_stubs: Vec<cadmpeg_ir::NativeUnknownRecord>,
+    image_part_fidelity: cadmpeg_ir::SourceFidelity,
+    image_part_stubs: Vec<cadmpeg_ir::NativeUnknownRecord>,
     protein_part_fidelity: cadmpeg_ir::SourceFidelity,
     protein_part_stubs: Vec<cadmpeg_ir::NativeUnknownRecord>,
 }
@@ -2532,11 +2532,11 @@ impl<'a> F3dDecodeSession<'a> {
                     cadmpeg_ir::Annotations::default(),
                 ),
                 history_part_stubs: Vec::new(),
-                canvas_part_fidelity: cadmpeg_ir::SourceFidelity::for_decode(
+                image_part_fidelity: cadmpeg_ir::SourceFidelity::for_decode(
                     ctx,
                     cadmpeg_ir::Annotations::default(),
                 ),
-                canvas_part_stubs: Vec::new(),
+                image_part_stubs: Vec::new(),
                 protein_part_fidelity: cadmpeg_ir::SourceFidelity::for_decode(
                     ctx,
                     cadmpeg_ir::Annotations::default(),
@@ -2606,11 +2606,11 @@ impl<'a> F3dDecodeSession<'a> {
                     cadmpeg_ir::Annotations::default(),
                 ),
                 history_part_stubs: Vec::new(),
-                canvas_part_fidelity: cadmpeg_ir::SourceFidelity::for_decode(
+                image_part_fidelity: cadmpeg_ir::SourceFidelity::for_decode(
                     ctx,
                     cadmpeg_ir::Annotations::default(),
                 ),
-                canvas_part_stubs: Vec::new(),
+                image_part_stubs: Vec::new(),
                 protein_part_fidelity: cadmpeg_ir::SourceFidelity::for_decode(
                     ctx,
                     cadmpeg_ir::Annotations::default(),
@@ -2821,14 +2821,14 @@ impl<'a> F3dDecodeSession<'a> {
             losses,
             history_part_fidelity,
             history_part_stubs,
-            canvas_part_fidelity,
-            canvas_part_stubs,
+            image_part_fidelity,
+            image_part_stubs,
         } = design;
         self.report.losses.extend(losses);
         self.history_part_fidelity.append(history_part_fidelity)?;
         self.history_part_stubs.extend(history_part_stubs);
-        self.canvas_part_fidelity.append(canvas_part_fidelity)?;
-        self.canvas_part_stubs.extend(canvas_part_stubs);
+        self.image_part_fidelity.append(image_part_fidelity)?;
+        self.image_part_stubs.extend(image_part_stubs);
         model.store(&mut self.ir.model);
         Ok(native)
     }
@@ -3271,14 +3271,14 @@ impl<'a> F3dDecodeSession<'a> {
                         ),
                         protein_part_stubs: std::mem::take(&mut self.protein_part_stubs),
                         bulk_record_part_stubs,
-                        canvas_part_fidelity: std::mem::replace(
-                            &mut self.canvas_part_fidelity,
+                        image_part_fidelity: std::mem::replace(
+                            &mut self.image_part_fidelity,
                             cadmpeg_ir::SourceFidelity::for_decode(
                                 self.ctx,
                                 cadmpeg_ir::Annotations::default(),
                             ),
                         ),
-                        canvas_part_stubs: std::mem::take(&mut self.canvas_part_stubs),
+                        image_part_stubs: std::mem::take(&mut self.image_part_stubs),
                         native_layout: Some(self.native),
                         primary_model_brep_name: None,
                         untyped: self.untyped,
@@ -3342,14 +3342,14 @@ impl<'a> F3dDecodeSession<'a> {
                 ),
                 protein_part_stubs: std::mem::take(&mut self.protein_part_stubs),
                 bulk_record_part_stubs,
-                canvas_part_fidelity: std::mem::replace(
-                    &mut self.canvas_part_fidelity,
+                image_part_fidelity: std::mem::replace(
+                    &mut self.image_part_fidelity,
                     cadmpeg_ir::SourceFidelity::for_decode(
                         self.ctx,
                         cadmpeg_ir::Annotations::default(),
                     ),
                 ),
-                canvas_part_stubs: std::mem::take(&mut self.canvas_part_stubs),
+                image_part_stubs: std::mem::take(&mut self.image_part_stubs),
                 native_layout: Some(self.native),
                 primary_model_brep_name: Some(geometry.primary_model_brep_name.clone()),
                 untyped: self.untyped,
@@ -3547,11 +3547,11 @@ fn decode_scanned_document<'a>(
                     cadmpeg_ir::Annotations::default(),
                 ),
                 history_part_stubs: Vec::new(),
-                canvas_part_fidelity: cadmpeg_ir::SourceFidelity::for_decode(
+                image_part_fidelity: cadmpeg_ir::SourceFidelity::for_decode(
                     ctx,
                     cadmpeg_ir::Annotations::default(),
                 ),
-                canvas_part_stubs: Vec::new(),
+                image_part_stubs: Vec::new(),
                 protein_part_fidelity: cadmpeg_ir::SourceFidelity::for_decode(
                     ctx,
                     cadmpeg_ir::Annotations::default(),
@@ -4560,8 +4560,8 @@ struct RetainedArtifacts {
     bulk_record_part_fidelity: cadmpeg_ir::SourceFidelity,
     bulk_record_part_stubs: Vec<cadmpeg_ir::NativeUnknownRecord>,
     mesh_part_fidelity: cadmpeg_ir::SourceFidelity,
-    canvas_part_fidelity: cadmpeg_ir::SourceFidelity,
-    canvas_part_stubs: Vec<cadmpeg_ir::NativeUnknownRecord>,
+    image_part_fidelity: cadmpeg_ir::SourceFidelity,
+    image_part_stubs: Vec<cadmpeg_ir::NativeUnknownRecord>,
     history_part_fidelity: cadmpeg_ir::SourceFidelity,
     history_part_stubs: Vec<cadmpeg_ir::NativeUnknownRecord>,
     protein_part_fidelity: cadmpeg_ir::SourceFidelity,
@@ -4594,7 +4594,7 @@ fn decode_result(
     source_fidelity.append(retained.parameter_state_fidelity)?;
     source_fidelity.append(retained.bulk_record_part_fidelity)?;
     source_fidelity.append(retained.mesh_part_fidelity)?;
-    source_fidelity.append(retained.canvas_part_fidelity)?;
+    source_fidelity.append(retained.image_part_fidelity)?;
     source_fidelity.append(retained.history_part_fidelity)?;
     source_fidelity.append(retained.protein_part_fidelity)?;
     let history_stubs = retained
@@ -4637,7 +4637,7 @@ fn decode_result(
             .extend(bulk_record_stubs);
     }
     let canvas_stubs = retained
-        .canvas_part_stubs
+        .image_part_stubs
         .iter()
         .map(cadmpeg_ir::native::NativeRecord::from)
         .collect::<Vec<_>>();

@@ -23,6 +23,9 @@ pub(super) fn regenerate(
             && entry
                 .entry_name()
                 .starts_with(crate::manifest::GENERATED_DESIGN_ASSET_FOLDER)
+            && target.model.configurations.iter().any(|configuration| {
+                configuration.native_ref.as_deref() == Some(entry.id().as_str())
+            })
     });
     let previous_table = match (previous_tables.next(), previous_tables.next()) {
         (Some(table), None) => Some(table),
@@ -80,8 +83,8 @@ pub(super) fn regenerate(
                 if value == "true" {
                     suppressed.push(Value::String(feature.to_owned()));
                 }
-            } else if key.as_str().starts_with("activation_rule:") {
-                rules.push((name.clone(), value.clone()));
+            } else if let Some(source) = key.as_str().strip_prefix("activation_rule:") {
+                rules.push((name.clone(), source.to_owned(), value.clone()));
             } else {
                 losses.push(F3dLossCode::WriterDesignRecordsOmitted.note(format!(
                     "configuration {} property {key} is not encoded",
@@ -179,38 +182,140 @@ pub(super) fn regenerate(
         if let Some(active) = active {
             payload.insert("active".into(), Value::String(active));
         }
+        let name = if let Some(table) = previous_table {
+            table.entry_name().clone()
+        } else {
+            let mut suffix = 0usize;
+            loop {
+                let discriminator = if suffix == 0 {
+                    String::new()
+                } else {
+                    format!("-{suffix}")
+                };
+                let candidate = format!(
+                    "{}/DesignConfigurationTable.generated{discriminator}.dsgcfg",
+                    crate::manifest::GENERATED_DESIGN_ASSET_FOLDER
+                );
+                if !previous
+                    .iter()
+                    .any(|entry| entry.entry_name() == &candidate)
+                {
+                    break candidate;
+                }
+                suffix = suffix.checked_add(1).ok_or_else(|| {
+                    CodecError::UnsupportedContent(
+                        "F3D configuration table name space exhausted".into(),
+                    )
+                })?;
+            }
+        };
         native
             .design_configurations
             .push(DesignConfiguration::try_new(
-                previous_table.map_or_else(
-                    || {
-                        format!(
-                            "{}/DesignConfigurationTable.generated.dsgcfg",
-                            crate::manifest::GENERATED_DESIGN_ASSET_FOLDER
-                        )
-                    },
-                    |table| table.entry_name().clone(),
-                ),
+                name,
                 DesignConfigurationKind::Table,
                 order,
                 payload,
             )?);
     }
-    for (ordinal, (activate, condition)) in rules.into_iter().enumerate() {
-        let mut payload = Map::new();
+    let mut used_rule_names = std::collections::BTreeSet::new();
+    let reserved_rule_names = previous
+        .iter()
+        .filter(|entry| entry.kind() == DesignConfigurationKind::Rule)
+        .map(|entry| entry.entry_name().clone())
+        .collect::<std::collections::BTreeSet<_>>();
+    let mut next_rule_index = 0usize;
+    for (activate, source, condition) in rules {
+        let original = previous.iter().find(|entry| {
+            entry.kind() == DesignConfigurationKind::Rule
+                && entry.entry_name() == &source
+                && !used_rule_names.contains(entry.entry_name())
+                && entry
+                    .entry_name()
+                    .starts_with(crate::manifest::GENERATED_DESIGN_ASSET_FOLDER)
+        });
+        let mut payload = original.map_or_else(Map::new, DesignConfiguration::payload);
         payload.insert("when".into(), Value::String(condition));
         payload.insert("activate".into(), Value::String(activate));
+        let name = if let Some(entry) = original {
+            entry.entry_name().clone()
+        } else {
+            loop {
+                let candidate = format!(
+                    "{}/DesignConfigurationRule.generated-{next_rule_index}.dsgcfgrule",
+                    crate::manifest::GENERATED_DESIGN_ASSET_FOLDER
+                );
+                next_rule_index = next_rule_index.checked_add(1).ok_or_else(|| {
+                    CodecError::UnsupportedContent(
+                        "F3D configuration rule name space exhausted".into(),
+                    )
+                })?;
+                if !reserved_rule_names.contains(&candidate)
+                    && !used_rule_names.contains(&candidate)
+                {
+                    break candidate;
+                }
+            }
+        };
+        used_rule_names.insert(name.clone());
         native
             .design_configurations
             .push(DesignConfiguration::try_new(
-                format!(
-                    "{}/DesignConfigurationRule.generated-{ordinal}.dsgcfgrule",
-                    crate::manifest::GENERATED_DESIGN_ASSET_FOLDER
-                ),
+                name,
                 DesignConfigurationKind::Rule,
                 Vec::new(),
                 payload,
             )?);
+    }
+    for entry in &previous {
+        if entry.kind() == DesignConfigurationKind::Table
+            && entry.variants().is_empty()
+            && entry.active().is_none()
+            && entry
+                .entry_name()
+                .starts_with(crate::manifest::GENERATED_DESIGN_ASSET_FOLDER)
+            && !native
+                .design_configurations
+                .iter()
+                .any(|written| written.entry_name() == entry.entry_name())
+        {
+            native.design_configurations.push(entry.clone());
+        }
+    }
+    for entry in &previous {
+        if entry.kind() != DesignConfigurationKind::Rule
+            || used_rule_names.contains(entry.entry_name())
+            || !entry
+                .entry_name()
+                .starts_with(crate::manifest::GENERATED_DESIGN_ASSET_FOLDER)
+        {
+            continue;
+        }
+        let payload = entry.payload();
+        let active_target = payload.get("activate").and_then(Value::as_str);
+        let original_target_exists = active_target.is_some_and(|name| {
+            previous
+                .iter()
+                .filter(|table| table.kind() == DesignConfigurationKind::Table)
+                .flat_map(|table| table.variants().iter())
+                .filter(|(candidate, _)| candidate == name)
+                .count()
+                == 1
+        });
+        let was_projected =
+            original_target_exists && payload.get("when").and_then(Value::as_str).is_some();
+        let target_resolves = active_target.is_none_or(|name| {
+            target
+                .model
+                .configurations
+                .iter()
+                .filter(|configuration| configuration.name.as_deref() == Some(name))
+                .count()
+                == 1
+        });
+        if !was_projected && target_resolves {
+            native.design_configurations.push(entry.clone());
+        }
     }
     target.model.configurations =
         crate::design::configurations::project_configurations(&native.design_configurations)?;
