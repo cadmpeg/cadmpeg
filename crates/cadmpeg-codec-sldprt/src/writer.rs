@@ -150,6 +150,7 @@ fn write_through_validation_error(
                 .surfaces
                 .iter()
                 .any(|surface| surface.id.as_str() == id && can_write_surface(&surface.geometry))
+                || ir.model.points.iter().any(|point| point.id.as_str() == id)
         })
     {
         return true;
@@ -1748,12 +1749,27 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
         .model
         .vertices
         .retain(|vertex| vertices.contains(&vertex.id));
-    let points = subset
+    let mut points = subset
         .model
         .vertices
         .iter()
         .map(|vertex| vertex.point.clone())
         .collect::<HashSet<_>>();
+    if retain_detached {
+        let owned = ir
+            .model
+            .vertices
+            .iter()
+            .map(|vertex| &vertex.point)
+            .collect::<HashSet<_>>();
+        points.extend(
+            ir.model
+                .points
+                .iter()
+                .filter(|point| !owned.contains(&point.id))
+                .map(|point| point.id.clone()),
+        );
+    }
     subset
         .model
         .points

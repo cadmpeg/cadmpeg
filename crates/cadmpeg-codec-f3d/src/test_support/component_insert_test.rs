@@ -11,7 +11,6 @@
 //! zero bytes and the same transform.
 #![allow(clippy::unwrap_used)]
 
-use super::streams_test::design_metastream_with_records;
 use crate::test_support::lp_utf16;
 
 /// One envelope of the shared scope record.
@@ -59,8 +58,7 @@ fn push_rigid_transform(out: &mut Vec<u8>, [x, y, z]: [f64; 3]) {
 /// A Design segment whose envelopes all carry one scope record index. Each
 /// envelope follows its own carrier and relation, so the scope admitted for
 /// the record determines the projected placement. Scopes, relations and
-/// carriers are found by their indexed headers; the `MetaStream` registers no
-/// types, so its primary index lists no records.
+/// carriers are listed in the primary index. The first scope envelope is live.
 pub(crate) fn component_insert_design(envelopes: &[ComponentInsertEnvelope]) -> (Vec<u8>, Vec<u8>) {
     let mut bulk = Vec::new();
     for (envelope, carrier) in envelopes.iter().zip((FIRST_CARRIER..).step_by(10)) {
@@ -101,7 +99,19 @@ pub(crate) fn component_insert_design(envelopes: &[ComponentInsertEnvelope]) -> 
         bulk.resize(scope_at + SCOPE_FRAME, 0);
         header(&mut bulk, b"258", SCOPE);
     }
-    let meta = design_metastream_with_records(&[], &[]);
+    let mut primary = Vec::new();
+    for carrier in (FIRST_CARRIER..).step_by(10).take(envelopes.len()) {
+        primary.extend([carrier, carrier + 1]);
+    }
+    if !envelopes.is_empty() {
+        primary.push(SCOPE);
+    }
+    let paired = if envelopes.is_empty() {
+        &[][..]
+    } else {
+        &[SCOPE][..]
+    };
+    let meta = super::zip_test::indexed_fixture_metastream(&bulk, &primary, paired);
     (bulk, meta)
 }
 
