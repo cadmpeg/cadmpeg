@@ -108,17 +108,17 @@ fn history_feature() -> Feature {
         name: None,
         suppressed: Some(false),
         needs_recompute: false,
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties,
         source_tag: Some("HistoryRecord".to_owned()),
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
         evaluation: FeatureEvaluation::new(
             FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: "06d2b948-7388-4634-9f7b-6bd6543d0b44".to_owned().into(),
-                parameters: Default::default(),
+                parameters: BTreeMap::default(),
             }),
-            Default::default(),
+            cadmpeg_ir::features::DistinctMembers::default(),
         ),
         native_ref: Some("rhino:history:record#4a9c4974-0863-40a8-84c7-4f27609c187c".to_owned()),
     }
