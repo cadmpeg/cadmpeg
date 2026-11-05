@@ -1788,11 +1788,10 @@ fn procedural_reduction_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> 
         .procedural_surfaces
         .iter()
         .filter(|procedural| {
-            if matches!(
-                procedural.definition(),
-                ProceduralSurfaceDefinition::CurveBounded { .. }
-            ) {
-                return false;
+            if let ProceduralSurfaceDefinition::CurveBounded { implicit_outer, .. } =
+                procedural.definition()
+            {
+                return !implicit_outer;
             }
             let owner = ir.model.procedural_surface_owner(&procedural.id);
             let Some(surface) = owner.and_then(|owner| {
