@@ -153,9 +153,19 @@ pub(super) fn prepare(
             }
         }
     }
+    let written_operations = match native.as_mut() {
+        Some(native) => {
+            crate::resolved_features::write_feature_parameters::synthesize_configuration_operations(
+                ir, native,
+            )?
+        }
+        None => HashSet::new(),
+    };
     for configuration in &mut ir.model.configurations {
         for feature in configuration.feature_states.keys() {
-            if !written_sketch_states.contains(&(configuration.id.clone(), feature.clone())) {
+            if !written_sketch_states.contains(&(configuration.id.clone(), feature.clone()))
+                && !written_operations.contains(&(configuration.id.clone(), feature.clone()))
+            {
                 losses.push(SldprtLossCode::WriterDesignReduced.note(format!(
                     "configuration {} feature {feature}: structural override has no native lane serializer", configuration.id
                 )));
