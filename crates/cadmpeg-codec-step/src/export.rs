@@ -2723,6 +2723,22 @@ impl<'a> Builder<'a> {
             }
             occurrence_placements.insert(occurrence.id.clone(), (from, to));
         }
+        let mut product_attributes =
+            HashMap::<&str, Vec<&cadmpeg_ir::attributes::SourceAttribute>>::new();
+        for attribute in &ir.model.attributes {
+            let owner = match &attribute.target {
+                AttributeTarget::ProductDefinition(id) => Some(id.as_str()),
+                AttributeTarget::Record { arena, id }
+                    if arena.as_str() == "product_definitions" =>
+                {
+                    Some(id.as_str())
+                }
+                _ => None,
+            };
+            if let Some(owner) = owner {
+                product_attributes.entry(owner).or_default().push(attribute);
+            }
+        }
         let mut definitions = HashMap::<ProductDefinitionId, Ref>::new();
         let mut representations = HashMap::<ProductDefinitionId, Ref>::new();
         for (product, &name) in products.iter().zip(&product_names) {
@@ -2755,6 +2771,44 @@ impl<'a> Builder<'a> {
                     string(description)
                 ),
             );
+            for attribute in product_attributes
+                .get(product.id.as_str())
+                .into_iter()
+                .flatten()
+            {
+                let scalar_items =
+                    !matches!(self.schema, StepSchema::Ap203Edition1 | StepSchema::Ap214);
+                let (kind, value) = match attribute.values.as_slice() {
+                    [Some(AttributeValue::String(value))] => {
+                        ("DESCRIPTIVE_REPRESENTATION_ITEM", string(value))
+                    }
+                    [Some(AttributeValue::Integer(value))] if scalar_items => {
+                        ("INTEGER_REPRESENTATION_ITEM", value.to_string())
+                    }
+                    [Some(AttributeValue::Float(value))] if scalar_items => {
+                        ("REAL_REPRESENTATION_ITEM", self.emitter.real(value.get()))
+                    }
+                    [Some(AttributeValue::Boolean(value))] if scalar_items => (
+                        "BOOLEAN_REPRESENTATION_ITEM",
+                        if *value { ".T." } else { ".F." }.to_owned(),
+                    ),
+                    _ => continue,
+                };
+                let property = self.emitter.emit(
+                    "PROPERTY_DEFINITION",
+                    &format!("{},'',{definition}", string(&attribute.name)),
+                );
+                let item = self.emitter.emit(kind, &format!("'',{value}"));
+                let representation = self
+                    .emitter
+                    .emit("REPRESENTATION", &format!("'',({item}),{context}"));
+                self.emitter.emit(
+                    "PROPERTY_DEFINITION_REPRESENTATION",
+                    &format!("{property},{representation}"),
+                );
+                self.consumed_attribute_ids
+                    .insert(attribute.id.as_str().to_owned());
+            }
             let shape = self
                 .emitter
                 .emit("PRODUCT_DEFINITION_SHAPE", &format!("'','',{definition}"));
