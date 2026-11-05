@@ -498,13 +498,15 @@ fn generated_source_less_writes_design_ownership_and_record_headers() {
             .unwrap();
         assert!(scan.unindexed_record_runs.is_empty());
         assert!(meta.secondary_records.is_empty());
-        assert_eq!(meta.records.len(), 1);
-        assert_eq!(meta.records[0].entity_id, 277);
-        assert_eq!(meta.records[0].bulk_offset, 79);
-        assert_eq!(&bulk[57..68], &[3, 0, 0, 0, b'3', b'5', b'0', 33, 0, 0, 0]);
-        assert_eq!(&bulk[68..79], &[3, 0, 0, 0, b'3', b'5', b'1', 44, 0, 0, 0]);
-        assert_eq!(&bulk[79..90], &[3, 0, 0, 0, b'2', b'5', b'6', 21, 1, 0, 0]);
-        assert_eq!(bulk.len(), 149);
+        assert_eq!(meta.records.len(), 2);
+        assert_eq!(meta.records[0].entity_id, 278);
+        assert_eq!(meta.records[0].bulk_offset, 0);
+        assert_eq!(meta.records[1].entity_id, 277);
+        assert_eq!(meta.records[1].bulk_offset, 94);
+        assert_eq!(&bulk[72..83], &[3, 0, 0, 0, b'3', b'5', b'0', 33, 0, 0, 0]);
+        assert_eq!(&bulk[83..94], &[3, 0, 0, 0, b'3', b'5', b'1', 44, 0, 0, 0]);
+        assert_eq!(&bulk[94..105], &[3, 0, 0, 0, b'2', b'5', b'6', 21, 1, 0, 0]);
+        assert_eq!(bulk.len(), 164);
     });
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
@@ -891,7 +893,9 @@ fn generated_source_less_writes_sketch_points_curves_and_constraints() {
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut Vec::new()))
         .expect_err("source-less points require a registered inverse companion");
-    assert!(matches!(error, cadmpeg_ir::codec::write::EncodeError::Io(inner) if matches!(inner.get_ref().and_then(|source| source.downcast_ref::<cadmpeg_core::CodecError>()), Some(cadmpeg_core::CodecError::InvalidInput(_)))));
+    assert!(
+        matches!(error, cadmpeg_ir::codec::write::EncodeError::Io(inner) if matches!(inner.get_ref().and_then(|source| source.downcast_ref::<cadmpeg_core::CodecError>()), Some(cadmpeg_core::CodecError::InvalidInput(_))))
+    );
     f3d_native_mut(&mut source_less).design_types[6]
         .set_entities(crate::records::identity::ReferenceRun::unlocated(vec![101]));
     f3d_native_mut(&mut source_less).design_types[2].set_version(10);
