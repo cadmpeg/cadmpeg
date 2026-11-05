@@ -9,6 +9,61 @@ use std::collections::HashSet;
 use crate::layout::extrusion_sparse_operation_trailer as extrusion_trailer;
 use crate::native::SldprtNative;
 
+const SCALAR_IDENTITY_CAPACITY: cadmpeg_ir::codec::write::CapacityField =
+    cadmpeg_ir::codec::write::CapacityField {
+        field: "feature_input.scalar_identity",
+        limit: u32::MAX as u64,
+        source: "docs/formats/sldprt.md §2: scalar object identifier u32 LE",
+        helper: "ScalarIdentities::take",
+    };
+
+pub(crate) struct ScalarIdentities {
+    used: HashSet<u32>,
+    next: Option<u32>,
+}
+
+impl ScalarIdentities {
+    pub(crate) fn new(native: &SldprtNative, configuration: Option<&str>) -> Self {
+        let mut used = native
+            .feature_histories
+            .iter()
+            .flat_map(|history| &history.features)
+            .filter_map(crate::records::Feature::source_value)
+            .collect::<HashSet<_>>();
+        for lane in native
+            .feature_input_lanes
+            .iter()
+            .filter(|lane| lane.configuration.as_deref() == configuration)
+        {
+            used.extend(lane.scalars.iter().map(|scalar| scalar.object_id));
+            used.extend(
+                lane.names
+                    .iter()
+                    .filter_map(|name| name.object_id.and_then(crate::records::ObjectId::value)),
+            );
+        }
+        Self {
+            used,
+            next: Some(1),
+        }
+    }
+
+    pub(crate) fn take(&mut self) -> Result<u32, crate::writer::write_error::WriteError> {
+        loop {
+            let candidate = self
+                .next
+                .ok_or(crate::writer::write_error::WriteError::Capacity {
+                    field: &SCALAR_IDENTITY_CAPACITY,
+                    value: u64::from(u32::MAX) + 1,
+                })?;
+            self.next = candidate.checked_add(1);
+            if self.used.insert(candidate) {
+                return Ok(candidate);
+            }
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 enum ConfigurationOperation {
     Extrusion(u16),
@@ -164,13 +219,7 @@ pub(crate) fn synthesize(
         return Ok(());
     }
     native.feature_input_lanes.retain(|lane| lane.id != LANE);
-    let mut next = native
-        .feature_histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .filter_map(crate::records::Feature::source_value)
-        .max()
-        .unwrap_or(0);
+    let mut scalar_ids = ScalarIdentities::new(native, None);
     let mut payload = Vec::new();
     for feature in native
         .feature_histories
@@ -246,16 +295,12 @@ pub(crate) fn synthesize(
             else {
                 continue;
             };
-            // (O-capacity): every scalar cell carries a distinct u32 object id.
-            next = next.checked_add(1).ok_or_else(|| {
-                CodecError::malformed("SLDPRT scalar object identity space is exhausted")
-            })?;
             super::write_generate::append_generated_scalar(
                 &mut payload,
                 class,
                 name.as_str(),
                 value,
-                next,
+                scalar_ids.take()?,
                 &[],
             )?;
         }
@@ -331,6 +376,22 @@ mod tests {
 
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
     use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, FeatureOperation};
+
+    #[test]
+    fn scalar_identity_allocation_reuses_gaps_and_reports_the_boundary() {
+        let mut ids = super::ScalarIdentities {
+            used: std::collections::HashSet::from([1, u32::MAX - 1]),
+            next: Some(1),
+        };
+        assert_eq!(ids.take().unwrap(), 2);
+        ids.next = Some(u32::MAX);
+        assert_eq!(ids.take().unwrap(), u32::MAX);
+        let error = ids.take().unwrap_err();
+        assert!(
+            matches!(error, crate::writer::write_error::WriteError::Capacity { field, value }
+            if field.field == "feature_input.scalar_identity" && field.limit == u64::from(u32::MAX) && value == u64::from(u32::MAX) + 1)
+        );
+    }
 
     #[test]
     fn inactive_revolution_form_is_written_in_its_configuration_lane() {
