@@ -638,13 +638,13 @@ fn render_settings_record(
             for (position, value) in numbers.by_ref().enumerate() {
                 // The endpoints persist as i32; the middle three persist as f64.
                 if position == 0 || position == 4 {
-                    if value.fract() != 0.0 || !(i32::MIN as f64..=i32::MAX as f64).contains(&value)
-                    {
-                        return Err(WriteError::Omit(
-                            "Rhino focal blur endpoint exceeds i32".into(),
-                        ));
-                    }
-                    inner.extend((value as i32).to_le_bytes());
+                    let endpoint = (value.fract() == 0.0)
+                        .then(|| cadmpeg_core::convert::truncate_f64_to_i32(value))
+                        .flatten()
+                        .ok_or_else(|| {
+                            WriteError::Omit("Rhino focal blur endpoint exceeds i32".into())
+                        })?;
+                    inner.extend(endpoint.to_le_bytes());
                 } else {
                     if !value.is_finite() {
                         return Err(WriteError::Omit(
@@ -685,7 +685,7 @@ fn render_settings_record(
                 "render settings mix present and absent legacy version fields".into(),
             ));
         }
-        let version_number = if fit {
+        let version_number: i32 = if fit {
             103
         } else if bottom {
             102
@@ -694,7 +694,7 @@ fn render_settings_record(
         } else {
             100
         };
-        let mut body = (version_number as i32).to_le_bytes().to_vec();
+        let mut body = version_number.to_le_bytes().to_vec();
         body.extend(i32::from(flag_field(fields, "custom_image_size")).to_le_bytes());
         body.extend(integer(Some(fields), "image_width_pixels", 0).to_le_bytes());
         body.extend(integer(Some(fields), "image_height_pixels", 0).to_le_bytes());
