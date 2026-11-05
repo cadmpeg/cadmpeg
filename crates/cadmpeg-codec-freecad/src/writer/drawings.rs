@@ -2,6 +2,7 @@
 //! `TechDraw` page and view objects authored from neutral drawings.
 
 use std::collections::HashMap;
+use std::fmt::Write as _;
 
 use cadmpeg_ir::drawings::DrawingKind;
 use cadmpeg_ir::report::loss::LossNote;
@@ -267,12 +268,14 @@ fn view_xsources(
                 .iter()
                 .map(|sub| xml::element("Sub", &[("value", sub.clone())]))
                 .collect::<String>();
-            output.push_str(&format!(
+            write!(
+                output,
                 "<XLink file=\"{}\" name=\"{}\" count=\"{}\">{children}</XLink>",
                 xml::escaped(file),
                 xml::escaped(target),
                 subs.len()
-            ));
+            )
+            .expect("write to string");
         }
     }
     object.set(
