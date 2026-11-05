@@ -4,9 +4,149 @@
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, FeatureOperation, ParameterValue};
 use cadmpeg_ir::CadIr;
+use std::collections::HashSet;
 
 use crate::layout::extrusion_sparse_operation_trailer as extrusion_trailer;
 use crate::native::SldprtNative;
+
+#[derive(Clone, Copy)]
+enum ConfigurationOperation {
+    Extrusion(u16),
+    Revolution(u32),
+}
+
+pub(crate) fn synthesize_configuration_operations(
+    ir: &CadIr,
+    native: &mut SldprtNative,
+) -> Result<
+    HashSet<(
+        cadmpeg_ir::features::ConfigurationId,
+        cadmpeg_ir::features::FeatureId,
+    )>,
+    crate::writer::write_error::WriteError,
+> {
+    let mut written = HashSet::new();
+    for configuration in ir
+        .model
+        .configurations
+        .iter()
+        .filter(|configuration| !configuration.active)
+    {
+        let slot = crate::history::write::configurations::configuration_slot(
+            &configuration.properties,
+            configuration.ordinal,
+        )
+        .to_string();
+        let mut records = Vec::new();
+        for (id, state) in &configuration.feature_states {
+            let Some(override_definition) = state.definition() else {
+                continue;
+            };
+            let Some(feature) = ir.model.features.iter().find(|feature| &feature.id == id) else {
+                continue;
+            };
+            let mut base = feature.evaluation.definition().clone();
+            let operation = match (override_definition, &mut base) {
+                (
+                    FeatureDefinition::Operation(FeatureOperation::Extrude { op, .. }),
+                    FeatureDefinition::Operation(FeatureOperation::Extrude { op: base_op, .. }),
+                ) => {
+                    *base_op = *op;
+                    extrusion_family(*op).map(ConfigurationOperation::Extrusion)
+                }
+                (
+                    FeatureDefinition::Operation(FeatureOperation::Revolve { op, .. }),
+                    FeatureDefinition::Operation(FeatureOperation::Revolve { op: base_op, .. }),
+                ) => {
+                    *base_op = *op;
+                    match op {
+                        BooleanOp::NewBody => Some(ConfigurationOperation::Revolution(5)),
+                        BooleanOp::Join => Some(ConfigurationOperation::Revolution(8)),
+                        _ => None,
+                    }
+                }
+                _ => None,
+            };
+            let Some(operation) = operation else { continue };
+            if &base != override_definition {
+                continue;
+            }
+            let Some(record) = native
+                .feature_histories
+                .iter()
+                .flat_map(|history| &history.features)
+                .find(|record| {
+                    feature.native_ref.as_deref() == Some(record.id.as_str())
+                        || (feature.native_ref.is_none()
+                            && record.id
+                                == crate::history::write::features::generated_feature_record_id(id))
+                })
+            else {
+                continue;
+            };
+            let Some(object_id) = record.source_value() else {
+                continue;
+            };
+            if matches!(operation, ConfigurationOperation::Revolution(_))
+                && record
+                    .input_class
+                    .as_deref()
+                    .is_some_and(|class| class != "moRevolution_c")
+            {
+                continue;
+            }
+            let class = match operation {
+                ConfigurationOperation::Extrusion(_) => record
+                    .input_class
+                    .as_deref()
+                    .filter(|class| matches!(*class, "moExtrusion_c" | "moICE_c" | "moCut_c"))
+                    .unwrap_or("moExtrusion_c"),
+                ConfigurationOperation::Revolution(_) => "moRevolution_c",
+            };
+            records.push((
+                id.clone(),
+                class.to_owned(),
+                record.name.clone(),
+                object_id,
+                operation,
+            ));
+        }
+        if records.is_empty() {
+            continue;
+        }
+        let mut payload = native
+            .feature_input_lanes
+            .iter()
+            .filter(|lane| {
+                lane.configuration.as_deref() == Some(&slot)
+                    && lane.id.starts_with("sldprt:generated:")
+            })
+            .flat_map(|lane| lane.native_payload.iter().copied())
+            .collect::<Vec<_>>();
+        for (id, class, name, object_id, operation) in records {
+            if let ConfigurationOperation::Revolution(form) = operation {
+                payload.extend_from_slice(&form.to_le_bytes());
+                payload.extend_from_slice(&[0; 4]);
+            }
+            append_named_object(&mut payload, &class, &name, object_id)?;
+            if let ConfigurationOperation::Extrusion(family) = operation {
+                append_extrusion_operation(&mut payload, family);
+            }
+            written.insert((configuration.id.clone(), id));
+        }
+        let lane = super::write_prepare::generated_configuration_lane(
+            &native.feature_histories,
+            &slot,
+            payload,
+        )?;
+        native.feature_input_lanes.retain(|lane| {
+            lane.configuration.as_deref() != Some(&slot)
+                || !lane.id.starts_with("sldprt:generated:")
+        });
+        native.feature_input_lanes.push(lane);
+    }
+    Ok(written)
+}
 
 /// Native scalar cells duplicate only the temporary output projection. The
 /// document keeps the sole authored control in its parameter or literal slot.
@@ -38,14 +178,7 @@ pub(crate) fn synthesize(
         let object = feature.source_value().ok_or_else(|| {
             CodecError::malformed("authored feature has no native object identity")
         })?;
-        let length = crate::writer::field_u16(
-            &crate::writer::CAPACITY_FIELDS[28],
-            cadmpeg_core::decode::u64_from_index(class.len()),
-        )?;
-        payload.extend_from_slice(super::CLASS_MARKER);
-        payload.extend_from_slice(&length.to_le_bytes());
-        payload.extend_from_slice(class.as_bytes());
-        super::write_generate::append_generated_object_name(&mut payload, &feature.name, object)?;
+        append_named_object(&mut payload, class, &feature.name, object)?;
         let neutral = ir.model.features.iter().find(|neutral| {
             neutral.native_ref.as_deref() == Some(feature.id.as_str())
                 || (neutral.native_ref.is_none()
@@ -59,18 +192,9 @@ pub(crate) fn synthesize(
                 FeatureDefinition::Operation(FeatureOperation::Extrude { op, .. }) => Some(*op),
                 _ => None,
             });
-            let family = match operation {
-                Some(BooleanOp::Join) => Some(0x0140_u16),
-                Some(BooleanOp::Cut) => Some(0x01ca_u16),
-                _ => None,
-            };
+            let family = operation.and_then(extrusion_family);
             if let Some(family) = family {
-                let trailer = payload.len() - 12;
-                let family = family.to_le_bytes();
-                payload
-                    [trailer + extrusion_trailer::FAMILY..trailer + extrusion_trailer::OBJECT_ID]
-                    .copy_from_slice(&[family[0], family[1], 0, 0xc0]);
-                payload.extend_from_slice(&[0, 0, 0, 0, 0xff, 0xfe, 0xff]);
+                append_extrusion_operation(&mut payload, family);
             }
         }
         for name in feature.parameters.keys() {
@@ -141,6 +265,38 @@ pub(crate) fn synthesize(
     Ok(())
 }
 
+fn extrusion_family(operation: BooleanOp) -> Option<u16> {
+    match operation {
+        BooleanOp::Join => Some(0x0140),
+        BooleanOp::Cut => Some(0x01ca),
+        _ => None,
+    }
+}
+
+fn append_named_object(
+    payload: &mut Vec<u8>,
+    class: &str,
+    name: &str,
+    object: u32,
+) -> Result<(), crate::writer::write_error::WriteError> {
+    let length = crate::writer::field_u16(
+        &crate::writer::CAPACITY_FIELDS[28],
+        cadmpeg_core::decode::u64_from_index(class.len()),
+    )?;
+    payload.extend_from_slice(super::CLASS_MARKER);
+    payload.extend_from_slice(&length.to_le_bytes());
+    payload.extend_from_slice(class.as_bytes());
+    super::write_generate::append_generated_object_name(payload, name, object)
+}
+
+fn append_extrusion_operation(payload: &mut Vec<u8>, family: u16) {
+    let trailer = payload.len() - 12;
+    let family = family.to_le_bytes();
+    payload[trailer + extrusion_trailer::FAMILY..trailer + extrusion_trailer::OBJECT_ID]
+        .copy_from_slice(&[family[0], family[1], 0, 0xc0]);
+    payload.extend_from_slice(&[0, 0, 0, 0, 0xff, 0xfe, 0xff]);
+}
+
 fn scalar(value: &ParameterValue, owner_class: &str, name: &str) -> Option<(&'static str, f64)> {
     match value {
         ParameterValue::Length(value) => Some(("moLengthParameter_c", value.get() / 1000.0)),
@@ -167,6 +323,156 @@ mod tests {
 
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
     use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, FeatureOperation};
+
+    #[test]
+    fn inactive_revolution_form_is_written_in_its_configuration_lane() {
+        use cadmpeg_ir::features::{
+            ConfigurationFeatureState, ConfigurationId, DesignConfiguration,
+        };
+        let mut source = crate::test_support::container::sldprt_with_body(
+            &crate::test_support::parasolid::triangle_body(),
+        );
+        source.extend(crate::test_support::container::make_block(0x42, "Contents/Keywords", br#"<Keywords><Revolve Name="Turn" Type="Revolve" id="17" AxisOrigin="0,0,0" AxisDirection="0,0,1" Operation="Join"><Dimension Name="Angle">180deg</Dimension></Revolve></Keywords>"#));
+        source.extend(crate::test_support::container::make_block(
+            0x42,
+            "Contents/Config-0-ResolvedFeatures",
+            &crate::test_support::history::resolved_feature_classes_with_ids(&[(
+                "moRevolution_c",
+                "Turn",
+                17,
+            )]),
+        ));
+        let decoded = crate::SldprtCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .unwrap();
+        let mut ir = decoded.ir().clone();
+        let feature_id = ir.model.features[0].id.clone();
+        let mut alternative = ir.model.features[0].evaluation.definition().clone();
+        let FeatureDefinition::Operation(FeatureOperation::Revolve { op, .. }) = &mut alternative
+        else {
+            panic!("revolution")
+        };
+        *op = BooleanOp::NewBody;
+        let configuration_id =
+            ConfigurationId::mint("synthetic:test:configuration#alternate-revolve").unwrap();
+        ir.model.configurations = vec![DesignConfiguration {
+            id: configuration_id.clone(),
+            ordinal: 1,
+            active: false,
+            source_index: Some(1),
+            name: Some("Alternative".into()),
+            material: None,
+            properties: Default::default(),
+            parameter_overrides: Default::default(),
+            bodies: None,
+            parameter_values: Default::default(),
+            feature_states: [(
+                feature_id.clone(),
+                ConfigurationFeatureState::Definition {
+                    definition: Box::new(alternative),
+                },
+            )]
+            .into_iter()
+            .collect(),
+            native_ref: None,
+        }];
+        let mut native = crate::test_support::native::sldprt_native(decoded.ir());
+        let written = super::synthesize_configuration_operations(&ir, &mut native).unwrap();
+        assert!(written.contains(&(configuration_id, feature_id)));
+        let lane = native
+            .feature_input_lanes
+            .iter()
+            .find(|lane| lane.configuration.as_deref() == Some("1"))
+            .unwrap();
+        let class = lane
+            .classes
+            .iter()
+            .find(|class| class.name == "moRevolution_c")
+            .unwrap();
+        let offset = usize::try_from(class.offset).unwrap();
+        assert_eq!(
+            &lane.native_payload[offset - 8..offset],
+            &[5, 0, 0, 0, 0, 0, 0, 0]
+        );
+    }
+
+    #[test]
+    fn inactive_extrusion_operation_is_written_in_its_configuration_lane() {
+        use cadmpeg_ir::features::{
+            ConfigurationFeatureState, ConfigurationId, DesignConfiguration,
+        };
+
+        let mut source = crate::test_support::container::sldprt_with_body(
+            &crate::test_support::parasolid::triangle_body(),
+        );
+        source.extend(crate::test_support::container::make_block(
+            0x42, "Contents/Keywords",
+            br#"<Keywords><Extrusion Name="Boss" id="9"><Dimension Name="D1">20</Dimension></Extrusion></Keywords>"#,
+        ));
+        source.extend(crate::test_support::container::make_block(
+            0x42,
+            "Contents/Config-0-ResolvedFeatures",
+            &crate::test_support::history::resolved_feature_classes_with_ids(&[(
+                "moExtrusion_c",
+                "Boss",
+                9,
+            )]),
+        ));
+        let decoded = crate::SldprtCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .unwrap();
+        let mut ir = decoded.ir().clone();
+        let feature_id = ir.model.features[0].id.clone();
+        ir.model.features[0].evaluation.edit(|definition, _| {
+            let FeatureDefinition::Operation(FeatureOperation::Extrude { op, .. }) = definition
+            else {
+                panic!("extrusion");
+            };
+            *op = BooleanOp::Join;
+        });
+        let mut alternative = ir.model.features[0].evaluation.definition().clone();
+        let FeatureDefinition::Operation(FeatureOperation::Extrude { op, .. }) = &mut alternative
+        else {
+            panic!("extrusion");
+        };
+        *op = BooleanOp::Cut;
+        let configuration_id =
+            ConfigurationId::mint("synthetic:test:configuration#alternative").unwrap();
+        ir.model.configurations = vec![DesignConfiguration {
+            id: configuration_id.clone(),
+            ordinal: 1,
+            active: false,
+            source_index: Some(1),
+            name: Some("Alternative".into()),
+            material: None,
+            properties: Default::default(),
+            parameter_overrides: Default::default(),
+            bodies: None,
+            parameter_values: Default::default(),
+            feature_states: [(
+                feature_id.clone(),
+                ConfigurationFeatureState::Definition {
+                    definition: Box::new(alternative),
+                },
+            )]
+            .into_iter()
+            .collect(),
+            native_ref: None,
+        }];
+        let mut native = crate::test_support::native::sldprt_native(decoded.ir());
+        let written = super::synthesize_configuration_operations(&ir, &mut native).unwrap();
+        assert!(written.contains(&(configuration_id, feature_id)));
+        let lane = native
+            .feature_input_lanes
+            .iter()
+            .find(|lane| lane.configuration.as_deref() == Some("1"))
+            .unwrap();
+        let name = lane.names.iter().find(|name| name.value == "Boss").unwrap();
+        assert_eq!(
+            super::super::operations::feature_inline_operation_fields(lane, name),
+            Some((0x01ca, 0))
+        );
+    }
 
     #[test]
     fn generated_extrusion_lane_carries_boolean_operation() {

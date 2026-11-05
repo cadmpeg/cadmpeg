@@ -132,7 +132,27 @@ pub(crate) fn write_semantic_with_records(
 
 /// Validation Errors the writer carries as stated instead of refusing.
 ///
-fn write_through_validation_error(finding: &cadmpeg_ir::report::check::Finding) -> bool {
+fn write_through_validation_error(
+    ir: &CadIr,
+    finding: &cadmpeg_ir::report::check::Finding,
+) -> bool {
+    if finding.check == cadmpeg_ir::report::check::Check::CarrierReachability
+        && finding.entity.as_deref().is_some_and(|id| {
+            ir.model.curves.iter().any(|curve| {
+                curve.id.as_str() == id
+                    && (matches!(
+                        curve.geometry.solved(),
+                        Some(SolvedCurveGeometry::Composite { .. })
+                    ) || can_write_curve(&curve.geometry))
+            }) || ir
+                .model
+                .surfaces
+                .iter()
+                .any(|surface| surface.id.as_str() == id && can_write_surface(&surface.geometry))
+        })
+    {
+        return true;
+    }
     finding.check == cadmpeg_ir::report::check::Check::GeometricConsistency
         && [
             "edge curve endpoints miss the edge's vertex positions",
@@ -142,6 +162,25 @@ fn write_through_validation_error(finding: &cadmpeg_ir::report::check::Finding) 
         ]
         .iter()
         .any(|message| finding.message.starts_with(message))
+}
+
+fn can_write_surface(geometry: &SurfaceGeometry) -> bool {
+    geometry.solved().is_some_and(|solved| {
+        matches!(solved, SolvedSurfaceGeometry::Nurbs(_))
+            || surface_values(
+                &SurfaceGeometry::Solved(solved.clone()),
+                surface_reference(solved),
+                1.0,
+            )
+            .is_ok()
+    })
+}
+
+fn can_write_curve(geometry: &CurveGeometry) -> bool {
+    geometry.solved().is_some_and(|solved| {
+        matches!(solved, SolvedCurveGeometry::Nurbs(_))
+            || curve_values(&CurveGeometry::Solved(solved.clone()), 1.0).is_ok()
+    })
 }
 
 /// Author the selected version envelope without consuming retained bytes.
@@ -216,7 +255,7 @@ pub(super) fn write_semantic_at(
     let validation = cadmpeg_ir::validate::validate_neutral(&normalized, Vec::new())?;
     let blocking = validation.findings.iter().find(|finding| {
         finding.severity >= cadmpeg_ir::report::Severity::Error
-            && !write_through_validation_error(finding)
+            && !write_through_validation_error(&normalized, finding)
     });
     if let Some(finding) = blocking {
         return Err(CodecError::Malformed(finding.message.clone()).into());
@@ -257,7 +296,7 @@ pub(super) fn write_semantic_at(
     let validation = cadmpeg_ir::validate::validate_neutral(ir, Vec::new())?;
     let blocking = validation.findings.iter().find(|finding| {
         finding.severity >= cadmpeg_ir::report::Severity::Error
-            && !write_through_validation_error(finding)
+            && !write_through_validation_error(ir, finding)
     });
     if let Some(finding) = blocking {
         return Err(CodecError::Malformed(finding.message.clone()).into());
@@ -1209,6 +1248,12 @@ pub(crate) const CAPACITY_FIELDS: &[cadmpeg_ir::codec::write::CapacityField] = &
         source: "docs/formats/sldprt.md §4: two-cell XT pointer",
         helper: "typed_ref",
     },
+    cadmpeg_ir::codec::write::CapacityField {
+        field: "feature.source_id",
+        limit: u32::MAX as u64,
+        source: "docs/formats/sldprt.md §8: feature source identifiers occupy u32 fields",
+        helper: "allocate_feature_source_id",
+    },
 ];
 
 /// Reduced rows: neutral paths the lump stores in reduced form (#232 §5.2).
@@ -1611,6 +1656,13 @@ pub(super) fn reserve_configuration_index(
 
 fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr, CodecError> {
     let selected = selected.iter().cloned().collect::<HashSet<_>>();
+    let retain_detached = selected.is_empty()
+        || ir
+            .model
+            .bodies
+            .iter()
+            .find(|body| matches!(body.kind, BodyKind::Solid | BodyKind::Sheet))
+            .is_some_and(|body| selected.contains(&body.id));
     if let Some(id) = selected
         .iter()
         .find(|id| !ir.model.bodies.iter().any(|body| &body.id == *id))
@@ -1702,22 +1754,67 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
         .model
         .points
         .retain(|point| points.contains(&point.id));
-    let surfaces = subset
+    let mut surfaces = subset
         .model
         .faces
         .iter()
         .map(|face| face.surface.clone())
         .collect::<HashSet<_>>();
+    if retain_detached {
+        let owned = ir
+            .model
+            .faces
+            .iter()
+            .map(|face| &face.surface)
+            .collect::<HashSet<_>>();
+        surfaces.extend(
+            ir.model
+                .surfaces
+                .iter()
+                .filter(|surface| {
+                    !owned.contains(&surface.id) && can_write_surface(&surface.geometry)
+                })
+                .map(|surface| surface.id.clone()),
+        );
+    }
     subset
         .model
         .surfaces
         .retain(|surface| surfaces.contains(&surface.id));
-    let curves = subset
+    let mut curves = subset
         .model
         .edges
         .iter()
         .filter_map(|edge| edge.curve().cloned())
         .collect::<HashSet<_>>();
+    curves.extend(
+        subset
+            .model
+            .coedges
+            .iter()
+            .filter_map(|coedge| coedge.use_curve.as_ref().map(|value| value.curve.clone())),
+    );
+    if retain_detached {
+        let mut owned = ir
+            .model
+            .edges
+            .iter()
+            .filter_map(|edge| edge.curve())
+            .collect::<HashSet<_>>();
+        owned.extend(
+            ir.model
+                .coedges
+                .iter()
+                .filter_map(|coedge| coedge.use_curve.as_ref().map(|value| &value.curve)),
+        );
+        curves.extend(
+            ir.model
+                .curves
+                .iter()
+                .filter(|curve| !owned.contains(&curve.id) && can_write_curve(&curve.geometry))
+                .map(|curve| curve.id.clone()),
+        );
+    }
     subset
         .model
         .curves

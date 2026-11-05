@@ -334,6 +334,28 @@ impl<'a> ContainerScan<'a> {
         self.inflated_entries.get(name).copied()
     }
 
+    pub(crate) fn stored_entry_view(&self, name: &str) -> Result<View<'a>, CodecError> {
+        let entry = self
+            .archive
+            .as_ref()
+            .and_then(|archive| archive.entry(name))
+            .ok_or_else(|| CodecError::malformed(format_args!("entry {name} not found")))?;
+        let range = entry.stored_range()?;
+        let start = self
+            .source_view
+            .start()
+            .checked_add(usize::try_from(range.start).map_err(CodecError::malformed)?)
+            .ok_or_else(|| CodecError::malformed("ZIP entry start overflows"))?;
+        let end = self
+            .source_view
+            .start()
+            .checked_add(usize::try_from(range.end).map_err(CodecError::malformed)?)
+            .ok_or_else(|| CodecError::malformed("ZIP entry end overflows"))?;
+        self.source_view
+            .child(start, end)
+            .ok_or_else(|| CodecError::malformed("ZIP entry extends beyond its archive"))
+    }
+
     #[cfg(test)]
     pub(crate) fn retains_entry_payload(&self, name: &str) -> bool {
         self.inflated_entries.contains_key(name)
@@ -546,13 +568,15 @@ pub(crate) fn scan<'a>(
                     .is_some_and(|extension| extension.eq_ignore_ascii_case("f2d")));
         let checkpoint = ctx.checkpoint();
         let temporary = DecodeArena::new();
-        let opened = if deferred {
-            ctx.with_arena(&temporary, |local| {
-                archive.open(local, &file.name).map(|_| None)
-            })
-        } else {
-            archive.open(ctx, &file.name).map(Some)
-        };
+        let opened = ctx.run_part(|| {
+            if deferred {
+                ctx.with_arena(&temporary, |local| {
+                    archive.open(local, &file.name).map(|_| None)
+                })
+            } else {
+                archive.open(ctx, &file.name).map(Some)
+            }
+        })?;
         let view = match opened {
             Ok(view) => {
                 if deferred {
@@ -560,13 +584,18 @@ pub(crate) fn scan<'a>(
                 }
                 view
             }
-            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(error)
                 if matches!(
                     role,
                     ContainerRole::Preview
                         | ContainerRole::Image
                         | ContainerRole::OgsCache
+                        | ContainerRole::BrepSmbh
+                        | ContainerRole::BrepSmb
+                        | ContainerRole::BrepText
+                        | ContainerRole::ProteinAssets
+                        | ContainerRole::Paramesh
+                        | ContainerRole::Properties
                         | ContainerRole::Other
                 ) =>
             {
@@ -584,7 +613,7 @@ pub(crate) fn scan<'a>(
             Err(error) => return Err(error),
         };
         let buf = view.map_or(&[][..], |view| view.window());
-        if is_brep {
+        if is_brep && view.is_some() {
             let kernel = if asm_header::has_asm_magic(buf) {
                 asm_header::parse(buf).map(|header| KernelFraming::Asm {
                     solved_record_limit: asm_header::solved_record_limit_with_header(buf, &header),
@@ -759,7 +788,10 @@ pub(crate) fn scan<'a>(
     bound_design_bulk_streams(&mut scan);
     for index in 0..scan.entries.len() {
         let entry = &scan.entries[index];
-        if entry.role != ContainerRole::BrepText || !scan.belongs_to_design_asset(&entry.name) {
+        if entry.role != ContainerRole::BrepText
+            || !scan.belongs_to_design_asset(&entry.name)
+            || !scan.has_entry(&entry.name)
+        {
             continue;
         }
         let bytes = scan.entry_bytes(&entry.name)?;
@@ -965,7 +997,9 @@ pub(crate) fn text_brep_names<'s>(
     scan.entries
         .iter()
         .filter(|entry| {
-            entry.role == ContainerRole::BrepText && scan.belongs_to_design_asset(&entry.name)
+            entry.role == ContainerRole::BrepText
+                && scan.belongs_to_design_asset(&entry.name)
+                && scan.has_entry(&entry.name)
         })
         .map(|entry| entry.name.as_str())
 }

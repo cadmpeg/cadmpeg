@@ -36,6 +36,7 @@ fn sketch_annotation_ids_preserve_identity_text() {
 
 #[test]
 fn failed_mesh_resource_limit_propagates() {
+    use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput, PartSpec};
     let refusal = cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit {
         scope: cadmpeg_core::decode::LimitScope::Session,
         dimension: cadmpeg_core::decode::ResourceDimension::DecompressedBytes,
@@ -45,26 +46,21 @@ fn failed_mesh_resource_limit_propagates() {
         additional: 1,
         operation: "synthetic mesh refusal",
     });
-    let mut bodies = Vec::new();
-    let mut report =
-        cadmpeg_ir::codec::DecodeBody::new(cadmpeg_ir::report::decode::DecodeTransfer {
-            scope: cadmpeg_ir::document::ContentScope::container(),
-            geometry_transferred: false,
-        });
-    let error = super::super::collect_mesh_outcome(
-        &mut bodies,
-        &mut report,
-        crate::design::decode::mesh::MeshContainerOutcome::Failed {
-            entry_name: "mesh.paramesh".into(),
-            error: refusal,
-        },
-    )
-    .unwrap_err();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, view) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(b"mesh", &arena, &policy).unwrap();
+    let mut parts = PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
+    let error = ctx
+        .decode_part(&mut parts, view, PartSpec::new("zip.entry"), |_| {
+            Err::<(), _>(refusal)
+        })
+        .unwrap_err();
     assert!(
         matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
         if limit.operation == "synthetic mesh refusal")
     );
-    assert!(report.losses.is_empty());
+    assert!(parts.losses().is_empty());
 }
 
 #[test]

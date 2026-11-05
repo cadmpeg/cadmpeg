@@ -179,29 +179,30 @@ pub(super) fn decode_scoped_image_records_with_parts<'s, T>(
             if images.iter().any(|(other, _): &(String, T)| *other == id) {
                 continue;
             }
-            match parse(bytes, &entry.name, scope, &read) {
-                Ok(Some(image)) => images.push((id, image)),
-                Ok(None) => {}
-                Err(error) => {
-                    let Some((start, end)) = extent(bytes, &entry.name, scope) else {
-                        continue;
-                    };
-                    let Some(extent) = source
-                        .start()
-                        .checked_add(start)
-                        .zip(source.start().checked_add(end))
-                        .and_then(|(start, end)| source.child(start, end))
-                    else {
-                        continue;
-                    };
-                    let spec = PartSpec::new(part_label);
-                    let spec = if extent.location().space == cadmpeg_core::decode::SpaceId::ROOT {
-                        spec
-                    } else {
-                        spec.in_stream(stream_name.clone())
-                    };
-                    ctx.decode_part(output, extent, spec, |_| Err::<(), CodecError>(error))?;
-                }
+            let Some((start, end)) = extent(bytes, &entry.name, scope) else {
+                continue;
+            };
+            let Some(extent) = source
+                .start()
+                .checked_add(start)
+                .zip(source.start().checked_add(end))
+                .and_then(|(start, end)| source.child(start, end))
+            else {
+                continue;
+            };
+            let spec = PartSpec::new(part_label).holding([
+                cadmpeg_ir::document::ArenaClass::Model,
+                cadmpeg_ir::document::ArenaClass::Design,
+            ]);
+            let spec = if extent.location().space == cadmpeg_core::decode::SpaceId::ROOT {
+                spec
+            } else {
+                spec.in_stream(stream_name.clone())
+            };
+            if let Some(Some(image)) = ctx.decode_part(output, extent, spec, |_| {
+                parse(bytes, &entry.name, scope, &read)
+            })? {
+                images.push((id, image));
             }
         }
     }

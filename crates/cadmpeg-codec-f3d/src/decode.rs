@@ -2174,6 +2174,12 @@ fn model_brep_candidates<'s>(
         let mut matches = container::design_breps(scan)
             .filter(|brep| brep.name.rsplit('/').next() == Some(blob_name.as_str()));
         let Some(brep) = matches.next() else {
+            if scan.unreadable_entries.iter().any(|part| {
+                scan.belongs_to_design_asset(&part.name)
+                    && part.name.rsplit('/').next() == Some(blob_name.as_str())
+            }) {
+                continue;
+            }
             return Err(CodecError::malformed(format_args!(
                 "Design body map references missing BREP entry {blob_name}"
             )));
@@ -2400,6 +2406,7 @@ struct F3dDecodeSession<'a> {
     unknowns: Vec<UnknownRecord>,
     admitted_entities: u64,
     untyped: cadmpeg_ir::document::ArenaClasses,
+    mesh_part_fidelity: cadmpeg_ir::SourceFidelity,
     history_part_fidelity: cadmpeg_ir::SourceFidelity,
     history_part_stubs: Vec<cadmpeg_ir::NativeUnknownRecord>,
     canvas_part_fidelity: cadmpeg_ir::SourceFidelity,
@@ -2494,7 +2501,8 @@ impl<'a> F3dDecodeSession<'a> {
             untyped.insert(cadmpeg_ir::document::ArenaClass::Model);
         }
         ir.model.subds = subds;
-        let mesh_projection = project_mesh_bodies(ctx, scan, &mut ir, &mut native, &mut report)?;
+        let (mesh_projection, mesh_part_fidelity) =
+            project_mesh_bodies(ctx, scan, &mut ir, &mut native, &mut report)?;
         if mesh_projection.untyped {
             untyped.insert(cadmpeg_ir::document::ArenaClass::Model);
         }
@@ -2518,6 +2526,7 @@ impl<'a> F3dDecodeSession<'a> {
                 unknowns,
                 admitted_entities,
                 untyped,
+                mesh_part_fidelity,
                 history_part_fidelity: cadmpeg_ir::SourceFidelity::for_decode(
                     ctx,
                     cadmpeg_ir::Annotations::default(),
@@ -2570,7 +2579,8 @@ impl<'a> F3dDecodeSession<'a> {
             },
             container_losses(scan, brep_outcome),
         )?;
-        let mesh_projection = project_mesh_bodies(ctx, scan, &mut ir, &mut native, &mut report)?;
+        let (mesh_projection, mesh_part_fidelity) =
+            project_mesh_bodies(ctx, scan, &mut ir, &mut native, &mut report)?;
         let mut untyped = cadmpeg_ir::document::ArenaClasses::new();
         if mesh_projection.untyped
             || container::design_breps(scan).next().is_some()
@@ -2590,6 +2600,7 @@ impl<'a> F3dDecodeSession<'a> {
                 unknowns,
                 admitted_entities,
                 untyped,
+                mesh_part_fidelity,
                 history_part_fidelity: cadmpeg_ir::SourceFidelity::for_decode(
                     ctx,
                     cadmpeg_ir::Annotations::default(),
@@ -3236,6 +3247,13 @@ impl<'a> F3dDecodeSession<'a> {
                         annotations,
                         parameter_state_fidelity,
                         bulk_record_part_fidelity,
+                        mesh_part_fidelity: std::mem::replace(
+                            &mut self.mesh_part_fidelity,
+                            cadmpeg_ir::SourceFidelity::for_decode(
+                                ctx,
+                                cadmpeg_ir::Annotations::default(),
+                            ),
+                        ),
                         history_part_fidelity: std::mem::replace(
                             &mut self.history_part_fidelity,
                             cadmpeg_ir::SourceFidelity::for_decode(
@@ -3303,6 +3321,10 @@ impl<'a> F3dDecodeSession<'a> {
                 annotations,
                 parameter_state_fidelity,
                 bulk_record_part_fidelity,
+                mesh_part_fidelity: std::mem::replace(
+                    &mut self.mesh_part_fidelity,
+                    cadmpeg_ir::SourceFidelity::for_decode(ctx, cadmpeg_ir::Annotations::default()),
+                ),
                 history_part_fidelity: std::mem::replace(
                     &mut self.history_part_fidelity,
                     cadmpeg_ir::SourceFidelity::for_decode(
@@ -3516,6 +3538,10 @@ fn decode_scanned_document<'a>(
                     cadmpeg_ir::Annotations::default(),
                 ),
                 bulk_record_part_stubs: Vec::new(),
+                mesh_part_fidelity: cadmpeg_ir::SourceFidelity::for_decode(
+                    ctx,
+                    cadmpeg_ir::Annotations::default(),
+                ),
                 history_part_fidelity: cadmpeg_ir::SourceFidelity::for_decode(
                     ctx,
                     cadmpeg_ir::Annotations::default(),
@@ -3768,31 +3794,6 @@ fn extend_unique_assets(
     Ok(())
 }
 
-fn collect_mesh_outcome(
-    bodies: &mut Vec<crate::design::decode::mesh::MeshBody>,
-    report: &mut DecodeBody,
-    outcome: crate::design::decode::mesh::MeshContainerOutcome,
-) -> Result<(), CodecError> {
-    use crate::design::decode::mesh::MeshContainerOutcome;
-    match outcome {
-        MeshContainerOutcome::Joined(body) => {
-            bodies.push(body);
-        }
-        MeshContainerOutcome::Unjoined { entry_name } => push_loss_vec(&mut report.losses, F3dLossCode::MeshContainerUnjoined, format_args!(
-                "mesh geometry container `{entry_name}` decoded but has no complete Design body join"
-            ),),
-        MeshContainerOutcome::Failed {
-            error: error @ CodecError::ResourceLimit(_),
-            ..
-        } => return Err(error),
-        MeshContainerOutcome::Failed { entry_name, error } => push_loss_vec(&mut report.losses, F3dLossCode::MeshContainerUndecoded, format_args!("mesh geometry container `{entry_name}` was not decoded: {error}"),),
-        MeshContainerOutcome::Missing { entry_name } => push_loss_vec(&mut report.losses, F3dLossCode::MeshContainerMissing, format_args!(
-                "Design mesh body names `{entry_name}`, but no unique geometry container joined it"
-            ),),
-    }
-    Ok(())
-}
-
 fn insert_mesh_texture_table(
     tables: &mut std::collections::HashMap<String, Vec<(String, cadmpeg_ir::assets::AssetId)>>,
     tessellation_id: &str,
@@ -3887,7 +3888,7 @@ fn project_mesh_bodies(
     ir: &mut CadIr,
     native: &mut F3dNative,
     report: &mut DecodeBody,
-) -> Result<MeshProjection, CodecError> {
+) -> Result<(MeshProjection, cadmpeg_ir::SourceFidelity), CodecError> {
     let decoded = match crate::design::decode::mesh::decode_mesh_bodies(ctx, scan) {
         Ok(decoded) => decoded,
         Err(CodecError::ResourceLimit(e)) => return Err(CodecError::ResourceLimit(e)),
@@ -3897,13 +3898,23 @@ fn project_mesh_bodies(
                 F3dLossCode::MeshContainerUndecoded,
                 format_args!("mesh bodies could not be decoded: {e}"),
             );
-            return Ok(MeshProjection {
-                count: 0,
-                untyped: true,
-                tessellations_by_scope: std::collections::HashMap::new(),
-            });
+            return Ok((
+                MeshProjection {
+                    count: 0,
+                    untyped: true,
+                    tessellations_by_scope: std::collections::HashMap::new(),
+                },
+                cadmpeg_ir::SourceFidelity::for_decode(ctx, cadmpeg_ir::Annotations::default()),
+            ));
         }
     };
+    let (_, mut part_native, part_fidelity, part_losses) = decoded.parts.into_parts();
+    native.unknowns.extend(
+        part_native
+            .namespace_mut("f3d")
+            .arena_as_for_decode::<cadmpeg_ir::NativeUnknownRecord>(ctx, "unknowns")?,
+    );
+    report.losses.extend(part_losses);
     native.design_mesh_features = decoded.features;
     let mut texture_assets = Vec::new();
     for texture in native
@@ -3945,11 +3956,21 @@ fn project_mesh_bodies(
     let mut bodies = Vec::new();
     let mut untyped = false;
     for outcome in decoded.outcomes {
-        untyped |= !matches!(
+        untyped |= matches!(
             &outcome,
-            crate::design::decode::mesh::MeshContainerOutcome::Joined(_)
+            crate::design::decode::mesh::MeshContainerOutcome::Unjoined { .. }
         );
-        collect_mesh_outcome(&mut bodies, report, outcome)?;
+        match outcome {
+            crate::design::decode::mesh::MeshContainerOutcome::Joined(body) => bodies.push(body),
+            crate::design::decode::mesh::MeshContainerOutcome::Unjoined { entry_name } => push_loss_vec(
+                &mut report.losses, F3dLossCode::MeshContainerUnjoined,
+                format_args!("mesh geometry container `{entry_name}` decoded but has no complete Design body join"),
+            ),
+            crate::design::decode::mesh::MeshContainerOutcome::Missing { entry_name } => push_loss_vec(
+                &mut report.losses, F3dLossCode::MeshContainerMissing,
+                format_args!("Design mesh body names `{entry_name}`, but no unique geometry container joined it"),
+            ),
+        }
     }
     let mut unresolved = std::collections::BTreeMap::new();
     let mut projection = MeshProjection {
@@ -4032,7 +4053,7 @@ fn project_mesh_bodies(
     }
     projection.untyped |= !unresolved.is_empty();
     report_unresolved_mesh_attributes(report, &unresolved);
-    Ok(projection)
+    Ok((projection, part_fidelity))
 }
 
 /// Resolve one-based `tid` values through a Design texture table. Zero leaves
@@ -4538,6 +4559,7 @@ struct RetainedArtifacts {
     parameter_state_fidelity: cadmpeg_ir::SourceFidelity,
     bulk_record_part_fidelity: cadmpeg_ir::SourceFidelity,
     bulk_record_part_stubs: Vec<cadmpeg_ir::NativeUnknownRecord>,
+    mesh_part_fidelity: cadmpeg_ir::SourceFidelity,
     canvas_part_fidelity: cadmpeg_ir::SourceFidelity,
     canvas_part_stubs: Vec<cadmpeg_ir::NativeUnknownRecord>,
     history_part_fidelity: cadmpeg_ir::SourceFidelity,
@@ -4571,6 +4593,7 @@ fn decode_result(
     source_fidelity.append(retained.native_fidelity)?;
     source_fidelity.append(retained.parameter_state_fidelity)?;
     source_fidelity.append(retained.bulk_record_part_fidelity)?;
+    source_fidelity.append(retained.mesh_part_fidelity)?;
     source_fidelity.append(retained.canvas_part_fidelity)?;
     source_fidelity.append(retained.history_part_fidelity)?;
     source_fidelity.append(retained.protein_part_fidelity)?;
@@ -5508,6 +5531,20 @@ fn container_losses(
     let brep_count = container::design_breps(scan).count();
     let selected = container::select_fallback_brep(scan);
     let text_count = container::text_brep_names(scan).count();
+
+    if brep_count == 0
+        && text_count == 0
+        && scan.unreadable_entries.iter().any(|part| {
+            matches!(
+                crate::container::classify(&part.name),
+                ContainerRole::BrepSmbh | ContainerRole::BrepSmb | ContainerRole::BrepText
+            )
+        })
+    {
+        return vec![F3dLossCode::MaterialNotTransferred.note(
+            "Materials/appearances (.protein assets, ACT/design assignments) were not transferred.",
+        )];
+    }
 
     let (geometry, topology) = match outcome {
         ModelBrepOutcome::NoPhysicalModel => (

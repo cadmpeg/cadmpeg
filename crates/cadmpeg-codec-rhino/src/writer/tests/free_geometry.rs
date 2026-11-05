@@ -1144,3 +1144,67 @@ fn mesh_buffer_length_uses_its_unsigned_wire_width() {
         ));
     }
 }
+
+#[test]
+fn noncanonical_periodic_curve_keeps_its_exact_span() {
+    use cadmpeg_ir::geometry::nurbs::NurbsCurve;
+    use cadmpeg_ir::geometry::{Curve, CurveGeometry};
+
+    let mut ir = CadIr::empty();
+    let id = cadmpeg_ir::ids::CurveId::mint("cadir:model:curve#periodic-closed").unwrap();
+    let nurbs = NurbsCurve::from_lanes(
+        2,
+        vec![-3.0, -1.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 7.0],
+        vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(2.0, 0.0, 0.0),
+            Point3::new(2.0, 2.0, 0.0),
+            Point3::new(0.0, 2.0, 0.0),
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(2.0, 0.0, 0.0),
+        ],
+        None,
+        true,
+    )
+    .unwrap();
+    let parameters = [0.25, 1.0, 3.5];
+    let expected = parameters.map(|parameter| {
+        cadmpeg_ir::eval::decode::nurbs_curve_point_at(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &nurbs,
+            parameter,
+        )
+        .unwrap()
+        .get()
+    });
+    ir.model.curves.push(Curve {
+        id,
+        native_ref: None,
+        parameter_range: None,
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
+        source_object: None,
+    });
+    let plan = RhinoCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("write periodic curve");
+    let losses = plan.report().losses.clone();
+    let mut output = Vec::new();
+    plan.write_to(&mut output).unwrap();
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(decoded.ir().model.curves.len(), 1, "losses: {losses:?}");
+    for (parameter, expected) in parameters.into_iter().zip(expected) {
+        let actual = cadmpeg_ir::eval::decode::curve_point(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &decoded.ir().model.curves[0].geometry,
+            parameter,
+        )
+        .unwrap()
+        .get();
+        assert!(
+            actual.distance(expected) < 1.0e-9,
+            "{parameter}: {actual:?} != {expected:?}"
+        );
+    }
+}

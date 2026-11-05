@@ -185,13 +185,6 @@ pub(crate) enum MeshContainerOutcome {
         /// Native archive entry name.
         entry_name: String,
     },
-    /// Reading or parsing the container failed independently of other entries.
-    Failed {
-        /// Native archive entry name.
-        entry_name: String,
-        /// Exact read or parse failure.
-        error: CodecError,
-    },
     /// A complete Design mesh body names no archive entry.
     Missing {
         /// Entry basename stored by the Design record.
@@ -203,6 +196,7 @@ pub(crate) enum MeshContainerOutcome {
 pub(crate) struct MeshDecode {
     pub(crate) outcomes: Vec<MeshContainerOutcome>,
     pub(crate) features: Vec<DesignMeshFeature>,
+    pub(crate) parts: cadmpeg_ir::source_fidelity::parts::PartOutput,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1721,56 +1715,65 @@ pub(crate) fn decode_mesh_bodies(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan,
 ) -> Result<MeshDecode, CodecError> {
+    use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput, PartSpec};
     let mut design_records = decode_mesh_design_records(scan)?;
     let mut outcomes = Vec::new();
+    let mut parts = PartOutput::new(cadmpeg_ir::CodecFormat::F3d, ctx);
     for entry in scan
         .entries
         .iter()
         .filter(|entry| scan.is_design_asset_entry(entry, ContainerRole::Paramesh))
     {
-        let container = match scan
-            .entry_bytes(&entry.name)
-            .and_then(|bytes| decode_mesh_container(ctx, bytes))
-        {
-            Ok(container) => container,
-            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-            Err(error) => {
-                outcomes.push(MeshContainerOutcome::Failed {
-                    entry_name: entry.name.clone(),
-                    error,
-                });
-                continue;
-            }
+        let Some(source) = scan.entry_view(&entry.name) else {
+            continue;
         };
+        let mut spec =
+            PartSpec::new("zip.entry").holding([cadmpeg_ir::document::ArenaClass::Model]);
+        if source.location().space != cadmpeg_core::decode::SpaceId::ROOT {
+            spec = spec.in_stream(
+                cadmpeg_ir::StreamName::try_from(entry.name.clone())
+                    .map_err(CodecError::malformed)?,
+            );
+        }
         let name = &entry.name;
         let base = name.rsplit('/').next().unwrap_or(name);
-        let Some((design_ordinal, feature_ordinal, body_ordinal)) =
-            resolve_mesh_body(&design_records, base, &container.fusion_uuid)
+        let Some(decoded) = ctx.decode_part(&mut parts, source, spec, |_| {
+            let container = decode_mesh_container(ctx, source.window()).map_err(|error| match error {
+                CodecError::Malformed(message) => CodecError::malformed(format_args!("entry {}: {message}", entry.name)),
+                other => other,
+            })?;
+            let Some((design_ordinal, feature_ordinal, body_ordinal)) =
+                resolve_mesh_body(&design_records, base, &container.fusion_uuid)
+            else {
+                return Ok(None);
+            };
+            let body = &design_records[design_ordinal][feature_ordinal].bodies()[body_ordinal];
+            let uuid = container.mesh_uuid.clone();
+            let projected = MeshBody::from_container(
+                &entry.name,
+                body.placement.record().byte_offset(),
+                body.placement.transform(),
+                container,
+            )?;
+            Ok(Some((
+                design_ordinal,
+                feature_ordinal,
+                body_ordinal,
+                uuid,
+                projected,
+            )))
+        })?
         else {
+            continue;
+        };
+        let Some((design_ordinal, feature_ordinal, body_ordinal, uuid, projected)) = decoded else {
             outcomes.push(MeshContainerOutcome::Unjoined {
                 entry_name: entry.name.clone(),
             });
             continue;
         };
         design_records[design_ordinal][feature_ordinal].bodies_mut()[body_ordinal]
-            .container_mesh_uuid = Some(container.mesh_uuid.clone());
-        let body = &design_records[design_ordinal][feature_ordinal].bodies()[body_ordinal];
-        let projected = match MeshBody::from_container(
-            &entry.name,
-            body.placement.record().byte_offset(),
-            body.placement.transform(),
-            container,
-        ) {
-            Ok(projected) => projected,
-            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-            Err(error) => {
-                outcomes.push(MeshContainerOutcome::Failed {
-                    entry_name: entry.name.clone(),
-                    error,
-                });
-                continue;
-            }
-        };
+            .container_mesh_uuid = Some(uuid);
         design_records[design_ordinal][feature_ordinal].bodies_mut()[body_ordinal]
             .tessellation_id = Some(projected.id.clone());
         outcomes.push(MeshContainerOutcome::Joined(projected));
@@ -1780,13 +1783,23 @@ pub(crate) fn decode_mesh_bodies(
         .flatten()
         .flat_map(crate::records::mesh::DesignMeshFeature::bodies)
         .filter(|body| body.tessellation_id.is_none())
+        .filter(|body| {
+            !scan.entries.iter().any(|entry| {
+                scan.is_design_asset_entry(entry, ContainerRole::Paramesh)
+                    && entry.name.rsplit('/').next() == Some(body.entry.name())
+            })
+        })
     {
         outcomes.push(MeshContainerOutcome::Missing {
             entry_name: body.entry.name().to_owned(),
         });
     }
     let features = flatten_mesh_features(design_records);
-    Ok(MeshDecode { outcomes, features })
+    Ok(MeshDecode {
+        outcomes,
+        features,
+        parts,
+    })
 }
 
 #[cfg(test)]
@@ -3346,21 +3359,26 @@ mod tests {
         let meta = crate::test_support::streams_test::design_metastream_with_records_and_secondary(
             &types, &primary, &secondary,
         );
-        let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
-        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-        crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
-        zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored)
-            .unwrap();
-        zip.write_all(&graph.bytes).unwrap();
-        zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
-            .unwrap();
-        zip.write_all(&meta).unwrap();
-        zip.start_file("FusionAssetName[Active]/ParaMeshGeometry.BlobParts/ParaMeshGeometry.11111111-2222-4333-8444-555555555555.paramesh", stored).unwrap();
-        zip.write_all(&crate::test_support::paramesh::triangle())
-            .unwrap();
-        let archive = zip.finish().unwrap().into_inner();
+        let archive = |payload: &[u8]| {
+            let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
+            let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+            crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+            zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored)
+                .unwrap();
+            zip.write_all(&graph.bytes).unwrap();
+            zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
+                .unwrap();
+            zip.write_all(&meta).unwrap();
+            zip.start_file("FusionAssetName[Active]/ParaMeshGeometry.BlobParts/ParaMeshGeometry.11111111-2222-4333-8444-555555555555.paramesh", stored).unwrap();
+            zip.write_all(payload).unwrap();
+            zip.finish().unwrap().into_inner()
+        };
+        let payload = crate::test_support::paramesh::triangle();
         let result = crate::F3dCodec
-            .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+            .decode(
+                &mut Cursor::new(archive(&payload)),
+                &DecodeOptions::default(),
+            )
             .unwrap();
         let [mesh] = result.ir().model.tessellations.as_slice() else {
             panic!("expected one tessellation");
@@ -3373,5 +3391,31 @@ mod tests {
                 cadmpeg_ir::features::FeatureOperation::MeshImport { tessellations }
             ) if tessellations.iter().any(|id| id == mesh.id.as_str())
         )));
+        let mut broken = payload;
+        broken[0] ^= 1;
+        let decoded = crate::F3dCodec
+            .decode(
+                &mut Cursor::new(archive(&broken)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        assert!(decoded.ir().model.tessellations.is_empty());
+        assert_eq!(decoded.ir().native_unknowns("f3d").unwrap().len(), 1);
+        assert_eq!(
+            decoded
+                .report()
+                .losses
+                .iter()
+                .filter(|loss| {
+                    loss.code
+                        == cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable
+                            .note("")
+                            .code
+                        && loss.message.contains("zip.entry")
+                        && loss.provenance.is_some()
+                })
+                .count(),
+            1
+        );
     }
 }
