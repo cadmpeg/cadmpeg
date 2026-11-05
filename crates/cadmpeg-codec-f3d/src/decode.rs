@@ -2912,7 +2912,6 @@ impl<'a> F3dDecodeSession<'a> {
                 self.ir.model.appearance_bindings = materials.bindings;
                 let face_losses =
                     resolve_face_appearance_bindings(&mut self.ir, &materials.face_assignments)?;
-                apply_appearance_base_colors(&mut self.ir);
                 apply_body_presentation_names(&mut self.ir, scan, &prereqs.design_body_bindings)?;
                 self.ir
                     .model
@@ -5857,46 +5856,6 @@ pub(crate) fn resolve_face_appearance_bindings(
     drop(bound_faces);
     ir.model.appearance_bindings.extend(new_bindings);
     Ok(losses)
-}
-
-/// Fill absent explicit topology colors from uniquely bound appearance assets.
-/// Native RGB/truecolor attributes remain authoritative on the same target.
-fn insert_appearance_color<'a, K: Eq + std::hash::Hash>(
-    colors: &mut std::collections::HashMap<&'a K, Option<cadmpeg_ir::topology::Color>>,
-    id: &'a K,
-    color: cadmpeg_ir::topology::Color,
-) {
-    if let Some(existing) = colors.get_mut(id) {
-        *existing = None;
-    } else {
-        colors.insert(id, Some(color));
-    }
-}
-
-fn apply_appearance_base_colors(ir: &mut CadIr) {
-    use cadmpeg_ir::appearance::AppearanceTarget;
-
-    let colors = ir
-        .model
-        .appearances
-        .iter()
-        .filter_map(|appearance| Some((&appearance.id, appearance.base_color?)))
-        .collect::<std::collections::HashMap<_, _>>();
-    let mut body_colors = std::collections::HashMap::new();
-    for binding in &ir.model.appearance_bindings {
-        let Some(color) = colors.get(&binding.appearance).copied() else {
-            continue;
-        };
-        match &binding.target {
-            AppearanceTarget::Body(id) => insert_appearance_color(&mut body_colors, id, color),
-            _ => {}
-        }
-    }
-    for body in &mut ir.model.bodies {
-        if body.color.is_none() {
-            body.color = body_colors.get(&body.id).copied().flatten();
-        }
-    }
 }
 
 pub(crate) fn is_default_body_name(name: &str) -> bool {

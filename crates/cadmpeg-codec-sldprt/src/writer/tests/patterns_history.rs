@@ -838,3 +838,51 @@ fn semantic_writer_patches_resolved_feature_sketch_types() {
         SketchInputKind::Relation(crate::records::SketchRelationKind::Vertical)
     );
 }
+
+#[test]
+fn source_less_pattern_retains_unresolved_construction() {
+    use cadmpeg_ir::features::{patterns::PatternTransform, FeatureDefinition, FeatureOperation};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Feature Name="Partial" Type="Custom" id="132"/></Keywords>"#,
+    ));
+    source.extend(make_block(
+        0x42,
+        "Contents/Config-0-ResolvedFeatures",
+        &resolved_feature_classes_with_ids(&[("moLPattern_c", "Partial", 132)]),
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    assert!(
+        matches!(ir.model.features[0].evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) if matches!(pattern.definition(), PatternTransform::Unresolved { .. }))
+    );
+    let expected = ir.model.features[0].evaluation.definition().clone();
+    ir.source = None;
+    ir.native = cadmpeg_ir::Native::default();
+    ir.model.features[0].native_ref = None;
+    let id = ir.model.features[0].id.clone();
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(!plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(id.as_str()) && loss.message.contains("solved result")));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(output
+        .ir()
+        .model
+        .features
+        .iter()
+        .any(|feature| feature.evaluation.definition() == &expected));
+}
