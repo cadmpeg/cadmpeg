@@ -178,6 +178,15 @@ pub(super) fn write<'a>(
             "FreeCAD point-kernel points",
         )?;
         points.extend(ir.model.points.iter().filter(matching));
+        let prefix = crate::native::model_id("point", &property.id, "");
+        points.sort_by_key(|point| {
+            let index = point
+                .id
+                .as_str()
+                .strip_prefix(&prefix)
+                .and_then(|index| index.parse::<usize>().ok());
+            (index.is_none(), index)
+        });
         let siblings = properties
             .iter()
             .filter(|other| other.owner == property.owner && other.type_name == property.type_name)
