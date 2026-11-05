@@ -61,18 +61,22 @@ pub(super) fn reconcile(target: &mut CadIr, native: &mut F3dNative) -> Result<()
             .ok_or_else(|| CodecError::InvalidInput("F3D body ordinal exceeds u64".into()))?;
         let original = key_for(&native.body_native_keys, body).cloned();
         let preferred = original.as_ref().and_then(|record| record.asm_body_key);
-        let key = assign(
-            preferred,
-            default_key,
-            &reserved_keys,
-            &mut used_keys,
-            u64::MAX / 2,
-            "ASM body key",
-        )?;
+        let key = if original.is_some() && preferred.is_none() && body.visible.is_none() {
+            None
+        } else {
+            Some(assign(
+                preferred,
+                default_key,
+                &reserved_keys,
+                &mut used_keys,
+                u64::MAX / 2,
+                "ASM body key",
+            )?)
+        };
         let record = match original {
             Some(original) => {
                 let mut record = original.clone();
-                record.asm_body_key = Some(key);
+                record.asm_body_key = key;
                 record
             }
             None => {
@@ -93,7 +97,7 @@ pub(super) fn reconcile(target: &mut CadIr, native: &mut F3dNative) -> Result<()
                         CodecError::InvalidInput("F3D body ordinal exceeds u32".into())
                     })?,
                     source_brep: None,
-                    asm_body_key: Some(key),
+                    asm_body_key: key,
                 }
             }
         };
@@ -102,7 +106,7 @@ pub(super) fn reconcile(target: &mut CadIr, native: &mut F3dNative) -> Result<()
         }
         let row_id = record.id();
         body_keys.push(record);
-        let Some(visible) = body.visible else {
+        let (Some(visible), Some(key)) = (body.visible, key) else {
             continue;
         };
         let suffix = assign(
