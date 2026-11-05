@@ -4,7 +4,7 @@
 use super::parameter_scope::payload_prologue;
 use crate::bytes::finite_reals_at;
 use crate::bytes::take_reference;
-use crate::design::decode::sketch::IndexedRecordOffsets;
+use crate::metastream::PrimaryFrames;
 use crate::records::feature::scope;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::feature::work_geometry::DesignWorkPointConstruction;
@@ -114,7 +114,7 @@ fn point_data_level(
 /// the frame is read only when they agree on the offset.
 pub(super) fn exact_work_point_construction(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
     stream_types: &HashMap<u64, (&str, u32)>,
 ) -> Option<DesignWorkPointConstruction> {
@@ -131,7 +131,7 @@ pub(super) fn exact_work_point_construction(
 
 pub(in crate::design::decode) fn exact_point_data_construction<'a>(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     point_record_indices: impl IntoIterator<Item = &'a u32>,
     stream_types: &HashMap<u64, (&str, u32)>,
 ) -> Option<DesignWorkPointConstruction> {

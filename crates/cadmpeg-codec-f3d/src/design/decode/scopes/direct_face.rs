@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact direct-face, move and scale operation scopes.
 
+use crate::metastream::PrimaryFrames;
 use cadmpeg_core::decode::u64_from_index;
 
 use super::parameter_scope::parameter_scope_payload_length;
@@ -11,7 +12,6 @@ use super::thicken_shell::exact_legacy_thicken_class_347;
 use super::thicken_shell::exact_shell_class_369_261;
 use super::thicken_shell::exact_shell_wall_slots;
 use crate::bytes::lp_ascii_filtered_view;
-use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::design_feature_family;
 use crate::design::DesignFeatureFamily;
 use crate::layout::indexed_design_record_header as indexed_header;
@@ -75,7 +75,7 @@ pub(crate) fn offset_faces_distance_reference_matches(
 
 pub(super) fn exact_direct_face_operation(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
 ) -> Option<DesignDirectFaceOperation> {
     let start = usize::try_from(scope.byte_offset()?).ok()?;
@@ -266,7 +266,7 @@ pub(super) fn exact_direct_face_operation(
 
 pub(super) fn exact_move_operation(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
 ) -> Option<DesignMoveOperation> {
     if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::Move) {
@@ -304,7 +304,7 @@ fn move_face_transform_marker(
 
 pub(super) fn exact_move_face_operation(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
 ) -> Option<DesignMoveOperation> {
     if !is_move_face(scope) || scope.reference_members().len() < 3 {
@@ -330,7 +330,7 @@ fn is_move_face(scope: &DesignParameterScope) -> bool {
 /// reference selects the record, so its class tag and frame length do not.
 fn move_face_transform(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     record_index: u32,
 ) -> Option<DesignMoveOperation> {
     let mut candidate = None;
@@ -384,7 +384,7 @@ fn move_transform_at(bytes: &[u8], start: usize, record_index: u32) -> Option<De
 /// The one admitted rigid-transform frame among `record_indices`.
 fn unique_move_transform<'a>(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     record_indices: impl IntoIterator<Item = &'a u32>,
 ) -> Option<DesignMoveOperation> {
     let mut candidate = None;
@@ -487,7 +487,7 @@ pub(crate) fn move_operation_links_hold(
 
 pub(super) fn exact_scale_operation(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
     stream_types: &HashMap<u64, (&str, u32)>,
 ) -> Result<Option<DesignScaleOperation>, cadmpeg_core::CodecError> {

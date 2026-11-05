@@ -8,6 +8,7 @@ use crate::layout::assembly_as_built_421_frame_327 as as_built_421_frame_327;
 use crate::layout::assembly_as_built_421_frame_376 as as_built_421_frame_376;
 use crate::layout::assembly_as_built_421_frame_448 as as_built_421_frame_448;
 use crate::layout::assembly_as_built_421_scope as as_built_421;
+use crate::metastream::PrimaryFrames;
 use crate::records::{
     decal::DesignRecordHeader,
     feature::{
@@ -29,7 +30,6 @@ use super::scopes::point_data::exact_point_data_construction;
 use super::scopes::shared_frames::exact_indexed_header_at;
 use super::scopes::shared_frames::marked_record_reference;
 use super::scopes::shared_frames::rigid_transform_at;
-use super::sketch::IndexedRecordOffsets;
 
 pub(in crate::design::decode) struct LegacyAsBuilt421Alignment {
     pub(super) angle: f64,
@@ -167,7 +167,7 @@ pub(super) fn exact_legacy_as_built_421_alignment(
 
 pub(super) fn exact_legacy_as_built_421_solved_frame(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
 ) -> Option<DesignAssemblySolvedFrame> {
     let generation = crate::design::assembly::legacy_as_built_421_generation(
@@ -187,8 +187,7 @@ pub(super) fn exact_legacy_as_built_421_solved_frame(
     let mut frame_candidates =
         records
             .offsets(frame_record_index)
-            .iter()
-            .copied()
+            .into_iter()
             .filter(|frame_start| {
                 exact_indexed_header_at(bytes, *frame_start, frame_record_index).as_deref()
                     == Some(expected_class_tag)
@@ -250,7 +249,7 @@ const EPS_LEGACY_AS_BUILT_DIRECTION: f64 = 1.0e-10;
 pub(super) fn exact_legacy_as_built_421_operands(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
     stream_types: &HashMap<u64, (&str, u32)>,
     recipes: &[ConstructionRecipe],
@@ -373,7 +372,7 @@ fn indexed_class_at(bytes: &[u8], byte_offset: u64) -> Option<String> {
 fn exact_legacy_as_built_face_selection(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
     scope_reference_ordinal: u32,
     (record_index, expected_class_tag): (u32, &str),
@@ -399,16 +398,14 @@ fn exact_legacy_as_built_face_selection(
             .and_then(|record_index| {
                 records
                     .offsets(*record_index)
-                    .iter()
-                    .copied()
+                    .into_iter()
                     .find(|offset| *offset > scope_start)
             })
             .and_then(|offset| u64::try_from(offset).ok())
     })();
     let mut candidates = records
         .offsets(record_index)
-        .iter()
-        .copied()
+        .into_iter()
         .filter_map(|byte_offset| {
             let class_tag = indexed_class_at(bytes, u64::try_from(byte_offset).ok()?)?;
             if class_tag != expected_class_tag {

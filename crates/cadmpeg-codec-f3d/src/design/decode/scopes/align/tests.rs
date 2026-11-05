@@ -63,7 +63,7 @@ fn align_native_paths_have_distinct_exact_losses() {
         "f3d/feature.align-construction-unparsed"
     );
     let bytes = crate::test_support::align::align_constructor_fixture(&scope);
-    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let records = crate::design::test_support::test_primary_frames(&bytes);
     envelope.construction =
         construction::decode_align_construction(&bytes, &records, &scope, &envelope);
     assert!(envelope.construction.is_some());
