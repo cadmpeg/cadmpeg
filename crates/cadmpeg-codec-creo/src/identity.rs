@@ -10,47 +10,21 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::{IdentityError, IdentityNamespace};
 
 /// Names classified as geometry or thumbnail sections use static namespaces.
-pub(crate) fn section_namespace(name: &str) -> Option<IdentityNamespace> {
+pub(crate) fn section_namespace(name: &str) -> IdentityNamespace {
     match name {
-        "VisibGeom" => Some(cadmpeg_ir::identity_namespace!(
-            "creo",
-            "VisibGeom",
-            "section"
-        )),
-        "NovisGeom" => Some(cadmpeg_ir::identity_namespace!(
-            "creo",
-            "NovisGeom",
-            "section"
-        )),
-        "ActDatums" => Some(cadmpeg_ir::identity_namespace!(
-            "creo",
-            "ActDatums",
-            "section"
-        )),
-        "THMB_IMG_MAIN" => Some(cadmpeg_ir::identity_namespace!(
-            "creo",
-            "THMB_IMG_MAIN",
-            "section"
-        )),
-        "FamilyInf" => Some(cadmpeg_ir::identity_namespace!(
-            "creo",
-            "FamilyInf",
-            "section"
-        )),
+        "VisibGeom" => cadmpeg_ir::identity_namespace!("creo", "VisibGeom", "section"),
+        "NovisGeom" => cadmpeg_ir::identity_namespace!("creo", "NovisGeom", "section"),
+        "ActDatums" => cadmpeg_ir::identity_namespace!("creo", "ActDatums", "section"),
+        "THMB_IMG_MAIN" => cadmpeg_ir::identity_namespace!("creo", "THMB_IMG_MAIN", "section"),
+        "FamilyInf" => cadmpeg_ir::identity_namespace!("creo", "FamilyInf", "section"),
         "AllFeatur" | "FeatDefs" | "FeatDefsIndex" | "FeatDefsDtm" | "Geomlists" | "GeomDepen"
         | "Model_L05_PX" | "Model_L05P" | "BasicData" | "BasBasData" | "BasFullData"
-        | "FullMData" => Some(cadmpeg_ir::identity_namespace!(
-            "creo",
-            "ModelData",
-            "section"
-        )),
+        | "FullMData" => cadmpeg_ir::identity_namespace!("creo", "ModelData", "section"),
         "MdlStatus" | "MdlRefInfo" | "DispCntrl" | "ColorSchemeInfo" | "LargeText"
         | "BasicText" | "IdsGenInfoDb" | "NeuPrtSld" | "NeuAsmSld" | "SolidPersistTable"
         | "SolidPrimdata" | "DEPDB_DATA" | "UnitSystemDef_L03" | "PDMTrail_L03" | "ActEntity"
-        | "DispDataTable" => Some(cadmpeg_ir::identity_namespace!(
-            "creo", "Metadata", "section"
-        )),
-        _ => Some(cadmpeg_ir::identity_namespace!("creo", "opaque", "section")),
+        | "DispDataTable" => cadmpeg_ir::identity_namespace!("creo", "Metadata", "section"),
+        _ => cadmpeg_ir::identity_namespace!("creo", "opaque", "section"),
     }
 }
 

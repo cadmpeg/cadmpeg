@@ -37,9 +37,14 @@ fn record_ids(document: &Value) -> BTreeSet<String> {
 }
 
 fn repoint_id_value(document: &mut Value, ids: &BTreeSet<String>) -> Option<String> {
-    fn walk(value: &mut Value, ids: &BTreeSet<String>) -> bool {
+    fn walk(value: &mut Value, ids: &BTreeSet<String>, attribute_values: bool) -> bool {
         match value {
             Value::Object(fields) => {
+                if attribute_values
+                    && fields.get("kind").and_then(Value::as_str) == Some("reference")
+                {
+                    return false;
+                }
                 for (key, child) in fields {
                     if key != "id" {
                         if let Value::String(text) = child {
@@ -48,7 +53,7 @@ fn repoint_id_value(document: &mut Value, ids: &BTreeSet<String>) -> Option<Stri
                                 return true;
                             }
                         }
-                        if walk(child, ids) {
+                        if walk(child, ids, attribute_values) {
                             return true;
                         }
                     }
@@ -57,7 +62,7 @@ fn repoint_id_value(document: &mut Value, ids: &BTreeSet<String>) -> Option<Stri
             }
             Value::Array(items) => {
                 for item in items {
-                    if walk(item, ids) {
+                    if walk(item, ids, attribute_values) {
                         return true;
                     }
                 }
@@ -66,13 +71,24 @@ fn repoint_id_value(document: &mut Value, ids: &BTreeSet<String>) -> Option<Stri
             _ => false,
         }
     }
-    let ids_snapshot = ids.clone();
     let model = document.get_mut("model")?.as_object_mut()?;
-    for rows in model.values_mut() {
+    for (arena, rows) in model {
         for row in rows.as_array_mut()?.iter_mut() {
-            let id = row.get("id")?.as_str()?.to_owned();
-            if walk(row, &ids_snapshot) {
-                return Some(id);
+            let fields = row.as_object_mut()?;
+            let id = fields.get("id")?.as_str()?.to_owned();
+            for (key, value) in fields {
+                if key == "id" {
+                    continue;
+                }
+                if let Value::String(text) = &mut *value {
+                    if ids.contains(text) {
+                        "injected:missing:record#0".clone_into(text);
+                        return Some(id);
+                    }
+                }
+                if walk(value, ids, arena == "attributes" && key == "values") {
+                    return Some(id);
+                }
             }
         }
     }
@@ -226,7 +242,7 @@ pub fn injected_error_findings(
     findings
 }
 
-type ReadBack = dyn Fn(&[u8]) -> u64;
+type CapacityReader = dyn Fn(&[u8]) -> u64;
 
 /// One capacity row under test: the writer's row plus its helper seam.
 pub struct CapacityRow {
@@ -235,7 +251,7 @@ pub struct CapacityRow {
     /// Writes `value` through the helper alone.
     pub write_at: Box<dyn Fn(u64) -> Result<Vec<u8>, EncodeError>>,
     /// Reads the stored value back through the decoder.
-    pub read_back: Box<ReadBack>,
+    pub read_back: Box<CapacityReader>,
 }
 
 /// Findings for capacity helpers: `limit` writes and reads back, `limit + 1`
@@ -360,7 +376,7 @@ mod tests {
                 value,
             });
         }
-        Ok(vec![u8::try_from(value).expect("test capacity fits u8")])
+        Ok(vec![u8::try_from(value).expect("three-bit value fits u8")])
     }
 
     #[test]
@@ -386,6 +402,28 @@ mod tests {
                 .iter()
                 .any(|finding| finding.contains("past its limit")),
             "{findings:?}"
+        );
+    }
+
+    #[test]
+    fn dangling_injection_preserves_opaque_attribute_reference_text() {
+        let mut document = json!({"model": {
+            "attributes": [{"id": "attribute#0", "values": [[{"kind": "reference", "value": "point#0"}]]}],
+            "edges": [{"id": "edge#0", "start": "point#0"}],
+            "points": [{"id": "point#0"}]
+        }});
+        let dangling = standard_injections()
+            .into_iter()
+            .find(|injection| injection.name == "dangling-reference")
+            .expect("dangling-reference injection exists");
+        assert_eq!((dangling.inject)(&mut document), Some("edge#0".into()));
+        assert_eq!(
+            document["model"]["attributes"][0]["values"][0][0]["value"],
+            "point#0"
+        );
+        assert_eq!(
+            document["model"]["edges"][0]["start"],
+            "injected:missing:record#0"
         );
     }
 

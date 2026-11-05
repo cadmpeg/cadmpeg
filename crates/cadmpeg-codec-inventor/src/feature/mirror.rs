@@ -725,8 +725,8 @@ pub(super) fn admit_operands(
                 }
                 _ => continue,
             };
-            match staged {
-                Some(Some(property)) => super::push_record(
+            if let Some(Some(property)) = staged {
+                super::push_record(
                     ctx,
                     &mut inventory.properties,
                     property,
@@ -734,8 +734,7 @@ pub(super) fn admit_operands(
                     segment.pair.token.key(),
                     record.ordinal,
                     "admit Inventor mirror operand",
-                )?,
-                Some(None) | None => {}
+                )?;
             }
         }
     }

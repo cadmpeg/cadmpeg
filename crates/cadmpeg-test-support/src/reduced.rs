@@ -52,8 +52,7 @@ pub fn quantum_probe(storage: ReducedStorage) -> Option<Value> {
         ReducedStorage::U8Channel => Some(Value::from(0.1)),
         ReducedStorage::F32 => Some(Value::from(0.1)),
         ReducedStorage::Decimal(places) => {
-            let probe =
-                1.0 + 10.0_f64.powi(-i32::try_from(places).expect("decimal places fit i32") - 1);
+            let probe = 1.0 + 10.0_f64.powi(-i32::try_from(places).expect("decimal places fit i32") - 1);
             Some(Value::from(probe))
         }
         ReducedStorage::Normalized { .. } => None,
