@@ -148,7 +148,7 @@ impl Parser<'_, '_, '_> {
                     }
                     self.budget
                         .decode_part(parts, extent, spec, |_| {
-                            Err::<(), CodecError>(CodecError::malformed(reason.clone()))
+                            Err::<(), CodecError>(CodecError::malformed(reason.to_owned()))
                         })
                         .map_err(ParseError::from)?;
                     omitted.push(start..end);
@@ -323,7 +323,7 @@ impl Parser<'_, '_, '_> {
                     let reason = reasons
                         .remove(&id)
                         .unwrap_or_else(|| "unresolved instance reference".to_owned());
-                    self.give_up_dependent(&record, reason)?;
+                    self.give_up_dependent(&record, &reason)?;
                     self.dead.insert(id);
                     self.dead_spans.insert(id, span.clone());
                     self.dead_keywords
@@ -353,7 +353,7 @@ impl Parser<'_, '_, '_> {
     /// Give up one dangling dependent as its own part. The dependent parsed,
     /// but its reference does not resolve, so its statement is the part the
     /// decoder cannot read. Nothing is staged, so the part drops nothing.
-    fn give_up_dependent(&mut self, record: &RawRecord, reason: String) -> Result<(), ParseError> {
+    fn give_up_dependent(&mut self, record: &RawRecord, reason: &str) -> Result<(), ParseError> {
         let (Some(source), Some(parts)) = (self.source, self.parts.as_deref_mut()) else {
             return Self::err_at(
                 record.span.start,
@@ -377,7 +377,7 @@ impl Parser<'_, '_, '_> {
         }
         self.budget
             .decode_part(parts, extent, spec, |_| {
-                Err::<(), CodecError>(CodecError::malformed(reason.clone()))
+                Err::<(), CodecError>(CodecError::malformed(reason.to_owned()))
             })
             .map_err(ParseError::from)?;
         // The helper owns the part bytes and sole unreadable loss. This span
