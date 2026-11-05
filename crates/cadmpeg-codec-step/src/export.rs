@@ -5466,7 +5466,9 @@ impl<'a> Builder<'a> {
             {
                 self.loss(
                     StepLossCode::PcurveSplitAcrossSurfaces,
-                    format!("pcurve {pcurve_id} was split between surfaces {first_id} and {surface_id}"),
+                    format!(
+                        "pcurve {pcurve_id} was split between surfaces {first_id} and {surface_id}"
+                    ),
                 );
             }
             None => {
@@ -7743,7 +7745,9 @@ impl<'a> Builder<'a> {
             .coedges
             .iter()
             .flat_map(|coedge| {
-                coedge.pcurves.iter()
+                coedge
+                    .pcurves
+                    .iter()
                     .filter(|use_| !pcurves.contains_key(use_.pcurve.as_str()))
                     .map(move |use_| format!("{} -> {}", coedge.id, use_.pcurve))
             })
