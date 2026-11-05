@@ -3993,6 +3993,7 @@ fn project_input_topology(
     let native_ref = state.id.clone();
 
     Some(cadmpeg_ir::features::FeatureInputTopology {
+        operands: Default::default(),
         id,
         input_of,
         bodies,

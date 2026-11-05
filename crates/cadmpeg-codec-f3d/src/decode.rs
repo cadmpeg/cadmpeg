@@ -1775,34 +1775,6 @@ fn push_loss_vec(
     losses.push(code.note(args.to_string()));
 }
 
-fn report_unparsed_parameter_records(
-    report: &mut DecodeBody,
-    unparsed: &[crate::design::decode::parameters::UnparsedParameterRecords],
-) {
-    for records in unparsed {
-        push_loss_vec(
-            &mut report.losses,
-            F3dLossCode::ParameterRecordUnparsed,
-            format_args!(
-                "{} parameter frame(s) in {} match no parameter grammar and were not decoded.",
-                records.count, records.stream
-            ),
-        );
-    }
-}
-
-fn report_unparsed_parameter_owners(report: &mut DecodeBody, count: usize) {
-    if count != 0 {
-        push_loss_vec(
-            &mut report.losses,
-            F3dLossCode::ParameterOwnerUnparsed,
-            format_args!(
-                "{count} Design parameter owner binding(s) match no owner grammar; their parameters remain native without interpreted owner bindings."
-            ),
-        );
-    }
-}
-
 fn report_design_projection_gaps(
     report: &mut DecodeBody,
     ctx: &DecodeContext<'_>,
@@ -2656,11 +2628,6 @@ impl<'a> F3dDecodeSession<'a> {
         self.report
             .losses
             .extend(prereqs.design_parameter_scope_losses.iter().cloned());
-        report_unparsed_parameter_records(&mut self.report, &prereqs.design_parameter_unparsed);
-        report_unparsed_parameter_owners(
-            &mut self.report,
-            prereqs.design_parameter_owner_unparsed.len(),
-        );
         if prereqs.design_superseded_scope_envelopes != 0 {
             push_loss_vec(
                 &mut self.report.losses,

@@ -254,26 +254,12 @@ fn parameter_state_session_budget_refusal_escapes_without_a_given_up_substitute(
 
 /// Parse the typed parameter frame `view`.
 fn parsed_parameter(view: View<'_>, offset: usize) -> crate::records::parameters::DesignParameter {
-    match super::super::parameters::parse_frame(
-        view,
-        "Design1/BulkStream.dat",
-        offset,
-        super::super::parameters::Expected {
-            entity_id: None,
-            emitted: &std::collections::HashSet::new(),
-        },
-    )
-    .expect("parameter frame")
-    {
-        super::super::parameters::ParsedFrame::Parameter {
-            parameter,
-            state_target,
-        } => {
-            assert_eq!(state_target, Some(401));
-            *parameter
-        }
-        _ => panic!("expected a typed parameter"),
-    }
+    let (parameter, state_target) =
+        super::super::parameters::parse_frame(view, "Design1/BulkStream.dat", offset)
+            .expect("parameter frame")
+            .expect("expected a typed parameter");
+    assert_eq!(state_target, Some(401));
+    parameter
 }
 
 #[test]
