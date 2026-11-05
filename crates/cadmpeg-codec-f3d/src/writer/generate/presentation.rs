@@ -201,6 +201,20 @@ impl GeneratedDesignRegistry {
             .iter()
             .map(GeneratedDesignType::from)
             .collect::<Vec<_>>();
+        for assignment in &native.design_material_assignments {
+            let Some(kind) = types.iter_mut().find(|kind| {
+                kind.type_guid
+                    .as_str()
+                    .eq_ignore_ascii_case(crate::design::presentation::BODY_PRESENTATION_TYPE_GUID)
+                    && kind.version == crate::design::presentation::BODY_PRESENTATION_TYPE_VERSION
+            }) else {
+                continue;
+            };
+            let entity = assignment.entity_id.suffix();
+            if !kind.entity_ids.contains(&entity) {
+                kind.entity_ids.push(entity);
+            }
+        }
         if !native.design_body_members.is_empty() {
             let record_index =
                 allocate_record_index(&mut used_record_indices, &mut next_record_index)?;
@@ -352,7 +366,7 @@ pub(super) fn dynamic_class_tag(
 }
 
 /// Build an RFC 9562 version-8 UUID from a domain-separated stable identity.
-fn deterministic_guid(domain: &str, identity: &str) -> String {
+pub(super) fn deterministic_guid(domain: &str, identity: &str) -> String {
     let mut digest = Sha256::new();
     digest.update(b"cadmpeg:f3d:generated-design:v1\0");
     digest.update(domain.as_bytes());

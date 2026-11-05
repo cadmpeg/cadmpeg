@@ -30,6 +30,44 @@ use crate::test_support::zip_test::{
 use crate::F3dCodec;
 
 #[test]
+fn source_less_synthesis_writes_body_material_assignment() {
+    let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    ir.model.appearances[0].physical_token = Some("PrismMaterial-019".into());
+    let (written, _) = super::source_less_analytic::synthesize_document(&ir, None);
+    assert_eq!(written.ir().model.appearance_bindings.len(), 1);
+    assert_eq!(
+        written.ir().model.appearance_bindings[0].target,
+        ir.model.appearance_bindings[0].target
+    );
+    assert_eq!(
+        written.ir().model.appearance_bindings[0].appearance,
+        ir.model.appearance_bindings[0].appearance
+    );
+    assert_eq!(
+        written.ir().model.appearance_bindings[0].channels,
+        ir.model.appearance_bindings[0].channels
+    );
+    assert_eq!(
+        written.ir().model.appearances[0].physical_token.as_deref(),
+        Some("PrismMaterial-019")
+    );
+    assert_eq!(
+        f3d_native(written.ir()).design_material_assignments.len(),
+        1
+    );
+    assert_eq!(
+        f3d_native(written.ir()).design_material_assignments[0]
+            .entity_id
+            .as_str(),
+        "0_985"
+    );
+}
+
+#[test]
 fn generated_source_less_writes_unassigned_protein_appearance() {
     use std::collections::BTreeMap;
 
