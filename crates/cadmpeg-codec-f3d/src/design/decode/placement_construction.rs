@@ -34,9 +34,7 @@ pub(super) fn checked_solved_frame(
             .fields
             .use_u_direction
             .as_ref()
-            .is_some_and(|value| {
-                value.value != 0 && !(matches!(placement.type_version, 15 | 16) && value.value == 1)
-            })
+            .is_some_and(|value| value.value > 1)
         || placement
             .fields
             .periodic_face_mode
