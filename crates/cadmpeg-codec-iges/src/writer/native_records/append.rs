@@ -52,7 +52,7 @@ fn encode(
             .map_err(|error| error.to_string())?,
         );
     }
-    let occurrence = products::current_root_occurrence(ir, arena, record);
+    let occurrence = products::current_occurrence(ir, arena, record);
     let mut placement = None;
     if let Some(occurrence) = occurrence {
         let cadmpeg_ir::products::PrototypeReference::Local { definition } = &occurrence.prototype
