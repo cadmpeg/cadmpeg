@@ -3457,10 +3457,10 @@ impl<'a> Builder<'a> {
                 if self.face_step_refs.contains_key(face_id.as_str()) {
                     continue;
                 }
-                let Some(face) = self.faces.get(face_id.as_str()).cloned() else {
+                let Some(face) = self.faces.get(face_id.as_str()).copied() else {
                     continue;
                 };
-                if !face.loops.is_empty() || !self.surface_is_self_bounded(&face) {
+                if !face.loops.is_empty() || !self.surface_is_self_bounded(face) {
                     continue;
                 }
                 let Some(surface) = self.emit_surface(face.surface.as_str()) else {
