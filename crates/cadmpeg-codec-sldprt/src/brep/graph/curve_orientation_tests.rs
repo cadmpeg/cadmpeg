@@ -107,11 +107,11 @@ fn along_marker_keeps_the_stored_edge_direction() {
 }
 
 #[test]
-fn against_marker_reverses_the_stored_edge_direction() {
+fn line_endpoints_set_edge_direction_with_against_marker() {
     let (start, end, sense) = decode_marked_line_edge(0x2b);
-    assert!(start.ends_with("#51"), "{start}");
-    assert!(end.ends_with("#50"), "{end}");
-    assert_eq!(sense, Sense::Reversed);
+    assert!(start.ends_with("#50"), "{start}");
+    assert!(end.ends_with("#51"), "{end}");
+    assert_eq!(sense, Sense::Forward);
 }
 
 /// Decode the triangle with its first edge, stored from (0, 0, 0) to
