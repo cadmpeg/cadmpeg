@@ -110,6 +110,32 @@ fn cut_before_global_gives_up_its_empty_section() {
 }
 
 #[test]
+fn given_up_global_holds_model_scope_without_start_metadata() {
+    let mut original = crate::test_support::compressed_parts::points(false, false);
+    let global = b"1H,,1H;";
+    let start = original
+        .windows(global.len())
+        .position(|window| window == global)
+        .unwrap();
+    let start_card = original
+        .chunks_exact(82)
+        .position(|card| card[72] == b'S')
+        .unwrap()
+        * 82;
+    original[start_card..start_card + 72].fill(b' ');
+    let decoded = crate::test_support::decode(original[..start].to_vec());
+    assert!(decoded.ir().scope.model);
+    assert!(decoded
+        .source_fidelity()
+        .unrepresented()
+        .contains(&cadmpeg_ir::ArenaClass::Model));
+    assert_eq!(
+        crate::test_support::given_up_count(decoded.report(), "iges.global_section"),
+        1
+    );
+}
+
+#[test]
 fn actual_data_callback_records_match_the_existing_parameter_grammar_without_reparsing_on_decode() {
     let original = crate::test_support::compressed_parts::points(false, false);
     let mut bytes = b"prefix:".to_vec();

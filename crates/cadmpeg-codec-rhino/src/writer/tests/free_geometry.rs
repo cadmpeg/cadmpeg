@@ -1208,3 +1208,46 @@ fn noncanonical_periodic_curve_keeps_its_exact_span() {
         );
     }
 }
+#[test]
+fn periodic_curve_with_discontinuous_seam_is_omitted_by_identity() {
+    use cadmpeg_ir::geometry::nurbs::NurbsCurve;
+    use cadmpeg_ir::geometry::{Curve, CurveGeometry};
+    let mut ir = CadIr::empty();
+    let id = cadmpeg_ir::ids::CurveId::mint("cadir:model:curve#periodic-open-seam").unwrap();
+    let nurbs = NurbsCurve::from_lanes(
+        2,
+        vec![-3.0, -1.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 7.0],
+        vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(2.0, 0.0, 0.0),
+            Point3::new(2.0, 2.0, 0.0),
+            Point3::new(0.0, 2.0, 0.0),
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(4.0, 0.0, 0.0),
+        ],
+        None,
+        true,
+    )
+    .unwrap();
+    ir.model.curves.push(Curve {
+        id: id.clone(),
+        native_ref: None,
+        parameter_range: None,
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)),
+        source_object: None,
+    });
+    let plan = RhinoCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(id.as_str()) && loss.message.contains("omitted")));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(decoded.ir().model.curves.is_empty());
+}

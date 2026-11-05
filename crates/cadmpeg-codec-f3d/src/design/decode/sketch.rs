@@ -5211,6 +5211,7 @@ fn parse_text_glyph_run(payload: &[u8], at: usize) -> Result<Option<TextGlyphRun
 
 /// Validated indexed-record identity and byte offset.
 pub(in crate::design::decode) struct IndexedRecordHeader {
+    #[cfg(test)]
     pub(super) offset: usize,
     pub(super) record_index: u32,
     pub(super) class_tag: crate::records::references::DesignClassTag,
@@ -5226,6 +5227,7 @@ pub(super) fn indexed_record_header_at(bytes: &[u8], at: usize) -> Option<Indexe
         .try_into()
         .ok()?;
     Some(IndexedRecordHeader {
+        #[cfg(test)]
         offset: at,
         record_index: View::u32_le_at(bytes, at + 7)?,
         class_tag,
