@@ -78,7 +78,9 @@ fn source_less_compact_body_attribute_is_authored() {
     let mut ir = decoded.ir().clone();
     let target = AttributeTarget::Body(ir.model.bodies[0].id.clone());
     let values = vec![Some(AttributeValue::Reference("f3d:brep:entity#-1".into())),
-        Some(AttributeValue::String("authored-value".into())), Some(AttributeValue::Integer(17))];
+        Some(AttributeValue::String("authored-value".into())), Some(AttributeValue::Integer(17)),
+        Some(AttributeValue::Boolean(true)), Some(AttributeValue::Boolean(false)),
+        AttributeValue::vector([1.0, 2.0]), AttributeValue::vector([3.0, 4.0, 5.0])];
     ir.model.attributes.push(SourceAttribute {
         id: "authored:model:attribute#1".try_into().unwrap(), native_ref: None,
         target: target.clone(), name: "ATTRIB_CUSTOM-attrib".into(), values: values.clone(),
