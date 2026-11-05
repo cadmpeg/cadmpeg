@@ -545,6 +545,7 @@ pub(crate) struct CurveScan {
     /// Ordered, pointwise-corresponding samples in both incident-face charts.
     pub(crate) two_chart_pcurves: Vec<TwoChartPcurveSamples>,
     pub(crate) angular_two_chart_curve_ids: BTreeSet<u32>,
+    pub(crate) ambiguous_two_chart_curve_ids: BTreeSet<u32>,
     /// Ordered world-coordinate lanes from FC-prefixed dense curve rows.
     pub(crate) fc_coordinates: Vec<FcCurveCoordinates>,
     /// FC05 records whose decoded points prove an exact circle.
@@ -1881,7 +1882,13 @@ fn two_chart_pcurves(
     face_ids: &BTreeSet<u32>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Vec<TwoChartPcurveSamples>, CodecError> {
-    two_chart_pcurves_with_modes(ctx, sections, face_ids, losses).map(|(samples, _)| samples)
+    two_chart_pcurves_with_modes(ctx, sections, face_ids, losses).map(|scan| scan.samples)
+}
+
+struct TwoChartPcurveScan {
+    samples: Vec<TwoChartPcurveSamples>,
+    angular_ids: BTreeSet<u32>,
+    ambiguous_ids: BTreeSet<u32>,
 }
 
 fn two_chart_pcurves_with_modes(
@@ -1889,7 +1896,7 @@ fn two_chart_pcurves_with_modes(
     sections: &[ScannedSection<'_>],
     face_ids: &BTreeSet<u32>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Result<(Vec<TwoChartPcurveSamples>, BTreeSet<u32>), CodecError> {
+) -> Result<TwoChartPcurveScan, CodecError> {
     let mut angular_ids = BTreeSet::new();
     let mut records = collect_section_records_result(
         sections.iter(),
@@ -1910,9 +1917,17 @@ fn two_chart_pcurves_with_modes(
         };
         *count += 1;
     }
+    let ambiguous = counts
+        .iter()
+        .filter_map(|(&id, &count)| (count > 1).then_some(id))
+        .collect();
     records.retain(|record| counts.get(&record.curve_id) == Some(&1));
     angular_ids.retain(|id| counts.get(id) == Some(&1));
-    Ok((records, angular_ids))
+    Ok(TwoChartPcurveScan {
+        samples: records,
+        angular_ids,
+        ambiguous_ids: ambiguous,
+    })
 }
 
 fn prototype_pcurves(
@@ -2972,7 +2987,7 @@ pub(crate) fn scan_bytes<'a>(
         &curve_topology_rows,
         &mut local_work_cap_losses,
     );
-    let (two_chart_pcurves, angular_two_chart_curve_ids) = two_chart_pcurves_with_modes(
+    let two_chart_scan = two_chart_pcurves_with_modes(
         ctx,
         &model_geometry_sections,
         &topology_face_ids,
@@ -3198,8 +3213,9 @@ pub(crate) fn scan_bytes<'a>(
             parameters: curve_parameters,
             nonvisible_parameters: nonvisible_curve_parameters,
             pcurves,
-            two_chart_pcurves,
-            angular_two_chart_curve_ids,
+            two_chart_pcurves: two_chart_scan.samples,
+            angular_two_chart_curve_ids: two_chart_scan.angular_ids,
+            ambiguous_two_chart_curve_ids: two_chart_scan.ambiguous_ids,
             fc_coordinates: fc_curve_coordinates,
             fc05_circles,
             fc05_cylinder_cap_pairs,

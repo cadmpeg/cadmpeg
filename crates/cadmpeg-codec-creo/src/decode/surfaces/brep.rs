@@ -2287,71 +2287,113 @@ pub(in super::super) fn transfer_native_brep(
                 Some(SolvedCurveGeometry::Unknown { .. })
             )
         });
-        if unresolved && !scan.surfaces.withholds_curve_charts(row.id) {
-            if let Some(pcurve) =
-                exactly_one(scan.curves.two_chart_pcurves.iter().filter(|pcurve| {
-                    pcurve.curve_id == row.id && pcurve.faces == [first.get(), second.get()]
-                }))
-            {
-                let surfaces = pcurve.faces.map(|face| {
-                    surface_positions
-                        .named(namespaces.prefix(face), face)
-                        .and_then(NamedSurfaces::unique)
-                        .map(|index| source_carriers.surface_geometry(&ir.model.surfaces[index]))
-                });
-                if let [Some(first_surface), Some(second_surface)] = surfaces {
-                    if let Some(geometry) = cylinder_intersection::carrier(
-                        ctx,
-                        pcurve,
-                        [first_surface, second_surface],
-                        points,
-                    )? {
-                        let id = crate::identity::compose_checked::<CurveId>(
-                            &crate::identity::VISIBGEOM_CURVE,
-                            row.id,
-                        )?;
-                        let range =
-                            cadmpeg_ir::topology::IncreasingParameterInterval::new([0.0, 1.0]);
-                        if let Some(position) = position {
-                            let candidate = &mut ir.model.curves[position];
-                            source_carriers.replace_curve_geometry(ctx, candidate, geometry)?;
-                            candidate.parameter_range = range;
-                        } else {
-                            ctx.charge_entities(1, "admit Creo model curves")?;
-                            source_carriers.admit_curve(
-                                ctx,
-                                ir,
-                                Curve {
-                                    id: id.clone(),
-                                    geometry,
-                                    parameter_range: range,
-                                    source_object: Some(SourceObjectAssociation {
-                                        geometry_role: None,
-                                        format: cadmpeg_ir::CodecFormat::Creo,
-                                        object_id: crate::identity::source_object_id_checked(
-                                            format_args!("VisibGeom:{}", row.id),
-                                        )?,
-                                        name: None,
-                                        color: None,
-                                        visible: None,
-                                        layer: None,
-                                        instance_path: Vec::new(),
-                                    }),
-                                },
-                            )?;
-                        }
-                        annotate(
-                            annotations,
-                            &id,
-                            "VisibGeom",
-                            cadmpeg_core::decode::u64_from_index(row.offset),
-                            "paired_cylinder_intersection",
-                            Exactness::Derived,
-                        )?;
-                        model_curve_counts.insert(row.id, 1);
-                        proved_cylinder_intersections.insert(row.id);
-                        continue;
+        if unresolved
+            && !scan.surfaces.withholds_curve_charts(row.id)
+            && !scan.curves.ambiguous_two_chart_curve_ids.contains(&row.id)
+        {
+            let faces = [first.get(), second.get()];
+            let surfaces = faces.map(|face| {
+                surface_positions
+                    .named(namespaces.prefix(face), face)
+                    .and_then(NamedSurfaces::unique)
+                    .map(|index| source_carriers.surface_geometry(&ir.model.surfaces[index]))
+            });
+            if let [Some(first_surface), Some(second_surface)] = surfaces {
+                let mut samples = scan
+                    .curves
+                    .two_chart_pcurves
+                    .iter()
+                    .filter(|pcurve| pcurve.curve_id == row.id);
+                let sample = samples.next();
+                let candidate = if samples.next().is_some() {
+                    None
+                } else if let Some(pcurve) = sample {
+                    if pcurve.faces == faces {
+                        cylinder_intersection::carrier(
+                            ctx,
+                            pcurve,
+                            [first_surface, second_surface],
+                            points,
+                        )?
+                        .map(|geometry| (geometry, "paired_cylinder_intersection"))
+                    } else {
+                        None
                     }
+                } else {
+                    let parameter = exactly_one(
+                        scan.curves
+                            .parameters
+                            .iter()
+                            .filter(|parameter| parameter.curve_id == row.id),
+                    );
+                    let frames = faces.map(|face| {
+                        exactly_one(
+                            scan.surfaces
+                                .parameters
+                                .iter()
+                                .filter(|parameter| parameter.surface_id == face),
+                        )
+                        .and_then(crate::surface::SurfaceParameterRecord::positional_cylinder_frame)
+                    });
+                    if let (Some(_), [Some(first_frame), Some(second_frame)]) = (
+                        parameter.filter(|parameter| parameter.type_byte == row.type_byte),
+                        frames,
+                    ) {
+                        cylinder_intersection::bounded::carrier(
+                            [first_surface, second_surface],
+                            &[first_frame, second_frame],
+                            points,
+                        )
+                        .map(|geometry| (geometry, "bounded_cylinder_intersection"))
+                    } else {
+                        None
+                    }
+                };
+                if let Some((geometry, witness)) = candidate {
+                    let id = crate::identity::compose_checked::<CurveId>(
+                        &crate::identity::VISIBGEOM_CURVE,
+                        row.id,
+                    )?;
+                    let range = cadmpeg_ir::topology::IncreasingParameterInterval::new([0.0, 1.0]);
+                    if let Some(position) = position {
+                        let candidate = &mut ir.model.curves[position];
+                        source_carriers.replace_curve_geometry(ctx, candidate, geometry)?;
+                        candidate.parameter_range = range;
+                    } else {
+                        ctx.charge_entities(1, "admit Creo model curves")?;
+                        source_carriers.admit_curve(
+                            ctx,
+                            ir,
+                            Curve {
+                                id: id.clone(),
+                                geometry,
+                                parameter_range: range,
+                                source_object: Some(SourceObjectAssociation {
+                                    geometry_role: None,
+                                    format: cadmpeg_ir::CodecFormat::Creo,
+                                    object_id: crate::identity::source_object_id_checked(
+                                        format_args!("VisibGeom:{}", row.id),
+                                    )?,
+                                    name: None,
+                                    color: None,
+                                    visible: None,
+                                    layer: None,
+                                    instance_path: Vec::new(),
+                                }),
+                            },
+                        )?;
+                    }
+                    annotate(
+                        annotations,
+                        &id,
+                        "VisibGeom",
+                        cadmpeg_core::decode::u64_from_index(row.offset),
+                        witness,
+                        Exactness::Derived,
+                    )?;
+                    model_curve_counts.insert(row.id, 1);
+                    proved_cylinder_intersections.insert(row.id);
+                    continue;
                 }
             }
         }

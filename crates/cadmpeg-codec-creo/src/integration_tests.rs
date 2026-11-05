@@ -1366,6 +1366,46 @@ fn positive_lower_bend_pipeline_reconciles_named_and_inline_carriers() {
     }
 }
 #[test]
+fn nist_ctc_01_rounded_hexagon_has_oblique_cylinder_intersection() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../corpus/nist-pmi/creo/nist_ctc_01_asme1_rd_cr10030.prt.5");
+    let result = decode(std::fs::read(path).expect("read NIST CTC-01 Creo part"));
+    let model = &result.ir().model;
+    for (curve_id, faces) in [
+        (2445, [2283, 2308]),
+        (2446, [2308, 2303]),
+        (2447, [2303, 2298]),
+        (2448, [2298, 2293]),
+        (2449, [2288, 2283]),
+        (2450, [2293, 2288]),
+    ] {
+        let curve = model
+            .curves
+            .iter()
+            .find(|curve| curve.id.as_str() == format!("creo:visibgeom:curve#{curve_id}"))
+            .expect("rounded-hexagon edge");
+        assert!(matches!(
+            curve.geometry,
+            cadmpeg_ir::geometry::CurveGeometry::Solved(
+                cadmpeg_ir::geometry::SolvedCurveGeometry::Nurbs(_)
+            )
+        ));
+        for face in faces {
+            assert!(model
+                .faces
+                .iter()
+                .any(|item| item.id.as_str() == format!("creo:visibgeom:face#{face}")));
+            assert!(model
+                .pcurves
+                .iter()
+                .any(|pcurve| pcurve.id.as_str()
+                    == format!("creo:visibgeom:pcurve#{curve_id}:{face}")));
+        }
+    }
+    assert_valid(&result);
+}
+
+#[test]
 fn nist_ctc_01_cylinder_intersections_have_surface_curves() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../corpus/nist-pmi/creo/nist_ctc_01_asme1_rd_cr10030.prt.5");
