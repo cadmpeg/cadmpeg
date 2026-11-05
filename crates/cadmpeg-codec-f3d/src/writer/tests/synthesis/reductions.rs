@@ -68,3 +68,35 @@ fn mesh_surface_sentinel_survives_source_less_synthesis() {
     assert!(crate::test_support::native_test::f3d_native(output.ir()).mesh_surface_sentinels.is_empty());
     assert!(report.losses.iter().any(|loss| loss.message.contains("mesh-surface-sentinel")));
 }
+
+#[test]
+fn source_less_compact_body_attribute_is_authored() {
+    use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
+    let source = crate::test_support::zip_test::f3d_with_smbh(
+        &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh());
+    let decoded = F3dCodec.decode(&mut Cursor::new(source), &DecodeOptions::default()).unwrap();
+    let mut ir = decoded.ir().clone();
+    let target = AttributeTarget::Body(ir.model.bodies[0].id.clone());
+    let values = vec![Some(AttributeValue::Reference("f3d:brep:entity#-1".into())),
+        Some(AttributeValue::String("authored-value".into())), Some(AttributeValue::Integer(17))];
+    ir.model.attributes.push(SourceAttribute {
+        id: "authored:model:attribute#1".try_into().unwrap(), native_ref: None,
+        target: target.clone(), name: "ATTRIB_CUSTOM-attrib".into(), values: values.clone(),
+    });
+    let mut bytes = Vec::new();
+    let report = F3dCodec.plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap().write_to(&mut bytes).unwrap();
+    let output = F3dCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()).unwrap();
+    let attribute = output.ir().model.attributes.iter().find(|attribute| attribute.target == target).unwrap();
+    assert_eq!(attribute.name, "ATTRIB_CUSTOM-attrib");
+    assert_eq!(attribute.values, values);
+    assert!(!report.losses.iter().any(|loss| loss.message.contains("authored:model:attribute#1")));
+
+    ir.model.attributes[0].values[1] = Some(AttributeValue::String("x".repeat(256)));
+    let mut bytes = Vec::new();
+    let report = F3dCodec.plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap().write_to(&mut bytes).unwrap();
+    assert!(report.losses.iter().any(|loss| loss.message.contains("authored:model:attribute#1")));
+    let output = F3dCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()).unwrap();
+    assert_eq!(output.ir().model.bodies.len(), 1);
+}
