@@ -646,7 +646,7 @@ pub(crate) fn materialize_give_ups(
                 part.dropped.join(", ")
             ))
             .with_provenance(provenance);
-        loss.dropped = part.dropped.clone();
+        loss.dropped.clone_from(&part.dropped);
         losses.push(loss);
         marks.push(GiveUpMark {
             id,
