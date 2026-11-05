@@ -2,7 +2,6 @@
 //! Preview payloads authored from embedded neutral assets.
 
 use cadmpeg_core::decode::View;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::{Asset, AssetContent};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::CadIr;
@@ -94,7 +93,10 @@ fn payload(asset: &Asset) -> Result<Vec<u8>, super::write_error::WriteError> {
 fn thumbnail_size(dib_length: usize) -> Result<u32, super::write_error::WriteError> {
     let value = cadmpeg_core::decode::u64_from_index(dib_length)
         .checked_add(4)
-        .ok_or_else(|| CodecError::malformed("thumbnail byte length exceeds u64"))?;
+        .ok_or(super::write_error::WriteError::Capacity {
+            field: &super::CAPACITY_FIELDS[5],
+            value: u64::MAX,
+        })?;
     u32::try_from(value).map_err(|_| super::write_error::WriteError::Capacity {
         field: &super::CAPACITY_FIELDS[5],
         value,
@@ -137,6 +139,13 @@ mod tests {
             matches!(error, cadmpeg_ir::codec::write::EncodeError::TargetCapacity {
             field, limit: actual_limit, value
         } if field.field == "thumbnail.byte_length" && actual_limit == u64::from(u32::MAX) && value == actual_limit + 1)
+        );
+        let error: cadmpeg_ir::codec::write::EncodeError =
+            super::thumbnail_size(usize::MAX).unwrap_err().into();
+        assert!(
+            matches!(error, cadmpeg_ir::codec::write::EncodeError::TargetCapacity {
+            field, limit: actual_limit, value
+        } if field.field == "thumbnail.byte_length" && actual_limit == u64::from(u32::MAX) && value >= actual_limit)
         );
     }
 }
