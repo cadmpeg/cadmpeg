@@ -11,7 +11,7 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::FiniteReal;
 
 use super::super::conics::{
-    ellipse_over_range, hyperbola_over_range, parabola_over_range, unperiod_curve,
+    clamp_curve, ellipse_over_range, hyperbola_over_range, parabola_over_range,
 };
 use super::super::{check_nurbs_curve, WriteError};
 
@@ -219,7 +219,7 @@ fn periodic_cubic_clamps_to_an_exact_span() {
     )
     .expect("valid periodic fixture");
     let (lo, hi) = (0.7, 4.2);
-    let converted = unperiod_curve("test", &periodic, range(lo, hi)).expect("clamped span");
+    let converted = clamp_curve("test", &periodic, range(lo, hi)).expect("clamped span");
     let expected = |parameter: f64| {
         cadmpeg_ir::eval::decode::nurbs_curve_point_at(
             EvaluationAdmission::Standard,
@@ -231,6 +231,35 @@ fn periodic_cubic_clamps_to_an_exact_span() {
     };
     assert_same_parameter(&converted, expected, lo, hi, 24);
     assert_canonical("test", &converted, lo, hi);
+}
+
+#[test]
+fn nonperiodic_rational_curve_clamps_to_its_used_interval() {
+    let source = NurbsCurve::from_lanes(
+        2,
+        vec![0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 3.0, 3.0],
+        vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 2.0, 0.0),
+            Point3::new(2.0, -1.0, 0.0),
+            Point3::new(3.0, 2.0, 0.0),
+            Point3::new(4.0, 0.0, 0.0),
+        ],
+        Some(vec![1.0, 2.0, 0.5, 1.5, 1.0]),
+        false,
+    )
+    .expect("valid rational curve");
+    for [lo, hi] in [[0.0, 2.5], [0.5, 3.0], [0.5, 2.5], [0.0, 3.0]] {
+        let converted = clamp_curve("test", &source, range(lo, hi)).expect("bounded span");
+        assert_same_parameter(
+            &converted,
+            |parameter| evaluate(&source, parameter),
+            lo,
+            hi,
+            24,
+        );
+        assert_canonical("test", &converted, lo, hi);
+    }
 }
 
 #[test]
@@ -252,7 +281,7 @@ fn periodic_full_domain_clamps_to_a_closed_span() {
         true,
     )
     .expect("valid periodic fixture");
-    let converted = unperiod_curve("test", &periodic, range(0.0, 4.0)).expect("full clamp");
+    let converted = clamp_curve("test", &periodic, range(0.0, 4.0)).expect("full clamp");
     let expected = |parameter: f64| {
         cadmpeg_ir::eval::decode::nurbs_curve_point_at(
             EvaluationAdmission::Standard,
