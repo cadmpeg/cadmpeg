@@ -1178,6 +1178,7 @@ pub(crate) enum FramedSectionCache<'a> {
 
 type FramedSections<'a> = Vec<(usize, crate::om::Section<'a>)>;
 type FramedSectionLayouts = Vec<(usize, crate::om::cache::SectionLayout)>;
+type ParsedFramedSections<'a> = (FramedSections<'a>, FramedSectionLayouts, Vec<(u64, u64)>);
 
 fn offset_block_key(section: usize, block: usize) -> String {
     format!("nx:om-data-blocks-{section}:block#{block}")
@@ -1187,14 +1188,7 @@ fn parse_framed_section_cache<'bytes>(
     bytes: &'bytes [u8],
     entries: &[DirEntry],
     retain_layouts: bool,
-) -> Result<
-    (
-        FramedSections<'bytes>,
-        FramedSectionLayouts,
-        Vec<(u64, u64)>,
-    ),
-    CodecError,
-> {
+) -> Result<ParsedFramedSections<'bytes>, CodecError> {
     let mut sections = Vec::new();
     let mut layouts = Vec::new();
     let mut truncated = Vec::new();
