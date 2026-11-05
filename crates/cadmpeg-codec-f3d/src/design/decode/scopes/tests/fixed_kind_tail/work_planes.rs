@@ -40,7 +40,7 @@ fn legacy_work_plane_class_380_frame_decodes_its_matrix() {
         .unwrap();
     let decoded = exact_work_plane_frame(
         &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &crate::design::test_support::test_primary_frames(&bytes),
         &scope,
     )
     .expect("class-380 WorkPlane frame");
@@ -90,7 +90,7 @@ fn legacy_work_plane_class_256_frame_decodes_its_opaque_prefix_lane() {
             .unwrap();
         let decoded = exact_work_plane_frame(
             &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &crate::design::test_support::test_primary_frames(&bytes),
             &scope,
         )
         .expect("class-256 WorkPlane frame");
@@ -127,7 +127,7 @@ fn legacy_work_plane_class_256_frame_decodes_its_opaque_prefix_lane() {
     assert_eq!(
         exact_work_plane_frame(
             &invalid,
-            &crate::design::test_support::indexed_record_offsets_for_test(&invalid),
+            &crate::design::test_support::test_primary_frames(&invalid),
             &scope
         ),
         None
@@ -203,7 +203,7 @@ fn legacy_work_plane_opaque_prefix_frames_use_class_pair_admission() {
             .unwrap();
         let decoded = exact_work_plane_frame(
             &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &crate::design::test_support::test_primary_frames(&bytes),
             &scope,
         )
         .expect("opaque-prefix WorkPlane frame");
@@ -239,7 +239,7 @@ fn legacy_work_plane_opaque_prefix_frames_use_class_pair_admission() {
     assert_eq!(
         exact_work_plane_frame(
             &invalid,
-            &crate::design::test_support::indexed_record_offsets_for_test(&invalid),
+            &crate::design::test_support::test_primary_frames(&invalid),
             &scope
         ),
         None

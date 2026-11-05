@@ -54,7 +54,7 @@ fn parse(bytes: &[u8]) -> Option<crate::records::feature::scope::DesignParameter
     let class_tag = crate::records::references::DesignClassTag::try_from("396".to_owned()).unwrap();
     parse_parameter_scope(
         bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(bytes),
+        &crate::design::test_support::test_primary_frames(bytes),
         SCOPE_RECORD,
         &class_tag,
         0,

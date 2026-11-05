@@ -54,17 +54,15 @@ fn off_catalog_inherit_selects_the_default_and_names_the_displacement() {
 }
 
 #[test]
-fn eligible_off_catalog_source_keeps_its_identity_until_synthesis() {
+fn eligible_off_catalog_source_selects_the_catalog_default() {
     let ir = catalog_write_ir(Some(("test", Some("test:future"))));
-    let target = resolve_write_request(&ir, TargetRequest::Inherit, CATALOG_WRITE_CATALOG)
-        .unwrap()
-        .prefer_source();
-    assert_eq!(target.target_id().as_str(), "test:future");
-    let displacement = target.synthesis_displacement_message().unwrap();
+    let target = resolve_write_request(&ir, TargetRequest::Inherit, CATALOG_WRITE_CATALOG).unwrap();
+    assert_eq!(target.target_id().as_str(), "test:new");
+    let displacement = target.displacement_message().unwrap();
     assert!(displacement.contains("test:future"));
     assert!(displacement.contains("test:new"));
-    assert!(target.source_preservation_eligible());
-    assert!(target.entry().is_none());
+    assert!(!target.source_preservation_eligible());
+    assert!(target.entry().is_some());
     assert_eq!(
         target.synthesis_target().unwrap().unwrap().as_str(),
         "test:new"

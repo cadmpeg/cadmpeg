@@ -7,7 +7,6 @@ use super::shared_frames::exact_same_segment_record_reference;
 use super::shared_frames::rigid_transform_at;
 use crate::bytes::lp_ascii_filtered_view;
 use crate::design::assembly::RigidGroupLocatorLayout;
-use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::decode::text::fixed_relaxed_guid_text;
 use crate::layout::assembly_operand_path_locator as path_locator;
 use crate::layout::assembly_operand_path_locator_reference_run as path_locator_run;
@@ -16,6 +15,7 @@ use crate::layout::assembly_variable_reference_operand_path_locator as variable_
 use crate::layout::assembly_wide_operand_path_identity_locator as wide_identity;
 use crate::layout::assembly_wide_operand_path_locator as wide_locator;
 use crate::layout::assembly_wide_operand_path_matrix_locator as wide_matrix;
+use crate::metastream::PrimaryFrames;
 use crate::records::feature::assembly::DesignAssemblyOperandPath;
 use crate::records::feature::assembly::DesignAssemblyOperandPathLink;
 use crate::records::feature::assembly::TYPED_OCCURRENCE_PATH_TYPE_GUID;
@@ -32,7 +32,7 @@ pub(super) type StreamTypes<'a> = HashMap<u64, (&'a str, u32)>;
 
 pub(super) fn exact_assembly_operand_paths<'a>(
     source: View<'a>,
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
     stream_types: &StreamTypes<'_>,
 ) -> Result<Option<[ParsedOperandPath<'a>; 2]>, CodecError> {
@@ -65,8 +65,7 @@ pub(super) fn exact_assembly_operand_paths<'a>(
             )?;
             let candidates = records
                 .offsets(locator_record_index)
-                .iter()
-                .copied()
+                .into_iter()
                 .filter(|locator_at| *locator_at >= search_start);
             let mut candidate = None;
             for locator_at in candidates {
@@ -113,7 +112,7 @@ pub(super) fn exact_assembly_operand_paths<'a>(
 /// member's.
 pub(super) fn exact_rigid_group_member_paths<'a>(
     source: View<'a>,
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
     stream_types: &StreamTypes<'_>,
     leading: &[ParsedOperandPath<'a>; 2],
@@ -139,8 +138,7 @@ pub(super) fn exact_rigid_group_member_paths<'a>(
             let mut candidate = None;
             for locator_at in records
                 .offsets(locator_record_index)
-                .iter()
-                .copied()
+                .into_iter()
                 .filter(|locator_at| *locator_at >= search_start)
             {
                 let parsed = match exact_assembly_operand_path_envelope(
@@ -181,7 +179,7 @@ pub(super) fn exact_rigid_group_member_paths<'a>(
 
 fn exact_assembly_operand_path_envelope<'a>(
     source: View<'a>,
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
     stream_types: &StreamTypes<'_>,
     locator_record_index: u32,

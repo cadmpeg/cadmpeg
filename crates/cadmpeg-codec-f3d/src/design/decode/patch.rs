@@ -2,7 +2,7 @@
 //! Decode the boundary-settings record a `SurfacePatch` scope references once
 //! per boundary component.
 
-use super::sketch::IndexedRecordOffsets;
+use crate::metastream::PrimaryFrames;
 use crate::records::feature::surface_ops::{DesignPatchContinuity, DesignSurfacePatchBoundary};
 use cadmpeg_core::decode::View;
 
@@ -15,7 +15,7 @@ use cadmpeg_core::decode::View;
 /// single-group path form carries no settings record and therefore yields none.
 pub(super) fn surface_patch_boundaries(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     reference_members: &[u32],
 ) -> Vec<DesignSurfacePatchBoundary> {
     let mut boundaries = Vec::new();

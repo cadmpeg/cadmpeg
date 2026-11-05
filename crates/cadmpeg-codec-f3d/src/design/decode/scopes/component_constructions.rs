@@ -2,12 +2,12 @@
 //! Exact derived-instance, component-insert, copy-paste-component and component-pattern occurrence scopes.
 
 use crate::bytes::lp_utf16_bounded;
+use crate::metastream::PrimaryFrames;
 use cadmpeg_core::decode::u64_from_index;
 
 use super::shared_frames::marked_record_reference;
 use super::shared_frames::rigid_transform_at;
 use crate::bytes::lp_ascii_filtered_view;
-use crate::design::decode::sketch::IndexedRecordOffsets;
 
 use crate::design::decode::text::relaxed_guid_end;
 use crate::design::decode::text::{fixed_guid_end, fixed_utf16_ascii_eq};
@@ -37,7 +37,7 @@ use cadmpeg_core::CodecError;
 
 pub(super) fn exact_derived_instance_construction(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
     occurrences: &[DesignComponentOccurrence],
 ) -> Result<Option<DesignDerivedInstanceConstruction>, CodecError> {
@@ -149,7 +149,7 @@ pub(super) fn exact_derived_instance_construction(
 
 pub(super) fn exact_component_insert_construction(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
 ) -> Result<Option<DesignComponentInsertConstruction>, CodecError> {
     let parsed = (|| {
@@ -509,7 +509,7 @@ pub(super) fn exact_component_insert_construction(
 
 fn exact_component_insert_class_426_relation<'a>(
     bytes: &'a [u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     relation_at: usize,
     scope_at: usize,
     relation_record_index: u32,
@@ -1024,7 +1024,7 @@ fn legacy_component_insert_placements(
 
 pub(super) fn exact_copy_paste_component_operation(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
     occurrences: &[DesignComponentOccurrence],
 ) -> Result<Option<DesignCopyPasteComponentOperation>, CodecError> {
@@ -1222,7 +1222,7 @@ fn unique_pattern_occurrence<'a>(
 }
 
 fn unique_indexed_record_before(
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     record_index: u32,
     end: usize,
 ) -> Option<usize> {

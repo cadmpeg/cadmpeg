@@ -33,7 +33,7 @@ fn direct_sketch_point_selection_reads_owner_and_persistent_ids() {
 
     let selection = parse_work_point_sketch_point_frame(
         &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &crate::design::test_support::test_primary_frames(&bytes),
         record_index,
         0,
     )
