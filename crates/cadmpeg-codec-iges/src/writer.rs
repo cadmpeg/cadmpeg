@@ -150,6 +150,7 @@ mod attributes;
 mod copious_curve;
 mod degrade;
 mod display;
+mod entity_order;
 mod feature_order;
 mod levels;
 mod native_plane;
@@ -634,6 +635,7 @@ fn synthesize_with_admission(
     }
 
     append_name_properties(&mut graph.entities, &graph.presentations)?;
+    entity_order::source_order(ir, &mut graph.entities, &mut graph.presentations)?;
     feature_order::order(ir, &mut graph.entities, &mut graph.presentations)?;
     attribute_export.regenerated.extend(display::regenerated(
         ir,
