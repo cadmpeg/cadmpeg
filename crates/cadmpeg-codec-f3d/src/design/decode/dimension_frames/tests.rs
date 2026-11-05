@@ -86,6 +86,66 @@ fn standard_recipe_references_refuse_nested_items_and_token_text() {
 }
 
 #[test]
+fn counted_recipe_operands_keep_one_reference_per_operand() {
+    // Two operands: the first names its face once, the second three times.
+    let name = |prefix: &mut Vec<u8>, lead: u32, token: &[u8], reference: u32| {
+        prefix.extend_from_slice(&lead.to_le_bytes());
+        prefix.extend_from_slice(&u32::try_from(token.len()).unwrap().to_le_bytes());
+        prefix.extend_from_slice(token);
+        prefix.extend_from_slice(&[0; 4]);
+        prefix.extend_from_slice(&1u32.to_le_bytes());
+        prefix.extend_from_slice(&reference.to_le_bytes());
+        prefix.extend_from_slice(&[0; 4]);
+    };
+    let packed = |prefix: &mut Vec<u8>, token: &[u8], reference: u32| {
+        prefix.extend_from_slice(&u32::try_from(token.len()).unwrap().to_le_bytes());
+        prefix.extend_from_slice(token);
+        prefix.extend_from_slice(&[0; 4]);
+        prefix.extend_from_slice(&1u32.to_le_bytes());
+        prefix.extend_from_slice(&reference.to_le_bytes());
+        prefix.extend_from_slice(&[0; 4]);
+    };
+    let mut prefix = vec![0; 10];
+    for word in [1u32, 3, 2] {
+        prefix.extend_from_slice(&word.to_le_bytes());
+    }
+    let first = prefix.len();
+    name(&mut prefix, 1, b"2", 303);
+    let second = prefix.len();
+    name(&mut prefix, 3, b"4", 301);
+    packed(&mut prefix, b"4", 316);
+    packed(&mut prefix, b"10", 303);
+    prefix.extend_from_slice(&[0; 4]);
+
+    let references =
+        crate::design::decode::dimension_frames::decode_recipe_references(&prefix, 1_000);
+    let read: Vec<_> = references
+        .iter()
+        .map(|reference| {
+            (
+                reference.selector_offset,
+                reference.token.as_str(),
+                reference.design_reference,
+            )
+        })
+        .collect();
+    assert_eq!(
+        read,
+        [
+            (1_000 + u64_from_index(first), "2", 303),
+            (1_000 + u64_from_index(second), "4", 301),
+        ]
+    );
+
+    // A truncated second operand is not a counted frame.
+    let mut short = prefix[..prefix.len() - 4].to_vec();
+    short.truncate(short.len() - 4);
+    assert!(
+        crate::design::decode::dimension_frames::decode_recipe_references(&short, 0).len() != 2
+    );
+}
+
+#[test]
 fn paired_recipe_references_refuse_operand_and_flattened_runs() {
     let mut prefix = vec![0; 10];
     for word in [1u32, 2, 1, 1] {

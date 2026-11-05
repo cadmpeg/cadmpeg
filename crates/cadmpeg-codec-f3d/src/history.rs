@@ -5440,12 +5440,11 @@ fn bind_historical_face_operand_candidates<'a>(
     for reference in &mut operand.recipe_references {
         bind_historical_recipe_reference_candidates(reference, topology, recipe_topologies)?;
     }
+    let recipe_face = face_recipes
+        .get(topology, face_recipe::FaceRecipeIndex::new)
+        .resolve(operand);
     if scope.kind() == crate::records::feature::scope::DesignFeatureKind::DeleteFace {
-        operand.resolved_face_slots = face_recipes
-            .get(topology, face_recipe::FaceRecipeIndex::new)
-            .resolve(operand)
-            .into_iter()
-            .collect();
+        operand.resolved_face_slots = recipe_face.into_iter().collect();
         return Ok(());
     }
     if let Some(recipe_record_index) = recipe_record_indices.get(operand.recipe_id.as_str()) {
@@ -5739,6 +5738,11 @@ fn bind_historical_face_operand_candidates<'a>(
                 None => {}
             }
         }
+    }
+    if let Some(face) = recipe_face {
+        // Every recipe node matches one boundary edge of this face and the
+        // face fans around both of its ends.
+        operand.resolved_face_slots = vec![face];
     }
     Ok(())
 }
@@ -7931,7 +7935,82 @@ fn bind_historical_edge_operand<'a>(
             })
         });
     }
+    if operand.resolved_edge_slot.is_none()
+        && matches!(
+            crate::design::design_feature_family(&scope.kind()),
+            Some(
+                crate::design::DesignFeatureFamily::Fillet
+                    | crate::design::DesignFeatureFamily::Chamfer
+            )
+        )
+    {
+        operand.resolved_edge_slot = side_one_reference_face_edge(
+            operand.recipe_structure.as_ref(),
+            &operand.recipe_references,
+            topology,
+            topology_queries,
+        );
+    }
     Ok(())
+}
+
+/// The one edge of `topology` that every face named by the first side of a
+/// standard edge recipe bounds. Each named reference must stand for exactly
+/// one face of the topology; the edge's faces need not carry the recipe's own
+/// Design reference.
+fn side_one_reference_face_edge<'a>(
+    structure: Option<&crate::records::topology::edge_recipe::DesignEdgeRecipeStructure>,
+    references: &[crate::records::dimensions::DesignRecipeReference],
+    topology: &'a AsmHistoricalTopology,
+    topology_queries: &mut TopologyQueryCache<'a>,
+) -> Option<i64> {
+    let side = structure.and_then(|structure| structure.sides.first())?;
+    let mut ordinals = Vec::new();
+    for value in std::iter::once(side.header_value)
+        .chain(side.scalars.iter().copied())
+        .filter(|value| *value != 0)
+    {
+        ordinals.push(usize::try_from(value).ok()?.checked_sub(1)?);
+    }
+    ordinals.sort_unstable_by(Ord::cmp);
+    ordinals.dedup();
+    if ordinals.len() < 2 {
+        return None;
+    }
+    let mut common = None::<Vec<i64>>;
+    for ordinal in ordinals {
+        let faces =
+            selection::faces_in_topology(effective_faces(references.get(ordinal)?), topology);
+        let [face] = faces.as_slice() else {
+            return None;
+        };
+        let [boundary] = face_boundary_contexts_for_slots(
+            &[stable_ref(face.as_str())?],
+            topology,
+            topology_queries,
+        )
+        .try_into()
+        .ok()?;
+        let edges: Vec<i64> = boundary
+            .loops
+            .iter()
+            .flat_map(|face_loop| face_loop.boundary.coedges().map(|row| row.edge_slot))
+            .collect();
+        common = Some(match common {
+            None => edges,
+            Some(mut common) => {
+                common.retain(|edge| edges.contains(edge));
+                common
+            }
+        });
+    }
+    let mut common = common?;
+    common.sort_unstable_by(Ord::cmp);
+    common.dedup();
+    match common.as_slice() {
+        [edge] => Some(*edge),
+        _ => None,
+    }
 }
 
 /// A resolved axis with finite origin and unit direction.

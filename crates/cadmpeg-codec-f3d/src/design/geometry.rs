@@ -293,7 +293,7 @@ fn arrangement_region_matching_curves(
         }
     }
     let faces = geometric!(sketch_arrangement_faces_with_nodes(
-        sketch, entities, tolerance, work, ctx, nodes
+        sketch, entities, tolerance, work, ctx, nodes, false
     )?);
     let mut selected = None;
     for face in &faces {
@@ -370,7 +370,73 @@ fn sketch_arrangement_faces(
     work: &ProfileGeometryWork,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<SketchArrangementFace>>, CodecError> {
-    sketch_arrangement_faces_with_nodes(sketch, entities, tolerance, work, ctx, Vec::new())
+    sketch_arrangement_faces_with_nodes(sketch, entities, tolerance, work, ctx, Vec::new(), false)
+}
+
+/// One bounded face of the arrangement every non-construction curve of a
+/// sketch makes: its directed boundary and its boundary polyline.
+pub(super) struct AtomicSketchRegion {
+    pub(super) boundary: Vec<cadmpeg_ir::features::SketchProfileBoundaryUse>,
+    pub(super) polyline: Vec<Point2>,
+}
+
+/// The bounded faces of the arrangement of every non-construction curve of
+/// `sketch`, profiled or not, split at every crossing.
+pub(super) fn atomic_sketch_regions(
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    tolerance: f64,
+    work: &ProfileGeometryWork,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<Vec<AtomicSketchRegion>>, CodecError> {
+    let segments = entities
+        .iter()
+        .filter(|entity| entity.sketch == sketch.id && !entity.construction)
+        .filter_map(|entity| {
+            if let cadmpeg_ir::sketches::SketchGeometryDefinition::Circle { center, radius } =
+                *entity.geometry.definition()
+            {
+                Some(ProfileBoundarySegment::Arc {
+                    center: center.get(),
+                    radius,
+                    start_angle: 0.0,
+                    end_angle: std::f64::consts::TAU,
+                })
+            } else {
+                profile_use_segment(entity, false)
+            }
+        })
+        .collect::<Vec<_>>();
+    let charged = segments
+        .len()
+        .checked_mul(segments.len())
+        .is_some_and(|count| work.arrangement.charge_by(count));
+    if !charged {
+        work.arrangement_skipped.set(true);
+        return Ok(None);
+    }
+    let mut nodes = Vec::new();
+    for (index, left) in segments.iter().enumerate() {
+        for right in segments.iter().skip(index + 1) {
+            if let Some(points) = analytic_segment_intersections(left, right) {
+                for point in points.into_iter().flatten() {
+                    arrangement_node(&mut nodes, point, tolerance);
+                }
+            }
+        }
+    }
+    let faces = geometric!(sketch_arrangement_faces_with_nodes(
+        sketch, entities, tolerance, work, ctx, nodes, true
+    )?);
+    Ok(Some(
+        faces
+            .into_iter()
+            .map(|face| AtomicSketchRegion {
+                boundary: face.boundary,
+                polyline: face.polyline,
+            })
+            .collect(),
+    ))
 }
 
 fn sketch_arrangement_faces_with_nodes(
@@ -380,6 +446,7 @@ fn sketch_arrangement_faces_with_nodes(
     work: &ProfileGeometryWork,
     ctx: &DecodeContext<'_>,
     mut nodes: Vec<Point2>,
+    all_curves: bool,
 ) -> Result<Option<Vec<SketchArrangementFace>>, CodecError> {
     use cadmpeg_ir::features::SketchProfileBoundaryUse;
     use cadmpeg_ir::sketches::{SketchEntityUse, SketchGeometryDefinition};
@@ -387,7 +454,7 @@ fn sketch_arrangement_faces_with_nodes(
     let mut pending = Vec::<SketchProfileBoundaryUse>::new();
     let mut circles = Vec::new();
     let mut candidate_uses = Vec::new();
-    if sketch.profiles.is_empty() {
+    if all_curves || sketch.profiles.is_empty() {
         for entity in entities
             .iter()
             .filter(|entity| entity.sketch == sketch.id && !entity.construction)
@@ -844,6 +911,9 @@ fn arrangement_edges_meet_only_at_nodes(
                 && !strictly_inside(*right_end, *left_start, *left_end);
         }
     }
+    if let Some(touch) = collinear_lines_touch_only(left, right, tolerance) {
+        return touch;
+    }
     analytic_segment_intersections(&left_segment, &right_segment).is_some_and(|intersections| {
         intersections.iter().flatten().all(|intersection| {
             shared_nodes
@@ -851,6 +921,41 @@ fn arrangement_edges_meet_only_at_nodes(
                 .any(|node| point_distance(*intersection, nodes[*node]) <= tolerance)
         })
     })
+}
+
+/// For two straight edges on one line, whether they share no more than an end;
+/// `None` when either edge is curved or the edges are not collinear.
+fn collinear_lines_touch_only(
+    left: &SketchArrangementEdge,
+    right: &SketchArrangementEdge,
+    tolerance: f64,
+) -> Option<bool> {
+    let straight = |edge: &SketchArrangementEdge| -> Option<(Point2, Point2)> {
+        let (start, end) = (*edge.polyline.first()?, *edge.polyline.last()?);
+        edge.polyline
+            .iter()
+            .all(|point| point_segment_distance(*point, (start, end)) <= tolerance)
+            .then_some((start, end))
+    };
+    let (a, b) = straight(left)?;
+    let (c, d) = straight(right)?;
+    let length = point_distance(a, b);
+    if length <= tolerance
+        || point_line_distance(c, (a, b)) > tolerance
+        || point_line_distance(d, (a, b)) > tolerance
+    {
+        return None;
+    }
+    let along = |p: Point2| ((p.u - a.u) * (b.u - a.u) + (p.v - a.v) * (b.v - a.v)) / length;
+    let (c, d) = (along(c), along(d));
+    let overlap = length.min(c.max(d)) - 0.0_f64.max(c.min(d));
+    Some(overlap <= tolerance)
+}
+
+/// The distance from `point` to the infinite line through `a` and `b`.
+fn point_line_distance(point: Point2, (a, b): (Point2, Point2)) -> f64 {
+    let length = point_distance(a, b);
+    ((b.u - a.u) * (a.v - point.v) - (a.u - point.u) * (b.v - a.v)).abs() / length
 }
 
 /// Whether `angle` lies strictly inside the directed arc from `start` to `end`
@@ -2203,6 +2308,25 @@ impl CertifiedPiece {
 fn certified_pieces_separated(left: &[CertifiedPiece], right: &[CertifiedPiece]) -> bool {
     left.iter()
         .all(|left| right.iter().all(|right| left.separated_from(right)))
+}
+
+/// Whether each of `points` lies inside the closed profile loop `profile`;
+/// `None` when the loop's boundary is not resolved.
+pub(super) fn profile_loop_contains_points(
+    profile: &[cadmpeg_ir::sketches::SketchEntityUse],
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    points: &[Point2],
+    tolerance: f64,
+    work: &ProfileGeometryWork,
+    ctx: &DecodeContext<'_>,
+) -> Result<Option<Vec<bool>>, CodecError> {
+    let boundary = geometric!(profile_boundary(profile, entities, tolerance, work, ctx)?);
+    Ok(Some(
+        points
+            .iter()
+            .map(|point| boundary.contains_point(*point))
+            .collect(),
+    ))
 }
 
 fn profile_boundary(

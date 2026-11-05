@@ -263,6 +263,32 @@ pub(crate) fn decode_recipe_references(
     }
 }
 
+/// Prefix offsets of the first name of each operand of a standard recipe
+/// prefix whose operands carry several persistent names.
+///
+/// The word at offset 18 counts the operands. Each operand opens with a word
+/// counting its names; the standard frame reads that word as the first name's
+/// selector. A prefix whose operands each carry one name, or whose counted
+/// operands do not end exactly at the reference suffix, has no such offsets.
+fn counted_operand_first_names(prefix: &[u8]) -> Option<HashSet<usize>> {
+    let operand_count = View::u32_le_at(prefix, 18).map(index_from_u32)?;
+    let mut first_names = HashSet::new();
+    let mut names_total = 0usize;
+    let mut at = 22usize;
+    for _ in 0..operand_count {
+        let names = View::u32_le_at(prefix, at)
+            .map(index_from_u32)
+            .filter(|names| *names != 0 && *names <= prefix.len() / 17)?;
+        first_names.insert(at);
+        for _ in 0..names {
+            at = scan_recipe_reference_operand(prefix, at, RecipeReferenceTokenFrame::Either)?.next;
+        }
+        names_total = names_total.checked_add(names)?;
+    }
+    (names_total > operand_count && recipe_reference_suffix(prefix.get(at..)?))
+        .then_some(first_names)
+}
+
 fn decode_standard_recipe_references(
     prefix: &[u8],
     prefix_offset: u64,
@@ -270,6 +296,9 @@ fn decode_standard_recipe_references(
     if View::u32_le_at(prefix, 22).is_none_or(|value| value == 0) {
         return Vec::new();
     }
+    // A recipe operand is one face or edge. Its first persistent name stands
+    // for it, so reference ordinals stay the operand ordinals of the program.
+    let first_names = counted_operand_first_names(prefix);
     let mut references = Vec::new();
     let mut at = 22usize;
     while prefix
@@ -279,6 +308,17 @@ fn decode_standard_recipe_references(
     {
         if recipe_reference_suffix(&prefix[at..]) {
             return references;
+        }
+        if let Some(first_names) = &first_names {
+            if !first_names.contains(&at) {
+                let Some(scanned) =
+                    scan_recipe_reference_operand(prefix, at, RecipeReferenceTokenFrame::Either)
+                else {
+                    return Vec::new();
+                };
+                at = scanned.next;
+                continue;
+            }
         }
         let Some(parsed) = decode_recipe_reference_operand(
             prefix,
