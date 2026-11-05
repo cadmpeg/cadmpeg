@@ -7419,14 +7419,12 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
-        if !self.split_edges.is_empty() {
+        let split_edges = self.split_edges.iter().copied().collect::<Vec<_>>();
+        for edge in split_edges {
             self.loss(
                 StepLossCode::NonManifoldEdgeSplit,
                 format!(
-                    "{} non-manifold edge(s) of closed shells were each written as one coincident \
-                     EDGE_CURVE per forward and reversed use pair (a STEP closed shell admits two \
-                     uses per edge)",
-                    self.split_edges.len()
+                    "non-manifold edge '{edge}' was written as coincident EDGE_CURVE records for its use pairs"
                 ),
             );
         }
