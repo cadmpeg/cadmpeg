@@ -1673,3 +1673,41 @@ fn removing_feature_name_does_not_restore_the_source_label() {
         .iter()
         .all(|feature| feature.name.is_none()));
 }
+
+#[test]
+fn directory_pattern_number_is_declared_when_reemitted() {
+    let mut ir = CadIr::empty();
+    install(
+        &mut ir,
+        "display_attributes",
+        "iges:presentation:display#D1",
+        &json!({
+            "source_entity": "iges:entity:directory#1", "line_font_number": 3,
+            "line_font_definition": null, "level_number": 0, "level_definition": null,
+            "color_number": 0, "color_definition": null, "line_weight_number": 0,
+            "line_weight_mm": null, "view": 0, "visible": true
+        }),
+    );
+    let mut entities = vec![owner()];
+    append(&ir, &mut entities, crate::IgesVersion::V5_3);
+    let regenerated = super::super::display::regenerated(
+        &ir,
+        &entities,
+        &BTreeMap::new(),
+        crate::IgesVersion::V5_3,
+    );
+    assert!(regenerated.contains("iges:presentation:display#D1"));
+    let bytes = encode_file(
+        &ir,
+        &entities,
+        &BTreeMap::new(),
+        crate::IgesVersion::V5_3,
+        Some(ir.tolerances.linear.unwrap().get()),
+    )
+    .unwrap();
+    let directory = bytes
+        .split(|byte| *byte == b'\n')
+        .find(|line| line.get(72) == Some(&b'D'))
+        .unwrap();
+    assert_eq!(&directory[24..32], b"       3");
+}
