@@ -439,12 +439,12 @@ type MetadataIr = (
     RouteOutcome,
 );
 
-    dialects: &DialectLayers,
-) -> Result<MetadataIr, CodecError> {
-    let mut unknowns = Vec::new();
 fn build_metadata_ir(
     ctx: &DecodeContext<'_>,
     scan: &Scan,
+    dialects: &DialectLayers,
+) -> Result<MetadataIr, CodecError> {
+    let mut unknowns = Vec::new();
     let mut ir = CadIr::decoded(source_meta(scan, dialects, None)?);
     let mut annotations = AnnotationBuilder::new();
     let mut losses = Vec::new();
