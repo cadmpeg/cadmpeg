@@ -4,6 +4,7 @@
 
 mod authored_assembly;
 mod authored_constraints;
+mod authored_drawing;
 mod authored_history;
 mod authored_operations;
 mod measured_geometry;
