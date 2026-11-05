@@ -202,6 +202,30 @@ fn surface_binding_writes_a_314_definition() {
     );
     let round_trip = round_trip(&ir);
     assert_eq!(round_trip.ir().model.faces.len(), 1);
+    assert_eq!(round_trip.ir().model.appearance_bindings.len(), 1);
+    assert!(matches!(
+        round_trip.ir().model.appearance_bindings[0].target,
+        AppearanceTarget::Surface(_)
+    ));
+    assert_eq!(
+        round_trip.ir().model.appearances[0].base_color,
+        ir.model.appearances[0].base_color
+    );
+    assert!(
+        !generated
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains("test:application:binding#red")
+                || loss.message.contains("test:application:appearance#red")),
+        "{:#?}",
+        generated.losses
+    );
+    ir.model.appearances[0].name = Some("named material".into());
+    let reduced = super::super::synthesize(&ir, IgesVersion::V5_3).unwrap();
+    assert!(reduced
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("test:application:appearance#red")));
 }
 
 #[test]
