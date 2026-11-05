@@ -1205,6 +1205,7 @@ fn cylinder_solid_with_plane_caps_round_trips() {
             )
             .and_then(|plan| plan.write_to(&mut bytes))
             .expect("cylinder solid writes");
+        super::revolution::assert_brep_revolution_checksum(&bytes);
         assert!(
             report
                 .losses
