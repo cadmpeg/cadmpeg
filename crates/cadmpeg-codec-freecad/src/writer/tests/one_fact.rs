@@ -14,6 +14,37 @@ const HISTORY: &[u8] = include_bytes!(concat!(
 ));
 
 #[test]
+fn dropped_presentation_layers_are_named_individually() {
+    use cadmpeg_ir::ids::LayerId;
+    use cadmpeg_ir::presentation::PresentationLayer;
+
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    for name in ["first", "second"] {
+        ir.model.presentation_layers.push(PresentationLayer {
+            id: LayerId::mint(format!("cadir:presentation:layer#{name}")).unwrap(),
+            native_ref: None,
+            name: name.into(),
+            parent: None,
+            description: None,
+            visible: None,
+            items: Vec::new(),
+        });
+    }
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    for layer in &ir.model.presentation_layers {
+        assert!(plan.report().losses.iter().any(|loss| {
+            loss.code
+                == crate::loss::FreecadLossCode::ExportArenaNotTransferred
+                    .note("")
+                    .code
+                && loss.message.contains(layer.id.as_str())
+        }));
+    }
+}
+
+#[test]
 fn source_less_formula_without_marker_keeps_its_parameter_binding() {
     use cadmpeg_ir::features::{DesignParameter, Expression, ExpressionToken, ParameterId};
     use cadmpeg_ir::scalar::FiniteReal;
