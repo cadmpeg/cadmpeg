@@ -232,7 +232,7 @@ terminal meaning remain unresolved. Exact framing does not supply those roles.
 
 **Need.** Bind scalar operands through an independently resolved local owner before applying a map to a carrier. Resolve the multi-operand payloads beginning `83` or `84` separately. Obtain a complete witness before admitting an unlisted scalar selector.
 
-**Conflict.** In FTC-07, treating consecutive operand values as one parameter representation joins source operands `7687` and `7688`, whose stored source intervals are approximately `[-58.658, 58.658]` and `[0, 0.901]`. The adjacent use-pair framing supplies no parameter transform between those operands.
+**Conflict.** In FTC-07, treating consecutive operand values as one parameter representation joins source operands `7687` and `7688`, whose stored source intervals are approximately `[-58.658, 58.658]` and `[0, 0.901]`. The adjacent use-pair framing supplies no parameter transform between those operands. Two maps have source intervals and whole-curve witnesses for sides `2` and `6` of the same freeform chart, with respective source operands `7650` and `7659`. A single additive offset from the chart-side operand to the map operand would require both `7648` and `7653`.
 
 ### SN-09. A8 parameter-map interpolation and additional operand productions
 
