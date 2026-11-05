@@ -17,7 +17,7 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::topology::{Body, BodyKind};
 use cadmpeg_ir::transform::Transform;
-use cadmpeg_ir::{Annotations, CadIr};
+use cadmpeg_ir::CadIr;
 
 use crate::loss::SldprtLossCode;
 
@@ -280,7 +280,7 @@ pub(super) fn preflight(
     // invalidate one body's geometry projection.
     candidate.model.tessellations.clear();
     crate::writer_transform::bake(&mut candidate)?;
-    super::super::check_semantic_support(&candidate, &Annotations::default())?;
+    super::super::check_semantic_support(&candidate)?;
     super::super::brep_body(&candidate, 0.001, body.kind == BodyKind::Sheet)?;
     Ok(())
 }

@@ -206,10 +206,9 @@ pub(crate) fn parse(
 
     let mut maps = Vec::new();
     let mut ids_by_table = HashMap::<usize, std::collections::HashSet<i64>>::new();
-    for property in properties
-        .iter()
-        .filter(|property| property.type_name == "Part::PropertyPartShape")
-    {
+    for property in properties.iter().filter(|property| {
+        property.type_name == "Part::PropertyPartShape" && property.body.is_some()
+    }) {
         let mut untyped = false;
         let mut carrier_present = false;
         let parsed = (|| {
