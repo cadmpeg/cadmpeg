@@ -393,8 +393,10 @@ fn element_table(bytes: &[u8], color_count: usize) -> Option<Vec<ElementRow>> {
     Some(rows)
 }
 
+type ColorProperty = (&'static str, fn(&ColorRow) -> f64);
+
 /// Property keys for the mapped non-color scalars, in grammar order.
-const COLOR_PROPERTIES: [(&str, fn(&ColorRow) -> f64); 5] = [
+const COLOR_PROPERTIES: [ColorProperty; 5] = [
     ("ambient", |row| row.ambient),
     ("diffuse", |row| row.diffuse),
     ("specular", |row| row.specular),
