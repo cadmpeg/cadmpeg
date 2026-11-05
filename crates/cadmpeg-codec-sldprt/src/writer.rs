@@ -1046,8 +1046,20 @@ fn section_type_ids(
 ) -> Result<Vec<u32>, write_error::WriteError> {
     let mut source_ids: HashMap<String, VecDeque<u32>> = HashMap::new();
     if let Some(scan) = source_scan {
+        let emitted = sections
+            .iter()
+            .map(|(name, _)| name.as_str())
+            .collect::<HashSet<_>>();
+        let mut identities = HashSet::new();
         for block in &scan.blocks {
             if let Some(section) = block.section.name() {
+                if !identities.insert((section, block.type_id))
+                    && emitted.contains(section)
+                {
+                    return Err(write_error::WriteError::Decline(format!(
+                        "SLDPRT source member {section} has an ambiguous type identity"
+                    )));
+                }
                 source_ids
                     .entry(section.to_owned())
                     .or_default()
