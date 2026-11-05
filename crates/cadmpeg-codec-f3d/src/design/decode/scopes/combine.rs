@@ -6,8 +6,8 @@ use super::parameter_scope::parameter_scope_payload_length;
 use super::shared_frames::marked_record_reference;
 use crate::bytes::lp_utf16_bounded;
 use crate::bytes::take_reference;
-use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::decode::text::fixed_guid_end;
+use crate::metastream::PrimaryFrames;
 
 use crate::design::design_feature_family;
 use crate::design::DesignFeatureFamily;
@@ -35,7 +35,7 @@ const COMBINE_CLAUSE_LEN: usize = 12;
 
 pub(super) fn exact_combine_operation(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
 ) -> Result<Option<DesignCombineOperation>, CodecError> {
     (|| {
@@ -157,14 +157,16 @@ pub(super) fn exact_combine_operation(
             .step_by(2)
             .zip(scope.reference_members().values().skip(1).step_by(2))
         {
-            let [operation_at, operation_end] = records.offsets(*operation_record_index) else {
+            let record_offsets = records.offsets(*operation_record_index);
+            let [operation_at, operation_end] = record_offsets.as_slice() else {
                 return None;
             };
             let role = combine_operation_identity_role(
                 bytes.get(*operation_at..*operation_end)?,
                 *selection_record_index,
             )?;
-            let [selection_at, selection_end] = records.offsets(*selection_record_index) else {
+            let record_offsets = records.offsets(*selection_record_index);
+            let [selection_at, selection_end] = record_offsets.as_slice() else {
                 return None;
             };
             if !contains_consecutive_guid_pair(bytes.get(*selection_at..*selection_end)?) {
@@ -271,7 +273,7 @@ fn operand_lists_name_operands(
 
 fn selection_body_node(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     start: usize,
     end: usize,
 ) -> Option<DesignCombineBodyNode> {
@@ -305,7 +307,8 @@ fn selection_body_node(
     let [record_index] = take_marked_records(bytes, &mut cursor, list_limit)?[..] else {
         return None;
     };
-    let [node_at, node_end] = records.offsets(record_index) else {
+    let record_offsets = records.offsets(record_index);
+    let [node_at, node_end] = record_offsets.as_slice() else {
         return None;
     };
     if bytes

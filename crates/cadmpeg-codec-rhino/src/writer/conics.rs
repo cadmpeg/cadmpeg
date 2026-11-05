@@ -285,27 +285,27 @@ pub(super) fn hyperbola_over_range(
     build_rational(id, 2, knots, poles, "edge")
 }
 
-/// Clamp a periodic NURBS curve to its used interval.
+/// Clamp a NURBS curve to its used interval.
 ///
 /// Boehm knot insertion raises each endpoint of `range` to full
 /// multiplicity, then the clamped span is extracted as a nonperiodic
 /// curve over the same parameter values. The operation is exact up to
 /// floating-point rounding; the extracted knots keep the edge's own
 /// parameter values so the edge domain check reads the admitted range.
-pub(super) fn unperiod_curve(
+pub(super) fn clamp_curve(
     id: &str,
     curve: &NurbsCurve,
     range: [FiniteReal; 2],
 ) -> Result<NurbsCurve, WriteError> {
-    let fail = |reason: &str| omit(format!("edge {id} periodic curve {reason}"));
-    if !curve.periodic() {
-        return Err(fail("is not periodic"));
-    }
+    let fail = |reason: &str| omit(format!("curve {id} {reason}"));
     let degree =
         usize::try_from(curve.degree()).map_err(|_| fail("degree exceeds address space"))?;
     if degree < 1 {
         return Err(fail("degree is below one"));
     }
+    let order = degree
+        .checked_add(1)
+        .ok_or_else(|| fail("degree overflows its end multiplicity"))?;
     let [lo, hi] = FiniteReal::raw_array(range);
     if !(hi > lo) || !lo.is_finite() || !hi.is_finite() {
         return Err(fail("used interval is not a finite increasing range"));
@@ -319,8 +319,8 @@ pub(super) fn unperiod_curve(
     if !(domain_lo <= lo && hi <= domain_hi) {
         return Err(fail("used interval leaves the evaluable domain"));
     }
-    if hi - lo > domain_hi - domain_lo || !(hi - lo).is_finite() {
-        return Err(fail("used interval spans more than one period"));
+    if !(hi - lo).is_finite() {
+        return Err(fail("used interval has non-finite width"));
     }
     // Homogeneous control points; polynomial poles carry unit weights,
     // one per pole already held, so the repeat cannot outgrow the input.
@@ -347,8 +347,8 @@ pub(super) fn unperiod_curve(
     let mut knots = knots;
     for endpoint in [lo, hi] {
         let mut multiplicity = knots.iter().filter(|knot| **knot == endpoint).count();
-        if multiplicity > degree {
-            return Err(fail("endpoint multiplicity exceeds the degree"));
+        if multiplicity > order {
+            return Err(fail("endpoint multiplicity exceeds the order"));
         }
         while multiplicity < degree {
             let span = locate_span(&knots, degree, homogeneous.len(), endpoint)
@@ -365,41 +365,33 @@ pub(super) fn unperiod_curve(
         .iter()
         .rposition(|knot| *knot == hi)
         .ok_or_else(|| fail("clamped end is missing"))?;
-    if first == 0
-        || last + 1 >= knots.len()
-        || knots[first..first + degree].iter().any(|knot| *knot != lo)
-        || knots[first + degree] == lo
-        || knots[last + 1 - degree..=last]
-            .iter()
-            .any(|knot| *knot != hi)
-        || knots[last - degree] == hi
-    {
-        return Err(fail("clamped endpoints lack exact full multiplicity"));
+    let start_multiplicity = knots.iter().filter(|knot| **knot == lo).count();
+    let end_multiplicity = knots.iter().filter(|knot| **knot == hi).count();
+    let start = if start_multiplicity == order {
+        first
+    } else {
+        first
+            .checked_sub(1)
+            .ok_or_else(|| fail("clamped start lacks a preceding knot"))?
+    };
+    let end = if end_multiplicity == order {
+        last.checked_sub(order)
+    } else {
+        last.checked_sub(degree)
     }
-    if last <= first {
-        return Err(fail("clamped span holds no knots"));
+    .ok_or_else(|| fail("clamped end lacks control points"))?;
+    if start > end || end >= homogeneous.len() {
+        return Err(fail("clamped span has invalid control point indices"));
     }
-    // The clamped span is a B-spline over the same blossom: endpoint
-    // multiplicity `degree + 1` around the interior knots, with control
-    // points `Q[first - 1 ..= last - degree]`. `Q[first - 1]` is the
-    // blossom at `(lo, ..., lo)` and `Q[last - degree]` the blossom at
-    // `(hi, ..., hi)`, so the span starts and ends exactly where the
-    // periodic curve does.
-    // The endpoint multiplicity is `degree + 1` around the interior knots.
-    // The repeat count follows the admitted degree, which the cardinality
-    // rule keeps below the held pole count, so it cannot outgrow the input.
-    let end_mult = degree
-        .checked_add(1)
-        .ok_or_else(|| fail("degree overflows its end multiplicity"))?;
+    let end_mult = order;
     let mut segment_knots = Vec::with_capacity(end_mult);
     for _ in 0..end_mult {
         segment_knots.push(lo);
     }
-    if first + degree <= last - degree {
-        segment_knots.extend_from_slice(&knots[first + degree..=last - degree]);
-    }
+    segment_knots
+        .extend_from_slice(&knots[first + start_multiplicity..last + 1 - end_multiplicity]);
     segment_knots.extend(std::iter::repeat(hi).take(end_mult));
-    let segment_points = homogeneous[first - 1..=last - degree].to_vec();
+    let segment_points = homogeneous[start..=end].to_vec();
     if segment_knots.len() != segment_points.len() + degree + 1 {
         return Err(fail("clamped span counts disagree"));
     }
@@ -453,6 +445,31 @@ pub(super) fn unperiod_curve(
         )),
         error => error,
     })?;
+    if curve.periodic() && hi == domain_hi {
+        let point = |value: &NurbsCurve, parameter| {
+            cadmpeg_ir::eval::decode::nurbs_curve_point_at(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                value,
+                parameter,
+            )
+            .map(|point| point.get())
+            .map_err(|error| match error {
+                cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit) => {
+                    WriteError::Encode(limit.into())
+                }
+                _ => fail("seam endpoint cannot be evaluated"),
+            })
+        };
+        let source = point(curve, domain_lo)?;
+        let written = point(&converted, hi)?;
+        if ![source.x, source.y, source.z]
+            .into_iter()
+            .zip([written.x, written.y, written.z])
+            .all(|(left, right)| cadmpeg_ir::compare::floats_agree(left, right))
+        {
+            return Err(fail("has a discontinuous periodic seam"));
+        }
+    }
     Ok(converted)
 }
 

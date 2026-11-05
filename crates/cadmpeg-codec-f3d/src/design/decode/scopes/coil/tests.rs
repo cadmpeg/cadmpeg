@@ -403,7 +403,7 @@ fn compact_coil_placement_accepts_identity_and_matrix_frames() {
                 draft.layout_fixture_tail();
             })
             .unwrap();
-        let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+        let records = crate::design::test_support::test_primary_frames(&bytes);
         let placement = exact_coil_placement(
             &cadmpeg_test_support::service_decode_context(),
             &bytes,
@@ -465,7 +465,7 @@ fn modern_coil_placement_accepts_class_450_matrix_frame() {
     let placement = exact_coil_placement(
         &cadmpeg_test_support::service_decode_context(),
         &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &crate::design::test_support::test_primary_frames(&bytes),
         &scope,
         &[],
     )
@@ -502,7 +502,7 @@ fn modern_coil_placement_requires_exact_class_450_matrix_carrier() {
         exact_coil_placement(
             &cadmpeg_test_support::service_decode_context(),
             &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &crate::design::test_support::test_primary_frames(&bytes),
             &scope,
             &[]
         )
@@ -516,7 +516,7 @@ fn modern_coil_placement_requires_exact_class_450_matrix_carrier() {
         exact_coil_placement(
             &cadmpeg_test_support::service_decode_context(),
             &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &crate::design::test_support::test_primary_frames(&bytes),
             &scope,
             &[]
         )
@@ -530,7 +530,7 @@ fn modern_coil_placement_requires_exact_class_450_matrix_carrier() {
         exact_coil_placement(
             &cadmpeg_test_support::service_decode_context(),
             &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &crate::design::test_support::test_primary_frames(&bytes),
             &scope,
             &[]
         )
@@ -545,7 +545,7 @@ fn compact_coil_placement_accepts_owner_referenced_identity_frame() {
     let placement = exact_coil_placement(
         &cadmpeg_test_support::service_decode_context(),
         &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &crate::design::test_support::test_primary_frames(&bytes),
         &scope,
         &[],
     )
@@ -578,7 +578,7 @@ fn legacy_coil_placement_accepts_identity_frame() {
     let placement = exact_coil_placement(
         &cadmpeg_test_support::service_decode_context(),
         &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &crate::design::test_support::test_primary_frames(&bytes),
         &scope,
         &[],
     )
@@ -615,7 +615,7 @@ fn legacy_coil_placement_requires_exact_identity_carrier() {
         exact_coil_placement(
             &cadmpeg_test_support::service_decode_context(),
             &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &crate::design::test_support::test_primary_frames(&bytes),
             &scope,
             &[]
         )
@@ -630,7 +630,7 @@ fn legacy_coil_placement_requires_exact_identity_carrier() {
         exact_coil_placement(
             &cadmpeg_test_support::service_decode_context(),
             &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &crate::design::test_support::test_primary_frames(&bytes),
             &scope,
             &[]
         )
@@ -644,7 +644,7 @@ fn legacy_coil_placement_requires_exact_identity_carrier() {
         exact_coil_placement(
             &cadmpeg_test_support::service_decode_context(),
             &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &crate::design::test_support::test_primary_frames(&bytes),
             &scope,
             &[]
         )
@@ -659,7 +659,7 @@ fn compact_coil_spiral_placement_accepts_seven_reference_form() {
     let placement = exact_coil_placement(
         &cadmpeg_test_support::service_decode_context(),
         &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &crate::design::test_support::test_primary_frames(&bytes),
         &scope,
         &[],
     )
@@ -689,7 +689,7 @@ fn compact_coil_seven_reference_form_requires_spiral_extent() {
         exact_coil_placement(
             &cadmpeg_test_support::service_decode_context(),
             &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &crate::design::test_support::test_primary_frames(&bytes),
             &scope,
             &[]
         )
@@ -712,7 +712,7 @@ fn compact_coil_placement_rejects_ambiguous_or_reflected_frames() {
         exact_coil_placement(
             &cadmpeg_test_support::service_decode_context(),
             &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &crate::design::test_support::test_primary_frames(&bytes),
             &scope,
             &[]
         )
@@ -726,7 +726,7 @@ fn compact_coil_placement_rejects_ambiguous_or_reflected_frames() {
         exact_coil_placement(
             &cadmpeg_test_support::service_decode_context(),
             &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &crate::design::test_support::test_primary_frames(&bytes),
             &scope,
             &[]
         )
@@ -740,7 +740,7 @@ fn compact_coil_placement_rejects_ambiguous_or_reflected_frames() {
         exact_coil_placement(
             &cadmpeg_test_support::service_decode_context(),
             &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &crate::design::test_support::test_primary_frames(&bytes),
             &scope,
             &[]
         )
@@ -755,7 +755,7 @@ fn compact_coil_placement_accepts_face_recipe_selection() {
     let placement = exact_coil_placement(
         &cadmpeg_test_support::service_decode_context(),
         &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &crate::design::test_support::test_primary_frames(&bytes),
         &scope,
         &recipes,
     )
@@ -819,7 +819,7 @@ fn coil_scope_discriminators_use_the_fixed_scope_prologue() {
 
     let scope = parse_parameter_scope(
         &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &crate::design::test_support::test_primary_frames(&bytes),
         header.record_index,
         &header.class_tag,
         header.byte_offset.expect("actual scanner header position"),
@@ -846,7 +846,7 @@ fn coil_scope_discriminators_use_the_fixed_scope_prologue() {
     bytes[24] = 0;
     let scope = parse_parameter_scope(
         &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &crate::design::test_support::test_primary_frames(&bytes),
         header.record_index,
         &header.class_tag,
         header.byte_offset.unwrap(),
@@ -897,7 +897,7 @@ fn compact_coil_scope_uses_its_own_closed_discriminators() {
 
     let scope = parse_parameter_scope(
         &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &crate::design::test_support::test_primary_frames(&bytes),
         header.record_index,
         &header.class_tag,
         header.byte_offset.expect("actual scanner header position"),
@@ -925,7 +925,7 @@ fn compact_coil_scope_uses_its_own_closed_discriminators() {
     right_hand[25] = 0;
     let scope = parse_parameter_scope(
         &right_hand,
-        &crate::design::test_support::indexed_record_offsets_for_test(&right_hand),
+        &crate::design::test_support::test_primary_frames(&right_hand),
         header.record_index,
         &header.class_tag,
         header.byte_offset.unwrap(),
@@ -939,7 +939,7 @@ fn compact_coil_scope_uses_its_own_closed_discriminators() {
     invalid_hand[25] = 2;
     let scope = parse_parameter_scope(
         &invalid_hand,
-        &crate::design::test_support::indexed_record_offsets_for_test(&invalid_hand),
+        &crate::design::test_support::test_primary_frames(&invalid_hand),
         header.record_index,
         &header.class_tag,
         header.byte_offset.unwrap(),
@@ -964,7 +964,7 @@ fn compact_coil_scope_uses_its_own_closed_discriminators() {
             bytes[107..111].copy_from_slice(&section_code.to_le_bytes());
             let parsed = parse_parameter_scope(
                 &bytes,
-                &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+                &crate::design::test_support::test_primary_frames(&bytes),
                 header.record_index,
                 &header.class_tag,
                 header.byte_offset.expect("actual scanner header position"),
@@ -979,7 +979,7 @@ fn compact_coil_scope_uses_its_own_closed_discriminators() {
     bytes[20..24].copy_from_slice(&2u32.to_le_bytes());
     let unsupported = parse_parameter_scope(
         &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &crate::design::test_support::test_primary_frames(&bytes),
         header.record_index,
         &header.class_tag,
         header.byte_offset.expect("actual scanner header position"),
@@ -1028,7 +1028,7 @@ fn compact_coil_new_body_scope_accepts_unlinked_state_trailer() {
 
     let scope = parse_parameter_scope(
         &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &crate::design::test_support::test_primary_frames(&bytes),
         header.record_index,
         &header.class_tag,
         header.byte_offset.expect("actual scanner header position"),
@@ -1105,7 +1105,7 @@ fn long_coil_scope_discriminators_use_the_ten_reference_envelope() {
         };
         parse_parameter_scope(
             &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &crate::design::test_support::test_primary_frames(&bytes),
             header.record_index,
             &header.class_tag,
             header.byte_offset.expect("actual scanner header position"),

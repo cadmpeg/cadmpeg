@@ -172,7 +172,7 @@ fn legacy_as_built_421_alignment_retains_ordered_limits_without_operand_projecti
         ];
         let alignment = exact_assembly_alignment(
             &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &crate::design::test_support::test_primary_frames(&bytes),
             &scope,
             &owners,
         )

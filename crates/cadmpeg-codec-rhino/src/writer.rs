@@ -2205,8 +2205,11 @@ fn validate_nurbs_trim(
     let reflected = sense == Sense::Reversed;
     match check_nurbs_trim(surface, face_tolerance, edge, reflected, explicit) {
         Ok(()) => Ok(()),
-        Err(first) if reflected => {
-            check_nurbs_trim(surface, face_tolerance, edge, false, explicit).map_err(|_| first)
+        Err(WriteError::Omit(first)) if reflected => {
+            match check_nurbs_trim(surface, face_tolerance, edge, false, explicit) {
+                Err(WriteError::Omit(_)) => Err(WriteError::Omit(first)),
+                result => result,
+            }
         }
         Err(error) => Err(error),
     }

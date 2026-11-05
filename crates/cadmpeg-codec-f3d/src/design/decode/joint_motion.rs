@@ -2,6 +2,7 @@
 //! Joint motion: the freedom entries of a joint's motion record and the limit
 //! lanes of its joint record.
 
+use crate::metastream::PrimaryFrames;
 use std::collections::HashMap;
 
 use cadmpeg_core::decode::{u64_from_index, View};
@@ -17,7 +18,6 @@ use crate::records::identity::Located;
 use cadmpeg_core::container::ContainerRole;
 
 use super::scopes::shared_frames::marked_record_reference;
-use super::sketch::IndexedRecordOffsets;
 
 /// A freedom entry before its word: byte `1`, f64 `0`, and f64 π. The u32
 /// word, `1` or `3`, and the u32 code follow; a word-`1` entry then stores an
@@ -59,7 +59,7 @@ pub(crate) fn decode_joint_motions(
             continue;
         };
         let frames = super::meta::design_primary_frames(bytes, &meta)?;
-        let records = IndexedRecordOffsets::from_primary_frames(&frames);
+        let records = crate::design::decode::meta::primary_frame_extents(&frames);
         let stream = crate::ids::native_scope(&entry.name);
         let assemble_scopes: HashMap<u32, bool> = scopes
             .iter()
@@ -88,11 +88,11 @@ pub(super) fn decode_stream(
     bytes: &[u8],
     entry_name: &str,
     assemble_scopes: &HashMap<u32, bool>,
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
 ) -> Vec<DesignJointMotion> {
     let mut headers: Vec<(usize, u32)> = records
         .records()
-        .flat_map(|(index, offsets)| offsets.iter().map(move |offset| (*offset, index)))
+        .flat_map(|(index, offsets)| offsets.into_iter().map(move |offset| (offset, index)))
         .collect();
     headers.sort_unstable();
     // A record ends at the next indexed header of any record.
@@ -204,7 +204,7 @@ struct MotionRecord {
 /// and references `J`.
 fn motion_joint(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     record_end: &dyn Fn(usize) -> usize,
     assemble_scopes: &HashMap<u32, bool>,
     motion: &MotionRecord,

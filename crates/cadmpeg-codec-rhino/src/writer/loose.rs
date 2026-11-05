@@ -5,7 +5,6 @@ use cadmpeg_ir::codec::write::EncodeBuffer;
 use std::collections::BTreeSet;
 
 use cadmpeg_core::decode::DecodeContext;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::topology::Edge;
@@ -488,8 +487,9 @@ fn curve_payload(
         }
         Some(SolvedCurveGeometry::Nurbs(nurbs)) => {
             let degree = usize::try_from(nurbs.degree()).map_err(|_| {
-                WriteError::Fail(CodecError::InvalidInput(
-                    "NURBS degree exceeds address space".into(),
+                WriteError::Omit(format!(
+                    "wire edge {} NURBS degree exceeds address space",
+                    edge.id
                 ))
             })?;
             let range = [lo.min(hi), lo.max(hi)];
@@ -500,26 +500,31 @@ fn curve_payload(
                         edge.id
                     )));
                 };
-                let converted = super::conics::unperiod_curve(curve.id.as_str(), nurbs, range)?;
-                check_nurbs_curve(curve.id.as_str(), &converted)?;
+                let converted = super::conics::clamp_curve(curve.id.as_str(), nurbs, range)?;
                 conversion = Some(RhinoLossCode::WriterCarrierResolved.note(format!(
                     "wire edge {} periodic NURBS carrier {} was clamped to an exact nonperiodic span",
                     edge.id, curve.id
                 )));
                 WritableEdgeCurve::NurbsOwned(converted)
             } else {
-                check_nurbs_curve(curve.id.as_str(), nurbs)?;
                 if [
                     nurbs.knots()[degree],
                     nurbs.knots()[nurbs.control_points().len()],
                 ] != range
                 {
-                    return Err(WriteError::Omit(
-                        "a trimmed NURBS wire requires an independent trimmed-curve encoding"
-                            .into(),
-                    ));
+                    let range = normalized_range(lo, hi).ok_or_else(|| {
+                        WriteError::Omit(format!("wire edge {} has no increasing range", edge.id))
+                    })?;
+                    let converted = super::conics::clamp_curve(curve.id.as_str(), nurbs, range)?;
+                    conversion = Some(RhinoLossCode::WriterCarrierResolved.note(format!(
+                        "wire edge {} carrier {} was restricted to the exact edge span; its unused curve domain is omitted",
+                        edge.id, curve.id
+                    )));
+                    WritableEdgeCurve::NurbsOwned(converted)
+                } else {
+                    check_nurbs_curve(curve.id.as_str(), nurbs)?;
+                    WritableEdgeCurve::Nurbs(nurbs)
                 }
-                WritableEdgeCurve::Nurbs(nurbs)
             }
         }
         Some(SolvedCurveGeometry::Polyline(polyline)) => {
@@ -610,7 +615,7 @@ fn curve_payload(
             .point(parameter)
             .map_err(|failure| match failure {
                 cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit) => {
-                    WriteError::Fail(CodecError::ResourceLimit(limit))
+                    WriteError::Encode(limit.into())
                 }
                 _ => WriteError::Omit(format!(
                     "wire edge {} endpoint evaluation has no supported finite result",

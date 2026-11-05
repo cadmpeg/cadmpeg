@@ -11,7 +11,6 @@ use super::legacy_operand_paths::CLASS_383_OWNER_REFERENCE_ORDINALS;
 use super::legacy_operand_paths::CLASS_388_OWNER_REFERENCE_ORDINALS;
 use crate::design::decode::assembly::exact_legacy_as_built_421_alignment;
 use crate::design::decode::assembly::exact_legacy_as_built_421_solved_frame;
-use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::design_feature_family;
 use crate::design::DesignFeatureFamily;
 use crate::ids::native_stream;
@@ -48,7 +47,7 @@ impl TryFrom<AsBuiltAlignmentDraft> for assembly::DesignAssemblyAlignmentForm {
 #[cfg(test)]
 pub(super) fn exact_assembly_alignment(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
     parameter_owners: &[DesignParameterOwner],
 ) -> Result<Option<DesignAssemblyAlignment>, CodecError> {
@@ -125,7 +124,7 @@ fn placement_ordered_owner_run(
 /// record types, which admit typed operand-path records.
 pub(super) fn exact_assembly_alignment_with_types(
     source: View<'_>,
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
     parameter_owners: &[DesignParameterOwner],
     stream_types: &super::assembly_operand_paths::StreamTypes<'_>,

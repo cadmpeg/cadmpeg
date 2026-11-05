@@ -10,7 +10,7 @@ use cadmpeg_core::CodecError;
 use crate::bytes::lp_ascii_filtered_view;
 use crate::container::ContainerScan;
 #[cfg(test)]
-use crate::design::decode::sketch::next_indexed_record_offset;
+use crate::metastream::PrimaryFrames;
 
 use crate::records::feature::assembly_features::{
     DesignComponentOccurrence, OCCURRENCE_OWNER_TYPE_GUID as OWNER_TYPE_GUID,
@@ -331,7 +331,8 @@ fn attributed_component_occurrence(
     start: usize,
     stream: &str,
 ) -> Option<DesignComponentOccurrence> {
-    let end = next_indexed_record_offset(bytes, start.checked_add(1)?)?;
+    let end = crate::design::test_support::test_primary_frames(bytes)
+        .next_at_or_after(start.checked_add(1)?)?;
     attributed_component_occurrence_frame(bytes, start, end, stream)
 }
 
@@ -1077,6 +1078,7 @@ mod tests {
     mod original;
 
     use super::{attributed_component_occurrence, root_instance_component};
+    use crate::metastream::PrimaryFrames;
     use crate::test_support::indexed_header;
 
     const COMPONENT: &str = "a989beb9-467b-4afa-9e90-a9329a2ca258";
@@ -1094,7 +1096,8 @@ mod tests {
         start: usize,
         stream: &str,
     ) -> Option<crate::records::feature::assembly_features::DesignComponentOccurrence> {
-        let end = super::next_indexed_record_offset(bytes, start.checked_add(1)?)?;
+        let end = crate::design::test_support::test_primary_frames(bytes)
+            .next_at_or_after(start.checked_add(1)?)?;
         super::exact_component_occurrence_frame(bytes, start, end, stream)
     }
 
