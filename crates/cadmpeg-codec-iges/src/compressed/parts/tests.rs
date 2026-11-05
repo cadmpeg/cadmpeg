@@ -58,6 +58,14 @@ fn cut_global_card_keeps_readable_fields_and_gives_up_the_unfinished_field() {
         1
     );
     let baseline = crate::test_support::decode(original);
+    let cards = &decoded.ir().native.namespace("iges").unwrap().arenas()["cards"];
+    let original_cards = &baseline.ir().native.namespace("iges").unwrap().arenas()["cards"];
+    for card in cards {
+        let original = original_cards
+            .iter()
+            .find(|original| original.id() == card.id());
+        assert_eq!(original, Some(card));
+    }
     for loss in &decoded.report().losses {
         assert!(
             loss.code.local_code() == "record.unreadable"

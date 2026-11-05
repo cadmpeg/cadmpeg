@@ -353,6 +353,17 @@ fn sketch_record_part<T>(
     frame: super::meta::TypedPrimaryFrame<'_>,
     parse: impl FnOnce() -> Result<T, CodecError>,
 ) -> Result<Option<T>, CodecError> {
+    sketch_frame_part(ctx, output, source, stream, frame.start..frame.end, parse)
+}
+
+fn sketch_frame_part<T>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    output: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
+    source: View<'_>,
+    stream: &str,
+    frame: std::ops::Range<usize>,
+    parse: impl FnOnce() -> Result<T, CodecError>,
+) -> Result<Option<T>, CodecError> {
     use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartSpec};
     let start = source
         .start()
@@ -974,6 +985,8 @@ fn parse_sketch_placement_candidates(
 /// `IntrinsicMetaTypeuint64`) from every design `BulkStream` entry in `scan`,
 /// sorted by stream offset.
 pub(crate) fn decode_persistent_references(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    parts: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
     scan: &ContainerScan,
 ) -> Result<Vec<PersistentReference>, CodecError> {
     let mut out = Vec::new();
@@ -999,6 +1012,8 @@ pub(crate) fn decode_persistent_references(
             })
             .collect();
         decode_persistent_references_from_stream(
+            ctx,
+            parts,
             entry_ordinal,
             &entry.name,
             source,
@@ -1057,6 +1072,27 @@ fn persistent_property_end(bytes: &[u8], after_name: usize) -> Option<usize> {
         .filter(|end| *end <= bytes.len())
 }
 
+fn persistent_property_has_truncated_value(bytes: &[u8], after_name: usize) -> bool {
+    let type_offset = if View::u32_le_at(bytes, after_name) == Some(23) {
+        Some(after_name)
+    } else if View::u32_le_at(bytes, after_name) == Some(2)
+        && View::u32_le_at(bytes, after_name + 4) == Some(14)
+        && View::u32_le_at(bytes, after_name + 22) == Some(23)
+    {
+        after_name.checked_add(22)
+    } else {
+        None
+    };
+    let Some((type_start, type_end)) = type_offset.and_then(|offset| {
+        let start = offset.checked_add(4)?;
+        Some((start, start.checked_add(PERSISTENT_REFERENCE_TYPE.len())?))
+    }) else {
+        return false;
+    };
+    bytes.get(type_start..type_end) == Some(PERSISTENT_REFERENCE_TYPE)
+        && type_end.checked_add(8).is_none_or(|end| end > bytes.len())
+}
+
 /// Parse one persistent-reference property: the name, the type descriptor,
 /// the type name and the u64 value.
 /// Returns the value offset relative to the property start and the value.
@@ -1082,6 +1118,8 @@ fn parse_persistent_property(property: &[u8], name: &[u8]) -> Option<(usize, u64
 }
 
 pub(crate) fn decode_persistent_references_from_stream(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    parts: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
     entry_ordinal: usize,
     entry_name: &str,
     source: View<'_>,
@@ -1093,46 +1131,66 @@ pub(crate) fn decode_persistent_references_from_stream(
         let Some(bytes) = bytes.get(frame.start..frame.end) else {
             continue;
         };
-        for &(name, kind) in &[
-            (b"pt_tag".as_slice(), PersistentReferenceKind::Point),
-            (
-                b"crv_primary_id".as_slice(),
-                PersistentReferenceKind::CurvePrimary,
-            ),
-            (
-                b"crv_secondary_id".as_slice(),
-                PersistentReferenceKind::CurveSecondary,
-            ),
-        ] {
-            let mut cursor = 0;
-            while let Some(offset) = find_from(bytes, name, cursor) {
-                cursor = offset + name.len();
-                let Some(end) = persistent_property_end(bytes, offset + name.len()) else {
-                    continue;
-                };
-                let Some((value_offset, value)) =
-                    parse_persistent_property(&bytes[offset..end], name)
-                else {
-                    continue;
-                };
-                let offset = frame.start + offset;
-                let reference = PersistentReference {
-                    id: design_record_id(
-                        entry_name,
-                        ":persistent-reference#",
-                        u64_from_index(offset),
+        let captured = sketch_frame_part(
+            ctx,
+            parts,
+            source,
+            entry_name,
+            frame.start..frame.end,
+            || {
+                let mut captured = Vec::new();
+                for &(name, kind) in &[
+                    (b"pt_tag".as_slice(), PersistentReferenceKind::Point),
+                    (
+                        b"crv_primary_id".as_slice(),
+                        PersistentReferenceKind::CurvePrimary,
                     ),
-                    byte_offset: Some(u64_from_index(offset)),
-                    value_offset: Some(u32::try_from(value_offset).map_err(|_| {
-                        CodecError::malformed(
-                            "f3d persistent reference relative offset exceeds u32",
-                        )
-                    })?),
-                    kind,
-                    value,
-                };
-                out.push((entry_ordinal, reference));
-            }
+                    (
+                        b"crv_secondary_id".as_slice(),
+                        PersistentReferenceKind::CurveSecondary,
+                    ),
+                ] {
+                    let mut cursor = 0;
+                    while let Some(offset) = find_from(bytes, name, cursor) {
+                        cursor = offset + name.len();
+                        let Some(end) = persistent_property_end(bytes, offset + name.len()) else {
+                            if persistent_property_has_truncated_value(bytes, offset + name.len()) {
+                                return Err(CodecError::malformed(format_args!(
+                                    "F3D persistent reference at byte {} has a truncated value",
+                                    frame.start + offset
+                                )));
+                            }
+                            continue;
+                        };
+                        let Some((value_offset, value)) =
+                            parse_persistent_property(&bytes[offset..end], name)
+                        else {
+                            continue;
+                        };
+                        let offset = frame.start + offset;
+                        let reference = PersistentReference {
+                            id: design_record_id(
+                                entry_name,
+                                ":persistent-reference#",
+                                u64_from_index(offset),
+                            ),
+                            byte_offset: Some(u64_from_index(offset)),
+                            value_offset: Some(u32::try_from(value_offset).map_err(|_| {
+                                CodecError::malformed(
+                                    "f3d persistent reference relative offset exceeds u32",
+                                )
+                            })?),
+                            kind,
+                            value,
+                        };
+                        captured.push((entry_ordinal, reference));
+                    }
+                }
+                Ok(captured)
+            },
+        )?;
+        if let Some(mut captured) = captured {
+            out.append(&mut captured);
         }
     }
     Ok(())
@@ -3854,6 +3912,8 @@ struct SketchSurfaceFrame {
     v_count: usize,
 }
 
+const SKETCH_SURFACE_TYPE_GUID: &str = "9D2F94E6-034B-447D-8337-F1087C092825";
+
 fn is_sketch_surface_header(payload: &[u8]) -> bool {
     payload.get(20) == Some(&1)
         && View::u32_le_at(payload, 21) == Some(2)
@@ -3994,7 +4054,13 @@ pub(crate) fn decode_sketch_surfaces(
         };
         for frame in design_primary_frames(bytes, &meta)? {
             let payload = &bytes[frame.start..frame.end];
-            if !is_sketch_surface_header(payload) {
+            let registered = frame.design_type.version == 0
+                && frame
+                    .design_type
+                    .type_guid
+                    .as_str()
+                    .eq_ignore_ascii_case(SKETCH_SURFACE_TYPE_GUID);
+            if !registered && !is_sketch_surface_header(payload) {
                 continue;
             }
             let typed = super::meta::TypedPrimaryFrame {
@@ -4004,6 +4070,12 @@ pub(crate) fn decode_sketch_surfaces(
                 design_type: frame.design_type,
             };
             let decoded = sketch_record_part(ctx, output, source, &entry.name, typed, || {
+                if registered && frame.design_type.module != "Geometry" {
+                    return Err(CodecError::malformed(format_args!(
+                        "F3D sketch surface {} has incompatible registration metadata",
+                        frame.entity_id
+                    )));
+                }
                 let record_index = u32::try_from(frame.entity_id).map_err(|_| {
                     CodecError::malformed(format_args!(
                         "F3D sketch surface entity {} exceeds u32",
