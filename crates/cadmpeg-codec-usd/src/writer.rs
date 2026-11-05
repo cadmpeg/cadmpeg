@@ -134,7 +134,7 @@ pub(crate) fn plan(
     input: EncodeInput<'_>,
     target: &ResolvedWrite<'_>,
     packaged: bool,
-) -> (ExportBody, Vec<Member>) {
+) -> Result<(ExportBody, Vec<Member>), cadmpeg_ir::codec::write::EncodeError> {
     let index = match target.target() {
         ResolvedTarget::Explicit { index, .. }
         | ResolvedTarget::Inherited { index, .. }
@@ -148,11 +148,19 @@ pub(crate) fn plan(
         .get(index)
         .copied()
         .unwrap_or(crate::TARGET_VERSIONS[0]);
-    let mut writer = Writer::new(input.ir, version);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy {
+        limits: input.limits,
+        ..Default::default()
+    };
+    let ctx = cadmpeg_core::decode::DecodeContext::for_encode(&arena, &policy);
+    let session = cadmpeg_core::encode::EncodeSession::from_context(&ctx)?;
+    let emitter_session = cadmpeg_core::encode::EncodeSession::from_context(&ctx)?;
+    let mut writer = Writer::new(input.ir, version, session, emitter_session);
     if packaged {
         writer.package = Some(Vec::new());
     }
-    let text = writer.layer();
+    let text = writer.layer()?;
     let mut losses = writer.losses();
     if let Some(message) = target.displacement_message() {
         losses.push(UsdLossCode::SourceDialectDisplaced.note(message));
@@ -173,7 +181,7 @@ pub(crate) fn plan(
         losses,
         notes: vec![format!("USDA {version} text layer, metre units")],
     };
-    (body, members)
+    Ok((body, members))
 }
 
 /// Counts of records no prim carries.
@@ -282,6 +290,7 @@ struct Writer<'ir> {
     /// The header version.
     version: &'static str,
     out: Emitter,
+    session: cadmpeg_core::encode::EncodeSession,
     unwritten: Unwritten,
     /// Material paths by appearance id.
     materials: BTreeMap<String, String>,
@@ -315,7 +324,12 @@ struct Writer<'ir> {
 }
 
 impl<'ir> Writer<'ir> {
-    fn new(ir: &'ir CadIr, version: &'static str) -> Self {
+    fn new(
+        ir: &'ir CadIr,
+        version: &'static str,
+        session: cadmpeg_core::encode::EncodeSession,
+        emitter_session: cadmpeg_core::encode::EncodeSession,
+    ) -> Self {
         let mut bindings = BTreeMap::new();
         for binding in &ir.model.appearance_bindings {
             let key = match &binding.target {
@@ -385,7 +399,8 @@ impl<'ir> Writer<'ir> {
         Self {
             ir,
             version,
-            out: Emitter::default(),
+            out: Emitter::with_session(emitter_session),
+            session,
             unwritten: Unwritten::default(),
             materials: BTreeMap::new(),
             bindings,
@@ -444,7 +459,7 @@ impl<'ir> Writer<'ir> {
             .unwrap_or_else(|| DEFAULT_UP_AXIS.to_owned())
     }
 
-    fn layer(&mut self) -> String {
+    fn layer(&mut self) -> Result<String, cadmpeg_core::decode::ResourceLimit> {
         let roots: Vec<&'ir Occurrence> = self
             .ir
             .model
@@ -508,7 +523,12 @@ impl<'ir> Writer<'ir> {
         if !self.shared.is_empty() {
             self.prototypes();
         }
-        let prims = std::mem::take(&mut self.out).finish();
+        let out = std::mem::take(&mut self.out);
+        if let Some(error) = out.refusal() {
+            return Err(error);
+        }
+        let deferred = out.deferred_properties();
+        let prims = out.finish();
         for (occurrence, path) in &self.paths {
             if let Some(key) =
                 physx::placeholder(&cadmpeg_ir::physics::solver::SolverTarget::Occurrence {
@@ -519,6 +539,14 @@ impl<'ir> Writer<'ir> {
             }
         }
         let (prims, unresolved) = physx::resolve(&prims, &self.target_paths);
+        debug_assert!(
+            unresolved <= deferred,
+            "unresolved placeholders belong to deferred properties"
+        );
+        for _ in 0..deferred.checked_sub(unresolved).unwrap_or_default() {
+            self.session.charge_entities(1, "USD written record")?;
+        }
+        self.session.finish()?;
         self.unwritten.solver_properties += unresolved + self.physics.unwritten_settings;
         let mut header = Emitter::default();
         header.line(&format!("#usda {}", self.version));
@@ -533,7 +561,7 @@ impl<'ir> Writer<'ir> {
         header.line(&format!("    upAxis = {}", quoted(&self.up_axis())));
         header.line(")");
         header.blank();
-        header.finish() + &prims
+        Ok(header.finish() + &prims)
     }
 
     /// The `Looks` scope with one material per appearance, under the root
@@ -789,7 +817,7 @@ impl<'ir> Writer<'ir> {
     /// Writes the visibility and transform ops of a placement.
     fn placement(&mut self, placement: &Placement<'_>) {
         if placement.hidden {
-            self.out.line("token visibility = \"invisible\"");
+            self.out.property("token visibility = \"invisible\"");
         }
         let mut order = Vec::new();
         if let Some(transform) = placement.transform {
@@ -809,25 +837,25 @@ impl<'ir> Writer<'ir> {
                     ]),
                 );
                 self.out
-                    .line(&format!("matrix4d xformOp:transform = {matrix}"));
+                    .property(&format!("matrix4d xformOp:transform = {matrix}"));
                 order.push("\"xformOp:transform\"");
             }
         }
         if placement.scale != [1.0; 3] {
-            self.out.line(&format!(
+            self.out.property(&format!(
                 "double3 xformOp:scale = {}",
                 tuple(&placement.scale)
             ));
             order.push("\"xformOp:scale\"");
         }
         if !order.is_empty() {
-            self.out.line(&format!(
+            self.out.property(&format!(
                 "uniform token[] xformOpOrder = [{}]",
                 order.join(", ")
             ));
         }
         for line in &placement.properties {
-            self.out.line(line);
+            self.out.deferred_property(line);
         }
     }
 
@@ -1116,14 +1144,14 @@ impl<'ir> Writer<'ir> {
         let Some(color) = body.and_then(|body| body.color) else {
             return;
         };
-        self.out.line(&format!(
+        self.out.property(&format!(
             "color3f[] primvars:displayColor = [{}] (",
             tuple32(&[color.r(), color.g(), color.b()])
         ));
         self.out.line("    interpolation = \"constant\"");
         self.out.line(")");
         if color.a() < 1.0 {
-            self.out.line(&format!(
+            self.out.property(&format!(
                 "float[] primvars:displayOpacity = [{}] (",
                 real32(color.a())
             ));
@@ -1147,7 +1175,7 @@ impl<'ir> Writer<'ir> {
 
     fn extent(&mut self, bounds: Option<([f32; 3], [f32; 3])>) {
         if let Some((min, max)) = bounds {
-            self.out.line(&format!(
+            self.out.property(&format!(
                 "float3[] extent = [{}, {}]",
                 tuple32(&min),
                 tuple32(&max)
@@ -1172,7 +1200,8 @@ impl<'ir> Writer<'ir> {
         self.out.open();
         self.placement(placement);
         if let Some(path) = binding {
-            self.out.line(&format!("rel material:binding = <{path}>"));
+            self.out
+                .property(&format!("rel material:binding = <{path}>"));
         }
     }
 
@@ -1259,7 +1288,8 @@ impl<'ir> Writer<'ir> {
                 .line(&format!("    interpolation = {}", quoted(interpolation)));
             self.out.line(")");
         }
-        self.out.line("uniform token subdivisionScheme = \"none\"");
+        self.out
+            .property("uniform token subdivisionScheme = \"none\"");
         if !tessellation.channels().is_empty() || !tessellation.texture_assignments().is_empty() {
             self.unwritten.channels += 1;
         }
@@ -1275,8 +1305,9 @@ impl<'ir> Writer<'ir> {
             })
             .collect();
         if bound.iter().any(Option::is_some) {
-            self.out
-                .line("uniform token subsetFamily:materialBind:familyType = \"nonOverlapping\"");
+            self.out.property(
+                "uniform token subsetFamily:materialBind:familyType = \"nonOverlapping\"",
+            );
         }
         let mut subsets = Names::default();
         for (group, binding) in tessellation.triangle_groups().iter().zip(bound) {
@@ -1298,9 +1329,9 @@ impl<'ir> Writer<'ir> {
             };
             self.prim_head("def GeomSubset", &name, &metadata);
             self.out.open();
-            self.out.line("uniform token elementType = \"face\"");
+            self.out.property("uniform token elementType = \"face\"");
             self.out
-                .line(&format!("uniform token familyName = {}", quoted(family)));
+                .property(&format!("uniform token familyName = {}", quoted(family)));
             self.out.array(
                 "int[] indices",
                 &group
@@ -1311,7 +1342,8 @@ impl<'ir> Writer<'ir> {
                 "",
             );
             if let Some(path) = binding {
-                self.out.line(&format!("rel material:binding = <{path}>"));
+                self.out
+                    .property(&format!("rel material:binding = <{path}>"));
             }
             self.out.close();
         }
@@ -1343,12 +1375,12 @@ impl<'ir> Writer<'ir> {
             }
         }
         self.extent(bounds);
-        self.out.line(&format!("int uVertexCount = {u_count}"));
-        self.out.line(&format!("int vVertexCount = {v_count}"));
+        self.out.property(&format!("int uVertexCount = {u_count}"));
+        self.out.property(&format!("int vVertexCount = {v_count}"));
         self.out
-            .line(&format!("int uOrder = {}", u64::from(nurbs.u_degree()) + 1));
+            .property(&format!("int uOrder = {}", u64::from(nurbs.u_degree()) + 1));
         self.out
-            .line(&format!("int vOrder = {}", u64::from(nurbs.v_degree()) + 1));
+            .property(&format!("int vOrder = {}", u64::from(nurbs.v_degree()) + 1));
         let knots = |values: &[f64]| values.iter().map(|knot| real(*knot)).collect::<Vec<_>>();
         self.out
             .array("double[] uKnots", &knots(nurbs.u_knots().as_slice()), "");
@@ -1368,7 +1400,8 @@ impl<'ir> Writer<'ir> {
         self.out.array("point3f[] points", &points, "");
         let reversed = nurbs.normal_reversed() != (face.sense == Sense::Reversed);
         if reversed {
-            self.out.line("uniform token orientation = \"leftHanded\"");
+            self.out
+                .property("uniform token orientation = \"leftHanded\"");
         }
         self.color_primvars(Some(body));
         self.out.close();
