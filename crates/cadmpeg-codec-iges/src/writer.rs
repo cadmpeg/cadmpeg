@@ -150,8 +150,10 @@ mod attributes;
 mod copious_curve;
 mod degrade;
 mod display;
+mod entity_order;
 mod feature_order;
 mod levels;
+mod native_plane;
 mod native_records;
 mod pcurve_admission;
 pub(crate) mod target;
@@ -633,6 +635,7 @@ fn synthesize_with_admission(
     }
 
     append_name_properties(&mut graph.entities, &graph.presentations)?;
+    entity_order::source_order(ir, &mut graph.entities, &mut graph.presentations)?;
     feature_order::order(ir, &mut graph.entities, &mut graph.presentations)?;
     attribute_export.regenerated.extend(display::regenerated(
         ir,
@@ -6371,6 +6374,9 @@ fn surface_entities_for_ir(
     version: crate::IgesVersion,
 ) -> Result<Vec<Entity>, CodecError> {
     let geometry = &surface.geometry;
+    if let Some(entity) = native_plane::regenerate(ir, surface) {
+        return Ok(vec![entity]);
+    }
     if let Some(solved) = geometry.solved() {
         if let SolvedSurfaceGeometry::Nurbs(nurbs) = solved {
             let construction = geometry.procedural_construction().and_then(|id| {
