@@ -242,6 +242,8 @@ pub fn injected_error_findings(
     findings
 }
 
+type CapacityReader = dyn Fn(&[u8]) -> u64;
+
 /// One capacity row under test: the writer's row plus its helper seam.
 pub struct CapacityRow {
     /// The writer's declared row.
@@ -249,7 +251,7 @@ pub struct CapacityRow {
     /// Writes `value` through the helper alone.
     pub write_at: Box<dyn Fn(u64) -> Result<Vec<u8>, EncodeError>>,
     /// Reads the stored value back through the decoder.
-    pub read_back: Box<dyn Fn(&[u8]) -> u64>,
+    pub read_back: Box<CapacityReader>,
 }
 
 /// Findings for capacity helpers: `limit` writes and reads back, `limit + 1`
