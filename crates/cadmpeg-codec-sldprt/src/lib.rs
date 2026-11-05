@@ -225,13 +225,8 @@ impl SldprtCodec {
             limits,
             |ctx, root| {
                 let fresh = cadmpeg_ir::Codec::decode_with_context(&SldprtCodec, ctx, root)
-                    .map_err(|failure| match failure {
-                        cadmpeg_ir::codec::DecodeFailure::Codec(error) => error,
-                        _ => CodecError::UnsupportedContent(
-                            "the retained SLDPRT source image refused to decode".into(),
-                        ),
-                    })?;
-                decode::document_local_sha256(fresh.ir())
+                    .map_err(|_| ())?;
+                decode::document_local_sha256(fresh.ir()).map_err(|_| ())
             },
         );
         if !replays {

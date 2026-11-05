@@ -22,7 +22,7 @@ use crate::design::decode::scopes::parameter_scope::payload_prologue;
 use crate::design::decode::scopes::shared_frames::marked_record_reference;
 use crate::design::decode::sketch::{
     cached_borrowed_record_offsets, cached_owned_record_offsets, indexed_record_header_at,
-    next_indexed_record_offset, next_indexed_record_offset_with_index, IndexedRecordOffsets,
+    IndexedRecordOffsets,
 };
 use crate::design::decode::text::design_record_id;
 use crate::design::decode::text::relaxed_guid_end;
@@ -177,7 +177,16 @@ pub(crate) fn decode_edge_operands(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let records = cached_borrowed_record_offsets(&mut record_offset_index, stream, bytes);
+        let Some(records) = cached_borrowed_record_offsets(
+            &mut record_offset_index,
+            stream,
+            bytes,
+            scan,
+            &entry.name,
+        )?
+        else {
+            continue;
+        };
         for (ordinal, record_index) in scope.reference_members().values().copied().enumerate() {
             if !member_indices.contains(&record_index) {
                 continue;
@@ -255,7 +264,16 @@ pub(crate) fn decode_edge_treatment_vertex_operands(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let records = cached_borrowed_record_offsets(&mut record_offset_index, stream, bytes);
+        let Some(records) = cached_borrowed_record_offsets(
+            &mut record_offset_index,
+            stream,
+            bytes,
+            scan,
+            &entry.name,
+        )?
+        else {
+            continue;
+        };
         for (scope_reference_ordinal, record_index) in
             scope.reference_members().values().copied().enumerate()
         {
@@ -359,7 +377,16 @@ pub(crate) fn bind_work_point_input_carriers(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let records = cached_owned_record_offsets(&mut record_offset_index, &stream, bytes);
+        let Some(records) = cached_owned_record_offsets(
+            &mut record_offset_index,
+            &stream,
+            bytes,
+            scan,
+            &entry.name,
+        )?
+        else {
+            continue;
+        };
         let scope_record_index = scope.record_index;
         let Some(construction) = scope.work_point_construction_mut() else {
             continue;
@@ -393,6 +420,7 @@ pub(crate) fn bind_work_point_input_carriers(
             }
             if let Some(selection) = parse_work_point_sketch_point_frame(
                 bytes,
+                records,
                 input.record_index(),
                 header.byte_offset.ok_or_else(|| {
                     CodecError::malformed("F3D source record has no scanner position")
@@ -442,6 +470,7 @@ pub(crate) fn bind_work_point_input_carriers(
             }
             let Some(selection) = parse_entity_selection_frame(
                 bytes,
+                records,
                 input.record_index(),
                 header.byte_offset.ok_or_else(|| {
                     CodecError::malformed("F3D source record has no scanner position")
@@ -533,7 +562,16 @@ pub(crate) fn bind_work_plane_constructions(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let records = cached_owned_record_offsets(&mut record_offset_index, &stream, bytes);
+        let Some(records) = cached_owned_record_offsets(
+            &mut record_offset_index,
+            &stream,
+            bytes,
+            scan,
+            &entry.name,
+        )?
+        else {
+            continue;
+        };
         let Some([placement_record_index, first, second, third, extra_offset]) =
             scope.reference_members().values_array()
         else {
@@ -928,7 +966,16 @@ pub(crate) fn decode_face_operands(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let records = cached_borrowed_record_offsets(&mut record_offset_index, stream, bytes);
+        let Some(records) = cached_borrowed_record_offsets(
+            &mut record_offset_index,
+            stream,
+            bytes,
+            scan,
+            &entry.name,
+        )?
+        else {
+            continue;
+        };
         for (group_member_index, record_index) in group
             .members()
             .iter()
@@ -1006,7 +1053,16 @@ pub(crate) fn decode_face_operands(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let records = cached_borrowed_record_offsets(&mut record_offset_index, stream, bytes);
+        let Some(records) = cached_borrowed_record_offsets(
+            &mut record_offset_index,
+            stream,
+            bytes,
+            scan,
+            &entry.name,
+        )?
+        else {
+            continue;
+        };
         let legacy_as_built = scope.kind()
             == crate::records::feature::scope::DesignFeatureKind::AsBuilt
             && crate::design::assembly::scope_legacy_as_built_421_generation(scope).is_some();
@@ -1090,7 +1146,16 @@ pub(crate) fn decode_face_source_groups(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let records = cached_borrowed_record_offsets(&mut record_offset_index, stream, bytes);
+        let Some(records) = cached_borrowed_record_offsets(
+            &mut record_offset_index,
+            stream,
+            bytes,
+            scan,
+            &entry.name,
+        )?
+        else {
+            continue;
+        };
         let Ok(scope_start) = usize::try_from(
             scope
                 .byte_offset()
@@ -1689,6 +1754,7 @@ pub(crate) fn bind_sketch_profiles(
 ) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, CodecError> {
     let headers = indexed_operand_headers(headers);
     let mut losses = Vec::new();
+    let mut record_offsets = HashMap::new();
     for scope in scopes.iter_mut().filter(|scope| {
         design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Extrude)
             || design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Sweep)
@@ -1703,6 +1769,11 @@ pub(crate) fn bind_sketch_profiles(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
+        let Some(records) =
+            cached_owned_record_offsets(&mut record_offsets, stream, bytes, scan, &entry.name)?
+        else {
+            continue;
+        };
         let mut profiles = Vec::new();
         for (ordinal, record_index) in scope.reference_members().values().copied().enumerate() {
             if scope.emboss_operand_construction().is_some() && ordinal != 1 {
@@ -1713,7 +1784,8 @@ pub(crate) fn bind_sketch_profiles(
             else {
                 continue;
             };
-            let Some(profile) = parse_sketch_profile(bytes, stream, ordinal, header, entities)
+            let Some(profile) =
+                parse_sketch_profile(bytes, records, stream, ordinal, header, entities)
             else {
                 continue;
             };
@@ -3936,6 +4008,7 @@ pub(crate) fn decode_entity_selection_operands(
 ) -> Result<Vec<DesignEntitySelectionOperand>, CodecError> {
     let headers = indexed_operand_headers(headers);
     let mut out = Vec::new();
+    let mut record_offsets = HashMap::new();
     for group in groups {
         let Some(stream) = native_stream(&group.id) else {
             continue;
@@ -3945,6 +4018,11 @@ pub(crate) fn decode_entity_selection_operands(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
+        let Some(records) =
+            cached_borrowed_record_offsets(&mut record_offsets, stream, bytes, scan, &entry.name)?
+        else {
+            continue;
+        };
         for (ordinal, record_index) in group
             .members()
             .iter()
@@ -3957,7 +4035,8 @@ pub(crate) fn decode_entity_selection_operands(
             let Some(header) = headers.get(&(stream, record_index)) else {
                 continue;
             };
-            if let Some(mut operand) = parse_entity_selection_operand(bytes, group, ordinal, header)
+            if let Some(mut operand) =
+                parse_entity_selection_operand(bytes, records, group, ordinal, header)
             {
                 operand.id = design_record_id(
                     &entry.name,
@@ -3977,6 +4056,7 @@ pub(crate) fn decode_entity_selection_operands(
 
 pub(super) fn parse_entity_selection_operand(
     bytes: &[u8],
+    records: &IndexedRecordOffsets,
     group: &DesignConstructionOperandGroup,
     group_member_ordinal: u32,
     header: &DesignRecordHeader,
@@ -3984,6 +4064,7 @@ pub(super) fn parse_entity_selection_operand(
     let header_offset = header.byte_offset?;
     let frame = parse_entity_selection_frame(
         bytes,
+        records,
         header.record_index,
         header_offset,
         header.class_tag.as_str(),
@@ -4141,16 +4222,17 @@ struct WorkPointSketchPointFrame {
 /// and the following point-data record.
 fn parse_work_point_sketch_point_frame(
     bytes: &[u8],
+    records: &IndexedRecordOffsets,
     record_index: u32,
     byte_offset: u64,
 ) -> Option<WorkPointSketchPointFrame> {
     let start = usize::try_from(byte_offset).ok()?;
     let prefix = parse_entity_selection_prefix(bytes, start, record_index)?;
-    let paired_at = next_indexed_record_offset(bytes, prefix.after_context_id + 8)?;
-    let nested_one_at = next_indexed_record_offset(bytes, paired_at + indexed_header::LEN)?;
-    let nested_two_at = next_indexed_record_offset(bytes, nested_one_at + indexed_header::LEN)?;
-    let identity_at = next_indexed_record_offset(bytes, nested_two_at + indexed_header::LEN)?;
-    let next_at = next_indexed_record_offset(bytes, identity_at + indexed_header::LEN)?;
+    let paired_at = records.next_at_or_after(prefix.after_context_id + 8)?;
+    let nested_one_at = records.next_at_or_after(paired_at + indexed_header::LEN)?;
+    let nested_two_at = records.next_at_or_after(nested_one_at + indexed_header::LEN)?;
+    let identity_at = records.next_at_or_after(nested_two_at + indexed_header::LEN)?;
+    let next_at = records.next_at_or_after(identity_at + indexed_header::LEN)?;
     let expected = [
         record_index,
         record_index.checked_add(1)?,
@@ -4216,17 +4298,18 @@ fn parse_work_point_sketch_point_frame(
 /// Parse the nested persistent-entity frame without assigning group ownership.
 pub(super) fn parse_entity_selection_frame(
     bytes: &[u8],
+    records: &IndexedRecordOffsets,
     record_index: u32,
     byte_offset: u64,
     class_tag: &str,
 ) -> Option<EntitySelectionFrame> {
     let start = usize::try_from(byte_offset).ok()?;
     let prefix = parse_entity_selection_prefix(bytes, start, record_index)?;
-    let paired_at = next_indexed_record_offset(bytes, prefix.after_context_id + 8)?;
-    let nested_one_at = next_indexed_record_offset(bytes, paired_at + 11)?;
-    let nested_two_at = next_indexed_record_offset(bytes, nested_one_at + 11)?;
-    let identity_at = next_indexed_record_offset(bytes, nested_two_at + 11)?;
-    let next_at = next_indexed_record_offset(bytes, identity_at + 11)?;
+    let paired_at = records.next_at_or_after(prefix.after_context_id + 8)?;
+    let nested_one_at = records.next_at_or_after(paired_at + 11)?;
+    let nested_two_at = records.next_at_or_after(nested_one_at + 11)?;
+    let identity_at = records.next_at_or_after(nested_two_at + 11)?;
+    let next_at = records.next_at_or_after(identity_at + 11)?;
     let expected = [
         record_index,
         record_index.checked_add(1)?,
@@ -4389,7 +4472,16 @@ pub(crate) fn decode_body_recipe_operands(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let records = cached_borrowed_record_offsets(&mut record_offset_index, stream, bytes);
+        let Some(records) = cached_borrowed_record_offsets(
+            &mut record_offset_index,
+            stream,
+            bytes,
+            scan,
+            &entry.name,
+        )?
+        else {
+            continue;
+        };
         for (ordinal, record_index) in group
             .members()
             .iter()
@@ -4438,7 +4530,16 @@ pub(crate) fn decode_body_recipe_operands(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let records = cached_borrowed_record_offsets(&mut record_offset_index, stream, bytes);
+        let Some(records) = cached_borrowed_record_offsets(
+            &mut record_offset_index,
+            stream,
+            bytes,
+            scan,
+            &entry.name,
+        )?
+        else {
+            continue;
+        };
         let operation = scope.combine_operation();
         let record_indexes = operation
             .into_iter()
@@ -4644,9 +4745,8 @@ fn body_recipe_operand_end_with_index(
     if records.first_at_or_after(prologue_end, successor).is_some() {
         return Some((successor, records.first_at_or_after(recipe_at, successor)?));
     }
-    let recipe_record_at = next_indexed_record_offset(bytes, prologue_end)?;
-    let close_at =
-        next_indexed_record_offset(bytes, recipe_record_at.checked_add(indexed_header::LEN)?)?;
+    let recipe_record_at = records.next_at_or_after(prologue_end)?;
+    let close_at = records.next_at_or_after(recipe_record_at.checked_add(indexed_header::LEN)?)?;
     if recipe_record_at >= recipe_at || close_at != recipe_at.checked_add(body_recipe_end::LEN)? {
         return None;
     }
@@ -5376,6 +5476,7 @@ fn utf16_decimal_u64(bytes: &[u8], at: usize) -> Option<(u64, usize)> {
 
 pub(in crate::design) fn parse_sketch_profile(
     bytes: &[u8],
+    records: &IndexedRecordOffsets,
     stream: &str,
     scope_reference_ordinal: u32,
     header: &DesignRecordHeader,
@@ -5394,7 +5495,7 @@ pub(in crate::design) fn parse_sketch_profile(
     relaxed_guid_end(bytes, start + 36)?;
     let (asset_id, after_asset_id) = lp_utf16_bounded(bytes, start + 36, 1..=256)?;
     let (entity_suffix, after_entity_suffix) = utf16_decimal_u64(bytes, after_asset_id)?;
-    let paired_at = next_indexed_record_offset(bytes, start + 11)?;
+    let paired_at = records.next_at_or_after(start + 11)?;
     let (paired_class_tag, after_paired_tag) =
         lp_ascii_filtered_view(bytes, paired_at, 0..=2000, u8::is_ascii_graphic)?;
     let tail_length = paired_at.checked_sub(after_entity_suffix)?;
@@ -5452,7 +5553,7 @@ pub(in crate::design) fn parse_sketch_profile(
         return None;
     }
     let region_selection =
-        parse_sketch_profile_region_selection(bytes, header.record_index, paired_at);
+        parse_sketch_profile_region_selection(bytes, records, header.record_index, paired_at);
     let entity_id_text = entity.entity_id.as_str().to_owned();
     DesignSketchProfileOperand::try_new(
         crate::records::topology::sketch_profile::DesignSketchProfileOperandDraft {
@@ -5475,6 +5576,7 @@ pub(in crate::design) fn parse_sketch_profile(
 
 fn parse_sketch_profile_region_selection(
     bytes: &[u8],
+    records: &IndexedRecordOffsets,
     profile_record_index: u32,
     paired_at: usize,
 ) -> Option<DesignSketchProfileRegionSelection> {
@@ -5483,7 +5585,7 @@ fn parse_sketch_profile_region_selection(
     const TERMINATOR_LEN: usize = 5;
 
     let next_header = |position, expected| {
-        let at = next_indexed_record_offset(bytes, position)?;
+        let at = records.next_at_or_after(position)?;
         (indexed_record_header_at(bytes, at)?.record_index == expected).then_some(at)
     };
     let nested_one_at = next_header(
@@ -5755,7 +5857,7 @@ fn parse_recipe_operand(
                 .byte_offset
                 .and_then(|offset| usize::try_from(offset).ok())?
                 .checked_add(family_name.len())?;
-            let next = next_indexed_record_offset(bytes, recipe_program_at)?;
+            let next = records.next_at_or_after(recipe_program_at)?;
             (u64::try_from(next).ok()? <= limit).then_some(next)?
         }
     };
@@ -6627,6 +6729,7 @@ fn edge_recipe_topology_triplet(
 /// `N`. Select an expected continuation before applying that fallback.
 fn face_recipe_next_boundary(
     bytes: &[u8],
+    records: &IndexedRecordOffsets,
     position: usize,
     record_index: u32,
     limit: Option<u64>,
@@ -6641,13 +6744,14 @@ fn face_recipe_next_boundary(
     [record_index.checked_add(4)?, record_index.checked_add(5)?]
         .into_iter()
         .filter_map(|expected_index| {
-            next_indexed_record_offset_with_index(bytes, position, expected_index)
+            records
+                .first_at_or_after(position, expected_index)
                 .map(|offset| (expected_index, offset))
         })
         .filter(|(_, offset)| within_limit(*offset))
         .min_by_key(|(_, offset)| *offset)
         .or_else(|| {
-            let offset = next_indexed_record_offset(bytes, position)?;
+            let offset = records.next_at_or_after(position)?;
             let record_index = indexed_record_header_at(bytes, offset)?.record_index;
             within_limit(offset).then_some((record_index, offset))
         })
@@ -6708,8 +6812,13 @@ pub(super) fn parse_face_operand(
     let program_start = usize::try_from(first_recipe.byte_offset?)
         .ok()?
         .checked_add(family_name_len)?;
-    let (immediate_next, next_record_index) =
-        face_recipe_next_boundary(bytes, program_start, header.record_index, next_byte_offset)?;
+    let (immediate_next, next_record_index) = face_recipe_next_boundary(
+        bytes,
+        records,
+        program_start,
+        header.record_index,
+        next_byte_offset,
+    )?;
     offsets[4] = immediate_next;
     let mut indexed = [("", 0u32); 5];
     for (offset, slot) in offsets.iter().zip(&mut indexed) {
@@ -6903,9 +7012,16 @@ pub(crate) fn decode_profile_curve_selections(
             {
                 continue;
             }
-            let records = records_by_stream
-                .entry(stream)
-                .or_insert_with(|| IndexedRecordOffsets::build(bytes));
+            let Some(records) = cached_borrowed_record_offsets(
+                &mut records_by_stream,
+                stream,
+                bytes,
+                scan,
+                &entry.name,
+            )?
+            else {
+                continue;
+            };
             let Some(mut selection) =
                 parse_typed_profile_curve_selection(ctx, bytes, records, group, ordinal, header)?
             else {
@@ -6980,8 +7096,7 @@ fn parse_typed_profile_curve_selection_prefix(
     {
         return None;
     }
-    let identity_end =
-        next_indexed_record_offset(bytes, identity_at + typed_identity::ZERO_RUN_10)?;
+    let identity_end = records.next_at_or_after(identity_at + typed_identity::ZERO_RUN_10)?;
     Some((
         DesignProfileCurveSelection {
             id: String::new(),

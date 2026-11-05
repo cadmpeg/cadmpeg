@@ -98,6 +98,62 @@ fn source_less_primitive_feature_survives_synthesis() {
         decoded.ir().dimension_value(angle).unwrap(),
         cadmpeg_ir::scalar::Angle::FULL_TURN
     );
+    let Dimension::Parameter(height_id) = height else {
+        panic!("generated height has an owned parameter");
+    };
+    let mut edited = decoded.ir().clone();
+    let parameter = edited
+        .model
+        .parameters
+        .iter_mut()
+        .find(|p| &p.id == height_id)
+        .unwrap();
+    let expected_parameter_name = parameter.name.clone();
+    let value = ParameterValue::Length(Length::new(40.0).unwrap());
+    parameter.expression = cadmpeg_ir::features::Expression::literal(&value);
+    parameter.value = Some(value);
+    let mut rewritten = Vec::new();
+    let plan = F3dCodec
+        .plan(EncodeInput::new(&edited, None), TargetRequest::Inherit)
+        .expect("plan edited feature parameter");
+    assert!(!plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("f3d.design_parameters")));
+    plan.write_to(&mut rewritten)
+        .expect("write edited feature parameter");
+    let rewritten = F3dCodec
+        .decode(&mut Cursor::new(rewritten), &DecodeOptions::default())
+        .expect("read edited feature parameter");
+    let FeatureDefinition::Operation(FeatureOperation::Primitive { solid, .. }) =
+        rewritten.ir().model.features[0].evaluation.definition()
+    else {
+        panic!("edited cylinder feature");
+    };
+    let PrimitiveSolidKind::Cylinder { height, .. } = solid.kind() else {
+        panic!("edited cylinder solid");
+    };
+    assert_eq!(rewritten.ir().dimension_value(height).unwrap().get(), 40.0);
+    let Dimension::Parameter(rewritten_id) = height else {
+        panic!("edited height retains its parameter binding");
+    };
+    let rewritten_parameter = rewritten
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| &parameter.id == rewritten_id)
+        .unwrap();
+    assert_eq!(rewritten_parameter.name, expected_parameter_name);
+    assert_eq!(
+        rewritten_parameter.owner.as_ref(),
+        Some(&rewritten.ir().model.features[0].id)
+    );
+    assert_eq!(
+        rewritten_parameter.expression.literal_text().as_deref(),
+        Some("40 mm")
+    );
     let mut second = ir.model.features[0].clone();
     second.id = FeatureId::mint("authored:model:feature#1").unwrap();
     second.ordinal = 1;
@@ -1190,7 +1246,7 @@ fn source_less_sketch_point_survives_synthesis() {
     let placement = SketchPlacement::try_resolved(
         Point3::new(10.0, 20.0, 30.0),
         Vector3::new(0.0, 0.0, 1.0),
-        Vector3::new(0.0, 1.0, 0.0),
+        Vector3::new(0.0, 1.0 + 2.0e-11, 0.0),
     )
     .unwrap();
     ir.model.sketches.push(Sketch {
@@ -1237,6 +1293,25 @@ fn source_less_sketch_point_survives_synthesis() {
     assert_eq!(
         decoded.ir().model.sketch_entities[0].sketch,
         decoded.ir().model.sketches[0].id
+    );
+    let mut edited = decoded.ir().clone();
+    let changed = SketchGeometry::try_from(SketchGeometryDefinition::Point {
+        position: Point2::new(25.0, 35.0),
+    })
+    .unwrap();
+    edited.model.sketch_entities[0].geometry = changed.clone();
+    let mut bytes = Vec::new();
+    F3dCodec
+        .plan(EncodeInput::new(&edited, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .expect("write edited sketch");
+    let edited_output = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode edited sketch");
+    assert_eq!(edited_output.ir().model.sketch_entities.len(), 1);
+    assert_eq!(
+        edited_output.ir().model.sketch_entities[0].geometry,
+        changed
     );
 }
 #[test]

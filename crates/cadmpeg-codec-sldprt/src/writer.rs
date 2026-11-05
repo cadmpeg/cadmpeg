@@ -6,6 +6,7 @@ use std::io::Write;
 use std::num::NonZeroU16;
 
 mod accounting;
+mod bounded_curve;
 mod custom_properties;
 mod edge_direction;
 mod envelope;
@@ -149,6 +150,7 @@ fn write_through_validation_error(
                 .surfaces
                 .iter()
                 .any(|surface| surface.id.as_str() == id && can_write_surface(&surface.geometry))
+                || ir.model.points.iter().any(|point| point.id.as_str() == id)
         })
     {
         return true;
@@ -301,7 +303,7 @@ pub(super) fn write_semantic_at(
     if let Some(finding) = blocking {
         return Err(CodecError::Malformed(finding.message.clone()).into());
     }
-    check_semantic_support(ir, annotations)?;
+    check_semantic_support(ir)?;
     // The IR stores canonical millimetres; Parasolid stores metres.
     let length_scale = 0.001;
     let patched_partition = if retained_partition.is_none() {
@@ -1254,6 +1256,24 @@ pub(crate) const CAPACITY_FIELDS: &[cadmpeg_ir::codec::write::CapacityField] = &
         source: "docs/formats/sldprt.md §8: feature source identifiers occupy u32 fields",
         helper: "allocate_feature_source_id",
     },
+    cadmpeg_ir::codec::write::CapacityField {
+        field: "sketch.frame_uncompressed_length",
+        limit: u32::MAX as u64,
+        source: "docs/formats/sldprt.md §1: frame uncompressed length is u32 LE",
+        helper: "field_u32",
+    },
+    cadmpeg_ir::codec::write::CapacityField {
+        field: "sketch.frame_compressed_length",
+        limit: u32::MAX as u64,
+        source: "docs/formats/sldprt.md §1: frame compressed length is u32 LE",
+        helper: "field_u32",
+    },
+    cadmpeg_ir::codec::write::CapacityField {
+        field: "sketch.wrapper_length",
+        limit: u32::MAX as u64,
+        source: "docs/formats/sldprt.md §1: nested wrapper length is u32 LE",
+        helper: "field_u32",
+    },
 ];
 
 /// Reduced rows: neutral paths the lump stores in reduced form (#232 §5.2).
@@ -1312,7 +1332,7 @@ pub(crate) fn section_type_id_at(index: usize) -> Result<u32, write_error::Write
         })
 }
 
-fn check_semantic_support(ir: &CadIr, annotations: &Annotations) -> Result<(), CodecError> {
+fn check_semantic_support(ir: &CadIr) -> Result<(), CodecError> {
     if !ir.model.configurations.is_empty()
         && ir
             .model
@@ -1392,21 +1412,6 @@ fn check_semantic_support(ir: &CadIr, annotations: &Annotations) -> Result<(), C
     if ir.model.faces.iter().any(|face| face.name.is_some()) {
         return Err(CodecError::UnsupportedContent(
             "SLDPRT semantic writer does not encode face names".into(),
-        ));
-    }
-    if ir.model.edges.iter().any(|edge| {
-        edge.param_range().is_some()
-            && annotations
-                .exactness()
-                .get(edge.id.as_str())
-                .is_none_or(|note| {
-                    note.entity() != cadmpeg_ir::Exactness::Derived
-                        && note.fields().get("carrier.param_range")
-                            != Some(&cadmpeg_ir::Exactness::Derived)
-                })
-    }) {
-        return Err(CodecError::UnsupportedContent(
-            "SLDPRT semantic writer does not encode explicit edge parameter ranges".into(),
         ));
     }
     for appearance in &ir.model.appearances {
@@ -1744,12 +1749,27 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
         .model
         .vertices
         .retain(|vertex| vertices.contains(&vertex.id));
-    let points = subset
+    let mut points = subset
         .model
         .vertices
         .iter()
         .map(|vertex| vertex.point.clone())
         .collect::<HashSet<_>>();
+    if retain_detached {
+        let owned = ir
+            .model
+            .vertices
+            .iter()
+            .map(|vertex| &vertex.point)
+            .collect::<HashSet<_>>();
+        points.extend(
+            ir.model
+                .points
+                .iter()
+                .filter(|point| !owned.contains(&point.id))
+                .map(|point| point.id.clone()),
+        );
+    }
     subset
         .model
         .points
@@ -3897,6 +3917,32 @@ pub(crate) fn brep_body(
         .filter(|item| !derived_sphere_seam_curves.contains(&item.id))
         .map(|item| Ok((item.id.clone(), take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::desktop())?;
+    let mut bounded_curves = HashMap::new();
+    for edge in &ir.model.edges {
+        if edge.param_range().is_none() {
+            continue;
+        }
+        if bounded_curve::derived_sphere_seam(ir, edge) {
+            continue;
+        }
+        let bounded = bounded_curve::from_edge(&ctx, ir, edge, length_scale)?.ok_or_else(|| {
+            CodecError::UnsupportedContent(format!(
+                "SLDPRT edge {} has no writable bounded curve",
+                edge.id
+            ))
+        })?;
+        if !curves.contains_key(&bounded.curve) {
+            return Err(CodecError::UnsupportedContent(format!(
+                "SLDPRT edge {} has no emitted bounded-curve source",
+                edge.id
+            ))
+            .into());
+        }
+        bounded_curves.insert(edge.id.clone(), (take_attr(&mut next)?, bounded));
+    }
+    ctx.finish_session()?;
     let points = ir
         .model
         .points
@@ -3986,6 +4032,27 @@ pub(crate) fn brep_body(
             &values,
         );
     }
+    for edge in &ir.model.edges {
+        let Some((identity, bounded)) = bounded_curves.get(&edge.id) else {
+            continue;
+        };
+        tag(&mut out, 0x85);
+        typed_ref(&mut out, *identity)?;
+        be32(&mut out, 0);
+        for _ in 0..5 {
+            typed_ref(&mut out, 0_u32)?;
+        }
+        out.push(0x2b);
+        typed_ref(&mut out, curves[&bounded.curve])?;
+        for point in bounded.points {
+            for value in [point.x, point.y, point.z] {
+                bef64(&mut out, value * length_scale);
+            }
+        }
+        for parameter in bounded.parameters {
+            bef64(&mut out, parameter);
+        }
+    }
     let face_owners = ir
         .model
         .faces
@@ -4059,9 +4126,10 @@ pub(crate) fn brep_body(
             0,
             0,
             0,
-            edge.curve()
-                .and_then(|id| curves.get(id))
-                .copied()
+            bounded_curves
+                .get(&edge.id)
+                .map(|(identity, _)| *identity)
+                .or_else(|| edge.curve().and_then(|id| curves.get(id)).copied())
                 .unwrap_or(0),
             0,
             0,
@@ -5390,7 +5458,7 @@ pub(crate) fn field_u16(
     u16::try_from(value).map_err(|_| write_error::WriteError::Capacity { field, value })
 }
 
-fn field_u32(
+pub(crate) fn field_u32(
     field: &'static cadmpeg_ir::codec::write::CapacityField,
     length: usize,
 ) -> Result<u32, write_error::WriteError> {
@@ -5423,7 +5491,6 @@ mod nurbs_write_tests {
     use cadmpeg_ir::geometry::nurbs::NurbsSurface;
     use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
     use cadmpeg_ir::math::Point3;
-    use cadmpeg_ir::Annotations;
 
     #[test]
     fn unsupported_pmi_is_reported_and_omitted_from_current_content() {
@@ -5443,7 +5510,7 @@ mod nurbs_write_tests {
         });
         // #209 S-entity: an unencodable datum is an affected entity loss,
         // not a refusal of the remaining authored native document.
-        assert!(check_semantic_support(&ir, &Annotations::default()).is_ok());
+        assert!(check_semantic_support(&ir).is_ok());
         assert_unsupported_pmi_is_reported(&ir);
 
         let cadmpeg_ir::PmiDefinition::Datum { identification } =
@@ -5452,11 +5519,11 @@ mod nurbs_write_tests {
             panic!("datum definition");
         };
         *identification = "B".into();
-        assert!(check_semantic_support(&ir, &Annotations::default()).is_ok());
+        assert!(check_semantic_support(&ir).is_ok());
         assert_unsupported_pmi_is_reported(&ir);
 
         ir.model.pmi.clear();
-        assert!(check_semantic_support(&ir, &Annotations::default()).is_ok());
+        assert!(check_semantic_support(&ir).is_ok());
     }
 
     fn assert_unsupported_pmi_is_reported(ir: &CadIr) {

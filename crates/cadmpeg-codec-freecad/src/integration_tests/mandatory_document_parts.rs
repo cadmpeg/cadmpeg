@@ -232,11 +232,9 @@ fn an_unframeable_mandatory_header_gives_up_only_the_real_archive_parent() {
         .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
         .unwrap();
     assert_eq!(decoded.ir().model.entity_count(), 0);
-    assert_eq!(decoded.ir().scope, cadmpeg_ir::ContentScope::container());
-    assert_eq!(
-        decoded.report().scope(),
-        cadmpeg_ir::ContentScope::container()
-    );
+    // #209 §1.1: the located archive part failed, so its classes remain held.
+    assert_eq!(decoded.ir().scope, cadmpeg_ir::ContentScope::full());
+    assert_eq!(decoded.report().scope(), cadmpeg_ir::ContentScope::full());
     assert!(decoded.ir().source.as_ref().unwrap().dialects().is_none());
     let fidelity = decoded.source_fidelity();
     let parts = crate::test_support::source_fidelity::given_up(fidelity);
