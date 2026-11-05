@@ -410,7 +410,7 @@ fn edited_extrusion_changes_between_solid_and_surface() {
                 .unwrap();
             assert!(output.ir().model.features.iter().any(|feature| matches!(
                 feature.evaluation.definition(),
-                FeatureDefinition::Operation(FeatureOperation::Extrude { solid: Some(value), op: BooleanOp::Join, .. }) if *value == !original
+                FeatureDefinition::Operation(FeatureOperation::Extrude { solid: Some(value), op: BooleanOp::Join, .. }) if *value != original
             )), "original {original}, fidelity {}", fidelity.is_some());
         }
     }
