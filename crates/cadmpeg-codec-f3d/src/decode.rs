@@ -2174,6 +2174,12 @@ fn model_brep_candidates<'s>(
         let mut matches = container::design_breps(scan)
             .filter(|brep| brep.name.rsplit('/').next() == Some(blob_name.as_str()));
         let Some(brep) = matches.next() else {
+            if scan.unreadable_entries.iter().any(|part| {
+                scan.belongs_to_design_asset(&part.name)
+                    && part.name.rsplit('/').next() == Some(blob_name.as_str())
+            }) {
+                continue;
+            }
             return Err(CodecError::malformed(format_args!(
                 "Design body map references missing BREP entry {blob_name}"
             )));
@@ -5525,6 +5531,20 @@ fn container_losses(
     let brep_count = container::design_breps(scan).count();
     let selected = container::select_fallback_brep(scan);
     let text_count = container::text_brep_names(scan).count();
+
+    if brep_count == 0
+        && text_count == 0
+        && scan.unreadable_entries.iter().any(|part| {
+            matches!(
+                crate::container::classify(&part.name),
+                ContainerRole::BrepSmbh | ContainerRole::BrepSmb | ContainerRole::BrepText
+            )
+        })
+    {
+        return vec![F3dLossCode::MaterialNotTransferred.note(
+            "Materials/appearances (.protein assets, ACT/design assignments) were not transferred.",
+        )];
+    }
 
     let (geometry, topology) = match outcome {
         ModelBrepOutcome::NoPhysicalModel => (
