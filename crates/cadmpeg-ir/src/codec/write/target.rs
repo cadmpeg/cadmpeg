@@ -12,15 +12,11 @@ use super::EncodeError;
 
 /// What the caller asked an encoder to write, before resolution picks it.
 ///
-/// Synthesis and preservation are different capabilities. Synthesis is static
-/// and input-independent: [`crate::codec::write::Encoder::targets`] is the
-/// whole catalog.
-/// Preservation is input-conditioned — replaying a retained baseline
-/// reproduces dialects no encoder could synthesize for arbitrary input — so it
-/// is asked for by [`TargetRequest::Inherit`], never by a catalog entry.
+/// Native requests resolve against the encoder catalog. An inherited source
+/// outside the catalog selects its default and records the displacement.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TargetRequest<'a> {
-    /// Preserve the source's dialect. The same-format default.
+    /// Select the source dialect when it belongs to the catalog.
     Inherit,
     /// A synthesis target from [`crate::codec::write::Encoder::targets`]: an
     /// explicit target flag, or the catalog default for a cross-format
@@ -88,12 +84,6 @@ pub enum ResolvedTarget<'a> {
         /// Why no source dialect could be inherited.
         source: DefaultSource,
     },
-    /// Inheritance of a recorded same-format dialect that is not on the
-    /// catalog; only verbatim replay can realize it.
-    Preserved {
-        /// The recorded source dialect to reproduce.
-        source: DialectId,
-    },
 }
 
 /// A native write resolved against the encoder catalog and source identity.
@@ -103,7 +93,6 @@ pub enum ResolvedTarget<'a> {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedWrite<'a> {
     target: ResolvedTarget<'a>,
-    available: TargetCatalog,
 }
 
 /// A selected catalog grammar for a synthesized write.
@@ -134,19 +123,17 @@ impl<'a> ResolvedWrite<'a> {
         &self.target
     }
 
-    /// The resolved catalog row, or `None` for a preserved off-catalog source.
+    /// The resolved catalog row.
     #[must_use]
     pub const fn entry(&self) -> Option<&'static TargetDescriptor> {
         match &self.target {
             ResolvedTarget::Explicit { entry, .. }
             | ResolvedTarget::Inherited { entry, .. }
             | ResolvedTarget::Default { entry, .. } => Some(entry),
-            ResolvedTarget::Preserved { .. } => None,
         }
     }
 
-    /// Position of the resolved row in the catalog the encoder declared, or
-    /// `None` for a preserved off-catalog source.
+    /// Position of the resolved row in the catalog the encoder declared.
     ///
     /// Catalogs projected from a version enumeration in order let codecs index
     /// that enumeration directly.
@@ -156,19 +143,16 @@ impl<'a> ResolvedWrite<'a> {
             ResolvedTarget::Explicit { index, .. }
             | ResolvedTarget::Inherited { index, .. }
             | ResolvedTarget::Default { index, .. } => Some(*index),
-            ResolvedTarget::Preserved { .. } => None,
         }
     }
 
-    /// The resolved output dialect: the catalog row's id, or the preserved
-    /// source id.
+    /// The resolved output dialect.
     #[must_use]
     pub const fn target_id(&self) -> &DialectId {
         match &self.target {
             ResolvedTarget::Explicit { entry, .. }
             | ResolvedTarget::Inherited { entry, .. }
             | ResolvedTarget::Default { entry, .. } => &entry.id,
-            ResolvedTarget::Preserved { source } => source,
         }
     }
 
@@ -178,7 +162,7 @@ impl<'a> ResolvedWrite<'a> {
     pub fn preserves_source(&self) -> bool {
         match &self.target {
             ResolvedTarget::Explicit { entry, source, .. } => source.recorded() == Some(&entry.id),
-            ResolvedTarget::Inherited { .. } | ResolvedTarget::Preserved { .. } => true,
+            ResolvedTarget::Inherited { .. } => true,
             ResolvedTarget::Default { .. } => false,
         }
     }
@@ -195,9 +179,7 @@ impl<'a> ResolvedWrite<'a> {
                 source: DefaultSource::OffCatalogDialect(source),
                 ..
             } => Some(source),
-            ResolvedTarget::Inherited { .. }
-            | ResolvedTarget::Default { .. }
-            | ResolvedTarget::Preserved { .. } => None,
+            ResolvedTarget::Inherited { .. } | ResolvedTarget::Default { .. } => None,
         }
     }
 
@@ -229,7 +211,7 @@ impl<'a> ResolvedWrite<'a> {
     pub const fn has_same_format_source(&self) -> bool {
         match &self.target {
             ResolvedTarget::Explicit { source, .. } => source.is_same_format(),
-            ResolvedTarget::Inherited { .. } | ResolvedTarget::Preserved { .. } => true,
+            ResolvedTarget::Inherited { .. } => true,
             ResolvedTarget::Default { source, .. } => matches!(
                 source,
                 DefaultSource::UnrecordedDialect | DefaultSource::OffCatalogDialect(_)
@@ -250,38 +232,15 @@ impl<'a> ResolvedWrite<'a> {
             && self.displaced_source().is_none()
     }
 
-    /// Resolves the actual synthesis grammar after source preservation declines.
+    /// Returns the selected synthesis grammar.
     pub fn for_synthesis(&self) -> Result<SynthesisTarget<'a>, EncodeError> {
-        let source = match &self.target {
+        let index = match &self.target {
             ResolvedTarget::Explicit { index, .. }
             | ResolvedTarget::Inherited { index, .. }
-            | ResolvedTarget::Default { index, .. } => {
-                return Ok(SynthesisTarget {
-                    resolved: self.clone(),
-                    index: *index,
-                });
-            }
-            ResolvedTarget::Preserved { source } => {
-                DefaultSource::OffCatalogDialect(source.clone())
-            }
+            | ResolvedTarget::Default { index, .. } => *index,
         };
-        let (index, entry) = self.available.default().ok_or_else(|| {
-            EncodeError::UnsupportedTarget(Box::new(TargetRefusal::new(
-                TargetRefusalKind::NoDefault {
-                    source: source.clone(),
-                },
-                self.available,
-            )))
-        })?;
         Ok(SynthesisTarget {
-            resolved: Self {
-                target: ResolvedTarget::Default {
-                    index,
-                    entry,
-                    source,
-                },
-                available: self.available,
-            },
+            resolved: self.clone(),
             index,
         })
     }
@@ -324,20 +283,6 @@ impl TargetResolution for ResolvedWrite<'_> {
     }
 
     fn synthesis_target(&self) -> Result<Option<&DialectId>, EncodeError> {
-        if let ResolvedTarget::Preserved { source } = &self.target {
-            return self
-                .available
-                .default()
-                .map(|(_, entry)| Some(&entry.id))
-                .ok_or_else(|| {
-                    EncodeError::UnsupportedTarget(Box::new(TargetRefusal::new(
-                        TargetRefusalKind::NoDefault {
-                            source: DefaultSource::OffCatalogDialect(source.clone()),
-                        },
-                        self.available,
-                    )))
-                });
-        }
         Ok(Some(self.target_id()))
     }
 }
@@ -444,7 +389,7 @@ fn source_identity(ir: &CadIr, format: &str) -> SourceIdentity {
 
 /// Resolve a native target and inheritance once, before codec-specific delivery.
 ///
-/// Native requests always name a catalog or preserved off-catalog dialect.
+/// Native requests always name a catalog dialect.
 /// A dialect-free neutral encoder handles its format identity locally instead
 /// of adding an identity case to every native writer.
 fn resolve_write_request<'a>(
@@ -501,14 +446,23 @@ fn resolve_write_request<'a>(
                     entry,
                     source,
                 },
-                None => ResolvedTarget::Preserved { source },
+                None => {
+                    let source = DefaultSource::OffCatalogDialect(source);
+                    let (index, entry) = catalog.default().ok_or_else(|| {
+                        refuse(TargetRefusalKind::NoDefault {
+                            source: source.clone(),
+                        })
+                    })?;
+                    ResolvedTarget::Default {
+                        index,
+                        entry,
+                        source,
+                    }
+                }
             },
         },
     };
-    Ok(ResolvedWrite {
-        target,
-        available: catalog,
-    })
+    Ok(ResolvedWrite { target })
 }
 #[cfg(test)]
 mod tests;

@@ -50,3 +50,32 @@ fn off_catalog_inherit_synthesizes_and_reads_the_reported_catalog_default() {
         "iges:5.3-fixed-ascii"
     );
 }
+
+#[test]
+fn off_catalog_inherit_synthesizes_even_with_a_retained_source_image() {
+    let source = point_file_at_version_flag(1);
+    let decoded = cadmpeg_test_support::EditableDecodeResult::from(
+        IgesCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .expect("original version-1 point fixture"),
+    );
+    let plan = IgesCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+            TargetRequest::Inherit,
+        )
+        .expect("catalog default");
+    assert!(matches!(
+        plan.report().write_path(),
+        WritePath::Synthesized { .. }
+    ));
+    assert_eq!(
+        serde_json::to_value(plan.report()).unwrap()["identity"]["target"],
+        "iges:5.3-fixed-ascii"
+    );
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "target.source-dialect-displaced"));
+}

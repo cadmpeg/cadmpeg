@@ -1433,6 +1433,22 @@ fn encode_face_topology_smbh(
             vertex: vertex_start,
         },
     )?;
+    super::reindex::preserve_indices(
+        &mut records,
+        model,
+        super::reindex::Starts {
+            region: region_start,
+            shell: shell_start,
+            face: face_start,
+            loop_: loop_start,
+            surface: surface_start,
+            curve: curve_start,
+            coedge: coedge_start,
+            edge: edge_start,
+            vertex: vertex_start,
+            point: point_start,
+        },
+    )?;
     native_history_tail(&mut records, native)?;
     let mut bytes = native_smbh_header(target)?;
     bytes.extend_from_slice(&records);
