@@ -4344,6 +4344,38 @@ fn write_body_hierarchy(
         .collect::<HashMap<_, _>>();
     let mut assigned = HashSet::new();
     for body in &ir.model.bodies {
+        let typed_only = body.regions.iter().any(|region| {
+            regions
+                .get(region)
+                .is_some_and(|region| region.shells.len() > 6)
+        });
+        if typed_only {
+            for region_id in &body.regions {
+                let region = regions.get(region_id).ok_or_else(|| {
+                    CodecError::Malformed("body references missing region".into())
+                })?;
+                for shell_id in &region.shells {
+                    let shell = shells.get(shell_id).ok_or_else(|| {
+                        CodecError::Malformed("region references missing shell".into())
+                    })?;
+                    for face in shell.faces() {
+                        if !faces.contains_key(face) {
+                            return Err(CodecError::Malformed(
+                                "shell references missing face".into(),
+                            )
+                            .into());
+                        }
+                        if !assigned.insert(face.clone()) {
+                            return Err(CodecError::Malformed(
+                                "face belongs to multiple bodies".into(),
+                            )
+                            .into());
+                        }
+                    }
+                }
+            }
+            continue;
+        }
         let root = take_attr(next)?;
         let mut native_regions = Vec::new();
         for region_id in &body.regions {
@@ -4424,13 +4456,9 @@ fn write_body_hierarchy(
                 );
             }
             if body.kind != BodyKind::Sheet {
-                entity51(
-                    out,
-                    AttributeCount::One,
-                    native_region,
-                    0x001b,
-                    &fixed_refs(&native_lumps, "SLDPRT region has more than six shells")?,
-                );
+                let mut references = [0; 6];
+                references[..native_lumps.len()].copy_from_slice(&native_lumps);
+                entity51(out, AttributeCount::One, native_region, 0x001b, &references);
             }
         }
         if native_regions.is_empty() {
@@ -4695,16 +4723,6 @@ fn typed_ref(out: &mut Vec<u8>, value: impl Into<u32>) -> Result<(), write_error
         be16(out, u16::try_from(value >> 15).map_err(|_| capacity())?);
     }
     Ok(())
-}
-
-fn fixed_refs(values: &[u16], message: &str) -> Result<[u16; 6], CodecError> {
-    if values.len() > 6 {
-        // (O-capacity): the target field cannot encode a value outside its width.
-        return Err(CodecError::NotImplemented(message.into()));
-    }
-    let mut refs = [0; 6];
-    refs[..values.len()].copy_from_slice(values);
-    Ok(refs)
 }
 
 pub(crate) fn face_colors(ir: &CadIr) -> HashMap<cadmpeg_ir::ids::FaceId, Color> {
