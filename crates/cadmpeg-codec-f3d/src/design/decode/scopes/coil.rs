@@ -236,6 +236,7 @@ pub(super) fn exact_coil_placement(
         }
         let persistent_frame = parse_entity_selection_frame(
             bytes,
+            records,
             selection_record_index,
             u64::try_from(selection_start).ok()?,
             selection_class_tag,

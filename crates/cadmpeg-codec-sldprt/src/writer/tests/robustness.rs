@@ -384,3 +384,22 @@ fn residual_specs(seed: &cadmpeg_ir::CadIr) -> Vec<ResidualSpec> {
     let _ = seed;
     Vec::new()
 }
+
+#[test]
+fn compressed_sketch_lengths_report_their_target_fields() {
+    for field in &crate::writer::CAPACITY_FIELDS[33..36] {
+        assert_eq!(
+            crate::writer::field_u32(field, usize::try_from(u32::MAX).unwrap()).unwrap(),
+            u32::MAX
+        );
+        let error: cadmpeg_ir::codec::write::EncodeError =
+            crate::writer::field_u32(field, usize::try_from(u64::from(u32::MAX) + 1).unwrap())
+                .unwrap_err()
+                .into();
+        assert!(
+            matches!(error, cadmpeg_ir::codec::write::EncodeError::TargetCapacity {
+            field: actual, limit, value
+        } if actual.field == field.field && limit == u64::from(u32::MAX) && value == limit + 1)
+        );
+    }
+}
