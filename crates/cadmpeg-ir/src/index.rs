@@ -307,6 +307,7 @@ macro_rules! define_model_index {
             fn build_identity_set(&self) -> (BorrowedIdentityIndex<'a, bool>, bool) {
                 let mut entities = 0_usize;
                 $(entities += self.ir.model.$field.len();)*
+                entities += self.ir.model.feature_input_topologies.iter().map(|state| state.operands.len()).sum::<usize>();
                 let mut slots = entities;
                 if self.include_native {
                     self.native_view().for_each(|_, _, records| slots += records.len());
@@ -314,6 +315,11 @@ macro_rules! define_model_index {
                 }
                 let mut identities = BorrowedIdentityIndex { slots: HashMap::with_capacity(slots) };
                 $(for entity in &self.ir.model.$field { identities.entry(entity.identity(), || false); })*
+                for state in &self.ir.model.feature_input_topologies {
+                    for operand in &state.operands {
+                        identities.entry(operand.id.as_str(), || false);
+                    }
+                }
                 if !self.include_native {
                     return (identities, false);
                 }

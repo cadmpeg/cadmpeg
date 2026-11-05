@@ -169,6 +169,26 @@ pub fn audit_native_linkage(document: &Value) -> Result<NativeLinkageAudit, Stri
                     .ok_or_else(|| format!("{pointer}/native_ref is not a string"))?;
                 inward_links.push((format!("{pointer}/native_ref"), reference));
             }
+            if arena.as_str() == "feature_input_topologies" {
+                if let Some(operands) = row.get("operands") {
+                    let operands = operands
+                        .as_array()
+                        .ok_or_else(|| format!("{pointer}/operands is not an array"))?;
+                    for (ordinal, operand) in operands.iter().enumerate() {
+                        let member = format!("{pointer}/operands/{ordinal}");
+                        let id = operand
+                            .get("id")
+                            .and_then(Value::as_str)
+                            .ok_or_else(|| format!("{member}/id is not a string"))?;
+                        let reference = operand
+                            .get("native_ref")
+                            .and_then(Value::as_str)
+                            .ok_or_else(|| format!("{member}/native_ref is not a string"))?;
+                        neutral_ids.insert(id);
+                        inward_links.push((format!("{member}/native_ref"), reference));
+                    }
+                }
+            }
         }
     }
     let mut native_ids = BTreeSet::new();

@@ -376,6 +376,7 @@ pub(crate) fn project(
             "project Inventor historical treatment edges",
         )?;
         states.push(FeatureInputTopology {
+            operands: Default::default(),
             id: state,
             input_of: feature.id.clone(),
             bodies: DistinctMembers::default(),
