@@ -30,19 +30,6 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let sketch_sources = self.sketch_sources;
         Ok({
             require_same_family(existing, &feature.id, &["Rib"])?;
-            if existing.is_none()
-                && (construction.profile.is_none()
-                    || construction.direction.is_none()
-                    || construction.thickness.is_none()
-                    || construction.side.is_none()
-                    || construction.draft == RibDraft::Unresolved
-                    || op == BooleanOp::Unresolved)
-            {
-                return Err(CodecError::UnsupportedContent(format!(
-                    "SLDPRT feature {} has unresolved rib construction",
-                    feature.id
-                )));
-            }
             let mut parameters = self.base_parameters();
             if let Some(thickness) = construction.thickness.as_ref() {
                 parameters.insert(
