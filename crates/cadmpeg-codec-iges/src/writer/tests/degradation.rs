@@ -654,6 +654,38 @@ fn edited_network_occurrence_placement_is_written_from_the_document() {
 }
 
 #[test]
+fn edited_network_translation_and_scale_use_instance_parameters() {
+    let bytes = crate::test_support::test_drawing_and_trimming::connected_network_subfigure_file();
+    let decoded = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let edited = cadmpeg_ir::transform::Transform::affine([
+        [2.0, 0.0, 0.0, 12.0],
+        [0.0, 3.0, 0.0, 23.0],
+        [0.0, 0.0, 4.0, 34.0],
+    ])
+    .unwrap();
+    ir.model.occurrences[0].transform = Some(edited);
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let after = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(after.ir().model.occurrences[0].transform, Some(edited));
+    assert_eq!(
+        after.ir().model.occurrences[0].id,
+        ir.model.occurrences[0].id
+    );
+    let namespace = after.ir().native.namespace("iges").unwrap();
+    assert!(namespace
+        .arenas()
+        .get("transformations")
+        .is_none_or(Vec::is_empty));
+}
+
+#[test]
 fn missing_network_placement_does_not_replay_the_old_placement() {
     let bytes = crate::test_support::test_drawing_and_trimming::connected_network_subfigure_file();
     let decoded = IgesCodec
