@@ -597,9 +597,7 @@ pub(in crate::decode) fn geometry_section_record(
     else {
         return Ok(None);
     };
-    let Some(namespace) = crate::identity::section_namespace(section.name()) else {
-        return Ok(None);
-    };
+    let namespace = crate::identity::section_namespace(section.name());
     crate::identity::compose_checked(&namespace, section.offset()).map(Some)
 }
 
