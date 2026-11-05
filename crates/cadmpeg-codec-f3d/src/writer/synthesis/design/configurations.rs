@@ -25,7 +25,7 @@ pub(super) fn regenerate(
     {
         super::super::super::generate::features::authored_feature_ids(target)
     } else {
-        Default::default()
+        std::collections::BTreeSet::default()
     };
     let previous = std::mem::take(&mut native.design_configurations);
     let mut previous_tables = previous.iter().filter(|entry| {

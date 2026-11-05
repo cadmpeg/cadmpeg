@@ -271,18 +271,38 @@ fn attach_indexed_om_unknowns(
     Ok(())
 }
 
-pub(super) fn attach(
+pub(crate) struct AttachOutputs<'a> {
+    pub annotations: &'a mut AnnotationBuilder,
+    pub unknowns: &'a mut Vec<UnknownRecord>,
+    pub losses: &'a mut Vec<LossNote>,
+}
+
+pub(crate) fn attach(
     ctx: &DecodeContext<'_>,
     ir: &mut CadIr,
     model: &crate::native::model::NativeModel,
     scan: &Scan,
-    annotations: &mut AnnotationBuilder,
-    unknowns: &mut Vec<UnknownRecord>,
-    losses: &mut Vec<LossNote>,
+    outputs: AttachOutputs<'_>,
     parts: &mut PartOutput,
 ) -> Result<bool, CodecError> {
+    let AttachOutputs {
+        annotations,
+        unknowns,
+        losses,
+    } = outputs;
     let snapshot = AttachSnapshot::capture(ir, annotations, unknowns, losses, scan);
-    match attach_records(ctx, ir, model, scan, annotations, unknowns, losses, parts) {
+    match attach_records(
+        ctx,
+        ir,
+        model,
+        scan,
+        AttachOutputs {
+            annotations: &mut *annotations,
+            unknowns: &mut *unknowns,
+            losses: &mut *losses,
+        },
+        parts,
+    ) {
         Ok(()) => Ok(true),
         Err(error @ CodecError::ResourceLimit(_)) => Err(error),
         Err(error) => {
@@ -368,10 +388,13 @@ fn run_rm_appearances_lane(
     ir: &mut CadIr,
     model: &crate::native::model::NativeModel,
     scan: &Scan,
-    annotations: &mut AnnotationBuilder,
-    unknowns: &mut Vec<UnknownRecord>,
-    losses: &mut Vec<LossNote>,
+    outputs: AttachOutputs<'_>,
 ) -> Result<(), CodecError> {
+    let AttachOutputs {
+        annotations,
+        unknowns,
+        losses,
+    } = outputs;
     let Some(extent) = entry_extent(scan, EntryContent::ActiveBodyIndex) else {
         return attach_rm_appearances(ir, model, annotations);
     };
@@ -424,19 +447,31 @@ fn run_display_jt_lane(
     Ok(outcome.unwrap_or_default())
 }
 
+#[derive(Clone, Copy)]
+struct ConfigurationInputs<'a> {
+    attribute_uses: &'a std::collections::BTreeMap<&'a str, &'a str>,
+    annotation_stream: &'a StreamHandle,
+}
+
 /// Run the configuration lane inside its part boundary.
-fn run_configurations_lane<'a>(
+fn run_configurations_lane(
     ctx: &DecodeContext<'_>,
     parts: &mut PartOutput,
     ir: &mut CadIr,
     model: &crate::native::model::NativeModel,
     scan: &Scan,
-    annotations: &mut AnnotationBuilder,
-    unknowns: &mut Vec<UnknownRecord>,
-    losses: &mut Vec<LossNote>,
-    attribute_uses: &std::collections::BTreeMap<&str, &'a str>,
-    annotation_stream: &StreamHandle,
+    outputs: AttachOutputs<'_>,
+    configuration: ConfigurationInputs<'_>,
 ) -> Result<(), CodecError> {
+    let AttachOutputs {
+        annotations,
+        unknowns,
+        losses,
+    } = outputs;
+    let ConfigurationInputs {
+        attribute_uses,
+        annotation_stream,
+    } = configuration;
     let Some(extent) = entry_extent(scan, EntryContent::Arrangements) else {
         return attach_configurations(
             ir,
@@ -481,10 +516,13 @@ fn run_expressions_lane(
     ir: &mut CadIr,
     model: &crate::native::model::NativeModel,
     scan: &Scan,
-    annotations: &mut AnnotationBuilder,
-    unknowns: &mut Vec<UnknownRecord>,
-    losses: &mut Vec<LossNote>,
+    outputs: AttachOutputs<'_>,
 ) -> Result<(), CodecError> {
+    let AttachOutputs {
+        annotations,
+        unknowns,
+        losses,
+    } = outputs;
     let Some(extent) = entry_extent(scan, EntryContent::PartPayload) else {
         return expressions::attach_expression_parameters(
             ctx,
@@ -565,10 +603,13 @@ fn run_feature_operations_lane(
     ir: &mut CadIr,
     model: &crate::native::model::NativeModel,
     scan: &Scan,
-    annotations: &mut AnnotationBuilder,
-    unknowns: &mut Vec<UnknownRecord>,
-    losses: &mut Vec<LossNote>,
+    outputs: AttachOutputs<'_>,
 ) -> Result<(), CodecError> {
+    let AttachOutputs {
+        annotations,
+        unknowns,
+        losses,
+    } = outputs;
     give_up_corrupt_label_operations(ctx, parts, scan)?;
     let Some(extent) = entry_extent(scan, EntryContent::PartPayload) else {
         #[cfg(test)]
@@ -711,11 +752,14 @@ fn attach_records(
     ir: &mut CadIr,
     model: &crate::native::model::NativeModel,
     scan: &Scan,
-    annotations: &mut AnnotationBuilder,
-    unknowns: &mut Vec<UnknownRecord>,
-    losses: &mut Vec<LossNote>,
+    outputs: AttachOutputs<'_>,
     parts: &mut PartOutput,
 ) -> Result<(), CodecError> {
+    let AttachOutputs {
+        annotations,
+        unknowns,
+        losses,
+    } = outputs;
     #[cfg(test)]
     super::attach_failure::check(super::attach_failure::Point::Entry)?;
     attach_container_payloads(ctx, ir, scan, annotations, unknowns, TypedNative::Available)?;
@@ -740,7 +784,18 @@ fn attach_records(
     if model.is_empty() && !has_object_sections {
         return Ok(());
     }
-    run_rm_appearances_lane(ctx, parts, ir, model, scan, annotations, unknowns, losses)?;
+    run_rm_appearances_lane(
+        ctx,
+        parts,
+        ir,
+        model,
+        scan,
+        AttachOutputs {
+            annotations: &mut *annotations,
+            unknowns: &mut *unknowns,
+            losses: &mut *losses,
+        },
+    )?;
     let display_jt_tessellations = run_display_jt_lane(ctx, parts, model, scan, losses)?;
     for (tessellation, source_offset, color) in display_jt_tessellations {
         if let Some(color) = color {
@@ -866,14 +921,40 @@ fn attach_records(
         ir,
         model,
         scan,
-        annotations,
-        unknowns,
-        losses,
-        &attribute_uses,
-        &annotation_stream,
+        AttachOutputs {
+            annotations: &mut *annotations,
+            unknowns: &mut *unknowns,
+            losses: &mut *losses,
+        },
+        ConfigurationInputs {
+            attribute_uses: &attribute_uses,
+            annotation_stream: &annotation_stream,
+        },
     )?;
-    run_expressions_lane(ctx, parts, ir, model, scan, annotations, unknowns, losses)?;
-    run_feature_operations_lane(ctx, parts, ir, model, scan, annotations, unknowns, losses)?;
+    run_expressions_lane(
+        ctx,
+        parts,
+        ir,
+        model,
+        scan,
+        AttachOutputs {
+            annotations: &mut *annotations,
+            unknowns: &mut *unknowns,
+            losses: &mut *losses,
+        },
+    )?;
+    run_feature_operations_lane(
+        ctx,
+        parts,
+        ir,
+        model,
+        scan,
+        AttachOutputs {
+            annotations: &mut *annotations,
+            unknowns: &mut *unknowns,
+            losses: &mut *losses,
+        },
+    )?;
     attach_current_feature_states(ir, annotations)?;
     ir.model
         .features
