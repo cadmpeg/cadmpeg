@@ -7,7 +7,7 @@ use crate::InventorCodec;
 /// A one-section OLE property-set stream holding property id 2 with an i32
 /// value of 17.
 fn stream() -> Vec<u8> {
-    let values = vec![[3_i32.to_le_bytes(), 17_i32.to_le_bytes()].concat()];
+    let values = [[3_i32.to_le_bytes(), 17_i32.to_le_bytes()].concat()];
     let mut section = vec![0; 8 + 8 * values.len()];
     section[4..8].copy_from_slice(
         &u32::try_from(values.len())
