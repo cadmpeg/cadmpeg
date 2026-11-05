@@ -448,7 +448,8 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     }
     design.persistent_references =
         crate::design::decode::sketch::decode_persistent_references(ctx, &mut design_parts, scan)?;
-    design.lost_edge_references = crate::design::decode::sketch::decode_lost_edge_references(scan)?;
+    design.lost_edge_references =
+        crate::design::decode::sketch::decode_lost_edge_references(ctx, &mut design_parts, scan)?;
     design.sketch_relations = crate::design::decode::sketch::decode_sketch_relations(
         ctx,
         &mut design_parts,
