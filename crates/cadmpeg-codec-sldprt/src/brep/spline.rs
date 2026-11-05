@@ -307,7 +307,7 @@ fn scan_arrays(
                         .compact
                         .entry(attr)
                         .or_default()
-                        .push(CompactArray { count, values_at });
+                        .push(CompactArray { values_at, count });
                 }
             }
         }

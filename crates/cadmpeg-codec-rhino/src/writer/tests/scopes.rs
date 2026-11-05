@@ -1317,7 +1317,7 @@ fn admission_drops_appearance_bindings_with_dangling_targets() {
         source_entity_id: None,
         object_type: None,
         visible: None,
-        channels: Default::default(),
+        channels: std::collections::BTreeMap::default(),
     });
     ir.model.appearance_bindings.push(AppearanceBinding {
         id: "test:model:binding#dangling".try_into().expect("identity"),
@@ -1327,7 +1327,7 @@ fn admission_drops_appearance_bindings_with_dangling_targets() {
         source_entity_id: None,
         object_type: None,
         visible: None,
-        channels: Default::default(),
+        channels: std::collections::BTreeMap::default(),
     });
     let (admitted, losses) = super::super::scopes::admit(&ir);
     let admitted = admitted.into_owned();
@@ -1372,7 +1372,7 @@ fn admission_drops_bindings_with_dangling_appearances() {
         source_entity_id: None,
         object_type: None,
         visible: None,
-        channels: Default::default(),
+        channels: std::collections::BTreeMap::default(),
     });
     let (admitted, losses) = super::super::scopes::admit(&ir);
     let admitted = admitted.into_owned();

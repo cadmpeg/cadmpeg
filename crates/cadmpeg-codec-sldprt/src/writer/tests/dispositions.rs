@@ -23,7 +23,7 @@ fn fixtures() -> Vec<(String, Vec<u8>)> {
 fn native_arena_registry_matches_native_dispositions_on_every_golden() {
     let registry = crate::native::SLDPRT_ARENA_NAMES
         .iter()
-        .map(|arena| arena.to_string())
+        .map(std::string::ToString::to_string)
         .collect::<BTreeSet<_>>();
     let mut checked = 0;
     for (name, bytes) in fixtures() {

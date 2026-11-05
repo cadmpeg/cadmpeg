@@ -5,6 +5,7 @@ use crate::test_support::parasolid::triangle_body;
 use crate::SldprtCodec;
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::features::holes::{HoleConstruction, HoleKind};
 use cadmpeg_ir::features::{
     BooleanOp, FeatureDefinition, FeatureOperation, PlanarProfileRef, ProfileRef,
 };
@@ -91,9 +92,9 @@ fn foreign_native_kind_keeps_history_and_document_properties_readable() {
         .evaluation
         .set_definition(FeatureDefinition::Operation(FeatureOperation::Native {
             kind: "Fem::FemAnalysis".into(),
-            parameters: Default::default(),
+            parameters: std::collections::BTreeMap::default(),
         }));
-    ir.model.features[0].source_content = Default::default();
+    ir.model.features[0].source_content = cadmpeg_ir::features::FeatureContent::default();
     ir.model.parameters.clear();
     ir.model.attributes.push(SourceAttribute {
         id: cadmpeg_ir::ids::AttributeId::mint("test:model:attribute#label").unwrap(),
@@ -182,7 +183,7 @@ fn source_less_extrusion_keeps_its_unresolved_extent() {
     use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, LinearTermination};
     let mut ir = source_less_extrusion();
     ir.model.parameters.clear();
-    ir.model.features[0].source_content = Default::default();
+    ir.model.features[0].source_content = cadmpeg_ir::features::FeatureContent::default();
     ir.model.features[0].evaluation.edit(|definition, _| {
         let FeatureDefinition::Operation(FeatureOperation::Extrude { extent, .. }) = definition
         else {
@@ -409,7 +410,7 @@ fn edited_extrusion_changes_between_solid_and_surface() {
                 .unwrap();
             assert!(output.ir().model.features.iter().any(|feature| matches!(
                 feature.evaluation.definition(),
-                FeatureDefinition::Operation(FeatureOperation::Extrude { solid: Some(value), op: BooleanOp::Join, .. }) if *value == !original
+                FeatureDefinition::Operation(FeatureOperation::Extrude { solid: Some(value), op: BooleanOp::Join, .. }) if *value != original
             )), "original {original}, fidelity {}", fidelity.is_some());
         }
     }
@@ -592,7 +593,6 @@ fn source_less_hole_retains_partial_entry_dimensions() {
         let FeatureDefinition::Operation(FeatureOperation::Hole { shape, .. }) = &expected else {
             panic!("fixture must decode as a hole");
         };
-        use cadmpeg_ir::features::holes::{HoleConstruction, HoleKind};
         assert!(
             matches!(
                 shape.construction(),
@@ -648,7 +648,6 @@ fn source_less_hole_retains_unevaluated_entry_form() {
             .unwrap();
         let mut ir = decoded.ir().clone();
         let expected = ir.model.features[0].evaluation.definition().clone();
-        use cadmpeg_ir::features::holes::{HoleConstruction, HoleKind};
         let FeatureDefinition::Operation(FeatureOperation::Hole { shape, .. }) = &expected else {
             panic!("fixture must decode as a hole");
         };
@@ -733,6 +732,83 @@ fn source_less_reference_plane_retains_unresolved_construction() {
         .features
         .iter()
         .any(|feature| feature.evaluation.definition() == &expected));
+}
+
+#[test]
+fn source_less_sketch_block_retains_definition_reference_and_placement() {
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(0x42, "Contents/Keywords", br#"<Keywords><Feature Name="Block" Type="SketchBlockDefinition" id="101"/><Feature Name="Use" Type="SketchBlockInstance" id="102" BlockDefinition="101" BlockOrigin="10mm,20mm,30mm"/></Keywords>"#));
+    source.extend(make_block(
+        0x42,
+        "Contents/Config-0-ResolvedFeatures",
+        &crate::test_support::history::resolved_feature_classes_with_ids(&[
+            ("moSketchBlockDef_c", "Block", 101),
+            ("moSketchBlockInst_c", "Use", 102),
+        ]),
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let definition = ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Block"))
+        .unwrap();
+    assert!(matches!(
+        definition.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::SketchBlockDefinition { sketch: None })
+    ));
+    let instance = ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Use"))
+        .unwrap();
+    let FeatureDefinition::Operation(FeatureOperation::SketchBlockInstance {
+        block: Some(block),
+        placement: Some(placement),
+    }) = instance.evaluation.definition()
+    else {
+        panic!("block instance");
+    };
+    assert_eq!(block, &definition.id);
+    let expected_placement = *placement;
+    ir.source = None;
+    ir.native = cadmpeg_ir::Native::default();
+    for feature in &mut ir.model.features {
+        feature.native_ref = None;
+    }
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let definition = output
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Block"))
+        .unwrap();
+    assert!(matches!(
+        definition.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::SketchBlockDefinition { sketch: None })
+    ));
+    let instance = output
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Use"))
+        .unwrap();
+    assert!(
+        matches!(instance.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::SketchBlockInstance { block: Some(block), placement: Some(placement) }) if block == &definition.id && placement == &expected_placement)
+    );
 }
 
 #[test]

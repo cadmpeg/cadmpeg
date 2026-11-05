@@ -2710,9 +2710,9 @@ pub(crate) fn project_geometry(
         decoded,
         consumed,
         losses,
+        skipped,
         boundary_vertex_derivations,
         sequences,
-        skipped,
     })
 }
 

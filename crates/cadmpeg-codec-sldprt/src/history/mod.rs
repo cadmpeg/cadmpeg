@@ -277,7 +277,7 @@ pub(crate) fn histories(
                     let text = if node.children().any(|child| child.is_element()) {
                         None
                     } else {
-                        let value = node.text().map(str::trim).unwrap_or("");
+                        let value = node.text().map_or("", str::trim);
                         // An empty custom property still holds its empty
                         // value: dropping it would lose the attribute the
                         // cross-closure comparison counts.

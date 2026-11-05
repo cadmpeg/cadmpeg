@@ -51,9 +51,7 @@ pub(crate) fn decode_canvas_images(
         stream_frames.insert(entry.name.as_str(), frames);
     }
     super::image::decode_scoped_image_records_with_parts(
-        ctx,
-        output,
-        "f3d.canvas_record",
+        (ctx, output, "f3d.canvas_record"),
         scan,
         scopes,
         &crate::records::feature::scope::DesignFeatureKind::Canvas,

@@ -98,7 +98,7 @@ pub(super) fn single_curve(
         record.extend(
             vertex
                 .tolerance
-                .map_or(0.0, |value| value.get())
+                .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get)
                 .to_le_bytes(),
         );
         vertices.push(record);
@@ -119,7 +119,7 @@ pub(super) fn single_curve(
     edge_record.extend(super::indexes(&[])?);
     edge_record.extend(
         edge.tolerance
-            .map_or(0.0, |value| value.get())
+            .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get)
             .to_le_bytes(),
     );
     for value in [lo, hi] {
@@ -245,7 +245,7 @@ pub(super) fn vertex_body(
         record.extend(
             vertex
                 .tolerance
-                .map_or(0.0, |value| value.get())
+                .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get)
                 .to_le_bytes(),
         );
         vertices.push(record);
