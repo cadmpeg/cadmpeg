@@ -2350,10 +2350,24 @@ fn trailing_sketch_owner_reference(record: &[u8]) -> Option<u32> {
     View::u32_le_at(record, tail + 1)
 }
 
+#[cfg(test)]
 pub(crate) fn decode_sketch_points_from_stream(
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
     stream: &str,
+) -> Result<Vec<SketchPoint>, CodecError> {
+    decode_sketch_points_with_parts(bytes, meta, stream, None)
+}
+
+fn decode_sketch_points_with_parts(
+    bytes: &[u8],
+    meta: &crate::metastream::MetaStream,
+    stream: &str,
+    mut parts: Option<(
+        &cadmpeg_core::decode::DecodeContext<'_>,
+        &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
+        View<'_>,
+    )>,
 ) -> Result<Vec<SketchPoint>, CodecError> {
     let Ok((frames, faults)) = super::meta::partition_primary_frames(bytes, meta) else {
         return Ok(Vec::new());
@@ -2394,7 +2408,7 @@ pub(crate) fn decode_sketch_points_from_stream(
             .map_err(|_| CodecError::Malformed("F3D sketch-point entity ID exceeds u32".into()))?;
         let id = design_record_id(stream, ":sketch-point#", u64_from_index(frame.start));
         let payload = &bytes[frame.start..frame.end];
-        let point = {
+        let parse = || -> Result<Option<SketchPoint>, CodecError> {
             let decoded = if derived {
                 decode_derived_sketch_point_record(bytes, meta, frame)
             } else {
@@ -2416,7 +2430,7 @@ pub(crate) fn decode_sketch_points_from_stream(
                     .trailing_reference()
                     .is_some_and(|id| failed_entities.contains(&u64::from(id)))
                 {
-                    continue;
+                    return Ok(None);
                 }
                 return Err(crate::design::text::malformed_design(format_args!(
                     "F3D sketch point {record_index} has an invalid trailing container reference"
@@ -2459,9 +2473,17 @@ pub(crate) fn decode_sketch_points_from_stream(
                 paired_reference: decoded.paired_reference,
                 coordinates: Point2::new(u, v),
             })
-            .map_err(CodecError::Malformed)?
+            .map(Some)
+            .map_err(CodecError::Malformed)
         };
-        out.push(point);
+        let point = if let Some((ctx, output, source)) = parts.as_mut() {
+            sketch_frame_part(ctx, output, *source, stream, frame.start..frame.end, parse)?.flatten()
+        } else {
+            parse()?
+        };
+        if let Some(point) = point {
+            out.push(point);
+        }
     }
     Ok(out)
 }
@@ -2470,10 +2492,13 @@ pub(crate) fn decode_sketch_points_from_stream(
 /// `BulkStream` entry in `scan`: its versioned identity, flags, coordinates,
 /// closure, trailing reference, and paired reverse curve-incidence record,
 /// converted centimetre→millimetre. Class version 0 supplies `(u,v)` and no
-/// persistent identity; later forms supply `(u,v,w)` and `pt_tag`. A known
-/// point record with a malformed or non-finite member sequence makes the
-/// stream malformed.
-pub(crate) fn decode_sketch_points(scan: &ContainerScan) -> Result<Vec<SketchPoint>, CodecError> {
+/// persistent identity; later forms supply `(u,v,w)` and `pt_tag`. A malformed
+/// point record is retained as an unreadable part.
+pub(crate) fn decode_sketch_points(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    output: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
+    scan: &ContainerScan,
+) -> Result<Vec<SketchPoint>, CodecError> {
     let mut out = Vec::new();
     for entry in scan
         .entries
@@ -2484,7 +2509,12 @@ pub(crate) fn decode_sketch_points(scan: &ContainerScan) -> Result<Vec<SketchPoi
         let Some(meta) = metadata_for_bulk_stream(scan, &entry.name)? else {
             continue;
         };
-        out.extend(decode_sketch_points_from_stream(bytes, &meta, &entry.name)?);
+        let source = scan
+            .entry_view(&entry.name)
+            .ok_or_else(|| CodecError::malformed("F3D sketch stream has no source view"))?;
+        out.extend(decode_sketch_points_with_parts(
+            bytes, &meta, &entry.name, Some((ctx, output, source)),
+        )?);
     }
     Ok(out)
 }
