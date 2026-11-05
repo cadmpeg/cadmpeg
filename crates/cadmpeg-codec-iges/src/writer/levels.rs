@@ -23,7 +23,7 @@ fn layer_item_id(item: &cadmpeg_ir::presentation::PresentationItem) -> Option<St
     })
 }
 
-fn layer_memberships(ir: &CadIr) -> BTreeMap<String, BTreeSet<i64>> {
+pub(super) fn layer_memberships(ir: &CadIr) -> BTreeMap<String, BTreeSet<i64>> {
     let mut layer_of: BTreeMap<String, BTreeSet<i64>> = BTreeMap::new();
     for layer in &ir.model.presentation_layers {
         let Ok(number) = layer.name.parse::<i64>() else {
@@ -93,7 +93,7 @@ pub(super) fn presentation_layer_coverage(
     (coverage, losses)
 }
 
-fn entity_layer_numbers(
+pub(super) fn entity_layer_numbers(
     entity: &Entity,
     memberships: &BTreeMap<String, BTreeSet<i64>>,
 ) -> BTreeSet<i64> {

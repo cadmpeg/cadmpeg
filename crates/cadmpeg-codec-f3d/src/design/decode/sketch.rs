@@ -322,7 +322,7 @@ fn decode_sketch_visibilities_with_parts(
         if frame.design_type.version != CURRENT_SKETCH_CONTAINER_VERSION {
             continue;
         }
-        match sketch_visibility_part(ctx, output, source, stream, frame, || {
+        match sketch_record_part(ctx, output, source, stream, frame, || {
             decode_sketch_visibility_frame(bytes, metadata, frame)
         })? {
             Some(visibility) => out.push(visibility),
@@ -345,7 +345,7 @@ fn decode_sketch_visibilities_with_parts(
     Ok(out)
 }
 
-fn sketch_visibility_part<T>(
+fn sketch_record_part<T>(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     output: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
     source: View<'_>,
@@ -454,7 +454,7 @@ fn validate_sketch_visibility_collections(
         };
         let targets = match parts.as_mut() {
             Some((ctx, output, source, stream)) => {
-                sketch_visibility_part(ctx, output, *source, stream, frame, parse)?
+                sketch_record_part(ctx, output, *source, stream, frame, parse)?
             }
             None => Some(parse()?),
         };
@@ -502,7 +502,7 @@ fn validate_sketch_visibility_collections(
                         .and_then(|frames| frames.get(entity))
                         .copied()
                         .ok_or_else(|| error())?;
-                    sketch_visibility_part(ctx, output, *source, stream, frame, || {
+                    sketch_record_part(ctx, output, *source, stream, frame, || {
                         Err::<(), CodecError>(error())
                     })?;
                     rejected.insert(*entity);
@@ -1852,35 +1852,32 @@ fn decode_headers_for_indices_from_stream(
 /// and return-member list. `records` supplies the byte offsets and class tags
 /// (typically from [`decode_related_record_headers`]).
 pub(crate) fn decode_sketch_relations(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    output: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
     scan: &ContainerScan,
     records: &[DesignRecordHeader],
 ) -> Result<Vec<SketchRelation>, CodecError> {
     let mut out = Vec::new();
-    // A record carries no class identity of its own: its class tag selects an
-    // entry in its segment's own type table, and only that entry's GUID names
-    // the class across segments.
-    let types = decode_types(scan)?;
     for entry in scan
         .entries
         .iter()
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
-        let stream_types = stream_types_by_class_tag(&types, &entry.name);
         let scope = ids::native_scope(&entry.name);
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let source = scan.entry_view(&entry.name).ok_or_else(|| {
+            CodecError::malformed("F3D sketch relation stream has no source view")
+        })?;
+        let bytes = source.window();
         let Some(meta) = metadata_for_bulk_stream(scan, &entry.name)? else {
             continue;
         };
         let Ok(frames) = design_primary_frames(bytes, &meta) else {
             continue;
         };
-        let frame_ends: HashMap<_, _> = frames
-            .iter()
-            .map(|frame| (frame.start, frame.end))
-            .collect();
+        let frame_ends: HashMap<_, _> = frames.iter().map(|frame| (frame.start, frame)).collect();
         let mut framed_offsets = std::collections::HashSet::new();
         {
-            for frame in frames {
+            for frame in &frames {
                 let design_type = frame.design_type;
                 if !matches!(
                     SketchRelationClass::of(design_type.type_guid.as_str(), design_type.version),
@@ -1893,9 +1890,21 @@ pub(crate) fn decode_sketch_relations(
                 ) {
                     continue;
                 }
-                let record_index = u32::try_from(frame.entity_id).map_err(|_| {
-                    CodecError::malformed("F3D sketch-relation entity ID exceeds u32")
-                })?;
+                let Ok(record_index) = u32::try_from(frame.entity_id) else {
+                    let typed = super::meta::TypedPrimaryFrame {
+                        entity_id: frame.entity_id,
+                        start: frame.start,
+                        end: frame.end,
+                        design_type: frame.design_type,
+                    };
+                    sketch_record_part(ctx, output, source, &entry.name, typed, || {
+                        Err::<(), CodecError>(CodecError::malformed(format_args!(
+                            "F3D sketch-relation entity {} exceeds u32",
+                            frame.entity_id
+                        )))
+                    })?;
+                    continue;
+                };
                 let record = DesignRecordHeader {
                     id: design_record_id(
                         &entry.name,
@@ -1903,18 +1912,15 @@ pub(crate) fn decode_sketch_relations(
                         u64_from_index(frame.start),
                     ),
                     record_index,
-                    class_tag: frame.class_tag,
+                    class_tag: frame.class_tag.clone(),
                     byte_offset: Some(u64_from_index(frame.start)),
                 };
                 framed_offsets.insert(u64_from_index(frame.start));
-                decode_sketch_relation_record(
-                    &mut out,
-                    &entry.name,
-                    &record,
-                    &bytes[frame.start..frame.end],
-                    design_type.type_guid.as_str(),
-                    design_type.version,
-                )?;
+                if let Some(mut decoded) =
+                    decode_sketch_relation_part(ctx, output, source, &entry.name, frame, &record)?
+                {
+                    out.append(&mut decoded);
+                }
             }
         }
         for record in records
@@ -1930,26 +1936,59 @@ pub(crate) fn decode_sketch_relations(
             let Ok(at) = usize::try_from(record_offset) else {
                 continue;
             };
-            let Some(&record_end) = frame_ends.get(&at) else {
+            let Some(frame) = frame_ends.get(&at) else {
                 continue;
             };
-            let Some(payload) = bytes.get(at..record_end) else {
+            if SketchRelationClass::of(
+                frame.design_type.type_guid.as_str(),
+                frame.design_type.version,
+            )
+            .is_none()
+            {
                 continue;
-            };
-            let Some(design_type) = stream_types.get(&record.class_tag.code()) else {
-                continue;
-            };
-            decode_sketch_relation_record(
-                &mut out,
-                &entry.name,
-                record,
-                payload,
-                design_type.type_guid.as_str(),
-                design_type.version,
-            )?;
+            }
+            if let Some(mut decoded) =
+                decode_sketch_relation_part(ctx, output, source, &entry.name, frame, record)?
+            {
+                out.append(&mut decoded);
+            }
         }
     }
     Ok(out)
+}
+
+fn decode_sketch_relation_part(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    output: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
+    source: View<'_>,
+    stream: &str,
+    frame: &super::meta::DesignPrimaryFrame<'_>,
+    record: &DesignRecordHeader,
+) -> Result<Option<Vec<SketchRelation>>, CodecError> {
+    let typed = super::meta::TypedPrimaryFrame {
+        entity_id: frame.entity_id,
+        start: frame.start,
+        end: frame.end,
+        design_type: frame.design_type,
+    };
+    sketch_record_part(ctx, output, source, stream, typed, || {
+        let mut records = Vec::new();
+        decode_sketch_relation_record(
+            &mut records,
+            stream,
+            record,
+            &source.window()[frame.start..frame.end],
+            frame.design_type.type_guid.as_str(),
+            frame.design_type.version,
+        )?;
+        if records.is_empty() {
+            return Err(CodecError::malformed(format_args!(
+                "F3D sketch relation {} does not match its registered grammar",
+                frame.entity_id
+            )));
+        }
+        Ok(records)
+    })
 }
 
 pub(crate) fn decode_sketch_relation_record(
@@ -3815,18 +3854,21 @@ struct SketchSurfaceFrame {
     v_count: usize,
 }
 
+fn is_sketch_surface_header(payload: &[u8]) -> bool {
+    payload.get(20) == Some(&1)
+        && View::u32_le_at(payload, 21) == Some(2)
+        && View::u32_le_at(payload, 25) == Some(13)
+        && payload.get(29..42) == Some(b"EntityGenesis")
+        && View::u32_le_at(payload, 42) == Some(23)
+        && payload.get(46..69) == Some(b"IntrinsicMetaTypeuint64")
+        && View::u32_le_at(payload, 77) == Some(11)
+        && payload.get(81..92) == Some(b"surface_tag")
+        && View::u32_le_at(payload, 92) == Some(23)
+        && payload.get(96..119) == Some(b"IntrinsicMetaTypeuint64")
+}
+
 fn parse_sketch_surface_frame(payload: &[u8]) -> Option<SketchSurfaceFrame> {
-    if payload.get(20) != Some(&1)
-        || View::u32_le_at(payload, 21) != Some(2)
-        || View::u32_le_at(payload, 25) != Some(13)
-        || payload.get(29..42) != Some(b"EntityGenesis")
-        || View::u32_le_at(payload, 42) != Some(23)
-        || payload.get(46..69) != Some(b"IntrinsicMetaTypeuint64")
-        || View::u32_le_at(payload, 77) != Some(11)
-        || payload.get(81..92) != Some(b"surface_tag")
-        || View::u32_le_at(payload, 92) != Some(23)
-        || payload.get(96..119) != Some(b"IntrinsicMetaTypeuint64")
-    {
+    if !is_sketch_surface_header(payload) {
         return None;
     }
     let entity_genesis = View::u64_le_at(payload, 69);
@@ -3933,6 +3975,8 @@ fn parse_sketch_surface(
 
 /// Decode tensor-product surface entities owned by spatial Design sketches.
 pub(crate) fn decode_sketch_surfaces(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    output: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
     scan: &ContainerScan,
 ) -> Result<Vec<SketchSurface>, CodecError> {
     let mut out = Vec::new();
@@ -3941,30 +3985,51 @@ pub(crate) fn decode_sketch_surfaces(
         .iter()
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let source = scan
+            .entry_view(&entry.name)
+            .ok_or_else(|| CodecError::malformed("F3D sketch surface stream has no source view"))?;
+        let bytes = source.window();
         let Some(meta) = metadata_for_bulk_stream(scan, &entry.name)? else {
             continue;
         };
         for frame in design_primary_frames(bytes, &meta)? {
-            let record_at = frame.start;
-            let Ok(record_index) = u32::try_from(frame.entity_id) else {
-                continue;
-            };
             let payload = &bytes[frame.start..frame.end];
-            let Some(surface) = parse_sketch_surface(payload, record_at)? else {
+            if !is_sketch_surface_header(payload) {
                 continue;
+            }
+            let typed = super::meta::TypedPrimaryFrame {
+                entity_id: frame.entity_id,
+                start: frame.start,
+                end: frame.end,
+                design_type: frame.design_type,
             };
-
-            out.push(SketchSurface {
-                id: ids::native_sketch_surface_id(&entry.name, record_at),
-                record_index,
-                owner_reference: None,
-                class_tag: frame.class_tag,
-                byte_offset: u64_from_index(record_at),
-                entity_genesis: surface.entity_genesis,
-                persistent_id: surface.persistent_id,
-                geometry: surface.geometry,
-            });
+            let decoded = sketch_record_part(ctx, output, source, &entry.name, typed, || {
+                let record_index = u32::try_from(frame.entity_id).map_err(|_| {
+                    CodecError::malformed(format_args!(
+                        "F3D sketch surface entity {} exceeds u32",
+                        frame.entity_id
+                    ))
+                })?;
+                let surface = parse_sketch_surface(payload, frame.start)?.ok_or_else(|| {
+                    CodecError::malformed(format_args!(
+                        "F3D sketch surface {} has an invalid payload",
+                        frame.entity_id
+                    ))
+                })?;
+                Ok(SketchSurface {
+                    id: ids::native_sketch_surface_id(&entry.name, frame.start),
+                    record_index,
+                    owner_reference: None,
+                    class_tag: frame.class_tag.clone(),
+                    byte_offset: u64_from_index(frame.start),
+                    entity_genesis: surface.entity_genesis,
+                    persistent_id: surface.persistent_id,
+                    geometry: surface.geometry,
+                })
+            })?;
+            if let Some(surface) = decoded {
+                out.push(surface);
+            }
         }
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));

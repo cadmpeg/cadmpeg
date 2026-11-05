@@ -494,3 +494,94 @@ pub(super) fn encode(
         _ => Err("record is not a constructive solid or array".into()),
     }
 }
+
+/// Apply a current neutral Boolean feature to its retained postfix tree.
+pub(super) fn apply_combine(
+    ir: &super::CadIr,
+    record: &super::NativeRecord,
+    fields: &mut Fields<'_>,
+) -> Result<Option<String>, String> {
+    use cadmpeg_ir::features::{BodySelection, BooleanKind, FeatureDefinition, FeatureOperation};
+    let mut features = ir
+        .model
+        .features
+        .iter()
+        .filter(|feature| feature.native_ref.as_deref() == Some(record.id()));
+    let Some(feature) = features.next() else {
+        return Ok(None);
+    };
+    if features.next().is_some() {
+        return Err("multiple features name one Boolean tree".into());
+    }
+    let FeatureDefinition::Operation(FeatureOperation::Combine { operands, op, .. }) =
+        feature.evaluation.definition()
+    else {
+        return Err("current feature is not an IGES Boolean combination".into());
+    };
+    let selection = |value: &BodySelection| -> Result<Vec<String>, String> {
+        match value {
+            BodySelection::Native(value) => Ok(vec![value.clone()]),
+            BodySelection::NativeSet(values) => Ok(values.as_slice().to_vec()),
+            _ => Err("Boolean operand has no exact native entity selection".into()),
+        }
+    };
+    let mut operands_in_order = selection(operands.target())?;
+    if operands_in_order.len() != 1 {
+        return Err("Boolean target must name one entity".into());
+    }
+    operands_in_order.extend(selection(operands.tools())?);
+    for operand in &mut operands_in_order {
+        if let Some(source) = ir
+            .native
+            .namespace("iges")
+            .and_then(|namespace| {
+                namespace
+                    .arenas()
+                    .values()
+                    .flatten()
+                    .find(|native| native.id() == operand.as_str())
+            })
+            .and_then(|native| native.field("source_entity"))
+            .and_then(|value| value.as_str().map(str::to_owned))
+        {
+            *operand = source;
+        }
+    }
+    let operation = match op {
+        BooleanKind::Join => 1,
+        BooleanKind::Cut => 2,
+        BooleanKind::Intersect => 3,
+    };
+    let terms = fields
+        .values
+        .get_mut("terms")
+        .and_then(Value::as_array_mut)
+        .ok_or("Boolean tree has no typed terms")?;
+    if terms
+        .iter()
+        .filter(|term| term.get("kind").and_then(Value::as_str) == Some("operand"))
+        .count()
+        != operands_in_order.len()
+    {
+        return Err("current operands cannot retain the Boolean tree's grouping".into());
+    }
+    let mut operands = operands_in_order.into_iter();
+    for term in terms {
+        let table = term
+            .as_object_mut()
+            .ok_or("Boolean term has no typed fields")?;
+        match table.get("kind").and_then(Value::as_str) {
+            Some("operand") => {
+                table.insert(
+                    "entity".into(),
+                    Value::String(operands.next().expect("count was checked")),
+                );
+            }
+            Some("operation") => {
+                table.insert("operation".into(), Value::from(operation));
+            }
+            _ => return Err("Boolean tree contains an unsupported term".into()),
+        }
+    }
+    Ok(Some(feature.id.to_string()))
+}

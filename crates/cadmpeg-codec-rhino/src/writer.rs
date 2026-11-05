@@ -2836,7 +2836,7 @@ fn check_knot_roundtrip(
     let reconstructed =
         crate::surfaces::reconstruct_knots(stored, order, count).map_err(|error| match error {
             crate::curves::GeometryError::Codec(CodecError::ResourceLimit(limit)) => {
-                WriteError::Fail(CodecError::ResourceLimit(limit))
+                WriteError::Encode(limit.into())
             }
             error => WriteError::Omit(format!("{direction} {id}: {error}")),
         })?;
