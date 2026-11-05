@@ -25,9 +25,8 @@ pub(super) fn prepare(
             *entity_counts.entry(entity.clone()).or_insert(0usize) += 1;
         }
     }
-    let neutral_single_body = native.design_types.is_empty()
+    let neutral_single_binding = native.design_types.is_empty()
         && native.design_material_assignments.is_empty()
-        && bodies.len() == 1
         && target.model.appearance_bindings.len() == 1;
     target.model.appearance_bindings.retain(|binding| {
         let cadmpeg_ir::appearance::AppearanceTarget::Body(body_id) = &binding.target else {
@@ -51,7 +50,7 @@ pub(super) fn prepare(
                 .as_deref()
                 .or(appearance.asset_guid.as_deref())
                 .is_some_and(|guid| crate::design::presentation::visual_token(guid).is_some());
-        if neutral_single_body && binding.source_entity_id.is_none() {
+        if neutral_single_binding && binding.source_entity_id.is_none() {
             return body.visible.is_some()
                 && binding.visible.is_none()
                 && binding.channels.is_empty()
