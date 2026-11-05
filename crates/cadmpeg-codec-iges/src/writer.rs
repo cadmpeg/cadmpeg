@@ -5947,23 +5947,33 @@ fn synthesized_native_dispositions(
         let regenerated = match arena.as_str() {
             "properties" | "product_properties" => represented_names,
             "cards" | "copious_data" | "transformations" | "manifold_solids" => !degraded_geometry,
-            "macro_definitions" | "macro_instances" | "definition_levels" => true,
-            "subfigure_definitions"
+            "macro_definitions"
+            | "macro_instances"
+            | "definition_levels"
+            | "subfigure_definitions"
             | "subfigure_instances"
             | "network_definitions"
             | "network_instances"
             | "connect_points"
             | "solid_assemblies"
             | "solid_instances"
-            | "external_references" => true,
-            "views" | "view_visibility" | "segmented_visibility" | "drawings" => true,
-            "annotations" => true,
-            "primitive_solids"
+            | "external_references"
+            | "views"
+            | "view_visibility"
+            | "segmented_visibility"
+            | "drawings"
+            | "annotations"
+            | "primitive_solids"
             | "procedural_solids"
             | "boolean_trees"
             | "selected_components"
             | "rectangular_arrays"
-            | "circular_arrays" => true,
+            | "circular_arrays" => namespace.arenas().get(arena).is_some_and(|records| {
+                !records.is_empty()
+                    && records
+                        .iter()
+                        .all(|record| regenerated.contains(record.id()))
+            }),
             _ => false,
         };
         if regenerated {
