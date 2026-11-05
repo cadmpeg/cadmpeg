@@ -331,8 +331,20 @@ fn unknown_source_declaration_selects_the_catalog_default() {
             .as_str(),
         "fcstd:schema-4"
     );
-    let mut expected_names: Vec<_> = decoded.ir().model.features.iter().map(|f| &f.name).collect();
-    let mut actual_names: Vec<_> = emitted.ir().model.features.iter().map(|f| &f.name).collect();
+    let mut expected_names: Vec<_> = decoded
+        .ir()
+        .model
+        .features
+        .iter()
+        .map(|f| &f.name)
+        .collect();
+    let mut actual_names: Vec<_> = emitted
+        .ir()
+        .model
+        .features
+        .iter()
+        .map(|f| &f.name)
+        .collect();
     expected_names.sort();
     actual_names.sort();
     assert_eq!(actual_names, expected_names);
