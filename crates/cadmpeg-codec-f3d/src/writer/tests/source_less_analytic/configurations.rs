@@ -191,6 +191,47 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
         7
     );
 
+    let rule_name = "FusionAssetName[Active]/DesignConfigurationRule.retained.dsgcfgrule";
+    let mut with_rule = source_less.clone();
+    update_f3d_native(&mut with_rule, |native| {
+        native.design_configurations.push(
+            crate::records::configuration::DesignConfiguration::try_new(
+                rule_name.into(),
+                crate::records::configuration::DesignConfigurationKind::Rule,
+                Vec::new(),
+                serde_json::from_value(
+                    serde_json::json!({"when": "width > 20 mm", "activate": "Small", "vendor": 7}),
+                )
+                .unwrap(),
+            )
+            .unwrap(),
+        );
+    });
+    with_rule.model.configurations = crate::design::configurations::project_configurations(
+        &f3d_native(&with_rule).design_configurations,
+    )
+    .unwrap();
+    let rule_key =
+        cadmpeg_core::text::NonBlankString::new(format!("activation_rule:{rule_name}")).unwrap();
+    with_rule
+        .model
+        .configurations
+        .iter_mut()
+        .find(|configuration| configuration.name.as_deref() == Some("Small"))
+        .unwrap()
+        .properties
+        .insert(rule_key, "width > 30 mm".into());
+    let (rule_output, _) = synthesize_document(&with_rule, None);
+    let rule_native = f3d_native(rule_output.ir());
+    let written_rule = rule_native
+        .design_configurations
+        .iter()
+        .find(|entry| entry.entry_name() == rule_name)
+        .unwrap();
+    assert_eq!(written_rule.payload()["when"], "width > 30 mm");
+    assert_eq!(written_rule.payload()["activate"], "Small");
+    assert_eq!(written_rule.payload()["vendor"], 7);
+
     let mut renamed = source_less.clone();
     renamed.model.configurations[0].name = Some("Renamed".into());
     let (renamed_output, _) = synthesize_document(&renamed, None);
@@ -269,6 +310,17 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
     let partial_native = f3d_native(partial_rule.ir());
     assert_eq!(
         partial_native.design_configurations[0].payload()["vendorExtension"],
+        7
+    );
+    let (partial_output, _) = synthesize_document(partial_rule.ir(), None);
+    let partial_output_native = f3d_native(partial_output.ir());
+    assert_eq!(partial_output_native.design_configurations.len(), 1);
+    assert_eq!(
+        partial_output_native.design_configurations[0].entry_name(),
+        rule_name
+    );
+    assert_eq!(
+        partial_output_native.design_configurations[0].payload()["vendorExtension"],
         7
     );
     assert!(partial_rule
