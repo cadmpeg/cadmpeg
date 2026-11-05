@@ -730,19 +730,14 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let feature = self.feature;
         let existing = self.existing;
         Ok({
-            let faces = face_selection_value(faces);
+            let selection = face_selection_value(faces);
             if existing.is_some_and(|record| !feature_family(record, "Dome")) {
                 return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} changes unsupported dome semantics",
                     feature.id
                 )));
             }
-            if existing.is_none()
-                && (faces.is_none()
-                    || height.is_none()
-                    || elliptical.is_none()
-                    || reverse.is_none())
-            {
+            if selection.is_none() && !matches!(faces, FaceSelection::Unresolved) {
                 return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} has unresolved dome construction",
                     feature.id
@@ -756,7 +751,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 );
             }
             let mut properties = self.base_properties();
-            if let Some(faces) = faces {
+            if let Some(faces) = selection {
                 properties.insert(cadmpeg_core::nonblank_literal!("Faces"), faces);
             }
             if let Some(elliptical) = elliptical {
@@ -800,13 +795,6 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 )));
             }
-            if existing.is_none() && (axis.is_none() || matches!(mode, FlexMode::Unresolved { .. }))
-            {
-                return Err(CodecError::UnsupportedContent(format!(
-                    "SLDPRT feature {} has unresolved flex construction",
-                    feature.id
-                )));
-            }
             let mut parameters = self.base_parameters();
             let mut properties = self.base_properties();
             if let Some(axis) = axis {
@@ -816,16 +804,53 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 );
                 properties.remove("AxisDirection");
             } else if let Some(record) = existing {
-                for key in ["Axis", "AxisDirection"] {
-                    if let Some((name, value)) = record.properties.get_key_value(key) {
-                        properties.insert(name.clone(), value.clone());
+                let source = record
+                    .properties
+                    .get("Axis")
+                    .or_else(|| record.properties.get("AxisDirection"));
+                if source.is_some_and(|value| {
+                    super::super::literals::parse_valid_direction(value).is_none()
+                }) {
+                    for key in ["Axis", "AxisDirection"] {
+                        if let Some((name, value)) = record.properties.get_key_value(key) {
+                            properties.insert(name.clone(), value.clone());
+                        }
                     }
                 }
             }
             match mode {
-                FlexMode::Unresolved { .. } => {
-                    if let Some(value) = existing.and_then(|record| record.properties.get("Mode")) {
-                        properties.insert(cadmpeg_core::nonblank_literal!("Mode"), value.clone());
+                FlexMode::Unresolved { form } => {
+                    use cadmpeg_ir::features::FlexForm;
+                    if let Some(form) = form {
+                        let (name, control) = match form {
+                            FlexForm::Bending => ("Bending", "Angle"),
+                            FlexForm::Twisting => ("Twisting", "Angle"),
+                            FlexForm::Tapering => ("Tapering", "Factor"),
+                            FlexForm::Stretching => ("Stretching", "Distance"),
+                        };
+                        let unresolved_control = |value: &str| {
+                            use cadmpeg_ir::features::DimensionValue;
+                            crate::history::literals::nonfinite_parameter_literal(value)
+                                || (*form == FlexForm::Tapering
+                                    && crate::history::literals::parse_parameter_literal(value)
+                                        .is_some_and(|literal| {
+                                            cadmpeg_ir::scalar::PositiveReal::from_parameter_value(
+                                                &literal,
+                                            )
+                                            .is_none()
+                                        }))
+                        };
+                        if existing.is_none()
+                            && parameters
+                                .get(control)
+                                .is_some_and(|value| !unresolved_control(value))
+                        {
+                            return Err(CodecError::UnsupportedContent(format!(
+                                "SLDPRT feature {} has an incompatible unresolved flex control",
+                                feature.id
+                            )));
+                        }
+                        properties.insert(cadmpeg_core::nonblank_literal!("Mode"), name.into());
                     }
                 }
                 FlexMode::Bending { angle } => {

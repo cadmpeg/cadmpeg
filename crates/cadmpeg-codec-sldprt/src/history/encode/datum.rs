@@ -45,11 +45,14 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
     pub(super) fn encode_datum_plane_unresolved(
         &self,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
-        let feature = self.feature;
-        Err(CodecError::UnsupportedContent(format!(
-            "SLDPRT feature {} has unresolved datum-plane construction",
-            feature.id
-        )))
+        require_same_family(self.existing, &self.feature.id, &["ReferencePlane"])?;
+        Ok(NeutralFeatureEncoding {
+            kind: self
+                .existing
+                .map_or_else(|| "ReferencePlane".into(), |record| record.kind.clone()),
+            parameters: self.base_parameters(),
+            properties: self.base_properties(),
+        })
     }
 
     pub(super) fn encode_datum_plane(
