@@ -4342,17 +4342,18 @@ fn explicit_region_matching_loop_index(
         return None;
     }
     let mut matching = sketch.profiles.iter().enumerate().filter(|(_, loop_uses)| {
-        exp_members.iter().all(|entity| {
-            let exp_count = exp_members
-                .iter()
-                .filter(|candidate| *candidate == entity)
-                .count();
-            let loop_count = loop_uses
-                .iter()
-                .filter(|use_| &use_.entity == *entity)
-                .count();
-            loop_count > 0 && exp_count <= loop_count
-        })
+        loop_uses.len() == exp_members.len()
+            && exp_members.iter().all(|entity| {
+                let exp_count = exp_members
+                    .iter()
+                    .filter(|candidate| *candidate == entity)
+                    .count();
+                let loop_count = loop_uses
+                    .iter()
+                    .filter(|use_| &use_.entity == *entity)
+                    .count();
+                exp_count == loop_count
+            })
     });
     let (index, _) = matching.next()?;
     if matching.next().is_some() {
@@ -4384,6 +4385,14 @@ fn explicit_region_agrees_with_candidate_region(
                 };
                 hole_loops.push(hole_loop);
             }
+            let total_loop_uses = outer_loop.len()
+                + hole_loops
+                    .iter()
+                    .map(|loop_uses| loop_uses.len())
+                    .sum::<usize>();
+            if exp_members.len() != total_loop_uses {
+                return false;
+            }
             let outer_part: Vec<&cadmpeg_ir::sketches::SketchEntityId> = exp_members
                 .iter()
                 .copied()
@@ -4391,6 +4400,16 @@ fn explicit_region_agrees_with_candidate_region(
                 .collect();
             if explicit_region_matching_loop_index(&outer_part, sketch) != Some(loops.outer()) {
                 return false;
+            }
+            for (&hole, hole_loop) in loops.holes().iter().zip(&hole_loops) {
+                let hole_part: Vec<&cadmpeg_ir::sketches::SketchEntityId> = exp_members
+                    .iter()
+                    .copied()
+                    .filter(|entity| hole_loop.iter().any(|use_| &use_.entity == *entity))
+                    .collect();
+                if explicit_region_matching_loop_index(&hole_part, sketch) != Some(hole) {
+                    return false;
+                }
             }
             exp_members.iter().all(|entity| {
                 let exp_count = exp_members
@@ -4402,31 +4421,10 @@ fn explicit_region_agrees_with_candidate_region(
                     .chain(hole_loops.iter().copied().flatten())
                     .filter(|use_| &use_.entity == *entity)
                     .count();
-                loop_count > 0 && exp_count <= loop_count
+                exp_count == loop_count
             })
         }
-        cadmpeg_ir::features::SketchProfileRegion::Trimmed {
-            outer_boundary,
-            hole_boundaries,
-        } => {
-            let total_uses =
-                outer_boundary.len() + hole_boundaries.iter().map(|hole| hole.len()).sum::<usize>();
-            if exp_members.len() != total_uses {
-                return false;
-            }
-            exp_members.iter().all(|entity| {
-                let exp_count = exp_members
-                    .iter()
-                    .filter(|candidate| *candidate == entity)
-                    .count();
-                let use_count = outer_boundary
-                    .iter()
-                    .chain(hole_boundaries.iter().flatten())
-                    .filter(|use_| &use_.entity == *entity)
-                    .count();
-                exp_count == use_count
-            })
-        }
+        cadmpeg_ir::features::SketchProfileRegion::Trimmed { .. } => false,
     }
 }
 
@@ -4443,7 +4441,7 @@ pub(in crate::design) fn planar_selection_agrees_with_region_operand(
     let Some(selection) = operand.region_selection.as_ref() else {
         return false;
     };
-    if selection.regions.is_empty() {
+    if selection.regions.is_empty() || selection.has_extended_incidence() {
         return false;
     }
     let Ok(owner_reference) = u32::try_from(operand.entity_id.suffix()) else {
@@ -4511,12 +4509,16 @@ pub(in crate::design) fn planar_selection_agrees_with_region_operand(
             {
                 let mut unique_exp = Vec::with_capacity(exp_loops.len());
                 for idx in exp_loops {
-                    if !unique_exp.contains(&idx) {
-                        unique_exp.push(idx);
+                    if unique_exp.contains(&idx) {
+                        return false;
                     }
+                    unique_exp.push(idx);
                 }
-                let all_outer_covered = cand_slice.iter().all(|reg| match reg {
-                    SketchProfileRegion::Loops { loops } => unique_exp.contains(&loops.outer()),
+                let all_cand_loops_covered = cand_slice.iter().all(|reg| match reg {
+                    SketchProfileRegion::Loops { loops } => {
+                        unique_exp.contains(&loops.outer())
+                            && loops.holes().iter().all(|hole| unique_exp.contains(hole))
+                    }
                     SketchProfileRegion::Trimmed { .. } => false,
                 });
                 let all_exp_used = unique_exp.iter().all(|idx| {
@@ -4527,7 +4529,7 @@ pub(in crate::design) fn planar_selection_agrees_with_region_operand(
                         SketchProfileRegion::Trimmed { .. } => false,
                     })
                 });
-                if all_outer_covered && all_exp_used {
+                if all_cand_loops_covered && all_exp_used {
                     return true;
                 }
             }

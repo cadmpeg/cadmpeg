@@ -1071,6 +1071,7 @@ fn unresolved_explicit_region_fixture(
             vec![entities[0].id().clone()],
             vec![entities[1].id().clone()],
             vec![entities[2].id().clone()],
+            vec![entities[0].id().clone(), entities[2].id().clone()],
         ],
     );
     let operand: crate::records::topology::sketch_profile::DesignSketchProfileOperand =
@@ -1098,7 +1099,7 @@ fn unresolved_explicit_region_fixture(
                         "kind_offset": 0,
                         "curve_primary_id": 100,
                         "curve_primary_id_offset": 4,
-                        "incidence_words": [0, 0, 0, 0, 3, 8, 0, 0],
+                        "incidence_words": [0, 0, 0, 0, 1, 1, 0, 0],
                         "incidence_words_offset": 8
                     }]
                 }],
@@ -1211,9 +1212,9 @@ fn unresolved_explicit_region_rejects_conflicting_group_and_accepts_agreeing_gro
             profile
         };
 
-        // Conflicting construction group selecting curve 200 (loop 2) vs explicit region curve 100 (loop 0)
+        // Conflicting construction group selecting curve 101 (loop 1) vs explicit region curve 100 (loop 0)
         assert_eq!(
-            run_with_curve(200),
+            run_with_curve(101),
             ProfileRef::Planar(
                 PlanarProfileRef::sketch_selection(sketch.id.clone(), vec![scope.id.clone()])
                     .unwrap()
@@ -1313,5 +1314,262 @@ fn unresolved_explicit_region_rejects_conflicting_transition_and_accepts_agreein
             run_with_radius(2.0),
             ProfileRef::Planar(PlanarProfileRef::sketch_profiles(sketch.id, vec![0]).unwrap())
         );
+    });
+}
+
+#[test]
+fn unresolved_explicit_region_requires_hole_agreement() {
+    use cadmpeg_ir::features::SketchProfileRegion;
+    use serde_json::json;
+
+    let (sketch, entities, curves, scope) = unresolved_explicit_region_fixture(None);
+    let crate::records::feature::scope::DesignScopePayload::Extrude(Some(ref extrude_scope)) =
+        scope.payload()
+    else {
+        panic!("Extrude scope");
+    };
+    let outer_only_operand = extrude_scope.extrude_profile.as_ref().unwrap();
+
+    // Explicit selection has only outer loop 0 (curve 100). A candidate with outer loop 0 and
+    // unaccounted-for hole loop 1 must be rejected.
+    let cand_with_unaccounted_hole = PlanarProfileRef::sketch_regions(
+        sketch.id.clone(),
+        vec![SketchProfileRegion::loops(0, vec![1]).unwrap()],
+    )
+    .unwrap();
+    assert!(
+        !crate::design::profile_select::planar_selection_agrees_with_region_operand(
+            "f3d:Design/BulkStream.dat",
+            outer_only_operand,
+            &sketch,
+            &curves,
+            &entities,
+            &cand_with_unaccounted_hole,
+        )
+    );
+
+    // Explicit selection listing both outer loop 0 (curve 100) and hole loop 1 (curve 101).
+    let outer_and_hole_operand: crate::records::topology::sketch_profile::DesignSketchProfileOperand =
+        serde_json::from_value(json!({
+            "scope_reference_ordinal": 0,
+            "record_index": 100,
+            "byte_offset": 10,
+            "class_tag": "301",
+            "asset_id": "01234567-89ab-cdef-0123-456789abcdef",
+            "asset_id_offset": 20,
+            "entity_id": "0_42",
+            "entity_suffix": 42,
+            "entity_reference_offset": 100,
+            "paired_class_tag": "259",
+            "paired_byte_offset": 200,
+            "region_selection": {
+                "record_index": 103,
+                "byte_offset": 300,
+                "class_tag": "302",
+                "region_count_offset": 336,
+                "regions": [{
+                    "member_count_offset": 340,
+                    "members": [
+                        {
+                            "kind": 3,
+                            "kind_offset": 0,
+                            "curve_primary_id": 100,
+                            "curve_primary_id_offset": 4,
+                            "incidence_words": [0, 0, 0, 0, 1, 1, 0, 0],
+                            "incidence_words_offset": 8
+                        },
+                        {
+                            "kind": 3,
+                            "kind_offset": 40,
+                            "curve_primary_id": 101,
+                            "curve_primary_id_offset": 44,
+                            "incidence_words": [0, 0, 0, 0, 1, 1, 0, 0],
+                            "incidence_words_offset": 48
+                        }
+                    ]
+                }],
+                "companion_class_tag": "260",
+                "companion_byte_offset": 700
+            }
+        }))
+        .unwrap();
+
+    // Candidate with conflicting hole loop 2 is rejected.
+    let cand_conflicting_hole = PlanarProfileRef::sketch_regions(
+        sketch.id.clone(),
+        vec![SketchProfileRegion::loops(0, vec![2]).unwrap()],
+    )
+    .unwrap();
+    assert!(
+        !crate::design::profile_select::planar_selection_agrees_with_region_operand(
+            "f3d:Design/BulkStream.dat",
+            &outer_and_hole_operand,
+            &sketch,
+            &curves,
+            &entities,
+            &cand_conflicting_hole,
+        )
+    );
+
+    // Candidate with extra hole loop 2 (explicit is a proper subset of candidate boundary loops) is rejected.
+    let cand_extra_hole = PlanarProfileRef::sketch_regions(
+        sketch.id.clone(),
+        vec![SketchProfileRegion::loops(0, vec![1, 2]).unwrap()],
+    )
+    .unwrap();
+    assert!(
+        !crate::design::profile_select::planar_selection_agrees_with_region_operand(
+            "f3d:Design/BulkStream.dat",
+            &outer_and_hole_operand,
+            &sketch,
+            &curves,
+            &entities,
+            &cand_extra_hole,
+        )
+    );
+
+    // Candidate with matching outer loop 0 and hole loop 1 is accepted.
+    assert!(
+        crate::design::profile_select::planar_selection_agrees_with_region_operand(
+            "f3d:Design/BulkStream.dat",
+            &outer_and_hole_operand,
+            &sketch,
+            &curves,
+            &entities,
+            &cand_with_unaccounted_hole,
+        )
+    );
+}
+
+#[test]
+fn explicit_region_with_extended_incidence_refuses_fallback_for_trimmed_curve_portions() {
+    use serde_json::json;
+
+    crate::test_support::with_decode_context(|ctx| {
+        let (sketch, entities, curves, fixture_scope) = unresolved_explicit_region_fixture(None);
+        let group = extrude_group(vec![10]);
+        let member = make_member(
+            group.record_index,
+            0,
+            10,
+            Some(SketchRelationOperand::Curve {
+                record_index: 20,
+                primary_id: 100,
+                secondary_id: 0,
+            }),
+        );
+
+        let run_portion = |incidence_words: [u32; 8]| -> ProfileRef {
+            let operand: crate::records::topology::sketch_profile::DesignSketchProfileOperand =
+                serde_json::from_value(json!({
+                    "scope_reference_ordinal": 0,
+                    "record_index": 100,
+                    "byte_offset": 10,
+                    "class_tag": "301",
+                    "asset_id": "01234567-89ab-cdef-0123-456789abcdef",
+                    "asset_id_offset": 20,
+                    "entity_id": "0_42",
+                    "entity_suffix": 42,
+                    "entity_reference_offset": 100,
+                    "paired_class_tag": "259",
+                    "paired_byte_offset": 200,
+                    "region_selection": {
+                        "record_index": 103,
+                        "byte_offset": 300,
+                        "class_tag": "302",
+                        "region_count_offset": 336,
+                        "regions": [{
+                            "member_count_offset": 340,
+                            "members": [{
+                                "kind": 3,
+                                "kind_offset": 0,
+                                "curve_primary_id": 100,
+                                "curve_primary_id_offset": 4,
+                                "incidence_words": incidence_words,
+                                "incidence_words_offset": 8
+                            }]
+                        }],
+                        "companion_class_tag": "260",
+                        "companion_byte_offset": 700
+                    }
+                }))
+                .unwrap();
+            let scope = crate::records::feature::scope::DesignParameterScope::empty(
+                "f3d:Design/BulkStream.dat:scope#7",
+                crate::records::feature::scope::DesignScopePayload::Extrude(Some(
+                    crate::records::feature::scope::DesignExtrudeScope {
+                        extrude_profile: Some(operand),
+                        ..crate::records::feature::scope::DesignExtrudeScope::default()
+                    },
+                )),
+                7,
+            );
+            let mut feature: cadmpeg_ir::features::Feature = serde_json::from_value(json!({
+                "id": "synthetic:test:feature#ext_trimmed",
+                "ordinal": 0,
+                "suppressed": false,
+                "native_ref": scope.id,
+                "definition": {
+                    "definition": "extrude",
+                    "profile": {"kind": "sketch", "value": sketch.id},
+                    "direction": {"kind": "profile_normal"},
+                    "start": {"kind": "profile_plane"},
+                    "extent": {"kind": "one_sided", "side": {"termination": {"kind": "blind", "length": 1.0}}},
+                    "op": "new_body",
+                    "solid": true
+                }
+            }))
+            .unwrap();
+            let sketches = [sketch.clone()];
+            let scopes = [scope];
+            let groups = [group.clone()];
+            let members = [member.clone()];
+            let work = ProfileGeometryWork::new();
+            crate::design::profile_select::bind_extrude_profile_selections(
+                std::slice::from_mut(&mut feature),
+                &scopes,
+                &groups,
+                &members,
+                &sketches,
+                &crate::design::profile_select::SketchCurveSelectionResolution {
+                    scopes: &scopes,
+                    groups: &[],
+                    operands: &[],
+                    profile_curves: &[],
+                    placements: &[],
+                    curve_identities: &curves,
+                    sketches: &sketches,
+                    sketch_entities: &entities,
+                    spatial_sketches: &[],
+                    spatial_sketch_entities: &[],
+                },
+                ExtrudeProfileResolution {
+                    entities: &entities,
+                    spatial_sketches: &[],
+                    spatial_entities: &[],
+                    histories: &[],
+                    scope_histories: &HashMap::new(),
+                    linear_tolerance: EPS,
+                    angular_tolerance: 1.0e-9,
+                    profile_work: &work,
+                    ctx,
+                },
+            )
+            .unwrap();
+            let cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::Extrude { profile, .. },
+            ) = feature.evaluation.into_parts().0
+            else {
+                panic!("Extrude");
+            };
+            profile
+        };
+
+        let native_selection = ProfileRef::Planar(
+            PlanarProfileRef::sketch_selection(sketch.id.clone(), vec![fixture_scope.id.clone()])
+                .unwrap(),
+        );
+        assert_eq!(run_portion([0, 0, 0, 0, 3, 8, 0, 0]), native_selection);
+        assert_eq!(run_portion([0, 0, 0, 0, 4, 9, 0, 0]), native_selection);
     });
 }
