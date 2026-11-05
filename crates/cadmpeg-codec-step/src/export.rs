@@ -498,7 +498,7 @@ pub(crate) struct Builder<'a> {
 /// `FILE_NAME` is the AP242 home for document metadata: the file name, the
 /// write timestamp, the author and organization lists, and the originating
 /// system. Each field admits the source names that denote it: the IGES
-/// document attribute names, the FreeCAD document property names, and the
+/// document attribute names, the `FreeCAD` document property names, and the
 /// names the STEP decoder projects from this same header. A field with no
 /// held attribute keeps the writer option, so a document without document
 /// attributes writes byte-identical output to before.
