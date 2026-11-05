@@ -327,6 +327,33 @@ fn to_object_revolve_construction(
     })
 }
 
+fn marker_one_revolve_prologue(bytes: &[u8], scope: &DesignParameterScope, start: usize) -> bool {
+    matches!(scope.reference_members().len(), 6 | 8)
+        && bytes.get(start + revolve::MARKER) == Some(&1)
+        && View::u32_le_at(bytes, start + revolve::ZERO_VALUE) == Some(0)
+        && View::u32_le_at(bytes, start + revolve::EXTENT_KIND) == Some(2)
+        && bytes.get(start + revolve::DIRECTION_KIND) == Some(&0)
+        && View::u32_le_at(bytes, start + revolve::STRUCTURAL_CONSTANT) == Some(1)
+}
+
+pub(super) fn marker_one_revolve_assumed_length(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+) -> Option<u64> {
+    let start = usize::try_from(scope.byte_offset()).ok()?;
+    let length = parameter_scope_payload_length(scope)?;
+    if matches!(
+        design_feature_family(&scope.kind()),
+        Some(DesignFeatureFamily::Revolve)
+    ) && marker_one_revolve_prologue(bytes, scope, start)
+        && !matches!(length, 345 | 355 | 367 | 351 | 373)
+    {
+        Some(length)
+    } else {
+        None
+    }
+}
+
 pub(super) fn exact_path_feature_construction(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
@@ -358,13 +385,8 @@ pub(super) fn exact_path_feature_construction(
     }
     match design_feature_family(&scope.kind())? {
         DesignFeatureFamily::Revolve
-            if matches!(scope.reference_members().len(), 6 | 8)
-                && matches!(parameter_scope_payload_length(scope), Some(345 | 355 | 367))
-                && bytes.get(start + revolve::MARKER) == Some(&1)
-                && View::u32_le_at(bytes, start + revolve::ZERO_VALUE) == Some(0)
-                && View::u32_le_at(bytes, start + revolve::EXTENT_KIND) == Some(2)
-                && bytes.get(start + revolve::DIRECTION_KIND) == Some(&0)
-                && View::u32_le_at(bytes, start + revolve::STRUCTURAL_CONSTANT) == Some(1) =>
+            if marker_one_revolve_prologue(bytes, scope, start)
+                && !matches!(parameter_scope_payload_length(scope), Some(351 | 373)) =>
         {
             let angle = unique_revolve_angle_owner(scope, parameter_owners, None, 0)?;
             Some(DesignPathFeatureConstruction::Revolve(

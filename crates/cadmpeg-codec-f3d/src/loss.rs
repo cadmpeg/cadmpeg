@@ -269,6 +269,8 @@ pub(crate) enum F3dLossCode {
     FeatureFixedFilletAssignmentNative,
     /// Extrude scope retains an unassigned extent payload.
     FeatureExtrudeExtentNative,
+    /// A marker-one `Revolve` scope has a token-independent frame length outside its documented set.
+    FeatureRevolveLayoutAssumed,
     /// Feature face operands stay unresolved inside historical selections.
     FeatureFaceOperandUnresolved,
     /// Edge-treatment selections retain native recipes; no historical edge.
@@ -564,6 +566,7 @@ impl F3dLossCode {
         Self::FeatureCombineSelectionNative,
         Self::FeatureFixedFilletAssignmentNative,
         Self::FeatureExtrudeExtentNative,
+        Self::FeatureRevolveLayoutAssumed,
         Self::FeatureFaceOperandUnresolved,
         Self::FeatureEdgeSelectionNative,
         Self::FeatureEdgeOperandUnresolved,
@@ -773,6 +776,7 @@ impl F3dLossCode {
             Self::FeatureCombineSelectionNative => "feature.combine-selection-native",
             Self::FeatureFixedFilletAssignmentNative => "feature.fixed-fillet-assignment-native",
             Self::FeatureExtrudeExtentNative => "feature.extrude-extent-native",
+            Self::FeatureRevolveLayoutAssumed => "feature.revolve-layout-assumed",
             Self::FeatureFaceOperandUnresolved => "feature.face-operand-unresolved",
             Self::FeatureEdgeSelectionNative => "feature.edge-selection-native",
             Self::FeatureEdgeOperandUnresolved => "feature.edge-operand-unresolved",
@@ -1007,6 +1011,7 @@ impl F3dLossCode {
             | Self::FeatureCombineSelectionNative
             | Self::FeatureFixedFilletAssignmentNative
             | Self::FeatureExtrudeExtentNative
+            | Self::FeatureRevolveLayoutAssumed
             | Self::FeatureFaceOperandUnresolved
             | Self::FeatureEdgeSelectionNative
             | Self::FeatureEdgeOperandUnresolved
@@ -1182,6 +1187,7 @@ impl F3dLossCode {
             | Self::FeatureCombineSelectionNative
             | Self::FeatureFixedFilletAssignmentNative
             | Self::FeatureExtrudeExtentNative
+            | Self::FeatureRevolveLayoutAssumed
             | Self::FeatureFaceOperandUnresolved
             | Self::FeatureEdgeSelectionNative
             | Self::FeatureEdgeOperandUnresolved
@@ -1428,6 +1434,7 @@ mod tests {
                 "feature.combine-selection-native",
                 "feature.fixed-fillet-assignment-native",
                 "feature.extrude-extent-native",
+                "feature.revolve-layout-assumed",
                 "feature.face-operand-unresolved",
                 "feature.edge-selection-native",
                 "feature.edge-operand-unresolved",

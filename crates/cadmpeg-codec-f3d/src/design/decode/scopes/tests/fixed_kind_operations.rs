@@ -6,7 +6,10 @@ use crate::design::decode::scopes::draft::exact_draft_operation_with_owners;
 use crate::design::decode::scopes::fixed_parameters::{
     exact_fixed_chamfer_parameters, exact_fixed_fillet_parameters,
 };
-use crate::design::decode::scopes::path_feature::exact_path_feature_construction;
+use crate::design::decode::scopes::parameter_scope::parameter_scope_payload_length;
+use crate::design::decode::scopes::path_feature::{
+    exact_path_feature_construction, marker_one_revolve_assumed_length,
+};
 use crate::records::feature::direct_face::DesignDraftOperation;
 use crate::records::feature::extrude::DesignExtrudeOperation;
 use crate::records::feature::fixed_parameters::{
@@ -1247,19 +1250,58 @@ fn fixed_kind_edge_and_revolve_operations(
             }
         ))
     );
-    let mut invalid_length_scope = legacy_revolve_scope.clone();
-    invalid_length_scope
+    assert_eq!(
+        marker_one_revolve_assumed_length(&bytes, &legacy_revolve_scope),
+        None
+    );
+    let mut undocumented_length_scope = legacy_revolve_scope.clone();
+    undocumented_length_scope
         .try_edit(|draft| {
             draft.frame_length = 360;
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.layout_fixture_tail();
         })
         .unwrap();
+    assert!(matches!(
+        exact_path_feature_construction(
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &undocumented_length_scope,
+            std::slice::from_ref(&legacy_angle),
+        ),
+        Some(DesignPathFeatureConstruction::Revolve(_))
+    ));
+    let assumed_length = marker_one_revolve_assumed_length(&bytes, &undocumented_length_scope);
+    assert!(assumed_length.is_some());
+    assert_eq!(
+        assumed_length,
+        parameter_scope_payload_length(&undocumented_length_scope)
+    );
+
+    let referenced_frame_length = legacy_revolve_scope.frame_length()
+        - parameter_scope_payload_length(&legacy_revolve_scope).unwrap()
+        + 351;
+    let mut referenced_length_scope = legacy_revolve_scope.clone();
+    referenced_length_scope
+        .try_edit(|draft| {
+            draft.frame_length = referenced_frame_length;
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    bytes.resize(
+        legacy_revolve_start + usize::try_from(referenced_frame_length).unwrap(),
+        0,
+    );
+    assert_eq!(
+        parameter_scope_payload_length(&referenced_length_scope),
+        Some(351)
+    );
     assert!(!matches!(
         exact_path_feature_construction(
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-            &invalid_length_scope,
+            &referenced_length_scope,
             std::slice::from_ref(&legacy_angle),
         ),
         Some(DesignPathFeatureConstruction::Revolve(_))
