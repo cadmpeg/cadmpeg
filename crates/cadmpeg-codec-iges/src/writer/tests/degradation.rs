@@ -1489,3 +1489,33 @@ fn open_solid_keeps_its_face_as_a_reported_sheet() {
         .iter()
         .any(|body| body.kind == cadmpeg_ir::topology::BodyKind::Sheet));
 }
+
+#[test]
+fn directory_disposition_requires_exact_generated_record() {
+    use cadmpeg_ir::codec::write::NativeDisposition;
+
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(
+                crate::test_support::test_drawing_and_trimming::connected_network_subfigure_file(),
+            ),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let transform = ir.model.occurrences[0].transform.unwrap();
+    let mut rows = transform.affine_rows();
+    rows[0][3] += 1.0;
+    ir.model.occurrences[0].transform =
+        Some(cadmpeg_ir::transform::Transform::affine(rows).unwrap());
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    let dispositions = &plan.report().native_dispositions;
+    assert_eq!(
+        dispositions.record_disposition("iges", "entities", "iges:entity:directory#5"),
+        NativeDisposition::Written
+    );
+    assert_eq!(
+        dispositions.record_disposition("iges", "entities", "iges:entity:directory#7"),
+        NativeDisposition::Dropped
+    );
+}
