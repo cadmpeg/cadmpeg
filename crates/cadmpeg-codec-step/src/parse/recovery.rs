@@ -399,7 +399,7 @@ fn statement_keyword(input: &[u8], start: usize, end: usize) -> Option<String> {
     while at < end && input.get(at).is_some_and(|byte| *byte == b'#') {
         at += 1;
     }
-    while at < end && input.get(at).is_some_and(|byte| byte.is_ascii_digit()) {
+    while at < end && input.get(at).is_some_and(u8::is_ascii_digit) {
         at += 1;
     }
     while at < end
