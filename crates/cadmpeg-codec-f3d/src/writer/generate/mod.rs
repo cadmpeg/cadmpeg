@@ -419,6 +419,22 @@ pub(super) fn write_with_limits(
                 ));
             }
         }
+        for constraint in &target.model.sketch_constraints {
+            if !sketches.constraints.contains(&constraint.id) {
+                residual_losses.push(crate::loss::F3dLossCode::WriterDesignRecordsOmitted.note(
+                    format!(
+                        "sketch constraint {} has no supported F3D encoding",
+                        constraint.id
+                    ),
+                ));
+            }
+        }
+        dispositions.sketch_constraints =
+            if sketches.constraints.len() == target.model.sketch_constraints.len() {
+                ArenaDisposition::Written
+            } else {
+                ArenaDisposition::Reported
+            };
         dispositions.sketches = if sketches.sketches.len() == target.model.sketches.len() {
             ArenaDisposition::Written
         } else {
