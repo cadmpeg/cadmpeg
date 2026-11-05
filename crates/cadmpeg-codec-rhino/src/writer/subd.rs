@@ -270,7 +270,7 @@ fn proxy_count(value: usize) -> Result<i32, WriteError> {
     i32::try_from(value).map_err(|_| WriteError::Omit("SubD proxy count exceeds i32".into()))
 }
 
-/// The `ON_`SubD`MeshProxyUserData` item: identity transform, embedded `SubD`,
+/// The `ON_SubDMeshProxyUserData` item: identity transform, embedded `SubD`,
 /// parent counts, and parent-array hashes, per the proxy contract.
 fn proxy_item(
     fingerprint: &crate::subd::MeshProxyFingerprint,
