@@ -10,16 +10,16 @@ use cadmpeg_ir::geometry::SolvedCurveGeometry;
 use cadmpeg_ir::topology::Edge;
 use std::collections::{HashMap, HashSet};
 
-pub(super) fn representation(
+pub(super) fn representation<'a>(
     ctx: &DecodeContext<'_>,
-    ir: &CadIr,
+    ir: &'a CadIr,
     edge: &Edge,
     sources: &PolygonSources,
     face_rows: &HashMap<String, usize>,
     covered: &HashSet<String>,
     rows: &mut Vec<String>,
     source_rows: &HashMap<(String, usize), usize>,
-) -> Result<Option<String>, CodecError> {
+) -> Result<Option<(String, Option<&'a str>)>, CodecError> {
     macro_rules! required {
         ($value:expr) => {
             match $value {
@@ -59,13 +59,18 @@ pub(super) fn representation(
     else {
         return Ok(None);
     };
-    let (polygon, triangulation) =
+    let (polygon, secondary, triangulation) =
         required!(representations.iter().find_map(|record| match record {
             TextEdgeRepresentation::PolygonOnTriangulation {
                 polygon,
                 triangulation,
                 ..
-            } => Some((*polygon, *triangulation)),
+            } => Some((*polygon, None, *triangulation)),
+            TextEdgeRepresentation::PolygonPair {
+                polygons,
+                triangulation,
+                ..
+            } => Some((polygons[0], Some(polygons[1]), *triangulation)),
             _ => None,
         }));
     let tables = required!(sources.tables(payload));
@@ -79,7 +84,7 @@ pub(super) fn representation(
         "FreeCAD polygon points",
     )?;
     points.extend(polyline.points());
-    'face: for coedge in ir.model.coedges.iter().filter(|use_| use_.edge == edge.id) {
+    for coedge in ir.model.coedges.iter().filter(|use_| use_.edge == edge.id) {
         let Some(wire) = ir
             .model
             .loops
@@ -122,69 +127,41 @@ pub(super) fn representation(
             continue;
         };
         let vertices = mesh.vertices();
-        let unchanged = original.nodes.len() == points.len()
-            && original.nodes.iter().zip(&points).all(|(node, point)| {
-                usize::try_from(*node)
-                    .ok()
-                    .and_then(|index| index.checked_sub(1))
-                    .and_then(|index| vertices.get(index))
-                    .is_some_and(|vertex| vertex == point)
-            });
-        let mut nodes = Vec::new();
-        ctx.reserve_working(&mut nodes, points.len(), "FreeCAD indexed polygon nodes")?;
-        if unchanged {
-            nodes.extend_from_slice(&original.nodes);
-        } else {
-            let key = |point: cadmpeg_ir::features::FinitePoint3| {
-                let point = point.get();
-                [point.x, point.y, point.z].map(
-                    |value| {
-                        if value == 0.0 {
-                            0
-                        } else {
-                            value.to_bits()
-                        }
-                    },
-                )
+        let Some(nodes) = super::polygon_nodes::remap(ctx, &original.nodes, &points, &vertices)?
+        else {
+            continue;
+        };
+        let secondary = if let Some(secondary) = secondary {
+            let Some(original_secondary) = secondary
+                .checked_sub(1)
+                .and_then(|index| tables.polygons_on_triangulations.get(index))
+            else {
+                continue;
             };
-            let mut indexes = Vec::new();
-            ctx.reserve_working(
-                &mut indexes,
-                vertices.len(),
-                "FreeCAD triangulation point index",
-            )?;
-            for (index, vertex) in vertices.iter().copied().enumerate() {
-                let Some(index) = u32::try_from(index)
-                    .ok()
-                    .and_then(|index| index.checked_add(1))
-                else {
-                    return Ok(None);
-                };
-                indexes.push((key(vertex), index));
-            }
-            indexes.sort_unstable_by_key(|row| row.0);
-            for (position, point) in points.iter().enumerate() {
-                let node = original.nodes.get(position).copied();
-                let retained = node
-                    .and_then(|node| usize::try_from(node).ok())
-                    .and_then(|index| index.checked_sub(1))
-                    .and_then(|index| vertices.get(index))
-                    .is_some_and(|vertex| vertex == point);
-                if let Some(node) = node.filter(|_| retained) {
-                    nodes.push(node);
-                    continue;
-                }
-                let target = key(*point);
-                let position = indexes.partition_point(|row| row.0 < target);
-                let Some((_, index)) = indexes.get(position).filter(|row| row.0 == target) else {
-                    continue 'face;
-                };
-                if indexes.get(position + 1).is_some_and(|row| row.0 == target) {
-                    continue 'face;
-                }
-                nodes.push(*index);
-            }
-        }
+            let Some(source_mesh) = triangulation
+                .checked_sub(1)
+                .and_then(|index| tables.triangulations.get(index))
+            else {
+                continue;
+            };
+            let source_row = source_rows.get(&(payload.id.clone(), secondary)).copied();
+            let Some(secondary) = super::polygon_pair::secondary(
+                ctx,
+                ir,
+                curve,
+                original_secondary,
+                source_mesh.nodes(),
+                &vertices,
+                rows,
+                source_row,
+            )?
+            else {
+                continue;
+            };
+            Some(secondary)
+        } else {
+            None
+        };
         let output = PolygonOnTriangulationRecord {
             id: curve.id.to_string(),
             nodes,
@@ -203,7 +180,10 @@ pub(super) fn representation(
             rows.push(value);
             rows.len()
         };
-        return Ok(Some(format!("6 {polygon} {row} 0")));
+        return Ok(Some(match secondary {
+            Some((secondary, curve)) => (format!("7 {polygon} {secondary} {row} 0"), Some(curve)),
+            None => (format!("6 {polygon} {row} 0"), None),
+        }));
     }
     Ok(None)
 }
