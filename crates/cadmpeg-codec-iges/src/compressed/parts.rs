@@ -127,6 +127,7 @@ pub(crate) fn normalize(
     let (parameter_delimiter, record_delimiter) =
         super::compressed_delimiters(global.parameter_delimiter, global.record_delimiter)?;
     let mut decoded = Vec::new();
+    let mut tail_given_up = data_begin == lines.len() && global.has_unframed_fields();
     if data_begin < data_end {
         let extent = source
             .child(
@@ -176,6 +177,7 @@ pub(crate) fn normalize(
                     let (parsed, fields, count, end) = match framed {
                         Ok(record) => record,
                         Err(error) if terminate.is_none() => {
+                            tail_given_up = true;
                             let tail = source
                                 .child(lines[at].extent.start(), source.end())
                                 .ok_or_else(|| malformed("Data record exceeds original source"))?;
@@ -279,7 +281,20 @@ pub(crate) fn normalize(
             },
         )? {
             decoded = records;
+        } else {
+            tail_given_up = true;
         }
+    }
+    if terminate.is_none() && !tail_given_up {
+        let end = source
+            .child(source.end(), source.end())
+            .ok_or_else(|| malformed("Terminate section exceeds original source"))?;
+        ctx.decode_part(
+            &mut parts,
+            end,
+            crate::reader::part("iges.terminate_section"),
+            |_| -> Result<(), CodecError> { Err(malformed("Terminate section is missing")) },
+        )?;
     }
     let mut card_count = global_end
         .checked_sub(start)
