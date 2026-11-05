@@ -35,10 +35,14 @@ fn annotation_bytes(genesis: Option<u64>) -> (Vec<u8>, usize) {
     (bytes, paired)
 }
 
-fn parse(bytes: &[u8]) -> Option<crate::records::dimensions::DesignDimensionAnnotationFrame> {
+fn parse(
+    bytes: &[u8],
+    paired: usize,
+) -> Option<crate::records::dimensions::DesignDimensionAnnotationFrame> {
     parse_dimension_annotation_frame(
         bytes,
         0,
+        paired,
         Some(383),
         &HashMap::from([(390, 391)]),
         &HashSet::from([354, 376]),
@@ -49,7 +53,7 @@ fn parse(bytes: &[u8]) -> Option<crate::records::dimensions::DesignDimensionAnno
 #[test]
 fn dimension_annotation_empty_metadata_binds_explicit_owner_and_operands() {
     let (bytes, paired) = annotation_bytes(None);
-    let frame = parse(&bytes).unwrap();
+    let frame = parse(&bytes, paired).unwrap();
     assert_eq!(frame.entity_genesis, None);
     assert_eq!(frame.companion_record_index, Some(383));
     assert_eq!(frame.governing_owner_record_index, 390);
@@ -83,9 +87,12 @@ fn dimension_annotation_empty_metadata_binds_explicit_owner_and_operands() {
 fn dimension_annotation_metadata_refuses_mutations_and_truncation() {
     for genesis in [None, Some(0x202)] {
         let (bytes, paired) = annotation_bytes(genesis);
-        assert!(parse(&bytes).is_some());
+        assert!(parse(&bytes, paired).is_some());
         for end in 0..bytes.len() {
-            assert!(parse(&bytes[..end]).is_none(), "truncation at {end}");
+            assert!(
+                parse(&bytes[..end], paired).is_none(),
+                "truncation at {end}"
+            );
         }
         for (at, value) in [
             (69, 0),
@@ -96,20 +103,20 @@ fn dimension_annotation_metadata_refuses_mutations_and_truncation() {
         ] {
             let mut mutated = bytes.clone();
             mutated[at] = value;
-            assert!(parse(&mutated).is_none(), "mutation at {at}");
+            assert!(parse(&mutated, paired).is_none(), "mutation at {at}");
         }
         let mut returned = bytes.clone();
         let return_first = if genesis.is_some() { 145 } else { 93 };
         returned[return_first..return_first + 4].copy_from_slice(&354u32.to_le_bytes());
-        assert!(parse(&returned).is_none());
+        assert!(parse(&returned, paired).is_none());
         if genesis.is_some() {
             let mut key = bytes.clone();
             key[78] = b'X';
-            assert!(parse(&key).is_none());
+            assert!(parse(&key, paired).is_none());
         } else {
             let mut populated = bytes.clone();
             populated[70] = 1;
-            assert!(parse(&populated).is_none());
+            assert!(parse(&populated, paired).is_none());
         }
     }
 }

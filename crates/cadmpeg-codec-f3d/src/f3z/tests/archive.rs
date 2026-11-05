@@ -154,9 +154,7 @@ fn f3z_archive_merges_identity_occurrences() {
             inherited.report().write_path(),
             "fidelity"
         ),
-        cadmpeg_ir::report::export::FidelityResolution::Degraded {
-            reason: "preserved F3D source image is unavailable".into(),
-        }
+        cadmpeg_ir::report::export::FidelityResolution::NotConsumed {}
     );
     let unrepresented = decoded.source_fidelity().unrepresented();
     let cause = if unrepresented.is_empty() {
@@ -178,17 +176,11 @@ fn f3z_archive_merges_identity_occurrences() {
     assert_eq!(displacement.len(), 1);
     assert!(displacement[0].message.contains("f3d:f3z-multi-document"));
     assert!(displacement[0].message.contains("f3d:manifest-3-2-0-0"));
-    let unavailable: Vec<_> = inherited
+    assert!(inherited
         .report()
         .losses
         .iter()
-        .filter(|loss| loss.code == F3dLossCode::SourcePreservedImageUnavailable.kind())
-        .collect();
-    assert_eq!(unavailable.len(), 1);
-    assert_eq!(
-        unavailable[0].message,
-        "preserved F3D source image is unavailable; regenerated from IR"
-    );
+        .all(|loss| loss.code != F3dLossCode::SourcePreservedImageUnavailable.kind()));
     let mut inherited_bytes = Vec::new();
     inherited
         .write_to(&mut inherited_bytes)
@@ -383,7 +375,7 @@ fn f3z_archive_merges_occurrence_scoped_unknown_carriers() {
 }
 
 #[test]
-fn f3z_archive_without_merged_components_preserves_root_replay() {
+fn f3z_archive_without_merged_components_synthesizes_the_default() {
     let root = f3d_with_smbh(&synthetic_geometry_smbh());
     let archive = f3z_archive("root.f3d", &[("root.f3d", root.as_slice())]);
     let decoded = EditableDecodeResult::from(
@@ -403,7 +395,7 @@ fn f3z_archive_without_merged_components_preserves_root_replay() {
             EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
             TargetRequest::Inherit,
         )
-        .expect("unmerged F3Z archive remains replayable");
+        .expect("the catalog default writes");
     let reported = wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
         plan.report(),
         "identity/target",
@@ -411,12 +403,20 @@ fn f3z_archive_without_merged_components_preserves_root_replay() {
     .as_ref()
     .expect("an F3D export names its target")
     .clone();
-    let mut replayed = Vec::new();
-    plan.write_to(&mut replayed).unwrap();
-    assert_eq!(replayed, archive);
+    assert!(matches!(
+        plan.report().write_path(),
+        cadmpeg_ir::report::export::WritePath::Synthesized { .. }
+    ));
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == F3dLossCode::SourceDialectDisplaced.kind()));
+    let mut written = Vec::new();
+    plan.write_to(&mut written).unwrap();
 
     let redecode = crate::test_support::archive_session::decode(
-        &mut Cursor::new(replayed),
+        &mut Cursor::new(written),
         &DecodeOptions::default(),
     )
     .unwrap();
@@ -426,6 +426,11 @@ fn f3z_archive_without_merged_components_preserves_root_replay() {
         .expect("re-decoded F3Z archive has a primary layer")
         .primary();
     assert_eq!(primary.dialect(), &reported);
+    assert_eq!(reported.as_str(), "f3d:manifest-3-2-0-0");
+    assert_eq!(
+        redecode.ir().model.bodies.len(),
+        decoded.ir().model.bodies.len()
+    );
 }
 
 #[test]
@@ -526,9 +531,7 @@ fn f3z_archive_recursively_merges_nested_occurrences() {
 }
 
 #[test]
-fn f3z_nested_member_reference_obeys_session_depth_limit() {
-    use cadmpeg_core::decode::ResourceDimension;
-
+fn f3z_nested_member_part_depth_limit_keeps_root() {
     const CHILD_ROLE: &str = "11112222-3333-4444-5555-666677778888";
     let component = f3d_without_brep("component-design", "component.f3d", &[]);
     let middle = f3d_without_brep(
@@ -546,18 +549,19 @@ fn f3z_nested_member_reference_obeys_session_depth_limit() {
         ],
     );
     let mut options = DecodeOptions::default();
-    // The session ceiling includes member frames and decoded entity reconstruction.
     options.policy.limits.max_recursion_depth = 6;
-    let error =
+    let decoded =
         crate::test_support::archive_session::decode(&mut Cursor::new(archive.clone()), &options)
-            .expect_err("nested member redirections exceed the selected depth");
-    assert!(matches!(
-        error,
-        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::RecursionDepth
-                && limit.limit == 6 && limit.used == 6 && limit.additional == 1
-                && limit.reason == cadmpeg_core::decode::ResourceFailure::BudgetExceeded
-    ));
+            .expect("the root survives the nested member part limit");
+    let losses: Vec<_> = decoded.report().losses.iter().filter(|loss| {
+        loss.code == cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable.note("").code
+    }).collect();
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].message.contains("middle.f3d"));
+    assert!(losses[0].message.contains("RecursionDepth"));
+    assert!(losses[0].message.contains("limit 6, used 6, requested 1"));
+    assert_eq!(decoded.ir().native_unknowns("f3d").unwrap().len(), 1);
+    assert!(decoded.ir().scope.model);
     crate::test_support::archive_session::decode(
         &mut Cursor::new(archive),
         &DecodeOptions::default(),

@@ -4263,6 +4263,7 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
         header_index.insert((stream, header.record_index), header);
     }
     let mut resolved_profiles = HashMap::new();
+    let mut record_offsets = HashMap::new();
     for group in groups.iter().filter(|group| {
         matches!(
             group.role(),
@@ -4277,11 +4278,22 @@ pub(crate) fn bind_loft_and_revolve_sketch_selections(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
+        let Some(records) = crate::design::decode::sketch::cached_borrowed_record_offsets(
+            &mut record_offsets,
+            stream,
+            bytes,
+            scan,
+            &entry.name,
+        )?
+        else {
+            continue;
+        };
         let Some(header) = header_index.get(&(stream, group.members()[0].value)) else {
             continue;
         };
         let Some(profile) = parse_sketch_profile(
             bytes,
+            records,
             stream,
             group.scope_reference_ordinal,
             header,

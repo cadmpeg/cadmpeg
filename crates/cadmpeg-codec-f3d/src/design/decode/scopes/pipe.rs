@@ -74,7 +74,7 @@ pub(crate) fn bind_constructions(
                 .and_modify(|slot| *slot = None)
                 .or_insert(Some(frame));
         }
-        let records = IndexedRecordOffsets::build(bytes);
+        let records = IndexedRecordOffsets::from_primary_frames(&frames);
         for (ordinal, scope) in scopes.iter().enumerate().filter(|(_, scope)| {
             scope.kind() == DesignFeatureKind::Pipe
                 && crate::ids::native_stream(&scope.id) == Some(stream.as_str())

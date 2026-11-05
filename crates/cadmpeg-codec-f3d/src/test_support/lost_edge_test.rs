@@ -87,14 +87,17 @@ pub(super) fn remove_body_lost_edge_bulkstream(run: u32) -> (Vec<u8>, Vec<(u64, 
     push_body_operand(&mut out, OPERANDS[1]);
 
     for record_index in FIRST_LOST_EDGE..wrapper {
-        header(&mut out, b"419", record_index);
+        records.push((u64::from(record_index), offset(&out)));
+        header(&mut out, b"264", record_index);
         out.extend_from_slice(&[0; 14]);
         lp_ascii(&mut out, "EDGE_REFERENCE_LOST");
     }
-    header(&mut out, b"326", wrapper);
+    records.push((u64::from(wrapper), offset(&out)));
+    header(&mut out, b"264", wrapper);
     out.extend_from_slice(&[0; 10]);
     out.extend_from_slice(&[1, 1, 0]);
-    header(&mut out, b"327", wrapper + 1);
+    records.push((u64::from(wrapper + 1), offset(&out)));
+    header(&mut out, b"264", wrapper + 1);
     out.extend_from_slice(&[0; 10]);
     out.extend_from_slice(&[2, 0, 0, 0, 0, 0]);
     (out, records)
