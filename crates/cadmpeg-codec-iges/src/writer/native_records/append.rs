@@ -2,10 +2,10 @@
 //! Order native definitions by their current typed references.
 
 use super::{
-    annotations, attributes, coordinates, copious, count, directory_label, drawings, entity, fem,
-    fonts, levels, macros, products, real, shape, solids, structure, text, BTreeSet, CadIr,
-    DirectoryLineFont, Entity, EntityStatus, Fields, NativeExport, NativeRecord, Targets, Value,
-    ARENAS,
+    annotations, associations, attributes, coordinates, copious, count, directory_label, drawings,
+    entity, fem, fonts, levels, macros, products, real, shape, solids, structure, text, BTreeSet,
+    CadIr, DirectoryLineFont, Entity, EntityStatus, Fields, NativeExport, NativeRecord, Targets,
+    Value, ARENAS,
 };
 use std::collections::BTreeMap;
 
@@ -24,6 +24,11 @@ fn encode(
         references: BTreeSet::new(),
         lenient,
         missing: Vec::new(),
+    };
+    let boolean_feature = if arena == "boolean_trees" {
+        solids::apply_combine(ir, record, &mut fields)?
+    } else {
+        None
     };
     let annotation = if arena == "annotations" {
         annotations::apply_text(ir, record, &mut fields)?
@@ -199,6 +204,9 @@ fn encode(
             };
             owners.push(*index);
         }
+    }
+    if let Some(feature) = boolean_feature {
+        result.source_targets.push(feature);
     }
     if let Some(annotation) = annotation {
         result.source_targets.push(annotation);
@@ -469,6 +477,7 @@ pub(in crate::writer) fn append(
         ..
     } = emitter;
     line_fonts(ir, entities, &targets);
+    associations::link(ir, entities, &targets);
     result
 }
 /// Emission state for one native re-emission pass: the read-only document

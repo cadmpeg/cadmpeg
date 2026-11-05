@@ -1092,3 +1092,102 @@ fn edited_semantic_note_text_reaches_regenerated_parameters() {
         .iter()
         .any(|item| item.text == expected));
 }
+
+#[test]
+fn regenerated_associativities_retain_required_back_pointers() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(
+                crate::test_support::test_drawing_and_trimming::bounded_associativity_forms_file(),
+            ),
+            &DecodeOptions::default(),
+        )
+        .expect("associativity fixture decodes");
+    let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).expect("associativities synthesize");
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("associativities re-decode");
+    assert!(
+        output
+            .report()
+            .losses
+            .iter()
+            .all(|loss| !loss.message.contains("predefined associativity")),
+        "{:?}",
+        output.report().losses
+    );
+}
+
+#[test]
+fn edited_boolean_operation_reaches_the_regenerated_tree() {
+    use cadmpeg_ir::features::{BooleanKind, FeatureDefinition, FeatureOperation};
+    let decoded = IgesCodec.decode(
+        &mut Cursor::new(crate::test_support::test_solids_and_structure::explicit_tetrahedron_solid_with_boolean_file()),
+        &DecodeOptions::default(),
+    ).expect("Boolean fixture decodes");
+    let mut ir = decoded.ir().clone();
+    let feature = ir
+        .model
+        .features
+        .iter_mut()
+        .find(|feature| {
+            matches!(
+                feature.evaluation.definition(),
+                FeatureDefinition::Operation(FeatureOperation::Combine { .. })
+            )
+        })
+        .expect("Boolean feature");
+    let mut definition = feature.evaluation.definition().clone();
+    let FeatureDefinition::Operation(FeatureOperation::Combine { op, .. }) = &mut definition else {
+        unreachable!()
+    };
+    *op = BooleanKind::Cut;
+    feature.evaluation.set_definition(definition);
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).expect("edited Boolean synthesizes");
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("Boolean re-decodes");
+    assert!(output.ir().model.features.iter().any(|feature| matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Combine {
+            op: BooleanKind::Cut,
+            ..
+        })
+    )));
+}
+
+#[test]
+fn reconstructed_default_display_record_is_declared_regenerated() {
+    use cadmpeg_ir::codec::write::NativeDisposition;
+    let decoded = IgesCodec.decode(&mut Cursor::new(point_file_with_global(
+        b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;"
+    )), &DecodeOptions::default()).expect("point fixture decodes");
+    let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).expect("point synthesizes");
+    assert_eq!(
+        plan.report()
+            .native_dispositions
+            .disposition("iges", "display_attributes"),
+        NativeDisposition::Regenerated
+    );
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("output decodes");
+    let before = &decoded.ir().native.namespace("iges").unwrap().arenas()["display_attributes"][0];
+    let after = &output.ir().native.namespace("iges").unwrap().arenas()["display_attributes"][0];
+    for field in [
+        "color_number",
+        "level_number",
+        "line_font_number",
+        "line_weight_number",
+        "view",
+        "visible",
+    ] {
+        assert_eq!(before.field(field), after.field(field), "{field}");
+    }
+}
