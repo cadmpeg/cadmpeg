@@ -1,7 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use std::f64::consts::TAU;
+
+use cadmpeg_ir::features::SketchProfileBoundaryUse;
+use cadmpeg_ir::geometry::DirectedParameterRange;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
-use cadmpeg_ir::sketches::{Sketch, SketchId, SketchPlacement};
+use cadmpeg_ir::scalar::Length;
+use cadmpeg_ir::sketches::{
+    Sketch, SketchEntity, SketchEntityId, SketchGeometry, SketchGeometryDefinition, SketchId,
+    SketchPlacement,
+};
 
 use crate::design::geometry::AtomicSketchRegion;
 use crate::history_records::{
@@ -11,7 +19,7 @@ use crate::history_records::{
     AsmHistoricalTopology,
 };
 
-use super::{changed_planes, face_cap, outlines_agree, PlaneFrame, Sampled};
+use super::{changed_planes, face_cap, outlines_agree, polygon_area, PlaneFrame, Sampled};
 
 const TOLERANCE: f64 = 1e-6;
 /// The cap face every test topology draws.
@@ -139,7 +147,7 @@ fn a_loop_whose_first_edge_is_stored_backwards_keeps_every_corner() {
             cap.loops[0]
         );
     }
-    assert!((cap.area - 1.0).abs() < 1e-12);
+    assert!((polygon_area(&cap.loops[0]).abs() - 1.0).abs() < 1e-12);
 }
 
 #[test]
@@ -190,93 +198,213 @@ fn an_edge_with_two_rows_of_one_kind_proves_no_cap() {
     assert!(face_cap(&xy_frame(), &topology, CAP, TOLERANCE).is_none());
 }
 
+/// A cap bounded by one closed edge where it meets a cylinder of `radius`
+/// about `center` along `axis`, with its seam at angle 0.
+fn circle_topology(center: (f64, f64), radius: f64, axis: Vector3) -> AsmHistoricalTopology {
+    let mut topology = loop_topology(&[(center.0 + radius, center.1)], &[(0, 0)]);
+    topology.face_loops.push(AsmHistoricalRelation {
+        owner_ref: 101,
+        member_refs: vec![201],
+    });
+    topology.coedge_topology.push(AsmHistoricalCoedge {
+        coedge: 350,
+        owner_loop: 201,
+        edge: 400,
+        next: 0,
+        previous: 0,
+        radial_next: 0,
+    });
+    topology.face_surfaces.push(AsmHistoricalCarrierBinding {
+        entity: 101,
+        carrier: 700,
+    });
+    topology.surface_cylinders.push(AsmHistoricalCylinder {
+        surface: 700,
+        origin: Point3::new(center.0, center.1, -5.0),
+        axis,
+        radius,
+    });
+    topology.edge_samples.push(AsmHistoricalEdgeSample {
+        edge: 400,
+        interior: Point3::new(center.0 - radius, center.1, 2.0),
+        tangent: None,
+    });
+    topology
+}
+
 #[test]
 fn a_closed_edge_is_a_circle_only_on_a_cylinder_about_the_cap_normal() {
-    // One closed edge on a circle of radius 2 about (1, 1).
-    let circle_topology = |axis: Vector3| {
-        let mut topology = loop_topology(&[(3.0, 1.0)], &[(0, 0)]);
-        topology.face_loops.push(AsmHistoricalRelation {
-            owner_ref: 101,
-            member_refs: vec![201],
-        });
-        topology.coedge_topology.push(AsmHistoricalCoedge {
-            coedge: 350,
-            owner_loop: 201,
-            edge: 400,
-            next: 0,
-            previous: 0,
-            radial_next: 0,
-        });
-        topology.face_surfaces.push(AsmHistoricalCarrierBinding {
-            entity: 101,
-            carrier: 700,
-        });
-        topology.surface_cylinders.push(AsmHistoricalCylinder {
-            surface: 700,
-            origin: Point3::new(1.0, 1.0, -5.0),
-            axis,
-            radius: 2.0,
-        });
-        topology.edge_samples.push(AsmHistoricalEdgeSample {
-            edge: 400,
-            interior: Point3::new(-1.0, 1.0, 2.0),
-            tangent: None,
-        });
-        topology
-    };
     let cap = face_cap(
         &xy_frame(),
-        &circle_topology(Vector3::new(0.0, 0.0, 1.0)),
+        &circle_topology((1.0, 1.0), 2.0, Vector3::new(0.0, 0.0, 1.0)),
         CAP,
         TOLERANCE,
     )
     .unwrap();
     let circle = std::f64::consts::PI * 4.0;
-    assert!((cap.area - circle).abs() < 1e-2 * circle);
-    assert!(cap.boundary_distance(Point2::new(1.0, 3.0)) < 1e-12);
+    assert!((polygon_area(&cap.loops[0]).abs() - circle).abs() < 1e-2 * circle);
+    let [super::Piece::Arc {
+        center,
+        radius,
+        sweep,
+        ..
+    }] = cap.pieces.as_slice()
+    else {
+        panic!("one arc piece");
+    };
+    assert!((center.u - 1.0).abs() < 1e-12 && (center.v - 1.0).abs() < 1e-12);
+    assert!((radius - 2.0).abs() < 1e-12 && (sweep.abs() - TAU).abs() < 1e-12);
     assert!(face_cap(
         &xy_frame(),
-        &circle_topology(Vector3::new(1.0, 0.0, 0.0)),
+        &circle_topology((1.0, 1.0), 2.0, Vector3::new(1.0, 0.0, 0.0)),
         CAP,
         TOLERANCE,
     )
     .is_none());
     // A neighbour face without a surface binding leaves the circle unproven.
-    let mut unbound = circle_topology(Vector3::new(0.0, 0.0, 1.0));
+    let mut unbound = circle_topology((1.0, 1.0), 2.0, Vector3::new(0.0, 0.0, 1.0));
     unbound
         .face_surfaces
         .retain(|binding| binding.entity != 101);
     assert!(face_cap(&xy_frame(), &unbound, CAP, TOLERANCE).is_none());
 }
 
-/// One region of area 1 sampled at the unit square's centre.
-fn sampled(region: &AtomicSketchRegion) -> Vec<Sampled<'_>> {
+fn line(id: &str, start: (f64, f64), end: (f64, f64)) -> SketchEntity {
+    SketchEntity::new(
+        SketchEntityId::mint(format!("synthetic:test:id#{id}")).unwrap(),
+        xy_sketch().id,
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
+            start: Point2::new(start.0, start.1),
+            end: Point2::new(end.0, end.1),
+        })
+        .unwrap(),
+    )
+}
+
+fn circle(id: &str, center: (f64, f64), radius: f64) -> SketchEntity {
+    SketchEntity::new(
+        SketchEntityId::mint(format!("synthetic:test:id#{id}")).unwrap(),
+        xy_sketch().id,
+        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+            center: Point2::new(center.0, center.1),
+            radius: Length::new(radius).unwrap(),
+        })
+        .unwrap(),
+    )
+}
+
+fn boundary_use(entity: &SketchEntity, range: [f64; 2]) -> SketchProfileBoundaryUse {
+    SketchProfileBoundaryUse {
+        entity: entity.id().clone(),
+        parameter_range: DirectedParameterRange::new(range).unwrap(),
+        reversed: false,
+    }
+}
+
+/// A region bounded by `entities` over `ranges`.
+fn region(entities: &[SketchEntity], ranges: &[[f64; 2]]) -> AtomicSketchRegion {
+    AtomicSketchRegion {
+        boundary: entities
+            .iter()
+            .zip(ranges)
+            .map(|(entity, range)| boundary_use(entity, *range))
+            .collect(),
+        polyline: Vec::new(),
+        encloses_island: false,
+    }
+}
+
+fn sampled(region: &AtomicSketchRegion, point: (f64, f64)) -> Vec<Sampled<'_>> {
     vec![Sampled {
         region,
-        point: Point2::new(0.5, 0.5),
-        area: 1.0,
+        point: Point2::new(point.0, point.1),
         nested: Vec::new(),
     }]
 }
 
+fn polygon(name: &str, corners: &[(f64, f64)]) -> Vec<SketchEntity> {
+    (0..corners.len())
+        .map(|k| {
+            line(
+                &format!("{name}-{k}"),
+                corners[k],
+                corners[(k + 1) % corners.len()],
+            )
+        })
+        .collect()
+}
+
 #[test]
-fn regions_of_the_caps_area_must_also_share_its_outline() {
+fn regions_and_cap_must_cover_each_others_outline() {
     let mut topology = loop_topology(&unit_square_corners(), &[(0, 1), (1, 2), (2, 3), (3, 0)]);
     straight_carriers(&mut topology);
     let cap = face_cap(&xy_frame(), &topology, CAP, TOLERANCE).unwrap();
-    let square = |du: f64| AtomicSketchRegion {
-        boundary: Vec::new(),
-        polyline: unit_square_corners()
-            .iter()
-            .map(|(u, v)| Point2::new(u + du, *v))
-            .collect(),
-        encloses_island: false,
-    };
-    let same = square(0.0);
-    assert!(outlines_agree(&cap, &sampled(&same), &[0], TOLERANCE));
+    let whole_lines = [[0.0, 1.0]; 4];
+
+    let same = polygon("same", &unit_square_corners());
+    let same_region = region(&same, &whole_lines);
+    assert!(outlines_agree(
+        &cap,
+        &sampled(&same_region, (0.5, 0.5)),
+        &[0],
+        &same,
+        TOLERANCE
+    ));
+
     // Equal area and a shared interior point, but another outline.
-    let shifted = square(0.4);
-    assert!(!outlines_agree(&cap, &sampled(&shifted), &[0], TOLERANCE));
+    let shifted_corners: Vec<(f64, f64)> = unit_square_corners()
+        .iter()
+        .map(|(u, v)| (u + 0.4, *v))
+        .collect();
+    let shifted = polygon("shifted", &shifted_corners);
+    let shifted_region = region(&shifted, &whole_lines);
+    assert!(!outlines_agree(
+        &cap,
+        &sampled(&shifted_region, (0.5, 0.5)),
+        &[0],
+        &shifted,
+        TOLERANCE
+    ));
+}
+
+#[test]
+fn a_polygon_inscribed_in_a_small_circular_cap_does_not_match_it() {
+    // A circular cap of radius 0.01 with its seam at a corner of the
+    // inscribed square: the square's corners all lie on the circle and its
+    // area differs by about 0.000114.
+    let radius = 0.01;
+    let cap = face_cap(
+        &xy_frame(),
+        &circle_topology((0.0, 0.0), radius, Vector3::new(0.0, 0.0, 1.0)),
+        CAP,
+        TOLERANCE,
+    )
+    .unwrap();
+    let square = polygon(
+        "inscribed",
+        &[(radius, 0.0), (0.0, radius), (-radius, 0.0), (0.0, -radius)],
+    );
+    let square_region = region(&square, &[[0.0, 1.0]; 4]);
+    assert!(!outlines_agree(
+        &cap,
+        &sampled(&square_region, (0.0, 0.0)),
+        &[0],
+        &square,
+        TOLERANCE
+    ));
+
+    // The circle itself matches, whichever angle its own seam is at.
+    let disc = [circle("disc", (0.0, 0.0), radius)];
+    for start in [0.0, 1.0] {
+        let disc_region = region(&disc, &[[start, start + TAU]]);
+        assert!(outlines_agree(
+            &cap,
+            &sampled(&disc_region, (0.0, 0.0)),
+            &[0],
+            &disc,
+            TOLERANCE
+        ));
+    }
 }
 
 #[test]

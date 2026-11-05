@@ -2026,6 +2026,57 @@ fn point_on_profile_boundary_use(
     }
 }
 
+/// The exact carrier one profile boundary use traces over its parameter
+/// interval, in the interval's stored direction.
+pub(super) enum BoundaryCarrier {
+    Line {
+        start: Point2,
+        end: Point2,
+    },
+    /// From `start` radians through `sweep` radians about `center`; a
+    /// negative sweep turns clockwise.
+    Arc {
+        center: Point2,
+        radius: f64,
+        start: f64,
+        sweep: f64,
+    },
+}
+
+/// The line or circular arc `use_` traces. `None` for any other curve.
+pub(super) fn boundary_use_carrier(
+    use_: &cadmpeg_ir::features::SketchProfileBoundaryUse,
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+) -> Option<BoundaryCarrier> {
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
+
+    let entity = entities.iter().find(|entity| entity.id() == &use_.entity)?;
+    let [from, to] = use_.parameter_range.endpoints();
+    match *entity.geometry.definition() {
+        SketchGeometryDefinition::Line { start, end } => {
+            let (start, end) = (start.get(), end.get());
+            let at = |parameter: f64| {
+                Point2::new(
+                    start.u + parameter * (end.u - start.u),
+                    start.v + parameter * (end.v - start.v),
+                )
+            };
+            Some(BoundaryCarrier::Line {
+                start: at(from),
+                end: at(to),
+            })
+        }
+        SketchGeometryDefinition::Circle { center, radius }
+        | SketchGeometryDefinition::Arc { center, radius, .. } => Some(BoundaryCarrier::Arc {
+            center: center.get(),
+            radius: radius.get(),
+            start: from,
+            sweep: to - from,
+        }),
+        _ => None,
+    }
+}
+
 fn signed_polygon_area(vertices: &[Point2]) -> f64 {
     cadmpeg_ir::math::planar::polygon_area_twice(vertices)
         .map_or(f64::NAN, cadmpeg_ir::scalar::FiniteReal::get)

@@ -6,8 +6,10 @@
 //! at one offset from the Sketch plane, repeats the swept region there. The
 //! regions are the bounded faces of the arrangement of every
 //! non-construction Sketch curve. A region whose interior lies inside the cap
-//! is selected; the selection is admitted only when the selected regions
-//! cover the cap's area and their outline lies on the cap's boundary.
+//! is selected; the selection is admitted only when the outline of the
+//! selected regions and the cap's boundary cover each other exactly: every
+//! outline line or arc lies on a cap line or arc of the same carrier over
+//! its whole interval, and the reverse.
 //!
 //! A cut through the part inserts no such cap. When the stored profiles name
 //! curves that bound several regions, a region bounded only by those curves
@@ -30,8 +32,8 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
 use super::ResolvedProfileSelection;
 use crate::design::geometry::{
-    atomic_sketch_regions, point_in_polygon, point_segment_distance, profile_loop_contains_points,
-    AtomicSketchRegion, ProfileGeometryWork,
+    atomic_sketch_regions, boundary_use_carrier, point_in_polygon, point_segment_distance,
+    profile_loop_contains_points, AtomicSketchRegion, BoundaryCarrier, ProfileGeometryWork,
 };
 use crate::history_records::{AsmDeltaState, AsmHistoricalTopology, AsmHistory};
 
@@ -151,6 +153,108 @@ impl Piece {
         }
     }
 
+    /// The piece's start, middle and end points.
+    fn points(&self) -> [Point2; 3] {
+        match *self {
+            Piece::Line(start, end) => [
+                start,
+                Point2::new(f64::midpoint(start.u, end.u), f64::midpoint(start.v, end.v)),
+                end,
+            ],
+            Piece::Arc {
+                center,
+                radius,
+                start,
+                sweep,
+            } => [start, start + sweep / 2.0, start + sweep].map(|angle| {
+                Point2::new(
+                    center.u + radius * angle.cos(),
+                    center.v + radius * angle.sin(),
+                )
+            }),
+        }
+    }
+
+    /// Whether `other` traces the same points as this piece, in either
+    /// direction.
+    fn same(&self, other: &Piece, tolerance: f64) -> bool {
+        let near = |a: Point2, b: Point2| distance(a, b) <= tolerance;
+        let ([start, middle, end], [other_start, other_middle, other_end]) =
+            (self.points(), other.points());
+        matches!(
+            (self, other),
+            (Piece::Line(..), Piece::Line(..)) | (Piece::Arc { .. }, Piece::Arc { .. })
+        ) && near(middle, other_middle)
+            && (near(start, other_start) && near(end, other_end)
+                || near(start, other_end) && near(end, other_start))
+    }
+
+    /// Whether pieces of `by` on this piece's own carrier cover its whole
+    /// interval: collinear lines for a line, arcs of the same circle for an
+    /// arc.
+    fn covered_by(&self, by: &[&Piece], tolerance: f64) -> bool {
+        match *self {
+            Piece::Line(start, end) => {
+                let length = distance(start, end);
+                if length <= tolerance {
+                    return false;
+                }
+                let (du, dv) = ((end.u - start.u) / length, (end.v - start.v) / length);
+                let along = |point: Point2| (point.u - start.u) * du + (point.v - start.v) * dv;
+                let across =
+                    |point: Point2| ((point.u - start.u) * dv - (point.v - start.v) * du).abs();
+                let intervals = by
+                    .iter()
+                    .filter_map(|other| match **other {
+                        Piece::Line(a, b) if across(a) <= tolerance && across(b) <= tolerance => {
+                            let (a, b) = (along(a), along(b));
+                            Some((a.min(b), a.max(b)))
+                        }
+                        _ => None,
+                    })
+                    .collect();
+                intervals_cover(intervals, 0.0, length, tolerance)
+            }
+            Piece::Arc {
+                center,
+                radius,
+                start,
+                sweep,
+            } => {
+                let counterclockwise = |start: f64, sweep: f64| {
+                    if sweep >= 0.0 {
+                        (start, sweep)
+                    } else {
+                        (start + sweep, -sweep)
+                    }
+                };
+                let (first, length) = counterclockwise(start, sweep);
+                let mut intervals = Vec::new();
+                for other in by {
+                    let Piece::Arc {
+                        center: other_center,
+                        radius: other_radius,
+                        start: other_start,
+                        sweep: other_sweep,
+                    } = **other
+                    else {
+                        continue;
+                    };
+                    if distance(center, other_center) > tolerance
+                        || (radius - other_radius).abs() > tolerance
+                    {
+                        continue;
+                    }
+                    let (other_first, other_length) = counterclockwise(other_start, other_sweep);
+                    let offset = (other_first - first).rem_euclid(TAU);
+                    intervals.push((offset, offset + other_length));
+                    intervals.push((offset - TAU, offset - TAU + other_length));
+                }
+                intervals_cover(intervals, 0.0, length, tolerance / radius)
+            }
+        }
+    }
+
     /// Appends the piece's polyline, without its end, to `ring`.
     fn push(&self, ring: &mut Vec<Point2>) {
         match *self {
@@ -204,12 +308,11 @@ impl Cap {
     }
 }
 
-/// One arrangement region with a point well inside it and its area net of
-/// the regions nested in it.
+/// One arrangement region with a point well inside it and the regions
+/// nested directly in it.
 struct Sampled<'a> {
     region: &'a AtomicSketchRegion,
     point: Point2,
-    area: f64,
     nested: Vec<usize>,
 }
 
@@ -256,20 +359,16 @@ pub(super) fn cap_profile_selection(
     };
     let mut selected = Vec::new();
     for cap in &caps {
-        let mut covered = 0.0;
         let mut inside = Vec::new();
         for (index, region) in sampled.iter().enumerate() {
             if cap.contains(region.point) {
-                covered += region.area;
                 inside.push(index);
                 if !selected.contains(&index) {
                     selected.push(index);
                 }
             }
         }
-        if (covered - cap.area).abs() > AREA_AGREEMENT * cap.area.max(1.0)
-            || !outlines_agree(cap, &sampled, &inside, tolerance)
-        {
+        if !outlines_agree(cap, &sampled, &inside, entities, tolerance) {
             return Ok(None);
         }
     }
@@ -504,57 +603,85 @@ fn trimmed_selection(
     Some(ResolvedProfileSelection::Regions(out))
 }
 
-/// Whether the outline of the union of the `chosen` regions lies on the
-/// cap's boundary and every cap vertex lies on that outline.
+/// Whether the outline of the union of the `chosen` regions and the cap's
+/// boundary cover each other exactly.
 ///
-/// A region boundary segment is on the outline when the union holds one of
-/// its sides and not the other; both its ends, which lie on sketch curves,
-/// must then lie on a proven cap piece.
-fn outlines_agree(cap: &Cap, sampled: &[Sampled<'_>], chosen: &[usize], tolerance: f64) -> bool {
-    let in_union = |point: Point2| {
-        chosen.iter().any(|index| {
-            let region = &sampled[*index];
-            point_in_polygon(point, &region.region.polyline)
-                && !region
-                    .nested
-                    .iter()
-                    .any(|nested| point_in_polygon(point, &sampled[*nested].region.polyline))
-        })
-    };
+/// Each boundary use of a chosen region counts once, and once more as a
+/// hole of that region for each region nested directly in it. A use counted
+/// an even number of times separates two chosen regions; the rest form the
+/// outline. Every outline line or arc must lie on cap pieces of the same
+/// carrier over its whole interval, and every cap piece on outline pieces.
+/// A boundary on any other curve proves nothing.
+fn outlines_agree(
+    cap: &Cap,
+    sampled: &[Sampled<'_>],
+    chosen: &[usize],
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    tolerance: f64,
+) -> bool {
     let rings = chosen
         .iter()
         .flat_map(|index| std::iter::once(*index).chain(sampled[*index].nested.iter().copied()));
-    let offset = SIDE_OFFSET * tolerance;
-    let mut outline = Vec::new();
+    let mut counted: Vec<(&cadmpeg_ir::sketches::SketchEntityId, Piece, usize)> = Vec::new();
     for ring in rings {
-        let ring = &sampled[ring].region.polyline;
-        for k in 0..ring.len() {
-            let (start, end) = (ring[k], ring[(k + 1) % ring.len()]);
-            let length = distance(start, end);
-            if length <= tolerance {
-                continue;
-            }
-            let middle = Point2::new(f64::midpoint(start.u, end.u), f64::midpoint(start.v, end.v));
-            let (du, dv) = (
-                -(end.v - start.v) / length * offset,
-                (end.u - start.u) / length * offset,
-            );
-            let left = in_union(Point2::new(middle.u + du, middle.v + dv));
-            let right = in_union(Point2::new(middle.u - du, middle.v - dv));
-            if left == right {
-                continue;
-            }
-            if cap.boundary_distance(start) > tolerance || cap.boundary_distance(end) > tolerance {
+        for use_ in &sampled[ring].region.boundary {
+            let Some(carrier) = boundary_use_carrier(use_, entities) else {
                 return false;
+            };
+            let piece = match carrier {
+                BoundaryCarrier::Line { start, end } => Piece::Line(start, end),
+                BoundaryCarrier::Arc {
+                    center,
+                    radius,
+                    start,
+                    sweep,
+                } => Piece::Arc {
+                    center,
+                    radius,
+                    start,
+                    sweep,
+                },
+            };
+            match counted
+                .iter_mut()
+                .find(|(entity, other, _)| *entity == &use_.entity && piece.same(other, tolerance))
+            {
+                Some((_, _, count)) => *count += 1,
+                None => counted.push((&use_.entity, piece, 1)),
             }
-            outline.push((start, end));
         }
     }
-    cap.corners.iter().all(|corner| {
-        outline
+    let outline: Vec<&Piece> = counted
+        .iter()
+        .filter(|(_, _, count)| count % 2 == 1)
+        .map(|(_, piece, _)| piece)
+        .collect();
+    let cap_pieces: Vec<&Piece> = cap.pieces.iter().collect();
+    !outline.is_empty()
+        && outline
             .iter()
-            .any(|segment| point_segment_distance(*corner, *segment) <= tolerance)
-    })
+            .all(|piece| piece.covered_by(&cap_pieces, tolerance))
+        && cap
+            .pieces
+            .iter()
+            .all(|piece| piece.covered_by(&outline, tolerance))
+}
+
+/// Whether ordered intervals reach from `from` to `to` without a gap wider
+/// than `slack`.
+fn intervals_cover(mut intervals: Vec<(f64, f64)>, from: f64, to: f64, slack: f64) -> bool {
+    intervals.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let mut reach = from;
+    for (low, high) in intervals {
+        if reach >= to - slack {
+            break;
+        }
+        if low > reach + slack {
+            return false;
+        }
+        reach = reach.max(high);
+    }
+    reach >= to - slack
 }
 
 fn unique_state(
@@ -915,8 +1042,8 @@ fn polygon_area(ring: &[Point2]) -> f64 {
         * 0.5
 }
 
-/// Each region with a point well inside it, outside the regions nested in it,
-/// and its area net of them. `None` when a region has no such point.
+/// Each region with a point well inside it, outside the regions nested in it.
+/// `None` when a region has no such point.
 fn sample_regions(regions: &[AtomicSketchRegion], tolerance: f64) -> Option<Vec<Sampled<'_>>> {
     let areas: Vec<f64> = regions
         .iter()
@@ -997,7 +1124,6 @@ fn sample_regions(regions: &[AtomicSketchRegion], tolerance: f64) -> Option<Vec<
         out.push(Sampled {
             region,
             point,
-            area,
             nested,
         });
     }
