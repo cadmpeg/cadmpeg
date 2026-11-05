@@ -16,6 +16,11 @@ use crate::records::feature::scope::{
     DesignExtrudeScope, DesignParameterScope, DesignScopePayload,
 };
 use crate::records::sketch_geometry::SketchCurveIdentity;
+use crate::records::sketch_relations::SketchRelationOperand;
+use crate::records::topology::extrude_selection::{
+    DesignExtrudeSelectionGroup, DesignExtrudeSelectionGroupWire, DesignExtrudeSelectionMember,
+    DesignExtrudeSelectionMemberDraft,
+};
 use crate::records::topology::sketch_profile::DesignSketchProfileOperand;
 
 const REGION_TOLERANCE: f64 = 1.0e-7;
@@ -117,6 +122,14 @@ fn fixture(
 }
 
 fn bound_profile(members: &[u32]) -> ProfileRef {
+    bound_profile_with_groups(members, &[], &[])
+}
+
+fn bound_profile_with_groups(
+    members: &[u32],
+    groups: &[DesignExtrudeSelectionGroup],
+    group_members: &[DesignExtrudeSelectionMember],
+) -> ProfileRef {
     let (sketch, entities, curves, scope) = fixture(members);
     let mut feature: Feature = serde_json::from_value(json!({
         "id": "synthetic:test:feature#cut", "ordinal": 0, "suppressed": false,
@@ -133,8 +146,8 @@ fn bound_profile(members: &[u32]) -> ProfileRef {
         bind_extrude_profile_selections(
             std::slice::from_mut(&mut feature),
             &scopes,
-            &[],
-            &[],
+            groups,
+            group_members,
             &sketches,
             &SketchCurveSelectionResolution {
                 scopes: &scopes,
@@ -231,4 +244,74 @@ fn incomplete_partial_curve_members_keep_the_native_selection() {
         bound_profile(&[2, 2, 2, 2, 3, 4, 5, 99]),
         ProfileRef::Planar(PlanarProfileRef::SketchSelection { .. })
     ));
+}
+
+fn curve_selection_group(
+    curve_primary_id: u64,
+) -> (DesignExtrudeSelectionGroup, DesignExtrudeSelectionMember) {
+    let group = DesignExtrudeSelectionGroup::try_from(DesignExtrudeSelectionGroupWire {
+        id: "f3d:Design/BulkStream.dat:selection-group#9".into(),
+        scope_record_index: 10,
+        scope_reference_ordinal: 1,
+        record_index: 9,
+        byte_offset: 0,
+        class_tag: "277".to_owned(),
+        member_count_offset: 32,
+        members: vec![11],
+        member_offsets: vec![37],
+        opaque_index: 1,
+        opaque_index_offset: 47,
+        opaque_scalar: 0.0,
+        opaque_scalar_offset: 51,
+        variant: Some(false),
+        typed_references: false,
+        paired_class_tag: "277".to_owned(),
+        paired_byte_offset: 100,
+    })
+    .unwrap();
+    let member = DesignExtrudeSelectionMember::try_new(DesignExtrudeSelectionMemberDraft {
+        id: "f3d:Design/BulkStream.dat:selection-member#11".into(),
+        group_record_index: 9,
+        group_member_ordinal: 0,
+        record_index: 11,
+        byte_offset: 0,
+        class_tag: crate::records::references::DesignClassTag::try_from("278".to_owned()).unwrap(),
+        local_id: 200,
+        local_id_offset: 21,
+        asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
+            "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+        )
+        .unwrap(),
+        asset_id_offset: 33,
+        context_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
+            "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
+        )
+        .unwrap(),
+        context_id_offset: 109,
+        tail_slot_present: false,
+        tail_slot_offset: 0,
+        resolved_geometry: Some(SketchRelationOperand::Curve {
+            record_index: 20,
+            primary_id: curve_primary_id,
+            secondary_id: 0,
+        }),
+        operand_identity_ids: Vec::new(),
+        historical: None,
+        scope_tail: None,
+        next_record_index: 12,
+        next_byte_offset: 190,
+    })
+    .unwrap();
+    (group, member)
+}
+
+#[test]
+fn incomplete_partial_curve_members_defer_to_the_selection_group_profile() {
+    let (group, member) = curve_selection_group(1);
+    let profile = bound_profile_with_groups(&[2, 2, 3, 4, 5, 6], &[group], &[member]);
+    let (sketch, _, _, _) = fixture(&[]);
+    assert_eq!(
+        profile,
+        ProfileRef::Planar(PlanarProfileRef::sketch_profiles(sketch.id, vec![0]).unwrap())
+    );
 }
