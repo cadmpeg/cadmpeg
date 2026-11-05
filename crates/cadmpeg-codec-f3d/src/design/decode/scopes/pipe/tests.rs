@@ -7,7 +7,7 @@ use crate::test_support::pipe::{Config, Fixture, Layout};
 fn pipe_source_binds_group_with_three_byte_flag_block() {
     let ctx = cadmpeg_test_support::service_decode_context();
     let native = Fixture::new(Config {
-        group_flag_prefix: true,
+        group_flags: &[1, 0, 0],
         ..Default::default()
     })
     .decode(&ctx)
