@@ -521,7 +521,7 @@ mod tests {
 
     #[test]
     fn ambiguity_reports_shared_spellings() {
-        let _ = ambiguity_sample(&json!({"kind": "plane"}));
+        drop(ambiguity_sample(&json!({"kind": "plane"})));
     }
 
     #[test]
