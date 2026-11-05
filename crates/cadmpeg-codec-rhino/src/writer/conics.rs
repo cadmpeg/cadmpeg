@@ -390,7 +390,7 @@ pub(super) fn clamp_curve(
     }
     segment_knots
         .extend_from_slice(&knots[first + start_multiplicity..last + 1 - end_multiplicity]);
-    segment_knots.extend(std::iter::repeat(hi).take(end_mult));
+    segment_knots.extend(std::iter::repeat_n(hi, end_mult));
     let segment_points = homogeneous[start..=end].to_vec();
     if segment_knots.len() != segment_points.len() + degree + 1 {
         return Err(fail("clamped span counts disagree"));
