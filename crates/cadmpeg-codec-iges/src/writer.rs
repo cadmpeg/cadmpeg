@@ -250,6 +250,45 @@ const SYNTHESIS_COVERAGE: ArenaDispositions = {
     }
 };
 
+/// A shared source Directory record is recoverable when every point on the
+/// generated vertex list has a current label attribute naming that record.
+fn vertex_list_source(ir: &CadIr, points: &[String]) -> Option<String> {
+    use cadmpeg_ir::attributes::AttributeTarget;
+    if points.is_empty() {
+        return None;
+    }
+    let mut source: Option<String> = None;
+    for point in points {
+        let mut candidates = ir.model.attributes.iter().filter(|attribute| {
+            matches!(&attribute.target, AttributeTarget::Point(id) if id.as_str() == point)
+                && matches!(attribute.name.as_str(), "name" | "iges.directory_label")
+                && attribute.native_ref.is_some()
+        });
+        let current = candidates.next()?.native_ref.as_deref()?;
+        if candidates.any(|attribute| attribute.native_ref.as_deref() != Some(current)) {
+            return None;
+        }
+        if source
+            .as_deref()
+            .is_some_and(|previous| previous != current)
+        {
+            return None;
+        }
+        source = Some(current.to_owned());
+    }
+    let id = source?;
+    ir.native
+        .namespace("iges")?
+        .arenas()
+        .get("entities")?
+        .iter()
+        .find(|record| {
+            record.id() == id
+                && record.field("entity_type").and_then(|value| value.as_i64()) == Some(502)
+        })?;
+    Some(id)
+}
+
 fn counts_for_ir(ir: &CadIr) -> BTreeMap<String, usize> {
     let mut counts = BTreeMap::new();
     if let Some(namespace) = ir.native.namespace("iges") {
@@ -434,7 +473,7 @@ fn face_display_color(
 /// no body fallback at emission; an unbound carrier keeps the default.
 fn carrier_display_color(
     ir: &CadIr,
-    target: cadmpeg_ir::appearance::AppearanceTarget,
+    target: &cadmpeg_ir::appearance::AppearanceTarget,
     owner: &str,
     losses: &mut Vec<LossNote>,
 ) -> BodyColor {
@@ -447,7 +486,7 @@ fn carrier_display_color(
                 .target
                 .typed_record_target(&ir.model)
                 .unwrap_or_else(|| binding.target.clone())
-                == target
+                == *target
         })
         .find_map(|binding| {
             ir.model
@@ -541,7 +580,7 @@ fn unapplied_body_placement_losses(ir: &CadIr, entities: &[Entity]) -> Vec<LossN
         .iter()
         .filter(|entity| entity.transform.is_some())
         .flat_map(|entity| entity.source_targets.iter())
-        .map(|target| target.as_str())
+        .map(String::as_str)
         .collect::<BTreeSet<_>>();
     let mut losses = Vec::new();
     for body in &ir.model.bodies {
@@ -580,8 +619,9 @@ fn synthesize_with_admission(
             .is_none_or(|solved| flatten_curve(solved).is_err())
     })?;
     let (poles, pole_losses) = admission::pole_edges(lowered.as_ref())?;
-    let (pcurves, pcurve_losses) = pcurve_admission::admit(poles.as_ref());
-    let (admitted, admission_losses) = admission::edge_carriers(pcurves.as_ref());
+    let (opened, open_losses) = admission::open_incomplete_solids(poles.as_ref());
+    let (pcurves, pcurve_losses) = pcurve_admission::admit(opened.as_ref());
+    let (admitted, admission_losses) = admission::edge_carriers(pcurves.as_ref())?;
     let (stripped, strip_losses) = admission::strip_unusable_face_topology(admitted.as_ref());
     let ir = stripped.as_ref().unwrap_or(admitted.as_ref());
     let mut graph = match synthesis_graph(ctx, ir, version) {
@@ -591,6 +631,7 @@ fn synthesize_with_admission(
     };
     let pcurves_adapted = !pcurve_losses.is_empty();
     graph.losses.extend(pole_losses);
+    graph.losses.extend(open_losses);
     graph.losses.extend(pcurve_losses);
     graph.losses.extend(admission_losses);
     graph.losses.extend(strip_losses);
@@ -636,7 +677,9 @@ fn synthesize_with_admission(
     }
 
     append_name_properties(&mut graph.entities, &graph.presentations)?;
-    placement_entities::materialize(&mut graph.entities)?;
+    graph
+        .losses
+        .extend(placement_entities::materialize(&mut graph.entities)?);
     entity_order::source_order(ir, &mut graph.entities, &mut graph.presentations)?;
     feature_order::order(ir, &mut graph.entities, &mut graph.presentations)?;
     attribute_export.regenerated.extend(display::regenerated(
@@ -883,7 +926,9 @@ fn synthesize_with_admission(
             &graph.entities,
             &graph.presentations,
             version,
-            ir.tolerances.linear.map(|value| value.get()),
+            ir.tolerances
+                .linear
+                .map(cadmpeg_ir::scalar::PositiveLength::get),
         )?,
         counts,
         losses: graph.losses,
@@ -1018,9 +1063,8 @@ fn synthesis_graph(
             append_surface_entities(
                 ctx,
                 &mut entities,
-                ir,
+                (ir, version),
                 surface,
-                version,
                 &ownership,
                 &mut body_presentations,
                 &mut losses,
@@ -1088,8 +1132,8 @@ fn synthesis_graph(
             )?;
             let color = carrier_display_color(
                 ir,
-                cadmpeg_ir::appearance::AppearanceTarget::Curve(curve_id.clone()),
-                &format!("curve {}", curve_id),
+                &cadmpeg_ir::appearance::AppearanceTarget::Curve(curve_id.clone()),
+                &format!("curve {curve_id}"),
                 &mut losses,
             );
             if !matches!(color, BodyColor::Standard(0)) {
@@ -2266,7 +2310,7 @@ fn validate_brep_topology<'a>(
 fn brep_entities(
     ctx: &DecodeContext<'_>,
     topology: ValidatedTopology<'_>,
-    mut body_presentations: &mut BTreeMap<usize, BodyPresentation>,
+    body_presentations: &mut BTreeMap<usize, BodyPresentation>,
     losses: &mut Vec<LossNote>,
 ) -> Result<Vec<Entity>, CodecError> {
     let ir = topology.ir;
@@ -2315,11 +2359,10 @@ fn brep_entities(
         if let Some(index) = append_surface_entities(
             ctx,
             &mut entities,
-            ir,
+            (ir, version),
             surface,
-            version,
             &ownership,
-            &mut body_presentations,
+            body_presentations,
             losses,
         )? {
             surface_indices.insert(surface.id.as_str().to_owned(), index);
@@ -2403,7 +2446,7 @@ fn brep_entities(
             version,
             ownership: &ownership,
             ignored: &ignored_carriers.curves,
-            presentations: &mut body_presentations,
+            presentations: body_presentations,
         },
         &mut entities,
         &mut consumed_curve_ids,
@@ -2600,13 +2643,26 @@ fn brep_entities(
             }
         }
         parameters.push(';');
+        let point_targets = vertex_ids
+            .iter()
+            .filter_map(|id| {
+                ir.model
+                    .vertices
+                    .iter()
+                    .find(|vertex| vertex.id.as_str() == id)
+                    .map(|vertex| vertex.point.to_string())
+            })
+            .collect::<Vec<_>>();
+        let source = vertex_list_source(ir, &point_targets);
+        let mut source_targets = point_targets;
+        source_targets.extend(source);
         let vertex_list_index = entities.len();
         entities.push(Entity {
             structure: None,
             property_links: Vec::new(),
             association_links: Vec::new(),
             line_font: None,
-            source_targets: Vec::new(),
+            source_targets,
             type_code: 502,
             form: 1,
             label: String::new(),
@@ -2996,7 +3052,7 @@ fn brep_entities(
             ir,
             point,
             &ownership,
-            &mut body_presentations,
+            body_presentations,
             losses,
         );
     }
@@ -3247,7 +3303,7 @@ fn same_float(left: f64, right: f64) -> bool {
 fn topology_entities(
     ctx: &DecodeContext<'_>,
     topology: ValidatedTopology<'_>,
-    mut body_presentations: &mut BTreeMap<usize, BodyPresentation>,
+    body_presentations: &mut BTreeMap<usize, BodyPresentation>,
     losses: &mut Vec<LossNote>,
 ) -> Result<Vec<Entity>, CodecError> {
     let ir = topology.ir;
@@ -3268,11 +3324,10 @@ fn topology_entities(
         if let Some(index) = append_surface_entities(
             ctx,
             &mut entities,
-            ir,
+            (ir, version),
             surface,
-            version,
             &ownership,
-            &mut body_presentations,
+            body_presentations,
             losses,
         )? {
             surface_indices.insert(surface.id.as_str().to_owned(), index);
@@ -3393,7 +3448,7 @@ fn topology_entities(
             version,
             ownership: &ownership,
             ignored: &ignored_carriers.curves,
-            presentations: &mut body_presentations,
+            presentations: body_presentations,
         },
         &mut entities,
         &mut consumed_curves,
@@ -3570,7 +3625,7 @@ fn topology_entities(
             ir,
             point,
             &ownership,
-            &mut body_presentations,
+            body_presentations,
             losses,
         );
     }
@@ -5867,7 +5922,7 @@ fn synthesized_native_dispositions(
     for arena in namespace.arenas().keys() {
         let regenerated = match arena.as_str() {
             "properties" | "product_properties" => represented_names,
-            "cards" | "transformations" | "manifold_solids" => !degraded_geometry,
+            "transformations" | "manifold_solids" => !degraded_geometry,
             "display_attributes"
             | "macro_definitions"
             | "macro_instances"
@@ -6005,7 +6060,7 @@ fn append_free_point_entity(
     entities.push(entity);
     let color = carrier_display_color(
         ir,
-        cadmpeg_ir::appearance::AppearanceTarget::Point(point.id.clone()),
+        &cadmpeg_ir::appearance::AppearanceTarget::Point(point.id.clone()),
         &format!("point {}", point.id),
         losses,
     );
@@ -6125,13 +6180,13 @@ fn analytic_surface_family(geometry: &SolvedSurfaceGeometry) -> Option<AnalyticS
 fn append_surface_entities(
     ctx: &DecodeContext<'_>,
     entities: &mut Vec<Entity>,
-    ir: &CadIr,
+    input: (&CadIr, crate::IgesVersion),
     surface: &Surface,
-    version: crate::IgesVersion,
     ownership: &ownership::SourceOwnership<'_>,
     presentations: &mut BTreeMap<usize, BodyPresentation>,
     losses: &mut Vec<LossNote>,
 ) -> Result<Option<usize>, CodecError> {
+    let (ir, version) = input;
     let Some(status) = ownership.surface_status(surface) else {
         report_unowned_support(losses, surface.id.as_str());
         return Ok(None);
@@ -6158,7 +6213,7 @@ fn append_surface_entities(
     {
         let color = carrier_display_color(
             ir,
-            cadmpeg_ir::appearance::AppearanceTarget::Surface(surface.id.clone()),
+            &cadmpeg_ir::appearance::AppearanceTarget::Surface(surface.id.clone()),
             &format!("surface {}", surface.id),
             losses,
         );
@@ -7978,7 +8033,7 @@ fn append_unowned_curves(
         }
         let color = carrier_display_color(
             ir,
-            cadmpeg_ir::appearance::AppearanceTarget::Curve(curve.id.clone()),
+            &cadmpeg_ir::appearance::AppearanceTarget::Curve(curve.id.clone()),
             &format!("curve {}", curve.id),
             losses,
         );
@@ -8062,6 +8117,19 @@ fn mark_curve_descendants(
 }
 
 fn edge_span(ir: &CadIr, edge: &Edge, geometry: &CurveGeometry) -> Result<CurveSpan, CodecError> {
+    checked_edge_span(ir, edge, geometry)?.ok_or_else(|| {
+        unsupported(format_args!(
+            "IGES edge {} endpoints disagree with its curve parameter range",
+            edge.id
+        ))
+    })
+}
+
+fn checked_edge_span(
+    ir: &CadIr,
+    edge: &Edge,
+    geometry: &CurveGeometry,
+) -> Result<Option<CurveSpan>, CodecError> {
     if matches!(
         geometry,
         CurveGeometry::Solved(SolvedCurveGeometry::Composite { .. })
@@ -8072,7 +8140,7 @@ fn edge_span(ir: &CadIr, edge: &Edge, geometry: &CurveGeometry) -> Result<CurveS
                 edge.id
             ))
         })?;
-        return curve_reference_span(ir, curve_id, geometry);
+        return curve_reference_span(ir, curve_id, geometry).map(Some);
     }
     let missing_range = || {
         CodecError::UnsupportedContent(format!(
@@ -8141,13 +8209,10 @@ fn edge_span(ir: &CadIr, edge: &Edge, geometry: &CurveGeometry) -> Result<CurveS
             if full_period {
                 return Err(missing_range());
             }
-            return Err(CodecError::malformed(format_args!(
-                "IGES edge {} endpoints disagree with its curve parameter range",
-                edge.id
-            )));
+            return Ok(None);
         }
     }
-    Ok(CurveSpan { range, start, end })
+    Ok(Some(CurveSpan { range, start, end }))
 }
 
 /// The canonical closed-traversal interval of a closed edge that stores no

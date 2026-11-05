@@ -57,18 +57,12 @@ fn decoded_parameter_records_have_their_primary_type_guids() {
     let scan = crate::container::scan(&ctx, root).unwrap();
     let mut output =
         cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
-    let mut parameters =
+    let parameters =
         super::super::decode_parameters(&ctx, &scan, &mut output, &mut Default::default()).unwrap();
-    let mut owners =
-        super::super::decode_parameter_owners(&ctx, &scan, &mut parameters, &mut output).unwrap();
-    let companions = super::super::decode_parameter_companions(
-        &ctx,
-        &scan,
-        &mut owners,
-        &mut parameters,
-        &mut output,
-    )
-    .unwrap();
+    let owners =
+        super::super::decode_parameter_owners(&ctx, &scan, &parameters, &mut output).unwrap();
+    let companions =
+        super::super::decode_parameter_companions(&ctx, &scan, &owners, &mut output).unwrap();
     assert_eq!(
         (parameters.len(), owners.len(), companions.len()),
         (1, 1, 1)

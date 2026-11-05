@@ -95,7 +95,8 @@ pub(super) fn apply_circular(
                     if !index.is_finite() || index < 0.0 || index >= f64::from(locations) {
                         return Err("circular angle is outside the source grid".into());
                     }
-                    let index = index as u32;
+                    let index = cadmpeg_core::convert::truncate_f64_to_u32(index)
+                        .ok_or("circular angle is outside the source grid")?;
                     if source_delta * f64::from(index) != angle {
                         return Err("circular angle has no exact IGES grid position".into());
                     }

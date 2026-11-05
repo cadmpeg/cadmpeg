@@ -77,14 +77,24 @@ fn source_less_primitive_feature_survives_synthesis() {
         native_ref: None,
     });
 
-    // Two BREP records and seven indexed feature records are emitted.
+    // Two BREP records and ten feature records are emitted.
     let mut limited = EncodeInput::new(&ir, None);
     limited.limits.max_entities = 8;
     assert!(matches!(F3dCodec.plan(limited, TargetRequest::Inherit),
         Err(cadmpeg_ir::codec::write::EncodeError::ResourceLimit(limit))
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities));
+    let mut limited = EncodeInput::new(&ir, None);
+    limited.limits.max_entities = 9;
+    assert!(matches!(F3dCodec.plan(limited, TargetRequest::Inherit),
+        Err(cadmpeg_ir::codec::write::EncodeError::ResourceLimit(limit))
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities));
+    let mut limited = EncodeInput::new(&ir, None);
+    limited.limits.max_entities = 11;
+    assert!(matches!(F3dCodec.plan(limited, TargetRequest::Inherit),
+        Err(cadmpeg_ir::codec::write::EncodeError::ResourceLimit(limit))
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities));
     let mut exact = EncodeInput::new(&ir, None);
-    exact.limits.max_entities = 9;
+    exact.limits.max_entities = 12;
     F3dCodec
         .plan(exact, TargetRequest::Inherit)
         .expect("exact output record budget");

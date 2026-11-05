@@ -1109,7 +1109,7 @@ fn prepare_write<'a, 'budget>(
             }
             Err(error) => return Err(error),
         }
-        if let Some((wire, curve_id)) = wire::single_line(&baked, archive_version)? {
+        if let Some((wire, curve_id, conversion)) = wire::single_curve(&baked, archive_version)? {
             let body = &baked.model.bodies[0];
             let edge = &baked.model.edges[0];
             let display = presentation::display(
@@ -1134,7 +1134,17 @@ fn prepare_write<'a, 'budget>(
                 "body {} wire ownership is written as a 3DM Brep without shell membership: region {}, shell {}",
                 body.id, baked.model.regions[0].id, baked.model.shells[0].id
             )));
+            losses.extend(conversion);
             if let Some(curve) = baked.model.curves.iter().find(|curve| curve.id == curve_id) {
+                if matches!(
+                    curve.geometry.solved(),
+                    Some(cadmpeg_ir::geometry::SolvedCurveGeometry::Circle(_))
+                ) {
+                    losses.push(RhinoLossCode::WriterCarrierResolved.note(format!(
+                        "curve {} is written as its exact bounded 3DM arc",
+                        curve.id
+                    )));
+                }
                 if !is_support(curve.source_object.as_ref()) {
                     losses.push(RhinoLossCode::WriterCarrierResolved.note(format!(
                         "curve {} is written as a Brep edge carrier",
@@ -1316,6 +1326,30 @@ fn prepare_write<'a, 'budget>(
         )?;
     }
     for (baked, reason) in failed_bodies {
+        let mut retained_body = false;
+        if reason.is_some() {
+            if let Some((payload, retained)) = wire::vertex_body(&baked, archive_version)? {
+                let body = &baked.model.bodies[0];
+                ctx.charge_entities(payload.record_count, "write Rhino Brep records")?;
+                brep_records.append(
+                    &brep_object_record(
+                        ir,
+                        &payload,
+                        body.id.as_str(),
+                        body.name.as_deref(),
+                        body.color,
+                        body.visible,
+                        &materials,
+                    )?,
+                    "retain Rhino Brep records",
+                )?;
+                carried.extend(retained);
+                carried.insert(body.id.to_string());
+                written_bodies.insert(body.id.to_string());
+                brep_count += 1;
+                retained_body = true;
+            }
+        }
         brep_count += salvage::write(
             ctx,
             ir,
@@ -1327,7 +1361,20 @@ fn prepare_write<'a, 'budget>(
             &mut written_curves,
         )?;
         if let Some(reason) = reason {
-            losses.push(omitted_body(&baked, &reason, &carried));
+            if retained_body {
+                let members = reduce::body_closure(&baked)
+                    .difference(&carried)
+                    .cloned()
+                    .collect::<Vec<_>>();
+                losses.push(RhinoLossCode::WriterBodyReduced.note(format!(
+                    "body {} is reduced to a vertex Brep: {reason}; {} omitted member record(s): {}",
+                    baked.model.bodies[0].id,
+                    members.len(),
+                    members.join(", ")
+                )));
+            } else {
+                losses.push(omitted_body(&baked, &reason, &carried));
+            }
         }
     }
     Ok(WritePlan {

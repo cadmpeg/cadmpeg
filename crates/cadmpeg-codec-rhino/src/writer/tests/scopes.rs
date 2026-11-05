@@ -225,6 +225,160 @@ fn wire_brep_retains_edge_and_endpoints_and_names_unrepresented_ownership() {
 }
 
 #[test]
+fn bounded_circular_wire_keeps_its_edge_and_exact_arc() {
+    const POSITION_TOLERANCE: f64 = 1e-10;
+    let mut ir = wire(BodyKind::Wire);
+    let edge = &mut ir.model.edges[0];
+    edge.set_param_range(Some([0.0, std::f64::consts::FRAC_PI_2].try_into().unwrap()));
+    let endpoints = [edge.start.clone(), edge.end.clone()];
+    let curve = &mut ir.model.curves[0];
+    curve.parameter_range = Some([0.0, std::f64::consts::FRAC_PI_2].try_into().unwrap());
+    curve.geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(
+        cadmpeg_ir::geometry::SolvedCurveGeometry::Circle(
+            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                4.0,
+            )
+            .unwrap(),
+        ),
+    );
+    for (vertex_id, position) in endpoints
+        .into_iter()
+        .zip([Point3::new(4.0, 0.0, 0.0), Point3::new(0.0, 4.0, 0.0)])
+    {
+        let vertex = ir
+            .model
+            .vertices
+            .iter()
+            .find(|vertex| vertex.id == vertex_id)
+            .unwrap();
+        let point = ir
+            .model
+            .points
+            .iter_mut()
+            .find(|point| point.id == vertex.point)
+            .unwrap();
+        point.set_position(FinitePoint3::new(position).unwrap());
+    }
+    let (decoded, losses) = roundtrip(&ir);
+    assert_eq!(decoded.model.edges.len(), 1);
+    assert_eq!(decoded.model.vertices.len(), 2);
+    assert_eq!(decoded.model.curves.len(), 1);
+    for parameter in [
+        0.0,
+        std::f64::consts::FRAC_PI_4,
+        std::f64::consts::FRAC_PI_2,
+    ] {
+        let expected = curve_position(&ir.model.curves[0], parameter);
+        let actual = curve_position(&decoded.model.curves[0], parameter);
+        assert!((expected.x - actual.x).abs() < POSITION_TOLERANCE);
+        assert!((expected.y - actual.y).abs() < POSITION_TOLERANCE);
+        assert!((expected.z - actual.z).abs() < POSITION_TOLERANCE);
+    }
+    assert!(losses
+        .iter()
+        .any(|loss| loss.message.contains(ir.model.curves[0].id.as_str())));
+}
+
+#[test]
+fn body_with_uncarried_edges_retains_its_vertices() {
+    let mut ir = sheet();
+    for edge in &mut ir.model.edges {
+        edge.set_curve(None).unwrap();
+    }
+    ir.model.curves.clear();
+    let (payload, _) = super::super::wire::vertex_body(&ir, crate::RhinoArchiveVersion::V8)
+        .expect("vertex Brep serialization")
+        .expect("held vertices have a native carrier");
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let parsed = crate::brep::parse(
+        &ctx,
+        &payload.body,
+        0..payload.body.len(),
+        crate::chunks::ArchiveVersion::V8,
+        Some(super::super::OPENNURBS_WRITER_VERSION),
+        &[],
+    )
+    .expect("native Brep grammar");
+    let crate::brep::BrepParse::Valid(brep) = parsed else {
+        panic!("vertex Brep topology must be valid");
+    };
+    assert_eq!(brep.raw().vertices.len(), ir.model.vertices.len());
+    for (native, vertex) in brep.raw().vertices.iter().zip(&ir.model.vertices) {
+        let point = ir
+            .model
+            .points
+            .iter()
+            .find(|point| point.id == vertex.point)
+            .unwrap();
+        let position = point.position().get();
+        assert_eq!(native.point.get(), [position.x, position.y, position.z]);
+    }
+    assert!(brep.raw().edges.is_empty());
+    assert!(brep.raw().faces.is_empty());
+    let (decoded, losses) = roundtrip(&ir);
+    for point in &ir.model.points {
+        assert!(decoded
+            .model
+            .points
+            .iter()
+            .any(|output| output.position() == point.position()));
+    }
+    let reduction = losses
+        .iter()
+        .find(|loss| loss.code == RhinoLossCode::WriterBodyReduced.kind())
+        .expect("the partial body names its omitted records");
+    assert!(reduction.message.contains(ir.model.bodies[0].id.as_str()));
+    for id in ir
+        .model
+        .edges
+        .iter()
+        .map(|edge| edge.id.as_str())
+        .chain(ir.model.faces.iter().map(|face| face.id.as_str()))
+    {
+        assert!(reduction.message.contains(id), "missing loss for {id}");
+    }
+}
+
+#[test]
+fn vertex_only_body_preserves_point_appearance() {
+    let source = RhinoCodec
+        .decode(
+            &mut Cursor::new(include_bytes!(
+                "../../../tests/golden/fixtures/generated_point.3dm"
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode point appearance");
+    let mut ir = sheet();
+    for edge in &mut ir.model.edges {
+        edge.set_curve(None).unwrap();
+    }
+    ir.model.curves.clear();
+    let mut appearance = source.ir().model.appearances[0].clone();
+    appearance.native_ref = None;
+    let blue = cadmpeg_ir::topology::Color::new(0.0, 0.0, 1.0, 1.0).unwrap();
+    appearance.base_color = Some(blue);
+    let mut binding = source.ir().model.appearance_bindings[0].clone();
+    binding.native_ref = None;
+    binding.target = cadmpeg_ir::appearance::AppearanceTarget::Point(ir.model.points[0].id.clone());
+    let position = ir.model.points[0].position();
+    ir.model.appearances.push(appearance);
+    ir.model.appearance_bindings.push(binding);
+    let (decoded, _) = roundtrip(&ir);
+    let point = decoded
+        .model
+        .points
+        .iter()
+        .find(|point| point.position() == position)
+        .expect("standalone point survives");
+    let target = cadmpeg_ir::appearance::AppearanceTarget::Point(point.id.clone());
+    assert_eq!(decoded.effective_display_color(&target), Some(blue));
+}
+
+#[test]
 fn loose_edge_uses_its_appearance_before_the_body_color() {
     let source = RhinoCodec
         .decode(
@@ -569,8 +723,9 @@ fn full_domain_rational_nurbs_wire_preserves_poles_weights_and_placement() {
             Point3::new(14.0, 20.0, 30.0),
         ]
     );
-    assert!(decoded.model.bodies.is_empty());
-    assert!(decoded.model.edges.is_empty());
+    assert_eq!(decoded.model.bodies.len(), 1);
+    assert_eq!(decoded.model.edges.len(), 1);
+    assert_eq!(decoded.model.vertices.len(), 2);
     assert_curve_style(
         &decoded,
         &decoded.model.curves[0],
