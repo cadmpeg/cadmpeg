@@ -20,6 +20,24 @@ const SEAM: &[u8] = include_bytes!(concat!(
 ));
 
 #[test]
+fn a_missing_identity_mapping_does_not_claim_coverage() {
+    let source = RhinoCodec
+        .decode(&mut Cursor::new(BREP), &DecodeOptions::default())
+        .unwrap();
+    let ir = source.ir();
+    let mut ids = super::ordinal_identities(ir, ir).unwrap();
+    assert!(ids.remove(ir.model.vertices[0].point.as_str()).is_some());
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).unwrap();
+    assert!(!super::agrees(
+        &ctx,
+        &ir.model.vertices,
+        &ir.model.vertices,
+        &ids
+    ));
+}
+
+#[test]
 fn synthesized_brep_claims_real_written_topology() {
     let source = RhinoCodec
         .decode(&mut Cursor::new(BREP), &DecodeOptions::default())
