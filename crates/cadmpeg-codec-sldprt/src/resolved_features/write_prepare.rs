@@ -1339,21 +1339,16 @@ fn source_less_lanes(
                 flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
             std::io::Write::write_all(&mut encoder, frame)?;
             let compressed = encoder.finish()?;
-            let frame_len = u32::try_from(frame.len()).map_err(|_| {
-                cadmpeg_core::CodecError::NotImplemented("SLDPRT sketch frame exceeds u32".into())
-            })?;
-            let compressed_len = u32::try_from(compressed.len()).map_err(|_| {
-                cadmpeg_core::CodecError::NotImplemented(
-                    "SLDPRT compressed sketch frame exceeds u32".into(),
-                )
-            })?;
+            let frame_len =
+                crate::writer::field_u32(&crate::writer::CAPACITY_FIELDS[33], frame.len())?;
+            let compressed_len =
+                crate::writer::field_u32(&crate::writer::CAPACITY_FIELDS[34], compressed.len())?;
             section.extend_from_slice(&frame_len.to_le_bytes());
             section.extend_from_slice(&compressed_len.to_le_bytes());
             section.extend(compressed);
         }
-        let chain_len = u32::try_from(section.len()).map_err(|_| {
-            cadmpeg_core::CodecError::NotImplemented("SLDPRT sketch wrapper exceeds u32".into())
-        })?;
+        let chain_len =
+            crate::writer::field_u32(&crate::writer::CAPACITY_FIELDS[35], section.len())?;
         payload.extend_from_slice(&chain_len.to_le_bytes());
         payload.extend(section);
         objects.push((configuration, owner.ordinal, payload));

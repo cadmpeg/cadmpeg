@@ -133,7 +133,7 @@ pub(crate) fn entry_part_loss(
     Ok(loss)
 }
 
-/// Preserve unindexed-record and manifest recovery diagnostics on decode and
+/// Preserve manifest recovery diagnostics on decode and
 /// inspection routes. Unreadable archive entries are given up as `zip.entry`
 /// parts with their own stub, so they are reported by [`entry_part_losses`]
 /// on inspection and archive-session routes and by the decode give-up.
@@ -141,27 +141,6 @@ pub(crate) fn header_losses(
     scan: &ContainerScan<'_>,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), cadmpeg_core::CodecError> {
-    for (name, run, stored) in &scan.unindexed_record_runs {
-        let retained = stored.checked_sub(run.start).ok_or_else(|| {
-            cadmpeg_core::CodecError::malformed(
-                "F3D unindexed record run exceeds its stored stream",
-            )
-        })?;
-        losses.push(
-            crate::loss::F3dLossCode::UnindexedRecordsRetained
-                .note(format!(
-                    "{name} stores {} record header(s) in {} byte(s) after its last indexed record, restarting at record index {}; they are not decoded and are retained natively.",
-                    run.headers,
-                    retained,
-                    run.first_record_index
-                ))
-                .with_provenance(cadmpeg_ir::SourceProvenance::in_stream(
-                    "f3d",
-                    cadmpeg_ir::stream_name!("BulkStream.dat"),
-                    cadmpeg_core::decode::u64_from_index(run.start),
-                )),
-        );
-    }
     for diagnostic in &scan.manifest_diagnostics {
         let message = format!(
             "{} is unreadable; manifest selectors retained",
