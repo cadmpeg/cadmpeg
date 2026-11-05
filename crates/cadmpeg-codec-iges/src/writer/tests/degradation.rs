@@ -1299,3 +1299,53 @@ fn empty_v4_model_emits_the_identity_frame() {
         .iter()
         .all(|loss| !loss.message.contains("transformation")));
 }
+
+#[test]
+fn face_custom_color_keeps_its_appearance_name() {
+    let harness =
+        cadmpeg_test_support::golden::Harness::new(env!("CARGO_MANIFEST_DIR"), "igs", "unused");
+    let (_, bytes) = harness
+        .fixture_inputs()
+        .into_iter()
+        .find(|(name, _)| name == "colored_explicit_vertex_loop")
+        .unwrap();
+    let decoded = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).unwrap();
+    for record in [
+        "iges:appearance:color#D13",
+        "iges:model:appearance-binding#face-D9",
+    ] {
+        assert!(plan
+            .report()
+            .losses
+            .iter()
+            .all(|loss| !loss.message.contains(record)));
+    }
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let binding = output
+        .ir()
+        .model
+        .appearance_bindings
+        .iter()
+        .find(|binding| {
+            matches!(
+                binding.target,
+                cadmpeg_ir::appearance::AppearanceTarget::Face(_)
+            )
+        })
+        .unwrap();
+    let appearance = output
+        .ir()
+        .model
+        .appearances
+        .iter()
+        .find(|appearance| appearance.id == binding.appearance)
+        .unwrap();
+    assert_eq!(appearance.name.as_deref(), Some("custom"));
+}
