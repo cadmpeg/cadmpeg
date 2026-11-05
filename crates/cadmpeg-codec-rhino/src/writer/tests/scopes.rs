@@ -158,10 +158,9 @@ fn general_and_wire_bodies_preserve_wire_geometry_style_and_placement() {
         styled(&mut ir);
         let (decoded, losses) = roundtrip(&ir);
         assert_eq!(decoded.model.curves.len(), 1);
-        // Modern ONCurve projection emits a free carrier, not an owning body
-        // or edge. That structural reduction must be reported even for one wire.
-        assert!(decoded.model.edges.is_empty());
-        assert!(decoded.model.bodies.is_empty());
+        assert_eq!(decoded.model.edges.len(), 1);
+        assert_eq!(decoded.model.vertices.len(), 2);
+        assert_eq!(decoded.model.bodies.len(), 1);
         let curve = &decoded.model.curves[0];
         assert_curve_style(&decoded, curve, &ir, ir.model.bodies[0].name.as_deref());
         assert_eq!(curve_position(curve, 0.0), Point3::new(10.0, 20.0, 30.0));
@@ -191,22 +190,28 @@ fn free_vertex_with_tolerance_keeps_its_point() {
 }
 
 #[test]
-fn wire_reduction_names_edge_and_endpoint_records() {
+fn wire_brep_retains_edge_and_endpoints_and_names_unrepresented_ownership() {
     let ir = wire(BodyKind::Wire);
-    let edge = &ir.model.edges[0];
-    let mut members = vec![
-        edge.id.to_string(),
-        edge.start.to_string(),
-        edge.end.to_string(),
-    ];
-    members.extend(
-        ir.model
-            .vertices
-            .iter()
-            .map(|vertex| vertex.point.to_string()),
-    );
     let (decoded, losses) = roundtrip(&ir);
     assert_eq!(decoded.model.curves.len(), 1);
+    assert_eq!(decoded.model.edges.len(), 1);
+    assert_eq!(decoded.model.vertices.len(), 2);
+    assert_eq!(decoded.model.points.len(), 2);
+    let source_positions = ir
+        .model
+        .points
+        .iter()
+        .map(|point| point.position().get())
+        .collect::<Vec<_>>();
+    let output_positions = decoded
+        .model
+        .points
+        .iter()
+        .map(|point| point.position().get())
+        .collect::<Vec<_>>();
+    for point in source_positions {
+        assert!(output_positions.contains(&point));
+    }
     let reduction = losses
         .iter()
         .find(|loss| {
@@ -214,9 +219,9 @@ fn wire_reduction_names_edge_and_endpoint_records() {
                 && loss.message.contains("wire ownership")
         })
         .expect("wire reduction is reported");
-    for member in members {
-        assert!(reduction.message.contains(&member), "missing {member}");
-    }
+    assert!(reduction.message.contains(ir.model.bodies[0].id.as_str()));
+    assert!(reduction.message.contains(ir.model.regions[0].id.as_str()));
+    assert!(reduction.message.contains(ir.model.shells[0].id.as_str()));
 }
 
 #[test]
@@ -509,6 +514,10 @@ fn inconsistent_wire_endpoint_is_an_export_omission() {
         })
         .expect("the omission names its record");
     assert!(loss.message.contains("carrier disagrees"), "{loss:?}");
+    assert!(
+        loss.message.contains(ir.model.edges[0].id.as_str()),
+        "{loss:?}"
+    );
 }
 
 #[test]
@@ -660,8 +669,9 @@ fn null_containing_body_name_is_omitted_with_warning_and_geometry_is_written() {
     ir.model.bodies[0].name = Some("left\0right".into());
     let (decoded, losses) = roundtrip(&ir);
     assert_eq!(decoded.model.curves.len(), 1);
-    assert!(decoded.model.edges.is_empty());
-    assert!(decoded.model.bodies.is_empty());
+    assert_eq!(decoded.model.edges.len(), 1);
+    assert_eq!(decoded.model.vertices.len(), 2);
+    assert_eq!(decoded.model.bodies.len(), 1);
     assert_curve_style(&decoded, &decoded.model.curves[0], &ir, None);
     assert_eq!(
         curve_position(&decoded.model.curves[0], 4.0),
