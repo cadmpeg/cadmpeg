@@ -631,10 +631,12 @@ pub(super) fn plan(
         &projected,
         &Annotations::default(),
         &[],
-        super::ClassLayouts::Authored,
-        declaration,
-        prepared_native,
-        source_trust,
+        super::SemanticOptions {
+            class_layouts: super::ClassLayouts::Authored,
+            sw_version: declaration,
+            prepared_native,
+            source_trust,
+        },
         &mut bytes,
     )?;
     debug_assert_eq!(
