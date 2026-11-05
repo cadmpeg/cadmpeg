@@ -892,8 +892,8 @@ fn parse_persisted_property(
         None => crate::fidelity::relative_xml_extent(stages.view, node.range())?,
     };
     let mut spec = document_part("freecad.property_value");
-    if let Some(class) = crate::fidelity::property_value_class(objects, owner, &type_name) {
-        spec = spec.holding([class]);
+    if let Some(classes) = crate::fidelity::property_value_classes(objects, owner, &type_name) {
+        spec = spec.holding(classes);
     }
     property.body = stages.ctx.decode_part(stages.stage, extent, spec, |_| {
         Ok(property_body(node, owner, &name, &type_name)?)
