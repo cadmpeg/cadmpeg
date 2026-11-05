@@ -288,6 +288,14 @@ Tagging slot 0 requires its input and result body revisions, its topology-naming
 
 **Need.** Slot 0 requires the Coil input/result body construction joins for operations outside new-body creation. Slot 1 requires its selected-profile construction join. Slot 2 requires the axis control and orientation rules outside the zero-control work-axis form. Slot 3 requires its Boolean construction role and polarity. Slot 4 requires its Boolean role and its relation to axis direction. Slot 5 requires its control grammar and the type-selector map for pitch and revolution, revolution and height, pitch and height, and spiral. Slots 6 through 9, 11, 12, 14, and 15 require their driving and inactive parameter roles, sign conventions, and parameter dependencies. Boolean slots 10 and 13 require their construction roles and any joins to end conditions. The profile selection requires its consumed-sketch and axis joins. Result selections require their input/result revision joins. Each polarity requires a controlled positive case before a neutral helical sweep can represent it.
 
+### DE-14. Base-unit type `705efe5d424e6e12692a3eb419b88a89`
+
+**Question.** Which dimension and display scale does base-unit type `705efe5d424e6e12692a3eb419b88a89` define?
+
+**Known.** The record has the 22-byte base-unit layout with magnitude 1 and factor 1. Unit definitions name it as their sole numerator, and value expressions that use those definitions store internal-centimetre values.
+
+**Need.** A stored scale, a stored symbol, or a displayed-text form of a literal in this unit.
+
 ## 5. Adjacent envelopes
 
 ### EN-01. Other CFB and RSe versions

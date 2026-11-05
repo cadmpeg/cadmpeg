@@ -4696,6 +4696,7 @@ pub(crate) mod tests {
             model_roots: Vec::new(),
             brep_segments: Vec::new(),
             issues: Vec::new(),
+            opaque_base_units: std::collections::HashSet::default(),
         };
         let sketch = crate::sketch::SketchInventory {
             sketches: Vec::new(),

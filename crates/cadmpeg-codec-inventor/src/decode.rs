@@ -1026,6 +1026,12 @@ fn decode_container<'a>(
                 unresolved.parameters
             )));
         }
+        if unresolved.value_only_parameters != 0 {
+            losses.push(InventorLossCode::ParameterExpressionNative.note(format!(
+                "Transferred {} Inventor parameter(s) with their exact value and no expression text: the unit record of the root literal has an unrecognised type and stays native.",
+                unresolved.value_only_parameters
+            )));
+        }
         losses.extend(crate::design::bounded_expression_loss(
             unresolved.bounded_parameters,
         ));
@@ -1464,6 +1470,7 @@ struct UnresolvedDesign {
     parameters: usize,
     parameter_scopes: usize,
     bounded_parameters: usize,
+    value_only_parameters: usize,
     sketches: usize,
     sketch_entities: usize,
     sketch_constraints: usize,
@@ -1546,6 +1553,7 @@ fn project_design(
         parameters: parameters.unresolved,
         parameter_scopes: parameters.unresolved_scopes,
         bounded_parameters: parameters.bounded,
+        value_only_parameters: parameters.value_only,
         sketches: sketches.unresolved_sketches,
         sketch_entities: sketches.unresolved_entities,
         sketch_constraints: sketches.unresolved_constraints,
