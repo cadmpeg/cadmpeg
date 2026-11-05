@@ -34,7 +34,8 @@ fn unsupported_arena_is_dropped_while_neutral_geometry_is_written() {
         .report()
         .losses
         .iter()
-        .any(|loss| loss.code == IgesLossCode::WriterArenaOmitted.kind()));
+        .any(|loss| loss.code == IgesLossCode::WriterArenaOmitted.kind()
+            && loss.message.contains("test:model:asset#external")));
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes)
         .expect("held geometry writes while unsupported assets are reported");
