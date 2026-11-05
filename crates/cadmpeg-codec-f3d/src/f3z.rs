@@ -187,7 +187,7 @@ fn compose(
     if ctx.container_only() {
         members.clear();
         report.losses.append(&mut outer_losses);
-        return finalize_result(ir, source, report, fidelity);
+        return Ok(finalize_result(ir, source, report, fidelity));
     }
 
     let merged = merge::merge_archive(
@@ -214,7 +214,7 @@ fn compose(
     ));
     merge::make_sibling_ordinals_unique(&mut ir.model.occurrences)?;
     report.losses.append(&mut outer_losses);
-    finalize_result(ir, source, report, fidelity)
+    Ok(finalize_result(ir, source, report, fidelity))
 }
 
 fn finalize_result(
@@ -222,18 +222,18 @@ fn finalize_result(
     source: cadmpeg_ir::SourceMeta,
     mut body: DecodeBody,
     source_fidelity: cadmpeg_ir::SourceFidelity,
-) -> Result<Decoded, CodecError> {
+) -> Decoded {
     body.transfer.scope = ir.scope;
     crate::design::owners::release_unbound(&mut ir.model);
     ir.finalize();
     // The decode wrapper stamps the archive digest on the normal path; the
     // archive session stamps the same bytes on the session path.
     ir.source = Some(source);
-    Ok(Decoded {
+    Decoded {
         ir,
         body,
         source_fidelity,
-    })
+    }
 }
 
 #[cfg(test)]
