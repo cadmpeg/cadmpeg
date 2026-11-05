@@ -26,7 +26,7 @@ pub(super) fn regenerated(
         .iter()
         .filter_map(|record| {
             let fields = record.fields().ok()?;
-            for field in ["color_number", "level_number", "line_weight_number", "view"] {
+            for field in ["line_weight_number", "view"] {
                 if fields.get(field).and_then(serde_json::Value::as_i64) != Some(0) {
                     return None;
                 }
@@ -66,12 +66,30 @@ pub(super) fn regenerated(
                 return None;
             }
             let assigned = levels::entity_layer_numbers(entity, &memberships);
-            if assigned.iter().any(|level| *level != 0) {
+            let level = match assigned.len() {
+                0 => 0,
+                1 => *assigned.first()?,
+                _ => return None,
+            };
+            if fields
+                .get("level_number")
+                .and_then(serde_json::Value::as_i64)
+                != Some(level)
+            {
                 return None;
             }
-            if presentations
+            let color = match presentations
                 .get(index)
-                .is_some_and(|presentation| !matches!(presentation.color, BodyColor::Standard(0)))
+                .map(|presentation| presentation.color)
+            {
+                None => 0,
+                Some(BodyColor::Standard(number)) => number,
+                _ => return None,
+            };
+            if fields
+                .get("color_number")
+                .and_then(serde_json::Value::as_i64)
+                != Some(color)
             {
                 return None;
             }
