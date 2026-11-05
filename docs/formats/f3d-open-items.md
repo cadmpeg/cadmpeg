@@ -751,9 +751,9 @@ The first closing reference run identifies a direct contained child by its local
 
 **Question.** Which face does a `MoveFace` or `OffsetFaces` bounded-face member select when the `DeleteFace` bounded-face rule resolves no unique face for its recipe?
 
-**Known.** A member selects the face that its bounded-face recipe resolves in the input state (`f3d.md`, "The members of a `MoveFace` or `OffsetFaces` group also state the selection"). The rule resolves nothing for a member with a node whose structure matches no recipe-structure form, a positive program header that differs from the node count, or node ordinals beyond the prefix operands. A prefix reference to a negative Design reference names every face that the referenced later feature changed, so its lane holds several faces.
+**Known.** A member selects the face that its bounded-face recipe resolves in the input state (`f3d.md`, "The members of a `MoveFace` or `OffsetFaces` group also state the selection"). The rule resolves nothing for a member with a node whose structure matches no recipe-structure form, a positive program header that differs from the node count, or node ordinals beyond the prefix operands.
 
-**Need.** The grammar of these node forms, and whether a negative Design reference adds faces to its operand's lane.
+**Need.** The grammar of these node forms.
 
 **Conflict.** None.
 
