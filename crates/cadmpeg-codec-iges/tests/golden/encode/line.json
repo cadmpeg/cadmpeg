@@ -93,16 +93,6 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 1 native record(s) from `iges.display_attributes`: iges:presentation:display-attributes#D1",
-        "severity": "info"
-      },
-      {
-        "code": {
-          "code": "native.records-omitted",
-          "kind": "record_not_typed",
-          "namespace": "export",
-          "scope": "namespaced"
-        },
         "message": "the iges write omits 1 native record(s) from `iges.entities`: iges:entity:directory#1",
         "severity": "info"
       },
@@ -161,7 +151,10 @@
               "disposition": "dropped"
             },
             "display_attributes": {
-              "disposition": "dropped"
+              "disposition": "regenerated",
+              "records": {
+                "iges:presentation:display-attributes#D1": "regenerated"
+              }
             },
             "drawings": {
               "disposition": "dropped"
