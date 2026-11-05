@@ -1068,3 +1068,24 @@ fn spatial_profiles_and_visibility_are_reported_when_unwritable() {
         3
     );
 }
+
+#[test]
+fn independent_spatial_construction_state_is_reported() {
+    use cadmpeg_ir::codec::write::Encoder;
+
+    let mut ir = source_less_spatial_line(Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0));
+    let entity = ir.model.spatial_sketch_entities[0].id().clone();
+    ir.model.spatial_sketch_entities[0].construction = true;
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(plan.report().losses.iter().any(
+        |loss| loss.message.contains(entity.as_str()) && loss.message.contains("construction")
+    ));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(output.ir().model.spatial_sketch_entities.iter().any(|entity| matches!(entity.geometry.definition(), SpatialSketchGeometryDefinition::Line { start, end } if *start == Point3::new(0.0, 0.0, 0.0) && *end == Point3::new(10.0, 0.0, 0.0))));
+}

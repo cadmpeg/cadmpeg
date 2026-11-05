@@ -544,6 +544,27 @@ fn sketches(
             false
         }
     });
+    let mut relation_entities = HashSet::new();
+    for constraint in &ir.model.spatial_sketch_constraints {
+        if let cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput::PointLineDistance {
+            point,
+            line,
+            ..
+        } = constraint.definition.kind()
+        {
+            relation_entities.insert(point);
+            relation_entities.insert(line);
+        }
+    }
+    for entity in &mut ir.model.spatial_sketch_entities {
+        if entity.construction && !relation_entities.contains(entity.id()) {
+            losses.push(SldprtLossCode::WriterFieldsOmitted.note(format!(
+                "spatial sketch entity {}: the independent construction state has no native encoding",
+                entity.id()
+            )));
+            entity.construction = false;
+        }
+    }
     ir.model.spatial_sketch_entities.retain(|entity| {
         let supported = matches!(
             entity.geometry.definition(),
