@@ -25,6 +25,7 @@ pub(super) struct SketchStream {
     pub(super) meta: Vec<u8>,
     pub(super) sketches: Vec<SketchId>,
     pub(super) entities: Vec<SketchEntityId>,
+    pub(super) text_entities: Vec<SketchEntityId>,
     pub(super) constraints: Vec<SketchConstraintId>,
 }
 
@@ -38,6 +39,8 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
     let mut companions = Vec::new();
     let mut lines = Vec::new();
     let mut circles = Vec::new();
+    let mut texts = Vec::new();
+    let mut text_entities = Vec::new();
     let mut relation_ids = Vec::new();
     let mut constraints = Vec::new();
     let mut sketches = Vec::new();
@@ -262,6 +265,14 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
         containers.push(u64::from(container));
         heads.push(u64::from(head));
         for (member, &(point, companion)) in members.iter().zip(&member_indices) {
+            if let Some(text) = neutral_text(member, point, container) {
+                mark(&mut primary, point, bulk.len())?;
+                super::records::encode_sketch_text(&mut bulk, &text)?;
+                texts.push(u64::from(point));
+                text_entities.push(member.id().clone());
+                entities.push(member.id().clone());
+                continue;
+            }
             let circular = match member.geometry.definition() {
                 SketchGeometryDefinition::Circle { center, radius } => {
                     Some((*center, *radius, 0.0, std::f64::consts::TAU))
@@ -458,6 +469,13 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
         ),
     ]
     .into_iter()
+    .chain((!texts.is_empty()).then_some((
+        "E0618268-3A06-450E-9E94-7CF4C2E66802",
+        "8E9D588C-28EF-43C4-B9A6-AA5430A68D4B",
+        0,
+        "Geometry",
+        texts,
+    )))
     .map(|(guid, base, version, module, entity_ids)| {
         Ok(GeneratedDesignType {
             type_guid: guid.to_owned().try_into().map_err(CodecError::Malformed)?,
@@ -480,12 +498,84 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
         meta,
         sketches,
         entities,
+        text_entities,
         constraints,
     }))
 }
 
 fn underflows(value: f64) -> bool {
     value != 0.0 && value / 10.0 == 0.0
+}
+
+pub(in crate::writer) fn neutral_text(
+    row: &cadmpeg_ir::sketches::SketchEntity,
+    record_index: u32,
+    owner_reference: u32,
+) -> Option<crate::records::sketch_geometry::SketchText> {
+    use crate::records::sketch_geometry::{SketchText, SketchTextAlignment, SketchTextLayout};
+    use cadmpeg_ir::sketches::{
+        SketchTextHorizontalAlignment as H, SketchTextVerticalAlignment as V,
+    };
+    if row.construction {
+        return None;
+    }
+    let SketchGeometryDefinition::Text {
+        text,
+        font_family,
+        font_weight,
+        height,
+        width_factor,
+        placement: Some(placement),
+        horizontal_alignment: Some(horizontal),
+        vertical_alignment: Some(vertical),
+    } = row.geometry.definition()
+    else {
+        return None;
+    };
+    let horizontal = match horizontal {
+        H::Left => 1,
+        H::Right => 2,
+        H::Center => 3,
+        H::Native(value) if !matches!(*value, 1..=3) => *value,
+        H::Native(_) => return None,
+    };
+    let vertical = match vertical {
+        V::Top => 1,
+        V::Bottom => 2,
+        V::Middle => 3,
+        V::Native(value) if !matches!(*value, 1..=3) => *value,
+        V::Native(_) => return None,
+    };
+    let text = SketchText {
+        id: format!("f3d:generated:sketch-text#{record_index}"),
+        record_index,
+        owner_reference,
+        class_tag: "264".to_owned().try_into().ok()?,
+        class_version: 0,
+        byte_offset: None,
+        entity_genesis: None,
+        persistent_id: Some(u64::from(record_index)),
+        base_id: None,
+        text: text.as_str().to_owned(),
+        font_family: font_family.as_str().to_owned(),
+        font_weight: i32::from(*font_weight),
+        height: *height,
+        color: cadmpeg_ir::topology::Color::new(0.0, 0.0, 0.0, 0.0)?,
+        layout: SketchTextLayout::TextexTag {
+            width_factor: cadmpeg_ir::scalar::NonNegativeReal::new(
+                width_factor.map_or(0.0, |value| value.get()),
+            )?,
+            alignment: Some(SketchTextAlignment {
+                horizontal,
+                vertical,
+            }),
+            first_reference: None,
+            second_reference: None,
+            placement: Some(*placement),
+        },
+        raw_bytes: Vec::new().into(),
+    };
+    super::records::sketch_text_supported(&text).then_some(text)
 }
 
 fn unsupported_member(row: &cadmpeg_ir::sketches::SketchEntity) -> bool {
@@ -542,6 +632,7 @@ fn unsupported_member(row: &cadmpeg_ir::sketches::SketchEntity) -> bool {
                                 || !(center.v + radius.get() * angle.sin()).is_finite()
                         })
             }
+            SketchGeometryDefinition::Text { .. } => neutral_text(row, 1, 1).is_none(),
             _ => true,
         }
 }
