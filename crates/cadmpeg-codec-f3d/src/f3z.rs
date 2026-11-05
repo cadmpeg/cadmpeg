@@ -119,6 +119,29 @@ fn compose(
         fidelity.insert_retained_record(id, root_image)?;
     }
     fidelity.retain_unknown_records("f3d", [crate::decode::preserve_source_image(scan)])?;
+    let mut source_untyped = cadmpeg_ir::document::ArenaClasses::default();
+    if session.omitted_drawing_root.is_some() {
+        source_untyped.insert(cadmpeg_ir::document::ArenaClass::Model);
+    }
+    if ctx.container_only() {
+        for member in session.members() {
+            match member.kind() {
+                session::F3zMemberKind::Design | session::F3zMemberKind::Skipped(_) => {
+                    source_untyped.insert(cadmpeg_ir::document::ArenaClass::Model);
+                    source_untyped.insert(cadmpeg_ir::document::ArenaClass::Design);
+                }
+                session::F3zMemberKind::PlacementOnly => {
+                    source_untyped.insert(cadmpeg_ir::document::ArenaClass::Design);
+                }
+                session::F3zMemberKind::Drawing => {
+                    source_untyped.insert(cadmpeg_ir::document::ArenaClass::Model);
+                }
+            }
+        }
+    }
+    if !source_untyped.is_empty() {
+        fidelity.mark_untyped(crate::ids::FILE_SOURCE_IMAGE_ID, source_untyped)?;
+    }
     let mut failed_parts = crate::decode::give_up_unreadable_entries(ctx, scan)?;
     for (path, member) in &session.archive.members {
         let archive::ClassifiedMember::Unreadable(error) = member else {
@@ -149,10 +172,6 @@ fn compose(
     fidelity.append(entry_fidelity)?;
     outer_losses.extend(entry_losses);
     if let Some(drawing_root) = &session.omitted_drawing_root {
-        fidelity.mark_untyped(
-            crate::ids::FILE_SOURCE_IMAGE_ID,
-            [cadmpeg_ir::document::ArenaClass::Model],
-        )?;
         push_loss(&mut report.losses, F3dLossCode::DrawingDocumentOmitted, format_args!(
             "drawing root {drawing_root} is omitted; decoded its unambiguous derived model {model_root}"
         ));
@@ -166,26 +185,6 @@ fn compose(
         "f3z archive: {member_count} document member(s); root {model_root}"
     ));
     if ctx.container_only() {
-        let mut untyped = cadmpeg_ir::document::ArenaClasses::default();
-        for member in session.members() {
-            match member.kind() {
-                session::F3zMemberKind::Design | session::F3zMemberKind::Skipped(_) => {
-                    untyped.insert(cadmpeg_ir::document::ArenaClass::Model);
-                    untyped.insert(cadmpeg_ir::document::ArenaClass::Design);
-                }
-                session::F3zMemberKind::PlacementOnly => {
-                    untyped.insert(cadmpeg_ir::document::ArenaClass::Design);
-                }
-                session::F3zMemberKind::Drawing => {
-                    untyped.insert(cadmpeg_ir::document::ArenaClass::Model);
-                }
-            }
-        }
-        crate::decode::declare_source_untyped(
-            &mut fidelity,
-            crate::ids::FILE_SOURCE_IMAGE_ID,
-            untyped,
-        )?;
         members.clear();
         report.losses.append(&mut outer_losses);
         return finalize_result(ir, source, report, fidelity);

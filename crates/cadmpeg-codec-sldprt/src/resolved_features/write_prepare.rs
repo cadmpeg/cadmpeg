@@ -1438,22 +1438,15 @@ fn source_less_lanes(
             }
         }
         let marker_id = |index: usize| -> Result<u16, crate::writer::write_error::WriteError> {
-            let value = cadmpeg_core::decode::u64_from_index(index) + 1;
-            u16::try_from(value).map_err(|_| crate::writer::write_error::WriteError::Capacity {
-                field: &super::write_generate::LOCAL_MARKER_CAPACITY,
-                value,
-            })
+            super::write_generate::local_marker_id(
+                cadmpeg_core::decode::u64_from_index(index).saturating_add(1),
+            )
         };
-        let marker_count = lines
-            .len()
-            .checked_mul(3)
-            .and_then(|count| count.checked_add(points.len()))
-            .ok_or(crate::writer::write_error::WriteError::Capacity {
-                field: &super::write_generate::LOCAL_MARKER_CAPACITY,
-                value: u64::MAX,
-            })?;
+        let marker_count = cadmpeg_core::decode::u64_from_index(lines.len())
+            .saturating_mul(3)
+            .saturating_add(cadmpeg_core::decode::u64_from_index(points.len()));
         if marker_count != 0 {
-            marker_id(marker_count - 1)?;
+            super::write_generate::local_marker_id(marker_count)?;
         }
         for (index, id) in points.iter().enumerate() {
             let entity = entities
