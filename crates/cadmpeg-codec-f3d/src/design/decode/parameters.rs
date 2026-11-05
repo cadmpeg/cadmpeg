@@ -569,7 +569,7 @@ fn parse_header_form(
         evaluated_value,
         evaluated_value_offset: FrameRelative(i128::from(u64_from_index(name_end))),
         comment: comment
-            .filter(|(text, _)| !text.trim().is_empty())
+            .filter(|(text, _)| !text.is_empty())
             .map(|(value, _)| ParsedParameterUnit {
                 value,
                 offset: FrameRelative(i128::from(u64_from_index(wide_prefix::LEN))),
@@ -672,7 +672,7 @@ fn parse_comment_discriminated_parameter(
         name_offset: FrameRelative(i128::from(u64_from_index(name_at + 4))),
         evaluated_value,
         evaluated_value_offset: FrameRelative(i128::from(u64_from_index(name_end))),
-        comment: (!comment.trim().is_empty()).then(|| ParsedParameterUnit {
+        comment: (!comment.is_empty()).then(|| ParsedParameterUnit {
             value: comment,
             offset: FrameRelative(i128::from(u64_from_index(comment_prefix::LEN))),
         }),

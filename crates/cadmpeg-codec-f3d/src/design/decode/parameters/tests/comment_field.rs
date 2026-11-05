@@ -67,9 +67,17 @@ fn wide_parameter_comment_moves_the_later_fields() {
     let plain = parse_design_parameter_record(&wide_owned("")).expect("no comment");
     assert_eq!(plain.comment(), None);
     assert_eq!(plain.expression_offset(), 54);
-    let blank = parse_design_parameter_record(&wide_owned("  ")).expect("blank comment");
-    assert_eq!(blank.comment(), None);
-    assert_eq!(blank.expression_offset(), 58);
+}
+
+#[test]
+fn wide_parameter_keeps_whitespace_comment_and_offset() {
+    let parameter = parse_design_parameter_record(&wide_owned("  ")).expect("comment");
+    assert_eq!(parameter.comment(), Some("  "));
+    assert_eq!(
+        serde_json::to_value(&parameter).unwrap()["comment_offset"],
+        35
+    );
+    assert_eq!(parameter.expression_offset(), 58);
 }
 
 #[test]
@@ -107,7 +115,14 @@ fn comment_discriminated(owner: Option<u32>, comment: &str, trailer: [u8; 5]) ->
     }
     lp_utf16(&mut frame, "40 mm");
     frame.extend_from_slice(&trailer);
-    lp_utf16(&mut frame, "Linear Dimension-2");
+    lp_utf16(
+        &mut frame,
+        if owner.is_some() {
+            "Linear Dimension-2"
+        } else {
+            "Benutzerparameter"
+        },
+    );
     lp_utf16(&mut frame, "mm");
     lp_utf16(&mut frame, "d1");
     frame.extend_from_slice(&4.0f64.to_le_bytes());
@@ -138,6 +153,7 @@ fn comment_discriminated_document_parameter_keeps_comment_and_flag() {
     let frame = comment_discriminated(None, "note", [0, 0, 1, 0, 1]);
     let parameter = parse_design_parameter_record(&frame).expect("document parameter");
     assert_eq!(parameter.kind(), DesignParameterKind::User);
+    assert_eq!(parameter.source_kind_str(), "Benutzerparameter");
     assert_eq!(parameter.owner_record_index(), None);
     assert_eq!(parameter.comment(), Some("note"));
     assert!(!parameter.flags().driven);
@@ -148,6 +164,17 @@ fn comment_discriminated_document_parameter_keeps_comment_and_flag() {
         serde_json::from_value(wire).unwrap();
     assert_eq!(round_trip.kind(), DesignParameterKind::User);
     assert_eq!(round_trip.comment(), Some("note"));
+}
+
+#[test]
+fn comment_discriminated_parameter_keeps_whitespace_comment_and_offset() {
+    let frame = comment_discriminated(Some(0xee), "  ", [0, 0, 0, 0, 0]);
+    let parameter = parse_design_parameter_record(&frame).expect("comment");
+    assert_eq!(parameter.comment(), Some("  "));
+    assert_eq!(
+        serde_json::to_value(&parameter).unwrap()["comment_offset"],
+        30
+    );
 }
 
 #[test]

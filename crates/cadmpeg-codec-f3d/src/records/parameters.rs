@@ -199,7 +199,7 @@ pub(crate) struct DesignParameter {
     /// Byte offset of `evaluated_value`.
     evaluated_value_offset: u64,
     /// Nonempty parameter comment, when the frame stores one.
-    comment: Option<Located<NonBlankString>>,
+    comment: Option<Located<String>>,
     flags: DesignParameterFlags,
     /// Value of a text parameter, which can be empty.
     text_value: Option<Located<String>>,
@@ -351,8 +351,11 @@ impl DesignParameter {
                         "comment_offset must lie between byte_offset and expression_offset",
                     );
                 }
+                if comment.value.is_empty() {
+                    return Err("comment must not be empty");
+                }
                 Ok(Located {
-                    value: NonBlankString::new(comment.value).ok_or("comment must not be empty")?,
+                    value: comment.value,
                     offset: comment.offset,
                 })
             })
