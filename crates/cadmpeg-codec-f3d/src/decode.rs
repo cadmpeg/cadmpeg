@@ -2636,6 +2636,10 @@ impl<'a> F3dDecodeSession<'a> {
     fn into_result(mut self, path: SessionPath) -> Result<AuthoredDecoded, CodecError> {
         self.admit_model_entities("admit F3D geometry entities")?;
         let prereqs = self.decode_product_prereqs(&path)?;
+        if let Some(unit) = &prereqs.modeling_length_unit {
+            self.source_attributes
+                .insert("modeling_length_unit".to_owned(), unit.clone());
+        }
         self.report
             .losses
             .extend(prereqs.design_parameter_scope_losses.iter().cloned());
@@ -3495,6 +3499,17 @@ fn decode_scanned_document<'a>(
             mut source_attributes,
             unknowns,
         } = build_metadata_ir(scan)?;
+        let mut unit_parts =
+            cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, ctx);
+        if let Some(unit) =
+            crate::design::decode::units::decode_document_length_unit(ctx, &mut unit_parts, scan)?
+        {
+            source_attributes.insert("modeling_length_unit".to_owned(), unit);
+        }
+        let (_, mut unit_native, unit_fidelity, unit_losses) = unit_parts.into_parts();
+        let unit_stubs = unit_native
+            .namespace_mut("f3d")
+            .arena_as_for_decode::<cadmpeg_ir::NativeUnknownRecord>(ctx, "unknowns")?;
         ir.scope = cadmpeg_ir::document::ContentScope::container();
         annotate_docstruct(ctx, &mut source_attributes, scan)?;
         let annotations = populate_annotations(&ir, scan, &F3dNative::default(), None, &unknowns)?;
@@ -3507,6 +3522,7 @@ fn decode_scanned_document<'a>(
             },
             container_losses(scan, &ModelBrepOutcome::NotAttempted),
         )?;
+        report.losses.extend(unit_losses);
         match crate::xref::decode(ctx, scan) {
             Ok(Some(table)) => {
                 apply_assembly_classification(ctx, &mut report, scan, &table, false)?;
@@ -3533,11 +3549,8 @@ fn decode_scanned_document<'a>(
                     ctx,
                     cadmpeg_ir::Annotations::default(),
                 ),
-                bulk_record_part_fidelity: cadmpeg_ir::SourceFidelity::for_decode(
-                    ctx,
-                    cadmpeg_ir::Annotations::default(),
-                ),
-                bulk_record_part_stubs: Vec::new(),
+                bulk_record_part_fidelity: unit_fidelity,
+                bulk_record_part_stubs: unit_stubs,
                 mesh_part_fidelity: cadmpeg_ir::SourceFidelity::for_decode(
                     ctx,
                     cadmpeg_ir::Annotations::default(),
@@ -5268,10 +5281,6 @@ fn source_attributes_and_tolerances(
             attributes.insert("asset_folder".to_owned(), copy);
         }
     }
-    if let Some(unit) = crate::design::decode::units::decode_document_length_unit(scan) {
-        attributes.insert("modeling_length_unit".to_owned(), unit);
-    }
-
     let mut tolerances = Tolerances::default();
     if let Some(h) = primary_model_brep
         .kernel
@@ -5475,10 +5484,6 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<MetadataIr, CodecError> {
             attributes.insert("asset_folder".to_owned(), copy);
         }
     }
-    if let Some(unit) = crate::design::decode::units::decode_document_length_unit(scan) {
-        attributes.insert("modeling_length_unit".to_owned(), unit);
-    }
-
     let brep = container::select_fallback_brep(scan);
     let partial_header = if brep.is_none() {
         scan.partial_brep_header()
