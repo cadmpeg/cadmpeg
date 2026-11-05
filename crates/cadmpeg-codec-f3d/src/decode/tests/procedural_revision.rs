@@ -695,18 +695,27 @@ fn decode_carries_the_document_modeling_length_unit_into_source_metadata() {
     zip.write_all(&meta).unwrap();
     let archive = zip.finish().unwrap().into_inner();
 
-    let result = F3dCodec
-        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
-        .expect("decode with a unit-systems design stream");
-    assert_eq!(
-        result
-            .ir()
-            .source
-            .as_ref()
-            .and_then(|source| source.attributes.get("modeling_length_unit"))
-            .map(String::as_str),
-        Some("inch")
-    );
+    for depth in [
+        cadmpeg_core::decode::DecodeDepth::Full,
+        cadmpeg_core::decode::DecodeDepth::Container,
+    ] {
+        let options = DecodeOptions {
+            depth,
+            ..DecodeOptions::default()
+        };
+        let result = F3dCodec
+            .decode(&mut Cursor::new(&archive), &options)
+            .expect("decode with a unit-systems design stream");
+        assert_eq!(
+            result
+                .ir()
+                .source
+                .as_ref()
+                .and_then(|source| source.attributes.get("modeling_length_unit"))
+                .map(String::as_str),
+            Some("inch")
+        );
+    }
 }
 
 #[test]

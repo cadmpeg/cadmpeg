@@ -21,12 +21,19 @@ use cadmpeg_ir::sketches::{
 };
 use std::collections::HashMap;
 
-const LOCAL_MARKER_CAPACITY: cadmpeg_ir::codec::write::CapacityField =
+pub(crate) const LOCAL_MARKER_CAPACITY: cadmpeg_ir::codec::write::CapacityField =
     cadmpeg_ir::codec::write::CapacityField {
         field: "sketch.marker.local_link_id",
         limit: u16::MAX as u64,
         source: "docs/formats/sldprt.md §2: feature-local link identifiers are u16",
         helper: "local_marker_id",
+    };
+pub(crate) const COORDINATE_LINK_CAPACITY: cadmpeg_ir::codec::write::CapacityField =
+    cadmpeg_ir::codec::write::CapacityField {
+        field: "sketch.coordinate_marker.local_links",
+        limit: 2,
+        source: "docs/formats/sldprt.md §2: coordinate marker local-link count",
+        helper: "append_coordinate_marker_link",
     };
 
 fn local_marker_id(value: u64) -> Result<u16, crate::writer::write_error::WriteError> {
@@ -815,13 +822,6 @@ pub(super) fn append_coordinate_marker_link(
     relation_local_id: u16,
 ) -> Result<(), crate::writer::write_error::WriteError> {
     const SELECTOR: u16 = 0x8386;
-    const CAPACITY: cadmpeg_ir::codec::write::CapacityField =
-        cadmpeg_ir::codec::write::CapacityField {
-            field: "sketch.coordinate_marker.local_links",
-            limit: 2,
-            source: "docs/formats/sldprt.md §2: coordinate marker local-link count",
-            helper: "append_coordinate_marker_link",
-        };
     let offsets = payload
         .windows(SKETCH_MARKER.len())
         .enumerate()
@@ -842,7 +842,7 @@ pub(super) fn append_coordinate_marker_link(
     })?);
     if count >= 2 {
         return Err(crate::writer::write_error::WriteError::Capacity {
-            field: &CAPACITY,
+            field: &COORDINATE_LINK_CAPACITY,
             value: cadmpeg_core::decode::u64_from_index(count) + 1,
         });
     }
@@ -1026,5 +1026,16 @@ mod writer_rule_tests {
             field, limit: 65535, value: 65536
         } if field.field == "sketch.marker.local_link_id")
         );
+    }
+
+    #[test]
+    fn generated_identity_and_link_capacities_are_declared() {
+        for field in [
+            super::LOCAL_MARKER_CAPACITY,
+            super::COORDINATE_LINK_CAPACITY,
+            crate::resolved_features::write_feature_parameters::SCALAR_IDENTITY_CAPACITY,
+        ] {
+            assert!(crate::writer::CAPACITY_FIELDS.contains(&field), "{field:?}");
+        }
     }
 }
