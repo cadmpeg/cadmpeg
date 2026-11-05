@@ -585,6 +585,18 @@ fn network_occurrence_survives_synthesis_with_its_placement() {
         .unwrap();
     assert_eq!(after.ir().model.occurrences.len(), 1);
     assert_eq!(after.ir().model.occurrences[0].transform, transform);
+    let original = &decoded.ir().native.namespace("iges").unwrap().arenas()["entities"];
+    let rewritten = &after.ir().native.namespace("iges").unwrap().arenas()["entities"];
+    assert_eq!(
+        original
+            .iter()
+            .map(|entity| entity.field("label"))
+            .collect::<Vec<_>>(),
+        rewritten
+            .iter()
+            .map(|entity| entity.field("label"))
+            .collect::<Vec<_>>()
+    );
     assert!(!after
         .report()
         .losses
