@@ -120,7 +120,7 @@ pub fn quantum(storage: ReducedStorage, stored: f64) -> f64 {
 /// The §5.2 target for a writer: its catalog default, except STEP requests
 /// `step:ap242-e3`.
 #[must_use]
-pub fn cross_request<'a>(encoder: &'a dyn Encoder) -> TargetRequest<'a> {
+pub fn cross_request(encoder: &dyn Encoder) -> TargetRequest<'_> {
     if encoder.id().as_str() == "step" {
         return TargetRequest::Explicit(STEP_SAME_TARGET);
     }
