@@ -370,9 +370,8 @@ fn subd_component_records_use_the_caller_entity_budget() {
     policy.limits.max_entities = 6;
     let ctx = DecodeContext::new(&arena, &policy, cadmpeg_core::decode::DecodeDepth::Full);
     let session = EncodeSession::from_context(&ctx).expect("session");
-    let error = match payload(&ctx, &session, &source, RhinoArchiveVersion::V8) {
-        Err(error) => error,
-        Ok(_) => panic!("the seven component records exceed the limit"),
+    let Err(error) = payload(&ctx, &session, &source, RhinoArchiveVersion::V8) else {
+        panic!("the seven component records exceed the limit");
     };
     let WriteError::Fail(CodecError::ResourceLimit(limit)) = error else {
         panic!("the original caller limit is returned");
