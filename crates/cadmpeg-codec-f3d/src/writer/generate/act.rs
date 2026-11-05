@@ -12,6 +12,7 @@ pub(super) struct Segment {
     pub(super) folder: String,
     pub(super) bulk: Vec<u8>,
     pub(super) meta: Vec<u8>,
+    pub(super) record_count: usize,
 }
 
 pub(super) fn encode(native: &F3dNative) -> Result<Vec<Segment>, CodecError> {
@@ -166,6 +167,7 @@ pub(super) fn encode(native: &F3dNative) -> Result<Vec<Segment>, CodecError> {
             ),
             bulk,
             meta,
+            record_count: records.len(),
         });
     }
     Ok(segments)
