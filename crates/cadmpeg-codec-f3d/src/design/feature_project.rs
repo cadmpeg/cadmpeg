@@ -2867,6 +2867,11 @@ fn same_component_paste_copy(
         source_bodies.push(source_body.clone());
         copy_bodies.push(copy_body.clone());
     }
+    let distinct_copies =
+        cadmpeg_ir::features::DistinctMembers::try_from(copy_bodies.clone()).is_ok();
+    if !distinct_copies || copy_bodies.iter().any(|copy| source_bodies.contains(copy)) {
+        return None;
+    }
     Some((
         FeatureDefinition::Operation(FeatureOperation::MoveBody {
             bodies: BodySelection::Resolved {

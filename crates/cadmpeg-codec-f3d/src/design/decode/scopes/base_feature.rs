@@ -842,13 +842,14 @@ pub(super) fn browser_node_suffixes(
     suffixes
 }
 
-/// Index each scope named by a paste or body-to-component timeline object.
+/// Index each scope named by exactly one paste or body-to-component timeline
+/// object.
 pub(super) fn timeline_body_owners<'a>(
     bytes: &[u8],
     records: &crate::design::decode::sketch::IndexedRecordOffsets,
     types: impl Iterator<Item = &'a crate::records::entity_header::SegmentType>,
 ) -> HashMap<u32, TimelineBodyOwner> {
-    let mut owners = HashMap::new();
+    let mut owners = HashMap::<u32, Option<TimelineBodyOwner>>::new();
     for design_type in types.filter(|design_type| {
         [PASTE_BODIES_TYPE_GUID, BODY_TO_COMPONENT_TYPE_GUID]
             .iter()
@@ -862,10 +863,16 @@ pub(super) fn timeline_body_owners<'a>(
             else {
                 continue;
             };
-            owners.insert(scope, owner);
+            owners
+                .entry(scope)
+                .and_modify(|named| *named = None)
+                .or_insert(Some(owner));
         }
     }
     owners
+        .into_iter()
+        .filter_map(|(scope, owner)| Some((scope, owner?)))
+        .collect()
 }
 
 fn parse_timeline_body_owner(

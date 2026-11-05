@@ -123,16 +123,18 @@ pub(crate) fn decode_parameter_scopes(
             crate::design::decode::meta::stream_types_by_class_tag(types, &entry.name);
         let body_owners = timeline_body_owners(bytes, &records, class_types.values().copied());
         let metadata = if body_owners.values().any(TimelineBodyOwner::keeps_sources) {
-            crate::design::decode::meta::metadata_for_bulk_stream(scan, &entry.name)?
+            crate::design::decode::meta::metadata_for_bulk_stream(scan, &entry.name)
+                .ok()
+                .flatten()
         } else {
             None
         };
-        let browser_nodes = match metadata {
-            Some(metadata) => browser_node_suffixes(
-                &crate::design::decode::presentation::browser_node_records(bytes, &metadata)?,
-            ),
-            None => std::collections::HashMap::new(),
-        };
+        let browser_nodes = metadata
+            .and_then(|metadata| {
+                crate::design::decode::presentation::browser_node_records(bytes, &metadata).ok()
+            })
+            .map(|nodes| browser_node_suffixes(&nodes))
+            .unwrap_or_default();
         let stream_scope_start = out.len();
         for header in parameter_scope_candidate_headers(bytes, &records)? {
             let Some(mut scope) = parse_parameter_scope_with_type_guid(

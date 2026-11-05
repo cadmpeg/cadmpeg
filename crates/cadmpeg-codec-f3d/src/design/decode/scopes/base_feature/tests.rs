@@ -708,3 +708,44 @@ fn wide_zero_body_frame_reads_its_metadata_at_offset_37() {
     unmarked[36] = 0;
     assert_eq!(zero_body_metadata(&unmarked, &scope), None);
 }
+
+#[test]
+fn a_scope_that_two_timeline_objects_name_has_no_owner() {
+    let mut owner_tail = removal_key(29, NULL_KEY);
+    owner_tail.extend(owner_paired_header());
+    let (mut bytes, _) = owned_frames_with(
+        &[(71, 61), (72, 62)],
+        4,
+        &[0; 10],
+        &owner_tail,
+        &two_source_pairs(),
+    );
+    crate::test_support::indexed_header(&mut bytes, *b"302", 52);
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    for target in [71, 72, 51] {
+        push_owner_reference(&mut bytes, target);
+    }
+    crate::test_support::indexed_header(&mut bytes, *b"260", 52);
+    let records = crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes);
+    let owner_type = |guid: &str, entity: u64| {
+        crate::records::entity_header::SegmentType::try_new(
+            "f3d:Design1/MetaStream.dat:design-type#0".to_owned(),
+            crate::design::test_support::design_type(guid, None, 1, "Fusion", vec![entity]),
+        )
+        .unwrap()
+    };
+    for types in [
+        [
+            owner_type(PASTE_OBJECT, 50),
+            owner_type(BODY_TO_COMPONENT_OBJECT, 52),
+        ],
+        [
+            owner_type(BODY_TO_COMPONENT_OBJECT, 52),
+            owner_type(PASTE_OBJECT, 50),
+        ],
+    ] {
+        assert!(!timeline_body_owners(&bytes, &records, types.iter()).contains_key(&51));
+        assert!(timeline_body_owners(&bytes, &records, types[..1].iter()).contains_key(&51));
+    }
+}

@@ -284,3 +284,24 @@ fn a_paste_copy_needs_a_current_source_and_copy_in_one_component() {
         .is_none());
     }
 }
+
+#[test]
+fn a_paste_copy_needs_distinct_copies_that_are_not_its_sources() {
+    let bindings = [
+        component_body(20, "f3d:model:body#1", 3),
+        component_body(21, "f3d:model:body#2", 3),
+        component_body(30, "f3d:model:body#3", 3),
+        component_body(31, "f3d:model:body#4", 3),
+    ];
+    assert!(paste_copy(&paste_scope(&[20, 21], &[30, 31]), &bindings).is_some());
+    for (sources, copies) in [
+        (&[20, 21][..], &[30, 30][..]),
+        (&[20], &[20]),
+        (&[20, 21], &[30, 20]),
+    ] {
+        assert!(
+            paste_copy(&paste_scope(sources, copies), &bindings).is_none(),
+            "{sources:?} -> {copies:?}"
+        );
+    }
+}
