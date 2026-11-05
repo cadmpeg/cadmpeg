@@ -198,7 +198,7 @@ fn reduced_rows_are_empty_for_iges() {
     // round-trips at full precision (#232 §5.2).
     assert!(super::super::REDUCED_FIELDS.is_empty());
     let seed = seed_golden();
-    let encoder = &IgesCodec as &dyn Encoder;
+    let encoder: &dyn Encoder = &IgesCodec;
     let redecode = |written: &[u8]| {
         let result = IgesCodec
             .decode(&mut Cursor::new(written), &DecodeOptions::default())
