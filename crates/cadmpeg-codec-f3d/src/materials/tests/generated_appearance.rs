@@ -133,7 +133,7 @@ fn decode_transfers_generated_protein_appearance() {
             .design
             .as_ref()
             .map(|design| design.id.value.as_str()),
-        Some("322")
+        Some("264")
     );
     assert_eq!(
         f3d_native(result.ir()).construction_recipes[0]
@@ -159,7 +159,7 @@ fn decode_transfers_generated_protein_appearance() {
         f3d_native(result.ir()).lost_edge_references[0]
             .class_tag
             .as_str(),
-        "419"
+        "264"
     );
     assert_eq!(
         f3d_native(result.ir()).lost_edge_references[0].record_index,

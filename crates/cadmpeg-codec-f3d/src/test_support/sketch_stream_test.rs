@@ -291,6 +291,13 @@ pub(super) fn generated_design_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
     }
     push_reference_u64(&mut alternate_curve, 277);
     out.extend_from_slice(&alternate_curve);
+    records.push((
+        9000,
+        u64::try_from(out.len()).expect("synthetic BodiesRoot offset"),
+    ));
+    out.extend_from_slice(&3u32.to_le_bytes());
+    out.extend_from_slice(b"258");
+    out.extend_from_slice(&9000u32.to_le_bytes());
     out.extend_from_slice(&10u32.to_le_bytes());
     out.extend_from_slice(b"BodiesRoot");
     out.extend_from_slice(&0u16.to_le_bytes());
@@ -303,9 +310,14 @@ pub(super) fn generated_design_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
         out.extend_from_slice(&0u16.to_le_bytes());
     }
     out.push(0);
+    records.push((
+        123,
+        u64::try_from(out.len()).expect("synthetic recipe offset"),
+    ));
     let mut recipe_prefix = vec![0u8; 27];
     recipe_prefix[0..4].copy_from_slice(&3u32.to_le_bytes());
-    recipe_prefix[4..7].copy_from_slice(b"322");
+    recipe_prefix[4..7].copy_from_slice(b"264");
+    recipe_prefix[7..11].copy_from_slice(&123u32.to_le_bytes());
     recipe_prefix[11..15].copy_from_slice(&123i32.to_le_bytes());
     recipe_prefix[23..27].copy_from_slice(&16u32.to_le_bytes());
     out.extend_from_slice(&recipe_prefix);
@@ -318,14 +330,22 @@ pub(super) fn generated_design_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
     out.extend_from_slice(&23u32.to_le_bytes());
     out.extend_from_slice(b"IntrinsicMetaTypeuint64");
     out.extend_from_slice(&439u64.to_le_bytes());
+    records.push((
+        4645,
+        u64::try_from(out.len()).expect("synthetic lost edge offset"),
+    ));
     out.extend_from_slice(&3u32.to_le_bytes());
-    out.extend_from_slice(b"419");
+    out.extend_from_slice(b"264");
     out.extend_from_slice(&4645u32.to_le_bytes());
     out.extend_from_slice(&[0; 14]);
     out.extend_from_slice(&19u32.to_le_bytes());
     out.extend_from_slice(b"EDGE_REFERENCE_LOST");
+    records.push((
+        4646,
+        u64::try_from(out.len()).expect("synthetic lost edge end offset"),
+    ));
     out.extend_from_slice(&3u32.to_le_bytes());
-    out.extend_from_slice(b"419");
+    out.extend_from_slice(b"264");
     out.extend_from_slice(&4646u32.to_le_bytes());
     out.extend_from_slice(b"body_recipe_data");
     (out, records)
