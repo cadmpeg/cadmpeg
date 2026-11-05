@@ -24,7 +24,7 @@ pub(super) fn represents(attribute: &SourceAttribute) -> bool {
             || !attribute.id.as_str().starts_with("sldprt:"))
 }
 
-const HISTORY_ORDINAL_CAPACITY: cadmpeg_ir::codec::write::CapacityField =
+pub(super) const HISTORY_ORDINAL_CAPACITY: cadmpeg_ir::codec::write::CapacityField =
     cadmpeg_ir::codec::write::CapacityField {
         field: "custom_property.ordinal",
         limit: u32::MAX as u64,
@@ -115,6 +115,11 @@ pub(super) fn synchronize(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn custom_property_ordinal_capacity_is_declared() {
+        assert!(crate::writer::CAPACITY_FIELDS.contains(&HISTORY_ORDINAL_CAPACITY));
+    }
 
     #[test]
     fn custom_properties_follow_sparse_feature_ordinals() {
