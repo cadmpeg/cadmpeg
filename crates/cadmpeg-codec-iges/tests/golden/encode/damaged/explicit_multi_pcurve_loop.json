@@ -1,9 +1,11 @@
 {
-  "output": "original fixture                                                        S      1\n1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,32,38,6,308,17,7HprodG      1\nuct,1.0,2,2HMM,1,1.0,15HYYYYMMDD.HHMMSS,1.0000000000000000D-3,0,6HauthorG      2\n,3Horg,11,0,0H,0H;                                                      G      3\nS0000001G0000003D0000000P0000000                                        T      1\n",
+  "output": "original fixture                                                        S      1\n1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,32,38,6,308,17,7HprodG      1\nuct,1.0,2,2HMM,1,1.0,15HYYYYMMDD.HHMMSS,1.0000000000000000D-3,0,6HauthorG      2\n,3Horg,11,0,0H,0H;                                                      G      3\n     316       1       0       0       0       0       0       000000200D      1\n     316       0       0       1       0                   UNITS       0D      2\n316,1,6HLENGTH,1HM,0.001;                                              1P      1\nS0000001G0000003D0000002P0000001                                        T      1\n",
   "report": {
     "census": {
       "basis": "target_records",
-      "counts": {}
+      "counts": {
+        "316_units_data": 1
+      }
     },
     "coverage": {
       "arenas": {
@@ -24,7 +26,7 @@
         "faces": "written",
         "feature_input_topologies": "dropped",
         "feature_result_topologies": "dropped",
-        "features": "dropped",
+        "features": "written",
         "loops": "written",
         "mass_properties": "omitted",
         "occurrences": "dropped",
@@ -73,16 +75,6 @@
         },
         "message": "preserved IGES source image is unavailable; semantic regeneration is required",
         "severity": "blocking"
-      },
-      {
-        "code": {
-          "code": "writer.arena-omitted",
-          "kind": "passthrough_record_omitted",
-          "namespace": "iges",
-          "scope": "namespaced"
-        },
-        "message": "IGES omits unsupported model arena presentation_layers",
-        "severity": "warning"
       },
       {
         "code": {
@@ -229,6 +221,16 @@
           "scope": "namespaced"
         },
         "message": "IGES attribute iges:application:attribute#D9:0:0 is omitted: its current owner has no emitted entity",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "writer.arena-omitted",
+          "kind": "passthrough_record_omitted",
+          "namespace": "iges",
+          "scope": "namespaced"
+        },
+        "message": "IGES cannot fully encode presentation layers: iges:presentation:level#0",
         "severity": "warning"
       },
       {
