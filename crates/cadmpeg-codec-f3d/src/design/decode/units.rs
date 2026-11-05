@@ -14,7 +14,9 @@ use cadmpeg_core::container::ContainerRole;
 use crate::container::ContainerScan;
 use crate::design::decode::meta::DesignPrimaryFrame;
 use crate::layout::indexed_design_record_header as indexed_header;
-use cadmpeg_core::decode::View;
+use cadmpeg_core::decode::{DecodeContext, View};
+use cadmpeg_core::CodecError;
+use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput, PartSpec};
 
 /// An indexed-record header: `u32 3`, three class-tag digits, `u32 index`.
 const HEADER_LEN: usize = indexed_header::LEN;
@@ -104,36 +106,6 @@ fn unit_system(bytes: &[u8], at: usize) -> Option<(&str, [u32; index_from_u32(UN
     Some((key, references(bytes, position)?))
 }
 
-/// The property name and unit name of one unit-entry record. The record stores
-/// a key, a label, byte `01`, the property name, the `NsCommonData` namespace,
-/// four zero bytes, and the UTF-16 unit name.
-fn unit_entry(bytes: &[u8], at: usize) -> Option<(&str, &'static str)> {
-    let (_key, position) = ascii_at(bytes, at)?;
-    let (_label, position) = ascii_at(bytes, position)?;
-    (bytes.get(position) == Some(&1)).then_some(())?;
-    let (property, position) = ascii_at(bytes, position + 1)?;
-    let (namespace, position) = ascii_at(bytes, position)?;
-    (namespace == ENTRY_NAMESPACE).then_some(())?;
-    let position = expect_zero_quad(bytes, position)?;
-    let count = usize::try_from(View::u32_le_at(bytes, position)?).ok()?;
-    if count > 64 {
-        return None;
-    }
-    let start = position.checked_add(4)?;
-    let end = count
-        .checked_mul(2)
-        .and_then(|size| start.checked_add(size))?;
-    let raw = bytes.get(start..end)?;
-    let value = LENGTH_UNIT_NAMES.iter().copied().find(|name| {
-        name.len() == count
-            && raw
-                .chunks_exact(2)
-                .zip(name.as_bytes())
-                .all(|(unit, byte)| unit == [*byte, 0])
-    })?;
-    Some((property, value))
-}
-
 /// Offsets of the unit-system reference count following each `UnitSystems`
 /// collection name. The name is the LP-ASCII string followed by two zero bytes.
 fn collection_counts(bytes: &[u8]) -> impl Iterator<Item = usize> + '_ {
@@ -148,84 +120,157 @@ fn collection_counts(bytes: &[u8]) -> impl Iterator<Item = usize> + '_ {
         })
 }
 
-/// The `Custom` system's `modelingLengthName` value, when one design
-/// `BulkStream` carries a well-formed `UnitSystems` collection.
-///
-/// The collection name follows its indexed header. A value outside the five
-/// stored length unit names is rejected.
-fn decode_modeling_length_unit(bytes: &[u8], frames: &[DesignPrimaryFrame<'_>]) -> Option<String> {
-    let payload = |frame: &DesignPrimaryFrame<'_>| bytes.get(frame.start..frame.member_end);
-    for collection in frames {
-        let Some(collection) = payload(collection) else {
-            continue;
-        };
-        for count_at in collection_counts(collection) {
-            let Some(systems) =
-                references::<{ index_from_u32(UNIT_SYSTEM_COUNT) }>(collection, count_at)
-            else {
-                continue;
-            };
-            for system in systems {
-                for system_frame in frames
-                    .iter()
-                    .filter(|frame| frame.entity_id == u64::from(system))
-                {
-                    let Some(system_bytes) = payload(system_frame) else {
-                        continue;
-                    };
-                    let Some((key, entries)) = unit_system(system_bytes, HEADER_LEN) else {
-                        continue;
-                    };
-                    if key != CUSTOM_SYSTEM {
-                        continue;
-                    }
-                    for entry in &entries {
-                        for entry_frame in frames
-                            .iter()
-                            .filter(|frame| frame.entity_id == u64::from(*entry))
-                        {
-                            let Some(entry_bytes) = payload(entry_frame) else {
-                                continue;
-                            };
-                            let Some((property, value)) = unit_entry(entry_bytes, HEADER_LEN)
-                            else {
-                                continue;
-                            };
-                            if property == MODELING_LENGTH_PROPERTY {
-                                return Some(value.to_owned());
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    None
-}
-
-/// The document's modelling length unit, read from the first design
-/// `BulkStream` that carries it.
-///
-/// An entry whose bytes cannot be read is skipped rather than failing the
-/// decode: the unit is presentation metadata, and no geometry depends on it.
-pub(crate) fn decode_document_length_unit(scan: &ContainerScan) -> Option<String> {
+/// The document's modelling length unit, read from the first design stream
+/// that carries it. Each selected indexed record is an independent part.
+pub(crate) fn decode_document_length_unit(
+    ctx: &DecodeContext<'_>,
+    output: &mut PartOutput,
+    scan: &ContainerScan,
+) -> Result<Option<String>, CodecError> {
     for entry in scan
         .entries
         .iter()
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
-        if let (Ok(bytes), Ok(Some(meta))) = (
-            scan.entry_bytes(&entry.name),
-            crate::design::decode::meta::metadata_for_bulk_stream(scan, &entry.name),
-        ) {
-            if let Ok(frames) = crate::design::decode::meta::design_primary_frames(bytes, &meta) {
-                if let Some(unit) = decode_modeling_length_unit(bytes, &frames) {
-                    return Some(unit);
+        let meta = match crate::design::decode::meta::metadata_for_bulk_stream(scan, &entry.name) {
+            Ok(Some(meta)) => meta,
+            Ok(None) | Err(CodecError::Malformed(_) | CodecError::Truncated { .. }) => continue,
+            Err(error) => return Err(error),
+        };
+        let source = scan
+            .entry_view(&entry.name)
+            .ok_or_else(|| CodecError::malformed("unit stream has no source view"))?;
+        let bytes = source.window();
+        let frames = match crate::design::decode::meta::design_primary_frames(bytes, &meta) {
+            Ok(frames) => frames,
+            Err(CodecError::Malformed(_) | CodecError::Truncated { .. }) => continue,
+            Err(error) => return Err(error),
+        };
+        if let Some(unit) = unit_from_frames(ctx, output, source, &entry.name, &frames)? {
+            return Ok(Some(unit));
+        }
+    }
+    Ok(None)
+}
+
+fn unit_from_frames(
+    ctx: &DecodeContext<'_>,
+    output: &mut PartOutput,
+    source: View<'_>,
+    stream: &str,
+    frames: &[DesignPrimaryFrame<'_>],
+) -> Result<Option<String>, CodecError> {
+    let bytes = source.window();
+    for collection in frames {
+        let Some(payload) = bytes.get(collection.start..collection.member_end) else {
+            continue;
+        };
+        for count_at in collection_counts(payload) {
+            let Some(systems) = unit_part(ctx, output, source, stream, collection, || {
+                references::<{ index_from_u32(UNIT_SYSTEM_COUNT) }>(payload, count_at)
+                    .ok_or_else(|| CodecError::malformed("invalid unit-system collection"))
+            })?
+            else {
+                continue;
+            };
+            let mut result = None;
+            for system in systems {
+                let Some(frame) = frames
+                    .iter()
+                    .find(|frame| frame.entity_id == u64::from(system))
+                else {
+                    continue;
+                };
+                let system_bytes = bytes.get(frame.start..frame.member_end).unwrap_or_default();
+                let Some((key, entries)) = unit_part(ctx, output, source, stream, frame, || {
+                    unit_system(system_bytes, HEADER_LEN)
+                        .ok_or_else(|| CodecError::malformed("invalid unit-system record"))
+                })?
+                else {
+                    continue;
+                };
+                if key != CUSTOM_SYSTEM {
+                    continue;
                 }
+                for index in entries {
+                    let Some(frame) = frames
+                        .iter()
+                        .find(|frame| frame.entity_id == u64::from(index))
+                    else {
+                        continue;
+                    };
+                    let entry_bytes = bytes.get(frame.start..frame.member_end).unwrap_or_default();
+                    let Some((property, value)) =
+                        unit_part(ctx, output, source, stream, frame, || {
+                            unit_entry_value(entry_bytes, HEADER_LEN)
+                                .ok_or_else(|| CodecError::malformed("invalid unit entry"))
+                        })?
+                    else {
+                        continue;
+                    };
+                    if property == MODELING_LENGTH_PROPERTY && result.is_none() {
+                        result = value.map(str::to_owned);
+                    }
+                }
+            }
+            if result.is_some() {
+                return Ok(result);
             }
         }
     }
-    None
+    Ok(None)
+}
+
+fn unit_entry_value(bytes: &[u8], at: usize) -> Option<(&str, Option<&'static str>)> {
+    let (_key, position) = ascii_at(bytes, at)?;
+    let (_label, position) = ascii_at(bytes, position)?;
+    (bytes.get(position) == Some(&1)).then_some(())?;
+    let (property, position) = ascii_at(bytes, position + 1)?;
+    let (namespace, position) = ascii_at(bytes, position)?;
+    (namespace == ENTRY_NAMESPACE).then_some(())?;
+    let position = expect_zero_quad(bytes, position)?;
+    let (value, _) = crate::bytes::lp_utf16_bounded_view(bytes, position, 0..=64)?;
+    let length_unit = if property == MODELING_LENGTH_PROPERTY {
+        Some(
+            LENGTH_UNIT_NAMES
+                .iter()
+                .copied()
+                .find(|name| value.eq_str(name))?,
+        )
+    } else {
+        None
+    };
+    Some((property, length_unit))
+}
+
+fn unit_part<T>(
+    ctx: &DecodeContext<'_>,
+    output: &mut PartOutput,
+    source: View<'_>,
+    stream: &str,
+    frame: &DesignPrimaryFrame<'_>,
+    parse: impl FnOnce() -> Result<T, CodecError>,
+) -> Result<Option<T>, CodecError> {
+    let start = source
+        .start()
+        .checked_add(frame.start)
+        .ok_or_else(|| CodecError::malformed("unit record start overflows"))?;
+    let end = source
+        .start()
+        .checked_add(frame.end)
+        .ok_or_else(|| CodecError::malformed("unit record end overflows"))?;
+    let extent = source
+        .child(start, end)
+        .ok_or_else(|| CodecError::malformed("unit record exceeds its stream"))?;
+    let spec = PartSpec::new("f3d.bulk_record").holding([cadmpeg_ir::document::ArenaClass::Design]);
+    let spec = if extent.location().space == cadmpeg_core::decode::SpaceId::ROOT {
+        spec
+    } else {
+        spec.in_stream(
+            cadmpeg_ir::StreamName::try_from(stream.to_owned()).map_err(CodecError::malformed)?,
+        )
+    };
+    ctx.decode_part(output, extent, spec, |_| parse())
 }
 
 #[cfg(test)]
@@ -235,8 +280,6 @@ pub(crate) mod tests {
         UNIT_SYSTEM_COUNT,
     };
     use crate::test_support::{lp_ascii, lp_utf16};
-
-    use super::decode_modeling_length_unit;
 
     /// The six systems in collection order.
     const SYSTEMS: [&str; 6] = [
@@ -390,7 +433,17 @@ pub(crate) mod tests {
                 }
             })
             .collect();
-        decode_modeling_length_unit(bytes, &frames)
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let mut output =
+            cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
+        super::unit_from_frames(
+            &ctx,
+            &mut output,
+            cadmpeg_core::decode::View::over_retained(bytes),
+            "Design/BulkStream.dat",
+            &frames,
+        )
+        .unwrap()
     }
 
     fn lower_camel(value: &str) -> String {
@@ -399,6 +452,88 @@ pub(crate) mod tests {
             .next()
             .map(|first| first.to_ascii_lowercase().to_string() + chars.as_str())
             .unwrap_or_default()
+    }
+
+    #[test]
+    fn damaged_custom_unit_entry_keeps_independent_length_setting() {
+        use cadmpeg_ir::codec::{Codec, DecodeOptions};
+        use std::io::{Cursor, Write};
+
+        const ENTRY: &str = "FusionAssetName[Active]/Design1/BulkStream.dat";
+        let (mut bulk, meta) =
+            stream_with_metastream(["centimeter", "millimeter", "meter", "inch", "foot", "foot"]);
+        let parsed = crate::metastream::parse(&meta, "Design/MetaStream.dat").unwrap();
+        let frames = crate::design::decode::meta::design_primary_frames(&bulk, &parsed).unwrap();
+        let damaged = frames
+            .iter()
+            .find(|frame| frame.entity_id == u64::from(entry_base(5)))
+            .unwrap();
+        let (start, end) = (damaged.start, damaged.end);
+        let namespace = bulk[start..end]
+            .windows(ENTRY_NAMESPACE.len())
+            .position(|window| window == ENTRY_NAMESPACE.as_bytes())
+            .unwrap();
+        bulk[start + namespace] = b'X';
+
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
+        crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+        zip.start_file("FusionAssetName[Active]/Breps.BlobParts/Body1.smbh", stored)
+            .unwrap();
+        zip.write_all(&crate::test_support::smbh_geometry_test::synthetic_geometry_smbh())
+            .unwrap();
+        zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
+            .unwrap();
+        zip.write_all(&meta).unwrap();
+        zip.start_file(ENTRY, stored).unwrap();
+        zip.write_all(&bulk).unwrap();
+        let archive = zip.finish().unwrap().into_inner();
+        crate::test_support::zip_test::with_scan(&archive, |scan| {
+            let ctx = cadmpeg_test_support::service_decode_context();
+            let mut output = cadmpeg_ir::source_fidelity::parts::PartOutput::new(
+                cadmpeg_ir::CodecFormat::F3d,
+                &ctx,
+            );
+            let unit = super::decode_document_length_unit(&ctx, &mut output, scan).unwrap();
+            assert_eq!(unit.as_deref(), Some("foot"));
+            let (_, native, fidelity, losses) = output.into_parts();
+            assert_eq!(losses.len(), 1);
+            assert_eq!(
+                losses[0].code,
+                cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable
+                    .note(String::new())
+                    .code
+            );
+            assert!(losses[0].message.contains("f3d.bulk_record"));
+            let retained = fidelity.retained_records().values().next().unwrap();
+            assert_eq!(retained.offset(), u64::try_from(start).unwrap());
+            assert_eq!(retained.data(), Some(&bulk[start..end]));
+            assert_eq!(
+                native.namespace("f3d").unwrap().arenas()["unknowns"].len(),
+                1
+            );
+        });
+        let decoded = crate::F3dCodec
+            .decode(&mut Cursor::new(&archive), &DecodeOptions::default())
+            .unwrap();
+        assert_eq!(
+            decoded.ir().source.as_ref().unwrap().attributes["modeling_length_unit"],
+            "foot"
+        );
+        assert_eq!(
+            decoded
+                .report()
+                .losses
+                .iter()
+                .filter(|loss| {
+                    loss.code
+                        == cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable
+                            .note(String::new())
+                            .code
+                })
+                .count(),
+            1
+        );
     }
 
     #[test]

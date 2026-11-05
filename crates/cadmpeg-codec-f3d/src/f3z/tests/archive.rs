@@ -304,6 +304,12 @@ fn f3z_drawing_root_decodes_its_unambiguous_derived_model() {
         .losses
         .iter()
         .any(|loss| loss.code == F3dLossCode::DrawingDocumentOmitted.kind()));
+    assert!(decoded
+        .source_fidelity()
+        .retained_record(crate::ids::FILE_SOURCE_IMAGE_ID)
+        .unwrap()
+        .untyped()
+        .contains(&cadmpeg_ir::document::ArenaClass::Model));
 }
 
 #[test]
@@ -483,6 +489,16 @@ fn f3z_container_only_stamps_the_archive_digest() {
         expected,
         "an F3Z merge carries the digest of the archive it was decoded from"
     );
+    let source = decoded
+        .source_fidelity()
+        .retained_record(crate::ids::FILE_SOURCE_IMAGE_ID)
+        .unwrap();
+    assert!(source
+        .untyped()
+        .contains(&cadmpeg_ir::document::ArenaClass::Model));
+    assert!(source
+        .untyped()
+        .contains(&cadmpeg_ir::document::ArenaClass::Design));
 }
 
 #[test]
@@ -553,9 +569,17 @@ fn f3z_nested_member_part_depth_limit_keeps_root() {
     let decoded =
         crate::test_support::archive_session::decode(&mut Cursor::new(archive.clone()), &options)
             .expect("the root survives the nested member part limit");
-    let losses: Vec<_> = decoded.report().losses.iter().filter(|loss| {
-        loss.code == cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable.note("").code
-    }).collect();
+    let losses: Vec<_> = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.code
+                == cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable
+                    .note("")
+                    .code
+        })
+        .collect();
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains("middle.f3d"));
     assert!(losses[0].message.contains("RecursionDepth"));

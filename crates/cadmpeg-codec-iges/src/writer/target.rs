@@ -91,15 +91,17 @@ fn synthesized_body(
     };
     let ctx = cadmpeg_core::decode::DecodeContext::for_encode(&arena, &policy);
     let session = cadmpeg_core::encode::EncodeSession::from_context(&ctx)?;
-    let synthesis = super::synthesize_with_admission(&recovered.document, version, |entities| {
-        for entity in entities {
-            if entity.transform.is_some() {
-                session.charge_entities(1, "write IGES transformation entity")?;
+    let synthesis =
+        super::synthesize_with_admission(&ctx, &recovered.document, version, |entities| {
+            for entity in entities {
+                if entity.transform.is_some() {
+                    session.charge_entities(1, "write IGES transformation entity")?;
+                }
+                session.charge_entities(1, "write IGES entity")?;
             }
-            session.charge_entities(1, "write IGES entity")?;
-        }
-        Ok(())
-    })?;
+            Ok(())
+        })?;
+    session.finish()?;
     losses.extend(synthesis.losses.clone());
     if !recovered.sampled_agreements.is_empty() {
         losses.push(IgesLossCode::EdgePcurveAgreementSampled.note(format!(
@@ -243,10 +245,10 @@ fn replay_bytes(input: EncodeInput<'_>) -> Result<Replay, CodecError> {
     // decline as unavailable before any comparison: replay needs the bytes
     // whatever the document holds. The digest agreement is the edit detector:
     // an edited document re-decodes to a different digest and synthesizes.
-    let current = crate::document_digest(ir)?;
     let Some(data) = record.and_then(|record| record.data()) else {
         return Ok(Replay::Declined(DeclineReason::SourceImageUnavailable));
     };
+    let current = crate::document_digest(ir, input.limits)?;
     let replays = cadmpeg_ir::hash::retained_image_replays(
         data,
         expected,
@@ -256,7 +258,7 @@ fn replay_bytes(input: EncodeInput<'_>) -> Result<Replay, CodecError> {
         |ctx, root| {
             let fresh = cadmpeg_ir::Codec::decode_with_context(&crate::IgesCodec, ctx, root)
                 .map_err(|_| ())?;
-            crate::document_digest(fresh.ir()).map_err(|_| ())
+            crate::document_digest(fresh.ir(), input.limits).map_err(|_| ())
         },
     );
     if !replays {

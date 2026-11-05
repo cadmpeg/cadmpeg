@@ -11,6 +11,9 @@ use cadmpeg_ir::report::{export::WritePath, Severity};
 use crate::F3dCodec;
 
 mod box_placement;
+mod configuration_features;
+mod cylinder_radius;
+mod write_errors;
 
 fn parameter(name: &str, ordinal: u32, value: ParameterValue) -> DesignParameter {
     DesignParameter {
