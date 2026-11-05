@@ -12,7 +12,6 @@ pub(super) struct Reach {
     pub(super) vertices: HashSet<String>,
     pub(super) curves: HashSet<String>,
     pub(super) surfaces: HashSet<String>,
-    pub(super) pcurves: HashSet<String>,
 }
 impl Reach {
     pub(super) fn bodies(ir: &CadIr, bodies: &[&Body]) -> Self {
@@ -308,13 +307,6 @@ impl Reach {
                 .iter()
                 .filter(|face| self.faces.contains(face.id.as_str()))
                 .map(|face| face.surface.to_string()),
-        );
-        self.pcurves.extend(
-            ir.model
-                .coedges
-                .iter()
-                .filter(|coedge| self.coedges.contains(coedge.id.as_str()))
-                .flat_map(|coedge| coedge.pcurves.iter().map(|usage| usage.pcurve.to_string())),
         );
     }
 }
