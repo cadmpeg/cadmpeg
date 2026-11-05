@@ -1826,7 +1826,7 @@ fn validation_accepts_unindexed_construction_identity_terminal() {
 }
 
 #[test]
-fn validation_accepts_class_338_sketch_curve_entity_selection_frame() {
+fn validation_accepts_marked_sketch_curve_entity_selection_frame() {
     use crate::records::{
         decal::DesignRecordHeader,
         topology::{
@@ -1907,6 +1907,7 @@ fn validation_accepts_class_338_sketch_curve_entity_selection_frame() {
             )
             .unwrap(),
             context_id_offset: 1_100,
+            serialization_form: 0,
             identity_record_index: 203,
             identity_record_offset: 2_000,
             primary_identity: 949,

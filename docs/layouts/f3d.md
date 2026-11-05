@@ -3199,11 +3199,11 @@ Unstated regions:
 - `0..11` (11 B): The indexed identity header occupies the first 11 bytes.
 - `11..21` (10 B): The compact identity stores zero bytes at offsets 11 through 20.
 
-## `class_338_sketch_curve_identity`
+## `marked_sketch_curve_identity`
 
 Spec §3.1 · layout: byte offsets · size: 49 B
 
-Offsets are relative to the class-`361` identity record's indexed header. The following indexed record begins at offset 49.
+Offsets are relative to the identity record's indexed header. The following indexed record begins at offset 49.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |

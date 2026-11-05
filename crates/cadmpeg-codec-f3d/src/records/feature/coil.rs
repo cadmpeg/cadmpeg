@@ -150,6 +150,8 @@ pub(crate) enum DesignCoilSelection {
         asset_id: DesignRelaxedGuidText,
         /// Context UUID qualifying the persistent selection namespace.
         context_id: DesignRelaxedGuidText,
+        #[serde(default, skip_serializing_if = "crate::history_records::is_default")]
+        serialization_form: u32,
         /// Indexed nested record carrying the persistent identity pair.
         identity_record_index: u32,
         /// First persistent identity value.
@@ -164,6 +166,8 @@ pub(crate) enum DesignCoilSelection {
         asset_id: DesignRelaxedGuidText,
         /// Context UUID qualifying the recipe selection namespace.
         context_id: DesignRelaxedGuidText,
+        #[serde(default, skip_serializing_if = "crate::history_records::is_default")]
+        serialization_form: u32,
         /// Indexed record containing the face recipe.
         recipe_record_index: u32,
         /// Byte offset of the face recipe record header.

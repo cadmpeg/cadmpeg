@@ -1364,6 +1364,7 @@ fn fixed_kind_edge_and_revolve_operations(
                 )
                 .unwrap(),
                 context_id_offset: 0,
+                serialization_form: 0,
                 identity_record_index: 903,
                 identity_record_offset: 0,
                 primary_identity: 100,

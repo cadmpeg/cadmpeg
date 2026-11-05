@@ -268,6 +268,8 @@ pub(crate) struct DesignAssemblyLegacySelection {
     pub(crate) context_id: DesignRelaxedGuidText,
     /// Byte offset of the context UUID's UTF-16LE payload.
     pub(crate) context_id_offset: u64,
+    #[serde(default, skip_serializing_if = "crate::history_records::is_default")]
+    pub(crate) serialization_form: u32,
     /// Indexed record containing the face recipe.
     pub(crate) recipe_record_index: u32,
     /// Byte offset of the recipe record's indexed header.

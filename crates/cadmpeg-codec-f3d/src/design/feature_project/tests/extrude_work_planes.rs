@@ -86,6 +86,7 @@ fn selection(
                 .try_into()
                 .unwrap(),
             context_id_offset: 0,
+            serialization_form: 0,
             identity_record_index: record_index + 3,
             identity_record_offset: 0,
             primary_identity,

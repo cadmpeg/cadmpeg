@@ -137,6 +137,7 @@ fn guide_surface_input() -> (
                     .try_into()
                     .unwrap(),
                 context_id_offset: 31_080,
+                serialization_form: 0,
                 identity_record_index: 2791,
                 identity_record_offset: 31_180,
                 primary_identity: 2718,

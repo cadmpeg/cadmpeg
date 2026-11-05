@@ -494,6 +494,7 @@ pub(crate) struct DesignHoleFaceSelection {
     pub(crate) context_id: DesignRelaxedGuidText,
     /// Byte offset of the context UUID's UTF-16LE code units.
     pub(crate) context_id_offset: u64,
+    pub(crate) serialization_form: u32,
     /// Nested indexed record carrying the persistent identity.
     pub(crate) identity_record_index: u32,
     /// Byte offset of the nested identity record.
@@ -529,6 +530,8 @@ struct DesignHoleFaceSelectionWire {
     context_id: DesignRelaxedGuidText,
     /// Byte offset of the context UUID's UTF-16LE code units.
     context_id_offset: u64,
+    #[serde(default, skip_serializing_if = "crate::history_records::is_default")]
+    serialization_form: u32,
     /// Nested indexed record carrying the persistent identity.
     identity_record_index: u32,
     /// Byte offset of the nested identity record.
@@ -585,6 +588,7 @@ impl TryFrom<DesignHoleFaceSelectionWire> for DesignHoleFaceSelection {
             asset_id_offset: wire.asset_id_offset,
             context_id: wire.context_id,
             context_id_offset: wire.context_id_offset,
+            serialization_form: wire.serialization_form,
             identity_record_index: wire.identity_record_index,
             identity_record_offset: wire.identity_record_offset,
             primary_identity: wire.primary_identity,
@@ -617,6 +621,8 @@ struct HoleFaceSelectionView<'a> {
     asset_id_offset: u64,
     context_id: &'a DesignRelaxedGuidText,
     context_id_offset: u64,
+    #[serde(skip_serializing_if = "crate::history_records::is_default")]
+    serialization_form: u32,
     identity_record_index: u32,
     identity_record_offset: u64,
     primary_identity: u64,
@@ -647,6 +653,7 @@ impl Serialize for DesignHoleFaceSelection {
             asset_id_offset: self.asset_id_offset,
             context_id: &self.context_id,
             context_id_offset: self.context_id_offset,
+            serialization_form: self.serialization_form,
             identity_record_index: self.identity_record_index,
             identity_record_offset: self.identity_record_offset,
             primary_identity: self.primary_identity,

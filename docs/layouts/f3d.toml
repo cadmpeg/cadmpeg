@@ -10566,12 +10566,12 @@ source = "spec"
 anchor = "the sketch-point persistent id as a u64 at offset 29"
 
 [[record]]
-name = "class_338_sketch_curve_identity"
+name = "marked_sketch_curve_identity"
 kind = "byte"
 section = "3.1"
-anchor = "A class-`338` Extrude profile member uses the persistent-selection prefix and four consecutive nested records"
+anchor = "A persistent-selection member with four consecutive nested records can have a 49-byte identity record"
 size = 49
-note = "Offsets are relative to the class-`361` identity record's indexed header. The following indexed record begins at offset 49."
+note = "Offsets are relative to the identity record's indexed header. The following indexed record begins at offset 49."
 
 [[record.gap]]
 offset = 0

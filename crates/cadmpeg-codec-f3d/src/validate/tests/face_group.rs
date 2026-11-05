@@ -26,6 +26,7 @@ fn selection_operand() -> crate::records::topology::entity_selection::DesignEnti
         )
         .unwrap(),
         context_id_offset: 1_100,
+        serialization_form: 0,
         identity_record_index: 203,
         identity_record_offset: 2_000,
         primary_identity: 949,

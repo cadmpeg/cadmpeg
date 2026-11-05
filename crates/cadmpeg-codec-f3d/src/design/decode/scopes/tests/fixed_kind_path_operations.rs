@@ -698,6 +698,7 @@ pub(super) fn fixed_kind_path_operations(
                 )
                 .unwrap(),
                 context_id_offset: 31_080,
+                serialization_form: 0,
                 identity_record_index: 2791,
                 identity_record_offset: 31_180,
                 primary_identity: 2718,

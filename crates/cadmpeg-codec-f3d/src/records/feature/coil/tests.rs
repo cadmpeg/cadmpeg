@@ -15,6 +15,7 @@ fn placement(explicit: bool) -> super::DesignCoilPlacement {
                 .to_owned()
                 .try_into()
                 .unwrap(),
+            serialization_form: 0,
             identity_record_index: 2,
             primary_identity: 3,
             secondary: None,

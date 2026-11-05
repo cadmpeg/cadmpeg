@@ -29,7 +29,6 @@ use crate::design::decode::text::relaxed_guid_end;
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::native_stream;
 use crate::layout::body_recipe_family_name_frame as body_recipe_end;
-use crate::layout::class_338_sketch_curve_identity as class_338_curve;
 use crate::layout::coil_compact_face_selection_prefix as coil_face_sel;
 use crate::layout::coil_compact_persistent_selection_prefix as coil_persist_sel;
 use crate::layout::coil_modern_selection_prefix as coil_modern_sel;
@@ -40,6 +39,7 @@ use crate::layout::indexed_design_record_header as indexed_header;
 use crate::layout::legacy_loft_body_carrier_class_322 as legacy_loft_322;
 use crate::layout::legacy_loft_body_carrier_class_322_tail as legacy_loft_322_tail;
 use crate::layout::legacy_loft_body_carrier_class_411 as legacy_loft_411;
+use crate::layout::marked_sketch_curve_identity as marked_curve;
 use crate::layout::sheet_metal_region_carrier_prefix as region_carrier;
 use crate::layout::sheet_metal_region_carrier_scalar_lane as region_scalar;
 use crate::layout::sheet_metal_region_identity_reference as region_reference;
@@ -446,6 +446,7 @@ pub(crate) fn bind_work_point_input_carriers(
                         asset_id_offset: selection.asset_id_offset,
                         context_id,
                         context_id_offset: selection.context_id_offset,
+                        serialization_form: selection.serialization_form,
                         identity_record_index: selection.identity_record_index,
                         identity_record_offset: selection.identity_record_offset,
                         primary_identity: selection.primary_identity,
@@ -581,6 +582,7 @@ fn resolve_sketch_point_selection(
             asset_id_offset: frame.asset_id_offset,
             context_id,
             context_id_offset: frame.context_id_offset,
+            serialization_form: frame.serialization_form,
             identity_record_index: frame.identity_record_index,
             identity_record_offset: frame.identity_record_offset,
             identity_form: frame.identity_form,
@@ -3958,6 +3960,7 @@ pub(super) fn parse_entity_selection_operand(
             asset_id_offset: frame.asset_id_offset,
             context_id: frame.context_id.try_into().ok()?,
             context_id_offset: frame.context_id_offset,
+            serialization_form: frame.serialization_form,
             identity_record_index: frame.identity_record_index,
             identity_record_offset: frame.identity_record_offset,
             primary_identity: frame.primary_identity,
@@ -3984,6 +3987,7 @@ pub(in crate::design::decode) struct EntitySelectionFrame {
     pub(super) asset_id_offset: u64,
     pub(super) context_id: String,
     pub(super) context_id_offset: u64,
+    pub(super) serialization_form: u32,
     pub(super) identity_record_index: u32,
     pub(super) identity_record_offset: u64,
     pub(super) primary_identity: u64,
@@ -4000,6 +4004,7 @@ pub(in crate::design::decode) struct EntitySelectionPrefix {
     pub(super) asset_id_offset: u64,
     pub(super) context_id: String,
     pub(super) context_id_offset: u64,
+    pub(super) serialization_form: u32,
     after_context_id: usize,
 }
 
@@ -4044,10 +4049,11 @@ pub(super) fn parse_entity_selection_prefix(
     };
     let (asset_id, after_asset_id) = lp_utf16_bounded(bytes, asset_start, 1..=256)?;
     let (context_id, after_context_id) = lp_utf16_bounded(bytes, after_asset_id, 1..=256)?;
+    let serialization_form = View::u32_le_at(bytes, after_context_id.checked_add(4)?)?;
     if !is_guid_relaxed(&asset_id)
         || !is_guid_relaxed(&context_id)
         || View::u32_le_at(bytes, after_context_id)? != 2
-        || bytes.get(after_context_id + 4..after_context_id + 8)? != [0; 4]
+        || serialization_form > 1
     {
         return None;
     }
@@ -4056,6 +4062,7 @@ pub(super) fn parse_entity_selection_prefix(
         asset_id_offset: u64::try_from(asset_start.checked_add(4)?).ok()?,
         context_id,
         context_id_offset: u64::try_from(after_asset_id.checked_add(4)?).ok()?,
+        serialization_form,
         after_context_id,
     })
 }
@@ -4080,6 +4087,7 @@ struct WorkPointSketchPointFrame {
     asset_id_offset: u64,
     context_id: String,
     context_id_offset: u64,
+    serialization_form: u32,
     identity_record_index: u32,
     identity_record_offset: u64,
     identity_form: DesignWorkPointSketchPointIdentityForm,
@@ -4184,6 +4192,7 @@ fn parse_work_point_sketch_point_frame(
         asset_id_offset: prefix.asset_id_offset,
         context_id: prefix.context_id,
         context_id_offset: prefix.context_id_offset,
+        serialization_form: prefix.serialization_form,
         identity_record_index: record_index.checked_add(3)?,
         identity_record_offset: u64::try_from(identity_at).ok()?,
         identity_form,
@@ -4231,42 +4240,38 @@ pub(super) fn parse_entity_selection_frame(
             return None;
         }
     }
-    let (identity_class_tag, _) =
-        lp_ascii_filtered_view(bytes, identity_at, 0..=2000, u8::is_ascii_graphic)?;
     let (_, after_next_tag) =
         lp_ascii_filtered_view(bytes, next_at, 0..=2000, u8::is_ascii_graphic)?;
     let next_record_index = View::u32_le_at(bytes, after_next_tag)?;
-    let (primary_identity_offset, primary_identity, secondary) = if class_tag == "338"
-        && identity_class_tag == "361"
+    let (primary_identity_offset, primary_identity, secondary) = if bytes
+        .get(identity_at + marked_curve::ZERO_PREFIX..identity_at + marked_curve::PRESENCE)?
+        == [0; 9]
+        && bytes.get(identity_at + marked_curve::PRESENCE) == Some(&1)
         && bytes.get(
-            identity_at + class_338_curve::ZERO_PREFIX..identity_at + class_338_curve::PRESENCE,
-        )? == [0; 9]
-        && bytes.get(identity_at + class_338_curve::PRESENCE) == Some(&1)
-        && bytes.get(
-            identity_at + class_338_curve::PRESENCE + 1
-                ..identity_at + class_338_curve::OWNER_RECORD_INDEX,
+            identity_at + marked_curve::PRESENCE + 1
+                ..identity_at + marked_curve::OWNER_RECORD_INDEX,
         )? == [0; 12]
-        && View::u32_le_at(bytes, identity_at + class_338_curve::OWNER_HIGH_ZERO)? == 0
-        && View::u32_le_at(bytes, identity_at + class_338_curve::CURVE_HIGH_ZERO)? == 0
-        && identity_at.checked_add(class_338_curve::LEN)? == next_at
+        && View::u32_le_at(bytes, identity_at + marked_curve::OWNER_HIGH_ZERO)? == 0
+        && View::u32_le_at(bytes, identity_at + marked_curve::CURVE_HIGH_ZERO)? == 0
+        && identity_at.checked_add(marked_curve::LEN)? == next_at
         && next_record_index == record_index.checked_add(4)?
     {
         let primary_identity = u64::from(View::u32_le_at(
             bytes,
-            identity_at + class_338_curve::OWNER_RECORD_INDEX,
+            identity_at + marked_curve::OWNER_RECORD_INDEX,
         )?);
         let secondary_identity = u64::from(View::u32_le_at(
             bytes,
-            identity_at + class_338_curve::CURVE_PERSISTENT_ID,
+            identity_at + marked_curve::CURVE_PERSISTENT_ID,
         )?);
         (
-            identity_at.checked_add(class_338_curve::OWNER_RECORD_INDEX)?,
+            identity_at.checked_add(marked_curve::OWNER_RECORD_INDEX)?,
             primary_identity,
             Some(crate::records::identity::DesignSecondaryIdentity {
                 identity: crate::records::identity::Located {
                     value: secondary_identity,
                     offset: u64::try_from(
-                        identity_at.checked_add(class_338_curve::CURVE_PERSISTENT_ID)?,
+                        identity_at.checked_add(marked_curve::CURVE_PERSISTENT_ID)?,
                     )
                     .ok()?,
                 },
@@ -4314,6 +4319,7 @@ pub(super) fn parse_entity_selection_frame(
         asset_id_offset: prefix.asset_id_offset,
         context_id: prefix.context_id,
         context_id_offset: prefix.context_id_offset,
+        serialization_form: prefix.serialization_form,
         identity_record_index: record_index.checked_add(3)?,
         identity_record_offset: u64::try_from(identity_at).ok()?,
         primary_identity,
@@ -5702,6 +5708,17 @@ fn parse_recipe_operand(
                         && native_stream(&recipe.id) == Some(stream)
                 })
                 .min_by_key(|recipe| recipe.byte_offset)?;
+            if recipe_kind == ConstructionRecipeKind::Edge
+                && parse_entity_selection_frame(
+                    bytes,
+                    header.record_index,
+                    header.byte_offset,
+                    header.class_tag.as_str(),
+                )
+                .is_some_and(|selection| recipe.byte_offset >= selection.next_byte_offset)
+            {
+                return None;
+            }
             let recipe_program_at = usize::try_from(recipe.byte_offset)
                 .ok()?
                 .checked_add(family_name.len())?;

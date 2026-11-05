@@ -440,6 +440,7 @@ fn surface_trim_binds_selected_cells_without_inventing_a_side() {
             scope_record_index: 1200,
             selection_record_index: 1,
             selection_byte_offset: 0,
+            serialization_form: 0,
             selection_next_record_index: 2,
             selection_next_byte_offset: 0,
             chain_records: [
@@ -538,6 +539,7 @@ fn surface_trim_selected_cells_keep_cells() {
             scope_record_index: 1200,
             selection_record_index: 1,
             selection_byte_offset: 0,
+            serialization_form: 0,
             selection_next_record_index: 2,
             selection_next_byte_offset: 0,
             chain_records: [

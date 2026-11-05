@@ -159,7 +159,7 @@ fn loft_trailing_scope_reference_preserves_wire_and_rejects_partial_locations() 
 }
 
 #[test]
-fn entity_selection_retains_primary_paired_and_class_338_forms() {
+fn entity_selection_retains_primary_paired_and_marked_forms() {
     let base = json!({
         "id": "operand", "scope_record_index": 1, "group_record_index": 2, "group_member_ordinal": 0,
         "record_index": 7, "byte_offset": 100, "class_tag": "338",

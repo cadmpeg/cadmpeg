@@ -373,6 +373,7 @@ fn dispatcher_projects_work_point_plane_construction_and_dependencies() {
                         )
                         .unwrap(),
                         context_id_offset: 2,
+                        serialization_form: 0,
                         identity_record_index: record_index + 3,
                         identity_record_offset: 3,
                         primary_identity: u64::from(work_plane_scope_record_index - 1),
