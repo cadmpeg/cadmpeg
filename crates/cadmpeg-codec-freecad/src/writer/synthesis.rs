@@ -891,10 +891,8 @@ pub(super) fn write(
         ir,
         &native_properties,
         &names,
-        &entry_names,
-        &retained,
-        &mut objects,
-        &mut entries,
+        (&entry_names, &retained),
+        (&mut objects, &mut entries),
         &mut losses,
     )?;
     let covered_points = super::point_kernel::write(
@@ -902,9 +900,7 @@ pub(super) fn write(
         ir,
         &native_properties,
         &names,
-        &entry_names,
-        &mut objects,
-        &mut entries,
+        (&entry_names, &mut objects, &mut entries),
         &mut losses,
     )?;
     // Independent records whose source object replays with every side
@@ -1271,7 +1267,10 @@ pub(super) fn write(
     let file_version = facts
         .as_ref()
         .and_then(|documents| documents.first())
-        .map_or_else(|| "1".to_owned(), |document| document.file_version.as_str().to_owned());
+        .map_or_else(
+            || "1".to_owned(),
+            |document| document.file_version.as_str().to_owned(),
+        );
     let document = xml::document(
         &objects,
         &document_properties,
