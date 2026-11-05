@@ -95,6 +95,9 @@ impl Serialize for DesignParameterScope {
         emit!("kind", self.kind_name());
         emit_opt!("source_kind", self.source_kind.as_ref());
         emit!("kind_offset", self.kind_offset);
+        if self.split_face_compact_prefix {
+            emit!("split_face_compact_prefix", true);
+        }
 
         if let Some(extrude) = self.extrude() {
             emit_opt!("extrude_prologue", extrude.extrude_prologue.as_ref());

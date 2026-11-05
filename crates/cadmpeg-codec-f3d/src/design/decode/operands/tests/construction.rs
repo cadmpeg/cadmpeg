@@ -485,7 +485,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             )
             .unwrap();
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
-            draft.reference_count_offset = *draft.reference_members.offsets().next().unwrap() - 5;
+            draft.reference_count_offset = draft.byte_offset + 172;
             draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
@@ -544,10 +544,21 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     compact_split_scope
         .try_edit(|draft| {
             draft.frame_length = 330;
+            draft.reference_count_offset = draft.byte_offset + 168;
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
         .unwrap();
+    let prefix_offset = usize::try_from(compact_split_scope.byte_offset()).unwrap();
+    let mut prefix = vec![0; prefix_offset + 32];
+    prefix[prefix_offset + 22] = 1;
+    prefix[prefix_offset + 27] = 1;
+    prefix[prefix_offset + 28] = 1;
+    crate::design::decode::scopes::parameter_scope::mark_split_face_compact_prefix(
+        &prefix,
+        &mut compact_split_scope,
+    );
     let crate::design::feature_project::ProjectedParameterDesign {
         features: compact_features,
         ..
@@ -1164,7 +1175,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
                 .try_into()
                 .unwrap();
             draft.frame_length = 250 + reference_bytes;
-            draft.kind_offset = draft.byte_offset + 140 + reference_bytes;
+            draft.kind_offset = draft.byte_offset + 139 + reference_bytes;
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.reference_count_offset =
                 draft.kind_offset - 12 - 11 * u64_from_index(draft.reference_members.len());
@@ -1285,10 +1296,10 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     ));
 
     for (class_tag, paired_class_tag, base_frame, base_kind) in [
-        ("287", "270", 245_u64, 135_u64),
-        ("287", "270", 256, 146),
+        ("287", "270", 246_u64, 135_u64),
+        ("287", "270", 257, 146),
         ("327", "257", 250, 139),
-        ("414", "263", 250, 140),
+        ("414", "263", 250, 139),
         ("497", "259", 257, 146),
         ("545", "257", 246, 135),
         ("545", "257", 250, 139),

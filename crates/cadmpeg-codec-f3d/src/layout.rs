@@ -2908,6 +2908,28 @@ pub(crate) mod base_feature_body_snapshot_scope_prefix {
     pub(crate) const KIND_CODE_UNIT_COUNT: usize = 22;
 }
 
+/// Byte offsets for the `split_face_compact_prefix` record.
+///
+/// Spec §3.1. Record length 32 B.
+///
+/// ```text
+/// Offsets are relative to the primary SplitFace indexed header. The first marked construction reference follows this prefix at offset 32.
+/// ```
+pub(crate) mod split_face_compact_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 32;
+    /// Offset of `zero_run_11` (`bytes[11]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_11: usize = 11;
+    /// Offset of `first_marker` (`u8`). Spec §3.1.
+    pub(crate) const FIRST_MARKER: usize = 22;
+    /// Offset of `zero_run_4` (`bytes[4]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_4: usize = 23;
+    /// Offset of `marker_pair` (`bytes[2]`). Spec §3.1.
+    pub(crate) const MARKER_PAIR: usize = 27;
+    /// Offset of `zero_run_3` (`bytes[3]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_3: usize = 29;
+}
+
 /// Byte offsets for the `form_class_325_cage_table` record.
 ///
 /// Spec §1.1.1. Record length 1850 B.
