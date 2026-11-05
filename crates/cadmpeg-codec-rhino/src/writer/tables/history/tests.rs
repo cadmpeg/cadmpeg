@@ -195,7 +195,7 @@ fn history_feature_with_object_references_round_trips() {
         record
             .descendants
             .iter()
-            .map(|uuid| uuid.to_string())
+            .map(ToString::to_string)
             .collect::<Vec<_>>(),
         ["07c90e28-cc28-4108-9408-df5a968f4114"]
     );
@@ -203,7 +203,7 @@ fn history_feature_with_object_references_round_trips() {
         record
             .antecedents
             .iter()
-            .map(|uuid| uuid.to_string())
+            .map(ToString::to_string)
             .collect::<Vec<_>>(),
         [
             "43cff9a6-c650-440c-af75-addf5585d7a0",

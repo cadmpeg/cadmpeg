@@ -228,7 +228,7 @@ mod tests {
         );
         let name = "test mapping"
             .encode_utf16()
-            .flat_map(|unit| unit.to_le_bytes())
+            .flat_map(u16::to_le_bytes)
             .collect::<Vec<_>>();
         assert!(
             record
