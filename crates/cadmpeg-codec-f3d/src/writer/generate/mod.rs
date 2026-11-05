@@ -24,9 +24,9 @@ pub(crate) mod parameter_links;
 mod parameters;
 pub(in crate::writer) mod preconditions;
 mod presentation;
-mod records;
+pub(super) mod records;
 mod reindex;
-mod sketches;
+pub(super) mod sketches;
 mod smbh;
 use parameters::encode_document_parameters;
 use preconditions::{
@@ -321,6 +321,12 @@ pub(super) fn write_with_limits(
         archive.write_all(&meta_stream)?;
     }
     let mut written_features = Vec::new();
+    for text in &native.sketch_texts {
+        residual_losses.push(ExportLossCode::RecordResidualUnavailable.note(format!(
+            "sketch text {}: generated formatting state uses unspecified defaults",
+            text.id
+        )));
+    }
     let mut written_owned_parameters = Vec::new();
     if let Some((bulk, meta, ids, parameter_ids, collection_index)) = generated_features {
         written_features = ids;
@@ -339,7 +345,7 @@ pub(super) fn write_with_limits(
             archive.write_all(&data)?;
         }
     }
-    let written_sketches = sketches::encode(target)?;
+    let written_sketches = sketches::encode(target, limits)?;
     if let Some(sketches) = &written_sketches {
         for (name, data) in [
             ("BulkStream.dat", &sketches.bulk),
@@ -356,6 +362,16 @@ pub(super) fn write_with_limits(
         for id in &sketches.sketches {
             residual_losses.push(ExportLossCode::RecordResidualUnavailable.note(format!(
                 "sketch {id}: generated member-run records have unspecified state fields"
+            )));
+        }
+        for id in &sketches.text_entities {
+            residual_losses.push(ExportLossCode::RecordResidualUnavailable.note(format!(
+                "sketch text {id}: generated glyph color and formatting use unspecified defaults"
+            )));
+        }
+        for id in &sketches.nurbs_entities {
+            residual_losses.push(ExportLossCode::RecordResidualUnavailable.note(format!(
+                "sketch NURBS {id}: generated fit tolerance uses an unspecified default"
             )));
         }
     }

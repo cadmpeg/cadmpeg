@@ -110,15 +110,6 @@ pub(crate) fn write_step_outcome(
     let file_name_fields = b.file_name_fields.clone();
     let lines = b.emitter.into_lines()?;
     let session = cadmpeg_core::encode::EncodeSession::from_context(ctx)?;
-    session.charge_entities(
-        cadmpeg_core::decode::u64_from_index(lines.len()),
-        "write STEP DATA records",
-    )?;
-    session.charge_entities(
-        cadmpeg_core::decode::u64_from_index(emitter_anchors.len()),
-        "write STEP REFERENCE records",
-    )?;
-
     write_header(
         w,
         schema,
@@ -130,12 +121,14 @@ pub(crate) fn write_step_outcome(
         emitter_anchors.sort_by_key(|(id, _)| *id);
         writeln!(w, "REFERENCE;")?;
         for (id, uri) in &emitter_anchors {
+            session.charge_entities(1, "write STEP REFERENCE record")?;
             writeln!(w, "#{id}=<{uri}>;")?;
         }
         writeln!(w, "ENDSEC;")?;
     }
     writeln!(w, "DATA;")?;
     for line in &lines {
+        session.charge_entities(1, "write STEP DATA record")?;
         writeln!(w, "{line}")?;
     }
     writeln!(w, "ENDSEC;")?;
@@ -3861,6 +3854,15 @@ impl<'a> Builder<'a> {
                     self.edges.get(id.as_str()).map(|edge| (emitted, *edge))
                 })
                 .collect::<Vec<_>>();
+            if edges.is_empty() && shell.faces().is_empty() {
+                self.loss(
+                    StepLossCode::WireShellNoWritableEdges,
+                    format!(
+                        "wire shell '{}' was omitted because it has no writable connected edge set",
+                        shell.id
+                    ),
+                );
+            }
             for component in wire::connected_components(&edges) {
                 connected_sets.push(
                     self.emitter
@@ -7410,14 +7412,12 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
-        if !self.split_edges.is_empty() {
+        let split_edges = self.split_edges.iter().copied().collect::<Vec<_>>();
+        for edge in split_edges {
             self.loss(
                 StepLossCode::NonManifoldEdgeSplit,
                 format!(
-                    "{} non-manifold edge(s) of closed shells were each written as one coincident \
-                     EDGE_CURVE per forward and reversed use pair (a STEP closed shell admits two \
-                     uses per edge)",
-                    self.split_edges.len()
+                    "non-manifold edge '{edge}' was written as coincident EDGE_CURVE records for its use pairs"
                 ),
             );
         }

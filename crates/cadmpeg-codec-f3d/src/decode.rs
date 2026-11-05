@@ -4686,17 +4686,6 @@ fn decode_result(
         retained.source_attributes,
         &mut report,
     )?;
-    if !ctx.container_only()
-        && ir
-            .model
-            .populated_arena(cadmpeg_ir::document::ArenaClass::Model)
-            .is_none()
-        && retained
-            .untyped
-            .contains(&cadmpeg_ir::document::ArenaClass::Model)
-    {
-        ir.scope.model = false;
-    }
     report.transfer.scope = ir.scope;
     let native = ir
         .native

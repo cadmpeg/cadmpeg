@@ -46,10 +46,23 @@ fn a_four_use_edge_is_split_into_two_material_use_pairs() {
     assert_eq!(text.matches("CLOSED_SHELL(").count(), 1);
     assert!(!text.contains("OPEN_SHELL("));
     assert!(!text.contains("SHELL_BASED_SURFACE_MODEL("));
-    assert!(report
-        .losses
+    let split_edge = ir
+        .model
+        .edges
         .iter()
-        .any(|loss| loss.code == crate::loss::StepLossCode::NonManifoldEdgeSplit.kind()));
+        .find(|edge| {
+            ir.model
+                .coedges
+                .iter()
+                .filter(|coedge| coedge.edge == edge.id)
+                .count()
+                > 2
+        })
+        .expect("fixture has a shared non-manifold edge");
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == crate::loss::StepLossCode::NonManifoldEdgeSplit.kind()
+            && loss.message.contains(split_edge.id.as_str())
+    }));
 
     let entities = entities(&text);
     let mut users = HashMap::<&str, Vec<&str>>::new();
