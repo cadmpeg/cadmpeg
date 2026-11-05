@@ -3,7 +3,6 @@
 
 use std::collections::BTreeMap;
 
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::CadIr;
 
@@ -11,20 +10,26 @@ use crate::native::SldprtNative;
 use crate::records::{Feature, FeatureHistory};
 
 pub(super) fn represents(attribute: &SourceAttribute) -> bool {
-    attribute.target == AttributeTarget::Document
+    represented_value(attribute).is_some()
+}
+
+fn represented_value(attribute: &SourceAttribute) -> Option<&str> {
+    if attribute.target == AttributeTarget::Document
         && !attribute.name.trim().is_empty()
-        && matches!(
-            attribute.values.as_slice(),
-            [Some(AttributeValue::String(_))]
-        )
         && (attribute
             .id
             .as_str()
             .starts_with("sldprt:history:custom-property#")
             || !attribute.id.as_str().starts_with("sldprt:"))
+    {
+        if let [Some(AttributeValue::String(value))] = attribute.values.as_slice() {
+            return Some(value);
+        }
+    }
+    None
 }
 
-const HISTORY_ORDINAL_CAPACITY: cadmpeg_ir::codec::write::CapacityField =
+pub(super) const HISTORY_ORDINAL_CAPACITY: cadmpeg_ir::codec::write::CapacityField =
     cadmpeg_ir::codec::write::CapacityField {
         field: "custom_property.ordinal",
         limit: u32::MAX as u64,
@@ -56,7 +61,7 @@ pub(super) fn synchronize(
         .model
         .attributes
         .iter()
-        .filter(|attribute| represents(attribute))
+        .filter_map(|attribute| represented_value(attribute).map(|value| (attribute, value)))
         .collect::<Vec<_>>();
     if attributes.is_empty() {
         return Ok(());
@@ -79,11 +84,8 @@ pub(super) fn synchronize(
         history.features[index].ordinal =
             crate::writer::field_u32(&HISTORY_ORDINAL_CAPACITY, rank)?;
     }
-    for attribute in attributes {
+    for (attribute, value) in attributes {
         let ordinal = crate::writer::field_u32(&HISTORY_ORDINAL_CAPACITY, history.features.len())?;
-        let [Some(AttributeValue::String(value))] = attribute.values.as_slice() else {
-            return Err(CodecError::malformed("custom property requires one string value").into());
-        };
         history.features.push(Feature {
             id: format!(
                 "sldprt:generated:custom-property#{}",
@@ -105,8 +107,8 @@ pub(super) fn synchronize(
             parameters: BTreeMap::new(),
             dimension_properties: BTreeMap::new(),
             properties: BTreeMap::new(),
-            text: Some(value.clone()),
-            content: vec![crate::records::FeatureContent::Text(value.clone())],
+            text: Some(value.to_owned()),
+            content: vec![crate::records::FeatureContent::Text(value.to_owned())],
         });
     }
     Ok(())
@@ -115,6 +117,11 @@ pub(super) fn synchronize(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn custom_property_ordinal_capacity_is_declared() {
+        assert!(crate::writer::CAPACITY_FIELDS.contains(&HISTORY_ORDINAL_CAPACITY));
+    }
 
     #[test]
     fn custom_properties_follow_sparse_feature_ordinals() {
