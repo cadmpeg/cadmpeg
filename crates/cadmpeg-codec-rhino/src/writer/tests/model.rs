@@ -10,6 +10,32 @@ use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::topology::EdgeCarrier;
 
 #[test]
+fn planar_surface_domains_cover_the_written_triangle() {
+    let ir = polygon_sheet(&[
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(10.0, 0.0, 0.0),
+        Point3::new(0.0, 10.0, 0.0),
+    ]);
+    let model = WritableModel::try_new(&ir).expect("triangle has writable topology");
+    assert!(model.surface_conversions.iter().any(|loss| {
+        loss.code == crate::loss::RhinoLossCode::WriterPlaneDomainRestricted.kind()
+            && loss.message.contains(ir.model.surfaces[0].id.as_str())
+    }));
+    let payload = model.surfaces[0]
+        .payload()
+        .expect("plane has a native payload");
+    let mut view = cadmpeg_core::decode::View::over_retained(&payload.body);
+    assert_eq!(view.req_u8().unwrap(), 0x10);
+    for _ in 0..16 {
+        view.req_f64_le().unwrap();
+    }
+    let u = [view.req_f64_le().unwrap(), view.req_f64_le().unwrap()];
+    let v = [view.req_f64_le().unwrap(), view.req_f64_le().unwrap()];
+    assert_eq!(u, [0.0, 10.0]);
+    assert_eq!(v, [0.0, 10.0]);
+}
+
+#[test]
 fn zero_length_edge_parameter_range_is_a_writer_limit() {
     let mut ir = polygon_sheet(&[
         Point3::new(0.0, 0.0, 0.0),
@@ -162,7 +188,12 @@ fn planar_brep_serializes_trim_iso_without_changing_its_topology_or_curves() {
         let raw = brep.raw();
         assert_eq!(
             raw.trims.iter().map(|trim| trim.iso).collect::<Vec<_>>(),
-            [RawTrimIso::Y, RawTrimIso::X, RawTrimIso::Y, RawTrimIso::X]
+            [
+                RawTrimIso::South,
+                RawTrimIso::East,
+                RawTrimIso::North,
+                RawTrimIso::West,
+            ]
         );
         assert_eq!(raw.trims.len(), 4);
         assert_eq!(raw.edges.len(), 4);

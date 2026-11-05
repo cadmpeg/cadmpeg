@@ -1185,11 +1185,13 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
                 ordinal: 0,
             },
         ],
-        &bodies,
-        &faces,
-        &edges,
-        &vertices,
-        &coedges,
+        crate::design::decode::dimension_frames::BrepTopology {
+            bodies: &bodies,
+            faces: &faces,
+            edges: &edges,
+            vertices: &vertices,
+            coedges: &coedges,
+        },
     );
     assert_eq!(
         edge_operand.candidate_faces,
@@ -1217,11 +1219,13 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             design_references: vec![303],
             ordinal: 0,
         }],
-        &bodies,
-        &faces,
-        &edges,
-        &vertices,
-        &coedges,
+        crate::design::decode::dimension_frames::BrepTopology {
+            bodies: &bodies,
+            faces: &faces,
+            edges: &edges,
+            vertices: &vertices,
+            coedges: &coedges,
+        },
     );
     assert!(edge_operand.candidate_faces.is_empty());
     let mut embedded_program = vec![99];
@@ -1557,11 +1561,13 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
                 ordinal: 0,
             },
         ],
-        &bodies,
-        &faces,
-        &edges,
-        &vertices,
-        &coedges,
+        crate::design::decode::dimension_frames::BrepTopology {
+            bodies: &bodies,
+            faces: &faces,
+            edges: &edges,
+            vertices: &vertices,
+            coedges: &coedges,
+        },
     );
     assert_eq!(
         operand.candidate_faces,

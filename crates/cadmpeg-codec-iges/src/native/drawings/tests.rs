@@ -62,7 +62,7 @@ fn drawing_sheets_link_their_views_and_views_carry_placed_scale() {
         "{rotation:?}"
     );
     assert_eq!(
-        view.scale.map(|scale| scale.get()),
+        view.scale.map(cadmpeg_ir::scalar::PositiveReal::get),
         Some(1.0),
         "{:?}",
         view.scale
@@ -101,7 +101,10 @@ fn unplaced_views_project_without_sheet_positions() {
     {
         let view = find_drawing(&result, native_id);
         assert!(matches!(view.kind, DrawingKind::View));
-        assert_eq!(view.order, index as u32);
+        assert_eq!(
+            view.order,
+            u32::try_from(index).expect("fixture index fits u32")
+        );
     }
     assert!(result
         .ir()

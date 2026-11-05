@@ -70,10 +70,10 @@ fn named_block(section: &str, payload: Vec<u8>) -> Block {
     }
 }
 
-fn synthetic_scan<'a>(
+fn synthetic_scan(
     blocks: Vec<Block>,
-    compound_streams: Vec<CompoundStream<'a>>,
-) -> ContainerScan<'a> {
+    compound_streams: Vec<CompoundStream<'_>>,
+) -> ContainerScan<'_> {
     ContainerScan {
         source_image: &[],
         version: 0,

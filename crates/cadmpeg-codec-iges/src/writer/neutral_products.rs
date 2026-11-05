@@ -5,6 +5,7 @@ use super::{reference_marker, CadIr, Entity, EntityStatus, Placement};
 use cadmpeg_ir::products::{OccurrenceParent, PrototypeReference};
 use cadmpeg_ir::scalar::FiniteReal;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::fmt::Write as _;
 
 pub(super) fn append(ir: &CadIr, entities: &mut Vec<Entity>, version: crate::IgesVersion) {
     let native = ir.native.namespace("iges");
@@ -15,7 +16,7 @@ pub(super) fn append(ir: &CadIr, entities: &mut Vec<Entity>, version: crate::Ige
                 .into_iter()
                 .flat_map(|arena| ns.arenas().get(arena).into_iter().flatten())
         })
-        .map(|record| record.id())
+        .map(cadmpeg_ir::NativeRecord::id)
         .collect::<std::collections::BTreeSet<_>>();
     let mut definitions = BTreeMap::new();
     let mut names = BTreeMap::new();
@@ -221,10 +222,11 @@ pub(super) fn append(ir: &CadIr, entities: &mut Vec<Entity>, version: crate::Ige
             continue;
         };
         let list = members.get(product.as_str()).map_or(&[][..], Vec::as_slice);
-        let references = list
-            .iter()
-            .map(|index| format!(",{}", reference_marker(*index)))
-            .collect::<String>();
+        let mut references = String::new();
+        for index in list {
+            write!(references, ",{}", reference_marker(*index))
+                .expect("writing to a string succeeds");
+        }
         let depth = depths.get(product.as_str()).copied().unwrap_or(0);
         entities[index].parameter_body =
             format!("{depth},{}H{name},{}{references};", name.len(), list.len()).into_bytes();
