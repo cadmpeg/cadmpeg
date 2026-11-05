@@ -1150,8 +1150,10 @@ fn declared_curve_dimension_rational_and_count_must_agree() {
     let xyz = declared_curve(3, false, &[0.0, 0.0, 0.0, 0.02, 0.0, 0.0]);
     assert_eq!(crate::nurbs::curves(&xyz).0.len(), 1);
     assert!(crate::nurbs::pcurves(&xyz).0.is_empty());
+    let homogeneous = declared_curve(4, false, &[0.0, 0.0, 0.0, 1.0, 0.02, 0.0, 0.0, 1.0]);
+    assert_eq!(crate::nurbs::curves(&homogeneous).0.len(), 1);
+    assert!(crate::nurbs::pcurves(&homogeneous).0.is_empty());
     for (dimension, rational, values) in [
-        (4, false, vec![0.0, 0.0, 0.0, 1.0, 0.02, 0.0, 0.0, 1.0]),
         (4, true, vec![0.0, 0.0, 1.0, 0.02, 0.0, 1.0]),
         (3, true, vec![0.0, 0.0, -1.0, 0.02, 0.0, 1.0]),
         (3, true, vec![0.0, 0.0, 0.0, 0.02, 0.0, 1.0]),
@@ -1160,6 +1162,16 @@ fn declared_curve_dimension_rational_and_count_must_agree() {
         assert!(crate::nurbs::curves(&stream).0.is_empty());
         assert!(crate::nurbs::pcurves(&stream).0.is_empty());
     }
+}
+
+#[test]
+fn a_refused_model_space_curve_is_refused_once() {
+    let stream = declared_curve(3, false, &[f64::MAX, 0.0, 0.0, 0.02, 0.0, 0.0]);
+    let (curves, curve_refusals) = crate::nurbs::curves(&stream);
+    let (pcurves, pcurve_refusals) = crate::nurbs::pcurves(&stream);
+    assert!(curves.is_empty() && pcurves.is_empty());
+    assert_eq!(curve_refusals.len(), 1);
+    assert!(pcurve_refusals.is_empty());
 }
 
 fn declared_curve(dimension: u16, rational: bool, values: &[f64]) -> Vec<u8> {
