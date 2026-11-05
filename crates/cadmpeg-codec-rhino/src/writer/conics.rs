@@ -453,6 +453,31 @@ pub(super) fn unperiod_curve(
         )),
         error => error,
     })?;
+    if hi == domain_hi {
+        let point = |value: &NurbsCurve, parameter| {
+            cadmpeg_ir::eval::decode::nurbs_curve_point_at(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                value,
+                parameter,
+            )
+            .map(|point| point.get())
+            .map_err(|error| match error {
+                cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit) => {
+                    WriteError::Encode(limit.into())
+                }
+                _ => fail("seam endpoint cannot be evaluated"),
+            })
+        };
+        let source = point(curve, domain_lo)?;
+        let written = point(&converted, hi)?;
+        if ![source.x, source.y, source.z]
+            .into_iter()
+            .zip([written.x, written.y, written.z])
+            .all(|(left, right)| cadmpeg_ir::compare::floats_agree(left, right))
+        {
+            return Err(fail("has a discontinuous periodic seam"));
+        }
+    }
     Ok(converted)
 }
 
