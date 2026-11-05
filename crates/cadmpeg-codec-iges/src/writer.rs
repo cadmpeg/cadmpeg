@@ -648,6 +648,51 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
         .regenerated
         .extend(native_export.regenerated);
     append_name_properties(&mut graph.entities, &graph.presentations)?;
+    let emitted = graph
+        .entities
+        .iter()
+        .flat_map(|entity| entity.source_targets.iter())
+        .collect::<BTreeSet<_>>();
+    let mut flattened = BTreeSet::new();
+    for curve in &ir.model.curves {
+        if !emitted.contains(&curve.id.to_string()) {
+            continue;
+        }
+        let mut pending = vec![curve];
+        let mut visited = BTreeSet::new();
+        while let Some(parent) = pending.pop() {
+            if !visited.insert(parent.id.clone()) {
+                continue;
+            }
+            let Some(SolvedCurveGeometry::Composite { segments, .. }) = parent.geometry.solved()
+            else {
+                continue;
+            };
+            for segment in segments {
+                if let Some(child) = ir
+                    .model
+                    .curves
+                    .iter()
+                    .find(|child| child.id == segment.curve)
+                {
+                    if matches!(
+                        child.geometry.solved(),
+                        Some(SolvedCurveGeometry::Composite { .. })
+                    ) {
+                        if !emitted.contains(&child.id.to_string()) {
+                            flattened.insert(child.id.to_string());
+                        }
+                        pending.push(child);
+                    }
+                }
+            }
+        }
+    }
+    for id in flattened {
+        graph.losses.push(IgesLossCode::WriterEntityOmitted.note(format!(
+            "IGES composite constituent {id} is flattened because Type 102 cannot contain another Type 102"
+        )));
+    }
     resolve_entity_references(&mut graph.entities)?;
     let (feature_coverage, feature_losses) =
         native_records::primitive_feature_coverage(ir, &graph.entities);
