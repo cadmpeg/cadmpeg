@@ -161,6 +161,12 @@ pub(super) struct Bounded {
     values: [FiniteReal; 8],
 }
 
+impl Bounded {
+    pub(super) fn attr(&self) -> u32 {
+        self.attr
+    }
+}
+
 /// Scan a stream for `00 85` records whose eight values are finite.
 pub(super) fn records(bytes: &[u8]) -> Vec<Bounded> {
     let mut out = Vec::new();
