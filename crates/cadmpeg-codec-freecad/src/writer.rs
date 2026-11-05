@@ -27,7 +27,7 @@ pub(crate) mod target;
 pub(crate) mod xml;
 
 use std::collections::{HashMap, HashSet};
-use std::io::{Seek, SeekFrom, Write};
+use std::io::{Seek, Write};
 
 use cadmpeg_core::CodecError;
 use zip::write::SimpleFileOptions;
@@ -115,18 +115,16 @@ pub(crate) const REDUCED_FIELDS: &[cadmpeg_ir::codec::write::ReducedField] = &[
             loss: "fcstd/parameter.driving-not-transferred",
         },
     },
+    cadmpeg_ir::codec::write::ReducedField {
+        path: "model.parameters[].expression",
+        storage: cadmpeg_ir::codec::write::ReducedStorage::Normalized {
+            loss: "fcstd/parameter.expression-normalized",
+        },
+    },
 ];
 
 trait WriteSeek: Write + Seek {}
 impl<T: Write + Seek> WriteSeek for T {}
-
-fn write(output: &mut dyn Write, resolution: &Resolution<'_>) -> Result<WriteOutcome, CodecError> {
-    let mut staged = tempfile::tempfile()?;
-    let report = write_seekable(&mut staged, resolution)?;
-    staged.seek(SeekFrom::Start(0))?;
-    std::io::copy(&mut staged, output)?;
-    Ok(report)
-}
 
 /// Repack the retained entry set with a patched `Document.xml`.
 ///

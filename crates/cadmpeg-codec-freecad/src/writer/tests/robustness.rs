@@ -144,6 +144,7 @@ fn reduced_rows_hold_their_normalizations() {
             "model.features[].source_tag",
             "model.parameters[].name",
             "model.parameters[].driving",
+            "model.parameters[].expression",
         ]
     );
     for row in rows {
@@ -179,6 +180,49 @@ fn reduced_rows_hold_their_normalizations() {
         losses
             .iter()
             .any(|loss| loss.code.to_string() == code && loss.message.contains(record))
+    }
+    {
+        use cadmpeg_ir::features::{Expression, ParameterValue};
+        let mut ir = seed_golden();
+        let owner = ir
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some("Box"))
+            .expect("seed Box feature")
+            .id
+            .clone();
+        let parameter = ir
+            .model
+            .parameters
+            .iter_mut()
+            .find(|parameter| {
+                parameter.owner.as_ref() == Some(&owner)
+                    && parameter.name == "Length"
+                    && matches!(parameter.value, Some(ParameterValue::Length(_)))
+            })
+            .expect("seed length parameter");
+        let id = parameter.id.clone();
+        let value = parameter.value.clone().unwrap();
+        let ParameterValue::Length(length) = &value else {
+            unreachable!()
+        };
+        parameter.expression = Expression::text(format!("{:.6} mm", length.get()));
+        let expected = Expression::literal(&value);
+        assert_ne!(parameter.expression, expected);
+        let (losses, output) = write(&ir);
+        assert!(has_loss(
+            &losses,
+            "fcstd/parameter.expression-normalized",
+            id.as_str()
+        ));
+        let parameter = output
+            .model
+            .parameters
+            .iter()
+            .find(|parameter| parameter.id == id)
+            .expect("literal parameter re-decodes");
+        assert_eq!(parameter.expression, expected);
     }
     // Body names with no native home are dropped. Body identities embed
     // their archive entry names, which the writer normalizes, so the probe
