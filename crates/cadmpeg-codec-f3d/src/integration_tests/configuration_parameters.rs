@@ -22,17 +22,37 @@ fn archive(table: &[u8], second_discriminator: u64) -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
     write_synthetic_manifests(&mut zip, stored);
-    zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored)
-        .unwrap();
+    let mut bulk = Vec::new();
+    let mut records = Vec::new();
     for (index, name, expression, value, discriminator) in [
         (71u32, "Width", "20 mm", 2.0, 5u64),
         (72u32, "Height", "Width / 2", 1.0, second_discriminator),
     ] {
         let mut frame =
             parameter_record(None, expression, "User Parameter", Some("mm"), name, value);
+        frame[4..7].copy_from_slice(b"256");
         frame[7..11].copy_from_slice(&index.to_le_bytes());
         frame[22..30].copy_from_slice(&discriminator.to_le_bytes());
-        zip.write_all(&frame).unwrap();
+        records.push((u64::from(index), u64::try_from(bulk.len()).unwrap()));
+        bulk.extend_from_slice(&frame);
+    }
+    let meta = crate::test_support::streams_test::design_metastream_with_records(
+        &[(
+            "7A6A3D31-BE74-4E19-9115-20642944C2E4",
+            "",
+            1,
+            "Fusion",
+            &[71, 72],
+        )],
+        &records,
+    );
+    for (name, bytes) in [
+        ("BulkStream.dat", bulk.as_slice()),
+        ("MetaStream.dat", meta.as_slice()),
+    ] {
+        zip.start_file(format!("FusionAssetName[Active]/Design1/{name}"), stored)
+            .unwrap();
+        zip.write_all(bytes).unwrap();
     }
     zip.start_file(TABLE, stored).unwrap();
     zip.write_all(table).unwrap();
@@ -131,7 +151,7 @@ fn configuration_parameter_refusal_reports_unparsed_record() {
         .report()
         .losses
         .iter()
-        .any(|loss| loss.code == crate::loss::F3dLossCode::ParameterRecordUnparsed.kind()));
+        .any(|loss| loss.code.local_code() == "record.unreadable"));
     assert_configuration_valid(&decoded);
 }
 
@@ -143,18 +163,28 @@ fn configuration_registered_tail_refusal_reports_unparsed_record() {
     const TAIL_TYPE_GUID: &str = "B0556F58-EE09-46A7-B18F-E296F48E5B13";
     let target = 181u64;
     let mut frame = parameter_record(None, "3 mm", "User Parameter", Some("mm"), "Width", 0.3);
+    frame[4..7].copy_from_slice(b"256");
     frame[22..30].copy_from_slice(&9u64.to_le_bytes());
     let tail = frame.len() - 12;
     frame[tail + 2..tail + 10].copy_from_slice(&target.to_le_bytes());
     let metadata = crate::test_support::streams_test::design_metastream_with_records(
-        &[(
-            TAIL_TYPE_GUID,
-            "A7AEA631-985B-4DD1-8CE2-DE2C-14B54081",
-            3,
-            "CommonData",
-            &[target],
-        )],
-        &[],
+        &[
+            (
+                "7A6A3D31-BE74-4E19-9115-20642944C2E4",
+                "",
+                1,
+                "Fusion",
+                &[71],
+            ),
+            (
+                TAIL_TYPE_GUID,
+                "A7AEA631-985B-4DD1-8CE2-DE2C-14B54081",
+                3,
+                "CommonData",
+                &[target],
+            ),
+        ],
+        &[(71, 0)],
     );
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
@@ -170,5 +200,5 @@ fn configuration_registered_tail_refusal_reports_unparsed_record() {
         .report()
         .losses
         .iter()
-        .any(|loss| loss.code == crate::loss::F3dLossCode::ParameterRecordUnparsed.kind()));
+        .any(|loss| loss.code.local_code() == "record.unreadable"));
 }

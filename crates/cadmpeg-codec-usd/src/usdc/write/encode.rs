@@ -115,11 +115,11 @@ pub(super) fn compress(data: &[u8]) -> Result<Vec<u8>, CodecError> {
     for chunk in chunks {
         let mut body = Vec::new();
         block(chunk, &mut body);
-        out.extend_from_slice(
-            &i32::try_from(body.len())
-                .map_err(|_| too_large())?
-                .to_le_bytes(),
+        debug_assert!(
+            i32::try_from(body.len()).is_ok(),
+            "compressed chunk length fits its signed size field"
         );
+        out.extend_from_slice(&i32::try_from(body.len()).unwrap_or_default().to_le_bytes());
         out.extend_from_slice(&body);
     }
     Ok(out)
