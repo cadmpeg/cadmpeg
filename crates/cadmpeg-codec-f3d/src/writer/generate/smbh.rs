@@ -21,9 +21,10 @@ use cadmpeg_ir::topology::Sense;
 
 use super::{
     attributes::{
-        edge_persistent_attribute_ref, encode_source_less_attributes, extra_attribute_ref, owner_attribute_ref,
-        sketch_link_attribute_ref, source_less_body_key, timestamp_attribute_ref, AttributeIndex,
-        AttributeOwner, AttributeOwnerStarts, SurfaceOwnerStarts,
+        edge_persistent_attribute_ref, encode_source_less_attributes, extra_attribute_ref,
+        owner_attribute_ref, sketch_link_attribute_ref, source_less_body_key,
+        timestamp_attribute_ref, AttributeIndex, AttributeOwner, AttributeOwnerStarts,
+        SurfaceOwnerStarts,
     },
     index::NativeGenerationIndex,
     native_bytes::{
@@ -47,6 +48,7 @@ pub(super) fn encode_smbh(
     native: &F3dNative,
     attributes: &AttributeIndex<'_>,
     limits: cadmpeg_core::decode::ResourceLimits,
+    output: &cadmpeg_core::decode::DecodeContext<'_>,
 ) -> Result<Vec<u8>, CodecError> {
     let topology = NativeGenerationIndex::new(target, native);
     if target.model.faces.is_empty() {
@@ -62,10 +64,11 @@ pub(super) fn encode_smbh(
                 && target.model.points.is_empty()
             {
                 let mut bytes = native_smbh_header(target)?;
+                output.charge_entities(1, "F3D BREP record")?;
                 native_ident(&mut bytes, "asmheader")?;
                 native_string(&mut bytes, "231.6.3.65535")?;
                 bytes.push(0x11);
-                native_history_tail(&mut bytes, native)?;
+                native_history_tail(&mut bytes, native, output)?;
                 return Ok(bytes);
             }
             return Err(CodecError::UnsupportedContent(
@@ -73,69 +76,9 @@ pub(super) fn encode_smbh(
                     .into(),
             ));
         }
-        return encode_wire_body_smbh(target, native, attributes, &topology);
+        return encode_wire_body_smbh(target, native, attributes, &topology, output);
     }
-    encode_face_topology_smbh(target, native, attributes, &topology, limits)
-}
-
-pub(super) fn charge_smbh_records(
-    target: &CadIr,
-    native: &F3dNative,
-    attributes: &AttributeIndex<'_>,
-    output: &cadmpeg_core::decode::DecodeContext<'_>,
-) -> Result<(), CodecError> {
-    let model = &target.model;
-    let first_attribute = if !model.faces.is_empty() {
-        NativeRecordPlan::for_model(model)?.attribute
-    } else if model.bodies.is_empty() {
-        1
-    } else {
-        let mut count = 1usize;
-        for amount in [
-            model.bodies.len(),
-            model.regions.len(),
-            model.shells.len(),
-            model.shells.iter().map(source_less_wire_count).sum(),
-            model.edges.len(),
-            model.curves.len(),
-            model.edges.len(),
-            model.vertices.len(),
-            model.points.len(),
-            model
-                .bodies
-                .iter()
-                .filter(|body| body.transform.is_some())
-                .count(),
-        ] {
-            count = count.checked_add(amount).ok_or_else(|| {
-                CodecError::InvalidInput("F3D BREP record count exceeds usize".into())
-            })?;
-        }
-        i64::try_from(count).map_err(CodecError::malformed)?
-    };
-    let geometry = usize::try_from(first_attribute).map_err(CodecError::malformed)?;
-    let attributes = if model.faces.is_empty() && model.bodies.is_empty() {
-        0
-    } else {
-        super::attributes::source_less_attribute_count(target, attributes)
-    };
-    let histories = if native.asm_histories.is_empty() {
-        1
-    } else {
-        native
-            .asm_histories
-            .iter()
-            .map(|history| history.states().len() + usize::from(history.preamble.is_some()))
-            .sum()
-    };
-    let count = geometry
-        .checked_add(attributes)
-        .and_then(|count| count.checked_add(histories))
-        .ok_or_else(|| CodecError::InvalidInput("F3D BREP record count exceeds usize".into()))?;
-    for _ in 0..count {
-        output.charge_entities(1, "F3D BREP record")?;
-    }
-    Ok(())
+    encode_face_topology_smbh(target, native, attributes, &topology, limits, output)
 }
 
 #[derive(Debug)]
@@ -286,6 +229,7 @@ fn encode_source_less_wires(
     wire_coedge_start: i64,
     shell_start: i64,
     vertex_start: i64,
+    output: &cadmpeg_core::decode::DecodeContext<'_>,
 ) -> Result<BTreeMap<VertexId, i64>, CodecError> {
     let model = &target.model;
     let vertex_ordinals = model
@@ -305,6 +249,7 @@ fn encode_source_less_wires(
     for (shell_ordinal, shell) in model.shells.iter().enumerate() {
         let shell_wire_count = source_less_wire_count(shell);
         if !shell.wire_edges().is_empty() {
+            output.charge_entities(1, "F3D BREP record")?;
             native_ident(records, "wire")?;
             native_ref(records, -1);
             native_i64(records, -1);
@@ -349,6 +294,7 @@ fn encode_source_less_wires(
                     "free vertex {vertex_id} belongs to more than one wire"
                 )));
             }
+            output.charge_entities(1, "F3D BREP record")?;
             native_ident(records, "wire")?;
             native_ref(records, -1);
             native_i64(records, -1);
@@ -394,6 +340,7 @@ fn encode_wire_body_smbh(
     native: &F3dNative,
     attributes: &AttributeIndex<'_>,
     topology: &NativeGenerationIndex<'_>,
+    output: &cadmpeg_core::decode::DecodeContext<'_>,
 ) -> Result<Vec<u8>, CodecError> {
     let model = &target.model;
     if model.bodies.is_empty()
@@ -450,6 +397,7 @@ fn encode_wire_body_smbh(
     let attribute_start = native_record_index(transform_start, transform_count)?;
 
     let mut records = Vec::new();
+    output.charge_entities(1, "F3D BREP record")?;
     native_ident(&mut records, "asmheader")?;
     native_string(&mut records, "231.6.3.65535")?;
     records.push(0x11);
@@ -460,6 +408,7 @@ fn encode_wire_body_smbh(
             .iter()
             .filter(|candidate| candidate.transform.is_some())
             .count();
+        output.charge_entities(1, "F3D BREP record")?;
         native_ident(&mut records, "body")?;
         native_ref(
             &mut records,
@@ -502,6 +451,7 @@ fn encode_wire_body_smbh(
             .transpose()?
             .unwrap_or(-1);
         let shell_ordinal = owned.first_shell;
+        output.charge_entities(1, "F3D BREP record")?;
         native_ident(&mut records, "region")?;
         native_ref(&mut records, -1);
         native_i64(&mut records, -1);
@@ -521,6 +471,7 @@ fn encode_wire_body_smbh(
             .map(|position| native_record_index(shell_start, position))
             .transpose()?
             .unwrap_or(-1);
+        output.charge_entities(1, "F3D BREP record")?;
         native_ident(&mut records, "shell")?;
         native_ref(&mut records, -1);
         native_i64(&mut records, -1);
@@ -544,6 +495,7 @@ fn encode_wire_body_smbh(
         wire_coedge_start,
         shell_start,
         vertex_start,
+        output,
     )?;
     let mut edge_base = 0usize;
     for (shell_ordinal, shell) in model.shells.iter().enumerate() {
@@ -552,6 +504,7 @@ fn encode_wire_body_smbh(
             let next = edge_base + (ordinal + 1) % shell.wire_edges().len();
             let previous =
                 edge_base + (ordinal + shell.wire_edges().len() - 1) % shell.wire_edges().len();
+            output.charge_entities(1, "F3D BREP record")?;
             native_ident(&mut records, "coedge")?;
             native_ref(&mut records, -1);
             native_i64(&mut records, -1);
@@ -574,7 +527,7 @@ fn encode_wire_body_smbh(
         }
         edge_base += shell.wire_edges().len();
     }
-    encode_source_less_curves(&mut records, target)?;
+    encode_source_less_curves(&mut records, target, output)?;
     let mut wire_edge_owners = model
         .edges
         .iter()
@@ -598,9 +551,11 @@ fn encode_wire_body_smbh(
         },
         &wire_edge_owners,
         &free_vertex_owners,
+        output,
     )?;
     for body in &model.bodies {
         if let Some(transform) = body.transform {
+            output.charge_entities(1, "F3D BREP record")?;
             native_transform(&mut records, topology, body, transform)?;
             records.push(0x11);
         }
@@ -616,16 +571,22 @@ fn encode_wire_body_smbh(
             edge: edge_start,
             vertex: vertex_start,
         },
+        output,
     )?;
-    native_history_tail(&mut records, native)?;
+    native_history_tail(&mut records, native, output)?;
     let mut bytes = native_smbh_header(target)?;
     bytes.extend_from_slice(&records);
     Ok(bytes)
 }
 
-fn encode_source_less_curves(records: &mut Vec<u8>, target: &CadIr) -> Result<(), CodecError> {
+fn encode_source_less_curves(
+    records: &mut Vec<u8>,
+    target: &CadIr,
+    output: &cadmpeg_core::decode::DecodeContext<'_>,
+) -> Result<(), CodecError> {
     let model = &target.model;
     for carrier in &model.curves {
+        output.charge_entities(1, "F3D BREP record")?;
         match carrier.geometry.solved() {
             Some(SolvedCurveGeometry::Line(line_curve)) => {
                 let origin = line_curve.origin().get();
@@ -736,6 +697,7 @@ fn encode_face_topology_smbh(
     attributes: &AttributeIndex<'_>,
     topology: &NativeGenerationIndex<'_>,
     limits: cadmpeg_core::decode::ResourceLimits,
+    output: &cadmpeg_core::decode::DecodeContext<'_>,
 ) -> Result<Vec<u8>, CodecError> {
     use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 
@@ -810,6 +772,7 @@ fn encode_face_topology_smbh(
     } = plan;
 
     let mut records = Vec::new();
+    output.charge_entities(1, "F3D BREP record")?;
     native_ident(&mut records, "asmheader")?;
     native_string(&mut records, "231.6.3.65535")?;
     records.push(0x11);
@@ -847,6 +810,7 @@ fn encode_face_topology_smbh(
             })
             .transpose()?
             .unwrap_or(-1);
+        output.charge_entities(1, "F3D BREP record")?;
         native_ident(&mut records, "body")?;
         native_ref(
             &mut records,
@@ -919,6 +883,7 @@ fn encode_face_topology_smbh(
                 })?;
             native_record_index(region_start, position)?
         };
+        output.charge_entities(1, "F3D BREP record")?;
         native_ident(&mut records, "region")?;
         native_ref(&mut records, -1);
         native_i64(&mut records, -1);
@@ -977,6 +942,7 @@ fn encode_face_topology_smbh(
                 })?;
             native_record_index(shell_start, position)?
         };
+        output.charge_entities(1, "F3D BREP record")?;
         native_ident(&mut records, "shell")?;
         native_ref(&mut records, -1);
         native_i64(&mut records, -1);
@@ -1007,6 +973,7 @@ fn encode_face_topology_smbh(
         wire_coedge_start,
         shell_start,
         vertex_start,
+        output,
     )?;
 
     for (face_ordinal_global, face) in model.faces.iter().enumerate() {
@@ -1045,6 +1012,7 @@ fn encode_face_topology_smbh(
                     face.surface
                 ))
             })?;
+        output.charge_entities(1, "F3D BREP record")?;
         native_ident(&mut records, "face")?;
         native_ref(
             &mut records,
@@ -1125,6 +1093,7 @@ fn encode_face_topology_smbh(
             .ok_or_else(|| {
                 CodecError::malformed(format_args!("loop references missing coedge {first}"))
             })?;
+        output.charge_entities(1, "F3D BREP record")?;
         native_ident(&mut records, "loop")?;
         native_ref(&mut records, -1);
         native_i64(&mut records, -1);
@@ -1165,6 +1134,7 @@ fn encode_face_topology_smbh(
     }
 
     for surface in &model.surfaces {
+        output.charge_entities(1, "F3D BREP record")?;
         match surface.geometry.solved() {
             Some(SolvedSurfaceGeometry::Plane(plane_surface)) => {
                 let origin = plane_surface.origin().get();
@@ -1327,14 +1297,16 @@ fn encode_face_topology_smbh(
         records.push(0x11);
     }
 
-    encode_source_less_curves(&mut records, target)?;
+    encode_source_less_curves(&mut records, target, output)?;
 
     for pcurve in &pcurves {
+        output.charge_entities(1, "F3D BREP record")?;
         native_pcurve(&mut records, pcurve.geometry, &pcurve.form, pcurve.support)?;
         records.push(0x11);
     }
     for pcurve in &pcurves {
         if let NativePcurveForm::Reference { uv_offset, .. } = pcurve.form {
+            output.charge_entities(1, "F3D BREP record")?;
             native_ref_pcurve_companion(&mut records, pcurve.geometry, uv_offset, pcurve.support)?;
             records.push(0x11);
         }
@@ -1369,6 +1341,7 @@ fn encode_face_topology_smbh(
             )));
         };
         let tolerant_range = tolerant_coedge_range(topology, &coedge.id);
+        output.charge_entities(1, "F3D BREP record")?;
         native_ident(
             &mut records,
             if tolerant_range.is_some() {
@@ -1444,6 +1417,7 @@ fn encode_face_topology_smbh(
             let next = wire_edge_base + (ordinal + 1) % shell.wire_edges().len();
             let previous = wire_edge_base
                 + (ordinal + shell.wire_edges().len() - 1) % shell.wire_edges().len();
+            output.charge_entities(1, "F3D BREP record")?;
             native_ident(&mut records, "coedge")?;
             native_ref(&mut records, -1);
             native_i64(&mut records, -1);
@@ -1479,9 +1453,11 @@ fn encode_face_topology_smbh(
         },
         &wire_edge_owners,
         &free_vertex_owners,
+        output,
     )?;
     for body in &model.bodies {
         if let Some(transform) = body.transform {
+            output.charge_entities(1, "F3D BREP record")?;
             native_transform(&mut records, topology, body, transform)?;
             records.push(0x11);
         }
@@ -1500,6 +1476,7 @@ fn encode_face_topology_smbh(
             edge: edge_start,
             vertex: vertex_start,
         },
+        output,
     )?;
     super::reindex::preserve_indices(
         &mut records,
@@ -1520,7 +1497,7 @@ fn encode_face_topology_smbh(
             point: point_start,
         },
     )?;
-    native_history_tail(&mut records, native)?;
+    native_history_tail(&mut records, native, output)?;
     let mut bytes = native_smbh_header(target)?;
     bytes.extend_from_slice(&records);
     Ok(bytes)
@@ -1622,6 +1599,7 @@ fn encode_source_less_edges_vertices_points(
     starts: SourceLessRecordStarts,
     edge_owners: &BTreeMap<cadmpeg_ir::ids::EdgeId, i64>,
     free_vertex_owners: &BTreeMap<VertexId, i64>,
+    output: &cadmpeg_core::decode::DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     let SourceLessRecordStarts {
         curve: curve_start,
@@ -1720,6 +1698,7 @@ fn encode_source_less_edges_vertices_points(
             range[0] /= LEN_TO_MM;
             range[1] /= LEN_TO_MM;
         }
+        output.charge_entities(1, "F3D BREP record")?;
         native_ident(
             records,
             if edge.tolerance.is_some() {
@@ -1737,7 +1716,12 @@ fn encode_source_less_edges_vertices_points(
             } else {
                 let entity = cadmpeg_ir::attributes::AttributeTarget::Edge(edge.id.clone());
                 timestamp_attribute_ref(target, attributes, &entity, attribute_start)?
-                    .or(extra_attribute_ref(target, attributes, &entity, attribute_start)?)
+                    .or(extra_attribute_ref(
+                        target,
+                        attributes,
+                        &entity,
+                        attribute_start,
+                    )?)
                     .unwrap_or(-1)
             },
         );
@@ -1764,6 +1748,7 @@ fn encode_source_less_edges_vertices_points(
             )));
         };
         let ownership = free_vertex_owners.get(&vertex.id).copied();
+        output.charge_entities(1, "F3D BREP record")?;
         native_ident(
             records,
             if vertex.tolerance.is_some()
@@ -1774,15 +1759,17 @@ fn encode_source_less_edges_vertices_points(
                 "vertex"
             },
         )?;
-        native_ref(
-            records,
-            {
-                let entity = cadmpeg_ir::attributes::AttributeTarget::Vertex(vertex.id.clone());
-                timestamp_attribute_ref(target, attributes, &entity, attribute_start)?
-                    .or(extra_attribute_ref(target, attributes, &entity, attribute_start)?)
-                    .unwrap_or(-1)
-            },
-        );
+        native_ref(records, {
+            let entity = cadmpeg_ir::attributes::AttributeTarget::Vertex(vertex.id.clone());
+            timestamp_attribute_ref(target, attributes, &entity, attribute_start)?
+                .or(extra_attribute_ref(
+                    target,
+                    attributes,
+                    &entity,
+                    attribute_start,
+                )?)
+                .unwrap_or(-1)
+        });
         native_i64(records, -1);
         native_ref(records, -1);
         if let Some(wire) = ownership {
@@ -1798,6 +1785,7 @@ fn encode_source_less_edges_vertices_points(
         records.push(0x11);
     }
     for point in &model.points {
+        output.charge_entities(1, "F3D BREP record")?;
         native_ident(records, "point")?;
         native_ref(records, -1);
         native_i64(records, -1);

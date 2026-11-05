@@ -5828,6 +5828,13 @@ impl<'a> Builder<'a> {
                 // census cannot miss a record the writer put in the file.
                 let basis = geometry::emitted_basis(solved);
                 let reference = geometry::surface(&mut self.emitter, &name, solved)?;
+                if matches!(basis, SolvedSurfaceGeometry::Cone(cone) if cone.half_angle().get() < 0.0)
+                {
+                    self.loss(
+                        StepLossCode::AnalyticSurfaceNormalized,
+                        format!("surface '{surface_id}' uses a reversed axis and positive cone semi-angle in STEP"),
+                    );
+                }
                 self.written_analytic_surfaces
                     .push(WrittenAnalyticSurface::Carrier(basis));
                 let chart = geometry::WrittenChart::of(basis);
