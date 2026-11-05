@@ -804,12 +804,37 @@ fn basis_curve(e: &mut Emitter, name: &str, g: &SolvedCurveGeometry) -> Option<R
         }
         SolvedCurveGeometry::Nurbs(n) => nurbs_curve(e, name, n),
         SolvedCurveGeometry::Polyline(polyline) => {
-            let points = polyline
-                .points()
-                .map(|position| point(e, "", position.get()).to_string())
-                .collect::<Vec<_>>()
-                .join(",");
-            e.emit("POLYLINE", &format!("{},({points})", string(name)))
+            let mut samples = (0..polyline.point_count())
+                .map(|index| {
+                    Some((
+                        polyline.parameter_at(index)?.get(),
+                        polyline.point_at(index)?.get(),
+                    ))
+                })
+                .collect::<Option<Vec<_>>>()?;
+            if samples.len() == 1 {
+                let p = point(e, "", samples[0].1);
+                e.emit("POLYLINE", &format!("{},({p},{p})", string(name)))
+            } else {
+                if samples[0].0 > samples[samples.len() - 1].0 {
+                    samples.reverse();
+                }
+                let knots: Vec<f64> = samples.iter().map(|(parameter, _)| *parameter).collect();
+                let points: Vec<Ref> = samples.iter().map(|(_, p)| point(e, "", *p)).collect();
+                let mut multiplicities = vec![1; samples.len()];
+                multiplicities[0] = 2;
+                *multiplicities.last_mut()? = 2;
+                e.emit(
+                    "B_SPLINE_CURVE_WITH_KNOTS",
+                    &format!(
+                        "{},1,{},.UNSPECIFIED.,.F.,.U.,{},{},.UNSPECIFIED.",
+                        string(name),
+                        refs(&points),
+                        int_list(&multiplicities),
+                        real_list(e, &knots)
+                    ),
+                )
+            }
         }
         // `placed_curve` ends the walk at the first carrier that is not a
         // placement, so `Transformed` does not reach this function. A composite
