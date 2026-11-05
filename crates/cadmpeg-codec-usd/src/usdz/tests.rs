@@ -69,12 +69,17 @@ fn every_member_of_a_package_is_stored_aligned() {
 #[test]
 fn package_supports_a_zip64_member_count() {
     let names: Vec<String> = (0..65_536).map(|index| format!("{index}.usda")).collect();
-    let members: Vec<(&str, &[u8])> = names.iter().map(|name| (name.as_str(), LAYER)).collect();
-    let bytes = package(&members).expect("ZIP64 package");
-    with_root(&bytes, |ctx, root| {
-        let package = open(ctx, root).expect("open ZIP64 package");
-        assert_eq!(package.snapshot.entries().len(), 65_536);
-    });
+    for count in [65_535, 65_536] {
+        let members: Vec<(&str, &[u8])> = names[..count]
+            .iter()
+            .map(|name| (name.as_str(), LAYER))
+            .collect();
+        let bytes = package(&members).expect("ZIP64 package");
+        with_root(&bytes, |ctx, root| {
+            let package = open(ctx, root).expect("open ZIP64 package");
+            assert_eq!(package.snapshot.entries().len(), count);
+        });
+    }
 }
 
 #[test]
