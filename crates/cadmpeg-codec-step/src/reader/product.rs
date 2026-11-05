@@ -28,6 +28,11 @@ use super::StageOutcome;
 
 mod bodies;
 
+enum ChildPrototype {
+    Local(ProductDefinitionId),
+    External(ExternalPrototype, UsedAsset),
+}
+
 /// Occurrences that product expansion may add to the model. Expansion stops
 /// at the limit and reports one loss.
 const MAX_OCCURRENCES: usize = 100_000;
@@ -579,10 +584,6 @@ pub(super) fn decode(
                 continue;
             }
             let usage = &usages[&usage_id];
-            enum ChildPrototype {
-                Local(ProductDefinitionId),
-                External(ExternalPrototype, UsedAsset),
-            }
             let child = match definition_prototypes.get(&usage.child_definition).cloned() {
                 Some(definition) => ChildPrototype::Local(definition),
                 None => match external_prototype(exchange, externals, usage.child_definition) {

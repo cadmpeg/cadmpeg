@@ -17,8 +17,6 @@ use cadmpeg_ir::report::{
     Severity,
 };
 
-pub(crate) mod payloads;
-
 const NAMESPACE: LossNamespace<'static> = cadmpeg_ir::loss_namespace!("fcstd");
 
 /// A stable, machine-readable identifier for one `.fcstd` transfer loss.
@@ -29,8 +27,6 @@ const NAMESPACE: LossNamespace<'static> = cadmpeg_ir::loss_namespace!("fcstd");
 pub(crate) enum FreecadLossCode {
     /// A formula identifier has no unique parameter binding.
     ExpressionReferenceUnresolved,
-    /// A property has no constructible typed attribute projection.
-    AttributePropertyUnprojected,
     ExportAttributeNotTransferred,
     /// Model payload content survives only in opaque source bytes.
     SourceModelPayloadUnrepresented,
@@ -54,7 +50,7 @@ pub(crate) enum FreecadLossCode {
     TemplateNotTransferred,
     /// A drawing source reference has no writable carrier.
     DrawingSourceNotTransferred,
-    /// A product membership requires a linked FreeCAD object.
+    /// A product membership requires a linked `FreeCAD` object.
     ProductMembershipNotTransferred,
     /// The stored horizontal view axis has no nonzero neutral direction.
     DrawingViewAxisNotTransferred,
@@ -174,7 +170,6 @@ impl FreecadLossCode {
     #[cfg(test)]
     const ALL: &'static [FreecadLossCode] = &[
         Self::ExpressionReferenceUnresolved,
-        Self::AttributePropertyUnprojected,
         Self::ExportAttributeNotTransferred,
         Self::SourceModelPayloadUnrepresented,
         Self::SourceDesignPayloadUnrepresented,
@@ -250,7 +245,6 @@ impl FreecadLossCode {
     const fn code(self) -> &'static str {
         match self {
             Self::ExpressionReferenceUnresolved => "expression.reference-unresolved",
-            Self::AttributePropertyUnprojected => "attribute.property-unprojected",
             Self::ExportAttributeNotTransferred => "attribute.not-transferred",
             Self::SourceModelPayloadUnrepresented => "source.model-payload-unrepresented",
             Self::SourceDesignPayloadUnrepresented => "source.design-payload-unrepresented",
@@ -335,7 +329,6 @@ impl FreecadLossCode {
     const fn severity(self) -> Severity {
         match self {
             Self::ExpressionReferenceUnresolved
-            | Self::AttributePropertyUnprojected
             | Self::ExportAttributeNotTransferred
             | Self::DrawingSourceNotTransferred
             | Self::ProductMembershipNotTransferred => Severity::Warning,
@@ -410,9 +403,9 @@ impl FreecadLossCode {
 
     const fn shared_taxonomy(self) -> LossTaxonomy {
         match self {
-            Self::ExpressionReferenceUnresolved
-            | Self::AttributePropertyUnprojected
-            | Self::ExportAttributeNotTransferred => LossTaxonomy::MetadataNotTransferred,
+            Self::ExpressionReferenceUnresolved | Self::ExportAttributeNotTransferred => {
+                LossTaxonomy::MetadataNotTransferred
+            }
             Self::SourceModelPayloadUnrepresented | Self::SourceDesignPayloadUnrepresented => {
                 LossTaxonomy::RecordNotTyped
             }
@@ -529,7 +522,6 @@ mod tests {
             codes,
             [
                 "expression.reference-unresolved",
-                "attribute.property-unprojected",
                 "attribute.not-transferred",
                 "source.model-payload-unrepresented",
                 "source.design-payload-unrepresented",

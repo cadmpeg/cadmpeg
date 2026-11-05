@@ -2,18 +2,28 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 6475,
-      "payload_sha256": "3741df37b7bfc98fe55f0ca6af3d03482fbb663527c1509446312f8bd4014575"
+      "payload_len": 23046,
+      "payload_sha256": "424d4f422607b5ef8b3aadaa2ff9acf34cd1112948b94c860205a0dc1304c8c1"
     },
     {
-      "name": "Box.brp",
+      "name": "Box.Shape.brp",
       "payload_len": 2561,
       "payload_sha256": "16de1522c25fb2a6e3968e6844b3116fe26303f9270bc1dc8d9b6c8227529e5a"
     },
     {
-      "name": "Cadmpeg.StringHasher.0.txt",
-      "payload_len": 22,
-      "payload_sha256": "fb6584f9f9e27a1800242afb8012578f820f423a4ae7fda4be20731580cbe0a1"
+      "name": "techdraw-template.svg",
+      "payload_len": 462,
+      "payload_sha256": "72d5cf7f1b02f68d56ddd6a29b9f4fe443c45be385234abfa923fd724054ec9b"
+    },
+    {
+      "name": "BoxCorners",
+      "payload_len": 52,
+      "payload_sha256": "4c1939e3046e1ba86a888c8eccd81f4d2b5b0eb7325c392e0b859228aa262dbb"
+    },
+    {
+      "name": "Length.SavedGeometry.0.brp",
+      "payload_len": 566,
+      "payload_sha256": "401381b137057fb4368d157aef9e15dda17a708ad3075eab94678c82bd30b487"
     }
   ],
   "report": {
@@ -100,7 +110,7 @@
         "configurations": "dropped",
         "curves": "written",
         "declared_measures": "omitted",
-        "drawings": "dropped",
+        "drawings": "reported",
         "edges": "written",
         "faces": "written",
         "feature_input_topologies": "dropped",
@@ -122,7 +132,7 @@
         "product_definitions": "written",
         "regions": "written",
         "rigid_bodies": "omitted",
-        "semantic_annotations": "dropped",
+        "semantic_annotations": "reported",
         "shells": "written",
         "sketch_constraints": "written",
         "sketch_entities": "written",
@@ -134,7 +144,7 @@
         "spreadsheets": "written",
         "subds": "dropped",
         "surfaces": "written",
-        "tessellations": "dropped",
+        "tessellations": "reported",
         "vertices": "written",
         "view_presentations": "written"
       },
@@ -147,32 +157,12 @@
     "losses": [
       {
         "code": {
-          "code": "metadata.native-property-not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "extension fcstd:native:extension#Front:0%3ACosmeticExtension has no retained owning object",
-        "severity": "info"
-      },
-      {
-        "code": {
-          "code": "metadata.native-property-not-transferred",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "extension fcstd:native:extension#Top:0%3ACosmeticExtension has no retained owning object",
-        "severity": "info"
-      },
-      {
-        "code": {
           "code": "arena.not-transferred",
           "kind": "metadata_not_transferred",
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "FCStd does not represent 6 record(s) in neutral arena `drawings`",
+        "message": "drawing fcstd:model:drawing#Front:entity contains fields the FCStd writer cannot regenerate",
         "severity": "warning"
       },
       {
@@ -182,7 +172,67 @@
           "namespace": "fcstd",
           "scope": "namespaced"
         },
-        "message": "FCStd does not represent 2 record(s) in neutral arena `semantic_annotations`",
+        "message": "drawing fcstd:model:drawing#Length:entity contains fields the FCStd writer cannot regenerate",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "arena.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "drawing fcstd:model:drawing#Note:entity contains fields the FCStd writer cannot regenerate",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "arena.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "drawing fcstd:model:drawing#Page:entity contains fields the FCStd writer cannot regenerate",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "arena.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "drawing fcstd:model:drawing#Template:entity contains fields the FCStd writer cannot regenerate",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "arena.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "drawing fcstd:model:drawing#Top:entity contains fields the FCStd writer cannot regenerate",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "arena.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "annotation fcstd:model:semantic-annotation#Length:content contains fields the FCStd writer cannot regenerate",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "arena.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "annotation fcstd:model:semantic-annotation#Note:content contains fields the FCStd writer cannot regenerate",
         "severity": "warning"
       },
       {
@@ -202,16 +252,6 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 6 native record(s) from `fcstd.applications`: fcstd:native:application#Front, fcstd:native:application#Length, fcstd:native:application#Note, fcstd:native:application#Page, fcstd:native:application#Template, fcstd:native:application#Top",
-        "severity": "info"
-      },
-      {
-        "code": {
-          "code": "native.records-omitted",
-          "kind": "record_not_typed",
-          "namespace": "export",
-          "scope": "namespaced"
-        },
         "message": "the fcstd write omits 6 native record(s) from `fcstd.drawings`: fcstd:native:drawing#Front, fcstd:native:drawing#Length, fcstd:native:drawing#Note, fcstd:native:drawing#Page, fcstd:native:drawing#Template, fcstd:native:drawing#Top",
         "severity": "info"
       },
@@ -222,7 +262,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 4 native record(s) from `fcstd.entries`: fcstd:native:entry#Box.Shape.brp, fcstd:native:entry#BoxCorners, fcstd:native:entry#Length.SavedGeometry.0.brp, fcstd:native:entry#techdraw-template.svg",
+        "message": "the fcstd write omits 2 native record(s) from `fcstd.properties`: fcstd:native:property#Box:ExpressionEngine, fcstd:native:property#Length:References3D",
         "severity": "info"
       },
       {
@@ -232,27 +272,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 2 native record(s) from `fcstd.extensions`: fcstd:native:extension#Front:0%3ACosmeticExtension, fcstd:native:extension#Top:0%3ACosmeticExtension",
-        "severity": "info"
-      },
-      {
-        "code": {
-          "code": "native.records-omitted",
-          "kind": "record_not_typed",
-          "namespace": "export",
-          "scope": "namespaced"
-        },
-        "message": "the fcstd write omits 6 native record(s) from `fcstd.objects`: fcstd:native:object#Front, fcstd:native:object#Length, fcstd:native:object#Note, fcstd:native:object#Page, fcstd:native:object#Template, fcstd:native:object#Top",
-        "severity": "info"
-      },
-      {
-        "code": {
-          "code": "native.records-omitted",
-          "kind": "record_not_typed",
-          "namespace": "export",
-          "scope": "namespaced"
-        },
-        "message": "the fcstd write omits 134 native record(s) from `fcstd.properties`: fcstd:native:property#Box:ExpressionEngine, fcstd:native:property#Front:Caption, fcstd:native:property#Front:CenterLines, fcstd:native:property#Front:CoarseView, fcstd:native:property#Front:CosmeticEdges, fcstd:native:property#Front:CosmeticVertexes, fcstd:native:property#Front:Direction, fcstd:native:property#Front:ExpressionEngine, fcstd:native:property#Front:Focus, fcstd:native:property#Front:GeomFormats, fcstd:native:property#Front:HardHidden, fcstd:native:property#Front:IsoCount, fcstd:native:property#Front:IsoHidden, fcstd:native:property#Front:IsoVisible, fcstd:native:property#Front:Label, fcstd:native:property#Front:Label2, fcstd:native:property#Front:LockPosition, fcstd:native:property#Front:Perspective, fcstd:native:property#Front:Rotation, fcstd:native:property#Front:Scale, fcstd:native:property#Front:ScaleType, fcstd:native:property#Front:ScrubCount, fcstd:native:property#Front:SeamHidden, fcstd:native:property#Front:SeamVisible, fcstd:native:property#Front:SmoothHidden, fcstd:native:property#Front:SmoothVisible, fcstd:native:property#Front:Source, fcstd:native:property#Front:Visibility, fcstd:native:property#Front:X, fcstd:native:property#Front:XDirection, fcstd:native:property#Front:XSource, fcstd:native:property#Front:Y, fcstd:native:property#Length:AngleOverride, fcstd:native:property#Length:Arbitrary, fcstd:native:property#Length:ArbitraryTolerances, fcstd:native:property#Length:BoxCorners, fcstd:native:property#Length:Caption, fcstd:native:property#Length:EqualTolerance, fcstd:native:property#Length:ExpressionEngine, fcstd:native:property#Length:ExtensionAngle, fcstd:native:property#Length:FormatSpec, fcstd:native:property#Length:FormatSpecOverTolerance, fcstd:native:property#Length:FormatSpecUnderTolerance, fcstd:native:property#Length:Inverted, fcstd:native:property#Length:Label, fcstd:native:property#Length:Label2, fcstd:native:property#Length:LineAngle, fcstd:native:property#Length:LockPosition, fcstd:native:property#Length:MeasureType, fcstd:native:property#Length:OverTolerance, fcstd:native:property#Length:References2D, fcstd:native:property#Length:References3D, fcstd:native:property#Length:Rotation, fcstd:native:property#Length:SavedGeometry, fcstd:native:property#Length:Scale, fcstd:native:property#Length:ScaleType, fcstd:native:property#Length:ShowUnits, fcstd:native:property#Length:TheoreticalExact, fcstd:native:property#Length:Type, fcstd:native:property#Length:UnderTolerance, fcstd:native:property#Length:UseActualArea, fcstd:native:property#Length:Visibility, fcstd:native:property#Length:X, fcstd:native:property#Length:Y, fcstd:native:property#Note:Caption, fcstd:native:property#Note:ExpressionEngine, fcstd:native:property#Note:Font, fcstd:native:property#Note:Label, fcstd:native:property#Note:Label2, fcstd:native:property#Note:LineSpace, fcstd:native:property#Note:LockPosition, fcstd:native:property#Note:MaxWidth, fcstd:native:property#Note:Owner, fcstd:native:property#Note:Rotation, fcstd:native:property#Note:Scale, fcstd:native:property#Note:ScaleType, fcstd:native:property#Note:Text, fcstd:native:property#Note:TextColor, fcstd:native:property#Note:TextSize, fcstd:native:property#Note:TextStyle, fcstd:native:property#Note:Visibility, fcstd:native:property#Note:X, fcstd:native:property#Note:Y, fcstd:native:property#Page:ExpressionEngine, fcstd:native:property#Page:KeepUpdated, fcstd:native:property#Page:Label, fcstd:native:property#Page:Label2, fcstd:native:property#Page:NextBalloonIndex, fcstd:native:property#Page:ProjectionType, fcstd:native:property#Page:Scale, fcstd:native:property#Page:Template, fcstd:native:property#Page:Views, fcstd:native:property#Page:Visibility, fcstd:native:property#Template:EditableTexts, fcstd:native:property#Template:ExpressionEngine, fcstd:native:property#Template:Height, fcstd:native:property#Template:Label, fcstd:native:property#Template:Label2, fcstd:native:property#Template:Orientation, fcstd:native:property#Template:PageResult, fcstd:native:property#Template:Template, fcstd:native:property#Template:Visibility, fcstd:native:property#Template:Width, fcstd:native:property#Top:Caption, fcstd:native:property#Top:CenterLines, fcstd:native:property#Top:CoarseView, fcstd:native:property#Top:CosmeticEdges, fcstd:native:property#Top:CosmeticVertexes, fcstd:native:property#Top:Direction, fcstd:native:property#Top:ExpressionEngine, fcstd:native:property#Top:Focus, fcstd:native:property#Top:GeomFormats, fcstd:native:property#Top:HardHidden, fcstd:native:property#Top:IsoCount, fcstd:native:property#Top:IsoHidden, fcstd:native:property#Top:IsoVisible, fcstd:native:property#Top:Label, fcstd:native:property#Top:Label2, fcstd:native:property#Top:LockPosition, fcstd:native:property#Top:Perspective, fcstd:native:property#Top:Rotation, fcstd:native:property#Top:Scale, fcstd:native:property#Top:ScaleType, fcstd:native:property#Top:ScrubCount, fcstd:native:property#Top:SeamHidden, fcstd:native:property#Top:SeamVisible, fcstd:native:property#Top:SmoothHidden, fcstd:native:property#Top:SmoothVisible, fcstd:native:property#Top:Source, fcstd:native:property#Top:Visibility, fcstd:native:property#Top:X, fcstd:native:property#Top:XDirection, fcstd:native:property#Top:XSource, fcstd:native:property#Top:Y",
+        "message": "the fcstd write omits 1 native record(s) from `fcstd.string_tables`: fcstd:native:string-table#0",
         "severity": "info"
       }
     ],
@@ -266,7 +286,13 @@
             "applications": {
               "disposition": "dropped",
               "records": {
-                "fcstd:native:application#Box": "regenerated"
+                "fcstd:native:application#Box": "regenerated",
+                "fcstd:native:application#Front": "regenerated",
+                "fcstd:native:application#Length": "regenerated",
+                "fcstd:native:application#Note": "regenerated",
+                "fcstd:native:application#Page": "regenerated",
+                "fcstd:native:application#Template": "regenerated",
+                "fcstd:native:application#Top": "regenerated"
               }
             },
             "attachments": {
@@ -302,13 +328,19 @@
             "entries": {
               "disposition": "dropped",
               "records": {
-                "fcstd:native:entry#Document.xml": "regenerated"
+                "fcstd:native:entry#Box.Shape.brp": "regenerated",
+                "fcstd:native:entry#BoxCorners": "regenerated",
+                "fcstd:native:entry#Document.xml": "regenerated",
+                "fcstd:native:entry#Length.SavedGeometry.0.brp": "regenerated",
+                "fcstd:native:entry#techdraw-template.svg": "regenerated"
               }
             },
             "extensions": {
               "disposition": "dropped",
               "records": {
-                "fcstd:native:extension#Box:0%3AAttachExtension": "written"
+                "fcstd:native:extension#Box:0%3AAttachExtension": "written",
+                "fcstd:native:extension#Front:0%3ACosmeticExtension": "written",
+                "fcstd:native:extension#Top:0%3ACosmeticExtension": "written"
               }
             },
             "gui_documents": {
@@ -326,8 +358,23 @@
             "objects": {
               "disposition": "dropped",
               "records": {
-                "fcstd:native:object#Box": "regenerated"
+                "fcstd:native:object#Box": "regenerated",
+                "fcstd:native:object#Front": "written",
+                "fcstd:native:object#Length": "written",
+                "fcstd:native:object#Note": "written",
+                "fcstd:native:object#Page": "written",
+                "fcstd:native:object#Template": "written",
+                "fcstd:native:object#Top": "written"
               }
+            },
+            "orphan_object_data": {
+              "disposition": "dropped"
+            },
+            "polygons3d": {
+              "disposition": "dropped"
+            },
+            "polygons_on_triangulations": {
+              "disposition": "dropped"
             },
             "product_nodes": {
               "disposition": "dropped"
@@ -371,7 +418,139 @@
                 "fcstd:native:property#Box:ShapeMaterial": "written",
                 "fcstd:native:property#Box:Visibility": "regenerated",
                 "fcstd:native:property#Box:Width": "regenerated",
-                "fcstd:native:property#Box:_ElementMapVersion": "written"
+                "fcstd:native:property#Box:_ElementMapVersion": "written",
+                "fcstd:native:property#Front:Caption": "regenerated",
+                "fcstd:native:property#Front:CenterLines": "written",
+                "fcstd:native:property#Front:CoarseView": "written",
+                "fcstd:native:property#Front:CosmeticEdges": "written",
+                "fcstd:native:property#Front:CosmeticVertexes": "written",
+                "fcstd:native:property#Front:Direction": "regenerated",
+                "fcstd:native:property#Front:ExpressionEngine": "written",
+                "fcstd:native:property#Front:Focus": "written",
+                "fcstd:native:property#Front:GeomFormats": "written",
+                "fcstd:native:property#Front:HardHidden": "written",
+                "fcstd:native:property#Front:IsoCount": "written",
+                "fcstd:native:property#Front:IsoHidden": "written",
+                "fcstd:native:property#Front:IsoVisible": "written",
+                "fcstd:native:property#Front:Label": "written",
+                "fcstd:native:property#Front:Label2": "written",
+                "fcstd:native:property#Front:LockPosition": "regenerated",
+                "fcstd:native:property#Front:Perspective": "written",
+                "fcstd:native:property#Front:Rotation": "regenerated",
+                "fcstd:native:property#Front:Scale": "regenerated",
+                "fcstd:native:property#Front:ScaleType": "regenerated",
+                "fcstd:native:property#Front:ScrubCount": "written",
+                "fcstd:native:property#Front:SeamHidden": "written",
+                "fcstd:native:property#Front:SeamVisible": "written",
+                "fcstd:native:property#Front:SmoothHidden": "written",
+                "fcstd:native:property#Front:SmoothVisible": "written",
+                "fcstd:native:property#Front:Source": "regenerated",
+                "fcstd:native:property#Front:Visibility": "written",
+                "fcstd:native:property#Front:X": "regenerated",
+                "fcstd:native:property#Front:XDirection": "written",
+                "fcstd:native:property#Front:XSource": "written",
+                "fcstd:native:property#Front:Y": "regenerated",
+                "fcstd:native:property#Length:AngleOverride": "regenerated",
+                "fcstd:native:property#Length:Arbitrary": "regenerated",
+                "fcstd:native:property#Length:ArbitraryTolerances": "regenerated",
+                "fcstd:native:property#Length:BoxCorners": "written",
+                "fcstd:native:property#Length:Caption": "regenerated",
+                "fcstd:native:property#Length:EqualTolerance": "regenerated",
+                "fcstd:native:property#Length:ExpressionEngine": "regenerated",
+                "fcstd:native:property#Length:ExtensionAngle": "regenerated",
+                "fcstd:native:property#Length:FormatSpec": "regenerated",
+                "fcstd:native:property#Length:FormatSpecOverTolerance": "regenerated",
+                "fcstd:native:property#Length:FormatSpecUnderTolerance": "regenerated",
+                "fcstd:native:property#Length:Inverted": "regenerated",
+                "fcstd:native:property#Length:Label": "regenerated",
+                "fcstd:native:property#Length:Label2": "regenerated",
+                "fcstd:native:property#Length:LineAngle": "regenerated",
+                "fcstd:native:property#Length:LockPosition": "regenerated",
+                "fcstd:native:property#Length:MeasureType": "regenerated",
+                "fcstd:native:property#Length:OverTolerance": "regenerated",
+                "fcstd:native:property#Length:References2D": "regenerated",
+                "fcstd:native:property#Length:Rotation": "regenerated",
+                "fcstd:native:property#Length:SavedGeometry": "written",
+                "fcstd:native:property#Length:Scale": "regenerated",
+                "fcstd:native:property#Length:ScaleType": "regenerated",
+                "fcstd:native:property#Length:ShowUnits": "regenerated",
+                "fcstd:native:property#Length:TheoreticalExact": "regenerated",
+                "fcstd:native:property#Length:Type": "regenerated",
+                "fcstd:native:property#Length:UnderTolerance": "regenerated",
+                "fcstd:native:property#Length:UseActualArea": "regenerated",
+                "fcstd:native:property#Length:Visibility": "regenerated",
+                "fcstd:native:property#Length:X": "regenerated",
+                "fcstd:native:property#Length:Y": "regenerated",
+                "fcstd:native:property#Note:Caption": "regenerated",
+                "fcstd:native:property#Note:ExpressionEngine": "regenerated",
+                "fcstd:native:property#Note:Font": "regenerated",
+                "fcstd:native:property#Note:Label": "regenerated",
+                "fcstd:native:property#Note:Label2": "regenerated",
+                "fcstd:native:property#Note:LineSpace": "regenerated",
+                "fcstd:native:property#Note:LockPosition": "regenerated",
+                "fcstd:native:property#Note:MaxWidth": "regenerated",
+                "fcstd:native:property#Note:Owner": "regenerated",
+                "fcstd:native:property#Note:Rotation": "regenerated",
+                "fcstd:native:property#Note:Scale": "regenerated",
+                "fcstd:native:property#Note:ScaleType": "regenerated",
+                "fcstd:native:property#Note:Text": "regenerated",
+                "fcstd:native:property#Note:TextColor": "regenerated",
+                "fcstd:native:property#Note:TextSize": "regenerated",
+                "fcstd:native:property#Note:TextStyle": "regenerated",
+                "fcstd:native:property#Note:Visibility": "regenerated",
+                "fcstd:native:property#Note:X": "regenerated",
+                "fcstd:native:property#Note:Y": "regenerated",
+                "fcstd:native:property#Page:ExpressionEngine": "written",
+                "fcstd:native:property#Page:KeepUpdated": "written",
+                "fcstd:native:property#Page:Label": "written",
+                "fcstd:native:property#Page:Label2": "written",
+                "fcstd:native:property#Page:NextBalloonIndex": "written",
+                "fcstd:native:property#Page:ProjectionType": "regenerated",
+                "fcstd:native:property#Page:Scale": "regenerated",
+                "fcstd:native:property#Page:Template": "regenerated",
+                "fcstd:native:property#Page:Views": "regenerated",
+                "fcstd:native:property#Page:Visibility": "written",
+                "fcstd:native:property#Template:EditableTexts": "written",
+                "fcstd:native:property#Template:ExpressionEngine": "written",
+                "fcstd:native:property#Template:Height": "written",
+                "fcstd:native:property#Template:Label": "written",
+                "fcstd:native:property#Template:Label2": "written",
+                "fcstd:native:property#Template:Orientation": "written",
+                "fcstd:native:property#Template:PageResult": "written",
+                "fcstd:native:property#Template:Template": "written",
+                "fcstd:native:property#Template:Visibility": "written",
+                "fcstd:native:property#Template:Width": "written",
+                "fcstd:native:property#Top:Caption": "regenerated",
+                "fcstd:native:property#Top:CenterLines": "written",
+                "fcstd:native:property#Top:CoarseView": "written",
+                "fcstd:native:property#Top:CosmeticEdges": "written",
+                "fcstd:native:property#Top:CosmeticVertexes": "written",
+                "fcstd:native:property#Top:Direction": "regenerated",
+                "fcstd:native:property#Top:ExpressionEngine": "written",
+                "fcstd:native:property#Top:Focus": "written",
+                "fcstd:native:property#Top:GeomFormats": "written",
+                "fcstd:native:property#Top:HardHidden": "written",
+                "fcstd:native:property#Top:IsoCount": "written",
+                "fcstd:native:property#Top:IsoHidden": "written",
+                "fcstd:native:property#Top:IsoVisible": "written",
+                "fcstd:native:property#Top:Label": "written",
+                "fcstd:native:property#Top:Label2": "written",
+                "fcstd:native:property#Top:LockPosition": "regenerated",
+                "fcstd:native:property#Top:Perspective": "written",
+                "fcstd:native:property#Top:Rotation": "regenerated",
+                "fcstd:native:property#Top:Scale": "regenerated",
+                "fcstd:native:property#Top:ScaleType": "regenerated",
+                "fcstd:native:property#Top:ScrubCount": "written",
+                "fcstd:native:property#Top:SeamHidden": "written",
+                "fcstd:native:property#Top:SeamVisible": "written",
+                "fcstd:native:property#Top:SmoothHidden": "written",
+                "fcstd:native:property#Top:SmoothVisible": "written",
+                "fcstd:native:property#Top:Source": "regenerated",
+                "fcstd:native:property#Top:Visibility": "written",
+                "fcstd:native:property#Top:X": "regenerated",
+                "fcstd:native:property#Top:XDirection": "written",
+                "fcstd:native:property#Top:XSource": "written",
+                "fcstd:native:property#Top:Y": "regenerated"
               }
             },
             "shape_payloads": {
@@ -381,10 +560,7 @@
               }
             },
             "string_tables": {
-              "disposition": "dropped",
-              "records": {
-                "fcstd:native:string-table#0": "written"
-              }
+              "disposition": "dropped"
             },
             "topology_uses": {
               "disposition": "dropped",

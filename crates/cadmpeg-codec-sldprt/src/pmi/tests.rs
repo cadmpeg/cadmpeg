@@ -696,8 +696,7 @@ fn damaged_page_graph_is_untyped_not_a_part() {
     assert_eq!(losses.len(), 1);
     assert!(losses[0].code == crate::loss::SldprtLossCode::PmiSemanticRecordUntyped.kind());
     assert!(
-        losses[0].message.contains("offset 0")
-            && losses[0].message.contains("length 512"),
+        losses[0].message.contains("offset 0") && losses[0].message.contains("length 512"),
         "{}",
         losses[0].message
     );

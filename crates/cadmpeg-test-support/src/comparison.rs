@@ -82,7 +82,7 @@ pub fn unpaired_before_ids(
         Mode::Same => pairing_gaps(before, after, &BTreeSet::new(), false),
         Mode::Cross(projection) => {
             let before = project(before, projection);
-            let after = project(&after, projection);
+            let after = project(after, projection);
             pairing_gaps(&before, &after, &BTreeSet::new(), true)
         }
     }

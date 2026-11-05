@@ -79,12 +79,13 @@ pub fn apply_storage(
             None => value.clone(),
         },
         ReducedStorage::F32 => match value.as_f64() {
-            Some(number) => Value::from(f64::from(number as f32)),
+            Some(number) => serde_json::from_value::<f32>(Value::from(number))
+                .map_or(Value::Null, |rounded| Value::from(f64::from(rounded))),
             None => value.clone(),
         },
         ReducedStorage::Decimal(places) => match value.as_f64() {
             Some(number) => {
-                let quantum = 10.0_f64.powi(places as i32);
+                let quantum = 10.0_f64.powi(i32::try_from(places).expect("decimal places fit i32"));
                 Value::from((number * quantum).round() / quantum)
             }
             None => value.clone(),
@@ -101,8 +102,11 @@ pub fn apply_storage(
 pub fn quantum(storage: ReducedStorage, stored: f64) -> f64 {
     match storage {
         ReducedStorage::U8Channel => 1.0 / 255.0 + f64::EPSILON,
-        ReducedStorage::F32 => f32::EPSILON as f64 * stored.abs().max(1.0) + f64::MIN_POSITIVE,
-        ReducedStorage::Decimal(places) => 0.5 / 10.0_f64.powi(places as i32) + f64::EPSILON,
+        ReducedStorage::F32 => f64::from(f32::EPSILON) * stored.abs().max(1.0) + f64::MIN_POSITIVE,
+        ReducedStorage::Decimal(places) => {
+            0.5 / 10.0_f64.powi(i32::try_from(places).expect("decimal places fit i32"))
+                + f64::EPSILON
+        }
         ReducedStorage::Normalized { .. } => 0.0,
     }
 }
@@ -110,7 +114,7 @@ pub fn quantum(storage: ReducedStorage, stored: f64) -> f64 {
 /// The §5.2 target for a writer: its catalog default, except STEP requests
 /// `step:ap242-e3`.
 #[must_use]
-pub fn cross_request<'a>(encoder: &'a dyn Encoder) -> TargetRequest<'a> {
+pub fn cross_request(encoder: &dyn Encoder) -> TargetRequest<'_> {
     if encoder.id().as_str() == "step" {
         return TargetRequest::Explicit(STEP_SAME_TARGET);
     }
@@ -650,7 +654,7 @@ fn body_findings(
         needs.insert(id.clone(), targets);
     }
     let mut related: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-    for id in before_ids.iter() {
+    for id in &before_ids {
         let mut seen = BTreeSet::from([id.clone()]);
         let mut pending = vec![id.clone()];
         while let Some(next) = pending.pop() {
@@ -1051,7 +1055,7 @@ mod tests {
         assert!(findings[0].contains("body#1"), "{findings:?}");
     }
 
-    /// The product_assembly.FCStd record that exposed the occurrence
+    /// The `product_assembly.FCStd` record that exposed the occurrence
     /// questions: the occurrence name is also a foreign native record id,
     /// and the writer nests former roots under one added synthetic root.
     fn assembly_before() -> serde_json::Value {
@@ -1157,7 +1161,7 @@ mod tests {
         assert!(step
             .get("native")
             .and_then(|native| native.as_object())
-            .is_some_and(|native| native.is_empty()));
+            .is_some_and(serde_json::Map::is_empty));
         assert!(step.pointer("/model/occurrences/0/name").is_some());
         let fcstd = project_document(&before, &carried, &fixed, "fcstd");
         assert!(fcstd.pointer("/native/fcstd/objects/0").is_some());

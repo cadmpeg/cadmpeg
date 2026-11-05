@@ -14,13 +14,13 @@
     {
       "filename": "application_payloads.FCStd",
       "sha256": "410af2e9ed55011039ee065b20e7614037482d382e75e173d78c9a008522de75",
-      "canonical_cadir_sha256": "ae9be634573aff6bda8d78d103cd300bc2b87290af300e7b1657853a0cbd3f94",
+      "canonical_cadir_sha256": "1e3ed39a48a5fd0b6765c86640c761736d84abe91ac351d902ab9b9b44757a15",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
       "native_errors": 0,
       "write_deterministic": true,
-      "semantic_round_trip": false,
+      "semantic_round_trip": true,
       "typed_edit_round_trip": false,
       "side_entries_preserved": true,
       "appearance_ownership_and_precedence": true,
@@ -34,7 +34,7 @@
         "articulations": 0,
         "assembly_joints": 0,
         "assets": 0,
-        "attributes": 33,
+        "attributes": 35,
         "bodies": 0,
         "coedges": 0,
         "colliders": 0,
@@ -93,7 +93,7 @@
     {
       "filename": "binary_exact_shape.FCStd",
       "sha256": "86ecddcee6d677370343c2f5a9682e57ca58db5808775b0e8812bdbe844dbe1e",
-      "canonical_cadir_sha256": "803545fda2bc972d157f7e7d1b6b03651687d1fbf7517f00ac0268b57cc73f67",
+      "canonical_cadir_sha256": "6ba8d22c021e8654846cb4bee66d67844c1675022601246893bb57108ca5752a",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -174,7 +174,7 @@
     {
       "filename": "core_design_product.FCStd",
       "sha256": "69c6aa00699cb8d8bb4014b48eb7c419352c49f360cffb45075f31e152f989ba",
-      "canonical_cadir_sha256": "f6673d54061ebf23b00cf16f26bc09c8bb251b9f54880886aec8d594cdb53ee6",
+      "canonical_cadir_sha256": "733c17774451bcf8ac62fd2a89732fabf793b3c7ce571ae1461ad5a74f295dc0",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -194,7 +194,7 @@
         "articulations": 0,
         "assembly_joints": 0,
         "assets": 0,
-        "attributes": 80,
+        "attributes": 81,
         "bodies": 5,
         "coedges": 84,
         "colliders": 0,
@@ -258,7 +258,7 @@
     {
       "filename": "core_operations.FCStd",
       "sha256": "54cc992ca6278fdd8e38b3d01f37c616e5dfdc38ca7a058fe838599b709ed228",
-      "canonical_cadir_sha256": "b9a3274773d829e3a9b006d7849a38f934933dd8ce8b3b7f6109f42617f10f99",
+      "canonical_cadir_sha256": "759085bcddd624595445d82c0f796362186b1a7d05bb1afb904712f145796d67",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -341,7 +341,7 @@
     {
       "filename": "design_history.FCStd",
       "sha256": "c71da85ee80979f3f210690125da00406b2d49682be765100fc1cfb1d98ea0d7",
-      "canonical_cadir_sha256": "6160165ca264560b874c72b60789efc67dafa3a5b7b4a0ab615ced859408f2a6",
+      "canonical_cadir_sha256": "9b80fe4019a0569988917b146dce1db7e2402f2138a4e1a3b2288219bbdf9273",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -424,7 +424,7 @@
     {
       "filename": "external_component.FCStd",
       "sha256": "e1a563bd89e46c00237b65ac543482aaa361c833deef759164143687d0de557b",
-      "canonical_cadir_sha256": "619ecba2b746575a746d90f8a05c33df02b505ab7fc37b99e6d292acb80aacb8",
+      "canonical_cadir_sha256": "933b269bcd6e243704652c327b280227b81d82d79203e3d099bd0b540f32836d",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -505,7 +505,7 @@
     {
       "filename": "geometry_topology.FCStd",
       "sha256": "d7c0a6325cd4f68413f5ba9b0e51cd1396d4dc32a5f08dedc3ed5b00fc12cb59",
-      "canonical_cadir_sha256": "147333589e259931623a1809bdbd4cef23b614e2220ca8480d35663e13c9029f",
+      "canonical_cadir_sha256": "0e9b48c4402ec7442a67c03deb20741eed48d9341373ffb780a5f26c932e06eb",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -587,7 +587,7 @@
     {
       "filename": "gui_appearance.FCStd",
       "sha256": "393db41b6acd1d3c890dc07085017fa6f07e91f96d59e7a244e2c834075ffcc2",
-      "canonical_cadir_sha256": "97fa243f72390e12f26d951d9d6a8c6c1b63d6e23b1f9e53bc755785752f6f78",
+      "canonical_cadir_sha256": "9ca54b95c77513bfac67cc5edd58ccb195a1da201fb3b26d0bcda1bef92ae940",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -672,7 +672,7 @@
     {
       "filename": "named_constraint_0.21.2_N10a.FCStd",
       "sha256": "d1f9225bfdf31d9708fc8fc8f94261edc9479d01d6a09c720ae70c16a5aa2362",
-      "canonical_cadir_sha256": "b101b0f8534bd1fef9487bff8a0d82a116c3395d89f95cbcefee352423d789f9",
+      "canonical_cadir_sha256": "64c0b5afc18efb4eec1f703e086d2db65792ba0c436eb044888606c397c1e2ae",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -753,7 +753,7 @@
     {
       "filename": "named_constraint_0.21.2_N11a.FCStd",
       "sha256": "73cd885cd4755b274fe1106db3022923352ea45a7a4d9964d48202790a47de61",
-      "canonical_cadir_sha256": "35ad056896b24c908d1b76d7c4640bd96bbb430071a652170e879c592d4a2764",
+      "canonical_cadir_sha256": "d9a200557fd784b7b8c8c9bebfc86ed885d991b19eea4eedd63c8849449eb420",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -800,7 +800,7 @@
         "native.fcstd.shape_payloads": 4,
         "native.fcstd.topology_uses": 111,
         "occurrences": 0,
-        "parameters": 9,
+        "parameters": 8,
         "pcurves": 0,
         "physical_materials": 0,
         "physics_scenes": 0,
@@ -834,7 +834,7 @@
     {
       "filename": "named_constraint_0.21.2_P12a.FCStd",
       "sha256": "d49fd8273b190a3eaa00573aa3af78e02fc271715ffe0ede9cfb7a3d367bd551",
-      "canonical_cadir_sha256": "64f3c4d26abc55a4adc97a9fa5ca1b51f362adea98c137ac9f9f707b190b3cb1",
+      "canonical_cadir_sha256": "cf4d0936cbbc1df22b1e613c3ba0484da4adbd75c3060ae71beac86d25c1501c",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -850,7 +850,7 @@
       "native_recomputed_design_verified": false,
       "entity_counts": {
         "appearance_bindings": 63,
-        "appearances": 23,
+        "appearances": 24,
         "articulations": 0,
         "assembly_joints": 0,
         "assets": 0,
@@ -884,7 +884,7 @@
         "native.fcstd.shape_payloads": 4,
         "native.fcstd.topology_uses": 111,
         "occurrences": 0,
-        "parameters": 9,
+        "parameters": 8,
         "pcurves": 0,
         "physical_materials": 0,
         "physics_scenes": 0,
@@ -918,7 +918,7 @@
     {
       "filename": "named_constraint_1.0.2_N10a.FCStd",
       "sha256": "c965847aa2a1ba6c1bacc43ae0c911db1610e57497ab5ca19fea5e6aed33ada4",
-      "canonical_cadir_sha256": "9511fe3af404a73afc06e971bd4fd10e8f62ffbaa7e74bd3dc907d53fae163ae",
+      "canonical_cadir_sha256": "76cb7bdfb9c72afeb4c88456fa75dd968a1530b8ee58f6c3b4827514729b4cca",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -1001,7 +1001,7 @@
     {
       "filename": "named_constraint_1.0.2_N11a.FCStd",
       "sha256": "d9ec8f0e02461883948cfb51f38a7702f172212227e663999d3a2886cf920245",
-      "canonical_cadir_sha256": "55c7b0aaef3140b6985faa8050b82b9c090fb68ed7c23fce130b0fac4414f85e",
+      "canonical_cadir_sha256": "346ab51e0831da75a61a56a17e21d2633ab6bc391251fe3848fe0da6857b60dc",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -1050,7 +1050,7 @@
         "native.fcstd.string_tables": 1,
         "native.fcstd.topology_uses": 111,
         "occurrences": 0,
-        "parameters": 9,
+        "parameters": 8,
         "pcurves": 0,
         "physical_materials": 0,
         "physics_scenes": 0,
@@ -1084,7 +1084,7 @@
     {
       "filename": "named_constraint_1.0.2_P12a.FCStd",
       "sha256": "e4b2e7e194d13f168dd9586c297a8a225e829d38cb5597e4475e3fe6d5649087",
-      "canonical_cadir_sha256": "df554e24d7ed8f75b89e00fa6fb38a3b9d83a67c07f6161f4fe57ab1b3c807cc",
+      "canonical_cadir_sha256": "b9eb399f856285e293dec5201ab1c37b5aa83f8f9cc5efff20f95e7bf2bfc81d",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -1093,7 +1093,7 @@
       "semantic_round_trip": false,
       "typed_edit_round_trip": false,
       "side_entries_preserved": true,
-      "appearance_ownership_and_precedence": true,
+      "appearance_ownership_and_precedence": false,
       "design_census_matches_projection": true,
       "design_property_edit_round_trip": false,
       "native_semantic_equivalence_verified": false,
@@ -1136,7 +1136,7 @@
         "native.fcstd.string_tables": 1,
         "native.fcstd.topology_uses": 111,
         "occurrences": 0,
-        "parameters": 9,
+        "parameters": 8,
         "pcurves": 0,
         "physical_materials": 0,
         "physics_scenes": 0,
@@ -1170,7 +1170,7 @@
     {
       "filename": "named_constraint_1.1.4_N10a.FCStd",
       "sha256": "215d76c07e95dd13f791b404eeacd6f625a0bbefa603e3653b007a73a853184c",
-      "canonical_cadir_sha256": "d7414a3cb05fa5c447d07f9fc1fe6a01059b72263ee6ca828c519b2c0388e8d5",
+      "canonical_cadir_sha256": "2c35324d9d13814b00558b2547287270300e0b848e8e0c81bf3cb0eb0ae8ae6c",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -1253,7 +1253,7 @@
     {
       "filename": "named_constraint_1.1.4_N11a.FCStd",
       "sha256": "371575fc594e25d1175b990c52a4ce3a01c430a35d2a7f0d6d1868517f4e89d8",
-      "canonical_cadir_sha256": "74897d63ed39d0544db97e29df6dd19a7269440cca20cc7e5ef5e6bf15560933",
+      "canonical_cadir_sha256": "1038c120a057bec1b2783462ef887e5405692ae050ac145287224d2c9bac2fc5",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -1302,7 +1302,7 @@
         "native.fcstd.string_tables": 1,
         "native.fcstd.topology_uses": 111,
         "occurrences": 0,
-        "parameters": 10,
+        "parameters": 9,
         "pcurves": 0,
         "physical_materials": 0,
         "physics_scenes": 0,
@@ -1336,7 +1336,7 @@
     {
       "filename": "named_constraint_1.1.4_P12a.FCStd",
       "sha256": "703bdba9622a88c56205442ee8b60e48587d6e2883b0687fa59cdf5021990e89",
-      "canonical_cadir_sha256": "09662d41fef88a65d0c1f4e0828eee6063787545c910144a5d277bfc70558e5b",
+      "canonical_cadir_sha256": "ca9eb4a0c85cedc1af5feadf0d748cada832bd60dc900aa9cd59aed89cfc8074",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -1345,7 +1345,7 @@
       "semantic_round_trip": false,
       "typed_edit_round_trip": false,
       "side_entries_preserved": true,
-      "appearance_ownership_and_precedence": true,
+      "appearance_ownership_and_precedence": false,
       "design_census_matches_projection": true,
       "design_property_edit_round_trip": false,
       "native_semantic_equivalence_verified": false,
@@ -1388,7 +1388,7 @@
         "native.fcstd.string_tables": 1,
         "native.fcstd.topology_uses": 111,
         "occurrences": 0,
-        "parameters": 10,
+        "parameters": 9,
         "pcurves": 0,
         "physical_materials": 0,
         "physics_scenes": 0,
@@ -1422,7 +1422,7 @@
     {
       "filename": "product_assembly.FCStd",
       "sha256": "b8e0e92c0155b4182565493deace3e30b42fe1e45e8424ae4fd1d9bc5ddd8340",
-      "canonical_cadir_sha256": "76ea9bae68cf742d0189c0fd398f2f1e08b8c43316bb241dcfe4fcbc27f25bab",
+      "canonical_cadir_sha256": "fb6f197843c39f1358b7af707d6ba6d5433347f0780bb16016727966470431d1",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -1442,7 +1442,7 @@
         "articulations": 0,
         "assembly_joints": 2,
         "assets": 0,
-        "attributes": 153,
+        "attributes": 159,
         "bodies": 2,
         "coedges": 30,
         "colliders": 0,
@@ -1506,7 +1506,7 @@
     {
       "filename": "recipe-0.21.2-F14a.FCStd",
       "sha256": "2f0e5e20da3e8f6d2073a7c8dd654b0c5035ed142c2e0392a14de832cd82eb5d",
-      "canonical_cadir_sha256": "65990be906daca942cd7653a3e06f42af275bfbb101567abda5b67980773b3dd",
+      "canonical_cadir_sha256": "8d3aba7a12fd587f49ad037928218ffc5ac33ee914f998e0933a7fd8a065123e",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -1587,7 +1587,7 @@
     {
       "filename": "recipe-0.21.2-F14b.FCStd",
       "sha256": "610d6e1aa1d73e940f0702b779edba65ec31b0e364836ca6dfcd190b18298058",
-      "canonical_cadir_sha256": "3085b90c2ca2500819cbad4c3be2a7992d39ea489143adc8df400f82e67acccf",
+      "canonical_cadir_sha256": "4e8e96de851226ad27d130291c333a5a9f1942a10d9704ddaac884eeb62100c6",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -1668,7 +1668,7 @@
     {
       "filename": "recipe-0.21.2-F14c.FCStd",
       "sha256": "25c836424406343439bd3fa9acd82f8e6dbabdae689fe2a799099bf73805aafb",
-      "canonical_cadir_sha256": "b047306e698420686ca9dda59a973813e363df90ea0b4a82d8ef81f04bb59754",
+      "canonical_cadir_sha256": "56c91e601ac6cea76515c5cf1016432899abdace62e9f6812b45a2f6bc6fa4c6",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -1749,7 +1749,7 @@
     {
       "filename": "recipe-0.21.2-F14d.FCStd",
       "sha256": "0f5374fddcf3623ea987b8018246e7c994d5f346b2bb812acc07b828aeb33210",
-      "canonical_cadir_sha256": "c22eda39af2cad5cc33830b6892727ba0e5668aa3b7f2f917f85723418d75f58",
+      "canonical_cadir_sha256": "4ece7191f4c497759b905126d111fb98ca2c42b33f4f0e1547cfa98ee13f1f73",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -1830,7 +1830,7 @@
     {
       "filename": "recipe-1.0.2-F14a.FCStd",
       "sha256": "2690f8a7f26e9096c917f0e2d4b9d311985a52dc1153546471064525ba8f68df",
-      "canonical_cadir_sha256": "c91cd59775a29a7e534ea431d315564cd124dbf48bb05b0b84da33a4583153cf",
+      "canonical_cadir_sha256": "0ce9308c9e7e7fa8c616126dced29669d143331397be128515bb092a066229c3",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -1913,7 +1913,7 @@
     {
       "filename": "recipe-1.0.2-F14b.FCStd",
       "sha256": "78a466e5a10fdd4212c2d055e20d909ac3857d83e679cc4e42def44e56386ea4",
-      "canonical_cadir_sha256": "87e71772716fa468fe8af70fefc31414b4b8d93ed62323fc30c9c974b09e1fd8",
+      "canonical_cadir_sha256": "cdb6cbebf83da999a6e5506f4acbc0c7fc4da3b38c073625c0a880827810f826",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -1996,7 +1996,7 @@
     {
       "filename": "recipe-1.0.2-F14c.FCStd",
       "sha256": "40a68d097af87a4ca192fe8d0caa227e236547cc1a5e8b95ddba1037eb8dca70",
-      "canonical_cadir_sha256": "6a157262556405f488c67fc0ce9398012597d0c9148dccda80cedff2b905e8cf",
+      "canonical_cadir_sha256": "cec466730f0ad7fbdfd4904365fdba6523514776566d0cabfca9374095ec09ce",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -2079,7 +2079,7 @@
     {
       "filename": "recipe-1.0.2-F14d.FCStd",
       "sha256": "79ef92a9922b0a162ae37a253df88a3c34b9acee8b3f742257e60421f6d3bbee",
-      "canonical_cadir_sha256": "12b6cd24facc8bb3a09be1452f89456121daf0514dc3ccfa78e699e9a8397501",
+      "canonical_cadir_sha256": "0d88b88480f14505f46552fde00846a9bff86d2cc9a51516331bcde48c9b262d",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -2162,7 +2162,7 @@
     {
       "filename": "recipe-1.1.4-F14a.FCStd",
       "sha256": "c79cd3693db356fdf0d81f367ce56dc57f15b74b3bd5833811f8170bb30377b8",
-      "canonical_cadir_sha256": "1d1de4eec1dc2802c7e58fa8e5967b91bddbc206e0d15f53eb2fda4d223ccd22",
+      "canonical_cadir_sha256": "ef67147a4f3f99020b91f8cc41c068c66c8c8c3b10893e675bb85381851b8574",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -2245,7 +2245,7 @@
     {
       "filename": "recipe-1.1.4-F14b.FCStd",
       "sha256": "e789d339d2a917dce88b85feebba6703d20e2d5cce57068f3068f67ce2b9ed1f",
-      "canonical_cadir_sha256": "f841b170e52dd786718ab83d257205b512c6a8ad7bd8fe25706a557aadf5bc47",
+      "canonical_cadir_sha256": "f97e5a0bb471c6f55b3410ef1bff1d3432d432a3a1b74da5d432e7fbb17c546e",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -2328,7 +2328,7 @@
     {
       "filename": "recipe-1.1.4-F14c.FCStd",
       "sha256": "dba4b4257d5b44c03051121c52d9ffb84e73fe17deae499256d807a129cd8852",
-      "canonical_cadir_sha256": "c6e78db89c56a1a9b1593aa7dade4a701960a1810f34e3c05551f528bd566406",
+      "canonical_cadir_sha256": "65e9c77d5f2a62e7b1f70fc31de55d3b007ebbe74302d41dad1e4b830db506ba",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -2411,7 +2411,7 @@
     {
       "filename": "recipe-1.1.4-F14d.FCStd",
       "sha256": "c278186012c4375a354fd43814f9258a0418803b43b41fd08c767f19a2d4909e",
-      "canonical_cadir_sha256": "bbf99dc12794dd7c887af4e1260da64cc6c09250a1dbb820800b571ae04d07b1",
+      "canonical_cadir_sha256": "e1781677d2b15ba3f81fdfd8c3ab6a88180e3a513dccc022a0e7b5696a9545af",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -2494,7 +2494,7 @@
     {
       "filename": "recipe_0.21.2_N04a.FCStd",
       "sha256": "ea81d20f6f99fa32d1a4d076a16165afd044452cd58b487196bc2b79213137a3",
-      "canonical_cadir_sha256": "48c5ec135f29687c292223049e27058324d2ecb61f9619715ce480bd12ad879b",
+      "canonical_cadir_sha256": "6035b3ad8f47cb4ed68993c5e847bec77ff7b7440a1065fa9c05cd49b6335edd",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -2575,7 +2575,7 @@
     {
       "filename": "recipe_0.21.2_N04b.FCStd",
       "sha256": "f331c741bab30d717db448ef5c4749be85e09d2d5309687d5688b86ab78b99c8",
-      "canonical_cadir_sha256": "6cc30d8ff7fd2efa8e99d21fed435c28c6c087d2d552a7934373b5254a3e5262",
+      "canonical_cadir_sha256": "acbc79476d06c8f1355bece7ec5430067b1640d81d1cdc95926c6ba90c33b701",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -2656,7 +2656,7 @@
     {
       "filename": "recipe_0.21.2_N04c.FCStd",
       "sha256": "aada0b43748b48935a0a2829196f0ef916a0407676f85bf6704c419dd4f32baa",
-      "canonical_cadir_sha256": "e4ec8888a50104dcd86d2525b5009b4801cc12d185253f1d31065665e1550b5f",
+      "canonical_cadir_sha256": "d5f885584595552d981683229eb69d093635bf52f40ececd4e5a058f60a286f1",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -2737,7 +2737,7 @@
     {
       "filename": "recipe_1.0.2_N04a.FCStd",
       "sha256": "191ff05e1d96660e8825d521b88904f1fa4eef7b5be5d916db63b2031dd21f3f",
-      "canonical_cadir_sha256": "f0bd9e303c8e686dcccbdfa010485c279fc956ed67c2d3b2ff4c84a4c1f57086",
+      "canonical_cadir_sha256": "226cbd00f8d87f4ae61a8c5c4826d612ee4412e2a06abbae4431107e9ca12dee",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -2820,7 +2820,7 @@
     {
       "filename": "recipe_1.0.2_N04b.FCStd",
       "sha256": "18c27b11e1c9ed9376b1544f43c095a038890ba59a1a0c725b910906f4ce9eb5",
-      "canonical_cadir_sha256": "5808114025a95bf31603defc702cfdd0b72f4ce6d704e17f139cfd65f4f4293e",
+      "canonical_cadir_sha256": "bd16dd56c34fc15b4a7a1198f09407c31b929985399c035e4adea4e8cbf0ee21",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -2903,7 +2903,7 @@
     {
       "filename": "recipe_1.0.2_N04c.FCStd",
       "sha256": "b38d3fb36b144a7cdf0220e1fa8db0abdfc14592b73da8a88bf1be5e2b75fa50",
-      "canonical_cadir_sha256": "dd1153693291d324870f44c0ca65af80f867907dd012bd3fc97995b3be1882d3",
+      "canonical_cadir_sha256": "8977673926077e011119dea14b6d4fa3b26d1a2892ead20fe6c1fb650427673c",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -2986,7 +2986,7 @@
     {
       "filename": "recipe_1.1.4_N04a.FCStd",
       "sha256": "c55205033fe8d9931abcfacf4a827a4feb94b68db1815ff0047fb410d43befdd",
-      "canonical_cadir_sha256": "cfd0b80d00aa7aa66136a747f855882f5a579ddaa1c8253b009f02a51cce6ea3",
+      "canonical_cadir_sha256": "734629558f602c23b3535ea10a125d99a207616bde7e28d4a9151f0118c5fbbb",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -3069,7 +3069,7 @@
     {
       "filename": "recipe_1.1.4_N04b.FCStd",
       "sha256": "ff9e07c4aa712b1dbb7686b3d4ee1af7a77942d70ea2de7c63ad12f0a785e12a",
-      "canonical_cadir_sha256": "c947833aca075066bef850484df6690a6619df44f9f52deffbf7b5fb331658ec",
+      "canonical_cadir_sha256": "1187ed96664b03d1055c1e2ee0473d814eb6848baf0d53ff908f7db6774a5840",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -3152,7 +3152,7 @@
     {
       "filename": "recipe_1.1.4_N04c.FCStd",
       "sha256": "38288b967568c7bb7eb337120667d34749a4fbcf71b3ef673d47c64649f99d36",
-      "canonical_cadir_sha256": "b58e88906581f138ac0e1f058a103c865fee8b546e5bc8d6f68e78eda967e9e3",
+      "canonical_cadir_sha256": "8585e65747655be62e55fb4a4375a3b07dd3002037faf0e35f15484fe32586a4",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -3235,7 +3235,7 @@
     {
       "filename": "sketch_conics.FCStd",
       "sha256": "517b5fd0c7ea35aea9d43a22dea1ffd0a50200c54c2c61aea856a0ca5d5b9751",
-      "canonical_cadir_sha256": "79d93ed06207bd0e71b0f2ff71fe21d4fab7b2d5efb42b36c9207c00509024a5",
+      "canonical_cadir_sha256": "192698dd92895cf5744be0a4eebdd905b7c722ced45d71e575cffdb3aff535ba",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -3318,7 +3318,7 @@
     {
       "filename": "sketch_constraints.FCStd",
       "sha256": "35bbba0d7529415176cfbbbdc1fabc265ac3748f5fc38058887ac254e44d074f",
-      "canonical_cadir_sha256": "d2a6f73b7b9bf0e62eae8d6ea9898229a09d230838c4a3154978395fa166be41",
+      "canonical_cadir_sha256": "4f3d08938aac9bd0e4f048055396ea0f391f2a67fd59bedff17f8c6619b9aca7",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -3401,7 +3401,7 @@
     {
       "filename": "techdraw-dimensions.FCStd",
       "sha256": "a1ec94417092ac8de667b13a164922e01adb23cc427a9a535ca2f51e12a61f75",
-      "canonical_cadir_sha256": "152a8c604d58d58b060e609486ee0fcb9141d26c5fce04164a2b7c702ef15f17",
+      "canonical_cadir_sha256": "def1e9e0713037a3be01ad4f4ae4939ce9170409d11734fc1a1ea88deb4f10ec",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -3485,13 +3485,13 @@
     {
       "filename": "techdraw-pages.FCStd",
       "sha256": "1890643d11d5055048dbdf05d53e5335945907312201152f3d8856278de95091",
-      "canonical_cadir_sha256": "08d9d1fb10d43e58a84741de656b62a7cd601f06abea417cc0e9fa2906b83d60",
+      "canonical_cadir_sha256": "fcfea4c25b76ed004a3b2ecd5e791ceca285d830e36ad8861c1ff93a20c5594d",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
       "native_errors": 0,
       "write_deterministic": true,
-      "semantic_round_trip": false,
+      "semantic_round_trip": true,
       "typed_edit_round_trip": false,
       "side_entries_preserved": true,
       "appearance_ownership_and_precedence": true,
@@ -3563,7 +3563,7 @@
     {
       "filename": "techdraw-variants.FCStd",
       "sha256": "09f0953e5a30c05166725f9c430e0f14ba20b2af3c330ff7837b7134b77a5ed8",
-      "canonical_cadir_sha256": "20883a263d054f4e0ae4256807cb4f83a5d1ec223dc7d9a2231cfe46fb60ba52",
+      "canonical_cadir_sha256": "76f89f9f393b14658263faec6fcf83fa93e9f7fd11712ba2bd408b4a58035faf",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -3647,7 +3647,7 @@
     {
       "filename": "techdraw-views.FCStd",
       "sha256": "8afd602cdd801c879b4830be6cb437270ca087532dfcb3a51f7a6da50d2841b0",
-      "canonical_cadir_sha256": "edd4b061e1007b9d991b9cab1e0b637d394e3e572f99a8dc1ce617c2cdc8e6a5",
+      "canonical_cadir_sha256": "253554d8582f98e07772662720d8528a32179ed4af7cfd4fd3fde8361e4d613e",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -3731,7 +3731,7 @@
     {
       "filename": "techdraw.FCStd",
       "sha256": "50450fbe592989557b01a854f4c4b5916c46fa4654f85d78cae3817fda95879b",
-      "canonical_cadir_sha256": "f4c5a9618b7e97c1db9a28fc84b707655ba350e60361d3ac3a82a4da98f8a8d4",
+      "canonical_cadir_sha256": "9df3baa5c943d6f00c417614bb136c2358f80c9aa7d6f37778e348972293874d",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -3815,7 +3815,7 @@
     {
       "filename": "techdraw_annotations.FCStd",
       "sha256": "6bc4c0e639b8055640c0bb02e2828a63184c787d42bda85d661707de3db84317",
-      "canonical_cadir_sha256": "39705870e0805d88bee06ff8eecce527294e5c48f4790d1a755afcb66ce98f9e",
+      "canonical_cadir_sha256": "6fa7ab82e090cc27ae4ef1b3d77990a678b6f845cca19966a208b235c7d3ac8e",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -3899,7 +3899,7 @@
     {
       "filename": "uniform_appearance.FCStd",
       "sha256": "b6840ea50a0b17df9385d99fbaa4895164ca0739219d876ab2f3ac8ec186cf48",
-      "canonical_cadir_sha256": "35a8b3003708e8b708d92248891b2e8e25b01514eca1a30c5401b682bc2e8325",
+      "canonical_cadir_sha256": "e50c8011ad717dbc8b3a32fe4ec9c7de5de785202534e4f60f599c1e84baee0d",
       "deterministic": true,
       "blocking_losses": 0,
       "neutral_errors": 0,
@@ -3908,7 +3908,7 @@
       "semantic_round_trip": false,
       "typed_edit_round_trip": false,
       "side_entries_preserved": true,
-      "appearance_ownership_and_precedence": true,
+      "appearance_ownership_and_precedence": false,
       "design_census_matches_projection": true,
       "design_property_edit_round_trip": false,
       "native_semantic_equivalence_verified": false,
@@ -4098,7 +4098,7 @@
       "draft:operation.anchor.pull.direction.x=0.0",
       "draft:operation.anchor.pull.direction.y=0.0",
       "draft:operation.anchor.pull.direction.z=1.0",
-      "draft:operation.angle.kind=literal",
+      "draft:operation.angle.kind=parameter",
       "draft:operation.faces.kind=resolved",
       "draft:operation.outward=true",
       "extrude:direction.kind=explicit",
@@ -4540,7 +4540,7 @@
         {
           "id": "design_records",
           "passed": true,
-          "observed": "features=178, sketches=37, constraints=161, parameters=266",
+          "observed": "features=178, sketches=37, constraints=161, parameters=260",
           "required": "nonempty feature, sketch, constraint, and parameter graphs"
         },
         {
@@ -4553,12 +4553,12 @@
     },
     {
       "level": "L5",
-      "passed": true,
+      "passed": false,
       "assertions": [
         {
           "id": "appearance_ownership_and_precedence",
-          "passed": true,
-          "observed": "targets={\"body\", \"edge\", \"face\", \"vertex\"}, all bindings checked=true",
+          "passed": false,
+          "observed": "targets={\"body\", \"edge\", \"face\", \"vertex\"}, all bindings checked=false",
           "required": "body, face, edge, and vertex targets with valid source ownership, assets, and override precedence"
         }
       ]
@@ -4600,7 +4600,7 @@
         {
           "id": "non_default_operation_branches",
           "passed": false,
-          "observed": "{\"chamfer:edges.kind=native\", \"chamfer:flip_direction=false\", \"chamfer:spec.first.kind=literal\", \"chamfer:spec.kind=two_distances\", \"chamfer:spec.second.kind=literal\", \"combine:operation.op=cut\", \"combine:operation.operands.target.kind=native\", \"combine:operation.operands.tools.kind=native\", \"datum_axis:direction.x=0.0\", \"datum_axis:direction.y=0.0\", \"datum_axis:direction.z=1.0\", \"datum_axis:origin.x=2.0\", \"datum_axis:origin.y=3.0\", \"datum_axis:origin.z=0.0\", \"datum_coordinate_system:frame.origin.x=7.0\", \"datum_coordinate_system:frame.origin.y=8.0\", \"datum_coordinate_system:frame.origin.z=9.0\", \"datum_coordinate_system:frame.x_axis.x=1.0\", \"datum_coordinate_system:frame.x_axis.y=0.0\", \"datum_coordinate_system:frame.x_axis.z=0.0\", \"datum_coordinate_system:frame.y_axis.x=0.0\", \"datum_coordinate_system:frame.y_axis.y=1.0\", \"datum_coordinate_system:frame.y_axis.z=0.0\", \"datum_coordinate_system:frame.z_axis.x=0.0\", \"datum_coordinate_system:frame.z_axis.y=0.0\", \"datum_coordinate_system:frame.z_axis.z=1.0\", \"datum_plane:frame.normal.x=0.0\", \"datum_plane:frame.normal.y=0.0\", \"datum_plane:frame.normal.z=1.0\", \"datum_plane:frame.origin.x=0.0\", \"datum_plane:frame.origin.y=0.0\", \"datum_plane:frame.origin.z=3.0\", \"datum_plane:frame.origin.z=4.0\", \"datum_plane:frame.u_axis.x=1.0\", \"datum_plane:frame.u_axis.y=0.0\", \"datum_plane:frame.u_axis.z=0.0\", \"datum_point:position.x=4.0\", \"datum_point:position.x=5.0\", \"datum_point:position.y=-7.0\", \"datum_point:position.y=5.0\", \"datum_point:position.z=0.0\", \"datum_point:position.z=3.0\", \"datum_point:position.z=6.0\", \"draft:operation.anchor.kind=neutral_plane\", \"draft:operation.anchor.plane.kind=native\", \"draft:operation.anchor.pull.direction.x=0.0\", \"draft:operation.anchor.pull.direction.y=0.0\", \"draft:operation.anchor.pull.direction.z=1.0\", \"draft:operation.angle.kind=literal\", \"draft:operation.faces.kind=resolved\", \"draft:operation.outward=true\", \"extrude:direction.kind=explicit\", \"extrude:direction.source.kind=custom\", \"extrude:direction.vector.x=0.0\", \"extrude:direction.vector.y=0.0\", \"extrude:direction.vector.z=1.0\", \"extrude:extent.kind=symmetric\", \"extrude:extent.side.draft.kind=parameter\", \"extrude:extent.side.termination.kind=blind\", \"extrude:extent.side.termination.length.kind=literal\", \"extrude:op=new_body\", \"extrude:operation.direction.kind=explicit\", \"extrude:operation.direction.source.kind=profile_normal\", \"extrude:operation.direction.vector.x=0.0\", \"extrude:operation.direction.vector.y=0.0\", \"extrude:operation.direction.vector.z=1.0\", \"extrude:operation.extent.kind=one_sided\", \"extrude:operation.extent.side.termination.kind=blind\", \"extrude:operation.extent.side.termination.length.kind=parameter\", \"extrude:operation.op=cut\", \"extrude:operation.op=join\", \"extrude:operation.profile.kind=sketch\", \"extrude:operation.solid=true\", \"extrude:operation.start.kind=profile_plane\", \"extrude:profile.kind=native\", \"extrude:solid=true\", \"extrude:start.kind=profile_plane\", \"fillet:edges.kind=native\", \"fillet:operation.edges.kind=resolved\", \"fillet:operation.radius.kind=constant\", \"fillet:operation.radius.radius.kind=parameter\", \"fillet:radius.kind=constant\", \"fillet:radius.radius.kind=literal\", \"hole:operation.bottom.included_angle.kind=parameter\", \"hole:operation.bottom.kind=angled\", \"hole:operation.direction.x=-0.0\", \"hole:operation.direction.y=-0.0\", \"hole:operation.direction.z=-1.0\", \"hole:operation.extent.kind=blind\", \"hole:operation.extent.length.kind=parameter\", \"hole:operation.profile.kind=sketch\", \"hole:operation.shape.construction.kind.angle.kind=parameter\", \"hole:operation.shape.construction.kind.diameter.kind=parameter\", \"hole:operation.shape.construction.kind.kind=countersink\", \"hole:operation.shape.diameter.kind=parameter\", \"loft:closed=false\", \"loft:guidance.kind=guides\", \"loft:kind=native\", \"loft:max_degree.kind=parameter\", \"loft:op=new_body\", \"loft:ruled=true\", \"loft:solid=true\", \"mirror_shape:plane_normal.x=1.0\", \"mirror_shape:plane_normal.y=0.0\", \"mirror_shape:plane_normal.z=0.0\", \"mirror_shape:plane_origin.x=0.0\", \"mirror_shape:plane_origin.y=0.0\", \"mirror_shape:plane_origin.z=0.0\", \"mirror_shape:source.kind=native\", \"native:kind=Fem::ConstraintTemperature\", \"native:kind=Fem::FemAnalysis\", \"native:kind=Path::Feature\", \"pattern:operation.kind=feature\", \"pattern:operation.pattern.count.kind=parameter\", \"pattern:operation.pattern.direction.x=-0.0\", \"pattern:operation.pattern.direction.y=-0.0\", \"pattern:operation.pattern.direction.z=-1.0\", \"pattern:operation.pattern.distance.distance.kind=parameter\", \"pattern:operation.pattern.distance.kind=span\", \"pattern:operation.pattern.kind=linear\", \"post_process:fuzzy_tolerance.kind=automatic\", \"post_process:fuzzy_tolerance.kind=kernel_default\", \"primitive:op=new_body\", \"primitive:operation.op=join\", \"primitive:operation.solid.angle.kind=parameter\", \"primitive:operation.solid.height.kind=parameter\", \"primitive:operation.solid.kind=box\", \"primitive:operation.solid.kind=cylinder\", \"primitive:operation.solid.length.kind=parameter\", \"primitive:operation.solid.radius.kind=radius\", \"primitive:operation.solid.radius.value.kind=parameter\", \"primitive:operation.solid.width.kind=parameter\", \"primitive:solid.angle.kind=parameter\", \"primitive:solid.height.kind=parameter\", \"primitive:solid.kind=box\", \"primitive:solid.kind=cylinder\", \"primitive:solid.length.kind=parameter\", \"primitive:solid.radius.kind=radius\", \"primitive:solid.radius.value.kind=parameter\", \"primitive:solid.width.kind=parameter\", \"revolve:construction.axis.direction.x=0.0\", \"revolve:construction.axis.direction.y=1.0\", \"revolve:construction.axis.direction.z=0.0\", \"revolve:construction.axis.origin.x=0.0\", \"revolve:construction.axis.origin.y=0.0\", \"revolve:construction.axis.origin.z=0.0\", \"revolve:construction.extent.kind=symmetric\", \"revolve:construction.extent.termination.angle.kind=parameter\", \"revolve:construction.extent.termination.kind=angle\", \"revolve:construction.profile.kind=sketch\", \"revolve:construction.solid=false\", \"revolve:op=new_body\", \"shell:allow_self_intersections=false\", \"shell:join=arc\", \"shell:mode=skin\", \"shell:outward=true\", \"shell:removed_faces.kind=resolved\", \"shell:resolve_intersections=true\", \"shell:thickness.kind=parameter\", \"sweep:orientation.kind=frenet\", \"sweep:path.kind=native\", \"sweep:shape.mode=solid\", \"sweep:shape.op=new_body\", \"sweep:shape.section.kind=profile\", \"sweep:shape.section.value.kind=native\", \"sweep:transformation=constant\", \"sweep:transition=transformed\"}",
+          "observed": "{\"chamfer:edges.kind=native\", \"chamfer:flip_direction=false\", \"chamfer:spec.first.kind=literal\", \"chamfer:spec.kind=two_distances\", \"chamfer:spec.second.kind=literal\", \"combine:operation.op=cut\", \"combine:operation.operands.target.kind=native\", \"combine:operation.operands.tools.kind=native\", \"datum_axis:direction.x=0.0\", \"datum_axis:direction.y=0.0\", \"datum_axis:direction.z=1.0\", \"datum_axis:origin.x=2.0\", \"datum_axis:origin.y=3.0\", \"datum_axis:origin.z=0.0\", \"datum_coordinate_system:frame.origin.x=7.0\", \"datum_coordinate_system:frame.origin.y=8.0\", \"datum_coordinate_system:frame.origin.z=9.0\", \"datum_coordinate_system:frame.x_axis.x=1.0\", \"datum_coordinate_system:frame.x_axis.y=0.0\", \"datum_coordinate_system:frame.x_axis.z=0.0\", \"datum_coordinate_system:frame.y_axis.x=0.0\", \"datum_coordinate_system:frame.y_axis.y=1.0\", \"datum_coordinate_system:frame.y_axis.z=0.0\", \"datum_coordinate_system:frame.z_axis.x=0.0\", \"datum_coordinate_system:frame.z_axis.y=0.0\", \"datum_coordinate_system:frame.z_axis.z=1.0\", \"datum_plane:frame.normal.x=0.0\", \"datum_plane:frame.normal.y=0.0\", \"datum_plane:frame.normal.z=1.0\", \"datum_plane:frame.origin.x=0.0\", \"datum_plane:frame.origin.y=0.0\", \"datum_plane:frame.origin.z=3.0\", \"datum_plane:frame.origin.z=4.0\", \"datum_plane:frame.u_axis.x=1.0\", \"datum_plane:frame.u_axis.y=0.0\", \"datum_plane:frame.u_axis.z=0.0\", \"datum_point:position.x=4.0\", \"datum_point:position.x=5.0\", \"datum_point:position.y=-7.0\", \"datum_point:position.y=5.0\", \"datum_point:position.z=0.0\", \"datum_point:position.z=3.0\", \"datum_point:position.z=6.0\", \"draft:operation.anchor.kind=neutral_plane\", \"draft:operation.anchor.plane.kind=native\", \"draft:operation.anchor.pull.direction.x=0.0\", \"draft:operation.anchor.pull.direction.y=0.0\", \"draft:operation.anchor.pull.direction.z=1.0\", \"draft:operation.angle.kind=parameter\", \"draft:operation.faces.kind=resolved\", \"draft:operation.outward=true\", \"extrude:direction.kind=explicit\", \"extrude:direction.source.kind=custom\", \"extrude:direction.vector.x=0.0\", \"extrude:direction.vector.y=0.0\", \"extrude:direction.vector.z=1.0\", \"extrude:extent.kind=symmetric\", \"extrude:extent.side.draft.kind=parameter\", \"extrude:extent.side.termination.kind=blind\", \"extrude:extent.side.termination.length.kind=literal\", \"extrude:op=new_body\", \"extrude:operation.direction.kind=explicit\", \"extrude:operation.direction.source.kind=profile_normal\", \"extrude:operation.direction.vector.x=0.0\", \"extrude:operation.direction.vector.y=0.0\", \"extrude:operation.direction.vector.z=1.0\", \"extrude:operation.extent.kind=one_sided\", \"extrude:operation.extent.side.termination.kind=blind\", \"extrude:operation.extent.side.termination.length.kind=parameter\", \"extrude:operation.op=cut\", \"extrude:operation.op=join\", \"extrude:operation.profile.kind=sketch\", \"extrude:operation.solid=true\", \"extrude:operation.start.kind=profile_plane\", \"extrude:profile.kind=native\", \"extrude:solid=true\", \"extrude:start.kind=profile_plane\", \"fillet:edges.kind=native\", \"fillet:operation.edges.kind=resolved\", \"fillet:operation.radius.kind=constant\", \"fillet:operation.radius.radius.kind=parameter\", \"fillet:radius.kind=constant\", \"fillet:radius.radius.kind=literal\", \"hole:operation.bottom.included_angle.kind=parameter\", \"hole:operation.bottom.kind=angled\", \"hole:operation.direction.x=-0.0\", \"hole:operation.direction.y=-0.0\", \"hole:operation.direction.z=-1.0\", \"hole:operation.extent.kind=blind\", \"hole:operation.extent.length.kind=parameter\", \"hole:operation.profile.kind=sketch\", \"hole:operation.shape.construction.kind.angle.kind=parameter\", \"hole:operation.shape.construction.kind.diameter.kind=parameter\", \"hole:operation.shape.construction.kind.kind=countersink\", \"hole:operation.shape.diameter.kind=parameter\", \"loft:closed=false\", \"loft:guidance.kind=guides\", \"loft:kind=native\", \"loft:max_degree.kind=parameter\", \"loft:op=new_body\", \"loft:ruled=true\", \"loft:solid=true\", \"mirror_shape:plane_normal.x=1.0\", \"mirror_shape:plane_normal.y=0.0\", \"mirror_shape:plane_normal.z=0.0\", \"mirror_shape:plane_origin.x=0.0\", \"mirror_shape:plane_origin.y=0.0\", \"mirror_shape:plane_origin.z=0.0\", \"mirror_shape:source.kind=native\", \"native:kind=Fem::ConstraintTemperature\", \"native:kind=Fem::FemAnalysis\", \"native:kind=Path::Feature\", \"pattern:operation.kind=feature\", \"pattern:operation.pattern.count.kind=parameter\", \"pattern:operation.pattern.direction.x=-0.0\", \"pattern:operation.pattern.direction.y=-0.0\", \"pattern:operation.pattern.direction.z=-1.0\", \"pattern:operation.pattern.distance.distance.kind=parameter\", \"pattern:operation.pattern.distance.kind=span\", \"pattern:operation.pattern.kind=linear\", \"post_process:fuzzy_tolerance.kind=automatic\", \"post_process:fuzzy_tolerance.kind=kernel_default\", \"primitive:op=new_body\", \"primitive:operation.op=join\", \"primitive:operation.solid.angle.kind=parameter\", \"primitive:operation.solid.height.kind=parameter\", \"primitive:operation.solid.kind=box\", \"primitive:operation.solid.kind=cylinder\", \"primitive:operation.solid.length.kind=parameter\", \"primitive:operation.solid.radius.kind=radius\", \"primitive:operation.solid.radius.value.kind=parameter\", \"primitive:operation.solid.width.kind=parameter\", \"primitive:solid.angle.kind=parameter\", \"primitive:solid.height.kind=parameter\", \"primitive:solid.kind=box\", \"primitive:solid.kind=cylinder\", \"primitive:solid.length.kind=parameter\", \"primitive:solid.radius.kind=radius\", \"primitive:solid.radius.value.kind=parameter\", \"primitive:solid.width.kind=parameter\", \"revolve:construction.axis.direction.x=0.0\", \"revolve:construction.axis.direction.y=1.0\", \"revolve:construction.axis.direction.z=0.0\", \"revolve:construction.axis.origin.x=0.0\", \"revolve:construction.axis.origin.y=0.0\", \"revolve:construction.axis.origin.z=0.0\", \"revolve:construction.extent.kind=symmetric\", \"revolve:construction.extent.termination.angle.kind=parameter\", \"revolve:construction.extent.termination.kind=angle\", \"revolve:construction.profile.kind=sketch\", \"revolve:construction.solid=false\", \"revolve:op=new_body\", \"shell:allow_self_intersections=false\", \"shell:join=arc\", \"shell:mode=skin\", \"shell:outward=true\", \"shell:removed_faces.kind=resolved\", \"shell:resolve_intersections=true\", \"shell:thickness.kind=parameter\", \"sweep:orientation.kind=frenet\", \"sweep:path.kind=native\", \"sweep:shape.mode=solid\", \"sweep:shape.op=new_body\", \"sweep:shape.section.kind=profile\", \"sweep:shape.section.value.kind=native\", \"sweep:transformation=constant\", \"sweep:transition=transformed\"}",
           "required": "{\"chamfer:spec.kind=two_distances\", \"combine:operation.op=cut\", \"datum_axis:origin.x=2.0\", \"datum_coordinate_system:frame.origin.z=9.0\", \"datum_plane:frame.origin.z=4.0\", \"datum_point:position.z=6.0\", \"draft:operation.outward=true\", \"extrude:extent.kind=symmetric\", \"fillet:radius.kind=constant\", \"hole:operation.bottom.kind=angled\", \"hole:operation.shape.construction.kind.kind=countersink\", \"loft:max_degree=4\", \"loft:ruled=true\", \"mirror_shape:plane_normal.x=1.0\", \"pattern:operation.pattern.count=4\", \"pattern:operation.pattern.direction.z=-1.0\", \"primitive:solid.kind=box\", \"primitive:solid.kind=cylinder\", \"revolve:construction.extent.kind=symmetric\", \"revolve:construction.extent.termination.kind=angle\", \"revolve:construction.solid=false\", \"shell:resolve_intersections=true\", \"sweep:orientation.kind=frenet\"}"
         }
       ]
@@ -4684,5 +4684,5 @@
       ]
     }
   ],
-  "highest_passing_gate": "L5"
+  "highest_passing_gate": "L4"
 }

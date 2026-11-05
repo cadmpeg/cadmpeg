@@ -42,7 +42,7 @@ fn repoint_id_value(document: &mut Value, ids: &BTreeSet<String>) -> Option<Stri
                     if key != "id" {
                         if let Value::String(text) = child {
                             if ids.contains(text) {
-                                *text = "injected:missing:record#0".to_owned();
+                                "injected:missing:record#0".clone_into(text);
                                 return true;
                             }
                         }
@@ -219,6 +219,8 @@ pub fn injected_error_findings(
     findings
 }
 
+type ReadBack = dyn Fn(&[u8]) -> u64;
+
 /// One capacity row under test: the writer's row plus its helper seam.
 pub struct CapacityRow {
     /// The writer's declared row.
@@ -226,7 +228,7 @@ pub struct CapacityRow {
     /// Writes `value` through the helper alone.
     pub write_at: Box<dyn Fn(u64) -> Result<Vec<u8>, EncodeError>>,
     /// Reads the stored value back through the decoder.
-    pub read_back: Box<dyn Fn(&[u8]) -> u64>,
+    pub read_back: Box<ReadBack>,
 }
 
 /// Findings for capacity helpers: `limit` writes and reads back, `limit + 1`
@@ -319,9 +321,7 @@ pub fn max_entities_findings(
         }
         Err(error) => {
             let text = error.to_string();
-            if !text.contains("max_entities")
-                && !matches!(error, EncodeError::ResourceLimit(_))
-            {
+            if !text.contains("max_entities") && !matches!(error, EncodeError::ResourceLimit(_)) {
                 findings.push(format!(
                     "planning with max_entities {} refuses without the limit: {error}",
                     record_count - 1
@@ -353,7 +353,7 @@ mod tests {
                 value,
             });
         }
-        Ok(vec![value as u8])
+        Ok(vec![u8::try_from(value).expect("test capacity fits u8")])
     }
 
     #[test]

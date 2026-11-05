@@ -595,6 +595,7 @@
           "order": 0,
           "parameters": {
             "Caption": "",
+            "ExpressionEngine": "[]",
             "Font": "osifont",
             "Label": "FirstNote",
             "Label2": "",
@@ -640,6 +641,7 @@
           "order": 1,
           "parameters": {
             "Caption": "",
+            "ExpressionEngine": "[]",
             "Font": "osifont",
             "Label": "SecondNote",
             "Label2": "",
@@ -709,6 +711,8 @@
           "gui_view_providers": 0,
           "joints": 0,
           "objects": 6,
+          "polygons3d": 0,
+          "polygons_on_triangulations": 0,
           "product_nodes": 0,
           "properties": 98,
           "shape_payloads": 0,
@@ -718,21 +722,23 @@
       },
       "__arena_sha256": {
         "fcstd": {
-          "annotations": "c06a8ffe68761777a268aef0c7f23512e5d4fb73983e3caecdf177163c6915e4",
-          "applications": "da08415b4981694eb901562de09ad1be78cb0b9e20393ca7f03c25a41c569c37",
+          "annotations": "dd763da0455bd54e931a6a2a597835e1dd16ebc00b523b69e748ed91457d33d1",
+          "applications": "d21f2e01004c67c66da90ed350283389aa34d91bf62025cee40c851811659075",
           "attachments": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "carrier_census": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "design_census": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "document": "e8bf34055c74cf54337477bc1bcf132bd8e5eca917aa63a6696ffe71977f376e",
           "drawings": "206d46943925e25729f94b0e72b4bca7f8d4b677e204f7777532285b2a99e6db",
           "element_maps": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-          "entries": "7d14a40fed1e63743e9f0df13c80cfa6a21505f5172e5b00bed1a55ec1cb5785",
+          "entries": "566f517305cb0cfc570aebd7d98860ba24cb620d86468cecefb3e29858a3bb53",
           "extensions": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "gui_documents": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "gui_properties": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "gui_view_providers": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "joints": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "objects": "ba0669d5c83aa55c4e40c54f1e86a100f07c97b49c4e9f6952af400028a5a8b9",
+          "polygons3d": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "polygons_on_triangulations": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "product_nodes": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "properties": "3d6102c737f7527960b870d2426f602e9a727985006c672f1079a4fe3f3bea0a",
           "shape_payloads": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
@@ -832,26 +838,6 @@
           "scope": "namespaced"
         },
         "message": "fcstd:native:object#SecondNote: untyped font properties, alignment, colour, line spacing, rich text, captions and dimension presentation remain native",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#FirstTemplate:PageResult (App::PropertyFileIncluded) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#SecondTemplate:PageResult (App::PropertyFileIncluded) has no neutral attribute encoding; its admitted typed native values remain held",
         "severity": "warning"
       },
       {

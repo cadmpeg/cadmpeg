@@ -121,8 +121,8 @@ fn typed_sketch_record_wins_over_stale_lane_bytes() {
         feature_input_lanes: vec![lane],
         ..Default::default()
     };
-    source.feature_input_lanes[0].sketch_entities[0] = source.feature_input_lanes[0].sketch_entities[0]
-        .with_test_identity(Some(0), Some(1));
+    source.feature_input_lanes[0].sketch_entities[0] =
+        source.feature_input_lanes[0].sketch_entities[0].with_test_identity(Some(0), Some(1));
     source.feature_input_lanes[0].sketch_entities[0]
         .reclassify(crate::records::SketchInputKind::LineOrCircle);
     source.feature_input_lanes[0].sketch_entities[0].coordinates_m =
