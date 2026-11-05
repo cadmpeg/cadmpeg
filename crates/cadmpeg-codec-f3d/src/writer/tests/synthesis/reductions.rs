@@ -160,3 +160,20 @@ fn source_less_compact_edge_vertex_and_coedge_attributes_are_authored() {
         assert!(!report.losses.iter().any(|loss| loss.message.contains(&format!("authored:model:attribute#{ordinal}"))));
     }
 }
+
+#[test]
+fn source_body_without_asm_key_keeps_the_absent_key() {
+    let source = crate::test_support::zip_test::f3d_with_smbh(
+        &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh());
+    let decoded = F3dCodec.decode(&mut Cursor::new(source), &DecodeOptions::default()).unwrap();
+    let mut ir = decoded.ir().clone();
+    crate::test_support::native_test::f3d_native_mut(&mut ir).body_native_keys[0].asm_body_key = None;
+    let before = crate::test_support::native_test::f3d_native(&ir).body_native_keys;
+    assert_eq!(before.len(), 1);
+    assert_eq!(before[0].asm_body_key, None);
+    let mut bytes = Vec::new();
+    F3dCodec.plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap().write_to(&mut bytes).unwrap();
+    let output = F3dCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()).unwrap();
+    assert_eq!(crate::test_support::native_test::f3d_native(output.ir()).body_native_keys, before);
+}

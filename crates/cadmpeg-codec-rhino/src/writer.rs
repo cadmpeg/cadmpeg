@@ -21,6 +21,7 @@ mod tables;
 pub(crate) mod target;
 mod trim_iso;
 mod trims;
+mod wire;
 use model::{
     ReducedCarrier, WritableEdge, WritableEdgeCurve, WritableFaceSurface, WritableModel,
     WritableObjectCurve, WritablePcurve, WritableVertex,
@@ -1107,6 +1108,52 @@ fn prepare_write<'a, 'budget>(
                 continue;
             }
             Err(error) => return Err(error),
+        }
+        if let Some((wire, curve_id)) = wire::single_line(&baked, archive_version)? {
+            let body = &baked.model.bodies[0];
+            let edge = &baked.model.edges[0];
+            let display = presentation::display(
+                ir,
+                &cadmpeg_ir::appearance::AppearanceTarget::Edge(edge.id.clone()),
+                None,
+            );
+            ctx.charge_entities(wire.record_count, "write Rhino Brep records")?;
+            brep_records.append(
+                &brep_object_record(
+                    ir,
+                    &wire,
+                    body.id.as_str(),
+                    display.name.or(body.name.as_deref()),
+                    display.color.or(body.color),
+                    display.visible.or(body.visible),
+                    &materials,
+                )?,
+                "retain Rhino Brep records",
+            )?;
+            losses.push(RhinoLossCode::WriterEntityOmitted.note(format!(
+                "body {} wire ownership is written as a 3DM Brep without shell membership: region {}, shell {}",
+                body.id, baked.model.regions[0].id, baked.model.shells[0].id
+            )));
+            if let Some(curve) = baked.model.curves.iter().find(|curve| curve.id == curve_id) {
+                if !is_support(curve.source_object.as_ref()) {
+                    losses.push(RhinoLossCode::WriterCarrierResolved.note(format!(
+                        "curve {} is written as a Brep edge carrier",
+                        curve.id
+                    )));
+                }
+                if curve.parameter_range.map(|range| range.endpoints())
+                    != edge.param_range().map(|range| range.get())
+                {
+                    losses.push(RhinoLossCode::WriterCarrierResolved.note(format!(
+                        "curve {} is restricted to the exact span of wire edge {}",
+                        curve.id, edge.id
+                    )));
+                }
+            }
+            written_curves.insert(curve_id.to_string());
+            written_bodies.insert(body.id.to_string());
+            brep_count += 1;
+            continue;
         }
         let loose_written = loose::write(
             ctx,
