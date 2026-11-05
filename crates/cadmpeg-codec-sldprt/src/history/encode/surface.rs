@@ -295,8 +295,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             use cadmpeg_ir::features::ThickenSide;
 
             let selection = face_selection_value(faces);
-            if selection.is_none()
-                && !(matches!(faces, FaceSelection::Unresolved) && existing.is_some())
+            if selection.is_none() && !matches!(faces, FaceSelection::Unresolved)
                 || existing.is_some_and(|record| {
                     !feature_family(record, "Thicken")
                         && !feature_family(record, "Thickness")
@@ -308,7 +307,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 )));
             }
-            if existing.is_none() && (thickness.is_none() || side.is_none()) {
+            if existing.is_none() && side.is_none() {
                 return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} has unresolved thicken construction",
                     feature.id
