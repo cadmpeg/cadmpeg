@@ -54,6 +54,12 @@ impl CylinderAxis {
             > radius + BLEND_RADIUS_DISTANCE_TOLERANCE
     }
 
+    /// Whether `point` lies on the cylinder of `radius` about the axis.
+    pub(super) fn meets(self, radius: f64, point: Point3) -> bool {
+        (point.vector_from(self.origin).cross(self.direction).norm() - radius).abs()
+            <= BLEND_RADIUS_DISTANCE_TOLERANCE
+    }
+
     /// The position of `point` along the axis.
     pub(super) fn position(self, point: Point3) -> f64 {
         point.vector_from(self.origin).dot(self.direction)

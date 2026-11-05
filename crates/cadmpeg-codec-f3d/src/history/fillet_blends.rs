@@ -27,6 +27,36 @@ struct Blend {
 /// The boundary edges of each face whose boundary rebuilds.
 type Boundaries = HashMap<i64, HashSet<i64>>;
 
+/// The spine, axis, radius, and axial extent of one cylinder blend.
+#[derive(Clone, Copy)]
+struct CylinderBlend {
+    spine: BlendSpine,
+    axis: CylinderAxis,
+    radius: f64,
+    low: f64,
+    high: f64,
+}
+
+impl CylinderBlend {
+    /// Whether `point` lies within the axial extent of the blend's boundary.
+    fn spans(self, point: Point3) -> bool {
+        let position = self.axis.position(point);
+        position >= self.low - FILLET_BLEND_EXTENT_TOLERANCE
+            && position <= self.high + FILLET_BLEND_EXTENT_TOLERANCE
+    }
+
+    /// Whether an edge runs along the axis: `None` when its rows cannot show
+    /// it.
+    fn runs_along(self, geometry: EdgeGeometry) -> Option<bool> {
+        if self.spine.rules_out(geometry) {
+            return Some(false);
+        }
+        geometry
+            .is_classified()
+            .then(|| self.spine.admits(geometry))
+    }
+}
+
 /// Rows of both states that locate the edge a blend replaces.
 struct BlendRows<'a> {
     edges: HashMap<i64, EdgeGeometry>,
@@ -73,47 +103,43 @@ impl<'a> BlendRows<'a> {
     /// a support that runs along the axis, lies farther than the radius from
     /// the axis line and within the axial extent of the blend's boundary, and
     /// has two owner faces: a support whose plane touches the cylinder, and a
-    /// face that the transition removes and that shares a preceding edge with
-    /// another support. Kept and deleted edges qualify alike. `None` when no
-    /// edge or more than one qualifies, or when a row that decides an edge is
-    /// missing or unusable.
+    /// face that the transition removes and that `reaches` another support.
+    /// Kept and deleted edges qualify alike. `None` when no edge or more than
+    /// one qualifies, or when a row that decides an edge is missing or
+    /// unusable.
     fn rounded_edge(
         &self,
-        blend: i64,
+        blend_face: i64,
         spine: BlendSpine,
         axis: CylinderAxis,
         radius: f64,
         supports: &[i64],
     ) -> Option<i64> {
         let mut extent = None::<(f64, f64)>;
-        for edge in self.output_boundaries.get(&blend)? {
+        for edge in self.output_boundaries.get(&blend_face)? {
             let position = axis.position(self.output_points.get(edge).copied().flatten()?);
             let (low, high) = extent.unwrap_or((position, position));
             extent = Some((low.min(position), high.max(position)));
         }
         let (low, high) = extent?;
+        let blend = CylinderBlend {
+            spine,
+            axis,
+            radius,
+            low,
+            high,
+        };
         let mut pool = BTreeSet::new();
         for support in supports {
             pool.extend(self.input_boundaries.get(support)?);
         }
         let mut found = None;
         for edge in pool {
-            let geometry = self.edges.get(edge).copied().unwrap_or_default();
-            if spine.rules_out(geometry) {
-                continue;
-            }
-            if !geometry.is_classified() {
-                return None;
-            }
-            if !spine.admits(geometry) {
+            if !blend.runs_along(self.edges.get(edge).copied().unwrap_or_default())? {
                 continue;
             }
             let point = self.input_points.get(edge).copied().flatten()?;
-            let position = axis.position(point);
-            if !axis.clears(radius, point)
-                || position < low - FILLET_BLEND_EXTENT_TOLERANCE
-                || position > high + FILLET_BLEND_EXTENT_TOLERANCE
-            {
+            if !axis.clears(radius, point) || !blend.spans(point) {
                 continue;
             }
             let Some([first, second]) = self.owners.get(edge).map(Vec::as_slice) else {
@@ -121,7 +147,7 @@ impl<'a> BlendRows<'a> {
             };
             let (mut touching, mut unknown) = (false, false);
             for (near, far) in [(first, second), (second, first)] {
-                if !supports.contains(near) || !self.beside_support(*far, *near, supports) {
+                if !supports.contains(near) || !self.reaches(*far, *near, supports, blend)? {
                     continue;
                 }
                 let carrier = self.input_carriers.get(near).copied().flatten()?;
@@ -141,20 +167,33 @@ impl<'a> BlendRows<'a> {
         found
     }
 
-    /// Whether the transition removes `face` and `face` shares a preceding
-    /// edge with a support other than `support`.
-    fn beside_support(&self, face: i64, support: i64, supports: &[i64]) -> bool {
-        let Some(boundary) = self.input_boundaries.get(&face) else {
-            return false;
-        };
-        !self.output_faces.contains(&face)
-            && supports.iter().any(|other| {
-                *other != support
-                    && self
-                        .input_boundaries
-                        .get(other)
-                        .is_some_and(|edges| !edges.is_disjoint(boundary))
-            })
+    /// Whether the transition removes `face` and `face` meets a support other
+    /// than `support` at a preceding edge that runs along the blend's axis on
+    /// its cylinder and within its axial extent: the edge that an overflow
+    /// blend rolls over. `None` when a row that decides such an edge is
+    /// missing or unusable.
+    fn reaches(
+        &self,
+        face: i64,
+        support: i64,
+        supports: &[i64],
+        blend: CylinderBlend,
+    ) -> Option<bool> {
+        if self.output_faces.contains(&face) {
+            return Some(false);
+        }
+        let boundary = self.input_boundaries.get(&face)?;
+        let mut reached = false;
+        for other in supports.iter().filter(|other| **other != support) {
+            for edge in boundary.intersection(self.input_boundaries.get(other)?) {
+                if !blend.runs_along(self.edges.get(edge).copied().unwrap_or_default())? {
+                    continue;
+                }
+                let point = self.input_points.get(edge).copied().flatten()?;
+                reached |= blend.axis.meets(blend.radius, point) && blend.spans(point);
+            }
+        }
+        Some(reached)
     }
 }
 

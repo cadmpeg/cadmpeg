@@ -293,6 +293,9 @@ fn a_cylinder_axis_needs_one_row_with_a_finite_origin_and_direction() {
     assert!((axis.position(point(5.0, 5.0, 3.0)) - 3.0).abs() < 1.0e-12);
     assert!(!axis.clears(2.0, point(3.0, 2.0, 7.0)), "on the cylinder");
     assert!(axis.clears(2.0, point(3.1, 2.0, 7.0)));
+    assert!(axis.meets(2.0, point(3.0, 2.0, 7.0)));
+    assert!(!axis.meets(2.0, point(3.1, 2.0, 7.0)));
+    assert!(!axis.meets(2.0, point(2.9, 2.0, 7.0)));
 }
 
 #[test]
