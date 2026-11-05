@@ -115,6 +115,12 @@ fn synthesized_body(
             recovered.sampled_fits.len(), recovered.residual_limit
         )));
     }
+    let mut written_native = synthesis.written_native;
+    written_native.extend(exact_physical_records(
+        input.ir,
+        &synthesis.bytes,
+        input.limits,
+    ));
     let mut body = super::body(
         synthesis.bytes,
         WritePath::Synthesized { consumption },
@@ -127,10 +133,67 @@ fn synthesized_body(
         input.ir,
         &body.losses,
         &synthesis.regenerated_native,
-        &synthesis.written_native,
+        &written_native,
     );
     body.synthesis_cause = synthesis_cause;
     Ok(body)
+}
+
+/// Confirm which current physical and Directory records are exactly present in
+/// the generated file, comparing output to the document, not to a baseline.
+fn exact_physical_records(
+    ir: &CadIr,
+    bytes: &[u8],
+    limits: cadmpeg_core::decode::ResourceLimits,
+) -> std::collections::BTreeSet<String> {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+
+    let Some(before) = ir.native.namespace("iges") else {
+        return std::collections::BTreeSet::new();
+    };
+    if ["cards", "entities"]
+        .iter()
+        .all(|arena| before.arenas().get(*arena).is_none_or(Vec::is_empty))
+    {
+        return std::collections::BTreeSet::new();
+    }
+    let options = DecodeOptions {
+        policy: cadmpeg_core::decode::DecodePolicy {
+            limits,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let Ok(decoded) = crate::IgesCodec.decode(&mut std::io::Cursor::new(bytes), &options) else {
+        return std::collections::BTreeSet::new();
+    };
+    let Some(after) = decoded.ir().native.namespace("iges") else {
+        return std::collections::BTreeSet::new();
+    };
+    let mut exact = std::collections::BTreeSet::new();
+    for arena in ["cards", "entities"] {
+        let Some(input_records) = before.arenas().get(arena) else {
+            continue;
+        };
+        let Some(output_records) = after.arenas().get(arena) else {
+            continue;
+        };
+        let by_id = output_records
+            .iter()
+            .map(|record| (record.id(), record))
+            .collect::<std::collections::BTreeMap<_, _>>();
+        exact.extend(
+            input_records
+                .iter()
+                .filter(|record| {
+                    by_id
+                        .get(record.id())
+                        .is_some_and(|other| *other == *record)
+                })
+                .map(|record| record.id().to_owned()),
+        );
+    }
+    exact
 }
 
 enum SynthesisCause {
