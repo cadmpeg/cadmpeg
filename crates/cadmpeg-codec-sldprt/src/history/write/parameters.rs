@@ -11,6 +11,35 @@ use crate::history::parameters::{
     global_parameter_owners, parameters_with_incoherent_dependencies, render_identifier,
 };
 
+pub(super) fn synchronize_dimension_properties(
+    parameter: &DesignParameter,
+    properties: &mut std::collections::BTreeMap<cadmpeg_core::text::NonBlankString, String>,
+) {
+    let old_value = properties.remove("Value");
+    let old_driven = properties.remove("Driven");
+    if let Some(value) = &parameter.value {
+        let expression_has_value =
+            parameter.expression.literal_value_as(value).as_ref() == Some(value);
+        if old_value.is_some() || !expression_has_value {
+            let text = old_value
+                .filter(|text| {
+                    cadmpeg_ir::features::Expression::text(text)
+                        .literal_value_as(value)
+                        .as_ref()
+                        == Some(value)
+                })
+                .unwrap_or_else(|| crate::history::literals::format_parameter_cache_value(value));
+            properties.insert(cadmpeg_core::nonblank_literal!("Value"), text);
+        }
+    }
+    if old_driven.is_some() || !parameter.driving {
+        let text = old_driven
+            .filter(|text| matches!(text.as_str(), "true" | "1") != parameter.driving)
+            .unwrap_or_else(|| (!parameter.driving).to_string());
+        properties.insert(cadmpeg_core::nonblank_literal!("Driven"), text);
+    }
+}
+
 pub(crate) fn synchronize_parameter_records(
     ir: &cadmpeg_ir::CadIr,
     native: &mut Option<crate::native::SldprtNative>,
@@ -223,10 +252,13 @@ fn sync_neutral_parameters(
         record.parameters.extend(canonical);
         record.dimension_properties = parameters
             .iter()
-            .map(|parameter| {
-                let mut properties = parameter.properties.clone();
-                properties.remove("Value");
-                properties.remove("Driven");
+            .filter_map(|parameter| {
+                let mut properties = record
+                    .dimension_properties
+                    .get(parameter.name.as_str())
+                    .cloned()
+                    .unwrap_or_default();
+                properties.extend(parameter.properties.clone());
                 if let Some(alias) = aliases.get(&parameter.id) {
                     let alias = match alias.split_once('@') {
                         Some((name, _)) => format!("{name}@{}", record.name),
@@ -234,17 +266,8 @@ fn sync_neutral_parameters(
                     };
                     properties.insert(cadmpeg_core::nonblank_literal!("EquationId"), alias);
                 }
-                if let Some(value) = &parameter.value {
-                    properties.insert(
-                        cadmpeg_core::nonblank_literal!("Value"),
-                        crate::history::literals::format_parameter_cache_value(value),
-                    );
-                }
-                properties.insert(
-                    cadmpeg_core::nonblank_literal!("Driven"),
-                    (!parameter.driving).to_string(),
-                );
-                (parameter.name.clone(), properties)
+                synchronize_dimension_properties(parameter, &mut properties);
+                (!properties.is_empty()).then(|| (parameter.name.clone(), properties))
             })
             .collect();
         let mut names = parameters
