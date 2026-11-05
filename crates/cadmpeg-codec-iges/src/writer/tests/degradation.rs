@@ -279,7 +279,10 @@ fn unsupported_solid_reports_its_omitted_topology() {
         )
         .expect("solid fixture decodes");
     let ir = decoded.ir();
-    let graph = super::super::degrade::graph(ir, IgesVersion::V4_0, "unsupported solid")
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let ctx = cadmpeg_core::decode::DecodeContext::for_encode(&arena, &policy);
+    let graph = super::super::degrade::graph(&ctx, ir, IgesVersion::V4_0, "unsupported solid")
         .expect("degradation reports unsupported topology");
     for id in ir
         .model
