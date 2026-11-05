@@ -903,7 +903,7 @@ Unstated regions:
 
 Spec §3.1 · layout: byte offsets · size: 309 B
 
-The 299-byte-payload form with the five-code-unit kind `Scale`. Offsets are relative to the primary indexed header; another kind spelling moves every offset from 231 on by its own UTF-16 length, and `scale_legacy_uniform_tail` gives the tail offsets for any spelling. The paired same-index header is outside this frame.
+The 299-byte-payload form with the five-code-unit kind `Scale`. Offsets are relative to the primary indexed header; another kind spelling moves every offset from 231 on by its UTF-16 byte length minus the ten bytes of `Scale`, and `scale_legacy_uniform_tail` gives the tail offsets for any spelling. The paired same-index header is outside this frame.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes/direct_face.rs`

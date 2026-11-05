@@ -2945,7 +2945,7 @@ kind = "byte"
 section = "3.1"
 anchor = "With the five-code-unit kind `Scale`, the kind code units occupy offsets 221 through 230"
 size = 309
-note = "The 299-byte-payload form with the five-code-unit kind `Scale`. Offsets are relative to the primary indexed header; another kind spelling moves every offset from 231 on by its own UTF-16 length, and `scale_legacy_uniform_tail` gives the tail offsets for any spelling. The paired same-index header is outside this frame."
+note = "The 299-byte-payload form with the five-code-unit kind `Scale`. Offsets are relative to the primary indexed header; another kind spelling moves every offset from 231 on by its UTF-16 byte length minus the ten bytes of `Scale`, and `scale_legacy_uniform_tail` gives the tail offsets for any spelling. The paired same-index header is outside this frame."
 parsed_by = ["crates/cadmpeg-codec-f3d/src/design/decode/scopes/direct_face.rs", "crates/cadmpeg-codec-f3d/src/design/decode/scopes/parameter_scope.rs"]
 
 [[record.field]]
