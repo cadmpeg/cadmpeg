@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Writer harness wiring for SolidWorks (#237 item, #217 §5.0, #232 §3.3 and §5.2).
+//! Writer harness wiring for `SolidWorks` (#237 item, #217 §5.0, #232 §3.3 and §5.2).
 //!
 //! Injected-error, capacity-helper and `max_entities` runners from
 //! `cadmpeg-test-support`; the residual checker over the §3.3 statement list;
@@ -147,8 +147,7 @@ fn material_name_capacity_is_a_typed_target_refusal() {
     for fidelity in [None, Some(decoded.source_fidelity())] {
         let error = SldprtCodec
             .plan(EncodeInput::new(&ir, fidelity), request())
-            .err()
-            .expect("material name exceeds target width");
+            .expect_err("material name exceeds target width");
         assert!(
             matches!(error, cadmpeg_ir::codec::write::EncodeError::TargetCapacity { field, limit: 255, value: 256 } if field.field == "material.name")
         );
@@ -212,8 +211,7 @@ fn feature_name_capacity_reaches_the_encoder() {
     for fidelity in [None, Some(decoded.source_fidelity())] {
         let error = SldprtCodec
             .plan(EncodeInput::new(&ir, fidelity), request())
-            .err()
-            .expect("feature name exceeds target width");
+            .expect_err("feature name exceeds target width");
         assert!(matches!(error,
             cadmpeg_ir::codec::write::EncodeError::TargetCapacity {
                 field, limit: 255, value: 256,
@@ -309,9 +307,9 @@ fn capacity_helpers_follow_their_rows() {
         field, limit: 255, value: 256
     } if field.field == "feature_input.name_length")
     );
-    let name = "n".repeat(crate::writer::CAPACITY_FIELDS[0].limit as usize);
+    let name = "n".repeat(usize::try_from(crate::writer::CAPACITY_FIELDS[0].limit).expect("capacity fits usize"));
     assert!(crate::writer::material_name_len(&name).is_ok());
-    let overlong = "n".repeat(crate::writer::CAPACITY_FIELDS[0].limit as usize + 1);
+    let overlong = "n".repeat(usize::try_from(crate::writer::CAPACITY_FIELDS[0].limit).expect("capacity fits usize") + 1);
     assert!(crate::writer::material_name_len(&overlong).is_err());
     let limit = crate::writer::CAPACITY_FIELDS[1].limit;
     let index = usize::try_from(limit).expect("type-id limit fits usize");
@@ -365,8 +363,7 @@ fn synthesized_unit_name_reports_its_byte_capacity() {
     );
     let error = SldprtCodec
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
-        .err()
-        .expect("the unit name exceeds the native byte count");
+        .expect_err("the unit name exceeds the native byte count");
     assert!(
         matches!(error, cadmpeg_ir::codec::write::EncodeError::TargetCapacity {
         field, limit: 255, value: 256
@@ -452,7 +449,7 @@ fn synthesized_records_carry_their_specified_residuals() {
     );
 }
 
-/// Residual positions the SolidWorks writer synthesizes, from `docs/formats/`.
+/// Residual positions the `SolidWorks` writer synthesizes, from `docs/formats/`.
 ///
 /// No residual rule is stated in `docs/formats/sldprt.md` yet; the first
 /// stated rule adds its spec here (#232 §3.3).

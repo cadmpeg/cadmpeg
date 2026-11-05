@@ -97,10 +97,12 @@ pub(crate) fn sketches(
                     native_ref: &native_ref,
                 },
                 annotations,
-                &mut sketches,
-                &mut entities,
-                &mut constraints,
-                &mut carriers,
+                SketchProjectionOutput {
+                    sketches: &mut sketches,
+                    entities: &mut entities,
+                    constraints: &mut constraints,
+                    carriers: &mut carriers,
+                },
             )?;
         }
         if !carriers.points.is_empty() || !carriers.curves.is_empty() {
@@ -127,16 +129,26 @@ struct BrepSketchSource<'a> {
     native_ref: &'a str,
 }
 
+struct SketchProjectionOutput<'a> {
+    sketches: &'a mut Vec<Sketch>,
+    entities: &'a mut Vec<SketchEntity>,
+    constraints: &'a mut Vec<SketchConstraint>,
+    carriers: &'a mut crate::native::NestedSketchCarriers,
+}
+
 fn project_brep(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     brep: &crate::brep::graph::Brep,
     source: &BrepSketchSource<'_>,
     annotations: &mut Annotations,
-    sketches: &mut Vec<Sketch>,
-    entities: &mut Vec<SketchEntity>,
-    constraints: &mut Vec<SketchConstraint>,
-    carriers: &mut crate::native::NestedSketchCarriers,
+    output: SketchProjectionOutput<'_>,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let SketchProjectionOutput {
+        sketches,
+        entities,
+        constraints,
+        carriers,
+    } = output;
     let BrepSketchSource {
         block_offset,
         stream_ordinal,
@@ -599,7 +611,7 @@ mod projected_profile_orientation_tests {
 
 #[cfg(test)]
 mod projected_brep_output_tests {
-    use super::{project_brep, BrepSketchSource};
+    use super::{project_brep, BrepSketchSource, SketchProjectionOutput};
     use cadmpeg_ir::geometry::{
         analytic::PlaneSurface, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
     };
@@ -705,10 +717,12 @@ mod projected_brep_output_tests {
                 native_ref: "native:points",
             },
             &mut annotations,
-            &mut sketches,
-            &mut entities,
-            &mut constraints,
-            &mut crate::native::NestedSketchCarriers::default(),
+            SketchProjectionOutput {
+                sketches: &mut sketches,
+                entities: &mut entities,
+                constraints: &mut constraints,
+                carriers: &mut crate::native::NestedSketchCarriers::default(),
+            },
         )
         .unwrap();
 
@@ -747,10 +761,12 @@ mod projected_brep_output_tests {
                 native_ref: "native:point",
             },
             &mut annotations,
-            &mut sketches,
-            &mut entities,
-            &mut constraints,
-            &mut crate::native::NestedSketchCarriers::default(),
+            SketchProjectionOutput {
+                sketches: &mut sketches,
+                entities: &mut entities,
+                constraints: &mut constraints,
+                carriers: &mut crate::native::NestedSketchCarriers::default(),
+            },
         )
         .expect("project B-rep");
         assert_eq!(sketches.len(), 1);
@@ -832,10 +848,12 @@ mod projected_brep_output_tests {
                 native_ref: "native:lane",
             },
             &mut cadmpeg_ir::annotations::Annotations::default(),
-            &mut Vec::new(),
-            &mut entities,
-            &mut Vec::new(),
-            &mut carriers,
+            SketchProjectionOutput {
+                sketches: &mut Vec::new(),
+                entities: &mut entities,
+                constraints: &mut Vec::new(),
+                carriers: &mut carriers,
+            },
         )
         .unwrap();
         let reference = entities
@@ -875,10 +893,12 @@ mod projected_brep_output_tests {
                 native_ref: "native:point",
             },
             &mut annotations,
-            &mut sketches,
-            &mut entities,
-            &mut constraints,
-            &mut crate::native::NestedSketchCarriers::default(),
+            SketchProjectionOutput {
+                sketches: &mut sketches,
+                entities: &mut entities,
+                constraints: &mut constraints,
+                carriers: &mut crate::native::NestedSketchCarriers::default(),
+            },
         )
         .expect("project B-rep");
         assert_eq!(sketches.len(), 1);

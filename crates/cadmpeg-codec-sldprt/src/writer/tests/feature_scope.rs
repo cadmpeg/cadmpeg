@@ -74,7 +74,7 @@ fn clearing_resolved_output_scope_removes_native_scope() {
     assert_eq!(source.ir().model.features[0].evaluation.outputs().len(), 1);
     source.ir_mut().model.features[0]
         .evaluation
-        .set_outputs(Default::default());
+        .set_outputs(cadmpeg_ir::features::DistinctMembers::default());
     let written = rewrite(&source);
     assert!(
         !sldprt_native(written.ir()).feature_histories[0].features[0]
