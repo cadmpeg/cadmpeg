@@ -450,6 +450,8 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         crate::design::decode::sketch::decode_persistent_references(scan)?;
     design.lost_edge_references = crate::design::decode::sketch::decode_lost_edge_references(scan)?;
     design.sketch_relations = crate::design::decode::sketch::decode_sketch_relations(
+        ctx,
+        &mut design_parts,
         scan,
         &prereqs.design_record_headers,
     )?;
@@ -474,7 +476,8 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     design.sketch_texts = crate::design::decode::sketch::decode_sketch_texts(scan)?;
     design.sketch_curve_identities =
         crate::design::decode::sketch::decode_sketch_curve_identities(scan)?;
-    design.sketch_surfaces = crate::design::decode::sketch::decode_sketch_surfaces(scan)?;
+    design.sketch_surfaces =
+        crate::design::decode::sketch::decode_sketch_surfaces(ctx, &mut design_parts, scan)?;
     crate::design::decode::sketch::bind_sketch_graph(
         &prereqs.design_entity_headers,
         &mut design.sketch_points,
