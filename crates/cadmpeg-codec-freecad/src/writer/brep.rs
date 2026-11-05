@@ -278,6 +278,7 @@ fn serialize_geometry(
         roots,
         root_override,
         covered,
+        &[],
         topology,
         losses,
     )
@@ -289,6 +290,7 @@ pub(super) fn unowned_with_uses(
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     roots: &RootKinds<'_>,
     covered: &HashSet<String>,
+    covered_points: &[&str],
 ) -> Result<Option<SerializedShape>, CodecError> {
     if let Some(refusal) = ctx.resource_refusal() {
         return Err(refusal.into());
@@ -298,7 +300,15 @@ pub(super) fn unowned_with_uses(
         indices: Vec::new(),
         uses: Vec::new(),
     };
-    let bytes = unowned_geometry(ctx, ir, losses, roots, covered, &mut topology)?;
+    let bytes = unowned_geometry(
+        ctx,
+        ir,
+        losses,
+        roots,
+        covered,
+        covered_points,
+        &mut topology,
+    )?;
     Ok(bytes.map(|bytes| SerializedShape {
         bytes,
         uses: topology.uses,
@@ -311,6 +321,7 @@ fn unowned_geometry(
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     roots: &RootKinds<'_>,
     covered: &HashSet<String>,
+    covered_points: &[&str],
     topology: &mut impl TopologyObserver,
 ) -> Result<Option<Vec<u8>>, CodecError> {
     let reachable = Reach::unowned(ir);
@@ -359,8 +370,18 @@ fn unowned_geometry(
             )),
         );
     }
-    let bytes =
-        serialize_geometry_inner(ctx, ir, &[], true, roots, None, covered, topology, losses)?;
+    let bytes = serialize_geometry_inner(
+        ctx,
+        ir,
+        &[],
+        true,
+        roots,
+        None,
+        covered,
+        covered_points,
+        topology,
+        losses,
+    )?;
     if bytes.is_none()
         && (!reachable.faces.is_empty()
             || !reachable.edges.is_empty()
@@ -568,6 +589,7 @@ fn serialize_geometry_inner(
     root_kinds: &RootKinds<'_>,
     root_override: Option<cadmpeg_ir::transform::Transform>,
     covered: &HashSet<String>,
+    covered_points: &[&str],
     topology: &mut impl TopologyObserver,
     losses: &mut Vec<LossNote>,
 ) -> Result<Option<Vec<u8>>, CodecError> {
@@ -869,7 +891,7 @@ fn serialize_geometry_inner(
     }
     if free {
         for point in ir.model.points.iter().filter(|point| {
-            !covered_by_replay(covered, &point.source_object)
+            covered_points.binary_search(&point.id.as_str()).is_err()
                 && !ir
                     .model
                     .vertices

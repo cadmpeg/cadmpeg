@@ -20,6 +20,7 @@ mod native_geometry;
 pub(crate) mod ordinals;
 mod parameters;
 mod pcurves;
+mod point_kernel;
 mod polygon_edges;
 mod polygon_nodes;
 mod polygon_pair;
