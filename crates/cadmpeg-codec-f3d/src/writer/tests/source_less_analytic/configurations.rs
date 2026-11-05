@@ -184,6 +184,28 @@ fn generated_design_configuration_json_decodes_and_writes_source_less() {
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less configuration round trip");
     assert_eq!(configuration_semantics(round_trip.ir()), expected_projected);
+    let written_native = f3d_native(round_trip.ir());
+    assert_eq!(written_native.design_configurations[0].entry_name(), name);
+    assert_eq!(
+        written_native.design_configurations[0].payload()["extension"]["future"],
+        7
+    );
+
+    let mut renamed = source_less.clone();
+    renamed.model.configurations[0].name = Some("Renamed".into());
+    let (renamed_output, _) = synthesize_document(&renamed, None);
+    let written_native = f3d_native(renamed_output.ir());
+    assert_eq!(written_native.design_configurations[0].entry_name(), name);
+    assert_eq!(
+        written_native.design_configurations[0].payload()["extension"]["future"],
+        7
+    );
+    assert!(renamed_output
+        .ir()
+        .model
+        .configurations
+        .iter()
+        .any(|configuration| configuration.name.as_deref() == Some("Renamed")));
 
     let rule_name = "FusionAssetName[Active]/DesignConfigurationRule.456.dsgcfgrule";
     let rule_result = F3dCodec
