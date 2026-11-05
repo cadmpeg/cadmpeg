@@ -638,7 +638,9 @@ fn synthesize_with_admission(
     }
 
     append_name_properties(&mut graph.entities, &graph.presentations)?;
-    placement_entities::materialize(&mut graph.entities)?;
+    graph
+        .losses
+        .extend(placement_entities::materialize(&mut graph.entities)?);
     entity_order::source_order(ir, &mut graph.entities, &mut graph.presentations)?;
     feature_order::order(ir, &mut graph.entities, &mut graph.presentations)?;
     attribute_export.regenerated.extend(display::regenerated(
@@ -5869,7 +5871,7 @@ fn synthesized_native_dispositions(
     for arena in namespace.arenas().keys() {
         let regenerated = match arena.as_str() {
             "properties" | "product_properties" => represented_names,
-            "cards" | "transformations" | "manifold_solids" => !degraded_geometry,
+            "transformations" | "manifold_solids" => !degraded_geometry,
             "display_attributes"
             | "macro_definitions"
             | "macro_instances"

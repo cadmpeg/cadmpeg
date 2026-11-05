@@ -8360,6 +8360,12 @@ fn zero_entity_records(bytes: &[u8], range: Range<usize>) -> Vec<CatiaZeroEntity
     output
 }
 
+type GivenUpObjectRecord = (
+    cadmpeg_ir::unknown::UnknownRecord,
+    cadmpeg_ir::report::loss::LossNote,
+    cadmpeg_ir::ArenaClasses,
+);
+
 impl CatiaNative {
     /// Decode CATIA-native records using container-bounded consolidated
     /// record sources.
@@ -8400,17 +8406,7 @@ impl CatiaNative {
         sources: &[Vec<crate::wire::records::SourceExtent>],
         provided_sampled_maps: Option<Vec<CatiaSampledParameterMap>>,
         refusal: &mut crate::nurbs::LaneRefusals,
-    ) -> Result<
-        (
-            Self,
-            Vec<(
-                cadmpeg_ir::unknown::UnknownRecord,
-                cadmpeg_ir::report::loss::LossNote,
-                cadmpeg_ir::ArenaClasses,
-            )>,
-        ),
-        cadmpeg_core::CodecError,
-    > {
+    ) -> Result<(Self, Vec<GivenUpObjectRecord>), cadmpeg_core::CodecError> {
         let consolidated_records = crate::wire::records::consolidated_records_in_sources(
             bytes,
             sources.iter().map(|source| source.iter()),
@@ -8432,17 +8428,7 @@ impl CatiaNative {
         bytes: &[u8],
         consolidated_records: &[ConsolidatedRecord],
         refusal: &mut crate::nurbs::LaneRefusals,
-    ) -> Result<
-        (
-            Self,
-            Vec<(
-                cadmpeg_ir::unknown::UnknownRecord,
-                cadmpeg_ir::report::loss::LossNote,
-                cadmpeg_ir::ArenaClasses,
-            )>,
-        ),
-        cadmpeg_core::CodecError,
-    > {
+    ) -> Result<(Self, Vec<GivenUpObjectRecord>), cadmpeg_core::CodecError> {
         /// Give up one undecodable `7C09` object record as a
         /// `catia.object_record` part (§4.5): the record's own u32 length
         /// frames its extent, which is retained and reported here while the
@@ -8572,11 +8558,7 @@ impl CatiaNative {
             .collect::<std::collections::HashMap<_, _>>();
         let mut entity_records = Vec::new();
         let mut object_graphs = Vec::new();
-        let mut give_ups: Vec<(
-            cadmpeg_ir::unknown::UnknownRecord,
-            cadmpeg_ir::report::loss::LossNote,
-            cadmpeg_ir::ArenaClasses,
-        )> = Vec::new();
+        let mut give_ups: Vec<GivenUpObjectRecord> = Vec::new();
         for (graph, skipped) in parsed_object_graphs {
             let mut entities = entity_runs
                 .remove(&(graph.pos, graph.records.len() + skipped.len()))

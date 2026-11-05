@@ -253,8 +253,12 @@ fn profile_wires(ctx: &DecodeContext<'_>, brep: &AsmBrep) -> Result<Vec<ProfileW
             .members
             .edges()
             .iter()
-            .map(|member| member.as_str())
-            .chain(wire.members.free_vertex().map(|vertex| vertex.as_str()))
+            .map(cadmpeg_asm::brep::records::identity::NativeRowId::as_str)
+            .chain(
+                wire.members
+                    .free_vertex()
+                    .map(cadmpeg_asm::brep::records::identity::NativeRowId::as_str),
+            )
             .filter_map(|member| owners.get(member).copied())
             .collect::<Vec<_>>();
         let Some(shell) = brep.shells.iter().find(|shell| {
