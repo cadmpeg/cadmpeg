@@ -151,3 +151,180 @@ fn a_stopped_sequence_has_no_node_tables() {
     payload.truncate(payload.len() - 4);
     assert!(sequence(&payload).is_none());
 }
+
+/// A Deltas POINT: index, node ID, four status-paired pointers, and `x`.
+fn deltas_point(first: bool, index: u16, x: f64) -> Vec<u8> {
+    let mut bytes = vec![0, 29];
+    if first {
+        bytes.push(255);
+    }
+    bytes.extend(index.to_be_bytes());
+    bytes.extend(7u32.to_be_bytes());
+    for _ in 0..4 {
+        bytes.extend(1u16.to_be_bytes());
+        bytes.push(1);
+    }
+    for value in [x, 0.0, 0.0] {
+        bytes.extend(value.to_be_bytes());
+    }
+    bytes
+}
+
+#[test]
+fn deltas_versions_keep_equal_records_and_leave_differing_ones_ambiguous() {
+    use cadmpeg_parasolid::records::DeltasRecords;
+    use cadmpeg_parasolid::test_support::test_pmarks;
+    let mut stream = test_pmarks::prefix(1);
+    stream.extend(deltas_point(true, 40, 0.001));
+    stream.extend(deltas_point(false, 40, 0.001));
+    stream.extend(deltas_point(false, 41, 0.001));
+    stream.extend(deltas_point(false, 41, 0.002));
+    let stream = test_pmarks::complete(stream);
+    let records = DeltasRecords::read(&stream).unwrap();
+    let agreement = super::DeltasAgreement::new([(&records, stream.as_slice())]);
+    let tables = super::deltas_tables(&records, &stream, 0, &agreement).unwrap();
+    assert!((tables.points()[&40].xyz_m[0] - 0.001).abs() < 1.0e-15);
+    assert!(!tables.points().contains_key(&41));
+    assert!(tables.point_is_ambiguous(41));
+}
+
+/// A Deltas EDGE: index, node ID, status-paired pointers, and `curve`.
+fn deltas_edge(first: bool, index: u16, curve: u16) -> Vec<u8> {
+    let mut bytes = vec![0, 16];
+    if first {
+        bytes.push(255);
+    }
+    bytes.extend(index.to_be_bytes());
+    bytes.extend(7u32.to_be_bytes());
+    bytes.extend(1u16.to_be_bytes());
+    bytes.push(1);
+    bytes.extend(crate::test_support::parasolid::sequence::NULL_REAL.to_be_bytes());
+    for target in [1, 1, 1, curve, 1, 1, 1] {
+        bytes.extend(u16::to_be_bytes(target));
+        bytes.push(1);
+    }
+    bytes
+}
+
+#[test]
+fn deltas_edges_whose_versions_disagree_across_streams_are_not_read() {
+    use cadmpeg_parasolid::records::DeltasRecords;
+    use cadmpeg_parasolid::test_support::test_pmarks;
+    let stream = |curve| {
+        let mut bytes = test_pmarks::prefix(1);
+        bytes.extend(deltas_edge(true, 50, curve));
+        bytes.extend(deltas_edge(false, 51, 31));
+        test_pmarks::complete(bytes)
+    };
+    let (first, second) = (stream(30), stream(32));
+    let first_records = DeltasRecords::read(&first).unwrap();
+    let second_records = DeltasRecords::read(&second).unwrap();
+    let agreement = super::DeltasAgreement::new([
+        (&first_records, first.as_slice()),
+        (&second_records, second.as_slice()),
+    ]);
+    for (records, payload) in [(&first_records, &first), (&second_records, &second)] {
+        let tables = super::deltas_tables(records, payload, 0, &agreement).unwrap();
+        assert!(!tables.edge_uses().contains_key(&50));
+        assert!(tables.edge_uses().contains_key(&51));
+    }
+}
+
+#[test]
+fn ownership_keeps_the_ambiguity_marker_of_a_conflicting_face() {
+    let mut tables = crate::brep::topology::Tables::default();
+    tables.bridge_frames.insert(
+        9,
+        crate::brep::topology::RecordFrame {
+            partition: false,
+            bytes: None,
+        },
+    );
+    own(&mut tables, &HashSet::new(), &HashSet::new());
+    assert!(tables
+        .bridge_frames
+        .get(&9)
+        .is_some_and(|frame| frame.bytes.is_none()));
+}
+
+#[test]
+fn edges_with_a_tolerance_outside_the_stored_bounds_are_not_read() {
+    use cadmpeg_parasolid::records::DeltasRecords;
+    use cadmpeg_parasolid::test_support::test_pmarks;
+    let edge = |first: bool, index: u16, tolerance: f64| {
+        let mut bytes = deltas_edge(first, index, 30);
+        let at = if first { 12 } else { 11 };
+        bytes[at..at + 8].copy_from_slice(&tolerance.to_be_bytes());
+        bytes
+    };
+    let mut bytes = test_pmarks::prefix(1);
+    bytes.extend(edge(true, 50, -1.0));
+    bytes.extend(edge(false, 51, f64::NAN));
+    bytes.extend(edge(false, 52, 1.0e-6));
+    let bytes = test_pmarks::complete(bytes);
+    let records = DeltasRecords::read(&bytes).unwrap();
+    let agreement = super::DeltasAgreement::new([(&records, bytes.as_slice())]);
+    let tables = super::deltas_tables(&records, &bytes, 0, &agreement).unwrap();
+    assert!(!tables.edge_uses().contains_key(&50));
+    assert!(!tables.edge_uses().contains_key(&51));
+    assert_eq!(tables.edge_uses()[&52].tolerance_m, Some(1.0e-6));
+}
+
+#[test]
+fn deltas_versions_agree_across_the_streams_of_a_site() {
+    use cadmpeg_parasolid::records::DeltasRecords;
+    use cadmpeg_parasolid::test_support::test_pmarks;
+    let stream = |points: &[(bool, u16, f64)]| {
+        let mut bytes = test_pmarks::prefix(1);
+        for (first, index, x) in points {
+            bytes.extend(deltas_point(*first, *index, *x));
+        }
+        test_pmarks::complete(bytes)
+    };
+    let first = stream(&[(true, 40, 0.001), (false, 41, 0.001), (false, 41, 0.002)]);
+    let second = stream(&[(true, 40, 0.003), (false, 41, 0.001), (false, 42, 0.001)]);
+    let first_records = DeltasRecords::read(&first).unwrap();
+    let second_records = DeltasRecords::read(&second).unwrap();
+    let agreement = super::DeltasAgreement::new([
+        (&first_records, first.as_slice()),
+        (&second_records, second.as_slice()),
+    ]);
+    for records in [&first_records, &second_records] {
+        let indices: Vec<u32> = super::consistent_deltas_nodes(records, &agreement)
+            .iter()
+            .map(cadmpeg_parasolid::records::deltas::node::DeltasNode::index)
+            .collect();
+        assert!(!indices.contains(&40));
+        assert!(!indices.contains(&41));
+    }
+    let second_indices: Vec<u32> = super::consistent_deltas_nodes(&second_records, &agreement)
+        .iter()
+        .map(cadmpeg_parasolid::records::deltas::node::DeltasNode::index)
+        .collect();
+    assert_eq!(second_indices, vec![42]);
+}
+
+#[test]
+fn a_rejected_partition_edge_is_not_filled_from_deltas() {
+    use cadmpeg_parasolid::records::DeltasRecords;
+    use cadmpeg_parasolid::test_support::test_pmarks;
+    let (mut payload, body_offset) = topology_sequence();
+    let edge = *read(&payload, body_offset)
+        .unwrap()
+        .edge_uses()
+        .keys()
+        .next()
+        .unwrap();
+    patch(&mut payload, 16, "tolerance", &(-1.0f64).to_be_bytes());
+    let mut partition = read(&payload, body_offset).unwrap();
+    assert!(!partition.edge_uses().contains_key(&edge));
+    let mut bytes = test_pmarks::prefix(1);
+    bytes.extend(deltas_edge(true, u16::try_from(edge).unwrap(), 30));
+    let bytes = test_pmarks::complete(bytes);
+    let records = DeltasRecords::read(&bytes).unwrap();
+    let agreement = super::DeltasAgreement::new([(&records, bytes.as_slice())]);
+    let deltas = super::deltas_tables(&records, &bytes, 0, &agreement).unwrap();
+    assert!(deltas.edge_uses().contains_key(&edge));
+    partition.merge_deltas(deltas, None);
+    assert!(!partition.edge_uses().contains_key(&edge));
+}

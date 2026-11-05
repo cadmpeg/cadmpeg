@@ -25,7 +25,7 @@ use crate::layout::chart_00_28 as chart_layout;
 use crate::layout::support_uv_00_cc as support_uv;
 use cadmpeg_parasolid::pointer;
 use cadmpeg_parasolid::records::node_type::{CHART, INTERSECTION, INTERSECTION_DATA, LIMIT};
-use cadmpeg_parasolid::records::{PrimaryRecords, SchemaPlan};
+use cadmpeg_parasolid::records::{NodeFields, PrimaryRecords, SchemaPlan};
 
 /// The XT null real, which marks an absent chart value.
 const MISSING_PARAMETER: f64 = -31_415_800_000_000.0;
@@ -43,6 +43,7 @@ const INTERSECTION_DATA_FIELD: &str = "intersection_data";
 const NULL_POINTER: u32 = 1;
 
 /// One decoded chart: solved points in metres and parameter bookkeeping.
+#[derive(Clone)]
 struct Chart {
     endpoints: [[f64; 3]; 2],
     interior_points: Vec<[f64; 3]>,
@@ -214,6 +215,7 @@ impl UvWidth {
     }
 }
 
+#[derive(Clone)]
 struct UvRecord {
     width: UvWidth,
     values: Vec<f64>,
@@ -235,6 +237,7 @@ struct NodeSchema {
 }
 
 /// One framed INTERSECTION node.
+#[derive(Clone)]
 struct Node {
     attr: u32,
     supports: [u32; 2],
@@ -743,6 +746,7 @@ pub(super) fn chartless(inputs: &Inputs) -> HashMap<u32, [u32; 2]> {
 }
 
 /// The INTERSECTION nodes, charts, and terminator points of one stream.
+#[derive(Clone)]
 pub(super) struct Inputs {
     /// Tag offset and node.
     nodes: Vec<(usize, Node)>,
@@ -797,6 +801,11 @@ pub(super) fn scan_inputs(bytes: &[u8], lane_refusals: &mut Vec<LossNote>) -> Op
 /// records and [`Inputs::scan_support_uv`] supplies them. Chart and limit rows
 /// are the three-real points of a partition. Offsets are body-relative.
 pub(super) fn from_nodes(records: &PrimaryRecords<'_>, body_offset: usize) -> Option<Inputs> {
+    from_nodes_of(&records.nodes().collect::<Vec<_>>(), body_offset)
+}
+
+/// [`from_nodes`] over any node instances, in stream order.
+pub(super) fn from_nodes_of<N: NodeFields>(nodes: &[N], body_offset: usize) -> Option<Inputs> {
     let mut inputs = Inputs {
         nodes: Vec::new(),
         charts: HashMap::new(),
@@ -805,7 +814,7 @@ pub(super) fn from_nodes(records: &PrimaryRecords<'_>, body_offset: usize) -> Op
     };
     let mut uvs_read = true;
     let mut indices = HashSet::new();
-    for node in records.nodes().filter(|node| {
+    for node in nodes.iter().filter(|node| {
         matches!(
             node.kind(),
             INTERSECTION | CHART | LIMIT | INTERSECTION_DATA

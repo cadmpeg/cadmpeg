@@ -6,7 +6,7 @@ use super::{
     decode_carrier_values, tag, valid_carrier_frame, valid_carrier_scalars, Carrier,
     MARKER_AGAINST_UNLINKED_EDGES, MARKER_REVERSED,
 };
-use cadmpeg_parasolid::records::PrimaryRecords;
+use cadmpeg_parasolid::records::{NodeFields, PrimaryRecords};
 use std::collections::HashSet;
 
 /// One analytic value field: a vector of three reals or one real.
@@ -72,9 +72,14 @@ fn value_fields(kind: u8) -> Option<&'static [Value]> {
 /// analytic nodes share an index. Offsets are body-relative. A node whose
 /// values fail the frame or scalar checks of its compact form is omitted.
 pub(super) fn analytic(records: &PrimaryRecords<'_>, body_offset: usize) -> Option<Vec<Carrier>> {
+    analytic_of(&records.nodes().collect::<Vec<_>>(), body_offset)
+}
+
+/// [`analytic`] over any node instances, in stream order.
+pub(super) fn analytic_of<N: NodeFields>(nodes: &[N], body_offset: usize) -> Option<Vec<Carrier>> {
     let mut carriers = Vec::new();
     let mut indices = HashSet::new();
-    for node in records.nodes() {
+    for node in nodes {
         let Ok(kind) = u8::try_from(node.kind()) else {
             continue;
         };

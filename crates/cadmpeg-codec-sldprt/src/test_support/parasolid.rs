@@ -1077,7 +1077,7 @@ fn prefixed_edge_use(attr: u16, curve_attr: u16) -> Vec<u8> {
     b
 }
 
-fn suffix_prefixed_edge_use(attr: u16, curve_attr: u16) -> Vec<u8> {
+pub(crate) fn suffix_prefixed_edge_use(attr: u16, curve_attr: u16) -> Vec<u8> {
     let mut b = vec![0x00, 0x10];
     be16(&mut b, attr);
     be32(&mut b, 0);

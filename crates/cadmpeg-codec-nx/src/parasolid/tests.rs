@@ -1034,7 +1034,7 @@ fn structural_entity_references_do_not_own_value_records() {
     bytes.extend_from_slice(&[0, b'N', 0, b'X']);
     let owned = super::referenced_value_record_offsets(&bytes);
     assert!(!owned.contains(&value_offset));
-    let references = super::referenced_value_xmts(&bytes);
+    let references = super::referenced_value_xmts(&bytes, super::terminated_nodes(&bytes).as_ref());
     assert!(!references.contains(&3));
     assert!(references.contains(&8));
     bytes[24..26].copy_from_slice(&3_u16.to_be_bytes());
@@ -1082,7 +1082,7 @@ fn attribute_owner_grouping_retains_trailing_references() {
         }
         bytes.extend_from_slice(&[0xaa, 0xbb]);
     }
-    let references = super::referenced_value_xmts(&bytes);
+    let references = super::referenced_value_xmts(&bytes, super::terminated_nodes(&bytes).as_ref());
     assert!(references.contains(&8));
 }
 

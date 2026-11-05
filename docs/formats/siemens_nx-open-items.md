@@ -121,11 +121,11 @@ until their enclosing sequence is established.
 
 ### PS-19. Deltas reference/type maps
 
-**Question.** Which transmit context or history edge owns each deltas reference/type map, what action does each entry encode, and what does its terminal word mean?
+**Question.** Which transmit context or history edge owns each deltas reference/type map, what action does each entry encode, and what field structure and meaning do its four terminal bytes have?
 
-**Known.** `siemens_nx.md` §4.2 defines map-section ownership, canonical nonnull XMT/kind pairs, the null XMT and zero slot, the terminal word, and transactional section closure. The terminal word is below `0x8000`. Its value is not a section-node count. Section order does not assign a map's history edge or action.
+**Known.** `siemens_nx.md` §4.2 defines map-section ownership, canonical nonnull XMT/kind pairs, the null XMT, the four terminal bytes, and transactional section closure. Section order does not assign a map's history edge or action. Terminal bytes `00 03 69 e7` and `00 00 b8 60` frame under a single big-endian u32, under two big-endian u16 fields, and under an opaque four-byte field. The reader retains the four bytes in stream order.
 
-**Need.** Establish the preceding and succeeding state relation, the exact typed create/modify/delete key sets, the terminal word's namespace, and the encoding width for terminal words with the high bit set before applying a map to entities.
+**Need.** Establish whether the terminal bytes are one 32-bit value, two 16-bit fields, or another structure, and their namespace. Establish the preceding and succeeding state relation and the exact typed create/modify/delete key sets before applying a map to entities.
 
 ### PS-25. Inline type-12 `BODY` instance state
 
@@ -165,6 +165,15 @@ bodies. Keep an unestablished edge selection unresolved. This includes repeated 
 
 **Conflict.** First or last BODY blocks, XMT 3, monotonic bounds, physical
 pairing, and repeated carrier spellings cannot select an aggregate change.
+In the NIST CTC-03 delta stream, four GROUP instances share XMT 2437 and
+type 90 across separate PMARK and map sections. A lookup by stream, XMT,
+and type merges those revisions. The current PMARK 5892 has delta key 2481
+and names PMARK 5898 as its predecessor; that PMARK has delta key 2429. The
+map after PMARK 5898 names GROUP 2562.
+That GROUP instance precedes the PMARK section. The map key leaves the
+instance revision and the action on its members unresolved.
+The counts of map entries and typed PMARK-section instances can differ from
+the adjacent PMARK's new-node and deleted-node counts in closed sections.
 
 **Note.** The reader withholds unselected history across topology, semantic
 residuals, GROUP updates and derived appearance or operation-result bindings.
@@ -213,6 +222,16 @@ or regenerated current-design selection.
 **Known.** `siemens_nx.md` §2.4 "The sections after the UGII prefix are clear sections or text-wrapped sections." defines both forms. A clear section ends at the next complete transmit header or at the stream boundary. The decoder reads the text-wrapped sections of a payload only when the payload holds no clear section.
 
 **Need.** We must know the section boundary to extract every stream of a payload that holds both forms without one section's bytes containing another.
+
+### PS-41. Status-prefixed type-81 references outside a terminated sequence
+
+**Question.** Does a partition or plain stream without a terminated node sequence carry type-81 references as binary-status-prefixed XMT values followed by a binary terminal?
+
+**Known.** `siemens_nx.md` §9.4 "In a terminated node sequence, type-81 references" gives the consecutive form in a terminated node sequence.
+
+**Need.** We must know the form to frame type-81 records in a stream that the shared node reader does not frame to its terminator.
+
+**Conflict.** The decoder's type-81 scan accepts the prefixed form when the first reference byte is `01`. A consecutive reference whose index cell starts with `01` then fails to frame. The decoder omits that record and reports a topology attribute list that reaches it with the loss `nx/attribute.list-unresolved`.
 
 ## 2. Object model and body composition
 
@@ -834,9 +853,9 @@ member as a neutral suppression or visibility state.
 
 **Known.** `siemens_nx.md` §2.3 "An assembly placement frame in `/Root/UG_PART/UG_PART` begins with" defines the complete matrix and text frame. `siemens_nx.md` §2.3 "An assembly placement frame at the start" joins a frame to its bounded object record. `siemens_nx.md` §2.3 "The native placement retains" excludes an ordinal join by source order. The decoder reports `assembly.occurrences-unresolved` when it retains assembly uses or placement frames without a neutral occurrence graph.
 
-**Need.** We must identify the child occurrence and translation unit to apply the matrix to external child geometry.
+**Need.** Identify the child occurrence and how the placement translations obtain their unit. Compare inch and metric models against independently matching geometry.
 
-**Conflict.** Repeated UUIDs identify groups of placement records. They do not select a distinct repeated child occurrence. The five-byte trailer has no established instance or unit role.
+**Conflict.** Repeated UUIDs identify groups of placement records. They do not select a distinct repeated child occurrence. In the NIST MTC assembly, 34 of 36 candidate FastLoad endpoint values resolve to placement owners. Pairing those endpoint rows with FastLoad occurrences by position matches 25 of 36 UUIDs; two endpoint values address other object records. The five-byte trailer has no established instance or unit role.
 
 ### AM-06. Assembly pattern dimensions
 

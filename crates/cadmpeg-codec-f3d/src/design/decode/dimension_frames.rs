@@ -11,6 +11,7 @@ use crate::design::decode::meta::{decode_types, stream_types_by_class_tag};
 use crate::design::decode::sketch::{indexed_record_offsets, next_indexed_record_offset};
 use crate::design::decode::text::design_record_id;
 use crate::ids::native_stream;
+use crate::layout::dimension_annotation_absent_metadata as annotation_absent_metadata;
 use crate::layout::dimension_annotation_genesis_metadata as annotation_genesis;
 use crate::layout::dimension_annotation_metadata_header as annotation_metadata;
 use crate::layout::grouped_recipe_reference_prefix as grouped_recipe;
@@ -1426,12 +1427,16 @@ fn parse_dimension_annotation_frame(
         });
         position = position.checked_add(15)?;
     }
-    if bytes.get(position + annotation_metadata::PRESENT)
-        != Some(&annotation_metadata::PRESENT_VALUE)
-    {
-        return None;
-    }
-    let (entity_genesis, annotation_byte_offset) =
+    let metadata_absent = bytes.get(position + annotation_absent_metadata::PRESENT)
+        == Some(&annotation_absent_metadata::PRESENT_VALUE);
+    let (entity_genesis, annotation_byte_offset) = if metadata_absent {
+        (None, position.checked_add(annotation_absent_metadata::LEN)?)
+    } else {
+        if bytes.get(position + annotation_metadata::PRESENT)
+            != Some(&annotation_metadata::PRESENT_VALUE)
+        {
+            return None;
+        }
         match View::u32_le_at(bytes, position + annotation_metadata::ENTRY_COUNT)? {
             0 => (None, position.checked_add(annotation_metadata::LEN)?),
             annotation_genesis::ENTRY_COUNT_VALUE => {
@@ -1455,7 +1460,8 @@ fn parse_dimension_annotation_frame(
                 )
             }
             _ => return None,
-        };
+        }
+    };
     let mut paired_search = annotation_byte_offset;
     let (paired_byte_offset, paired_class_tag) = loop {
         let at = next_indexed_record_offset(bytes, paired_search)?;
@@ -1574,6 +1580,7 @@ fn parse_dimension_annotation_frame(
         frame_length: u64::try_from(paired_byte_offset.checked_sub(start)?).ok()?,
         operands,
         entity_genesis,
+        metadata_absent,
         annotation_bytes,
         annotation_byte_offset: u64_from_index(annotation_byte_offset),
         governing_owner_record_index,

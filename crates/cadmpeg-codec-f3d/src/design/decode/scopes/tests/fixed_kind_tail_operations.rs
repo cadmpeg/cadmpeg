@@ -202,7 +202,7 @@ pub(super) fn fixed_kind_tail_operations(
     scale_scope
         .try_edit(|draft| {
             draft.byte_offset = u64_from_index(scale_at);
-            draft.payload = crate::records::feature::scope::DesignFeatureKind::Massstab
+            draft.payload = crate::records::feature::scope::DesignFeatureKind::Scale
                 .try_into()
                 .unwrap();
             draft.frame_length = 317;
@@ -214,6 +214,7 @@ pub(super) fn fixed_kind_tail_operations(
             draft.layout_fixture_tail();
         })
         .unwrap();
+    scale_scope.source_kind = Some("Maßstab".to_owned());
     let scale_records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     assert_eq!(
         exact_scale_operation(&bytes, &scale_records, &scale_scope, &HashMap::new()).unwrap(),
@@ -606,15 +607,13 @@ pub(super) fn fixed_kind_tail_operations(
         );
         match (thicken_scope.payload_mut(), construction) {
             (
-                crate::records::feature::scope::DesignScopePayloadMut::OffsetFaces(slot)
-                | crate::records::feature::scope::DesignScopePayloadMut::DecalerLesFaces(slot),
+                crate::records::feature::scope::DesignScopePayloadMut::OffsetFaces(slot),
                 Some(crate::records::feature::direct_face::DesignDirectFaceOperation::OffsetFaces(
                     value,
                 )),
             ) => *slot = Some(value),
             (
-                crate::records::feature::scope::DesignScopePayloadMut::Shell(slot)
-                | crate::records::feature::scope::DesignScopePayloadMut::Schale(slot),
+                crate::records::feature::scope::DesignScopePayloadMut::Shell(slot),
                 Some(crate::records::feature::direct_face::DesignDirectFaceOperation::Shell(value)),
             ) => *slot = Some(value),
             (
@@ -739,15 +738,13 @@ pub(super) fn fixed_kind_tail_operations(
         );
         match (shell_scope.payload_mut(), construction) {
             (
-                crate::records::feature::scope::DesignScopePayloadMut::OffsetFaces(slot)
-                | crate::records::feature::scope::DesignScopePayloadMut::DecalerLesFaces(slot),
+                crate::records::feature::scope::DesignScopePayloadMut::OffsetFaces(slot),
                 Some(crate::records::feature::direct_face::DesignDirectFaceOperation::OffsetFaces(
                     value,
                 )),
             ) => *slot = Some(value),
             (
-                crate::records::feature::scope::DesignScopePayloadMut::Shell(slot)
-                | crate::records::feature::scope::DesignScopePayloadMut::Schale(slot),
+                crate::records::feature::scope::DesignScopePayloadMut::Shell(slot),
                 Some(crate::records::feature::direct_face::DesignDirectFaceOperation::Shell(value)),
             ) => *slot = Some(value),
             (
@@ -1001,15 +998,13 @@ pub(super) fn fixed_kind_tail_operations(
         );
         match (compact_shell_scope.payload_mut(), construction) {
             (
-                crate::records::feature::scope::DesignScopePayloadMut::OffsetFaces(slot)
-                | crate::records::feature::scope::DesignScopePayloadMut::DecalerLesFaces(slot),
+                crate::records::feature::scope::DesignScopePayloadMut::OffsetFaces(slot),
                 Some(crate::records::feature::direct_face::DesignDirectFaceOperation::OffsetFaces(
                     value,
                 )),
             ) => *slot = Some(value),
             (
-                crate::records::feature::scope::DesignScopePayloadMut::Shell(slot)
-                | crate::records::feature::scope::DesignScopePayloadMut::Schale(slot),
+                crate::records::feature::scope::DesignScopePayloadMut::Shell(slot),
                 Some(crate::records::feature::direct_face::DesignDirectFaceOperation::Shell(value)),
             ) => *slot = Some(value),
             (
@@ -1043,15 +1038,13 @@ pub(super) fn fixed_kind_tail_operations(
         );
         match (offset_scope.payload_mut(), construction) {
             (
-                crate::records::feature::scope::DesignScopePayloadMut::OffsetFaces(slot)
-                | crate::records::feature::scope::DesignScopePayloadMut::DecalerLesFaces(slot),
+                crate::records::feature::scope::DesignScopePayloadMut::OffsetFaces(slot),
                 Some(crate::records::feature::direct_face::DesignDirectFaceOperation::OffsetFaces(
                     value,
                 )),
             ) => *slot = Some(value),
             (
-                crate::records::feature::scope::DesignScopePayloadMut::Shell(slot)
-                | crate::records::feature::scope::DesignScopePayloadMut::Schale(slot),
+                crate::records::feature::scope::DesignScopePayloadMut::Shell(slot),
                 Some(crate::records::feature::direct_face::DesignDirectFaceOperation::Shell(value)),
             ) => *slot = Some(value),
             (
@@ -1111,9 +1104,7 @@ pub(super) fn fixed_kind_tail_operations(
                 .unwrap();
         })
         .unwrap();
-    if let crate::records::feature::scope::DesignScopePayloadMut::Extrude(slot)
-    | crate::records::feature::scope::DesignScopePayloadMut::Extrusion(slot)
-    | crate::records::feature::scope::DesignScopePayloadMut::Extrusao(slot) =
+    if let crate::records::feature::scope::DesignScopePayloadMut::Extrude(slot) =
         extrude_scope.payload_mut()
     {
         slot.get_or_insert_with(Default::default).extrude_prologue =

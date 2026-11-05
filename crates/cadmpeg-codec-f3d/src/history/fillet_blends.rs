@@ -18,9 +18,14 @@ struct Blend {
 }
 
 /// The blend faces that a transition inserts on new carriers, each with the
-/// one deleted edge that it replaces, or `None` when a new carrier has no
-/// spine or radius row, a blend has no replaced edge or more than one, or two
-/// blends replace one edge.
+/// one deleted edge that it replaces, or `None` when a face of either state
+/// has no rebuilt boundary or no single carrier, a result face on a new
+/// carrier persists or is not listed as inserted, a new carrier has no spine
+/// or finite positive radius row, an adjacent face of a blend maps to no single input
+/// face or has no rebuilt boundary, a support has no input boundary, an edge
+/// that two supports share has no axis row or tangent, a
+/// blend's supports share no edge along its spine or more than one, the
+/// transition keeps that edge, or two blends replace one edge.
 fn transition_blends(
     transition: &AsmHistoricalTransition,
     input: &AsmHistoricalTopology,
@@ -29,6 +34,19 @@ fn transition_blends(
     let inserted = &transition.topology.faces.inserted;
     let carriers = super::unique_face_carriers(output);
     let input_surfaces = input.surfaces.iter().copied().collect::<HashSet<_>>();
+    // A result face on a new carrier that persists from the preceding
+    // topology, or that the transition does not list as inserted, could be
+    // an unlisted blend.
+    let input_faces = input.faces.iter().copied().collect::<HashSet<_>>();
+    let listed = inserted.iter().copied().collect::<HashSet<_>>();
+    for face in &output.faces {
+        let carrier = carriers.get(face).copied().flatten()?;
+        if !input_surfaces.contains(&carrier)
+            && (input_faces.contains(face) || !listed.contains(face))
+        {
+            return None;
+        }
+    }
     let mut blend_faces = Vec::new();
     for face in inserted {
         let carrier = carriers.get(face).copied().flatten()?;
@@ -41,6 +59,21 @@ fn transition_blends(
     }
     let output_boundaries = super::face_boundary_edge_index(output);
     let input_boundaries = super::face_boundary_edge_index(input);
+    // A face whose boundary does not rebuild, or that has no single carrier,
+    // could hide a support or a shared edge, in either state.
+    let input_carriers = super::unique_face_carriers(input);
+    let rebuilt = |faces: &[i64],
+                   boundaries: &HashMap<i64, HashSet<i64>>,
+                   carriers: &HashMap<i64, Option<i64>>| {
+        faces.iter().all(|face| {
+            boundaries.contains_key(face) && carriers.get(face).copied().flatten().is_some()
+        })
+    };
+    if !rebuilt(&output.faces, &output_boundaries, &carriers)
+        || !rebuilt(&input.faces, &input_boundaries, &input_carriers)
+    {
+        return None;
+    }
     let supports = super::treatment_face_supports(&blend_faces, output, input, &output_boundaries);
     if supports.len() != blend_faces.len() {
         return None;
@@ -63,34 +96,37 @@ fn transition_blends(
         .collect::<HashSet<_>>();
     let mut blends = Vec::new();
     let mut replaced = HashSet::new();
-    for (_, carrier, supports) in supports {
+    for (_, carrier, supports, complete) in supports {
+        if !complete {
+            return None;
+        }
         let spine = spines.get(&carrier)?;
-        let radius = radii.get(&carrier).copied().flatten()?;
+        let radius = radii
+            .get(&carrier)
+            .copied()
+            .flatten()
+            .filter(|radius| radius.is_finite() && *radius > 0.0)?;
         let mut candidates = BTreeSet::new();
         for (ordinal, left) in supports.iter().enumerate() {
-            let Some(left_edges) = input_boundaries.get(left) else {
-                continue;
-            };
+            let left_edges = input_boundaries.get(left)?;
             for right in &supports[ordinal + 1..] {
-                let Some(right_edges) = input_boundaries.get(right) else {
-                    continue;
-                };
-                candidates.extend(
-                    left_edges
-                        .intersection(right_edges)
-                        .copied()
-                        .filter(|edge| {
-                            deleted.contains(edge)
-                                && spine.admits(edges.get(edge).copied().unwrap_or_default())
-                        }),
-                );
+                let right_edges = input_boundaries.get(right)?;
+                for edge in left_edges.intersection(right_edges) {
+                    let geometry = edges.get(edge).copied().unwrap_or_default();
+                    if !geometry.is_classified() {
+                        return None;
+                    }
+                    if spine.admits(geometry) {
+                        candidates.insert(*edge);
+                    }
+                }
             }
         }
         let mut candidates = candidates.into_iter();
         let (Some(edge), None) = (candidates.next(), candidates.next()) else {
             return None;
         };
-        if !replaced.insert(edge) {
+        if !deleted.contains(&edge) || !replaced.insert(edge) {
             return None;
         }
         blends.push(Blend { radius, edge });
@@ -119,43 +155,64 @@ fn group_edges(radii: &[Option<f64>], blends: &[Blend]) -> Option<Vec<Vec<i64>>>
     Some(edges)
 }
 
-fn native_group_id(selection: &EdgeSelection) -> Option<&str> {
-    match selection {
-        EdgeSelection::Native(native) => Some(native.as_str()),
-        EdgeSelection::Historical { native, .. }
-        | EdgeSelection::HistoricalPartial { native, .. } => Some(native.as_str()),
-        _ => None,
-    }
-}
-
-/// Whether a selection names an edge of the input state that the transition
-/// keeps.
-fn names_kept_edge(
+/// Whether a group's selection agrees with the blend edges `slots` at its
+/// radius. A native or unresolved selection states no edge. A partial
+/// selection agrees when every edge it states is in `slots`, and a complete
+/// selection when it states exactly `slots`. A selection of edges outside the
+/// input topology states edges that `slots` cannot confirm.
+fn agrees(
     selection: &EdgeSelection,
     feature_id: &cadmpeg_ir::features::FeatureId,
     previous_state_id: i64,
-    deleted: &HashSet<i64>,
+    slots: &[i64],
 ) -> bool {
-    let edges = match selection {
-        EdgeSelection::Historical { edges, .. } => edges.as_slice(),
-        EdgeSelection::HistoricalPartial { edges, .. } => edges.as_slice(),
-        _ => return false,
-    };
-    edges.iter().any(|edge| {
+    let slot = |edge: &cadmpeg_ir::ids::HistoricalEdgeId| {
         crate::ids::feature_input_edge_slot(feature_id, previous_state_id, edge)
-            .is_none_or(|slot| !deleted.contains(&slot))
-    })
+    };
+    match selection {
+        EdgeSelection::Native(_) | EdgeSelection::Unresolved => true,
+        EdgeSelection::HistoricalPartial { edges, .. } => edges
+            .iter()
+            .all(|edge| slot(edge).is_some_and(|slot| slots.contains(&slot))),
+        EdgeSelection::Historical { edges, .. } => {
+            edges.iter().map(slot).collect::<Option<HashSet<_>>>()
+                == Some(slots.iter().copied().collect())
+        }
+        EdgeSelection::All
+        | EdgeSelection::Edges(_)
+        | EdgeSelection::Resolved { .. }
+        | EdgeSelection::Generated { .. } => false,
+    }
 }
 
-/// Bind each `Fillet` group whose blends replace one edge per distinct group
-/// member to those edges.
+/// The native group reference of a selection that the blend edges replace,
+/// or `None` when the selection stays. A complete selection that agrees
+/// already states the blend edges, in its operand order.
+fn replaceable_native(selection: &EdgeSelection) -> Option<&str> {
+    match selection {
+        EdgeSelection::Native(native) => Some(native.as_str()),
+        EdgeSelection::HistoricalPartial { native, .. } => Some(native.as_str()),
+        EdgeSelection::Historical { .. }
+        | EdgeSelection::Unresolved
+        | EdgeSelection::All
+        | EdgeSelection::Edges(_)
+        | EdgeSelection::Resolved { .. }
+        | EdgeSelection::Generated { .. } => None,
+    }
+}
+
+/// Bind each `Fillet` group whose operand proofs leave it native or partial
+/// to the edges its blends replace.
 ///
 /// A constant-radius fillet replaces each edge that it rounds with a blend
 /// face at its group's radius. When every new carrier of the transition is a
-/// blend whose spine names one deleted edge, those edges hold every rounded
-/// edge, so a group whose blends name one edge per distinct member selects
-/// exactly those edges. A selection that names an edge the transition keeps
-/// stays, because DR-224 asks whether a rounded edge can keep its slot.
+/// blend whose supports share one edge along its spine and the transition
+/// deletes that edge, those edges hold every rounded edge: a rounded edge
+/// that kept its slot would leave its blend with a kept edge along its spine.
+/// The blends at a group's radius therefore name exactly its edges, and a
+/// tangent chain can give the group more or fewer members than edges. A
+/// selection that disagrees with its blend edges contradicts that claim for
+/// the whole transition, so then no group binds.
 pub(super) fn bind_fillet_groups(
     definition: &mut FeatureDefinition,
     feature_id: &cadmpeg_ir::features::FeatureId,
@@ -188,19 +245,16 @@ pub(super) fn bind_fillet_groups(
     let Some(edges) = group_edges(&radii, &blends) else {
         return;
     };
-    let deleted = transition
-        .topology
-        .edges
-        .deleted
+    if !fillet_groups
         .iter()
-        .copied()
-        .collect::<HashSet<_>>();
+        .zip(&edges)
+        .all(|(group, slots)| agrees(&group.edges, feature_id, previous_state_id, slots))
+    {
+        return;
+    }
     let stream = crate::ids::native_stream(&scope.id);
     for (fillet_group, slots) in fillet_groups.iter_mut().zip(edges) {
-        if names_kept_edge(&fillet_group.edges, feature_id, previous_state_id, &deleted) {
-            continue;
-        }
-        let Some(native) = native_group_id(&fillet_group.edges).map(str::to_owned) else {
+        let Some(native) = replaceable_native(&fillet_group.edges).map(str::to_owned) else {
             continue;
         };
         let mut matching = groups.iter().filter(|group| {
@@ -211,12 +265,7 @@ pub(super) fn bind_fillet_groups(
         let (Some(group), None) = (matching.next(), matching.next()) else {
             continue;
         };
-        let members = group
-            .members()
-            .iter()
-            .map(|member| member.value)
-            .collect::<HashSet<_>>();
-        if slots.is_empty() || slots.len() != members.len() {
+        if group.members().is_empty() {
             continue;
         }
         let prefix = crate::ids::feature_input_prefix(feature_id, previous_state_id);

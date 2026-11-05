@@ -76,25 +76,3 @@ fn loft_projects_native_sections() {
         false,
     );
 }
-
-#[test]
-fn solevacion_projects_like_loft() {
-    let (mut scope, groups) =
-        loft_input([DesignOperandRole::ROLE_0X5, DesignOperandRole::ROLE_0X5]);
-    scope
-        .try_edit(|draft| {
-            draft.payload = DesignScopePayload::Solevacion(Some(DesignLoftConstruction {
-                operation: DesignExtrudeOperation::NewBody,
-                operation_offset: 128,
-            }));
-        })
-        .unwrap();
-    let definition =
-        crate::test_support::with_decode_context(|decode_ctx| project(decode_ctx, &scope, &groups))
-            .unwrap()
-            .unwrap();
-    assert!(matches!(
-        definition,
-        FeatureDefinition::Operation(FeatureOperation::Loft { sections, .. }) if sections.len() == 2
-    ));
-}

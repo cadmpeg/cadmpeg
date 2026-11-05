@@ -28,7 +28,9 @@ pub(crate) fn relation_stays_native(
 ) -> bool {
     use super::PmDcSketchConstraintKind as Kind;
     match constraint.kind {
-        Kind::PolygonRelation { .. } | Kind::BlockGroup { .. } => true,
+        Kind::PolygonRelation { .. } | Kind::PolygonControl { .. } | Kind::BlockGroup { .. } => {
+            true
+        }
         Kind::CircleCenter {
             entity: first,
             center: second,

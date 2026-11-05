@@ -191,6 +191,32 @@ fn a_surface_with_two_rows_states_no_spine() {
 }
 
 #[test]
+fn an_edge_with_an_unusable_axis_or_tangent_is_not_classified() {
+    let origin = point(0.0, 0.0, 0.0);
+    let z = vector(0.0, 0.0, 1.0);
+    assert!(edge(origin, z, z).is_classified());
+    assert!(!edge(origin, vector(0.0, 0.0, 0.0), z).is_classified());
+    assert!(!edge(origin, z, vector(0.0, 0.0, 0.0)).is_classified());
+    assert!(!edge(origin, vector(f64::NAN, 0.0, 1.0), z).is_classified());
+    assert!(!edge(origin, z, vector(0.0, f64::INFINITY, 0.0)).is_classified());
+    assert!(!edge(point(f64::NAN, 0.0, 0.0), z, z).is_classified());
+    assert!(!EdgeGeometry::default().is_classified());
+}
+
+#[test]
+fn a_torus_axis_with_a_non_finite_origin_states_no_spine() {
+    let mut unusable = axis(11);
+    unusable.origin = point(f64::NAN, 2.0, 0.0);
+    let result = AsmHistoricalTopology {
+        surfaces: vec![11],
+        surface_axes: vec![unusable],
+        surface_radii: vec![radius(11)],
+        ..AsmHistoricalTopology::default()
+    };
+    assert_eq!(blend_spines(&result).get(&11), None);
+}
+
+#[test]
 fn a_zero_axis_states_no_spine() {
     let mut zero_cylinder = cylinder(10);
     zero_cylinder.axis = vector(0.0, 0.0, 0.0);

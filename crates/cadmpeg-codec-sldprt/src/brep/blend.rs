@@ -9,7 +9,7 @@ use std::collections::{HashMap, HashSet};
 
 use cadmpeg_core::decode::View;
 use cadmpeg_parasolid::records::node_type::{BLEND_BOUND, BLEND_SURF};
-use cadmpeg_parasolid::records::PrimaryRecords;
+use cadmpeg_parasolid::records::{NodeFields, PrimaryRecords};
 
 use super::LEN_TO_MM;
 
@@ -164,6 +164,7 @@ fn blend_from_raw(raw: &RawCarrier, offset: usize) -> Option<BlendCarrier> {
     })
 }
 
+#[derive(Clone)]
 pub(super) struct BlendCarriers {
     pub blends: HashMap<u32, BlendCarrier>,
     pub pairs: HashMap<u32, SupportPairCarrier>,
@@ -247,11 +248,19 @@ pub(super) fn from_nodes(
     records: &PrimaryRecords<'_>,
     body_offset: usize,
 ) -> Option<BlendCarriers> {
+    from_nodes_of(&records.nodes().collect::<Vec<_>>(), body_offset)
+}
+
+/// [`from_nodes`] over any node instances, in stream order.
+pub(super) fn from_nodes_of<N: NodeFields>(
+    nodes: &[N],
+    body_offset: usize,
+) -> Option<BlendCarriers> {
     let mut blends = HashMap::new();
     let mut pairs = HashMap::new();
     let mut bounds = HashMap::new();
     let mut indices = HashSet::new();
-    for node in records.nodes() {
+    for node in nodes {
         let kind = node.kind();
         if kind != BLEND_SURF && kind != BLEND_BOUND {
             continue;

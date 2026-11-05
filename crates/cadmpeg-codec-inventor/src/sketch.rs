@@ -158,6 +158,9 @@ const POLYGON_TYPE: [u8; 16] = [
 const POLYGON_RELATION_TYPE: [u8; 16] = [
     0x1f, 0x89, 0xdb, 0xfb, 0xd8, 0x47, 0x78, 0xb6, 0xb0, 0x96, 0x72, 0x85, 0xc7, 0xec, 0x8b, 0xb9,
 ];
+const POLYGON_CONTROL_TYPE: [u8; 16] = [
+    0x84, 0x5c, 0x3b, 0xbf, 0xd2, 0x11, 0x2a, 0xe9, 0x60, 0x00, 0x4b, 0xb3, 0x89, 0x32, 0xed, 0xb0,
+];
 const DISTANCE_TYPE: [u8; 16] = [
     0x58, 0x85, 0x05, 0x11, 0xd2, 0x11, 0xe3, 0x95, 0x60, 0x00, 0x0c, 0xb3, 0x89, 0x32, 0xed, 0xb0,
 ];
@@ -345,6 +348,15 @@ pub(crate) enum PmDcSketchConstraintKind {
     },
     BlockGroup {
         members: PmDcReferenceList,
+    },
+    /// The polygon control relation: it names the polygon's reference entity
+    /// and first vertex point and holds a parameter reference in its header.
+    PolygonControl {
+        value: u32,
+        reference: PmDcReference,
+        vertex: [PmDcReference; 2],
+        position: [FiniteReal; 2],
+        flags: cadmpeg_ir::native::bytes::NativeBytes<[u8; 3]>,
     },
     EqualDistance {
         first: [PmDcReference; 2],
@@ -869,6 +881,7 @@ enum SketchConstraintTag {
     Collinear,
     Symmetric,
     PolygonRelation,
+    PolygonControl,
     BlockGroup,
     EqualDistance,
     SplinePoint,
@@ -900,6 +913,7 @@ impl SketchConstraintTag {
             COLLINEAR_TYPE => Some(Self::Collinear),
             SYMMETRIC_TYPE => Some(Self::Symmetric),
             POLYGON_RELATION_TYPE => Some(Self::PolygonRelation),
+            POLYGON_CONTROL_TYPE => Some(Self::PolygonControl),
             BLOCK_GROUP_TYPE => Some(Self::BlockGroup),
             EQUAL_DISTANCE_TYPE => Some(Self::EqualDistance),
             _ => None,
@@ -1408,6 +1422,25 @@ fn parse_constraint(
         SketchConstraintTag::BlockGroup => PmDcSketchConstraintKind::BlockGroup {
             members: reference_list(&mut cursor, 2, "block group member list")?,
         },
+        SketchConstraintTag::PolygonControl => {
+            let value = cursor.u32("polygon control value")?;
+            let reference = cursor.reference("polygon control reference entity")?;
+            let vertex = [
+                cursor.reference("polygon control vertex reference")?,
+                cursor.reference("polygon control second vertex reference")?,
+            ];
+            PmDcSketchConstraintKind::PolygonControl {
+                value,
+                reference,
+                vertex,
+                position: f64_array(&mut cursor, "polygon control vertex position")?,
+                flags: cadmpeg_ir::native::bytes::NativeBytes::new([
+                    cursor.u8("polygon control first flag")?,
+                    cursor.u8("polygon control second flag")?,
+                    cursor.u8("polygon control third flag")?,
+                ]),
+            }
+        }
         SketchConstraintTag::PolygonRelation => PmDcSketchConstraintKind::PolygonRelation {
             first: cursor.reference("polygon relation first reference")?,
             second: cursor.reference("polygon relation second reference")?,
@@ -1896,6 +1929,30 @@ pub(crate) fn graph_loss(
     })
 }
 
+/// The loss for polygon control relations whose two vertex references differ.
+/// The relation repeats one vertex reference in every record that shows the
+/// pattern, but that reading is not proven, so a relation with two different
+/// vertices is kept native without it. The relation defines no geometry, so
+/// the sketch still closes.
+pub(crate) fn polygon_control_vertex_loss(
+    constraints: &[PmDcSketchConstraint],
+) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    let count = constraints
+        .iter()
+        .filter(|constraint| {
+            matches!(
+                constraint.kind,
+                PmDcSketchConstraintKind::PolygonControl { vertex, .. } if vertex[0] != vertex[1]
+            )
+        })
+        .count();
+    (count != 0).then(|| {
+        crate::loss::InventorLossCode::SketchPolygonControlVerticesDiffer.note(format!(
+            "Retained {count} Inventor polygon control relation(s) with two different vertex references natively: the reading that the relation repeats one vertex reference is not proven and is not applied."
+        ))
+    })
+}
+
 /// The loss for distance dimensions that stay native because they are
 /// measured to an axis line.
 pub(crate) fn axis_distance_loss(count: usize) -> Option<cadmpeg_ir::report::loss::LossNote> {
@@ -2325,6 +2382,7 @@ fn project_constraint(
             )
         }
         PmDcSketchConstraintKind::BlockGroup { .. }
+        | PmDcSketchConstraintKind::PolygonControl { .. }
         | PmDcSketchConstraintKind::PolygonRelation { .. } => return None,
         PmDcSketchConstraintKind::Symmetric {
             first,
