@@ -1240,7 +1240,7 @@ fn parse_framed_section_cache<'bytes>(
             sections.push((entry_index, section));
         }
     }
-    truncated.sort();
+    truncated.sort_unstable();
     let mut merged: Vec<(u64, u64)> = Vec::new();
     for span in truncated {
         if let Some(last) = merged.last_mut() {
