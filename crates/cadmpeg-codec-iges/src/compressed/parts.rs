@@ -51,6 +51,12 @@ pub(crate) fn normalize(
         cursor += 1;
     }
     if cursor == start {
+        if cursor == lines.len() {
+            return Err(CodecError::Truncated {
+                location: source.location_at(source.end()),
+                operation: "IGES Compressed ASCII Start section",
+            });
+        }
         return Err(malformed("Start section is missing after the flag record"));
     }
     let global_begin = cursor;

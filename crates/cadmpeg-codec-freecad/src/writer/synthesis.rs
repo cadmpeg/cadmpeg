@@ -1135,42 +1135,64 @@ pub(super) fn write(
                 .note("the emitted FCStd document has no geometry"),
         );
     }
-    // Design objects enter `<Objects>` and `<ObjectData>` in ascending
-    // feature ordinal order, ties by arena order; replayed natives keep
-    // their declaration slots. Re-sorting a replay would renumber its
-    // declaration index and persistent identity on re-decode, so the
-    // ordinal pass only orders synthesized objects, which have no source
-    // declaration to preserve (#238 §5.5).
+    // Restore source declaration slots before ordering semantic siblings.
     {
+        fn order_slots(objects: &mut Vec<Object>, ranks: &HashMap<&str, (u64, usize)>) {
+            let mut ordered = Vec::new();
+            let mut slots = Vec::new();
+            for object in objects.drain(..) {
+                if ranks.contains_key(object.name.as_str()) {
+                    slots.push(None);
+                    ordered.push(object);
+                } else {
+                    slots.push(Some(object));
+                }
+            }
+            ordered.sort_by_key(|object| ranks[object.name.as_str()]);
+            let mut ordered = ordered.into_iter();
+            *objects = slots
+                .into_iter()
+                .map(|slot| {
+                    slot.unwrap_or_else(|| ordered.next().expect("ordered slot has no object"))
+                })
+                .collect();
+        }
+        let source_order: HashMap<&str, usize> = native_objects
+            .iter()
+            .filter_map(|object| {
+                names
+                    .get(object.id().as_str())
+                    .map(|name| (name.as_str(), object.order))
+            })
+            .collect();
+        objects.sort_by_key(|object| {
+            let rank = source_order.get(object.name.as_str()).copied();
+            (rank.is_none(), rank)
+        });
+
         let mut rank_of: HashMap<&str, (u64, usize)> = HashMap::new();
         for (index, feature) in ir.model.features.iter().enumerate() {
             if let Some(name) = names.get(feature.id.as_str()) {
-                if native_names.contains(name.as_str()) {
-                    continue;
-                }
                 rank_of
                     .entry(name.as_str())
                     .or_insert((feature.ordinal, index));
             }
         }
-        let mut design = Vec::new();
-        let mut slots = Vec::new();
-        for object in objects.drain(..) {
-            if rank_of.contains_key(object.name.as_str()) {
-                slots.push(None);
-                design.push(object);
-            } else {
-                slots.push(Some(object));
+        order_slots(&mut objects, &rank_of);
+        let mut roots = HashMap::new();
+        for (index, occurrence) in ir.model.occurrences.iter().enumerate() {
+            if matches!(
+                occurrence.parent,
+                cadmpeg_ir::products::OccurrenceParent::Root {}
+            ) {
+                if let Some(name) = names.get(occurrence.id.as_str()) {
+                    roots
+                        .entry(name.as_str())
+                        .or_insert((u64::from(occurrence.ordinal), index));
+                }
             }
         }
-        design.sort_by_key(|object| rank_of[object.name.as_str()]);
-        let mut design = design.into_iter();
-        objects = slots
-            .into_iter()
-            .map(|slot| {
-                slot.unwrap_or_else(|| design.next().expect("design slot has no design object"))
-            })
-            .collect();
+        order_slots(&mut objects, &roots);
     }
     // The document header preserves the source's producing application and
     // persistence versions, so the re-decode reproduces the document facts.
