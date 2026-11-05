@@ -1524,6 +1524,14 @@ mod tests {
             .get("source_record_index")
             .is_none());
 
+        // A serialized zero source target is not a reference.
+        let mut zero = serde_json::to_value(&occurrence).unwrap();
+        zero["attributed"]["source_record_index"] = serde_json::json!(0);
+        assert!(serde_json::from_value::<
+            crate::records::feature::assembly_features::DesignComponentOccurrence,
+        >(zero)
+        .is_err());
+
         // A zero target is not a reference.
         let target = repeat;
         bytes[target..target + 8].fill(0);

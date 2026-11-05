@@ -913,6 +913,9 @@ impl TryFrom<DesignComponentOccurrenceWire> for DesignComponentOccurrence {
             if value.path_discriminator.is_some() {
                 return Err("an attributed frame stores its discriminator in attributed".into());
             }
+            if attributed.source_record_index == Some(0) {
+                return Err("an attributed frame's source reference names a nonzero record".into());
+            }
             let mut record = Self::try_new_attributed(
                 draft,
                 DesignAttributedOccurrenceFrame {
