@@ -139,7 +139,8 @@ fn encode_session_recovers_a_part_scoped_expansion_refusal() {
     policy.limits.max_decompressed_bytes_total = 8;
     policy.limits.max_decompressed_bytes_per_expand = 1;
     let ctx = DecodeContext::for_encode(&arena, &policy);
-    let session = EncodeSession::from_context(&ctx).expect("encode session opens");
+    let session =
+        EncodeSession::from_context(&ctx).expect("encode session opens from a fresh context");
     let outcome = ctx.run_part(|| {
         let mut expansion = ctx.begin_expand(ExpandSpec::Exact(2))?;
         expansion.write(b"ab")?;
