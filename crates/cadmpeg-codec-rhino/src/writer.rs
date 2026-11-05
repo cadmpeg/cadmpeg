@@ -1733,7 +1733,7 @@ fn brep_payload(
             record.extend([0.0_f64, 0.0].into_iter().flat_map(f64::to_le_bytes));
             Ok(record)
         })
-        .collect::<Result<Vec<_>, CodecError>>()?;
+        .collect::<Result<Vec<_>, WriteError>>()?;
     count_records(trims.len())?;
     payload.extend(raw_array(&trims)?);
     let loops = model
