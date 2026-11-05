@@ -75,6 +75,11 @@ const UNITLESS_TYPE: [u8; 16] = [
     0x22, 0x00, 0x9d, 0x5f, 0xd2, 0x11, 0x8e, 0x09, 0xc0, 0x00, 0x5a, 0x9a, 0x23, 0x78, 0xd0, 0x4f,
 ];
 
+/// Base-unit type whose dimension and display scale are not defined.
+const UNDEFINED_BASE_UNIT_TYPE: [u8; 16] = [
+    0x70, 0x5e, 0xfe, 0x5d, 0x42, 0x4e, 0x6e, 0x12, 0x69, 0x2a, 0x3e, 0xb4, 0x19, 0xb8, 0x8a, 0x89,
+];
+
 #[derive(Debug)]
 pub(crate) struct DesignInventory {
     pub(crate) parameters: Vec<PmDcParameter>,
@@ -505,7 +510,9 @@ pub(crate) fn inventory(
                     },
                 )
             } else {
-                if has_unscaled_base_unit_layout(record.payload) {
+                if record.type_id == UNDEFINED_BASE_UNIT_TYPE
+                    && has_unscaled_base_unit_layout(record.payload)
+                {
                     inventory
                         .opaque_base_units
                         .insert((segment.pair.token.key().to_string(), record.ordinal));
@@ -2360,6 +2367,31 @@ mod tests {
                 Length::new(20.0).expect("finite length fixture")
             ))
         );
+    }
+
+    /// A 22-byte base-unit payload with magnitude 1 and factor 1.
+    fn unscaled_base_unit_payload() -> Vec<u8> {
+        let mut payload = Vec::new();
+        payload.extend_from_slice(&0_u32.to_le_bytes());
+        payload.extend_from_slice(&0_u16.to_le_bytes());
+        payload.extend_from_slice(&1.0_f64.to_le_bytes());
+        payload.extend_from_slice(&1.0_f64.to_le_bytes());
+        payload
+    }
+
+    #[test]
+    fn only_the_undefined_base_unit_type_is_held_as_an_opaque_base_unit() {
+        let payload = unscaled_base_unit_payload();
+        let admitted = inventory_with_record(
+            super::UNDEFINED_BASE_UNIT_TYPE,
+            &payload,
+            DecodePolicy::service(),
+        )
+        .expect("undefined base unit is held");
+        assert_eq!(admitted.opaque_base_units.len(), 1);
+        let admitted = inventory_with_record([1; 16], &payload, DecodePolicy::service())
+            .expect("unknown record is skipped");
+        assert!(admitted.opaque_base_units.is_empty());
     }
 
     #[test]
