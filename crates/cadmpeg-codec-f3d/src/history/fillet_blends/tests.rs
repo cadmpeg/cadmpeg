@@ -178,6 +178,339 @@ fn a_blend_with_no_deleted_edge_along_its_spine_states_nothing() {
 }
 
 #[test]
+fn a_blend_whose_supports_share_a_kept_edge_along_its_spine_states_nothing() {
+    let mut kept = faces(&[(10, &[16, 17, 18]), (11, &[16, 17, 19]), (12, &[18, 19])]);
+    line(&mut kept, 16, z());
+    line(&mut kept, 17, z());
+    line(&mut kept, 18, y());
+    line(&mut kept, 19, y());
+    assert_eq!(blends(&kept, &output()), None);
+}
+
+/// Supports 10 and 11 share deleted edge 17 along z and edge 16, whose
+/// geometry rows are absent.
+fn unclassified_shared_edge() -> AsmHistoricalTopology {
+    let mut topology = faces(&[(10, &[16, 17, 18]), (11, &[16, 17, 19]), (12, &[18, 19])]);
+    topology.edges.push(16);
+    line(&mut topology, 17, z());
+    line(&mut topology, 18, y());
+    line(&mut topology, 19, y());
+    topology
+}
+
+#[test]
+fn a_shared_support_edge_without_geometry_states_nothing() {
+    assert_eq!(blends(&unclassified_shared_edge(), &output()), None);
+    let mut definition = fillet(native(), three_mm());
+    bind_fillet_groups(
+        &mut definition,
+        &FeatureId::mint("f3d:test:feature#42").expect("identity grammar"),
+        &scope(42),
+        &[group(42, &[7, 8])],
+        1,
+        (
+            &transition(&[20], &[17, 18, 19]),
+            &unclassified_shared_edge(),
+            &output(),
+        ),
+    );
+    assert_eq!(
+        definition,
+        fillet(native(), three_mm()),
+        "an incomplete group stays native"
+    );
+}
+
+#[test]
+fn a_support_without_an_input_boundary_states_nothing() {
+    let mut unbounded = input(z());
+    unbounded
+        .face_loops
+        .retain(|relation| relation.owner_ref != 12);
+    assert_eq!(blends(&unbounded, &output()), None);
+}
+
+#[test]
+fn an_adjacent_face_without_a_rebuilt_boundary_states_nothing() {
+    let mut omitted = output();
+    omitted
+        .face_loops
+        .retain(|relation| relation.owner_ref != 12);
+    assert_eq!(blends(&input(z()), &omitted), None);
+}
+
+#[test]
+fn an_edge_with_an_omitted_owner_face_states_nothing() {
+    let mut input = input(z());
+    input.surfaces.push(113);
+    add_face(&mut input, 13, &[41], 113);
+    let mut omitted = faces(&[
+        (10, &[30]),
+        (11, &[31]),
+        (12, &[32]),
+        (13, &[32, 33]),
+        (20, &[30, 31, 32]),
+    ]);
+    omitted
+        .coedge_topology
+        .retain(|coedge| coedge.coedge != 130_033);
+    let original = output();
+    omitted.surface_cylinders = original.surface_cylinders;
+    omitted.surface_radii = original.surface_radii;
+    assert_eq!(
+        blends(&input, &omitted),
+        None,
+        "face 13 on edge 32 is not rebuilt"
+    );
+}
+
+/// Supports 10 and 11 share deleted edge 17 along z and edge 16 along
+/// `direction`.
+fn unusable_shared_edge(direction: Vector3) -> AsmHistoricalTopology {
+    let mut topology = faces(&[(10, &[16, 17, 18]), (11, &[16, 17, 19]), (12, &[18, 19])]);
+    line(&mut topology, 16, direction);
+    line(&mut topology, 17, z());
+    line(&mut topology, 18, y());
+    line(&mut topology, 19, y());
+    topology
+}
+
+#[test]
+fn a_shared_support_edge_with_an_unusable_direction_states_nothing() {
+    for direction in [
+        Vector3::new(0.0, 0.0, 0.0),
+        Vector3::new(f64::NAN, 0.0, 1.0),
+        Vector3::new(f64::INFINITY, 0.0, 0.0),
+    ] {
+        assert_eq!(blends(&unusable_shared_edge(direction), &output()), None);
+        let mut definition = fillet(native(), three_mm());
+        bind_fillet_groups(
+            &mut definition,
+            &FeatureId::mint("f3d:test:feature#42").expect("identity grammar"),
+            &scope(42),
+            &[group(42, &[7, 8])],
+            1,
+            (
+                &transition(&[20], &[17, 18, 19]),
+                &unusable_shared_edge(direction),
+                &output(),
+            ),
+        );
+        assert_eq!(
+            definition,
+            fillet(native(), three_mm()),
+            "an incomplete group stays native"
+        );
+    }
+}
+
+#[test]
+fn a_persisting_support_without_one_input_carrier_states_nothing() {
+    let mut two = input(z());
+    two.face_surfaces.push(AsmHistoricalCarrierBinding {
+        entity: 11,
+        carrier: 199,
+    });
+    assert_eq!(blends(&two, &output()), None, "two input carriers");
+    let mut none = input(z());
+    none.face_surfaces.retain(|binding| binding.entity != 11);
+    assert_eq!(blends(&none, &output()), None, "no input carrier");
+}
+
+#[test]
+fn an_unlisted_new_face_states_nothing() {
+    let mut unlisted = output();
+    let extra = faces(&[(21, &[33])]);
+    unlisted.faces.extend(extra.faces);
+    unlisted.face_surfaces.extend(extra.face_surfaces.clone());
+    unlisted.face_loops.extend(extra.face_loops);
+    unlisted.loop_coedges.extend(extra.loop_coedges);
+    unlisted.coedge_topology.extend(extra.coedge_topology);
+    assert_eq!(
+        blends(&input(z()), &unlisted),
+        None,
+        "new face 21 on new carrier 121 is not listed as inserted"
+    );
+    unlisted
+        .face_surfaces
+        .retain(|binding| binding.entity != 21);
+    assert_eq!(
+        blends(&input(z()), &unlisted),
+        None,
+        "new face 21 has no carrier"
+    );
+}
+
+#[test]
+fn a_persistent_face_on_a_new_carrier_states_nothing() {
+    let mut reused = input(z());
+    add_face(&mut reused, 20, &[41], 199);
+    reused.surfaces.push(199);
+    assert_eq!(
+        blends(&reused, &output()),
+        None,
+        "listed blend 20 persists from preceding face 20 on carrier 199"
+    );
+    let (input, mut output) = (with_face_15(input(z())), with_face_15(output()));
+    assert!(
+        blends(&input, &output).is_some(),
+        "face 15 keeps carrier 115"
+    );
+    for binding in &mut output.face_surfaces {
+        if binding.entity == 15 {
+            binding.carrier = 125;
+        }
+    }
+    output.surfaces.push(125);
+    output.surface_cylinders.push(AsmHistoricalCylinder {
+        surface: 125,
+        origin: Point3::new(0.0, 0.0, 0.0),
+        axis: z(),
+        radius: 3.0,
+    });
+    output.surface_radii.push(AsmHistoricalSurfaceRadius {
+        surface: 125,
+        radius: 3.0,
+    });
+    assert_eq!(
+        blends(&input, &output),
+        None,
+        "persistent face 15 moves to new carrier 125 beside inserted blend 20"
+    );
+}
+
+#[test]
+fn a_neighbour_whose_coedge_row_on_the_blend_edge_is_missing_states_nothing() {
+    let mut input = input(z());
+    input.surfaces.push(113);
+    add_face(&mut input, 13, &[41], 113);
+    let mut omitted = faces(&[
+        (10, &[30]),
+        (11, &[31]),
+        (12, &[32]),
+        (13, &[32, 33]),
+        (20, &[30, 31, 32]),
+    ]);
+    omitted
+        .coedge_topology
+        .retain(|coedge| coedge.coedge != 130_032);
+    let original = output();
+    omitted.surface_cylinders = original.surface_cylinders;
+    omitted.surface_radii = original.surface_radii;
+    assert_eq!(
+        blends(&input, &omitted),
+        None,
+        "face 13 lists a coedge on edge 32 without a topology row"
+    );
+}
+
+/// Add `face`, bounded by `edges` and bound to `carrier`.
+fn add_face(topology: &mut AsmHistoricalTopology, face: i64, edges: &[i64], carrier: i64) {
+    let extra = faces(&[(face, edges)]);
+    topology.faces.extend(extra.faces);
+    topology.face_loops.extend(extra.face_loops);
+    topology.loop_coedges.extend(extra.loop_coedges);
+    topology.coedge_topology.extend(extra.coedge_topology);
+    topology.face_surfaces.push(AsmHistoricalCarrierBinding {
+        entity: face,
+        carrier,
+    });
+}
+
+/// `topology` with face 15, bounded by edge 40 and bound to carrier 115.
+fn with_face_15(mut topology: AsmHistoricalTopology) -> AsmHistoricalTopology {
+    let extra = faces(&[(15, &[40])]);
+    topology.faces.extend(extra.faces);
+    topology.surfaces.extend(extra.surfaces);
+    topology.face_surfaces.extend(extra.face_surfaces);
+    topology.face_loops.extend(extra.face_loops);
+    topology.loop_coedges.extend(extra.loop_coedges);
+    topology.coedge_topology.extend(extra.coedge_topology);
+    topology
+}
+
+#[test]
+fn a_face_of_either_state_that_does_not_rebuild_states_nothing() {
+    let (input, output) = (with_face_15(input(z())), with_face_15(output()));
+    assert!(
+        blends(&input, &output).is_some(),
+        "face 15 rebuilds in both states"
+    );
+    let unbuilt = |mut topology: AsmHistoricalTopology| {
+        topology
+            .coedge_topology
+            .retain(|coedge| coedge.coedge != 150_040);
+        topology
+    };
+    assert_eq!(
+        blends(&unbuilt(input.clone()), &output),
+        None,
+        "input face 15"
+    );
+    assert_eq!(
+        blends(&input, &unbuilt(output.clone())),
+        None,
+        "result face 15"
+    );
+    let two_carriers = |mut topology: AsmHistoricalTopology| {
+        topology.face_surfaces.push(AsmHistoricalCarrierBinding {
+            entity: 15,
+            carrier: 199,
+        });
+        topology
+    };
+    assert_eq!(
+        blends(&two_carriers(input.clone()), &output),
+        None,
+        "input face 15"
+    );
+    assert_eq!(
+        blends(&input, &two_carriers(output)),
+        None,
+        "result face 15"
+    );
+}
+
+#[test]
+fn a_blend_radius_that_is_not_finite_and_positive_states_nothing() {
+    for radius in [f64::NAN, f64::INFINITY, 0.0, -3.0] {
+        let mut unusable = output();
+        unusable.surface_radii[0].radius = radius;
+        assert_eq!(blends(&input(z()), &unusable), None, "radius {radius}");
+    }
+}
+
+#[test]
+fn an_adjacent_face_that_maps_to_no_single_input_face_states_nothing() {
+    let mut shared = input(z());
+    add_face(&mut shared, 13, &[41], 112);
+    let mut replaced = faces(&[(10, &[30]), (11, &[31]), (14, &[32]), (20, &[30, 31, 32])]);
+    for binding in &mut replaced.face_surfaces {
+        if binding.entity == 14 {
+            binding.carrier = 112;
+        }
+    }
+    let original = output();
+    replaced.surface_cylinders = original.surface_cylinders.clone();
+    replaced.surface_radii = original.surface_radii.clone();
+    assert_eq!(
+        blends(&shared, &replaced),
+        None,
+        "carrier 112 names two input faces"
+    );
+
+    let mut no_carrier = output();
+    no_carrier
+        .face_surfaces
+        .retain(|binding| binding.entity != 12);
+    assert_eq!(
+        blends(&input(z()), &no_carrier),
+        None,
+        "face 12 has no carrier"
+    );
+}
+
+#[test]
 fn a_blend_with_two_deleted_edges_along_its_spine_states_nothing() {
     let mut two = input(z());
     two.edge_samples.retain(|sample| sample.edge != 18);
@@ -214,11 +547,7 @@ fn a_new_carrier_without_a_spine_or_a_radius_states_nothing() {
 #[test]
 fn an_inserted_face_on_a_preceding_carrier_is_not_a_blend() {
     let mut output = output();
-    output.faces.push(21);
-    output.face_surfaces.push(AsmHistoricalCarrierBinding {
-        entity: 21,
-        carrier: 110,
-    });
+    add_face(&mut output, 21, &[33], 110);
     assert_eq!(
         transition_blends(&transition(&[20, 21], &[17, 18, 19]), &input(z()), &output),
         Some(vec![Blend {
@@ -281,6 +610,18 @@ fn new_support(
             member_refs: loops_15.to_vec(),
         });
         input.loop_coedges.extend(face_15.loop_coedges);
+        for loop_slot in loops_15 {
+            if !input
+                .loop_coedges
+                .iter()
+                .any(|relation| relation.owner_ref == *loop_slot)
+            {
+                input.loop_coedges.push(AsmHistoricalRelation {
+                    owner_ref: *loop_slot,
+                    member_refs: Vec::new(),
+                });
+            }
+        }
     }
     for binding in &mut input.face_surfaces {
         match binding.entity {
@@ -316,6 +657,10 @@ fn new_support(
         output.face_loops.push(AsmHistoricalRelation {
             owner_ref: 13,
             member_refs: vec![1_113],
+        });
+        output.loop_coedges.push(AsmHistoricalRelation {
+            owner_ref: 1_113,
+            member_refs: Vec::new(),
         });
     }
     let original = self::output();
@@ -481,11 +826,7 @@ fn a_persisting_support_does_not_stand_for_a_removed_face_on_its_carrier() {
 #[test]
 fn a_support_that_keeps_its_slot_on_a_shared_carrier_supports_its_blend() {
     let mut shared = input(z());
-    shared.faces.push(13);
-    shared.face_surfaces.push(AsmHistoricalCarrierBinding {
-        entity: 13,
-        carrier: 111,
-    });
+    add_face(&mut shared, 13, &[41], 111);
     assert_eq!(
         blends(&shared, &output()),
         Some(vec![Blend {
@@ -530,11 +871,7 @@ fn two_blends_replace_the_edges_along_their_spines() {
 #[test]
 fn an_inserted_face_without_one_carrier_states_nothing() {
     let mut output = two_blends();
-    output.faces.push(22);
-    output.face_surfaces.push(AsmHistoricalCarrierBinding {
-        entity: 22,
-        carrier: 130,
-    });
+    add_face(&mut output, 22, &[42], 130);
     output.face_surfaces.push(AsmHistoricalCarrierBinding {
         entity: 22,
         carrier: 131,
@@ -638,11 +975,19 @@ fn scope(record_index: u32) -> DesignParameterScope {
 }
 
 fn group(scope_record_index: u32, members: &[u32]) -> DesignConstructionOperandGroup {
+    named_group(GROUP_ID, scope_record_index, members)
+}
+
+fn named_group(
+    id: &str,
+    scope_record_index: u32,
+    members: &[u32],
+) -> DesignConstructionOperandGroup {
     let member_offsets: Vec<u64> = (0..u64::try_from(members.len()).unwrap())
         .map(|ordinal| ordinal * 11)
         .collect();
     serde_json::from_value(serde_json::json!({
-        "id": GROUP_ID,
+        "id": id,
         "byte_offset": 0,
         "class_tag": "325",
         "record_index": 43,
@@ -747,32 +1092,28 @@ fn earlier(slots: &[i64]) -> EdgeSelection {
 }
 
 #[test]
-fn a_bound_group_replaces_an_earlier_selection_of_deleted_edges() {
-    assert_eq!(
-        slots(&bound(earlier(&[18]), three_mm(), &[group(42, &[7])])),
-        ["17"]
-    );
-}
-
-#[test]
 fn a_selection_that_names_a_kept_edge_stays() {
     for kept in [&[21][..], &[18, 21]] {
-        assert_eq!(
-            bound(earlier(kept), three_mm(), &[group(42, &[7])]),
-            earlier(kept)
-        );
+        for selection in [earlier(kept), partial(kept)] {
+            assert_eq!(
+                bound(selection.clone(), three_mm(), &[group(42, &[7])]),
+                selection
+            );
+        }
     }
 }
 
-#[test]
-fn a_group_with_another_member_count_keeps_its_selection() {
-    assert_eq!(bound(native(), three_mm(), &[group(42, &[7, 8])]), native());
-    let mut definition = fillet(native(), three_mm());
+/// The group's selection after binding with blend faces 20 and 21.
+fn bound_by_two_blends(
+    edges: EdgeSelection,
+    groups: &[DesignConstructionOperandGroup],
+) -> EdgeSelection {
+    let mut definition = fillet(edges, three_mm());
     bind_fillet_groups(
         &mut definition,
         &FeatureId::mint("f3d:test:feature#42").expect("identity grammar"),
         &scope(42),
-        &[group(42, &[7])],
+        groups,
         1,
         (
             &transition(&[20, 21], &[17, 18, 19]),
@@ -780,10 +1121,152 @@ fn a_group_with_another_member_count_keeps_its_selection() {
             &two_blends(),
         ),
     );
+    let FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) = definition else {
+        panic!("expected a fillet");
+    };
+    groups.into_iter().next().unwrap().edges
+}
+
+fn partial(slots: &[i64]) -> EdgeSelection {
+    let feature = FeatureId::mint("f3d:test:feature#42").expect("identity grammar");
+    let prefix = crate::ids::feature_input_prefix(&feature, 1);
+    EdgeSelection::historical_partial(
+        crate::ids::feature_input_topology_id(&feature, 1),
+        slots
+            .iter()
+            .map(|slot| crate::ids::history_input_edge_id(&prefix, *slot))
+            .collect(),
+        vec!["f3d:Design/BulkStream.dat:design-edge-operand#9".into()],
+        GROUP_ID.into(),
+    )
+    .unwrap()
+}
+
+#[test]
+fn a_complete_selection_stays_whether_or_not_its_blend_edges_agree() {
     assert_eq!(
-        definition,
-        fillet(native(), three_mm()),
+        bound(earlier(&[18]), three_mm(), &[group(42, &[7])]),
+        earlier(&[18]),
+        "one member, deleted edge 18 against blend edge 17"
+    );
+    assert_eq!(
+        bound(earlier(&[18]), three_mm(), &[group(42, &[7, 8])]),
+        earlier(&[18])
+    );
+    assert_eq!(
+        bound_by_two_blends(earlier(&[18]), &[group(42, &[7])]),
+        earlier(&[18]),
         "two blends round two edges"
+    );
+    assert_eq!(
+        bound_by_two_blends(earlier(&[18, 17]), &[group(42, &[7, 8])]),
+        earlier(&[18, 17]),
+        "the blend edges agree, and the selection keeps its operand order"
+    );
+}
+
+#[test]
+fn an_incomplete_group_takes_its_blend_edges_whatever_its_member_count() {
+    assert_eq!(
+        slots(&bound(native(), three_mm(), &[group(42, &[7, 8])])),
+        ["17"]
+    );
+    assert_eq!(
+        slots(&bound_by_two_blends(native(), &[group(42, &[7])])),
+        ["17", "18"]
+    );
+    assert_eq!(
+        slots(&bound_by_two_blends(
+            partial(&[18]),
+            &[group(42, &[7, 8, 9])]
+        )),
+        ["17", "18"]
+    );
+}
+
+const OTHER_GROUP_ID: &str = "f3d:Design/BulkStream.dat:group#44";
+
+/// The selections of a 3 mm group and a 5 mm group after binding with blend
+/// face 20 at 3 mm, which replaces edge 17, and blend face 21 at 5 mm, which
+/// replaces edge 18.
+fn bound_pair(three: EdgeSelection, five: EdgeSelection) -> (EdgeSelection, EdgeSelection) {
+    let mut output = two_blends();
+    output.surface_cylinders[1].radius = 5.0;
+    output.surface_radii[1].radius = 5.0;
+    let five_mm = RadiusSpec::Constant {
+        radius: cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap(),
+    };
+    let mut definition = FeatureDefinition::Operation(FeatureOperation::Fillet {
+        groups: cadmpeg_ir::features::NonEmptyMembers::try_from(vec![
+            FilletGroup {
+                edges: three,
+                radius: three_mm(),
+                tangency_weight: None,
+            },
+            FilletGroup {
+                edges: five,
+                radius: five_mm,
+                tangency_weight: None,
+            },
+        ])
+        .unwrap(),
+    });
+    bind_fillet_groups(
+        &mut definition,
+        &FeatureId::mint("f3d:test:feature#42").expect("identity grammar"),
+        &scope(42),
+        &[group(42, &[7]), named_group(OTHER_GROUP_ID, 42, &[8])],
+        1,
+        (&transition(&[20, 21], &[17, 18, 19]), &input(z()), &output),
+    );
+    let FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) = definition else {
+        panic!("expected a fillet");
+    };
+    let mut groups = groups.iter().map(|group| group.edges.clone());
+    (groups.next().unwrap(), groups.next().unwrap())
+}
+
+#[test]
+fn a_selection_that_disagrees_with_its_blend_edges_binds_no_group_of_the_transition() {
+    let other = || EdgeSelection::Native(OTHER_GROUP_ID.into());
+    for agreeing in [earlier(&[17]), EdgeSelection::Unresolved] {
+        let (three, five) = bound_pair(agreeing.clone(), other());
+        assert_eq!(three, agreeing);
+        assert_eq!(
+            slots(&five),
+            ["18"],
+            "{agreeing:?} agrees with blend edge 17"
+        );
+    }
+    for disagreeing in [
+        earlier(&[18]),
+        earlier(&[17, 18]),
+        partial(&[18]),
+        EdgeSelection::All,
+    ] {
+        assert_eq!(
+            bound_pair(disagreeing.clone(), other()),
+            (disagreeing, other()),
+            "the 3 mm selection states edges other than blend edge 17"
+        );
+    }
+}
+
+#[test]
+fn a_group_without_members_keeps_its_selection() {
+    assert_eq!(bound(native(), three_mm(), &[group(42, &[])]), native());
+}
+
+#[test]
+fn a_partial_selection_of_an_edge_without_a_blend_stays() {
+    assert_eq!(
+        bound(partial(&[18]), three_mm(), &[group(42, &[7, 8])]),
+        partial(&[18])
+    );
+    assert_eq!(
+        bound(partial(&[18]), three_mm(), &[group(42, &[7])]),
+        partial(&[18]),
+        "one blend edge for one member"
     );
 }
 
