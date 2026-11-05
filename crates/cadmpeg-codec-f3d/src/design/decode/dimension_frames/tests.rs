@@ -64,15 +64,36 @@ fn dimension_recipe_uses_its_immediate_indexed_record_boundary() {
     bytes.extend_from_slice(&41u32.to_le_bytes());
     bytes.extend_from_slice(&[0; 9]);
 
+    let decoy = 5 + 11;
+    bytes[decoy..decoy + 4].copy_from_slice(&3u32.to_le_bytes());
+    bytes[decoy + 4..decoy + 7].copy_from_slice(b"421");
+    bytes[decoy + 7..decoy + 11].copy_from_slice(&99u32.to_le_bytes());
+    let frames = [
+        crate::metastream::PrimaryRecordFrame {
+            entity_id: 40,
+            start: 5,
+            member_end: next_offset,
+            end: next_offset,
+        },
+        crate::metastream::PrimaryRecordFrame {
+            entity_id: 41,
+            start: next_offset,
+            member_end: bytes.len(),
+            end: bytes.len(),
+        },
+    ];
     assert_eq!(
-        indexed_record_containing(&bytes, 5, bytes.len(), recipe_offset),
+        indexed_record_containing(&bytes, &frames, 5, bytes.len(), recipe_offset),
         Some((5, "415", 40, next_offset))
     );
     assert_eq!(
-        indexed_record_containing(&bytes, 5, bytes.len(), next_offset + 11),
+        indexed_record_containing(&bytes, &frames, 5, bytes.len(), next_offset + 11),
         Some((next_offset, "423", 41, bytes.len()))
     );
-    assert_eq!(indexed_record_containing(&bytes, 6, bytes.len(), 7), None);
+    assert_eq!(
+        indexed_record_containing(&bytes, &frames, 6, bytes.len(), 7),
+        None
+    );
     assert_eq!(
         contiguous_i32_program(&[u8::MAX; 8], 0, 8),
         Some(vec![-1, -1])
@@ -728,6 +749,7 @@ fn dimension_annotation_frame_links_nullable_loci_to_governing_owner() {
     let frame = parse_dimension_annotation_frame(
         &bytes,
         0,
+        paired_byte_offset,
         Some(383),
         &HashMap::from([(390, 391)]),
         &HashSet::from([354, 376]),
@@ -766,6 +788,7 @@ fn dimension_annotation_frame_links_nullable_loci_to_governing_owner() {
     let leading = parse_dimension_annotation_frame(
         &bytes,
         0,
+        paired_byte_offset,
         None,
         &HashMap::from([(390, 391)]),
         &HashSet::from([354, 376]),
@@ -805,6 +828,7 @@ fn dimension_presentation_frame_requires_registered_geometry_and_paired_sketch_h
     let frame = parse_dimension_presentation_frame(
         &bytes,
         0,
+        paired_offset,
         "6CCF41D5-40BE-48ED-A834-18F3EAED6C57",
         &HashSet::from([306, 331]),
         &HashSet::from([270]),
@@ -826,9 +850,37 @@ fn dimension_presentation_frame_requires_registered_geometry_and_paired_sketch_h
     assert_eq!(frame.operands[1].geometry_record_index.get(), 331);
     assert_eq!(frame.owner_reference, 270);
 
+    let mut copy = bytes.clone();
+    let mut fake = Vec::new();
+    fake.extend_from_slice(&3u32.to_le_bytes());
+    fake.extend_from_slice(b"281");
+    fake.extend_from_slice(&332u32.to_le_bytes());
+    fake.extend_from_slice(&[0; 8]);
+    fake.push(1);
+    fake.extend_from_slice(&270u32.to_le_bytes());
+    copy.splice(
+        presentation_offset..presentation_offset,
+        fake.iter().copied(),
+    );
+    let selected = parse_dimension_presentation_frame(
+        &copy,
+        0,
+        paired_offset + fake.len(),
+        "6CCF41D5-40BE-48ED-A834-18F3EAED6C57",
+        &HashSet::from([306, 331]),
+        &HashSet::from([270]),
+        &HashSet::from([281]),
+    )
+    .expect("indexed paired frame");
+    assert_eq!(
+        selected.paired_byte_offset,
+        Some(u64_from_index(paired_offset + fake.len()))
+    );
+
     assert!(parse_dimension_presentation_frame(
         &bytes,
         0,
+        paired_offset,
         "6CCF41D5-40BE-48ED-A834-18F3EAED6C57",
         &HashSet::from([306]),
         &HashSet::from([270]),

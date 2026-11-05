@@ -358,7 +358,9 @@ pub(super) fn generated_design_types(
                 | GeneratedDesignMetastreamVariant::CopyPasteBodies
                 | GeneratedDesignMetastreamVariant::Form
         ) {
-        if matches!(variant, GeneratedDesignMetastreamVariant::CopyPasteBodies) {
+        if matches!(variant, GeneratedDesignMetastreamVariant::RemoveBody) {
+            &[123, 600, 1500, 1700, 1701, 1702, 1703, 4645, 4646]
+        } else if matches!(variant, GeneratedDesignMetastreamVariant::CopyPasteBodies) {
             &[123, 600, 1500, 1700, 4645, 4646]
         } else {
             &[123, 600, 1500, 4645, 4646]

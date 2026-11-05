@@ -635,11 +635,12 @@ fn unadmitted_rigid_group_frames_emit_a_loss() {
             frame - 181 - if alternate { 4 } else { 0 } - property_width,
             tail
         );
-        let archive = crate::test_support::zip_test::f3d_with_configuration(
-            &[],
-            "FusionAssetName[Active]/Design1/BulkStream.dat",
+        let metadata = crate::test_support::zip_test::indexed_fixture_metastream(
             &bytes,
+            &[10, 64, 67, 71],
+            &[10],
         );
+        let archive = crate::test_support::body_reference_tail_test::archive(&bytes, &metadata);
         crate::test_support::zip_test::with_scan(&archive, |scan| {
             let decoded = decode_parameter_scopes(
                 &cadmpeg_test_support::service_decode_context(),
