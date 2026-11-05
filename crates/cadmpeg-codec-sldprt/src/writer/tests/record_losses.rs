@@ -114,6 +114,73 @@ fn assert_loss(ir: &CadIr, code: SldprtLossCode, prefix: &str) {
 }
 
 #[test]
+fn omitted_body_face_and_edge_fields_name_their_records() {
+    let mut ir = cube();
+    let body = ir.model.bodies[0].id.clone();
+    let face = ir.model.faces[0].id.clone();
+    let edge = ir.model.edges[0].id.clone();
+    ir.model.bodies[0].name = Some("Part body".into());
+    ir.model.bodies[0].color = Some(Color::new(0.2, 0.3, 0.4, 1.0).unwrap());
+    ir.model.faces[0].name = Some("Face name".into());
+    ir.model.edges[0].set_param_range(Some(
+        cadmpeg_ir::topology::ParameterInterval::new([0.0, 1.0]).unwrap(),
+    ));
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    for (id, field) in [
+        (body.as_str(), "name"),
+        (face.as_str(), "name"),
+        (edge.as_str(), "carrier.param_range"),
+    ] {
+        assert!(
+            plan.report().losses.iter().any(|loss| loss.code
+                == SldprtLossCode::WriterFieldsOmitted.kind()
+                && loss.message.contains(id)
+                && loss.message.contains(field)),
+            "missing loss for {id} {field}"
+        );
+    }
+}
+
+#[test]
+fn omitted_appearance_fields_name_the_appearance() {
+    let mut ir = cube();
+    let mut material = appearance(None);
+    material.library_id = Some("library".into());
+    material.category = Some("category".into());
+    material.properties.insert(
+        cadmpeg_core::nonblank_literal!("roughness"),
+        cadmpeg_ir::scalar::FiniteReal::new(0.4).unwrap(),
+    );
+    let id = material.id.clone();
+    ir.model.appearance_bindings.push(AppearanceBinding {
+        native_ref: None,
+        id: "test:model:appearance-binding#face".try_into().unwrap(),
+        target: AppearanceTarget::Face(ir.model.faces[0].id.clone()),
+        appearance: id.clone(),
+        source_entity_id: None,
+        object_type: None,
+        visible: None,
+        channels: Default::default(),
+    });
+    ir.model.appearances.push(material);
+    ir.model.finalize();
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    for field in ["library_id", "category", "properties"] {
+        assert!(
+            plan.report().losses.iter().any(|loss| loss.code
+                == SldprtLossCode::WriterFieldsOmitted.kind()
+                && loss.message.contains(id.as_str())
+                && loss.message.contains(field)),
+            "missing loss for {id} {field}"
+        );
+    }
+}
+
+#[test]
 fn document_string_attribute_is_preserved_outside_sldprt_namespace() {
     let mut ir = cube();
     ir.model

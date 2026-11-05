@@ -23,6 +23,9 @@ use super::{
     preconditions::DesignBindingsValidated,
 };
 
+pub(super) const BODY_ROOT_TYPE_GUID: &str = "A2EDAFD4-B122-49CC-AF09-96BE5C57A89D";
+const BODY_ROOT_BASE_GUID: &str = "5EAF2F0F-4AEE-4F20-B569-119A7BD1F36D";
+
 /// One type-table row after generated record types have been registered.
 pub(in crate::writer::generate) struct GeneratedDesignType {
     pub(super) type_guid: DesignRelaxedGuidText,
@@ -156,18 +159,19 @@ impl GeneratedDesignRegistry {
                 .values()
                 .filter_map(|entity_suffix| u32::try_from(*entity_suffix).ok()),
         );
-        let mut next_record_index = if body_map.is_empty() && pending.is_empty() {
-            0
-        } else {
-            used_record_indices
-                .last()
-                .copied()
-                .unwrap_or(0)
-                .checked_add(1)
-                .ok_or_else(|| {
-                    CodecError::InvalidInput("F3D Design record index space is full".into())
-                })?
-        };
+        let mut next_record_index =
+            if body_map.is_empty() && pending.is_empty() && native.design_body_members.is_empty() {
+                0
+            } else {
+                used_record_indices
+                    .last()
+                    .copied()
+                    .unwrap_or(0)
+                    .checked_add(1)
+                    .ok_or_else(|| {
+                        CodecError::InvalidInput("F3D Design record index space is full".into())
+                    })?
+            };
 
         let body_map = GeneratedBodyMapEntries::new(body_map)
             .map(|entries| {
@@ -194,6 +198,18 @@ impl GeneratedDesignRegistry {
             .iter()
             .map(GeneratedDesignType::from)
             .collect::<Vec<_>>();
+        if !native.design_body_members.is_empty() {
+            let record_index =
+                allocate_record_index(&mut used_record_indices, &mut next_record_index)?;
+            register_generated_type(
+                &mut types,
+                BODY_ROOT_TYPE_GUID,
+                BODY_ROOT_BASE_GUID,
+                0,
+                DESIGN_MODULE_BODY,
+                vec![u64::from(record_index)],
+            )?;
+        }
         let body_map = body_map
             .map(|(entries, record_index)| {
                 let type_index = register_generated_type(

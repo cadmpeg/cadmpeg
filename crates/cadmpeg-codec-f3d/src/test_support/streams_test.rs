@@ -2,8 +2,8 @@
 //! Synthetic Design and ACT MetaStream/BulkStream payloads.
 #![allow(clippy::unwrap_used)]
 
-use cadmpeg_core::decode::u64_from_index;
 use super::sketch_stream_test::{generated_design_bulkstream, generated_design_sketch_bulkstream};
+use cadmpeg_core::decode::u64_from_index;
 
 use crate::test_support::component_body_test::{append_body_owners, body_type, container_type};
 use crate::test_support::{
@@ -359,12 +359,12 @@ pub(super) fn generated_design_types(
                 | GeneratedDesignMetastreamVariant::Form
         ) {
         if matches!(variant, GeneratedDesignMetastreamVariant::CopyPasteBodies) {
-            &[600, 1500, 1700]
+            &[123, 600, 1500, 1700, 4645, 4646]
         } else {
-            &[600, 1500]
+            &[123, 600, 1500, 4645, 4646]
         }
     } else {
-        &[600]
+        &[123, 600, 4645, 4646]
     };
     let mut types: Vec<(&str, &str, u32, &str, &[u64])> = vec![
         (
@@ -386,7 +386,7 @@ pub(super) fn generated_design_types(
             "",
             5,
             "Dimension",
-            &[270, 271],
+            &[270, 271, 9000],
         ),
         (
             "60403D47-0C49-49B0-BDE8-1679608164A2",
