@@ -142,11 +142,11 @@ fn resolve_curve(placed: &PlacedCurve) -> Option<SolvedCurveGeometry> {
 }
 
 fn moved_point(transform: Transform, point: Point3) -> Option<Point3> {
-    transform.apply_point(point).map(|point| point.get())
+    transform.apply_point(point).map(cadmpeg_ir::features::FinitePoint3::get)
 }
 
 fn moved_direction(transform: Transform, direction: Vector3) -> Option<Vector3> {
-    transform.apply_vector(direction).map(|vector| vector.get())
+    transform.apply_vector(direction).map(cadmpeg_ir::features::FiniteVector3::get)
 }
 
 fn apply_surface_transform(

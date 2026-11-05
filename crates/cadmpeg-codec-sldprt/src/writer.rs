@@ -225,9 +225,9 @@ pub(super) fn write_semantic_at(
                     lane.native_payload.to_vec(),
                 )?;
                 let mut entities = lane.sketch_entities.clone();
-                entities.sort_by_key(|entity| entity.ordinal());
+                entities.sort_by_key(crate::records::SketchInputEntity::ordinal);
                 let mut expected_entities = expected.sketch_entities.clone();
-                expected_entities.sort_by_key(|entity| entity.ordinal());
+                expected_entities.sort_by_key(crate::records::SketchInputEntity::ordinal);
                 if !crate::resolved_features::write_prepare::sketch_entities_match(
                     &entities,
                     &expected_entities,
