@@ -2859,6 +2859,10 @@ impl<'a> F3dDecodeSession<'a> {
             }
         };
         if act.untyped_records != 0 {
+            self.untyped.extend([
+                cadmpeg_ir::document::ArenaClass::Model,
+                cadmpeg_ir::document::ArenaClass::Design,
+            ]);
             self.report
                 .losses
                 .push(F3dLossCode::ActRecordUntyped.note(format!(
