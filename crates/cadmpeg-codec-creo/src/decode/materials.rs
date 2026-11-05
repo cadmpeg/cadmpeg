@@ -421,11 +421,13 @@ fn admit_appearances(
         let Some(row) = colors.get(offset) else {
             continue;
         };
-        if !row.rgb.iter().all(|value| value.is_finite()) {
+        let [Some(r), Some(g), Some(b)] = row.rgb.map(cadmpeg_core::convert::f32_from_f64) else {
             continue;
-        }
-        let [r, g, b] = row.rgb.map(|value| value as f32);
-        let alpha = 1.0 - row.transmission as f32;
+        };
+        let Some(transmission) = cadmpeg_core::convert::f32_from_f64(row.transmission) else {
+            continue;
+        };
+        let alpha = 1.0 - transmission;
         let Some(base_color) = Color::new(r, g, b, alpha) else {
             continue;
         };
