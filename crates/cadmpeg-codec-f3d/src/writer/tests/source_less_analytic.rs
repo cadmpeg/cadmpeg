@@ -235,7 +235,7 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
                 byte_offset: 0,
                 asm_body_key_offset: 0,
                 asm_body_key: 42,
-                entity_suffix: 42,
+                entity_suffix: 84,
                 visible: false,
             },
         )
@@ -334,6 +334,10 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
     assert_eq!(round_trip.ir().model.bodies[0].visible, Some(false));
     assert_eq!(f3d_native(round_trip.ir()).body_visibilities.len(), 1);
     assert!(!f3d_native(round_trip.ir()).body_visibilities[0].visible);
+    assert_eq!(
+        f3d_native(round_trip.ir()).body_visibilities[0].entity_suffix,
+        84
+    );
     assert_eq!(
         f3d_native(round_trip.ir()).body_visibilities[0].id(),
         "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh:body-visibility#42"
