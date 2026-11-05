@@ -111,7 +111,7 @@ pub fn apply_storage(
 pub fn quantum(storage: ReducedStorage, stored: f64) -> f64 {
     match storage {
         ReducedStorage::U8Channel => 1.0 / 255.0 + f64::EPSILON,
-        ReducedStorage::F32 => f32::EPSILON as f64 * stored.abs().max(1.0) + f64::MIN_POSITIVE,
+        ReducedStorage::F32 => f64::from(f32::EPSILON) * stored.abs().max(1.0) + f64::MIN_POSITIVE,
         ReducedStorage::Decimal(places) => 0.5 / 10.0_f64.powi(places.cast_signed()) + f64::EPSILON,
         ReducedStorage::Normalized { .. } => 0.0,
     }
