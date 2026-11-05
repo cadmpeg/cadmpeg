@@ -597,6 +597,10 @@ fn network_occurrence_survives_synthesis_with_its_placement() {
             .map(|entity| entity.field("label"))
             .collect::<Vec<_>>()
     );
+    for (original, rewritten) in original.iter().zip(rewritten) {
+        assert_eq!(original.field("parameters"), rewritten.field("parameters"));
+    }
+
     assert!(!after
         .report()
         .losses
@@ -672,7 +676,7 @@ fn edited_network_definition_name_is_written_from_the_document() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
     let mut ir = decoded.ir().clone();
-    ir.model.product_definitions[0].label = Some("current network".into());
+    ir.model.product_definitions[0].label = Some("current, network".into());
     let id = ir.model.product_definitions[0].id.to_string();
     let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
     assert!(
@@ -691,7 +695,7 @@ fn edited_network_definition_name_is_written_from_the_document() {
         .unwrap();
     assert_eq!(
         after.ir().model.product_definitions[0].label.as_deref(),
-        Some("current network")
+        Some("current, network")
     );
     assert_eq!(after.ir().model.occurrences.len(), 1);
 }
