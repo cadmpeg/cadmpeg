@@ -90,18 +90,18 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
             .iter()
             .filter(|row| row.sketch == sketch.id)
             .collect::<Vec<_>>();
-        let relations = target
+        let mut relations = Vec::new();
+        let mut relation_members = Vec::new();
+        for relation in target
             .model
             .sketch_constraints
             .iter()
             .filter(|row| row.sketch == sketch.id)
-            .collect::<Vec<_>>();
-        let mut relation_members = Vec::new();
-        for relation in &relations {
+        {
             let (entity, mask) = match relation.definition.kind() {
                 SketchConstraintDefinitionInput::Horizontal { entity } => (entity, 0x40u64),
                 SketchConstraintDefinitionInput::Vertical { entity } => (entity, 0x80u64),
-                _ => break,
+                _ => continue,
             };
             if relation.name.is_some()
                 || relation.driving.is_some()
@@ -113,7 +113,7 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
                 || relation.label_position.is_some()
                 || relation.metadata.is_some()
             {
-                break;
+                continue;
             }
             let Some(member) = members.iter().position(|member| {
                 member.id() == entity
@@ -122,12 +122,10 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
                         SketchGeometryDefinition::Line { .. }
                     )
             }) else {
-                break;
+                continue;
             };
+            relations.push(relation);
             relation_members.push((member, mask));
-        }
-        if relation_members.len() != relations.len() {
-            continue;
         }
         if members.iter().any(|row| {
             row.construction
