@@ -25,7 +25,7 @@ pub(super) fn payload(
     };
     if body
         .transform
-        .is_some_and(|value| value != Default::default())
+        .is_some_and(|value| value != cadmpeg_ir::transform::Transform::default())
     {
         return Ok(None);
     }
