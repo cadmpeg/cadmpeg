@@ -20,7 +20,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use super::encode_paths::{symbol_candidates, Call, CtorKind, Function, Graph};
+use super::encode_paths::{symbol_candidates, Call, CtorKind, Function, Graph, SelfReturn};
 
 const IR_PACKAGE: &str = "cadmpeg_ir";
 
@@ -700,14 +700,11 @@ fn constructor_table(
 }
 
 /// Functions reachable from an `EncoderBackend` method through static
-/// function paths and macro invocations only (§5.2 scan exclusion).
+/// function paths, macros, and proven receiver methods (§5.2 scan exclusion).
 ///
-/// The shared call graph resolves method calls by name across the workspace:
-/// applied to exclusion, that broadcast marks 96% of the STEP crate
-/// encode-reachable (measured: 1015 of 1052 functions) and empties the scan.
-/// Static-path reachability keeps genuinely shared helpers out while an
-/// encode-path method reached only through dynamic dispatch may contribute
-/// scan evidence; any finding it causes names its construction site.
+/// The shared call graph resolves method calls by name across the workspace.
+/// Static paths and proven receivers keep shared helpers out of the scan.
+/// Unresolved method dispatch can contribute scan evidence.
 fn narrow_reachable(graph: &Graph) -> BTreeSet<usize> {
     let mut symbols: BTreeMap<Vec<String>, Vec<usize>> = BTreeMap::new();
     let mut macros: BTreeMap<&str, Vec<usize>> = BTreeMap::new();
@@ -753,6 +750,46 @@ fn narrow_reachable(graph: &Graph) -> BTreeSet<usize> {
                         for form in graph.resolved_paths(&candidate) {
                             if let Some(found) = symbols.get(&form) {
                                 for next in found {
+                                    if reachable.insert(*next) {
+                                        pending.push(*next);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                Call::SelfMethod(method) => {
+                    if let Some(mut owner) = graph.functions[at].owner.clone() {
+                        owner.push(method.clone());
+                        if let Some([next]) = symbols.get(&owner).map(Vec::as_slice) {
+                            if reachable.insert(*next) {
+                                pending.push(*next);
+                            }
+                        }
+                    }
+                }
+                Call::MethodOnConstructor {
+                    constructor,
+                    method,
+                    unwrapped,
+                } => {
+                    for candidate in symbol_candidates(constructor, &graph.functions[at]) {
+                        for form in graph.resolved_paths(&candidate) {
+                            for constructor in symbols.get(&form).into_iter().flatten() {
+                                let constructor = &graph.functions[*constructor];
+                                let expected = if *unwrapped {
+                                    SelfReturn::Wrapped
+                                } else {
+                                    SelfReturn::Direct
+                                };
+                                if constructor.returns_self != Some(expected) {
+                                    continue;
+                                }
+                                let Some(mut owner) = constructor.owner.clone() else {
+                                    continue;
+                                };
+                                owner.push(method.clone());
+                                if let Some([next]) = symbols.get(&owner).map(Vec::as_slice) {
                                     if reachable.insert(*next) {
                                         pending.push(*next);
                                     }
@@ -1195,6 +1232,73 @@ mod tests {
             !scan.variants.contains("Sense::Forward"),
             "helpers reachable from the encode path are excluded: {scan:?}"
         );
+    }
+
+    #[test]
+    fn encode_path_follows_methods_of_self_returning_constructors() {
+        let scan = scan_variants(
+            r#"
+            use crate::{Sense, Surface};
+            struct Writer;
+            struct Builder;
+            impl EncoderBackend for Writer {
+                fn plan(&self) {
+                    let builder = Builder::new()?;
+                    builder.build();
+                }
+            }
+            impl Builder {
+                fn new() -> Result<Self, ()> { Ok(Self) }
+                fn build(&self) { self.helper(); }
+                fn helper(&self) { let _ = Sense::Forward; }
+            }
+            fn decode() { let _ = Surface::Plane; }
+            "#,
+        );
+        assert!(!scan.variants.contains("Sense::Forward"), "{scan:?}");
+        assert!(scan.variants.contains("Surface::Plane"), "{scan:?}");
+    }
+
+    #[test]
+    fn wrapped_constructor_is_not_its_own_receiver_without_unwrapping() {
+        let scan = scan_variants(
+            r#"
+            use crate::Sense;
+            struct Writer;
+            struct Builder;
+            trait Build { fn build(self); }
+            impl Build for Result<Builder, ()> { fn build(self) {} }
+            impl EncoderBackend for Writer {
+                fn plan(&self) { let value = Builder::new(); value.build(); }
+            }
+            impl Builder {
+                fn new() -> Result<Self, ()> { Ok(Self) }
+                fn build(&self) { let _ = Sense::Forward; }
+            }
+            "#,
+        );
+        assert!(scan.variants.contains("Sense::Forward"), "{scan:?}");
+    }
+
+    #[test]
+    fn another_return_type_does_not_mark_the_constructor_owner_method() {
+        let scan = scan_variants(
+            r#"
+            use crate::Sense;
+            struct Writer;
+            struct Factory;
+            struct Product;
+            impl EncoderBackend for Writer {
+                fn plan(&self) { let product = Factory::new(); product.build(); }
+            }
+            impl Factory {
+                fn new() -> Product { Product }
+                fn build(&self) { let _ = Sense::Forward; }
+            }
+            impl Product { fn build(&self) {} }
+            "#,
+        );
+        assert!(scan.variants.contains("Sense::Forward"), "{scan:?}");
     }
 
     #[test]
