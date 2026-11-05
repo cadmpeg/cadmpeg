@@ -446,6 +446,11 @@ fn source_less_compact_custom_attributes_preserve_values() {
         .unwrap();
     assert_eq!(output.ir().model.attributes, decoded.ir().model.attributes);
 
+    let mut renamed = decoded.ir().clone();
+    renamed.model.attributes[1].name = "ATTRIB_CUSTOM-attrib_edited".into();
+    let (output, _) = super::source_less_analytic::synthesize_document(&renamed, None);
+    assert_eq!(output.ir().model.attributes, renamed.model.attributes);
+
     let mut edited = decoded.ir().clone();
     let timestamp = &mut edited.model.attributes[1];
     let Some(cadmpeg_ir::attributes::AttributeValue::Float(value)) = &mut timestamp.values[3]
