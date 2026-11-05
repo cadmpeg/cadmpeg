@@ -699,6 +699,29 @@ fn synthesize_with_admission(
         .iter()
         .flat_map(|entity| entity.source_targets.iter())
         .collect::<BTreeSet<_>>();
+    let mut emitted_compounds = 0;
+    for procedural in &ir.model.procedural_curves {
+        let Some(owner) = ir.model.procedural_curve_owner(&procedural.id) else {
+            continue;
+        };
+        if compound::geometry(ir, owner).is_some()
+            && graph.entities.iter().any(|entity| {
+                entity.type_code == 102
+                    && matches!(entity.status, EntityStatus::Independent)
+                    && entity
+                        .source_targets
+                        .iter()
+                        .any(|target| target == owner.as_str())
+            })
+        {
+            emitted_compounds += 1;
+            let previous = format!(
+                "IGES procedural definition {} was reduced to a solved carrier",
+                procedural.id
+            );
+            graph.losses.retain(|loss| loss.message != previous);
+        }
+    }
     let mut emitted_products = 0;
     for product in &ir.model.product_definitions {
         if !emitted.contains(&product.id.to_string()) {
@@ -835,6 +858,9 @@ fn synthesize_with_admission(
     let counts = entity_counts(&graph.entities);
     let mut coverage = SYNTHESIS_COVERAGE;
     coverage.features = feature_coverage;
+    if emitted_compounds > 0 {
+        coverage.procedural_curves = ArenaDisposition::Reported;
+    }
     if emitted_products > 0 {
         coverage.product_definitions = ArenaDisposition::Reported;
     }
@@ -1075,9 +1101,14 @@ fn synthesis_graph(
                 )));
                 continue;
             }
-            let geometry = flatten_curve(curve.geometry.solved().ok_or_else(|| {
-                CodecError::UnsupportedContent("IGES curve carrier has no solved geometry".into())
-            })?)?;
+            let geometry = match compound::geometry(ir, curve_id) {
+                Some(geometry) => geometry,
+                None => flatten_curve(curve.geometry.solved().ok_or_else(|| {
+                    CodecError::UnsupportedContent(
+                        "IGES curve carrier has no solved geometry".into(),
+                    )
+                })?)?,
+            };
             let span = edge_span(ir, edge, &geometry)?;
             let curve_index = append_curve_entity(
                 &mut entities,
@@ -8079,9 +8110,12 @@ fn append_unowned_curves(
             dependent.push((curve, status));
             continue;
         }
-        let geometry = flatten_curve(curve.geometry.solved().ok_or_else(|| {
-            CodecError::UnsupportedContent("IGES curve carrier has no solved geometry".into())
-        })?)?;
+        let geometry = match compound::geometry(ir, &curve.id) {
+            Some(geometry) => geometry,
+            None => flatten_curve(curve.geometry.solved().ok_or_else(|| {
+                CodecError::UnsupportedContent("IGES curve carrier has no solved geometry".into())
+            })?)?,
+        };
         let span = curve
             .parameter_range
             .map(|_| curve_reference_span(ir, &curve.id, &geometry))
@@ -8179,6 +8213,22 @@ fn mark_curve_descendants(
     if let Some(SolvedCurveGeometry::Composite { segments, .. }) = curve.geometry.solved() {
         for segment in segments {
             mark_curve_descendants(ir, &segment.curve, consumed, active)?;
+        }
+    }
+    if compound::geometry(ir, curve_id).is_some() {
+        if let Some(record) = curve.geometry.procedural_construction().and_then(|id| {
+            ir.model
+                .procedural_curves
+                .iter()
+                .find(|record| &record.id == id)
+        }) {
+            if let cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound(compound) =
+                record.definition()
+            {
+                for component in compound.components() {
+                    mark_curve_descendants(ir, &component.component, consumed, active)?;
+                }
+            }
         }
     }
     active.remove(curve_id);
@@ -9951,6 +10001,7 @@ fn finite(value: f64, field: &str) -> Result<FiniteReal, CodecError> {
 #[cfg(test)]
 mod tests;
 
+mod compound;
 mod neutral_products;
 mod ownership;
 mod support_records;
