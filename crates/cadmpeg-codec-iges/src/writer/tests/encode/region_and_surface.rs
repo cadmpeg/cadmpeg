@@ -425,6 +425,28 @@ fn classified_model_only_sheet_preserves_its_edge_uses() {
         .expect("generated IGES decodes");
     assert_eq!(round_trip.ir().model.faces.len(), 1);
     assert_eq!(round_trip.ir().model.coedges.len(), expected);
+
+    ir.model.bodies[0].transform = Some(
+        cadmpeg_ir::transform::Transform::affine([
+            [1.0, 0.0, 0.0, 3.0],
+            [0.0, 1.0, 0.0, 4.0],
+            [0.0, 0.0, 1.0, 5.0],
+        ])
+        .expect("rigid placement"),
+    );
+    let placed = crate::writer::synthesize(&ir, IgesVersion::V5_3).expect("placed synthesis");
+    assert_eq!(placed.counts.get("144_trimmed_surface"), Some(&1));
+    let round_trip = IgesCodec
+        .decode(&mut Cursor::new(placed.bytes), &DecodeOptions::default())
+        .expect("placed IGES decodes");
+    let entries = &round_trip.ir().native.namespace("iges").unwrap().arenas()["entities"];
+    assert!(entries.iter().any(|entry| {
+        entry.field("entity_type").and_then(|value| value.as_i64()) == Some(144)
+            && entry
+                .field("transform")
+                .and_then(|value| value.as_i64())
+                .is_some_and(|value| value > 0)
+    }));
 }
 
 #[test]
