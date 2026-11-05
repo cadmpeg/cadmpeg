@@ -4105,9 +4105,10 @@ A directed ring follows same-face successors and returns to its first side.
 Each ring uses each of its sides once. Boundary ownership, a surface carrier,
 chart, endpoint geometry, and face-surface sense are separate bindings.
 
-A native planar face can have multiple disjoint outer cycles. Each inner cycle
-lies inside one outer cycle. A planar face region has one outer boundary and
-zero or more inner boundaries. A planar face with one closed loop, and a
+A native planar face can have multiple disjoint outer cycles. An outer cycle
+can contain lines and circular arcs, including arcs whose stored interval
+exceeds a half-turn. Each inner cycle lies inside one outer cycle. A planar face
+region has one outer boundary and zero or more inner boundaries. A planar face with one closed loop, and a
 non-planar face admitted under the one-loop rule, has one outer boundary.
 
 A generated-table identifier that occurs as a `crv_array` face side binds
