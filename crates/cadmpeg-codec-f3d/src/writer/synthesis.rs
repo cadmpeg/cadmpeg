@@ -26,14 +26,17 @@ pub(super) struct Synthesized {
 }
 
 /// Author an archive from the document, reducing unsupported records locally.
-pub(super) fn write(target: &CadIr) -> Result<Synthesized, CodecError> {
+pub(super) fn write(
+    target: &CadIr,
+    limits: cadmpeg_core::decode::ResourceLimits,
+) -> Result<Synthesized, CodecError> {
     let mut prepared = target.clone();
     let mut losses = Vec::new();
     prepare::auxiliary(&mut prepared, &mut losses);
     appearance::prepare(&mut prepared, &mut losses);
     native::reconcile(&mut prepared, &mut losses)?;
     let mut bytes = Vec::new();
-    let coverage = match super::generate::write_new(&prepared, &mut bytes) {
+    let coverage = match super::generate::write_with_limits(&prepared, &mut bytes, limits) {
         Ok((coverage, residual_losses)) => {
             losses.extend(residual_losses);
             coverage
@@ -43,16 +46,16 @@ pub(super) fn write(target: &CadIr) -> Result<Synthesized, CodecError> {
             prepare::unreferenced_composite_curves(&mut prepared, &mut losses)?;
             prepare::pcurves(&mut prepared, &mut losses)?;
             bytes.clear();
-            match super::generate::write_new(&prepared, &mut bytes) {
+            match super::generate::write_with_limits(&prepared, &mut bytes, limits) {
                 Ok((coverage, residual_losses)) => {
                     losses.extend(residual_losses);
                     coverage
                 }
                 Err(error) if declines(&error) => {
-                    prepared = topology::admit_bodies(&prepared, &mut losses)?;
+                    prepared = topology::admit_bodies(&prepared, &mut losses, limits)?;
                     native::repair_keys(&mut prepared)?;
                     bytes.clear();
-                    match super::generate::write_new(&prepared, &mut bytes) {
+                    match super::generate::write_with_limits(&prepared, &mut bytes, limits) {
                         Ok((coverage, residual_losses)) => {
                             losses.extend(residual_losses);
                             coverage
@@ -64,7 +67,8 @@ pub(super) fn write(target: &CadIr) -> Result<Synthesized, CodecError> {
                             // and retry; every omission is reported.
                             native::shed_design(&mut prepared)?;
                             bytes.clear();
-                            match super::generate::write_new(&prepared, &mut bytes) {
+                            match super::generate::write_with_limits(&prepared, &mut bytes, limits)
+                            {
                                 Ok((coverage, residual_losses)) => {
                                     losses.extend(residual_losses);
                                     coverage
@@ -75,7 +79,9 @@ pub(super) fn write(target: &CadIr) -> Result<Synthesized, CodecError> {
                                     )));
                                     prepared = CadIr::empty();
                                     bytes.clear();
-                                    match super::generate::write_new(&prepared, &mut bytes) {
+                                    match super::generate::write_with_limits(
+                                        &prepared, &mut bytes, limits,
+                                    ) {
                                         Ok((coverage, residual_losses)) => {
                                             losses.extend(residual_losses);
                                             coverage
