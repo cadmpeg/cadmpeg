@@ -400,13 +400,16 @@ fn unowned_geometry(
 /// payloads name, in list order (W1). Bodies without a source payload
 /// contribute nothing. A list entry naming an absent record is dropped
 /// with a records-omitted loss, so no stale table is written.
+type PolygonSections = (Vec<String>, Vec<String>, HashMap<(String, usize), usize>);
+type PcurveGroup<'a> = Vec<(usize, [f64; 2], Sense, &'a str)>;
+
 fn polygon_sections(
     ir: &CadIr,
     bodies: &[&Body],
     faces: &HashSet<String>,
     edges: &HashSet<String>,
     losses: &mut Vec<LossNote>,
-) -> Result<(Vec<String>, Vec<String>, HashMap<(String, usize), usize>), CodecError> {
+) -> Result<PolygonSections, CodecError> {
     let Some(namespace) = ir.native.namespace("fcstd") else {
         return Ok((Vec::new(), Vec::new(), HashMap::new()));
     };
@@ -978,7 +981,7 @@ fn serialize_geometry_inner(
             }
         };
         let mut seen = std::collections::HashSet::new();
-        let mut pcurve_groups: BTreeMap<_, Vec<(usize, [f64; 2], Sense, &str)>> = BTreeMap::new();
+        let mut pcurve_groups: BTreeMap<_, PcurveGroup<'_>> = BTreeMap::new();
         for coedge in ir
             .model
             .coedges
