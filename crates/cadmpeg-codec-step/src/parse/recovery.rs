@@ -120,10 +120,7 @@ impl Parser<'_, '_, '_> {
             Err(error @ ParseError::Syntax { .. }) => {
                 self.diagnostics.truncate(diagnostic_start);
                 let input_len = self.lexer.input().len();
-                let end = match statement_end(self.lexer.input(), start, self.lexer.is_draft()) {
-                    Ok(end) => end,
-                    Err(error) => return Err(error),
-                };
+                let end = statement_end(self.lexer.input(), start, self.lexer.is_draft())?;
                 // A truncated tail without a readable name still owns a shared
                 // part home. Only the EOF cut (no bytes beyond) goes through
                 // the helper; a complete defective statement in the middle
