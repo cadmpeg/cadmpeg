@@ -577,3 +577,61 @@ fn additional_carrier_name_attributes_are_reported_by_identity() {
         == StepLossCode::SourceAttributeNotWritten.kind()
         && loss.message.contains("test:model:attribute#first")));
 }
+
+#[test]
+fn writer_names_a_wire_shell_without_writable_edges() {
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
+    ir.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Wire;
+    let shell = ir.model.shells[0].id.clone();
+    let vertex = ir.model.vertices[0].id.clone();
+    ir.model.shells[0]
+        .edit_topology(|faces, edges, vertices| {
+            faces.clear();
+            edges.clear();
+            *vertices = vec![vertex];
+        })
+        .unwrap();
+
+    let report = write_step(
+        &ir,
+        &mut Vec::new(),
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .unwrap();
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == StepLossCode::WireShellNoWritableEdges.kind()
+            && loss.message.contains(shell.as_str())
+    }));
+}
+
+#[test]
+fn a_surface_shell_in_a_mixed_body_is_not_reported_as_an_omitted_wire_shell() {
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
+    ir.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::General;
+    let surface_shell = ir.model.shells[0].id.clone();
+    let wire_shell = cadmpeg_ir::ids::ShellId::mint("test:model:shell#free-vertex").unwrap();
+    ir.model
+        .shells
+        .push(cadmpeg_ir::topology::Shell::with_free_vertex(
+            wire_shell.clone(),
+            ir.model.regions[0].id.clone(),
+            ir.model.vertices[0].id.clone(),
+        ));
+    ir.model.regions[0].shells.push(wire_shell.clone());
+    let report = write_step(
+        &ir,
+        &mut Vec::new(),
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .unwrap();
+    let losses = report
+        .losses
+        .iter()
+        .filter(|loss| loss.code == StepLossCode::WireShellNoWritableEdges.kind())
+        .collect::<Vec<_>>();
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].message.contains(wire_shell.as_str()));
+    assert!(!losses[0].message.contains(surface_shell.as_str()));
+}

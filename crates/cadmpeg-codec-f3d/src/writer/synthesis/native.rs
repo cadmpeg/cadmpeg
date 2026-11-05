@@ -8,7 +8,30 @@ use cadmpeg_ir::codec::write::{NativeDisposition, NativeDispositions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
 
-use crate::native::F3dNative;
+use crate::{loss::F3dLossCode, native::F3dNative};
+
+fn sketch_owner_matches(
+    target: &CadIr,
+    placements: &[crate::records::sketch_placement::DesignSketchPlacement],
+    entity: &cadmpeg_ir::sketches::SketchEntity,
+    owner: u32,
+    record_id: &str,
+) -> bool {
+    let Some(scope) = crate::ids::native_stream(record_id) else {
+        return false;
+    };
+    target
+        .model
+        .sketches
+        .iter()
+        .find(|sketch| sketch.id == entity.sketch)
+        .and_then(|sketch| sketch.native_ref.as_deref())
+        .and_then(|id| placements.iter().find(|placement| placement.id == id))
+        .is_some_and(|placement| {
+            placement.entity_id.suffix() == u64::from(owner)
+                && crate::ids::native_stream(&placement.id) == Some(scope)
+        })
+}
 
 const WRITTEN: &[&str] = &[
     "act_tables",
@@ -220,10 +243,7 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
     remap_sketch_tags!(&mut native.sketch_curve_identities);
     remap_sketch_tags!(&mut native.sketch_relations);
     remap_sketch_tags!(&mut native.sketch_texts);
-    // Record headers annotate the indexed slots they name, so a header whose
-    // slot a remaining type registers follows the same type-table position.
-    // A header no remaining type registers is kept as authored: hand-built
-    // content addresses slots the generated registry does not re-list.
+    // Record headers annotate indexed slots in the generated registry.
     {
         let headers = std::mem::take(&mut native.design_record_headers);
         let mut kept = Vec::with_capacity(headers.len());
@@ -245,7 +265,10 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
                         code.to_string().try_into().map_err(CodecError::Malformed)?;
                     kept.push(header);
                 }
-                None => kept.push(header),
+                None => losses.push(F3dLossCode::WriterNativeRecordsOmitted.note(format!(
+                    "Design record header {} has no registered class and is omitted",
+                    header.id
+                ))),
             }
         }
         native.design_record_headers = kept;
@@ -257,9 +280,135 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
     native
         .sketch_points
         .retain(|record| record.owner_reference.is_some());
-    native
-        .sketch_curve_identities
-        .retain(|record| record.owner_reference.is_some());
+    native.sketch_curve_identities.retain_mut(|record| {
+        let Some(owner) = record.owner_reference else {
+            return false;
+        };
+        let mut projected = target
+            .model
+            .sketch_entities
+            .iter()
+            .filter(|entity| entity.native_ref.as_deref() == Some(record.id.as_str()));
+        let Some(entity) = projected.next() else {
+            return true;
+        };
+        let was_nurbs = matches!(
+            record.geometry,
+            Some(crate::records::sketch_geometry::SketchCurveGeometry::Nurbs { .. })
+        );
+        let is_nurbs = matches!(
+            entity.geometry.definition(),
+            cadmpeg_ir::sketches::SketchGeometryDefinition::Nurbs { .. }
+        );
+        if !was_nurbs && !is_nurbs {
+            return true;
+        }
+        if projected.next().is_some()
+            || entity.geometry_ref.is_some()
+            || !entity.endpoint_refs.is_empty()
+            || !sketch_owner_matches(
+                target,
+                &original.design_sketch_placements,
+                entity,
+                owner,
+                &record.id,
+            )
+        {
+            return false;
+        }
+        let Some(authored) = super::super::generate::sketches::neutral_nurbs(entity) else {
+            return false;
+        };
+        let Some(crate::records::sketch_geometry::SketchCurveGeometry::Nurbs {
+            carrier_reference: None,
+            subtype_class_tag,
+            geometry,
+            ..
+        }) = &mut record.geometry
+        else {
+            return false;
+        };
+        let Some(subtype) = native
+            .design_types
+            .iter()
+            .position(|kind| {
+                kind.type_guid
+                    .as_str()
+                    .eq_ignore_ascii_case("EE518F9E-9CC3-4424-9CAB-2B92426E5312")
+                    && kind.version == 4
+                    && kind.module == "Geometry"
+            })
+            .and_then(|ordinal| ordinal.checked_add(256))
+            .filter(|tag| *tag <= 999)
+        else {
+            return false;
+        };
+        let Ok(tag) = subtype.to_string().try_into() else {
+            return false;
+        };
+        let Ok(updated) = crate::records::sketch_geometry::SketchNurbsGeometry::from_parts(
+            authored.degree(),
+            geometry.fit_tolerance().get(),
+            8,
+            authored.knots_copy(),
+            authored.poles().clone(),
+        ) else {
+            return false;
+        };
+        *subtype_class_tag = tag;
+        *geometry = updated;
+        true
+    });
+    native.sketch_texts.retain_mut(|text| {
+        let mut projected = target
+            .model
+            .sketch_entities
+            .iter()
+            .filter(|entity| entity.native_ref.as_deref() == Some(text.id.as_str()));
+        if let Some(entity) = projected.next() {
+            let owner_matches = sketch_owner_matches(
+                target,
+                &original.design_sketch_placements,
+                entity,
+                text.owner_reference,
+                &text.id,
+            );
+            if projected.next().is_some()
+                || entity.geometry_ref.is_some()
+                || !entity.endpoint_refs.is_empty()
+                || !owner_matches
+            {
+                return false;
+            }
+            let Some(authored) = super::super::generate::sketches::neutral_text(
+                entity,
+                text.record_index,
+                text.owner_reference,
+            ) else {
+                return false;
+            };
+            text.text = authored.text;
+            text.font_family = authored.font_family;
+            text.font_weight = authored.font_weight;
+            text.height = authored.height;
+            text.layout = authored.layout;
+        }
+        super::super::generate::records::sketch_text_supported(text)
+            && text
+                .class_tag
+                .dynamic_ordinal()
+                .and_then(|ordinal| native.design_types.get(ordinal))
+                .is_some_and(|kind| {
+                    kind.type_guid
+                        .as_str()
+                        .eq_ignore_ascii_case("E0618268-3A06-450E-9E94-7CF4C2E66802")
+                        && kind.version == text.class_version
+                        && kind
+                            .entities
+                            .values()
+                            .any(|id| *id == u64::from(text.record_index))
+                })
+    });
     // W1: a sketch-curve link the generator cannot consume has no writable
     // carrier. Only a coedge-owned link resolving to a carried coedge is
     // regenerated; anything else is dropped here and reported through the
@@ -327,15 +476,26 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
         )
         .filter(|index| !retained_sketch_records.contains(index))
         .collect::<std::collections::BTreeSet<_>>();
+    for header in &mut native.design_entity_headers {
+        if let Some(references) = header.sketch_references_mut() {
+            references
+                .references
+                .retain(|reference| !omitted_sketch_records.contains(&reference.value));
+            if references
+                .record_reference
+                .is_some_and(|index| omitted_sketch_records.contains(&index))
+            {
+                references.record_reference = None;
+                references.record_reference_offset = None;
+            }
+        }
+    }
     native.design_entity_headers.retain(|header| {
         header.member_values().next().is_none()
             && !original
                 .design_material_assignments
                 .iter()
                 .any(|assignment| assignment.entity_id == header.entity_id)
-            && !header
-                .reference_values()
-                .any(|index| omitted_sketch_records.contains(index))
     });
     let omitted_header_entities = original
         .design_entity_headers

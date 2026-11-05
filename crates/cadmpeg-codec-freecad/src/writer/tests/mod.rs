@@ -6,5 +6,7 @@ pub(crate) mod targets;
 
 mod coverage;
 mod one_fact;
+mod polygon;
+mod polygon_pair;
 mod robustness;
 mod synthesis;
