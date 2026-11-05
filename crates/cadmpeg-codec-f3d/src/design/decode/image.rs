@@ -63,6 +63,7 @@ pub(super) type ImageRead<'s, 'r> = dyn Fn(std::ops::Range<usize>) -> Option<&'s
 /// Decode image records of scopes in their owning streams, ordered by native
 /// identity: `locate` names each record, and `parse` reads its grammar
 /// through the read it is given.
+#[cfg(test)]
 pub(super) fn decode_scoped_image_records<'s, T>(
     scan: &ContainerScan<'s>,
     scopes: &[crate::records::feature::scope::DesignParameterScope],
