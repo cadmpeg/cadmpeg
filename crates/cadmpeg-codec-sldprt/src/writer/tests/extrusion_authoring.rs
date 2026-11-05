@@ -65,3 +65,144 @@ fn source_less_extrusion_keeps_its_unresolved_profile() {
         })
     )));
 }
+
+#[test]
+fn source_less_extrusion_keeps_its_unresolved_operation() {
+    let mut ir = source_less_extrusion();
+    ir.model.features[0].evaluation.edit(|definition, _| {
+        let FeatureDefinition::Operation(FeatureOperation::Extrude { op, .. }) = definition else {
+            panic!("extrusion");
+        };
+        *op = BooleanOp::Unresolved;
+    });
+    ir.model.finalize();
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(!plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("retains its solved result")));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(output.ir().model.features.iter().any(|feature| matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
+            op: BooleanOp::Unresolved,
+            ..
+        })
+    )));
+}
+
+#[test]
+fn source_less_extrusion_keeps_its_unresolved_extent() {
+    use cadmpeg_ir::features::{ExtrudeExtent, ExtrudeSide, LinearTermination};
+    let mut ir = source_less_extrusion();
+    ir.model.parameters.clear();
+    ir.model.features[0].source_content = Default::default();
+    ir.model.features[0].evaluation.edit(|definition, _| {
+        let FeatureDefinition::Operation(FeatureOperation::Extrude { extent, .. }) = definition
+        else {
+            panic!("extrusion");
+        };
+        *extent = ExtrudeExtent::OneSided {
+            side: ExtrudeSide {
+                termination: LinearTermination::Unresolved {},
+                draft: None,
+            },
+        };
+    });
+    ir.model.finalize();
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(!plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("retains its solved result")));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(output.ir().model.features.iter().any(|feature| matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
+            extent: ExtrudeExtent::OneSided {
+                side: ExtrudeSide {
+                    termination: LinearTermination::Unresolved {},
+                    ..
+                }
+            },
+            ..
+        })
+    )));
+}
+
+#[test]
+fn edited_extrusion_can_clear_its_operation() {
+    for original in [BooleanOp::Join, BooleanOp::Cut] {
+        let mut source = source_less_extrusion();
+        source.model.features[0].evaluation.edit(|definition, _| {
+            let FeatureDefinition::Operation(FeatureOperation::Extrude { op, .. }) = definition
+            else {
+                panic!("extrusion")
+            };
+            *op = original;
+        });
+        let plan = SldprtCodec
+            .plan(EncodeInput::new(&source, None), TargetRequest::Inherit)
+            .unwrap();
+        let mut bytes = Vec::new();
+        plan.write_to(&mut bytes).unwrap();
+        let decoded = SldprtCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        let mut ir = decoded.ir().clone();
+        ir.model
+            .features
+            .iter_mut()
+            .find(|feature| feature.name.as_deref() == Some("Boss"))
+            .unwrap()
+            .evaluation
+            .edit(|definition, _| {
+                let FeatureDefinition::Operation(FeatureOperation::Extrude { op, .. }) = definition
+                else {
+                    panic!("extrusion")
+                };
+                *op = BooleanOp::Unresolved;
+            });
+        for fidelity in [None, Some(decoded.source_fidelity())] {
+            let plan = SldprtCodec
+                .plan(EncodeInput::new(&ir, fidelity), TargetRequest::Inherit)
+                .unwrap();
+            assert!(!plan
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.message.contains("retains its solved result")));
+            let mut bytes = Vec::new();
+            plan.write_to(&mut bytes).unwrap();
+            let output = SldprtCodec
+                .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+                .unwrap();
+            assert!(
+                output.ir().model.features.iter().any(|feature| matches!(
+                    feature.evaluation.definition(),
+                    FeatureDefinition::Operation(FeatureOperation::Extrude {
+                        op: BooleanOp::Unresolved,
+                        ..
+                    })
+                )),
+                "initial {original:?}, fidelity {}, features {:?}",
+                fidelity.is_some(),
+                output.ir().model.features
+            );
+        }
+    }
+}

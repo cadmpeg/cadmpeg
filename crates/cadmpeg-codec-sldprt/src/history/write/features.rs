@@ -560,6 +560,20 @@ fn synchronize_features(
             .iter_mut()
             .flat_map(|history| &mut history.features)
             .find(|candidate| record_ids.get(&feature.id) == Some(&candidate.id));
+        if patch_input_names
+            && existing
+                .as_deref()
+                .and_then(|record| record.input_class.as_deref())
+                == Some("moCut_c")
+            && matches!(feature.evaluation.definition(),
+                FeatureDefinition::Operation(FeatureOperation::Extrude { op, .. })
+                    if *op != cadmpeg_ir::features::BooleanOp::Cut)
+        {
+            return Err(crate::writer::write_error::WriteError::Decline(format!(
+                "feature {} changes the native cut class",
+                feature.id
+            )));
+        }
         let suppressed = feature.suppressed.ok_or_else(|| {
             CodecError::UnsupportedContent(format!(
                 "SLDPRT feature {} has unresolved suppression",
