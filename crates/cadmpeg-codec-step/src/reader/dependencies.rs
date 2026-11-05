@@ -216,7 +216,7 @@ pub(super) fn decode(
                 )
                 .map_err(CodecError::malformed)?,
             );
-            notes.insert(["external source ", source, " item ", &item].join(""));
+            notes.insert(["external source ", source, " item ", item].join(""));
             typed.insert(id);
             typed.insert(*source_id);
         }

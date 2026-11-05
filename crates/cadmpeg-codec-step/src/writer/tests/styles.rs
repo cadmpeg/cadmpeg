@@ -210,7 +210,7 @@ fn body_appearance_keeps_its_owner_when_faces_inherit_its_color() {
         schema: None,
         category: None,
         base_color: Some(color),
-        properties: Default::default(),
+        properties: std::collections::BTreeMap::default(),
         textures: Vec::new(),
     });
     let binding = "test:model:appearance-binding#body";
@@ -222,7 +222,7 @@ fn body_appearance_keeps_its_owner_when_faces_inherit_its_color() {
         source_entity_id: None,
         object_type: None,
         visible: None,
-        channels: Default::default(),
+        channels: std::collections::BTreeMap::default(),
     });
     let mut bytes = Vec::new();
     let report = write_step(
@@ -286,7 +286,7 @@ fn unbound_appearance_does_not_style_an_unrelated_carrier() {
         schema: None,
         category: None,
         base_color: Some(Color::new(0.125, 0.25, 0.5, 0.75).expect("color")),
-        properties: Default::default(),
+        properties: std::collections::BTreeMap::default(),
         textures: Vec::new(),
     });
     let mut bytes = Vec::new();

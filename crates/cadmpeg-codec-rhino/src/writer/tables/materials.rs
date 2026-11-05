@@ -452,10 +452,8 @@ fn read_texture(value: &Value) -> Option<ParsedTexture> {
 fn texture_minor(texture: &ParsedTexture) -> i32 {
     if texture.treat_as_linear.is_some() {
         2
-    } else if texture.file_reference.is_some() {
-        1
     } else {
-        0
+        i32::from(texture.file_reference.is_some())
     }
 }
 

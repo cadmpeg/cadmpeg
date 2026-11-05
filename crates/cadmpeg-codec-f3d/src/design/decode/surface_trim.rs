@@ -146,7 +146,7 @@ fn exact_surface_trim_operation(
     let mut cell_record_indices = HashSet::new();
 
     let mut cell_ordinals = HashSet::new();
-    let parsed = (|| {
+    (|| {
         for ordinal in 0..cell_count_usize {
             let entry_start = entries_start.checked_add(ordinal.checked_mul(19)?)?;
             let cell_record_index = marked_record_reference(bytes, entry_start)?;
@@ -195,8 +195,7 @@ fn exact_surface_trim_operation(
             },
         )
         .ok()
-    })();
-    parsed
+    })()
 }
 
 /// Decode every exact `SurfaceTrim` BRep-cell carrier into its own native arena.

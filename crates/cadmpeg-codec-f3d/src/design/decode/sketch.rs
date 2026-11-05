@@ -403,7 +403,7 @@ fn validate_sketch_visibility_collections(
     )>,
 ) -> Result<Option<std::collections::HashSet<u64>>, CodecError> {
     if out.is_empty() && failed.is_empty() {
-        return Ok(Some(Default::default()));
+        return Ok(Some(std::collections::HashSet::default()));
     }
     let visibilities = out
         .iter()
@@ -512,7 +512,7 @@ fn validate_sketch_visibility_collections(
                         .as_ref()
                         .and_then(|frames| frames.get(entity))
                         .copied()
-                        .ok_or_else(|| error())?;
+                        .ok_or_else(&error)?;
                     sketch_record_part(ctx, output, *source, stream, frame, || {
                         Err::<(), CodecError>(error())
                     })?;

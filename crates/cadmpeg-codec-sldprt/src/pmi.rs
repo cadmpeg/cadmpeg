@@ -860,10 +860,8 @@ fn collect_dimensions(
                 let mut part_losses = give_up_pmi_record(
                     ctx,
                     cell_extent(&image, payload),
-                    stream,
-                    parent,
-                    &normalized,
-                    &message,
+                    (stream, parent),
+                    (&normalized, &message),
                     output.stubs,
                     &mut output.untyped_sections,
                     annotations,
@@ -884,7 +882,7 @@ fn collect_dimensions(
     Ok(())
 }
 
-/// Parse one UnQLite cell value as its PMI record.
+/// Parse one `UnQLite` cell value as its PMI record.
 ///
 /// The value holds exactly one record at its start. The work budget scales
 /// with the cell value, not the enclosing section.
@@ -908,12 +906,12 @@ fn parse_cell_record(
     extract_dimension(ctx, value, image.key.len(), guid, parent, &work, false)
 }
 
-/// The source extent of one UnQLite cell value for a part give-up.
+/// The source extent of one `UnQLite` cell value for a part give-up.
 ///
 /// A value inside one database piece gives up exactly its bytes. An overflow
 /// value spans pages without one source extent; its first piece stands in
 /// for the cell while the enclosing section record keeps the remaining bytes.
-fn cell_extent<'a, 'b>(image: &'b database::read::MapImage<'a>, fallback: View<'b>) -> View<'b> {
+fn cell_extent<'b>(image: &'b database::read::MapImage<'_>, fallback: View<'b>) -> View<'b> {
     image.value_extent().unwrap_or(fallback)
 }
 
@@ -944,14 +942,14 @@ fn dropped_pmi_record_ids(guid: &str) -> [String; 7] {
 fn give_up_pmi_record(
     ctx: &DecodeContext<'_>,
     extent: View<'_>,
-    stream: &cadmpeg_ir::StreamName,
-    parent: &str,
-    guid: &str,
-    message: &str,
+    location: (&cadmpeg_ir::StreamName, &str),
+    failure: (&str, &str),
     stubs: &mut Vec<UnknownRecord>,
     untyped: &mut Option<&mut std::collections::BTreeSet<String>>,
     annotations: &mut Annotations,
 ) -> Result<Vec<LossNote>, CodecError> {
+    let (stream, parent) = location;
+    let (guid, message) = failure;
     let mut part = PartOutput::new(CodecFormat::Sldprt, ctx);
     let spec = PartSpec::new("pmi_record")
         .in_stream(stream.clone())
@@ -1082,8 +1080,9 @@ fn collect_dimension_maps(
                     .ok_or_else(|| CodecError::malformed("PMI map part precedes its section"))?;
                 let end = candidates
                     .get(index)
-                    .map(|(_, next)| base.checked_add(next.checked_sub(36)?))
-                    .unwrap_or_else(|| base.checked_add(payload.len()))
+                    .map_or_else(|| base.checked_add(payload.len()), |(_, next)| {
+                        base.checked_add(next.checked_sub(36)?)
+                    })
                     .ok_or_else(|| CodecError::malformed("PMI map part escapes its section"))?;
                 let Some(extent) = source.child(guid_start, end) else {
                     return Err(CodecError::malformed("PMI map part escapes its section"));
@@ -1091,10 +1090,8 @@ fn collect_dimension_maps(
                 let mut part_losses = give_up_pmi_record(
                     ctx,
                     extent,
-                    stream,
-                    parent,
-                    &normalized,
-                    &message,
+                    (stream, parent),
+                    (&normalized, &message),
                     stubs,
                     &mut untyped_sections,
                     annotations,

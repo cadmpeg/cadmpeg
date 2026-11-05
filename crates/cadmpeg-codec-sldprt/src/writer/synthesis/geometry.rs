@@ -35,17 +35,14 @@ pub(super) fn convert_polylines(ir: &mut CadIr, losses: &mut Vec<LossNote>) {
             }
             _ => return None,
         };
-        let Some(mut samples) = (0..polyline.point_count())
+        let mut samples = (0..polyline.point_count())
             .map(|index| {
                 Some((
                     polyline.parameter_at(index)?.get(),
                     polyline.point_at(index)?,
                 ))
             })
-            .collect::<Option<Vec<_>>>()
-        else {
-            return None;
-        };
+            .collect::<Option<Vec<_>>>()?;
         if samples.len() < 2 {
             return None;
         }
@@ -142,11 +139,11 @@ fn resolve_curve(placed: &PlacedCurve) -> Option<SolvedCurveGeometry> {
 }
 
 fn moved_point(transform: Transform, point: Point3) -> Option<Point3> {
-    transform.apply_point(point).map(|point| point.get())
+    transform.apply_point(point).map(cadmpeg_ir::features::FinitePoint3::get)
 }
 
 fn moved_direction(transform: Transform, direction: Vector3) -> Option<Vector3> {
-    transform.apply_vector(direction).map(|vector| vector.get())
+    transform.apply_vector(direction).map(cadmpeg_ir::features::FiniteVector3::get)
 }
 
 fn apply_surface_transform(
@@ -578,10 +575,8 @@ pub(super) fn flatten_composite_curves(
         let mut touched = edges;
         touched.extend(coedges);
         if !touched.is_empty() {
-            message.push_str(&format!(
-                "; edges and coedges now carried by the leaf: {}",
-                touched.join(", ")
-            ));
+            message.push_str("; edges and coedges now carried by the leaf: ");
+            message.push_str(&touched.join(", "));
         }
         losses.push(SldprtLossCode::WriterEntityOmitted.note(message));
     }

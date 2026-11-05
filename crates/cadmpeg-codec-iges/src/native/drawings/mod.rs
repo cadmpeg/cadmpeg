@@ -82,7 +82,7 @@ pub(super) fn project(
         .map(|sequence| (*sequence, true))
         .chain(ordered_views.keys().map(|sequence| (*sequence, false)))
         .collect();
-    ordered.sort();
+    ordered.sort_unstable();
     let mut order = 0_u32;
     for (sequence, is_page) in ordered {
         let id = ids::drawing(&Stem::directory(sequence));
