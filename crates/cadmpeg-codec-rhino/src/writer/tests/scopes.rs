@@ -283,6 +283,102 @@ fn bounded_circular_wire_keeps_its_edge_and_exact_arc() {
 }
 
 #[test]
+fn body_with_uncarried_edges_retains_its_vertices() {
+    let mut ir = sheet();
+    for edge in &mut ir.model.edges {
+        edge.set_curve(None).unwrap();
+    }
+    ir.model.curves.clear();
+    let (payload, _) = super::super::wire::vertex_body(&ir, crate::RhinoArchiveVersion::V8)
+        .expect("vertex Brep serialization")
+        .expect("held vertices have a native carrier");
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let parsed = crate::brep::parse(
+        &ctx,
+        &payload.body,
+        0..payload.body.len(),
+        crate::chunks::ArchiveVersion::V8,
+        Some(super::super::OPENNURBS_WRITER_VERSION),
+        &[],
+    )
+    .expect("native Brep grammar");
+    let crate::brep::BrepParse::Valid(brep) = parsed else {
+        panic!("vertex Brep topology must be valid");
+    };
+    assert_eq!(brep.raw().vertices.len(), ir.model.vertices.len());
+    for (native, vertex) in brep.raw().vertices.iter().zip(&ir.model.vertices) {
+        let point = ir
+            .model
+            .points
+            .iter()
+            .find(|point| point.id == vertex.point)
+            .unwrap();
+        let position = point.position().get();
+        assert_eq!(native.point.get(), [position.x, position.y, position.z]);
+    }
+    assert!(brep.raw().edges.is_empty());
+    assert!(brep.raw().faces.is_empty());
+    let (decoded, losses) = roundtrip(&ir);
+    for point in &ir.model.points {
+        assert!(decoded
+            .model
+            .points
+            .iter()
+            .any(|output| output.position() == point.position()));
+    }
+    let reduction = losses
+        .iter()
+        .find(|loss| loss.code == RhinoLossCode::WriterBodyReduced.kind())
+        .expect("the partial body names its omitted records");
+    assert!(reduction.message.contains(ir.model.bodies[0].id.as_str()));
+    for id in ir
+        .model
+        .edges
+        .iter()
+        .map(|edge| edge.id.as_str())
+        .chain(ir.model.faces.iter().map(|face| face.id.as_str()))
+    {
+        assert!(reduction.message.contains(id), "missing loss for {id}");
+    }
+}
+
+#[test]
+fn vertex_only_body_preserves_point_appearance() {
+    let source = RhinoCodec
+        .decode(
+            &mut Cursor::new(include_bytes!(
+                "../../../tests/golden/fixtures/generated_point.3dm"
+            )),
+            &DecodeOptions::default(),
+        )
+        .expect("decode point appearance");
+    let mut ir = sheet();
+    for edge in &mut ir.model.edges {
+        edge.set_curve(None).unwrap();
+    }
+    ir.model.curves.clear();
+    let mut appearance = source.ir().model.appearances[0].clone();
+    appearance.native_ref = None;
+    let blue = cadmpeg_ir::topology::Color::new(0.0, 0.0, 1.0, 1.0).unwrap();
+    appearance.base_color = Some(blue);
+    let mut binding = source.ir().model.appearance_bindings[0].clone();
+    binding.native_ref = None;
+    binding.target = cadmpeg_ir::appearance::AppearanceTarget::Point(ir.model.points[0].id.clone());
+    let position = ir.model.points[0].position();
+    ir.model.appearances.push(appearance);
+    ir.model.appearance_bindings.push(binding);
+    let (decoded, _) = roundtrip(&ir);
+    let point = decoded
+        .model
+        .points
+        .iter()
+        .find(|point| point.position() == position)
+        .expect("standalone point survives");
+    let target = cadmpeg_ir::appearance::AppearanceTarget::Point(point.id.clone());
+    assert_eq!(decoded.effective_display_color(&target), Some(blue));
+}
+
+#[test]
 fn loose_edge_uses_its_appearance_before_the_body_color() {
     let source = RhinoCodec
         .decode(
