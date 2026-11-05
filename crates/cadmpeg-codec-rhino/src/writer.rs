@@ -640,7 +640,7 @@ impl From<CodecError> for WriteError {
 
 impl From<cadmpeg_core::decode::ResourceLimit> for WriteError {
     fn from(limit: cadmpeg_core::decode::ResourceLimit) -> Self {
-        Self::Fail(limit.into())
+        Self::Encode(limit.into())
     }
 }
 
