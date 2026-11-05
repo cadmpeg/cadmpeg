@@ -186,6 +186,42 @@ fn missing_units_owner_drops_the_record_with_its_identity() {
 }
 
 #[test]
+fn native_dispositions_distinguish_emitted_and_unwritable_level_records() {
+    use cadmpeg_ir::codec::write::NativeDisposition;
+
+    let mut ir = CadIr::empty();
+    let emitted = "iges:presentation:definition-levels#D1";
+    let omitted = "iges:presentation:definition-levels#D3";
+    install(
+        &mut ir,
+        "definition_levels",
+        emitted,
+        &json!({"levels": [1, 2]}),
+    );
+    install(
+        &mut ir,
+        "definition_levels",
+        omitted,
+        &json!({"levels": "invalid"}),
+    );
+    let export = append(&ir, &mut Vec::new(), crate::IgesVersion::V5_3);
+    let dispositions = crate::writer::synthesized_native_dispositions(
+        &ir,
+        &export.losses,
+        &export.regenerated,
+        &BTreeSet::new(),
+    );
+    assert_eq!(
+        dispositions.record_disposition("iges", "definition_levels", emitted),
+        NativeDisposition::Regenerated
+    );
+    assert_eq!(
+        dispositions.record_disposition("iges", "definition_levels", omitted),
+        NativeDisposition::Dropped
+    );
+}
+
+#[test]
 fn reemitted_node_writes_coordinates_and_subscript() {
     let mut ir = CadIr::empty();
     let id = "iges:fem:node#D11";
