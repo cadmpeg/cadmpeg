@@ -709,6 +709,7 @@ mod tests {
                 "parameter.graph-open",
                 "parameter.expression-bounded",
                 "parameter.expression-native",
+                "parameter.unit-layout-assumed",
                 "parameter.scope-unresolved",
                 "sketch.graph-open",
                 "rse.stream-unpaired",
