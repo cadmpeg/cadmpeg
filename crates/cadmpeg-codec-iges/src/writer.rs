@@ -58,6 +58,7 @@ const WRITER_ENDPOINT_RELATIVE_TOLERANCE: f64 = EPS_WRITE_POSITION;
 enum EntityStatus {
     Independent,
     Definition,
+    LogicalPositional,
     PhysicallyDependent,
     LogicallyDependent,
     BothDependent,
@@ -82,6 +83,7 @@ impl EntityStatus {
         match self {
             Self::Independent => "00000000",
             Self::Definition => "00000200",
+            Self::LogicalPositional => "00000400",
             Self::PhysicallyDependent => "00010000",
             Self::LogicallyDependent => "00020000",
             Self::BothDependent => "00030000",
@@ -696,6 +698,86 @@ fn synthesize_with_admission(
         .iter()
         .flat_map(|entity| entity.source_targets.iter())
         .collect::<BTreeSet<_>>();
+    let mut emitted_products = 0;
+    for product in &ir.model.product_definitions {
+        if !emitted.contains(&product.id.to_string()) {
+            continue;
+        }
+        emitted_products += 1;
+        let previous = format!(
+            "IGES omits unsupported product_definitions record {}",
+            product.id
+        );
+        graph.losses.retain(|loss| loss.message != previous);
+        let mut omitted = Vec::new();
+        if product.kind != cadmpeg_ir::products::ProductDefinitionKind::Part {
+            omitted.push("product kind");
+        }
+        if product.source_name.is_some() {
+            omitted.push("source name");
+        }
+        if product.description.is_some() {
+            omitted.push("description");
+        }
+        if product.part_number.is_some() {
+            omitted.push("part number");
+        }
+        if !product.bom_properties.is_empty() {
+            omitted.push("BOM properties");
+        }
+        if !product.bodies.is_empty() {
+            omitted.push("body associations");
+        }
+        if !product.sketches.is_empty() {
+            omitted.push("sketch associations");
+        }
+        if !omitted.is_empty() {
+            graph
+                .losses
+                .push(IgesLossCode::WriterArenaOmitted.note(format!(
+                    "IGES product definition {} does not preserve {}",
+                    product.id,
+                    omitted.join(", ")
+                )));
+        }
+    }
+    let mut emitted_occurrences = 0;
+    for occurrence in &ir.model.occurrences {
+        if !emitted.contains(&occurrence.id.to_string()) {
+            continue;
+        }
+        emitted_occurrences += 1;
+        let previous = format!(
+            "IGES omits unsupported occurrences record {}",
+            occurrence.id
+        );
+        graph.losses.retain(|loss| loss.message != previous);
+        let mut omitted = Vec::new();
+        if occurrence.transform.is_none() {
+            omitted.push("unspecified placement");
+        }
+        if occurrence.name.is_some() {
+            omitted.push("name");
+        }
+        if occurrence.visible.is_some() {
+            omitted.push("visibility");
+        }
+        if occurrence.linked_prototype.is_some() {
+            omitted.push("linked prototype placement");
+        }
+        if occurrence.link.is_some() {
+            omitted.push("link state");
+        }
+        if !omitted.is_empty() {
+            graph
+                .losses
+                .push(IgesLossCode::WriterArenaOmitted.note(format!(
+                    "IGES occurrence {} does not preserve {}",
+                    occurrence.id,
+                    omitted.join(", ")
+                )));
+        }
+    }
     let mut flattened = BTreeSet::new();
     for curve in &ir.model.curves {
         if !emitted.contains(&curve.id.to_string()) {
@@ -752,6 +834,12 @@ fn synthesize_with_admission(
     let counts = entity_counts(&graph.entities);
     let mut coverage = SYNTHESIS_COVERAGE;
     coverage.features = feature_coverage;
+    if emitted_products > 0 {
+        coverage.product_definitions = ArenaDisposition::Reported;
+    }
+    if emitted_occurrences > 0 {
+        coverage.occurrences = ArenaDisposition::Reported;
+    }
     coverage.presentation_layers = layer_coverage;
     coverage.attributes = if attribute_export.preserved.len() == ir.model.attributes.len() {
         ArenaDisposition::Written
