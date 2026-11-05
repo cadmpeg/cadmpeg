@@ -444,12 +444,6 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 )));
             }
-            if existing.is_none() && diameter.is_none() {
-                return Err(CodecError::UnsupportedContent(format!(
-                    "SLDPRT feature {} has an unresolved hole diameter",
-                    feature.id
-                )));
-            }
             let mut parameters = self.base_parameters();
             if let Some(diameter) = diameter {
                 parameters.insert(
@@ -699,10 +693,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     }
                 }
                 None => {
-                    return Err(CodecError::UnsupportedContent(format!(
-                        "SLDPRT feature {} has unresolved hole termination",
-                        feature.id
-                    )))
+                    properties.remove("EndCondition");
                 }
             }
             NeutralFeatureEncoding {
