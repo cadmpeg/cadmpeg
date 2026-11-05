@@ -237,12 +237,14 @@ fn report_reductions(coverage: &mut ArenaDispositions, losses: &[LossNote]) {
     }
     if has(&[
         StepLossCode::PcurveCarrierUnwritable,
+        StepLossCode::PcurveAssociationLimit,
         StepLossCode::CoedgePcurveNativeMetadata,
     ]) {
         coverage.pcurves = Reported;
     }
     if has(&[
         StepLossCode::PcurveCarrierUnwritable,
+        StepLossCode::PcurveAssociationLimit,
         StepLossCode::CoedgePcurveNoGeometry,
         StepLossCode::CoedgePcurveNativeMetadata,
         StepLossCode::PcurveUseNativeMetadata,
