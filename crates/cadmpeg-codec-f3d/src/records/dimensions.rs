@@ -690,6 +690,7 @@ impl DesignDimensionAnnotationFrame {
             return Err("an absent metadata block carries no EntityGenesis entry".into());
         }
         if draft.entity_genesis.is_none()
+            && !draft.metadata_absent
             && !(draft.operands.len() == 3
                 && draft.operands[0].geometry_record_index.is_none()
                 && draft.operands[1..]

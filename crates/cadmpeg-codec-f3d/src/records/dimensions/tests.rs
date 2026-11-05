@@ -346,6 +346,34 @@ fn annotation_frame_absent_metadata_validates_wire_offsets() {
 }
 
 #[test]
+fn annotation_frame_absent_metadata_admits_any_nonempty_operand_shape() {
+    let mut input = draft(100);
+    input.entity_genesis = None;
+    input.metadata_absent = true;
+    input.annotation_byte_offset = 185;
+    input.governing_owner_reference_offset = 188;
+    for (ordinal, member) in input.return_members.iter_mut().enumerate() {
+        member.offset = 203 + u64_from_index(ordinal) * 11;
+    }
+    assert_eq!(input.operands.len(), 4);
+    assert!(input
+        .operands
+        .iter()
+        .skip(1)
+        .all(|operand| operand.geometry_record_index.is_some()));
+    let frame = Frame::try_new(input.clone()).unwrap();
+    assert_eq!(frame.into_draft(), input);
+    let mut empty = input;
+    empty.metadata_absent = false;
+    empty.annotation_byte_offset += 4;
+    empty.governing_owner_reference_offset += 4;
+    for member in &mut empty.return_members {
+        member.offset += 4;
+    }
+    assert!(Frame::try_new(empty).is_err());
+}
+
+#[test]
 fn annotation_frame_empty_metadata_validates_wire_offsets_and_operand_shape() {
     let mut input = draft(100);
     input.operands.pop();
