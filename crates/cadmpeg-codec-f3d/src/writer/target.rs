@@ -191,7 +191,7 @@ fn synthesized_body(
         coverage,
         losses: synthesis_losses,
         native_dispositions,
-    } = super::synthesis::write(input.ir)?;
+    } = super::synthesis::write(input.ir, input.limits)?;
     let synthesis_cause = match &cause {
         SynthesisCause::PatchDeclined { reason } => {
             Some(cadmpeg_ir::codec::write::SynthesisCause::PatchDeclined {

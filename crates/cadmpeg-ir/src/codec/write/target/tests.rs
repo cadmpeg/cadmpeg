@@ -2,10 +2,10 @@
 use super::resolve_write_request;
 use super::TargetRequest;
 use crate::codec::write::test_support::CATALOG_WRITE_TARGETS;
+use crate::codec::write::EncodeError;
 use crate::CadIr;
 use cadmpeg_core::dialect::{DialectId, DialectLayers, DialectMatch};
 use cadmpeg_core::target::TargetCatalog;
-use crate::codec::write::EncodeError;
 use std::collections::BTreeMap;
 
 #[test]
@@ -144,16 +144,16 @@ fn write_request_inherit_preserves_a_same_format_catalog_source() {
 }
 
 #[test]
-fn write_request_inherit_preserves_a_same_format_off_catalog_source() {
+fn write_request_inherit_defaults_a_same_format_off_catalog_source() {
     let ir = catalog_write_ir(Some(("test", Some("test:future"))));
     let resolved =
         resolve_write_request(&ir, TargetRequest::Inherit, CATALOG_WRITE_CATALOG).unwrap();
-    assert_eq!(resolved.entry(), None);
-    assert_eq!(resolved.target_id().as_str(), "test:future");
-    assert!(resolved.preserves_source());
+    assert_eq!(resolved.entry().unwrap().id.as_str(), "test:new");
+    assert_eq!(resolved.target_id().as_str(), "test:new");
+    assert!(!resolved.preserves_source());
     assert!(resolved.has_same_format_source());
-    assert!(resolved.source_preservation_eligible());
-    assert_eq!(resolved.displaced_source(), None);
+    assert!(!resolved.source_preservation_eligible());
+    assert_eq!(resolved.displaced_source().unwrap().as_str(), "test:future");
 }
 
 #[test]
