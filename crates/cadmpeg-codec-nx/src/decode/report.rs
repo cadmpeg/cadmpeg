@@ -270,6 +270,7 @@ pub(super) fn build_geometry_report(
     } = geometry_report_facts;
 
     let has_untransferred_attribute_fields = model.has_untransferred_parasolid_attribute_fields();
+    let unresolved_attribute_lists = model.unresolved_parasolid_topology_attribute_lists();
     let mut losses = Vec::new();
 
     push_report_loss(
@@ -365,6 +366,18 @@ pub(super) fn build_geometry_report(
             format_args!(
                 "A referenced Parasolid attribute value was not transferred because its \
                       complete value relation did not resolve.",
+            ),
+        );
+    }
+
+    if unresolved_attribute_lists > 0 {
+        push_report_loss(
+            &mut losses,
+            NxLossCode::AttributeListUnresolved,
+            format_args!(
+                "{unresolved_attribute_lists} Parasolid topology attribute list(s) reach a \
+                 type-81 record that did not decode or a type-81 record without a resolved \
+                 type-80 definition; their attributes were not transferred."
             ),
         );
     }

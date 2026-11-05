@@ -9,7 +9,7 @@ use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_parasolid::records::node_type::TRIMMED_CURVE;
-use cadmpeg_parasolid::records::PrimaryRecords;
+use cadmpeg_parasolid::records::{NodeFields, PrimaryRecords};
 
 use super::index::CarrierIndex;
 use super::sp_curve::SurfaceCurveCarrier;
@@ -161,6 +161,12 @@ pub(super) struct Bounded {
     values: [FiniteReal; 8],
 }
 
+impl Bounded {
+    pub(super) fn attr(&self) -> u32 {
+        self.attr
+    }
+}
+
 /// Scan a stream for `00 85` records whose eight values are finite.
 pub(super) fn records(bytes: &[u8]) -> Vec<Bounded> {
     let mut out = Vec::new();
@@ -200,9 +206,17 @@ pub(super) fn records(bytes: &[u8]) -> Vec<Bounded> {
 /// `body_offset`, in stream order; `None` when a base field of a node does
 /// not read or two nodes share an index. Offsets are body-relative.
 pub(super) fn from_nodes(records: &PrimaryRecords<'_>, body_offset: usize) -> Option<Vec<Bounded>> {
+    from_nodes_of(&records.nodes().collect::<Vec<_>>(), body_offset)
+}
+
+/// [`from_nodes`] over any node instances, in stream order.
+pub(super) fn from_nodes_of<N: NodeFields>(
+    nodes: &[N],
+    body_offset: usize,
+) -> Option<Vec<Bounded>> {
     let mut out = Vec::new();
     let mut indices = HashSet::new();
-    for node in records.nodes().filter(|node| node.kind() == TRIMMED_CURVE) {
+    for node in nodes.iter().filter(|node| node.kind() == TRIMMED_CURVE) {
         indices.insert(node.index()).then_some(())?;
         let sensed = matches!(node.char("sense")?, b'+' | b'-');
         let source = node.pointer("basis_curve")?;

@@ -43,7 +43,7 @@ fn unowned_value_candidates_cannot_hide_referenced_values() {
 }
 
 #[test]
-fn parasolid_entity_54_strings_require_exact_length_and_terminator() {
+fn parasolid_entity_54_strings_end_at_their_length_before_a_zero_byte() {
     let mut bytes = vec![0xaa, 0x00, 0x54];
     bytes.extend_from_slice(&8u32.to_be_bytes());
     bytes.extend_from_slice(&17u16.to_be_bytes());
@@ -55,7 +55,7 @@ fn parasolid_entity_54_strings_require_exact_length_and_terminator() {
         .strings;
     assert_eq!(records.len(), 1);
     assert_eq!(records[0].offset, 1);
-    assert_eq!(records[0].byte_len, 17);
+    assert_eq!(records[0].byte_len, 16);
     assert_eq!(u32::from(records[0].xmt), 17);
     assert_eq!(records[0].value.as_str(), "deadbeef");
     assert_eq!(

@@ -220,6 +220,7 @@ impl MergeSession<'_, '_> {
             self.ctx,
             parent_ir,
             &member_roots,
+            JointRebind::All,
             &mut parent_report.losses,
         )?;
         let unplaced_members = self
@@ -610,6 +611,35 @@ fn omit_unbound_member_joints(
     }
 }
 
+/// Which joints of a document `rebind_joint_descent` rewrites.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum JointRebind {
+    /// Every joint: complete scopes by their full occurrence path, others by
+    /// their leading descent keys.
+    All,
+    /// Only joints of complete scopes, which bind after decode. A standalone
+    /// document has no merged members, so other joints keep their operands.
+    CompleteScopes,
+}
+
+/// Complete the operand descent of the joints that bind after decode in a
+/// standalone document and bind their features. The document has no merged
+/// members, so a path that continues below an external placement does not
+/// complete: its joint keeps its decoded operand and its feature stays native.
+pub(crate) fn bind_standalone_joints(
+    ctx: &DecodeContext<'_>,
+    ir: &mut cadmpeg_ir::CadIr,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Result<(), CodecError> {
+    rebind_joint_descent(
+        ctx,
+        ir,
+        &std::collections::BTreeMap::new(),
+        JointRebind::CompleteScopes,
+        losses,
+    )
+}
+
 fn rebind_joint_descent(
     ctx: &DecodeContext<'_>,
     ir: &mut cadmpeg_ir::CadIr,
@@ -617,10 +647,11 @@ fn rebind_joint_descent(
         cadmpeg_ir::ids::OccurrenceId,
         cadmpeg_ir::ids::OccurrenceId,
     >,
+    mode: JointRebind,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), CodecError> {
     use crate::records::feature::assembly_features::DesignComponentOccurrence;
-    use cadmpeg_ir::products::{OccurrenceParent, OperandContainer};
+    use cadmpeg_ir::products::OccurrenceParent;
 
     if ir.model.assembly_joints.is_empty() {
         return Ok(());
@@ -716,23 +747,74 @@ fn rebind_joint_descent(
             complete_scopes.insert(scope.id);
         }
     }
-    let instances = ir
-        .model
+    rebind_joints(
+        &mut JointRows {
+            occurrences: &ir.model.occurrences,
+            joints: &mut ir.model.assembly_joints,
+            features: &mut ir.model.features,
+        },
+        &children,
+        &complete_children,
+        &complete_scopes,
+        mode,
+        losses,
+    );
+    Ok(())
+}
+
+/// The rows of a model that joint rebinding reads and rewrites.
+struct JointRows<'a> {
+    occurrences: &'a [cadmpeg_ir::products::Occurrence],
+    joints: &'a mut Vec<cadmpeg_ir::products::AssemblyJoint>,
+    features: &'a mut Vec<cadmpeg_ir::features::Feature>,
+}
+
+/// Complete the operand descent of the joints of `model` and bind the
+/// features of the joints that complete. A joint of a complete scope whose
+/// path does not complete is removed and reported.
+fn rebind_joints(
+    model: &mut JointRows<'_>,
+    children: &JointChildren<'_>,
+    complete_children: &JointChildren<'_>,
+    complete_scopes: &std::collections::BTreeSet<String>,
+    mode: JointRebind,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) {
+    use cadmpeg_ir::products::OperandContainer;
+    let instances = model
         .occurrences
         .iter()
         .map(|occurrence| &occurrence.id)
         .collect::<std::collections::BTreeSet<_>>();
     let mut refused = std::collections::BTreeSet::new();
-    for joint in &mut ir.model.assembly_joints {
+    let mut unresolved_scopes = std::collections::BTreeSet::new();
+    for joint in model.joints.iter_mut() {
         let joint_id = joint.id.clone();
-        if joint
+        if let Some(scope) = joint
             .native_ref
-            .as_ref()
-            .is_some_and(|id| complete_scopes.contains(id))
+            .clone()
+            .filter(|id| complete_scopes.contains(id))
         {
-            if !retain_complete_joint(joint, &complete_children, &instances, losses) {
+            if mode == JointRebind::CompleteScopes {
+                // A standalone document keeps a readable joint whose descent
+                // continues below an unmerged placement, with its operand as
+                // decoded; its feature stays native.
+                let mut descended = joint.clone();
+                if complete_joint_descent(&mut descended, complete_children, &instances) {
+                    *joint = descended;
+                } else {
+                    losses.push(F3dLossCode::AssemblyOperandDescentUnresolved.note(format!(
+                        "joint {}: the complete occurrence path continues below an unmerged placement; the joint keeps its decoded operand and its feature stays native",
+                        joint.id
+                    )));
+                    unresolved_scopes.insert(scope);
+                }
+            } else if !retain_complete_joint(joint, complete_children, &instances, losses) {
                 refused.insert(joint_id.clone());
             }
+            continue;
+        }
+        if mode == JointRebind::CompleteScopes {
             continue;
         }
         for connector in joint.connectors_mut() {
@@ -777,15 +859,12 @@ fn rebind_joint_descent(
             }
         }
     }
-    ir.model
-        .assembly_joints
-        .retain(|joint| !refused.contains(&joint.id));
-    bind_retained_joint_features(
-        &mut ir.model.features,
-        &ir.model.assembly_joints,
-        &complete_scopes,
-    );
-    Ok(())
+    model.joints.retain(|joint| !refused.contains(&joint.id));
+    let bindable = complete_scopes
+        .difference(&unresolved_scopes)
+        .cloned()
+        .collect::<std::collections::BTreeSet<_>>();
+    bind_retained_joint_features(model.features, model.joints, &bindable);
 }
 
 /// Bind the features of joints that survived complete descent. A refused joint

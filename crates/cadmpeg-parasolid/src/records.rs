@@ -12,12 +12,14 @@ use serde::{Deserialize, Serialize};
 
 mod base;
 pub mod deltas;
+pub mod fields;
 pub mod group;
 pub mod primary;
 
 pub mod node_type;
 
 pub use deltas::DeltasRecords;
+pub use fields::NodeFields;
 pub use primary::{EdgeFrame, PrimaryRecords};
 
 /// A base schema that embedded edit programs refer to.

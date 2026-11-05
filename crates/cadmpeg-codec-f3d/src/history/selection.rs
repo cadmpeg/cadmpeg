@@ -1141,6 +1141,7 @@ pub(crate) fn bind_mirror_selection_planes(
     face_operands: &[crate::records::topology::face::DesignFaceOperand],
     identities: &[crate::records::topology::construction::DesignConstructionOperandIdentity],
     histories: &[AsmHistory],
+    design_types: &[crate::records::entity_header::SegmentType],
 ) {
     for scope in scopes {
         let stream = crate::ids::native_stream(&scope.id).map(str::to_owned);
@@ -1214,23 +1215,37 @@ pub(crate) fn bind_mirror_selection_planes(
             if matching_identities.next().is_some() {
                 continue;
             }
-            if let Some(plane) = design_geometry_mirror_plane(operand.primary_identity) {
-                Some(plane)
-            } else {
-                let persistent_candidates = if let Some(identity) = identity
-                    .and_then(crate::records::topology::construction::DesignConstructionOperandIdentity::persistent_identity) {
-                    entity_selection_face_candidates(identity.local_id, histories)
-                } else {
-                    Vec::new()
-                };
-                let primary_candidates =
-                    entity_selection_face_candidates(operand.primary_identity, histories);
-                let Some(candidate) =
-                    unique_mirror_plane_candidate(primary_candidates, persistent_candidates)
-                else {
-                    continue;
-                };
-                historical_mirror_plane(&candidate, previous_state_id, histories)
+            let Some(stream) = stream.as_deref() else {
+                continue;
+            };
+            match crate::design::decode::meta::classify_origin_entity(
+                design_types,
+                stream,
+                operand.primary_identity,
+            ) {
+                crate::design::decode::meta::OriginClassification::Origin(
+                    crate::design::decode::meta::OriginEntity::Plane(ordinal),
+                ) => design_geometry_origin_plane(ordinal),
+                crate::design::decode::meta::OriginClassification::Origin(
+                    crate::design::decode::meta::OriginEntity::Axis(_),
+                )
+                | crate::design::decode::meta::OriginClassification::Unknown => continue,
+                crate::design::decode::meta::OriginClassification::NotOrigin => {
+                    let persistent_candidates = if let Some(identity) = identity
+                        .and_then(crate::records::topology::construction::DesignConstructionOperandIdentity::persistent_identity) {
+                        entity_selection_face_candidates(identity.local_id, histories)
+                    } else {
+                        Vec::new()
+                    };
+                    let primary_candidates =
+                        entity_selection_face_candidates(operand.primary_identity, histories);
+                    let Some(candidate) =
+                        unique_mirror_plane_candidate(primary_candidates, persistent_candidates)
+                    else {
+                        continue;
+                    };
+                    historical_mirror_plane(&candidate, previous_state_id, histories)
+                }
             }
         } else if let Some(operand) = matching_face_operand {
             historical_mirror_face_operand_plane(operand, history, previous_state_id)
@@ -1350,15 +1365,15 @@ pub(crate) struct HistoricalMirrorPlane {
     pub(crate) normal: cadmpeg_ir::math::Vector3,
 }
 
-/// Resolve the three built-in Design Geometry origin planes.
+/// The Design Geometry origin plane at one ordinal of its origin: XY, XZ, or YZ.
 ///
 /// A body face selected as a plane is a face-recipe operand, so an ASM entity
 /// that carries the same identity value is a different entity.
-pub(crate) fn design_geometry_mirror_plane(primary_identity: u64) -> Option<HistoricalMirrorPlane> {
-    let normal = match primary_identity {
-        42 => cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
-        43 => cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
-        44 => cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+pub(crate) fn design_geometry_origin_plane(ordinal: usize) -> Option<HistoricalMirrorPlane> {
+    let normal = match ordinal {
+        0 => cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+        1 => cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0),
+        2 => cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
         _ => return None,
     };
     Some(HistoricalMirrorPlane {

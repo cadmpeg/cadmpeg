@@ -604,3 +604,61 @@ fn construction_tracking_path_admits_lane_two_and_three_only() {
         assert!(parse_construction_tracking_path(&tracking_path(lane), 0, 300, &class).is_none());
     }
 }
+
+#[test]
+fn tracking_path_headers_are_named_by_the_path_after_unrelated_wrappers() {
+    use crate::records::{
+        references::DesignClassTag,
+        topology::construction::{
+            DesignConstructionOperandIdentity, DesignConstructionOperandIdentityDraft,
+            DesignConstructionTrackingPath, DesignConstructionTrackingPathDraft,
+            DesignIdentityWrapper,
+        },
+    };
+    let tag = |tag: &str| DesignClassTag::try_from(tag.to_owned()).unwrap();
+    let path = DesignConstructionTrackingPath::try_new(DesignConstructionTrackingPathDraft {
+        wrapper_record_index: 2947,
+        wrapper_byte_offset: 1_024,
+        wrapper_class_tag: tag("354"),
+        carrier_record_index: 2948,
+        carrier_byte_offset: 1_057,
+        carrier_class_tag: tag("412"),
+        primary_identity: 246,
+        primary_identity_offset: 1_094,
+        selector: 1,
+        selector_offset: 1_114,
+        kind: 1,
+        kind_offset: 1_118,
+        first_related_identity: None,
+        second_related_identity: None,
+        following_record_index: 2949,
+        following_byte_offset: 1_138,
+        following_class_tag: tag("354"),
+    })
+    .unwrap();
+    let identity =
+        DesignConstructionOperandIdentity::try_new(DesignConstructionOperandIdentityDraft {
+            id: "f3d:Design/BulkStream.dat:operand-identity#1000".into(),
+            group_record_index: 1116,
+            wrappers: vec![DesignIdentityWrapper {
+                record_index: 2936,
+                byte_offset: 1_000,
+                class_tag: tag("329"),
+            }],
+            following_record_index: 2949,
+            following_byte_offset: 1_138,
+            following_class_tag: tag("354"),
+            tracking_path: Some(path),
+            persistent_identity: None,
+        })
+        .unwrap();
+    assert_eq!(
+        crate::design::decode::operands::tracking_path_record_indices(&[identity])
+            .collect::<Vec<_>>(),
+        vec![
+            ("f3d:Design/BulkStream.dat", 2947),
+            ("f3d:Design/BulkStream.dat", 2948),
+            ("f3d:Design/BulkStream.dat", 2949),
+        ]
+    );
+}

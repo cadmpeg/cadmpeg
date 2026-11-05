@@ -87,23 +87,19 @@ impl MapEntry {
     }
 }
 
-/// The word that ends an index map, below `0x8000`.
+/// The four bytes that end an index map, in stream order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "u16", into = "u16")]
-pub struct TerminalWord(u16);
+#[serde(transparent)]
+pub struct TerminalBytes([u8; 4]);
 
-impl TryFrom<u16> for TerminalWord {
-    type Error = &'static str;
-    fn try_from(value: u16) -> Result<Self, Self::Error> {
-        if value >= 0x8000 {
-            return Err("map terminal word width is unresolved");
-        }
-        Ok(Self(value))
+impl From<[u8; 4]> for TerminalBytes {
+    fn from(value: [u8; 4]) -> Self {
+        Self(value)
     }
 }
 
-impl From<TerminalWord> for u16 {
-    fn from(value: TerminalWord) -> Self {
+impl From<TerminalBytes> for [u8; 4] {
+    fn from(value: TerminalBytes) -> Self {
         value.0
     }
 }

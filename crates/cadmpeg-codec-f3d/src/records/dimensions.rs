@@ -5,6 +5,7 @@ use cadmpeg_ir::native::bytes::NativeBytes;
 
 use cadmpeg_core::decode::u64_from_index;
 
+use crate::layout::dimension_annotation_absent_metadata as annotation_absent_metadata;
 use crate::layout::dimension_annotation_genesis_metadata as annotation_genesis;
 use crate::layout::dimension_annotation_metadata_header as annotation_metadata;
 
@@ -96,6 +97,19 @@ pub(crate) struct DesignRecipeReference {
     /// different native selector, before a historical state supersedes them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) alternate_selector_edges: Vec<EdgeId>,
+}
+
+/// Byte width of the u32 selector field of a recipe reference.
+const RECIPE_SELECTOR_FIELD_BYTES: u64 = 4;
+
+impl DesignRecipeReference {
+    /// Whether the token bytes follow the u32 selector field without a length
+    /// prefix.
+    pub(crate) fn has_packed_token(&self) -> bool {
+        self.selector_offset
+            .checked_add(RECIPE_SELECTOR_FIELD_BYTES)
+            == Some(self.token_offset)
+    }
 }
 
 /// Paired-locus frame nested under a dimensional parameter companion.
@@ -571,6 +585,8 @@ pub(crate) struct DesignDimensionAnnotationFrame {
     operands: Vec<DesignDimensionAnnotationLocus>,
     /// `EntityGenesis` origin bitfield.
     entity_genesis: Option<u64>,
+    /// Whether the frame stores `u8 0` alone instead of a metadata block.
+    metadata_absent: bool,
     /// Opaque annotation bytes between the metadata block and governing owner.
     annotation_bytes: NativeBytes<Vec<u8>>,
     /// Indexed parameter-owner record selecting the governed dimension.
@@ -602,6 +618,7 @@ impl Clone for DesignDimensionAnnotationFrame {
             frame_length: self.frame_length,
             operands: self.operands.clone(),
             entity_genesis: self.entity_genesis,
+            metadata_absent: self.metadata_absent,
             annotation_bytes: (self.annotation_bytes.clone()),
             governing_owner_record_index: self.governing_owner_record_index,
             return_members: self.return_members.clone(),
@@ -611,8 +628,10 @@ impl Clone for DesignDimensionAnnotationFrame {
     }
 }
 
-fn annotation_metadata_length(entity_genesis: Option<u64>) -> u64 {
-    if entity_genesis.is_some() {
+fn annotation_metadata_length(entity_genesis: Option<u64>, metadata_absent: bool) -> u64 {
+    if metadata_absent {
+        u64_from_index(annotation_absent_metadata::LEN)
+    } else if entity_genesis.is_some() {
         u64_from_index(annotation_genesis::LEN)
     } else {
         u64_from_index(annotation_metadata::LEN)
@@ -649,6 +668,8 @@ pub(crate) struct DesignDimensionAnnotationFrameDraft {
     pub(crate) operands: Vec<DesignDimensionAnnotationOperand>,
     /// `EntityGenesis` origin bitfield.
     pub(crate) entity_genesis: Option<u64>,
+    /// Whether the frame stores `u8 0` alone instead of a metadata block.
+    pub(crate) metadata_absent: bool,
     /// Opaque annotation bytes between the metadata block and governing owner.
     pub(crate) annotation_bytes: Vec<u8>,
     /// Byte offset of `annotation_bytes`.
@@ -678,7 +699,11 @@ impl DesignDimensionAnnotationFrame {
     }
 
     fn try_new_inner(draft: DesignDimensionAnnotationFrameDraft) -> Result<Self, String> {
+        if draft.metadata_absent && draft.entity_genesis.is_some() {
+            return Err("an absent metadata block carries no EntityGenesis entry".into());
+        }
         if draft.entity_genesis.is_none()
+            && !draft.metadata_absent
             && !(draft.operands.len() == 3
                 && draft.operands[0].geometry_record_index.is_none()
                 && draft.operands[1..]
@@ -698,7 +723,12 @@ impl DesignDimensionAnnotationFrame {
             .byte_offset
             .checked_add(24)
             .and_then(|offset| offset.checked_add(operand_bytes))
-            .and_then(|offset| offset.checked_add(annotation_metadata_length(draft.entity_genesis)))
+            .and_then(|offset| {
+                offset.checked_add(annotation_metadata_length(
+                    draft.entity_genesis,
+                    draft.metadata_absent,
+                ))
+            })
             .ok_or("annotation_byte_offset overflows")?;
         let governing_owner_reference_offset = u64::try_from(draft.annotation_bytes.len())
             .ok()
@@ -789,6 +819,7 @@ impl DesignDimensionAnnotationFrame {
                 })
                 .collect::<Vec<_>>(),
             entity_genesis: draft.entity_genesis,
+            metadata_absent: draft.metadata_absent,
             annotation_bytes: (draft.annotation_bytes).into(),
             governing_owner_record_index: draft.governing_owner_record_index,
             return_members: draft
@@ -816,12 +847,17 @@ impl DesignDimensionAnnotationFrame {
         self.entity_genesis
     }
 
+    /// Opaque annotation bytes between the metadata block and governing owner.
+    pub(crate) fn annotation_bytes(&self) -> &[u8] {
+        self.annotation_bytes.as_ref()
+    }
+
     /// Derived annotation byte offset.
     pub(crate) fn annotation_byte_offset(&self) -> u64 {
         self.byte_offset
             + 24
             + u64_from_index(self.operands.len()) * 15
-            + annotation_metadata_length(self.entity_genesis)
+            + annotation_metadata_length(self.entity_genesis, self.metadata_absent)
     }
 
     /// Derived governing owner reference offset.
@@ -866,6 +902,7 @@ impl DesignDimensionAnnotationFrame {
                 })
                 .collect(),
             entity_genesis: self.entity_genesis,
+            metadata_absent: self.metadata_absent,
             annotation_bytes: self.annotation_bytes.into_inner(),
             annotation_byte_offset,
             governing_owner_record_index: self.governing_owner_record_index,
@@ -918,6 +955,9 @@ struct DesignDimensionAnnotationFrameWire {
         deserialize_with = "deserialize_entity_genesis"
     )]
     entity_genesis: Option<u64>,
+    /// Whether the frame stores `u8 0` alone instead of a metadata block.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    metadata_absent: bool,
     /// Opaque annotation bytes between the metadata block and governing owner.
     annotation_bytes: NativeBytes<Vec<u8>>,
     /// Byte offset of `annotation_bytes`.
@@ -989,6 +1029,8 @@ struct DesignDimensionAnnotationFrameWireRef<'a> {
     operands: AnnotationOperands<'a>,
     #[serde(skip_serializing_if = "Option::is_none")]
     entity_genesis: Option<u64>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    metadata_absent: bool,
     annotation_bytes: NativeBytes<&'a [u8]>,
     annotation_byte_offset: u64,
     governing_owner_record_index: u32,
@@ -1013,6 +1055,7 @@ impl Serialize for DesignDimensionAnnotationFrame {
             frame_length: self.frame_length,
             operands: AnnotationOperands(self),
             entity_genesis: self.entity_genesis(),
+            metadata_absent: self.metadata_absent,
             annotation_bytes: (&self.annotation_bytes).into(),
             annotation_byte_offset: self.annotation_byte_offset(),
             governing_owner_record_index: self.governing_owner_record_index,
@@ -1061,6 +1104,7 @@ impl TryFrom<DesignDimensionAnnotationFrameWire> for DesignDimensionAnnotationFr
             frame_length: wire.frame_length,
             operands: wire.operands,
             entity_genesis: wire.entity_genesis,
+            metadata_absent: wire.metadata_absent,
             annotation_bytes: wire.annotation_bytes.into_inner(),
             annotation_byte_offset: wire.annotation_byte_offset,
             governing_owner_record_index: wire.governing_owner_record_index,
@@ -1094,6 +1138,7 @@ impl From<DesignDimensionAnnotationFrame> for DesignDimensionAnnotationFrameWire
             frame_length: value.frame_length,
             operands: value.operands,
             entity_genesis: value.entity_genesis,
+            metadata_absent: value.metadata_absent,
             annotation_bytes: (value.annotation_bytes).into(),
             annotation_byte_offset: value.annotation_byte_offset,
             governing_owner_record_index: value.governing_owner_record_index,

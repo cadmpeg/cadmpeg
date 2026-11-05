@@ -16,7 +16,7 @@ use super::sweep::SweepKind;
 use super::LEN_TO_MM;
 use cadmpeg_parasolid::pointer::read_at as read_ref;
 use cadmpeg_parasolid::records::node_type::SP_CURVE;
-use cadmpeg_parasolid::records::PrimaryRecords;
+use cadmpeg_parasolid::records::{NodeFields, PrimaryRecords};
 
 const TAG: u8 = 0x89;
 
@@ -365,8 +365,17 @@ pub(super) fn from_nodes(
     body_offset: usize,
     pcurves: &HashMap<u32, PcurveNurbs>,
 ) -> Option<HashMap<u32, SpCurve>> {
+    from_nodes_of(&records.nodes().collect::<Vec<_>>(), body_offset, pcurves)
+}
+
+/// [`from_nodes`] over any node instances, in stream order.
+pub(super) fn from_nodes_of<N: NodeFields>(
+    nodes: &[N],
+    body_offset: usize,
+    pcurves: &HashMap<u32, PcurveNurbs>,
+) -> Option<HashMap<u32, SpCurve>> {
     let mut out = HashMap::new();
-    for node in records.nodes().filter(|node| node.kind() == SP_CURVE) {
+    for node in nodes.iter().filter(|node| node.kind() == SP_CURVE) {
         let sensed = matches!(node.char("sense")?, b'+' | b'-');
         let surface = node.pointer("surface")?;
         let b_curve = node.pointer("b_curve")?;

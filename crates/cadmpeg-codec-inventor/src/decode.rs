@@ -1026,6 +1026,12 @@ fn decode_container<'a>(
                 unresolved.parameters
             )));
         }
+        if unresolved.value_only_parameters != 0 {
+            losses.push(InventorLossCode::ParameterExpressionNative.note(format!(
+                "Transferred {} Inventor parameter(s) with their exact value and no expression text: the unit record of the root literal has an unrecognised type and stays native.",
+                unresolved.value_only_parameters
+            )));
+        }
         losses.extend(crate::design::bounded_expression_loss(
             unresolved.bounded_parameters,
         ));
@@ -1053,6 +1059,9 @@ fn decode_container<'a>(
         losses.extend(crate::sketch::curve::member_losses(
             &sketch_inventory,
             &container.rse,
+        ));
+        losses.extend(crate::sketch::polygon_control_vertex_loss(
+            &sketch_inventory.constraints,
         ));
         losses.extend(crate::sketch::spline::point_relation_loss(
             &sketch_inventory.constraints,
@@ -1464,6 +1473,7 @@ struct UnresolvedDesign {
     parameters: usize,
     parameter_scopes: usize,
     bounded_parameters: usize,
+    value_only_parameters: usize,
     sketches: usize,
     sketch_entities: usize,
     sketch_constraints: usize,
@@ -1546,6 +1556,7 @@ fn project_design(
         parameters: parameters.unresolved,
         parameter_scopes: parameters.unresolved_scopes,
         bounded_parameters: parameters.bounded,
+        value_only_parameters: parameters.value_only,
         sketches: sketches.unresolved_sketches,
         sketch_entities: sketches.unresolved_entities,
         sketch_constraints: sketches.unresolved_constraints,

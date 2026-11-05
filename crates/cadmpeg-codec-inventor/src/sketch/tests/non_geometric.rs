@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::super::{
-    curve, SketchProjection, BLOCK_GROUP_TYPE, BLOCK_MEMBER_TYPE, POLYGON_RELATION_TYPE,
-    POLYGON_TYPE,
+    curve, SketchProjection, BLOCK_GROUP_TYPE, BLOCK_MEMBER_TYPE, POLYGON_CONTROL_TYPE,
+    POLYGON_RELATION_TYPE, POLYGON_TYPE,
 };
 use super::*;
 use cadmpeg_ir::sketches::SketchGeometryDefinition;
@@ -105,6 +105,112 @@ fn polygon_controls_keep_edge_lines_and_native_relation_losses() {
     assert_eq!(losses.len(), 1);
     assert_eq!(losses[0].code.local_code(), "sketch.curve-native");
     assert!(losses[0].message.contains("Retained 1"));
+}
+
+/// A polygon control record after the constraint header: `value:u32`, the
+/// reference entity, the vertex reference twice, the vertex position as two
+/// f64 values, and three flag bytes.
+fn polygon_control_bytes(ordinal: u32, references: [u32; 3], flags: [u8; 3]) -> Vec<u8> {
+    let mut bytes = constraint_header(ordinal, 0);
+    bytes.extend_from_slice(&7_u32.to_le_bytes());
+    for reference in references {
+        bytes.extend_from_slice(&(0x8000_0000 | reference).to_le_bytes());
+    }
+    bytes.extend_from_slice(&2.0_f64.to_le_bytes());
+    bytes.extend_from_slice(&0.0_f64.to_le_bytes());
+    bytes.extend_from_slice(&flags);
+    bytes
+}
+
+#[test]
+fn a_polygon_control_relation_parses_its_operands_and_stays_native() {
+    let bytes = polygon_control_bytes(11, [4, 5, 5], [0, 0, 1]);
+    let parsed = parse(&bytes, |_, source| {
+        parse_constraint(SketchConstraintTag::PolygonControl, source, 22).expect("polygon control")
+    });
+    let PmDcSketchConstraintKind::PolygonControl {
+        value,
+        reference,
+        vertex,
+        position,
+        flags,
+    } = parsed.kind
+    else {
+        panic!("polygon control form");
+    };
+    assert_eq!(value, 7);
+    assert_eq!(reference.index(), 4);
+    assert_eq!(vertex.map(crate::pmdc::PmDcReference::index), [5, 5]);
+    assert_eq!(position.map(FiniteReal::get), [2.0, 0.0]);
+    assert_eq!(flags, [0, 0, 1]);
+    assert!(parsed.header.parameter.is_some());
+    assert!(curve::relation_stays_native(
+        &located(parsed, POLYGON_CONTROL_TYPE, 11),
+        |_| false
+    ));
+}
+
+#[test]
+fn a_polygon_control_relation_keeps_the_sketch_closed_and_stays_a_native_constraint() {
+    let (mut inventory, _) = closed_square_inventory();
+    let control = parse(
+        &polygon_control_bytes(11, [4, 5, 5], [0, 0, 1]),
+        |_, source| {
+            parse_constraint(SketchConstraintTag::PolygonControl, source, 22)
+                .expect("polygon control")
+        },
+    );
+    inventory
+        .constraints
+        .push(located(control, POLYGON_CONTROL_TYPE, 11));
+    add_members(&mut inventory, &[12]);
+    let projected = projection(&inventory);
+    assert_eq!(projected.sketches.len(), 1);
+    assert_eq!(projected.entities.len(), 8);
+    assert!(projected.constraints.is_empty());
+    assert_eq!(projected.unresolved_sketches, 0);
+    assert_eq!(projected.unresolved_constraints, 1);
+}
+
+#[test]
+fn a_polygon_control_member_without_a_record_keeps_the_sketch_unresolved() {
+    let (mut inventory, _) = closed_square_inventory();
+    add_members(&mut inventory, &[12]);
+    let projected = projection(&inventory);
+    assert!(projected.sketches.is_empty());
+    assert!(projected.entities.is_empty());
+    assert_eq!(projected.unresolved_sketches, 1);
+}
+
+#[test]
+fn a_polygon_control_member_listed_twice_keeps_the_sketch_unresolved() {
+    let (mut inventory, _) = closed_square_inventory();
+    let control = parse(
+        &polygon_control_bytes(11, [4, 5, 5], [0, 0, 1]),
+        |_, source| {
+            parse_constraint(SketchConstraintTag::PolygonControl, source, 22)
+                .expect("polygon control")
+        },
+    );
+    inventory
+        .constraints
+        .push(located(control, POLYGON_CONTROL_TYPE, 11));
+    add_members(&mut inventory, &[12, 12]);
+    assert!(projection(&inventory).sketches.is_empty());
+}
+
+#[test]
+fn a_truncated_polygon_control_record_becomes_an_issue() {
+    let mut bytes = polygon_control_bytes(11, [4, 5, 5], [0, 0, 1]);
+    let admitted = inventory_with_record(POLYGON_CONTROL_TYPE, &bytes, DecodePolicy::service())
+        .expect("polygon control is admitted");
+    assert_eq!(admitted.constraints.len(), 1);
+    assert!(admitted.issues.is_empty());
+    bytes.pop();
+    let admitted = inventory_with_record(POLYGON_CONTROL_TYPE, &bytes, DecodePolicy::service())
+        .expect("truncated polygon control becomes an issue");
+    assert!(admitted.constraints.is_empty());
+    assert_eq!(admitted.issues.len(), 1);
 }
 
 fn block_inventory() -> SketchInventory {
@@ -256,4 +362,58 @@ fn duplicate_native_members_and_relations_keep_the_sketch_unresolved() {
         }
         assert!(projection(&inventory).sketches.is_empty());
     }
+}
+
+#[test]
+fn a_polygon_control_record_with_two_different_vertices_keeps_both_and_reports_a_loss() {
+    let bytes = polygon_control_bytes(11, [4, 5, 6], [0, 0, 1]);
+    let parsed = parse(&bytes, |_, source| {
+        parse_constraint(SketchConstraintTag::PolygonControl, source, 22).expect("polygon control")
+    });
+    let PmDcSketchConstraintKind::PolygonControl { vertex, .. } = &parsed.kind else {
+        panic!("polygon control form");
+    };
+    assert_eq!(vertex.map(crate::pmdc::PmDcReference::index), [5, 6]);
+    let equal = parse(
+        &polygon_control_bytes(11, [4, 5, 5], [0, 0, 1]),
+        |_, source| {
+            parse_constraint(SketchConstraintTag::PolygonControl, source, 22)
+                .expect("polygon control")
+        },
+    );
+    let equal = located(equal, POLYGON_CONTROL_TYPE, 11);
+    assert!(super::super::polygon_control_vertex_loss(std::slice::from_ref(&equal)).is_none());
+    let unequal = located(parsed, POLYGON_CONTROL_TYPE, 12);
+    let losses = super::super::polygon_control_vertex_loss(&[equal, unequal])
+        .expect("unequal vertices report a loss");
+    assert_eq!(losses.code.namespace(), "inventor");
+    assert_eq!(
+        losses.code.local_code(),
+        crate::loss::InventorLossCode::SketchPolygonControlVerticesDiffer.code()
+    );
+    assert!(losses.message.contains("Retained 1"));
+    let admitted = inventory_with_record(POLYGON_CONTROL_TYPE, &bytes, DecodePolicy::service())
+        .expect("unequal polygon control is admitted");
+    assert_eq!(admitted.constraints.len(), 1);
+    assert!(admitted.issues.is_empty());
+}
+
+#[test]
+fn a_polygon_control_relation_with_two_different_vertices_keeps_the_sketch_closed() {
+    let (mut inventory, _) = closed_square_inventory();
+    let control = parse(
+        &polygon_control_bytes(11, [4, 5, 6], [0, 0, 1]),
+        |_, source| {
+            parse_constraint(SketchConstraintTag::PolygonControl, source, 22)
+                .expect("polygon control")
+        },
+    );
+    inventory
+        .constraints
+        .push(located(control, POLYGON_CONTROL_TYPE, 11));
+    add_members(&mut inventory, &[12]);
+    let projected = projection(&inventory);
+    assert_eq!(projected.sketches.len(), 1);
+    assert_eq!(projected.unresolved_sketches, 0);
+    assert_eq!(projected.unresolved_constraints, 1);
 }

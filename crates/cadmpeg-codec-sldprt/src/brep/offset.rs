@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_parasolid::records::node_type::OFFSET_SURF;
-use cadmpeg_parasolid::records::PrimaryRecords;
+use cadmpeg_parasolid::records::{NodeFields, PrimaryRecords};
 
 use super::LEN_TO_MM;
 
@@ -119,8 +119,16 @@ pub(super) fn from_nodes(
     records: &PrimaryRecords<'_>,
     body_offset: usize,
 ) -> Option<HashMap<u32, OffsetCarrier>> {
+    from_nodes_of(&records.nodes().collect::<Vec<_>>(), body_offset)
+}
+
+/// [`from_nodes`] over any node instances, in stream order.
+pub(super) fn from_nodes_of<N: NodeFields>(
+    nodes: &[N],
+    body_offset: usize,
+) -> Option<HashMap<u32, OffsetCarrier>> {
     let mut out = HashMap::new();
-    for node in records.nodes().filter(|node| node.kind() == OFFSET_SURF) {
+    for node in nodes.iter().filter(|node| node.kind() == OFFSET_SURF) {
         let sensed = matches!(node.char("sense")?, b'+' | b'-');
         let discriminator = node.char("check")?;
         node.logical("true_offset")?;

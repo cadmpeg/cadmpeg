@@ -28,10 +28,7 @@ pub(crate) fn solved_frame(
     scope: &DesignParameterScope,
     placements: &[DesignPlacementConstruction],
 ) -> Option<DesignWorkPlaneTransform> {
-    if !matches!(
-        scope.kind(),
-        DesignFeatureKind::WorkPlane | DesignFeatureKind::PlanoDeObra
-    ) {
+    if scope.kind() != DesignFeatureKind::WorkPlane {
         return None;
     }
     let mut candidates = placements
@@ -57,17 +54,12 @@ pub(crate) fn bind(
 ) -> Vec<cadmpeg_ir::report::loss::LossNote> {
     let mut losses = Vec::new();
     for scope in scopes {
-        if !matches!(
-            scope.kind(),
-            DesignFeatureKind::WorkPlane | DesignFeatureKind::PlanoDeObra
-        ) {
+        if scope.kind() != DesignFeatureKind::WorkPlane {
             continue;
         }
         if has_operand(scope, placements) {
             let frame = solved_frame(scope, placements);
-            if let DesignScopePayloadMut::WorkPlane(slot)
-            | DesignScopePayloadMut::PlanoDeObra(slot) = scope.payload_mut()
-            {
+            if let DesignScopePayloadMut::WorkPlane(slot) = scope.payload_mut() {
                 *slot = frame;
             }
         }
