@@ -177,7 +177,17 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 11 native record(s) from `iges.entities`: iges:entity:directory#1, iges:entity:directory#11, iges:entity:directory#13, iges:entity:directory#15, iges:entity:directory#17, iges:entity:directory#19, iges:entity:directory#21, iges:entity:directory#3, iges:entity:directory#5, iges:entity:directory#7, iges:entity:directory#9",
+        "message": "the iges write omits 5 native record(s) from `iges.cards`: iges:physical:card#26, iges:physical:card#27, iges:physical:card#28, iges:physical:card#37, iges:physical:card#4",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "native.records-omitted",
+          "kind": "record_not_typed",
+          "namespace": "export",
+          "scope": "namespaced"
+        },
+        "message": "the iges write omits 3 native record(s) from `iges.entities`: iges:entity:directory#1, iges:entity:directory#11, iges:entity:directory#9",
         "severity": "info"
       },
       {
@@ -224,7 +234,41 @@
               "disposition": "dropped"
             },
             "cards": {
-              "disposition": "regenerated"
+              "disposition": "dropped",
+              "records": {
+                "iges:physical:card#1": "written",
+                "iges:physical:card#10": "written",
+                "iges:physical:card#11": "written",
+                "iges:physical:card#12": "written",
+                "iges:physical:card#13": "written",
+                "iges:physical:card#14": "written",
+                "iges:physical:card#15": "written",
+                "iges:physical:card#16": "written",
+                "iges:physical:card#17": "written",
+                "iges:physical:card#18": "written",
+                "iges:physical:card#19": "written",
+                "iges:physical:card#2": "written",
+                "iges:physical:card#20": "written",
+                "iges:physical:card#21": "written",
+                "iges:physical:card#22": "written",
+                "iges:physical:card#23": "written",
+                "iges:physical:card#24": "written",
+                "iges:physical:card#25": "written",
+                "iges:physical:card#29": "written",
+                "iges:physical:card#3": "written",
+                "iges:physical:card#30": "written",
+                "iges:physical:card#31": "written",
+                "iges:physical:card#32": "written",
+                "iges:physical:card#33": "written",
+                "iges:physical:card#34": "written",
+                "iges:physical:card#35": "written",
+                "iges:physical:card#36": "written",
+                "iges:physical:card#5": "written",
+                "iges:physical:card#6": "written",
+                "iges:physical:card#7": "written",
+                "iges:physical:card#8": "written",
+                "iges:physical:card#9": "written"
+              }
             },
             "circular_arrays": {
               "disposition": "dropped"
@@ -267,7 +311,17 @@
               "disposition": "dropped"
             },
             "entities": {
-              "disposition": "dropped"
+              "disposition": "dropped",
+              "records": {
+                "iges:entity:directory#13": "written",
+                "iges:entity:directory#15": "written",
+                "iges:entity:directory#17": "written",
+                "iges:entity:directory#19": "written",
+                "iges:entity:directory#21": "written",
+                "iges:entity:directory#3": "written",
+                "iges:entity:directory#5": "written",
+                "iges:entity:directory#7": "written"
+              }
             },
             "external_references": {
               "disposition": "dropped"
