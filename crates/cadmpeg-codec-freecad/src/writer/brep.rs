@@ -1169,11 +1169,53 @@ fn serialize_geometry_inner(
                     };
                     children.push((*index, Sense::Forward));
                 }
-                if children.is_empty() && degraded {
+                if degraded {
                     let mut retained_edges = HashSet::new();
                     let mut retained_vertices = std::collections::BTreeSet::new();
                     let mut represented_vertices = HashSet::new();
+                    for edge in shell.wire_edges().iter().filter_map(|id| {
+                        indices
+                            .get(id.as_str())
+                            .and_then(|_| ir.model.edges.iter().find(|edge| edge.id == *id))
+                    }) {
+                        retained_edges.insert(edge.id.as_str());
+                        represented_vertices.insert(edge.start.as_str());
+                        represented_vertices.insert(edge.end.as_str());
+                    }
+                    represented_vertices.extend(
+                        shell
+                            .free_vertices()
+                            .iter()
+                            .filter(|id| indices.contains_key(id.as_str()))
+                            .map(|id| id.as_str()),
+                    );
+                    for face in shell.faces().iter().filter_map(|id| {
+                        indices
+                            .get(id.as_str())
+                            .and_then(|_| ir.model.faces.iter().find(|face| face.id == *id))
+                    }) {
+                        for wire in face
+                            .loops
+                            .iter()
+                            .filter_map(|id| ir.model.loops.iter().find(|wire| wire.id == *id))
+                        {
+                            for coedge in wire.coedges().iter().filter_map(|id| {
+                                ir.model.coedges.iter().find(|coedge| coedge.id == *id)
+                            }) {
+                                retained_edges.insert(coedge.edge.as_str());
+                                if let Some(edge) =
+                                    ir.model.edges.iter().find(|edge| edge.id == coedge.edge)
+                                {
+                                    represented_vertices.insert(edge.start.as_str());
+                                    represented_vertices.insert(edge.end.as_str());
+                                }
+                            }
+                        }
+                    }
                     for face_id in shell.faces() {
+                        if indices.contains_key(face_id.as_str()) {
+                            continue;
+                        }
                         let Some(face) = ir.model.faces.iter().find(|face| face.id == *face_id)
                         else {
                             continue;

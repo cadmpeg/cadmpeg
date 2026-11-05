@@ -6,6 +6,8 @@
 //! supported neutral profile and reports content the target cannot hold.
 
 use crate::entities::affine_parameter_map;
+mod capacity;
+
 use crate::entities::curve_conversion::ANGULAR_TOLERANCE;
 use crate::entities::geometry::curve_is_line;
 use crate::loss::IgesLossCode;
@@ -253,6 +255,29 @@ fn counts_for_ir(ir: &CadIr) -> BTreeMap<String, usize> {
         counts.insert("116_point".into(), ir.model.points.len());
     }
     counts
+}
+
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum WriteError {
+    #[error(transparent)]
+    Codec(#[from] CodecError),
+    #[error(transparent)]
+    Encode(#[from] cadmpeg_ir::codec::write::EncodeError),
+}
+
+impl From<cadmpeg_core::decode::ResourceLimit> for WriteError {
+    fn from(limit: cadmpeg_core::decode::ResourceLimit) -> Self {
+        Self::Encode(limit.into())
+    }
+}
+
+impl From<WriteError> for cadmpeg_ir::codec::write::EncodeError {
+    fn from(error: WriteError) -> Self {
+        match error {
+            WriteError::Codec(error) => cadmpeg_ir::codec::write::transitional_from_codec(error),
+            WriteError::Encode(error) => error,
+        }
+    }
 }
 
 struct Synthesis {
@@ -611,7 +636,16 @@ fn unapplied_body_placement_losses(ir: &CadIr, entities: &[Entity]) -> Vec<LossN
     losses
 }
 
-fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, CodecError> {
+#[cfg(test)]
+fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, WriteError> {
+    synthesize_with_admission(ir, version, |_| Ok(()))
+}
+
+fn synthesize_with_admission(
+    ir: &CadIr,
+    version: crate::IgesVersion,
+    admit: impl FnOnce(&[Entity]) -> Result<(), WriteError>,
+) -> Result<Synthesis, WriteError> {
     let lowered = cadmpeg_ir::codec::write::subset_lowering::lower_subset_curves(ir, |curve| {
         curve
             .geometry
@@ -622,7 +656,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
     let mut graph = match synthesis_graph(ir, version) {
         Ok(graph) => graph,
         Err(CodecError::UnsupportedContent(reason)) => degrade::graph(ir, version, &reason)?,
-        Err(error) => return Err(error),
+        Err(error) => return Err(error.into()),
     };
     graph
         .losses
@@ -747,6 +781,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
     {
         coverage.bodies = ArenaDisposition::Reported;
     }
+    admit(&graph.entities)?;
     Ok(Synthesis {
         written_native: attribute_export.written,
         regenerated_native: attribute_export.regenerated,
@@ -816,17 +851,12 @@ fn synthesis_graph(ir: &CadIr, version: crate::IgesVersion) -> Result<SynthesisG
                     .flat_map(cadmpeg_ir::topology::Loop::vertices),
             )
             .collect::<BTreeSet<_>>();
-        let count = ir
-            .model
-            .vertices
-            .iter()
-            .filter(|vertex| {
-                ignored.vertices.contains(vertex.id.as_str()) && !owned.contains(&vertex.id)
-            })
-            .count();
-        if count != 0 {
+        for vertex in ir.model.vertices.iter().filter(|vertex| {
+            ignored.vertices.contains(vertex.id.as_str()) && !owned.contains(&vertex.id)
+        }) {
             losses.push(IgesLossCode::WriterFreeGeometryOmitted.note(format!(
-                "{count} free vertex record(s) were not written on the topology path"
+                "free vertex record {} was not written on the topology path",
+                vertex.id
             )));
         }
     }
@@ -1010,8 +1040,28 @@ fn synthesis_graph(ir: &CadIr, version: crate::IgesVersion) -> Result<SynthesisG
         }
         entities
     };
+    let emitted_loops = entities
+        .iter()
+        .flat_map(|entity| entity.source_targets.iter())
+        .cloned()
+        .collect::<BTreeSet<_>>();
     if let Some(remap) = ensure_version_support(&mut entities, version, &mut losses)? {
         remap_presentations(&mut body_presentations, &remap);
+        let retained = entities
+            .iter()
+            .flat_map(|entity| entity.source_targets.iter())
+            .collect::<BTreeSet<_>>();
+        for boundary in &ir.model.loops {
+            let id = boundary.id.to_string();
+            if emitted_loops.contains(&id) && !retained.contains(&id) {
+                for coedge in boundary.coedges() {
+                    losses.push(IgesLossCode::WriterEntityOmitted.note(format!(
+                        "IGES coedge {coedge} is omitted with loop {id} for {}",
+                        version.name()
+                    )));
+                }
+            }
+        }
     }
     Ok(SynthesisGraph {
         entities,
@@ -1313,7 +1363,7 @@ fn strip_unusable_face_topology(ir: &CadIr) -> (Option<CadIr>, Vec<LossNote>) {
         .model
         .bodies
         .retain(|body| !body.regions.is_empty());
-    let losses = bad
+    let mut losses = bad
         .into_iter()
         .map(|(face, missing)| {
             IgesLossCode::WriterEntityOmitted.note(format!(
@@ -1321,7 +1371,12 @@ fn strip_unusable_face_topology(ir: &CadIr) -> (Option<CadIr>, Vec<LossNote>) {
                 missing.join(", ")
             ))
         })
-        .collect();
+        .collect::<Vec<_>>();
+    for id in bad_loops.into_iter().chain(bad_coedges) {
+        losses.push(IgesLossCode::WriterEntityOmitted.note(format!(
+            "IGES boundary record {id} is omitted with its unsupported face"
+        )));
+    }
     (Some(document), losses)
 }
 
@@ -2520,7 +2575,7 @@ fn brep_entities(
         &mut consumed_curve_ids,
         losses,
     )?;
-    ignored_carriers.report_omitted(ignored_curves, "B-rep", losses);
+    ignored_carriers.report_omitted(&ignored_curves, "B-rep", losses);
 
     let mut written_pcurves = BTreeMap::new();
     for loop_ in topology.loops.values().copied() {
@@ -3178,16 +3233,15 @@ struct IgnoredCarrierGeometry {
 impl IgnoredCarrierGeometry {
     /// Reports the ignored edges, which no topology path writes, and the
     /// `curves` ignored curves that the `path` writer skipped.
-    fn report_omitted(&self, curves: usize, path: &str, losses: &mut Vec<LossNote>) {
-        if !self.edges.is_empty() {
+    fn report_omitted(&self, curves: &[String], path: &str, losses: &mut Vec<LossNote>) {
+        for id in &self.edges {
             losses.push(IgesLossCode::WriterDuplicateCarrierOmitted.note(format!(
-                "{} free edge record(s) duplicating a written carrier were not written on the {path} path",
-                self.edges.len()
+                "free edge record {id} duplicates a written carrier on the {path} path"
             )));
         }
-        if curves != 0 {
+        for id in curves {
             losses.push(IgesLossCode::WriterDuplicateCarrierOmitted.note(format!(
-                "{curves} free curve record(s) duplicating a written parameter curve were not written on the {path} path"
+                "free curve record {id} duplicates a written parameter curve on the {path} path"
             )));
         }
     }
@@ -3546,7 +3600,7 @@ fn topology_entities(
         &mut consumed_curves,
         losses,
     )?;
-    ignored_carriers.report_omitted(ignored_curves, "trimmed-sheet", losses);
+    ignored_carriers.report_omitted(&ignored_curves, "trimmed-sheet", losses);
 
     let mut pcurve_indices = BTreeMap::new();
     for (pcurve_id, pcurve) in topology.pcurves {
@@ -8034,7 +8088,7 @@ struct UnownedCurves<'a, 'ir> {
 }
 
 /// Writes each curve that no written entity has consumed, in identity order,
-/// and returns the number of `ignored` curves skipped. A physically dependent
+/// and returns the identities of `ignored` curves skipped. A physically dependent
 /// entity is valid only under a written parent, so a physically dependent
 /// curve that no written curve consumes is withheld with a loss.
 fn append_unowned_curves(
@@ -8042,7 +8096,7 @@ fn append_unowned_curves(
     entities: &mut Vec<Entity>,
     consumed: &mut BTreeSet<String>,
     losses: &mut Vec<LossNote>,
-) -> Result<usize, CodecError> {
+) -> Result<Vec<String>, CodecError> {
     let UnownedCurves {
         ir,
         version,
@@ -8052,14 +8106,14 @@ fn append_unowned_curves(
     } = request;
     let mut curves = ir.model.curves.iter().collect::<Vec<_>>();
     curves.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
-    let mut ignored_curves = 0_usize;
+    let mut ignored_curves = Vec::new();
     let mut dependent = Vec::new();
     for curve in curves {
         if consumed.contains(curve.id.as_str()) {
             continue;
         }
         if ignored.contains(curve.id.as_str()) {
-            ignored_curves += 1;
+            ignored_curves.push(curve.id.to_string());
             continue;
         }
         let status = ownership.status(curve.source_object.as_ref());
@@ -9281,7 +9335,7 @@ fn encode_file(
     body_presentations: &BTreeMap<usize, BodyPresentation>,
     version: crate::IgesVersion,
     minimum_resolution: f64,
-) -> Result<Vec<u8>, CodecError> {
+) -> Result<Vec<u8>, WriteError> {
     let metadata = DocumentMetadata::of(ir);
     let generation_timestamp = generation_timestamp_for(version, metadata.generation_date)?;
     let maximum_coordinate = generated_maximum_coordinate(entities);
@@ -9354,7 +9408,8 @@ fn encode_file(
         let Some(parent_expanded) = expanded_index_by_entity.get(parent).copied() else {
             return Err(CodecError::malformed(
                 "IGES transformation link targets no emitted entity",
-            ));
+            )
+            .into());
         };
         let parent_sequence = u32::try_from(parent_expanded)
             .ok()
@@ -9367,7 +9422,8 @@ fn encode_file(
         else {
             return Err(CodecError::malformed(
                 "IGES transformation link targets no emitted entity",
-            ));
+            )
+            .into());
         };
         *slot = parent_sequence;
     }
@@ -9397,9 +9453,9 @@ fn encode_file(
             None | Some(BodyColor::Standard(0)) => 0,
             Some(BodyColor::Standard(number)) => number,
             Some(BodyColor::Custom(_)) => {
-                return Err(CodecError::Malformed(
-                    "IGES color definition was not emitted".into(),
-                ));
+                return Err(
+                    CodecError::Malformed("IGES color definition was not emitted".into()).into(),
+                );
             }
             Some(BodyColor::Definition(entity_index)) => {
                 let expanded_index =
@@ -9864,12 +9920,12 @@ fn civil_date_from_unix_days(days: i64) -> (i64, i64, i64) {
     (year, month, day)
 }
 
-fn directory_card(fields: [String; 9], sequence: u32) -> Result<Vec<u8>, CodecError> {
+fn directory_card(fields: [String; 9], sequence: u32) -> Result<Vec<u8>, WriteError> {
     let mut payload = Vec::new();
     for field in fields {
         payload.extend_from_slice(&crate::directory::render_field(field.as_bytes())?);
     }
-    card(&payload, b'D', sequence)
+    Ok(card(&payload, b'D', sequence)?)
 }
 
 /// (C) Parameter fragments fit 64 bytes; (O-capacity) directory pointers fit eight digits.
@@ -9877,72 +9933,34 @@ fn parameter_card(
     data: &[u8],
     directory_sequence: u32,
     sequence: u32,
-) -> Result<Vec<u8>, CodecError> {
+) -> Result<Vec<u8>, WriteError> {
     if data.len() > 64 {
-        return Err(CodecError::Malformed(
-            "IGES Parameter Data payload exceeds 64 bytes".into(),
-        ));
+        return Err(
+            CodecError::Malformed("IGES Parameter Data payload exceeds 64 bytes".into()).into(),
+        );
     }
     let mut payload = vec![b' '; 72];
     payload[..data.len()].copy_from_slice(data);
     let pointer = format!("{directory_sequence:>8}");
     if pointer.len() > 8 {
-        return Err(CodecError::InvalidInput(
-            "IGES directory sequence overflows".into(),
-        ));
+        return Err(CodecError::InvalidInput("IGES directory sequence overflows".into()).into());
     }
     payload[64..].copy_from_slice(pointer.as_bytes());
-    card(&payload, b'P', sequence)
+    Ok(card(&payload, b'P', sequence)?)
 }
 
 /// IGES states every JSON path at full precision; no written value is
 /// quantized or normalized (#232 §5.2).
 pub(crate) const REDUCED_FIELDS: &[cadmpeg_ir::codec::write::ReducedField] = &[];
 
-/// Stored-field capacities of the Fixed ASCII card layout (#217 §5.0).
-/// The payload row holds the 72 section-data bytes and the sequence row the
-/// seven-column decimal field (`docs/formats/iges.md` §33). Both helpers
-/// refuse with `InvalidInput` until #239 switches the encode path to
-/// `EncodeError`, when they construct `TargetCapacity` instead.
-pub(crate) const CAPACITY_FIELDS: &[cadmpeg_ir::codec::write::CapacityField] = &[
-    cadmpeg_ir::codec::write::CapacityField {
-        field: "card.payload",
-        limit: 72,
-        source: "docs/formats/iges.md §33: card bytes 1 through 72 are section data",
-        helper: "card_payload",
-    },
-    cadmpeg_ir::codec::write::CapacityField {
-        field: "card.sequence",
-        limit: 9_999_999,
-        source: "docs/formats/iges.md §33: bytes 74 through 80 are the decimal sequence field",
-        helper: "card_sequence",
-    },
-];
-
-/// The section data fits the 72-byte card payload.
-fn card_payload(data: &[u8]) -> Result<(), CodecError> {
-    if u64::try_from(data.len()).is_ok_and(|length| length > CAPACITY_FIELDS[0].limit) {
-        return Err(CodecError::InvalidInput(
-            "IGES card payload exceeds 72 bytes".into(),
-        ));
-    }
-    Ok(())
-}
-
-/// The card sequence fits the seven-column decimal field.
-fn card_sequence(sequence: u32) -> Result<u32, CodecError> {
-    if u64::from(sequence) > CAPACITY_FIELDS[1].limit {
-        return Err(CodecError::InvalidInput(
-            "IGES card sequence exceeds seven digits".into(),
-        ));
-    }
-    Ok(sequence)
-}
-
 /// (O-capacity) Fixed ASCII cards have 72 payload columns and seven sequence digits.
-fn card(data: &[u8], section: u8, sequence: u32) -> Result<Vec<u8>, CodecError> {
-    card_payload(data)?;
-    let sequence = card_sequence(sequence)?;
+fn card(
+    data: &[u8],
+    section: u8,
+    sequence: u32,
+) -> Result<Vec<u8>, cadmpeg_ir::codec::write::EncodeError> {
+    capacity::card_payload(data)?;
+    let sequence = capacity::card_sequence(sequence)?;
     let mut payload = vec![b' '; 80];
     payload[..data.len()].copy_from_slice(data);
     payload[72] = section;
