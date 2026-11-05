@@ -5254,7 +5254,7 @@ fn admit_kernel_tolerances(
                 linear.get()
             )));
         }
-        tolerances.linear = linear;
+        tolerances.linear = Some(linear);
     }
     if let Some(angular) = resnor.and_then(cadmpeg_ir::scalar::PositiveAngle::new) {
         tolerances.angular = angular;

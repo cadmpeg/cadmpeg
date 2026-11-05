@@ -19,7 +19,8 @@ fn an_untrimmed_sphere_takes_its_chord_from_the_radius() {
     let options = mesh_options(&cadmpeg_ir::index::ModelIndex::new_model_only(ir), body);
     let radius = 20.0_f64;
     let diagonal = (3.0 * (2.0 * radius).powi(2)).sqrt();
-    let expected = (diagonal * CHORD_RATIO).max(ir.tolerances.linear.get() * MIN_CHORD_TOLERANCES);
+    let expected = (diagonal * CHORD_RATIO)
+        .max(ir.tolerances.linear.expect("stated linear tolerance").get() * MIN_CHORD_TOLERANCES);
     assert!(
         floats_agree(options.chord, expected),
         "chord {} vs {expected} from diagonal {diagonal}",

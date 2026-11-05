@@ -45,7 +45,10 @@ pub(super) fn native_smbh_header(target: &CadIr) -> Result<Vec<u8>, CodecError> 
     native_string(&mut bytes, "Thu Jan  1 00:00:00 1970")?;
     native_f64(&mut bytes, 60.0);
     // Binary ASM stores length tolerances in centimetres.
-    native_f64(&mut bytes, target.tolerances.linear.get() / 10.0);
+    native_f64(
+        &mut bytes,
+        target.tolerances.linear_or_default().get() / 10.0,
+    );
     native_f64(&mut bytes, target.tolerances.angular.get());
     Ok(bytes)
 }
@@ -4690,9 +4693,7 @@ fn native_conic_interval_curve(
         )
     };
     let spans = truncate_f64_to_usize(span_count)
-        .filter(|spans| {
-            u32::try_from(*spans).is_ok_and(|spans| spans <= MAX_GENERATED_CONIC_SPANS)
-        })
+        .filter(|spans| u32::try_from(*spans).is_ok_and(|spans| spans <= MAX_GENERATED_CONIC_SPANS))
         .ok_or_else(too_large)?;
     let step = delta / f64_from_index(spans).ok_or_else(too_large)?;
 
