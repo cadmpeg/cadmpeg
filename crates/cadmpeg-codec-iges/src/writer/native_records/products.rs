@@ -4,8 +4,8 @@
 
 use super::{coordinates, entity, integer, real, text, Entity, Fields, Value};
 
-/// Resolve a root instance through its current neutral occurrence and prototype.
-pub(super) fn current_root_occurrence<'a>(
+/// Resolve an instance when exactly one current occurrence uses it.
+pub(super) fn current_occurrence<'a>(
     ir: &'a super::CadIr,
     arena: &str,
     record: &super::NativeRecord,
@@ -24,12 +24,6 @@ pub(super) fn current_root_occurrence<'a>(
         .occurrences
         .iter()
         .filter(|occurrence| {
-            if !matches!(
-                occurrence.parent,
-                cadmpeg_ir::products::OccurrenceParent::Root {}
-            ) {
-                return false;
-            }
             native.iter().any(|native| {
                 occurrence.native_ref.as_deref() == Some(native.id())
                     && native
