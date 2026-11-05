@@ -913,7 +913,7 @@ fn parse_cell_record(
 /// A value inside one database piece gives up exactly its bytes. An overflow
 /// value spans pages without one source extent; its first piece stands in
 /// for the cell while the enclosing section record keeps the remaining bytes.
-fn cell_extent<'a, 'b>(image: &'b database::read::MapImage<'a>, fallback: View<'b>) -> View<'b> {
+fn cell_extent<'b>(image: &'b database::read::MapImage<'_>, fallback: View<'b>) -> View<'b> {
     image.value_extent().unwrap_or(fallback)
 }
 
