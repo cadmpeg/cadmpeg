@@ -1013,3 +1013,305 @@ fn multi_face_loops_preempt_single_face_loops() {
         assert_eq!(result, Some(ResolvedProfileSelection::Loops(vec![0, 1])));
     });
 }
+
+// ---------------------------------------------------------------------------
+// 8. Unresolved explicit region selection vs group/transition alternatives
+// ---------------------------------------------------------------------------
+
+fn unresolved_explicit_region_fixture(
+    history_states: Option<(i64, i64)>,
+) -> (
+    Sketch,
+    Vec<SketchEntity>,
+    Vec<crate::records::sketch_geometry::SketchCurveIdentity>,
+    crate::records::feature::scope::DesignParameterScope,
+) {
+    use serde_json::json;
+
+    let sketch_id = SketchId::mint("f3d:model:sketch#explicit_conflict").unwrap();
+    let specs = [
+        (
+            100_u32,
+            json!({"kind": "circle", "center": {"u": 0.0, "v": 0.0}, "radius": 2.0}),
+        ),
+        (
+            101_u32,
+            json!({"kind": "circle", "center": {"u": 0.0, "v": 0.0}, "radius": 1.0}),
+        ),
+        (
+            200_u32,
+            json!({"kind": "circle", "center": {"u": 10.0, "v": 0.0}, "radius": 3.0}),
+        ),
+    ];
+    let mut entities = Vec::new();
+    let mut curves = Vec::new();
+    for (primary, geom) in specs {
+        entities.push(SketchEntity::new(
+            crate::ids::neutral_sketch_curve_id(&sketch_id, u64::from(primary), 0),
+            sketch_id.clone(),
+            serde_json::from_value::<SketchGeometry>(geom).unwrap(),
+        ));
+        curves.push(crate::records::sketch_geometry::SketchCurveIdentity {
+            id: format!("f3d:Design/BulkStream.dat:curve#{primary}"),
+            record_index: primary,
+            owner_reference: Some(42),
+            class_tag: "300".to_owned().try_into().unwrap(),
+            byte_offset: 0,
+            geometry_offset: 0,
+            entity_genesis: None,
+            primary_id: std::num::NonZeroU64::new(u64::from(primary)).unwrap(),
+            secondary_id: 0,
+            geometry: None,
+            planar_z_noise: None,
+        });
+    }
+    let sketch = make_sketch(
+        "f3d:model:sketch#explicit_conflict",
+        vec![
+            vec![entities[0].id().clone()],
+            vec![entities[1].id().clone()],
+            vec![entities[2].id().clone()],
+        ],
+    );
+    let operand: crate::records::topology::sketch_profile::DesignSketchProfileOperand =
+        serde_json::from_value(json!({
+            "scope_reference_ordinal": 0,
+            "record_index": 100,
+            "byte_offset": 10,
+            "class_tag": "301",
+            "asset_id": "01234567-89ab-cdef-0123-456789abcdef",
+            "asset_id_offset": 20,
+            "entity_id": "0_42",
+            "entity_suffix": 42,
+            "entity_reference_offset": 100,
+            "paired_class_tag": "259",
+            "paired_byte_offset": 200,
+            "region_selection": {
+                "record_index": 103,
+                "byte_offset": 300,
+                "class_tag": "302",
+                "region_count_offset": 336,
+                "regions": [{
+                    "member_count_offset": 340,
+                    "members": [{
+                        "kind": 3,
+                        "kind_offset": 0,
+                        "curve_primary_id": 100,
+                        "curve_primary_id_offset": 4,
+                        "incidence_words": [0, 0, 0, 0, 3, 8, 0, 0],
+                        "incidence_words_offset": 8
+                    }]
+                }],
+                "companion_class_tag": "260",
+                "companion_byte_offset": 700
+            }
+        }))
+        .unwrap();
+    let mut scope = crate::records::feature::scope::DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:scope#7",
+        crate::records::feature::scope::DesignScopePayload::Extrude(Some(
+            crate::records::feature::scope::DesignExtrudeScope {
+                extrude_profile: Some(operand),
+                ..crate::records::feature::scope::DesignExtrudeScope::default()
+            },
+        )),
+        7,
+    );
+    if let Some((state_id, prev_state_id)) = history_states {
+        scope
+            .try_edit(|draft| {
+                draft.frame_length = 124;
+                draft.paired_byte_offset = 124;
+                draft.history_state_id = Some(state_id);
+                draft.previous_history_state_id = Some(prev_state_id);
+                draft.previous_history_state_id_offset = Some(78);
+            })
+            .unwrap();
+    }
+    (sketch, entities, curves, scope)
+}
+
+#[test]
+fn unresolved_explicit_region_rejects_conflicting_group_and_accepts_agreeing_group() {
+    use serde_json::json;
+
+    crate::test_support::with_decode_context(|ctx| {
+        let (sketch, entities, curves, scope) = unresolved_explicit_region_fixture(None);
+        let group = extrude_group(vec![10]);
+
+        let run_with_curve = |curve_primary: u64| -> ProfileRef {
+            let member = make_member(
+                group.record_index,
+                0,
+                10,
+                Some(SketchRelationOperand::Curve {
+                    record_index: 20,
+                    primary_id: curve_primary,
+                    secondary_id: 0,
+                }),
+            );
+            let mut feature: cadmpeg_ir::features::Feature = serde_json::from_value(json!({
+                "id": "synthetic:test:feature#ext",
+                "ordinal": 0,
+                "suppressed": false,
+                "native_ref": scope.id,
+                "definition": {
+                    "definition": "extrude",
+                    "profile": {"kind": "sketch", "value": sketch.id},
+                    "direction": {"kind": "profile_normal"},
+                    "start": {"kind": "profile_plane"},
+                    "extent": {"kind": "one_sided", "side": {"termination": {"kind": "blind", "length": 1.0}}},
+                    "op": "new_body",
+                    "solid": true
+                }
+            }))
+            .unwrap();
+            let sketches = [sketch.clone()];
+            let scopes = [scope.clone()];
+            let groups = [group.clone()];
+            let members = [member];
+            let work = ProfileGeometryWork::new();
+            crate::design::profile_select::bind_extrude_profile_selections(
+                std::slice::from_mut(&mut feature),
+                &scopes,
+                &groups,
+                &members,
+                &sketches,
+                &crate::design::profile_select::SketchCurveSelectionResolution {
+                    scopes: &scopes,
+                    groups: &[],
+                    operands: &[],
+                    profile_curves: &[],
+                    placements: &[],
+                    curve_identities: &curves,
+                    sketches: &sketches,
+                    sketch_entities: &entities,
+                    spatial_sketches: &[],
+                    spatial_sketch_entities: &[],
+                },
+                ExtrudeProfileResolution {
+                    entities: &entities,
+                    spatial_sketches: &[],
+                    spatial_entities: &[],
+                    histories: &[],
+                    scope_histories: &HashMap::new(),
+                    linear_tolerance: EPS,
+                    angular_tolerance: 1.0e-9,
+                    profile_work: &work,
+                    ctx,
+                },
+            )
+            .unwrap();
+            let cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::Extrude { profile, .. },
+            ) = feature.evaluation.into_parts().0
+            else {
+                panic!("Extrude");
+            };
+            profile
+        };
+
+        // Conflicting construction group selecting curve 200 (loop 2) vs explicit region curve 100 (loop 0)
+        assert_eq!(
+            run_with_curve(200),
+            ProfileRef::Planar(
+                PlanarProfileRef::sketch_selection(sketch.id.clone(), vec![scope.id.clone()])
+                    .unwrap()
+            )
+        );
+
+        // Agreeing construction group selecting curve 100 (loop 0)
+        assert_eq!(
+            run_with_curve(100),
+            ProfileRef::Planar(PlanarProfileRef::sketch_profiles(sketch.id, vec![0]).unwrap())
+        );
+    });
+}
+
+#[test]
+fn unresolved_explicit_region_rejects_conflicting_transition_and_accepts_agreeing_transition() {
+    use serde_json::json;
+
+    crate::test_support::with_decode_context(|ctx| {
+        let (sketch, entities, curves, scope) = unresolved_explicit_region_fixture(Some((1, 0)));
+
+        let run_with_radius = |radius: f64| -> ProfileRef {
+            let topo0 = AsmHistoricalTopology::default();
+            let topo1 = cylinder_face_topology(0, radius, 0.0);
+            let history = history_with_topologies(&[topo0, topo1]);
+            let mut feature: cadmpeg_ir::features::Feature = serde_json::from_value(json!({
+                "id": "synthetic:test:feature#ext_trans",
+                "ordinal": 0,
+                "suppressed": false,
+                "native_ref": scope.id,
+                "definition": {
+                    "definition": "extrude",
+                    "profile": {"kind": "sketch", "value": sketch.id},
+                    "direction": {"kind": "profile_normal"},
+                    "start": {"kind": "profile_plane"},
+                    "extent": {"kind": "one_sided", "side": {"termination": {"kind": "blind", "length": 1.0}}},
+                    "op": "new_body",
+                    "solid": true
+                }
+            }))
+            .unwrap();
+            let sketches = [sketch.clone()];
+            let scopes = [scope.clone()];
+            let histories = [history];
+            let work = ProfileGeometryWork::new();
+            crate::design::profile_select::bind_extrude_profile_selections(
+                std::slice::from_mut(&mut feature),
+                &scopes,
+                &[],
+                &[],
+                &sketches,
+                &crate::design::profile_select::SketchCurveSelectionResolution {
+                    scopes: &scopes,
+                    groups: &[],
+                    operands: &[],
+                    profile_curves: &[],
+                    placements: &[],
+                    curve_identities: &curves,
+                    sketches: &sketches,
+                    sketch_entities: &entities,
+                    spatial_sketches: &[],
+                    spatial_sketch_entities: &[],
+                },
+                ExtrudeProfileResolution {
+                    entities: &entities,
+                    spatial_sketches: &[],
+                    spatial_entities: &[],
+                    histories: &histories,
+                    scope_histories: &HashMap::new(),
+                    linear_tolerance: EPS,
+                    angular_tolerance: 1.0e-9,
+                    profile_work: &work,
+                    ctx,
+                },
+            )
+            .unwrap();
+            let cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::Extrude { profile, .. },
+            ) = feature.evaluation.into_parts().0
+            else {
+                panic!("Extrude");
+            };
+            profile
+        };
+
+        // Conflicting transition inserting radius 1.0 (loop 1) vs explicit region curve 100 (loop 0, radius 2.0)
+        assert_eq!(
+            run_with_radius(1.0),
+            ProfileRef::Planar(
+                PlanarProfileRef::sketch_selection(sketch.id.clone(), vec![scope.id.clone()])
+                    .unwrap()
+            )
+        );
+
+        // Agreeing transition inserting radius 2.0 (loop 0)
+        assert_eq!(
+            run_with_radius(2.0),
+            ProfileRef::Planar(PlanarProfileRef::sketch_profiles(sketch.id, vec![0]).unwrap())
+        );
+    });
+}
