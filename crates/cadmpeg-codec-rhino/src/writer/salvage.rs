@@ -70,17 +70,12 @@ pub(super) fn write(
             &cadmpeg_ir::appearance::AppearanceTarget::Surface(surface.id.clone()),
             surface.source_object.as_ref(),
         );
-        ctx.charge_entities(1, "write Rhino object record")?;
+        ctx.charge_entities(
+            cadmpeg_core::decode::u64_from_index(payload.record_count),
+            "write Rhino surface records",
+        )?;
         output.append(
-            &attributed_object_record(
-                ir,
-                8,
-                payload.0,
-                &payload.1,
-                surface.id.as_str(),
-                display,
-                materials,
-            )?,
+            &super::surface_object_record(ir, &payload, surface.id.as_str(), display, materials)?,
             "retain Rhino archive bytes",
         )?;
         losses.extend(notes);

@@ -687,7 +687,7 @@ pub(super) enum WritableFaceSurface<'a> {
         pole_count: i32,
     },
     Revolution {
-        payload: Vec<u8>,
+        payload: super::SurfacePayload,
         usage: [[f64; 2]; 2],
         surface: &'a cadmpeg_ir::geometry::Surface,
     },
@@ -746,24 +746,28 @@ impl<'a> WritableFaceSurface<'a> {
         }
     }
 
-    pub(super) fn payload(&self) -> Result<([u8; 16], Vec<u8>), WriteError> {
+    pub(super) fn payload(&self) -> Result<super::SurfacePayload, WriteError> {
         Ok(match self {
             Self::Plane {
                 origin,
                 normal,
                 u_axis,
-            } => (
-                super::PLANE_SURFACE_CLASS,
-                super::plane_surface_payload(*origin, *normal, *u_axis)?,
-            ),
+            } => super::SurfacePayload {
+                class: super::PLANE_SURFACE_CLASS,
+                body: super::plane_surface_payload(*origin, *normal, *u_axis)?,
+                direct: None,
+                record_count: 1,
+            },
             Self::Nurbs {
                 surface,
                 pole_count,
-            } => (
-                super::NURBS_SURFACE_CLASS,
-                super::nurbs_surface_payload(surface, *pole_count)?,
-            ),
-            Self::Revolution { payload, .. } => (super::REV_SURFACE_CLASS, payload.clone()),
+            } => super::SurfacePayload {
+                class: super::NURBS_SURFACE_CLASS,
+                body: super::nurbs_surface_payload(surface, *pole_count)?,
+                direct: None,
+                record_count: 1,
+            },
+            Self::Revolution { payload, .. } => payload.clone(),
         })
     }
 }

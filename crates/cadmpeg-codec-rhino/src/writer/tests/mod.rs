@@ -24,6 +24,7 @@ mod placements;
 mod planar;
 mod reduced_fields;
 mod reductions;
+mod revolution;
 mod scopes;
 mod targets;
 
