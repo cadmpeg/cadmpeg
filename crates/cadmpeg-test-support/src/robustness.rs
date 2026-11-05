@@ -49,7 +49,7 @@ fn repoint_id_value(document: &mut Value, ids: &BTreeSet<String>) -> Option<Stri
                     if key != "id" {
                         if let Value::String(text) = child {
                             if ids.contains(text) {
-                                *text = "injected:missing:record#0".to_owned();
+                                "injected:missing:record#0".clone_into(text);
                                 return true;
                             }
                         }
@@ -82,7 +82,7 @@ fn repoint_id_value(document: &mut Value, ids: &BTreeSet<String>) -> Option<Stri
                 }
                 if let Value::String(text) = &mut *value {
                     if ids.contains(text) {
-                        *text = "injected:missing:record#0".to_owned();
+                        "injected:missing:record#0".clone_into(text);
                         return Some(id);
                     }
                 }
