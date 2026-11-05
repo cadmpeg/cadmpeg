@@ -1705,7 +1705,7 @@ pub(in crate::decode) fn transfer_sampled_sweep_circles(
 
 pub(in crate::decode) enum SampledCircleRange {
     Unrelated,
-    Refused(cadmpeg_ir::report::loss::LossNote),
+    Refused(Box<cadmpeg_ir::report::loss::LossNote>),
     Admitted([f64; 2]),
 }
 
@@ -1754,12 +1754,12 @@ pub(in crate::decode) fn sampled_sweep_circle_range(
         source_carriers,
     )? {
         Some(range) => Ok(SampledCircleRange::Admitted(range)),
-        None => Ok(SampledCircleRange::Refused(
+        None => Ok(SampledCircleRange::Refused(Box::new(
             CreoLossCode::SampledPcurveCarrierUnresolved.note(format!(
                 "Curve {} at byte {} has no unique ordered circular sweep interval; its interval remains native",
                 record.curve_id, record.offset
             )),
-        )),
+        ))),
     }
 }
 
@@ -1873,9 +1873,9 @@ pub(in crate::decode) fn sampled_hole_circle_range(
             *geometry = oriented;
             Ok(SampledCircleRange::Admitted(range))
         }
-        None => Ok(SampledCircleRange::Refused(CreoLossCode::HoleCircleIntervalUnresolved.note(
+        None => Ok(SampledCircleRange::Refused(Box::new(CreoLossCode::HoleCircleIntervalUnresolved.note(
             format!("Hole curve {} at byte {} retains an unresolved owned plane/cylinder sample pair or ordered circle interval", record.curve_id, record.offset)
-        ))),
+        )))),
     }
 }
 
