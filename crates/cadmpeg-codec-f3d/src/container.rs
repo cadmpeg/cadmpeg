@@ -519,7 +519,10 @@ fn partial_stored_brep_header(
         return None;
     }
     let start = usize::try_from(entry.declaration_range().end).ok()?;
-    let prefix = source.get(start..)?;
+    let end = start
+        .checked_add(usize::try_from(entry.compressed_size).ok()?)?
+        .min(source.len());
+    let prefix = source.get(start..end)?;
     if !asm_header::has_asm_magic(prefix) {
         return None;
     }
