@@ -225,11 +225,13 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
         std::slice::from_ref(&recipe),
         &candidate_tags,
         std::slice::from_ref(&scope),
-        &bodies,
-        &faces,
-        &edges,
-        &vertices,
-        &coedges,
+        crate::design::decode::dimension_frames::BrepTopology {
+            bodies: &bodies,
+            faces: &faces,
+            edges: &edges,
+            vertices: &vertices,
+            coedges: &coedges,
+        },
     );
     assert_eq!(
         operand.references()[0].candidate_faces,
@@ -322,11 +324,13 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
             },
         ],
         std::slice::from_ref(&combine_scope),
-        &bodies,
-        &faces,
-        &edges,
-        &vertices,
-        &coedges,
+        crate::design::decode::dimension_frames::BrepTopology {
+            bodies: &bodies,
+            faces: &faces,
+            edges: &edges,
+            vertices: &vertices,
+            coedges: &coedges,
+        },
     );
     assert_eq!(
         combine_operand.references()[0].candidate_faces,

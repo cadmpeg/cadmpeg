@@ -730,26 +730,40 @@ pub(crate) fn bind_dimension_recipe_reference_candidates(
                 reference,
                 tags,
                 Some(&record.id),
-                bodies,
-                faces,
-                edges,
-                vertices,
-                coedges,
+                crate::design::decode::dimension_frames::BrepTopology {
+                    bodies,
+                    faces,
+                    edges,
+                    vertices,
+                    coedges,
+                },
             );
         }
     }
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct BrepTopology<'a> {
+    pub(crate) bodies: &'a [cadmpeg_ir::topology::Body],
+    pub(crate) faces: &'a [cadmpeg_ir::topology::Face],
+    pub(crate) edges: &'a [cadmpeg_ir::topology::Edge],
+    pub(crate) vertices: &'a [cadmpeg_ir::topology::Vertex],
+    pub(crate) coedges: &'a [cadmpeg_ir::topology::Coedge],
 }
 
 pub(crate) fn bind_recipe_reference_candidates(
     reference: &mut crate::records::dimensions::DesignRecipeReference,
     tags: &[PersistentSubentityTag],
     owner_id: Option<&str>,
-    bodies: &[cadmpeg_ir::topology::Body],
-    faces: &[cadmpeg_ir::topology::Face],
-    edges: &[cadmpeg_ir::topology::Edge],
-    vertices: &[cadmpeg_ir::topology::Vertex],
-    coedges: &[cadmpeg_ir::topology::Coedge],
+    topology: crate::design::decode::dimension_frames::BrepTopology<'_>,
 ) {
+    let crate::design::decode::dimension_frames::BrepTopology {
+        bodies,
+        faces,
+        edges,
+        vertices,
+        coedges,
+    } = topology;
     reference.candidate_faces.clear();
     reference.candidate_edges.clear();
     reference.alternate_selector_faces.clear();
