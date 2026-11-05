@@ -73,7 +73,6 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
             [0.0, 0.0, 0.0, 1.0],
         ];
         if crate::records::sketch_placement::SketchPlacementMatrix::try_from(frame).is_err()
-            || sketch.native_ref.is_some()
             || sketch.configuration.is_some()
             || sketch.visible.is_some()
             || target
@@ -92,7 +91,6 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
             .collect::<Vec<_>>();
         if members.iter().any(|row| {
             row.construction
-                || row.native_ref.is_some()
                 || row.geometry_ref.is_some()
                 || !row.endpoint_refs.is_empty()
                 || match row.geometry.definition() {
