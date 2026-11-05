@@ -241,7 +241,7 @@ pub(super) fn document<'source>(
                             let (objects, data, _) = vocabulary.tags();
                             for tag in [objects, data] {
                                 if !root.children().any(|node| node.has_tag_name(tag))
-                                    && !damage.iter().any(|(name, _, _)| name == tag.as_bytes())
+                                    && !damage.iter().any(|(name, _, _, _)| name == tag.as_bytes())
                                 {
                                     return Err(CodecError::malformed(format_args!(
                                         "Document.xml has no {tag} section"

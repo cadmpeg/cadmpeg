@@ -270,6 +270,23 @@ pub(super) fn check_native_links(
         )*};
     }
     crate::document::arena_registry!(check_arenas);
+    for topology in &ir.model.feature_input_topologies {
+        for operand in &topology.operands {
+            let native_ref = &operand.native_ref;
+            if !all_ids.native_record_owns(native_ref.as_str()) {
+                super::record_finding(
+                    findings,
+                    Check::NativeLinks,
+                    Severity::Error,
+                    Some(topology.id.as_str()),
+                    format_args!(
+                        "operand native_ref `{}` does not resolve",
+                        native_ref.as_str()
+                    ),
+                );
+            }
+        }
+    }
     for feature in &ir.model.features {
         if let crate::features::FeatureDefinition::Operation(
             crate::features::FeatureOperation::HelixNativeAxis {

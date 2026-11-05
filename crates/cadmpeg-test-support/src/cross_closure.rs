@@ -21,7 +21,7 @@ use super::comparison::{
 };
 use super::writer_closure::{structural_name_findings, Redecode, Redecoded, STEP_SAME_TARGET};
 
-mod typed_variants;
+pub(crate) mod typed_variants;
 
 /// Keys deleted at any depth before pairing (§5.2), plus the drawings
 /// arena's `parameters`.
