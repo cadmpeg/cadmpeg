@@ -109,6 +109,15 @@ pub(crate) fn write_step_outcome(
     let outcome = b.finish_outcome();
     let file_name_fields = b.file_name_fields.clone();
     let lines = b.emitter.into_lines()?;
+    let session = cadmpeg_core::encode::EncodeSession::from_context(ctx)?;
+    session.charge_entities(
+        cadmpeg_core::decode::u64_from_index(lines.len()),
+        "write STEP DATA records",
+    )?;
+    session.charge_entities(
+        cadmpeg_core::decode::u64_from_index(emitter_anchors.len()),
+        "write STEP REFERENCE records",
+    )?;
 
     write_header(
         w,
