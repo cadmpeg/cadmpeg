@@ -205,6 +205,16 @@ fn nested_single_line_composites_use_the_owning_edge_endpoints() {
         .losses
         .iter()
         .any(|loss| loss.message.contains(id("inner").as_str())));
+    assert!(output
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(id("outer").as_str())
+            && loss.message.contains("nested composite")));
+    assert!(output
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("test:model:edge#edge")
+            && loss.message.contains("flattened composite")));
 }
 
 #[test]

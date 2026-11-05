@@ -886,6 +886,16 @@ pub(super) fn write(
         // the same placement twice. Keep canonical construction placements and
         // typed native placements; body-only objects use their BRep root.
     }
+    let covered_points = super::point_kernel::write(
+        ctx,
+        ir,
+        &native_properties,
+        &names,
+        &entry_names,
+        &mut objects,
+        &mut entries,
+        &mut losses,
+    )?;
     // Independent records whose source object replays with every side
     // entry property need no `FreeGeometry` copy: the replayed payload
     // carries them, and the re-decode reproduces them from it.
@@ -905,7 +915,8 @@ pub(super) fn write(
             covered.insert(owner.clone());
         }
     }
-    if let Some(serialized) = brep::unowned_with_uses(ctx, ir, &mut losses, &root_kinds, &covered)?
+    if let Some(serialized) =
+        brep::unowned_with_uses(ctx, ir, &mut losses, &root_kinds, &covered, &covered_points)?
     {
         let mut name = "FreeGeometry".to_owned();
         while objects.iter().any(|object| object.name == name) {

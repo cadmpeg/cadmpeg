@@ -4,6 +4,7 @@
 pub(crate) mod patching;
 pub(crate) mod targets;
 
+mod application_geometry;
 mod coverage;
 mod degradation;
 mod one_fact;
