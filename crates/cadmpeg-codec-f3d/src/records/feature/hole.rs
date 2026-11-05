@@ -6,6 +6,7 @@ use crate::records::identity::{DesignSecondaryIdentity, Located};
 use crate::records::mesh::DesignRelaxedGuidText;
 use crate::records::references::DesignClassTag;
 use crate::records::topology::entity_selection::DesignEntitySelectionFaceCandidate;
+use crate::records::topology::entity_selection::SelectionSerializationForm;
 use cadmpeg_ir::scalar::FiniteReal;
 use serde::{ser::SerializeSeq, Deserialize, Serialize};
 
@@ -494,7 +495,7 @@ pub(crate) struct DesignHoleFaceSelection {
     pub(crate) context_id: DesignRelaxedGuidText,
     /// Byte offset of the context UUID's UTF-16LE code units.
     pub(crate) context_id_offset: u64,
-    pub(crate) serialization_form: u32,
+    pub(crate) serialization_form: SelectionSerializationForm,
     /// Nested indexed record carrying the persistent identity.
     pub(crate) identity_record_index: u32,
     /// Byte offset of the nested identity record.
@@ -531,7 +532,7 @@ struct DesignHoleFaceSelectionWire {
     /// Byte offset of the context UUID's UTF-16LE code units.
     context_id_offset: u64,
     #[serde(default, skip_serializing_if = "crate::history_records::is_default")]
-    serialization_form: u32,
+    serialization_form: SelectionSerializationForm,
     /// Nested indexed record carrying the persistent identity.
     identity_record_index: u32,
     /// Byte offset of the nested identity record.
@@ -622,7 +623,7 @@ struct HoleFaceSelectionView<'a> {
     context_id: &'a DesignRelaxedGuidText,
     context_id_offset: u64,
     #[serde(skip_serializing_if = "crate::history_records::is_default")]
-    serialization_form: u32,
+    serialization_form: SelectionSerializationForm,
     identity_record_index: u32,
     identity_record_offset: u64,
     primary_identity: u64,

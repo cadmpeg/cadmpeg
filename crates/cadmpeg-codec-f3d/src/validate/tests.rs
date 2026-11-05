@@ -1907,7 +1907,8 @@ fn validation_accepts_marked_sketch_curve_entity_selection_frame() {
             )
             .unwrap(),
             context_id_offset: 1_100,
-            serialization_form: 0,
+            serialization_form:
+                crate::records::topology::entity_selection::SelectionSerializationForm::Zero,
             identity_record_index: 203,
             identity_record_offset: 2_000,
             primary_identity: 949,

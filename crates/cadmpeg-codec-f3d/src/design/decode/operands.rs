@@ -4,6 +4,7 @@
 mod fillet_variable_groups;
 
 use crate::bytes::lp_utf16_bounded;
+use crate::records::topology::entity_selection::SelectionSerializationForm;
 use crate::records::topology::{
     construction::DesignConstructionOperandRole, extrude_selection::DesignExtrudeFaceEncoding,
 };
@@ -3987,7 +3988,7 @@ pub(in crate::design::decode) struct EntitySelectionFrame {
     pub(super) asset_id_offset: u64,
     pub(super) context_id: String,
     pub(super) context_id_offset: u64,
-    pub(super) serialization_form: u32,
+    pub(super) serialization_form: SelectionSerializationForm,
     pub(super) identity_record_index: u32,
     pub(super) identity_record_offset: u64,
     pub(super) primary_identity: u64,
@@ -4004,7 +4005,7 @@ pub(in crate::design::decode) struct EntitySelectionPrefix {
     pub(super) asset_id_offset: u64,
     pub(super) context_id: String,
     pub(super) context_id_offset: u64,
-    pub(super) serialization_form: u32,
+    pub(super) serialization_form: SelectionSerializationForm,
     after_context_id: usize,
 }
 
@@ -4049,11 +4050,14 @@ pub(super) fn parse_entity_selection_prefix(
     };
     let (asset_id, after_asset_id) = lp_utf16_bounded(bytes, asset_start, 1..=256)?;
     let (context_id, after_context_id) = lp_utf16_bounded(bytes, after_asset_id, 1..=256)?;
-    let serialization_form = View::u32_le_at(bytes, after_context_id.checked_add(4)?)?;
+    let serialization_form = SelectionSerializationForm::try_from(View::u32_le_at(
+        bytes,
+        after_context_id.checked_add(4)?,
+    )?)
+    .ok()?;
     if !is_guid_relaxed(&asset_id)
         || !is_guid_relaxed(&context_id)
         || View::u32_le_at(bytes, after_context_id)? != 2
-        || serialization_form > 1
     {
         return None;
     }
@@ -4087,7 +4091,7 @@ struct WorkPointSketchPointFrame {
     asset_id_offset: u64,
     context_id: String,
     context_id_offset: u64,
-    serialization_form: u32,
+    serialization_form: SelectionSerializationForm,
     identity_record_index: u32,
     identity_record_offset: u64,
     identity_form: DesignWorkPointSketchPointIdentityForm,

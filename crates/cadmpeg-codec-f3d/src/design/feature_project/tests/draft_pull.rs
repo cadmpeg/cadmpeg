@@ -114,7 +114,8 @@ fn selection(primary_identity: u64, face_slots: &[i64]) -> DesignEntitySelection
         )
         .unwrap(),
         context_id_offset: 0,
-        serialization_form: 0,
+        serialization_form:
+            crate::records::topology::entity_selection::SelectionSerializationForm::Zero,
         identity_record_index: 115,
         identity_record_offset: 0,
         primary_identity,

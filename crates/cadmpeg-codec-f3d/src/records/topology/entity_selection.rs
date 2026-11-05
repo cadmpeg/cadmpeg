@@ -15,6 +15,35 @@ use crate::records::references::DesignClassTag;
 use serde::Deserialize;
 use serde::Serialize;
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "u32", into = "u32")]
+pub(crate) enum SelectionSerializationForm {
+    #[default]
+    Zero,
+    One,
+}
+
+impl TryFrom<u32> for SelectionSerializationForm {
+    type Error = &'static str;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::Zero),
+            1 => Ok(Self::One),
+            _ => Err("selection serialization form must be 0 or 1"),
+        }
+    }
+}
+
+impl From<SelectionSerializationForm> for u32 {
+    fn from(value: SelectionSerializationForm) -> Self {
+        match value {
+            SelectionSerializationForm::Zero => 0,
+            SelectionSerializationForm::One => 1,
+        }
+    }
+}
+
 /// Persistent Design entity selected through a nested indexed-record frame.
 #[derive(Debug, PartialEq, Deserialize)]
 #[serde(try_from = "DesignEntitySelectionOperandWire")]
@@ -39,7 +68,7 @@ pub(crate) struct DesignEntitySelectionOperand {
     pub(crate) context_id: DesignRelaxedGuidText,
     /// Byte offset of the context UUID's UTF-16LE code units.
     context_id_offset: u64,
-    serialization_form: u32,
+    serialization_form: SelectionSerializationForm,
     /// Byte offset of the nested identity record.
     identity_record_offset: u64,
     /// Primary entity identity in the nested identity pair; for a Sketch
@@ -103,7 +132,7 @@ impl Serialize for DesignEntitySelectionOperand {
             context_id: &'a str,
             context_id_offset: u64,
             #[serde(skip_serializing_if = "crate::history_records::is_default")]
-            serialization_form: u32,
+            serialization_form: SelectionSerializationForm,
             identity_record_index: u32,
             identity_record_offset: u64,
             primary_identity: u64,
@@ -351,7 +380,7 @@ pub(crate) struct DesignEntitySelectionOperandDraft {
     pub(crate) context_id: DesignRelaxedGuidText,
     /// Byte offset of the context UUID's UTF-16LE code units.
     pub(crate) context_id_offset: u64,
-    pub(crate) serialization_form: u32,
+    pub(crate) serialization_form: SelectionSerializationForm,
     /// Nested indexed record that carries the persistent entity identity.
     pub(crate) identity_record_index: u32,
     /// Byte offset of the nested identity record.
@@ -400,7 +429,7 @@ struct DesignEntitySelectionOperandWire {
     /// Byte offset of the context UUID's UTF-16LE code units.
     context_id_offset: u64,
     #[serde(default, skip_serializing_if = "crate::history_records::is_default")]
-    serialization_form: u32,
+    serialization_form: SelectionSerializationForm,
     /// Nested indexed record that carries the persistent entity identity.
     identity_record_index: u32,
     /// Byte offset of the nested identity record.

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Work axes, work points, work planes and the vertex recipes they resolve through.
 
+use crate::records::topology::entity_selection::SelectionSerializationForm;
 use cadmpeg_ir::native::bytes::NativeBytes;
 
 use cadmpeg_core::decode::u64_from_index;
@@ -690,7 +691,7 @@ pub(crate) struct DesignWorkPointPlaneSelection {
     context_id: DesignRelaxedGuidText,
     /// Byte offset of the context UUID's UTF-16LE code units.
     context_id_offset: u64,
-    serialization_form: u32,
+    serialization_form: SelectionSerializationForm,
     /// Byte offset of the nested identity record.
     identity_record_offset: u64,
     /// Serialized primary identity immediately preceding the `WorkPlane` scope.
@@ -784,7 +785,7 @@ pub(crate) struct DesignWorkPointPlaneSelectionDraft {
     /// Byte offset of the context UUID's UTF-16LE code units.
     pub(crate) context_id_offset: u64,
     #[serde(default, skip_serializing_if = "crate::history_records::is_default")]
-    pub(crate) serialization_form: u32,
+    pub(crate) serialization_form: SelectionSerializationForm,
     /// Nested indexed record carrying the persistent identity.
     pub(crate) identity_record_index: u32,
     /// Byte offset of the nested identity record.
@@ -852,7 +853,7 @@ pub(crate) struct DesignWorkPointSketchPointSelection {
     context_id: DesignRelaxedGuidText,
     /// Byte offset of the context UUID's UTF-16LE code units.
     context_id_offset: u64,
-    serialization_form: u32,
+    serialization_form: SelectionSerializationForm,
     /// Byte offset of the nested identity record.
     identity_record_offset: u64,
     /// Layout of the nested identity record.
@@ -963,7 +964,7 @@ pub(crate) struct DesignWorkPointSketchPointSelectionDraft {
     /// Byte offset of the context UUID's UTF-16LE code units.
     pub(crate) context_id_offset: u64,
     #[serde(default, skip_serializing_if = "crate::history_records::is_default")]
-    pub(crate) serialization_form: u32,
+    pub(crate) serialization_form: SelectionSerializationForm,
     /// Nested indexed record carrying the persistent identity.
     pub(crate) identity_record_index: u32,
     /// Byte offset of the nested identity record.

@@ -10,6 +10,7 @@ use crate::records::mesh::DesignRelaxedGuidText;
 use crate::records::recipes::{ConstructionRecipeDesign, ConstructionRecipeSelector};
 use crate::records::references::DesignClassTag;
 use crate::records::sketch_placement::SketchPlacementMatrix;
+use crate::records::topology::entity_selection::SelectionSerializationForm;
 use serde::{Deserialize, Deserializer, Serialize};
 
 cadmpeg_core::named_optional_field!(deserialize_coil_clockwise, bool, "coil_clockwise");
@@ -151,7 +152,7 @@ pub(crate) enum DesignCoilSelection {
         /// Context UUID qualifying the persistent selection namespace.
         context_id: DesignRelaxedGuidText,
         #[serde(default, skip_serializing_if = "crate::history_records::is_default")]
-        serialization_form: u32,
+        serialization_form: SelectionSerializationForm,
         /// Indexed nested record carrying the persistent identity pair.
         identity_record_index: u32,
         /// First persistent identity value.
@@ -167,7 +168,7 @@ pub(crate) enum DesignCoilSelection {
         /// Context UUID qualifying the recipe selection namespace.
         context_id: DesignRelaxedGuidText,
         #[serde(default, skip_serializing_if = "crate::history_records::is_default")]
-        serialization_form: u32,
+        serialization_form: SelectionSerializationForm,
         /// Indexed record containing the face recipe.
         recipe_record_index: u32,
         /// Byte offset of the face recipe record header.

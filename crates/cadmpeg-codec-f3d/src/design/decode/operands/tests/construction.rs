@@ -626,7 +626,8 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
                 )
                 .unwrap(),
                 context_id_offset: 0,
-                serialization_form: 0,
+                serialization_form:
+                    crate::records::topology::entity_selection::SelectionSerializationForm::Zero,
                 identity_record_index: record_index + 3,
                 identity_record_offset: 0,
                 primary_identity,

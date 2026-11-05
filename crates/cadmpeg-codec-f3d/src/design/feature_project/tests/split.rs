@@ -394,7 +394,8 @@ fn compact_plane_selection(
                 .try_into()
                 .unwrap(),
             context_id_offset: 0,
-            serialization_form: 0,
+            serialization_form:
+                crate::records::topology::entity_selection::SelectionSerializationForm::Zero,
             identity_record_index: record_index + 3,
             identity_record_offset: 0,
             primary_identity,
@@ -604,7 +605,8 @@ fn direct_single_identity_split_face_member_projects_historical_edge_path() {
                 )
                 .unwrap(),
                 context_id_offset: 0,
-                serialization_form: 0,
+                serialization_form:
+                    crate::records::topology::entity_selection::SelectionSerializationForm::Zero,
                 identity_record_index: 104,
                 identity_record_offset: 0,
                 primary_identity: 225,

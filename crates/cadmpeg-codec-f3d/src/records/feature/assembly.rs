@@ -9,6 +9,7 @@ use crate::records::mesh::{DesignOccurrenceKey, DesignRelaxedGuidText};
 use crate::records::recipes::ConstructionRecipeKind;
 use crate::records::references::DesignClassTag;
 use crate::records::sketch_placement::SketchPlacementMatrix;
+use crate::records::topology::entity_selection::SelectionSerializationForm;
 use cadmpeg_ir::scalar::FiniteReal;
 use serde::ser::{SerializeSeq, SerializeStruct};
 use serde::{Deserialize, Serialize};
@@ -269,7 +270,7 @@ pub(crate) struct DesignAssemblyLegacySelection {
     /// Byte offset of the context UUID's UTF-16LE payload.
     pub(crate) context_id_offset: u64,
     #[serde(default, skip_serializing_if = "crate::history_records::is_default")]
-    pub(crate) serialization_form: u32,
+    pub(crate) serialization_form: SelectionSerializationForm,
     /// Indexed record containing the face recipe.
     pub(crate) recipe_record_index: u32,
     /// Byte offset of the recipe record's indexed header.

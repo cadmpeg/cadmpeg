@@ -44,6 +44,20 @@ fn entity_selection_borrowed_wire_matches_owned_wire_bytes() {
 }
 
 #[test]
+fn entity_selection_serialization_form_validates_wire() {
+    let mut wire = entity_selection_wire_for_borrowed();
+    let default: DesignEntitySelectionOperand = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(serde_json::to_value(default).unwrap(), wire);
+
+    wire["serialization_form"] = 1.into();
+    let operand: DesignEntitySelectionOperand = serde_json::from_value(wire.clone()).unwrap();
+    assert_eq!(serde_json::to_value(operand).unwrap(), wire);
+
+    wire["serialization_form"] = 2.into();
+    assert!(serde_json::from_value::<DesignEntitySelectionOperand>(wire).is_err());
+}
+
+#[test]
 fn entity_selection_native_retained_limit_refuses_before_clone() {
     let record: DesignEntitySelectionOperand =
         serde_json::from_value(entity_selection_wire_for_borrowed()).unwrap();

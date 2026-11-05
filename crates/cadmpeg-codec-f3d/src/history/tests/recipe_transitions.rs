@@ -872,7 +872,8 @@ fn hole_case_with(
                     .try_into()
                     .unwrap(),
                 context_id_offset: 0,
-                serialization_form: 0,
+                serialization_form:
+                    crate::records::topology::entity_selection::SelectionSerializationForm::Zero,
                 identity_record_index: 103,
                 identity_record_offset: 0,
                 primary_identity: 18044,
