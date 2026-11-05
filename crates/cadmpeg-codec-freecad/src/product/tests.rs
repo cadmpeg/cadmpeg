@@ -1883,3 +1883,63 @@ fn assembly_joints_and_linked_prototypes_are_not_occurrences() {
     ));
     assert_valid_document(result.ir());
 }
+#[test]
+fn container_ordinals_follow_source_member_order() {
+    for (runtime, property) in [("App::LinkGroup", "ElementList"), ("App::Part", "Group")] {
+        let document = format!(
+            r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="4"><Object type="{runtime}" name="Group"/><Object type="App::Link" name="First"/><Object type="App::Link" name="Second"/><Object type="Part::Feature" name="Prototype"/></Objects>
+<ObjectData Count="4">
+ <Object name="Group"><Properties Count="1"><Property name="{property}" type="App::PropertyLinkList"><LinkList count="2"><Link value="Second"/><Link value="First"/></LinkList></Property></Properties></Object>
+ <Object name="First"><Properties Count="1"><Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property></Properties></Object>
+ <Object name="Second"><Properties Count="1"><Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property></Properties></Object>
+ <Object name="Prototype"><Properties Count="0"/></Object>
+</ObjectData></Document>"#
+        );
+        let decoded = FcstdCodec
+            .decode(
+                &mut Cursor::new(archive(&document)),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        let occurrences = &decoded.ir().model.occurrences;
+        for (name, ordinal) in [("Second", 0), ("First", 1)] {
+            let suffix = format!("#{name}:instance");
+            let item = occurrences
+                .iter()
+                .find(|item| item.id.as_str().ends_with(&suffix))
+                .unwrap();
+            assert_eq!(item.ordinal, ordinal, "{runtime}: {name}");
+        }
+        assert_valid_document(decoded.ir());
+    }
+}
+
+#[test]
+fn container_ordinals_keep_array_elements_together_in_source_order() {
+    let document = r#"<Document SchemaVersion="4" FileVersion="1">
+<Objects Count="4"><Object type="App::LinkGroup" name="Group"/><Object type="App::Link" name="First"/><Object type="App::Link" name="Array"/><Object type="Part::Feature" name="Prototype"/></Objects>
+<ObjectData Count="4">
+ <Object name="Group"><Properties Count="1"><Property name="ElementList" type="App::PropertyLinkList"><LinkList count="2"><Link value="Array"/><Link value="First"/></LinkList></Property></Properties></Object>
+ <Object name="First"><Properties Count="1"><Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property></Properties></Object>
+ <Object name="Array"><Properties Count="3"><Property name="LinkedObject" type="App::PropertyXLink"><XLink file="" name="Prototype"/></Property><Property name="ShowElement" type="App::PropertyBool"><Bool value="false"/></Property><Property name="ElementCount" type="App::PropertyIntegerConstraint"><Integer value="2"/></Property></Properties></Object>
+ <Object name="Prototype"><Properties Count="0"/></Object>
+</ObjectData></Document>"#;
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(archive(document)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    for (suffix, ordinal) in [("#Array:0", 0), ("#Array:1", 1), ("#First:instance", 2)] {
+        let item = decoded
+            .ir()
+            .model
+            .occurrences
+            .iter()
+            .find(|item| item.id.as_str().ends_with(suffix))
+            .unwrap();
+        assert_eq!(item.ordinal, ordinal, "{suffix}");
+    }
+    assert_valid_document(decoded.ir());
+}
