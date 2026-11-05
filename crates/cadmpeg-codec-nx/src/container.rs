@@ -1806,37 +1806,20 @@ fn directory_region_cut(
 /// the directory at the first entry the remaining image cannot complete.
 /// A fully declared entry keeps its file span even when that span runs past
 /// the image, so the tail give-up can retain the available bytes (§4.5).
-fn try_entry_cut(
-    data: &[u8],
-    o: usize,
-    region: Region,
-) -> Option<(DirEntry, usize)> {
-    let Some(name_len) = View::u32_le_at(data, o).and_then(|value| usize::try_from(value).ok())
-    else {
-        return None;
-    };
+fn try_entry_cut(data: &[u8], o: usize, region: Region) -> Option<(DirEntry, usize)> {
+    let name_len = View::u32_le_at(data, o).and_then(|value| usize::try_from(value).ok())?;
     if !(6..=128).contains(&name_len) {
         return None;
     }
-    let Some(name_start) = o.checked_add(dir_entry::LEN) else {
-        return None;
-    };
-    let Some(name_end) = name_start.checked_add(name_len) else {
-        return None;
-    };
-    let Some(raw) = data.get(name_start..name_end) else {
-        return None;
-    };
+    let name_start = o.checked_add(dir_entry::LEN)?;
+    let name_end = name_start.checked_add(name_len)?;
+    let raw = data.get(name_start..name_end)?;
     if !raw.starts_with(b"/Root") || !raw.iter().all(|&b| (0x20..0x7f).contains(&b)) {
         return None;
     }
     let payload = name_end;
-    let Some(next) = payload.checked_add(file_payload::LEN) else {
-        return None;
-    };
-    if data.get(payload..next).is_none() {
-        return None;
-    }
+    let next = payload.checked_add(file_payload::LEN)?;
+    data.get(payload..next)?;
 
     let Ok(value) = std::str::from_utf8(raw) else {
         return None;
