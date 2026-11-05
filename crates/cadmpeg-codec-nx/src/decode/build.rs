@@ -1285,14 +1285,16 @@ pub(super) fn try_decode_geometry(
             &mut parsed,
             terminal_lineage,
         )?;
-        let held = crate::native::attach_annotations(
+        let held = crate::native::attach::attach(
             ctx,
             &mut ir,
             &model,
             scan,
-            &mut annotations,
-            &mut unknowns,
-            &mut native_losses,
+            crate::native::attach::AttachOutputs {
+                annotations: &mut annotations,
+                unknowns: &mut unknowns,
+                losses: &mut native_losses,
+            },
             &mut parts,
         )?;
         Ok((model, held))
