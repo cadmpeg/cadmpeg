@@ -4679,6 +4679,7 @@ fn oriented_annotation_point_dimension(
 
     if !parameter.source_kind_str().starts_with("Linear Dimension")
         || !design_dimension_unit(parameter)
+        || first.id() == second.id()
     {
         return None;
     }

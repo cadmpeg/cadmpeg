@@ -28733,9 +28733,9 @@ anchor = "The metadata header stores `u8 1` and a u32 entry count."
 name = "dimension_annotation_payload_points"
 kind = "byte"
 section = "3.1"
-anchor = "In a two-point `Linear Dimension*` frame, the [annotation byte payload](../layouts/f3d.md) begins with two xyz f64 points"
+anchor = "it [begins with two xyz f64 points](../layouts/f3d.md)"
 size = 48
-note = "Offsets are relative to the start of the annotation byte payload of a two-point Linear Dimension frame. The rest of the payload follows the two points."
+note = "Offsets are relative to the start of the annotation byte payload of a two-point Linear Dimension frame whose payload holds at least 48 bytes. The rest of the payload follows the two points."
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/dimensions.rs"
 
 [[record.field]]
@@ -28743,14 +28743,14 @@ name = "first_point"
 offset = 0
 type = "f64[3]"
 source = "spec"
-anchor = "In a two-point `Linear Dimension*` frame, the [annotation byte payload](../layouts/f3d.md) begins with two xyz f64 points"
+anchor = "it [begins with two xyz f64 points](../layouts/f3d.md)"
 
 [[record.field]]
 name = "second_point"
 offset = 24
 type = "f64[3]"
 source = "spec"
-anchor = "In a two-point `Linear Dimension*` frame, the [annotation byte payload](../layouts/f3d.md) begins with two xyz f64 points"
+anchor = "it [begins with two xyz f64 points](../layouts/f3d.md)"
 
 [[record]]
 name = "dimension_annotation_genesis_metadata"
