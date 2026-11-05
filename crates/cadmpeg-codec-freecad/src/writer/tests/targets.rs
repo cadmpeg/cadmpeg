@@ -298,57 +298,56 @@ fn unknown_source_declaration_selects_the_catalog_default() {
     let primary = decoded.report().dialects().unwrap().primary();
     assert_eq!(primary.dialect().as_str(), "fcstd:unknown");
     assert_eq!(primary.declared()["schema_version"], "04");
-    for fidelity in [Some(decoded.source_fidelity()), None] {
-        let output = plan(decoded.ir(), fidelity, TargetRequest::Inherit)
-            .expect("the catalog default writes");
-        assert_eq!(target(&output), "fcstd:schema-4");
-        assert!(matches!(
-            output.report().write_path(),
-            WritePath::Synthesized { .. }
-        ));
-        let displacement: Vec<_> = output
+    let output = inherited(&decoded);
+    assert_eq!(target(&output), "fcstd:unknown");
+    assert!(matches!(
+        output.report().write_path(),
+        WritePath::Patched { .. }
+    ));
+    assert_eq!(entry_payloads(&bytes(output)), entry_payloads(&source));
+    let fallback = plan(decoded.ir(), None, TargetRequest::Inherit)
+        .expect("off-catalog inheritance synthesizes the catalog default");
+    assert_eq!(target(&fallback), "fcstd:schema-4");
+    assert!(matches!(
+        fallback.report().write_path(),
+        WritePath::Synthesized { .. }
+    ));
+    assert!(fallback.report().losses.iter().any(|loss| {
+        loss.code
+            == crate::loss::FreecadLossCode::SourceDialectDisplaced
+                .note("")
+                .code
+            && loss.message.contains("fcstd:unknown")
+            && loss.message.contains("fcstd:schema-4")
+    }));
+    let emitted = decode(&bytes(fallback));
+    assert_eq!(
+        emitted
             .report()
-            .losses
-            .iter()
-            .filter(|loss| {
-                loss.code
-                    == crate::loss::FreecadLossCode::SourceDialectDisplaced
-                        .note("")
-                        .code
-            })
-            .collect();
-        assert_eq!(displacement.len(), 1);
-        assert!(displacement[0].message.contains("fcstd:unknown"));
-        assert!(displacement[0].message.contains("fcstd:schema-4"));
-        let emitted = decode(&bytes(output));
-        assert_eq!(
-            emitted
-                .report()
-                .dialects()
-                .unwrap()
-                .primary()
-                .dialect()
-                .as_str(),
-            "fcstd:schema-4"
-        );
-        let mut expected_names: Vec<_> = decoded
-            .ir()
-            .model
-            .features
-            .iter()
-            .map(|feature| feature.name.clone())
-            .collect();
-        let mut actual_names: Vec<_> = emitted
-            .ir()
-            .model
-            .features
-            .iter()
-            .map(|feature| feature.name.clone())
-            .collect();
-        expected_names.sort();
-        actual_names.sort();
-        assert_eq!(actual_names, expected_names);
-    }
+            .dialects()
+            .unwrap()
+            .primary()
+            .dialect()
+            .as_str(),
+        "fcstd:schema-4"
+    );
+    let mut expected_names: Vec<_> = decoded
+        .ir()
+        .model
+        .features
+        .iter()
+        .map(|f| &f.name)
+        .collect();
+    let mut actual_names: Vec<_> = emitted
+        .ir()
+        .model
+        .features
+        .iter()
+        .map(|f| &f.name)
+        .collect();
+    expected_names.sort();
+    actual_names.sort();
+    assert_eq!(actual_names, expected_names);
     let explicit = plan(
         decoded.ir(),
         None,
