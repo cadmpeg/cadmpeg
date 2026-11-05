@@ -8,6 +8,9 @@ use cadmpeg_ir::features::{
 pub(super) fn class(operation: &FeatureOperation) -> Option<&'static str> {
     Some(match operation {
         FeatureOperation::Extrude {
+            solid: Some(false), ..
+        } => "moExtruRefSurface_c",
+        FeatureOperation::Extrude {
             op: BooleanOp::Cut, ..
         } => "moCut_c",
         FeatureOperation::Extrude { .. } => "moExtrusion_c",

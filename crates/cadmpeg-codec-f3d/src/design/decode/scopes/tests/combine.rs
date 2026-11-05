@@ -103,7 +103,7 @@ fn combine_tools_keep_first_and_additional_records() {
         lp_utf16(&mut bytes, "10000000-0000-0000-0000-000000000001");
         indexed_header(&mut bytes, *b"306", pair[1]);
     }
-    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let records = crate::design::test_support::test_primary_frames(&bytes);
     let header = DesignRecordHeader {
         id: "generated:scope-header#0".into(),
         record_index: 90,
@@ -208,7 +208,7 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
     };
     let mut scope = parse_parameter_scope(
         &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &crate::design::test_support::test_primary_frames(&bytes),
         header.record_index,
         &header.class_tag,
         header.byte_offset.expect("actual scanner header position"),
@@ -217,7 +217,7 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
     .expect("Combine scope");
     let operation = exact_combine_operation(
         &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &crate::design::test_support::test_primary_frames(&bytes),
         &scope,
     )
     .unwrap()
@@ -301,7 +301,7 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
         .unwrap();
     let compact = exact_combine_operation(
         &compact_bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&compact_bytes),
+        &crate::design::test_support::test_primary_frames(&compact_bytes),
         &compact_scope,
     )
     .unwrap()
@@ -324,7 +324,7 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
     malformed_compact_tail[45] = 1;
     assert!(exact_combine_operation(
         &malformed_compact_tail,
-        &crate::design::test_support::indexed_record_offsets_for_test(&malformed_compact_tail),
+        &crate::design::test_support::test_primary_frames(&malformed_compact_tail),
         &compact_scope
     )
     .unwrap()
@@ -448,7 +448,7 @@ fn combine_extended_reference_scope_retains_external_tool_identity() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let records = crate::design::test_support::test_primary_frames(&bytes);
     let operation = exact_combine_operation(&bytes, &records, &scope)
         .unwrap()
         .expect("extended-reference Combine construction");
@@ -531,7 +531,7 @@ fn combine_extended_reference_scope_retains_external_tool_identity() {
     malformed_reference[35] = 0;
     assert!(exact_combine_operation(
         &malformed_reference,
-        &crate::design::test_support::indexed_record_offsets_for_test(&malformed_reference),
+        &crate::design::test_support::test_primary_frames(&malformed_reference),
         &scope
     )
     .unwrap()
@@ -546,7 +546,7 @@ fn combine_extended_reference_scope_retains_external_tool_identity() {
     .unwrap()] = b'g';
     let operation = exact_combine_operation(
         &malformed_external_asset,
-        &crate::design::test_support::indexed_record_offsets_for_test(&malformed_external_asset),
+        &crate::design::test_support::test_primary_frames(&malformed_external_asset),
         &scope,
     )
     .unwrap()
@@ -719,7 +719,7 @@ impl OperandListFixture {
 }
 
 fn decode_combine_frame(bytes: &[u8]) -> Option<DesignCombineOperation> {
-    let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
+    let records = crate::design::test_support::test_primary_frames(bytes);
     let class_tag = crate::records::references::DesignClassTag::try_from("412".to_owned()).unwrap();
     let scope = parse_parameter_scope_with_type_guid(
         bytes,

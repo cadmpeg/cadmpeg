@@ -5,7 +5,6 @@ use cadmpeg_core::decode::u64_from_index;
 
 use super::shared_frames::exact_fixed_scalar;
 use super::shared_frames::marked_record_reference;
-use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::decode::text::{fixed_guid_end, fixed_utf16_ascii_eq};
 use crate::layout::shell_class_369_261_scope_frame as shell_369_261;
 use crate::layout::shell_wall_slot_scope_prefix as shell_slots;
@@ -22,7 +21,7 @@ const WALL_SLOTS_ZERO_RUN: usize = 12;
 /// pair and 291-byte frame are part of admission for this distinct grammar.
 pub(super) fn exact_legacy_thicken_class_347(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
 ) -> Option<DesignDirectFaceOperation> {
     if scope.class_tag.as_str() != "347"
@@ -96,7 +95,7 @@ pub(super) fn exact_legacy_thicken_class_347(
 /// face counts, so the admission rests on the frame grammar alone.
 pub(super) fn exact_shell_wall_slots(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
 ) -> Option<DesignDirectFaceOperation> {
     let start = usize::try_from(scope.byte_offset()?).ok()?;
@@ -196,7 +195,7 @@ pub(super) fn exact_shell_wall_slots(
 
 pub(super) fn exact_shell_class_369_261(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
 ) -> Option<DesignDirectFaceOperation> {
     if scope.class_tag.as_str() != "369"

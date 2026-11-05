@@ -1252,7 +1252,7 @@ pub(crate) const CAPACITY_FIELDS: &[cadmpeg_ir::codec::write::CapacityField] = &
     },
     cadmpeg_ir::codec::write::CapacityField {
         field: "feature.source_id",
-        limit: u32::MAX as u64,
+        limit: (u32::MAX - 1) as u64,
         source: "docs/formats/sldprt.md §8: feature source identifiers occupy u32 fields",
         helper: "allocate_feature_source_id",
     },
