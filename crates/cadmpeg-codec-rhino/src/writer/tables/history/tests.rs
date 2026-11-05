@@ -108,17 +108,17 @@ fn history_feature() -> Feature {
         name: None,
         suppressed: Some(false),
         needs_recompute: false,
-        dependencies: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
         source_properties,
         source_tag: Some("HistoryRecord".to_owned()),
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
         evaluation: FeatureEvaluation::new(
             FeatureDefinition::Operation(FeatureOperation::Native {
                 kind: "06d2b948-7388-4634-9f7b-6bd6543d0b44".to_owned().into(),
-                parameters: Default::default(),
+                parameters: BTreeMap::default(),
             }),
-            Default::default(),
+            cadmpeg_ir::features::DistinctMembers::default(),
         ),
         native_ref: Some("rhino:history:record#4a9c4974-0863-40a8-84c7-4f27609c187c".to_owned()),
     }
@@ -132,7 +132,7 @@ fn held_record() -> NativeRecord {
         serde_json::json!({
             "source_uuid": "4a9c4974-0863-40a8-84c7-4f27609c187c",
             "command_uuid": "06d2b948-7388-4634-9f7b-6bd6543d0b44",
-            "record_version": 20180320,
+            "record_version": 20_180_320,
             "record_type": "history_parameters",
             "copy_on_replace": false,
             "antecedent_object_uuids": ["43cff9a6-c650-440c-af75-addf5585d7a0", "e06de8c1-f86e-4f2f-a4d8-06d491888fdc"],
@@ -186,7 +186,7 @@ fn history_feature_with_object_references_round_trips() {
     let parsed = scan_history(&exported.records);
     assert_eq!(parsed.len(), 1);
     let record = &parsed[0];
-    assert_eq!(record.version, 20180320);
+    assert_eq!(record.version, 20_180_320);
     assert_eq!(
         record.command_id.to_string(),
         "06d2b948-7388-4634-9f7b-6bd6543d0b44"
@@ -195,7 +195,7 @@ fn history_feature_with_object_references_round_trips() {
         record
             .descendants
             .iter()
-            .map(|uuid| uuid.to_string())
+            .map(ToString::to_string)
             .collect::<Vec<_>>(),
         ["07c90e28-cc28-4108-9408-df5a968f4114"]
     );
@@ -203,7 +203,7 @@ fn history_feature_with_object_references_round_trips() {
         record
             .antecedents
             .iter()
-            .map(|uuid| uuid.to_string())
+            .map(ToString::to_string)
             .collect::<Vec<_>>(),
         [
             "43cff9a6-c650-440c-af75-addf5585d7a0",
@@ -235,6 +235,7 @@ fn written_history_feature_has_no_omission_loss() {
     use cadmpeg_ir::codec::write::{
         target::TargetRequest, ArenaCoverage, ArenaDisposition, EncodeInput, Encoder,
     };
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
     let source = document();
     let mut bytes = Vec::new();
@@ -242,7 +243,6 @@ fn written_history_feature_has_no_omission_loss() {
         .plan(EncodeInput::new(&source, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("write the history feature");
-    use cadmpeg_ir::codec::{Codec, DecodeOptions};
     let decoded = crate::RhinoCodec
         .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
         .expect("read the history feature");

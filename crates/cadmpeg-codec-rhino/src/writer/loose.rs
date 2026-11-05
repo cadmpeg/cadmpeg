@@ -437,7 +437,7 @@ pub(super) fn write(
 fn normalized_range(lo: f64, hi: f64) -> Option<[cadmpeg_ir::scalar::FiniteReal; 2]> {
     use cadmpeg_ir::scalar::FiniteReal;
     let (lo, hi) = (lo.min(hi), lo.max(hi));
-    if !(lo < hi) {
+    if lo.partial_cmp(&hi) != Some(std::cmp::Ordering::Less) {
         return None;
     }
     Some([FiniteReal::new(lo)?, FiniteReal::new(hi)?])
@@ -478,7 +478,9 @@ pub(super) fn curve_payload(
         }
         Some(SolvedCurveGeometry::Circle(circle)) => {
             check_frame(curve.id.as_str(), *circle.frame(), "circle")?;
-            if !(hi > lo) || hi - lo > std::f64::consts::TAU + super::MAX_ARC_SPAN_EXCESS {
+            if hi.partial_cmp(&lo) != Some(std::cmp::Ordering::Greater)
+                || hi - lo > std::f64::consts::TAU + super::MAX_ARC_SPAN_EXCESS
+            {
                 return Err(WriteError::Omit(
                     "a wire circle spanning more than one turn requires an independent trimmed-curve encoding".into(),
                 ));
@@ -506,42 +508,40 @@ pub(super) fn curve_payload(
                     edge.id, curve.id
                 )));
                 WritableEdgeCurve::NurbsOwned(converted)
+            } else if [
+                nurbs.knots()[degree],
+                nurbs.knots()[nurbs.control_points().len()],
+            ] == range
+            {
+                match check_nurbs_curve(curve.id.as_str(), nurbs) {
+                    Ok(()) => WritableEdgeCurve::Nurbs(nurbs),
+                    Err(WriteError::Omit(_)) => {
+                        let range = normalized_range(lo, hi).ok_or_else(|| {
+                            WriteError::Omit(format!(
+                                "wire edge {} has no increasing range",
+                                edge.id
+                            ))
+                        })?;
+                        let converted =
+                            super::conics::clamp_curve(curve.id.as_str(), nurbs, range)?;
+                        conversion = Some(RhinoLossCode::WriterCarrierResolved.note(format!(
+                            "wire edge {} carrier {} was clamped to its exact span",
+                            edge.id, curve.id
+                        )));
+                        WritableEdgeCurve::NurbsOwned(converted)
+                    }
+                    Err(error) => return Err(error),
+                }
             } else {
-                if [
-                    nurbs.knots()[degree],
-                    nurbs.knots()[nurbs.control_points().len()],
-                ] != range
-                {
-                    let range = normalized_range(lo, hi).ok_or_else(|| {
-                        WriteError::Omit(format!("wire edge {} has no increasing range", edge.id))
-                    })?;
-                    let converted = super::conics::clamp_curve(curve.id.as_str(), nurbs, range)?;
-                    conversion = Some(RhinoLossCode::WriterCarrierResolved.note(format!(
+                let range = normalized_range(lo, hi).ok_or_else(|| {
+                    WriteError::Omit(format!("wire edge {} has no increasing range", edge.id))
+                })?;
+                let converted = super::conics::clamp_curve(curve.id.as_str(), nurbs, range)?;
+                conversion = Some(RhinoLossCode::WriterCarrierResolved.note(format!(
                         "wire edge {} carrier {} was restricted to the exact edge span; its unused curve domain is omitted",
                         edge.id, curve.id
                     )));
-                    WritableEdgeCurve::NurbsOwned(converted)
-                } else {
-                    match check_nurbs_curve(curve.id.as_str(), nurbs) {
-                        Ok(()) => WritableEdgeCurve::Nurbs(nurbs),
-                        Err(WriteError::Omit(_)) => {
-                            let range = normalized_range(lo, hi).ok_or_else(|| {
-                                WriteError::Omit(format!(
-                                    "wire edge {} has no increasing range",
-                                    edge.id
-                                ))
-                            })?;
-                            let converted =
-                                super::conics::clamp_curve(curve.id.as_str(), nurbs, range)?;
-                            conversion = Some(RhinoLossCode::WriterCarrierResolved.note(format!(
-                                "wire edge {} carrier {} was clamped to its exact span",
-                                edge.id, curve.id
-                            )));
-                            WritableEdgeCurve::NurbsOwned(converted)
-                        }
-                        Err(error) => return Err(error),
-                    }
-                }
+                WritableEdgeCurve::NurbsOwned(converted)
             }
         }
         Some(SolvedCurveGeometry::Polyline(polyline)) => {

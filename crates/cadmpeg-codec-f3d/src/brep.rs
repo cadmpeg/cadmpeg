@@ -346,7 +346,7 @@ pub(crate) fn resolve_body_selector<'a>(
             .find(|body| key.owns_native_ref(body.native_ref.as_deref()))
             .map(|body| body.id.clone())
     };
-    Ok(resolve_body_key_row(body_keys, selector)?.and_then(|key| keyed_body(key)))
+    Ok(resolve_body_key_row(body_keys, selector)?.and_then(keyed_body))
 }
 
 /// Canonical native row carrying an attribute target's entity.

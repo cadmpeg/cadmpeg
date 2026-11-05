@@ -255,12 +255,14 @@ fn v1_annotation_fields(
     Some(output)
 }
 
+type V1DimensionPayload = ([u8; 16], Vec<u8>, f64);
+
 fn v1_dimension(
     annotation: &SemanticAnnotation,
     position: [f64; 3],
     record: &Map<String, Value>,
     plane_fields: &Map<String, Value>,
-) -> Result<Option<([u8; 16], Vec<u8>, f64)>, CodecError> {
+) -> Result<Option<V1DimensionPayload>, CodecError> {
     let Some(fields) = record.get("payload").and_then(|v| v.get("fields")) else {
         return Ok(None);
     };

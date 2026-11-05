@@ -105,20 +105,57 @@ pub(crate) fn plan(
         .filter(|_| resolved.source_preservation_eligible() && input.can_reuse_source())
     {
         if let Some(resolution) = retained_baseline(input.ir, fidelity, resolved.target_id()) {
-            let patch = admit_unedited(&allocation_context, input.ir, resolution.fidelity())
-                .and_then(|()| {
-                    allocation_context.run_part(|| finish(&allocation_context, &resolution))?
-                });
-            match patch {
-                Ok(body) => return Ok(body),
-                Err(error @ CodecError::UnsupportedContent(_))
-                | Err(
+            let matches = cadmpeg_ir::hash::retained_source_matches(
+                &allocation_context,
+                input.ir,
+                resolution.fidelity(),
+                "fcstd",
+                crate::fidelity::SOURCE_IMAGE,
+                |ctx, root| {
+                    let fresh =
+                        cadmpeg_ir::Codec::decode_with_context(&crate::FcstdCodec, ctx, root)
+                            .ok()?;
+                    cadmpeg_ir::hash::document_local_sha256(
+                        ctx,
+                        fresh.ir(),
+                        fresh.ir().source.as_ref(),
+                        "fcstd",
+                        crate::fidelity::SOURCE_IMAGE,
+                    )
+                    .ok()
+                },
+            );
+            let patch = match matches {
+                Ok(true) => {
+                    Some(allocation_context.run_part(|| finish(&allocation_context, &resolution))?)
+                }
+                Ok(false) => {
+                    reason =
+                        Some("the current document no longer matches its retained image".into());
+                    None
+                }
+                Err(
                     error @ CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit {
                         scope: cadmpeg_core::decode::LimitScope::Part,
                         ..
                     }),
-                ) => reason = Some(error.to_string()),
+                ) => {
+                    reason = Some(error.to_string());
+                    None
+                }
                 Err(error) => return Err(error),
+            };
+            match patch {
+                Some(Ok(body)) => return Ok(body),
+                Some(Err(error @ CodecError::UnsupportedContent(_)))
+                | Some(Err(
+                    error @ CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit {
+                        scope: cadmpeg_core::decode::LimitScope::Part,
+                        ..
+                    }),
+                )) => reason = Some(error.to_string()),
+                Some(Err(error)) => return Err(error),
+                None => {}
             }
         } else {
             reason = Some("the retained typed document layout is unavailable".into());
@@ -148,80 +185,8 @@ pub(crate) fn plan(
     Ok(body)
 }
 
-/// Admit the retained layout only for an unedited document.
-///
-/// Patch preserves layout and identities; it never supplies content. Any
-/// difference between the current document and a fresh decode of its
-/// retained image — neutral or native — declines to synthesis with a
-/// `PatchDeclined` reason (#238). A missing image declines the same way;
-/// it never fails the write.
-fn admit_unedited(
-    ctx: &DecodeContext<'_>,
-    ir: &CadIr,
-    fidelity: &cadmpeg_ir::SourceFidelity,
-) -> Result<(), CodecError> {
-    if let Some(refusal) = ctx.resource_refusal() {
-        return Err(refusal.into());
-    }
-    // The gate admits the retained layout only when the retained image still
-    // digests to the source baseline and decodes to the current document.
-    // A missing image declines to synthesis; it never fails the write.
-    let Some(image) = fidelity
-        .retained_record(crate::fidelity::SOURCE_IMAGE)
-        .and_then(|record| record.data())
-    else {
-        return Err(CodecError::UnsupportedContent(
-            "the retained FCStd source image is unavailable".into(),
-        ));
-    };
-    let current = cadmpeg_ir::hash::document_local_sha256(
-        ctx,
-        ir,
-        ir.source.as_ref(),
-        "fcstd",
-        crate::fidelity::SOURCE_IMAGE,
-    )?;
-    let session = cadmpeg_core::encode::EncodeSession::from_context(ctx)?;
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (fresh_ctx, fresh_root) = DecodeContext::for_encode_session_root(&arena, &session, image)?;
-    let replays = if cadmpeg_ir::hash::digest::Sha256Digest::digest(image) == fidelity.decode_digest
-    {
-        let fresh_hash = fresh_ctx
-            .run_part(|| {
-                let fresh = cadmpeg_ir::Codec::decode_with_context(
-                    &crate::FcstdCodec,
-                    &fresh_ctx,
-                    fresh_root,
-                );
-                Ok(fresh.ok().and_then(|fresh| {
-                    cadmpeg_ir::hash::document_local_sha256(
-                        &fresh_ctx,
-                        fresh.ir(),
-                        fresh.ir().source.as_ref(),
-                        "fcstd",
-                        crate::fidelity::SOURCE_IMAGE,
-                    )
-                    .ok()
-                }))
-            })?
-            .ok()
-            .flatten();
-        fresh_hash.as_deref() == Some(current.as_str())
-    } else {
-        false
-    };
-    session.finish()?;
-    if !replays {
-        return Err(CodecError::UnsupportedContent(
-            "the current document no longer matches its retained image".into(),
-        ));
-    }
-    Ok(())
-}
-
 /// Write the resolved retained layout using source images from fidelity.
-/// [`admit_unedited`] admits only an unedited document; the fingerprint
-/// selects layout only.
+/// The shared source comparison selects layout only.
 fn finish(ctx: &DecodeContext<'_>, resolution: &Resolution<'_>) -> Result<ExportBody, CodecError> {
     let mut output = std::io::Cursor::new(Vec::new());
     let outcome = write_seekable(&mut output, resolution, ctx)?;

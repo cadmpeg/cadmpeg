@@ -99,7 +99,7 @@ pub(crate) struct SemanticOutput {
     pub(crate) consumed_source_layout: bool,
     pub(crate) omitted_envelope_bytes: usize,
     /// Losses from writing the canonical side of a validation Error instead
-    /// of refusing (#217 InvalidInput rule, #237).
+    /// of refusing (#217 `InvalidInput` rule, #237).
     pub(crate) normalization_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
 
@@ -119,14 +119,16 @@ pub(crate) fn write_semantic_with_records(
         ir,
         annotations,
         retained_records,
-        if source_fidelity.is_some() {
-            ClassLayouts::Source
-        } else {
-            ClassLayouts::Unavailable
+        SemanticOptions {
+            class_layouts: if source_fidelity.is_some() {
+                ClassLayouts::Source
+            } else {
+                ClassLayouts::Unavailable
+            },
+            sw_version: None,
+            prepared_native: None,
+            source_trust: trust,
         },
-        None,
-        None,
-        trust,
         writer,
     )
 }
@@ -185,17 +187,28 @@ fn can_write_curve(geometry: &CurveGeometry) -> bool {
     })
 }
 
+/// Options for writing a semantic envelope.
+pub(super) struct SemanticOptions<'a> {
+    class_layouts: ClassLayouts,
+    sw_version: Option<&'a str>,
+    prepared_native: Option<SldprtNative>,
+    source_trust: SourceTrust,
+}
+
 /// Author the selected version envelope without consuming retained bytes.
 pub(super) fn write_semantic_at(
     ir: &CadIr,
     annotations: &Annotations,
     retained_records: &[SourceRecord<'_>],
-    class_layouts: ClassLayouts,
-    sw_version: Option<&str>,
-    prepared_native: Option<SldprtNative>,
-    source_trust: SourceTrust,
+    options: SemanticOptions<'_>,
     writer: &mut dyn Write,
 ) -> Result<SemanticOutput, write_error::WriteError> {
+    let SemanticOptions {
+        class_layouts,
+        sw_version,
+        prepared_native,
+        source_trust,
+    } = options;
     let prepared_design = matches!(class_layouts, ClassLayouts::Authored);
     let digest_arena = DecodeArena::new();
     let (digest_ctx, _) =
@@ -225,9 +238,9 @@ pub(super) fn write_semantic_at(
                     lane.native_payload.to_vec(),
                 )?;
                 let mut entities = lane.sketch_entities.clone();
-                entities.sort_by_key(|entity| entity.ordinal());
+                entities.sort_by_key(crate::records::SketchInputEntity::ordinal);
                 let mut expected_entities = expected.sketch_entities.clone();
-                expected_entities.sort_by_key(|entity| entity.ordinal());
+                expected_entities.sort_by_key(crate::records::SketchInputEntity::ordinal);
                 if !crate::resolved_features::write_prepare::sketch_entities_match(
                     &entities,
                     &expected_entities,
@@ -592,8 +605,7 @@ pub(super) fn write_semantic_at(
         ir,
         retained_records,
         annotations,
-        &generated_partition_sections,
-        &emitted_sections,
+        (&generated_partition_sections, &emitted_sections),
         retain_native_brep,
         patch_active_configuration,
         &mut normalization_losses,
@@ -1090,181 +1102,181 @@ pub(crate) const CAPACITY_FIELDS: &[cadmpeg_ir::codec::write::CapacityField] = &
     },
     cadmpeg_ir::codec::write::CapacityField {
         field: "section.type_id",
-        limit: u32::MAX as u64 - 0x20,
+        limit: 0xffff_ffff_u64 - 0x20,
         source: "docs/formats/sldprt.md §1.1: type_id u32 LE",
         helper: "section_type_id_at",
     },
     cadmpeg_ir::codec::write::CapacityField {
         field: "section.compressed_length",
-        limit: u32::MAX as u64,
+        limit: 0xffff_ffff_u64,
         source: "docs/formats/sldprt.md §1.1: compressed length is u32 LE",
         helper: "field_u32",
     },
     cadmpeg_ir::codec::write::CapacityField {
         field: "section.payload_length",
-        limit: u32::MAX as u64,
+        limit: 0xffff_ffff_u64,
         source: "docs/formats/sldprt.md §1.1: uncompressed length is u32 LE",
         helper: "field_u32",
     },
     cadmpeg_ir::codec::write::CapacityField {
         field: "section.name_length",
-        limit: u32::MAX as u64,
+        limit: 0xffff_ffff_u64,
         source: "docs/formats/sldprt.md §1.1: name length is u32 LE",
         helper: "field_u32",
     },
     cadmpeg_ir::codec::write::CapacityField {
         field: "thumbnail.byte_length",
-        limit: u32::MAX as u64,
+        limit: 0xffff_ffff_u64,
         source: "docs/formats/sldprt.md §2: thumbnail file-size word",
         helper: "thumbnail_size",
     },
     cadmpeg_ir::codec::write::CapacityField {
         field: "envelope.member_count",
-        limit: u16::MAX as u64,
+        limit: 0xffff_u64,
         source: "docs/formats/sldprt.md §1.3: EOCD entry count u16 LE",
         helper: "envelope_u16",
     },
     cadmpeg_ir::codec::write::CapacityField {
         field: "envelope.member_name_length",
-        limit: u16::MAX as u64,
+        limit: 0xffff_u64,
         source: "docs/formats/sldprt.md §1.1: ZIP member name length u16 LE",
         helper: "envelope_u16",
     },
     cadmpeg_ir::codec::write::CapacityField {
         field: "envelope.local_offset",
-        limit: u32::MAX as u64,
+        limit: 0xffff_ffff_u64,
         source: "docs/formats/sldprt.md §1.3: local offset u32 LE",
         helper: "field_u32",
     },
     cadmpeg_ir::codec::write::CapacityField {
         field: "envelope.central_size",
-        limit: u32::MAX as u64,
+        limit: 0xffff_ffff_u64,
         source: "docs/formats/sldprt.md §1.3: central size u32 LE",
         helper: "field_u32",
     },
     cadmpeg_ir::codec::write::CapacityField {
         field: "envelope.central_offset",
-        limit: u32::MAX as u64,
+        limit: 0xffff_ffff_u64,
         source: "docs/formats/sldprt.md §1.3: central offset u32 LE",
         helper: "field_u32",
     },
     cadmpeg_ir::codec::write::CapacityField {
         field: "feature_input.name_length",
-        limit: u8::MAX as u64,
+        limit: 0xff_u64,
         source: "docs/formats/sldprt.md §2: object name UTF-16 code-unit count u8",
         helper: "feature_input_name_len",
     },
     cadmpeg_ir::codec::write::CapacityField {
         field: "document.unit_name_byte_length",
-        limit: u8::MAX as u64,
+        limit: 0xff_u64,
         source: "docs/formats/sldprt.md §8: length-unit name byte count u8",
         helper: "unit_name_byte_len",
     },
     cadmpeg_ir::codec::write::CapacityField {
         field: "display_list.triangle_count",
-        limit: u32::MAX as u64,
+        limit: 0xffff_ffff_u64,
         source: "docs/formats/sldprt.md §8: display table triangle count u32 LE",
         helper: "field_u32",
     },
     cadmpeg_ir::codec::write::CapacityField {
         field: "display_list.strip_count",
-        limit: u32::MAX as u64,
+        limit: 0xffff_ffff_u64,
         source: "docs/formats/sldprt.md §8: display table strip count u32 LE",
         helper: "field_u32",
     },
     cadmpeg_ir::codec::write::CapacityField {
         field: "display_list.channel_item_count",
-        limit: u32::MAX as u64,
+        limit: 0xffff_ffff_u64,
         source: "docs/formats/sldprt.md §8: display descriptor item count u32 LE",
         helper: "field_u32",
     },
     cadmpeg_ir::codec::write::CapacityField {
         field: "display_list.list_c_value",
-        limit: u32::MAX as u64,
+        limit: 0xffff_ffff_u64,
         source: "docs/formats/sldprt.md §8: List C holds u32 LE values 2*ListA[i]-2",
         helper: "display_list_c_value",
     },
     cadmpeg_ir::codec::write::CapacityField {
         field: "nurbs.curve.degree",
-        limit: u16::MAX as u64,
+        limit: 0xffff_u64,
         source: "docs/layouts/sldprt.toml: bspline_curve_descriptor.degree",
         helper: "field_u16",
     },
     cadmpeg_ir::codec::write::CapacityField {
         field: "nurbs.curve.pole_count",
-        limit: u32::MAX as u64,
+        limit: 0xffff_ffff_u64,
         source: "docs/layouts/sldprt.toml: bspline_curve_descriptor.control_count",
         helper: "field_u32",
     },
     cadmpeg_ir::codec::write::CapacityField {
         field: "nurbs.curve.knot_count",
-        limit: u32::MAX as u64,
+        limit: 0xffff_ffff_u64,
         source: "docs/layouts/sldprt.toml: bspline_curve_descriptor.knot_count",
         helper: "field_u32",
     },
     cadmpeg_ir::codec::write::CapacityField {
         field: "nurbs.surface.u_degree",
-        limit: u16::MAX as u64,
+        limit: 0xffff_u64,
         source: "docs/layouts/sldprt.toml: bspline_surface_descriptor.u_degree",
         helper: "field_u16",
     },
     cadmpeg_ir::codec::write::CapacityField {
         field: "nurbs.surface.v_degree",
-        limit: u16::MAX as u64,
+        limit: 0xffff_u64,
         source: "docs/layouts/sldprt.toml: bspline_surface_descriptor.v_degree",
         helper: "field_u16",
     },
     cadmpeg_ir::codec::write::CapacityField {
         field: "nurbs.surface.u_pole_count",
-        limit: u32::MAX as u64,
+        limit: 0xffff_ffff_u64,
         source: "docs/layouts/sldprt.toml: bspline_surface_descriptor.u_pole_count",
         helper: "field_u32",
     },
     cadmpeg_ir::codec::write::CapacityField {
         field: "nurbs.surface.v_pole_count",
-        limit: u32::MAX as u64,
+        limit: 0xffff_ffff_u64,
         source: "docs/layouts/sldprt.toml: bspline_surface_descriptor.v_pole_count",
         helper: "field_u32",
     },
     cadmpeg_ir::codec::write::CapacityField {
         field: "nurbs.surface.u_knot_count",
-        limit: u32::MAX as u64,
+        limit: 0xffff_ffff_u64,
         source: "docs/layouts/sldprt.toml: bspline_surface_descriptor.u_distinct_knot_count",
         helper: "field_u32",
     },
     cadmpeg_ir::codec::write::CapacityField {
         field: "nurbs.surface.v_knot_count",
-        limit: u32::MAX as u64,
+        limit: 0xffff_ffff_u64,
         source: "docs/layouts/sldprt.toml: bspline_surface_descriptor.v_distinct_knot_count",
         helper: "field_u32",
     },
     cadmpeg_ir::codec::write::CapacityField {
         field: "nurbs.knot_multiplicity",
-        limit: u16::MAX as u64,
+        limit: 0xffff_u64,
         source: "docs/formats/sldprt.md §7.2: multiplicity array values u16 BE",
         helper: "unique_knots",
     },
     cadmpeg_ir::codec::write::CapacityField {
         field: "nurbs.array_length",
-        limit: u32::MAX as u64,
+        limit: 0xffff_ffff_u64,
         source: "docs/formats/sldprt.md §7.2: array element count u32 BE",
         helper: "field_u32",
     },
     cadmpeg_ir::codec::write::CapacityField {
         field: "feature_input.class_name_length",
-        limit: u16::MAX as u64,
+        limit: 0xffff_u64,
         source: "docs/formats/sldprt.md §2: class name length u16 LE",
         helper: "field_u16",
     },
     cadmpeg_ir::codec::write::CapacityField {
         field: "parasolid.description_length",
-        limit: u16::MAX as u64,
+        limit: 0xffff_u64,
         source: "docs/formats/sldprt.md §3.1: description byte count u16 BE",
         helper: "field_u16",
     },
     cadmpeg_ir::codec::write::CapacityField {
         field: "parasolid.schema_length",
-        limit: u8::MAX as u64,
+        limit: 0xff_u64,
         source: "docs/formats/sldprt.md §3.1: schema byte count u8",
         helper: "field_u8",
     },
@@ -1276,25 +1288,25 @@ pub(crate) const CAPACITY_FIELDS: &[cadmpeg_ir::codec::write::CapacityField] = &
     },
     cadmpeg_ir::codec::write::CapacityField {
         field: "feature.source_id",
-        limit: (u32::MAX - 1) as u64,
+        limit: 0xffff_fffe_u64,
         source: "docs/formats/sldprt.md §8: feature source identifiers occupy u32 fields",
         helper: "allocate_feature_source_id",
     },
     cadmpeg_ir::codec::write::CapacityField {
         field: "sketch.frame_uncompressed_length",
-        limit: u32::MAX as u64,
+        limit: 0xffff_ffff_u64,
         source: "docs/formats/sldprt.md §1: frame uncompressed length is u32 LE",
         helper: "field_u32",
     },
     cadmpeg_ir::codec::write::CapacityField {
         field: "sketch.frame_compressed_length",
-        limit: u32::MAX as u64,
+        limit: 0xffff_ffff_u64,
         source: "docs/formats/sldprt.md §1: frame compressed length is u32 LE",
         helper: "field_u32",
     },
     cadmpeg_ir::codec::write::CapacityField {
         field: "sketch.wrapper_length",
-        limit: u32::MAX as u64,
+        limit: 0xffff_ffff_u64,
         source: "docs/formats/sldprt.md §1: nested wrapper length is u32 LE",
         helper: "field_u32",
     },
@@ -1325,7 +1337,7 @@ pub(crate) const REDUCED_FIELDS: &[cadmpeg_ir::codec::write::ReducedField] = &[
     },
 ];
 
-/// The u8 UTF-16 code-unit count of one SWObjects material name.
+/// The u8 UTF-16 code-unit count of one `SWObjects` material name.
 pub(crate) fn material_name_len(name: &str) -> Result<u8, write_error::WriteError> {
     let units = name.encode_utf16().count();
     let value = cadmpeg_core::decode::u64_from_index(units);
@@ -1672,7 +1684,7 @@ fn configuration_partitions(
 const CONFIGURATION_INDEX_CAPACITY: cadmpeg_ir::codec::write::CapacityField =
     cadmpeg_ir::codec::write::CapacityField {
         field: "configuration.source_index",
-        limit: u32::MAX as u64,
+        limit: 0xffff_ffff_u64,
         source: "docs/formats/sldprt.md §2: configuration source index u32",
         helper: "reserve_configuration_index",
     };
@@ -1925,12 +1937,12 @@ fn opaque_blocks(
     ir: &CadIr,
     records: &[SourceRecord<'_>],
     annotations: &Annotations,
-    generated_partitions: &HashSet<String>,
-    emitted_sections: &HashSet<String>,
+    sections: (&HashSet<String>, &HashSet<String>),
     retain_native_brep: bool,
     patch_active_configuration: bool,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Vec<(String, Vec<u8>)>, CodecError> {
+    let (generated_partitions, emitted_sections) = sections;
     let native = ir
         .native
         .namespace("sldprt")
@@ -1943,12 +1955,9 @@ fn opaque_blocks(
         .iter()
         .filter(|record| record.id.as_str().starts_with("sldprt:file:block#"))
         .filter_map(|record| {
-            let provenance = match annotations.provenance.get(record.id.as_str()) {
-                Some(provenance) => provenance,
-                None => {
-                    unplaced.push(record.id.as_str().to_owned());
-                    return None;
-                }
+            let Some(provenance) = annotations.provenance.get(record.id.as_str()) else {
+                unplaced.push(record.id.as_str().to_owned());
+                return None;
             };
             let section = provenance.stream();
             if matches!(
@@ -3015,18 +3024,17 @@ fn metadata_attributes(ir: &CadIr) -> Vec<&cadmpeg_ir::attributes::SourceAttribu
         .collect()
 }
 
+type MetadataPayloads = (
+    Vec<u8>,
+    Option<Vec<u8>>,
+    Vec<cadmpeg_ir::report::loss::LossNote>,
+);
+
 fn metadata_payloads(
     ir: &CadIr,
     native: Option<&SldprtNative>,
     length_scale: f64,
-) -> Result<
-    (
-        Vec<u8>,
-        Option<Vec<u8>>,
-        Vec<cadmpeg_ir::report::loss::LossNote>,
-    ),
-    write_error::WriteError,
-> {
+) -> Result<MetadataPayloads, write_error::WriteError> {
     use cadmpeg_ir::attributes::AttributeTarget;
 
     let mut objects = Vec::new();
@@ -4542,7 +4550,7 @@ fn write_body_hierarchy(
 const TYPED_NODE_ID_CAPACITY: cadmpeg_ir::codec::write::CapacityField =
     cadmpeg_ir::codec::write::CapacityField {
         field: "parasolid.typed_node_id",
-        limit: u32::MAX as u64,
+        limit: 0xffff_ffff_u64,
         source: "docs/formats/sldprt.md §3.3: typed XT node id u32 BE",
         helper: "next_typed_node_id",
     };
@@ -4843,6 +4851,7 @@ fn write_attribute_list(
     Ok(())
 }
 
+#[derive(Clone, Copy)]
 enum AttributeCount {
     One,
     Two,

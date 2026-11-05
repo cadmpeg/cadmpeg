@@ -86,22 +86,41 @@ fn solid_chain_cut(
     }
 }
 
+pub(super) struct ProductSources<'a> {
+    pub(super) occurrences: &'a [NativeProductOccurrence],
+    pub(super) subfigures: &'a [NativeSubfigureDefinition],
+    pub(super) networks: &'a [NativeNetworkDefinition],
+    pub(super) assemblies: &'a [NativeSolidAssembly],
+    pub(super) instances: &'a [NativeSolidInstance],
+    pub(super) externals: &'a [NativeExternalReference],
+    pub(super) selected: &'a [NativeSelectedComponent],
+}
+
+#[derive(Clone, Copy)]
+pub(super) struct SourceMaps<'a> {
+    pub(super) entries: &'a BTreeMap<u32, &'a DirectoryEntry>,
+    pub(super) records: &'a BTreeMap<u32, &'a ParameterRecord>,
+}
+
 pub(super) fn project(
     ir: &mut CadIr,
-    occurrences: &[NativeProductOccurrence],
-    subfigures: &[NativeSubfigureDefinition],
-    networks: &[NativeNetworkDefinition],
-    assemblies: &[NativeSolidAssembly],
-    instances: &[NativeSolidInstance],
-    externals: &[NativeExternalReference],
-    selected: &[NativeSelectedComponent],
-    entries: &BTreeMap<u32, &DirectoryEntry>,
-    records: &BTreeMap<u32, &ParameterRecord>,
+    sources: &ProductSources<'_>,
+    maps: SourceMaps<'_>,
     length_factor: Option<f64>,
     precision: RealPrecision,
     sequences: &SourceSequences,
     ctx: &DecodeContext<'_>,
 ) -> Result<(Vec<LossNote>, Vec<String>), CodecError> {
+    let &ProductSources {
+        occurrences,
+        subfigures,
+        networks,
+        assemblies,
+        instances,
+        externals,
+        selected,
+    } = sources;
+    let SourceMaps { entries, records } = maps;
     let mut losses = Vec::new();
     let mut dropped_occurrences = Vec::new();
     let mut definitions = BTreeMap::new();
@@ -144,24 +163,21 @@ pub(super) fn project(
             continue;
         };
         for link in &record.native_links {
-            let sequence = match source_sequence(link) {
-                Ok(sequence) => sequence,
-                Err(_) => {
-                    losses.push(IgesLossCode::NeutralProjectionUnavailable.note(format!(
-                        "{} member {member}: product membership of carrier {link} has no directory sequence", record.id
-                    )));
-                    continue;
-                }
+            let Ok(sequence) = source_sequence(link) else {
+                losses.push(IgesLossCode::NeutralProjectionUnavailable.note(format!(
+                    "{} member {member}: product membership of carrier {link} has no directory sequence", record.id
+                )));
+                continue;
             };
             // A carrier without a neutral body is a non-body member (a curve,
             // point, or surface): it stays native with its links, and the
             // definition lists only bodies. A missing solid body is already
             // reported by its own projection or give-up.
             for body in &ir.model.bodies {
-                if sequences.body_neutral_form(&body.id) == Some(sequence) {
-                    if !definition.bodies.contains(&body.id) {
-                        definition.bodies.push(body.id.clone());
-                    }
+                if sequences.body_neutral_form(&body.id) == Some(sequence)
+                    && !definition.bodies.contains(&body.id)
+                {
+                    definition.bodies.push(body.id.clone());
                 }
             }
         }
@@ -321,15 +337,14 @@ pub(super) fn project(
             None => vec![instance.source_entity.clone()],
         };
         let transform = entry_placement(
-            entries,
-            records,
+            maps,
             length_factor,
             precision,
             *sequence,
             &instance.id,
             &mut losses,
             ctx,
-        )?;
+        );
         placed.push((
             *sequence,
             occurrence_id(&path)?,
@@ -342,7 +357,7 @@ pub(super) fn project(
         let Ok(assembly_sequence) = source_sequence(&assembly.source_entity) else {
             continue;
         };
-        for item in assembly.items.iter() {
+        for item in &assembly.items {
             let Some(target) = item
                 .item
                 .as_ref()
@@ -392,17 +407,16 @@ pub(super) fn project(
                 _ => continue,
             };
             let transform = item_placement(
-                entries,
-                records,
+                maps,
                 length_factor,
                 precision,
                 item.transformation.as_deref(),
                 &assembly.id,
                 &mut losses,
                 ctx,
-            )?;
+            );
             let id = occurrence_id(
-                &[
+                [
                     assembly.source_entity.clone(),
                     format!("iges:entity:directory#{target}"),
                 ]
@@ -443,25 +457,20 @@ pub(super) fn project(
         let prototype = match target {
             Some(target) => {
                 let key = format!("iges:entity:directory#{target}");
-                if !definitions.contains_key(&key) {
-                    definitions.insert(
-                        key,
-                        ProductDefinition {
-                            sketches: Vec::new(),
-                            id: ids::product(&Stem::directory(target)),
-                            kind: ProductDefinitionKind::Part,
-                            source_name: None,
-                            label: entries
-                                .get(&target)
-                                .and_then(|entry| directory_label(entry)),
-                            description: None,
-                            part_number: None,
-                            bom_properties: BTreeMap::new(),
-                            bodies: Vec::new(),
-                            native_ref: Some(format!("iges:solid:boolean-tree#D{target}")),
-                        },
-                    );
-                }
+                definitions.entry(key).or_insert_with(|| ProductDefinition {
+                    sketches: Vec::new(),
+                    id: ids::product(&Stem::directory(target)),
+                    kind: ProductDefinitionKind::Part,
+                    source_name: None,
+                    label: entries
+                        .get(&target)
+                        .and_then(|entry| directory_label(entry)),
+                    description: None,
+                    part_number: None,
+                    bom_properties: BTreeMap::new(),
+                    bodies: Vec::new(),
+                    native_ref: Some(format!("iges:solid:boolean-tree#D{target}")),
+                });
                 match definitions.get(&format!("iges:entity:directory#{target}")) {
                     Some(definition) => PrototypeReference::Local {
                         definition: definition.id.clone(),
@@ -479,15 +488,14 @@ pub(super) fn project(
             None => vec![component.source_entity.clone()],
         };
         let transform = entry_placement(
-            entries,
-            records,
+            maps,
             length_factor,
             precision,
             sequence,
             &component.id,
             &mut losses,
             ctx,
-        )?;
+        );
         placed.push((
             sequence,
             occurrence_id(&path)?,
@@ -656,7 +664,7 @@ fn assembly_shell_sequences(
             _ => {}
         }
     }
-    shells.sort();
+    shells.sort_unstable();
     shells.dedup();
     shells
 }
@@ -696,24 +704,20 @@ fn native_transformation_sequence(value: &str) -> Option<u32> {
 }
 
 fn entry_placement(
-    entries: &BTreeMap<u32, &DirectoryEntry>,
-    records: &BTreeMap<u32, &ParameterRecord>,
+    maps: SourceMaps<'_>,
     length_factor: Option<f64>,
     precision: RealPrecision,
     sequence: u32,
     native_id: &str,
     losses: &mut Vec<LossNote>,
     ctx: &DecodeContext<'_>,
-) -> Result<Option<Transform>, CodecError> {
-    let Some(entry) = entries.get(&sequence) else {
-        return Ok(None);
-    };
+) -> Option<Transform> {
+    let SourceMaps { entries, records } = maps;
+    let entry = entries.get(&sequence)?;
     if entry.transform == 0 {
-        return Ok(None);
+        return None;
     }
-    let Some(length_factor) = length_factor else {
-        return Ok(None);
-    };
+    let length_factor = length_factor?;
     match resolve_transform(
         entry.transform,
         entries,
@@ -723,32 +727,28 @@ fn entry_placement(
         &mut BTreeSet::new(),
         ctx,
     ) {
-        Ok(transform) => Ok(Some(transform)),
+        Ok(transform) => Some(transform),
         Err(_) => {
             losses.push(IgesLossCode::NeutralProjectionUnavailable.note(format!(
                 "{native_id}: solid placement pointer is not a resolvable transformation"
             )));
-            Ok(None)
+            None
         }
     }
 }
 
 fn item_placement(
-    entries: &BTreeMap<u32, &DirectoryEntry>,
-    records: &BTreeMap<u32, &ParameterRecord>,
+    maps: SourceMaps<'_>,
     length_factor: Option<f64>,
     precision: RealPrecision,
     transformation: Option<&str>,
     native_id: &str,
     losses: &mut Vec<LossNote>,
     ctx: &DecodeContext<'_>,
-) -> Result<Option<Transform>, CodecError> {
-    let Some(sequence) = transformation.and_then(native_transformation_sequence) else {
-        return Ok(None);
-    };
-    let Some(length_factor) = length_factor else {
-        return Ok(None);
-    };
+) -> Option<Transform> {
+    let SourceMaps { entries, records } = maps;
+    let sequence = transformation.and_then(native_transformation_sequence)?;
+    let length_factor = length_factor?;
     match resolve_transform(
         i64::from(sequence),
         entries,
@@ -758,12 +758,12 @@ fn item_placement(
         &mut BTreeSet::new(),
         ctx,
     ) {
-        Ok(transform) => Ok(Some(transform)),
+        Ok(transform) => Some(transform),
         Err(_) => {
             losses.push(IgesLossCode::NeutralProjectionUnavailable.note(format!(
                 "{native_id}: assembly member placement pointer is not a resolvable transformation"
             )));
-            Ok(None)
+            None
         }
     }
 }
