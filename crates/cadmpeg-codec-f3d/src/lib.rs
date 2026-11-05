@@ -120,7 +120,7 @@ use cadmpeg_core::decode::{DecodeContext, DecodeDepth, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     target::{Catalog, ResolvedWrite},
-    EncodeError, EncodeInput, EncoderBackend, ExportBody, transitional_from_codec,
+    transitional_from_codec, EncodeError, EncodeInput, EncoderBackend, ExportBody,
 };
 use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
 use cadmpeg_ir::document::CadIr;
@@ -164,15 +164,9 @@ impl F3dCodec {
             scope,
             limits,
             |ctx, root| {
-                let fresh = cadmpeg_ir::Codec::decode_with_context(&F3dCodec, ctx, root).map_err(
-                    |failure| match failure {
-                        cadmpeg_ir::codec::DecodeFailure::Codec(error) => error,
-                        _ => CodecError::UnsupportedContent(
-                            "the retained F3D source image refused to decode".into(),
-                        ),
-                    },
-                )?;
-                decode::document_local_sha256(fresh.ir())
+                let fresh =
+                    cadmpeg_ir::Codec::decode_with_context(&F3dCodec, ctx, root).map_err(|_| ())?;
+                decode::document_local_sha256(fresh.ir()).map_err(|_| ())
             },
         );
         if !replays {
