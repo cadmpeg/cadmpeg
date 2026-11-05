@@ -1519,3 +1519,53 @@ fn directory_disposition_requires_exact_generated_record() {
         NativeDisposition::Dropped
     );
 }
+
+#[test]
+fn nonorthogonal_occurrence_placement_is_reported_without_invalid_matrix() {
+    let bytes = crate::test_support::test_drawing_and_trimming::connected_network_subfigure_file();
+    let decoded = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let mut rows = ir.model.occurrences[0].transform.unwrap().affine_rows();
+    rows[0][1] = 1.0;
+    ir.model.occurrences[0].transform =
+        Some(cadmpeg_ir::transform::Transform::affine(rows).unwrap());
+    let id = ir.model.occurrences[0].id.clone();
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(id.as_str())
+            && loss.message.contains("not an orthonormal")));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(output.ir().model.occurrences.len(), 1);
+}
+
+#[test]
+fn reflected_occurrence_uses_left_handed_matrix() {
+    let bytes = crate::test_support::test_drawing_and_trimming::connected_network_subfigure_file();
+    let decoded = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let reflected = cadmpeg_ir::transform::Transform::affine([
+        [-1.0, 0.0, 0.0, 10.0],
+        [0.0, 1.0, 0.0, 20.0],
+        [0.0, 0.0, 1.0, 30.0],
+    ])
+    .unwrap();
+    ir.model.occurrences[0].transform = Some(reflected);
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(output.ir().model.occurrences[0].transform, Some(reflected));
+}
