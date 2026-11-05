@@ -559,3 +559,45 @@ fn source_less_edge_treatments_retain_unresolved_construction() {
             .any(|feature| feature.evaluation.definition() == &expected));
     }
 }
+
+#[test]
+fn source_less_draft_retains_unresolved_construction() {
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Draft Name="Partial" Type="Draft" id="151"/></Keywords>"#,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    assert!(matches!(
+        ir.model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Draft { .. })
+    ));
+    let expected = ir.model.features[0].evaluation.definition().clone();
+    ir.source = None;
+    ir.native = cadmpeg_ir::Native::default();
+    ir.model.features[0].native_ref = None;
+    let id = ir.model.features[0].id.clone();
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(!plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(id.as_str()) && loss.message.contains("solved result")));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(output
+        .ir()
+        .model
+        .features
+        .iter()
+        .any(|feature| feature.evaluation.definition() == &expected));
+}
