@@ -589,15 +589,20 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let existing = self.existing;
         Ok({
             let unsupported = existing.is_some_and(|record| !feature_family(record, "MoveFace"));
-            let (Some(faces), false) = (face_selection_value(faces), unsupported) else {
+            let faces_value = face_selection_value(faces);
+            if unsupported || (faces_value.is_none() && !matches!(faces, FaceSelection::Unresolved))
+            {
                 return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} changes unsupported move-face semantics",
                     feature.id
                 )));
-            };
+            }
             let mut parameters = self.base_parameters();
             let mut properties = self.base_properties();
-            properties.insert(cadmpeg_core::nonblank_literal!("Faces"), faces);
+            properties.remove("Faces");
+            if let Some(faces) = faces_value {
+                properties.insert(cadmpeg_core::nonblank_literal!("Faces"), faces);
+            }
             parameters.remove("Distance");
             parameters.remove("Angle");
             properties.remove("Direction");
