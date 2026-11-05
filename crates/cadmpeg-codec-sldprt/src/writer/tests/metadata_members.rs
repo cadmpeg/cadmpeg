@@ -675,6 +675,21 @@ fn unchanged_history_replays_full_source_xml_and_an_edited_history_regenerates()
     assert!(String::from_utf8(regenerated)
         .unwrap()
         .contains("EditedTree"));
+    let ambiguous = [
+        (
+            changed.clone(),
+            "Contents/Keywords".into(),
+            b"first".to_vec(),
+        ),
+        (
+            changed.clone(),
+            "Contents/Keywords".into(),
+            b"second".to_vec(),
+        ),
+    ];
+    let output =
+        crate::writer::retained_history_payload(&changed, "Contents/Keywords", &ambiguous).unwrap();
+    assert!(String::from_utf8(output).unwrap().contains("EditedTree"));
 }
 
 #[test]
