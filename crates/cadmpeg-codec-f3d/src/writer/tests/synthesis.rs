@@ -1630,6 +1630,31 @@ fn source_less_sketch_horizontal_constraint_survives_synthesis() {
         matches!(decoded.ir().model.sketch_constraints[0].definition.kind(),
         SketchConstraintDefinitionInput::Horizontal { entity } if entity == decoded.ir().model.sketch_entities[0].id())
     );
+    let mut unsupported = ir.model.sketch_constraints[0].clone();
+    unsupported.id = "authored:model:sketch-constraint#2".try_into().unwrap();
+    unsupported.name = Some("named relation".into());
+    ir.model.sketch_constraints.push(unsupported);
+    let mut partial_bytes = Vec::new();
+    let plan = F3dCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| { loss.message.contains("authored:model:sketch-constraint#2") }));
+    plan.write_to(&mut partial_bytes).unwrap();
+    let partial = F3dCodec
+        .decode(&mut Cursor::new(partial_bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(partial.ir().model.sketches.len(), 1);
+    assert_eq!(partial.ir().model.sketch_entities.len(), 1);
+    assert_eq!(partial.ir().model.sketch_constraints.len(), 1);
+    assert!(
+        matches!(partial.ir().model.sketch_constraints[0].definition.kind(),
+        SketchConstraintDefinitionInput::Horizontal { entity }
+            if entity == partial.ir().model.sketch_entities[0].id())
+    );
     let mut edited = decoded.ir().clone();
     edited.model.sketch_entities[0].geometry =
         SketchGeometry::try_from(SketchGeometryDefinition::Line {
