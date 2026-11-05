@@ -488,14 +488,16 @@ fn build_metadata_ir(
                 &mut parsed,
                 None,
             )?;
-            let held = crate::native::attach_annotations(
+            let held = crate::native::attach::attach(
                 ctx,
                 &mut ir,
                 &model,
                 scan,
-                &mut annotations,
-                &mut unknowns,
-                &mut losses,
+                crate::native::attach::AttachOutputs {
+                    annotations: &mut annotations,
+                    unknowns: &mut unknowns,
+                    losses: &mut losses,
+                },
                 &mut parts,
             )?;
             crate::native::retain_deltas_gaps(ctx, scan, &model, &mut unknowns)?;
