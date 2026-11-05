@@ -71,6 +71,11 @@ cadmpeg_core::named_optional_field!(
 
 cadmpeg_core::named_optional_field!(deserialize_source_kind, String, "source_kind");
 cadmpeg_core::named_optional_field!(
+    deserialize_label,
+    crate::records::identity::Located<String>,
+    "label"
+);
+cadmpeg_core::named_optional_field!(
     deserialize_assembly_alignment,
     DesignAssemblyAlignment,
     "assembly_alignment"
@@ -811,7 +816,11 @@ struct DesignParameterScopeSerde {
     /// Byte offset of `feature_ordinal`.
     feature_ordinal_offset: u64,
     /// Label and offset of its UTF-16LE code units.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_label"
+    )]
     label: Option<crate::records::identity::Located<String>>,
     /// ASM delta-state identity produced by this scope, when active.
     #[serde(

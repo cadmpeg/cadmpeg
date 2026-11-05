@@ -11831,8 +11831,15 @@ note = "Offsets are relative to the primary indexed header. The frame has eight 
 
 [[record.gap]]
 offset = 0
-size = 21
-note = "The indexed header and the zero prefix before the operation are outside this field run."
+size = 11
+note = "The indexed header is outside this field run."
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "Offsets 11 through 20 are zero. Offset 21 stores the result operation, offset 25 stores extent kind `2`, offset 29"
 
 [[record.field]]
 name = "operation"
@@ -11862,10 +11869,12 @@ type = "u8"
 source = "spec"
 anchor = "offset 30 stores marker `1`"
 
-[[record.gap]]
+[[record.field]]
+name = "zero_run_3"
 offset = 31
-size = 3
-note = "Three zero bytes separate the fixed prefix from the angle-owner reference."
+type = "bytes[3]"
+source = "spec"
+anchor = "Offsets 31 through 33 are zero"
 
 [[record.field]]
 name = "angle_reference_marker"

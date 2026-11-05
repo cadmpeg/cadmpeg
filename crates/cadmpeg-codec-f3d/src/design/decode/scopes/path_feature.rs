@@ -127,10 +127,13 @@ fn referenced_angle_revolve_construction(
     ) {
         (length @ (351 | 373), count @ (6 | 8))
             if matches!(
-                (length, count, View::u32_le_at(bytes, start + referenced_revolve::OPERATION)),
+                (
+                    length,
+                    count,
+                    View::u32_le_at(bytes, start + referenced_revolve::OPERATION)
+                ),
                 (351, 6, Some(4)) | (373, 8, Some(1..=3))
-            )
-                && bytes.get(start + referenced_revolve::MARKER) == Some(&1)
+            ) && bytes.get(start + referenced_revolve::MARKER) == Some(&1)
                 && View::u32_le_at(bytes, start + referenced_revolve::ZERO_VALUE) == Some(0)
                 && View::u32_le_at(bytes, start + referenced_revolve::EXTENT_KIND) == Some(2)
                 && bytes.get(start + referenced_revolve::DIRECTION_KIND) == Some(&0) =>
@@ -427,6 +430,7 @@ pub(super) fn exact_path_feature_construction(
         DesignFeatureFamily::Revolve
             if parameter_scope_payload_length(scope) == Some(363)
                 && scope.reference_members().len() == 8
+                && bytes.get(start + 11..start + 21) == Some(&[0; 10])
                 && View::u32_le_at(bytes, start + 25) == Some(2)
                 && bytes.get(start + 29) == Some(&0)
                 && View::u32_le_at(bytes, start + 30) == Some(1)
@@ -458,9 +462,20 @@ pub(super) fn exact_path_feature_construction(
         DesignFeatureFamily::Revolve
             if parameter_scope_payload_length(scope) == Some(373)
                 && scope.reference_members().len() == 8
-                && View::u32_le_at(bytes, start + direction_pair_revolve::EXTENT_KIND) == Some(2)
-                && bytes.get(start + direction_pair_revolve::DIRECTION_KIND..start + 31)
-                    == Some(&[0, 1]) =>
+                && bytes.get(
+                    start + direction_pair_revolve::ZERO_RUN_10
+                        ..start + direction_pair_revolve::OPERATION,
+                ) == Some(&[0; 10])
+                && View::u32_le_at(bytes, start + direction_pair_revolve::EXTENT_KIND)
+                    == Some(2)
+                && bytes.get(
+                    start + direction_pair_revolve::DIRECTION_KIND
+                        ..start + direction_pair_revolve::ZERO_RUN_3,
+                ) == Some(&[0, 1])
+                && bytes.get(
+                    start + direction_pair_revolve::ZERO_RUN_3
+                        ..start + direction_pair_revolve::ANGLE_REFERENCE_MARKER,
+                ) == Some(&[0; 3]) =>
         {
             let angle_record_index = marked_record_reference(
                 bytes,

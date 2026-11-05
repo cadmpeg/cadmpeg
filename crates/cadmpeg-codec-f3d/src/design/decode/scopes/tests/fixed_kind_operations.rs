@@ -787,6 +787,18 @@ fn fixed_kind_edge_and_revolve_operations(
         ))
     );
 
+    bytes[indexed_revolve_start + 11] = 1;
+    assert!(!matches!(
+        exact_path_feature_construction(
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &indexed_revolve_scope,
+            std::slice::from_ref(&indexed_angle),
+        ),
+        Some(DesignPathFeatureConstruction::Revolve(_))
+    ));
+    bytes[indexed_revolve_start + 11] = 0;
+
     for (class_tag, paired_class_tag) in [("304", "258"), ("408", "259")] {
         let mut scope = indexed_revolve_scope.clone();
         scope.class_tag =
@@ -846,8 +858,9 @@ fn fixed_kind_edge_and_revolve_operations(
         .unwrap();
     let mut direction_pair_angle = indexed_angle.clone();
     {
-        let mut wire =
-            crate::records::parameters::DesignParameterOwnerWire::from(direction_pair_angle.clone());
+        let mut wire = crate::records::parameters::DesignParameterOwnerWire::from(
+            direction_pair_angle.clone(),
+        );
         wire.scope_record_index = direction_pair_scope.record_index;
         wire.byte_offset = u64_from_index(direction_pair_start);
         wire.evaluated_value_offset = u64_from_index(direction_pair_start + 40);
@@ -878,6 +891,19 @@ fn fixed_kind_edge_and_revolve_operations(
             }
         ))
     );
+    for offset in [11, 32] {
+        bytes[direction_pair_start + offset] = 1;
+        assert!(!matches!(
+            exact_path_feature_construction(
+                &bytes,
+                &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+                &direction_pair_scope,
+                std::slice::from_ref(&direction_pair_angle),
+            ),
+            Some(DesignPathFeatureConstruction::Revolve(_))
+        ));
+        bytes[direction_pair_start + offset] = 0;
+    }
     for (class_tag, paired_class_tag) in [("304", "258"), ("408", "259")] {
         let mut scope = direction_pair_scope.clone();
         scope.class_tag =

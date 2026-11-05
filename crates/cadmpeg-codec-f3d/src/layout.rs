@@ -3729,12 +3729,16 @@ pub(crate) mod coil_compact_placement_matrix_frame {
 /// Offsets are relative to the primary indexed header. The frame has eight ordered references; its fixed operation prefix and angle-owner reference are typed, and the remaining marked references retain their source envelope.
 /// ```
 pub(crate) mod direction_pair_revolve_scope_frame {
+    /// Offset of `zero_run_10` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_10: usize = 11;
     /// Offset of `operation` (`u32`, little-endian). Spec §3.1.
     pub(crate) const OPERATION: usize = 21;
     /// Offset of `extent_kind` (`u32`, little-endian). Spec §3.1.
     pub(crate) const EXTENT_KIND: usize = 25;
     /// Offset of `direction_kind` (`u8`). Spec §3.1.
     pub(crate) const DIRECTION_KIND: usize = 29;
+    /// Offset of `zero_run_3` (`bytes[3]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_3: usize = 31;
     /// Offset of `angle_reference_marker` (`u8`). Spec §3.1.
     pub(crate) const ANGLE_REFERENCE_MARKER: usize = 34;
 }

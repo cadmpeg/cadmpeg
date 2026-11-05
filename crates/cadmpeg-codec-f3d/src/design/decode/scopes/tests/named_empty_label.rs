@@ -110,7 +110,10 @@ fn parameter_scope_keeps_nonempty_label_and_excludes_it_from_payload_length() {
     .unwrap()
     .expect("named scope");
     assert_eq!(
-        scope.label.as_ref().map(|label| (label.value.as_str(), label.offset)),
+        scope
+            .label
+            .as_ref()
+            .map(|label| (label.value.as_str(), label.offset)),
         Some(("A😀", u64_from_index(label_offset)))
     );
     assert_eq!(
