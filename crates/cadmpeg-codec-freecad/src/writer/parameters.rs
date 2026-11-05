@@ -185,15 +185,15 @@ pub(in crate::writer) fn render_expression_lossy(
 
 /// Allocate each ownerless parameter once. Existing typed `VarSets` remain the
 /// same owners; authored globals share one deterministic new
-/// `Spreadsheet::Sheet` named `Parameters`, which every FreeCAD version
-/// loads (`App::VarSet` does not load before FreeCAD 1.0). A `VarSet`
+/// `Spreadsheet::Sheet` named `Parameters`, which every `FreeCAD` version
+/// loads (`App::VarSet` does not load before `FreeCAD` 1.0). A `VarSet`
 /// object present as a native record is re-emitted as a `VarSet`
 /// (`writer/native/neutral.rs`); only the generated owner is a sheet.
 ///
 /// Ownerless parameters without cells become cells of the generated sheet:
 /// each is allocated a column-A address in parameter order, with the
 /// parameter name as its alias when the name is a valid free identifier.
-/// Cell parameters have no driving flag in FreeCAD, so a cleared driving
+/// Cell parameters have no driving flag in `FreeCAD`, so a cleared driving
 /// flag is a documented loss, as is a name with no valid alias (#238 §5.5).
 pub(super) fn prepare(
     ir: &CadIr,

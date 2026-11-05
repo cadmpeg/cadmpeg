@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! TechDraw page and view objects authored from neutral drawings.
+//! `TechDraw` page and view objects authored from neutral drawings.
 
 use std::collections::HashMap;
 
