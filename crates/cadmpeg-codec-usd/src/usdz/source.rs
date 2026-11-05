@@ -62,7 +62,11 @@ pub(crate) fn parse<'a>(
     source: &mut Source<'a>,
 ) -> Result<Layer, CodecError> {
     match source.header {
-        Header::Text { .. } => crate::text::grammar::parse_layer(ctx, source.layer.window()),
+        Header::Text { .. } => crate::text::grammar::parse_layer_at(
+            ctx,
+            source.layer.window(),
+            source.layer.location_at(source.layer.start()),
+        ),
         Header::Binary { .. } => {
             let (layer, unread) = crate::usdc::read(ctx, source.layer)?;
             if !unread.is_empty() {
