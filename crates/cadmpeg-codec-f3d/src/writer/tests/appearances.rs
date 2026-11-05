@@ -169,10 +169,57 @@ fn neutral_body_material_authors_design_registry() {
     let mut second_binding = multiple.model.appearance_bindings[0].clone();
     second_binding.id = "authored:model:appearance-binding#2".try_into().unwrap();
     second_binding.target = AppearanceTarget::Body(multiple.model.bodies[1].id.clone());
+    let mut second_appearance = multiple.model.appearances[0].clone();
+    let second_guid = "22222222-3333-4444-5555-666666666666";
+    second_appearance.id = format!("f3d:design:appearance#{second_guid}")
+        .try_into()
+        .unwrap();
+    second_appearance.asset_guid = Some(second_guid.into());
+    second_appearance.visual_guid = Some(second_guid.into());
+    second_appearance.physical_token = Some("PrismMaterial-020".into());
+    second_appearance.base_color =
+        Some(cadmpeg_ir::topology::Color::new(0.8, 0.1, 0.2, 1.0).unwrap());
+    second_binding.appearance = second_appearance.id.clone();
+    multiple.model.appearances.push(second_appearance);
     multiple.model.appearance_bindings.push(second_binding);
     let (multiple_bound, _) = super::source_less_analytic::synthesize_document(&multiple, None);
     assert_eq!(multiple_bound.ir().model.bodies.len(), 2);
     assert_eq!(multiple_bound.ir().model.appearance_bindings.len(), 2);
+    for binding in &multiple_bound.ir().model.appearance_bindings {
+        let AppearanceTarget::Body(body) = &binding.target else {
+            panic!("body assignment")
+        };
+        let ordinal = multiple_bound
+            .ir()
+            .model
+            .bodies
+            .iter()
+            .position(|item| &item.id == body)
+            .unwrap();
+        let original = multiple
+            .model
+            .appearance_bindings
+            .iter()
+            .find(|item| {
+                item.target == AppearanceTarget::Body(multiple.model.bodies[ordinal].id.clone())
+            })
+            .unwrap();
+        let expected = multiple
+            .model
+            .appearances
+            .iter()
+            .find(|item| item.id == original.appearance)
+            .unwrap();
+        let actual = multiple_bound
+            .ir()
+            .model
+            .appearances
+            .iter()
+            .find(|item| item.id == binding.appearance)
+            .unwrap();
+        assert_eq!(actual.base_color, expected.base_color);
+        assert_eq!(actual.physical_token, expected.physical_token);
+    }
     assert_eq!(
         f3d_native(multiple_bound.ir())
             .design_material_assignments
