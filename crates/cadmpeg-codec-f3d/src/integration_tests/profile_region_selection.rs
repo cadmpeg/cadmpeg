@@ -383,3 +383,31 @@ fn counted_members_name_an_uncut_circle_once() {
         ProfileRef::Planar(PlanarProfileRef::SketchSelection { .. })
     ));
 }
+
+#[test]
+fn counted_members_name_each_coincident_uncut_circle_once() {
+    let geometry = vec![
+        json!({"kind": "circle", "center": {"u": 0.0, "v": 0.0}, "radius": 1.0}),
+        json!({"kind": "circle", "center": {"u": 0.0, "v": 0.0}, "radius": 1.0}),
+        json!({"kind": "line", "start": {"u": -2.0, "v": -2.0}, "end": {"u": 2.0, "v": -2.0}}),
+        json!({"kind": "line", "start": {"u": 2.0, "v": -2.0}, "end": {"u": 2.0, "v": 2.0}}),
+        json!({"kind": "line", "start": {"u": 2.0, "v": 2.0}, "end": {"u": -2.0, "v": 2.0}}),
+        json!({"kind": "line", "start": {"u": -2.0, "v": 2.0}, "end": {"u": -2.0, "v": -2.0}}),
+    ];
+    let loops: &[&[usize]] = &[&[0], &[1], &[2, 3, 4, 5]];
+    let profile = bound_fixture(fixture_with(geometry.clone(), loops, &[1, 2]));
+    let ProfileRef::Planar(PlanarProfileRef::SketchRegions { regions, .. }) = &profile else {
+        panic!("disk region: {profile:?}");
+    };
+    let [SketchProfileRegion::Trimmed {
+        hole_boundaries, ..
+    }] = regions.as_slice()
+    else {
+        panic!("one atomic region");
+    };
+    assert!(hole_boundaries.is_empty());
+    assert!(matches!(
+        bound_fixture(fixture_with(geometry, loops, &[1, 2, 2])),
+        ProfileRef::Planar(PlanarProfileRef::SketchSelection { .. })
+    ));
+}

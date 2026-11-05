@@ -668,8 +668,10 @@ fn sketch_arrangement_faces_with_nodes(
             let start = (edge_index, reversed);
             let mut current = start;
             let mut boundary = Vec::new();
-            let mut fragments = Vec::<cadmpeg_ir::sketches::SketchEntityId>::new();
-            let mut coincident = Vec::new();
+            let mut runs = Vec::<(
+                cadmpeg_ir::sketches::SketchEntityId,
+                Vec<cadmpeg_ir::sketches::SketchEntityId>,
+            )>::new();
             let mut polyline = Vec::new();
             loop {
                 let (index, reverse) = current;
@@ -686,11 +688,19 @@ fn sketch_arrangement_faces_with_nodes(
                     use_.reversed = !use_.reversed;
                 }
                 let joint = edge.nodes[usize::from(reverse)];
-                if !(synthetic_nodes.contains(&joint) && fragments.last() == Some(&use_.entity)) {
-                    fragments.push(use_.entity.clone());
+                match runs.last_mut() {
+                    Some((entity, coincident))
+                        if synthetic_nodes.contains(&joint) && *entity == use_.entity =>
+                    {
+                        for other in &edge.coincident {
+                            if !coincident.contains(other) {
+                                coincident.push(other.clone());
+                            }
+                        }
+                    }
+                    _ => runs.push((use_.entity.clone(), edge.coincident.clone())),
                 }
                 boundary.push(use_);
-                coincident.extend(edge.coincident.iter().cloned());
                 if reverse {
                     for point in edge.polyline.iter().rev().take(edge.polyline.len() - 1) {
                         polyline.push(*point);
@@ -708,12 +718,20 @@ fn sketch_arrangement_faces_with_nodes(
                 let next = uses[(twin + uses.len() - 1) % uses.len()];
                 current = (next.0, next.1);
             }
-            if fragments.len() > 1
-                && fragments.first() == fragments.last()
+            if runs.len() > 1
+                && runs.first().map(|run| &run.0) == runs.last().map(|run| &run.0)
                 && synthetic_nodes.contains(&edges[edge_index].nodes[usize::from(reversed)])
             {
-                fragments.pop();
+                if let Some((_, coincident)) = runs.pop() {
+                    for other in coincident {
+                        if !runs[0].1.contains(&other) {
+                            runs[0].1.push(other);
+                        }
+                    }
+                }
             }
+            let fragments = runs.iter().map(|run| run.0.clone()).collect();
+            let coincident = runs.into_iter().flat_map(|run| run.1).collect();
             if polyline.len() >= 3 && signed_polygon_area(&polyline) > tolerance * tolerance {
                 // Proven-disjoint components lie wholly inside or outside
                 // the face, so one node of each decides.
