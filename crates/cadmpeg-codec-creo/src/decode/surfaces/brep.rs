@@ -2077,6 +2077,51 @@ impl BrepFaceReferences {
     }
 }
 
+fn topology_boundary_sense(
+    lp: &crate::topology::Loop,
+    surface: &SurfaceGeometry,
+    incidence: &BTreeMap<HalfEdgeId, &crate::topology::HalfEdgeVertexIncidence>,
+    vertices: &BTreeMap<u32, [f64; 3]>,
+    evidence: NativeCurveEvidence<'_>,
+) -> Option<Sense> {
+    let mut points = Vec::new();
+    let mut bindings = Vec::new();
+    for edge in lp.half_edges() {
+        let curve = exactly_one(evidence.model_curves.iter().filter(|curve| {
+            crate::identity::matches_numbered_identity(
+                curve.id.as_str(),
+                "creo:visibgeom:curve#",
+                edge.curve_id,
+            )
+        }))?;
+        matches!(
+            evidence.source_carriers.curve_geometry(curve),
+            CurveGeometry::Solved(SolvedCurveGeometry::Line(_))
+        )
+        .then_some(())?;
+        let binding = incidence.get(edge)?;
+        let end = binding.end_vertex_id?;
+        let point = Point3::from(*vertices.get(&binding.start_vertex_id.get())?);
+        let uv = cadmpeg_ir::eval::analytic_surface_parameters(surface, point)?.get();
+        points.push([uv.u, uv.v]);
+        bindings.push((binding.start_vertex_id, end));
+    }
+    bindings
+        .iter()
+        .zip(bindings.iter().cycle().skip(1))
+        .all(|(a, b)| a.1 == b.0)
+        .then_some(())?;
+    crate::decode::sweep::revolution_cap::convex_polygon_contains_circles(&points, &[])
+        .then_some(())?;
+    let [a, b, c] = [points[0], points[1], points[2]];
+    let winding = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+    Some(if winding > 0.0 {
+        Sense::Reversed
+    } else {
+        Sense::Forward
+    })
+}
+
 fn native_loop_ring(
     native_loop: &crate::topology::Loop,
     face_id: u32,
@@ -3294,11 +3339,33 @@ pub(in super::super) fn transfer_native_brep(
                     ir.model.surfaces.len() - 1,
                 );
             }
-            let face_sense = if face_orientations[face_id] {
+            let stored_sense = if face_orientations[face_id] {
                 Sense::Reversed
             } else {
                 Sense::Forward
             };
+            let face_sense =
+                if source_carriers.is_topology_bound_plane(&surface) && native_loops.len() == 1 {
+                    surface_positions
+                        .named(surface_prefix, *face_id)
+                        .and_then(NamedSurfaces::unique)
+                        .and_then(|position| {
+                            topology_boundary_sense(
+                                native_loops[0],
+                                source_carriers.surface_geometry(&ir.model.surfaces[position]),
+                                &incidence,
+                                solved_vertices,
+                                NativeCurveEvidence {
+                                    typed_nonlinear_curve_ids: &typed_nonlinear_curve_ids,
+                                    model_curves: &ir.model.curves,
+                                    source_carriers,
+                                },
+                            )
+                        })
+                        .unwrap_or(stored_sense)
+                } else {
+                    stored_sense
+                };
             annotate(
                 annotations,
                 &face,
