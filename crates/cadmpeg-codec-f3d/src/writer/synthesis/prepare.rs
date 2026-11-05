@@ -107,10 +107,10 @@ pub(super) fn auxiliary(
         limits,
         ..Default::default()
     };
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+    let ctx = cadmpeg_core::decode::DecodeContext::for_encode(&arena, &policy);
     let mut retained = Vec::new();
     for surface in std::mem::take(&mut target.model.subds) {
-        if super::super::generate::subd::encode(&ctx, &surface)?.is_some() {
+        if super::super::generate::subd::encode(&ctx, &surface, false)?.is_some() {
             retained.push(surface);
         } else {
             losses.push(F3dLossCode::WriterSubdOmitted.note(format!(
