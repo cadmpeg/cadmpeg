@@ -140,6 +140,36 @@ fn surface_trim_decodes_selection_chain_and_cell_table() {
 }
 
 #[test]
+fn surface_trim_accepts_dynamic_cell_table_tag() {
+    let (mut bytes, scope) = surface_trim_selection_and_cell_table();
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let (table_start, _) = records.frames(817).next().unwrap();
+    bytes[table_start + 4..table_start + 7].copy_from_slice(b"999");
+    let operation = exact_surface_trim_operation(
+        &bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &scope,
+    )
+    .expect("valid cell table");
+    assert_eq!(operation.cell_entries().len(), 2);
+    assert_eq!(operation.trailing_value, 5);
+}
+
+#[test]
+fn surface_trim_rejects_nonzero_cell_table_prefix() {
+    let (mut bytes, scope) = surface_trim_selection_and_cell_table();
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let (table_start, _) = records.frames(817).next().unwrap();
+    bytes[table_start + 11] = 1;
+    assert!(exact_surface_trim_operation(
+        &bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &scope,
+    )
+    .is_none());
+}
+
+#[test]
 fn surface_trim_rejects_cell_ordinal_outside_partition() {
     let (mut bytes, scope) = surface_trim_selection_and_cell_table();
     let table_start = bytes

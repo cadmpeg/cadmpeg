@@ -26,10 +26,9 @@ use std::collections::{HashMap, HashSet};
 /// Decode the exact auxiliary BRep-cell carrier of a `SurfaceTrim` scope.
 ///
 /// The carrier is reached from the trimming entity selection. Two indexed
-/// records precede the cell table. The table itself is class-287 or class-325
-/// and has one 19-byte entry for each marked cell reference. The entries are
-/// cells selected for removal, and the trailing value is the total cell count
-/// of the operation's partition.
+/// records precede the cell table. The table has one 19-byte entry for each
+/// marked cell reference. The entries are cells selected for removal, and the
+/// trailing value is the total cell count of the operation's partition.
 fn exact_surface_trim_operation(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
@@ -72,9 +71,6 @@ fn exact_surface_trim_operation(
         let cell_table = indexed_record_header_at(bytes, cell_table_byte_offset)?;
         let cell_table_record_index = cell_table.record_index;
         let cell_table_class_tag = cell_table.class_tag;
-        if !matches!(cell_table_class_tag.as_str(), "287" | "325") {
-            return None;
-        }
         let (primary, paired) = records
             .frames(cell_table_record_index)
             .find(|(primary, _)| *primary == cell_table_byte_offset)?;
