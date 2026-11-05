@@ -15,12 +15,39 @@ pub(super) fn append_color_definitions(
 ) -> Result<(), CodecError> {
     let mut written = BTreeMap::new();
     for (owner, presentation) in presentations.iter_mut() {
-        let BodyColor::Custom(color) = presentation.color else {
+        let Some(entity) = entities.get(*owner) else {
             continue;
         };
-        let appearance = entities
-            .get(*owner)
-            .and_then(|entity| custom_appearance(ir, entity, color));
+        let (color, appearance) = match presentation.color {
+            BodyColor::Custom(color) => (
+                color,
+                bound_appearance(ir, entity, |candidate| candidate == color),
+            ),
+            BodyColor::Standard(number) if number > 0 => {
+                let Some(appearance) = bound_appearance(
+                    ir,
+                    entity,
+                    |candidate| matches!(display_color(Some(candidate), "appearance", &mut Vec::new()), BodyColor::Standard(value) if value == number),
+                ) else {
+                    continue;
+                };
+                let Some(color) = appearance.base_color else {
+                    continue;
+                };
+                let shared_rgb = ir
+                    .model
+                    .appearances
+                    .iter()
+                    .filter(|other| other.base_color == Some(color))
+                    .count()
+                    > 1;
+                if appearance.name.is_none() && !shared_rgb {
+                    continue;
+                }
+                (color, Some(appearance))
+            }
+            _ => continue,
+        };
         if let Some(index) = appearance
             .and_then(|appearance| written.get(appearance.id.as_str()))
             .copied()
@@ -150,7 +177,7 @@ pub(super) fn coverage(
                 (BodyColor::Standard(left), BodyColor::Standard(right)) => {
                     left == right && appearance.name.is_none()
                 }
-                (BodyColor::Custom(color), BodyColor::Definition(index)) => {
+                (_, BodyColor::Definition(index)) => {
                     let values = [color.r(), color.g(), color.b()].map(|v| {
                         number(FiniteReal::new(f64::from(v) * 100.0).expect("finite color"))
                     });
@@ -220,10 +247,10 @@ pub(super) fn coverage(
 }
 
 /// Find the unique current appearance assigned to this emitted carrier.
-pub(super) fn custom_appearance<'a>(
+fn bound_appearance<'a>(
     ir: &'a CadIr,
     entity: &Entity,
-    color: cadmpeg_ir::topology::Color,
+    matches_color: impl Fn(cadmpeg_ir::topology::Color) -> bool,
 ) -> Option<&'a cadmpeg_ir::appearance::Appearance> {
     use cadmpeg_ir::appearance::AppearanceTarget;
     let mut matches = ir.model.appearance_bindings.iter().filter_map(|binding| {
@@ -243,7 +270,7 @@ pub(super) fn custom_appearance<'a>(
             return None;
         }
         ir.model.appearances.iter().find(|appearance| {
-            appearance.id == binding.appearance && appearance.base_color == Some(color)
+            appearance.id == binding.appearance && appearance.base_color.is_some_and(&matches_color)
         })
     });
     let appearance = matches.next()?;

@@ -147,10 +147,13 @@ mod brep_order;
 use brep_order::{brep_sense, edge_use_positions, edge_use_sense, pole_use_order};
 mod appearance;
 mod attributes;
+mod copious_curve;
 mod degrade;
 mod display;
+mod entity_order;
 mod feature_order;
 mod levels;
+mod native_plane;
 mod native_records;
 mod pcurve_admission;
 pub(crate) mod target;
@@ -615,14 +618,31 @@ fn synthesize_with_admission(
     attribute_export
         .regenerated
         .extend(native_export.regenerated);
+    if let Some(records) = ir
+        .native
+        .namespace("iges")
+        .and_then(|namespace| namespace.arenas().get("copious_data"))
+    {
+        for record in records {
+            if graph
+                .entities
+                .iter()
+                .any(|entity| entity.source_targets.iter().any(|id| id == record.id()))
+            {
+                attribute_export.regenerated.insert(record.id().to_owned());
+            }
+        }
+    }
+
     append_name_properties(&mut graph.entities, &graph.presentations)?;
+    entity_order::source_order(ir, &mut graph.entities, &mut graph.presentations)?;
+    feature_order::order(ir, &mut graph.entities, &mut graph.presentations)?;
     attribute_export.regenerated.extend(display::regenerated(
         ir,
         &graph.entities,
         &graph.presentations,
         version,
     ));
-    feature_order::order(ir, &mut graph.entities, &mut graph.presentations)?;
     let emitted = graph
         .entities
         .iter()
@@ -5845,7 +5865,7 @@ fn synthesized_native_dispositions(
     for arena in namespace.arenas().keys() {
         let regenerated = match arena.as_str() {
             "properties" | "product_properties" => represented_names,
-            "cards" | "copious_data" | "transformations" | "manifold_solids" => !degraded_geometry,
+            "cards" | "transformations" | "manifold_solids" => !degraded_geometry,
             "display_attributes"
             | "macro_definitions"
             | "macro_instances"
@@ -6354,6 +6374,9 @@ fn surface_entities_for_ir(
     version: crate::IgesVersion,
 ) -> Result<Vec<Entity>, CodecError> {
     let geometry = &surface.geometry;
+    if let Some(entity) = native_plane::regenerate(ir, surface) {
+        return Ok(vec![entity]);
+    }
     if let Some(solved) = geometry.solved() {
         if let SolvedSurfaceGeometry::Nurbs(nurbs) = solved {
             let construction = geometry.procedural_construction().and_then(|id| {
@@ -7333,15 +7356,20 @@ impl CurveEntityEmitter<'_> {
             }
             _ => {
                 let mut entity = match sense {
-                    Sense::Forward => curve_entity(
-                        geometry.solved().ok_or_else(|| {
-                            CodecError::UnsupportedContent(
-                                "IGES carrier has no solved geometry".into(),
-                            )
-                        })?,
-                        span,
-                        self.version,
-                    )?,
+                    Sense::Forward => {
+                        match copious_curve::regenerate(self.ir, curve_id, geometry, span, sense) {
+                            Some(entity) => entity,
+                            None => curve_entity(
+                                geometry.solved().ok_or_else(|| {
+                                    CodecError::UnsupportedContent(
+                                        "IGES carrier has no solved geometry".into(),
+                                    )
+                                })?,
+                                span,
+                                self.version,
+                            )?,
+                        }
+                    }
                     Sense::Reversed => {
                         let span = span.ok_or_else(|| {
                             CodecError::UnsupportedContent(format!(

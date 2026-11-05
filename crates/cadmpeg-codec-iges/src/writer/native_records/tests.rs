@@ -1775,3 +1775,118 @@ fn directory_color_and_visibility_are_declared_when_reemitted() {
     assert_eq!(&cards[0][64..72], b"01000000");
     assert_eq!(&cards[1][16..24], b"       2");
 }
+
+#[test]
+fn directory_font_definition_is_declared_when_pointer_is_unchanged() {
+    let mut ir = CadIr::empty();
+    let font = "iges:presentation:line-font#D3";
+    install(
+        &mut ir,
+        "line_fonts",
+        font,
+        &json!({
+            "source_entity": "iges:entity:directory#3", "kind": "visible_blank_pattern",
+            "fallback_line_font_number": 1, "segment_count": 2, "lengths": [2.0, 1.0],
+            "hexadecimal_pattern": "41"
+        }),
+    );
+    install(
+        &mut ir,
+        "display_attributes",
+        "iges:presentation:display#D1",
+        &json!({
+            "source_entity": "iges:entity:directory#1", "line_font_number": -3,
+            "line_font_definition": font, "level_number": 0, "level_definition": null,
+            "color_number": 0, "color_definition": null, "line_weight_number": 0,
+            "line_weight_mm": null, "view": 0, "visible": true
+        }),
+    );
+    let mut entities = vec![owner()];
+    append(&ir, &mut entities, crate::IgesVersion::V5_3);
+    let regenerated = super::super::display::regenerated(
+        &ir,
+        &entities,
+        &BTreeMap::new(),
+        crate::IgesVersion::V5_3,
+    );
+    assert!(regenerated.contains("iges:presentation:display#D1"));
+    let bytes = encode_file(
+        &ir,
+        &entities,
+        &BTreeMap::new(),
+        crate::IgesVersion::V5_3,
+        Some(ir.tolerances.linear.unwrap().get()),
+    )
+    .unwrap();
+    let directory = bytes
+        .split(|byte| *byte == b'\n')
+        .find(|line| line.get(72) == Some(&b'D'))
+        .unwrap();
+    assert_eq!(&directory[24..32], b"      -3");
+    let zero = FiniteReal::ZERO;
+    let one = FiniteReal::ONE;
+    entities[0].transform = Some(super::super::Placement {
+        rows: [
+            [one, zero, zero, zero],
+            [zero, one, zero, zero],
+            [zero, zero, one, zero],
+        ],
+    });
+    let regenerated = super::super::display::regenerated(
+        &ir,
+        &entities,
+        &BTreeMap::new(),
+        crate::IgesVersion::V5_3,
+    );
+    assert!(!regenerated.contains("iges:presentation:display#D1"));
+    let bytes = encode_file(
+        &ir,
+        &entities,
+        &BTreeMap::new(),
+        crate::IgesVersion::V5_3,
+        Some(ir.tolerances.linear.unwrap().get()),
+    )
+    .unwrap();
+    let directory = bytes
+        .split(|byte| *byte == b'\n')
+        .find(|line| line.get(72) == Some(&b'D') && &line[..8] == b"     110")
+        .unwrap();
+    assert_eq!(&directory[24..32], b"      -5");
+}
+
+#[test]
+fn v4_generated_line_font_is_declared_when_it_matches() {
+    let mut ir = CadIr::empty();
+    install(
+        &mut ir,
+        "display_attributes",
+        "iges:presentation:display#D1",
+        &json!({
+            "source_entity": "iges:entity:directory#1", "line_font_number": 1,
+            "line_font_definition": null, "level_number": 0, "level_definition": null,
+            "color_number": 0, "color_definition": null, "line_weight_number": 0,
+            "line_weight_mm": null, "view": 0, "visible": true
+        }),
+    );
+    let entities = vec![owner()];
+    let regenerated = super::super::display::regenerated(
+        &ir,
+        &entities,
+        &BTreeMap::new(),
+        crate::IgesVersion::V4_0,
+    );
+    assert!(regenerated.contains("iges:presentation:display#D1"));
+    let bytes = encode_file(
+        &ir,
+        &entities,
+        &BTreeMap::new(),
+        crate::IgesVersion::V4_0,
+        Some(ir.tolerances.linear.unwrap().get()),
+    )
+    .unwrap();
+    let directory = bytes
+        .split(|byte| *byte == b'\n')
+        .find(|line| line.get(72) == Some(&b'D'))
+        .unwrap();
+    assert_eq!(&directory[24..32], b"       1");
+}

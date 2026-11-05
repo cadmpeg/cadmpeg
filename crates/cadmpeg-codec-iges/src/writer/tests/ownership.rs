@@ -231,6 +231,37 @@ fn surface_binding_writes_a_314_definition() {
         named.ir().model.appearances[0].name.as_deref(),
         Some("named material")
     );
+    ir.model.appearances[0].base_color = Color::new(1.0, 0.0, 0.0, 1.0);
+    let named_standard = round_trip(&ir);
+    assert_eq!(
+        named_standard.ir().model.appearances[0].name.as_deref(),
+        Some("named material")
+    );
+    assert_eq!(
+        named_standard.ir().model.appearances[0].base_color,
+        ir.model.appearances[0].base_color
+    );
+    ir.model.appearances[0].name = None;
+    let mut second_surface = ir.model.surfaces[0].clone();
+    second_surface.id = cadmpeg_ir::ids::SurfaceId::mint("test:model:surface#second").unwrap();
+    let mut second_appearance = ir.model.appearances[0].clone();
+    second_appearance.id =
+        cadmpeg_ir::ids::AppearanceId::mint("test:application:appearance#second").unwrap();
+    let mut second_binding = ir.model.appearance_bindings[0].clone();
+    second_binding.id =
+        cadmpeg_ir::ids::AppearanceBindingId::mint("test:application:binding#second").unwrap();
+    second_binding.target = AppearanceTarget::Surface(second_surface.id.clone());
+    second_binding.appearance = second_appearance.id.clone();
+    ir.model.surfaces.push(second_surface);
+    ir.model.appearances.push(second_appearance);
+    ir.model.appearance_bindings.push(second_binding);
+    let distinct = round_trip(&ir);
+    assert_eq!(distinct.ir().model.appearances.len(), 2);
+    assert_eq!(distinct.ir().model.appearance_bindings.len(), 2);
+    assert_ne!(
+        distinct.ir().model.appearance_bindings[0].appearance,
+        distinct.ir().model.appearance_bindings[1].appearance
+    );
 }
 
 #[test]

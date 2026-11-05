@@ -14,6 +14,7 @@ mod box_placement;
 mod configuration_features;
 mod cylinder_radius;
 mod limits;
+mod mesh_sentinel;
 mod neutral_text;
 mod reductions;
 mod sketch_constraints;
@@ -74,6 +75,16 @@ fn source_less_primitive_feature_survives_synthesis() {
         evaluation: FeatureEvaluation::from_definition(definition.clone()),
         native_ref: None,
     });
+
+    // Two BREP records and seven indexed feature records are emitted.
+    let mut limited = EncodeInput::new(&ir, None);
+    limited.limits.max_entities = 8;
+    assert!(matches!(F3dCodec.plan(limited, TargetRequest::Inherit),
+        Err(cadmpeg_ir::codec::write::EncodeError::ResourceLimit(limit))
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities));
+    let mut exact = EncodeInput::new(&ir, None);
+    exact.limits.max_entities = 9;
+    F3dCodec.plan(exact, TargetRequest::Inherit).expect("exact output record budget");
 
     let mut bytes = Vec::new();
     F3dCodec
