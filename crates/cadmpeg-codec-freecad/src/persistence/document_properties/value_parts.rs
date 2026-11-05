@@ -25,11 +25,10 @@ pub(super) fn decode<'source>(
     let extent = crate::fidelity::relative_xml_extent(view, value.range())?;
     let mut spec = crate::persistence::document_part("freecad.property_value");
     let type_name = property.type_name.clone();
+    let name = property.name.clone();
     if let Some(classes) = crate::fidelity::property_value_classes(objects, owner, &type_name) {
         spec = spec.holding(classes);
     }
-    let name = property.name.clone();
-    let type_name = property.type_name.clone();
     let body = ctx.decode_part(stage, extent, spec, |value_stage| {
         let body = crate::persistence::property_body(node, owner, &name, &type_name)?;
         let mut complete = property.clone();
