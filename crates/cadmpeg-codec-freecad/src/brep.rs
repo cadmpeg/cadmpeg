@@ -2591,10 +2591,9 @@ pub(crate) fn parse_payloads(
         polygons3d: Vec::new(),
         polygons_on_triangulations: Vec::new(),
     };
-    for property in properties
-        .iter()
-        .filter(|property| property.type_name == "Part::PropertyPartShape")
-    {
+    for property in properties.iter().filter(|property| {
+        property.type_name == "Part::PropertyPartShape" && property.body.is_some()
+    }) {
         let Some(name) = direct_shape_entry(ctx, property)? else {
             continue;
         };

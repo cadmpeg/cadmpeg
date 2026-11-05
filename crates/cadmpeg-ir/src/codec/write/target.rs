@@ -84,6 +84,15 @@ pub enum ResolvedTarget<'a> {
         /// Why no source dialect could be inherited.
         source: DefaultSource,
     },
+    /// An inherited off-catalog source may be preserved, with a fallback.
+    Preserved {
+        /// Source dialect for a successful patch or replay.
+        source: DialectId,
+        /// Position of the catalog synthesis fallback.
+        fallback_index: usize,
+        /// Catalog synthesis fallback.
+        fallback: &'static TargetDescriptor,
+    },
 }
 
 /// A native write resolved against the encoder catalog and source identity.
@@ -130,6 +139,7 @@ impl<'a> ResolvedWrite<'a> {
             ResolvedTarget::Explicit { entry, .. }
             | ResolvedTarget::Inherited { entry, .. }
             | ResolvedTarget::Default { entry, .. } => Some(entry),
+            ResolvedTarget::Preserved { .. } => None,
         }
     }
 
@@ -143,6 +153,7 @@ impl<'a> ResolvedWrite<'a> {
             ResolvedTarget::Explicit { index, .. }
             | ResolvedTarget::Inherited { index, .. }
             | ResolvedTarget::Default { index, .. } => Some(*index),
+            ResolvedTarget::Preserved { .. } => None,
         }
     }
 
@@ -153,6 +164,7 @@ impl<'a> ResolvedWrite<'a> {
             ResolvedTarget::Explicit { entry, .. }
             | ResolvedTarget::Inherited { entry, .. }
             | ResolvedTarget::Default { entry, .. } => &entry.id,
+            ResolvedTarget::Preserved { source, .. } => source,
         }
     }
 
@@ -162,7 +174,7 @@ impl<'a> ResolvedWrite<'a> {
     pub fn preserves_source(&self) -> bool {
         match &self.target {
             ResolvedTarget::Explicit { entry, source, .. } => source.recorded() == Some(&entry.id),
-            ResolvedTarget::Inherited { .. } => true,
+            ResolvedTarget::Inherited { .. } | ResolvedTarget::Preserved { .. } => true,
             ResolvedTarget::Default { .. } => false,
         }
     }
@@ -179,7 +191,9 @@ impl<'a> ResolvedWrite<'a> {
                 source: DefaultSource::OffCatalogDialect(source),
                 ..
             } => Some(source),
-            ResolvedTarget::Inherited { .. } | ResolvedTarget::Default { .. } => None,
+            ResolvedTarget::Inherited { .. }
+            | ResolvedTarget::Default { .. }
+            | ResolvedTarget::Preserved { .. } => None,
         }
     }
 
@@ -204,6 +218,18 @@ impl<'a> ResolvedWrite<'a> {
         })
     }
 
+    /// Describe displacement if source preservation falls back to synthesis.
+    #[must_use]
+    pub fn synthesis_displacement_message(&self) -> Option<String> {
+        match &self.target {
+            ResolvedTarget::Preserved { source, fallback, .. } => Some(format!(
+                "source dialect {source} was displaced by target dialect {}; the source dialect identity is not preserved",
+                fallback.id
+            )),
+            _ => self.displacement_message(),
+        }
+    }
+
     /// Whether the document records source metadata for this encoder format.
     ///
     /// This includes a same-format source whose dialect was not classified.
@@ -211,7 +237,7 @@ impl<'a> ResolvedWrite<'a> {
     pub const fn has_same_format_source(&self) -> bool {
         match &self.target {
             ResolvedTarget::Explicit { source, .. } => source.is_same_format(),
-            ResolvedTarget::Inherited { .. } => true,
+            ResolvedTarget::Inherited { .. } | ResolvedTarget::Preserved { .. } => true,
             ResolvedTarget::Default { source, .. } => matches!(
                 source,
                 DefaultSource::UnrecordedDialect | DefaultSource::OffCatalogDialect(_)
@@ -234,15 +260,28 @@ impl<'a> ResolvedWrite<'a> {
 
     /// Returns the selected synthesis grammar.
     pub fn for_synthesis(&self) -> Result<SynthesisTarget<'a>, EncodeError> {
-        let index = match &self.target {
+        match &self.target {
             ResolvedTarget::Explicit { index, .. }
             | ResolvedTarget::Inherited { index, .. }
-            | ResolvedTarget::Default { index, .. } => *index,
-        };
-        Ok(SynthesisTarget {
-            resolved: self.clone(),
-            index,
-        })
+            | ResolvedTarget::Default { index, .. } => Ok(SynthesisTarget {
+                resolved: self.clone(),
+                index: *index,
+            }),
+            ResolvedTarget::Preserved {
+                source,
+                fallback_index,
+                fallback,
+            } => Ok(SynthesisTarget {
+                resolved: Self {
+                    target: ResolvedTarget::Default {
+                        index: *fallback_index,
+                        entry: fallback,
+                        source: DefaultSource::OffCatalogDialect(source.clone()),
+                    },
+                },
+                index: *fallback_index,
+            }),
+        }
     }
 }
 
@@ -265,6 +304,11 @@ pub trait TargetResolution: resolution_sealed::Sealed {
 
     /// The target actually authored when source preservation cannot proceed.
     fn synthesis_target(&self) -> Result<Option<&DialectId>, EncodeError>;
+
+    /// Prefer an eligible source layout over the synthesis fallback.
+    fn prefer_source(self) -> Self
+    where
+        Self: Sized;
 }
 
 impl TargetResolution for () {
@@ -275,6 +319,8 @@ impl TargetResolution for () {
     fn synthesis_target(&self) -> Result<Option<&DialectId>, EncodeError> {
         Ok(None)
     }
+
+    fn prefer_source(self) -> Self {}
 }
 
 impl TargetResolution for ResolvedWrite<'_> {
@@ -283,7 +329,27 @@ impl TargetResolution for ResolvedWrite<'_> {
     }
 
     fn synthesis_target(&self) -> Result<Option<&DialectId>, EncodeError> {
-        Ok(Some(self.target_id()))
+        match &self.target {
+            ResolvedTarget::Preserved { fallback, .. } => Ok(Some(&fallback.id)),
+            _ => Ok(Some(self.target_id())),
+        }
+    }
+
+    fn prefer_source(self) -> Self {
+        match self.target {
+            ResolvedTarget::Default {
+                index,
+                entry,
+                source: DefaultSource::OffCatalogDialect(source),
+            } => Self {
+                target: ResolvedTarget::Preserved {
+                    source,
+                    fallback_index: index,
+                    fallback: entry,
+                },
+            },
+            target => Self { target },
+        }
     }
 }
 

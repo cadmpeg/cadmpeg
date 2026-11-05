@@ -24,7 +24,19 @@ pub(super) fn regenerate(
     CodecError,
 > {
     let original_native = std::mem::take(&mut native.design_parameters);
-    let mut parameters = target.model.parameters.iter().collect::<Vec<_>>();
+    let owned = target
+        .model
+        .parameters
+        .iter()
+        .filter(|parameter| parameter.owner.is_some())
+        .cloned()
+        .collect::<Vec<_>>();
+    let mut parameters = target
+        .model
+        .parameters
+        .iter()
+        .filter(|parameter| parameter.owner.is_none())
+        .collect::<Vec<_>>();
     parameters.sort_by(|left, right| (left.ordinal, &left.id).cmp(&(right.ordinal, &right.id)));
     // Pre-rewrite neutral identities in author order, so the caller can point
     // retained selections at the rewritten parameters below.
@@ -154,6 +166,7 @@ pub(super) fn regenerate(
             .parameters,
         )
     })?;
+    target.model.parameters.extend(owned);
     // The rewrite above re-identifies every authored parameter from its
     // native record. Hand the caller the pre-rewrite to rewritten identity
     // map so retained selections keep naming live parameters.

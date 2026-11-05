@@ -624,9 +624,9 @@ pub(crate) fn decode_with_body_bindings<'a>(
         .iter()
         .filter(|entry| scan.is_design_asset_entry(entry, ContainerRole::ProteinAssets))
     {
-        let protein = scan.entry_view(&entry.name).ok_or_else(|| {
-            CodecError::Malformed("protein archive entry missing from scan".into())
-        })?;
+        let Some(protein) = scan.entry_view(&entry.name) else {
+            continue;
+        };
         let stream_name =
             StreamName::try_from(entry.name.clone()).map_err(CodecError::malformed)?;
         let spec = PartSpec::new("f3d.protein_record")
@@ -1794,37 +1794,17 @@ fn decode_design_object_types(
         .iter()
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Metastream))
     {
-        let bytes = scan.entry_bytes(&entry.name)?;
-        let mut position = 0usize;
-        while position + 8 <= bytes.len() {
-            let Some((object_type, after_type)) = lp_ascii_printable(bytes, position)? else {
-                position += 1;
-                continue;
-            };
-            if !object_type.chars().all(char::is_alphabetic) {
-                position += 1;
-                continue;
-            }
-            let mut view = View::over_retained(&bytes[after_type..]);
-            let Some(count) = view.u32_le() else {
-                break;
-            };
-            if count > 200 {
-                position += 1;
-                continue;
-            }
-            if view.counted(u64::from(count), 8).is_none() {
-                position += 1;
-                continue;
-            }
-            for _ in 0..count {
-                let Some(id) = view.u64_le() else {
-                    break;
-                };
-                let value = object_type.clone();
-                out.insert(id, value);
-            }
-            position = after_type + view.position();
+        let meta = scan.parsed_metastream(&entry.name)?;
+        let Some(prefix) = entry.name.strip_suffix("MetaStream.dat") else {
+            continue;
+        };
+        let bulk = format!("{prefix}BulkStream.dat");
+        if !scan.has_entry(&bulk) {
+            continue;
+        }
+        let bytes = scan.entry_bytes(&bulk)?;
+        for frame in crate::design::decode::meta::design_primary_frames(bytes, &meta)? {
+            out.insert(frame.entity_id, frame.design_type.module.clone());
         }
     }
     Ok(out)

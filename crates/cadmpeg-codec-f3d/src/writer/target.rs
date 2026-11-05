@@ -16,23 +16,8 @@ pub(crate) fn plan(
     input: EncodeInput<'_>,
     target: &ResolvedWrite<'_>,
 ) -> Result<ExportBody, CodecError> {
-    if target.entry().is_none() {
-        return match preserve(input)? {
-            Preservation::Written {
-                bytes,
-                write_path,
-                notes,
-            } => Ok(preserved_body(input.ir, write_path, bytes, notes)),
-            Preservation::PatchDeclined { reason } => {
-                synthesize_displaced(input, target, SynthesisCause::PatchDeclined { reason })
-            }
-            Preservation::SourceImageUnavailable => {
-                synthesize_displaced(input, target, SynthesisCause::SourceImageUnavailable)
-            }
-        };
-    }
     if target.preserves_source() {
-        return match preserve(input)? {
+        let mut body = match preserve(input)? {
             Preservation::Written {
                 bytes,
                 write_path,
@@ -44,7 +29,14 @@ pub(crate) fn plan(
             Preservation::PatchDeclined { reason } => {
                 synthesized_body(input, SynthesisCause::PatchDeclined { reason })
             }
-        };
+        }?;
+        if matches!(body.write_path, WritePath::Synthesized { .. }) {
+            if let Some(message) = target.synthesis_displacement_message() {
+                body.losses
+                    .push(F3dLossCode::SourceDialectDisplaced.note(message));
+            }
+        }
+        return Ok(body);
     }
     let cause = if let Some(message) = target.displacement_message() {
         SynthesisCause::Displaced(message)
@@ -59,25 +51,6 @@ pub(crate) fn plan(
         SynthesisCause::Fresh
     };
     synthesized_body(input, cause)
-}
-
-fn synthesize_displaced(
-    input: EncodeInput<'_>,
-    target: &ResolvedWrite<'_>,
-    cause: SynthesisCause,
-) -> Result<ExportBody, CodecError> {
-    // An off-catalog `Inherit` resolves to the catalog default with a
-    // displacement loss; a missing default still synthesizes.
-    let message = target
-        .for_synthesis()
-        .ok()
-        .and_then(|synthesis| synthesis.resolution().displacement_message());
-    let mut body = synthesized_body(input, cause)?;
-    if let Some(message) = message {
-        body.losses
-            .push(F3dLossCode::SourceDialectDisplaced.note(message));
-    }
-    Ok(body)
 }
 
 enum Preservation {

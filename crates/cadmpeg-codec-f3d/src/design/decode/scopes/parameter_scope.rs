@@ -117,7 +117,12 @@ pub(crate) fn decode_parameter_scopes(
             .ok_or_else(|| CodecError::malformed("parameter-scope source View is missing"))?;
         let bytes = source.window();
         let stream = crate::ids::native_scope(&entry.name);
-        let records = IndexedRecordOffsets::build(bytes);
+        let Some(meta) = crate::design::decode::meta::metadata_for_bulk_stream(scan, &entry.name)?
+        else {
+            continue;
+        };
+        let frames = crate::design::decode::meta::design_primary_frames(bytes, &meta)?;
+        let records = IndexedRecordOffsets::from_primary_frames(&frames);
         let stream_types = crate::design::decode::meta::stream_types_by_entity(types, &entry.name);
         let class_types =
             crate::design::decode::meta::stream_types_by_class_tag(types, &entry.name);
