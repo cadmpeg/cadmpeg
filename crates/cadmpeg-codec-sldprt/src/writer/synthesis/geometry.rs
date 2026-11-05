@@ -35,17 +35,14 @@ pub(super) fn convert_polylines(ir: &mut CadIr, losses: &mut Vec<LossNote>) {
             }
             _ => return None,
         };
-        let Some(mut samples) = (0..polyline.point_count())
+        let mut samples = (0..polyline.point_count())
             .map(|index| {
                 Some((
                     polyline.parameter_at(index)?.get(),
                     polyline.point_at(index)?,
                 ))
             })
-            .collect::<Option<Vec<_>>>()
-        else {
-            return None;
-        };
+            .collect::<Option<Vec<_>>>()?;
         if samples.len() < 2 {
             return None;
         }
