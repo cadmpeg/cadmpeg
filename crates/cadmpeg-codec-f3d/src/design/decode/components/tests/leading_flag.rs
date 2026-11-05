@@ -148,3 +148,83 @@ fn a_leading_flag_frame_with_one_wrong_field_states_no_occurrence() {
         }
     }
 }
+
+/// The bytes registered as entity 253 at offset 0 under one Component type.
+fn registered_under(type_guid: &str) -> crate::metastream::MetaStream {
+    use crate::metastream::{MetaStream, RecordIndexEntry};
+    use crate::records::entity_header::{BaseTypeGuid, SegmentTypeData};
+    use crate::records::identity::ReferenceRun;
+    MetaStream {
+        types: vec![SegmentTypeData {
+            byte_offset: 0,
+            type_guid: type_guid.to_owned().try_into().unwrap(),
+            type_guid_offset: 0,
+            base_type_guid: BaseTypeGuid::Absent,
+            version: 2,
+            version_offset: 0,
+            module: "Component".to_owned(),
+            entities: ReferenceRun::unlocated(vec![253]),
+        }],
+        records: vec![RecordIndexEntry {
+            entity_id: 253,
+            bulk_offset: 0,
+        }],
+        secondary_records: Vec::new(),
+    }
+}
+
+/// Discover and admit the occurrences of one stream as the decoder does.
+fn discover(
+    bytes: &[u8],
+    meta: &crate::metastream::MetaStream,
+) -> (
+    Vec<DesignComponentOccurrence>,
+    Vec<cadmpeg_ir::report::loss::LossNote>,
+    usize,
+) {
+    let key = |entity: u64, start: usize| (entity, u64::try_from(start).unwrap());
+    let frames = crate::metastream::primary_record_frames(meta, bytes.len()).unwrap();
+    let typed = super::super::occurrence_frames(bytes, meta).unwrap();
+    let primary = frames
+        .iter()
+        .map(|frame| key(frame.entity_id, frame.start))
+        .collect();
+    let typed_primary = typed
+        .iter()
+        .map(|frame| key(frame.entity_id, frame.start))
+        .collect();
+    let frame_ends = frames
+        .iter()
+        .map(|frame| (frame.start, frame.member_end))
+        .collect();
+    let (mut occurrences, losses) =
+        super::super::discover_occurrences(bytes, STREAM, &frame_ends, &typed_primary);
+    let superseded =
+        super::super::admit_occurrence_envelopes(&mut occurrences, &primary, &typed_primary);
+    (occurrences, losses, superseded)
+}
+
+#[test]
+fn a_leading_flag_frame_is_a_carrier_only_under_the_occurrence_placement_type() {
+    const OWNER_TYPE: &str = "904F885E-D859-4755-A7EF-6EBED8732FAD";
+    let placement = registered_under(super::super::OCCURRENCE_PLACEMENT_TYPE_GUID);
+    let other = registered_under(OWNER_TYPE);
+    for matrix in [false, true] {
+        let mut bytes = frame(matrix);
+        bytes[4..7].copy_from_slice(b"256");
+        let (occurrences, losses, superseded) = discover(&bytes, &placement);
+        assert_eq!(occurrences.len(), 1);
+        assert_eq!(occurrences[0].component_record_index, 202);
+        assert!(losses.is_empty());
+        assert_eq!(superseded, 0);
+        let (occurrences, losses, superseded) = discover(&bytes, &other);
+        assert!(occurrences.is_empty());
+        assert!(losses.is_empty());
+        assert_eq!(superseded, 0);
+    }
+    let mut later = frame(false);
+    later[4..7].copy_from_slice(b"256");
+    later[46..50].copy_from_slice(&2_u32.to_le_bytes());
+    assert_eq!(discover(&later, &placement).1.len(), 1);
+    assert!(discover(&later, &other).1.is_empty());
+}

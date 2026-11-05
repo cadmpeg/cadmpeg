@@ -110,31 +110,9 @@ pub(crate) fn decode_component_occurrences(
             .iter()
             .map(|frame| (frame.start, frame.member_end))
             .collect::<std::collections::BTreeMap<_, _>>();
-        let mut stream_occurrences = Vec::new();
-        let mut at = 0;
-        while let Some(start) = next_indexed_record_offset(bytes, at) {
-            let end = frame_ends
-                .get(&start)
-                .copied()
-                .or_else(|| next_indexed_record_offset(bytes, start.checked_add(1)?));
-            if let Some(occurrence) = end
-                .and_then(|end| exact_component_occurrence_frame(bytes, start, end, &scope))
-                .or_else(|| attributed_component_occurrence(bytes, start, &scope))
-                .or_else(|| {
-                    end.and_then(|end| leading_flag_component_occurrence(bytes, start, end, &scope))
-                })
-            {
-                if let Some(loss) = unproven_identity_loss(&occurrence) {
-                    losses.push(loss);
-                } else {
-                    stream_occurrences.push(occurrence);
-                }
-            }
-            let Some(next_at) = start.checked_add(1) else {
-                break;
-            };
-            at = next_at;
-        }
+        let (mut stream_occurrences, stream_losses) =
+            discover_occurrences(bytes, &scope, &frame_ends, &typed_primary);
+        losses.extend(stream_losses);
         superseded += admit_occurrence_envelopes(&mut stream_occurrences, &primary, &typed_primary);
         ambiguous_current_poses += bind_current_poses(&mut stream_occurrences, &poses);
         paths.extend(component_paths(&scope, &stream_occurrences, path_carriers));
@@ -149,6 +127,52 @@ pub(crate) fn decode_component_occurrences(
         ambiguous_current_poses,
         paths,
     })
+}
+
+/// The occurrence frames of one Design stream, and the identity losses of the
+/// identity frames that state a later ordinal. A leading-flag frame is a
+/// carrier only where the occurrence-placement type row registers its record
+/// at its offset.
+fn discover_occurrences(
+    bytes: &[u8],
+    scope: &str,
+    frame_ends: &std::collections::BTreeMap<usize, usize>,
+    typed_primary: &std::collections::BTreeSet<(u64, u64)>,
+) -> (
+    Vec<DesignComponentOccurrence>,
+    Vec<cadmpeg_ir::report::loss::LossNote>,
+) {
+    let registered = |occurrence: &DesignComponentOccurrence| {
+        typed_primary.contains(&(u64::from(occurrence.record_index), occurrence.byte_offset()))
+    };
+    let mut occurrences = Vec::new();
+    let mut losses = Vec::new();
+    let mut at = 0;
+    while let Some(start) = next_indexed_record_offset(bytes, at) {
+        let end = frame_ends
+            .get(&start)
+            .copied()
+            .or_else(|| next_indexed_record_offset(bytes, start.checked_add(1)?));
+        if let Some(occurrence) = end
+            .and_then(|end| exact_component_occurrence_frame(bytes, start, end, scope))
+            .or_else(|| attributed_component_occurrence(bytes, start, scope))
+            .or_else(|| {
+                end.and_then(|end| leading_flag_component_occurrence(bytes, start, end, scope))
+                    .filter(registered)
+            })
+        {
+            if let Some(loss) = unproven_identity_loss(&occurrence) {
+                losses.push(loss);
+            } else {
+                occurrences.push(occurrence);
+            }
+        }
+        let Some(next_at) = start.checked_add(1) else {
+            break;
+        };
+        at = next_at;
+    }
+    (occurrences, losses)
 }
 
 /// The native component paths of one Design stream. An element is an
