@@ -161,6 +161,8 @@ pub(crate) enum FreecadLossCode {
     ParameterNameNotTransferred,
     /// A parameter has no driving flag in its native home.
     ParameterDrivingNotTransferred,
+    /// An expression is stored using the native scalar or cell spelling.
+    ParameterExpressionNormalized,
     /// Persistence version metadata used a lowercase alias.
     FileVersionNoncanonical,
     /// Persistence file-version declaration cannot select a legacy map encoding.
@@ -240,6 +242,7 @@ impl FreecadLossCode {
         Self::ProductLinkedPlacementFolded,
         Self::ParameterNameNotTransferred,
         Self::ParameterDrivingNotTransferred,
+        Self::ParameterExpressionNormalized,
         Self::FileVersionNoncanonical,
         Self::FileVersionUnverified,
         Self::ElementMapVersionUnresolved,
@@ -324,6 +327,7 @@ impl FreecadLossCode {
             Self::ProductLinkedPlacementFolded => "product.linked-placement-folded",
             Self::ParameterNameNotTransferred => "parameter.name-not-transferred",
             Self::ParameterDrivingNotTransferred => "parameter.driving-not-transferred",
+            Self::ParameterExpressionNormalized => "parameter.expression-normalized",
             Self::FileVersionNoncanonical => "metadata.file-version-noncanonical",
             Self::FileVersionUnverified => "metadata.file-version-unverified",
             Self::ElementMapVersionUnresolved => "element-map.version-unresolved",
@@ -401,6 +405,7 @@ impl FreecadLossCode {
             | Self::ProductLinkedPlacementFolded
             | Self::ParameterNameNotTransferred
             | Self::ParameterDrivingNotTransferred
+            | Self::ParameterExpressionNormalized
             | Self::FileVersionNoncanonical
             | Self::FileVersionUnverified
             | Self::ElementMapVersionUnresolved
@@ -473,7 +478,8 @@ impl FreecadLossCode {
             | Self::ProductLinkedPlacementFolded
             | Self::ParameterNameNotTransferred
             | Self::FeatureLengthNotTransferred
-            | Self::ParameterDrivingNotTransferred => LossTaxonomy::MetadataNotTransferred,
+            | Self::ParameterDrivingNotTransferred
+            | Self::ParameterExpressionNormalized => LossTaxonomy::MetadataNotTransferred,
             Self::PersistenceCountNoncanonical
             | Self::ProgramVersionNoncanonical
             | Self::FileVersionNoncanonical
@@ -595,6 +601,7 @@ mod tests {
                 "product.linked-placement-folded",
                 "parameter.name-not-transferred",
                 "parameter.driving-not-transferred",
+                "parameter.expression-normalized",
                 "metadata.file-version-noncanonical",
                 "metadata.file-version-unverified",
                 "element-map.version-unresolved",
