@@ -991,7 +991,7 @@ fn prepare_write<'a, 'budget>(
                             "; procedural construction {construction} omitted"
                         ))
                         .unwrap_or_default()
-                )))
+                )));
             }
             Err(error) => return Err(error),
         }
