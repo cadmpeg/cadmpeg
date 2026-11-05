@@ -604,7 +604,7 @@ fn synchronize_features(
         } = NeutralFeatureEncoder {
             feature,
             canonical_parameters: parameters,
-            orphaned_parameters: &orphaned,
+            orphaned_parameters: orphaned,
             canonical_features: features,
             canonical_parameter_texts: &canonical_parameter_texts,
             existing: existing.as_deref(),
