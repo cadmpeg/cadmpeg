@@ -331,3 +331,28 @@ fn counted_members_name_both_curves_of_a_coincident_boundary_stretch() {
         ProfileRef::Planar(PlanarProfileRef::SketchSelection { .. })
     ));
 }
+
+#[test]
+fn counted_members_match_a_region_whose_edge_two_profiles_share() {
+    let geometry = vec![
+        json!({"kind": "line", "start": {"u": -1.0, "v": -1.0}, "end": {"u": 0.0, "v": -1.0}}),
+        json!({"kind": "line", "start": {"u": 0.0, "v": -1.0}, "end": {"u": 0.0, "v": 1.0}}),
+        json!({"kind": "line", "start": {"u": 0.0, "v": 1.0}, "end": {"u": -1.0, "v": 1.0}}),
+        json!({"kind": "line", "start": {"u": -1.0, "v": 1.0}, "end": {"u": -1.0, "v": -1.0}}),
+        json!({"kind": "line", "start": {"u": 0.0, "v": -1.0}, "end": {"u": 1.0, "v": -1.0}}),
+        json!({"kind": "line", "start": {"u": 1.0, "v": -1.0}, "end": {"u": 1.0, "v": 1.0}}),
+        json!({"kind": "line", "start": {"u": 1.0, "v": 1.0}, "end": {"u": 0.0, "v": 1.0}}),
+    ];
+    let profile = bound_fixture(fixture_with(
+        geometry,
+        &[&[0, 1, 2, 3], &[1, 4, 5, 6]],
+        &[1, 2, 3, 4],
+    ));
+    let ProfileRef::Planar(PlanarProfileRef::SketchRegions { regions, .. }) = &profile else {
+        panic!("left square region: {profile:?}");
+    };
+    let [SketchProfileRegion::Trimmed { outer_boundary, .. }] = regions.as_slice() else {
+        panic!("one atomic region");
+    };
+    assert_eq!(outer_boundary.len(), 4);
+}

@@ -527,7 +527,11 @@ fn sketch_arrangement_faces_with_nodes(
             if (candidate.nodes == edge.nodes || candidate.nodes == [edge.nodes[1], edge.nodes[0]])
                 && arrangement_edges_coincident(candidate, &edge, entities, tolerance, ctx)?
             {
-                candidate.coincident.push(edge.boundary.entity.clone());
+                if candidate.boundary.entity != edge.boundary.entity
+                    && !candidate.coincident.contains(&edge.boundary.entity)
+                {
+                    candidate.coincident.push(edge.boundary.entity.clone());
+                }
                 coincident = true;
                 break;
             }
