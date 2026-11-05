@@ -111,16 +111,23 @@ fn source_less_primitive_feature_survives_synthesis() {
     ir.model.features[1].source_tag = Some("unsupported variant".into());
     let (output, report) = super::source_less_analytic::synthesize_document(&ir, None);
     assert_eq!(output.ir().model.features.len(), 1);
-    let omitted = ir.model.features[1].id.as_str();
+    let omitted = ir.model.features[1].id.to_string();
     let retained = ir.model.features[0].id.as_str();
     assert!(report
         .losses
         .iter()
-        .any(|loss| loss.message.contains(omitted)));
+        .any(|loss| loss.message.contains(&omitted)));
     assert!(!report
         .losses
         .iter()
         .any(|loss| loss.message.contains(retained)));
+    ir.model.features[1].source_tag = None;
+    ir.model.features[1].needs_recompute = true;
+    let (output, report) = super::source_less_analytic::synthesize_document(&ir, None);
+    assert_eq!(output.ir().model.features.len(), 2);
+    assert!(report.losses.iter().any(|loss| {
+        loss.message.contains(&omitted) && loss.message.contains("recompute state")
+    }));
 }
 
 #[test]
