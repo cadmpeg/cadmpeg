@@ -13,6 +13,7 @@ mod appearance;
 mod body_keys;
 mod design;
 mod geometry;
+mod materials;
 mod native;
 mod prepare;
 mod streams;
