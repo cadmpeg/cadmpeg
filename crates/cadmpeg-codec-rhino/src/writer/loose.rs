@@ -500,25 +500,31 @@ fn curve_payload(
                         edge.id
                     )));
                 };
-                let converted = super::conics::unperiod_curve(curve.id.as_str(), nurbs, range)?;
+                let converted = super::conics::clamp_curve(curve.id.as_str(), nurbs, range)?;
                 conversion = Some(RhinoLossCode::WriterCarrierResolved.note(format!(
                     "wire edge {} periodic NURBS carrier {} was clamped to an exact nonperiodic span",
                     edge.id, curve.id
                 )));
                 WritableEdgeCurve::NurbsOwned(converted)
             } else {
-                check_nurbs_curve(curve.id.as_str(), nurbs)?;
                 if [
                     nurbs.knots()[degree],
                     nurbs.knots()[nurbs.control_points().len()],
                 ] != range
                 {
-                    return Err(WriteError::Omit(
-                        "a trimmed NURBS wire requires an independent trimmed-curve encoding"
-                            .into(),
-                    ));
+                    let range = normalized_range(lo, hi).ok_or_else(|| {
+                        WriteError::Omit(format!("wire edge {} has no increasing range", edge.id))
+                    })?;
+                    let converted = super::conics::clamp_curve(curve.id.as_str(), nurbs, range)?;
+                    conversion = Some(RhinoLossCode::WriterCarrierResolved.note(format!(
+                        "wire edge {} carrier {} was restricted to the exact edge span; its unused curve domain is omitted",
+                        edge.id, curve.id
+                    )));
+                    WritableEdgeCurve::NurbsOwned(converted)
+                } else {
+                    check_nurbs_curve(curve.id.as_str(), nurbs)?;
+                    WritableEdgeCurve::Nurbs(nurbs)
                 }
-                WritableEdgeCurve::Nurbs(nurbs)
             }
         }
         Some(SolvedCurveGeometry::Polyline(polyline)) => {
