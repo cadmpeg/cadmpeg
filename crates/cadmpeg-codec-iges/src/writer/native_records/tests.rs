@@ -584,6 +584,74 @@ fn reemitted_definition_levels_redecode_to_their_level_set() {
     );
 }
 
+#[test]
+fn neutral_multiple_levels_write_a_definition_set() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use cadmpeg_ir::presentation::{PresentationItem, PresentationLayer};
+    use std::io::Cursor;
+
+    let decoded = crate::IgesCodec
+        .decode(
+            &mut Cursor::new(crate::test_support::test_curves_and_surfaces::line_file(0)),
+            &DecodeOptions::default(),
+        )
+        .expect("line fixture decodes");
+    let mut ir = decoded.ir().clone();
+    let curve = ir.model.curves[0].id.clone();
+    ir.model.presentation_layers.clear();
+    for number in [2, 4] {
+        ir.model.presentation_layers.push(PresentationLayer {
+            id: cadmpeg_ir::ids::LayerId::mint(format!("test:presentation:layer#{number}"))
+                .unwrap(),
+            native_ref: None,
+            name: number.to_string(),
+            parent: None,
+            description: None,
+            visible: None,
+            items: vec![PresentationItem::Curve {
+                curve: curve.clone(),
+            }],
+        });
+    }
+    let output = super::super::synthesize(&ir, crate::IgesVersion::V5_3).expect("line synthesizes");
+    assert_eq!(
+        output.coverage.presentation_layers,
+        cadmpeg_ir::codec::write::ArenaDisposition::Written
+    );
+    assert!(!output
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("presentation layers")));
+    let after = crate::IgesCodec
+        .decode(&mut Cursor::new(output.bytes), &DecodeOptions::default())
+        .expect("output decodes");
+    let names = after
+        .ir()
+        .model
+        .presentation_layers
+        .iter()
+        .map(|layer| layer.name.as_str())
+        .collect::<BTreeSet<_>>();
+    assert_eq!(names, BTreeSet::from(["2", "4"]));
+    assert!(after
+        .ir()
+        .model
+        .presentation_layers
+        .iter()
+        .all(|layer| !layer.items.is_empty()));
+    ir.model.presentation_layers[1].name = "not-a-level-number".into();
+    let omitted_id = ir.model.presentation_layers[1].id.to_string();
+    let output = super::super::synthesize(&ir, crate::IgesVersion::V5_3).expect("line synthesizes");
+    assert_eq!(
+        output.coverage.presentation_layers,
+        cadmpeg_ir::codec::write::ArenaDisposition::Reported
+    );
+    assert!(output
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(&omitted_id)));
+}
+
 /// Decode one committed golden fixture, regenerate it, and require the named
 /// native arenas to agree field for field after normalizing record identity.
 fn assert_fixture_round_trips(fixture: &str, arenas: &[&str]) {
