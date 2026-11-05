@@ -298,7 +298,7 @@ Tagging slot 0 requires its input and result body revisions, its topology-naming
 
 **Conflict.** The native projection emits zero neutral PMI items for these dimensions.
 
-**Note.** CTC-01's adjacent FBAttribute ReferenceKey candidates do not equal either native target face key; native uses one face per target cylinder while STEP uses two. Among 11 NIST Inventor models with STEP PMI, 10 had untyped 23/24-byte FBAttribute candidates with no native face-key matches and the remaining model had no FBAttribute segment; CTC-01 browser-section splices also crossed entry boundaries.
+**Note.** CTC-01's adjacent FBAttribute ReferenceKey candidates do not equal either native target face key; native uses one face per target cylinder while STEP uses two. Among 11 NIST Inventor models with STEP PMI, 10 had untyped 23/24-byte FBAttribute candidates with no native face-key matches and the remaining model had no FBAttribute segment; CTC-01 browser-section splices also crossed entry boundaries. The `Diameter Dimension 4` feature label selects RSe owner ordinal 3610, type `cf2b17de9c46a894e06459a70546aa94` (150-byte payload); `Linear Dimension 1` and `Linear Dimension 2` select ordinals 3785 and 3835, type `c6b25a40954bd1c3e7ca9ca365917af4` (38-byte payload). These owner types remain untyped, and their semantic PMI role is unestablished. The next discriminator is to identify their record grammars and trace any typed ReferenceKey and saved-context path to the two STEP target-cylinder face pairs.
 
 ## 5. Adjacent envelopes
 
