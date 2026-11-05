@@ -392,7 +392,7 @@ pub(super) fn collect(ir: &CadIr) -> Result<(Vec<BodyScope>, Vec<LossNote>), Cod
             if let Some(cadmpeg_ir::geometry::SolvedCurveGeometry::Composite { segments, .. }) =
                 curve.geometry.solved()
             {
-                for segment in segments.iter() {
+                for segment in segments {
                     if curves.insert(segment.curve.to_string()) {
                         frontier.push(segment.curve.to_string());
                     }
@@ -1109,7 +1109,7 @@ fn prune_pass(
             .into_iter()
             .filter(|id| loops.contains(id.as_str()));
         let kept = kept.collect::<Vec<_>>();
-        for id in row.loops.iter() {
+        for id in &row.loops {
             if !loops.contains(id.as_str()) {
                 pruned("face", row.id.as_str(), format!("loop {id} is missing"));
             }
