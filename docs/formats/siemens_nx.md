@@ -902,8 +902,7 @@ by `null_XMT, terminal_word:u32 BE`. Each kind is from 2 through the
 declared maximum. The null XMT is `00 01`. Map XMT encoding is canonical: direct
 zero, an extended zero quotient, and an `80 00` remainder are invalid. This
 canonicality rule is local to map entries. The terminal word takes every 32-bit
-value. Its value does not count the section's nodes and does not select a
-state. The six-byte map tail places null XMT at `+0` and terminal word at `+2`,
+value. The six-byte map tail places null XMT at `+0` and terminal word at `+2`,
 relative to the end of the entry pairs.
 
 After a closed leading section, a map section is required. After a closed map

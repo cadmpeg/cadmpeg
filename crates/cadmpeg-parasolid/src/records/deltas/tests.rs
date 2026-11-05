@@ -523,6 +523,8 @@ fn a_map_tail_is_one_32_bit_terminal_word() {
     for (tail, word) in [
         ([0, 0, 0xb8, 0x60], 0xb860),
         ([0, 3, 0x69, 0xe7], 0x0003_69e7),
+        ([0x80, 0, 0, 0], 0x8000_0000),
+        ([0xff, 0xff, 0xff, 0xff], u32::MAX),
     ] {
         let mut bytes = map_start();
         bytes.extend([0, 2, 0, 7, 0, 1]);

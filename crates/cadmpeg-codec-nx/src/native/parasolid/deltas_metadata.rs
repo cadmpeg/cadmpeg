@@ -256,6 +256,10 @@ mod tests {
         let original = map();
         let parsed: ParasolidDeltasMetadata = serde_json::from_value(original.clone()).unwrap();
         assert_eq!(serde_json::to_value(parsed).unwrap(), original);
+        let mut widest = original.clone();
+        widest["terminal_word"] = json!(u32::MAX);
+        let parsed: ParasolidDeltasMetadata = serde_json::from_value(widest.clone()).unwrap();
+        assert_eq!(serde_json::to_value(parsed).unwrap(), widest);
         for (key, value) in [
             ("id", json!("nx:s0:deltas-metadata#101")),
             ("stream_ordinal", json!(1)),

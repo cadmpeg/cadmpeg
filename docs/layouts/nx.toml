@@ -2820,7 +2820,7 @@ section = "4.2"
 anchor = "The six-byte map tail places null XMT at `+0` and terminal word at `+2`,"
 size = 6
 endianness = "big"
-note = "Relative to the endpoint of the variable-width nonnull XMT/kind pairs. The terminal word does not frame nodes or select a state."
+note = "Relative to the endpoint of the variable-width nonnull XMT/kind pairs."
 
 [[record.field]]
 name = "null_xmt"

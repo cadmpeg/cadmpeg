@@ -966,7 +966,7 @@ Closes the enclosing leading, map, or PMARK section. In the exact final position
 
 Spec §4.2 · layout: byte offsets · size: 6 B
 
-Relative to the endpoint of the variable-width nonnull XMT/kind pairs. The terminal word does not frame nodes or select a state.
+Relative to the endpoint of the variable-width nonnull XMT/kind pairs.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
