@@ -16,14 +16,67 @@ use cadmpeg_ir::{
 };
 use std::collections::HashMap;
 
-/// A binding that restates the value lane carries no formula the value
-/// lane does not already hold. Omitting it keeps the re-decode from gaining
-/// an engine binding the source never stated.
+/// A literal uses the scalar property without an expression binding.
 fn is_literal_binding(parameter: &cadmpeg_ir::features::DesignParameter) -> bool {
-    parameter
-        .value
-        .as_ref()
-        .is_some_and(|value| parameter.expression == Expression::literal(value))
+    cell_literal_value(parameter).is_some()
+}
+
+pub(in crate::writer) fn cell_literal_value(
+    parameter: &cadmpeg_ir::features::DesignParameter,
+) -> Option<ParameterValue> {
+    if let Some(value) = &parameter.value {
+        return parameter.expression.literal_value_as(value);
+    }
+    [
+        ParameterValue::Real(cadmpeg_ir::scalar::FiniteReal::ZERO),
+        ParameterValue::Length(cadmpeg_ir::scalar::Length::ZERO),
+        ParameterValue::Angle(cadmpeg_ir::scalar::Angle::ZERO),
+        ParameterValue::String(String::new()),
+    ]
+    .iter()
+    .find_map(|value| parameter.expression.literal_value_as(value))
+}
+
+fn report_literal_normalization(
+    parameter: &cadmpeg_ir::features::DesignParameter,
+    losses: &mut Vec<LossNote>,
+) {
+    let Some(value) = cell_literal_value(parameter) else {
+        return;
+    };
+    if parameter.expression != Expression::literal(&value) {
+        losses.push(FreecadLossCode::ParameterExpressionNormalized.note(format!(
+            "parameter {} literal expression is stored as a scalar value",
+            parameter.id
+        )));
+    }
+}
+
+pub(in crate::writer) fn report_cell_normalization(
+    parameter: &cadmpeg_ir::features::DesignParameter,
+    content: &str,
+    losses: &mut Vec<LossNote>,
+) {
+    if cell_literal_value(parameter).is_some() {
+        report_literal_normalization(parameter, losses);
+        return;
+    }
+    let had_marker = parameter
+        .expression
+        .tokens
+        .iter()
+        .find_map(|token| match token {
+            cadmpeg_ir::features::ExpressionToken::Text(text) if text.is_empty() => None,
+            cadmpeg_ir::features::ExpressionToken::Text(text) => Some(text.starts_with('=')),
+            cadmpeg_ir::features::ExpressionToken::Parameter(_) => Some(false),
+        })
+        .unwrap_or(false);
+    if content.starts_with('\'') || (content.starts_with('=') && !had_marker) {
+        losses.push(FreecadLossCode::ParameterExpressionNormalized.note(format!(
+            "parameter {} expression is stored as spreadsheet content {content:?}",
+            parameter.id
+        )));
+    }
 }
 
 pub(in crate::writer) fn parameter_reference(
@@ -296,13 +349,10 @@ pub(super) fn prepare(
         names::prepare(ir, objects, names)?;
         let mut cells = String::new();
         for (parameter, address, alias) in allocated {
-            let mut attributes: Vec<(&str, String)> = vec![
-                ("address", address.clone()),
-                (
-                    "content",
-                    super::design::spreadsheet_expression(ir, parameter, names),
-                ),
-            ];
+            let content = super::design::spreadsheet_expression(ir, parameter, names);
+            report_cell_normalization(parameter, &content, losses);
+            let mut attributes: Vec<(&str, String)> =
+                vec![("address", address.clone()), ("content", content)];
             if let Some(alias) = alias {
                 attributes.push(("alias", alias));
             }
@@ -416,13 +466,21 @@ pub(super) fn write(
                             &[("path", path.clone()), ("expression", expression.clone())],
                         ));
                 }
+            } else {
+                report_literal_normalization(parameter, losses);
             }
             continue;
         }
         let property_name = names
             .get(&format!("parameter-path:{}", parameter.id))
             .map_or(parameter.name.as_str(), String::as_str);
-        let property = match &parameter.value {
+        let value = parameter.value.as_ref().map(|value| {
+            parameter
+                .expression
+                .literal_value_as(value)
+                .unwrap_or_else(|| value.clone())
+        });
+        let property = match &value {
             Some(ParameterValue::Length(value)) => {
                 xml::scalar(property_name, "App::PropertyLength", "Float", value.get())
             }
@@ -512,6 +570,8 @@ pub(super) fn write(
                     ("expression", expression),
                 ],
             ));
+        } else {
+            report_literal_normalization(parameter, losses);
         }
     }
     controls::write(ir, objects, names, &mut expressions, losses)?;
@@ -539,6 +599,49 @@ mod tests {
             properties: BTreeMap::new(),
             pmi: None,
             native_ref: None,
+        }
+    }
+
+    #[test]
+    fn literal_spelling_writes_a_plain_property_with_the_expression_value() {
+        let owner = cadmpeg_ir::features::FeatureId::mint("cadir:model:feature#owner").unwrap();
+        let real = ParameterValue::Real(cadmpeg_ir::scalar::FiniteReal::new(2.0).unwrap());
+        let length = ParameterValue::Length(cadmpeg_ir::scalar::Length::new(20.0).unwrap());
+        for (expression, cached, expected, has_engine, normalized) in [
+            ("2", real.clone(), "2", false, false),
+            ("2.00", real.clone(), "2", false, true),
+            ("3.00", real.clone(), "3", false, true),
+            ("2 + 1", real, "2", true, false),
+            ("20 mm", length.clone(), "20", false, false),
+            ("2.00 cm", length.clone(), "20", false, true),
+            ("3.00 cm", length, "30", false, true),
+        ] {
+            let mut parameter = cell_parameter(Expression::text(expression));
+            parameter.owner = Some(owner.clone());
+            parameter.name = "Width".into();
+            parameter.value = Some(cached);
+            let mut ir = cadmpeg_ir::CadIr::empty();
+            ir.model.parameters.push(parameter);
+            let mut objects = vec![Object::new("Owner".into(), "App::FeaturePython", "Owner")];
+            let names = HashMap::from([(owner.as_str().to_owned(), "Owner".to_owned())]);
+            let mut losses = Vec::new();
+            write(&ir, &mut objects, &names, &mut losses).unwrap();
+            assert_eq!(
+                losses.iter().any(|loss| loss.code
+                    == FreecadLossCode::ParameterExpressionNormalized.note("").code),
+                normalized
+            );
+            assert_eq!(
+                objects[0].properties.contains_key("ExpressionEngine"),
+                has_engine
+            );
+            let xml = &objects[0].properties["Width"];
+            let document = roxmltree::Document::parse(xml).unwrap();
+            let value = document
+                .descendants()
+                .find(|node| node.has_tag_name("Float"))
+                .unwrap();
+            assert_eq!(value.attribute("value"), Some(expected));
         }
     }
 
@@ -581,7 +684,7 @@ mod tests {
         let mut names = HashMap::from([(feature.as_str().to_owned(), "Sheet".to_owned())]);
         let mut losses = Vec::new();
         prepare(&ir, &mut objects, &mut names, &mut losses).unwrap();
-        super::super::design::spreadsheets(&ir, &mut objects, &mut names).unwrap();
+        super::super::design::spreadsheets(&ir, &mut objects, &mut names, &mut losses).unwrap();
         let xml = objects[0].properties.get("cells").unwrap();
         let document = roxmltree::Document::parse(xml).unwrap();
         let cells: Vec<_> = document
@@ -625,8 +728,9 @@ mod tests {
         ir.model.parameters.push(parameter);
         let mut objects = Vec::new();
         let mut names = HashMap::new();
-        prepare(&ir, &mut objects, &mut names, &mut Vec::new()).unwrap();
-        super::super::design::spreadsheets(&ir, &mut objects, &mut names).unwrap();
+        let mut losses = Vec::new();
+        prepare(&ir, &mut objects, &mut names, &mut losses).unwrap();
+        super::super::design::spreadsheets(&ir, &mut objects, &mut names, &mut losses).unwrap();
 
         assert_eq!(objects.len(), 1);
         assert_eq!(names[&format!("parameter-owner:{id}")], objects[0].name);

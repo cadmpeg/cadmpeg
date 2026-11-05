@@ -8,11 +8,11 @@ use super::shared_frames::marked_record_reference;
 use super::shared_frames::rigid_transform_at;
 use super::work_geometry::ScopePlacementFrame;
 use crate::bytes::take_reference;
-use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::decode::text::fixed_relaxed_guid_text;
 use crate::layout::assembly_axial_construction_carrier as axial_carrier;
 use crate::layout::assembly_axial_role_prefix as axial_role;
 use crate::layout::assembly_axial_selector_prefix as axial_selector;
+use crate::metastream::PrimaryFrames;
 use crate::records::feature::assembly;
 use crate::records::feature::assembly::DesignAssemblyAxialOperandTarget;
 use crate::records::feature::assembly::DesignAssemblyAxialSelectorIdentity;
@@ -127,7 +127,7 @@ pub(super) fn bind_joint_origin_frames_from_assemblies(
 /// stream has decoded its own construction.
 pub(super) fn bind_axial_assembly_operand_targets(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scopes: &mut [DesignParameterScope],
 ) -> Result<(), CodecError> {
     let mut bindings = Vec::new();
@@ -193,7 +193,7 @@ struct ExactIndexedRecordPair {
 
 fn exact_assembly_axial_operand_target(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     assembly: &DesignParameterScope,
     frame: &DesignAssemblyOperandFrame,
     scopes: &[DesignParameterScope],
@@ -253,7 +253,7 @@ fn exact_assembly_axial_operand_target(
 
 fn exact_assembly_axial_component_operand(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
     frame: &DesignAssemblyOperandFrame,
 ) -> Result<Option<AxialComponentOperand>, CodecError> {
@@ -278,8 +278,7 @@ fn exact_assembly_axial_component_operand(
     let mut candidate = None;
     for start in records
         .offsets(frame.reference_record_index)
-        .iter()
-        .copied()
+        .into_iter()
         .filter(|start| *start >= search_start)
     {
         if let Some(next) =
@@ -296,7 +295,7 @@ fn exact_assembly_axial_component_operand(
 
 fn exact_assembly_axial_component_operand_at(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
     frame: &DesignAssemblyOperandFrame,
     start: usize,
@@ -406,7 +405,7 @@ fn exact_assembly_axial_component_operand_at(
 
 fn exact_assembly_axial_selector(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     axis: ExactIndexedRecordPair,
     limit: usize,
 ) -> Result<Option<DesignAssemblyAxialSelectorIdentity>, CodecError> {
@@ -415,8 +414,7 @@ fn exact_assembly_axial_selector(
         let selector_record_index = axis_record_index.checked_add(3)?;
         let mut selector_offsets = records
             .offsets(selector_record_index)
-            .iter()
-            .copied()
+            .into_iter()
             .filter(|offset| *offset > axis.paired_byte_offset && *offset < limit);
         let (Some(selector_at), Some(selector_paired_at), None) = (
             selector_offsets.next(),
@@ -491,8 +489,7 @@ fn exact_assembly_axial_selector(
         let role_record_index = selector_record_index.checked_add(5)?;
         let mut role_offsets = records
             .offsets(role_record_index)
-            .iter()
-            .copied()
+            .into_iter()
             .filter(|offset| *offset > selector_paired_at && *offset < limit);
         let (Some(role_at), None) = (role_offsets.next(), role_offsets.next()) else {
             return None;
@@ -559,15 +556,14 @@ fn exact_assembly_axial_selector(
 
 fn exact_paired_indexed_record_between(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     record_index: u32,
     start: usize,
     end: usize,
 ) -> Option<ExactIndexedRecordPair> {
     let mut offsets = records
         .offsets(record_index)
-        .iter()
-        .copied()
+        .into_iter()
         .filter(|offset| *offset >= start && *offset < end);
     let (Some(primary_at), Some(paired_at), None) =
         (offsets.next(), offsets.next(), offsets.next())

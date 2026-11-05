@@ -6,6 +6,7 @@ use cadmpeg_ir::{
     codec::write::{ArenaDisposition, ArenaDispositions},
     document::CadIr,
     report::loss::LossNote,
+    schema::EntitySchema,
 };
 
 pub(super) fn declaration() -> ArenaDispositions {
@@ -155,6 +156,12 @@ pub(super) fn complete(ir: &CadIr, losses: &mut Vec<LossNote>) -> ArenaDispositi
     {
         dispositions.bodies = ArenaDisposition::Reported;
     }
+    if losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "parameter.expression-normalized")
+    {
+        dispositions.parameters = ArenaDisposition::Reported;
+    }
     let geometry_loss = losses
         .iter()
         .any(|loss| loss.code.local_code() == "geometry.not-transferred");
@@ -231,41 +238,29 @@ pub(super) fn complete(ir: &CadIr, losses: &mut Vec<LossNote>) -> ArenaDispositi
         dispositions.assembly_joints = ArenaDisposition::Reported;
     }
 
-    for (arena, count) in [
-        ("subds", ir.model.subds.len()),
-        ("assets", ir.model.assets.len()),
-        (
-            "feature_input_topologies",
-            ir.model.feature_input_topologies.len(),
-        ),
-        (
-            "feature_result_topologies",
-            ir.model.feature_result_topologies.len(),
-        ),
-        ("configurations", ir.model.configurations.len()),
-        ("spatial_sketches", ir.model.spatial_sketches.len()),
-        (
-            "spatial_sketch_entities",
-            ir.model.spatial_sketch_entities.len(),
-        ),
-        (
-            "spatial_sketch_constraints",
-            ir.model.spatial_sketch_constraints.len(),
-        ),
-        ("pmi", ir.model.pmi.len()),
-        ("presentation_layers", ir.model.presentation_layers.len()),
-    ] {
-        if count != 0 {
-            let code = if arena == "subds" {
-                FreecadLossCode::ExportGeometryNotTransferred
-            } else {
-                FreecadLossCode::ExportArenaNotTransferred
-            };
-            losses.push(code.note(format!(
-                "FCStd does not represent {count} record(s) in neutral arena `{arena}`"
-            )));
-        }
+    macro_rules! dropped {
+        ($code:expr, $($arena:ident),+ $(,)?) => {
+            $(for record in &ir.model.$arena {
+                losses.push($code.note(format!(
+                    "FCStd does not represent {} in neutral arena `{}`",
+                    record.identity(), stringify!($arena)
+                )));
+            })+
+        };
     }
+    dropped!(FreecadLossCode::ExportGeometryNotTransferred, subds);
+    dropped!(
+        FreecadLossCode::ExportArenaNotTransferred,
+        assets,
+        feature_input_topologies,
+        feature_result_topologies,
+        configurations,
+        spatial_sketches,
+        spatial_sketch_entities,
+        spatial_sketch_constraints,
+        pmi,
+        presentation_layers,
+    );
     for drawing in &ir.model.drawings {
         if !matches!(
             drawing.kind,

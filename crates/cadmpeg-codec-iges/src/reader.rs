@@ -551,12 +551,39 @@ fn source_fidelity(
 
 fn append_generic_losses(
     losses: &mut Vec<LossNote>,
+    ir: &CadIr,
     directory: &[directory::DirectoryEntry],
     projection: &entities::geometry::Projection,
     attributed: &BTreeSet<u32>,
     global_table: global::GlobalTable,
 ) {
     for entry in directory.iter().filter(|entry| entry.entity_type != 0) {
+        let macro_arena = if entry.entity_type == 306 {
+            Some("macro_definitions")
+        } else if crate::profile::macro_instance_type(entry.entity_type) {
+            Some("macro_instances")
+        } else {
+            None
+        };
+        if let Some(arena) = macro_arena {
+            let source = format!("iges:entity:directory#{}", entry.sequence);
+            if ir
+                .native
+                .namespace("iges")
+                .and_then(|namespace| namespace.arenas().get(arena))
+                .is_some_and(|records| {
+                    records.iter().any(|record| {
+                        record
+                            .field("source_entity")
+                            .as_ref()
+                            .and_then(serde_json::Value::as_str)
+                            == Some(source.as_str())
+                    })
+                })
+            {
+                continue;
+            }
+        }
         let admitted =
             crate::profile::envelope_a_admits(entry.entity_type, entry.form, global_table);
         if admitted
@@ -1032,15 +1059,18 @@ fn decode_with_occurrence_limits(
     // Parameter sections and defines no design part; design is overdelivered
     // with model, which the depth harness pins.
     let required = ctx.depth().required_scope();
-    let model_part = parse.scan.lines.iter().any(|line| {
-        matches!(
-            line,
-            card::ScannedLine::Card {
-                section: card::Section::Directory | card::Section::Parameter,
-                ..
-            }
-        )
-    });
+    let model_part = part_fidelity
+        .unrepresented()
+        .contains(&cadmpeg_ir::ArenaClass::Model)
+        || parse.scan.lines.iter().any(|line| {
+            matches!(
+                line,
+                card::ScannedLine::Card {
+                    section: card::Section::Directory | card::Section::Parameter,
+                    ..
+                }
+            )
+        });
     ir.model = part_model;
     // Part give-ups stage their unknowns stubs as native records. Merge them
     // into the document; the model, fidelity and losses merge with the
@@ -1121,6 +1151,7 @@ fn decode_with_occurrence_limits(
     losses.append(&mut part_losses);
     losses.extend(projection_losses);
     if invalid_resolution
+        && matches!(&parse.global, global::GlobalRecord::Resolved(global) if global.minimum_resolution_available())
         && !losses.iter().any(|loss| {
             loss.code.local_code() == IgesLossCode::GlobalSemanticContextSubstituted.code()
         })
@@ -1229,15 +1260,6 @@ fn decode_with_occurrence_limits(
             &parse.directory,
         );
     }
-    let untyped_records = native::untyped_records(&ir);
-    for record in &untyped_records {
-        losses.push(IgesLossCode::EntityRetainedUnprojected.note(format!(
-            "native record {record} contains source-only text or macro statements; their evidence is retained but their content is not typed"
-        )));
-    }
-    if !untyped_records.is_empty() {
-        source_fidelity.mark_untyped(crate::SOURCE_IMAGE_ID, [cadmpeg_ir::ArenaClass::Model])?;
-    }
     let global_table = match &parse.global {
         global::GlobalRecord::Resolved(global) => Some(global.global_table()),
         global::GlobalRecord::Unfinished => None,
@@ -1255,6 +1277,7 @@ fn decode_with_occurrence_limits(
         if let Some(table) = global_table {
             append_generic_losses(
                 &mut losses,
+                &ir,
                 &parse.directory,
                 &projection,
                 &attributed_before_generic,

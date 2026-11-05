@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode parameter scopes and parse one scope payload.
 
+use crate::metastream::PrimaryFrames;
 mod family;
 
 use crate::bytes::lp_utf16_bounded;
@@ -52,7 +53,6 @@ use crate::container::ContainerScan;
 use crate::design::decode::assembly::exact_legacy_as_built_421_operands;
 use crate::design::decode::canvas::typed_canvas_reference;
 use crate::design::decode::operands::RecordFrame;
-use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::decode::text::design_record_id;
 use crate::design::design_feature_family;
 use crate::design::DesignFeatureFamily;
@@ -117,7 +117,12 @@ pub(crate) fn decode_parameter_scopes(
             .ok_or_else(|| CodecError::malformed("parameter-scope source View is missing"))?;
         let bytes = source.window();
         let stream = crate::ids::native_scope(&entry.name);
-        let records = IndexedRecordOffsets::build(bytes);
+        let Some(meta) = crate::design::decode::meta::metadata_for_bulk_stream(scan, &entry.name)?
+        else {
+            continue;
+        };
+        let frames = crate::design::decode::meta::design_primary_frames(bytes, &meta)?;
+        let records = crate::design::decode::meta::primary_frame_extents(&frames);
         let stream_types = crate::design::decode::meta::stream_types_by_entity(types, &entry.name);
         let class_types =
             crate::design::decode::meta::stream_types_by_class_tag(types, &entry.name);
@@ -973,7 +978,7 @@ pub(super) fn read_payload_prologue(
 /// index opens nothing.
 pub(super) fn parameter_scope_candidate_headers(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
 ) -> Result<Vec<RecordFrame>, CodecError> {
     let mut headers = Vec::new();
     for (record_index, offsets) in records.records() {
@@ -1056,7 +1061,7 @@ enum ScopeTailForm {
 
 fn unparsed_rigid_group_tail_length(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     record_index: u32,
     byte_offset: u64,
 ) -> Option<usize> {
@@ -1231,7 +1236,7 @@ fn parameter_scope_previous_history_offset_for_form(
 #[cfg(test)]
 pub(in crate::design::decode) fn parse_parameter_scope(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     record_index: u32,
     class_tag: &crate::records::references::DesignClassTag,
     byte_offset: u64,
@@ -1241,7 +1246,7 @@ pub(in crate::design::decode) fn parse_parameter_scope(
 
 pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     record_index: u32,
     class_tag: &crate::records::references::DesignClassTag,
     byte_offset: u64,

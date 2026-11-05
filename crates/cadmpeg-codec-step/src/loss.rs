@@ -185,6 +185,8 @@ pub(crate) enum StepLossCode {
     HiddenPmiVisibilityUnsupported,
     /// A wire shell has free vertices without an edge-based STEP carrier.
     WireShellFreeVertices,
+    /// A wire shell has no writable connected edge set.
+    WireShellNoWritableEdges,
     /// Bodies without component ownership are assigned to the root product.
     BodyWithoutProductRepresentation,
     /// Solid and sheet shells do not retain wire members within the shell.
@@ -250,6 +252,8 @@ pub(crate) enum StepLossCode {
     VertexPcurveUseOmitted,
     /// A pcurve shared by different surfaces was split.
     PcurveSplitAcrossSurfaces,
+    /// A surface curve cannot associate another pcurve beyond its STEP limit.
+    PcurveAssociationLimit,
     /// Coedge-local 3D curve uses were not represented.
     CoedgeUseCurveNotRepresented,
     /// Topology metadata values were not represented.
@@ -280,6 +284,8 @@ pub(crate) enum StepLossCode {
     OccurrenceMetadataOmitted,
     /// PMI annotations were not written.
     PmiAnnotationNotWritten,
+    /// A PMI dimension's parameter reference was not represented.
+    PmiParameterReferenceOmitted,
     /// Source-object associations were not represented.
     SourceAssociationOmitted,
     /// Display colors had no emitted STEP item.
@@ -487,6 +493,7 @@ impl StepLossCode {
         Self::HiddenPresentationLayerVisibilityUnsupported,
         Self::HiddenPmiVisibilityUnsupported,
         Self::WireShellFreeVertices,
+        Self::WireShellNoWritableEdges,
         Self::BodyWithoutProductRepresentation,
         Self::SurfaceShellWireTopologyOmitted,
         Self::TessellationRequiresAp242,
@@ -519,6 +526,7 @@ impl StepLossCode {
         Self::PcurveUseNativeMetadata,
         Self::VertexPcurveUseOmitted,
         Self::PcurveSplitAcrossSurfaces,
+        Self::PcurveAssociationLimit,
         Self::CoedgeUseCurveNotRepresented,
         Self::TopologyMetadataNotRepresented,
         Self::SubdOmitted,
@@ -534,6 +542,7 @@ impl StepLossCode {
         Self::OccurrenceNoWritableProduct,
         Self::OccurrenceMetadataOmitted,
         Self::PmiAnnotationNotWritten,
+        Self::PmiParameterReferenceOmitted,
         Self::SourceAssociationOmitted,
         Self::DisplayColorUnstyled,
         Self::WireBodyTransparencyOmitted,
@@ -691,6 +700,7 @@ impl StepLossCode {
             Self::BodyWithoutProductRepresentation => "product.body-without-representation",
             Self::SurfaceShellWireTopologyOmitted => "topology.surface-shell-wire-omitted",
             Self::WireShellFreeVertices => "topology.wire-shell-free-vertices",
+            Self::WireShellNoWritableEdges => "topology.wire-shell-no-writable-edges",
             Self::TessellationRequiresAp242 => "tessellation.requires-ap242",
             Self::TessellationFeatureEdges => "tessellation.feature-edges",
             Self::TessellationCornerNormals => "tessellation.corner-normals",
@@ -723,6 +733,7 @@ impl StepLossCode {
             Self::PcurveUseNativeMetadata => "pcurve.use-native-metadata",
             Self::VertexPcurveUseOmitted => "pcurve.vertex-use-omitted",
             Self::PcurveSplitAcrossSurfaces => "pcurve.split-across-surfaces",
+            Self::PcurveAssociationLimit => "pcurve.association-limit",
             Self::CoedgeUseCurveNotRepresented => "topology.coedge-use-curve-not-represented",
             Self::TopologyMetadataNotRepresented => "topology.metadata-not-represented",
             Self::SubdOmitted => "geometry.subd-omitted",
@@ -738,6 +749,7 @@ impl StepLossCode {
             Self::OccurrenceNoWritableProduct => "occurrence.no-writable-product",
             Self::OccurrenceMetadataOmitted => "occurrence.metadata-omitted",
             Self::PmiAnnotationNotWritten => "pmi.annotation-not-written",
+            Self::PmiParameterReferenceOmitted => "pmi.parameter-reference-omitted",
             Self::SourceAssociationOmitted => "source.association-omitted",
             Self::DisplayColorUnstyled => "appearance.display-color-unstyled",
             Self::WireBodyTransparencyOmitted => "appearance.wire-body-transparency-omitted",
@@ -846,6 +858,7 @@ impl StepLossCode {
             | Self::CoedgePcurveNativeMetadata
             | Self::PcurveUseNativeMetadata
             | Self::PcurveSplitAcrossSurfaces
+            | Self::PcurveAssociationLimit
             | Self::CoedgeUseCurveNotRepresented
             | Self::TopologyMetadataNotRepresented
             | Self::ParametricDesignRecordsOmitted
@@ -949,6 +962,7 @@ impl StepLossCode {
             | Self::OccurrenceUnresolvedParent
             | Self::OccurrenceNoLocalProduct
             | Self::WireShellFreeVertices
+            | Self::WireShellNoWritableEdges
             | Self::BodyWithoutProductRepresentation
             | Self::SurfaceShellWireTopologyOmitted
             | Self::TessellationBodyLinkUnwritable
@@ -1009,7 +1023,8 @@ impl StepLossCode {
             | Self::CoedgePcurveNativeMetadata
             | Self::PcurveUseNativeMetadata
             | Self::VertexPcurveUseOmitted
-            | Self::PcurveSplitAcrossSurfaces => LossTaxonomy::PcurveOmitted,
+            | Self::PcurveSplitAcrossSurfaces
+            | Self::PcurveAssociationLimit => LossTaxonomy::PcurveOmitted,
             Self::FaceMultipleOuterBounds
             | Self::ShellDisconnectedFaces
             | Self::EdgeVertexOffCarrier => LossTaxonomy::SourceTopologyInvalid,
@@ -1041,6 +1056,7 @@ impl StepLossCode {
             Self::ParametricDesignRecordsOmitted => LossTaxonomy::ParametricRecordOmitted,
             Self::SemanticAnnotationOmitted
             | Self::PmiAnnotationNotWritten
+            | Self::PmiParameterReferenceOmitted
             | Self::PmiDatumSystemInvalid
             | Self::DimensionalLimitsOmitted => LossTaxonomy::PmiOmitted,
             Self::DocumentAssetOmitted | Self::DocumentAssetMediaTypeOmitted => {
@@ -1166,6 +1182,7 @@ mod tests {
                 "presentation.hidden-layer-visibility-unsupported",
                 "pmi.hidden-visibility-unsupported",
                 "topology.wire-shell-free-vertices",
+                "topology.wire-shell-no-writable-edges",
                 "product.body-without-representation",
                 "topology.surface-shell-wire-omitted",
                 "tessellation.requires-ap242",
@@ -1198,6 +1215,7 @@ mod tests {
                 "pcurve.use-native-metadata",
                 "pcurve.vertex-use-omitted",
                 "pcurve.split-across-surfaces",
+                "pcurve.association-limit",
                 "topology.coedge-use-curve-not-represented",
                 "topology.metadata-not-represented",
                 "geometry.subd-omitted",
@@ -1213,6 +1231,7 @@ mod tests {
                 "occurrence.no-writable-product",
                 "occurrence.metadata-omitted",
                 "pmi.annotation-not-written",
+                "pmi.parameter-reference-omitted",
                 "source.association-omitted",
                 "appearance.display-color-unstyled",
                 "appearance.wire-body-transparency-omitted",

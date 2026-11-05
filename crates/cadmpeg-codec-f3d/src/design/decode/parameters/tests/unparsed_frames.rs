@@ -5,7 +5,6 @@ use std::io::{Cursor, Write};
 use zip::CompressionMethod;
 
 use super::typed_parameter_record;
-use crate::design::decode::sketch::next_indexed_record_offset;
 use crate::design::test_support::parameter_record;
 use crate::test_support::manifest_test::write_synthetic_manifests;
 
@@ -250,25 +249,24 @@ fn unmatched_frame_before_a_parameter_advances_the_scan() {
 }
 
 #[test]
-fn parameter_scan_reaches_each_header_within_a_length_budget() {
+fn parameter_primary_index_bounds_each_record() {
     let (bulk, valid_at) = bulk_with_leading_unmatched_frame();
-    let mut position = 0usize;
-    let mut visited = Vec::new();
-    while let Some(at) = next_indexed_record_offset(&bulk, position) {
-        visited.push(at);
-        assert!(
-            visited.len() <= bulk.len() + 1,
-            "parameter scan exceeded its step budget at offset {at}"
-        );
-        position = at + 1;
-    }
-    assert_eq!(visited.first(), Some(&0));
-    assert!(visited.contains(&valid_at));
-    assert_eq!(
-        visited.len(),
-        visited
-            .iter()
-            .collect::<std::collections::HashSet<_>>()
-            .len()
-    );
+    let meta = crate::metastream::MetaStream {
+        types: Vec::new(),
+        records: vec![
+            crate::metastream::RecordIndexEntry {
+                entity_id: 4242,
+                bulk_offset: 0,
+            },
+            crate::metastream::RecordIndexEntry {
+                entity_id: 71,
+                bulk_offset: u64::try_from(valid_at).unwrap(),
+            },
+        ],
+        secondary_records: Vec::new(),
+    };
+    let frames = crate::metastream::primary_record_frames(&meta, bulk.len()).unwrap();
+    assert_eq!(frames.len(), 2);
+    assert_eq!((frames[0].start, frames[0].end), (0, valid_at));
+    assert_eq!((frames[1].start, frames[1].end), (valid_at, bulk.len()));
 }

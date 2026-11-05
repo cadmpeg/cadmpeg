@@ -113,7 +113,19 @@
       "payload": "native",
       "target": "usd:usda-1.0"
     },
-    "losses": [],
+    "losses": [
+      {
+        "code": {
+          "code": "target.source-dialect-displaced",
+          "kind": "source_dialect_displaced",
+          "namespace": "usd",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "source dialect usd:unknown was displaced by target dialect usd:usda-1.0; the source dialect identity is not preserved",
+        "severity": "warning"
+      }
+    ],
     "native_dispositions": {
       "namespaces": {}
     },

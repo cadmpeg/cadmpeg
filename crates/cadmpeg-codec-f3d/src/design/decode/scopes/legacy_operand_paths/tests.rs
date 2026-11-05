@@ -95,7 +95,7 @@ fn path_fixture() -> Vec<u8> {
 #[test]
 fn legacy_path_keeps_both_occurrence_guids() {
     let bytes = path_fixture();
-    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let records = crate::design::test_support::test_primary_frames(&bytes);
     let scope = scope();
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (_ctx, source) = cadmpeg_core::decode::DecodeContext::from_root_bytes(

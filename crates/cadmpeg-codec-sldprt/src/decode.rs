@@ -4827,22 +4827,6 @@ fn build_metadata_ir(
         &native.feature_input_lanes,
     );
     preserve_source_image(ctx, scan, &mut annotations, &mut unknowns)?;
-    let metadata = crate::native::DocumentMetadata {
-        id: cadmpeg_core::nonblank_literal!("sldprt:metadata:document#0"),
-        attributes: std::mem::take(&mut ir.model.attributes),
-        pmi: std::mem::take(&mut ir.model.pmi),
-        semantic_annotations: std::mem::take(&mut ir.model.semantic_annotations),
-    };
-    if !metadata.attributes.is_empty()
-        || !metadata.pmi.is_empty()
-        || !metadata.semantic_annotations.is_empty()
-    {
-        native.document_metadata.push(metadata);
-        native.store(ctx, ir.native.namespace_mut("sldprt"))?;
-    }
-    // Scope follows located parts, not populated arenas (§1.1, §4.1). A
-    // class whose parts were found but failed stays in scope; its failed
-    // parts are given up, so their classes enter unrepresented.
     let model_parts_located = scan.sections().any(|section| {
         section
             .ps_streams()
@@ -4852,6 +4836,24 @@ fn build_metadata_ir(
         .truncated_blocks
         .iter()
         .any(crate::container::TruncatedBlock::model_located);
+    if ctx.container_only() || !model_parts_located {
+        let metadata = crate::native::DocumentMetadata {
+            id: cadmpeg_core::nonblank_literal!("sldprt:metadata:document#0"),
+            attributes: std::mem::take(&mut ir.model.attributes),
+            pmi: std::mem::take(&mut ir.model.pmi),
+            semantic_annotations: std::mem::take(&mut ir.model.semantic_annotations),
+        };
+        if !metadata.attributes.is_empty()
+            || !metadata.pmi.is_empty()
+            || !metadata.semantic_annotations.is_empty()
+        {
+            native.document_metadata.push(metadata);
+            native.store(ctx, ir.native.namespace_mut("sldprt"))?;
+        }
+    }
+    // Scope follows located parts, not populated arenas (§1.1, §4.1). A
+    // class whose parts were found but failed stays in scope; its failed
+    // parts are given up, so their classes enter unrepresented.
     let design_parts_located = !native.feature_histories.is_empty()
         || !native.feature_input_lanes.is_empty()
         || !native.pmi_dimensions.is_empty()

@@ -43,6 +43,7 @@ fn exact_assembly_operand_path_envelope(
     )?;
     super::exact_assembly_operand_path_envelope(
         source,
+        &crate::design::test_support::test_primary_frames(bytes),
         scope,
         types,
         locator_record_index,
@@ -69,6 +70,7 @@ fn with_parsed_envelope<R>(
     read(
         super::exact_assembly_operand_path_envelope(
             source,
+            &crate::design::test_support::test_primary_frames(bytes),
             scope,
             types,
             locator_record_index,

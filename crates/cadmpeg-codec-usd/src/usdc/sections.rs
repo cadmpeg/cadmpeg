@@ -101,13 +101,16 @@ fn table_of_contents(file: View<'_>) -> Result<Vec<(String, View<'_>)>, CodecErr
         .ok_or_else(|| malformed("the bootstrap header is truncated"))?;
     let offset = usize::try_from(offset).map_err(|_| malformed("the table offset is negative"))?;
     let mut view = file;
-    view.seek(absolute(file, offset)?)
-        .ok_or_else(|| malformed("the table of contents is past the end"))?;
-    let sections = count(
-        &mut view,
-        usdc_section::LEN,
-        "the section count exceeds the table",
-    )?;
+    view.seek(absolute(file, offset)?).ok_or_else(|| {
+        CodecError::truncated(file.location_at(file.end()), "usdc table of contents")
+    })?;
+    let count = view.req_u64_le()?;
+    let sections = view
+        .counted(count, usdc_section::LEN)
+        .map(cadmpeg_core::decode::BoundedCount::get)
+        .ok_or_else(|| {
+            CodecError::truncated(file.location_at(file.end()), "usdc table of contents")
+        })?;
     let mut out = Vec::new();
     for _ in 0..sections {
         let record = view.req_take(usdc_section::LEN)?;
@@ -125,7 +128,7 @@ fn table_of_contents(file: View<'_>) -> Result<Vec<(String, View<'_>)>, CodecErr
             .ok_or_else(|| malformed("a section end overflows"))?;
         let section = file
             .child(absolute(file, start)?, absolute(file, end)?)
-            .ok_or_else(|| malformed("a section is past the end"))?;
+            .ok_or_else(|| CodecError::truncated(file.location_at(file.end()), "usdc section"))?;
         out.push((name, section));
     }
     Ok(out)
@@ -533,7 +536,10 @@ pub(super) fn read<'a>(
 ) -> Result<Structure<'a>, CodecError> {
     let bytes = file.window();
     if bytes.len() < bootstrap::LEN {
-        return Err(malformed("the bootstrap header is truncated"));
+        return Err(CodecError::truncated(
+            file.location_at(file.end()),
+            "usdc bootstrap",
+        ));
     }
     let version = [
         bytes[bootstrap::MAJOR],

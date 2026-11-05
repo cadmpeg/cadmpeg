@@ -17,7 +17,7 @@ const OCCURRENCE: &str = "f867facf-edec-4109-9553-b3703c4e0caf";
 #[test]
 fn derived_instance_requires_exact_relation_carrier_and_transform_join() {
     let (mut bytes, mut scope, occurrence) = fixture();
-    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let records = crate::design::test_support::test_primary_frames(&bytes);
 
     let construction = exact_derived_instance_construction(
         &bytes,
@@ -55,7 +55,7 @@ fn derived_instance_requires_exact_relation_carrier_and_transform_join() {
     scope.paired_class_tag =
         crate::records::references::DesignClassTag::try_from("261".to_owned()).unwrap();
     bytes[425 + scope_279::TRANSFORM + 6] = 0;
-    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let records = crate::design::test_support::test_primary_frames(&bytes);
     assert!(exact_derived_instance_construction(
         &bytes,
         &records,

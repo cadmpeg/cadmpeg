@@ -20,7 +20,7 @@ fn entity(result: &DecodeResult, index: usize) -> serde_json::Value {
 }
 
 /// The first entity holds the double at `field`, as the baseline holds its
-/// own value there; no part is given up and no record is quarantined. The
+/// own value there; no part is given up. The
 /// Binary Flag Section supersedes Global fields 8 and 10, so they set no
 /// range for a Binary real (IGES 5.3 Appendix H.2.3; iges.md, Binary).
 fn assert_value_admitted(baseline: &DecodeResult, decoded: &DecodeResult, field: usize) {
@@ -33,16 +33,7 @@ fn assert_value_admitted(baseline: &DecodeResult, decoded: &DecodeResult, field:
         expected["parameters"].as_array().map(Vec::len)
     );
     assert_eq!(entity(decoded, 1), entity(baseline, 1));
-    let native = decoded.ir().native.namespace("iges").unwrap();
-    assert!(native
-        .arenas()
-        .get("quarantined_directory_records")
-        .is_none());
-
-    assert!(native
-        .arenas()
-        .get("quarantined_parameter_records")
-        .is_none());
+    assert!(crate::test_support::given_up_parts(decoded.source_fidelity()).is_empty());
     assert!(decoded
         .report()
         .losses
@@ -63,7 +54,7 @@ fn a_binary_point_coordinate_beyond_global_field_8_is_admitted() {
 }
 
 #[test]
-fn a_binary_arc_value_beyond_global_field_8_is_admitted_and_no_record_is_quarantined() {
+fn a_binary_arc_value_beyond_global_field_8_is_admitted_without_a_give_up() {
     let baseline = crate::test_support::decode(arc_with_real_start_then_point(1.0));
     let decoded = crate::test_support::decode(arc_with_real_start_then_point(UNADMITTED_REAL));
     // The arc start X is the fourth value: token 4 after the entity type.

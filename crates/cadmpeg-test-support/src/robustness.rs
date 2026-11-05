@@ -16,6 +16,8 @@ use serde_json::Value;
 pub struct Injection {
     /// Short name for findings, such as `dangling-reference`.
     pub name: &'static str,
+    /// Whether this edit is invalid rather than legal stale state.
+    pub invalid: bool,
     /// Mutates `document`; the returned id names the affected record.
     pub inject: fn(&mut Value) -> Option<String>,
 }
@@ -83,6 +85,7 @@ pub fn standard_injections() -> Vec<Injection> {
     vec![
         Injection {
             name: "dangling-reference",
+            invalid: true,
             inject: |document| {
                 let ids = record_ids(document);
                 repoint_id_value(document, &ids)
@@ -90,6 +93,7 @@ pub fn standard_injections() -> Vec<Injection> {
         },
         Injection {
             name: "duplicate-id",
+            invalid: true,
             inject: |document| {
                 let model = document.get_mut("model")?.as_object_mut()?;
                 for rows in model.values_mut() {
@@ -111,6 +115,7 @@ pub fn standard_injections() -> Vec<Injection> {
         },
         Injection {
             name: "recompute-flag",
+            invalid: false,
             inject: |document| {
                 let features = document
                     .get_mut("model")?
@@ -130,8 +135,9 @@ pub fn standard_injections() -> Vec<Injection> {
 }
 
 /// Findings for injected validation errors over one seed: each applicable
-/// injection must invalidate the document, yet the write succeeds with a
-/// loss naming the affected record (#217 §5.0).
+/// invalid injection must produce a validation error; legal stale state must
+/// not. The write succeeds with a loss naming the affected record (#217 §5.0,
+/// #209 §2.5).
 #[must_use]
 pub fn injected_error_findings(
     seed: &CadIr,
@@ -163,17 +169,18 @@ pub fn injected_error_findings(
             }
         };
         match cadmpeg_ir::validate_neutral(&ir, Vec::new()) {
-            Ok(report)
-                if report
+            Ok(report) => {
+                let has_error = report
                     .findings
                     .iter()
-                    .any(|finding| finding.severity == Severity::Error) => {}
-            Ok(_) => {
-                findings.push(format!(
-                    "the {} injection reports no validation Error on {record}",
-                    injection.name
-                ));
-                continue;
+                    .any(|finding| finding.severity == Severity::Error);
+                if has_error != injection.invalid {
+                    findings.push(format!(
+                        "the {} injection has unexpected validation state on {record}",
+                        injection.name
+                    ));
+                    continue;
+                }
             }
             Err(error) => {
                 findings.push(format!(

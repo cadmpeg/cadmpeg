@@ -52,7 +52,7 @@ fn move_transform_added_classes_decode_exact_matrix() {
         let (bytes, scope) = fixture(class, length);
         let decoded = exact_move_operation(
             &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &crate::design::test_support::test_primary_frames(&bytes),
             &scope,
         )
         .unwrap();
@@ -145,7 +145,7 @@ fn decoded_move_face(
 ) -> Option<crate::records::feature::direct_face::DesignMoveOperation> {
     exact_move_face_operation(
         bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(bytes),
+        &crate::design::test_support::test_primary_frames(bytes),
         scope,
     )
 }
@@ -272,7 +272,7 @@ fn move_transform_refuses_wrong_length_controls_matrix_and_pair() {
     for bytes in variants {
         assert!(exact_move_operation(
             &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &crate::design::test_support::test_primary_frames(&bytes),
             &scope,
         )
         .is_none());

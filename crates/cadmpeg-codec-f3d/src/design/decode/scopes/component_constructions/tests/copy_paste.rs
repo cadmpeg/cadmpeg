@@ -90,7 +90,7 @@ fn copy_paste_matrices_keep_their_source_locations() {
                 },
             ),
         ];
-        let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+        let records = crate::design::test_support::test_primary_frames(&bytes);
         let operation =
             { exact_copy_paste_component_operation(&bytes, &records, &scope, &occurrences) }
                 .unwrap()

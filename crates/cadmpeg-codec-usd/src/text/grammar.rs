@@ -5,7 +5,7 @@
 //! the separator rules, which consume their own padding. Padding classes
 //! follow §2.1: inline, single-line, and multiline.
 
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeContext, SourceLocation, SpaceId};
 use cadmpeg_core::CodecError;
 
 use super::syntax::{
@@ -85,7 +85,25 @@ fn is_keyword(word: &str) -> bool {
 /// Parses one whole layer. The header line is consumed as text; the caller
 /// classifies it.
 pub(crate) fn parse_layer(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Layer, CodecError> {
+    parse_layer_at(
+        ctx,
+        bytes,
+        SourceLocation {
+            space: SpaceId::ROOT,
+            offset: 0,
+        },
+    )
+}
+
+pub(crate) fn parse_layer_at(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    origin: SourceLocation,
+) -> Result<Layer, CodecError> {
     let text = std::str::from_utf8(bytes).map_err(|error| {
+        if error.error_len().is_none() {
+            return truncated(origin, error.valid_up_to(), "usda UTF-8");
+        }
         CodecError::malformed(format_args!(
             "usda: byte {} is not valid UTF-8",
             error.valid_up_to()
@@ -96,8 +114,25 @@ pub(crate) fn parse_layer(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Layer
         text,
         bytes: text.as_bytes(),
         pos: 0,
+        origin,
     };
     parser.layer()
+}
+
+fn truncated(origin: SourceLocation, offset: usize, operation: &'static str) -> CodecError {
+    match origin
+        .offset
+        .checked_add(cadmpeg_core::decode::u64_from_index(offset))
+    {
+        Some(offset) => CodecError::truncated(
+            SourceLocation {
+                space: origin.space,
+                offset,
+            },
+            operation,
+        ),
+        None => CodecError::malformed("usda source offset overflows"),
+    }
 }
 
 struct Parser<'c, 'a, 't> {
@@ -105,6 +140,7 @@ struct Parser<'c, 'a, 't> {
     text: &'t str,
     bytes: &'t [u8],
     pos: usize,
+    origin: SourceLocation,
 }
 
 type Parsed<T> = Result<T, CodecError>;
@@ -119,6 +155,9 @@ impl<'t> Parser<'_, '_, 't> {
     }
 
     fn error_at(&self, offset: usize, expected: &str) -> CodecError {
+        if self.at_end() {
+            return truncated(self.origin, self.bytes.len(), "usda syntax");
+        }
         let before = self.bytes.get(..offset).unwrap_or(self.bytes);
         let line = memchr_count(before, b'\n') + 1;
         let column = before
@@ -195,7 +234,10 @@ impl<'t> Parser<'_, '_, 't> {
                 self.advance(end + 2);
                 Ok(true)
             }
-            None => Err(self.error_at(start, "`*/` to close the block comment")),
+            None => {
+                self.pos = self.bytes.len();
+                Err(self.error_at(start, "`*/` to close the block comment"))
+            }
         }
     }
 

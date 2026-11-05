@@ -2,8 +2,8 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 22315,
-      "payload_sha256": "b67bc9719ed4b13fe36919e2b0a585bb9b7624cc4409c973c58eef8780d01cae"
+      "payload_len": 22461,
+      "payload_sha256": "a60b2ca313fb6172e6c2f2648c35e447fcd40a43b6a32a1e922ad2b624376258"
     },
     {
       "name": "Model.Shape.brp",
@@ -272,7 +272,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 2 native record(s) from `fcstd.properties`: fcstd:native:property#Dimension:References3D, fcstd:native:property#Model:ExpressionEngine",
+        "message": "the fcstd write omits 1 native record(s) from `fcstd.properties`: fcstd:native:property#Model:ExpressionEngine",
         "severity": "info"
       },
       {
@@ -440,6 +440,7 @@
                 "fcstd:native:property#Dimension:MeasureType": "regenerated",
                 "fcstd:native:property#Dimension:OverTolerance": "regenerated",
                 "fcstd:native:property#Dimension:References2D": "regenerated",
+                "fcstd:native:property#Dimension:References3D": "regenerated",
                 "fcstd:native:property#Dimension:Rotation": "regenerated",
                 "fcstd:native:property#Dimension:SavedGeometry": "written",
                 "fcstd:native:property#Dimension:Scale": "regenerated",

@@ -3,8 +3,8 @@
 
 use super::shared_frames::rigid_transform_at;
 use crate::bytes::lp_utf16_bounded;
-use crate::design::decode::sketch::{next_indexed_record_offset, IndexedRecordOffsets};
 use crate::layout::paste_context_owner_tail as context_tail;
+use crate::metastream::PrimaryFrames;
 use crate::records::feature::occurrence_transfer::{
     DesignOccurrenceTransfer, DesignOccurrenceTransferSource, DesignPasteOwner, COMPONENT_TYPE,
     CONTEXT_TYPE, OWNER_TYPE,
@@ -44,7 +44,7 @@ fn owner(bytes: &[u8], paired: usize, index: u32) -> Option<u64> {
 
 fn relation(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     index: u32,
 ) -> Option<(usize, u32, u32, u64)> {
     let at = records.first_at_or_after(0, index)?;
@@ -57,7 +57,7 @@ fn relation(
     zeros(&mut view, 1)?;
     let scope = reference(&mut view)?;
     let paired = view.position();
-    if next_indexed_record_offset(bytes, at + 1)? != paired {
+    if records.next_at_or_after(at + 1)? != paired {
         return None;
     }
     Some((at, occurrence, scope, owner(bytes, paired, index)?))
@@ -65,7 +65,7 @@ fn relation(
 
 fn component_owner(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     types: &std::collections::HashMap<u64, (&str, u32)>,
     collection: u64,
 ) -> Option<DesignPasteOwner> {
@@ -114,7 +114,7 @@ fn component_owner(
 
 pub(super) fn exact_occurrence_transfer(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
     types: &std::collections::HashMap<u64, (&str, u32)>,
 ) -> Option<DesignOccurrenceTransfer> {

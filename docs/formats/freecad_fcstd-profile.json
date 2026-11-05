@@ -20,7 +20,7 @@
       "neutral_errors": 0,
       "native_errors": 0,
       "write_deterministic": true,
-      "semantic_round_trip": true,
+      "semantic_round_trip": false,
       "typed_edit_round_trip": false,
       "side_entries_preserved": true,
       "appearance_ownership_and_precedence": true,

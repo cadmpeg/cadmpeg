@@ -764,3 +764,50 @@ fn semantic_writer_regenerates_modified_nurbs_carriers() {
         |surface| matches!(&surface.geometry, SurfaceGeometry::Solved(SolvedSurfaceGeometry::Nurbs(value)) if value == &expected_surface)
     ));
 }
+
+#[test]
+fn duplicate_configuration_partition_indices_are_reassigned_with_a_loss() {
+    use cadmpeg_ir::features::{ConfigurationId, DesignConfiguration, DistinctMembers};
+
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let bodies = DistinctMembers::try_from(vec![ir.model.bodies[0].id.clone()]).unwrap();
+    ir.model.configurations = (0..2)
+        .map(|index| DesignConfiguration {
+            id: ConfigurationId::mint(format!("synthetic:test:configuration#{index}")).unwrap(),
+            ordinal: index,
+            active: index == 0,
+            source_index: Some(0),
+            name: Some(format!("Config {index}")),
+            material: None,
+            properties: Default::default(),
+            bodies: Some(bodies.clone()),
+            parameter_values: Default::default(),
+            parameter_overrides: Default::default(),
+            feature_states: Default::default(),
+            native_ref: None,
+        })
+        .collect();
+    ir.model.finalize();
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let replaced = ir.model.configurations[1].id.as_str();
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(replaced) && loss.message.contains("source index")));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let indices = decoded
+        .ir()
+        .model
+        .configurations
+        .iter()
+        .filter_map(|configuration| configuration.source_index)
+        .collect::<std::collections::HashSet<_>>();
+    assert_eq!(indices.len(), 2);
+}

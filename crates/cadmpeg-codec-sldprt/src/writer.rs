@@ -6,6 +6,7 @@ use std::io::Write;
 use std::num::NonZeroU16;
 
 mod accounting;
+mod bounded_curve;
 mod custom_properties;
 mod edge_direction;
 mod envelope;
@@ -149,6 +150,7 @@ fn write_through_validation_error(
                 .surfaces
                 .iter()
                 .any(|surface| surface.id.as_str() == id && can_write_surface(&surface.geometry))
+                || ir.model.points.iter().any(|point| point.id.as_str() == id)
         })
     {
         return true;
@@ -301,7 +303,7 @@ pub(super) fn write_semantic_at(
     if let Some(finding) = blocking {
         return Err(CodecError::Malformed(finding.message.clone()).into());
     }
-    check_semantic_support(ir, annotations)?;
+    check_semantic_support(ir)?;
     // The IR stores canonical millimetres; Parasolid stores metres.
     let length_scale = 0.001;
     let patched_partition = if retained_partition.is_none() {
@@ -367,7 +369,7 @@ pub(super) fn write_semantic_at(
         .map(|(section, _)| section.clone())
         .collect::<HashSet<_>>();
     let mut sections = partition_sections;
-    let materials = materials_payload(ir)?;
+    let (materials, material_residuals) = materials_payload(ir)?;
     let mut retained_swobjects = retained_swobjects_sections(ir, retained_records, annotations)?;
     require_named_metadata_members(&retained_swobjects, source_scan.as_ref())?;
     let original_metadata_sections = retained_swobjects.clone();
@@ -402,7 +404,8 @@ pub(super) fn write_semantic_at(
         }
         true
     };
-    let (objects, units) = metadata_payloads(ir, native.as_ref(), length_scale)?;
+    let (objects, units, metadata_residuals) =
+        metadata_payloads(ir, native.as_ref(), length_scale)?;
     if replay_swobjects {
         consumed_source_layout = true;
         generated_partition_sections
@@ -416,7 +419,9 @@ pub(super) fn write_semantic_at(
             )?;
         }
     } else {
+        normalization_losses.extend(metadata_residuals);
         if !materials.is_empty() {
+            normalization_losses.extend(material_residuals);
             for appearance in &ir.model.appearances {
                 let in_swobjects = appearance.schema.as_deref() == Some("moVisualProperties_c")
                     || ir.model.appearance_bindings.iter().any(|binding| {
@@ -461,7 +466,7 @@ pub(super) fn write_semantic_at(
     }
     if !ir.model.tessellations.is_empty() {
         let baseline = retained_source_baseline(&mut source_baseline, source_context.as_ref())?;
-        if let Some(retained) = retained_display_sections(ir, baseline, source_scan.as_ref())? {
+        if let Some(retained) = retained_display_sections(ir, baseline, source_scan.as_ref()) {
             for (section, payload) in retained {
                 push_generated_metadata_member(
                     &mut sections,
@@ -639,7 +644,14 @@ pub(super) fn write_semantic_at(
         .transpose()?
         .flatten();
     let envelope = if source_envelope.is_some() {
-        envelope::build(&sections, &type_ids, source_scan.as_ref())?
+        let (envelope, residuals) = envelope::build(&sections, &type_ids, source_scan.as_ref())?;
+        normalization_losses.extend(residuals);
+        envelope
+    } else if source_scan.is_none() {
+        let (envelope, residuals) =
+            envelope::build_fresh(outer_header(retained_records), &sections, &type_ids)?;
+        normalization_losses.extend(residuals);
+        envelope
     } else {
         let mut bytes = outer_header(retained_records).to_vec();
         let mut compressed_sizes = Vec::with_capacity(sections.len());
@@ -753,30 +765,32 @@ fn semantic_coverage(_patched: bool, retained_brep: bool) -> ArenaDispositions {
 
 fn assign_configuration_indices(
     configurations: &mut [cadmpeg_ir::features::DesignConfiguration],
-) -> Result<(), CodecError> {
+) -> Result<(), write_error::WriteError> {
     let mut used = HashSet::new();
     let mut names = HashSet::new();
     for configuration in configurations.iter() {
         let Some(name) = configuration.name.as_deref() else {
-            return Err(CodecError::Malformed(
-                "SLDPRT configuration has no resolved name".into(),
-            ));
+            return Err(
+                CodecError::Malformed("SLDPRT configuration has no resolved name".into()).into(),
+            );
         };
         if name.trim().is_empty() {
-            return Err(CodecError::Malformed(
-                "SLDPRT configuration has an empty name".into(),
-            ));
+            return Err(
+                CodecError::Malformed("SLDPRT configuration has an empty name".into()).into(),
+            );
         }
         if !names.insert(name) {
             return Err(CodecError::malformed(format_args!(
                 "SLDPRT repeats configuration name {name:?}"
-            )));
+            ))
+            .into());
         }
         if let Some(index) = configuration.source_index {
             if !used.insert(index) {
                 return Err(CodecError::malformed(format_args!(
                     "duplicate SLDPRT configuration source index {index}"
-                )));
+                ))
+                .into());
             }
         }
     }
@@ -1250,10 +1264,34 @@ pub(crate) const CAPACITY_FIELDS: &[cadmpeg_ir::codec::write::CapacityField] = &
     },
     cadmpeg_ir::codec::write::CapacityField {
         field: "feature.source_id",
-        limit: u32::MAX as u64,
+        limit: (u32::MAX - 1) as u64,
         source: "docs/formats/sldprt.md §8: feature source identifiers occupy u32 fields",
         helper: "allocate_feature_source_id",
     },
+    cadmpeg_ir::codec::write::CapacityField {
+        field: "sketch.frame_uncompressed_length",
+        limit: u32::MAX as u64,
+        source: "docs/formats/sldprt.md §1: frame uncompressed length is u32 LE",
+        helper: "field_u32",
+    },
+    cadmpeg_ir::codec::write::CapacityField {
+        field: "sketch.frame_compressed_length",
+        limit: u32::MAX as u64,
+        source: "docs/formats/sldprt.md §1: frame compressed length is u32 LE",
+        helper: "field_u32",
+    },
+    cadmpeg_ir::codec::write::CapacityField {
+        field: "sketch.wrapper_length",
+        limit: u32::MAX as u64,
+        source: "docs/formats/sldprt.md §1: nested wrapper length is u32 LE",
+        helper: "field_u32",
+    },
+    crate::resolved_features::write_generate::LOCAL_MARKER_CAPACITY,
+    crate::resolved_features::write_generate::COORDINATE_LINK_CAPACITY,
+    crate::resolved_features::write_feature_parameters::SCALAR_IDENTITY_CAPACITY,
+    custom_properties::HISTORY_ORDINAL_CAPACITY,
+    CONFIGURATION_INDEX_CAPACITY,
+    TYPED_NODE_ID_CAPACITY,
 ];
 
 /// Reduced rows: neutral paths the lump stores in reduced form (#232 §5.2).
@@ -1312,7 +1350,7 @@ pub(crate) fn section_type_id_at(index: usize) -> Result<u32, write_error::Write
         })
 }
 
-fn check_semantic_support(ir: &CadIr, annotations: &Annotations) -> Result<(), CodecError> {
+fn check_semantic_support(ir: &CadIr) -> Result<(), CodecError> {
     if !ir.model.configurations.is_empty()
         && ir
             .model
@@ -1392,21 +1430,6 @@ fn check_semantic_support(ir: &CadIr, annotations: &Annotations) -> Result<(), C
     if ir.model.faces.iter().any(|face| face.name.is_some()) {
         return Err(CodecError::UnsupportedContent(
             "SLDPRT semantic writer does not encode face names".into(),
-        ));
-    }
-    if ir.model.edges.iter().any(|edge| {
-        edge.param_range().is_some()
-            && annotations
-                .exactness()
-                .get(edge.id.as_str())
-                .is_none_or(|note| {
-                    note.entity() != cadmpeg_ir::Exactness::Derived
-                        && note.fields().get("carrier.param_range")
-                            != Some(&cadmpeg_ir::Exactness::Derived)
-                })
-    }) {
-        return Err(CodecError::UnsupportedContent(
-            "SLDPRT semantic writer does not encode explicit edge parameter ranges".into(),
         ));
     }
     for appearance in &ir.model.appearances {
@@ -1633,10 +1656,18 @@ fn configuration_partitions(
         .collect()
 }
 
+const CONFIGURATION_INDEX_CAPACITY: cadmpeg_ir::codec::write::CapacityField =
+    cadmpeg_ir::codec::write::CapacityField {
+        field: "configuration.source_index",
+        limit: u32::MAX as u64,
+        source: "docs/formats/sldprt.md §2: configuration source index u32",
+        helper: "reserve_configuration_index",
+    };
+
 pub(super) fn reserve_configuration_index(
     used: &mut HashSet<u32>,
     next: &mut u32,
-) -> Result<u32, CodecError> {
+) -> Result<u32, write_error::WriteError> {
     loop {
         let index = *next;
         if used.insert(index) {
@@ -1645,12 +1676,12 @@ pub(super) fn reserve_configuration_index(
             }
             return Ok(index);
         }
-        *next = index.checked_add(1).ok_or_else(|| {
-            // (O-capacity): the target field cannot encode a value outside its width.
-            CodecError::NotImplemented(
-                "SLDPRT configuration source index space is exhausted".into(),
-            )
-        })?;
+        *next = index
+            .checked_add(1)
+            .ok_or(write_error::WriteError::Capacity {
+                field: &CONFIGURATION_INDEX_CAPACITY,
+                value: u64::from(u32::MAX) + 1,
+            })?;
     }
 }
 
@@ -1744,12 +1775,27 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
         .model
         .vertices
         .retain(|vertex| vertices.contains(&vertex.id));
-    let points = subset
+    let mut points = subset
         .model
         .vertices
         .iter()
         .map(|vertex| vertex.point.clone())
         .collect::<HashSet<_>>();
+    if retain_detached {
+        let owned = ir
+            .model
+            .vertices
+            .iter()
+            .map(|vertex| &vertex.point)
+            .collect::<HashSet<_>>();
+        points.extend(
+            ir.model
+                .points
+                .iter()
+                .filter(|point| !owned.contains(&point.id))
+                .map(|point| point.id.clone()),
+        );
+    }
     subset
         .model
         .points
@@ -2928,6 +2974,11 @@ fn scaled<const N: usize>(values: [f64; N], scale: f64) -> Option<[f64; N]> {
         .then_some(products)
 }
 
+fn supports_metadata_attribute(attribute: &cadmpeg_ir::attributes::SourceAttribute) -> bool {
+    attribute.target == cadmpeg_ir::attributes::AttributeTarget::Document
+        && matches!(MetadataRecord::project(attribute, 0.001, |_| Ok(())), Ok(Some(_)))
+}
+
 /// This codec's document attributes, ordered by source payload position.
 ///
 /// Arena order is by identifier name; writing that order would move every
@@ -2935,7 +2986,7 @@ fn scaled<const N: usize>(values: [f64; N], scale: f64) -> Option<[f64; N]> {
 fn metadata_attributes(ir: &CadIr) -> Vec<&cadmpeg_ir::attributes::SourceAttribute> {
     let mut positioned = Vec::new();
     for attribute in &ir.model.attributes {
-        if attribute.id.as_str().starts_with("sldprt:")
+        if (attribute.id.as_str().starts_with("sldprt:") || supports_metadata_attribute(attribute))
             && !accounting::requires_attribute_omission(attribute)
             && !custom_properties::represents(attribute)
             && !crate::pmi::write::attribute_supported(attribute)
@@ -2955,11 +3006,19 @@ fn metadata_payloads(
     ir: &CadIr,
     native: Option<&SldprtNative>,
     length_scale: f64,
-) -> Result<(Vec<u8>, Option<Vec<u8>>), write_error::WriteError> {
+) -> Result<
+    (
+        Vec<u8>,
+        Option<Vec<u8>>,
+        Vec<cadmpeg_ir::report::loss::LossNote>,
+    ),
+    write_error::WriteError,
+> {
     use cadmpeg_ir::attributes::AttributeTarget;
 
     let mut objects = Vec::new();
     let mut unit_code = None;
+    let mut residuals = Vec::new();
     let attributes = if ir.scope.model {
         metadata_attributes(ir)
     } else {
@@ -3015,6 +3074,14 @@ fn metadata_payloads(
                 states,
                 filetime,
             }) => {
+                residuals.push(
+                    cadmpeg_ir::codec::write::ExportLossCode::RecordResidualUnavailable.note(
+                        format!(
+                            "configuration manager {}: unspecified SWObjects record bytes",
+                            attribute.id
+                        ),
+                    ),
+                );
                 let mut record = [0u8; 125];
                 record[66..70].copy_from_slice(&minor.to_le_bytes());
                 record[107] = states;
@@ -3041,7 +3108,7 @@ fn metadata_payloads(
         format!("<Metadata><Property Name=\"SW_UnitsLinear\" Value=\"{code}\"/></Metadata>")
             .into_bytes()
     });
-    Ok((objects, units))
+    Ok((objects, units, residuals))
 }
 
 pub(crate) fn swobjects_local_sha256(
@@ -3112,9 +3179,9 @@ fn retained_display_sections(
     ir: &CadIr,
     baseline: Option<&cadmpeg_ir::codec::Decoded>,
     scan: Option<&crate::container::ContainerScan<'_>>,
-) -> Result<Option<RetainedDisplaySections>, CodecError> {
+) -> Option<RetainedDisplaySections> {
     let (Some(baseline), Some(scan)) = (baseline, scan) else {
-        return Ok(None);
+        return None;
     };
     let mut original = baseline.ir.model.tessellations.iter().collect::<Vec<_>>();
     let mut current = ir.model.tessellations.iter().collect::<Vec<_>>();
@@ -3124,7 +3191,7 @@ fn retained_display_sections(
         || baseline.ir.model.appearances != ir.model.appearances
         || baseline.ir.model.appearance_bindings != ir.model.appearance_bindings
     {
-        return Ok(None);
+        return None;
     }
     let mut names = HashSet::new();
     let mut result = Vec::new();
@@ -3133,28 +3200,19 @@ fn retained_display_sections(
             .source_fidelity
             .annotations
             .provenance
-            .get(mesh.id.as_str())
-            .ok_or_else(|| {
-                CodecError::NotImplemented(
-                    "retained tessellation has no proved source member".into(),
-                )
-            })?;
+            .get(mesh.id.as_str())?;
         let name = provenance.stream();
         if !names.insert(name.to_owned()) {
             continue;
         }
         let mut sources = scan.sections().filter(|source| source.name() == Some(name));
-        let source = sources.next().ok_or_else(|| {
-            CodecError::NotImplemented("retained display requires a named source member".into())
-        })?;
+        let source = sources.next()?;
         if sources.next().is_some() {
-            return Err(CodecError::NotImplemented(
-                "ambiguous retained display member identity".into(),
-            ));
+            return None;
         }
         result.push((name.to_owned(), source.payload().to_vec()));
     }
-    Ok(Some(result))
+    Some(result)
 }
 
 fn retained_history_sections(
@@ -3183,26 +3241,22 @@ fn retained_history_sections(
         .feature_histories
         .retain(|history| !history.id.starts_with("sldprt:generated:"));
     let annotations = &baseline.source_fidelity.annotations;
-    native
-        .feature_histories
-        .into_iter()
-        .map(|history| {
-            let provenance = annotations.provenance.get(&history.id).ok_or_else(|| {
-                CodecError::Malformed("reparsed SLDPRT history has no source owner".into())
-            })?;
-            let name = provenance.stream();
-            let mut sources = scan.sections().filter(|source| source.name() == Some(name));
-            let source = sources.next().ok_or_else(|| {
-                CodecError::NotImplemented("SLDPRT history requires a named retained member".into())
-            })?;
-            if sources.next().is_some() {
-                return Err(CodecError::NotImplemented(
-                    "SLDPRT history has ambiguous retained member identity".into(),
-                ));
-            }
-            Ok((history, name.to_owned(), source.payload().to_vec()))
-        })
-        .collect()
+    let mut retained = Vec::new();
+    for history in native.feature_histories {
+        let Some(provenance) = annotations.provenance.get(&history.id) else {
+            return Ok(Vec::new());
+        };
+        let name = provenance.stream();
+        let mut sources = scan.sections().filter(|source| source.name() == Some(name));
+        let Some(source) = sources.next() else {
+            return Ok(Vec::new());
+        };
+        if sources.next().is_some() {
+            return Ok(Vec::new());
+        }
+        retained.push((history, name.to_owned(), source.payload().to_vec()));
+    }
+    Ok(retained)
 }
 
 fn retained_history_payload(
@@ -3215,9 +3269,7 @@ fn retained_history_payload(
         .filter(|(original, name, _)| original.id == history.id && name == section);
     let original = originals.next();
     if originals.next().is_some() {
-        return Err(CodecError::NotImplemented(
-            "ambiguous retained SLDPRT history".into(),
-        ));
+        return history_payload(history);
     }
     if let Some((original, _, payload)) = original {
         if original == history {
@@ -3786,12 +3838,20 @@ fn body_material(ir: &CadIr) -> Result<Option<(&str, Color)>, CodecError> {
     Ok(selected)
 }
 
-fn materials_payload(ir: &CadIr) -> Result<Vec<u8>, write_error::WriteError> {
+fn materials_payload(
+    ir: &CadIr,
+) -> Result<(Vec<u8>, Vec<cadmpeg_ir::report::loss::LossNote>), write_error::WriteError> {
     let mut payload = Vec::new();
-    for (name, color) in swobjects_materials(ir)? {
+    let mut residuals = Vec::new();
+    for (ordinal, (name, color)) in swobjects_materials(ir)?.into_iter().enumerate() {
         payload.extend(material_payload(name, color)?);
+        residuals.push(
+            cadmpeg_ir::codec::write::ExportLossCode::RecordResidualUnavailable.note(format!(
+                "SWObjects material {name}#{ordinal}: unspecified visual-property record bytes"
+            )),
+        );
     }
-    Ok(payload)
+    Ok((payload, residuals))
 }
 
 fn swobjects_materials(ir: &CadIr) -> Result<Vec<(&str, Color)>, CodecError> {
@@ -3848,6 +3908,16 @@ fn material_payload(name: &str, color: Color) -> Result<Vec<u8>, write_error::Wr
     for unit in name {
         out.extend_from_slice(&unit.to_le_bytes());
     }
+    out.extend_from_slice(&[0; 48]);
+    out.extend_from_slice(&0u32.to_le_bytes());
+    out.extend_from_slice(&[0; 20]);
+    out.extend_from_slice(&[0xff, 0xfe, 0xff, 0]);
+    out.extend_from_slice(&[0; 16]);
+    out.extend_from_slice(&[0xff, 0xfe, 0xff, 0]);
+    out.extend_from_slice(&[0; 81]);
+    out.extend_from_slice(&[0xff, 0xfe, 0xff, 0]);
+    out.extend_from_slice(&[0; 12]);
+    out.extend_from_slice(&[0xff, 0xfe, 0xff, 0]);
     Ok(out)
 }
 
@@ -3897,6 +3967,32 @@ pub(crate) fn brep_body(
         .filter(|item| !derived_sphere_seam_curves.contains(&item.id))
         .map(|item| Ok((item.id.clone(), take_attr(&mut next)?)))
         .collect::<Result<HashMap<_, _>, CodecError>>()?;
+    let arena = DecodeArena::new();
+    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::desktop())?;
+    let mut bounded_curves = HashMap::new();
+    for edge in &ir.model.edges {
+        if edge.param_range().is_none() {
+            continue;
+        }
+        if bounded_curve::derived_sphere_seam(ir, edge) {
+            continue;
+        }
+        let bounded = bounded_curve::from_edge(&ctx, ir, edge, length_scale)?.ok_or_else(|| {
+            CodecError::UnsupportedContent(format!(
+                "SLDPRT edge {} has no writable bounded curve",
+                edge.id
+            ))
+        })?;
+        if !curves.contains_key(&bounded.curve) {
+            return Err(CodecError::UnsupportedContent(format!(
+                "SLDPRT edge {} has no emitted bounded-curve source",
+                edge.id
+            ))
+            .into());
+        }
+        bounded_curves.insert(edge.id.clone(), (take_attr(&mut next)?, bounded));
+    }
+    ctx.finish_session()?;
     let points = ir
         .model
         .points
@@ -3986,6 +4082,27 @@ pub(crate) fn brep_body(
             &values,
         );
     }
+    for edge in &ir.model.edges {
+        let Some((identity, bounded)) = bounded_curves.get(&edge.id) else {
+            continue;
+        };
+        tag(&mut out, 0x85);
+        typed_ref(&mut out, *identity)?;
+        be32(&mut out, 0);
+        for _ in 0..5 {
+            typed_ref(&mut out, 0_u32)?;
+        }
+        out.push(0x2b);
+        typed_ref(&mut out, curves[&bounded.curve])?;
+        for point in bounded.points {
+            for value in [point.x, point.y, point.z] {
+                bef64(&mut out, value * length_scale);
+            }
+        }
+        for parameter in bounded.parameters {
+            bef64(&mut out, parameter);
+        }
+    }
     let face_owners = ir
         .model
         .faces
@@ -4059,9 +4176,10 @@ pub(crate) fn brep_body(
             0,
             0,
             0,
-            edge.curve()
-                .and_then(|id| curves.get(id))
-                .copied()
+            bounded_curves
+                .get(&edge.id)
+                .map(|(identity, _)| *identity)
+                .or_else(|| edge.curve().and_then(|id| curves.get(id)).copied())
                 .unwrap_or(0),
             0,
             0,
@@ -4261,18 +4379,47 @@ fn write_body_hierarchy(
         .collect::<HashMap<_, _>>();
     let mut assigned = HashSet::new();
     for body in &ir.model.bodies {
+        let typed_only = body.regions.iter().any(|region| {
+            regions
+                .get(region)
+                .is_some_and(|region| {
+                    region.shells.len() > 6
+                        || (body.kind == BodyKind::Sheet && region.shells.len() > 1)
+                })
+        });
+        if typed_only {
+            for region_id in &body.regions {
+                let region = regions.get(region_id).ok_or_else(|| {
+                    CodecError::Malformed("body references missing region".into())
+                })?;
+                for shell_id in &region.shells {
+                    let shell = shells.get(shell_id).ok_or_else(|| {
+                        CodecError::Malformed("region references missing shell".into())
+                    })?;
+                    for face in shell.faces() {
+                        if !faces.contains_key(face) {
+                            return Err(CodecError::Malformed(
+                                "shell references missing face".into(),
+                            )
+                            .into());
+                        }
+                        if !assigned.insert(face.clone()) {
+                            return Err(CodecError::Malformed(
+                                "face belongs to multiple bodies".into(),
+                            )
+                            .into());
+                        }
+                    }
+                }
+            }
+            continue;
+        }
         let root = take_attr(next)?;
         let mut native_regions = Vec::new();
         for region_id in &body.regions {
             let region = regions
                 .get(region_id)
                 .ok_or_else(|| CodecError::Malformed("body references missing region".into()))?;
-            if body.kind == BodyKind::Sheet && region.shells.len() > 1 {
-                return Err(CodecError::UnsupportedContent(
-                    "SLDPRT sheet regions support at most one shell".into(),
-                )
-                .into());
-            }
             let native_region = take_attr(next)?;
             native_regions.push(native_region);
             let mut native_lumps = Vec::new();
@@ -4341,13 +4488,9 @@ fn write_body_hierarchy(
                 );
             }
             if body.kind != BodyKind::Sheet {
-                entity51(
-                    out,
-                    AttributeCount::One,
-                    native_region,
-                    0x001b,
-                    &fixed_refs(&native_lumps, "SLDPRT region has more than six shells")?,
-                );
+                let mut references = [0; 6];
+                references[..native_lumps.len()].copy_from_slice(&native_lumps);
+                entity51(out, AttributeCount::One, native_region, 0x001b, &references);
             }
         }
         if native_regions.is_empty() {
@@ -4383,6 +4526,23 @@ fn write_body_hierarchy(
     Ok(())
 }
 
+const TYPED_NODE_ID_CAPACITY: cadmpeg_ir::codec::write::CapacityField =
+    cadmpeg_ir::codec::write::CapacityField {
+        field: "parasolid.typed_node_id",
+        limit: u32::MAX as u64,
+        source: "docs/formats/sldprt.md §3.3: typed XT node id u32 BE",
+        helper: "next_typed_node_id",
+    };
+
+fn next_typed_node_id(next: &mut u64) -> Result<u32, write_error::WriteError> {
+    let id = u32::try_from(*next).map_err(|_| write_error::WriteError::Capacity {
+        field: &TYPED_NODE_ID_CAPACITY,
+        value: *next,
+    })?;
+    *next += 1;
+    Ok(id)
+}
+
 /// Write the typed XT ownership graph used by the decoder for body membership.
 ///
 /// The compact topology records use the same transmit attributes as the
@@ -4398,6 +4558,7 @@ fn write_typed_body_hierarchy(
     next: &mut u16,
     out: &mut Vec<u8>,
 ) -> Result<(), write_error::WriteError> {
+    let mut node_id = 1_u64;
     let region_attrs = ir
         .model
         .regions
@@ -4422,7 +4583,7 @@ fn write_typed_body_hierarchy(
         }
     }
 
-    for (index, body) in ir.model.bodies.iter().enumerate() {
+    for body in &ir.model.bodies {
         let body_attr = body_attrs[&body.id];
         let first_region = body
             .regions
@@ -4439,15 +4600,7 @@ fn write_typed_body_hierarchy(
             out,
             0x0c,
             body_attr,
-            u32::try_from(index)
-                .ok()
-                .and_then(|index| 0x1000_0000_u32.checked_add(index))
-                .ok_or_else(|| {
-                    // (O-capacity): the target field cannot encode a value outside its width.
-                    CodecError::NotImplemented(
-                        "SLDPRT typed topology node index exceeds the 32-bit range".into(),
-                    )
-                })?,
+            next_typed_node_id(&mut node_id)?,
         );
         for value in [5_u32, 6, 1, 1, 1, 1] {
             typed_ref(out, value)?;
@@ -4474,40 +4627,45 @@ fn write_typed_body_hierarchy(
         }
     }
 
-    for (index, shell) in ir.model.shells.iter().enumerate() {
-        let body = ir
-            .model
-            .regions
-            .iter()
-            .find(|region| region.shells.iter().any(|candidate| candidate == &shell.id))
-            .map(|region| &region.body)
-            .ok_or_else(|| CodecError::Malformed("typed shell has no region".into()))?;
+    for shell in &ir.model.shells {
         let region = ir
             .model
             .regions
             .iter()
             .find(|region| region.shells.iter().any(|candidate| candidate == &shell.id))
             .ok_or_else(|| CodecError::Malformed("typed shell has no region".into()))?;
+        let position = region
+            .shells
+            .iter()
+            .position(|candidate| candidate == &shell.id)
+            .ok_or_else(|| {
+                CodecError::Malformed("typed region does not reference its shell".into())
+            })?;
+        let next_shell = region
+            .shells
+            .get(position + 1)
+            .map_or(1, |id| shell_attrs[id]);
         typed_prefix(
             out,
             0x0d,
             shell_attrs[&shell.id],
-            u32::try_from(index)
-                .ok()
-                .and_then(|index| 0x2000_0000_u32.checked_add(index))
-                .ok_or_else(|| {
-                    // (O-capacity): the target field cannot encode a value outside its width.
-                    CodecError::NotImplemented(
-                        "SLDPRT typed topology node index exceeds the 32-bit range".into(),
-                    )
-                })?,
+            next_typed_node_id(&mut node_id)?,
         );
-        for value in [1, body_attrs[body], 1, 1, 1, 1, region_attrs[&region.id], 1] {
+        for value in [
+            1,
+            body_attrs[&region.body],
+            next_shell,
+            1,
+            1,
+            1,
+            region_attrs[&region.id],
+            1,
+        ] {
             typed_ref(out, value)?;
         }
     }
 
-    for (index, region) in ir.model.regions.iter().enumerate() {
+    for region in &ir.model.regions {
         let body = body_attrs[&region.body];
         let body_regions = ir
             .model
@@ -4533,15 +4691,7 @@ fn write_typed_body_hierarchy(
             out,
             0x13,
             region_attrs[&region.id],
-            u32::try_from(index)
-                .ok()
-                .and_then(|index| 0x3000_0000_u32.checked_add(index))
-                .ok_or_else(|| {
-                    // (O-capacity): the target field cannot encode a value outside its width.
-                    CodecError::NotImplemented(
-                        "SLDPRT typed topology node index exceeds the 32-bit range".into(),
-                    )
-                })?,
+            next_typed_node_id(&mut node_id)?,
         );
         for value in [1, body, next_region, previous_region, shell_head] {
             typed_ref(out, value)?;
@@ -4549,7 +4699,7 @@ fn write_typed_body_hierarchy(
         out.push(b'S');
     }
 
-    for (index, face) in ir.model.faces.iter().enumerate() {
+    for face in &ir.model.faces {
         let shell = face_shells
             .get(&face.id)
             .copied()
@@ -4558,15 +4708,7 @@ fn write_typed_body_hierarchy(
             out,
             0x0e,
             faces[&face.id],
-            u32::try_from(index)
-                .ok()
-                .and_then(|index| 0x4000_0000_u32.checked_add(index))
-                .ok_or_else(|| {
-                    // (O-capacity): the target field cannot encode a value outside its width.
-                    CodecError::NotImplemented(
-                        "SLDPRT typed topology node index exceeds the 32-bit range".into(),
-                    )
-                })?,
+            next_typed_node_id(&mut node_id)?,
         );
         typed_ref(out, 1_u32)?;
         out.extend_from_slice(&MAGIC);
@@ -4613,16 +4755,6 @@ fn typed_ref(out: &mut Vec<u8>, value: impl Into<u32>) -> Result<(), write_error
         be16(out, u16::try_from(value >> 15).map_err(|_| capacity())?);
     }
     Ok(())
-}
-
-fn fixed_refs(values: &[u16], message: &str) -> Result<[u16; 6], CodecError> {
-    if values.len() > 6 {
-        // (O-capacity): the target field cannot encode a value outside its width.
-        return Err(CodecError::NotImplemented(message.into()));
-    }
-    let mut refs = [0; 6];
-    refs[..values.len()].copy_from_slice(values);
-    Ok(refs)
 }
 
 pub(crate) fn face_colors(ir: &CadIr) -> HashMap<cadmpeg_ir::ids::FaceId, Color> {
@@ -5390,7 +5522,7 @@ pub(crate) fn field_u16(
     u16::try_from(value).map_err(|_| write_error::WriteError::Capacity { field, value })
 }
 
-fn field_u32(
+pub(crate) fn field_u32(
     field: &'static cadmpeg_ir::codec::write::CapacityField,
     length: usize,
 ) -> Result<u32, write_error::WriteError> {
@@ -5423,7 +5555,6 @@ mod nurbs_write_tests {
     use cadmpeg_ir::geometry::nurbs::NurbsSurface;
     use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
     use cadmpeg_ir::math::Point3;
-    use cadmpeg_ir::Annotations;
 
     #[test]
     fn unsupported_pmi_is_reported_and_omitted_from_current_content() {
@@ -5443,7 +5574,7 @@ mod nurbs_write_tests {
         });
         // #209 S-entity: an unencodable datum is an affected entity loss,
         // not a refusal of the remaining authored native document.
-        assert!(check_semantic_support(&ir, &Annotations::default()).is_ok());
+        assert!(check_semantic_support(&ir).is_ok());
         assert_unsupported_pmi_is_reported(&ir);
 
         let cadmpeg_ir::PmiDefinition::Datum { identification } =
@@ -5452,11 +5583,11 @@ mod nurbs_write_tests {
             panic!("datum definition");
         };
         *identification = "B".into();
-        assert!(check_semantic_support(&ir, &Annotations::default()).is_ok());
+        assert!(check_semantic_support(&ir).is_ok());
         assert_unsupported_pmi_is_reported(&ir);
 
         ir.model.pmi.clear();
-        assert!(check_semantic_support(&ir, &Annotations::default()).is_ok());
+        assert!(check_semantic_support(&ir).is_ok());
     }
 
     fn assert_unsupported_pmi_is_reported(ir: &CadIr) {

@@ -521,7 +521,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 )));
             };
             if continuity.weight().is_some() {
-                return Err(CodecError::NotImplemented(format!(
+                return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} has a weighted filled-surface condition",
                     feature.id
                 )));

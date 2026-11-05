@@ -23,7 +23,7 @@ fn layer_item_id(item: &cadmpeg_ir::presentation::PresentationItem) -> Option<St
     })
 }
 
-fn layer_memberships(ir: &CadIr) -> BTreeMap<String, BTreeSet<i64>> {
+pub(super) fn layer_memberships(ir: &CadIr) -> BTreeMap<String, BTreeSet<i64>> {
     let mut layer_of: BTreeMap<String, BTreeSet<i64>> = BTreeMap::new();
     for layer in &ir.model.presentation_layers {
         let Ok(number) = layer.name.parse::<i64>() else {
@@ -93,7 +93,7 @@ pub(super) fn presentation_layer_coverage(
     (coverage, losses)
 }
 
-fn entity_layer_numbers(
+pub(super) fn entity_layer_numbers(
     entity: &Entity,
     memberships: &BTreeMap<String, BTreeSet<i64>>,
 ) -> BTreeSet<i64> {
@@ -122,8 +122,60 @@ fn definition_level_set(entity: &Entity) -> Option<BTreeSet<i64>> {
     (values.len() == count).then(|| values.into_iter().collect())
 }
 
+fn level_body(levels: &BTreeSet<i64>) -> Vec<u8> {
+    format!(
+        "{},{};",
+        levels.len(),
+        levels
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(",")
+    )
+    .into_bytes()
+}
+
 pub(super) fn append_level_definitions(ir: &CadIr, entities: &mut Vec<Entity>) {
     let memberships = layer_memberships(ir);
+    let targets = super::attributes::targets(ir, entities);
+    if let Some(namespace) = ir.native.namespace("iges") {
+        let mut replacements = BTreeMap::<usize, BTreeSet<BTreeSet<i64>>>::new();
+        for record in namespace
+            .arenas()
+            .get("display_attributes")
+            .into_iter()
+            .flatten()
+        {
+            let Some(definition) = record
+                .field("level_definition")
+                .and_then(|v| v.as_str().map(str::to_owned))
+            else {
+                continue;
+            };
+            let Some(owner) = record
+                .field("source_entity")
+                .and_then(|v| v.as_str().map(str::to_owned))
+            else {
+                continue;
+            };
+            let Some([definition]) = targets.get(&definition).map(Vec::as_slice) else {
+                continue;
+            };
+            for owner in targets.get(&owner).into_iter().flatten() {
+                let levels = entity_layer_numbers(&entities[*owner], &memberships);
+                if !levels.is_empty() {
+                    replacements.entry(*definition).or_default().insert(levels);
+                }
+            }
+        }
+        for (index, sets) in replacements {
+            if definition_level_set(&entities[index]).is_some() {
+                if let Some(levels) = sets.first() {
+                    entities[index].parameter_body = level_body(levels);
+                }
+            }
+        }
+    }
     let mut sets = entities
         .iter()
         .filter_map(definition_level_set)
@@ -137,15 +189,6 @@ pub(super) fn append_level_definitions(ir: &CadIr, entities: &mut Vec<Entity>) {
         if !sets.insert(levels.clone()) {
             continue;
         }
-        let body = format!(
-            "{},{};",
-            levels.len(),
-            levels
-                .iter()
-                .map(ToString::to_string)
-                .collect::<Vec<_>>()
-                .join(",")
-        );
         entities.push(Entity {
             structure: None,
             property_links: Vec::new(),
@@ -157,7 +200,7 @@ pub(super) fn append_level_definitions(ir: &CadIr, entities: &mut Vec<Entity>) {
             label: String::new(),
             status: EntityStatus::PhysicallyDependent,
             subscript: 0,
-            parameter_body: body.into_bytes(),
+            parameter_body: level_body(&levels),
             transform: None,
             transform_link: None,
         });

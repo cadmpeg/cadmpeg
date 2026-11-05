@@ -345,11 +345,12 @@ fn body_recipe_operand_decodes_counted_and_empty_reference_tables() {
     );
 
     let stream_name = "FusionAssetName[Active]/Design1/BulkStream.dat";
-    let archive = crate::test_support::zip_test::f3d_with_configuration(
-        &crate::test_support::smbh_header_test::synthetic_smbh(),
-        stream_name,
+    let metadata = crate::test_support::zip_test::indexed_fixture_metastream(
         &bytes,
+        &[100, 101, 102, 103, 104],
+        &[100],
     );
+    let archive = crate::test_support::body_reference_tail_test::archive(&bytes, &metadata);
     group.id = crate::ids::native_scoped_id(stream_name, "operand-group", 90);
     record.id = crate::ids::native_scoped_id(stream_name, "record", 100);
     recipe.id = crate::ids::native_scoped_id(stream_name, "construction-recipe", recipe_at);

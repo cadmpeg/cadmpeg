@@ -1248,25 +1248,18 @@ pub(crate) fn synthesize_feature_classes(
         .flat_map(|history| &history.features)
         .filter_map(crate::records::Feature::source_value)
         .collect::<std::collections::HashSet<_>>();
-    let mut next = 1u32;
+    let mut next = Some(1u32);
     for feature in native
         .feature_histories
         .iter_mut()
         .flat_map(|history| &mut history.features)
         .filter(|feature| feature.input_class.is_some() && feature.source_value().is_none())
     {
-        while used.contains(&next) {
-            next = next.checked_add(1).ok_or_else(|| {
-                cadmpeg_core::CodecError::malformed(
-                    "SLDPRT feature object identity space is exhausted",
-                )
-            })?;
-        }
-        let source = crate::records::FeatureSource::from_value(next).ok_or_else(|| {
-            cadmpeg_core::CodecError::malformed("SLDPRT feature object identity space is exhausted")
+        let id = crate::history::write::features::allocate_feature_source_id(&mut used, &mut next)?;
+        let source = crate::records::FeatureSource::from_value(id).ok_or_else(|| {
+            cadmpeg_core::CodecError::malformed("SLDPRT feature source identity is absent")
         })?;
         feature.source_id = Some(source);
-        used.insert(next);
     }
     let mut payload = Vec::new();
     for feature in native
@@ -1312,19 +1305,30 @@ fn source_less_lanes(
     let mut objects = Vec::<(String, u64, Vec<u8>)>::new();
     for sketch in &ir.model.sketches {
         let configuration = sketch.configuration.clone().unwrap_or_else(|| "0".into());
-        let owner = unique_planar_sketch_owner(ir, &sketch.id)?;
-        let owner_record = generated_sketch_owner_record(native, owner, sketch.id.as_str())?;
-        let object_id = generated_sketch_owner_id(owner_record, sketch.id.as_str())?;
+        let owner = if ir
+            .model
+            .features
+            .iter()
+            .any(|feature| feature_owns_planar_sketch(ir, feature, &sketch.id))
+        {
+            Some(unique_planar_sketch_owner(ir, &sketch.id)?)
+        } else {
+            None
+        };
         let mut payload = Vec::new();
-        append_generated_object_name(
-            &mut payload,
-            if owner_record.name.is_empty() {
-                sketch.name.as_deref().unwrap_or(sketch.id.as_str())
-            } else {
-                owner_record.name.as_str()
-            },
-            object_id,
-        )?;
+        if let Some(owner) = owner {
+            let owner_record = generated_sketch_owner_record(native, owner, sketch.id.as_str())?;
+            let object_id = generated_sketch_owner_id(owner_record, sketch.id.as_str())?;
+            append_generated_object_name(
+                &mut payload,
+                if owner_record.name.is_empty() {
+                    sketch.name.as_deref().unwrap_or(sketch.id.as_str())
+                } else {
+                    owner_record.name.as_str()
+                },
+                object_id,
+            )?;
+        }
         append_generated_sketch_markers(ir, sketch, &mut payload)?;
         let sketch_ir = sketch_brep(ir, sketch)?;
         let body = crate::writer::brep_body(&sketch_ir, 0.001, false)?;
@@ -1339,25 +1343,25 @@ fn source_less_lanes(
                 flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
             std::io::Write::write_all(&mut encoder, frame)?;
             let compressed = encoder.finish()?;
-            let frame_len = u32::try_from(frame.len()).map_err(|_| {
-                cadmpeg_core::CodecError::NotImplemented("SLDPRT sketch frame exceeds u32".into())
-            })?;
-            let compressed_len = u32::try_from(compressed.len()).map_err(|_| {
-                cadmpeg_core::CodecError::NotImplemented(
-                    "SLDPRT compressed sketch frame exceeds u32".into(),
-                )
-            })?;
+            let frame_len =
+                crate::writer::field_u32(&crate::writer::CAPACITY_FIELDS[33], frame.len())?;
+            let compressed_len =
+                crate::writer::field_u32(&crate::writer::CAPACITY_FIELDS[34], compressed.len())?;
             section.extend_from_slice(&frame_len.to_le_bytes());
             section.extend_from_slice(&compressed_len.to_le_bytes());
             section.extend(compressed);
         }
-        let chain_len = u32::try_from(section.len()).map_err(|_| {
-            cadmpeg_core::CodecError::NotImplemented("SLDPRT sketch wrapper exceeds u32".into())
-        })?;
+        let chain_len =
+            crate::writer::field_u32(&crate::writer::CAPACITY_FIELDS[35], section.len())?;
         payload.extend_from_slice(&chain_len.to_le_bytes());
         payload.extend(section);
-        objects.push((configuration, owner.ordinal, payload));
+        objects.push((
+            configuration,
+            owner.map_or(0, |owner| owner.ordinal),
+            payload,
+        ));
     }
+    let mut spatial_scalar_ids = std::collections::BTreeMap::new();
     for sketch in &ir.model.spatial_sketches {
         let configuration = sketch.configuration.clone().unwrap_or_else(|| "0".into());
         let owner = unique_spatial_sketch_owner(ir, &sketch.id)?;
@@ -1386,22 +1390,216 @@ fn source_less_lanes(
             ))
             .into());
         }
-        for entity in entities {
-            match *entity.geometry.definition() {
-                SpatialSketchGeometryDefinition::Point { position } => {
+        let constraints = ir
+            .model
+            .spatial_sketch_constraints
+            .iter()
+            .filter(|constraint| constraint.sketch == sketch.id)
+            .collect::<Vec<_>>();
+        let mut points = Vec::new();
+        let mut lines = Vec::new();
+        for constraint in &constraints {
+            let cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput::PointLineDistance {
+                point,
+                line,
+                ..
+            } = constraint.definition.kind()
+            else {
+                return Err(cadmpeg_core::CodecError::UnsupportedContent(format!(
+                    "spatial sketch constraint {} has no native serializer",
+                    constraint.id
+                ))
+                .into());
+            };
+            if !points.contains(&point) {
+                points.push(point);
+            }
+            if !lines.contains(&line) {
+                lines.push(line);
+            }
+        }
+        for entity in &entities {
+            match entity.geometry.definition() {
+                SpatialSketchGeometryDefinition::Point { position } if constraints.is_empty() => {
                     append_spatial_point_marker(&mut payload, position.get(), object_id)?;
                 }
+                SpatialSketchGeometryDefinition::Point { .. } => {}
                 SpatialSketchGeometryDefinition::Line { start, end } => {
                     append_spatial_vertex(&mut payload, start.get());
                     append_spatial_vertex(&mut payload, end.get());
                 }
                 _ => {
                     return Err(cadmpeg_core::CodecError::UnsupportedContent(format!(
-                        "source-less SLDPRT spatial sketch {} supports point and line geometry only",
-                        sketch.id.as_str()
-                    )).into());
+                    "source-less SLDPRT spatial sketch {} supports point and line geometry only",
+                    sketch.id
+                ))
+                    .into())
                 }
             }
+        }
+        let marker_id = |index: usize| -> Result<u16, crate::writer::write_error::WriteError> {
+            let value = cadmpeg_core::decode::u64_from_index(index)
+                .checked_add(1)
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("spatial marker count overflows u64")
+                })?;
+            super::write_generate::local_marker_id(value)
+        };
+        let marker_count = cadmpeg_core::decode::u64_from_index(lines.len())
+            .checked_mul(3)
+            .and_then(|count| count.checked_add(cadmpeg_core::decode::u64_from_index(points.len())))
+            .ok_or_else(|| {
+                cadmpeg_core::CodecError::malformed("spatial marker count overflows u64")
+            })?;
+        if marker_count != 0 {
+            super::write_generate::local_marker_id(marker_count)?;
+        }
+        for (index, id) in points.iter().enumerate() {
+            let entity = entities
+                .iter()
+                .find(|entity| entity.id() == *id)
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("spatial relation point is missing")
+                })?;
+            let SpatialSketchGeometryDefinition::Point { position } = entity.geometry.definition()
+            else {
+                return Err(cadmpeg_core::CodecError::UnsupportedContent(
+                    "spatial relation point has no point geometry".into(),
+                )
+                .into());
+            };
+            append_spatial_relation_marker(
+                &mut payload,
+                position.get(),
+                2,
+                u32::from(marker_id(index)?),
+                entity.construction,
+            )?;
+        }
+        let mut endpoint_points = Vec::new();
+        for (index, id) in lines.iter().enumerate() {
+            let entity = entities
+                .iter()
+                .find(|entity| entity.id() == *id)
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("spatial relation line is missing")
+                })?;
+            let SpatialSketchGeometryDefinition::Line { start, end } = entity.geometry.definition()
+            else {
+                return Err(cadmpeg_core::CodecError::UnsupportedContent(
+                    "spatial relation line has no line geometry".into(),
+                )
+                .into());
+            };
+            let first = marker_id(points.len() + index * 2)?;
+            let second = marker_id(points.len() + index * 2 + 1)?;
+            let line = marker_id(points.len() + lines.len() * 2 + index)?;
+            append_spatial_line_handle(&mut payload, first, second, line);
+            append_spatial_relation_marker(&mut payload, start.get(), 0, u32::from(first), false)?;
+            append_spatial_relation_marker(&mut payload, end.get(), 0, u32::from(second), false)?;
+            endpoint_points.push((*start, entity.endpoint_refs.first().map(String::as_str)));
+            endpoint_points.push((*end, entity.endpoint_refs.get(1).map(String::as_str)));
+        }
+        for entity in entities.iter().filter(|_| !constraints.is_empty()) {
+            if let SpatialSketchGeometryDefinition::Point { position } =
+                entity.geometry.definition()
+            {
+                if !points.contains(&entity.id()) {
+                    if let Some(index) = endpoint_points.iter().position(|(endpoint, reference)| {
+                        endpoint == position
+                            && reference.is_none_or(|id| id == entity.id().as_str())
+                    }) {
+                        endpoint_points.remove(index);
+                    } else {
+                        append_spatial_point_marker(&mut payload, position.get(), object_id)?;
+                    }
+                }
+            }
+        }
+        let scalar_ids = spatial_scalar_ids
+            .entry(configuration.clone())
+            .or_insert_with(|| {
+                super::write_feature_parameters::ScalarIdentities::new(native, Some(&configuration))
+            });
+        for constraint in constraints {
+            let cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput::PointLineDistance {
+                point,
+                line,
+                parameter,
+            } = constraint.definition.kind()
+            else {
+                return Err(cadmpeg_core::CodecError::UnsupportedContent(format!(
+                    "spatial sketch constraint {} has no native serializer",
+                    constraint.id
+                ))
+                .into());
+            };
+            let parameter = parameter
+                .parameter()
+                .and_then(|id| {
+                    ir.model
+                        .parameters
+                        .iter()
+                        .find(|candidate| &candidate.id == id)
+                })
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::UnsupportedContent(
+                        "spatial point-line relation requires a bound parameter".into(),
+                    )
+                })?;
+            let Some(cadmpeg_ir::features::ParameterValue::Length(value)) =
+                parameter.value.as_ref()
+            else {
+                return Err(cadmpeg_core::CodecError::UnsupportedContent(
+                    "spatial point-line relation requires an evaluated length".into(),
+                )
+                .into());
+            };
+            let point_index = points.iter().position(|id| *id == point).ok_or_else(|| {
+                cadmpeg_core::CodecError::malformed("spatial relation point was not allocated")
+            })?;
+            let line_index = lines.iter().position(|id| *id == line).ok_or_else(|| {
+                cadmpeg_core::CodecError::malformed("spatial relation line was not allocated")
+            })?;
+            let construction = entities
+                .iter()
+                .any(|entity| entity.id() == point && entity.construction);
+            let point_kind = if construction {
+                crate::records::FeatureInputOperandKind::Native(
+                    crate::records::operand_tag::NativeOperandTag::TAG_837B,
+                )
+            } else {
+                crate::records::FeatureInputOperandKind::D6
+            };
+            let line_kind = if matches!(point_kind, crate::records::FeatureInputOperandKind::D6) {
+                crate::records::FeatureInputOperandKind::E1
+            } else {
+                crate::records::FeatureInputOperandKind::Native(
+                    crate::records::operand_tag::NativeOperandTag::TAG_8386,
+                )
+            };
+            let point_index = if construction {
+                point_index
+            } else {
+                points[..point_index]
+                    .iter()
+                    .filter(|prior| {
+                        entities
+                            .iter()
+                            .any(|entity| entity.id() == **prior && !entity.construction)
+                    })
+                    .count()
+            };
+            let point_index = marker_id(point_index)? - 1;
+            let line_index = marker_id(points.len() + lines.len() * 2 + line_index)?;
+            super::write_generate::append_generated_scalar(
+                &mut payload,
+                "sgPntLineDist",
+                &parameter.name,
+                value.get() * 0.001,
+                scalar_ids.take()?,
+                &[(point_kind, point_index), (line_kind, line_index)],
+            )?;
         }
         objects.push((configuration, owner.ordinal, payload));
     }
@@ -1929,6 +2127,49 @@ fn append_spatial_point_marker(
     Ok(())
 }
 
+fn append_spatial_relation_marker(
+    payload: &mut Vec<u8>,
+    point: Point3,
+    kind: u32,
+    object_index: u32,
+    construction: bool,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let start = payload.len() + 4;
+    append_spatial_point_marker(payload, point, object_index)?;
+    payload[start + 17..start + 21].copy_from_slice(&kind.to_le_bytes());
+    if construction {
+        payload[start + 23..start + 27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
+    }
+    Ok(())
+}
+
+fn append_spatial_line_handle(payload: &mut Vec<u8>, first: u16, second: u16, local_id: u16) {
+    use crate::layout::extended_geometry_locus_96_construction_line as layout;
+    payload.extend_from_slice(&u32::from(local_id).to_le_bytes());
+    let start = payload.len();
+    payload.resize(start + layout::IDENTITY_SECOND, 0);
+    payload[start..start + 5].copy_from_slice(super::LEGACY_EXTENDED_SKETCH_MARKER);
+    payload[start + 5..start + 13]
+        .copy_from_slice(&[0xff, 0xff, 0xff, 0xff, 0x04, 0x00, 0xff, 0xff]);
+    payload[start + 13..start + 17].copy_from_slice(&[0x00, 0x00, 0x80, 0xbf]);
+    payload[start + 23..start + 27].copy_from_slice(&[0x05, 0x00, 0x01, 0x00]);
+    payload[start + 27..start + 29].copy_from_slice(&2u16.to_le_bytes());
+    payload[start + 31..start + 39]
+        .copy_from_slice(&[0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x0c, 0x00]);
+    payload[start + layout::STATE_VALUE..start + layout::ENDPOINT_FIRST]
+        .copy_from_slice(&1.0f64.to_le_bytes());
+    payload[start + layout::ENDPOINT_FIRST..start + layout::ENDPOINT_FIRST + 2]
+        .copy_from_slice(&first.to_le_bytes());
+    payload[start + layout::ENDPOINT_FIRST + 2..start + layout::ZERO_ENDPOINT_PREFIX]
+        .copy_from_slice(&second.to_le_bytes());
+    payload[start + layout::SIGNED_SELECTOR..start + layout::ZERO_SELECTOR_TRAILER]
+        .copy_from_slice(&(-1.0f64).to_le_bytes());
+    payload[start + layout::TAIL_TAG..start + layout::ZERO_TAIL_PREFIX]
+        .copy_from_slice(&[0x00, 0x00, 0x04, 0x00]);
+    payload[start + layout::IDENTITY_FIRST..start + layout::IDENTITY_SECOND]
+        .copy_from_slice(&u32::from(local_id).to_le_bytes());
+}
+
 fn spatial_point_native_coordinates(point: Point3) -> Result<[f64; 3], cadmpeg_core::CodecError> {
     let native = [point.x * 0.001, point.y * 0.001, point.z * 0.001];
     if native
@@ -2116,10 +2357,15 @@ mod source_less_lane_tests {
             coordinate_marker_local_links(&payload, 0),
             Some((vec![2, 3], 0x8386))
         );
-        assert!(append_coordinate_marker_link(&mut payload, 1, 4)
-            .expect_err("expected error")
-            .to_string()
-            .contains("exceeds two reverse relations"));
+        let error: cadmpeg_ir::codec::write::EncodeError =
+            append_coordinate_marker_link(&mut payload, 1, 4)
+                .expect_err("expected error")
+                .into();
+        assert!(
+            matches!(error, cadmpeg_ir::codec::write::EncodeError::TargetCapacity {
+            field, limit: 2, value: 3
+        } if field.field == "sketch.coordinate_marker.local_links")
+        );
     }
 
     #[test]

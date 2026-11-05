@@ -99,8 +99,9 @@ fn enclosure_metadata_generation_authors_the_enclosure_record() {
     });
     // #237 byte authoring: synthesis authors the declaration, token, 25-byte
     // prologue and ten scaled f64 values (spec §8).
-    let (objects, units) = crate::writer::metadata_payloads(&ir, None, 0.001).unwrap();
+    let (objects, units, residuals) = crate::writer::metadata_payloads(&ir, None, 0.001).unwrap();
     assert!(units.is_none());
+    assert!(residuals.is_empty());
     let token = b"moTransRefPlaneData_c";
     let at = objects
         .windows(token.len())
@@ -119,4 +120,50 @@ fn enclosure_metadata_generation_authors_the_enclosure_record() {
         );
     }
     assert_eq!(values, [0., 0., 0., 0.1, 0.1, 0.1, -0.1, -0.1, -0.1, 0.2]);
+}
+
+#[test]
+fn synthesized_configuration_manager_reports_unavailable_residual() {
+    use cadmpeg_ir::attributes::AttributeValue;
+    use cadmpeg_ir::codec::write::Encoder;
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput};
+
+    let mut ir = crate::test_support::ir::source_less_cube();
+    let id = AttributeId::mint("sldprt:test:attribute#configuration-manager").unwrap();
+    ir.model.attributes.push(SourceAttribute {
+        id: id.clone(),
+        native_ref: None,
+        target: AttributeTarget::Document,
+        name: "configuration_manager".into(),
+        values: vec![
+            Some(AttributeValue::Integer(17)),
+            Some(AttributeValue::Integer(3)),
+            Some(AttributeValue::Integer(12345)),
+        ],
+    });
+    let (objects, _, residuals) = crate::writer::metadata_payloads(&ir, None, 0.001).unwrap();
+    let token = b"moConfigurationMgr_c";
+    let at = objects
+        .windows(token.len())
+        .position(|bytes| bytes == token)
+        .unwrap()
+        + token.len();
+    let body = &objects[at..at + 125];
+    assert_eq!(&body[66..70], &17u32.to_le_bytes());
+    assert_eq!(body[107], 3);
+    assert_eq!(&body[117..125], &12345u64.to_le_bytes());
+    assert_eq!(residuals.len(), 1);
+    assert_eq!(
+        residuals[0].code.local_code(),
+        "record.residual-unavailable"
+    );
+    assert!(residuals[0].message.contains(id.as_str()));
+
+    let plan = crate::SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.code.local_code() == "record.residual-unavailable"
+            && loss.message.contains(id.as_str())
+    }));
 }

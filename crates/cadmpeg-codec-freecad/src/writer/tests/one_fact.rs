@@ -14,6 +14,116 @@ const HISTORY: &[u8] = include_bytes!(concat!(
 ));
 
 #[test]
+fn dropped_presentation_layers_are_named_individually() {
+    use cadmpeg_ir::ids::LayerId;
+    use cadmpeg_ir::presentation::PresentationLayer;
+
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    for name in ["first", "second"] {
+        ir.model.presentation_layers.push(PresentationLayer {
+            id: LayerId::mint(format!("cadir:presentation:layer#{name}")).unwrap(),
+            native_ref: None,
+            name: name.into(),
+            parent: None,
+            description: None,
+            visible: None,
+            items: Vec::new(),
+        });
+    }
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    for layer in &ir.model.presentation_layers {
+        assert!(plan.report().losses.iter().any(|loss| {
+            loss.code
+                == crate::loss::FreecadLossCode::ExportArenaNotTransferred
+                    .note("")
+                    .code
+                && loss.message.contains(layer.id.as_str())
+        }));
+    }
+}
+
+#[test]
+fn source_less_formula_without_marker_keeps_its_parameter_binding() {
+    use cadmpeg_ir::features::{DesignParameter, Expression, ExpressionToken, ParameterId};
+    use cadmpeg_ir::scalar::FiniteReal;
+
+    let width = ParameterId::mint("cadir:model:parameter#width").unwrap();
+    let parameter = |id, ordinal, name: &str, expression, value| DesignParameter {
+        product_definition: None,
+        id,
+        owner: None,
+        ordinal,
+        name: name.into(),
+        expression,
+        display: None,
+        value: Some(ParameterValue::Real(FiniteReal::new(value).unwrap())),
+        driving: true,
+        properties: Default::default(),
+        pmi: None,
+        native_ref: None,
+    };
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model.parameters.push(parameter(
+        width.clone(),
+        0,
+        "Width",
+        Expression::text("2"),
+        2.0,
+    ));
+    ir.model.parameters.push(parameter(
+        ParameterId::mint("cadir:model:parameter#height").unwrap(),
+        1,
+        "Height",
+        Expression {
+            tokens: vec![
+                ExpressionToken::Parameter(width),
+                ExpressionToken::Text(" * 2".into()),
+            ],
+        },
+        4.0,
+    ));
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.code
+            == crate::loss::FreecadLossCode::ParameterExpressionNormalized
+                .note("")
+                .code
+            && loss.message.contains("cadir:model:parameter#height")
+    }));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let width = output
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "Width")
+        .unwrap();
+    let height = output
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "Height")
+        .unwrap();
+    assert_eq!(
+        height
+            .expression
+            .dependencies()
+            .cloned()
+            .collect::<Vec<_>>(),
+        [width.id.clone()]
+    );
+}
+
+#[test]
 fn ownerless_cell_keeps_its_sheet_and_expression_references() {
     let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Spreadsheet::Sheet" name="Sheet" id="1"/></Objects><ObjectData Count="1"><Object name="Sheet"><Properties Count="1"><Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="2"><Cell address="A1" content="5" alias="width"/><Cell address="A2" content="=width * 3" alias="height"/></Cells></Property></Properties></Object></ObjectData></Document>"#;
     let source = crate::test_support::test_archive::archive(xml);
@@ -1150,6 +1260,51 @@ fn edited_dimension_view_scale_and_rotation_reach_output() {
             .map(cadmpeg_ir::scalar::FiniteReal::get),
         Some(15.0)
     );
+}
+
+#[test]
+fn empty_dimension_reference_list_survives_synthesis() {
+    let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="TechDraw::DrawViewDimension" name="Dimension"/></Objects><ObjectData Count="1"><Object name="Dimension"><Properties Count="2"><Property name="Type" type="App::PropertyEnumeration"><Integer value="6"/></Property><Property name="References3D" type="App::PropertyLinkSubList" status="4"><LinkSubList count="0"/></Property></Properties></Object></ObjectData></Document>"#;
+    let decoded = FcstdCodec
+        .decode(
+            &mut Cursor::new(crate::test_support::test_archive::archive(xml)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let before = &decoded.ir().model.semantic_annotations[0];
+    assert_eq!(
+        before.parameters.get("References3D").map(String::as_str),
+        Some("[]")
+    );
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let annotation = &output.ir().model.semantic_annotations[0];
+    assert_eq!(
+        annotation
+            .parameters
+            .get("References3D")
+            .map(String::as_str),
+        Some("[]")
+    );
+    let properties = output
+        .ir()
+        .native
+        .namespace("fcstd")
+        .unwrap()
+        .arena_as::<PropertyRecord>("properties")
+        .unwrap();
+    let property = properties
+        .iter()
+        .find(|property| property.name == "References3D")
+        .unwrap();
+    assert_eq!(property.type_name, "App::PropertyLinkSubList");
+    assert_eq!(property.status, Some(4));
 }
 
 #[test]

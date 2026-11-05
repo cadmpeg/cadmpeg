@@ -199,6 +199,22 @@ fn nested_single_line_composites_use_the_owning_edge_endpoints() {
     assert_eq!(span.range.get(), [0.0, 3.0]);
     assert_eq!(span.start, Point3::new(2.0, 0.0, 0.0));
     assert_eq!(span.end, Point3::new(5.0, 0.0, 0.0));
+    let output =
+        super::super::synthesize(&ir, crate::IgesVersion::V5_3).expect("curve synthesizes");
+    assert!(output
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(id("inner").as_str())));
+    assert!(output
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(id("outer").as_str())
+            && loss.message.contains("nested composite")));
+    assert!(output
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("test:model:edge#edge")
+            && loss.message.contains("flattened composite")));
 }
 
 #[test]

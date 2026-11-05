@@ -262,17 +262,28 @@ mod resolution_sealed {
 pub trait TargetResolution: resolution_sealed::Sealed {
     /// The native target identity, or `None` for the neutral document.
     fn export_target(&self) -> Option<&DialectId>;
+
+    /// The target actually authored when source preservation cannot proceed.
+    fn synthesis_target(&self) -> Result<Option<&DialectId>, EncodeError>;
 }
 
 impl TargetResolution for () {
     fn export_target(&self) -> Option<&DialectId> {
         None
     }
+
+    fn synthesis_target(&self) -> Result<Option<&DialectId>, EncodeError> {
+        Ok(None)
+    }
 }
 
 impl TargetResolution for ResolvedWrite<'_> {
     fn export_target(&self) -> Option<&DialectId> {
         Some(self.target_id())
+    }
+
+    fn synthesis_target(&self) -> Result<Option<&DialectId>, EncodeError> {
+        Ok(Some(self.target_id()))
     }
 }
 

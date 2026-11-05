@@ -4,7 +4,7 @@
 use super::{catalog_write_ir, resolve_write_request, TargetRequest, CATALOG_WRITE_CATALOG};
 use crate::codec::write::EncodeError;
 use crate::codec::write::{
-    target::{Catalog, ResolvedTarget, ResolvedWrite},
+    target::{Catalog, ResolvedTarget, ResolvedWrite, TargetResolution},
     ArenaCoverage, EncodeInput, Encoder, EncoderBackend, ExportBody, PatchConsumption, WritePath,
 };
 use crate::codec::FormatId;
@@ -51,6 +51,28 @@ fn off_catalog_inherit_selects_the_default_and_names_the_displacement() {
     );
     assert_eq!(actual.displacement_message().as_deref(), Some("source dialect test:future was displaced by target dialect test:new; the source dialect identity is not preserved"));
     assert_eq!(actual.for_synthesis().unwrap().index(), 1);
+}
+
+#[test]
+fn eligible_off_catalog_source_selects_the_catalog_default() {
+    let ir = catalog_write_ir(Some(("test", Some("test:future"))));
+    let target = resolve_write_request(&ir, TargetRequest::Inherit, CATALOG_WRITE_CATALOG).unwrap();
+    assert_eq!(target.target_id().as_str(), "test:new");
+    let displacement = target.displacement_message().unwrap();
+    assert!(displacement.contains("test:future"));
+    assert!(displacement.contains("test:new"));
+    assert!(!target.source_preservation_eligible());
+    assert!(target.entry().is_some());
+    assert_eq!(
+        target.synthesis_target().unwrap().unwrap().as_str(),
+        "test:new"
+    );
+    let synthesis = target.for_synthesis().unwrap();
+    assert_eq!(synthesis.resolution().target_id().as_str(), "test:new");
+    assert_eq!(
+        synthesis.resolution().displaced_source().unwrap().as_str(),
+        "test:future"
+    );
 }
 
 #[test]

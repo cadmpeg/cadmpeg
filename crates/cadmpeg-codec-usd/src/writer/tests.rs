@@ -14,6 +14,25 @@ fn has_loss(report: &cadmpeg_ir::report::export::ExportReport, code: UsdLossCode
 }
 
 #[test]
+fn inherited_unknown_dialect_writes_default_and_reports_displacement() {
+    let source = decode("#usda 9.0\ndef Xform \"A\"\n{\n}\n");
+    let (text, report) = crate::test_support::try_encode(
+        source.ir(),
+        cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
+    )
+    .expect("the catalog default writes");
+    assert!(text.starts_with("#usda 1.0"));
+    let losses: Vec<_> = report
+        .losses
+        .iter()
+        .filter(|loss| loss.code == UsdLossCode::SourceDialectDisplaced.kind())
+        .collect();
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].message.contains("usd:unknown"));
+    assert!(losses[0].message.contains("usd:usda-1.0"));
+}
+
+#[test]
 fn the_layer_states_metres_and_one_root() {
     let source = decode(&format!(
         "#usda 1.0\n(\n    upAxis = \"Y\"\n)\ndef Xform \"Robot\"\n{{\n    def Mesh \"Arm\"\n    {{\n        {MESH}\n    }}\n}}\n"

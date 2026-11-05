@@ -5,11 +5,11 @@ use super::shared_frames::exact_fixed_scalar;
 use super::shared_frames::marked_record_reference;
 use super::shared_frames::FixedScalarFrame;
 use crate::bytes::lp_ascii_filtered_view;
-use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::design_feature_family;
 use crate::design::DesignFeatureFamily;
 use crate::ids::native_stream;
 use crate::layout::current_extrude_operation_fields as extrude_fields;
+use crate::metastream::PrimaryFrames;
 use crate::records::feature::extrude::DesignExtrudeExtent;
 use crate::records::feature::extrude::DesignExtrudePrologue;
 use crate::records::feature::fixed_parameters::DesignFixedChamferDistance;
@@ -32,7 +32,7 @@ use cadmpeg_ir::scalar::{NonZeroReal, PositiveReal};
 /// do not follow that order names each lane through its prologue.
 pub(super) fn exact_fixed_extrude_parameters(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
     parameters: &[DesignParameter],
     parameter_owners: &[crate::records::parameters::DesignParameterOwner],
@@ -56,7 +56,7 @@ pub(super) fn exact_fixed_extrude_parameters(
 
 fn exact_ordered_fixed_extrude_lanes(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
     parameters: &[DesignParameter],
     parameter_owners: &[crate::records::parameters::DesignParameterOwner],
@@ -296,7 +296,7 @@ fn reference_aware_lane_owners(
 /// another source kind, leaves the lanes unassigned.
 fn exact_named_fixed_extrude_lanes(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
     owners: &ReferenceAwareLaneOwners,
     (parameters, parameter_owners): (&[DesignParameter], &[DesignParameterOwner]),
@@ -410,7 +410,7 @@ fn exact_named_fixed_extrude_lanes(
 
 fn exact_embedded_extrude_distance(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     record_index: u32,
     scope_record_index: u32,
 ) -> Option<FixedScalarFrame<PositiveReal>> {
@@ -454,7 +454,7 @@ fn exact_embedded_extrude_distance(
 
 pub(super) fn exact_fixed_fillet_parameters(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
     parameters: &[DesignParameter],
     parameter_owners: &[DesignParameterOwner],
@@ -557,7 +557,7 @@ pub(super) fn exact_fixed_fillet_parameters(
 
 pub(super) fn exact_fixed_chamfer_parameters(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
     parameter_owners: &[DesignParameterOwner],
 ) -> Option<DesignFixedChamferParameters> {

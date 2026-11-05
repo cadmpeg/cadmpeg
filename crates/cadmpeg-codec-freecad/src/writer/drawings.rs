@@ -93,7 +93,38 @@ pub(super) fn dimension_references(
     use cadmpeg_ir::references::ReferenceTarget;
     for role in ["References2D", "References3D", "Source3d"] {
         let Some(selections) = annotation.references.get(role) else {
-            object.properties.shift_remove(role);
+            if annotation
+                .parameters
+                .get(role)
+                .is_some_and(|value| value == "[]")
+            {
+                let empty = object.properties.get(role).and_then(|xml| {
+                    let document = roxmltree::Document::parse(xml).ok()?;
+                    if document.root_element().attribute("type") != Some("App::PropertyLinkSubList")
+                    {
+                        return Some(false);
+                    }
+                    let list = document
+                        .descendants()
+                        .find(|node| node.has_tag_name("LinkSubList"))?;
+                    Some(
+                        list.attribute("count") == Some("0")
+                            && !list.children().any(|node| node.has_tag_name("Link")),
+                    )
+                });
+                if empty != Some(true) {
+                    object.set(
+                        role,
+                        xml::property(
+                            role,
+                            "App::PropertyLinkSubList",
+                            "<LinkSubList count=\"0\"></LinkSubList>",
+                        ),
+                    );
+                }
+            } else {
+                object.properties.shift_remove(role);
+            }
             continue;
         };
         let mut links = Vec::new();
@@ -730,6 +761,37 @@ mod tests {
             .unwrap();
         assert_eq!(link.attribute("obj"), Some("View"));
         assert_eq!(link.attribute("sub"), Some("Edge2"));
+        assert!(losses.is_empty());
+    }
+
+    #[test]
+    fn empty_dimension_reference_parameter_authors_an_empty_list() {
+        let mut annotation = SemanticAnnotation::new(
+            SemanticAnnotationId::mint("cadir:model:annotation#dimension").unwrap(),
+            "dimension".into(),
+            SemanticAnnotationKind::Dimension,
+            "TechDraw::DrawViewDimension".into(),
+            0,
+            "native".into(),
+        );
+        annotation.parameters.insert(
+            cadmpeg_core::text::NonBlankString::new("References3D").unwrap(),
+            "[]".into(),
+        );
+        let mut object = Object::new(
+            "Dimension".into(),
+            "TechDraw::DrawViewDimension",
+            "Dimension",
+        );
+        let mut losses = Vec::new();
+        dimension_references(&annotation, &mut object, &HashMap::new(), &mut losses);
+        let document = roxmltree::Document::parse(&object.properties["References3D"]).unwrap();
+        let list = document
+            .descendants()
+            .find(|node| node.has_tag_name("LinkSubList"))
+            .unwrap();
+        assert_eq!(list.attribute("count"), Some("0"));
+        assert!(!list.children().any(|node| node.has_tag_name("Link")));
         assert!(losses.is_empty());
     }
 }

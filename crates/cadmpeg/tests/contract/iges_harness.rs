@@ -3,6 +3,7 @@
 
 use std::io::Cursor;
 
+use cadmpeg_ir::codec::write::EncodeInput;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_registry::Format;
 use cadmpeg_test_support::cross_closure::cross_request;
@@ -24,9 +25,6 @@ fn check_fixtures(
         .expect("IGES codec");
     let mut paths = fixtures("iges");
     paths.sort();
-    if cfg!(debug_assertions) {
-        paths.truncate(1);
-    }
     let mut findings = Vec::new();
     for path in paths {
         let bytes = std::fs::read(&path).expect("fixture bytes");
@@ -34,8 +32,15 @@ fn check_fixtures(
             depth: encoder.request(),
             ..DecodeOptions::default()
         };
-        let Ok(decoded) = source.decode(&mut Cursor::new(bytes), &options) else {
-            continue;
+        let decoded = match source.decode(&mut Cursor::new(bytes), &options) {
+            Ok(decoded) => decoded,
+            Err(error) => {
+                findings.push(format!(
+                    "{}: fixture decode failed: {error}",
+                    path.display()
+                ));
+                continue;
+            }
         };
         findings.extend(
             check(decoded.ir(), encoder.as_ref())
@@ -62,7 +67,32 @@ fn iges_injected_errors_name_the_record() {
 #[test]
 fn iges_max_entities_refuses_below_count() {
     check_fixtures(|ir, encoder| {
-        let count = ir.census().values().sum::<usize>() as u64;
-        max_entities_findings(ir, encoder, cross_request(encoder), count)
+        let request = cross_request(encoder);
+        let mut bytes = Vec::new();
+        let Ok(plan) = encoder.plan(EncodeInput::new(ir, None), request) else {
+            return vec!["the control write without a ceiling refuses".into()];
+        };
+        if let Err(error) = plan.write_to(&mut bytes) {
+            return vec![format!("the control write failed: {error}")];
+        }
+        let cards = bytes
+            .split(|byte| *byte == b'\n')
+            .filter(|card| card.get(72) == Some(&b'D'))
+            .count();
+        if cards % 2 != 0 {
+            return vec!["the control output has an incomplete Directory entry".into()];
+        }
+        let count = (cards / 2) as u64;
+        if count == 0 {
+            let mut input = EncodeInput::new(ir, None);
+            input.limits.max_entities = 0;
+            return match encoder.plan(input, request) {
+                Ok(_) => Vec::new(),
+                Err(error) => vec![format!(
+                    "empty output refused a zero entity ceiling: {error}"
+                )],
+            };
+        }
+        max_entities_findings(ir, encoder, request, count)
     });
 }

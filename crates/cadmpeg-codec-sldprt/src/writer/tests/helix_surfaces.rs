@@ -1392,7 +1392,8 @@ fn filled_surface_round_trip(
 }
 
 #[test]
-fn semantic_writer_refuses_filled_surface_weight_loss() {
+fn semantic_writer_preserves_filled_surface_when_weight_is_unavailable() {
+    use cadmpeg_ir::codec::write::Encoder;
     use cadmpeg_ir::features::{
         FeatureDefinition, FeatureOperation, FilledSurfaceBoundaryCondition,
         FilledSurfaceContinuityState, NonEmptyMembers,
@@ -1427,17 +1428,31 @@ fn semantic_writer_refuses_filled_surface_weight_loss() {
             ));
         });
     }
-    let mut encoded = Vec::new();
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut encoded,
-    )
-    .unwrap_err();
-    assert!(
-        matches!(&error, cadmpeg_ir::codec::write::EncodeError::Io(inner) if matches!(inner.get_ref().and_then(|source| source.downcast_ref::<cadmpeg_core::CodecError>()), Some(cadmpeg_core::CodecError::NotImplemented(message)) if message.contains("weighted filled-surface condition"))),
-        "{error}"
-    );
+    let feature_id = decoded.ir().model.features[0].id.to_string();
+    for fidelity in [Some(decoded.source_fidelity()), None] {
+        let plan = SldprtCodec
+            .plan(
+                cadmpeg_ir::codec::write::EncodeInput::new(decoded.ir(), fidelity),
+                cadmpeg_ir::codec::write::target::TargetRequest::Inherit,
+            )
+            .unwrap();
+        assert!(plan
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains(&feature_id)
+                && loss.message.contains("continuity weight omitted")));
+        let mut encoded = Vec::new();
+        plan.write_to(&mut encoded).unwrap();
+        let output = SldprtCodec
+            .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+            .unwrap();
+        assert!(output.ir().model.features.iter().any(|feature| matches!(
+            feature.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::FilledSurface { continuity, .. })
+                if continuity.uniform_value() == Some(cadmpeg_ir::features::SurfaceContinuity::Tangent)
+        )));
+    }
 }
 
 #[test]

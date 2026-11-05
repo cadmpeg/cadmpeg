@@ -19,6 +19,20 @@ use cadmpeg_ir::sketches::{
 };
 use std::collections::HashSet;
 
+fn frame(
+    entity_id: u64,
+    start: usize,
+    paired: usize,
+    end: usize,
+) -> crate::metastream::PrimaryRecordFrame {
+    crate::metastream::PrimaryRecordFrame {
+        entity_id,
+        start,
+        member_end: paired,
+        end,
+    }
+}
+
 #[test]
 fn dimension_locus_pair_resolves_two_typed_geometry_records() {
     let mut bytes = vec![0; 80];
@@ -39,8 +53,13 @@ fn dimension_locus_pair_resolves_two_typed_geometry_records() {
     bytes.extend_from_slice(b"273");
     bytes.extend_from_slice(&233u32.to_le_bytes());
 
-    let mut pair = parse_dimension_locus_pair(&bytes, 0, 228, &HashSet::from([192, 194]))
-        .expect("paired dimension locus frame");
+    let mut pair = parse_dimension_locus_pair(
+        &bytes,
+        &frame(233, 0, 80, bytes.len()),
+        228,
+        &HashSet::from([192, 194]),
+    )
+    .expect("paired dimension locus frame");
     pair.id = "f3d:Design/BulkStream.dat:design-dimension-locus-pair#0".into();
     assert_eq!(pair.companion_record_index, 228);
     assert_eq!(pair.record_index, 233);
@@ -104,15 +123,30 @@ fn dimension_locus_pair_resolves_two_typed_geometry_records() {
     nested.extend_from_slice(&229u32.to_le_bytes());
     nested.extend_from_slice(&bytes);
     let nested_end = nested.len();
-    let nested = find_dimension_locus_pair(&nested, 0, nested_end, 228, &HashSet::from([192, 194]))
-        .expect("nested paired dimension locus frame");
+    let nested = find_dimension_locus_pair(
+        &nested,
+        &[frame(233, 11, 91, nested_end)],
+        0,
+        nested_end,
+        228,
+        &HashSet::from([192, 194]),
+    )
+    .expect("nested paired dimension locus frame");
     assert_eq!(nested.byte_offset(), Some(11));
     assert_eq!(nested.paired_byte_offset(), Some(91));
 
     let mut competing = bytes.clone();
     competing.extend_from_slice(&bytes);
+    let second = bytes.len();
+    competing[second + 7..second + 11].copy_from_slice(&234u32.to_le_bytes());
+    competing[second + 87..second + 91].copy_from_slice(&234u32.to_le_bytes());
+    let frames = [
+        frame(233, 0, 80, second),
+        frame(234, second, second + 80, competing.len()),
+    ];
     assert!(find_dimension_locus_pair(
         &competing,
+        &frames,
         0,
         competing.len(),
         228,
@@ -138,8 +172,13 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
     bytes.extend_from_slice(b"273");
     bytes.extend_from_slice(&1394u32.to_le_bytes());
 
-    let pair = parse_dimension_null_locus_pair(&bytes, 0, 1290, &HashSet::from([1109]))
-        .expect("null-locus dimension frame");
+    let pair = parse_dimension_null_locus_pair(
+        &bytes,
+        &frame(1394, 0, 74, bytes.len()),
+        1290,
+        &HashSet::from([1109]),
+    )
+    .expect("null-locus dimension frame");
     assert_eq!(pair.companion_record_index, 1290);
     assert_eq!(pair.governing_companion_record_index, 1290);
     assert_eq!(pair.record_index, 1394);
@@ -149,7 +188,13 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
     assert_eq!(pair.loci()[1].role, 7);
     assert_eq!(pair.paired_class_tag.as_str(), "273");
 
-    assert!(parse_dimension_null_locus_pair(&bytes, 0, 1290, &HashSet::from([1110]),).is_none());
+    assert!(parse_dimension_null_locus_pair(
+        &bytes,
+        &frame(1394, 0, 74, bytes.len()),
+        1290,
+        &HashSet::from([1110]),
+    )
+    .is_none());
 
     let mut nested = Vec::new();
     nested.extend_from_slice(&3u32.to_le_bytes());
@@ -157,9 +202,15 @@ fn dimension_null_locus_pair_preserves_null_and_typed_roles() {
     nested.extend_from_slice(&229u32.to_le_bytes());
     nested.extend_from_slice(&bytes);
     let nested_end = nested.len();
-    let nested =
-        find_dimension_null_locus_pair(&nested, 0, nested_end, 1290, &HashSet::from([1109]))
-            .expect("null-locus frame following another indexed frame");
+    let nested = find_dimension_null_locus_pair(
+        &nested,
+        &[frame(1394, 11, 85, nested_end)],
+        0,
+        nested_end,
+        1290,
+        &HashSet::from([1109]),
+    )
+    .expect("null-locus frame following another indexed frame");
     assert_eq!(nested.byte_offset(), Some(11));
     assert_eq!(nested.paired_byte_offset(), Some(85));
 
@@ -350,8 +401,14 @@ fn dimension_locus_group_preserves_roles_owner_state_and_return_order() {
     bytes.extend_from_slice(&3u32.to_le_bytes());
     bytes.extend_from_slice(b"315");
     bytes.extend_from_slice(&251u32.to_le_bytes());
+    let frames = [
+        frame(249, 0, 101, 101),
+        frame(250, 101, 202, 202),
+        frame(251, 202, bytes.len(), bytes.len()),
+    ];
     let groups = find_dimension_locus_groups(
         &bytes,
+        &frames,
         0,
         bytes.len(),
         240,

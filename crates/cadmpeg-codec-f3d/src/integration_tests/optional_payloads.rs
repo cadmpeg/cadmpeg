@@ -265,3 +265,40 @@ fn optional_asset_part_limit_preserves_the_model() {
     assert!(loss.message.contains("thumbnail.png"));
     assert!(loss.message.contains("zip.entry"));
 }
+
+#[test]
+fn unreadable_protein_entry_has_one_loss_for_the_entry() {
+    let name = "FusionAssetName[Active]/ProteinAssets.BlobParts/ProteinAsset.0.protein";
+    let mut bytes = crate::test_support::zip_test::f3d_with_smbh_and_protein_guids(
+        &synthetic_geometry_smbh(),
+        &["11111111-2222-3333-4444-555555555555"],
+    );
+    let baseline = super::decode(bytes.clone());
+    assert_eq!(baseline.ir().model.appearances.len(), 1);
+    assert!(baseline.ir().model.appearances[0].base_color.is_some());
+    damage_entry(&mut bytes, name, Defect::Crc);
+    let damaged = super::decode(bytes);
+    assert_eq!(damaged.ir().model.appearances.len(), 1);
+    assert!(damaged.ir().model.appearances[0].base_color.is_none());
+    assert_eq!(
+        damaged.ir().model.appearances[0].visual_guid,
+        baseline.ir().model.appearances[0].visual_guid
+    );
+    assert_eq!(damaged.ir().native_unknowns("f3d").unwrap().len(), 1);
+    let new_losses: Vec<_> = damaged
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| !baseline.report().losses.iter().any(|old| old.code == loss.code))
+        .collect();
+    let [loss] = new_losses.as_slice() else {
+        panic!("expected one new loss for the unreadable entry");
+    };
+    assert_eq!(
+        loss.code,
+        cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable
+            .note("")
+            .code
+    );
+    assert!(loss.message.contains(name));
+}

@@ -2,6 +2,7 @@
 //! Parse Design sketch placements, headers, relations, and geometry.
 
 use crate::bytes::lp_utf16_bounded;
+use crate::metastream::PrimaryFrames;
 use cadmpeg_core::decode::u64_from_index;
 
 use crate::records::sketch_placement::{
@@ -49,90 +50,9 @@ use super::meta::{
 
 const EPS_SKETCH_DECODE_LINE_COMPONENTS_E12: f64 = 1.0e-12;
 
-/// Byte offsets of every indexed-record header in one `BulkStream`, grouped by
-/// the record index carried at header offset seven.
-pub(in crate::design) struct IndexedRecordOffsets {
-    by_record_index: HashMap<u32, Vec<usize>>,
-}
-
-impl IndexedRecordOffsets {
-    /// Index every exact indexed-record header in `bytes` in one forward pass.
-    pub(in crate::design) fn build(bytes: &[u8]) -> Self {
-        let mut by_record_index = HashMap::<u32, Vec<usize>>::new();
-        for header in indexed_record_offsets(bytes) {
-            by_record_index
-                .entry(header.record_index)
-                .or_default()
-                .push(header.offset);
-        }
-        Self { by_record_index }
-    }
-
-    /// Ascending header offsets carrying `record_index`.
-    pub(in crate::design) fn offsets(&self, record_index: u32) -> &[usize] {
-        self.by_record_index
-            .get(&record_index)
-            .map_or(&[], Vec::as_slice)
-    }
-
-    /// Record indexes and their ascending header offsets.
-    pub(in crate::design) fn records(&self) -> impl Iterator<Item = (u32, &[usize])> {
-        self.by_record_index
-            .iter()
-            .map(|(record_index, offsets)| (*record_index, offsets.as_slice()))
-    }
-
-    /// The first header at or after `position` that carries `record_index`.
-    pub(super) fn first_at_or_after(&self, position: usize, record_index: u32) -> Option<usize> {
-        let offsets = self.offsets(record_index);
-        offsets
-            .get(offsets.partition_point(|offset| *offset < position))
-            .copied()
-    }
-
-    /// Consecutive header offsets carrying `record_index`, each pair delimiting
-    /// one frame of that record.
-    pub(in crate::design) fn frames(
-        &self,
-        record_index: u32,
-    ) -> impl Iterator<Item = (usize, usize)> + '_ {
-        self.offsets(record_index)
-            .windows(2)
-            .map(|pair| (pair[0], pair[1]))
-    }
-}
-
 fn entity_meta_scope(bulk_scope: &str) -> Option<String> {
     let prefix = bulk_scope.strip_suffix("BulkStream.dat")?;
     Some(format!("{prefix}MetaStream.dat"))
-}
-
-/// Cache a stream index under its borrowed identity.
-pub(in crate::design) fn cached_borrowed_record_offsets<'a, 's>(
-    cache: &'a mut HashMap<&'s str, IndexedRecordOffsets>,
-    stream: &'s str,
-    bytes: &'a [u8],
-) -> &'a IndexedRecordOffsets {
-    match cache.entry(stream) {
-        std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
-        std::collections::hash_map::Entry::Vacant(entry) => {
-            entry.insert(IndexedRecordOffsets::build(bytes))
-        }
-    }
-}
-
-/// Cache a stream index under owned stream text.
-pub(in crate::design) fn cached_owned_record_offsets<'a>(
-    cache: &'a mut HashMap<String, IndexedRecordOffsets>,
-    stream: &str,
-    bytes: &[u8],
-) -> &'a IndexedRecordOffsets {
-    match cache.entry(stream.to_owned()) {
-        std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
-        std::collections::hash_map::Entry::Vacant(entry) => {
-            entry.insert(IndexedRecordOffsets::build(bytes))
-        }
-    }
 }
 
 /// Decode the unique local-to-model placement frame referenced by every
@@ -141,6 +61,8 @@ pub(in crate::design) fn cached_owned_record_offsets<'a>(
 /// stream interval even though its generic reference table does not repeat
 /// the entity suffix.
 pub(crate) fn decode_sketch_placements(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    output: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
     entities: &[DesignEntityHeader],
@@ -154,7 +76,14 @@ pub(crate) fn decode_sketch_placements(
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let scope = crate::ids::native_scope(&entry.name);
-        record_offsets.insert(scope, IndexedRecordOffsets::build(bytes));
+        let Some(meta) = metadata_for_bulk_stream(scan, &entry.name)? else {
+            continue;
+        };
+        let frames = design_primary_frames(bytes, &meta)?;
+        record_offsets.insert(
+            scope,
+            crate::design::decode::meta::primary_frame_extents(&frames),
+        );
     }
     let mut visibilities = HashMap::new();
     for entry in scan
@@ -162,7 +91,6 @@ pub(crate) fn decode_sketch_placements(
         .iter()
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
-        let bytes = scan.entry_bytes(&entry.name)?;
         let Some(metadata) = metadata_for_bulk_stream(scan, &entry.name)? else {
             continue;
         };
@@ -170,7 +98,12 @@ pub(crate) fn decode_sketch_placements(
         let Some((key, _)) = record_offsets.get_key_value(&scope) else {
             continue;
         };
-        for (entity_suffix, visibility) in decode_sketch_visibilities_in_stream(bytes, &metadata)? {
+        let source = scan
+            .entry_view(&entry.name)
+            .ok_or_else(|| CodecError::malformed("F3D sketch stream has no source view"))?;
+        for (entity_suffix, visibility) in
+            decode_sketch_visibilities_with_parts(ctx, output, source, &entry.name, &metadata)?
+        {
             if visibilities.contains_key(&(key.as_str(), entity_suffix)) {
                 return Err(crate::design::text::malformed_design(format_args!(
                     "F3D Design stream {} repeats sketch visibility for entity {entity_suffix}",
@@ -338,6 +271,7 @@ const SKETCH_CONTAINER_MEMBER_VERSION: u32 = 4;
 /// Decode the direct display flag in every current sketch container's typed
 /// Geometry member. Other sketch-container versions do not expose this member
 /// layout and therefore leave neutral visibility unknown.
+#[cfg(test)]
 fn decode_sketch_visibilities_in_stream(
     bytes: &[u8],
     metadata: &crate::metastream::MetaStream,
@@ -355,90 +289,110 @@ fn decode_sketch_visibilities_in_stream(
         if frame.design_type.version != CURRENT_SKETCH_CONTAINER_VERSION {
             continue;
         }
-        if frame.design_type.module != DESIGN_MODULE_SKETCH
-            || !frame
-                .design_type
-                .base_type_guid
-                .value()
-                .map(crate::records::mesh::DesignRelaxedGuidText::as_str)
-                .is_some_and(|base| base.eq_ignore_ascii_case(SKETCH_CONTAINER_MEMBER_TYPE_GUID))
-        {
-            return Err(crate::design::text::malformed_design(format_args!(
-                "F3D sketch container {} has incompatible registration metadata",
-                frame.entity_id
-            )));
-        }
-        let Some(NamedEntityHeader {
-            entity_id,
-            end: header_end,
-            ..
-        }) = (match parse_settled_entity_header(&bytes[..frame.end], frame.start) {
-            Some(header) => Some(header),
-            None => parse_genesis_entity_header(&bytes[..frame.end], frame.start),
-        })
-        else {
-            return Err(crate::design::text::malformed_design(format_args!(
-                "F3D sketch container {} has an invalid entity header",
-                frame.entity_id
-            )));
-        };
-        let entity_suffix = entity_id.suffix();
-        if entity_suffix != frame.entity_id {
-            return Err(crate::design::text::malformed_design(format_args!(
-                "F3D sketch container {} disagrees with its entity header {entity_suffix}",
-                frame.entity_id
-            )));
-        }
-        let Some(member_at) = next_indexed_record_offset(&bytes[..frame.end], header_end) else {
-            return Err(crate::design::text::malformed_design(format_args!(
-                "F3D sketch container {entity_suffix} has no typed Geometry member"
-            )));
-        };
-        let Some((class_tag, after_tag)) =
-            lp_ascii_filtered_view(bytes, member_at, 3..=3, u8::is_ascii_digit)
-        else {
-            return Err(crate::design::text::malformed_design(format_args!(
-                "F3D sketch container {entity_suffix} has an invalid Geometry-member class tag"
-            )));
-        };
-        let member_type = class_tag
-            .parse::<usize>()
-            .ok()
-            .and_then(|tag| tag.checked_sub(256))
-            .and_then(|ordinal| metadata.types.get(ordinal));
-        if after_tag != member_at + 7
-            || !member_type.is_some_and(|member_type| {
-                member_type
-                    .type_guid
-                    .as_str()
-                    .eq_ignore_ascii_case(SKETCH_CONTAINER_MEMBER_TYPE_GUID)
-                    && member_type.version == SKETCH_CONTAINER_MEMBER_VERSION
-                    && member_type.module == "Geometry"
-                    && member_type
-                        .base_type_guid
-                        .value()
-                        .map(crate::records::mesh::DesignRelaxedGuidText::as_str)
-                        .is_some_and(|base| {
-                            base.eq_ignore_ascii_case(SKETCH_CONTAINER_MEMBER_BASE_TYPE_GUID)
-                        })
-            })
-        {
-            return Err(crate::design::text::malformed_design(format_args!(
-                "F3D sketch container {entity_suffix} has an incompatible Geometry member"
-            )));
-        }
-        let Some(visibility) =
-            decode_sketch_visibility_member(&bytes[..frame.end], member_at, entity_suffix)
-        else {
-            return Err(crate::design::text::malformed_design(format_args!(
-                "F3D sketch container {entity_suffix} has an invalid visibility member"
-            )));
-        };
-
-        out.push((entity_suffix, visibility));
+        out.push(decode_sketch_visibility_frame(bytes, metadata, frame)?);
     }
-    if out.is_empty() {
-        return Ok(out);
+    let Some(rejected) =
+        validate_sketch_visibility_collections(bytes, metadata, &out, &Default::default(), None)?
+    else {
+        return Ok(Vec::new());
+    };
+    out.retain(|(entity, _)| !rejected.contains(entity));
+    Ok(out)
+}
+
+fn decode_sketch_visibilities_with_parts(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    output: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
+    source: View<'_>,
+    stream: &str,
+    metadata: &crate::metastream::MetaStream,
+) -> Result<Vec<(u64, DesignSketchVisibility)>, CodecError> {
+    let bytes = source.window();
+    let Ok(frames) = super::meta::typed_primary_frames(
+        bytes,
+        metadata,
+        SKETCH_CONTAINER_TYPE_GUID,
+        "sketch-container",
+    ) else {
+        return Ok(Vec::new());
+    };
+    let mut out = Vec::new();
+    let mut failed = std::collections::HashSet::new();
+    for frame in frames {
+        if frame.design_type.version != CURRENT_SKETCH_CONTAINER_VERSION {
+            continue;
+        }
+        match sketch_record_part(ctx, output, source, stream, frame, || {
+            decode_sketch_visibility_frame(bytes, metadata, frame)
+        })? {
+            Some(visibility) => out.push(visibility),
+            None => {
+                failed.insert(frame.entity_id);
+            }
+        }
+    }
+    let Some(rejected) = validate_sketch_visibility_collections(
+        bytes,
+        metadata,
+        &out,
+        &failed,
+        Some((ctx, output, source, stream)),
+    )?
+    else {
+        return Ok(Vec::new());
+    };
+    out.retain(|(entity, _)| !rejected.contains(entity));
+    Ok(out)
+}
+
+fn sketch_record_part<T>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    output: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
+    source: View<'_>,
+    stream: &str,
+    frame: super::meta::TypedPrimaryFrame<'_>,
+    parse: impl FnOnce() -> Result<T, CodecError>,
+) -> Result<Option<T>, CodecError> {
+    use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartSpec};
+    let start = source
+        .start()
+        .checked_add(frame.start)
+        .ok_or_else(|| CodecError::malformed("sketch record start overflows"))?;
+    let end = source
+        .start()
+        .checked_add(frame.end)
+        .ok_or_else(|| CodecError::malformed("sketch record end overflows"))?;
+    let extent = source
+        .child(start, end)
+        .ok_or_else(|| CodecError::malformed("sketch record exceeds its stream"))?;
+    let spec = PartSpec::new("f3d.bulk_record").holding([
+        cadmpeg_ir::document::ArenaClass::Model,
+        cadmpeg_ir::document::ArenaClass::Design,
+    ]);
+    let spec = if extent.location().space == cadmpeg_core::decode::SpaceId::ROOT {
+        spec
+    } else {
+        spec.in_stream(
+            cadmpeg_ir::StreamName::try_from(stream.to_owned()).map_err(CodecError::malformed)?,
+        )
+    };
+    ctx.decode_part(output, extent, spec, |_| parse())
+}
+
+fn validate_sketch_visibility_collections(
+    bytes: &[u8],
+    metadata: &crate::metastream::MetaStream,
+    out: &[(u64, DesignSketchVisibility)],
+    failed: &std::collections::HashSet<u64>,
+    mut parts: Option<(
+        &cadmpeg_core::decode::DecodeContext<'_>,
+        &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
+        View<'_>,
+        &str,
+    )>,
+) -> Result<Option<std::collections::HashSet<u64>>, CodecError> {
+    if out.is_empty() && failed.is_empty() {
+        return Ok(Some(Default::default()));
     }
     let visibilities = out
         .iter()
@@ -452,56 +406,206 @@ fn decode_sketch_visibilities_in_stream(
         "5275CBA4-3D7D-40DC-A651-1DFF3FC8AFBF",
         "sketch ordinal collection",
     ) else {
-        return Ok(Vec::new());
+        return Ok(None);
     };
+    let mut failed_collections = std::collections::HashSet::new();
     for frame in ordinal_frames {
-        let members = ([3, 4].contains(&frame.design_type.version)
-            && frame.design_type.module == "Geometry"
-            && frame
-                .design_type
-                .base_type_guid
-                .value()
-                .is_some_and(|base| {
-                    base.as_str()
-                        .eq_ignore_ascii_case(SKETCH_CONTAINER_MEMBER_BASE_TYPE_GUID)
-                }))
-        .then(|| {
-            ordinal_collection_members(&bytes[frame.start..frame.end], frame.design_type.version)
-        })
-        .flatten();
-        let Some(members) = members else {
-            return Err(crate::design::text::malformed_design(format_args!(
-                "F3D sketch ordinal collection {} has an invalid member run",
-                frame.entity_id
-            )));
-        };
-        collections.insert(frame.entity_id);
-        for target in members {
-            if !listed.insert(target)
-                || !visibilities.get(&target).is_some_and(|visibility| {
-                    visibility.ordinal_collection.map(std::num::NonZeroU64::get)
-                        == Some(frame.entity_id)
-                })
-            {
-                return Err(crate::design::text::malformed_design(format_args!(
-                    "F3D sketch ordinal collection {} has an invalid sketch member {target}",
+        let parse = || {
+            let members = ([3, 4].contains(&frame.design_type.version)
+                && frame.design_type.module == "Geometry"
+                && frame
+                    .design_type
+                    .base_type_guid
+                    .value()
+                    .is_some_and(|base| {
+                        base.as_str()
+                            .eq_ignore_ascii_case(SKETCH_CONTAINER_MEMBER_BASE_TYPE_GUID)
+                    }))
+            .then(|| {
+                ordinal_collection_members(
+                    &bytes[frame.start..frame.end],
+                    frame.design_type.version,
+                )
+            })
+            .flatten()
+            .ok_or_else(|| {
+                crate::design::text::malformed_design(format_args!(
+                    "F3D sketch ordinal collection {} has an invalid member run",
                     frame.entity_id
-                )));
+                ))
+            })?;
+            let mut targets = std::collections::HashSet::new();
+            for target in members {
+                if listed.contains(&target)
+                    || !targets.insert(target)
+                    || (!failed.contains(&target)
+                        && !visibilities.get(&target).is_some_and(|visibility| {
+                            visibility.ordinal_collection.map(std::num::NonZeroU64::get)
+                                == Some(frame.entity_id)
+                        }))
+                {
+                    return Err(crate::design::text::malformed_design(format_args!(
+                        "F3D sketch ordinal collection {} has an invalid sketch member {target}",
+                        frame.entity_id
+                    )));
+                }
             }
+            Ok(targets)
+        };
+        let targets = match parts.as_mut() {
+            Some((ctx, output, source, stream)) => {
+                sketch_record_part(ctx, output, *source, stream, frame, parse)?
+            }
+            None => Some(parse()?),
+        };
+        if let Some(targets) = targets {
+            collections.insert(frame.entity_id);
+            listed.extend(targets);
+        } else {
+            failed_collections.insert(frame.entity_id);
         }
     }
-    for (entity, visibility) in &out {
+    let mut rejected = std::collections::HashSet::new();
+    let mut container_frames = None;
+    for (entity, visibility) in out {
         let collection_valid = match visibility.ordinal_collection {
-            Some(collection) => collections.contains(&collection.get()) && listed.contains(entity),
+            Some(collection) => {
+                failed_collections.contains(&collection.get())
+                    || (collections.contains(&collection.get()) && listed.contains(entity))
+            }
             None => !listed.contains(entity),
         };
         if !collection_valid {
-            return Err(crate::design::text::malformed_design(format_args!(
-                "F3D sketch container {entity} has an invalid ordinal collection"
-            )));
+            let error = || {
+                crate::design::text::malformed_design(format_args!(
+                    "F3D sketch container {entity} has an invalid ordinal collection"
+                ))
+            };
+            match parts.as_mut() {
+                Some((ctx, output, source, stream)) => {
+                    if container_frames.is_none() {
+                        let frames = super::meta::typed_primary_frames(
+                            bytes,
+                            metadata,
+                            SKETCH_CONTAINER_TYPE_GUID,
+                            "sketch-container",
+                        )?;
+                        container_frames = Some(
+                            frames
+                                .into_iter()
+                                .map(|frame| (frame.entity_id, frame))
+                                .collect::<HashMap<_, _>>(),
+                        );
+                    }
+                    let frame = container_frames
+                        .as_ref()
+                        .and_then(|frames| frames.get(entity))
+                        .copied()
+                        .ok_or_else(|| error())?;
+                    sketch_record_part(ctx, output, *source, stream, frame, || {
+                        Err::<(), CodecError>(error())
+                    })?;
+                    rejected.insert(*entity);
+                }
+                None => return Err(error()),
+            }
         }
     }
-    Ok(out)
+    Ok(Some(rejected))
+}
+
+fn decode_sketch_visibility_frame(
+    bytes: &[u8],
+    metadata: &crate::metastream::MetaStream,
+    frame: super::meta::TypedPrimaryFrame<'_>,
+) -> Result<(u64, DesignSketchVisibility), CodecError> {
+    if frame.design_type.module != DESIGN_MODULE_SKETCH
+        || !frame
+            .design_type
+            .base_type_guid
+            .value()
+            .map(crate::records::mesh::DesignRelaxedGuidText::as_str)
+            .is_some_and(|base| base.eq_ignore_ascii_case(SKETCH_CONTAINER_MEMBER_TYPE_GUID))
+    {
+        return Err(crate::design::text::malformed_design(format_args!(
+            "F3D sketch container {} has incompatible registration metadata",
+            frame.entity_id
+        )));
+    }
+    let Some(NamedEntityHeader {
+        entity_id,
+        end: header_end,
+        ..
+    }) = (match parse_settled_entity_header(&bytes[..frame.end], frame.start) {
+        Some(header) => Some(header),
+        None => parse_genesis_entity_header(&bytes[..frame.end], frame.start),
+    })
+    else {
+        return Err(crate::design::text::malformed_design(format_args!(
+            "F3D sketch container {} has an invalid entity header",
+            frame.entity_id
+        )));
+    };
+    let entity_suffix = entity_id.suffix();
+    if entity_suffix != frame.entity_id {
+        return Err(crate::design::text::malformed_design(format_args!(
+            "F3D sketch container {} disagrees with its entity header {entity_suffix}",
+            frame.entity_id
+        )));
+    }
+    let member_at = metadata
+        .secondary_records
+        .iter()
+        .find(|record| record.entity_id == frame.entity_id)
+        .and_then(|record| usize::try_from(record.bulk_offset).ok())
+        .filter(|offset| *offset >= header_end && *offset < frame.end)
+        .ok_or_else(|| {
+            crate::design::text::malformed_design(format_args!(
+                "F3D sketch container {entity_suffix} has no typed Geometry member"
+            ))
+        })?;
+    let Some((class_tag, after_tag)) =
+        lp_ascii_filtered_view(bytes, member_at, 3..=3, u8::is_ascii_digit)
+    else {
+        return Err(crate::design::text::malformed_design(format_args!(
+            "F3D sketch container {entity_suffix} has an invalid Geometry-member class tag"
+        )));
+    };
+    let member_type = class_tag
+        .parse::<usize>()
+        .ok()
+        .and_then(|tag| tag.checked_sub(256))
+        .and_then(|ordinal| metadata.types.get(ordinal));
+    if after_tag != member_at + 7
+        || !member_type.is_some_and(|member_type| {
+            member_type
+                .type_guid
+                .as_str()
+                .eq_ignore_ascii_case(SKETCH_CONTAINER_MEMBER_TYPE_GUID)
+                && member_type.version == SKETCH_CONTAINER_MEMBER_VERSION
+                && member_type.module == "Geometry"
+                && member_type
+                    .base_type_guid
+                    .value()
+                    .map(crate::records::mesh::DesignRelaxedGuidText::as_str)
+                    .is_some_and(|base| {
+                        base.eq_ignore_ascii_case(SKETCH_CONTAINER_MEMBER_BASE_TYPE_GUID)
+                    })
+        })
+    {
+        return Err(crate::design::text::malformed_design(format_args!(
+            "F3D sketch container {entity_suffix} has an incompatible Geometry member"
+        )));
+    }
+    let Some(visibility) =
+        decode_sketch_visibility_member(&bytes[..frame.end], member_at, entity_suffix)
+    else {
+        return Err(crate::design::text::malformed_design(format_args!(
+            "F3D sketch container {entity_suffix} has an invalid visibility member"
+        )));
+    };
+
+    Ok((entity_suffix, visibility))
 }
 
 fn ordinal_collection_members(
@@ -644,7 +748,7 @@ fn parse_member_run_head_placement(
     bytes: &[u8],
     entity_byte_offset: u64,
     entity_id: &crate::records::identity::DesignEntityId,
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
 ) -> Option<DesignSketchPlacement> {
     let parsed = (|| {
         let start = usize::try_from(entity_byte_offset).ok()?;
@@ -675,7 +779,9 @@ fn parse_member_run_head_placement(
         if after_tag != head_at + 7 {
             return None;
         }
-        let head_end = next_indexed_record_offset(bytes, head_at + 11).unwrap_or(bytes.len());
+        let head_end = records
+            .next_at_or_after(head_at + 11)
+            .unwrap_or(bytes.len());
         let frame_length = head_end.checked_sub(head_at)?;
         let form = match frame_length {
             typed_compact::LEN
@@ -745,7 +851,7 @@ fn parse_sketch_placement_candidates(
     scope_record_index: u32,
     entity_id: &crate::records::identity::DesignEntityId,
     record_index: u32,
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
 ) -> Vec<DesignSketchPlacement> {
     let mut out = Vec::new();
     for pair in records.offsets(record_index).windows(2) {
@@ -880,7 +986,25 @@ pub(crate) fn decode_persistent_references(
         let source = scan
             .entry_view(&entry.name)
             .ok_or_else(|| CodecError::malformed(format_args!("entry {} not found", entry.name)))?;
-        decode_persistent_references_from_stream(entry_ordinal, &entry.name, source, &mut out)?;
+        let Some(meta) = metadata_for_bulk_stream(scan, &entry.name)? else {
+            continue;
+        };
+        let frames: Vec<_> = design_primary_frames(source.window(), &meta)?
+            .into_iter()
+            .map(|frame| crate::metastream::PrimaryRecordFrame {
+                entity_id: frame.entity_id,
+                start: frame.start,
+                member_end: frame.member_end,
+                end: frame.end,
+            })
+            .collect();
+        decode_persistent_references_from_stream(
+            entry_ordinal,
+            &entry.name,
+            source,
+            &frames,
+            &mut out,
+        )?;
     }
     Ok(finish_persistent_references(out))
 }
@@ -961,40 +1085,54 @@ pub(crate) fn decode_persistent_references_from_stream(
     entry_ordinal: usize,
     entry_name: &str,
     source: View<'_>,
+    frames: &[crate::metastream::PrimaryRecordFrame],
     out: &mut Vec<(usize, PersistentReference)>,
 ) -> Result<(), CodecError> {
     let bytes = source.window();
-    for &(name, kind) in &[
-        (b"pt_tag".as_slice(), PersistentReferenceKind::Point),
-        (
-            b"crv_primary_id".as_slice(),
-            PersistentReferenceKind::CurvePrimary,
-        ),
-        (
-            b"crv_secondary_id".as_slice(),
-            PersistentReferenceKind::CurveSecondary,
-        ),
-    ] {
-        let mut cursor = 0;
-        while let Some(offset) = find_from(bytes, name, cursor) {
-            cursor = offset + name.len();
-            let Some(end) = persistent_property_end(bytes, offset + name.len()) else {
-                continue;
-            };
-            let Some((value_offset, value)) = parse_persistent_property(&bytes[offset..end], name)
-            else {
-                continue;
-            };
-            let reference = PersistentReference {
-                id: design_record_id(entry_name, ":persistent-reference#", u64_from_index(offset)),
-                byte_offset: Some(u64_from_index(offset)),
-                value_offset: Some(u32::try_from(value_offset).map_err(|_| {
-                    CodecError::malformed("f3d persistent reference relative offset exceeds u32")
-                })?),
-                kind,
-                value,
-            };
-            out.push((entry_ordinal, reference));
+    for frame in frames {
+        let Some(bytes) = bytes.get(frame.start..frame.end) else {
+            continue;
+        };
+        for &(name, kind) in &[
+            (b"pt_tag".as_slice(), PersistentReferenceKind::Point),
+            (
+                b"crv_primary_id".as_slice(),
+                PersistentReferenceKind::CurvePrimary,
+            ),
+            (
+                b"crv_secondary_id".as_slice(),
+                PersistentReferenceKind::CurveSecondary,
+            ),
+        ] {
+            let mut cursor = 0;
+            while let Some(offset) = find_from(bytes, name, cursor) {
+                cursor = offset + name.len();
+                let Some(end) = persistent_property_end(bytes, offset + name.len()) else {
+                    continue;
+                };
+                let Some((value_offset, value)) =
+                    parse_persistent_property(&bytes[offset..end], name)
+                else {
+                    continue;
+                };
+                let offset = frame.start + offset;
+                let reference = PersistentReference {
+                    id: design_record_id(
+                        entry_name,
+                        ":persistent-reference#",
+                        u64_from_index(offset),
+                    ),
+                    byte_offset: Some(u64_from_index(offset)),
+                    value_offset: Some(u32::try_from(value_offset).map_err(|_| {
+                        CodecError::malformed(
+                            "f3d persistent reference relative offset exceeds u32",
+                        )
+                    })?),
+                    kind,
+                    value,
+                };
+                out.push((entry_ordinal, reference));
+            }
         }
     }
     Ok(())
@@ -1014,7 +1152,19 @@ pub(crate) fn decode_lost_edge_references(
         let source = scan
             .entry_view(&entry.name)
             .ok_or_else(|| CodecError::malformed(format_args!("entry {} not found", entry.name)))?;
-        decode_lost_edge_references_from_stream(&entry.name, source.window(), &mut out);
+        let Some(meta) = metadata_for_bulk_stream(scan, &entry.name)? else {
+            continue;
+        };
+        let frames: Vec<_> = design_primary_frames(source.window(), &meta)?
+            .into_iter()
+            .map(|frame| crate::metastream::PrimaryRecordFrame {
+                entity_id: frame.entity_id,
+                start: frame.start,
+                member_end: frame.member_end,
+                end: frame.end,
+            })
+            .collect();
+        decode_lost_edge_references_from_stream(&entry.name, source.window(), &frames, &mut out);
     }
     Ok(out)
 }
@@ -1056,23 +1206,28 @@ fn parse_lost_edge_record<'a>(
 pub(crate) fn decode_lost_edge_references_from_stream(
     entry_name: &str,
     bytes: &[u8],
+    frames: &[crate::metastream::PrimaryRecordFrame],
     out: &mut Vec<LostEdgeReference>,
 ) {
     let marker = b"EDGE_REFERENCE_LOST";
-    let mut cursor = 0;
-    while let Some(relative) = bytes[cursor..]
-        .windows(marker.len())
-        .position(|window| window == marker)
-    {
-        let offset = cursor + relative;
-        cursor = offset + marker.len();
-        let Some(header_offset) = offset.checked_sub(29) else {
+    for pair in frames.windows(2) {
+        let frame = pair[0];
+        let following = pair[1];
+        if frame.member_end != following.start
+            || frame.member_end.checked_sub(frame.start) != Some(LOST_EDGE_RECORD_LENGTH)
+        {
+            continue;
+        }
+        let header_offset = frame.start;
+        let Some(next_end) = following.start.checked_add(LOST_EDGE_NEXT_HEADER_LENGTH) else {
             continue;
         };
-        let record_end = header_offset + LOST_EDGE_RECORD_LENGTH;
+        if next_end > following.member_end {
+            continue;
+        }
         let (Some(record), Some(next)) = (
-            bytes.get(header_offset..record_end),
-            bytes.get(record_end..record_end + LOST_EDGE_NEXT_HEADER_LENGTH),
+            bytes.get(frame.start..frame.member_end),
+            bytes.get(following.start..next_end),
         ) else {
             continue;
         };
@@ -1095,6 +1250,11 @@ pub(crate) fn decode_lost_edge_references_from_stream(
         ) else {
             continue;
         };
+        if u64::from(record_index) != frame.entity_id
+            || u64::from(next_record_index) != following.entity_id
+        {
+            continue;
+        }
         out.push(reference);
     }
 }
@@ -1184,13 +1344,10 @@ fn lp_ascii_matches(bytes: &[u8], at: usize, expected: &[u8]) -> Option<usize> {
 /// base-point reference is returned as the first member.
 fn parse_sketch_member_run(
     bytes: &[u8],
-    from: usize,
+    paired: usize,
     entity_suffix: u64,
 ) -> Vec<crate::records::identity::Located<u32>> {
     let empty = Vec::new();
-    let Some(paired) = next_indexed_record_offset(bytes, from) else {
-        return empty;
-    };
     if View::u32_le_at(bytes, paired + 7).map(u64::from) != Some(entity_suffix) {
         return empty;
     }
@@ -1248,11 +1405,11 @@ fn parse_sketch_member_run(
 /// reference.
 fn parse_legacy_sketch_member_run(
     bytes: &[u8],
-    primary_at: usize,
+    paired_at: usize,
     entity_suffix: u32,
 ) -> Option<Vec<crate::records::identity::Located<u32>>> {
-    parse_legacy_sketch_member_run_with(bytes, primary_at, entity_suffix, false)
-        .or_else(|| parse_legacy_sketch_member_run_with(bytes, primary_at, entity_suffix, true))
+    parse_legacy_sketch_member_run_with(bytes, paired_at, entity_suffix, false)
+        .or_else(|| parse_legacy_sketch_member_run_with(bytes, paired_at, entity_suffix, true))
 }
 
 /// Target of the local reference at `at` in one spelling: the eleven-byte
@@ -1274,7 +1431,7 @@ fn legacy_sketch_reference_target(bytes: &[u8], at: usize, typed: bool) -> Optio
 /// reference in the run uses the same spelling.
 fn parse_legacy_sketch_member_run_with(
     bytes: &[u8],
-    primary_at: usize,
+    paired_at: usize,
     entity_suffix: u32,
     typed: bool,
 ) -> Option<Vec<crate::records::identity::Located<u32>>> {
@@ -1284,7 +1441,6 @@ fn parse_legacy_sketch_member_run_with(
         11
     };
     let parsed = (|| {
-        let paired_at = next_indexed_record_offset(bytes, primary_at + 11)?;
         if View::u32_le_at(bytes, paired_at + 7) != Some(entity_suffix)
             || bytes.get(paired_at + 11..paired_at + 19) != Some(&[0u8; 8][..])
             || legacy_sketch_reference_target(bytes, paired_at + 19, typed).is_none()
@@ -1329,9 +1485,10 @@ fn parse_legacy_sketch_container_members(
     bytes: &[u8],
     primary_at: usize,
     entity_suffix: u32,
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
 ) -> Option<Vec<crate::records::identity::Located<u32>>> {
-    if let Some(members) = parse_legacy_sketch_member_run(bytes, primary_at, entity_suffix) {
+    let paired_at = records.first_at_or_after(primary_at.checked_add(1)?, entity_suffix)?;
+    if let Some(members) = parse_legacy_sketch_member_run(bytes, paired_at, entity_suffix) {
         return Some(members);
     }
     let entity_id =
@@ -1391,9 +1548,15 @@ pub(crate) fn decode_entity_headers(
         let stream_modules = meta_scope
             .as_ref()
             .and_then(|name| entity_modules.get(name.as_str()));
-        for header in indexed_record_offsets(bytes) {
-            let start = header.offset;
-            let class_tag = header.class_tag.clone();
+        let Some(meta) = metadata_for_bulk_stream(scan, &entry.name)? else {
+            continue;
+        };
+        let frames = design_primary_frames(bytes, &meta)?;
+        for frame in &frames {
+            let start = frame.start;
+            let class_tag = frame.class_tag.clone();
+            let record_bytes = bytes;
+            let bytes = &bytes[..frame.member_end];
             let settled = parse_settled_entity_header(bytes, start);
             let genesis_form = settled.is_none();
             let Some(NamedEntityHeader {
@@ -1434,8 +1597,12 @@ pub(crate) fn decode_entity_headers(
                             .collect(),
                     },
                 );
-            let members = if genesis_form && in_sketch_module {
-                parse_sketch_member_run(bytes, record_end, entity_suffix)
+            let members = if genesis_form
+                && in_sketch_module
+                && frame.member_end < frame.end
+                && record_end <= frame.member_end
+            {
+                parse_sketch_member_run(&record_bytes[..frame.end], frame.member_end, entity_suffix)
             } else {
                 Vec::new()
             };
@@ -1466,7 +1633,7 @@ pub(crate) fn decode_entity_headers(
         let Some(candidates) = candidates.filter(|candidates| !candidates.is_empty()) else {
             continue;
         };
-        let records = IndexedRecordOffsets::build(bytes);
+        let records = crate::design::decode::meta::primary_frame_extents(&frames);
         let mut existing = std::collections::HashSet::new();
         for entity in out
             .iter()
@@ -1477,13 +1644,15 @@ pub(crate) fn decode_entity_headers(
             };
             existing.insert(index);
         }
-        for header in indexed_record_offsets(bytes) {
-            let start = header.offset;
-            let entity_suffix = header.record_index;
+        for frame in frames {
+            let start = frame.start;
+            let Ok(entity_suffix) = u32::try_from(frame.entity_id) else {
+                continue;
+            };
             if !candidates.contains(&entity_suffix) || existing.contains(&entity_suffix) {
                 continue;
             }
-            let class_tag = header.class_tag.clone();
+            let class_tag = frame.class_tag.clone();
             let Some(members) =
                 parse_legacy_sketch_container_members(bytes, start, entity_suffix, &records)
             else {
@@ -1638,7 +1807,11 @@ fn decode_headers_for_indices(
     }) {
         let bytes = scan.entry_bytes(&entry.name)?;
         let scope = crate::ids::native_scope(&entry.name);
-        decode_headers_for_indices_from_stream(&entry.name, &scope, bytes, wanted, &mut out);
+        let Some(meta) = metadata_for_bulk_stream(scan, &entry.name)? else {
+            continue;
+        };
+        let frames = design_primary_frames(bytes, &meta)?;
+        decode_headers_for_indices_from_stream(&entry.name, &scope, &frames, wanted, &mut out);
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
@@ -1647,14 +1820,16 @@ fn decode_headers_for_indices(
 fn decode_headers_for_indices_from_stream(
     stream_name: &str,
     scope: &str,
-    bytes: &[u8],
+    frames: &[super::meta::DesignPrimaryFrame<'_>],
     wanted: &std::collections::HashSet<(&str, u32)>,
     out: &mut Vec<DesignRecordHeader>,
 ) {
     let mut emitted = std::collections::HashSet::new();
-    for header in indexed_record_offsets(bytes) {
-        let position = header.offset;
-        let record_index = header.record_index;
+    for frame in frames {
+        let position = frame.start;
+        let Ok(record_index) = u32::try_from(frame.entity_id) else {
+            continue;
+        };
         if wanted.contains(&(scope, record_index)) && !emitted.contains(&record_index) {
             emitted.insert(record_index);
 
@@ -1665,7 +1840,7 @@ fn decode_headers_for_indices_from_stream(
                     u64_from_index(position),
                 ),
                 record_index,
-                class_tag: header.class_tag,
+                class_tag: frame.class_tag.clone(),
                 byte_offset: Some(u64_from_index(position)),
             });
         }
@@ -1677,28 +1852,32 @@ fn decode_headers_for_indices_from_stream(
 /// and return-member list. `records` supplies the byte offsets and class tags
 /// (typically from [`decode_related_record_headers`]).
 pub(crate) fn decode_sketch_relations(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    output: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
     scan: &ContainerScan,
     records: &[DesignRecordHeader],
 ) -> Result<Vec<SketchRelation>, CodecError> {
     let mut out = Vec::new();
-    // A record carries no class identity of its own: its class tag selects an
-    // entry in its segment's own type table, and only that entry's GUID names
-    // the class across segments.
-    let types = decode_types(scan)?;
     for entry in scan
         .entries
         .iter()
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
-        let stream_types = stream_types_by_class_tag(&types, &entry.name);
         let scope = ids::native_scope(&entry.name);
-        let bytes = scan.entry_bytes(&entry.name)?;
+        let source = scan.entry_view(&entry.name).ok_or_else(|| {
+            CodecError::malformed("F3D sketch relation stream has no source view")
+        })?;
+        let bytes = source.window();
+        let Some(meta) = metadata_for_bulk_stream(scan, &entry.name)? else {
+            continue;
+        };
+        let Ok(frames) = design_primary_frames(bytes, &meta) else {
+            continue;
+        };
+        let frame_ends: HashMap<_, _> = frames.iter().map(|frame| (frame.start, frame)).collect();
         let mut framed_offsets = std::collections::HashSet::new();
-        if let Some(meta) = metadata_for_bulk_stream(scan, &entry.name)? {
-            let Ok(frames) = design_primary_frames(bytes, &meta) else {
-                continue;
-            };
-            for frame in frames {
+        {
+            for frame in &frames {
                 let design_type = frame.design_type;
                 if !matches!(
                     SketchRelationClass::of(design_type.type_guid.as_str(), design_type.version),
@@ -1711,9 +1890,21 @@ pub(crate) fn decode_sketch_relations(
                 ) {
                     continue;
                 }
-                let record_index = u32::try_from(frame.entity_id).map_err(|_| {
-                    CodecError::malformed("F3D sketch-relation entity ID exceeds u32")
-                })?;
+                let Ok(record_index) = u32::try_from(frame.entity_id) else {
+                    let typed = super::meta::TypedPrimaryFrame {
+                        entity_id: frame.entity_id,
+                        start: frame.start,
+                        end: frame.end,
+                        design_type: frame.design_type,
+                    };
+                    sketch_record_part(ctx, output, source, &entry.name, typed, || {
+                        Err::<(), CodecError>(CodecError::malformed(format_args!(
+                            "F3D sketch-relation entity {} exceeds u32",
+                            frame.entity_id
+                        )))
+                    })?;
+                    continue;
+                };
                 let record = DesignRecordHeader {
                     id: design_record_id(
                         &entry.name,
@@ -1721,18 +1912,15 @@ pub(crate) fn decode_sketch_relations(
                         u64_from_index(frame.start),
                     ),
                     record_index,
-                    class_tag: frame.class_tag,
+                    class_tag: frame.class_tag.clone(),
                     byte_offset: Some(u64_from_index(frame.start)),
                 };
                 framed_offsets.insert(u64_from_index(frame.start));
-                decode_sketch_relation_record(
-                    &mut out,
-                    &entry.name,
-                    &record,
-                    &bytes[frame.start..frame.end],
-                    design_type.type_guid.as_str(),
-                    design_type.version,
-                )?;
+                if let Some(mut decoded) =
+                    decode_sketch_relation_part(ctx, output, source, &entry.name, frame, &record)?
+                {
+                    out.append(&mut decoded);
+                }
             }
         }
         for record in records
@@ -1748,24 +1936,59 @@ pub(crate) fn decode_sketch_relations(
             let Ok(at) = usize::try_from(record_offset) else {
                 continue;
             };
-            let record_end = next_indexed_record_offset(bytes, at + 11).unwrap_or(bytes.len());
-            let Some(payload) = bytes.get(at..record_end) else {
+            let Some(frame) = frame_ends.get(&at) else {
                 continue;
             };
-            let Some(design_type) = stream_types.get(&record.class_tag.code()) else {
+            if SketchRelationClass::of(
+                frame.design_type.type_guid.as_str(),
+                frame.design_type.version,
+            )
+            .is_none()
+            {
                 continue;
-            };
-            decode_sketch_relation_record(
-                &mut out,
-                &entry.name,
-                record,
-                payload,
-                design_type.type_guid.as_str(),
-                design_type.version,
-            )?;
+            }
+            if let Some(mut decoded) =
+                decode_sketch_relation_part(ctx, output, source, &entry.name, frame, record)?
+            {
+                out.append(&mut decoded);
+            }
         }
     }
     Ok(out)
+}
+
+fn decode_sketch_relation_part(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    output: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
+    source: View<'_>,
+    stream: &str,
+    frame: &super::meta::DesignPrimaryFrame<'_>,
+    record: &DesignRecordHeader,
+) -> Result<Option<Vec<SketchRelation>>, CodecError> {
+    let typed = super::meta::TypedPrimaryFrame {
+        entity_id: frame.entity_id,
+        start: frame.start,
+        end: frame.end,
+        design_type: frame.design_type,
+    };
+    sketch_record_part(ctx, output, source, stream, typed, || {
+        let mut records = Vec::new();
+        decode_sketch_relation_record(
+            &mut records,
+            stream,
+            record,
+            &source.window()[frame.start..frame.end],
+            frame.design_type.type_guid.as_str(),
+            frame.design_type.version,
+        )?;
+        if records.is_empty() {
+            return Err(CodecError::malformed(format_args!(
+                "F3D sketch relation {} does not match its registered grammar",
+                frame.entity_id
+            )));
+        }
+        Ok(records)
+    })
 }
 
 pub(crate) fn decode_sketch_relation_record(
@@ -2018,9 +2241,11 @@ pub(crate) fn decode_sketch_points_from_stream(
     meta: &crate::metastream::MetaStream,
     stream: &str,
 ) -> Result<Vec<SketchPoint>, CodecError> {
-    let Ok(frames) = design_primary_frames(bytes, meta) else {
+    let Ok((frames, faults)) = super::meta::partition_primary_frames(bytes, meta) else {
         return Ok(Vec::new());
     };
+    let failed_entities: std::collections::HashSet<_> =
+        faults.into_iter().map(|fault| fault.entity_id).collect();
     let mut frames_by_entity = HashMap::new();
     let mut types_by_entity = HashMap::new();
     for frame in &frames {
@@ -2073,6 +2298,12 @@ pub(crate) fn decode_sketch_points_from_stream(
                 decoded.trailing_reference(),
                 SKETCH_CONTAINER_TYPE_GUID,
             ) {
+                if decoded
+                    .trailing_reference()
+                    .is_some_and(|id| failed_entities.contains(&u64::from(id)))
+                {
+                    continue;
+                }
                 return Err(crate::design::text::malformed_design(format_args!(
                     "F3D sketch point {record_index} has an invalid trailing container reference"
                 )));
@@ -3623,18 +3854,21 @@ struct SketchSurfaceFrame {
     v_count: usize,
 }
 
+fn is_sketch_surface_header(payload: &[u8]) -> bool {
+    payload.get(20) == Some(&1)
+        && View::u32_le_at(payload, 21) == Some(2)
+        && View::u32_le_at(payload, 25) == Some(13)
+        && payload.get(29..42) == Some(b"EntityGenesis")
+        && View::u32_le_at(payload, 42) == Some(23)
+        && payload.get(46..69) == Some(b"IntrinsicMetaTypeuint64")
+        && View::u32_le_at(payload, 77) == Some(11)
+        && payload.get(81..92) == Some(b"surface_tag")
+        && View::u32_le_at(payload, 92) == Some(23)
+        && payload.get(96..119) == Some(b"IntrinsicMetaTypeuint64")
+}
+
 fn parse_sketch_surface_frame(payload: &[u8]) -> Option<SketchSurfaceFrame> {
-    if payload.get(20) != Some(&1)
-        || View::u32_le_at(payload, 21) != Some(2)
-        || View::u32_le_at(payload, 25) != Some(13)
-        || payload.get(29..42) != Some(b"EntityGenesis")
-        || View::u32_le_at(payload, 42) != Some(23)
-        || payload.get(46..69) != Some(b"IntrinsicMetaTypeuint64")
-        || View::u32_le_at(payload, 77) != Some(11)
-        || payload.get(81..92) != Some(b"surface_tag")
-        || View::u32_le_at(payload, 92) != Some(23)
-        || payload.get(96..119) != Some(b"IntrinsicMetaTypeuint64")
-    {
+    if !is_sketch_surface_header(payload) {
         return None;
     }
     let entity_genesis = View::u64_le_at(payload, 69);
@@ -3741,6 +3975,8 @@ fn parse_sketch_surface(
 
 /// Decode tensor-product surface entities owned by spatial Design sketches.
 pub(crate) fn decode_sketch_surfaces(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    output: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
     scan: &ContainerScan,
 ) -> Result<Vec<SketchSurface>, CodecError> {
     let mut out = Vec::new();
@@ -3749,34 +3985,51 @@ pub(crate) fn decode_sketch_surfaces(
         .iter()
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
-        let bytes = scan.entry_bytes(&entry.name)?;
-        let mut at = 0usize;
-        while let Some(record_at) = next_indexed_record_offset(bytes, at) {
-            at = record_at + 1;
-            let Some((class_tag, after_tag)) =
-                lp_ascii_filtered_view(bytes, record_at, 0..=2000, u8::is_ascii_graphic)
-            else {
+        let source = scan
+            .entry_view(&entry.name)
+            .ok_or_else(|| CodecError::malformed("F3D sketch surface stream has no source view"))?;
+        let bytes = source.window();
+        let Some(meta) = metadata_for_bulk_stream(scan, &entry.name)? else {
+            continue;
+        };
+        for frame in design_primary_frames(bytes, &meta)? {
+            let payload = &bytes[frame.start..frame.end];
+            if !is_sketch_surface_header(payload) {
                 continue;
+            }
+            let typed = super::meta::TypedPrimaryFrame {
+                entity_id: frame.entity_id,
+                start: frame.start,
+                end: frame.end,
+                design_type: frame.design_type,
             };
-            let Some(record_index) = View::u32_le_at(bytes, after_tag) else {
-                continue;
-            };
-            let payload = &bytes[record_at..];
-            let Some(surface) = parse_sketch_surface(payload, record_at)? else {
-                continue;
-            };
-
-            out.push(SketchSurface {
-                id: ids::native_sketch_surface_id(&entry.name, record_at),
-                record_index,
-                owner_reference: None,
-                class_tag: crate::design::decode::text::class_tag_from_view(class_tag)
-                    .map_err(CodecError::Malformed)?,
-                byte_offset: u64_from_index(record_at),
-                entity_genesis: surface.entity_genesis,
-                persistent_id: surface.persistent_id,
-                geometry: surface.geometry,
-            });
+            let decoded = sketch_record_part(ctx, output, source, &entry.name, typed, || {
+                let record_index = u32::try_from(frame.entity_id).map_err(|_| {
+                    CodecError::malformed(format_args!(
+                        "F3D sketch surface entity {} exceeds u32",
+                        frame.entity_id
+                    ))
+                })?;
+                let surface = parse_sketch_surface(payload, frame.start)?.ok_or_else(|| {
+                    CodecError::malformed(format_args!(
+                        "F3D sketch surface {} has an invalid payload",
+                        frame.entity_id
+                    ))
+                })?;
+                Ok(SketchSurface {
+                    id: ids::native_sketch_surface_id(&entry.name, frame.start),
+                    record_index,
+                    owner_reference: None,
+                    class_tag: frame.class_tag.clone(),
+                    byte_offset: u64_from_index(frame.start),
+                    entity_genesis: surface.entity_genesis,
+                    persistent_id: surface.persistent_id,
+                    geometry: surface.geometry,
+                })
+            })?;
+            if let Some(surface) = decoded {
+                out.push(surface);
+            }
         }
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
@@ -5071,9 +5324,8 @@ fn parse_text_glyph_run(payload: &[u8], at: usize) -> Result<Option<TextGlyphRun
     parsed.transpose()
 }
 
-/// Validated indexed-record identity and byte offset.
+/// Validated indexed-record identity.
 pub(in crate::design::decode) struct IndexedRecordHeader {
-    pub(super) offset: usize,
     pub(super) record_index: u32,
     pub(super) class_tag: crate::records::references::DesignClassTag,
 }
@@ -5088,47 +5340,9 @@ pub(super) fn indexed_record_header_at(bytes: &[u8], at: usize) -> Option<Indexe
         .try_into()
         .ok()?;
     Some(IndexedRecordHeader {
-        offset: at,
         record_index: View::u32_le_at(bytes, at + 7)?,
         class_tag,
     })
-}
-
-pub(in crate::design) fn next_indexed_record_offset(
-    bytes: &[u8],
-    position: usize,
-) -> Option<usize> {
-    indexed_record_offsets(bytes.get(position..)?)
-        .next()
-        .map(|header| position + header.offset)
-}
-
-/// Header offsets of every indexed record whose class tag is three characters.
-///
-/// A class tag is `256` plus an index into the segment's own type table, so a
-/// tag reaches four characters only in a segment registering more than 744
-/// types. No segment registers that many.
-pub(super) fn indexed_record_offsets(
-    bytes: &[u8],
-) -> impl Iterator<Item = IndexedRecordHeader> + '_ {
-    memchr::memmem::find_iter(bytes, &[3, 0, 0, 0])
-        .filter_map(|at| indexed_record_header_at(bytes, at))
-}
-
-pub(super) fn next_indexed_record_offset_with_index(
-    bytes: &[u8],
-    mut position: usize,
-    record_index: u32,
-) -> Option<usize> {
-    loop {
-        let offset = next_indexed_record_offset(bytes, position)?;
-        if indexed_record_header_at(bytes, offset)
-            .is_some_and(|header| header.record_index == record_index)
-        {
-            return Some(offset);
-        }
-        position = offset.checked_add(1)?;
-    }
 }
 
 fn marked_u32(bytes: &[u8], position: usize) -> Option<(u32, usize)> {

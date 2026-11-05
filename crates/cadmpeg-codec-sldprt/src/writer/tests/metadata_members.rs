@@ -675,6 +675,69 @@ fn unchanged_history_replays_full_source_xml_and_an_edited_history_regenerates()
     assert!(String::from_utf8(regenerated)
         .unwrap()
         .contains("EditedTree"));
+    let ambiguous = [
+        (
+            changed.clone(),
+            "Contents/Keywords".into(),
+            b"first".to_vec(),
+        ),
+        (
+            changed.clone(),
+            "Contents/Keywords".into(),
+            b"second".to_vec(),
+        ),
+    ];
+    let output =
+        crate::writer::retained_history_payload(&changed, "Contents/Keywords", &ambiguous).unwrap();
+    assert!(String::from_utf8(output).unwrap().contains("EditedTree"));
+}
+
+#[test]
+fn unidentified_history_members_select_regeneration() {
+    let history = br#"<Keywords><Feature Name="Tree" Type="Origin" id="11"/></Keywords>"#;
+    let (decoded, _) = shared_member_with_sections(
+        resolved_features_payload(&[0]),
+        &[("Contents/Keywords", history)],
+    );
+    let source = decoded
+        .source_fidelity()
+        .retained_record(crate::SOURCE_IMAGE_ID)
+        .unwrap()
+        .data()
+        .unwrap();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        source,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::desktop(),
+    )
+    .unwrap();
+    let mut baseline = crate::decode::decode(&ctx, root).unwrap();
+    let scan = crate::test_support::container::scan(source);
+    let retained = crate::writer::retained_history_sections(&baseline, &scan).unwrap();
+    assert_eq!(retained.len(), 1);
+    let id = retained[0].0.id.clone();
+    let mut missing = outer_header();
+    missing.extend(make_block(1, "Other", b"other"));
+    let missing_scan = crate::test_support::container::scan(&missing);
+    assert!(
+        crate::writer::retained_history_sections(&baseline, &missing_scan)
+            .unwrap()
+            .is_empty()
+    );
+    let mut duplicate = outer_header();
+    duplicate.extend(make_block(1, "Contents/Keywords", history));
+    duplicate.extend(make_block(2, "Contents/Keywords", history));
+    let duplicate_scan = crate::test_support::container::scan(&duplicate);
+    assert!(
+        crate::writer::retained_history_sections(&baseline, &duplicate_scan)
+            .unwrap()
+            .is_empty()
+    );
+    baseline.source_fidelity.annotations.provenance.remove(&id);
+    assert!(crate::writer::retained_history_sections(&baseline, &scan)
+        .unwrap()
+        .is_empty());
 }
 
 #[test]
@@ -791,7 +854,7 @@ fn changed_display_semantics_do_not_replay_an_unchanged_source_member() {
         &cadmpeg_core::decode::DecodePolicy::desktop(),
     )
     .unwrap();
-    let baseline = crate::decode::decode(&ctx, root).unwrap();
+    let mut baseline = crate::decode::decode(&ctx, root).unwrap();
     let scan_arena = cadmpeg_core::decode::DecodeArena::new();
     let (scan_ctx, scan_root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         source,
@@ -802,12 +865,41 @@ fn changed_display_semantics_do_not_replay_an_unchanged_source_member() {
     let scan = crate::container::scan(&scan_ctx, scan_root).unwrap();
     let retained =
         crate::writer::retained_display_sections(decoded.ir(), Some(&baseline), Some(&scan))
-            .unwrap()
             .unwrap();
-    assert_eq!(retained, vec![("Contents/DisplayLists".into(), display)]);
+    assert_eq!(
+        retained,
+        vec![("Contents/DisplayLists".into(), display.clone())]
+    );
     assert!(
-        crate::writer::retained_display_sections(&changed, Some(&baseline), Some(&scan))
-            .unwrap()
+        crate::writer::retained_display_sections(&changed, Some(&baseline), Some(&scan)).is_none()
+    );
+    let mut missing = outer_header();
+    missing.extend(make_block(1, "Other", b"other"));
+    let missing_scan = crate::test_support::container::scan(&missing);
+    assert!(crate::writer::retained_display_sections(
+        decoded.ir(),
+        Some(&baseline),
+        Some(&missing_scan)
+    )
+    .is_none());
+    let mut duplicate = outer_header();
+    duplicate.extend(make_block(1, "Contents/DisplayLists", &display));
+    duplicate.extend(make_block(2, "Contents/DisplayLists", &display));
+    let duplicate_scan = crate::test_support::container::scan(&duplicate);
+    assert!(crate::writer::retained_display_sections(
+        decoded.ir(),
+        Some(&baseline),
+        Some(&duplicate_scan)
+    )
+    .is_none());
+    let mesh = baseline.ir.model.tessellations[0].id.clone();
+    baseline
+        .source_fidelity
+        .annotations
+        .provenance
+        .remove(mesh.as_str());
+    assert!(
+        crate::writer::retained_display_sections(decoded.ir(), Some(&baseline), Some(&scan))
             .is_none()
     );
 }
@@ -913,4 +1005,39 @@ fn duplicate_feature_owned_names_refuse_ambiguous_source_member_identity() {
     let mut decoded = EditableDecodeResult::from(decoded);
     edit_radius(&mut decoded.ir_mut());
     synthesized_after_declined_patch(&decoded);
+}
+
+#[test]
+fn foreign_bounding_envelope_is_written_from_its_values() {
+    use cadmpeg_ir::attributes::{AttributeTarget, SourceAttribute};
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let id = cadmpeg_ir::ids::AttributeId::mint("foreign:metadata:attribute#bounds").unwrap();
+    let values = vec![Some(AttributeValue::vector([1.0, 2.0, 3.0, 4.0]).unwrap())];
+    ir.model.attributes.push(SourceAttribute {
+        id: id.clone(),
+        native_ref: None,
+        target: AttributeTarget::Document,
+        name: "bounding_envelope".into(),
+        values: values.clone(),
+    });
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(!plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(id.as_str())));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(decoded.ir().model.attributes.iter().any(|attribute| {
+        attribute.target == AttributeTarget::Document
+            && attribute.name == "bounding_envelope"
+            && attribute.values == values
+    }));
 }

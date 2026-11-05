@@ -13,32 +13,15 @@ use crate::loss::IgesLossCode;
 pub(crate) fn plan(
     input: EncodeInput<'_>,
     resolved: &ResolvedWrite<'_>,
-) -> Result<ExportBody, CodecError> {
+) -> Result<ExportBody, super::WriteError> {
     debug_assert!(
-        crate::writer::CAPACITY_FIELDS.len() == 2,
+        super::capacity::CAPACITY_FIELDS.len() == 2,
         "IGES card layout declares payload and sequence rows"
     );
     debug_assert!(
         crate::writer::REDUCED_FIELDS.is_empty(),
         "IGES stores no reduced fields"
     );
-    // Synthesis visits every input record, so the caller's entity ceiling
-    // applies to the input record count before any building (#217 §5.0).
-    {
-        use cadmpeg_core::decode::{
-            u64_from_index, DecodeArena, DecodeContext, DecodeDepth, DecodeMode, DecodePolicy,
-        };
-        let arena = DecodeArena::new();
-        let policy = DecodePolicy {
-            mode: DecodeMode::Salvage,
-            limits: input.limits,
-        };
-        let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Geometry);
-        ctx.charge_entities(
-            u64_from_index(input.ir.census().values().sum()),
-            "write IGES records",
-        )?;
-    }
     match resolved.target() {
         ResolvedTarget::Explicit { index, .. }
         | ResolvedTarget::Inherited { index, .. }
@@ -62,7 +45,7 @@ pub(crate) fn plan(
 fn replay_or_synthesize(
     input: EncodeInput<'_>,
     version: crate::IgesVersion,
-) -> Result<ExportBody, CodecError> {
+) -> Result<ExportBody, super::WriteError> {
     let replay_failure = match replay_bytes(input)? {
         Replay::Replayed { bytes } => return Ok(replayed_body(input.ir, bytes)),
         Replay::Declined(reason) => reason,
@@ -96,12 +79,29 @@ fn synthesized_body(
     input: EncodeInput<'_>,
     version: crate::IgesVersion,
     cause: SynthesisCause,
-) -> Result<ExportBody, CodecError> {
+) -> Result<ExportBody, super::WriteError> {
     let synthesis_cause = cause.report_cause();
     let (consumption, loss) = cause.into_fidelity();
     let mut losses = loss.into_iter().collect::<Vec<_>>();
     let recovered = cadmpeg_ir::codec::write::edge_recovery::recover_edge_curves(input.ir)?;
-    let synthesis = super::synthesize(&recovered.document, version)?;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy {
+        limits: input.limits,
+        ..cadmpeg_core::decode::DecodePolicy::default()
+    };
+    let ctx = cadmpeg_core::decode::DecodeContext::for_encode(&arena, &policy);
+    let session = cadmpeg_core::encode::EncodeSession::from_context(&ctx)?;
+    let synthesis =
+        super::synthesize_with_admission(&ctx, &recovered.document, version, |entities| {
+            for entity in entities {
+                if entity.transform.is_some() {
+                    session.charge_entities(1, "write IGES transformation entity")?;
+                }
+                session.charge_entities(1, "write IGES entity")?;
+            }
+            Ok(())
+        })?;
+    session.finish()?;
     losses.extend(synthesis.losses.clone());
     if !recovered.sampled_agreements.is_empty() {
         losses.push(IgesLossCode::EdgePcurveAgreementSampled.note(format!(
@@ -245,10 +245,10 @@ fn replay_bytes(input: EncodeInput<'_>) -> Result<Replay, CodecError> {
     // decline as unavailable before any comparison: replay needs the bytes
     // whatever the document holds. The digest agreement is the edit detector:
     // an edited document re-decodes to a different digest and synthesizes.
-    let current = crate::document_digest(ir)?;
     let Some(data) = record.and_then(|record| record.data()) else {
         return Ok(Replay::Declined(DeclineReason::SourceImageUnavailable));
     };
+    let current = crate::document_digest(ir, input.limits)?;
     let replays = cadmpeg_ir::hash::retained_image_replays(
         data,
         expected,
@@ -257,13 +257,8 @@ fn replay_bytes(input: EncodeInput<'_>) -> Result<Replay, CodecError> {
         input.limits,
         |ctx, root| {
             let fresh = cadmpeg_ir::Codec::decode_with_context(&crate::IgesCodec, ctx, root)
-                .map_err(|failure| match failure {
-                    cadmpeg_ir::codec::DecodeFailure::Codec(error) => error,
-                    _ => CodecError::UnsupportedContent(
-                        "the retained IGES source image refused to decode".into(),
-                    ),
-                })?;
-            crate::document_digest(fresh.ir())
+                .map_err(|_| ())?;
+            crate::document_digest(fresh.ir(), input.limits).map_err(|_| ())
         },
     );
     if !replays {

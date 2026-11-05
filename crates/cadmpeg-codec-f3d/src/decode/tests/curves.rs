@@ -928,9 +928,18 @@ fn generated_spline_carriers_write_explicit_forward_sense() {
             .and_then(|plan| plan.write_to(&mut encoded))
             .expect("source-less spline carrier encode");
         let mut archive = zip::ZipArchive::new(Cursor::new(&encoded)).expect("generated F3D ZIP");
+        let names: Vec<_> = archive
+            .file_names()
+            .map(|name| name.expect("generated entry name"))
+            .filter(|name| name.contains("/Breps.BlobParts/") && name.ends_with(".smbh"))
+            .map(std::borrow::Cow::into_owned)
+            .collect();
+        let [name] = names.as_slice() else {
+            panic!("expected one generated BREP stream");
+        };
         let mut generated_smbh = Vec::new();
         archive
-            .by_name("FusionAssetName[Active]/Breps.BlobParts/BREP.generated.smbh")
+            .by_name(name)
             .expect("generated BREP stream")
             .read_to_end(&mut generated_smbh)
             .expect("generated BREP bytes");

@@ -69,6 +69,310 @@ fn source_less_spatial_line(start: Point3, end: Point3) -> cadmpeg_ir::CadIr {
     ir
 }
 
+fn check_spatial_point_line_distance_reaches_output(
+    construction: bool,
+    point_construction: bool,
+    second_point_construction: bool,
+) {
+    use cadmpeg_ir::codec::write::Encoder;
+    use cadmpeg_ir::features::{DesignParameter, Dimension, ParameterId, ParameterValue};
+    use cadmpeg_ir::sketches::{
+        SketchConstraintId, SpatialSketchConstraint, SpatialSketchConstraintDefinitionInput,
+    };
+
+    let mut ir = source_less_spatial_line(Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0));
+    ir.model.spatial_sketch_entities[0].construction = construction;
+    let sketch = ir.model.spatial_sketches[0].id.clone();
+    let line = ir.model.spatial_sketch_entities[0].id().clone();
+    let point = SpatialSketchEntityId::mint("synthetic:test:spatial-sketch-entity#point").unwrap();
+    ir.model
+        .spatial_sketch_entities
+        .push(SpatialSketchEntity::new(
+            point.clone(),
+            sketch.clone(),
+            SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Point {
+                position: Point3::new(3.0, 4.0, 0.0),
+            })
+            .unwrap(),
+        ));
+    let parameter = ParameterId::mint("synthetic:test:parameter#distance").unwrap();
+    ir.model
+        .spatial_sketch_entities
+        .last_mut()
+        .unwrap()
+        .construction = point_construction;
+    ir.model.parameters.push(DesignParameter {
+        product_definition: None,
+        id: parameter.clone(),
+        owner: Some(ir.model.features[0].id.clone()),
+        ordinal: 0,
+        name: "D1".into(),
+        expression: "4mm".into(),
+        driving: true,
+        display: None,
+        value: Some(ParameterValue::Length(
+            cadmpeg_ir::scalar::Length::new(4.0).unwrap(),
+        )),
+        properties: BTreeMap::new(),
+        pmi: None,
+        native_ref: None,
+    });
+    ir.model
+        .spatial_sketch_constraints
+        .push(SpatialSketchConstraint {
+            id: SketchConstraintId::mint("synthetic:test:constraint#point-line").unwrap(),
+            sketch,
+            definition: SpatialSketchConstraintDefinitionInput::PointLineDistance {
+                point,
+                line,
+                parameter: Dimension::Parameter(parameter),
+            }
+            .try_into()
+            .unwrap(),
+            native_ref: None,
+        });
+    let other_line =
+        SpatialSketchEntityId::mint("synthetic:test:spatial-sketch-entity#other-line").unwrap();
+    ir.model
+        .spatial_sketch_entities
+        .push(SpatialSketchEntity::new(
+            other_line.clone(),
+            ir.model.spatial_sketches[0].id.clone(),
+            SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Line {
+                start: Point3::new(20.0, -5.0, 0.0),
+                end: Point3::new(20.0, 5.0, 0.0),
+            })
+            .unwrap(),
+        ));
+    let third_parameter = ParameterId::mint("synthetic:test:parameter#third-distance").unwrap();
+    ir.model
+        .spatial_sketch_entities
+        .last_mut()
+        .unwrap()
+        .construction = construction;
+    ir.model.parameters.push(DesignParameter {
+        product_definition: None,
+        id: third_parameter.clone(),
+        owner: Some(ir.model.features[0].id.clone()),
+        ordinal: 2,
+        name: "D3".into(),
+        expression: "17mm".into(),
+        driving: true,
+        display: None,
+        value: Some(ParameterValue::Length(
+            cadmpeg_ir::scalar::Length::new(17.0).unwrap(),
+        )),
+        properties: BTreeMap::new(),
+        pmi: None,
+        native_ref: None,
+    });
+    ir.model
+        .spatial_sketch_constraints
+        .push(SpatialSketchConstraint {
+            id: SketchConstraintId::mint("synthetic:test:constraint#other-line").unwrap(),
+            sketch: ir.model.spatial_sketches[0].id.clone(),
+            definition: SpatialSketchConstraintDefinitionInput::PointLineDistance {
+                point: ir.model.spatial_sketch_entities[1].id().clone(),
+                line: other_line,
+                parameter: Dimension::Parameter(third_parameter),
+            }
+            .try_into()
+            .unwrap(),
+            native_ref: None,
+        });
+    let second_point =
+        SpatialSketchEntityId::mint("synthetic:test:spatial-sketch-entity#second-point").unwrap();
+    ir.model
+        .spatial_sketch_entities
+        .push(SpatialSketchEntity::new(
+            second_point.clone(),
+            ir.model.spatial_sketches[0].id.clone(),
+            SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Point {
+                position: Point3::new(3.0, 7.0, 0.0),
+            })
+            .unwrap(),
+        ));
+    let second_parameter = ParameterId::mint("synthetic:test:parameter#second-distance").unwrap();
+    ir.model
+        .spatial_sketch_entities
+        .last_mut()
+        .unwrap()
+        .construction = second_point_construction;
+    ir.model.parameters.push(DesignParameter {
+        product_definition: None,
+        id: second_parameter.clone(),
+        owner: Some(ir.model.features[0].id.clone()),
+        ordinal: 1,
+        name: "D2".into(),
+        expression: "7mm".into(),
+        driving: true,
+        display: None,
+        value: Some(ParameterValue::Length(
+            cadmpeg_ir::scalar::Length::new(7.0).unwrap(),
+        )),
+        properties: BTreeMap::new(),
+        pmi: None,
+        native_ref: None,
+    });
+    ir.model
+        .spatial_sketch_constraints
+        .push(SpatialSketchConstraint {
+            id: SketchConstraintId::mint("synthetic:test:constraint#second-point-line").unwrap(),
+            sketch: ir.model.spatial_sketches[0].id.clone(),
+            definition: SpatialSketchConstraintDefinitionInput::PointLineDistance {
+                point: second_point,
+                line: ir.model.spatial_sketch_entities[0].id().clone(),
+                parameter: Dimension::Parameter(second_parameter),
+            }
+            .try_into()
+            .unwrap(),
+            native_ref: None,
+        });
+    ir.model.finalize();
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    for constraint in &ir.model.spatial_sketch_constraints {
+        assert!(
+            !plan
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.message.contains(constraint.id.as_str())),
+            "{:#?}",
+            plan.report().losses
+        );
+    }
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let native = crate::test_support::native::sldprt_native(output.ir());
+    let lane = native
+        .feature_input_lanes
+        .iter()
+        .find(|lane| !lane.relation_instances.is_empty())
+        .unwrap();
+    assert_eq!(lane.relation_instances.len(), 3);
+    let mut line_refs = BTreeMap::new();
+    for relation in &lane.relation_instances {
+        assert_eq!(
+            relation.family,
+            crate::records::FeatureInputRelationFamily::PointLineDistance
+        );
+        assert!(
+            relation.operands[0].entity_ref.is_some(),
+            "point operand resolves"
+        );
+        let line_ref = relation.operands[1]
+            .entity_ref
+            .as_deref()
+            .expect("line operand resolves");
+        assert!(lane
+            .sketch_entities
+            .iter()
+            .any(|marker| marker.id() == line_ref
+                && marker.kind() == crate::records::SketchInputKind::LineOrCircle));
+        let scalar = lane
+            .scalars
+            .iter()
+            .find(|scalar| Some(scalar.id.as_str()) == relation.parameter_scalar_ref())
+            .unwrap();
+        let name = lane
+            .names
+            .iter()
+            .find(|name| name.id == scalar.name)
+            .unwrap();
+        let point_ref = relation.operands[0].entity_ref.as_deref().unwrap();
+        let expected_y = if name.value == "D2" { 7.0 } else { 4.0 };
+        assert!(output.ir().model.spatial_sketch_entities.iter().any(|entity| {
+            entity.native_ref.as_deref() == Some(point_ref)
+                && matches!(entity.geometry.definition(), SpatialSketchGeometryDefinition::Point { position }
+                    if position.get() == Point3::new(3.0, expected_y, 0.0))
+        }), "{} point operand selects the authored point", name.value);
+        line_refs.insert(name.value.as_str(), line_ref);
+    }
+    assert_eq!(line_refs["D1"], line_refs["D2"]);
+    assert_ne!(line_refs["D1"], line_refs["D3"]);
+    for (position, distance, line_start, line_end) in [
+        (
+            Point3::new(3.0, 4.0, 0.0),
+            4.0,
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(10.0, 0.0, 0.0),
+        ),
+        (
+            Point3::new(3.0, 7.0, 0.0),
+            7.0,
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(10.0, 0.0, 0.0),
+        ),
+        (
+            Point3::new(3.0, 4.0, 0.0),
+            17.0,
+            Point3::new(20.0, -5.0, 0.0),
+            Point3::new(20.0, 5.0, 0.0),
+        ),
+    ] {
+        assert!(output.ir().model.spatial_sketch_constraints.iter().any(|constraint| {
+            let SpatialSketchConstraintDefinitionInput::PointLineDistance { point, line, parameter } = constraint.definition.kind() else { return false };
+            let expected_construction = if position.y == 7.0 { second_point_construction } else { point_construction };
+            let point_ok = output.ir().model.spatial_sketch_entities.iter().any(|entity| entity.id() == point && entity.construction == expected_construction && matches!(entity.geometry.definition(), SpatialSketchGeometryDefinition::Point { position: actual } if actual.get() == position));
+            let line_ok = output.ir().model.spatial_sketch_entities.iter().any(|entity| entity.id() == line && entity.construction == construction && matches!(entity.geometry.definition(), SpatialSketchGeometryDefinition::Line { start, end } if start.get() == line_start && end.get() == line_end));
+            let value_ok = parameter.parameter().and_then(|id| output.ir().model.parameters.iter().find(|candidate| &candidate.id == id)).and_then(|parameter| parameter.value.as_ref()).is_some_and(|value| matches!(value, ParameterValue::Length(value) if value.get() == distance));
+            point_ok && line_ok && value_ok
+        }), "{:#?}", output.ir().model.spatial_sketch_constraints);
+    }
+    for fidelity in [Some(output.source_fidelity()), None] {
+        let plan = SldprtCodec
+            .plan(
+                EncodeInput::new(output.ir(), fidelity),
+                TargetRequest::Inherit,
+            )
+            .unwrap();
+        let mut rewritten = Vec::new();
+        plan.write_to(&mut rewritten).unwrap();
+        let decoded = SldprtCodec
+            .decode(&mut Cursor::new(rewritten), &DecodeOptions::default())
+            .unwrap();
+        assert_eq!(
+            decoded
+                .ir()
+                .model
+                .spatial_sketch_constraints
+                .iter()
+                .filter(|constraint| matches!(
+                    constraint.definition.kind(),
+                    SpatialSketchConstraintDefinitionInput::PointLineDistance { .. }
+                ))
+                .count(),
+            3
+        );
+    }
+}
+
+#[test]
+fn source_less_spatial_point_line_distance_reaches_output() {
+    check_spatial_point_line_distance_reaches_output(false, false, false);
+}
+
+#[test]
+fn source_less_spatial_construction_line_distance_reaches_output() {
+    check_spatial_point_line_distance_reaches_output(true, false, false);
+}
+
+#[test]
+fn source_less_spatial_construction_point_distance_reaches_output() {
+    check_spatial_point_line_distance_reaches_output(true, true, true);
+}
+
+#[test]
+fn source_less_spatial_mixed_point_roles_reach_output() {
+    check_spatial_point_line_distance_reaches_output(true, true, false);
+    check_spatial_point_line_distance_reaches_output(true, false, true);
+}
+
 #[test]
 fn inactive_configuration_retains_its_spatial_sketch() {
     use cadmpeg_ir::codec::write::Encoder;
@@ -335,4 +639,137 @@ fn bake_transform_is_applied_and_output_stays_valid() {
         round_trip.ir().model.points[0].position().get().x,
         original_x + 10.0
     );
+}
+
+#[test]
+fn unowned_planar_sketch_does_not_gain_a_feature() {
+    use cadmpeg_ir::codec::write::Encoder;
+    let source = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/golden/fixtures/authored_nested_circle.sldprt"
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(decoded.ir().model.features.is_empty());
+    assert_eq!(decoded.ir().model.sketch_entities.len(), 1);
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(output.ir().model.features.is_empty());
+    assert_eq!(output.ir().model.sketch_entities.len(), 1);
+    assert_eq!(
+        output.ir().model.sketch_entities[0].geometry,
+        decoded.ir().model.sketch_entities[0].geometry
+    );
+}
+
+#[test]
+fn solid_region_retains_multiple_shells() {
+    use cadmpeg_ir::codec::write::Encoder;
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let region = ir.model.regions[0].id.clone();
+    let second = serde_json::to_string(&cadmpeg_ir::examples::unit_cube().unwrap())
+        .unwrap()
+        .replace("synthetic:cube:", "synthetic:secondcube:");
+    let mut other: cadmpeg_ir::CadIr = serde_json::from_str(&second).unwrap();
+    ir.model.regions[0]
+        .shells
+        .extend(other.model.regions[0].shells.clone());
+    for shell in &mut other.model.shells {
+        shell.region = region.clone();
+    }
+    macro_rules! append {
+        ($($arena:ident),* $(,)?) => {$(ir.model.$arena.extend(other.model.$arena);)*};
+    }
+    append!(shells, faces, loops, coedges, edges, vertices, points, surfaces, curves);
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let result = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(result.ir().model.regions.len(), 1);
+    assert_eq!(result.ir().model.regions[0].shells.len(), 2);
+    assert_eq!(result.ir().model.faces.len(), 12);
+}
+
+#[test]
+fn solid_region_retains_seven_shells() {
+    use cadmpeg_ir::codec::write::Encoder;
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let region = ir.model.regions[0].id.clone();
+    for index in 1..7 {
+        let source = serde_json::to_string(&cadmpeg_ir::examples::unit_cube().unwrap())
+            .unwrap()
+            .replace("synthetic:cube:", &format!("synthetic:cube{index}:"));
+        let mut other: cadmpeg_ir::CadIr = serde_json::from_str(&source).unwrap();
+        ir.model.regions[0]
+            .shells
+            .extend(other.model.regions[0].shells.clone());
+        for shell in &mut other.model.shells {
+            shell.region = region.clone();
+        }
+        macro_rules! append {
+            ($($arena:ident),* $(,)?) => {$(ir.model.$arena.extend(other.model.$arena);)*};
+        }
+        append!(shells, faces, loops, coedges, edges, vertices, points, surfaces, curves);
+    }
+    ir.model.finalize();
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let result = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(result.ir().model.regions.len(), 1);
+    assert_eq!(result.ir().model.regions[0].shells.len(), 7);
+    assert_eq!(result.ir().model.faces.len(), 42);
+}
+
+#[test]
+fn sheet_region_retains_multiple_shells() {
+    use cadmpeg_ir::codec::write::Encoder;
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    ir.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Sheet;
+    let region = ir.model.regions[0].id.clone();
+    let source = serde_json::to_string(&cadmpeg_ir::examples::unit_cube().unwrap())
+        .unwrap()
+        .replace("synthetic:cube:", "synthetic:secondcube:");
+    let mut other: cadmpeg_ir::CadIr = serde_json::from_str(&source).unwrap();
+    ir.model.regions[0]
+        .shells
+        .extend(other.model.regions[0].shells.clone());
+    for shell in &mut other.model.shells {
+        shell.region = region.clone();
+    }
+    macro_rules! append {
+        ($($arena:ident),* $(,)?) => {$(ir.model.$arena.extend(other.model.$arena);)*};
+    }
+    append!(shells, faces, loops, coedges, edges, vertices, points, surfaces, curves);
+    ir.model.finalize();
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let result = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        result.ir().model.bodies[0].kind,
+        cadmpeg_ir::topology::BodyKind::Sheet
+    );
+    assert_eq!(result.ir().model.regions.len(), 1);
+    assert_eq!(result.ir().model.regions[0].shells.len(), 2);
+    assert_eq!(result.ir().model.faces.len(), 12);
 }

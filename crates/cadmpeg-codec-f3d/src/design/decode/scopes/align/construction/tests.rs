@@ -10,7 +10,7 @@ fn align_constructor_retains_every_word_code_and_scalar() {
         let (prefix, scope) = align_prefix_fixture(form);
         let envelope = super::super::decode_align_envelope(&prefix, &scope).unwrap();
         let bytes = align_constructor_fixture(&scope);
-        let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+        let records = crate::design::test_support::test_primary_frames(&bytes);
         let construction = decode_align_construction(&bytes, &records, &scope, &envelope).unwrap();
         assert_eq!(
             construction
@@ -49,7 +49,7 @@ fn align_constructor_refuses_changed_framing_owners_and_nonfinite_scalars() {
     let envelope = super::super::decode_align_envelope(&prefix, &scope).unwrap();
     let bytes = align_constructor_fixture(&scope);
     let decode = |bytes: &[u8]| {
-        let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
+        let records = crate::design::test_support::test_primary_frames(bytes);
         decode_align_construction(bytes, &records, &scope, &envelope)
     };
     for at in [

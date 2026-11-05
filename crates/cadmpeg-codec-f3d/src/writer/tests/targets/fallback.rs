@@ -46,3 +46,32 @@ fn off_catalog_inherit_synthesizes_and_reads_the_reported_catalog_default() {
         "f3d:manifest-3-2-0-0"
     );
 }
+
+#[test]
+fn off_catalog_source_without_an_image_reports_the_synthesis_target() {
+    let ir = sourced_ir("f3d:f3z-multi-document");
+    let fidelity = cadmpeg_ir::SourceFidelity::with_annotations(
+        cadmpeg_ir::Annotations::default(),
+        cadmpeg_ir::hash::digest::Sha256Digest::digest(b"missing image"),
+    );
+    let plan = F3dCodec
+        .plan(
+            EncodeInput::new(&ir, Some(&fidelity)),
+            TargetRequest::Inherit,
+        )
+        .expect("the catalog default writes when the retained image is missing");
+    assert!(matches!(
+        plan.report().write_path(),
+        WritePath::Synthesized { .. }
+    ));
+    let report = serde_json::to_value(plan.report()).unwrap();
+    assert_eq!(report["identity"]["target"], "f3d:manifest-3-2-0-0");
+    let loss = plan
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.code.local_code() == "target.source-dialect-displaced")
+        .expect("the source displacement is reported");
+    assert!(loss.message.contains("f3d:f3z-multi-document"));
+    assert!(loss.message.contains("f3d:manifest-3-2-0-0"));
+}

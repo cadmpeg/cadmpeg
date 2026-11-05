@@ -259,6 +259,7 @@ pub(crate) struct ContainerScan<'a> {
     pub(crate) archive_member_sizes: Vec<u64>,
     /// Decoded BREP stream facts, in archive order.
     pub(crate) breps: Vec<BrepFacts>,
+    partial_brep_headers: Vec<(String, KernelFraming)>,
     /// Each text B-rep's one admitted parse, shared by model and report paths.
     pub(crate) text_breps: std::collections::HashMap<String, TextBrepFraming>,
     /// Whether this ZIP is one F3D document or an outer F3Z archive.
@@ -269,9 +270,7 @@ pub(crate) struct ContainerScan<'a> {
     /// byte span. Complete stored bytes remain in `source_image`; decode
     /// gives up each entry as a `zip.entry` part.
     pub(crate) unreadable_entries: Vec<UnreadableEntryPart>,
-    /// Design `BulkStream` record runs after the last indexed record, by
-    /// entry name, with the stream's stored length. Their entry views end
-    /// where the run starts; complete stored bytes remain in `source_image`.
+    #[cfg(test)]
     pub(crate) unindexed_record_runs: Vec<(
         String,
         crate::design::decode::meta::UnindexedRecordRun,
@@ -308,10 +307,12 @@ impl<'a> ContainerScan<'a> {
             entries: self.entries.clone(),
             archive_member_sizes: self.archive_member_sizes.clone(),
             breps: self.breps.clone(),
+            partial_brep_headers: self.partial_brep_headers.clone(),
             text_breps: self.text_breps.clone(),
             kind: self.kind.clone(),
             manifest_diagnostics: self.manifest_diagnostics.clone(),
             unreadable_entries: self.unreadable_entries.clone(),
+            #[cfg(test)]
             unindexed_record_runs: self.unindexed_record_runs.clone(),
             inflated_entries: self.inflated_entries.clone(),
             archive: self.archive.clone(),
@@ -487,6 +488,16 @@ impl<'a> ContainerScan<'a> {
                 .is_some_and(|segment| is_numbered_segment(segment, "FusionACTSegmentType"))
     }
 
+    /// Read available kernel header fields from a truncated stored BREP entry.
+    pub(crate) fn partial_brep_header(&self) -> Option<&KernelFraming> {
+        let mut headers = self
+            .partial_brep_headers
+            .iter()
+            .filter_map(|(name, header)| self.belongs_to_design_asset(name).then_some(header));
+        let header = headers.next()?;
+        headers.next().is_none().then_some(header)
+    }
+
     fn asset_segment<'n>(&self, name: &'n str) -> Option<&'n str> {
         let relative = self
             .design_asset_folder()
@@ -494,6 +505,35 @@ impl<'a> ContainerScan<'a> {
             .strip_prefix('/')?;
         relative.split_once('/').map(|(segment, _)| segment)
     }
+}
+
+fn partial_stored_brep_header(
+    entry: &cadmpeg_container::EntryRecord,
+    source: &[u8],
+) -> Option<KernelFraming> {
+    if !entry.is_recovered()
+        || entry.data_start.is_some()
+        || entry.encrypted
+        || entry.compression != cadmpeg_container::ZipCompression::Stored
+    {
+        return None;
+    }
+    let start = usize::try_from(entry.declaration_range().end).ok()?;
+    let end = start
+        .checked_add(usize::try_from(entry.compressed_size).ok()?)?
+        .min(source.len());
+    let prefix = source.get(start..end)?;
+    if !asm_header::has_asm_magic(prefix) {
+        return None;
+    }
+    let header = asm_header::parse(prefix)?;
+    header.metadata.save_format_version?;
+    header.metadata.entity_count?;
+    header.metadata.flags?;
+    Some(KernelFraming::Asm {
+        solved_record_limit: None,
+        header,
+    })
 }
 
 fn is_numbered_segment(segment: &str, prefix: &str) -> bool {
@@ -521,6 +561,7 @@ pub(crate) fn scan<'a>(
 
     let mut entries = Vec::new();
     let mut breps = Vec::new();
+    let mut partial_brep_headers = Vec::new();
     let mut inflated_entries = BTreeMap::new();
     let mut unreadable_entries = Vec::new();
     if let Some(range) = archive.recovery_tail() {
@@ -603,6 +644,11 @@ pub(crate) fn scan<'a>(
                     format!("{name} cannot be opened: {error}; stored payload retained");
                 attributes.insert("payload_error".to_owned(), diagnostic.clone());
                 let range = file.stored_range().map_err(|_| error)?;
+                if is_brep {
+                    if let Some(header) = partial_stored_brep_header(file, source_image) {
+                        partial_brep_headers.push((name.clone(), header));
+                    }
+                }
                 unreadable_entries.push(UnreadableEntryPart {
                     name: name.clone(),
                     range,
@@ -773,10 +819,12 @@ pub(crate) fn scan<'a>(
         entries,
         archive_member_sizes,
         breps,
+        partial_brep_headers,
         text_breps: std::collections::HashMap::new(),
         kind,
         manifest_diagnostics,
         unreadable_entries,
+        #[cfg(test)]
         unindexed_record_runs: Vec::new(),
         inflated_entries,
         archive,
@@ -785,7 +833,8 @@ pub(crate) fn scan<'a>(
         scope_entry_indices,
         metastream_cache: std::sync::Mutex::new(std::collections::HashMap::new()),
     };
-    bound_design_bulk_streams(&mut scan);
+    #[cfg(test)]
+    collect_unindexed_record_runs(&mut scan);
     for index in 0..scan.entries.len() {
         let entry = &scan.entries[index];
         if entry.role != ContainerRole::BrepText
@@ -820,9 +869,8 @@ pub(crate) fn scan<'a>(
     Ok(scan)
 }
 
-/// End each Design `BulkStream` view at the record run after its last indexed
-/// record, so that decoders read only the records its `MetaStream` indexes.
-fn bound_design_bulk_streams(scan: &mut ContainerScan<'_>) {
+#[cfg(test)]
+fn collect_unindexed_record_runs(scan: &mut ContainerScan<'_>) {
     let bulk_streams = scan
         .entries
         .iter()
@@ -840,16 +888,10 @@ fn bound_design_bulk_streams(scan: &mut ContainerScan<'_>) {
         else {
             continue;
         };
-        let Some(run) = crate::design::decode::meta::unindexed_record_run(view.window(), &meta)
-        else {
-            continue;
-        };
-        let Some(bounded) = view.child(view.start(), view.start() + run.start) else {
-            continue;
-        };
-        let stored = view.window().len();
-        scan.inflated_entries.insert(name.clone(), bounded);
-        scan.unindexed_record_runs.push((name, run, stored));
+        if let Some(run) = crate::design::decode::meta::unindexed_record_run(view.window(), &meta) {
+            scan.unindexed_record_runs
+                .push((name, run, view.window().len()));
+        }
     }
 }
 

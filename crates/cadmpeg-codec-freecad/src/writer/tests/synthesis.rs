@@ -34,6 +34,40 @@ fn synthesized(source: &[u8], target: &str) -> cadmpeg_ir::codec::DecodeResult {
 }
 
 #[test]
+fn synthesized_design_objects_keep_their_source_declaration_slots() {
+    let source = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../corpus/freecad_fcstd/fixtures/techdraw-dimensions.FCStd"
+    ));
+    let input = FcstdCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let order = |ir: &cadmpeg_ir::CadIr| {
+        let mut objects = ir
+            .native
+            .namespace("fcstd")
+            .unwrap()
+            .arena_as::<crate::native::ObjectRecord>("objects")
+            .unwrap();
+        objects.sort_by_key(|object| object.order);
+        objects
+            .iter()
+            .map(|object| object.name().to_owned())
+            .collect::<Vec<_>>()
+    };
+    let before = order(input.ir());
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(input.ir(), None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(order(output.ir()), before);
+}
+
+#[test]
 fn single_segment_composite_edge_keeps_its_line() {
     use cadmpeg_ir::geometry::{
         CompositeCurveSegment, CompositeCurveSegments, CompositeCurveTransition, Curve,
@@ -198,6 +232,163 @@ fn triangulated_face_with_polygon_edge_survives_synthesis() {
         output.ir().model.tessellations[0].triangles(),
         input.ir().model.tessellations[0].triangles()
     );
+    let edge_curve = |ir: &cadmpeg_ir::CadIr| {
+        let id = ir.model.edges[0].curve().unwrap();
+        ir.model
+            .curves
+            .iter()
+            .find(|curve| curve.id == *id)
+            .unwrap()
+            .geometry
+            .clone()
+    };
+    assert_eq!(edge_curve(output.ir()), edge_curve(input.ir()));
+    let namespace = output.ir().native.namespace("fcstd").unwrap();
+    let payloads = namespace
+        .arena_as::<crate::brep::ShapePayloadRecord>("shape_payloads")
+        .unwrap();
+    let polygons = namespace
+        .arena_as::<crate::brep::Polygon3dRecord>("polygons3d")
+        .unwrap();
+    let indexed = namespace
+        .arena_as::<crate::brep::PolygonOnTriangulationRecord>("polygons_on_triangulations")
+        .unwrap();
+    let tables = crate::brep::Tables::from_payload(&payloads[0], &polygons, &indexed)
+        .unwrap()
+        .unwrap();
+    assert!(tables.curves.is_empty());
+    assert!(tables.tshapes.iter().any(|shape| matches!(
+        &shape.geometry,
+        crate::brep::TextTShapeGeometry::Edge { representations, .. }
+            if representations.iter().any(|value| matches!(value, crate::brep::TextEdgeRepresentation::PolygonOnTriangulation { .. }))
+    )));
+    let mut edited = input.ir().clone();
+    let curve_id = edited.model.edges[0].curve().unwrap().clone();
+    let curve = edited
+        .model
+        .curves
+        .iter_mut()
+        .find(|curve| curve.id == curve_id)
+        .unwrap();
+    let cadmpeg_ir::geometry::CurveGeometry::Solved(
+        cadmpeg_ir::geometry::SolvedCurveGeometry::Polyline(polyline),
+    ) = &mut curve.geometry
+    else {
+        panic!("expected a polyline edge");
+    };
+    polyline.set_chordal_deflection(0.03).unwrap();
+    polyline
+        .edit_samples(|samples| {
+            if let cadmpeg_ir::geometry::sampled::PolylineSamples::Parameterized { vertices } =
+                samples
+            {
+                let mut updated = vertices.to_vec();
+                updated.insert(
+                    1,
+                    cadmpeg_ir::geometry::sampled::PolylineVertex {
+                        parameter: 0.5,
+                        point: cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0),
+                    },
+                );
+                *vertices = updated.try_into().unwrap();
+            }
+            Ok(())
+        })
+        .unwrap();
+    let mesh = edited.model.tessellations[0].clone();
+    let mut vertices = mesh.vertices();
+    vertices.swap(0, 1);
+    let mut triangles = mesh.triangles();
+    for triangle in &mut triangles {
+        for vertex in triangle {
+            *vertex = match *vertex {
+                0 => 1,
+                1 => 0,
+                other => other,
+            };
+        }
+    }
+    let reordered = cadmpeg_ir::tessellation::TessellationMesh::from_checked_list_lanes(
+        vertices, triangles, None,
+    )
+    .unwrap();
+    edited.model.tessellations[0] = mesh.with_mesh(reordered, Vec::new()).unwrap();
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&edited, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let reread = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(edge_curve(reread.ir()), edge_curve(&edited));
+    let namespace = reread.ir().native.namespace("fcstd").unwrap();
+    let indexed = namespace
+        .arena_as::<crate::brep::PolygonOnTriangulationRecord>("polygons_on_triangulations")
+        .unwrap();
+    let payloads = namespace
+        .arena_as::<crate::brep::ShapePayloadRecord>("shape_payloads")
+        .unwrap();
+    let polygons = namespace
+        .arena_as::<crate::brep::Polygon3dRecord>("polygons3d")
+        .unwrap();
+    let tables = crate::brep::Tables::from_payload(&payloads[0], &polygons, &indexed)
+        .unwrap()
+        .unwrap();
+    assert!(tables.tshapes.iter().any(|shape| match &shape.geometry {
+        crate::brep::TextTShapeGeometry::Edge {
+            representations, ..
+        } => representations.iter().any(|value| match value {
+            crate::brep::TextEdgeRepresentation::PolygonOnTriangulation { polygon, .. } => polygon
+                .checked_sub(1)
+                .and_then(|index| tables.polygons_on_triangulations.get(index))
+                .is_some_and(
+                    |polygon| polygon.nodes == [2, 3, 1] && polygon.deflection.get() == 0.03
+                ),
+            _ => false,
+        }),
+        _ => false,
+    }));
+    let mut unmatched = edited.clone();
+    let curve = unmatched
+        .model
+        .curves
+        .iter_mut()
+        .find(|curve| curve.id == curve_id)
+        .unwrap();
+    let cadmpeg_ir::geometry::CurveGeometry::Solved(
+        cadmpeg_ir::geometry::SolvedCurveGeometry::Polyline(polyline),
+    ) = &mut curve.geometry
+    else {
+        panic!("expected a polyline edge");
+    };
+    polyline
+        .edit_samples(|samples| {
+            if let cadmpeg_ir::geometry::sampled::PolylineSamples::Parameterized { vertices } =
+                samples
+            {
+                vertices[1].point.y = 0.5;
+            }
+            Ok(())
+        })
+        .unwrap();
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&unmatched, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.code
+            == crate::loss::FreecadLossCode::ExportGeometryNotTransferred
+                .note("")
+                .code
+            && loss.message.contains(unmatched.model.edges[0].id.as_str())
+            && loss.message.contains("triangulation association")
+    }));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let reread = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(edge_curve(reread.ir()), edge_curve(&unmatched));
 }
 
 #[test]
@@ -336,6 +527,45 @@ fn reversed_procedural_surface_ranges_use_the_solved_carrier() {
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .unwrap();
     }
+}
+
+#[test]
+fn unsupported_face_keeps_its_boundary_beside_a_supported_face() {
+    let xml = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="Shape" id="1"/></Objects><ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.brp"/></Property></Properties></Object></ObjectData></Document>"#;
+    let brep = b"CASCADE Topology V3, (c) Open Cascade\nLocations 0\nCurve2ds 2\n1 0 0 1 0\n1 0 0 1 0\nCurves 2\n1 0 0 0 1 0 0\n1 0 1 0 1 0 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 2\n1 0 0 0 0 0 1 1 0 0 0 1 0\n1 0 1 0 0 0 1 1 0 0 0 1 0\nTriangulations 0\nTShapes 12\nVe 0.001 0 0 0 0 0 1001000 *\nVe 0.001 1 0 0 0 0 1001000 *\nVe 0.001 0 1 0 0 0 1001000 *\nVe 0.001 1 1 0 0 0 1001000 *\nEd 0.001 1 1 0 1 1 0 0 1 2 1 1 0 0 1 0 1001000 +12 0 -11 0 *\nEd 0.001 1 1 0 1 2 0 0 1 2 2 2 0 0 1 0 1001000 +10 0 -9 0 *\nWi 1001000 +8 0 *\nWi 1001000 +7 0 *\nFa 0 0.001 1 0 1001000 +6 0 *\nFa 0 0.001 2 0 1001000 +5 0 *\nSh 1001000 +4 0 +3 0 *\nSo 1001000 +2 0 *\n+1 0 *";
+    let source = crate::test_support::test_archive::archive_entries(&[
+        ("Document.xml", xml),
+        ("Shape.brp", brep),
+    ]);
+    let input = FcstdCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        (input.ir().model.faces.len(), input.ir().model.edges.len()),
+        (2, 2)
+    );
+    let mut ir = input.ir().clone();
+    let surface = ir.model.faces[0].surface.clone();
+    ir.model
+        .surfaces
+        .iter_mut()
+        .find(|value| value.id == surface)
+        .unwrap()
+        .geometry = cadmpeg_ir::geometry::SurfaceGeometry::Solved(
+        cadmpeg_ir::geometry::SolvedSurfaceGeometry::Unknown { record: None },
+    );
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        (output.ir().model.faces.len(), output.ir().model.edges.len()),
+        (1, 2)
+    );
 }
 
 #[test]
@@ -1556,6 +1786,49 @@ fn zero_vertex_normal_drops_the_normal_lane_and_keeps_the_face() {
     assert!(output.ir().model.tessellations[0]
         .vertex_normals()
         .is_empty());
+}
+
+#[test]
+fn shared_body_visibility_normalizes_to_first_body() {
+    let xml = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Part::Feature" name="Shape"/></Objects><ObjectData Count="1"><Object name="Shape"><Properties Count="1"><Property name="Shape" type="Part::PropertyPartShape"><Part file="Shape.brp"/></Property></Properties></Object></ObjectData></Document>"#;
+    let brep = b"CASCADE Topology V3, (c) Open Cascade\nLocations 0\nCurve2ds 0\nCurves 0\nPolygon3D 0\nPolygonOnTriangulations 0\nSurfaces 0\nTriangulations 1\n3 1 0 0 0.02 0 0 0 1 0 0 0 1 0 1 2 3\nTShapes 6\nFa 0 0.001 0 0 2 1 1001000 *\nSh 1001000 +6 0 *\nSo 1001000 +5 0 *\nFa 0 0.001 0 0 2 1 1001000 *\nSh 1001000 +3 0 *\nSo 1001000 +2 0 *\n+4 0\n+1 0\n";
+    let source = crate::test_support::test_archive::archive_entries(&[
+        ("Document.xml", xml),
+        ("Shape.brp", brep),
+    ]);
+    let input = FcstdCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = input.ir().clone();
+    assert_eq!(ir.model.bodies.len(), 2);
+    ir.model.bodies[0].visible = Some(true);
+    ir.model.bodies[1].visible = Some(false);
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.code
+            == crate::loss::FreecadLossCode::AppearanceBodyStyleNotTransferred
+                .note("")
+                .code
+            && ir
+                .model
+                .bodies
+                .iter()
+                .all(|body| loss.message.contains(body.id.as_str()))
+    }));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(output.ir().model.bodies.len(), 2);
+    assert!(output
+        .ir()
+        .model
+        .bodies
+        .iter()
+        .all(|body| body.visible == Some(true)));
 }
 
 #[test]

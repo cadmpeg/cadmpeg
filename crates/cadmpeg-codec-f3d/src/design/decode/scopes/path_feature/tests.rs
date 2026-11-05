@@ -36,7 +36,7 @@ fn compact_loft_prefix_reads_operation_at_offset_25_for_any_dynamic_class_tag() 
             .unwrap();
         let construction = exact_path_feature_construction(
             &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &crate::design::test_support::test_primary_frames(&bytes),
             &scope,
             &[],
         )
@@ -55,7 +55,7 @@ fn compact_loft_prefix_reads_operation_at_offset_25_for_any_dynamic_class_tag() 
         assert_eq!(
             exact_path_feature_construction(
                 &bytes,
-                &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+                &crate::design::test_support::test_primary_frames(&bytes),
                 &scope,
                 &[],
             ),
@@ -82,7 +82,7 @@ fn two_lane_sweep_scope_from_corpus_admits_exact_along_and_against_distances() {
         .unwrap();
     let bytes = view.unread().to_vec();
 
-    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let records = crate::design::test_support::test_primary_frames(&bytes);
     let mut scope = DesignParameterScope::empty(
         "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter-scope#97558",
         crate::records::feature::scope::DesignFeatureKind::Sweep,
@@ -183,7 +183,7 @@ fn compact_two_lane_sweep_pins_admission_rules_and_rejects_mutations() {
     };
 
     let scope = make_scope();
-    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let records = crate::design::test_support::test_primary_frames(&bytes);
     let construction = exact_path_feature_construction(&bytes, &records, &scope, &[])
         .expect("exact 2-lane sweep construction");
     assert_eq!(
@@ -286,7 +286,7 @@ fn compact_two_lane_sweep_pins_admission_rules_and_rejects_mutations() {
     let mut mutated = bytes.clone();
     let second_scalar_offset = usize::try_from(value_offsets[1] - 40).expect("usize offset");
     mutated[second_scalar_offset + 35] = 2;
-    let mutated_records = crate::design::test_support::indexed_record_offsets_for_test(&mutated);
+    let mutated_records = crate::design::test_support::test_primary_frames(&mutated);
     assert_eq!(
         exact_path_feature_construction(&mutated, &mutated_records, &scope, &[]),
         None

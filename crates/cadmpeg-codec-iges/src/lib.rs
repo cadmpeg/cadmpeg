@@ -41,7 +41,7 @@ use cadmpeg_core::target::TargetDescriptor;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     target::{Catalog, ResolvedWrite},
-    transitional_from_codec, EncodeError, EncodeInput, EncoderBackend, ExportBody,
+    EncodeError, EncodeInput, EncoderBackend, ExportBody,
 };
 use cadmpeg_ir::codec::{CodecBackend, Confidence, Decoded, FormatId};
 use cadmpeg_ir::hash::document_local_sha256;
@@ -127,11 +127,19 @@ impl IgesVersion {
 #[derive(Debug, Default, Clone, Copy)]
 pub struct IgesCodec;
 
-fn document_digest(ir: &CadIr) -> Result<String, cadmpeg_core::CodecError> {
+fn document_digest(
+    ir: &CadIr,
+    limits: cadmpeg_core::decode::ResourceLimits,
+) -> Result<String, cadmpeg_core::CodecError> {
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+    let policy = cadmpeg_core::decode::DecodePolicy {
+        limits,
+        ..Default::default()
+    };
+    let ctx = DecodeContext::for_encode(&arena, &policy);
+    let session = cadmpeg_core::encode::EncodeSession::from_context(&ctx)?;
     let digest = document_local_sha256(&ctx, ir, ir.source.as_ref(), "iges", SOURCE_IMAGE_ID)?;
+    session.finish()?;
     ctx.finish_session()?;
     Ok(digest)
 }
@@ -221,7 +229,7 @@ impl EncoderBackend for IgesCodec {
         input: EncodeInput<'_>,
         target: ResolvedWrite<'_>,
     ) -> Result<ExportBody, EncodeError> {
-        writer::target::plan(input, &target).map_err(transitional_from_codec)
+        writer::target::plan(input, &target).map_err(EncodeError::from)
     }
 }
 

@@ -11,14 +11,13 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::dialect::DialectId;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
-    target::ResolvedWrite, ArenaCoverage, EncodeError, EncodeInput, ExportBody, PatchConsumption,
-    WritePath,
+    target::ResolvedWrite, ArenaCoverage, EncodeInput, ExportBody, PatchConsumption, WritePath,
 };
 use cadmpeg_ir::document::CadIr;
 
 pub(super) mod projection;
 
-use super::write;
+use super::write_seekable;
 use crate::native::DocumentFacts;
 
 /// What resolving a [`cadmpeg_ir::codec::write::target::TargetRequest`] against the source decided.
@@ -106,13 +105,8 @@ pub(crate) fn plan(
         .filter(|_| resolved.source_preservation_eligible() && input.can_reuse_source())
     {
         if let Some(resolution) = retained_baseline(input.ir, fidelity, resolved.target_id()) {
-            let patch = admit_unedited(
-                &allocation_context,
-                input.ir,
-                resolution.fidelity(),
-                input.limits,
-            )
-            .and_then(|()| finish(&resolution));
+            let patch = admit_unedited(&allocation_context, input.ir, resolution.fidelity())
+                .and_then(|()| finish(&allocation_context, &resolution));
             match patch {
                 Ok(body) => return Ok(body),
                 Err(error @ CodecError::UnsupportedContent(_)) => reason = Some(error.to_string()),
@@ -122,31 +116,6 @@ pub(crate) fn plan(
             reason = Some("the retained typed document layout is unavailable".into());
         }
     }
-    // Synthesis authors the recorded schema grammars only. A preserved
-    // off-catalog dialect has no synthesis vocabulary: it patches from its
-    // retained image or refuses as an unsupported target (#238 §5.0).
-    let synthesizable = [
-        crate::dialect::FcstdDialect::Schema2,
-        crate::dialect::FcstdDialect::Schema3,
-        crate::dialect::FcstdDialect::Schema4,
-    ];
-    if !synthesizable
-        .iter()
-        .any(|known| known.id().as_str() == resolved.target_id().as_str())
-    {
-        return Err(CodecError::UnsupportedTarget(Box::new(
-            cadmpeg_core::target::TargetRefusal::unknown_explicit(
-                resolved.target_id().as_str(),
-                cadmpeg_core::target::TargetCatalog::new(crate::dialect::TARGETS, Some(0)),
-            ),
-        )));
-    }
-    let synthesis = resolved.for_synthesis().map_err(|error| match error {
-        // Resolution only refuses a missing catalog default here (#239).
-        EncodeError::UnsupportedTarget(refusal) => CodecError::UnsupportedTarget(refusal),
-        error => CodecError::malformed(error.to_string()),
-    })?;
-    let resolved = synthesis.resolution();
     let schema = if *resolved.target_id() == crate::dialect::FcstdDialect::Schema2.id() {
         "2"
     } else if *resolved.target_id() == crate::dialect::FcstdDialect::Schema3.id() {
@@ -182,7 +151,6 @@ fn admit_unedited(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
     fidelity: &cadmpeg_ir::SourceFidelity,
-    limits: cadmpeg_core::decode::ResourceLimits,
 ) -> Result<(), CodecError> {
     if let Some(refusal) = ctx.resource_refusal() {
         return Err(refusal.into());
@@ -205,58 +173,36 @@ fn admit_unedited(
         "fcstd",
         crate::fidelity::SOURCE_IMAGE,
     )?;
-    let replays = cadmpeg_ir::hash::retained_image_replays(
-        image,
-        &fidelity.decode_digest,
-        current.as_str(),
-        ir.scope,
-        limits,
-        |_, _| {
-            // The writer plans from Full-depth documents (REQUEST), so the
-            // replay decodes the image at Full even when the document scope
-            // is narrower; the scope-derived depth would drop held records.
-            let arena = cadmpeg_core::decode::DecodeArena::new();
-            let policy = cadmpeg_core::decode::DecodePolicy {
-                limits,
-                ..cadmpeg_core::decode::DecodePolicy::default()
-            };
-            let (fresh_ctx, fresh_root) = cadmpeg_core::decode::DecodeContext::from_root_bytes_at(
-                image,
-                &arena,
-                &policy,
-                cadmpeg_core::decode::DecodeDepth::Full,
-            )
-            .map_err(|_| {
-                CodecError::UnsupportedContent(
-                    "the retained FCStd source image refused to decode".into(),
-                )
-            })?;
-            let fresh =
-                cadmpeg_ir::Codec::decode_with_context(&crate::FcstdCodec, &fresh_ctx, fresh_root)
-                    .map_err(|failure| match failure {
-                        cadmpeg_ir::codec::DecodeFailure::Codec(error) => error,
-                        _ => CodecError::UnsupportedContent(
-                            "the retained FCStd source image refused to decode".into(),
-                        ),
-                    })?;
-            let hash_arena = cadmpeg_core::decode::DecodeArena::new();
-            let hash_policy = cadmpeg_core::decode::DecodePolicy::default();
-            let (hash_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-                &[],
-                &hash_arena,
-                &hash_policy,
-            )?;
-            let fresh_hash = cadmpeg_ir::hash::document_local_sha256(
-                &hash_ctx,
-                fresh.ir(),
-                fresh.ir().source.as_ref(),
-                "fcstd",
-                crate::fidelity::SOURCE_IMAGE,
-            )?;
-            hash_ctx.finish_session()?;
-            Ok::<_, CodecError>(fresh_hash)
-        },
-    );
+    let session = cadmpeg_core::encode::EncodeSession::from_context(ctx)?;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (fresh_ctx, fresh_root) = DecodeContext::for_encode_session_root(&arena, &session, image)?;
+    let replays = if cadmpeg_ir::hash::digest::Sha256Digest::digest(image) == fidelity.decode_digest
+    {
+        let fresh_hash = fresh_ctx
+            .run_part(|| {
+                let fresh = cadmpeg_ir::Codec::decode_with_context(
+                    &crate::FcstdCodec,
+                    &fresh_ctx,
+                    fresh_root,
+                );
+                Ok(fresh.ok().and_then(|fresh| {
+                    cadmpeg_ir::hash::document_local_sha256(
+                        &fresh_ctx,
+                        fresh.ir(),
+                        fresh.ir().source.as_ref(),
+                        "fcstd",
+                        crate::fidelity::SOURCE_IMAGE,
+                    )
+                    .ok()
+                }))
+            })?
+            .ok()
+            .flatten();
+        fresh_hash.as_deref() == Some(current.as_str())
+    } else {
+        false
+    };
+    session.finish()?;
     if !replays {
         return Err(CodecError::UnsupportedContent(
             "the current document no longer matches its retained image".into(),
@@ -268,9 +214,10 @@ fn admit_unedited(
 /// Write the resolved retained layout using source images from fidelity.
 /// [`admit_unedited`] admits only an unedited document; the fingerprint
 /// selects layout only.
-fn finish(resolution: &Resolution<'_>) -> Result<ExportBody, CodecError> {
-    let mut bytes = Vec::new();
-    let outcome = write(&mut bytes, resolution)?;
+fn finish(ctx: &DecodeContext<'_>, resolution: &Resolution<'_>) -> Result<ExportBody, CodecError> {
+    let mut output = std::io::Cursor::new(Vec::new());
+    let outcome = write_seekable(&mut output, resolution, ctx)?;
+    let bytes = output.into_inner();
     Ok(ExportBody {
         bytes,
         census: outcome.census,

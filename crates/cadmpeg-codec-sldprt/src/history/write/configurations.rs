@@ -124,13 +124,6 @@ pub(crate) fn synchronize_configuration_records(
         .iter()
         .map(|feature| (&feature.id, feature))
         .collect::<HashMap<_, _>>();
-    let mut next_scalar = native
-        .feature_histories
-        .iter()
-        .flat_map(|history| &history.features)
-        .filter_map(crate::records::Feature::source_value)
-        .max()
-        .unwrap_or(0);
     let mut active_values = BTreeMap::new();
     if synthesized {
         for configuration in ir.model.configurations.iter().filter(|c| !c.active) {
@@ -155,6 +148,11 @@ pub(crate) fn synchronize_configuration_records(
             continue;
         }
         let slot = configuration_slot(&configuration.properties, configuration.ordinal).to_string();
+        let mut scalar_ids =
+            crate::resolved_features::write_feature_parameters::ScalarIdentities::new(
+                native,
+                Some(&slot),
+            );
         let mut groups = BTreeMap::<
             &cadmpeg_ir::features::FeatureId,
             Vec<(&cadmpeg_ir::features::DesignParameter, &ParameterValue)>,
@@ -228,15 +226,7 @@ pub(crate) fn synchronize_configuration_records(
                     class,
                     &parameter.name,
                     value,
-                    {
-                        // (O-capacity): each scalar requires a distinct u32 native identity.
-                        next_scalar = next_scalar.checked_add(1).ok_or_else(|| {
-                            CodecError::malformed(
-                                "SLDPRT configuration scalar identity space is exhausted",
-                            )
-                        })?;
-                        next_scalar
-                    },
+                    scalar_ids.take()?,
                     &[],
                 )?;
             }

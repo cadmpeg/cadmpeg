@@ -7,6 +7,10 @@ use std::collections::{BTreeMap, BTreeSet};
 pub(super) enum Value {
     Unknown,
     Functions(BTreeSet<Vec<String>>),
+    Constructed {
+        constructor: Vec<String>,
+        unwrapped: bool,
+    },
 }
 
 #[derive(Default)]

@@ -198,6 +198,14 @@ pub(crate) fn append_generated_record_tail(bytes: &mut Vec<u8>, head: &str, tail
 }
 
 pub(crate) fn synthetic_geometry_with_history_smbh() -> Vec<u8> {
+    synthetic_geometry_with_history(true)
+}
+
+pub(crate) fn synthetic_geometry_with_typed_history_smbh() -> Vec<u8> {
+    synthetic_geometry_with_history(false)
+}
+
+fn synthetic_geometry_with_history(include_opaque_payload: bool) -> Vec<u8> {
     let mut bytes = synthetic_geometry_smbh();
     let name_tag = bytes
         .windows(b"\x0d\x0bdelta_state".len())
@@ -243,11 +251,13 @@ pub(crate) fn synthetic_geometry_with_history_smbh() -> Vec<u8> {
     t_long(&mut tail, 0); // end changes
     t_long(&mut tail, 0); // end boards
     t_end(&mut tail);
-    t_ident(&mut tail, "history_payload");
-    t_long(&mut tail, 37);
-    t_ref(&mut tail, 1830);
-    t_ref(&mut tail, -1);
-    t_end(&mut tail);
+    if include_opaque_payload {
+        t_ident(&mut tail, "history_payload");
+        t_long(&mut tail, 37);
+        t_ref(&mut tail, 1830);
+        t_ref(&mut tail, -1);
+        t_end(&mut tail);
+    }
     t_ident(&mut tail, "delta_state");
     for value in [3, 1, 0] {
         t_long(&mut tail, value);

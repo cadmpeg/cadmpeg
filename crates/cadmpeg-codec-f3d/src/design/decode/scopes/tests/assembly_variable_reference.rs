@@ -60,7 +60,7 @@ fn variable_reference_assembly_uses_fixed_alignment_lanes() {
     let mut bytes = assembly_operand_frame_fixture(scope_record_index);
     let alignment = exact_assembly_alignment(
         &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &crate::design::test_support::test_primary_frames(&bytes),
         &scope,
         &owners,
     )
@@ -164,7 +164,7 @@ fn variable_reference_assembly_uses_fixed_alignment_lanes() {
     bytes.extend_from_slice(&71_u32.to_le_bytes());
     let paths = exact_assembly_alignment(
         &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &crate::design::test_support::test_primary_frames(&bytes),
         &scope,
         &owners,
     )
@@ -184,7 +184,7 @@ fn variable_reference_assembly_uses_fixed_alignment_lanes() {
         crate::records::references::DesignClassTag::try_from("260".to_owned()).unwrap();
     assert!(exact_assembly_alignment(
         &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &crate::design::test_support::test_primary_frames(&bytes),
         &wrong_generation,
         &owners,
     )

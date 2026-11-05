@@ -42,6 +42,40 @@ pub(crate) fn regenerate(
             ))
         })
         .collect::<BTreeMap<_, _>>();
+    let neutral_refs = document
+        .model
+        .parameters
+        .iter()
+        .filter_map(|record| record.native_ref.as_deref())
+        .chain(
+            document
+                .model
+                .sketch_entities
+                .iter()
+                .filter_map(|record| record.native_ref.as_deref()),
+        )
+        .chain(
+            document
+                .model
+                .spatial_sketch_entities
+                .iter()
+                .filter_map(|record| record.native_ref.as_deref()),
+        )
+        .chain(
+            document
+                .model
+                .sketch_constraints
+                .iter()
+                .filter_map(|record| record.native_ref.as_deref()),
+        )
+        .chain(
+            document
+                .model
+                .spatial_sketch_constraints
+                .iter()
+                .filter_map(|record| record.native_ref.as_deref()),
+        )
+        .collect::<BTreeSet<_>>();
     let mut selection_owners = BTreeSet::new();
     for lane in &source.feature_input_lanes {
         for record in &lane.body_selections {
@@ -99,7 +133,13 @@ pub(crate) fn regenerate(
     for (ordinal, original) in source.feature_input_lanes.iter().enumerate() {
         let mut selected = original.clone();
         if ir.scope.design {
-            retain_owners(&mut selected, source, &allowed_owners, &selection_owners);
+            retain_owners(
+                &mut selected,
+                source,
+                &allowed_owners,
+                &selection_owners,
+                &neutral_refs,
+            );
         }
         let lane = &selected;
         if lane.classes.is_empty() && lane.names.is_empty() && lane.sketch_entities.is_empty() {
@@ -266,6 +306,20 @@ pub(crate) fn regenerate(
                     arena: "sketch_input_entities",
                     id: marker.id().into(),
                     reason: "native marker owner or link no longer resolves".into(),
+                });
+                continue;
+            }
+            if matches!(marker.kind(), SketchInputKind::Relation(_))
+                && marker.links().is_empty()
+                && lane
+                    .sketch_entities
+                    .iter()
+                    .any(|candidate| candidate.local_id() == Some(0))
+            {
+                omitted.push(Omission {
+                    arena: "sketch_input_entities",
+                    id: marker.id().into(),
+                    reason: "an unlinked marker has no unambiguous default reference".into(),
                 });
                 continue;
             }
@@ -465,11 +519,18 @@ fn retain_owners(
     source: &SldprtNative,
     allowed: &BTreeSet<&str>,
     selection_owners: &BTreeSet<&str>,
+    neutral_refs: &BTreeSet<&str>,
 ) {
-    let permitted = |owner: Option<&str>| owner.is_some_and(|owner| allowed.contains(owner));
+    let permitted = |owner: Option<&str>| owner.is_none_or(|owner| allowed.contains(owner));
     let selection_permitted = |owner: Option<&str>| {
-        owner.is_some_and(|owner| allowed.contains(owner) || selection_owners.contains(owner))
+        owner.is_none_or(|owner| allowed.contains(owner) || selection_owners.contains(owner))
     };
+    let projected_scalar_names = lane
+        .scalars
+        .iter()
+        .filter(|scalar| scalar.feature_ref.is_none() && neutral_refs.contains(scalar.id.as_str()))
+        .map(|scalar| scalar.name.clone())
+        .collect::<BTreeSet<_>>();
     let scalar_names = lane
         .scalars
         .iter()
@@ -482,12 +543,17 @@ fn retain_owners(
     });
     lane.names.retain(|name| {
         selection_permitted(name.feature_ref.as_deref())
+            && !projected_scalar_names.contains(&name.id)
             && (!scalar_names.contains(name.id.as_str()) || permitted(name.feature_ref.as_deref()))
     });
-    lane.scalars
-        .retain(|record| permitted(record.feature_ref.as_deref()));
-    lane.relation_bindings
-        .retain(|record| permitted(record.feature_ref.as_deref()));
+    lane.scalars.retain(|record| {
+        permitted(record.feature_ref.as_deref())
+            && (record.feature_ref.is_some() || !neutral_refs.contains(record.id.as_str()))
+    });
+    lane.relation_bindings.retain(|record| {
+        permitted(record.feature_ref.as_deref())
+            && (record.feature_ref.is_some() || !neutral_refs.contains(record.id.as_str()))
+    });
     lane.relation_instances
         .retain(|record| permitted(Some(&record.feature_ref)));
     lane.body_selections
@@ -498,8 +564,10 @@ fn retain_owners(
         .retain(|record| selection_permitted(Some(&record.feature_ref)));
     lane.references
         .retain(|record| permitted(record.feature_ref.as_deref()));
-    lane.sketch_entities
-        .retain(|record| permitted(record.feature_ref.as_deref()));
+    lane.sketch_entities.retain(|record| {
+        permitted(record.feature_ref.as_deref())
+            && (record.feature_ref.is_some() || !neutral_refs.contains(record.id()))
+    });
     lane.generated_surface_identities.retain(|record| {
         source
             .feature_histories
@@ -562,15 +630,12 @@ fn marker_bytes(marker: &crate::records::SketchInputEntity) -> Option<Vec<u8>> {
         let SketchInputKind::Relation(kind) = marker.kind() else {
             return None;
         };
-        let [first, second] = marker.links() else {
-            return None;
+        let links = match marker.links() {
+            [] => [0, 0],
+            [first, second] => [first.local_id, second.local_id],
+            _ => return None,
         };
-        super::write_generate::append_reference_marker(
-            &mut bytes,
-            kind,
-            [first.local_id, second.local_id],
-            id,
-        );
+        super::write_generate::append_reference_marker(&mut bytes, kind, links, id);
         if let Some(links) = &marker.links {
             bytes[start + 68..start + 70].copy_from_slice(&links.selector().to_le_bytes());
         }

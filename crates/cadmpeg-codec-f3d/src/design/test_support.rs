@@ -19,11 +19,37 @@ pub(crate) fn with_test_decode_context<T>(f: impl FnOnce(&DecodeContext<'_>) -> 
     f(&ctx)
 }
 
-/// Build a record index under the default test decode policy.
-pub(in crate::design) fn indexed_record_offsets_for_test(
+pub(in crate::design) fn test_primary_frames(
     bytes: &[u8],
-) -> crate::design::decode::sketch::IndexedRecordOffsets {
-    crate::design::decode::sketch::IndexedRecordOffsets::build(bytes)
+) -> Vec<crate::metastream::PrimaryRecordFrame> {
+    let headers: Vec<_> = memchr::memmem::find_iter(bytes, &[3, 0, 0, 0])
+        .filter_map(|at| {
+            let tag = bytes.get(at + 4..at + 7)?;
+            if !tag.iter().all(u8::is_ascii_digit) {
+                return None;
+            }
+            Some((
+                at,
+                u64::from(cadmpeg_core::decode::View::u32_le_at(bytes, at + 7)?),
+            ))
+        })
+        .collect();
+    let mut result = Vec::new();
+    let mut ordinal = 0;
+    while ordinal < headers.len() {
+        let (start, entity_id) = headers[ordinal];
+        let paired = headers.get(ordinal + 1).filter(|(_, id)| *id == entity_id);
+        let next = ordinal + if paired.is_some() { 2 } else { 1 };
+        let end = headers.get(next).map_or(bytes.len(), |(at, _)| *at);
+        result.push(crate::metastream::PrimaryRecordFrame {
+            entity_id,
+            start,
+            member_end: paired.map_or(end, |(at, _)| *at),
+            end,
+        });
+        ordinal = next;
+    }
+    result
 }
 
 pub(crate) fn parameter_record(

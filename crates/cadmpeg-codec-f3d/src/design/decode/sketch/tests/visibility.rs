@@ -88,6 +88,7 @@ fn visibility_stream() -> (Vec<u8>, crate::metastream::MetaStream) {
     for unit in "0_201".encode_utf16() {
         bytes.extend_from_slice(&unit.to_le_bytes());
     }
+    let member_at = cadmpeg_core::decode::u64_from_index(bytes.len());
     let mut visibility = member(1, 1);
     visibility[4..7].copy_from_slice(b"257");
     bytes.extend_from_slice(&visibility);
@@ -147,7 +148,10 @@ fn visibility_stream() -> (Vec<u8>, crate::metastream::MetaStream) {
             entity_id: ENTITY_SUFFIX,
             bulk_offset: 0,
         }],
-        secondary_records: Vec::new(),
+        secondary_records: vec![crate::metastream::RecordIndexEntry {
+            entity_id: ENTITY_SUFFIX,
+            bulk_offset: member_at,
+        }],
     };
 
     (bytes, metadata)
@@ -203,6 +207,117 @@ fn collection_stream_version(
         });
     }
     (bytes, metadata)
+}
+
+fn two_visibility_stream(
+    sibling_collection: u64,
+    collections: &[(u64, &[u64])],
+) -> (Vec<u8>, crate::metastream::MetaStream, usize, usize) {
+    let (mut bytes, mut metadata) = visibility_stream();
+    let member_at = usize::try_from(metadata.secondary_records[0].bulk_offset).unwrap();
+    let mut sibling = bytes.clone();
+    sibling[7..15].copy_from_slice(&202u64.to_le_bytes());
+    sibling[33] = b'2';
+    sibling[member_at + 7..member_at + 15].copy_from_slice(&202u64.to_le_bytes());
+    sibling[member_at + 37..member_at + 45].copy_from_slice(&sibling_collection.to_le_bytes());
+    let sibling_start = bytes.len();
+    bytes.extend_from_slice(&sibling);
+    let (collection_bytes, collection_meta) = collection_stream(300, collections);
+    let first = usize::try_from(collection_meta.records[1].bulk_offset).unwrap();
+    let collection_start = bytes.len();
+    bytes.extend_from_slice(&collection_bytes[first..]);
+    metadata.types[0].entities = crate::records::identity::ReferenceRun::unlocated(vec![201, 202]);
+    metadata.types.push(collection_meta.types[2].clone());
+    metadata.records.push(crate::metastream::RecordIndexEntry {
+        entity_id: 202,
+        bulk_offset: u64::try_from(sibling_start).unwrap(),
+    });
+    for record in collection_meta.records.iter().skip(1) {
+        metadata.records.push(crate::metastream::RecordIndexEntry {
+            entity_id: record.entity_id,
+            bulk_offset: u64::try_from(
+                collection_start + usize::try_from(record.bulk_offset).unwrap() - first,
+            )
+            .unwrap(),
+        });
+    }
+    metadata
+        .secondary_records
+        .push(crate::metastream::RecordIndexEntry {
+            entity_id: 202,
+            bulk_offset: u64::try_from(sibling_start + member_at).unwrap(),
+        });
+    (bytes, metadata, member_at, collection_start)
+}
+
+fn decode_visibility_parts(
+    bytes: &[u8],
+    metadata: &crate::metastream::MetaStream,
+) -> (
+    Vec<(
+        u64,
+        crate::records::sketch_placement::DesignSketchVisibility,
+    )>,
+    usize,
+    usize,
+) {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    use cadmpeg_ir::source_fidelity::parts::PartOutput;
+
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let (ctx, source) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
+    let visibilities = super::super::decode_sketch_visibilities_with_parts(
+        &ctx,
+        &mut output,
+        source,
+        "Design/BulkStream.dat",
+        metadata,
+    )
+    .unwrap();
+    let (_, native, fidelity, losses) = output.into_parts();
+    assert_eq!(fidelity.retained_records().len(), losses.len());
+    let stubs = native
+        .namespace("f3d")
+        .map_or(0, |namespace| namespace.arenas()["unknowns"].len());
+    (visibilities, stubs, losses.len())
+}
+
+#[test]
+fn damaged_sketch_visibility_keeps_an_indexed_sibling() {
+    let (mut bytes, metadata, member_at, _) = two_visibility_stream(300, &[(300, &[201, 202])]);
+    bytes[member_at + 35] = 2;
+    let (visibilities, stubs, losses) = decode_visibility_parts(&bytes, &metadata);
+    assert_eq!(visibilities.len(), 1);
+    assert_eq!(visibilities[0].0, 202);
+    assert!(visibilities[0].1.visible);
+    assert_eq!(visibilities[0].1.ordinal_collection.unwrap().get(), 300);
+    assert_eq!((stubs, losses), (1, 1));
+}
+
+#[test]
+fn unlisted_sketch_visibility_keeps_a_listed_sibling() {
+    let (bytes, metadata, _, _) = two_visibility_stream(300, &[(300, &[202])]);
+    let (visibilities, stubs, losses) = decode_visibility_parts(&bytes, &metadata);
+    assert_eq!(visibilities.len(), 1);
+    assert_eq!(visibilities[0].0, 202);
+    assert!(visibilities[0].1.visible);
+    assert_eq!((stubs, losses), (1, 1));
+}
+
+#[test]
+fn damaged_sketch_collection_keeps_independent_visibility() {
+    let (mut bytes, metadata, _, collection_start) =
+        two_visibility_stream(400, &[(300, &[201]), (400, &[202])]);
+    bytes[collection_start + 11] = 1;
+    let (visibilities, stubs, losses) = decode_visibility_parts(&bytes, &metadata);
+    assert_eq!(visibilities.len(), 2);
+    assert!(visibilities
+        .iter()
+        .all(|(_, visibility)| visibility.visible));
+    assert_eq!(visibilities[1].1.ordinal_collection.unwrap().get(), 400);
+    assert_eq!((stubs, losses), (1, 1));
 }
 
 #[test]

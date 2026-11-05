@@ -479,12 +479,6 @@ pub(in crate::writer) fn validate_source_less_sketch_graph(
         geometry_owners.insert(curve.record_index, owner_reference);
     }
     for relation in &native.sketch_relations {
-        if !root_indices.contains(&relation.record_index) {
-            return Err(CodecError::InvalidInput(format!(
-                "F3D sketch relation {} is not reachable from a sketch header",
-                relation.id
-            )));
-        }
         if !sketch_owners.contains(&u64::from(relation.owner_reference)) {
             return Err(CodecError::InvalidInput(format!(
                 "F3D sketch relation {} references missing sketch owner {}",
@@ -504,6 +498,23 @@ pub(in crate::writer) fn validate_source_less_sketch_graph(
         }
     }
     for text in &native.sketch_texts {
+        let text_type = source_less_design_record_type(
+            native,
+            &text.class_tag,
+            text.record_index,
+            "sketch text",
+        )?;
+        if !text_type
+            .type_guid
+            .as_str()
+            .eq_ignore_ascii_case("E0618268-3A06-450E-9E94-7CF4C2E66802")
+            || text_type.version != text.class_version
+        {
+            return Err(CodecError::UnsupportedContent(format!(
+                "F3D sketch text {} requires its textex type registration",
+                text.id
+            )));
+        }
         if !root_indices.contains(&text.record_index) {
             return Err(CodecError::InvalidInput(format!(
                 "F3D sketch text {} is not reachable from a sketch header",
@@ -659,12 +670,6 @@ pub(super) fn validate_source_less_design_bindings(
         }
         Ok(())
     };
-    if let Some(assignment) = native.design_material_assignments.first() {
-        return Err(CodecError::UnsupportedContent(format!(
-            "source-less F3D material assignment {} requires a typed body-presentation B-rep and scene graph",
-            assignment.id
-        )));
-    }
     for visibility in &native.body_visibilities {
         insert(
             visibility.asm_body_key(),

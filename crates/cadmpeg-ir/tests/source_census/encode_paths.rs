@@ -15,6 +15,12 @@ mod tests;
 pub(crate) enum Call {
     Function(Vec<String>),
     Method(String),
+    SelfMethod(String),
+    MethodOnConstructor {
+        constructor: Vec<String>,
+        method: String,
+        unwrapped: bool,
+    },
     Macro(String),
     UnresolvedValue(String),
 }
@@ -52,6 +58,12 @@ pub(crate) struct PathCheck {
     construction: bool,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SelfReturn {
+    Direct,
+    Wrapped,
+}
+
 #[derive(Debug)]
 pub(crate) struct Function {
     pub(crate) file: String,
@@ -62,6 +74,7 @@ pub(crate) struct Function {
     pub(crate) root: bool,
     pub(crate) root_trait: Option<Vec<String>>,
     pub(crate) is_macro: bool,
+    pub(crate) returns_self: Option<SelfReturn>,
     /// Type parameters in scope; a call through one dispatches by name.
     pub(crate) generics: BTreeSet<String>,
     pub(crate) calls: BTreeSet<Call>,
@@ -197,6 +210,7 @@ impl Graph {
                     Call::Method(name) => {
                         groups.extend(index.methods.get(name.as_str()).cloned());
                     }
+                    Call::SelfMethod(_) | Call::MethodOnConstructor { .. } => {}
                     Call::Macro(name) => {
                         groups.extend(index.macros.get(name.as_str()).cloned());
                     }

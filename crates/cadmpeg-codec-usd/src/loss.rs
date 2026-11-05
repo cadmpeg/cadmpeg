@@ -19,6 +19,8 @@ const NAMESPACE: LossNamespace<'static> = cadmpeg_ir::loss_namespace!("usd");
 pub(crate) enum UsdLossCode {
     /// The header names no declared text version.
     SourceDialectUnverified,
+    /// The selected target replaces the source dialect.
+    SourceDialectDisplaced,
     /// Sublayers of the layer were not composed.
     CompositionSublayersNotComposed,
     /// A reference or payload to another layer was kept as an external
@@ -144,6 +146,7 @@ impl UsdLossCode {
     #[cfg(test)]
     pub(crate) const ALL: &'static [UsdLossCode] = &[
         Self::SourceDialectUnverified,
+        Self::SourceDialectDisplaced,
         Self::CompositionSublayersNotComposed,
         Self::CompositionExternalArc,
         Self::CompositionLayerUnavailable,
@@ -204,6 +207,11 @@ impl UsdLossCode {
                 "source.dialect-unverified",
                 Warning,
                 T::SourceDialectUnverified,
+            ),
+            Self::SourceDialectDisplaced => (
+                "target.source-dialect-displaced",
+                Warning,
+                T::SourceDialectDisplaced,
             ),
             Self::CompositionSublayersNotComposed => (
                 "composition.sublayers-not-composed",

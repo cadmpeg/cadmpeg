@@ -7,7 +7,7 @@ use crate::test_support::lp_utf16;
 
 fn tested_component_insert_construction(
     bytes: &[u8],
-    records: &crate::design::decode::sketch::IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
 ) -> Option<crate::records::feature::assembly_features::DesignComponentInsertConstruction> {
     exact_component_insert_construction(bytes, records, scope).unwrap()
@@ -103,7 +103,7 @@ fn run_component_insert_scope_fixture() {
 
     let construction = tested_component_insert_construction(
         &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &crate::design::test_support::test_primary_frames(&bytes),
         &scope,
     )
     .expect("component insert construction");
@@ -173,7 +173,7 @@ fn run_component_insert_scope_fixture() {
         .unwrap();
         let construction = tested_component_insert_construction(
             &legacy,
-            &crate::design::test_support::indexed_record_offsets_for_test(&legacy),
+            &crate::design::test_support::test_primary_frames(&legacy),
             &legacy_scope,
         )
         .unwrap_or_else(|| panic!("{frame_length}-byte component insert construction"));
@@ -247,7 +247,7 @@ fn run_component_insert_scope_fixture() {
     .unwrap();
     let construction = tested_component_insert_construction(
         &expanded,
-        &crate::design::test_support::indexed_record_offsets_for_test(&expanded),
+        &crate::design::test_support::test_primary_frames(&expanded),
         &expanded_scope,
     )
     .expect("404-byte component insert construction");
@@ -325,7 +325,7 @@ fn run_component_insert_scope_fixture() {
     .unwrap();
     let construction = tested_component_insert_construction(
         &legacy,
-        &crate::design::test_support::indexed_record_offsets_for_test(&legacy),
+        &crate::design::test_support::test_primary_frames(&legacy),
         &legacy_scope,
     )
     .expect("class-288 legacy component insert construction");
@@ -463,7 +463,7 @@ fn compact_component_insert_identity_form_joins_grouped_carrier() {
 
     let construction = tested_component_insert_construction(
         &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &crate::design::test_support::test_primary_frames(&bytes),
         &scope,
     )
     .expect("compact identity component insert construction");
@@ -597,7 +597,7 @@ fn class_410_component_insert_identity_form_joins_class_380_carrier() {
 
     let construction = tested_component_insert_construction(
         &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &crate::design::test_support::test_primary_frames(&bytes),
         &scope,
     )
     .expect("class-410 component insert construction");
@@ -616,7 +616,7 @@ fn class_410_component_insert_identity_form_joins_class_380_carrier() {
     bytes[4..7].copy_from_slice(b"382");
     assert!(tested_component_insert_construction(
         &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &crate::design::test_support::test_primary_frames(&bytes),
         &scope
     )
     .is_none());
@@ -740,7 +740,7 @@ fn class_434_component_insert_identity_form_joins_variable_role_class_341_carrie
 
     let construction = tested_component_insert_construction(
         &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &crate::design::test_support::test_primary_frames(&bytes),
         &scope,
     )
     .expect("class-434 component insert construction");
@@ -889,7 +889,7 @@ fn class_426_component_insert_joins_legacy_relation_and_class_369_carrier() {
 
     let construction = tested_component_insert_construction(
         &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &crate::design::test_support::test_primary_frames(&bytes),
         &scope,
     )
     .expect("class-426 component insert construction");
@@ -946,7 +946,7 @@ fn class_426_component_insert_joins_legacy_relation_and_class_369_carrier() {
         .unwrap();
     let external_construction = tested_component_insert_construction(
         &external_bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&external_bytes),
+        &crate::design::test_support::test_primary_frames(&external_bytes),
         &external_scope,
     )
     .expect("class-426 external-role component insert construction");
@@ -956,7 +956,7 @@ fn class_426_component_insert_joins_legacy_relation_and_class_369_carrier() {
     bytes[4..7].copy_from_slice(b"380");
     assert!(tested_component_insert_construction(
         &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &crate::design::test_support::test_primary_frames(&bytes),
         &scope
     )
     .is_none());
@@ -1100,7 +1100,7 @@ fn class_283_component_insert_admits_compact_and_transformed_scopes() {
 
     let identity = crate::records::sketch_placement::SketchPlacementMatrix::IDENTITY.rows();
     let (bytes, scope, _) = make_fixture(257, identity);
-    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let records = crate::design::test_support::test_primary_frames(&bytes);
     let construction = tested_component_insert_construction(&bytes, &records, &scope)
         .expect("class-283 compact component insert construction");
     assert_eq!(construction.carrier_record_index, 10);
@@ -1125,7 +1125,7 @@ fn class_283_component_insert_admits_compact_and_transformed_scopes() {
     let (bytes, scope, scope_at) = make_fixture(385, transformed);
     let construction = tested_component_insert_construction(
         &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &crate::design::test_support::test_primary_frames(&bytes),
         &scope,
     )
     .expect("class-283 transformed component insert construction");
@@ -1292,7 +1292,7 @@ fn identity_insert_scopes_join_relation_and_external_carrier() {
                 draft.feature_ordinal_offset = u64_from_index(start + 184 + delta);
             })
             .unwrap();
-        let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+        let records = crate::design::test_support::test_primary_frames(&bytes);
         let construction = tested_component_insert_construction(&bytes, &records, &scope).unwrap();
         assert_eq!(construction.neutron_role, role);
         assert_eq!(construction.occurrence_identity, Some(19));

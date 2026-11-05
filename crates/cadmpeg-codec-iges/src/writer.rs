@@ -6,10 +6,12 @@
 //! supported neutral profile and reports content the target cannot hold.
 
 use crate::entities::affine_parameter_map;
+mod capacity;
+
 use crate::entities::curve_conversion::ANGULAR_TOLERANCE;
 use crate::entities::geometry::curve_is_line;
 use crate::loss::IgesLossCode;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     ArenaCoverage, ArenaDisposition, ArenaDispositions, ExportBody, WritePath,
@@ -56,9 +58,11 @@ const WRITER_ENDPOINT_RELATIVE_TOLERANCE: f64 = EPS_WRITE_POSITION;
 enum EntityStatus {
     Independent,
     Definition,
+    LogicalPositional,
     PhysicallyDependent,
     LogicallyDependent,
     BothDependent,
+    Annotation,
     AnnotationDependent,
     PhysicallyDependentEdgeList,
     ParameterCurve,
@@ -80,9 +84,11 @@ impl EntityStatus {
         match self {
             Self::Independent => "00000000",
             Self::Definition => "00000200",
+            Self::LogicalPositional => "00000400",
             Self::PhysicallyDependent => "00010000",
             Self::LogicallyDependent => "00020000",
             Self::BothDependent => "00030000",
+            Self::Annotation => "00000100",
             Self::AnnotationDependent => "00010100",
             Self::PhysicallyDependentEdgeList => "00010001",
             Self::ParameterCurve => "00010500",
@@ -141,10 +147,16 @@ const WRITER_ENTITY_TYPES: &[u32] = &[
     146, 148, 186, 190, 192, 194, 196, 198, 314, 406, 418, 502, 504, 508, 510, 514,
 ];
 
+mod admission;
+mod brep_order;
+use brep_order::{brep_sense, edge_use_positions, edge_use_sense, pole_use_order};
+mod appearance;
 mod attributes;
 mod degrade;
+mod display;
 mod levels;
 mod native_records;
+mod pcurve_admission;
 pub(crate) mod target;
 
 fn body(
@@ -253,6 +265,29 @@ fn counts_for_ir(ir: &CadIr) -> BTreeMap<String, usize> {
         counts.insert("116_point".into(), ir.model.points.len());
     }
     counts
+}
+
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum WriteError {
+    #[error(transparent)]
+    Codec(#[from] CodecError),
+    #[error(transparent)]
+    Encode(#[from] cadmpeg_ir::codec::write::EncodeError),
+}
+
+impl From<cadmpeg_core::decode::ResourceLimit> for WriteError {
+    fn from(limit: cadmpeg_core::decode::ResourceLimit) -> Self {
+        Self::Encode(limit.into())
+    }
+}
+
+impl From<WriteError> for cadmpeg_ir::codec::write::EncodeError {
+    fn from(error: WriteError) -> Self {
+        match error {
+            WriteError::Codec(error) => cadmpeg_ir::codec::write::transitional_from_codec(error),
+            WriteError::Encode(error) => error,
+        }
+    }
 }
 
 struct Synthesis {
@@ -381,9 +416,6 @@ fn face_display_color(
             matches!(
                 &resolved,
                 cadmpeg_ir::appearance::AppearanceTarget::Face(id) if *id == face.id
-            ) || matches!(
-                &resolved,
-                cadmpeg_ir::appearance::AppearanceTarget::Surface(id) if *id == face.surface
             )
         })
         .find_map(|binding| {
@@ -611,24 +643,47 @@ fn unapplied_body_placement_losses(ir: &CadIr, entities: &[Entity]) -> Vec<LossN
     losses
 }
 
-fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, CodecError> {
+#[cfg(test)]
+fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, WriteError> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let ctx = DecodeContext::for_encode(&arena, &policy);
+    synthesize_with_admission(&ctx, ir, version, |_| Ok(()))
+}
+
+fn synthesize_with_admission(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    version: crate::IgesVersion,
+    admit: impl FnOnce(&[Entity]) -> Result<(), WriteError>,
+) -> Result<Synthesis, WriteError> {
     let lowered = cadmpeg_ir::codec::write::subset_lowering::lower_subset_curves(ir, |curve| {
         curve
             .geometry
             .solved()
             .is_none_or(|solved| flatten_curve(solved).is_err())
     })?;
-    let ir = lowered.as_ref();
-    let mut graph = match synthesis_graph(ir, version) {
+    let (poles, pole_losses) = admission::pole_edges(lowered.as_ref())?;
+    let (pcurves, pcurve_losses) = pcurve_admission::admit(poles.as_ref());
+    let (admitted, admission_losses) = admission::edge_carriers(pcurves.as_ref());
+    let (stripped, strip_losses) = admission::strip_unusable_face_topology(admitted.as_ref());
+    let ir = stripped.as_ref().unwrap_or(admitted.as_ref());
+    let mut graph = match synthesis_graph(ctx, ir, version) {
         Ok(graph) => graph,
-        Err(CodecError::UnsupportedContent(reason)) => degrade::graph(ir, version, &reason)?,
-        Err(error) => return Err(error),
+        Err(CodecError::UnsupportedContent(reason)) => degrade::graph(ctx, ir, version, &reason)?,
+        Err(error) => return Err(error.into()),
     };
+    let pcurves_adapted = !pcurve_losses.is_empty();
+    graph.losses.extend(pole_losses);
+    graph.losses.extend(pcurve_losses);
+    graph.losses.extend(admission_losses);
+    graph.losses.extend(strip_losses);
     graph
         .losses
         .extend(unapplied_body_placement_losses(ir, &graph.entities));
     append_color_definitions(&mut graph.entities, &mut graph.presentations)?;
     native_records::solids::append_primitive_features(ir, &mut graph.entities);
+    neutral_products::append(ir, &mut graph.entities, version);
     let mut native_export = native_records::append::append(ir, &mut graph.entities, version);
     graph.losses.extend(native_export.losses);
     levels::append_level_definitions(ir, &mut graph.entities);
@@ -648,6 +703,168 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
         .regenerated
         .extend(native_export.regenerated);
     append_name_properties(&mut graph.entities, &graph.presentations)?;
+    attribute_export.regenerated.extend(display::regenerated(
+        ir,
+        &graph.entities,
+        &graph.presentations,
+        version,
+    ));
+    let emitted = graph
+        .entities
+        .iter()
+        .flat_map(|entity| entity.source_targets.iter())
+        .collect::<BTreeSet<_>>();
+    let mut emitted_compounds = 0;
+    for procedural in &ir.model.procedural_curves {
+        let Some(owner) = ir.model.procedural_curve_owner(&procedural.id) else {
+            continue;
+        };
+        if compound::geometry(ir, owner).is_some()
+            && graph.entities.iter().any(|entity| {
+                entity.type_code == 102
+                    && matches!(entity.status, EntityStatus::Independent)
+                    && entity
+                        .source_targets
+                        .iter()
+                        .any(|target| target == owner.as_str())
+            })
+        {
+            emitted_compounds += 1;
+            let previous = format!(
+                "IGES procedural definition {} was reduced to a solved carrier",
+                procedural.id
+            );
+            graph.losses.retain(|loss| loss.message != previous);
+        }
+    }
+    let mut emitted_products = 0;
+    for product in &ir.model.product_definitions {
+        if !emitted.contains(&product.id.to_string()) {
+            continue;
+        }
+        emitted_products += 1;
+        let previous = format!(
+            "IGES omits unsupported product_definitions record {}",
+            product.id
+        );
+        graph.losses.retain(|loss| loss.message != previous);
+        let mut omitted = Vec::new();
+        if product.kind != cadmpeg_ir::products::ProductDefinitionKind::Part {
+            omitted.push("product kind");
+        }
+        if product.source_name.is_some() {
+            omitted.push("source name");
+        }
+        if product.description.is_some() {
+            omitted.push("description");
+        }
+        if product.part_number.is_some() {
+            omitted.push("part number");
+        }
+        if !product.bom_properties.is_empty() {
+            omitted.push("BOM properties");
+        }
+        if !product.bodies.is_empty() {
+            omitted.push("body associations");
+        }
+        if !product.sketches.is_empty() {
+            omitted.push("sketch associations");
+        }
+        if !omitted.is_empty() {
+            graph
+                .losses
+                .push(IgesLossCode::WriterArenaOmitted.note(format!(
+                    "IGES product definition {} does not preserve {}",
+                    product.id,
+                    omitted.join(", ")
+                )));
+        }
+    }
+    let mut emitted_occurrences = 0;
+    for occurrence in &ir.model.occurrences {
+        if !emitted.contains(&occurrence.id.to_string()) {
+            continue;
+        }
+        emitted_occurrences += 1;
+        let previous = format!(
+            "IGES omits unsupported occurrences record {}",
+            occurrence.id
+        );
+        graph.losses.retain(|loss| loss.message != previous);
+        let mut omitted = Vec::new();
+        if occurrence.transform.is_none() {
+            omitted.push("unspecified placement");
+        }
+        if occurrence.name.is_some() {
+            omitted.push("name");
+        }
+        if occurrence.visible.is_some() {
+            omitted.push("visibility");
+        }
+        if occurrence.linked_prototype.is_some() {
+            omitted.push("linked prototype placement");
+        }
+        if occurrence.link.is_some() {
+            omitted.push("link state");
+        }
+        if !omitted.is_empty() {
+            graph
+                .losses
+                .push(IgesLossCode::WriterArenaOmitted.note(format!(
+                    "IGES occurrence {} does not preserve {}",
+                    occurrence.id,
+                    omitted.join(", ")
+                )));
+        }
+    }
+    let mut flattened = BTreeSet::new();
+    for curve in &ir.model.curves {
+        if !emitted.contains(&curve.id.to_string()) {
+            continue;
+        }
+        let mut pending = vec![curve];
+        let mut visited = BTreeSet::new();
+        while let Some(parent) = pending.pop() {
+            if !visited.insert(parent.id.clone()) {
+                continue;
+            }
+            let Some(SolvedCurveGeometry::Composite { segments, .. }) = parent.geometry.solved()
+            else {
+                continue;
+            };
+            for segment in segments {
+                if let Some(child) = ir
+                    .model
+                    .curves
+                    .iter()
+                    .find(|child| child.id == segment.curve)
+                {
+                    if matches!(
+                        child.geometry.solved(),
+                        Some(SolvedCurveGeometry::Composite { .. })
+                    ) {
+                        if !emitted.contains(&child.id.to_string()) {
+                            flattened.insert(child.id.to_string());
+                        }
+                        pending.push(child);
+                    }
+                }
+            }
+        }
+    }
+    graph
+        .losses
+        .extend(compound::flattened_owner_losses(ir, &emitted));
+    for id in flattened {
+        graph.losses.push(IgesLossCode::WriterEntityOmitted.note(format!(
+            "IGES composite constituent {id} is flattened because Type 102 cannot contain another Type 102"
+        )));
+    }
+    let emitted_annotations = ir
+        .model
+        .semantic_annotations
+        .iter()
+        .any(|annotation| emitted.contains(&annotation.id.to_string()));
     resolve_entity_references(&mut graph.entities)?;
     let (feature_coverage, feature_losses) =
         native_records::primitive_feature_coverage(ir, &graph.entities);
@@ -664,6 +881,22 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
     let counts = entity_counts(&graph.entities);
     let mut coverage = SYNTHESIS_COVERAGE;
     coverage.features = feature_coverage;
+    if emitted_annotations {
+        coverage.semantic_annotations = ArenaDisposition::Reported;
+    }
+    if pcurves_adapted {
+        coverage.coedges = ArenaDisposition::Reported;
+        coverage.pcurves = ArenaDisposition::Reported;
+    }
+    if emitted_compounds > 0 {
+        coverage.procedural_curves = ArenaDisposition::Reported;
+    }
+    if emitted_products > 0 {
+        coverage.product_definitions = ArenaDisposition::Reported;
+    }
+    if emitted_occurrences > 0 {
+        coverage.occurrences = ArenaDisposition::Reported;
+    }
     coverage.presentation_layers = layer_coverage;
     coverage.attributes = if attribute_export.preserved.len() == ir.model.attributes.len() {
         ArenaDisposition::Written
@@ -674,6 +907,11 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
     };
     coverage.appearance_bindings =
         appearance_binding_coverage(ir, &graph.entities, &graph.presentations);
+    graph.losses.extend(appearance::losses(
+        ir,
+        &graph.entities,
+        &graph.presentations,
+    ));
     if graph
         .losses
         .iter()
@@ -702,6 +940,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
     {
         coverage.bodies = ArenaDisposition::Reported;
     }
+    admit(&graph.entities)?;
     Ok(Synthesis {
         written_native: attribute_export.written,
         regenerated_native: attribute_export.regenerated,
@@ -718,13 +957,14 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
     })
 }
 
-fn synthesis_graph(ir: &CadIr, version: crate::IgesVersion) -> Result<SynthesisGraph, CodecError> {
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())?;
-    let ctx = &ctx;
+fn synthesis_graph(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    version: crate::IgesVersion,
+) -> Result<SynthesisGraph, CodecError> {
     let arena_losses = unsupported_model_losses(ir)?;
     reject_owned_wire_topology(ir)?;
-    let (stripped, strip_losses) = strip_unusable_face_topology(ir);
+    let (stripped, strip_losses) = admission::strip_unusable_face_topology(ir);
     let ir = stripped.as_ref().unwrap_or(ir);
     let mut losses = procedural_reduction_losses(ir)?;
     losses.extend(strip_losses);
@@ -771,17 +1011,12 @@ fn synthesis_graph(ir: &CadIr, version: crate::IgesVersion) -> Result<SynthesisG
                     .flat_map(cadmpeg_ir::topology::Loop::vertices),
             )
             .collect::<BTreeSet<_>>();
-        let count = ir
-            .model
-            .vertices
-            .iter()
-            .filter(|vertex| {
-                ignored.vertices.contains(vertex.id.as_str()) && !owned.contains(&vertex.id)
-            })
-            .count();
-        if count != 0 {
+        for vertex in ir.model.vertices.iter().filter(|vertex| {
+            ignored.vertices.contains(vertex.id.as_str()) && !owned.contains(&vertex.id)
+        }) {
             losses.push(IgesLossCode::WriterFreeGeometryOmitted.note(format!(
-                "{count} free vertex record(s) were not written on the topology path"
+                "free vertex record {} was not written on the topology path",
+                vertex.id
             )));
         }
     }
@@ -896,9 +1131,14 @@ fn synthesis_graph(ir: &CadIr, version: crate::IgesVersion) -> Result<SynthesisG
                 )));
                 continue;
             }
-            let geometry = flatten_curve(curve.geometry.solved().ok_or_else(|| {
-                CodecError::UnsupportedContent("IGES curve carrier has no solved geometry".into())
-            })?)?;
+            let geometry = match compound::geometry(ir, curve_id) {
+                Some(geometry) => geometry,
+                None => flatten_curve(curve.geometry.solved().ok_or_else(|| {
+                    CodecError::UnsupportedContent(
+                        "IGES curve carrier has no solved geometry".into(),
+                    )
+                })?)?,
+            };
             let span = edge_span(ir, edge, &geometry)?;
             let curve_index = append_curve_entity(
                 &mut entities,
@@ -965,8 +1205,28 @@ fn synthesis_graph(ir: &CadIr, version: crate::IgesVersion) -> Result<SynthesisG
         }
         entities
     };
+    let emitted_loops = entities
+        .iter()
+        .flat_map(|entity| entity.source_targets.iter())
+        .cloned()
+        .collect::<BTreeSet<_>>();
     if let Some(remap) = ensure_version_support(&mut entities, version, &mut losses)? {
         remap_presentations(&mut body_presentations, &remap);
+        let retained = entities
+            .iter()
+            .flat_map(|entity| entity.source_targets.iter())
+            .collect::<BTreeSet<_>>();
+        for boundary in &ir.model.loops {
+            let id = boundary.id.to_string();
+            if emitted_loops.contains(&id) && !retained.contains(&id) {
+                for coedge in boundary.coedges() {
+                    losses.push(IgesLossCode::WriterEntityOmitted.note(format!(
+                        "IGES coedge {coedge} is omitted with loop {id} for {}",
+                        version.name()
+                    )));
+                }
+            }
+        }
     }
     Ok(SynthesisGraph {
         entities,
@@ -1138,146 +1398,6 @@ fn reject_owned_wire_topology(ir: &CadIr) -> Result<(), CodecError> {
         return Err(CodecError::UnsupportedContent(message));
     }
     Ok(())
-}
-
-/// Faces whose boundary no carrier reaches, with their topology stripped so
-/// the carrier surface still writes. A loop coedge whose edge names no model
-/// curve, or names one without solved geometry, can never supply a Type 141
-/// or Type 142 boundary; the face drops with a loss while its surface writes
-/// bare or domain-bounded. Faces the trimmed writer can encode are untouched.
-fn strip_unusable_face_topology(ir: &CadIr) -> (Option<CadIr>, Vec<LossNote>) {
-    if has_brep_topology(ir) || ir.model.faces.is_empty() {
-        return (None, Vec::new());
-    }
-    let loops = ir
-        .model
-        .loops
-        .iter()
-        .map(|loop_| (loop_.id.as_str(), loop_))
-        .collect::<BTreeMap<_, _>>();
-    let coedges = ir
-        .model
-        .coedges
-        .iter()
-        .map(|coedge| (coedge.id.as_str(), coedge))
-        .collect::<BTreeMap<_, _>>();
-    let edges = ir
-        .model
-        .edges
-        .iter()
-        .map(|edge| (edge.id.as_str(), edge))
-        .collect::<BTreeMap<_, _>>();
-    let solved = ir
-        .model
-        .curves
-        .iter()
-        .filter(|curve| curve.geometry.solved().is_some())
-        .map(|curve| curve.id.as_str())
-        .collect::<BTreeSet<_>>();
-    let mut bad = Vec::new();
-    for face in &ir.model.faces {
-        let mut missing = Vec::new();
-        let mut has_coedge = false;
-        for loop_id in face.loops.iter() {
-            let Some(loop_) = loops.get(loop_id.as_str()) else {
-                continue;
-            };
-            for coedge_id in loop_.coedges() {
-                has_coedge = true;
-                let carrier = coedges
-                    .get(coedge_id.as_str())
-                    .and_then(|coedge| edges.get(coedge.edge.as_str()))
-                    .and_then(|edge| edge.curve())
-                    .is_some_and(|curve_id| solved.contains(curve_id.as_str()));
-                if !carrier {
-                    missing.push(coedge_id.as_str().to_owned());
-                }
-            }
-        }
-        if !has_coedge || !missing.is_empty() {
-            bad.push((face.id.as_str().to_owned(), missing));
-        }
-    }
-    if bad.is_empty() {
-        return (None, Vec::new());
-    }
-    let bad_faces = bad
-        .iter()
-        .map(|(face, _)| face.as_str())
-        .collect::<BTreeSet<_>>();
-    let mut bad_loops = BTreeSet::new();
-    for face in &ir.model.faces {
-        if bad_faces.contains(face.id.as_str()) {
-            bad_loops.extend(face.loops.iter().map(|loop_| loop_.as_str()));
-        }
-    }
-    let mut bad_coedges = BTreeSet::new();
-    for loop_id in &bad_loops {
-        if let Some(loop_) = loops.get(loop_id) {
-            bad_coedges.extend(loop_.coedges().iter().map(|coedge| coedge.as_str()));
-        }
-    }
-    let mut document = ir.clone();
-    document
-        .model
-        .faces
-        .retain(|face| !bad_faces.contains(face.id.as_str()));
-    document
-        .model
-        .loops
-        .retain(|loop_| !bad_loops.contains(loop_.id.as_str()));
-    document
-        .model
-        .coedges
-        .retain(|coedge| !bad_coedges.contains(coedge.id.as_str()));
-    let mut live_shells = BTreeSet::new();
-    document.model.shells.retain_mut(|shell| {
-        let faces = shell
-            .faces()
-            .iter()
-            .filter(|face| !bad_faces.contains(face.as_str()))
-            .cloned()
-            .collect::<Vec<_>>();
-        if shell.replace_faces(faces).is_ok() {
-            live_shells.insert(shell.id.as_str().to_owned());
-            true
-        } else {
-            false
-        }
-    });
-    for region in &mut document.model.regions {
-        region
-            .shells
-            .retain(|shell| live_shells.contains(shell.as_str()));
-    }
-    document
-        .model
-        .regions
-        .retain(|region| !region.shells.is_empty());
-    let live_regions = document
-        .model
-        .regions
-        .iter()
-        .map(|region| region.id.as_str())
-        .collect::<BTreeSet<_>>();
-    for body in &mut document.model.bodies {
-        body.regions
-            .retain(|region| live_regions.contains(region.as_str()));
-    }
-    document
-        .model
-        .bodies
-        .retain(|body| !body.regions.is_empty());
-    let losses = bad
-        .into_iter()
-        .map(|(face, missing)| {
-            IgesLossCode::WriterEntityOmitted.note(format!(
-                "IGES face {face} has no usable boundary carrier and is omitted: {}",
-                missing.join(", ")
-            ))
-        })
-        .collect();
-    (Some(document), losses)
 }
 
 impl crate::IgesVersion {
@@ -1725,16 +1845,15 @@ fn procedural_reduction_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> 
             )));
         }
     }
-    let surface_count = ir
+    let surfaces = ir
         .model
         .procedural_surfaces
         .iter()
         .filter(|procedural| {
-            if matches!(
-                procedural.definition(),
-                ProceduralSurfaceDefinition::CurveBounded { .. }
-            ) {
-                return false;
+            if let ProceduralSurfaceDefinition::CurveBounded { implicit_outer, .. } =
+                procedural.definition()
+            {
+                return !implicit_outer;
             }
             let owner = ir.model.procedural_surface_owner(&procedural.id);
             let Some(surface) = owner.and_then(|owner| {
@@ -1751,14 +1870,20 @@ fn procedural_reduction_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> 
                 procedural.definition(),
             )
         })
-        .count();
-    let curve_count = ir.model.procedural_curves.len();
-    if surface_count == 0 && curve_count == 0 {
-        return Ok(Vec::new());
-    }
-    Ok(vec![IgesLossCode::ProceduralReduced.note(format!(
-        "{surface_count} procedural surface definition(s) and {curve_count} procedural curve definition(s) were reduced to writable solved carriers"
-    ))])
+        .map(|procedural| procedural.id.as_str());
+    let curves = ir
+        .model
+        .procedural_curves
+        .iter()
+        .map(|procedural| procedural.id.as_str());
+    Ok(surfaces
+        .chain(curves)
+        .map(|id| {
+            IgesLossCode::ProceduralReduced.note(format!(
+                "IGES procedural definition {id} was reduced to a solved carrier"
+            ))
+        })
+        .collect())
 }
 
 fn is_native_surface_construction(
@@ -2469,7 +2594,7 @@ fn brep_entities(
         &mut consumed_curve_ids,
         losses,
     )?;
-    ignored_carriers.report_omitted(ignored_curves, "B-rep", losses);
+    ignored_carriers.report_omitted(&ignored_curves, "B-rep", losses);
 
     let mut written_pcurves = BTreeMap::new();
     for loop_ in topology.loops.values().copied() {
@@ -3063,42 +3188,6 @@ fn brep_entities(
     Ok(entities)
 }
 
-/// The Type 508 edge-use orientation of a coedge. A Type 508 loop keeps its
-/// face on the left about the support normal, and a reversed face keeps it on
-/// the left about the reversed normal, so a reversed face writes its loops
-/// backward.
-fn edge_use_sense(coedge: Sense, face: Sense) -> Sense {
-    if coedge == face {
-        Sense::Forward
-    } else {
-        Sense::Reversed
-    }
-}
-
-/// The pcurve uses of a pole-vertex use in Type 508 order. A reversed face
-/// writes its loops backward, so it writes the uses in reverse order.
-fn pole_use_order(uses: &[PcurveUse], face: Sense) -> Vec<&PcurveUse> {
-    match face {
-        Sense::Forward => uses.iter().collect(),
-        Sense::Reversed => uses.iter().rev().collect(),
-    }
-}
-
-/// The ring positions of a loop in Type 508 edge-use order.
-fn edge_use_positions(count: usize, face: Sense) -> Vec<usize> {
-    match face {
-        Sense::Forward => (0..count).collect(),
-        Sense::Reversed => (0..count).rev().collect(),
-    }
-}
-
-fn brep_sense(sense: Sense) -> i32 {
-    match sense {
-        Sense::Forward => 1,
-        Sense::Reversed => 0,
-    }
-}
-
 fn used_brep_pcurve_ids(ir: &CadIr) -> std::collections::BTreeSet<String> {
     let mut ids = ir
         .model
@@ -3127,16 +3216,15 @@ struct IgnoredCarrierGeometry {
 impl IgnoredCarrierGeometry {
     /// Reports the ignored edges, which no topology path writes, and the
     /// `curves` ignored curves that the `path` writer skipped.
-    fn report_omitted(&self, curves: usize, path: &str, losses: &mut Vec<LossNote>) {
-        if !self.edges.is_empty() {
+    fn report_omitted(&self, curves: &[String], path: &str, losses: &mut Vec<LossNote>) {
+        for id in &self.edges {
             losses.push(IgesLossCode::WriterDuplicateCarrierOmitted.note(format!(
-                "{} free edge record(s) duplicating a written carrier were not written on the {path} path",
-                self.edges.len()
+                "free edge record {id} duplicates a written carrier on the {path} path"
             )));
         }
-        if curves != 0 {
+        for id in curves {
             losses.push(IgesLossCode::WriterDuplicateCarrierOmitted.note(format!(
-                "{curves} free curve record(s) duplicating a written parameter curve were not written on the {path} path"
+                "free curve record {id} duplicates a written parameter curve on the {path} path"
             )));
         }
     }
@@ -3495,7 +3583,7 @@ fn topology_entities(
         &mut consumed_curves,
         losses,
     )?;
-    ignored_carriers.report_omitted(ignored_curves, "trimmed-sheet", losses);
+    ignored_carriers.report_omitted(&ignored_curves, "trimmed-sheet", losses);
 
     let mut pcurve_indices = BTreeMap::new();
     for (pcurve_id, pcurve) in topology.pcurves {
@@ -5787,14 +5875,12 @@ fn unsupported_model_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
         arena!("presentation_documents", presentation_documents),
         arena!("view_presentations", view_presentations),
         arena!("tessellations", tessellations),
-        arena!("appearances", appearances),
-        arena!("appearance_bindings", appearance_bindings),
         arena!("pmi", pmi),
     ];
     let losses = unsupported
         .into_iter()
         .filter(|(_, present, _)| *present)
-        .map(|(arena, _, ids)| {
+        .flat_map(|(arena, _, ids)| {
             let code = if matches!(
                 arena,
                 "features"
@@ -5814,10 +5900,13 @@ fn unsupported_model_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
             } else {
                 IgesLossCode::WriterArenaOmitted
             };
-            code.note(format!(
-                "IGES omits unsupported model arena {arena}: {}",
-                ids.join(", ")
-            ))
+            ids.into_iter().map(move |id| {
+                if arena == "semantic_annotations" {
+                    code.note(format!("IGES does not fully preserve {arena} record {id}"))
+                } else {
+                    code.note(format!("IGES omits unsupported {arena} record {id}"))
+                }
+            })
         })
         .collect();
     for vertex in &ir.model.vertices {
@@ -5961,7 +6050,8 @@ fn synthesized_native_dispositions(
         let regenerated = match arena.as_str() {
             "properties" | "product_properties" => represented_names,
             "cards" | "copious_data" | "transformations" | "manifold_solids" => !degraded_geometry,
-            "macro_definitions"
+            "display_attributes"
+            | "macro_definitions"
             | "macro_instances"
             | "definition_levels"
             | "subfigure_definitions"
@@ -6230,6 +6320,7 @@ fn append_surface_entities(
     };
     let base_index = entities.len();
     let mut additions = surface_entities_for_ir(ctx, ir, surface, base_index, version)?;
+    support_records::retain(ir, surface, &mut additions);
     if let Some(entity) = additions.last_mut() {
         entity.status = status;
         entity.source_targets.push(surface.id.to_string());
@@ -6246,7 +6337,7 @@ fn append_surface_entities(
     if wrapped.is_some() {
         entities[surface_index].status = EntityStatus::PhysicallyDependent;
     }
-    if !ir.model.faces.iter().any(|face| face.surface == surface.id) {
+    {
         let color = carrier_display_color(
             ir,
             cadmpeg_ir::appearance::AppearanceTarget::Surface(surface.id.clone()),
@@ -6255,7 +6346,7 @@ fn append_surface_entities(
         );
         if !matches!(color, BodyColor::Standard(0)) {
             presentations.insert(
-                wrapped.unwrap_or(surface_index),
+                surface_index,
                 BodyPresentation {
                     label: None,
                     name: None,
@@ -7985,7 +8076,7 @@ struct UnownedCurves<'a, 'ir> {
 }
 
 /// Writes each curve that no written entity has consumed, in identity order,
-/// and returns the number of `ignored` curves skipped. A physically dependent
+/// and returns the identities of `ignored` curves skipped. A physically dependent
 /// entity is valid only under a written parent, so a physically dependent
 /// curve that no written curve consumes is withheld with a loss.
 fn append_unowned_curves(
@@ -7993,7 +8084,7 @@ fn append_unowned_curves(
     entities: &mut Vec<Entity>,
     consumed: &mut BTreeSet<String>,
     losses: &mut Vec<LossNote>,
-) -> Result<usize, CodecError> {
+) -> Result<Vec<String>, CodecError> {
     let UnownedCurves {
         ir,
         version,
@@ -8003,14 +8094,14 @@ fn append_unowned_curves(
     } = request;
     let mut curves = ir.model.curves.iter().collect::<Vec<_>>();
     curves.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
-    let mut ignored_curves = 0_usize;
+    let mut ignored_curves = Vec::new();
     let mut dependent = Vec::new();
     for curve in curves {
         if consumed.contains(curve.id.as_str()) {
             continue;
         }
         if ignored.contains(curve.id.as_str()) {
-            ignored_curves += 1;
+            ignored_curves.push(curve.id.to_string());
             continue;
         }
         let status = ownership.status(curve.source_object.as_ref());
@@ -8019,9 +8110,12 @@ fn append_unowned_curves(
             dependent.push((curve, status));
             continue;
         }
-        let geometry = flatten_curve(curve.geometry.solved().ok_or_else(|| {
-            CodecError::UnsupportedContent("IGES curve carrier has no solved geometry".into())
-        })?)?;
+        let geometry = match compound::geometry(ir, &curve.id) {
+            Some(geometry) => geometry,
+            None => flatten_curve(curve.geometry.solved().ok_or_else(|| {
+                CodecError::UnsupportedContent("IGES curve carrier has no solved geometry".into())
+            })?)?,
+        };
         let span = curve
             .parameter_range
             .map(|_| curve_reference_span(ir, &curve.id, &geometry))
@@ -8119,6 +8213,22 @@ fn mark_curve_descendants(
     if let Some(SolvedCurveGeometry::Composite { segments, .. }) = curve.geometry.solved() {
         for segment in segments {
             mark_curve_descendants(ir, &segment.curve, consumed, active)?;
+        }
+    }
+    if compound::geometry(ir, curve_id).is_some() {
+        if let Some(record) = curve.geometry.procedural_construction().and_then(|id| {
+            ir.model
+                .procedural_curves
+                .iter()
+                .find(|record| &record.id == id)
+        }) {
+            if let cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound(compound) =
+                record.definition()
+            {
+                for component in compound.components() {
+                    mark_curve_descendants(ir, &component.component, consumed, active)?;
+                }
+            }
         }
     }
     active.remove(curve_id);
@@ -9232,7 +9342,7 @@ fn encode_file(
     body_presentations: &BTreeMap<usize, BodyPresentation>,
     version: crate::IgesVersion,
     minimum_resolution: f64,
-) -> Result<Vec<u8>, CodecError> {
+) -> Result<Vec<u8>, WriteError> {
     let metadata = DocumentMetadata::of(ir);
     let generation_timestamp = generation_timestamp_for(version, metadata.generation_date)?;
     let maximum_coordinate = generated_maximum_coordinate(entities);
@@ -9305,7 +9415,8 @@ fn encode_file(
         let Some(parent_expanded) = expanded_index_by_entity.get(parent).copied() else {
             return Err(CodecError::malformed(
                 "IGES transformation link targets no emitted entity",
-            ));
+            )
+            .into());
         };
         let parent_sequence = u32::try_from(parent_expanded)
             .ok()
@@ -9318,7 +9429,8 @@ fn encode_file(
         else {
             return Err(CodecError::malformed(
                 "IGES transformation link targets no emitted entity",
-            ));
+            )
+            .into());
         };
         *slot = parent_sequence;
     }
@@ -9348,9 +9460,9 @@ fn encode_file(
             None | Some(BodyColor::Standard(0)) => 0,
             Some(BodyColor::Standard(number)) => number,
             Some(BodyColor::Custom(_)) => {
-                return Err(CodecError::Malformed(
-                    "IGES color definition was not emitted".into(),
-                ));
+                return Err(
+                    CodecError::Malformed("IGES color definition was not emitted".into()).into(),
+                );
             }
             Some(BodyColor::Definition(entity_index)) => {
                 let expanded_index =
@@ -9493,24 +9605,38 @@ fn generated_line_font(version: crate::IgesVersion, entity_type: u32, form: i64)
     }
 }
 
-/// Generation timestamp: the held document date when the target version
-/// accepts its lexical form, else the current time in the target form. The
-/// four-digit year form the later versions admit is not a V4.0 or V5.0 field
-/// 18 value, so a held four-digit date is truncated to its two-digit form
-/// for those targets.
+/// Use a held IGES date only when the selected Global table admits it.
 fn generation_timestamp_for(
     version: crate::IgesVersion,
     held: Option<&str>,
 ) -> Result<String, CodecError> {
-    if let Some(held) = held {
-        let truncated = held.len() == 15
-            && matches!(version, crate::IgesVersion::V4_0 | crate::IgesVersion::V5_0);
-        if !truncated {
-            return Ok(held.to_owned());
-        }
-        return Ok(held[2..].to_owned());
+    if let Some(held) = held.filter(|value| valid_global_date(value, version)) {
+        return Ok(held.to_owned());
     }
     generation_timestamp(SystemTime::now(), version)
+}
+
+fn valid_global_date(value: &str, version: crate::IgesVersion) -> bool {
+    let bytes = value.as_bytes();
+    let dot = match bytes.len() {
+        13 => 6,
+        15 if !matches!(version, crate::IgesVersion::V4_0 | crate::IgesVersion::V5_0) => 8,
+        _ => return false,
+    };
+    if bytes[dot] != b'.'
+        || bytes
+            .iter()
+            .enumerate()
+            .any(|(i, b)| i != dot && !b.is_ascii_digit())
+    {
+        return false;
+    }
+    let number = |offset: usize| (bytes[offset] - b'0') * 10 + (bytes[offset + 1] - b'0');
+    (1..=12).contains(&number(dot - 4))
+        && (1..=31).contains(&number(dot - 2))
+        && number(dot + 1) < 24
+        && number(dot + 3) < 60
+        && number(dot + 5) < 60
 }
 
 /// Renders one IGES global Hollerith field.
@@ -9574,6 +9700,7 @@ fn document_metadata<'a>(ir: &'a CadIr, name: &str) -> Option<&'a str> {
 pub(super) fn global_projected_attribute(
     ir: &CadIr,
     attribute: &cadmpeg_ir::attributes::SourceAttribute,
+    version: crate::IgesVersion,
 ) -> bool {
     if !matches!(
         attribute.target,
@@ -9598,6 +9725,13 @@ pub(super) fn global_projected_attribute(
         return false;
     };
     if document_metadata(ir, &attribute.name) != Some(value.as_str()) {
+        return false;
+    }
+    if attribute.name == "generation_date" || attribute.name == "model_date" {
+        return valid_global_date(value, version)
+            && (attribute.name != "model_date" || version != crate::IgesVersion::V4_0);
+    }
+    if attribute.name == "system_id" && value.is_empty() {
         return false;
     }
     if attribute.name == "start" {
@@ -9641,7 +9775,12 @@ fn generated_global(
         "1H;".to_owned(),
         global_hollerith(WRITER_SENDER_PRODUCT),
         global_hollerith(WRITER_NATIVE_FILE_NAME),
-        global_hollerith(metadata.system_id.unwrap_or(WRITER_NATIVE_SYSTEM_ID)),
+        global_hollerith(
+            metadata
+                .system_id
+                .filter(|value| !value.is_empty())
+                .unwrap_or(WRITER_NATIVE_SYSTEM_ID),
+        ),
         global_hollerith(WRITER_PREPROCESSOR_VERSION),
         WRITER_INTEGER_REPRESENTATION_BITS.to_string(),
         WRITER_SINGLE_PRECISION_MAGNITUDE.to_string(),
@@ -9671,10 +9810,20 @@ fn generated_global(
     match version {
         crate::IgesVersion::V4_0 => {}
         crate::IgesVersion::V5_0 => {
-            fields.push(global_hollerith(metadata.model_date.unwrap_or("")));
+            fields.push(global_hollerith(
+                metadata
+                    .model_date
+                    .filter(|value| valid_global_date(value, version))
+                    .unwrap_or(""),
+            ));
         }
         crate::IgesVersion::V5_1 | crate::IgesVersion::V5_2 | crate::IgesVersion::V5_3 => {
-            fields.push(global_hollerith(metadata.model_date.unwrap_or("")));
+            fields.push(global_hollerith(
+                metadata
+                    .model_date
+                    .filter(|value| valid_global_date(value, version))
+                    .unwrap_or(""),
+            ));
             fields.push(global_hollerith(""));
         }
     }
@@ -9778,12 +9927,12 @@ fn civil_date_from_unix_days(days: i64) -> (i64, i64, i64) {
     (year, month, day)
 }
 
-fn directory_card(fields: [String; 9], sequence: u32) -> Result<Vec<u8>, CodecError> {
+fn directory_card(fields: [String; 9], sequence: u32) -> Result<Vec<u8>, WriteError> {
     let mut payload = Vec::new();
     for field in fields {
         payload.extend_from_slice(&crate::directory::render_field(field.as_bytes())?);
     }
-    card(&payload, b'D', sequence)
+    Ok(card(&payload, b'D', sequence)?)
 }
 
 /// (C) Parameter fragments fit 64 bytes; (O-capacity) directory pointers fit eight digits.
@@ -9791,72 +9940,34 @@ fn parameter_card(
     data: &[u8],
     directory_sequence: u32,
     sequence: u32,
-) -> Result<Vec<u8>, CodecError> {
+) -> Result<Vec<u8>, WriteError> {
     if data.len() > 64 {
-        return Err(CodecError::Malformed(
-            "IGES Parameter Data payload exceeds 64 bytes".into(),
-        ));
+        return Err(
+            CodecError::Malformed("IGES Parameter Data payload exceeds 64 bytes".into()).into(),
+        );
     }
     let mut payload = vec![b' '; 72];
     payload[..data.len()].copy_from_slice(data);
     let pointer = format!("{directory_sequence:>8}");
     if pointer.len() > 8 {
-        return Err(CodecError::InvalidInput(
-            "IGES directory sequence overflows".into(),
-        ));
+        return Err(CodecError::InvalidInput("IGES directory sequence overflows".into()).into());
     }
     payload[64..].copy_from_slice(pointer.as_bytes());
-    card(&payload, b'P', sequence)
+    Ok(card(&payload, b'P', sequence)?)
 }
 
 /// IGES states every JSON path at full precision; no written value is
 /// quantized or normalized (#232 §5.2).
 pub(crate) const REDUCED_FIELDS: &[cadmpeg_ir::codec::write::ReducedField] = &[];
 
-/// Stored-field capacities of the Fixed ASCII card layout (#217 §5.0).
-/// The payload row holds the 72 section-data bytes and the sequence row the
-/// seven-column decimal field (`docs/formats/iges.md` §33). Both helpers
-/// refuse with `InvalidInput` until #239 switches the encode path to
-/// `EncodeError`, when they construct `TargetCapacity` instead.
-pub(crate) const CAPACITY_FIELDS: &[cadmpeg_ir::codec::write::CapacityField] = &[
-    cadmpeg_ir::codec::write::CapacityField {
-        field: "card.payload",
-        limit: 72,
-        source: "docs/formats/iges.md §33: card bytes 1 through 72 are section data",
-        helper: "card_payload",
-    },
-    cadmpeg_ir::codec::write::CapacityField {
-        field: "card.sequence",
-        limit: 9_999_999,
-        source: "docs/formats/iges.md §33: bytes 74 through 80 are the decimal sequence field",
-        helper: "card_sequence",
-    },
-];
-
-/// The section data fits the 72-byte card payload.
-fn card_payload(data: &[u8]) -> Result<(), CodecError> {
-    if u64::try_from(data.len()).is_ok_and(|length| length > CAPACITY_FIELDS[0].limit) {
-        return Err(CodecError::InvalidInput(
-            "IGES card payload exceeds 72 bytes".into(),
-        ));
-    }
-    Ok(())
-}
-
-/// The card sequence fits the seven-column decimal field.
-fn card_sequence(sequence: u32) -> Result<u32, CodecError> {
-    if u64::from(sequence) > CAPACITY_FIELDS[1].limit {
-        return Err(CodecError::InvalidInput(
-            "IGES card sequence exceeds seven digits".into(),
-        ));
-    }
-    Ok(sequence)
-}
-
 /// (O-capacity) Fixed ASCII cards have 72 payload columns and seven sequence digits.
-fn card(data: &[u8], section: u8, sequence: u32) -> Result<Vec<u8>, CodecError> {
-    card_payload(data)?;
-    let sequence = card_sequence(sequence)?;
+fn card(
+    data: &[u8],
+    section: u8,
+    sequence: u32,
+) -> Result<Vec<u8>, cadmpeg_ir::codec::write::EncodeError> {
+    capacity::card_payload(data)?;
+    let sequence = capacity::card_sequence(sequence)?;
     let mut payload = vec![b' '; 80];
     payload[..data.len()].copy_from_slice(data);
     payload[72] = section;
@@ -9890,4 +10001,7 @@ fn finite(value: f64, field: &str) -> Result<FiniteReal, CodecError> {
 #[cfg(test)]
 mod tests;
 
+mod compound;
+mod neutral_products;
 mod ownership;
+mod support_records;

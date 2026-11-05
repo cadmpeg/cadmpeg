@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode exact carrier-owned assembly operand paths.
 
+use crate::metastream::PrimaryFrames;
 use cadmpeg_core::decode::index_from_u32;
 
 use super::assembly_path_layout::{
@@ -16,7 +17,6 @@ use super::shared_frames::exact_indexed_header_at;
 use super::shared_frames::exact_same_segment_record_reference;
 use super::shared_frames::marked_record_reference;
 use super::shared_frames::rigid_transform_at;
-use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::decode::text::{fixed_guid_end, fixed_relaxed_guid_text, fixed_utf16_ascii_eq};
 use crate::layout::assembly_class_363_264_frame_360_child as class_363_child;
 use crate::layout::assembly_class_363_264_frame_360_leading as class_363_leading;
@@ -35,7 +35,7 @@ use crate::records::feature::scope::DesignParameterScope;
 
 pub(super) fn exact_variable_reference_operand_qualifiers(
     source: View<'_>,
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
     frames: &[DesignAssemblyOperandFrame; 2],
 ) -> Result<Option<[DesignAssemblyOperandQualifier; 2]>, CodecError> {
@@ -57,7 +57,7 @@ pub(super) fn exact_variable_reference_operand_qualifiers(
 
 fn exact_class_363_operand_path<'a>(
     source: View<'a>,
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
     frame: &DesignAssemblyOperandFrame,
 ) -> Result<Option<ParsedOperandPath<'a>>, CodecError> {
@@ -219,7 +219,7 @@ fn exact_class_363_operand_path<'a>(
 
 fn exact_class_307_joint_origin(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     frame: &DesignAssemblyOperandFrame,
 ) -> Option<DesignAssemblyOperandQualifier> {
     let (start, paired_at) = exact_class_264_record_frame(
@@ -289,7 +289,7 @@ struct CarrierFrame {
 
 fn exact_class_363_identity_frame(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     record_index: u32,
 ) -> Option<CarrierFrame> {
     for (frame_length, scope_reference) in [
@@ -346,7 +346,7 @@ fn exact_class_363_identity_frame(
 
 fn exact_class_363_node_frame(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
     record_index: u32,
 ) -> Option<CarrierFrame> {
@@ -387,7 +387,7 @@ fn exact_class_363_node_frame(
 
 fn exact_class_264_record_frame(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     record_index: u32,
     class_tag: &str,
     frame_length: usize,
@@ -522,7 +522,7 @@ mod tests {
             class_307_joint_origin::KIND_CODE_UNIT_COUNT,
             "JointOrigin",
         );
-        let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+        let records = crate::design::test_support::test_primary_frames(&bytes);
         let frame = DesignAssemblyOperandFrame {
             reference_record_index: record_index,
             reference_offset: Some(9),
@@ -563,7 +563,7 @@ mod tests {
         ));
 
         bytes[class_307_joint_origin::REFERENCE_TRAILER] = 0;
-        let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+        let records = crate::design::test_support::test_primary_frames(&bytes);
         assert_eq!(exact_class_307_joint_origin(&bytes, &records, &frame), None);
     }
 
@@ -605,7 +605,7 @@ mod tests {
                     bytes[start..start + 2].copy_from_slice(&unit.to_le_bytes());
                 }
             }
-            let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+            let records = crate::design::test_support::test_primary_frames(&bytes);
             assert_eq!(
                 exact_class_363_identity_frame(&bytes, &records, record_index),
                 Some(CarrierFrame {

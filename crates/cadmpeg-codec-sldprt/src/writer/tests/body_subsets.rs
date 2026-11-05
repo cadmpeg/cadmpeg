@@ -147,3 +147,43 @@ fn detached_carriers_are_authored_without_a_body() {
     assert!((0..partition.len()).any(|offset| matches!(crate::brep::parse_carrier(partition, offset), Some(crate::brep::Carrier::Surface(carrier)) if carrier.geometry == surface.geometry)));
     assert!((0..partition.len()).any(|offset| matches!(crate::brep::parse_carrier(partition, offset), Some(crate::brep::Carrier::Curve(carrier)) if carrier.geometry == curve.geometry)));
 }
+
+#[test]
+fn detached_point_is_written_in_the_selected_partition() {
+    use cadmpeg_core::decode::View;
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    use cadmpeg_ir::features::FinitePoint3;
+    use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::topology::Point;
+
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let body = ir.model.bodies[0].id.clone();
+    let point = Point::new(
+        cadmpeg_ir::ids::PointId::mint("synthetic:test:point#detached").unwrap(),
+        FinitePoint3::new(Point3::new(1000.0, 2000.0, 3000.0)).unwrap(),
+        None,
+    );
+    ir.model.points.push(point.clone());
+    let subset = super::super::body_subset(&ir, &[body]).unwrap();
+    assert!(subset
+        .model
+        .points
+        .iter()
+        .any(|candidate| candidate.id == point.id));
+    let plan = crate::SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let scan = crate::test_support::container::scan(&bytes);
+    let partition = crate::container::select_active_parasolid_site(&scan)
+        .unwrap()
+        .section
+        .payload();
+    let points = crate::brep::topology::scan_plain(partition);
+    assert!(points.points().values().any(|candidate| {
+        [1.0, 2.0, 3.0].iter().enumerate().all(|(index, value)| {
+            View::f64_be_at(partition, candidate.xyz_offset + index * 8) == Some(*value)
+        })
+    }));
+}

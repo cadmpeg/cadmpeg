@@ -58,7 +58,7 @@ enum Preservation {
     },
 }
 
-fn preserve(input: EncodeInput<'_>) -> Result<Preservation, CodecError> {
+fn preserve(input: EncodeInput<'_>) -> Result<Preservation, cadmpeg_core::decode::ResourceLimit> {
     if !input.can_reuse_source() {
         return Ok(Preservation::SourceImageUnavailable);
     }
@@ -88,10 +88,28 @@ fn preserve(input: EncodeInput<'_>) -> Result<Preservation, CodecError> {
             write_path: path,
             notes,
         }),
+        Err(CodecError::ResourceLimit(limit)) if caller_ceiling(limit, input.limits) => Err(limit),
         Err(error) => Ok(Preservation::PatchDeclined {
             reason: error.to_string(),
         }),
     }
+}
+
+fn caller_ceiling(
+    limit: cadmpeg_core::decode::ResourceLimit,
+    limits: cadmpeg_core::decode::ResourceLimits,
+) -> bool {
+    use cadmpeg_core::decode::ResourceDimension;
+    let ceiling = match limit.dimension {
+        ResourceDimension::InputBytes => limits.max_input_bytes,
+        ResourceDimension::DecompressedBytes => limits.max_decompressed_bytes_total,
+        ResourceDimension::RetainedBytes => limits.max_retained_bytes,
+        ResourceDimension::Entities => limits.max_entities,
+        ResourceDimension::RecursionDepth => return false,
+    };
+    limit.scope == cadmpeg_core::decode::LimitScope::Session
+        && limit.reason == cadmpeg_core::decode::ResourceFailure::BudgetExceeded
+        && limit.limit == ceiling
 }
 
 fn preserved_body(

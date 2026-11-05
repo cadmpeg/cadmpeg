@@ -28,8 +28,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_ir::appearance::AppearanceTarget;
 use cadmpeg_ir::codec::write::{
-    target::ResolvedWrite, ArenaCoverage, ArenaDisposition, ArenaDispositions, Consumption,
-    EncodeError, EncodeInput, ExportBody, WritePath,
+    target::{ResolvedTarget, ResolvedWrite},
+    ArenaCoverage, ArenaDisposition, ArenaDispositions, Consumption, EncodeInput, ExportBody,
+    WritePath,
 };
 use cadmpeg_ir::geometry::nurbs::NurbsSurface;
 use cadmpeg_ir::geometry::{
@@ -133,22 +134,29 @@ pub(crate) fn plan(
     input: EncodeInput<'_>,
     target: &ResolvedWrite<'_>,
     packaged: bool,
-) -> Result<(ExportBody, Vec<Member>), EncodeError> {
-    let version = target
-        .index()
-        .and_then(|index| crate::TARGET_VERSIONS.get(index).copied())
-        .map(Ok)
-        .unwrap_or_else(|| {
-            target
-                .for_synthesis()
-                .map(|synthesis| crate::TARGET_VERSIONS[synthesis.index()])
-        })?;
+) -> (ExportBody, Vec<Member>) {
+    let index = match target.target() {
+        ResolvedTarget::Explicit { index, .. }
+        | ResolvedTarget::Inherited { index, .. }
+        | ResolvedTarget::Default { index, .. } => *index,
+    };
+    debug_assert!(
+        index < crate::TARGET_VERSIONS.len(),
+        "USD catalog rows match layer versions"
+    );
+    let version = crate::TARGET_VERSIONS
+        .get(index)
+        .copied()
+        .unwrap_or(crate::TARGET_VERSIONS[0]);
     let mut writer = Writer::new(input.ir, version);
     if packaged {
         writer.package = Some(Vec::new());
     }
     let text = writer.layer();
-    let losses = writer.losses();
+    let mut losses = writer.losses();
+    if let Some(message) = target.displacement_message() {
+        losses.push(UsdLossCode::SourceDialectDisplaced.note(message));
+    }
     let members = writer.package.take().unwrap_or_default();
     let body = ExportBody {
         bytes: text.into_bytes(),
@@ -165,7 +173,7 @@ pub(crate) fn plan(
         losses,
         notes: vec![format!("USDA {version} text layer, metre units")],
     };
-    Ok((body, members))
+    (body, members)
 }
 
 /// Counts of records no prim carries.

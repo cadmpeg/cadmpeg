@@ -433,14 +433,6 @@ fn phase5_freeze_export_precondition_admissibility_fixtures() {
         .is_ok());
 }
 
-#[test]
-fn configuration_source_index_allocation_rejects_exhaustion() {
-    let mut used = std::collections::HashSet::from([u32::MAX]);
-    let mut next = u32::MAX;
-    let error = crate::writer::reserve_configuration_index(&mut used, &mut next).unwrap_err();
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
-}
-
 mod projections;
 
 #[test]

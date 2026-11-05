@@ -586,6 +586,47 @@ fn reemitted_definition_levels_redecode_to_their_level_set() {
 }
 
 #[test]
+fn edited_definition_levels_replace_the_source_set() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use std::io::Cursor;
+
+    let decoded = crate::IgesCodec
+        .decode(
+            &mut Cursor::new(
+                crate::test_support::test_solids_and_structure::definition_levels_file(),
+            ),
+            &DecodeOptions::default(),
+        )
+        .expect("levels fixture decodes");
+    let mut ir = decoded.ir().clone();
+    ir.model
+        .presentation_layers
+        .iter_mut()
+        .find(|layer| layer.name == "7")
+        .expect("level seven")
+        .name = "8".into();
+    let output =
+        super::super::synthesize(&ir, crate::IgesVersion::V5_3).expect("levels synthesize");
+    let after = crate::IgesCodec
+        .decode(&mut Cursor::new(output.bytes), &DecodeOptions::default())
+        .expect("output decodes");
+    let names = after
+        .ir()
+        .model
+        .presentation_layers
+        .iter()
+        .map(|layer| layer.name.as_str())
+        .collect::<BTreeSet<_>>();
+    assert_eq!(names, BTreeSet::from(["2", "8", "11"]));
+    assert!(after
+        .ir()
+        .model
+        .presentation_layers
+        .iter()
+        .all(|layer| !layer.items.is_empty()));
+}
+
+#[test]
 fn neutral_multiple_levels_write_a_definition_set() {
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
     use cadmpeg_ir::presentation::{PresentationItem, PresentationLayer};
@@ -1125,4 +1166,64 @@ fn reemitted_drawings_redecode_to_their_typed_records() {
     assert_fixture_round_trips("view_visibility_forms", &["view_visibility", "views"]);
     assert_fixture_round_trips("dimension_forms", &["annotations"]);
     assert_fixture_round_trips("leader_forms", &["annotations"]);
+}
+
+#[test]
+fn boolean_feature_order_follows_current_ordinals() {
+    use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use std::io::Cursor;
+    let entities = [
+        (158, 0, "SPHERE1", "158,1,0,0,0;"),
+        (158, 0, "SPHERE2", "158,1,3,0,0;"),
+        (180, 0, "FIRST", "180,3,-1,-3,1;"),
+        (180, 0, "SECOND", "180,3,-1,-3,1;"),
+    ]
+    .into_iter()
+    .map(|(entity_type, form, label, parameters)| OwnedTestEntity {
+        entity_type,
+        form,
+        label: label.into(),
+        status: "00000000",
+        parameters: parameters.into(),
+    })
+    .collect::<Vec<_>>();
+    let decoded = crate::IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&entities)),
+            &DecodeOptions::default(),
+        )
+        .expect("Boolean fixtures decode");
+    let mut ir = decoded.ir().clone();
+    let first = ir
+        .model
+        .features
+        .iter()
+        .position(|feature| feature.name.as_deref() == Some("FIRST"))
+        .expect("first Boolean");
+    let second = ir
+        .model
+        .features
+        .iter()
+        .position(|feature| feature.name.as_deref() == Some("SECOND"))
+        .expect("second Boolean");
+    let ordinal = ir.model.features[first].ordinal;
+    ir.model.features[first].ordinal = ir.model.features[second].ordinal;
+    ir.model.features[second].ordinal = ordinal;
+    let output = super::super::synthesize(&ir, crate::IgesVersion::V5_3)
+        .expect("Boolean features synthesize");
+    let after = crate::IgesCodec
+        .decode(&mut Cursor::new(output.bytes), &DecodeOptions::default())
+        .expect("Boolean features re-decode");
+    let ordinal = |name: &str| {
+        after
+            .ir()
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .expect("written Boolean feature")
+            .ordinal
+    };
+    assert!(ordinal("SECOND") < ordinal("FIRST"));
 }

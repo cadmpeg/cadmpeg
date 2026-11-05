@@ -156,3 +156,136 @@ fn typed_sketch_record_wins_over_stale_lane_bytes() {
         target.feature_input_lanes
     );
 }
+
+#[test]
+fn ownerless_native_scalar_survives_when_design_is_held() {
+    let mut payload = Vec::new();
+    crate::resolved_features::write_generate::append_generated_scalar(
+        &mut payload,
+        "moLengthParameter_c",
+        "Independent",
+        0.034,
+        23,
+        &[],
+    )
+    .unwrap();
+    let lane = crate::resolved_features::write_prepare::generated_native_lane(
+        &[],
+        "sldprt:feature-input#independent",
+        None,
+        payload,
+    )
+    .unwrap();
+    assert!(lane.scalars[0].feature_ref.is_none());
+    let source = SldprtNative {
+        feature_input_lanes: vec![lane],
+        ..Default::default()
+    };
+    let mut target = SldprtNative::default();
+    let ir = cadmpeg_ir::CadIr::empty();
+    let mut losses = Vec::new();
+    let mut dispositions = NativeDispositions::for_namespace(
+        "sldprt",
+        crate::native::SLDPRT_ARENA_NAMES,
+        NativeDisposition::Dropped,
+    );
+    regenerate(
+        &ir,
+        &ir,
+        &source,
+        &mut target,
+        &mut losses,
+        &mut dispositions,
+    )
+    .unwrap();
+    assert_eq!(target.feature_input_lanes.len(), 1);
+    assert_eq!(target.feature_input_lanes[0].scalars.len(), 1);
+    assert_eq!(target.feature_input_lanes[0].scalars[0].value.get(), 0.034);
+    assert!(losses.is_empty(), "{losses:?}");
+
+    let mut edited = ir.clone();
+    edited
+        .model
+        .parameters
+        .push(cadmpeg_ir::features::DesignParameter {
+            product_definition: None,
+            id: cadmpeg_ir::features::ParameterId::mint("synthetic:test:parameter#independent")
+                .unwrap(),
+            owner: None,
+            ordinal: 0,
+            name: "Independent".into(),
+            expression: "70mm".into(),
+            display: None,
+            value: Some(cadmpeg_ir::features::ParameterValue::Length(
+                cadmpeg_ir::scalar::Length::new(70.0).unwrap(),
+            )),
+            driving: true,
+            properties: Default::default(),
+            pmi: None,
+            native_ref: Some(source.feature_input_lanes[0].scalars[0].id.clone()),
+        });
+    let mut target = SldprtNative::default();
+    let mut losses = Vec::new();
+    regenerate(
+        &edited,
+        &edited,
+        &source,
+        &mut target,
+        &mut losses,
+        &mut dispositions,
+    )
+    .unwrap();
+    assert!(target
+        .feature_input_lanes
+        .iter()
+        .flat_map(|lane| &lane.scalars)
+        .all(|scalar| scalar.value.get() != 0.034));
+}
+
+#[test]
+fn unlinked_native_relation_is_written_without_inventing_links() {
+    let mut payload = vec![0; 4];
+    crate::resolved_features::write_generate::append_reference_marker(
+        &mut payload,
+        crate::records::SketchRelationKind::Angle,
+        [0, 0],
+        1,
+    );
+    let lane = crate::resolved_features::write_prepare::generated_native_lane(
+        &[],
+        "sldprt:feature-input#relation",
+        None,
+        payload,
+    )
+    .unwrap();
+    let source = SldprtNative {
+        feature_input_lanes: vec![lane],
+        ..Default::default()
+    };
+    let mut target = SldprtNative::default();
+    let ir = cadmpeg_ir::CadIr::empty();
+    let mut losses = Vec::new();
+    let mut dispositions = NativeDispositions::for_namespace(
+        "sldprt",
+        crate::native::SLDPRT_ARENA_NAMES,
+        NativeDisposition::Dropped,
+    );
+    regenerate(
+        &ir,
+        &ir,
+        &source,
+        &mut target,
+        &mut losses,
+        &mut dispositions,
+    )
+    .unwrap();
+    let markers = &target.feature_input_lanes[0].sketch_entities;
+    assert_eq!(markers.len(), 1);
+    assert_eq!(
+        markers[0].kind(),
+        crate::records::SketchInputKind::Relation(crate::records::SketchRelationKind::Angle)
+    );
+    assert_eq!(markers[0].local_id(), Some(1));
+    assert!(markers[0].links().is_empty());
+    assert!(losses.is_empty(), "{losses:?}");
+}
