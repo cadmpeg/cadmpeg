@@ -299,12 +299,29 @@ fn unknown_source_declaration_selects_the_catalog_default() {
     assert_eq!(primary.dialect().as_str(), "fcstd:unknown");
     assert_eq!(primary.declared()["schema_version"], "04");
     let output = inherited(&decoded);
-    assert_eq!(target(&output), "fcstd:unknown");
+    assert_eq!(target(&output), "fcstd:schema-4");
     assert!(matches!(
         output.report().write_path(),
-        WritePath::Patched { .. }
+        WritePath::Synthesized { .. }
     ));
-    assert_eq!(entry_payloads(&bytes(output)), entry_payloads(&source));
+    assert!(output.report().losses.iter().any(|loss| {
+        loss.code
+            == crate::loss::FreecadLossCode::SourceDialectDisplaced
+                .note("")
+                .code
+            && loss.message.contains("fcstd:unknown")
+            && loss.message.contains("fcstd:schema-4")
+    }));
+    assert_eq!(
+        decode(&bytes(output))
+            .report()
+            .dialects()
+            .unwrap()
+            .primary()
+            .dialect()
+            .as_str(),
+        "fcstd:schema-4"
+    );
     let fallback = plan(decoded.ir(), None, TargetRequest::Inherit)
         .expect("off-catalog inheritance synthesizes the catalog default");
     assert_eq!(target(&fallback), "fcstd:schema-4");
