@@ -98,7 +98,24 @@ fn zero_payload_mesh_surface_is_typed_as_a_native_sentinel() {
         .iter()
         .any(|loss| loss.message.contains("spline/procedural surfaces")));
 
-    assert_mesh_sentinel_export(result.ir(), Some(result.source_fidelity()));
+    let mut replay = Vec::new();
+    let report = F3dCodec
+        .plan(
+            EncodeInput::new(result.ir(), Some(result.source_fidelity())),
+            TargetRequest::Inherit,
+        )
+        .and_then(|plan| plan.write_to(&mut replay))
+        .expect("fully represented source replays");
+    assert!(matches!(
+        report.write_path(),
+        cadmpeg_ir::report::export::WritePath::VerbatimReplay { .. }
+    ));
+    assert_eq!(replay, source);
+    let replayed = F3dCodec
+        .decode(&mut Cursor::new(replay), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(f3d_native(replayed.ir()).mesh_surface_sentinels.len(), 1);
+    assert_eq!(replayed.ir().model.faces.len(), 1);
 
     let mut edited = result.ir().clone();
     f3d_native_mut(&mut edited).mesh_surface_sentinels[0].record_index += 1;
