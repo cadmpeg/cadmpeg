@@ -199,6 +199,9 @@ impl FaceRecipeIndex {
                 lanes.push(BTreeSet::new());
             }
             let lane = lanes.get_mut(ordinal)?;
+            if reference.design_reference < 0 {
+                continue;
+            }
             for face in super::effective_faces(reference) {
                 if let Some(slot) = super::stable_ref(face.as_str()) {
                     if self.boundaries.contains_key(&slot) {
