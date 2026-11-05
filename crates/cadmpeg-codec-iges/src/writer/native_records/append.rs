@@ -10,6 +10,7 @@ use super::{
 use std::collections::BTreeMap;
 
 fn encode(
+    ir: &CadIr,
     arena: &str,
     record: &NativeRecord,
     targets: &Targets,
@@ -24,6 +25,93 @@ fn encode(
         lenient,
         missing: Vec::new(),
     };
+    let definition = if matches!(arena, "subfigure_definitions" | "network_definitions") {
+        let mut matches = ir
+            .model
+            .product_definitions
+            .iter()
+            .filter(|definition| definition.native_ref.as_deref() == Some(record.id()));
+        match (matches.next(), matches.next()) {
+            (Some(definition), None) => Some(definition),
+            _ => None,
+        }
+    } else {
+        None
+    };
+    if let Some(definition) = definition {
+        let name = definition
+            .label
+            .as_ref()
+            .filter(|label| !label.trim().is_empty())
+            .ok_or("current product definition has no IGES name")?;
+        fields.values.insert(
+            "name".into(),
+            serde_json::to_value(cadmpeg_ir::native::bytes::NativeBytes::from(
+                name.as_bytes().to_vec(),
+            ))
+            .map_err(|error| error.to_string())?,
+        );
+    }
+    let occurrence = products::current_occurrence(ir, arena, record);
+    let mut placement = None;
+    if let Some(occurrence) = occurrence {
+        let cadmpeg_ir::products::PrototypeReference::Local { definition } = &occurrence.prototype
+        else {
+            return Err("current occurrence has no local prototype".into());
+        };
+        let product = ir
+            .model
+            .product_definitions
+            .iter()
+            .find(|product| &product.id == definition)
+            .ok_or("current occurrence prototype is missing")?;
+        let native_definition = product
+            .native_ref
+            .as_ref()
+            .ok_or("current occurrence prototype has no IGES definition")?;
+        fields.values.insert(
+            "definition".into(),
+            Value::String(native_definition.clone()),
+        );
+        {
+            let transform = occurrence
+                .transform
+                .unwrap_or(cadmpeg_ir::transform::Transform::identity());
+            let native = occurrence.native_ref.as_deref().and_then(|id| {
+                ir.native
+                    .namespace("iges")?
+                    .arenas()
+                    .get("product_occurrences")?
+                    .iter()
+                    .find(|native| native.id() == id)?
+                    .field("local_transform")
+            });
+            let same = native.and_then(|value| {
+                serde_json::from_value::<cadmpeg_ir::transform::Transform>(value).ok()
+            }) == Some(transform);
+            if !same {
+                fields
+                    .values
+                    .insert("translation".into(), serde_json::json!([0.0, 0.0, 0.0]));
+                fields.values.insert(
+                    "scale".into(),
+                    if arena == "network_instances" {
+                        serde_json::json!([1.0, 1.0, 1.0])
+                    } else {
+                        serde_json::json!(1.0)
+                    },
+                );
+                let mut rows = [[cadmpeg_ir::scalar::FiniteReal::ONE; 4]; 3];
+                for (row, values) in rows.iter_mut().zip(transform.affine_rows()) {
+                    for (slot, value) in row.iter_mut().zip(values) {
+                        *slot = cadmpeg_ir::scalar::FiniteReal::new(value)
+                            .ok_or("occurrence placement is not finite")?;
+                    }
+                }
+                placement = Some(super::super::Placement { rows });
+            }
+        }
+    }
     let mut result = match arena {
         "text_fonts" | "line_fonts" | "text_templates" => {
             fonts::encode(arena, &mut fields, type_code, form)?
@@ -84,6 +172,16 @@ fn encode(
         }
         _ => return Err("record has no native writer".into()),
     };
+    super::numeric::retain(ir, record, &mut result);
+    if let Some(definition) = definition {
+        result.source_targets.push(definition.id.to_string());
+    }
+    if let Some(placement) = placement {
+        result.transform = Some(placement);
+    }
+    if let Some(occurrence) = occurrence {
+        result.source_targets.push(occurrence.id.to_string());
+    }
     let mut owners = Vec::new();
     if let Some(value) = fields.value("owners") {
         for owner in value
@@ -165,6 +263,25 @@ fn line_fonts(ir: &CadIr, entities: &mut [Entity], targets: &Targets) {
             }
         }
     }
+}
+
+fn source_directory_label(ir: &CadIr, record: &NativeRecord) -> Option<String> {
+    let source = record.field("source_entity")?.as_str()?.to_owned();
+    let entity = ir
+        .native
+        .namespace("iges")?
+        .arenas()
+        .get("entities")?
+        .iter()
+        .find(|entity| entity.id() == source)?;
+    let bytes: cadmpeg_ir::native::bytes::NativeBytes =
+        serde_json::from_value(entity.field("label")?).ok()?;
+    let label = std::str::from_utf8(bytes.as_ref()).ok()?;
+    (label.len() <= 8
+        && label
+            .bytes()
+            .all(|byte| byte.is_ascii_graphic() || byte == b' '))
+    .then(|| label.to_owned())
 }
 
 /// Directory labels from the neutral records a native record projects to.
@@ -370,7 +487,7 @@ impl Emitter<'_, '_> {
     /// owner and transformation target it names is already emitted.
     fn try_push(&mut self, arena: &str, record: &NativeRecord) -> Push {
         let Ok((mut entity, owners, _)) =
-            encode(arena, record, &self.targets, &self.claimed, false)
+            encode(self.ir, arena, record, &self.targets, &self.claimed, false)
         else {
             return Push::Deferred;
         };
@@ -406,7 +523,18 @@ impl Emitter<'_, '_> {
                 entity.status = status;
             }
         }
-        if let Some(label) = self
+        if matches!(
+            arena,
+            "subfigure_definitions"
+                | "network_definitions"
+                | "subfigure_instances"
+                | "network_instances"
+                | "connect_points"
+        ) {
+            if let Some(label) = source_directory_label(self.ir, record) {
+                entity.label = label;
+            }
+        } else if let Some(label) = self
             .labels
             .get(record.id())
             .and_then(|name| directory_label(name))
@@ -428,7 +556,7 @@ impl Emitter<'_, '_> {
     /// unresolvable references; what remains missing decides the class.
     fn classify(&self, arena: &str, record: &NativeRecord, pending: &BTreeSet<String>) -> Class {
         let (entity, owners, missing) =
-            match encode(arena, record, &self.targets, &self.claimed, true) {
+            match encode(self.ir, arena, record, &self.targets, &self.claimed, true) {
                 Ok(ok) => ok,
                 Err(error) => {
                     // An owner that still waits for emission keeps the record
@@ -474,7 +602,8 @@ impl Emitter<'_, '_> {
     fn reencode(&mut self, entries: &[(usize, &str, &NativeRecord)]) -> bool {
         let mut progressed = false;
         for (index, arena, record) in entries {
-            let Ok((fresh, _, _)) = encode(arena, record, &self.targets, &self.claimed, false)
+            let Ok((fresh, _, _)) =
+                encode(self.ir, arena, record, &self.targets, &self.claimed, false)
             else {
                 continue;
             };

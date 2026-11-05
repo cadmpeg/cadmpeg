@@ -245,6 +245,7 @@ pub(super) fn serialize_with_uses(
         uses: Vec::new(),
     };
     let bytes = serialize_geometry(
+        ctx,
         ir,
         bodies,
         roots,
@@ -260,6 +261,7 @@ pub(super) fn serialize_with_uses(
 }
 
 fn serialize_geometry(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     bodies: &[&Body],
     roots: &RootKinds<'_>,
@@ -269,6 +271,7 @@ fn serialize_geometry(
     losses: &mut Vec<LossNote>,
 ) -> Result<Option<Vec<u8>>, CodecError> {
     serialize_geometry_inner(
+        ctx,
         ir,
         bodies,
         false,
@@ -295,7 +298,7 @@ pub(super) fn unowned_with_uses(
         indices: Vec::new(),
         uses: Vec::new(),
     };
-    let bytes = unowned_geometry(ir, losses, roots, covered, &mut topology)?;
+    let bytes = unowned_geometry(ctx, ir, losses, roots, covered, &mut topology)?;
     Ok(bytes.map(|bytes| SerializedShape {
         bytes,
         uses: topology.uses,
@@ -303,6 +306,7 @@ pub(super) fn unowned_with_uses(
 }
 
 fn unowned_geometry(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     roots: &RootKinds<'_>,
@@ -355,7 +359,8 @@ fn unowned_geometry(
             )),
         );
     }
-    let bytes = serialize_geometry_inner(ir, &[], true, roots, None, covered, topology, losses)?;
+    let bytes =
+        serialize_geometry_inner(ctx, ir, &[], true, roots, None, covered, topology, losses)?;
     if bytes.is_none()
         && (!reachable.faces.is_empty()
             || !reachable.edges.is_empty()
@@ -376,10 +381,12 @@ fn unowned_geometry(
 fn polygon_sections(
     ir: &CadIr,
     bodies: &[&Body],
+    faces: &HashSet<String>,
+    edges: &HashSet<String>,
     losses: &mut Vec<LossNote>,
-) -> Result<(Vec<String>, Vec<String>), CodecError> {
+) -> Result<(Vec<String>, Vec<String>, HashMap<(String, usize), usize>), CodecError> {
     let Some(namespace) = ir.native.namespace("fcstd") else {
-        return Ok((Vec::new(), Vec::new()));
+        return Ok((Vec::new(), Vec::new(), HashMap::new()));
     };
     let uses =
         namespace.arena_as::<crate::native::source_use::SourceUseSelector>("topology_uses")?;
@@ -390,10 +397,25 @@ fn polygon_sections(
     let mut seen = HashSet::new();
     let mut entries3d = Vec::new();
     let mut entries_indexed = Vec::new();
-    for body in bodies {
-        let Some(native) = body.native_ref.as_deref() else {
-            continue;
-        };
+    let mut indexed_positions = HashMap::new();
+    let natives = bodies
+        .iter()
+        .filter_map(|body| body.native_ref.as_deref())
+        .chain(
+            ir.model
+                .faces
+                .iter()
+                .filter(|face| faces.contains(face.id.as_str()))
+                .filter_map(|face| face.native_ref.as_deref()),
+        )
+        .chain(
+            ir.model
+                .edges
+                .iter()
+                .filter(|edge| edges.contains(edge.id.as_str()))
+                .filter_map(|edge| edge.native_ref.as_deref()),
+        );
+    for native in natives {
         let Some(payload) = uses
             .iter()
             .find(|use_record| use_record.id == native)
@@ -421,10 +443,12 @@ fn polygon_sections(
                 ))),
             }
         }
-        for id in table_indexed {
+        for (position, id) in table_indexed.iter().enumerate() {
             match indexed.iter().find(|record| record.id == *id) {
                 Some(record) => {
-                    entries_indexed.push(crate::brep::polygon_on_triangulation_text(record))
+                    entries_indexed.push(crate::brep::polygon_on_triangulation_text(record));
+                    indexed_positions
+                        .insert((payload.id.clone(), position + 1), entries_indexed.len());
                 }
                 None => losses.push(ExportLossCode::NativeRecordsOmitted.note(format!(
                     "polygon record {id} named by {} is absent and its table entry is omitted",
@@ -433,7 +457,7 @@ fn polygon_sections(
             }
         }
     }
-    Ok((entries3d, entries_indexed))
+    Ok((entries3d, entries_indexed, indexed_positions))
 }
 
 fn triangulation_sections(
@@ -536,6 +560,7 @@ fn covered_by_replay(
 }
 
 fn serialize_geometry_inner(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     bodies: &[&Body],
     free: bool,
@@ -561,7 +586,56 @@ fn serialize_geometry_inner(
     } = reachable;
     let (triangulations, face_triangulations) =
         triangulation_sections(ir, bodies, &faces, free, covered, losses);
-    let (mut polygons3d, polygons_indexed) = polygon_sections(ir, bodies, losses)?;
+    let (mut polygons3d, mut polygons_indexed, indexed_positions) =
+        polygon_sections(ir, bodies, &faces, &edges, losses)?;
+    let sources = if polygons_indexed.is_empty() {
+        None
+    } else {
+        super::polygon_sources::PolygonSources::new(ctx, ir)?
+    };
+    let mut polygon_representations = HashMap::new();
+    for edge in ir
+        .model
+        .edges
+        .iter()
+        .filter(|edge| edges.contains(edge.id.as_str()))
+    {
+        let indexed = match &sources {
+            Some(sources) => super::indexed_polygon::representation(
+                ctx,
+                ir,
+                edge,
+                sources,
+                &face_triangulations,
+                covered,
+                &mut polygons_indexed,
+                &indexed_positions,
+            )?,
+            None => None,
+        };
+        let fallback = indexed
+            .is_none()
+            .then(|| super::polygon_edges::polygon3d(ir, edge, &mut polygons3d))
+            .flatten();
+        if fallback.is_some() {
+            if let (Some(sources), Some(native)) = (&sources, edge.native_ref.as_deref()) {
+                if let Some((_, source)) = sources.shape(ctx, native)? {
+                    if matches!(&source.geometry, crate::brep::TextTShapeGeometry::Edge { representations, .. }
+                        if representations.iter().any(|value| matches!(value,
+                            crate::brep::TextEdgeRepresentation::PolygonOnTriangulation { .. }
+                            | crate::brep::TextEdgeRepresentation::PolygonPair { .. })))
+                    {
+                        losses.push(crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(format!(
+                            "edge {} keeps its polygon but its triangulation association cannot be written", edge.id
+                        )));
+                    }
+                }
+            }
+        }
+        if let Some(representation) = indexed.or(fallback) {
+            polygon_representations.insert(edge.id.as_str(), representation);
+        }
+    }
     let mut locations = Vec::new();
     let mut curves = Vec::new();
     let mut curve_ids = HashMap::new();
@@ -580,8 +654,7 @@ fn serialize_geometry_inner(
             .filter(|edge| edges.contains(edge.id.as_str()) && edge.curve() == Some(&curve.id))
             .peekable();
         if edge_uses.peek().is_some()
-            && edge_uses
-                .all(|edge| super::polygon_edges::polygon3d(ir, edge, &mut polygons3d).is_some())
+            && edge_uses.all(|edge| polygon_representations.contains_key(edge.id.as_str()))
         {
             continue;
         }
@@ -836,8 +909,8 @@ fn serialize_geometry_inner(
                 });
         let mut representation = if degenerate {
             String::new()
-        } else if let Some(polygon) = super::polygon_edges::polygon3d(ir, edge, &mut polygons3d) {
-            polygon
+        } else if let Some(polygon) = polygon_representations.get(edge.id.as_str()) {
+            polygon.clone()
         } else {
             match edge.curve() {
                 Some(curve) => {
@@ -1907,6 +1980,7 @@ pub(super) mod tests {
         let current = crate::topology_transfer::current_bindings(ctx, ir)?;
         let roots = RootKinds::new(ctx, ir, &current)?;
         serialize_geometry(
+            ctx,
             ir,
             bodies,
             &roots,

@@ -8,7 +8,15 @@ use cadmpeg_ir::{CadIr, CodecFormat};
 use serde_json::Value;
 
 fn number_at(parameters: &[Value], index: usize) -> Option<f64> {
-    parameters.get(index)?.get("value")?.get("value")?.as_f64()
+    let token = parameters.get(index)?.get("value")?;
+    match token.get("kind")?.as_str()? {
+        "integer" => token
+            .get("value")?
+            .as_i64()
+            .and_then(cadmpeg_core::convert::f64_from_i64),
+        "real" => token.get("value")?.as_f64(),
+        _ => None,
+    }
 }
 
 fn sequence_at(parameters: &[Value], index: usize) -> Option<u64> {
