@@ -11,6 +11,7 @@
     clippy::trivially_copy_pass_by_ref
 )]
 
+use cadmpeg_asm::brep::records::identity::NativeRowId;
 use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
 use std::io::Cursor;
@@ -137,7 +138,6 @@ fn generated_source_less_writes_persistent_body_and_sketch_provenance_attributes
     // Link targets name canonical native rows; each neutral entity carries the
     // row id in its `native_ref`. The coedge-owned link names its owning
     // edge's row with the coedge source index, since coedges hold no row.
-    use cadmpeg_asm::brep::records::identity::NativeRowId;
     let body_row = NativeRowId::from("f3d:asm:body-native-key#1".to_string());
     let face_row = NativeRowId::from("f3d:asm:face-native-key#2".to_string());
     let edge_row = NativeRowId::from("f3d:asm:edge-ownership#3".to_string());
