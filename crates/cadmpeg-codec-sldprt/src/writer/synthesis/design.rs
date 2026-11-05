@@ -507,6 +507,20 @@ fn sketches(
             super::reduce_feature_to_solved(feature)?;
         }
     }
+    for sketch in &mut ir.model.spatial_sketches {
+        for (index, _) in sketch.profiles.drain(..).enumerate() {
+            losses.push(SldprtLossCode::WriterFieldsOmitted.note(format!(
+                "spatial sketch {} profile {index} has no native profile encoding",
+                sketch.id
+            )));
+        }
+        if sketch.visible.take().is_some() {
+            losses.push(SldprtLossCode::WriterFieldsOmitted.note(format!(
+                "spatial sketch {}: visibility has no native spatial-sketch encoding",
+                sketch.id
+            )));
+        }
+    }
     // Native spatial lanes hold point and line coordinates without a B-rep profile.
     // Relations without a generated native form are reported by arena accounting.
     let parameters = &ir.model.parameters;

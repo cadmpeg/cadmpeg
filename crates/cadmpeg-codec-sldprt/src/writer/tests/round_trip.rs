@@ -987,3 +987,84 @@ fn inactive_discrete_configuration_values_are_written_as_scalars() {
                 .message
                 .contains("no native configuration scalar encoding")));
 }
+
+#[test]
+fn spatial_profiles_and_visibility_are_reported_when_unwritable() {
+    use cadmpeg_ir::codec::write::Encoder;
+    use cadmpeg_ir::math::Vector3;
+    use cadmpeg_ir::sketches::{SpatialSketchEntityUse, SpatialSketchProfile};
+
+    let mut ir = source_less_spatial_line(Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0));
+    let sketch = ir.model.spatial_sketches[0].id.clone();
+    let mut boundary = vec![SpatialSketchEntityUse {
+        entity: ir.model.spatial_sketch_entities[0].id().clone(),
+        reversed: false,
+    }];
+    for (index, (start, end)) in [
+        (Point3::new(1.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)),
+        (Point3::new(0.0, 1.0, 0.0), Point3::new(0.0, 0.0, 0.0)),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let id = SpatialSketchEntityId::mint(format!(
+            "synthetic:test:spatial-sketch-entity#side-{index}"
+        ))
+        .unwrap();
+        ir.model
+            .spatial_sketch_entities
+            .push(SpatialSketchEntity::new(
+                id.clone(),
+                sketch.clone(),
+                SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Line {
+                    start,
+                    end,
+                })
+                .unwrap(),
+            ));
+        boundary.push(SpatialSketchEntityUse {
+            entity: id,
+            reversed: false,
+        });
+    }
+    ir.model.spatial_sketches[0].profiles.push(
+        SpatialSketchProfile::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            boundary,
+        )
+        .unwrap(),
+    );
+    ir.model.spatial_sketches[0].visible = Some(false);
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    for field in ["profile 0", "visibility"] {
+        assert!(
+            plan.report()
+                .losses
+                .iter()
+                .any(|loss| loss.message.contains(sketch.as_str()) && loss.message.contains(field)),
+            "missing {field} loss"
+        );
+    }
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        output
+            .ir()
+            .model
+            .spatial_sketch_entities
+            .iter()
+            .filter(|entity| matches!(
+                entity.geometry.definition(),
+                SpatialSketchGeometryDefinition::Line { .. }
+            ))
+            .count(),
+        3
+    );
+}
