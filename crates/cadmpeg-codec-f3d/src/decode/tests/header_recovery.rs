@@ -196,6 +196,19 @@ fn truncated_stored_brep_keeps_its_complete_kernel_header() {
             field.record == cadmpeg_ir::report::loss::DOCUMENT_HEADER
                 && field.field == "tolerances.linear"
         })));
+    let incomplete_name = F3dCodec
+        .decode(
+            &mut Cursor::new(&source[..local_header + 32]),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(incomplete_name.ir().tolerances.linear, None);
+    assert!(incomplete_name.report().losses.iter().any(|loss| {
+        loss.dropped_fields.iter().any(|field| {
+            field.record == cadmpeg_ir::report::loss::DOCUMENT_HEADER
+                && field.field == "tolerances.linear"
+        })
+    }));
     const ZIP_LOCAL_COMPRESSED_LENGTH_OFFSET: usize = 18;
     let mut invalid = source[..cut].to_vec();
     invalid[local_header + ZIP_LOCAL_COMPRESSED_LENGTH_OFFSET
