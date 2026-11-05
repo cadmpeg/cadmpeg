@@ -215,7 +215,10 @@ fn is_design_native_arena(name: &str) -> bool {
 
 /// Whether one container entry can hold model content.
 fn entry_holds_model(content: crate::container::EntryContent) -> bool {
-    use crate::container::EntryContent::*;
+    use crate::container::EntryContent::{
+        ActiveBodyIndex, AssetCatalog, DisplayJt, ExternalReferences, FastLoadJt,
+        FastLoadStructure, MaterialTexture, NamedOpaqueStream, PartAttributes,
+    };
     matches!(
         content,
         ActiveBodyIndex
@@ -232,7 +235,7 @@ fn entry_holds_model(content: crate::container::EntryContent) -> bool {
 
 /// Whether one container entry can hold design content.
 fn entry_holds_design(content: crate::container::EntryContent) -> bool {
-    use crate::container::EntryContent::*;
+    use crate::container::EntryContent::{Arrangements, NamedOpaqueStream, PartPayload};
     matches!(content, PartPayload | Arrangements | NamedOpaqueStream)
 }
 
