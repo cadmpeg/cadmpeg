@@ -31,7 +31,7 @@
         "faces": "written",
         "feature_input_topologies": "dropped",
         "feature_result_topologies": "dropped",
-        "features": "dropped",
+        "features": "written",
         "loops": "written",
         "mass_properties": "omitted",
         "occurrences": "dropped",
@@ -80,16 +80,6 @@
         },
         "message": "preserved IGES source image is unavailable; semantic regeneration is required",
         "severity": "blocking"
-      },
-      {
-        "code": {
-          "code": "writer.arena-omitted",
-          "kind": "passthrough_record_omitted",
-          "namespace": "iges",
-          "scope": "namespaced"
-        },
-        "message": "IGES omits unsupported model arena presentation_layers",
-        "severity": "warning"
       },
       {
         "code": {
@@ -145,6 +135,16 @@
       },
       {
         "code": {
+          "code": "writer.arena-omitted",
+          "kind": "passthrough_record_omitted",
+          "namespace": "iges",
+          "scope": "namespaced"
+        },
+        "message": "IGES cannot fully encode presentation layers: iges:presentation:level#0",
+        "severity": "warning"
+      },
+      {
+        "code": {
           "code": "native.records-omitted",
           "kind": "record_not_typed",
           "namespace": "export",
@@ -160,7 +160,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 6 native record(s) from `iges.display_attributes`: iges:presentation:display-attributes#D1, iges:presentation:display-attributes#D11, iges:presentation:display-attributes#D3, iges:presentation:display-attributes#D5, iges:presentation:display-attributes#D7, iges:presentation:display-attributes#D9",
+        "message": "the iges write omits 4 native record(s) from `iges.display_attributes`: iges:presentation:display-attributes#D11, iges:presentation:display-attributes#D5, iges:presentation:display-attributes#D7, iges:presentation:display-attributes#D9",
         "severity": "info"
       },
       {
@@ -228,7 +228,11 @@
               "disposition": "dropped"
             },
             "display_attributes": {
-              "disposition": "dropped"
+              "disposition": "dropped",
+              "records": {
+                "iges:presentation:display-attributes#D1": "regenerated",
+                "iges:presentation:display-attributes#D3": "regenerated"
+              }
             },
             "drawings": {
               "disposition": "dropped"

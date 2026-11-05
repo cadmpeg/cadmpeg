@@ -1228,3 +1228,54 @@ fn empty_note_text_is_reported_without_invalid_hollerith() {
         .iter()
         .all(|loss| !loss.message.contains("hollerith-count-zero")));
 }
+
+#[test]
+fn implicit_nurbs_domain_retains_its_loopless_face() {
+    let decoded = IgesCodec.decode(
+        &mut Cursor::new(crate::test_support::test_drawing_and_trimming::parameter_domain_trimmed_surface_file("144,1,0,0,0;")),
+        &DecodeOptions::default(),
+    ).expect("natural-domain face decodes");
+    assert_eq!(decoded.ir().model.faces.len(), 1);
+    assert!(decoded.ir().model.faces[0].loops.is_empty());
+    let plan =
+        plan_at(IgesVersion::V5_3, decoded.ir(), None).expect("natural-domain face synthesizes");
+    let face_id = decoded.ir().model.faces[0].id.as_str();
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .all(|loss| !loss.message.contains(face_id)));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("natural-domain face re-decodes");
+    assert_eq!(output.ir().model.bodies.len(), 1);
+    assert_eq!(output.ir().model.faces.len(), 1);
+    assert!(output.ir().model.faces[0].loops.is_empty());
+}
+
+#[test]
+fn empty_model_emits_its_canonical_length_unit_definition() {
+    let ir = CadIr::empty();
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).expect("empty document synthesizes");
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == IgesLossCode::NoExportableSolids.kind()));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("units definition re-decodes");
+    assert!(output.ir().model.bodies.is_empty());
+    assert!(output.ir().model.faces.is_empty());
+    let units = &output.ir().native.namespace("iges").unwrap().arenas()["units_data"];
+    assert_eq!(units.len(), 1);
+    assert!(output
+        .report()
+        .losses
+        .iter()
+        .all(|loss| !loss.message.contains("units")));
+}
