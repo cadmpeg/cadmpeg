@@ -622,6 +622,113 @@ pub(super) fn restore_configuration_tree_node_definitions(
     }
 }
 
+fn project_configuration_spatial_sketches(
+    ir: &mut cadmpeg_ir::CadIr,
+    features: &mut [cadmpeg_ir::features::Feature],
+    histories: &[FeatureHistory],
+    lanes: &[crate::records::FeatureInputLane],
+) {
+    use cadmpeg_ir::sketches::{SpatialSketchEntity, SpatialSketchEntityId, SpatialSketchId};
+
+    let Some(configuration) = lanes.first().and_then(|lane| lane.configuration.as_deref()) else {
+        return;
+    };
+    let (sketches, entities) =
+        crate::resolved_features::markers::spatial_sketches(features, histories, lanes);
+    for mut sketch in sketches {
+        let members = entities
+            .iter()
+            .filter(|entity| entity.sketch == sketch.id)
+            .collect::<Vec<_>>();
+        let existing = ir
+            .model
+            .spatial_sketch_entities
+            .iter()
+            .filter(|entity| entity.sketch == sketch.id)
+            .collect::<Vec<_>>();
+        let occupied = ir
+            .model
+            .spatial_sketches
+            .iter()
+            .any(|row| row.id == sketch.id);
+        if occupied
+            && existing.len() == members.len()
+            && existing.iter().zip(&members).all(|(left, right)| {
+                left.geometry == right.geometry && left.construction == right.construction
+            })
+        {
+            continue;
+        }
+        let original_id = sketch.id.clone();
+        let entity_ids = ir
+            .model
+            .spatial_sketch_entities
+            .iter()
+            .map(|entity| entity.id().as_str())
+            .collect::<HashSet<_>>();
+        let conflicts = |id: &SpatialSketchId| {
+            members
+                .iter()
+                .enumerate()
+                .any(|(index, _)| entity_ids.contains(format!("{id}:entity:{index}").as_str()))
+        };
+        if occupied || conflicts(&sketch.id) {
+            let mut ordinal = 0u64;
+            let id = loop {
+                let text = if ordinal == 0 {
+                    format!("{}:configuration:{configuration}", sketch.id)
+                } else {
+                    format!("{}:configuration:{configuration}:{ordinal}", sketch.id)
+                };
+                let Ok(id) = SpatialSketchId::mint(text) else {
+                    break None;
+                };
+                if !ir.model.spatial_sketches.iter().any(|row| row.id == id) && !conflicts(&id) {
+                    break Some(id);
+                }
+                let Some(next) = ordinal.checked_add(1) else {
+                    break None;
+                };
+                ordinal = next;
+            };
+            let Some(id) = id else { continue };
+            sketch.id = id;
+        }
+        let mut remapped = Vec::with_capacity(members.len());
+        for (index, entity) in members.iter().enumerate() {
+            let Ok(id) = SpatialSketchEntityId::mint(format!("{}:entity:{index}", sketch.id))
+            else {
+                remapped.clear();
+                break;
+            };
+            remapped.push(
+                SpatialSketchEntity::new(id, sketch.id.clone(), entity.geometry.clone())
+                    .with_construction(entity.construction)
+                    .with_native_ref(entity.native_ref.clone())
+                    .with_geometry_ref(entity.geometry_ref.clone())
+                    .with_endpoint_refs(entity.endpoint_refs.clone()),
+            );
+        }
+        if remapped.len() != members.len() {
+            continue;
+        }
+        for feature in features.iter_mut() {
+            if matches!(feature.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::SpatialSketch { sketch: Some(id) }) if *id == original_id)
+            {
+                feature
+                    .evaluation
+                    .set_definition(FeatureDefinition::Operation(
+                        FeatureOperation::SpatialSketch {
+                            sketch: Some(sketch.id.clone()),
+                        },
+                    ));
+            }
+        }
+        ir.model.spatial_sketches.push(sketch);
+        ir.model.spatial_sketch_entities.extend(remapped);
+    }
+}
+
 /// Apply sketch ownership projection to configuration-local feature snapshots.
 pub(crate) fn project_configuration_sketch_states(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -701,6 +808,7 @@ pub(crate) fn project_configuration_sketch_states(
                     ));
             }
         }
+        project_configuration_spatial_sketches(ir, &mut features, histories, scoped_lanes);
         let mut parameters = std::mem::take(&mut ir.model.parameters);
         let mut saved_values = Vec::new();
         let result = (|| -> Result<(), cadmpeg_core::CodecError> {
