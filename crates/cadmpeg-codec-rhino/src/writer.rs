@@ -4164,7 +4164,14 @@ fn object_attributes_payload(
     }
     if color.is_some() {
         payload.extend([13, 1]);
-    } else if material.is_some() || ir.model.presentation_layers.is_empty() {
+    } else if material.is_some()
+        || (ir.model.presentation_layers.is_empty()
+            && ir
+                .model
+                .bodies
+                .iter()
+                .any(|body| body.id.as_str() == identity))
+    {
         payload.extend([13, 2]);
     }
     if material.is_some() {
