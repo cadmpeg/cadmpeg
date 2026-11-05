@@ -4706,9 +4706,17 @@ fn oriented_annotation_point_dimension(
         return None;
     }
     let payload = frame.annotation_bytes().get(..payload_points::LEN)?;
-    let [first_u, first_v, _] = crate::bytes::f64s_at::<3>(payload, payload_points::FIRST_POINT)?;
-    let [second_u, second_v, _] =
-        crate::bytes::f64s_at::<3>(payload, payload_points::SECOND_POINT)?;
+    let first_point = crate::bytes::f64s_at::<3>(payload, payload_points::FIRST_POINT)?;
+    let second_point = crate::bytes::f64s_at::<3>(payload, payload_points::SECOND_POINT)?;
+    if !first_point
+        .iter()
+        .chain(&second_point)
+        .all(|value| value.is_finite())
+    {
+        return None;
+    }
+    let [first_u, first_v, _] = first_point;
+    let [second_u, second_v, _] = second_point;
     let first_locus = SketchLocus::Entity(first.id().clone());
     let second_locus = SketchLocus::Entity(second.id().clone());
     let parameter = parameter_id.clone();

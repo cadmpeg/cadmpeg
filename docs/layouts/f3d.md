@@ -8436,15 +8436,15 @@ Parsed by:
 
 Spec §3.1 · layout: byte offsets · size: 48 B
 
-Offsets are relative to the start of the annotation byte payload. The rest of the payload follows the two points.
+Offsets are relative to the start of the annotation byte payload of a two-point Linear Dimension frame. The rest of the payload follows the two points.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/dimensions.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 24 | `first_point` | `f64[3]` | little | spec | begins with two xyz f64 points |
-| 24 | 24 | `second_point` | `f64[3]` | little | spec | begins with two xyz f64 points |
+| 0 | 24 | `first_point` | `f64[3]` | little | spec | In a two-point `Linear Dimension*` frame, the [annotation byte payload](../layouts/f3d.md) begins with two xyz f64 points |
+| 24 | 24 | `second_point` | `f64[3]` | little | spec | In a two-point `Linear Dimension*` frame, the [annotation byte payload](../layouts/f3d.md) begins with two xyz f64 points |
 
 ## `dimension_annotation_genesis_metadata`
 

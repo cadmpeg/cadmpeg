@@ -17,6 +17,7 @@ use crate::records::parameters::DesignParameterCompanion;
 use crate::records::sketch_geometry::SketchCurveIdentity;
 use crate::records::sketch_geometry::SketchPoint;
 use crate::records::sketch_placement::DesignSketchPlacement;
+use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_ir::math::Point2;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::sketches::SketchConstraintDefinitionInput;
@@ -1379,11 +1380,8 @@ fn diagonal_annotation_point_dimension_takes_its_payload_orientation() {
     };
     let parameter_id = cadmpeg_ir::features::ParameterId::mint("generated:test:parameter#0")
         .expect("identity grammar");
-    let frame = |first_point: [f64; 3], second_point: [f64; 3]| {
-        let mut annotation_bytes = Vec::new();
-        for value in first_point.into_iter().chain(second_point) {
-            annotation_bytes.extend_from_slice(&value.to_le_bytes());
-        }
+    let raw_frame = |annotation_bytes: Vec<u8>| {
+        let owner_reference_at = 74 + u64_from_index(annotation_bytes.len()) + 1;
         let operand = |index: u32, at: u64| DesignDimensionAnnotationOperand {
             geometry_record_index: std::num::NonZeroU32::new(index),
             geometry_reference_offset: at + 1,
@@ -1403,10 +1401,10 @@ fn diagonal_annotation_point_dimension_takes_its_payload_orientation() {
             annotation_bytes,
             annotation_byte_offset: 74,
             governing_owner_record_index: 13,
-            governing_owner_reference_offset: 123,
+            governing_owner_reference_offset: owner_reference_at,
             return_members: [10, 11]
                 .into_iter()
-                .zip([138, 149])
+                .zip([owner_reference_at + 15, owner_reference_at + 26])
                 .map(|(value, offset)| crate::records::identity::Located {
                     value: std::num::NonZeroU32::new(value).unwrap(),
                     offset,
@@ -1418,6 +1416,13 @@ fn diagonal_annotation_point_dimension_takes_its_payload_orientation() {
             owner_reference_offset: 320,
         })
         .unwrap()
+    };
+    let frame = |first_point: [f64; 3], second_point: [f64; 3]| {
+        let mut annotation_bytes = Vec::new();
+        for value in first_point.into_iter().chain(second_point) {
+            annotation_bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        raw_frame(annotation_bytes)
     };
     let orient = |frame: &DesignDimensionAnnotationFrame, second: &SketchEntity, kind: &str| {
         crate::design::dimensions::oriented_annotation_point_dimension(
@@ -1442,4 +1447,10 @@ fn diagonal_annotation_point_dimension_takes_its_payload_orientation() {
     assert!(orient(&horizontal, &diagonal, "Diameter Dimension-2").is_none());
     let off_diagonal = point("generated:test:point#2", 5.0, 4.0);
     assert!(orient(&horizontal, &off_diagonal, "Linear Dimension-2").is_none());
+    let not_finite = frame([f64::NAN, 7.0, 0.0], [6.0, 7.0, 0.0]);
+    assert!(orient(&not_finite, &diagonal, "Linear Dimension-2").is_none());
+    let infinite = frame([1.0, 7.0, f64::INFINITY], [6.0, 7.0, 0.0]);
+    assert!(orient(&infinite, &diagonal, "Linear Dimension-2").is_none());
+    let short = raw_frame(vec![0; 47]);
+    assert!(orient(&short, &diagonal, "Linear Dimension-2").is_none());
 }

@@ -8111,7 +8111,7 @@ pub(crate) mod dimension_annotation_metadata_header {
 /// Spec §3.1. Record length 48 B.
 ///
 /// ```text
-/// Offsets are relative to the start of the annotation byte payload. The rest of the payload follows the two points.
+/// Offsets are relative to the start of the annotation byte payload of a two-point Linear Dimension frame. The rest of the payload follows the two points.
 /// ```
 pub(crate) mod dimension_annotation_payload_points {
     /// Record length in bytes. Spec §3.1.
