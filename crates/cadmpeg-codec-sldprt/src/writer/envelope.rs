@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Regeneration of proved native ZIP envelopes with retained signature tokens.
+//! Author native ZIP envelopes and preserve retained signature tokens.
 
 use std::collections::BTreeSet;
 
@@ -37,6 +37,73 @@ fn unique<const N: usize>(values: &BTreeSet<[u8; N]>) -> Result<[u8; N], CodecEr
 pub(super) struct Regenerated {
     pub(super) bytes: Vec<u8>,
     pub(super) omitted_envelope_bytes: usize,
+}
+
+pub(super) fn build_fresh(
+    header: [u8; 8],
+    sections: &[(String, Vec<u8>)],
+    time_dates: &[u32],
+) -> Result<(Regenerated, Vec<cadmpeg_ir::report::loss::LossNote>), super::write_error::WriteError>
+{
+    use cadmpeg_ir::codec::write::ExportLossCode;
+
+    if sections.len() != time_dates.len() {
+        return Err(unsupported().into());
+    }
+    let count = envelope_u16(&super::CAPACITY_FIELDS[6], sections.len())?;
+    let mut output = header.to_vec();
+    let mut directory = Vec::new();
+    let mut losses = Vec::new();
+    for ((name, payload), time_date) in sections.iter().zip(time_dates) {
+        envelope_u16(&super::CAPACITY_FIELDS[7], name.len())?;
+        let offset = super::field_u32(
+            &super::CAPACITY_FIELDS[8],
+            output
+                .len()
+                .checked_sub(outer::LEN)
+                .ok_or_else(unsupported)?,
+        )?;
+        let frame = super::block(payload, name, *time_date)?;
+        output.extend_from_slice(&[0; 4]);
+        output.extend_from_slice(&frame);
+        directory.extend_from_slice(&[0; 6]);
+        directory.extend_from_slice(frame.get(..local::LEN).ok_or_else(unsupported)?);
+        directory.extend_from_slice(&[0; 10]);
+        directory.extend_from_slice(&offset.to_le_bytes());
+        let name_end = local::LEN.checked_add(name.len()).ok_or_else(unsupported)?;
+        directory.extend_from_slice(frame.get(local::LEN..name_end).ok_or_else(unsupported)?);
+        for kind in ["local", "central"] {
+            losses.push(ExportLossCode::RecordResidualUnavailable.note(format!(
+                "{kind} ZIP record {name}: signature token is unspecified"
+            )));
+        }
+    }
+    let central_offset = super::field_u32(
+        &super::CAPACITY_FIELDS[10],
+        output
+            .len()
+            .checked_sub(outer::LEN)
+            .ok_or_else(unsupported)?,
+    )?;
+    let central_size = super::field_u32(&super::CAPACITY_FIELDS[9], directory.len())?;
+    output.extend(directory);
+    output.extend_from_slice(&[0; 8]);
+    output.extend_from_slice(&count.to_le_bytes());
+    output.extend_from_slice(&count.to_le_bytes());
+    output.extend_from_slice(&central_size.to_le_bytes());
+    output.extend_from_slice(&central_offset.to_le_bytes());
+    output.extend_from_slice(&0u16.to_le_bytes());
+    losses.push(
+        ExportLossCode::RecordResidualUnavailable
+            .note("ZIP end-of-central-directory record: signature token is unspecified"),
+    );
+    Ok((
+        Regenerated {
+            bytes: output,
+            omitted_envelope_bytes: 0,
+        },
+        losses,
+    ))
 }
 
 pub(super) fn auxiliary_loss(bytes: usize) -> Option<cadmpeg_ir::report::loss::LossNote> {
@@ -240,6 +307,67 @@ mod tests {
         source.extend(anchored_cache_cell(100, 9, "A", fill));
         source.extend(anchored_cache_cell(100, 10, "B", fill));
         native_envelope_fixture(&source)
+    }
+
+    #[test]
+    fn fresh_envelope_has_complete_directory_and_reports_signatures() {
+        let sections = vec![
+            ("A".into(), b"alpha".to_vec()),
+            ("B".into(), b"beta".to_vec()),
+        ];
+        let (written, losses) =
+            build_fresh(outer_header().try_into().unwrap(), &sections, &[10, 11]).unwrap();
+        let scan = crate::test_support::container::scan(&written.bytes);
+        assert_eq!(scan.blocks.len(), 2);
+        assert_eq!(scan.directory.len(), 2);
+        let envelope = native_layout::source_envelope(
+            &written.bytes,
+            &scan.blocks,
+            false,
+            tail_location(&written.bytes),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(envelope.entries.len(), 2);
+        for (name, payload) in &sections {
+            assert!(scan
+                .blocks
+                .iter()
+                .any(|block| block.section.name() == Some(name.as_str())
+                    && block.payload == *payload));
+            for kind in ["local", "central"] {
+                assert!(losses.iter().any(|loss| loss.code.local_code()
+                    == "record.residual-unavailable"
+                    && loss.message.contains(kind)
+                    && loss.message.contains(name)));
+            }
+        }
+        assert_eq!(losses.len(), 5);
+        assert!(losses
+            .iter()
+            .any(|loss| loss.message.contains("end-of-central-directory")));
+    }
+
+    #[test]
+    fn source_less_plan_writes_the_complete_envelope() {
+        use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+
+        let ir = crate::test_support::ir::source_less_cube();
+        let plan = crate::SldprtCodec
+            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+            .unwrap();
+        assert!(plan.report().losses.iter().any(|loss| {
+            loss.code.local_code() == "record.residual-unavailable"
+                && loss.message.contains("end-of-central-directory")
+        }));
+        let mut output = Vec::new();
+        plan.write_to(&mut output).unwrap();
+        let scan = crate::test_support::container::scan(&output);
+        let envelope =
+            native_layout::source_envelope(&output, &scan.blocks, false, tail_location(&output))
+                .unwrap()
+                .unwrap();
+        assert_eq!(envelope.entries.len(), scan.blocks.len());
     }
 
     #[test]
