@@ -619,7 +619,7 @@ fn build_result(
         decode_stream_part(ctx, root.window(), &records, header)
     })? {
         Some(part) => part,
-        None => stream_part_given_up(output)?,
+        None => stream_part_given_up(output),
     };
     assemble_result(ctx, ir, losses, has_entities, text_dialect, &kernel, part)
 }
@@ -703,13 +703,13 @@ fn decode_stream_part(
 
 /// Assemble the staged give-up of a failed stream part: the helper's stub,
 /// retained bytes and `record.unreadable` loss with an empty model.
-fn stream_part_given_up(output: PartOutput) -> Result<StreamPart, CodecError> {
+fn stream_part_given_up(output: PartOutput) -> StreamPart {
     let (model, native, fidelity, prior_losses) = output.into_parts();
     let unknown_count = native
         .namespace("sat")
         .and_then(|namespace| namespace.arenas().get("unknowns"))
         .map_or(0, Vec::len);
-    Ok(StreamPart {
+    StreamPart {
         model,
         native,
         fidelity,
@@ -717,7 +717,7 @@ fn stream_part_given_up(output: PartOutput) -> Result<StreamPart, CodecError> {
         stats: Stats::default(),
         unknown_count,
         prior_losses,
-    })
+    }
 }
 
 fn assemble_result(
