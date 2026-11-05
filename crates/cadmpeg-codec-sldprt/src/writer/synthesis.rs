@@ -692,7 +692,7 @@ pub(super) fn plan(
     coverage.features = ArenaDisposition::Reported;
     coverage.parameters = ArenaDisposition::Reported;
     coverage.sketch_constraints = ArenaDisposition::Reported;
-    coverage.spatial_sketch_constraints = ArenaDisposition::Dropped;
+    coverage.spatial_sketch_constraints = ArenaDisposition::Reported;
     if supported.len() != input.ir.model.bodies.len() {
         coverage.bodies = ArenaDisposition::Reported;
         coverage.regions = ArenaDisposition::Reported;
@@ -1300,6 +1300,9 @@ fn reduce_fields(
         entity.endpoint_refs.clear();
     }
     for constraint in &mut ir.model.sketch_constraints {
+        constraint.native_ref = None;
+    }
+    for constraint in &mut ir.model.spatial_sketch_constraints {
         constraint.native_ref = None;
     }
     for coedge in &mut ir.model.coedges {
