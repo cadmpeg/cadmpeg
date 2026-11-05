@@ -144,14 +144,11 @@ pub(super) fn project(
             continue;
         };
         for link in &record.native_links {
-            let sequence = match source_sequence(link) {
-                Ok(sequence) => sequence,
-                Err(_) => {
-                    losses.push(IgesLossCode::NeutralProjectionUnavailable.note(format!(
-                        "{} member {member}: product membership of carrier {link} has no directory sequence", record.id
-                    )));
-                    continue;
-                }
+            let Ok(sequence) = source_sequence(link) else {
+                losses.push(IgesLossCode::NeutralProjectionUnavailable.note(format!(
+                    "{} member {member}: product membership of carrier {link} has no directory sequence", record.id
+                )));
+                continue;
             };
             // A carrier without a neutral body is a non-body member (a curve,
             // point, or surface): it stays native with its links, and the
