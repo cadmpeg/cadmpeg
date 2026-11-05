@@ -13,6 +13,7 @@ mod appearance;
 mod body_keys;
 mod design;
 mod geometry;
+mod materials;
 mod native;
 mod prepare;
 mod streams;
@@ -33,8 +34,9 @@ pub(super) fn write(
     let mut prepared = target.clone();
     let mut losses = Vec::new();
     prepare::auxiliary(&mut prepared, &mut losses);
-    appearance::prepare(&mut prepared, &mut losses);
-    native::reconcile(&mut prepared, &mut losses)?;
+    let original = super::primitives::f3d_native(&prepared)?.unwrap_or_default();
+    appearance::prepare(&mut prepared, &original, &mut losses);
+    native::reconcile(&mut prepared, original, &mut losses)?;
     let mut bytes = Vec::new();
     let mut regenerated_parameters = std::collections::BTreeSet::new();
     let coverage = match super::generate::write_with_limits(&prepared, &mut bytes, limits) {

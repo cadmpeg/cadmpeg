@@ -376,9 +376,36 @@ fn seekable_encoder_matches_the_write_only_fallback() {
         .dialect();
     let resolution = retained_baseline(decoded.ir(), decoded.source_fidelity(), source_dialect)
         .expect("the decoded schema-4 baseline is preserved");
-    crate::writer::write_seekable(&mut streamed, &resolution).expect("seekable writer");
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let ctx = cadmpeg_core::decode::DecodeContext::for_encode(&arena, &policy);
+    crate::writer::write_seekable(&mut streamed, &resolution, &ctx).expect("seekable writer");
 
     assert_eq!(streamed.into_inner(), staged);
+
+    let limited_arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut limited_policy = cadmpeg_core::decode::DecodePolicy::default();
+    let image = crate::source_archive::image(decoded.source_fidelity()).unwrap();
+    limited_policy.limits.max_input_bytes = cadmpeg_core::decode::u64_from_index(image.len());
+    let limited = cadmpeg_core::decode::DecodeContext::for_encode(&limited_arena, &limited_policy);
+    let session = cadmpeg_core::encode::EncodeSession::from_context(&limited).unwrap();
+    let previous_arena = cadmpeg_core::decode::DecodeArena::new();
+    let (_previous, _) = cadmpeg_core::decode::DecodeContext::for_encode_session_root(
+        &previous_arena,
+        &session,
+        b"x",
+    )
+    .unwrap();
+    let Err(error) =
+        crate::writer::write_seekable(&mut Cursor::new(Vec::new()), &resolution, &limited)
+    else {
+        panic!("the caller's input ceiling applies to the retained archive");
+    };
+    assert!(matches!(
+        error,
+        cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::InputBytes
+    ));
 }
 
 #[test]

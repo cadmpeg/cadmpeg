@@ -369,7 +369,7 @@ pub(super) fn write_semantic_at(
         .map(|(section, _)| section.clone())
         .collect::<HashSet<_>>();
     let mut sections = partition_sections;
-    let materials = materials_payload(ir)?;
+    let (materials, material_residuals) = materials_payload(ir)?;
     let mut retained_swobjects = retained_swobjects_sections(ir, retained_records, annotations)?;
     require_named_metadata_members(&retained_swobjects, source_scan.as_ref())?;
     let original_metadata_sections = retained_swobjects.clone();
@@ -404,7 +404,8 @@ pub(super) fn write_semantic_at(
         }
         true
     };
-    let (objects, units) = metadata_payloads(ir, native.as_ref(), length_scale)?;
+    let (objects, units, metadata_residuals) =
+        metadata_payloads(ir, native.as_ref(), length_scale)?;
     if replay_swobjects {
         consumed_source_layout = true;
         generated_partition_sections
@@ -418,7 +419,9 @@ pub(super) fn write_semantic_at(
             )?;
         }
     } else {
+        normalization_losses.extend(metadata_residuals);
         if !materials.is_empty() {
+            normalization_losses.extend(material_residuals);
             for appearance in &ir.model.appearances {
                 let in_swobjects = appearance.schema.as_deref() == Some("moVisualProperties_c")
                     || ir.model.appearance_bindings.iter().any(|binding| {
@@ -463,7 +466,7 @@ pub(super) fn write_semantic_at(
     }
     if !ir.model.tessellations.is_empty() {
         let baseline = retained_source_baseline(&mut source_baseline, source_context.as_ref())?;
-        if let Some(retained) = retained_display_sections(ir, baseline, source_scan.as_ref())? {
+        if let Some(retained) = retained_display_sections(ir, baseline, source_scan.as_ref()) {
             for (section, payload) in retained {
                 push_generated_metadata_member(
                     &mut sections,
@@ -641,7 +644,14 @@ pub(super) fn write_semantic_at(
         .transpose()?
         .flatten();
     let envelope = if source_envelope.is_some() {
-        envelope::build(&sections, &type_ids, source_scan.as_ref())?
+        let (envelope, residuals) = envelope::build(&sections, &type_ids, source_scan.as_ref())?;
+        normalization_losses.extend(residuals);
+        envelope
+    } else if source_scan.is_none() {
+        let (envelope, residuals) =
+            envelope::build_fresh(outer_header(retained_records), &sections, &type_ids)?;
+        normalization_losses.extend(residuals);
+        envelope
     } else {
         let mut bytes = outer_header(retained_records).to_vec();
         let mut compressed_sizes = Vec::with_capacity(sections.len());
@@ -2996,11 +3006,19 @@ fn metadata_payloads(
     ir: &CadIr,
     native: Option<&SldprtNative>,
     length_scale: f64,
-) -> Result<(Vec<u8>, Option<Vec<u8>>), write_error::WriteError> {
+) -> Result<
+    (
+        Vec<u8>,
+        Option<Vec<u8>>,
+        Vec<cadmpeg_ir::report::loss::LossNote>,
+    ),
+    write_error::WriteError,
+> {
     use cadmpeg_ir::attributes::AttributeTarget;
 
     let mut objects = Vec::new();
     let mut unit_code = None;
+    let mut residuals = Vec::new();
     let attributes = if ir.scope.model {
         metadata_attributes(ir)
     } else {
@@ -3056,6 +3074,14 @@ fn metadata_payloads(
                 states,
                 filetime,
             }) => {
+                residuals.push(
+                    cadmpeg_ir::codec::write::ExportLossCode::RecordResidualUnavailable.note(
+                        format!(
+                            "configuration manager {}: unspecified SWObjects record bytes",
+                            attribute.id
+                        ),
+                    ),
+                );
                 let mut record = [0u8; 125];
                 record[66..70].copy_from_slice(&minor.to_le_bytes());
                 record[107] = states;
@@ -3082,7 +3108,7 @@ fn metadata_payloads(
         format!("<Metadata><Property Name=\"SW_UnitsLinear\" Value=\"{code}\"/></Metadata>")
             .into_bytes()
     });
-    Ok((objects, units))
+    Ok((objects, units, residuals))
 }
 
 pub(crate) fn swobjects_local_sha256(
@@ -3153,9 +3179,9 @@ fn retained_display_sections(
     ir: &CadIr,
     baseline: Option<&cadmpeg_ir::codec::Decoded>,
     scan: Option<&crate::container::ContainerScan<'_>>,
-) -> Result<Option<RetainedDisplaySections>, CodecError> {
+) -> Option<RetainedDisplaySections> {
     let (Some(baseline), Some(scan)) = (baseline, scan) else {
-        return Ok(None);
+        return None;
     };
     let mut original = baseline.ir.model.tessellations.iter().collect::<Vec<_>>();
     let mut current = ir.model.tessellations.iter().collect::<Vec<_>>();
@@ -3165,7 +3191,7 @@ fn retained_display_sections(
         || baseline.ir.model.appearances != ir.model.appearances
         || baseline.ir.model.appearance_bindings != ir.model.appearance_bindings
     {
-        return Ok(None);
+        return None;
     }
     let mut names = HashSet::new();
     let mut result = Vec::new();
@@ -3174,28 +3200,19 @@ fn retained_display_sections(
             .source_fidelity
             .annotations
             .provenance
-            .get(mesh.id.as_str())
-            .ok_or_else(|| {
-                CodecError::NotImplemented(
-                    "retained tessellation has no proved source member".into(),
-                )
-            })?;
+            .get(mesh.id.as_str())?;
         let name = provenance.stream();
         if !names.insert(name.to_owned()) {
             continue;
         }
         let mut sources = scan.sections().filter(|source| source.name() == Some(name));
-        let source = sources.next().ok_or_else(|| {
-            CodecError::NotImplemented("retained display requires a named source member".into())
-        })?;
+        let source = sources.next()?;
         if sources.next().is_some() {
-            return Err(CodecError::NotImplemented(
-                "ambiguous retained display member identity".into(),
-            ));
+            return None;
         }
         result.push((name.to_owned(), source.payload().to_vec()));
     }
-    Ok(Some(result))
+    Some(result)
 }
 
 fn retained_history_sections(
@@ -3827,12 +3844,20 @@ fn body_material(ir: &CadIr) -> Result<Option<(&str, Color)>, CodecError> {
     Ok(selected)
 }
 
-fn materials_payload(ir: &CadIr) -> Result<Vec<u8>, write_error::WriteError> {
+fn materials_payload(
+    ir: &CadIr,
+) -> Result<(Vec<u8>, Vec<cadmpeg_ir::report::loss::LossNote>), write_error::WriteError> {
     let mut payload = Vec::new();
-    for (name, color) in swobjects_materials(ir)? {
+    let mut residuals = Vec::new();
+    for (ordinal, (name, color)) in swobjects_materials(ir)?.into_iter().enumerate() {
         payload.extend(material_payload(name, color)?);
+        residuals.push(
+            cadmpeg_ir::codec::write::ExportLossCode::RecordResidualUnavailable.note(format!(
+                "SWObjects material {name}#{ordinal}: unspecified visual-property record bytes"
+            )),
+        );
     }
-    Ok(payload)
+    Ok((payload, residuals))
 }
 
 fn swobjects_materials(ir: &CadIr) -> Result<Vec<(&str, Color)>, CodecError> {
@@ -3889,6 +3914,16 @@ fn material_payload(name: &str, color: Color) -> Result<Vec<u8>, write_error::Wr
     for unit in name {
         out.extend_from_slice(&unit.to_le_bytes());
     }
+    out.extend_from_slice(&[0; 48]);
+    out.extend_from_slice(&0u32.to_le_bytes());
+    out.extend_from_slice(&[0; 20]);
+    out.extend_from_slice(&[0xff, 0xfe, 0xff, 0]);
+    out.extend_from_slice(&[0; 16]);
+    out.extend_from_slice(&[0xff, 0xfe, 0xff, 0]);
+    out.extend_from_slice(&[0; 81]);
+    out.extend_from_slice(&[0xff, 0xfe, 0xff, 0]);
+    out.extend_from_slice(&[0; 12]);
+    out.extend_from_slice(&[0xff, 0xfe, 0xff, 0]);
     Ok(out)
 }
 

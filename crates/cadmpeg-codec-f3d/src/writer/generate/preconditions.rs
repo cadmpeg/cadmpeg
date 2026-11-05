@@ -670,12 +670,6 @@ pub(super) fn validate_source_less_design_bindings(
         }
         Ok(())
     };
-    if let Some(assignment) = native.design_material_assignments.first() {
-        return Err(CodecError::UnsupportedContent(format!(
-            "source-less F3D material assignment {} requires a typed body-presentation B-rep and scene graph",
-            assignment.id
-        )));
-    }
     for visibility in &native.body_visibilities {
         insert(
             visibility.asm_body_key(),

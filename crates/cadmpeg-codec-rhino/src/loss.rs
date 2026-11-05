@@ -233,6 +233,8 @@ pub(crate) enum RhinoLossCode {
     WriterSubdOmitted,
     /// Procedural definitions are reduced to solved carriers.
     WriterProceduralReduced,
+    /// An absent model scope is represented by an empty model.
+    WriterScopeExpanded,
     /// An edge carrier is resolved through wrappers to an explicit leaf.
     WriterCarrierResolved,
     /// Material records have no writer encoding.
@@ -359,6 +361,7 @@ impl RhinoLossCode {
         Self::WriterDesignOmitted,
         Self::WriterSubdOmitted,
         Self::WriterProceduralReduced,
+        Self::WriterScopeExpanded,
         Self::WriterCarrierResolved,
         Self::WriterMaterialOmitted,
         Self::WriterAttributesOmitted,
@@ -439,6 +442,7 @@ impl RhinoLossCode {
             Self::WriterDesignOmitted => "design.parametric-records-omitted",
             Self::WriterSubdOmitted => "writer.subds-omitted",
             Self::WriterProceduralReduced => "writer.procedural-reduced",
+            Self::WriterScopeExpanded => "writer.scope-expanded",
             Self::WriterCarrierResolved => "writer.carrier-resolved",
             Self::WriterMaterialOmitted => "writer.materials-omitted",
             Self::WriterAttributesOmitted => "writer.attributes-omitted",
@@ -546,6 +550,7 @@ impl RhinoLossCode {
             | Self::WriterPcurveExpanded
             | Self::WriterPcurveDomainRestricted => LossTaxonomy::TopologyNotTransferred,
             Self::WriterBodyTransformNotApplied => LossTaxonomy::BodyTransformNotApplied,
+            Self::WriterScopeExpanded => LossTaxonomy::MetadataNotTransferred,
             Self::WriterDesignOmitted => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterSubdOmitted => LossTaxonomy::SubdOmitted,
             Self::WriterProceduralReduced | Self::WriterCarrierResolved => {
@@ -673,6 +678,7 @@ mod tests {
                 "design.parametric-records-omitted",
                 "writer.subds-omitted",
                 "writer.procedural-reduced",
+                "writer.scope-expanded",
                 "writer.carrier-resolved",
                 "writer.materials-omitted",
                 "writer.attributes-omitted",
