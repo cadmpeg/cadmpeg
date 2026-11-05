@@ -27,6 +27,7 @@ pub(super) struct Starts {
 pub(super) fn preserve_indices(
     records: &mut Vec<u8>,
     model: &Model,
+    limits: cadmpeg_core::decode::ResourceLimits,
     starts: Starts,
 ) -> Result<(), CodecError> {
     if !model
@@ -41,16 +42,17 @@ pub(super) fn preserve_indices(
         return Ok(());
     }
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let policy = cadmpeg_core::decode::DecodePolicy {
+        limits,
+        ..Default::default()
+    };
     let ctx = cadmpeg_core::decode::DecodeContext::new(
         &arena,
         &policy,
         cadmpeg_core::decode::DecodeDepth::Full,
     );
     let framed = cadmpeg_asm::sab::frame(&ctx, records, 0, records.len(), RefWidth::Eight, None)
-        .map_err(|error| {
-            CodecError::malformed(format_args!("generated F3D BREP framing: {error}"))
-        })?;
+        .map_err(|error| error.into_codec_error(&ctx, CodecError::malformed))?;
     let count = framed.len();
     let mut destinations = ctx.alloc_filled(count, None, "plan F3D BREP record destinations")?;
     let mut occupied = ctx.alloc_filled(count, false, "reserve F3D BREP record indices")?;

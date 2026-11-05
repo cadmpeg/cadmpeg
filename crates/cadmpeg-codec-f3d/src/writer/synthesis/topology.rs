@@ -13,29 +13,34 @@ use crate::loss::F3dLossCode;
 pub(super) fn admit_bodies(
     source: &CadIr,
     losses: &mut Vec<LossNote>,
+    limits: cadmpeg_core::decode::ResourceLimits,
 ) -> Result<CadIr, CodecError> {
     let mut admitted = BTreeSet::new();
     for body in &source.model.bodies {
         let mut candidate_ids = admitted.clone();
         candidate_ids.insert(body.id.clone());
         let candidate = body_graph(source, &candidate_ids)?;
-        match super::super::generate::write_new(&candidate, &mut Vec::new()) {
+        match super::super::generate::write_with_limits(&candidate, &mut Vec::new(), limits) {
             Ok(_) => admitted = candidate_ids,
             Err(error) if super::declines(&error) => {
                 // F3D can encode an open shell. Admit independently encodable
                 // faces before considering omission of their containing body.
-                let reduced = admit_faces(&candidate, &body.id, losses)?;
+                let reduced = admit_faces(&candidate, &body.id, losses, limits)?;
                 if reduced
                     .model
                     .bodies
                     .iter()
                     .any(|record| record.id == body.id)
                 {
-                    match super::super::generate::write_new(&reduced, &mut Vec::new()) {
+                    match super::super::generate::write_with_limits(
+                        &reduced,
+                        &mut Vec::new(),
+                        limits,
+                    ) {
                         Ok(_) => {
                             admitted = candidate_ids;
                             return admit_bodies_after_reduction(
-                                source, reduced, &admitted, losses,
+                                source, reduced, &admitted, losses, limits,
                             );
                         }
                         Err(error) if super::declines(&error) => {}
@@ -58,6 +63,7 @@ fn admit_bodies_after_reduction(
     mut reduced: CadIr,
     admitted: &BTreeSet<BodyId>,
     losses: &mut Vec<LossNote>,
+    limits: cadmpeg_core::decode::ResourceLimits,
 ) -> Result<CadIr, CodecError> {
     let remaining = source
         .model
@@ -66,7 +72,7 @@ fn admit_bodies_after_reduction(
         .filter(|body| !admitted.contains(&body.id))
         .map(|body| body.id.clone())
         .collect();
-    let tail = admit_bodies(&body_graph(source, &remaining)?, losses)?;
+    let tail = admit_bodies(&body_graph(source, &remaining)?, losses, limits)?;
     // Merge only geometry arenas: auxiliary and design content were already
     // prepared once and are shared by all admitted body candidates.
     macro_rules! append { ($($field:ident),*) => {$({
@@ -99,6 +105,7 @@ fn admit_faces(
     source: &CadIr,
     body: &BodyId,
     losses: &mut Vec<LossNote>,
+    limits: cadmpeg_core::decode::ResourceLimits,
 ) -> Result<CadIr, CodecError> {
     let shells: BTreeSet<_> = source
         .model
@@ -123,7 +130,7 @@ fn admit_faces(
         let mut candidate_ids = admitted.clone();
         candidate_ids.insert(face.id.clone());
         let candidate = face_graph(source, &shells, &candidate_ids)?;
-        match super::super::generate::write_new(&candidate, &mut Vec::new()) {
+        match super::super::generate::write_with_limits(&candidate, &mut Vec::new(), limits) {
             Ok(_) => admitted = candidate_ids,
             Err(error) if super::declines(&error) => {
                 losses.push(F3dLossCode::WriterGeometryOmitted.note(format!(

@@ -46,6 +46,7 @@ pub(super) fn encode_smbh(
     target: &CadIr,
     native: &F3dNative,
     attributes: &AttributeIndex<'_>,
+    limits: cadmpeg_core::decode::ResourceLimits,
 ) -> Result<Vec<u8>, CodecError> {
     let topology = NativeGenerationIndex::new(target, native);
     if target.model.faces.is_empty() {
@@ -74,7 +75,7 @@ pub(super) fn encode_smbh(
         }
         return encode_wire_body_smbh(target, native, attributes, &topology);
     }
-    encode_face_topology_smbh(target, native, attributes, &topology)
+    encode_face_topology_smbh(target, native, attributes, &topology, limits)
 }
 
 #[derive(Debug)]
@@ -674,6 +675,7 @@ fn encode_face_topology_smbh(
     native: &F3dNative,
     attributes: &AttributeIndex<'_>,
     topology: &NativeGenerationIndex<'_>,
+    limits: cadmpeg_core::decode::ResourceLimits,
 ) -> Result<Vec<u8>, CodecError> {
     use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 
@@ -1436,6 +1438,7 @@ fn encode_face_topology_smbh(
     super::reindex::preserve_indices(
         &mut records,
         model,
+        limits,
         super::reindex::Starts {
             region: region_start,
             shell: shell_start,
