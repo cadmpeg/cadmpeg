@@ -4351,11 +4351,13 @@ fn valid_vertex_recipe(
             reference,
             &native.persistent_subentity_tags,
             Some(&scope.id),
-            &ctx.ir.model.bodies,
-            &ctx.ir.model.faces,
-            &ctx.ir.model.edges,
-            &ctx.ir.model.vertices,
-            &ctx.ir.model.coedges,
+            crate::design::decode::dimension_frames::BrepTopology {
+                bodies: &ctx.ir.model.bodies,
+                faces: &ctx.ir.model.faces,
+                edges: &ctx.ir.model.edges,
+                vertices: &ctx.ir.model.vertices,
+                coedges: &ctx.ir.model.coedges,
+            },
         );
     }
     let program_byte_length = u64::try_from(vertex.recipe_program.len())
@@ -6460,11 +6462,13 @@ fn validate_body_recipe_operands<'a>(
         &native.construction_recipes,
         &native.persistent_subentity_tags,
         &native.design_parameter_scopes,
-        &ctx.ir.model.bodies,
-        &ctx.ir.model.faces,
-        &ctx.ir.model.edges,
-        &ctx.ir.model.vertices,
-        &ctx.ir.model.coedges,
+        crate::design::decode::dimension_frames::BrepTopology {
+            bodies: &ctx.ir.model.bodies,
+            faces: &ctx.ir.model.faces,
+            edges: &ctx.ir.model.edges,
+            vertices: &ctx.ir.model.vertices,
+            coedges: &ctx.ir.model.coedges,
+        },
     );
     history::bind_body_recipe_operand_history_candidates(
         &mut expected_operands,
@@ -7085,11 +7089,13 @@ fn validate_edge_operands<'a>(
                 design_reference,
                 &native.persistent_subentity_tags,
                 Some(&operand.id),
-                &ctx.ir.model.bodies,
-                &ctx.ir.model.faces,
-                &ctx.ir.model.edges,
-                &ctx.ir.model.vertices,
-                &ctx.ir.model.coedges,
+                crate::design::decode::dimension_frames::BrepTopology {
+                    bodies: &ctx.ir.model.bodies,
+                    faces: &ctx.ir.model.faces,
+                    edges: &ctx.ir.model.edges,
+                    vertices: &ctx.ir.model.vertices,
+                    coedges: &ctx.ir.model.coedges,
+                },
             ),
             None => Vec::new(),
         };
@@ -7103,11 +7109,13 @@ fn validate_edge_operands<'a>(
                     reference,
                     &native.persistent_subentity_tags,
                     Some(&operand.id),
-                    &ctx.ir.model.bodies,
-                    &ctx.ir.model.faces,
-                    &ctx.ir.model.edges,
-                    &ctx.ir.model.vertices,
-                    &ctx.ir.model.coedges,
+                    crate::design::decode::dimension_frames::BrepTopology {
+                        bodies: &ctx.ir.model.bodies,
+                        faces: &ctx.ir.model.faces,
+                        edges: &ctx.ir.model.edges,
+                        vertices: &ctx.ir.model.vertices,
+                        coedges: &ctx.ir.model.coedges,
+                    },
                 );
             }
         }
@@ -7339,11 +7347,13 @@ fn validate_edge_treatment_vertex_operands<'a>(
                 reference,
                 &native.persistent_subentity_tags,
                 Some(&operand.id),
-                &ctx.ir.model.bodies,
-                &ctx.ir.model.faces,
-                &ctx.ir.model.edges,
-                &ctx.ir.model.vertices,
-                &ctx.ir.model.coedges,
+                crate::design::decode::dimension_frames::BrepTopology {
+                    bodies: &ctx.ir.model.bodies,
+                    faces: &ctx.ir.model.faces,
+                    edges: &ctx.ir.model.edges,
+                    vertices: &ctx.ir.model.vertices,
+                    coedges: &ctx.ir.model.coedges,
+                },
             );
         }
     }
@@ -7536,11 +7546,13 @@ fn validate_face_operands<'a>(
                     reference,
                     &native.persistent_subentity_tags,
                     Some(&operand.id),
-                    &ctx.ir.model.bodies,
-                    &ctx.ir.model.faces,
-                    &ctx.ir.model.edges,
-                    &ctx.ir.model.vertices,
-                    &ctx.ir.model.coedges,
+                    crate::design::decode::dimension_frames::BrepTopology {
+                        bodies: &ctx.ir.model.bodies,
+                        faces: &ctx.ir.model.faces,
+                        edges: &ctx.ir.model.edges,
+                        vertices: &ctx.ir.model.vertices,
+                        coedges: &ctx.ir.model.coedges,
+                    },
                 );
             }
         }
@@ -7555,6 +7567,7 @@ fn validate_face_operands<'a>(
             .collect::<std::collections::HashSet<_>>();
         let expected_unreferenced_faces = expected_faces
             .iter()
+            .filter(|face| !referenced_faces.contains(face))
             .cloned()
             .collect::<Vec<_>>();
         let mut expected_alternate_selector_faces = expected_references
@@ -7566,7 +7579,6 @@ fn validate_face_operands<'a>(
         expected_alternate_selector_faces.dedup();
         let expected_node_offsets = operand
             .recipe_program
-            .filter(|face| !referenced_faces.contains(face))
             .windows(3)
             .enumerate()
             .filter(|(_, values)| *values == [-1, -1, 2])
@@ -8438,11 +8450,13 @@ fn validate_dimension_recipe_records<'a>(
                         reference,
                         &native.persistent_subentity_tags,
                         Some(&record.id),
-                        &ctx.ir.model.bodies,
-                        &ctx.ir.model.faces,
-                        &ctx.ir.model.edges,
-                        &ctx.ir.model.vertices,
-                        &ctx.ir.model.coedges,
+                        crate::design::decode::dimension_frames::BrepTopology {
+                            bodies: &ctx.ir.model.bodies,
+                            faces: &ctx.ir.model.faces,
+                            edges: &ctx.ir.model.edges,
+                            vertices: &ctx.ir.model.vertices,
+                            coedges: &ctx.ir.model.coedges,
+                        },
                     );
                 }
                 frame_length >= 11
