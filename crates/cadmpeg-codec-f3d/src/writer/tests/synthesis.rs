@@ -14,8 +14,10 @@ mod box_placement;
 mod configuration_features;
 mod cylinder_radius;
 mod limits;
+mod mesh_sentinel;
 mod neutral_text;
 mod reductions;
+mod sketch_attribute;
 mod sketch_constraints;
 mod sketch_nurbs;
 mod write_errors;
@@ -83,7 +85,9 @@ fn source_less_primitive_feature_survives_synthesis() {
         if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities));
     let mut exact = EncodeInput::new(&ir, None);
     exact.limits.max_entities = 9;
-    F3dCodec.plan(exact, TargetRequest::Inherit).expect("exact output record budget");
+    F3dCodec
+        .plan(exact, TargetRequest::Inherit)
+        .expect("exact output record budget");
 
     let mut bytes = Vec::new();
     F3dCodec
@@ -599,9 +603,13 @@ fn source_less_compact_custom_attributes_preserve_values() {
         cadmpeg_ir::attributes::AttributeValue::Reference("f3d:brep:entity#-1x".into()),
     );
     let (output, report) = super::source_less_analytic::synthesize_document(&dangling, None);
-    assert_eq!(output.ir().model.attributes[0], dangling.model.attributes[0]);
+    assert_eq!(
+        output.ir().model.attributes[0],
+        dangling.model.attributes[0]
+    );
     assert!(report.losses.iter().any(|loss| {
-        loss.message.contains(dangling.model.attributes[1].id.as_str())
+        loss.message
+            .contains(dangling.model.attributes[1].id.as_str())
             && loss.message.contains("successor reference")
     }));
 

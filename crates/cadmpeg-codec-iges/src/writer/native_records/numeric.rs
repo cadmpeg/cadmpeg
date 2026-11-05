@@ -41,7 +41,7 @@ fn fields(body: &[u8]) -> Option<Vec<&[u8]>> {
     None
 }
 
-pub(super) fn retain(ir: &CadIr, source: &NativeRecord, entity: &mut Entity) {
+pub(in crate::writer) fn retain(ir: &CadIr, source: &NativeRecord, entity: &mut Entity) {
     let Some(source_id) = source
         .field("source_entity")
         .and_then(|value| value.as_str().map(str::to_owned))

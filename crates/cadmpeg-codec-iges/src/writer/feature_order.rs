@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Keep the Directory order of emitted features consistent with CADIR.
 
-use super::{
-    map_parameter_references, reference_marker, BodyPresentation, DirectoryLineFont, Entity,
-};
+use super::{BodyPresentation, Entity};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::CadIr;
 use std::collections::BTreeMap;
@@ -43,49 +41,5 @@ pub(super) fn order(
     for (slot, (old, _)) in slots.into_iter().zip(ordered) {
         permutation[slot] = old;
     }
-    if permutation.iter().enumerate().all(|(new, old)| new == *old) {
-        return Ok(());
-    }
-    let remap = permutation
-        .iter()
-        .enumerate()
-        .map(|(new, old)| (*old, new))
-        .collect::<BTreeMap<_, _>>();
-    let mut old = std::mem::take(entities)
-        .into_iter()
-        .map(Some)
-        .collect::<Vec<_>>();
-    *entities = permutation
-        .into_iter()
-        .map(|index| old[index].take().expect("entity permutation is unique"))
-        .collect();
-    for entity in entities.iter_mut() {
-        if let Some(index) = &mut entity.structure {
-            *index = remap[index];
-        }
-        if let Some(index) = &mut entity.transform_link {
-            *index = remap[index];
-        }
-        if let Some(DirectoryLineFont::Definition(index)) = &mut entity.line_font {
-            *index = remap[index];
-        }
-        for links in [&mut entity.property_links, &mut entity.association_links] {
-            for index in links {
-                *index = remap[index];
-            }
-        }
-        entity.parameter_body = map_parameter_references(&entity.parameter_body, |index| {
-            remap
-                .get(&index)
-                .copied()
-                .map(reference_marker)
-                .ok_or_else(|| {
-                    CodecError::malformed(
-                        "IGES feature ordering found a dangling parameter pointer",
-                    )
-                })
-        })?;
-    }
-    super::remap_presentations(presentations, &remap);
-    Ok(())
+    super::entity_order::reorder(entities, presentations, permutation)
 }
