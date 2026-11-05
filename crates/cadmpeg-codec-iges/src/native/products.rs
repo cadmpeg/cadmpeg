@@ -104,14 +104,14 @@ pub(super) struct SourceMaps<'a> {
 
 pub(super) fn project(
     ir: &mut CadIr,
-    sources: ProductSources<'_>,
+    sources: &ProductSources<'_>,
     maps: SourceMaps<'_>,
     length_factor: Option<f64>,
     precision: RealPrecision,
     sequences: &SourceSequences,
     ctx: &DecodeContext<'_>,
 ) -> Result<(Vec<LossNote>, Vec<String>), CodecError> {
-    let ProductSources {
+    let &ProductSources {
         occurrences,
         subfigures,
         networks,

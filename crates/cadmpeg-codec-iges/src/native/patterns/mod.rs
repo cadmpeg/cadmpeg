@@ -477,14 +477,14 @@ fn project_circular(
 
 pub(super) fn project(
     ir: &mut CadIr,
-    arrays: Arrays<'_>,
+    arrays: &Arrays<'_>,
     sources: Sources<'_>,
     ordinal: &mut u64,
     losses: &mut Vec<LossNote>,
     ctx: &DecodeContext<'_>,
     admitted: &BTreeSet<u32>,
 ) -> Result<(), CodecError> {
-    let Arrays {
+    let &Arrays {
         rectangular,
         circular,
     } = arrays;
