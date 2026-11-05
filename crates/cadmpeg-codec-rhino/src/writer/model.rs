@@ -1913,11 +1913,11 @@ impl<'a> WritableModel<'a> {
                 && result.faces.iter().any(|face| face.surface == index)
             {
                 let domain = super::plane_domain::domain(&result, index)?;
-                let WritableFaceSurface::Plane { domain: target, .. } = &mut result.surfaces[index]
-                else {
-                    unreachable!("the surface was checked as a plane")
-                };
-                *target = domain;
+                if let WritableFaceSurface::Plane { domain: target, .. } =
+                    &mut result.surfaces[index]
+                {
+                    *target = domain;
+                }
             }
         }
         Ok(result)
