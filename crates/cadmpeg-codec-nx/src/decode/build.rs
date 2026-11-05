@@ -311,12 +311,7 @@ pub(super) fn try_decode_geometry(
             pcurves: nurbs_pcurves,
             refusals: nurbs_refusals,
         } = parsed.parse_nurbs(si);
-        for refusal in nurbs_refusals {
-            carrier_refusals.push(NxLossCode::CarrierLanesUnpaired.note(format!(
-                "parasolid#{si} {} at byte {} states no carrier: {}",
-                refusal.family, refusal.pos, refusal.error
-            )));
-        }
+        carrier_refusals.extend(nurbs_refusals.iter().map(|refusal| refusal.loss(si)));
         let view = parsed.stream(si);
         carrier_refusals.extend(surface_refusals(si, &view.graph));
         let stream_name = format!("nx:parasolid#{si}:{}", stream.kind().label());

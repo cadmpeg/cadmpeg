@@ -100,7 +100,7 @@ pub(in crate::brep) fn carriers_of<N: NodeFields>(
                     continue;
                 };
                 if !descriptor.spatial() {
-                    if let Some(pcurve) = assemble_pcurve(&arrays, descriptor) {
+                    if let Some(pcurve) = assemble_pcurve(&arrays, attr, descriptor, refusals) {
                         out.pcurves.insert(attr, pcurve);
                     }
                 } else if let Some(carrier) =

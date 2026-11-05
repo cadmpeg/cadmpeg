@@ -138,6 +138,12 @@ pub(crate) enum SldprtLossCode {
     GeometrySurfaceSolverWorkCapped,
     /// A spline carrier's pole and weight lanes do not pair.
     GeometrySplineLanesUnpaired,
+    /// A spline carrier stores a control-point weight that is zero or
+    /// negative.
+    GeometrySplineWeightNonpositive,
+    /// A spline carrier's dimension, counts, or multiplicities contradict
+    /// each other or its arrays.
+    GeometrySplineFieldsInconsistent,
     /// A CONE node stores a negative sine or cosine of its half-angle, whose
     /// surface is unresolved (`GC-49`).
     GeometryConeHalfAngleSignUnresolved,
@@ -321,6 +327,8 @@ impl SldprtLossCode {
         Self::GeometryPcurveAmbiguous,
         Self::GeometrySurfaceSolverWorkCapped,
         Self::GeometrySplineLanesUnpaired,
+        Self::GeometrySplineWeightNonpositive,
+        Self::GeometrySplineFieldsInconsistent,
         Self::GeometryConeHalfAngleSignUnresolved,
         Self::GeometryConeHalfAngleIdentityRefused,
         Self::GeometryIntersectionLayoutUnknown,
@@ -422,6 +430,8 @@ impl SldprtLossCode {
             Self::GeometryPcurveAmbiguous => "geometry.pcurve-ambiguous",
             Self::GeometrySurfaceSolverWorkCapped => "geometry.surface-solver-work-capped",
             Self::GeometrySplineLanesUnpaired => "geometry.spline-lanes-unpaired",
+            Self::GeometrySplineWeightNonpositive => "geometry.spline-weight-nonpositive",
+            Self::GeometrySplineFieldsInconsistent => "geometry.spline-fields-inconsistent",
             Self::GeometryConeHalfAngleSignUnresolved => "geometry.cone-half-angle-sign-unresolved",
             Self::GeometryConeHalfAngleIdentityRefused => {
                 "geometry.cone-half-angle-identity-refused"
@@ -563,6 +573,8 @@ impl SldprtLossCode {
             | Self::GeometryPcurveAmbiguous
             | Self::GeometrySurfaceSolverWorkCapped
             | Self::GeometrySplineLanesUnpaired
+            | Self::GeometrySplineWeightNonpositive
+            | Self::GeometrySplineFieldsInconsistent
             | Self::GeometryConeHalfAngleSignUnresolved
             | Self::GeometryConeHalfAngleIdentityRefused
             | Self::GeometryIntersectionLayoutUnknown
@@ -671,6 +683,8 @@ impl SldprtLossCode {
             | Self::GeometryPointRecordAmbiguous
             | Self::GeometryCurveMarkerConflict
             | Self::GeometrySplineLanesUnpaired
+            | Self::GeometrySplineWeightNonpositive
+            | Self::GeometrySplineFieldsInconsistent
             | Self::GeometryConeHalfAngleSignUnresolved
             | Self::GeometryConeHalfAngleIdentityRefused
             | Self::GeometryIntersectionLayoutUnknown
@@ -811,6 +825,30 @@ pub(crate) fn spline_lane_refusal(record: impl std::fmt::Display) -> LossNote {
     SldprtLossCode::GeometrySplineLanesUnpaired.note(message)
 }
 
+/// One refused spline carrier, named by `record`, with the loss code and
+/// message of its refusal.
+pub(crate) fn spline_refusal(
+    record: impl std::fmt::Display,
+    refusal: &cadmpeg_parasolid::geometry::nurbs::Refusal,
+) -> LossNote {
+    use cadmpeg_parasolid::geometry::nurbs::Refusal;
+    let (code, cause) = match refusal {
+        Refusal::Lanes(error) => return spline_lane_refusal(format_args!("{record}: {error}")),
+        Refusal::NonpositiveWeight => (
+            SldprtLossCode::GeometrySplineWeightNonpositive,
+            "stores a control-point weight that is zero or negative",
+        ),
+        Refusal::Fields => (
+            SldprtLossCode::GeometrySplineFieldsInconsistent,
+            "stores a dimension, count, or multiplicity that contradicts its fields or arrays",
+        ),
+    };
+    code.note(format!(
+        "{record} {cause}; the carrier is not emitted and the entities that reference it fall \
+         back to an untyped support."
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use cadmpeg_ir::report::loss::{LossTaxonomy, StrictConsequence};
@@ -919,6 +957,8 @@ mod tests {
                 "geometry.pcurve-ambiguous",
                 "geometry.surface-solver-work-capped",
                 "geometry.spline-lanes-unpaired",
+                "geometry.spline-weight-nonpositive",
+                "geometry.spline-fields-inconsistent",
                 "geometry.cone-half-angle-sign-unresolved",
                 "geometry.cone-half-angle-identity-refused",
                 "geometry.intersection-layout-unknown",

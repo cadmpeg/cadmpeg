@@ -61,8 +61,6 @@ fn contradictory_fields_have_no_geometry() {
         b_curve(&linear(2, true, &homogeneous[..4])),
         Err(Refusal::Fields)
     );
-    let negative = [0.0, 0.0, 0.0, 1.0, 0.001, 0.0, 0.0, -1.0];
-    assert_eq!(b_curve(&linear(4, true, &negative)), Err(Refusal::Fields));
     let short = [0.0, 0.0, 0.0];
     assert_eq!(b_curve(&linear(3, false, &short)), Err(Refusal::Fields));
 }
@@ -121,4 +119,16 @@ fn a_bilinear_surface_keeps_its_u_major_grid_and_normal_sense() {
     assert_eq!(poles[2].get().x, 1.0);
     assert_eq!(poles[3].get().z, 2.0);
     assert!(surface.normal_reversed());
+}
+
+#[test]
+fn a_zero_or_negative_weight_is_refused_for_its_weight() {
+    for weight in [0.0, -1.0] {
+        let vertices = [0.0, 0.0, 0.0, 1.0, 0.001, 0.0, 0.0, weight];
+        assert_eq!(
+            b_curve(&linear(4, true, &vertices)),
+            Err(Refusal::NonpositiveWeight),
+            "weight {weight}"
+        );
+    }
 }

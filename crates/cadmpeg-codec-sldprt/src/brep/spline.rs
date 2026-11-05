@@ -1022,14 +1022,15 @@ fn assemble_curve(
     descriptor: &CurveDescriptor,
     refusals: &mut Vec<LossNote>,
 ) -> Option<CurveCarrier> {
-    use cadmpeg_parasolid::geometry::nurbs::{b_curve, BCurve, Refusal};
+    use cadmpeg_parasolid::geometry::nurbs::{b_curve, BCurve};
     let nurbs = match b_curve(&curve_fields(arrays, descriptor)?) {
         Ok(BCurve::Spatial(nurbs)) => nurbs,
-        Ok(BCurve::Planar(_)) | Err(Refusal::Fields) => return None,
-        Err(Refusal::Lanes(error)) => {
-            refusals.push(crate::loss::spline_lane_refusal(format_args!(
-                "curve carrier attribute {attr}: {error}"
-            )));
+        Ok(BCurve::Planar(_)) => return None,
+        Err(refusal) => {
+            refusals.push(crate::loss::spline_refusal(
+                format_args!("curve carrier attribute {attr}"),
+                &refusal,
+            ));
             return None;
         }
     };
@@ -1044,8 +1045,11 @@ fn assemble_curve(
 }
 
 /// Two-dimensional `00 86` B-curves by `attr`, in stored support parameters
-/// (spec §7.6).
-pub(super) fn scan_pcurve_carriers(bytes: &[u8]) -> HashMap<u32, PcurveNurbs> {
+/// (spec §7.6). A refused carrier is recorded in `refusals`.
+pub(super) fn scan_pcurve_carriers(
+    bytes: &[u8],
+    refusals: &mut Vec<LossNote>,
+) -> HashMap<u32, PcurveNurbs> {
     let mut out = HashMap::new();
     let descriptors = scan_curve_descriptors(bytes, CurveDescriptor::planar);
     if descriptors.is_empty() {
@@ -1075,18 +1079,32 @@ pub(super) fn scan_pcurve_carriers(bytes: &[u8]) -> HashMap<u32, PcurveNurbs> {
         let Some(descriptor) = curve_descriptor(bytes, p, &descriptors) else {
             continue;
         };
-        if let Some(nurbs) = assemble_pcurve(&arrays, descriptor) {
+        if let Some(nurbs) = assemble_pcurve(&arrays, attr, descriptor, refusals) {
             out.entry(attr).or_insert(nurbs);
         }
     }
     out
 }
 
-/// The parameter-space NURBS of a planar `descriptor` from its arrays.
-fn assemble_pcurve(arrays: &Arrays, descriptor: &CurveDescriptor) -> Option<PcurveNurbs> {
-    match cadmpeg_parasolid::geometry::nurbs::b_curve(&curve_fields(arrays, descriptor)?) {
-        Ok(cadmpeg_parasolid::geometry::nurbs::BCurve::Planar(nurbs)) => Some(nurbs),
-        _ => None,
+/// The parameter-space NURBS of the planar `descriptor` of `B_CURVE` `attr`
+/// from its arrays. A refusal is recorded in `refusals`.
+fn assemble_pcurve(
+    arrays: &Arrays,
+    attr: u32,
+    descriptor: &CurveDescriptor,
+    refusals: &mut Vec<LossNote>,
+) -> Option<PcurveNurbs> {
+    use cadmpeg_parasolid::geometry::nurbs::{b_curve, BCurve};
+    match b_curve(&curve_fields(arrays, descriptor)?) {
+        Ok(BCurve::Planar(nurbs)) => Some(nurbs),
+        Ok(BCurve::Spatial(_)) => None,
+        Err(refusal) => {
+            refusals.push(crate::loss::spline_refusal(
+                format_args!("pcurve carrier attribute {attr}"),
+                &refusal,
+            ));
+            None
+        }
     }
 }
 
@@ -1296,11 +1314,11 @@ fn assemble_surface(
     };
     let nurbs = match cadmpeg_parasolid::geometry::nurbs::b_surface(&fields, normal_reversed) {
         Ok(nurbs) => nurbs,
-        Err(cadmpeg_parasolid::geometry::nurbs::Refusal::Fields) => return None,
-        Err(cadmpeg_parasolid::geometry::nurbs::Refusal::Lanes(error)) => {
-            refusals.push(crate::loss::spline_lane_refusal(format_args!(
-                "surface carrier attribute {attr}: {error}"
-            )));
+        Err(refusal) => {
+            refusals.push(crate::loss::spline_refusal(
+                format_args!("surface carrier attribute {attr}"),
+                &refusal,
+            ));
             return None;
         }
     };
@@ -2062,6 +2080,28 @@ mod tests {
         };
         assert!(!normal_reversed(b'+'));
         assert!(normal_reversed(b'-'));
+    }
+
+    #[test]
+    fn a_surface_with_a_negative_weight_is_omitted_with_one_loss() {
+        let mut bytes =
+            crate::test_support::parasolid::rational_nurbs_surface_carrier(180, 181, 10);
+        let mut refusals = Vec::new();
+        assert!(scan_surface_carriers(&bytes, &mut refusals).contains_key(&180));
+        assert!(refusals.is_empty());
+        let control = bytes
+            .windows(3)
+            .position(|window| window == [0x00, 0x2d, 0x2b])
+            .unwrap();
+        let weight = control + 9 + 7 * 8;
+        assert_eq!(bytes[weight..weight + 8], 0.5_f64.to_be_bytes());
+        bytes[weight..weight + 8].copy_from_slice(&(-0.5_f64).to_be_bytes());
+        assert!(scan_surface_carriers(&bytes, &mut refusals).is_empty());
+        assert_eq!(refusals.len(), 1);
+        assert_eq!(
+            refusals[0].code,
+            crate::loss::SldprtLossCode::GeometrySplineWeightNonpositive.kind()
+        );
     }
 
     #[test]

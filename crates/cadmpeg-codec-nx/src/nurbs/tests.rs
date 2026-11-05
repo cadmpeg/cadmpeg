@@ -867,6 +867,50 @@ fn nurbs_compact_curve_descriptor_survives_a_status_prefix_collision() {
     assert_eq!(crate::nurbs::curves(&stream).0.len(), 1);
 }
 
+fn dimension_four_rational_curve_stream(weights: [f64; 2]) -> Vec<u8> {
+    let mut stream = bspline_partition_stream();
+    let descriptor = stream
+        .windows(4)
+        .position(|window| window == [0, 136, 0, 40])
+        .expect("curve descriptor");
+    put_ref(&mut stream, descriptor + 10, 4);
+    let payload = stream
+        .windows(4)
+        .position(|window| window == [0, 135, 0, 41])
+        .expect("curve payload");
+    let old_payload_len = 15 + 6 * 8;
+    let mut rational_payload = record(135, 15 + 8 * 8);
+    put_ref(&mut rational_payload, 2, 41);
+    rational_payload[9..13].copy_from_slice(&8u32.to_be_bytes());
+    let [first, second] = weights;
+    for (index, value) in [0.0, 0.0, 0.0, first, 0.02 * second, 0.0, 0.0, second]
+        .into_iter()
+        .enumerate()
+    {
+        put_f64(&mut rational_payload, 15 + index * 8, value);
+    }
+    stream.splice(payload..payload + old_payload_len, rational_payload);
+    stream
+}
+
+#[test]
+fn a_curve_with_a_negative_weight_is_omitted_with_one_loss() {
+    let (curves, refusals) =
+        crate::nurbs::curves(&dimension_four_rational_curve_stream([1.0, 2.0]));
+    assert_eq!(curves.len(), 1);
+    assert!(refusals.is_empty());
+    let (curves, refusals) =
+        crate::nurbs::curves(&dimension_four_rational_curve_stream([1.0, -2.0]));
+    assert!(curves.is_empty());
+    let [refusal] = refusals.as_slice() else {
+        panic!("one refusal, got {refusals:?}");
+    };
+    assert_eq!(
+        refusal.loss(0).code,
+        crate::loss::NxLossCode::CarrierSplineWeightNonpositive.kind()
+    );
+}
+
 #[test]
 fn nurbs_decodes_dimension_four_rational_curve() {
     let mut stream = bspline_partition_stream();
@@ -924,7 +968,10 @@ fn a_refused_curve_carrier_is_stated_not_dropped() {
     };
     assert_eq!(refusal.family, "B_CURVE");
     assert!(
-        !refusal.error.to_string().is_empty(),
+        matches!(
+            &refusal.refusal,
+            cadmpeg_parasolid::geometry::nurbs::Refusal::Lanes(error) if !error.to_string().is_empty()
+        ),
         "the refusal carries the carrier's own text"
     );
 }

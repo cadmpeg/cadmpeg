@@ -83,8 +83,10 @@ pub enum BCurve {
 pub enum Refusal {
     /// The fields contradict each other: a dimension that disagrees with the
     /// rational flag, a control or knot count that disagrees with its array,
-    /// a zero multiplicity, or a weight that is not positive.
+    /// or a zero multiplicity.
     Fields,
+    /// A homogeneous control point stores a weight that is zero or negative.
+    NonpositiveWeight,
     /// The IR refuses the assembled lanes.
     Lanes(NurbsError),
 }
@@ -190,7 +192,9 @@ fn weight(pole: &[f64], rational: bool) -> Result<f64, Refusal> {
     } else {
         1.0
     };
-    (weight > 0.0).then_some(weight).ok_or(Refusal::Fields)
+    (weight > 0.0)
+        .then_some(weight)
+        .ok_or(Refusal::NonpositiveWeight)
 }
 
 type Lanes<P> = (Vec<P>, Option<Vec<f64>>);

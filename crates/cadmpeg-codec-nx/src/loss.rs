@@ -113,6 +113,11 @@ loss_codes! {
     AssemblyComponentsExternal => ("assembly.components-external", Blocking, AssemblyComponentsExternal),
     /// A carrier record of the right family states lanes the IR carrier refuses.
     CarrierLanesUnpaired => ("carrier.lanes-unpaired", Warning, ObjectRecordsUntransferred),
+    /// A B-spline record stores a control-point weight that is zero or negative.
+    CarrierSplineWeightNonpositive => ("carrier.spline-weight-nonpositive", Warning, ObjectRecordsUntransferred),
+    /// A B-spline record's dimension, counts, or multiplicities contradict
+    /// each other or its arrays.
+    CarrierSplineFieldsInconsistent => ("carrier.spline-fields-inconsistent", Warning, ObjectRecordsUntransferred),
     /// A CONE record stores a negative sine or cosine of its half-angle,
     /// whose surface is unresolved.
     CarrierConeHalfAngleSignUnresolved => ("carrier.cone-half-angle-sign-unresolved", Warning, ObjectRecordsUntransferred),
@@ -225,6 +230,8 @@ mod tests {
                 "stream.non-parasolid-omitted",
                 "assembly.components-external",
                 "carrier.lanes-unpaired",
+                "carrier.spline-weight-nonpositive",
+                "carrier.spline-fields-inconsistent",
                 "carrier.cone-half-angle-sign-unresolved",
                 "carrier.cone-half-angle-identity-refused",
                 "carrier.torus-negative-major-unresolved",

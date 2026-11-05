@@ -19,8 +19,8 @@ use crate::layout::nurbs_surface_descriptor_prefix as surf_desc;
 use crate::topology::Graph;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::geometry::{
-    nurbs::NurbsError, pcurve::PcurveGeometry, CurveGeometry, SolvedCurveGeometry,
-    SolvedSurfaceGeometry, SurfaceGeometry,
+    pcurve::PcurveGeometry, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry,
+    SurfaceGeometry,
 };
 use curve_references::CurveDescriptorReferences;
 
@@ -73,7 +73,7 @@ fn decode_surfaces(
     descriptors: &BTreeMap<u32, Option<SurfaceDescriptor>>,
     refusals: &mut Vec<CarrierRefusal>,
 ) -> Vec<Surface> {
-    use cadmpeg_parasolid::geometry::nurbs::{b_surface, Knots, Refusal, SurfaceFields};
+    use cadmpeg_parasolid::geometry::nurbs::{b_surface, Knots, SurfaceFields};
     let mut records = Vec::new();
     for node in graph.of_kind(NodeKind::BSurface) {
         let candidate = (|| {
@@ -136,12 +136,11 @@ fn decode_surfaces(
             let normal_reversed = node.common_header()?.0 == cadmpeg_ir::topology::Sense::Reversed;
             let surface = match b_surface(&fields, normal_reversed) {
                 Ok(surface) => surface,
-                Err(Refusal::Fields) => return None,
-                Err(Refusal::Lanes(error)) => {
+                Err(refusal) => {
                     refusals.push(CarrierRefusal {
                         pos: node.pos(),
                         family: "B_SURFACE",
-                        error,
+                        refusal,
                     });
                     return None;
                 }
@@ -240,7 +239,7 @@ fn decode_pcurves(
     descriptors: &BTreeMap<u32, Option<CurveDescriptor>>,
     refusals: &mut Vec<CarrierRefusal>,
 ) -> Vec<Pcurve> {
-    use cadmpeg_parasolid::geometry::nurbs::{BCurve, Refusal};
+    use cadmpeg_parasolid::geometry::nurbs::BCurve;
     let mut records = Vec::new();
     for node in graph.of_kind(NodeKind::BCurve) {
         let candidate = (|| {
@@ -256,12 +255,12 @@ fn decode_pcurves(
                     pos: node.pos(),
                     geometry: PcurveGeometry::Nurbs { nurbs },
                 }),
-                Ok(BCurve::Spatial(_)) | Err(Refusal::Fields) => None,
-                Err(Refusal::Lanes(error)) => {
+                Ok(BCurve::Spatial(_)) => None,
+                Err(refusal) => {
                     refusals.push(CarrierRefusal {
                         pos: node.pos(),
                         family: "B_CURVE pcurve",
-                        error,
+                        refusal,
                     });
                     None
                 }
@@ -296,7 +295,7 @@ fn decode_curves(
     descriptors: &BTreeMap<u32, Option<CurveDescriptor>>,
     refusals: &mut Vec<CarrierRefusal>,
 ) -> Vec<Curve> {
-    use cadmpeg_parasolid::geometry::nurbs::{BCurve, Refusal};
+    use cadmpeg_parasolid::geometry::nurbs::BCurve;
     let mut records = Vec::new();
     for node in graph.of_kind(NodeKind::BCurve) {
         let candidate = (|| {
@@ -312,12 +311,12 @@ fn decode_curves(
                     pos: node.pos(),
                     geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
                 }),
-                Ok(BCurve::Planar(_)) | Err(Refusal::Fields) => None,
-                Err(Refusal::Lanes(error)) => {
+                Ok(BCurve::Planar(_)) => None,
+                Err(refusal) => {
                     refusals.push(CarrierRefusal {
                         pos: node.pos(),
                         family: "B_CURVE",
-                        error,
+                        refusal,
                     });
                     None
                 }
@@ -340,11 +339,11 @@ pub(crate) struct Parsed {
     pub(crate) surfaces: Vec<Surface>,
     pub(crate) curves: Vec<Curve>,
     pub(crate) pcurves: Vec<Pcurve>,
-    /// Records of the right family whose lanes the IR carrier refused.
+    /// Records of the right family that state no carrier.
     pub(crate) refusals: Vec<CarrierRefusal>,
 }
 
-/// A carrier record of the right family whose lanes the IR carrier refused.
+/// A carrier record of the right family that states no carrier.
 #[derive(Debug, Clone)]
 pub(crate) struct CarrierRefusal {
     /// Byte offset of the descriptor record within the stream.
@@ -352,7 +351,31 @@ pub(crate) struct CarrierRefusal {
     /// Carrier family the record states.
     pub(crate) family: &'static str,
     /// The carrier's refusal.
-    pub(crate) error: NurbsError,
+    pub(crate) refusal: cadmpeg_parasolid::geometry::nurbs::Refusal,
+}
+
+impl CarrierRefusal {
+    /// The loss of this record in Parasolid stream `si`.
+    pub(crate) fn loss(&self, si: usize) -> cadmpeg_ir::report::loss::LossNote {
+        use crate::loss::NxLossCode;
+        use cadmpeg_parasolid::geometry::nurbs::Refusal;
+        let record = format!("parasolid#{si} {} at byte {}", self.family, self.pos);
+        let (code, cause) = match &self.refusal {
+            Refusal::Lanes(error) => {
+                return NxLossCode::CarrierLanesUnpaired
+                    .note(format!("{record} states no carrier: {error}"))
+            }
+            Refusal::NonpositiveWeight => (
+                NxLossCode::CarrierSplineWeightNonpositive,
+                "stores a control-point weight that is zero or negative",
+            ),
+            Refusal::Fields => (
+                NxLossCode::CarrierSplineFieldsInconsistent,
+                "stores a dimension, count, or multiplicity that contradicts its fields or arrays",
+            ),
+        };
+        code.note(format!("{record} {cause}; the carrier is not emitted."))
+    }
 }
 
 pub(crate) fn parse_with_graph(bytes: &[u8], graph: &Graph) -> Parsed {
