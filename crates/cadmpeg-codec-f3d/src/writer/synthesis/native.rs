@@ -8,7 +8,7 @@ use cadmpeg_ir::codec::write::{NativeDisposition, NativeDispositions};
 use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
 
-use crate::native::F3dNative;
+use crate::{loss::F3dLossCode, native::F3dNative};
 
 fn sketch_owner_matches(
     target: &CadIr,
@@ -243,10 +243,7 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
     remap_sketch_tags!(&mut native.sketch_curve_identities);
     remap_sketch_tags!(&mut native.sketch_relations);
     remap_sketch_tags!(&mut native.sketch_texts);
-    // Record headers annotate the indexed slots they name, so a header whose
-    // slot a remaining type registers follows the same type-table position.
-    // A header no remaining type registers is kept as authored: hand-built
-    // content addresses slots the generated registry does not re-list.
+    // Record headers annotate indexed slots in the generated registry.
     {
         let headers = std::mem::take(&mut native.design_record_headers);
         let mut kept = Vec::with_capacity(headers.len());
@@ -268,7 +265,10 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
                         code.to_string().try_into().map_err(CodecError::Malformed)?;
                     kept.push(header);
                 }
-                None => kept.push(header),
+                None => losses.push(F3dLossCode::WriterNativeRecordsOmitted.note(format!(
+                    "Design record header {} has no registered class and is omitted",
+                    header.id
+                ))),
             }
         }
         native.design_record_headers = kept;
