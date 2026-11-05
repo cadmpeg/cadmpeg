@@ -243,7 +243,7 @@ pub(super) fn encode_design_bulkstream(
     }
     encode_browser_nodes(&mut out, &mut primary_records, registry)?;
     for assignment in &native.design_material_assignments {
-        if !encode_material_assignment(
+        if encode_material_assignment(
             &mut out,
             &mut primary_records,
             registry,
