@@ -404,7 +404,7 @@ pub(super) fn collect(ir: &CadIr) -> Result<(Vec<BodyScope>, Vec<LossNote>), Cod
                         .procedural_curves
                         .iter()
                         .find(|row| row.id == *id)
-                        .map(|row| row.definition())
+                        .map(cadmpeg_ir::geometry::ProceduralCurve::definition)
                 })
             {
                 for component in compound.components() {

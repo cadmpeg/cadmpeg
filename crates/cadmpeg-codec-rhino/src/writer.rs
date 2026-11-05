@@ -1151,8 +1151,8 @@ fn prepare_write<'a, 'budget>(
                         curve.id
                     )));
                 }
-                if curve.parameter_range.map(|range| range.endpoints())
-                    != edge.param_range().map(|range| range.get())
+                if curve.parameter_range.map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints)
+                    != edge.param_range().map(cadmpeg_ir::units::FiniteVector::get)
                 {
                     losses.push(RhinoLossCode::WriterCarrierResolved.note(format!(
                         "curve {} is restricted to the exact span of wire edge {}",
@@ -1724,7 +1724,7 @@ fn brep_payload(
     let surfaces = model
         .surfaces
         .iter()
-        .map(|surface| surface.payload())
+        .map(WritableFaceSurface::payload)
         .collect::<Result<Vec<_>, WriteError>>()?;
     for surface in &surfaces {
         count_records(surface.record_count)?;
@@ -2218,7 +2218,7 @@ fn admit_pcurve<'a>(
     }
     let trim_domain = pcurve
         .parameter_range()
-        .map_or(edge.domain, |range| range.finite_components());
+        .map_or(edge.domain, cadmpeg_ir::units::FiniteVector::finite_components);
     let domain = FiniteReal::raw_array(trim_domain);
     if domain[0] >= domain[1] {
         return Err(WriteError::Omit(format!(

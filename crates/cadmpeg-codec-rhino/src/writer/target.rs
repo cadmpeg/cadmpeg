@@ -45,7 +45,7 @@ pub(crate) fn plan(
             losses.push(RhinoLossCode::WriterAppearanceChannelsOmitted.note(format!(
                 "appearance binding {} change-version channels are omitted: {}",
                 binding.id,
-                binding.channels.keys().map(|key| key.as_str()).collect::<Vec<_>>().join(", ")
+                binding.channels.keys().map(cadmpeg_core::text::NonBlankString::as_str).collect::<Vec<_>>().join(", ")
             )));
         }
         let target = binding.target.typed_record_target(&input.ir.model);

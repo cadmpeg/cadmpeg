@@ -432,7 +432,7 @@ impl WritableCoedge<'_> {
     pub(super) fn trim_domain(&self, edge: &WritableEdge<'_>) -> [FiniteReal; 2] {
         self.explicit_pcurve
             .and_then(Pcurve::parameter_range)
-            .map_or(edge.domain, |range| range.finite_components())
+            .map_or(edge.domain, cadmpeg_ir::units::FiniteVector::finite_components)
     }
 }
 
@@ -495,7 +495,7 @@ impl WritablePcurve<'_> {
     pub(super) fn domain(&self, edge: &WritableEdge<'_>) -> [FiniteReal; 2] {
         self.source
             .parameter_range()
-            .map_or(edge.domain, |range| range.finite_components())
+            .map_or(edge.domain, cadmpeg_ir::units::FiniteVector::finite_components)
     }
 }
 
@@ -553,7 +553,7 @@ impl<'a> WritableObjectCurve<'a> {
                 check_frame(curve.id.as_str(), *circle.frame(), "circle")?;
                 let domain = curve.parameter_range.map_or(
                     [0.0, std::f64::consts::TAU],
-                    |range| range.endpoints(),
+                    cadmpeg_ir::topology::IncreasingParameterInterval::endpoints,
                 );
                 if domain[0] >= domain[1]
                     || domain[1] - domain[0] > std::f64::consts::TAU + super::MAX_ARC_SPAN_EXCESS
@@ -603,7 +603,7 @@ impl<'a> WritableObjectCurve<'a> {
                 }
             }
             Some(SolvedCurveGeometry::Polyline(polyline)) => {
-                let range = curve.parameter_range.map(|range| range.endpoints());
+                let range = curve.parameter_range.map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints);
                 let converted = super::polyline::convert(curve.id.as_str(), polyline, range)?;
                 conversion = Some(RhinoLossCode::WriterCarrierResolved.note(format!(
                     "curve {} polyline was converted to an exact degree-one NURBS; its chordal deflection is omitted",
@@ -1079,7 +1079,7 @@ impl<'a> WritableModel<'a> {
                     })?;
                 let domain = pcurve
                     .parameter_range()
-                    .map(|range| range.finite_components())
+                    .map(cadmpeg_ir::units::FiniteVector::finite_components)
                     .ok_or_else(|| {
                         WriteError::Omit(format!("singular edge {} has no trim domain", edge.id))
                     })?;
