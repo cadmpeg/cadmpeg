@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Author legacy sketch containers and isolated point members.
+//! Author legacy sketch containers, isolated points and line members.
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
@@ -23,10 +23,39 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
     let mut heads = Vec::new();
     let mut points = Vec::new();
     let mut companions = Vec::new();
+    let mut lines = Vec::new();
     let mut sketches = Vec::new();
     let mut entities = Vec::new();
+    let mut containers_used = std::collections::BTreeSet::new();
+    let mut occupied = target
+        .model
+        .sketches
+        .iter()
+        .filter_map(|sketch| {
+            let name = sketch.name.as_ref()?;
+            let id = crate::records::identity::DesignEntityId::try_from(name.clone()).ok()?;
+            u32::try_from(id.suffix()).ok().filter(|id| *id != 0)
+        })
+        .collect::<std::collections::BTreeSet<_>>();
     let mut next = 1u32;
     for sketch in &target.model.sketches {
+        let Some(name) = sketch
+            .name
+            .as_ref()
+            .filter(|name| name.encode_utf16().count() <= 256)
+        else {
+            continue;
+        };
+        let Some(container) = crate::records::identity::DesignEntityId::try_from(name.clone())
+            .ok()
+            .and_then(|id| u32::try_from(id.suffix()).ok())
+            .filter(|id| *id != 0)
+        else {
+            continue;
+        };
+        if containers_used.contains(&container) {
+            continue;
+        }
         let Some((origin, normal, axis)) = sketch.resolved_placement() else {
             continue;
         };
@@ -40,7 +69,6 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
             || sketch.configuration.is_some()
             || sketch.visible.is_some()
             || !sketch.profiles.is_empty()
-            || sketch.name.as_deref() != Some(format!("Sketch_{next}").as_str())
             || target
                 .model
                 .sketch_constraints
@@ -60,34 +88,49 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
                 || row.native_ref.is_some()
                 || row.geometry_ref.is_some()
                 || !row.endpoint_refs.is_empty()
-                || !matches!(
-                    row.geometry.definition(),
-                    SketchGeometryDefinition::Point { .. }
-                )
-        }) {
+                || match row.geometry.definition() {
+                    SketchGeometryDefinition::Point { .. } => false,
+                    SketchGeometryDefinition::Line { start, end } => {
+                        let start = start.get();
+                        let end = end.get();
+                        let length = (end.u - start.u).hypot(end.v - start.v);
+                        !length.is_finite() || length <= f64::EPSILON
+                    }
+                    _ => true,
+                }
+        }) || has_closed_line_chain(&members, target.tolerances.linear.get())
+        {
             continue;
         }
         let count = u32::try_from(members.len())
             .map_err(|_| CodecError::InvalidInput("F3D sketch member count exceeds u32".into()))?;
-        let end = next
-            .checked_add(2)
-            .and_then(|v| count.checked_mul(2).and_then(|n| v.checked_add(n)))
-            .ok_or_else(|| {
-                CodecError::InvalidInput("F3D sketch record index exceeds u32".into())
-            })?;
-        let container = next;
-        let head = next + 1;
+        let Some(head) = allocate(&mut occupied, &mut next) else {
+            break;
+        };
+        let mut member_indices = Vec::new();
+        for _ in &members {
+            let Some(point) = allocate(&mut occupied, &mut next) else {
+                break;
+            };
+            let Some(companion) = allocate(&mut occupied, &mut next) else {
+                break;
+            };
+            member_indices.push((point, companion));
+        }
+        if member_indices.len() != members.len() {
+            break;
+        }
         mark(&mut primary, container, bulk.len())?;
         header(&mut bulk, "256", container)?;
         bulk.extend_from_slice(&0u32.to_le_bytes());
         bulk.extend_from_slice(&[0; 5]);
         bulk.push(0);
-        native_lp_utf16(&mut bulk, &format!("Sketch_{container}"))?;
+        native_lp_utf16(&mut bulk, name)?;
         bulk.extend_from_slice(&u64::MAX.to_le_bytes());
         bulk.push(1);
         bulk.extend_from_slice(&count.to_le_bytes());
-        for ordinal in 0..count {
-            reference(&mut bulk, container + 2 + ordinal * 2);
+        for (point, _) in &member_indices {
+            reference(&mut bulk, *point);
         }
         mark(&mut secondary, container, bulk.len())?;
         header(&mut bulk, "257", container)?;
@@ -100,8 +143,8 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
         bulk.extend_from_slice(&ordinal.to_le_bytes());
         bulk.extend_from_slice(&[0; 7]);
         bulk.extend_from_slice(&count.to_le_bytes());
-        for ordinal in 0..count {
-            reference(&mut bulk, container + 2 + ordinal * 2);
+        for (point, _) in &member_indices {
+            reference(&mut bulk, *point);
         }
         mark(&mut primary, head, bulk.len())?;
         header(&mut bulk, "258", head)?;
@@ -131,13 +174,47 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
         bulk.extend_from_slice(&[0; 10]);
         containers.push(u64::from(container));
         heads.push(u64::from(head));
-        for (ordinal, member) in members.iter().enumerate() {
-            let point = container
-                + 2
-                + u32::try_from(ordinal).map_err(|_| {
-                    CodecError::InvalidInput("F3D sketch member count exceeds u32".into())
-                })? * 2;
-            let companion = point + 1;
+        for (member, (point, companion)) in members.iter().zip(member_indices) {
+            if let SketchGeometryDefinition::Line { start, end } = member.geometry.definition() {
+                let start = start.get();
+                let end = end.get();
+                let dx = end.u - start.u;
+                let dy = end.v - start.v;
+                let length = dx.hypot(dy);
+                mark(&mut primary, point, bulk.len())?;
+                header(&mut bulk, "261", point)?;
+                bulk.extend_from_slice(&[0; 9]);
+                bulk.push(1);
+                bulk.extend_from_slice(&2u32.to_le_bytes());
+                for (name, value) in [
+                    ("crv_primary_id", u64::from(point)),
+                    ("crv_secondary_id", 0),
+                ] {
+                    native_lp_ascii(&mut bulk, name)?;
+                    native_lp_ascii(&mut bulk, "IntrinsicMetaTypeuint64")?;
+                    bulk.extend_from_slice(&value.to_le_bytes());
+                }
+                for value in [
+                    start.u / 10.0,
+                    start.v / 10.0,
+                    0.0,
+                    dx / 10.0,
+                    dy / 10.0,
+                    0.0,
+                    dx / length,
+                    dy / length,
+                    0.0,
+                    0.0,
+                    0.0,
+                    1.0,
+                ] {
+                    bulk.extend_from_slice(&value.to_le_bytes());
+                }
+                reference(&mut bulk, container);
+                lines.push(u64::from(point));
+                entities.push(member.id().clone());
+                continue;
+            }
             let SketchGeometryDefinition::Point { position } = member.geometry.definition() else {
                 continue;
             };
@@ -168,7 +245,7 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
             entities.push(member.id().clone());
         }
         sketches.push(sketch.id.clone());
-        next = end;
+        containers_used.insert(container);
     }
     if sketches.is_empty() {
         return Ok(None);
@@ -208,6 +285,13 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
             0,
             "Geometry",
             companions,
+        ),
+        (
+            "DCA267ED-D615-4934-B64F-AD805E8003E2",
+            "9FF71F46-205F-484B-A2B5-A245D0D8FE33",
+            2,
+            "Geometry",
+            lines,
         ),
     ]
     .into_iter()
@@ -257,4 +341,59 @@ fn reference(out: &mut Vec<u8>, id: u32) {
     out.push(1);
     out.extend_from_slice(&id.to_le_bytes());
     out.extend_from_slice(&[0; 6]);
+}
+
+fn allocate(occupied: &mut std::collections::BTreeSet<u32>, next: &mut u32) -> Option<u32> {
+    while *next != 0 && occupied.contains(next) {
+        *next = next.checked_add(1).unwrap_or(0);
+    }
+    let id = *next;
+    if id == 0 {
+        return None;
+    }
+    occupied.insert(id);
+    *next = next.checked_add(1).unwrap_or(0);
+    Some(id)
+}
+
+fn has_closed_line_chain(members: &[&cadmpeg_ir::sketches::SketchEntity], tolerance: f64) -> bool {
+    let mut endpoints = Vec::new();
+    for member in members {
+        if let SketchGeometryDefinition::Line { start, end } = member.geometry.definition() {
+            endpoints.push(start.get());
+            endpoints.push(end.get());
+        }
+    }
+    let mut parents = (0..endpoints.len()).collect::<Vec<_>>();
+    for i in 0..endpoints.len() {
+        for j in 0..i {
+            if (endpoints[i].u - endpoints[j].u).hypot(endpoints[i].v - endpoints[j].v) <= tolerance
+            {
+                join(&mut parents, i, j);
+            }
+        }
+    }
+    let mut graph = (0..endpoints.len()).collect::<Vec<_>>();
+    for i in (0..endpoints.len()).step_by(2) {
+        let a = root(&parents, i);
+        let b = root(&parents, i + 1);
+        if root(&graph, a) == root(&graph, b) {
+            return true;
+        }
+        join(&mut graph, a, b);
+    }
+    false
+}
+
+fn root(parents: &[usize], mut index: usize) -> usize {
+    while parents[index] != index {
+        index = parents[index];
+    }
+    index
+}
+
+fn join(parents: &mut [usize], a: usize, b: usize) {
+    let a = root(parents, a);
+    let b = root(parents, b);
+    parents[a] = b;
 }
