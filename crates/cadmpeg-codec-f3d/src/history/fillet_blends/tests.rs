@@ -239,14 +239,14 @@ fn rib_blends(input: &AsmHistoricalTopology, output: &AsmHistoricalTopology) -> 
 }
 
 /// The blend of `rib_fillet()` reading `edge`, with `rivals`.
-fn rib_reading(edge: i64, rivals: &[i64]) -> Option<Vec<Blend>> {
-    Some(vec![Blend {
+fn rib_reading(edge: i64, rivals: &[i64]) -> Vec<Blend> {
+    vec![Blend {
         radius: 1.0,
         edge,
         found: Found::Inferred {
             rivals: rivals.to_vec(),
         },
-    }])
+    }]
 }
 
 /// Add edge `edge` to the loop of `face`.
@@ -303,7 +303,10 @@ fn rib_with_edge_21(at: Point3, on: i64, beside: Option<(i64, Point3)>) -> AsmHi
 
 #[test]
 fn a_cylinder_blend_whose_supports_share_no_edge_replaces_the_edge_on_its_touching_support() {
-    assert_eq!(rib_blends(&rib(), &rib_fillet()), rib_reading(17, &[]));
+    assert_eq!(
+        rib_blends(&rib(), &rib_fillet()),
+        Some(rib_reading(17, &[]))
+    );
     let on_cylinder = rib_with_edge_21(
         Point3::new(1.0, -(0.75_f64.sqrt()), 0.0),
         10,
@@ -311,7 +314,7 @@ fn a_cylinder_blend_whose_supports_share_no_edge_replaces_the_edge_on_its_touchi
     );
     assert_eq!(
         rib_blends(&on_cylinder, &rib_fillet()),
-        rib_reading(17, &[]),
+        Some(rib_reading(17, &[])),
         "edge 21 beside touching plate top 10 lies on the cylinder"
     );
 }
@@ -343,7 +346,7 @@ fn a_cylinder_blend_reads_its_nearest_linked_candidate_then_its_lowest_slot() {
             &rib_with_edge_21(Point3::new(1.0, -2.0, 0.0), 10, Some((12, on_rib_top()))),
             &rib_fillet()
         ),
-        rib_reading(17, &[21]),
+        Some(rib_reading(17, &[21])),
         "linked edge 21 lies farther from the axis than edge 17"
     );
     assert_eq!(
@@ -355,7 +358,7 @@ fn a_cylinder_blend_reads_its_nearest_linked_candidate_then_its_lowest_slot() {
             ),
             &rib_fillet()
         ),
-        rib_reading(17, &[21]),
+        Some(rib_reading(17, &[21])),
         "linked edge 21 lies as far from the axis as edge 17"
     );
 }
@@ -400,7 +403,7 @@ fn a_cylinder_blend_ranks_a_candidate_that_its_other_support_does_not_reach_last
     for (case, input) in &unlinked {
         assert_eq!(
             rib_blends(input, &rib_fillet()),
-            rib_reading(17, &[21]),
+            Some(rib_reading(17, &[21])),
             "edge 21 lies nearer the axis, but {case}"
         );
     }
@@ -408,7 +411,7 @@ fn a_cylinder_blend_ranks_a_candidate_that_its_other_support_does_not_reach_last
     alone.edge_samples[0].interior = Point3::new(2.0, 0.0, 0.0);
     assert_eq!(
         rib_blends(&alone, &rib_fillet()),
-        rib_reading(21, &[]),
+        Some(rib_reading(21, &[])),
         "edge 17 lies outside the blend's extent"
     );
     let persisting = rib_with_edge_21(nearer(), 10, Some((12, on_rib_top())));
@@ -422,7 +425,7 @@ fn a_cylinder_blend_ranks_a_candidate_that_its_other_support_does_not_reach_last
     result_13.coedge_topology.extend(extra.coedge_topology);
     assert_eq!(
         rib_blends(&persisting, &result_13),
-        rib_reading(17, &[21]),
+        Some(rib_reading(17, &[21])),
         "face 13 persists"
     );
 }
@@ -465,7 +468,7 @@ fn a_cylinder_blend_reads_its_best_deleted_candidate() {
             10,
             Some((12, on_rib_top()))
         )),
-        rib_reading(21, &[17]),
+        Some(rib_reading(21, &[17])),
         "edge 17 ranks first and keeps its slot"
     );
 }
@@ -550,7 +553,7 @@ fn a_cylinder_blend_states_nothing_when_a_row_that_decides_an_edge_is_unusable()
     let beside = || rib_with_edge_21(Point3::new(1.0, 1.0, 0.5), 12, Some((10, on_plate_top())));
     assert_eq!(
         rib_blends(&beside(), &rib_fillet()),
-        rib_reading(17, &[]),
+        Some(rib_reading(17, &[])),
         "rib top 12, the support that owns edge 21, does not touch the cylinder"
     );
     let mut across = beside();
@@ -563,7 +566,7 @@ fn a_cylinder_blend_states_nothing_when_a_row_that_decides_an_edge_is_unusable()
         .tangent = Some(y());
     assert_eq!(
         rib_blends(&across, &rib_fillet()),
-        rib_reading(17, &[]),
+        Some(rib_reading(17, &[])),
         "the tangent of edge 21 runs across the axis"
     );
     let mut unknown = Vec::new();
@@ -605,6 +608,17 @@ fn a_cylinder_blend_states_nothing_when_a_row_that_decides_an_edge_is_unusable()
         .unwrap()
         .interior = Point3::new(f64::NAN, 1.0, 0.5);
     unknown.push(("edge 21 has no finite interior point", unplaced));
+    let mut curved = beside();
+    curved.surface_cylinders.push(AsmHistoricalCylinder {
+        surface: 110,
+        origin: Point3::new(0.0, 0.0, 0.0),
+        axis: x(),
+        radius: 1.0,
+    });
+    unknown.push((
+        "carrier 110 of plate top 10 also has a cylinder row",
+        curved,
+    ));
     for (case, input) in unknown {
         assert_eq!(rib_blends(&input, &rib_fillet()), None, "{case}");
     }
@@ -614,6 +628,13 @@ fn a_cylinder_blend_states_nothing_when_a_row_that_decides_an_edge_is_unusable()
         rib_blends(&rib(), &unbounded),
         None,
         "boundary edge 31 has no sample"
+    );
+    let mut wider = rib_fillet();
+    wider.surface_cylinders[0].radius = 1.0 + 1.0e-5;
+    assert_eq!(
+        rib_blends(&rib(), &wider),
+        None,
+        "the cylinder row of carrier 120 has another radius than its radius row"
     );
 }
 

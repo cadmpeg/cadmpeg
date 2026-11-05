@@ -3,7 +3,7 @@
 
 use crate::history_records::AsmHistoricalTopology;
 use cadmpeg_ir::math::{Point3, Vector3};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Millimetres between a circle centre and the torus axis line that holds it.
 const BLEND_SPINE_POSITION_TOLERANCE: f64 = 1.0e-6;
@@ -13,6 +13,9 @@ const BLEND_SPINE_DIRECTION_TOLERANCE: f64 = 1.0e-9;
 /// Millimetres between a distance from a cylinder axis line and the cylinder
 /// radius that equals it.
 const BLEND_RADIUS_DISTANCE_TOLERANCE: f64 = 1.0e-6;
+/// Millimetres between the radius of a cylinder row and the radius row of
+/// its carrier.
+const CYLINDER_ROW_RADIUS_TOLERANCE: f64 = 1.0e-6;
 
 /// The edge geometry that a blend carrier admits as its replaced edge.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -40,11 +43,12 @@ impl EdgeGeometry {
     }
 }
 
-/// The axis line of a cylinder blend carrier.
+/// The axis line and row radius of a cylinder blend carrier.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct CylinderAxis {
     origin: Point3,
     direction: Vector3,
+    radius: f64,
 }
 
 impl CylinderAxis {
@@ -72,6 +76,12 @@ impl CylinderAxis {
     /// normal is perpendicular to the axis and its distance from the axis
     /// line equals the radius. `None` when the plane has a non-finite origin
     /// or a zero or non-finite normal.
+    /// Whether the cylinder row's radius is within
+    /// `CYLINDER_ROW_RADIUS_TOLERANCE` of `radius`.
+    pub(super) fn has_radius(self, radius: f64) -> bool {
+        (self.radius - radius).abs() <= CYLINDER_ROW_RADIUS_TOLERANCE
+    }
+
     pub(super) fn touches(self, radius: f64, (origin, normal): (Point3, Vector3)) -> Option<bool> {
         let normal = normal.unit().filter(|_| finite(origin))?;
         Some(
@@ -86,13 +96,20 @@ impl CylinderAxis {
 /// finite and whose direction is finite and nonzero.
 pub(super) fn cylinder_axes(result: &AsmHistoricalTopology) -> HashMap<i64, CylinderAxis> {
     unique_rows(&result.surface_cylinders, |row| {
-        (row.surface, (row.origin, row.axis))
+        (row.surface, (row.origin, row.axis, row.radius))
     })
     .into_iter()
     .filter_map(|(surface, row)| {
-        let (origin, axis) = row?;
+        let (origin, axis, radius) = row?;
         let direction = axis.unit().filter(|_| finite(origin))?;
-        Some((surface, CylinderAxis { origin, direction }))
+        Some((
+            surface,
+            CylinderAxis {
+                origin,
+                direction,
+                radius,
+            },
+        ))
     })
     .collect()
 }
@@ -107,13 +124,25 @@ pub(super) fn edge_points(topology: &AsmHistoricalTopology) -> HashMap<i64, Opti
 }
 
 /// The origin and normal of each plane carrier, or `None` for a carrier with
-/// two plane rows.
+/// two plane rows or with a cylinder or axis row.
 pub(super) fn plane_rows(
     topology: &AsmHistoricalTopology,
 ) -> HashMap<i64, Option<(Point3, Vector3)>> {
-    unique_rows(&topology.surface_planes, |row| {
+    let curved = topology
+        .surface_cylinders
+        .iter()
+        .map(|row| row.surface)
+        .chain(topology.surface_axes.iter().map(|row| row.surface))
+        .collect::<HashSet<_>>();
+    let mut planes = unique_rows(&topology.surface_planes, |row| {
         (row.surface, (row.origin, row.normal))
-    })
+    });
+    for (surface, plane) in &mut planes {
+        if curved.contains(surface) {
+            *plane = None;
+        }
+    }
+    planes
 }
 
 fn finite(point: Point3) -> bool {

@@ -296,6 +296,8 @@ fn a_cylinder_axis_needs_one_row_with_a_finite_origin_and_direction() {
     assert!(axis.meets(2.0, point(3.0, 2.0, 7.0)));
     assert!(!axis.meets(2.0, point(3.1, 2.0, 7.0)));
     assert!(!axis.meets(2.0, point(2.9, 2.0, 7.0)));
+    assert!(axis.has_radius(2.0 + 1.0e-7));
+    assert!(!axis.has_radius(2.0 + 1.0e-5));
 }
 
 #[test]
@@ -373,4 +375,27 @@ fn a_duplicated_or_non_finite_row_states_no_point_or_plane() {
     assert!(planes[&10].is_some());
     assert_eq!(planes[&11], None);
     assert!(!planes.contains_key(&12));
+}
+
+#[test]
+fn a_plane_carrier_with_a_cylinder_or_axis_row_states_no_plane() {
+    let plane = |surface| AsmHistoricalPlane {
+        surface,
+        origin: point(0.0, 0.0, 0.0),
+        normal: vector(0.0, 0.0, 1.0),
+    };
+    let topology = AsmHistoricalTopology {
+        surface_planes: vec![plane(10), plane(11), plane(12)],
+        surface_cylinders: vec![cylinder(11)],
+        surface_axes: vec![AsmHistoricalSurfaceAxis {
+            surface: 12,
+            origin: point(0.0, 0.0, 0.0),
+            direction: vector(0.0, 0.0, 1.0),
+        }],
+        ..AsmHistoricalTopology::default()
+    };
+    let planes = plane_rows(&topology);
+    assert!(planes[&10].is_some());
+    assert_eq!(planes[&11], None);
+    assert_eq!(planes[&12], None);
 }

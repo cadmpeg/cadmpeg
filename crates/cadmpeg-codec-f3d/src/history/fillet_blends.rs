@@ -11,7 +11,7 @@ use cadmpeg_ir::features::edge_treatments::RadiusSpec;
 use cadmpeg_ir::features::{EdgeSelection, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::loss::LossNote;
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 /// Millimetres between a blend radius and the radius of its group.
 const FILLET_BLEND_RADIUS_TOLERANCE: f64 = 1.0e-6;
@@ -33,9 +33,9 @@ struct Blend {
 enum Found {
     /// Two supports of the blend share the edge.
     Shared,
-    /// The supports share no edge; the edge is the best-ranked deleted
-    /// candidate of `BlendRows::rounded_edge`, and `rivals` are the other
-    /// candidates in rank order.
+    /// The supports share no edge along the axis; the edge is the
+    /// best-ranked deleted candidate of `BlendRows::rounded_edge`, and
+    /// `rivals` are the other candidates in rank order.
     Inferred { rivals: Vec<i64> },
 }
 
@@ -150,13 +150,15 @@ impl<'a> BlendRows<'a> {
         for support in supports {
             pool.extend(self.input_boundaries.get(support)?);
         }
-        let mut candidates = Vec::new();
+        let mut along = BTreeMap::new();
         for edge in pool {
-            if !blend.runs_along(self.edges.get(edge).copied().unwrap_or_default())? {
-                continue;
+            if blend.runs_along(self.edges.get(edge).copied().unwrap_or_default())? {
+                along.insert(*edge, self.input_points.get(edge).copied().flatten()?);
             }
-            let point = self.input_points.get(edge).copied().flatten()?;
-            if !axis.clears(radius, point) || !blend.spans(point) {
+        }
+        let mut candidates = Vec::new();
+        for (edge, point) in &along {
+            if !axis.clears(radius, *point) || !blend.spans(*point) {
                 continue;
             }
             let owners = self.owners.get(edge).map_or(&[][..], Vec::as_slice);
@@ -171,7 +173,9 @@ impl<'a> BlendRows<'a> {
                     touching = true;
                     let other = owners.iter().find(|owner| *owner != near);
                     linked |= owners.len() == 2
-                        && other.is_some_and(|other| self.reaches(*other, *near, supports, blend));
+                        && other.is_some_and(|other| {
+                            self.reaches(*other, *near, supports, (blend, &along))
+                        });
                 }
             }
             if !touching {
@@ -180,7 +184,7 @@ impl<'a> BlendRows<'a> {
                 }
                 continue;
             }
-            candidates.push((!linked, axis.distance(point), *edge));
+            candidates.push((!linked, axis.distance(*point), *edge));
         }
         candidates.sort_by(|left, right| {
             left.0
@@ -200,31 +204,27 @@ impl<'a> BlendRows<'a> {
     }
 
     /// Whether the transition removes `face` and `face` meets a support other
-    /// than `support` at a preceding edge that runs along the blend's axis on
-    /// its cylinder and within its axial extent: the edge that an overflow
-    /// blend rolls over.
-    fn reaches(&self, face: i64, support: i64, supports: &[i64], blend: CylinderBlend) -> bool {
-        let Some(boundary) = self.input_boundaries.get(&face) else {
-            return false;
-        };
+    /// than `support` at an edge of `along` that lies on the blend's cylinder
+    /// and within its axial extent: the edge that an overflow blend rolls
+    /// over. `along` holds the point of each support edge that runs along the
+    /// blend's axis.
+    fn reaches(
+        &self,
+        face: i64,
+        support: i64,
+        supports: &[i64],
+        (blend, along): (CylinderBlend, &BTreeMap<i64, Point3>),
+    ) -> bool {
         !self.output_faces.contains(&face)
-            && supports
-                .iter()
-                .filter(|other| **other != support)
-                .filter_map(|other| self.input_boundaries.get(other))
-                .flat_map(|edges| boundary.intersection(edges))
-                .any(|edge| {
-                    blend.runs_along(self.edges.get(edge).copied().unwrap_or_default())
-                        == Some(true)
-                        && self
-                            .input_points
-                            .get(edge)
-                            .copied()
-                            .flatten()
-                            .is_some_and(|point| {
-                                blend.axis.meets(blend.radius, point) && blend.spans(point)
-                            })
-                })
+            && self.input_boundaries.get(&face).is_some_and(|boundary| {
+                supports
+                    .iter()
+                    .filter(|other| **other != support)
+                    .filter_map(|other| self.input_boundaries.get(other))
+                    .flat_map(|edges| boundary.intersection(edges))
+                    .filter_map(|edge| along.get(edge))
+                    .any(|point| blend.axis.meets(blend.radius, *point) && blend.spans(*point))
+            })
     }
 }
 
@@ -334,7 +334,10 @@ fn transition_blends(
             }
         }
         let (edge, found) = if candidates.is_empty() {
-            let axis = axes.get(&carrier).copied()?;
+            let axis = axes
+                .get(&carrier)
+                .copied()
+                .filter(|axis| axis.has_radius(radius))?;
             let (edge, rivals) = rows.rounded_edge(blend, *spine, axis, radius, &supports)?;
             (edge, Found::Inferred { rivals })
         } else {
@@ -434,7 +437,10 @@ fn replaceable_native(selection: &EdgeSelection) -> Option<&str> {
 /// The blends at a group's radius therefore name exactly its edges, and a
 /// tangent chain can give the group more or fewer members than edges. A
 /// selection that disagrees with its blend edges contradicts that claim for
-/// the whole transition, so then no group binds.
+/// the whole transition, so then no group binds. A cylinder blend whose
+/// supports share no edge along its axis gives its best-ranked deleted
+/// candidate, and a group that binds such an edge gets a note that the edge
+/// is inferred and, when other candidates exist, a note that names them.
 pub(super) fn bind_fillet_groups(
     definition: &mut FeatureDefinition,
     feature_id: &cadmpeg_ir::features::FeatureId,
@@ -505,11 +511,11 @@ pub(super) fn bind_fillet_groups(
                 feature_id.as_str()
             );
             inferred.push(F3dLossCode::HistoricalFilletEdgeInferred.note(format!(
-                "{at} is inferred from its touching support and the blend geometry, because the blend's supports share no edge"
+                "{at} is inferred from its touching support and the blend geometry, because the blend's supports share no edge along its axis"
             )));
             if !rivals.is_empty() {
                 inferred.push(F3dLossCode::HistoricalFilletEdgeAmbiguous.note(format!(
-                    "{at} is the best-ranked of {} candidate edges; the other candidates are slots {rivals:?}",
+                    "{at} is the best-ranked deleted candidate of {} candidate edges; the other candidates in rank order are slots {rivals:?}",
                     rivals.len() + 1
                 )));
             }
