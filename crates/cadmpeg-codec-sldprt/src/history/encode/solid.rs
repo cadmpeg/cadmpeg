@@ -11,7 +11,7 @@ use crate::classification::{classify, FeatureClass};
 use crate::history::classify::{extrude_feature_op, is_extrude};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{
-    holes::{HoleBottom, HoleConstruction, HoleKind, HolePlacement, HoleProfileFilter},
+    holes::{HoleBottom, HoleConstruction, HoleKind, HolePlacement, HoleProfileFilter, PartialPair},
     BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeStart, FaceMaker, FaceSelection,
     InnerWireTaper, LinearTermination, PlanarProfileRef, ProfileRef,
 };
@@ -453,17 +453,52 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             }
             if let Some(kind) = kind {
                 match kind {
-                    HoleKind::Unresolved(_)
-                    | HoleKind::PartialCounterbore(..)
-                    | HoleKind::PartialCountersink(..)
-                        if existing.is_some() => {}
-                    HoleKind::Unresolved(_)
-                    | HoleKind::PartialCounterbore(..)
-                    | HoleKind::PartialCountersink(..) => {
+                    HoleKind::Unresolved(_) if existing.is_some() => {}
+                    HoleKind::Unresolved(_) => {
                         return Err(CodecError::UnsupportedContent(format!(
                             "SLDPRT feature {} has unresolved hole entry construction",
                             feature.id
                         )));
+                    }
+                    HoleKind::PartialCounterbore(pair) => {
+                        parameters.remove("CounterboreDiameter");
+                        parameters.remove("CounterboreDepth");
+                        parameters.remove("CountersinkDiameter");
+                        parameters.remove("CountersinkAngle");
+                        match pair {
+                            PartialPair::First(diameter) => {
+                                parameters.insert(
+                                    cadmpeg_core::nonblank_literal!("CounterboreDiameter"),
+                                    format_length_mm(self.dimension(diameter)?.into()),
+                                );
+                            }
+                            PartialPair::Second(depth) => {
+                                parameters.insert(
+                                    cadmpeg_core::nonblank_literal!("CounterboreDepth"),
+                                    format_length_mm(self.dimension(depth)?.into()),
+                                );
+                            }
+                        }
+                    }
+                    HoleKind::PartialCountersink(pair) => {
+                        parameters.remove("CounterboreDiameter");
+                        parameters.remove("CounterboreDepth");
+                        parameters.remove("CountersinkDiameter");
+                        parameters.remove("CountersinkAngle");
+                        match pair {
+                            PartialPair::First(diameter) => {
+                                parameters.insert(
+                                    cadmpeg_core::nonblank_literal!("CountersinkDiameter"),
+                                    format_length_mm(self.dimension(diameter)?.into()),
+                                );
+                            }
+                            PartialPair::Second(angle) => {
+                                parameters.insert(
+                                    cadmpeg_core::nonblank_literal!("CountersinkAngle"),
+                                    format_angle_rad(self.dimension(angle)?.into()),
+                                );
+                            }
+                        }
                     }
                     HoleKind::Simple => {
                         parameters.remove("CounterboreDiameter");
