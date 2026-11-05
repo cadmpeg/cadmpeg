@@ -5750,6 +5750,9 @@ impl<'a> Builder<'a> {
                 let direction = cadmpeg_ir::units::DirectionAboveEpsilon::new(
                     definition_payload.direction().get(),
                 )?;
+                if !direction.norm().is_finite() {
+                    return None;
+                }
                 let directrix = self.emit_curve(definition_payload.directrix().as_str())?;
                 let direction_ref = geometry::direction(&mut self.emitter, direction);
                 let vector = self.emitter.emit(
