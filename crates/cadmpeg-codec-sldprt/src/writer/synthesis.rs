@@ -253,6 +253,7 @@ pub(super) fn plan(
         &mut losses,
     );
     repair_duplicate_configuration_indices(&mut projected.model.configurations, &mut losses);
+    repair_configuration_names(&mut projected.model.configurations, &mut losses);
     // Native lane and history records require names; default blank feature
     // names to their identity as configurations do (#237).
     normalize_feature_names(&mut projected.model.features, &mut losses);
@@ -857,6 +858,42 @@ fn repair_multiple_active_configurations(
             }
             active_seen = true;
         }
+    }
+}
+
+fn repair_configuration_names(
+    configurations: &mut [cadmpeg_ir::features::DesignConfiguration],
+    losses: &mut Vec<LossNote>,
+) {
+    let mut reserved = configurations
+        .iter()
+        .filter_map(|configuration| configuration.name.clone())
+        .collect::<std::collections::HashSet<_>>();
+    let mut seen = std::collections::HashSet::new();
+    let mut order = (0..configurations.len()).collect::<Vec<_>>();
+    order.sort_by_key(|index| configurations[*index].ordinal);
+    for position in order {
+        let configuration = &mut configurations[position];
+        if let Some(name) = configuration
+            .name
+            .as_ref()
+            .filter(|name| !name.trim().is_empty())
+        {
+            if seen.insert(name.clone()) {
+                continue;
+            }
+        }
+        let mut replacement = configuration.id.as_str().to_owned();
+        while reserved.contains(&replacement) {
+            replacement.push('_');
+        }
+        reserved.insert(replacement.clone());
+        seen.insert(replacement.clone());
+        configuration.name = Some(replacement);
+        losses.push(SldprtLossCode::WriterFieldsOmitted.note(format!(
+            "configuration {}: missing or duplicate name was replaced by a unique identity",
+            configuration.id
+        )));
     }
 }
 
