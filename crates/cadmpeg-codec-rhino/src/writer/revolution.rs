@@ -31,7 +31,7 @@ pub(super) fn held_revolution(
     }
     let Some(parameter) = revolution
         .parameter_interval()
-        .map(|range| range.endpoints())
+        .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints)
     else {
         return Ok(None);
     };
@@ -69,7 +69,7 @@ pub(super) fn held_revolution(
         Some(domain[0][1]),
         Some(domain[1][1]),
     ];
-    if construction.record_bounds().map(|bounds| bounds.get()) != Some(expected) {
+    if construction.record_bounds().map(cadmpeg_ir::geometry::RecordBounds::get) != Some(expected) {
         return Ok(None);
     }
     let (profile, conversion) = match WritableObjectCurve::try_new(curve) {

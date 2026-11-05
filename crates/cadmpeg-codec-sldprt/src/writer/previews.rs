@@ -131,7 +131,7 @@ mod tests {
 
     #[test]
     fn thumbnail_size_reports_native_field_capacity() {
-        let limit = u32::MAX as usize;
+        let limit = usize::try_from(u32::MAX).expect("u32 capacity fits usize");
         assert_eq!(super::thumbnail_size(limit - 4).unwrap(), u32::MAX);
         let error: cadmpeg_ir::codec::write::EncodeError =
             super::thumbnail_size(limit - 3).unwrap_err().into();

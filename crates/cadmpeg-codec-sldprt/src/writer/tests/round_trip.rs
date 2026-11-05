@@ -437,7 +437,7 @@ fn check_native_spatial_relation(driving: bool, tags: [&str; 2], address: u32) {
             native_ref: None,
         });
     let result = crate::SldprtCodec.plan(EncodeInput::new(&ir, None), TargetRequest::Inherit);
-    if address > u16::MAX as u32 {
+    if address > u32::from(u16::MAX) {
         assert!(
             matches!(result, Err(cadmpeg_ir::codec::write::EncodeError::TargetCapacity {
             field, limit: 65535, value: 65536

@@ -626,7 +626,7 @@ impl TryFrom<FeatureInputLaneWire> for FeatureInputLane {
             .into_iter()
             .map(|entity| {
                 SketchInputEntity::from_wire(entity, &wire.native_payload)
-                    .map_err(|error| error.to_owned())
+                    .map_err(std::borrow::ToOwned::to_owned)
             })
             .collect::<Result<Vec<_>, _>>()?;
         let relation_instances = wire

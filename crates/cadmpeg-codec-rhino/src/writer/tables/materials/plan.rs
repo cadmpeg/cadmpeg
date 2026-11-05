@@ -75,7 +75,7 @@ impl MaterialPlan {
                 appearance
                     .properties
                     .keys()
-                    .map(|key| key.as_str())
+                    .map(cadmpeg_core::text::NonBlankString::as_str)
                     .filter(|key| {
                         !matches!(
                             *key,

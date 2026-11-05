@@ -12,7 +12,7 @@ use crate::native::SldprtNative;
 pub(crate) const SCALAR_IDENTITY_CAPACITY: cadmpeg_ir::codec::write::CapacityField =
     cadmpeg_ir::codec::write::CapacityField {
         field: "feature_input.scalar_identity",
-        limit: u32::MAX as u64,
+        limit: 0xffff_ffff_u64,
         source: "docs/formats/sldprt.md §2: scalar object identifier u32 LE",
         helper: "ScalarIdentities::take",
     };
@@ -431,10 +431,10 @@ mod tests {
             source_index: Some(1),
             name: Some("Alternative".into()),
             material: None,
-            properties: Default::default(),
-            parameter_overrides: Default::default(),
+            properties: std::collections::BTreeMap::default(),
+            parameter_overrides: std::collections::BTreeMap::default(),
             bodies: None,
-            parameter_values: Default::default(),
+            parameter_values: std::collections::BTreeMap::default(),
             feature_states: [(
                 feature_id.clone(),
                 ConfigurationFeatureState::Definition {
@@ -514,10 +514,10 @@ mod tests {
             source_index: Some(1),
             name: Some("Alternative".into()),
             material: None,
-            properties: Default::default(),
-            parameter_overrides: Default::default(),
+            properties: std::collections::BTreeMap::default(),
+            parameter_overrides: std::collections::BTreeMap::default(),
             bodies: None,
-            parameter_values: Default::default(),
+            parameter_values: std::collections::BTreeMap::default(),
             feature_states: [(
                 feature_id.clone(),
                 ConfigurationFeatureState::Definition {

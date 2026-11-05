@@ -42,7 +42,9 @@ fn assert_locus(
     steps: usize,
 ) {
     for step in 0..=steps {
-        let parameter = lo + (hi - lo) * step as f64 / steps as f64;
+        let parameter = lo
+            + (hi - lo) * cadmpeg_core::convert::f64_from_index(step).expect("test index fits f64")
+                / cadmpeg_core::convert::f64_from_index(steps).expect("test count fits f64");
         let residual = contains(evaluate(converted, parameter));
         assert!(
             residual <= PROOF_TOLERANCE,
@@ -63,11 +65,15 @@ fn assert_same_parameter(
 ) {
     let mut scale = 1.0_f64;
     for step in 0..=steps {
-        let parameter = lo + (hi - lo) * step as f64 / steps as f64;
+        let parameter = lo
+            + (hi - lo) * cadmpeg_core::convert::f64_from_index(step).expect("test index fits f64")
+                / cadmpeg_core::convert::f64_from_index(steps).expect("test count fits f64");
         scale = scale.max(expected(parameter).distance(Point3::new(0.0, 0.0, 0.0)));
     }
     for step in 0..=steps {
-        let parameter = lo + (hi - lo) * step as f64 / steps as f64;
+        let parameter = lo
+            + (hi - lo) * cadmpeg_core::convert::f64_from_index(step).expect("test index fits f64")
+                / cadmpeg_core::convert::f64_from_index(steps).expect("test count fits f64");
         let distance = evaluate(converted, parameter).distance(expected(parameter));
         assert!(
             distance <= PROOF_TOLERANCE * scale,
@@ -103,7 +109,7 @@ fn ellipse_full_arc_converts_to_closed_rational_nurbs() {
         ellipse_over_range("test", &ellipse, range(0.0, std::f64::consts::TAU)).expect("full arc");
     assert_eq!(converted.control_points().len(), 9);
     let contains = |point: Point3| {
-        let (s, r) = ((point.x - 1.0) / 4.0, (point.y + 2.0) / 2.0);
+        let (s, r) = ((point.x - 1.0) / 4.0, point.y.midpoint(2.0));
         (s * s + r * r - 1.0).abs().max((point.z - 3.0).abs())
     };
     assert_locus(&converted, contains, 0.0, std::f64::consts::TAU, 64);

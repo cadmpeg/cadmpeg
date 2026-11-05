@@ -9,11 +9,14 @@ use cadmpeg_ir::features::{
 use crate::history::classify::extrude_op;
 
 pub(super) fn feature_xml_tag(feature: &cadmpeg_ir::features::Feature) -> String {
-    if let Some(tag) = feature
-        .source_tag
-        .as_ref()
-        .filter(|tag| !tag.contains(':') && valid_xml_name(tag))
-    {
+    let operation_class = super::input_classes::class(feature.evaluation.definition().operation())
+        .and_then(|class| crate::classification::native_object_class(class).feature());
+    if let Some(tag) = feature.source_tag.as_ref().filter(|tag| {
+        let tag_class = crate::classification::classify_xml_element(tag);
+        !tag.contains(':')
+            && valid_xml_name(tag)
+            && (operation_class.is_none() || tag_class.is_none() || operation_class == tag_class)
+    }) {
         return tag.clone();
     }
     let tag = match feature.evaluation.definition() {
@@ -171,4 +174,34 @@ pub(crate) fn valid_xml_name(name: &str) -> bool {
         .is_some_and(|byte| byte.is_ascii_alphabetic() || matches!(byte, b'_' | b':'))
         && bytes
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b':' | b'-' | b'.'))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::feature_xml_tag;
+    use cadmpeg_ir::features::{
+        Feature, FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation,
+    };
+
+    #[test]
+    fn changed_operation_selects_its_own_xml_tag() {
+        let feature = Feature {
+            product_definition: None,
+            id: FeatureId::mint("test:design:feature#block").unwrap(),
+            ordinal: 0,
+            name: None,
+            suppressed: None,
+            dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+            source_properties: std::collections::BTreeMap::default(),
+            source_tag: Some("Sketch".into()),
+            source_text: None,
+            source_content: cadmpeg_ir::features::FeatureContent::default(),
+            needs_recompute: false,
+            evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
+                FeatureOperation::SketchBlockDefinition { sketch: None },
+            )),
+            native_ref: None,
+        };
+        assert_eq!(feature_xml_tag(&feature), "Block");
+    }
 }

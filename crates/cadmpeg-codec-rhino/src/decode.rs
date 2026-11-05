@@ -1932,7 +1932,7 @@ impl<'a> DecodeContext<'a> {
                 );
                 return Ok(false);
             }
-        };
+        }
         self.geometry_transferred = true;
         Ok(true)
     }
@@ -1985,12 +1985,6 @@ impl<'a> DecodeContext<'a> {
         }
         Ok(())
     }
-
-    /// Commit the Unknown-surface placeholder for a free object only.
-    ///
-    /// A definition member's unreadable payload fails without free geometry:
-    /// its only neutral home is through its definition's product records, so
-    /// a placeholder surface would invent model content no occurrence owns
 
     /// Commits the transaction and produces canonical IR and report state.
     pub(crate) fn commit(mut self) -> Result<Decoded, cadmpeg_core::CodecError> {
@@ -2649,7 +2643,7 @@ impl<'a> DecodeContext<'a> {
                             .push(format!("curve candidate rejected: {error}"));
                         return Ok(false);
                     }
-                };
+                }
             }
             crate::curves::DecodedGeometry::Surface { surface } => match surface {
                 crate::surfaces::DecodedSurface::Typed {
@@ -2786,7 +2780,7 @@ impl<'a> DecodeContext<'a> {
                 ));
                 return Ok(false);
             }
-        };
+        }
         self.geometry_transferred = true;
         Ok(true)
     }
@@ -2930,7 +2924,7 @@ impl<'a> DecodeContext<'a> {
                 return Ok(false);
             }
             Err(CandidateError::Codec(error)) => return Err(error),
-        };
+        }
         self.geometry_transferred = true;
         Ok(true)
     }
