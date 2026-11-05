@@ -1089,7 +1089,7 @@ pub(crate) fn scan_curve_carriers(
             knots,
             points,
             weights,
-            false,
+            descriptor.periodic,
         ) {
             Ok(nurbs) => nurbs,
             Err(error) => {
