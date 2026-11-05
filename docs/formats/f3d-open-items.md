@@ -897,7 +897,7 @@ The first closing reference run identifies a direct contained child by its local
 
 **Question.** What fields delimit the document parameter prefix that contains an additional text label before its source ordinal, and where is its discriminator?
 
-**Known.** Two user-parameter frames in the public parametric standoff design store text labels before the ordinal, null owner, expression, source kind, unit, and name. Three document parameters named `He`, `Le`, and `Wi` store `Height`, `Lenght`, and `Width` in an LP-UTF16 field at offset 31 of the wide form, after zero bytes at offsets 11 through 30. Their tails name the parameter collection. The decoder reports these frames as `parameter.record-unparsed`.
+**Known.** Two user-parameter frames in the public parametric standoff design store text labels before the ordinal, null owner, expression, source kind, unit, and name. Three document parameters named `He`, `Le`, and `Wi` store `Height`, `Lenght`, and `Width` in an LP-UTF16 field at offset 31 of the wide form, after zero bytes at offsets 11 through 30. Their tails name the parameter collection. The decoder gives up these frames and charges `record.unreadable`.
 
 **Need.** Independent designs with labeled user parameters and controlled changes to the label, source name, and expression, including one parameter saved with a comment and saved without it.
 
