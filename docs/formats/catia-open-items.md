@@ -168,6 +168,16 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must identify complete native set-owner, ordered collection, capture-membership, active-view, and geometry-target incidences. Validate each relation independently against producer collections and properties. A named camera, shared structural ancestry, numeric equality, or a display state cannot supply a missing relation. Document design configurations require their own model-variant production.
 
+**Conflict.** FTC-07 has two native scalar candidates with value `0.762`, the same decoded framing, and the same design-object owner. Its STEP twin assigns `0.762 mm` to a parallelism tolerance and to a surface-profile tolerance with different targets. One native candidate's group includes a `0.127` value and fields named `Seg3TolNumValue` and `Seg3TolTabValue`.
+
+### DI-29. Sheet topology roots
+
+**Question.** Which native records own sheet bodies and their surface representations?
+
+**Known.** FTC-07 has one FBB group with 304 face rows. `SurfacicReps` supplies analytic carriers for 284 of those faces. Its STEP twin contains a 304-face solid and two separate one-face sheets. Seven native `Line` and `GSMFill` selections share a design-object owner.
+
+**Need.** Identify the topology root and surface ownership for each sheet, or account for the geometry held by the remaining native representations.
+
 ## 3. Standard nested `V5_CFV2`
 
 ### SN-02. Rolling-ball scalar-jet semantics and tail control
@@ -232,7 +242,7 @@ terminal meaning remain unresolved. Exact framing does not supply those roles.
 
 **Need.** Bind scalar operands through an independently resolved local owner before applying a map to a carrier. Resolve the multi-operand payloads beginning `83` or `84` separately. Obtain a complete witness before admitting an unlisted scalar selector.
 
-**Conflict.** In FTC-07, treating consecutive operand values as one parameter representation joins source operands `7687` and `7688`, whose stored source intervals are approximately `[-58.658, 58.658]` and `[0, 0.901]`. The adjacent use-pair framing supplies no parameter transform between those operands. Two maps have source intervals and whole-curve witnesses for sides `2` and `6` of the same freeform chart, with respective source operands `7650` and `7659`. A single additive offset from the chart-side operand to the map operand would require both `7648` and `7653`.
+**Conflict.** In FTC-07, treating consecutive operand values as one parameter representation joins source operands `7687` and `7688`, whose stored source intervals are approximately `[-58.658, 58.658]` and `[0, 0.901]`. The adjacent use-pair framing supplies no parameter transform between those operands. Two maps have source intervals and whole-curve witnesses for sides `2` and `6` of the same freeform chart, with respective source operands `7650` and `7659`. A single additive offset from the chart-side operand to the map operand would require both `7648` and `7653`. The 80 chart-side frames and 439 distinct source-scoped records selected by resolved edge endpoint references form disjoint sets.
 
 ### SN-09. A8 parameter-map interpolation and additional operand productions
 
