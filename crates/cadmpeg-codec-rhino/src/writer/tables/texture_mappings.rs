@@ -112,19 +112,16 @@ pub(in crate::writer) fn mappings(
                     if version.value() >= 50 { 8 } else { 4 },
                 )));
             }
-            let minor = if fields
-                .get("texture_space")
-                .and_then(Value::as_i64)
-                .is_some_and(|space| space != 0)
-                || fields
-                    .get("capped")
-                    .and_then(Value::as_bool)
-                    .unwrap_or(false)
-            {
-                1
-            } else {
-                0
-            };
+            let minor = u8::from(
+                fields
+                    .get("texture_space")
+                    .and_then(Value::as_i64)
+                    .is_some_and(|space| space != 0)
+                    || fields
+                        .get("capped")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false),
+            );
             let mut body = Vec::new();
             body.extend(uuid(fields.get("source_uuid"), record.id()));
             body.extend(u32_field(&fields, "mapping_type")?.to_le_bytes());

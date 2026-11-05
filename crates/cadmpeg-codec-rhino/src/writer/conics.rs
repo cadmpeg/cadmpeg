@@ -325,11 +325,10 @@ pub(super) fn clamp_curve(
     // Homogeneous control points; polynomial poles carry unit weights,
     // one per pole already held, so the repeat cannot outgrow the input.
     let points = curve.control_points();
-    let weights: Vec<f64> = curve
-        .weights()
-        .map_or_else(|| vec![1.0; points.len()], |lane| {
-            lane.iter().map(|weight| weight.get()).collect()
-        });
+    let weights: Vec<f64> = curve.weights().map_or_else(
+        || vec![1.0; points.len()],
+        |lane| lane.iter().map(|weight| weight.get()).collect(),
+    );
     if weights.len() != count {
         return Err(fail("weight and pole counts disagree"));
     }
@@ -583,11 +582,7 @@ fn hyperbola_piece(
     // shoulder separation, then prove the solved weight on the other one.
     let numerators = [p0u + p2u - 2.0 * mid[0], p0w + p2w - 2.0 * mid[1]];
     let denominators = [mid[0] - shoulder[0], mid[1] - shoulder[1]];
-    let coordinate = if denominators[0].abs() >= denominators[1].abs() {
-        0
-    } else {
-        1
-    };
+    let coordinate = usize::from(denominators[0].abs() < denominators[1].abs());
     if denominators[coordinate] == 0.0 || !denominators[coordinate].is_finite() {
         return Err(fail("span midpoint meets its shoulder"));
     }

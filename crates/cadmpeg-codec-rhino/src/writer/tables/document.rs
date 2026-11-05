@@ -433,12 +433,11 @@ fn annotation_settings_record(fields: &Map<String, Value>) -> Result<Vec<u8>, Wr
         || fields.get("hatch_scaling").is_some()
     {
         2
-    } else if fields.get("world_view_text_scale").is_some()
-        || fields.get("annotation_scaling").is_some()
-    {
-        1
     } else {
-        0
+        u8::from(
+            fields.get("world_view_text_scale").is_some()
+                || fields.get("annotation_scaling").is_some(),
+        )
     };
     let mut body = vec![0x10 | minor];
     for name in [
@@ -570,13 +569,12 @@ fn render_settings_record(
             || fields.get("snapshot").is_some_and(|value| !value.is_null())
         {
             2
-        } else if fields
-            .get("obsolete_focal_blur")
-            .is_some_and(|value| !value.is_null())
-        {
-            1
         } else {
-            0
+            u8::from(
+                fields
+                    .get("obsolete_focal_blur")
+                    .is_some_and(|value| !value.is_null()),
+            )
         };
         let mut inner = Vec::new();
         inner.push(u8::from(flag_field(fields, "custom_image_size")));
