@@ -6201,6 +6201,7 @@ fn append_surface_entities(
     };
     let base_index = entities.len();
     let mut additions = surface_entities_for_ir(ctx, ir, surface, base_index, version)?;
+    support_records::retain(ir, surface, &mut additions);
     if let Some(entity) = additions.last_mut() {
         entity.status = status;
         entity.source_targets.push(surface.id.to_string());
@@ -9863,3 +9864,4 @@ fn finite(value: f64, field: &str) -> Result<FiniteReal, CodecError> {
 mod tests;
 
 mod ownership;
+mod support_records;
