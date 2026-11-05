@@ -390,7 +390,7 @@ mod tests {
         assert!(
             super::super::agree(&before, &after, &allowances, super::super::Mode::Same).is_ok()
         );
-        after["tolerances"]["linear"] = json!(0.000001);
+        after["tolerances"]["linear"] = json!(0.000_001);
         assert!(
             super::super::agree(&before, &after, &allowances, super::super::Mode::Same).is_err()
         );
