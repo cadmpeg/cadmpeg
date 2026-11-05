@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Regeneration of proved native ZIP envelopes with retained signature tokens.
+//! Author native ZIP envelopes and preserve retained signature tokens.
 
 use std::collections::BTreeSet;
 
@@ -27,16 +27,82 @@ fn bytes_array<const N: usize>(source: &[u8], start: usize) -> Result<[u8; N], C
         .ok_or_else(unsupported)
 }
 
-fn unique<const N: usize>(values: &BTreeSet<[u8; N]>) -> Result<[u8; N], CodecError> {
-    if values.len() != 1 {
-        return Err(unsupported());
-    }
-    values.first().copied().ok_or_else(unsupported)
+fn unique<const N: usize>(values: &BTreeSet<[u8; N]>) -> Option<[u8; N]> {
+    (values.len() == 1)
+        .then(|| values.first().copied())
+        .flatten()
 }
 
 pub(super) struct Regenerated {
     pub(super) bytes: Vec<u8>,
     pub(super) omitted_envelope_bytes: usize,
+}
+
+pub(super) fn build_fresh(
+    header: [u8; 8],
+    sections: &[(String, Vec<u8>)],
+    time_dates: &[u32],
+) -> Result<(Regenerated, Vec<cadmpeg_ir::report::loss::LossNote>), super::write_error::WriteError>
+{
+    use cadmpeg_ir::codec::write::ExportLossCode;
+
+    if sections.len() != time_dates.len() {
+        return Err(unsupported().into());
+    }
+    let count = envelope_u16(&super::CAPACITY_FIELDS[6], sections.len())?;
+    let mut output = header.to_vec();
+    let mut directory = Vec::new();
+    let mut losses = Vec::new();
+    for ((name, payload), time_date) in sections.iter().zip(time_dates) {
+        envelope_u16(&super::CAPACITY_FIELDS[7], name.len())?;
+        let offset = super::field_u32(
+            &super::CAPACITY_FIELDS[8],
+            output
+                .len()
+                .checked_sub(outer::LEN)
+                .ok_or_else(unsupported)?,
+        )?;
+        let frame = super::block(payload, name, *time_date)?;
+        output.extend_from_slice(&[0; 4]);
+        output.extend_from_slice(&frame);
+        directory.extend_from_slice(&[0; 6]);
+        directory.extend_from_slice(frame.get(..local::LEN).ok_or_else(unsupported)?);
+        directory.extend_from_slice(&[0; 10]);
+        directory.extend_from_slice(&offset.to_le_bytes());
+        let name_end = local::LEN.checked_add(name.len()).ok_or_else(unsupported)?;
+        directory.extend_from_slice(frame.get(local::LEN..name_end).ok_or_else(unsupported)?);
+        for kind in ["local", "central"] {
+            losses.push(ExportLossCode::RecordResidualUnavailable.note(format!(
+                "{kind} ZIP record {name}: signature token is unspecified"
+            )));
+        }
+    }
+    let central_offset = super::field_u32(
+        &super::CAPACITY_FIELDS[10],
+        output
+            .len()
+            .checked_sub(outer::LEN)
+            .ok_or_else(unsupported)?,
+    )?;
+    let central_size = super::field_u32(&super::CAPACITY_FIELDS[9], directory.len())?;
+    output.extend(directory);
+    output.extend_from_slice(&[0; 8]);
+    output.extend_from_slice(&count.to_le_bytes());
+    output.extend_from_slice(&count.to_le_bytes());
+    output.extend_from_slice(&central_size.to_le_bytes());
+    output.extend_from_slice(&central_offset.to_le_bytes());
+    output.extend_from_slice(&0u16.to_le_bytes());
+    losses.push(
+        ExportLossCode::RecordResidualUnavailable
+            .note("ZIP end-of-central-directory record: signature token is unspecified"),
+    );
+    Ok((
+        Regenerated {
+            bytes: output,
+            omitted_envelope_bytes: 0,
+        },
+        losses,
+    ))
 }
 
 pub(super) fn auxiliary_loss(bytes: usize) -> Option<cadmpeg_ir::report::loss::LossNote> {
@@ -51,7 +117,8 @@ pub(super) fn build(
     sections: &[(String, Vec<u8>)],
     time_dates: &[u32],
     source_scan: Option<&ContainerScan<'_>>,
-) -> Result<Regenerated, super::write_error::WriteError> {
+) -> Result<(Regenerated, Vec<cadmpeg_ir::report::loss::LossNote>), super::write_error::WriteError>
+{
     let scan = source_scan.ok_or_else(unsupported)?;
     let envelope = native_layout::source_envelope(
         scan.source_image,
@@ -84,6 +151,7 @@ pub(super) fn build(
     }
     let mut output = bytes_array::<8>(scan.source_image, 0)?.to_vec();
     let mut central_entries = Vec::new();
+    let mut residuals = Vec::new();
     for ((name, payload), time_date) in sections.iter().zip(time_dates) {
         envelope_u16(&super::CAPACITY_FIELDS[7], name.len())?;
         if name.is_empty() || !name.bytes().all(|byte| (0x20..0x7f).contains(&byte)) {
@@ -116,7 +184,23 @@ pub(super) fn build(
                 bytes_array::<10>(&entry.descriptor, 0)?,
             )
         } else {
-            (unique(&local_tokens)?, unique(&central_tokens)?, [0; 10])
+            let local_token = unique(&local_tokens).unwrap_or_else(|| {
+                residuals.push(
+                    cadmpeg_ir::codec::write::ExportLossCode::RecordResidualUnavailable.note(
+                        format!("local ZIP record {name}: signature token is unspecified"),
+                    ),
+                );
+                [0; 4]
+            });
+            let central_token = unique(&central_tokens).unwrap_or_else(|| {
+                residuals.push(
+                    cadmpeg_ir::codec::write::ExportLossCode::RecordResidualUnavailable.note(
+                        format!("central ZIP record {name}: signature token is unspecified"),
+                    ),
+                );
+                [0; 6]
+            });
+            (local_token, central_token, [0; 10])
         };
         let relative = super::field_u32(
             &super::CAPACITY_FIELDS[8],
@@ -187,10 +271,13 @@ pub(super) fn build(
     output.extend(central_size.to_le_bytes());
     output.extend(central_offset.to_le_bytes());
     output.extend(0u16.to_le_bytes());
-    Ok(Regenerated {
-        bytes: output,
-        omitted_envelope_bytes,
-    })
+    Ok((
+        Regenerated {
+            bytes: output,
+            omitted_envelope_bytes,
+        },
+        residuals,
+    ))
 }
 
 fn envelope_u16(
@@ -243,6 +330,67 @@ mod tests {
     }
 
     #[test]
+    fn fresh_envelope_has_complete_directory_and_reports_signatures() {
+        let sections = vec![
+            ("A".into(), b"alpha".to_vec()),
+            ("B".into(), b"beta".to_vec()),
+        ];
+        let (written, losses) =
+            build_fresh(outer_header().try_into().unwrap(), &sections, &[10, 11]).unwrap();
+        let scan = crate::test_support::container::scan(&written.bytes);
+        assert_eq!(scan.blocks.len(), 2);
+        assert_eq!(scan.directory.len(), 2);
+        let envelope = native_layout::source_envelope(
+            &written.bytes,
+            &scan.blocks,
+            false,
+            tail_location(&written.bytes),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(envelope.entries.len(), 2);
+        for (name, payload) in &sections {
+            assert!(scan
+                .blocks
+                .iter()
+                .any(|block| block.section.name() == Some(name.as_str())
+                    && block.payload == *payload));
+            for kind in ["local", "central"] {
+                assert!(losses.iter().any(|loss| loss.code.local_code()
+                    == "record.residual-unavailable"
+                    && loss.message.contains(kind)
+                    && loss.message.contains(name)));
+            }
+        }
+        assert_eq!(losses.len(), 5);
+        assert!(losses
+            .iter()
+            .any(|loss| loss.message.contains("end-of-central-directory")));
+    }
+
+    #[test]
+    fn source_less_plan_writes_the_complete_envelope() {
+        use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+
+        let ir = crate::test_support::ir::source_less_cube();
+        let plan = crate::SldprtCodec
+            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+            .unwrap();
+        assert!(plan.report().losses.iter().any(|loss| {
+            loss.code.local_code() == "record.residual-unavailable"
+                && loss.message.contains("end-of-central-directory")
+        }));
+        let mut output = Vec::new();
+        plan.write_to(&mut output).unwrap();
+        let scan = crate::test_support::container::scan(&output);
+        let envelope =
+            native_layout::source_envelope(&output, &scan.blocks, false, tail_location(&output))
+                .unwrap()
+                .unwrap();
+        assert_eq!(envelope.entries.len(), scan.blocks.len());
+    }
+
+    #[test]
     fn source_less_and_unproved_signature_envelopes_abstain() {
         assert!(matches!(
             build(&[], &[], None),
@@ -277,7 +425,9 @@ mod tests {
                 ("B".into(), b"changed".to_vec()),
                 ("C".into(), b"new".to_vec()),
             ];
-            let regenerated = build(&sections, &[10, 11, 12], Some(&original)).unwrap();
+            let (regenerated, residuals) =
+                build(&sections, &[10, 11, 12], Some(&original)).unwrap();
+            assert!(residuals.is_empty());
             assert_eq!(regenerated.omitted_envelope_bytes, 100);
             let output = regenerated.bytes;
             let written = crate::test_support::container::scan(&output);
@@ -344,19 +494,42 @@ mod tests {
     }
 
     #[test]
-    fn new_member_does_not_choose_between_distinct_retained_signature_tokens() {
+    fn new_member_reports_unavailable_signature_among_distinct_retained_tokens() {
         let mut source = source_fixture(0);
         let parsed = crate::test_support::container::scan(&source);
         let at = parsed.blocks[1].offset - 4;
         source[at] ^= 1;
         let parsed = crate::test_support::container::scan(&source);
         let sections = vec![("C".into(), b"new".to_vec())];
-        assert!(matches!(
-            build(&sections, &[12], Some(&parsed)),
-            Err(super::super::write_error::WriteError::Fatal(
-                CodecError::NotImplemented(_)
-            ))
-        ));
+        let (written, residuals) = build(&sections, &[12], Some(&parsed)).unwrap();
+        let output = crate::test_support::container::scan(&written.bytes);
+        assert_eq!(output.blocks.len(), 1);
+        assert_eq!(output.blocks[0].section.name(), Some("C"));
+        assert_eq!(
+            &written.bytes[output.blocks[0].offset - 4..output.blocks[0].offset],
+            &[0; 4]
+        );
+        assert!(residuals.iter().any(|loss| loss.code.local_code()
+            == "record.residual-unavailable"
+            && loss.message.contains("local ZIP record C")));
+    }
+
+    #[test]
+    fn new_member_reports_an_unavailable_central_signature() {
+        let mut source = source_fixture(0);
+        let parsed = crate::test_support::container::scan(&source);
+        let at = parsed.directory[1].offset - 6;
+        source[at] ^= 1;
+        let parsed = crate::test_support::container::scan(&source);
+        let sections = vec![("C".into(), b"new".to_vec())];
+        let (written, residuals) = build(&sections, &[12], Some(&parsed)).unwrap();
+        let output = crate::test_support::container::scan(&written.bytes);
+        assert_eq!(output.directory.len(), 1);
+        let signature = output.directory[0].offset - 6;
+        assert_eq!(&written.bytes[signature..signature + 4], &[0; 4]);
+        assert!(residuals.iter().any(|loss| loss.code.local_code()
+            == "record.residual-unavailable"
+            && loss.message.contains("central ZIP record C")));
     }
     #[test]
     fn omitted_padding_and_unretained_cache_bytes_have_one_counted_loss() {
@@ -368,7 +541,8 @@ mod tests {
                 ("A".into(), b"unchanged".to_vec()),
                 ("B".into(), b"changed".to_vec()),
             ];
-            let regenerated = build(&sections, &[10, 11], Some(&parsed)).unwrap();
+            let (regenerated, residuals) = build(&sections, &[10, 11], Some(&parsed)).unwrap();
+            assert!(residuals.is_empty());
             assert_eq!(regenerated.omitted_envelope_bytes, 247);
             let note = auxiliary_loss(regenerated.omitted_envelope_bytes).unwrap();
             assert_eq!(
@@ -411,7 +585,9 @@ mod tests {
                 ("A".into(), b"second".to_vec()),
                 ("A".into(), b"first".to_vec()),
             ];
-            let retained = build(&unchanged, &[0x0021_004a, 0x0021_0049], Some(&original)).unwrap();
+            let (retained, residuals) =
+                build(&unchanged, &[0x0021_004a, 0x0021_0049], Some(&original)).unwrap();
+            assert!(residuals.is_empty());
             assert_eq!(retained.omitted_envelope_bytes, 0);
             let parsed = crate::test_support::container::scan(&retained.bytes);
             assert_eq!(parsed.cache_cells.len(), 1);
@@ -452,7 +628,8 @@ mod tests {
                 ),
             ];
             for (sections, time_dates) in cases {
-                let omitted = build(&sections, &time_dates, Some(&original)).unwrap();
+                let (omitted, residuals) = build(&sections, &time_dates, Some(&original)).unwrap();
+                assert!(residuals.is_empty());
                 assert_eq!(omitted.omitted_envelope_bytes, 100);
                 assert!(auxiliary_loss(omitted.omitted_envelope_bytes).is_some());
                 let parsed = crate::test_support::container::scan(&omitted.bytes);

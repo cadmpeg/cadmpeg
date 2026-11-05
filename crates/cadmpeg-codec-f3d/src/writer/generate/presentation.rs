@@ -109,7 +109,10 @@ impl GeneratedDesignRegistry {
             let Some(visible) = body.visible else {
                 continue;
             };
-            let metadata = visibility_by_body.get(body.id.as_str()).copied();
+            let metadata = body
+                .native_ref
+                .as_deref()
+                .and_then(|id| visibility_by_body.get(id).copied());
             let asm_body_key = match metadata {
                 Some(metadata) => metadata.asm_body_key(),
                 None => u64::try_from(source_less_body_key(attributes, body, ordinal)?).map_err(
