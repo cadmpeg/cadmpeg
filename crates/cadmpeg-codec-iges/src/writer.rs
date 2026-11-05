@@ -1134,7 +1134,7 @@ fn synthesis_graph(
             let color = carrier_display_color(
                 ir,
                 cadmpeg_ir::appearance::AppearanceTarget::Curve(curve_id.clone()),
-                &format!("curve {}", curve_id),
+                &format!("curve {curve_id}"),
                 &mut losses,
             );
             if !matches!(color, BodyColor::Standard(0)) {
