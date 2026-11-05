@@ -750,12 +750,115 @@ fn encode_sketch_nurbs(
     Ok(())
 }
 
-fn encode_sketch_text(_out: &mut Vec<u8>, text: &SketchText) -> Result<(), CodecError> {
-    // (S-entity): raw retained payload is not a native content serializer.
-    Err(CodecError::UnsupportedContent(format!(
-        "sketch text {} has no typed F3D serializer",
-        text.id,
-    )))
+pub(in crate::writer) fn sketch_text_supported(text: &SketchText) -> bool {
+    use crate::records::sketch_geometry::SketchTextLayout;
+    let SketchTextLayout::TextexTag {
+        alignment: Some(_),
+        first_reference: None,
+        second_reference: None,
+        placement: Some(placement),
+        ..
+    } = &text.layout
+    else {
+        return false;
+    };
+    let anchor = placement.anchor.get();
+    placement.rotation.get() == 0.0
+        && ![anchor.u, anchor.v, text.height.get()]
+            .into_iter()
+            .any(|value| value != 0.0 && value / LEN_TO_MM == 0.0)
+        && !text.font_family.is_empty()
+        && text.font_family.encode_utf16().count() <= 1024
+        && !text.text.is_empty()
+        && text.text.encode_utf16().count() <= 1_048_576
+        && text.persistent_id.is_some()
+}
+
+fn encode_sketch_text(out: &mut Vec<u8>, text: &SketchText) -> Result<(), CodecError> {
+    use crate::records::sketch_geometry::SketchTextLayout;
+    if !sketch_text_supported(text) {
+        return Err(CodecError::UnsupportedContent(format!(
+            "sketch text {} has unsupported F3D metrics or identity",
+            text.id,
+        )));
+    }
+    let SketchTextLayout::TextexTag {
+        width_factor,
+        alignment: Some(alignment),
+        placement: Some(placement),
+        ..
+    } = &text.layout
+    else {
+        return Err(CodecError::UnsupportedContent(format!(
+            "sketch text {} has no supported F3D member layout",
+            text.id,
+        )));
+    };
+    let anchor = placement.anchor.get();
+    let height = text.height.get() / LEN_TO_MM;
+    native_lp_ascii(out, text.class_tag.as_str())?;
+    out.extend_from_slice(&u64::from(text.record_index).to_le_bytes());
+    native_lp_ascii(out, "")?;
+    out.push(0);
+    let properties = [
+        ("EntityGenesis", text.entity_genesis),
+        ("textex_tag", text.persistent_id),
+        ("txt_tag_base", text.base_id),
+    ];
+    out.push(1);
+    let count = properties
+        .iter()
+        .filter(|(_, value)| value.is_some())
+        .count();
+    out.extend_from_slice(
+        &u32::try_from(count)
+            .map_err(CodecError::malformed)?
+            .to_le_bytes(),
+    );
+    for (name, value) in properties {
+        if let Some(value) = value {
+            native_lp_ascii(out, name)?;
+            native_lp_ascii(out, "IntrinsicMetaTypeuint64")?;
+            out.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    out.push(1);
+    out.extend_from_slice(&width_factor.get().to_le_bytes());
+    for value in [
+        text.color.r(),
+        text.color.g(),
+        text.color.b(),
+        text.color.a(),
+    ] {
+        out.extend_from_slice(&value.to_le_bytes());
+    }
+    native_lp_utf16(out, &text.font_family)?;
+    out.push(0);
+    out.extend_from_slice(&height.to_le_bytes());
+    out.extend_from_slice(&alignment.horizontal.to_le_bytes());
+    out.extend_from_slice(&[0; 3]);
+    native_lp_utf16(out, &text.text)?;
+    out.extend_from_slice(&alignment.vertical.to_le_bytes());
+    out.push(0);
+    out.extend_from_slice(&text.font_weight.to_le_bytes());
+    out.extend_from_slice(&[0; 5]);
+    for row in [
+        [1.0, 0.0, 0.0, anchor.u / LEN_TO_MM],
+        [0.0, 1.0, 0.0, anchor.v / LEN_TO_MM],
+        [0.0, 0.0, 1.0, 0.0],
+        [0.0, 0.0, 0.0, 1.0],
+    ] {
+        for value in row {
+            out.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    out.extend_from_slice(&[0, 0, 0, 0, 1]);
+    for value in [0.0f32, 0.0, 0.0, 1.0, 1.0] {
+        out.extend_from_slice(&value.to_le_bytes());
+    }
+    out.extend_from_slice(&[0; 5]);
+    write_reference(out, text.owner_reference);
+    Ok(())
 }
 
 /// Least sketch-relation record the Design `BulkStream` writer emits. A
@@ -1043,6 +1146,31 @@ mod tests {
             body_map: None,
             browser_nodes: None,
         }
+    }
+
+    #[test]
+    fn neutral_text_members_survive_typed_serialization() {
+        let text = crate::test_support::sketch_text::neutral_text_record();
+        let mut bytes = Vec::new();
+        super::encode_sketch_text(&mut bytes, &text).unwrap();
+        let decoded = crate::design::decode::sketch::decode_sketch_text_record(
+            &bytes,
+            "Design/BulkStream.dat",
+            text.class_tag.clone(),
+            text.class_version,
+            text.record_index,
+            0,
+        )
+        .unwrap()
+        .expect("typed text record");
+        assert_eq!(decoded.text, text.text);
+        assert_eq!(decoded.font_family, text.font_family);
+        assert_eq!(decoded.font_weight, text.font_weight);
+        assert_eq!(decoded.height, text.height);
+        assert_eq!(decoded.color, text.color);
+        assert_eq!(decoded.layout, text.layout);
+        assert_eq!(decoded.owner_reference, text.owner_reference);
+        assert_eq!(decoded.persistent_id, text.persistent_id);
     }
 
     #[test]
