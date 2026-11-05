@@ -4666,7 +4666,38 @@ fn decode_result(
             .extend(design_stubs);
     }
     let entry_parts = give_up_unreadable_entries(ctx, scan)?;
-    let (_, mut entry_native, entry_fidelity, entry_losses) = entry_parts.into_parts();
+    let (_, mut entry_native, entry_fidelity, mut entry_losses) = entry_parts.into_parts();
+    if container::design_breps(scan).next().is_none()
+        && container::text_brep_names(scan).next().is_none()
+        && scan
+            .partial_brep_header()
+            .and_then(crate::container::KernelFraming::model_metadata)
+            .and_then(|header| header.linear)
+            .is_none()
+    {
+        let mut candidates = scan
+            .unreadable_entries
+            .iter()
+            .enumerate()
+            .filter(|(_, part)| {
+                scan.belongs_to_design_asset(&part.name)
+                    && matches!(
+                        crate::container::classify(&part.name),
+                        ContainerRole::BrepSmbh | ContainerRole::BrepSmb | ContainerRole::BrepText
+                    )
+            });
+        if let Some((ordinal, _)) = candidates.next().filter(|_| candidates.next().is_none()) {
+            ir.tolerances.linear = None;
+            let loss = entry_losses
+                .get_mut(ordinal)
+                .ok_or_else(|| CodecError::malformed("unreadable BREP entry has no part loss"))?;
+            loss.dropped_fields
+                .push(cadmpeg_ir::report::loss::DroppedField {
+                    record: cadmpeg_ir::report::loss::DOCUMENT_HEADER.to_owned(),
+                    field: "tolerances.linear".to_owned(),
+                });
+        }
+    }
     if let Some(stubs) = entry_native
         .namespace_mut("f3d")
         .arenas_mut()

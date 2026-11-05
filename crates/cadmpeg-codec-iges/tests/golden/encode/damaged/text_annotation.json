@@ -1,5 +1,5 @@
 {
-  "output": "original fixture                                                        S      1\n1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,32,38,6,308,17,7HprodG      1\nuct,1.0,2,2HMM,1,1.0,15HYYYYMMDD.HHMMSS,1.0000000000000000D-3,0,6HauthorG      2\n,3Horg,11,0,0H,0H;                                                      G      3\n     212       1       0       0       0       0       0       000000100D      1\n     212       0       0       2       0                               0D      2\n212,2,5,20,4,1,1.5707963267948966D0,0,0,0,1,2,0,5HALPHA,3,12,3,        1P      1\n18,1.5707963267948966D0,2.5000000000000000D-1,1,1,4,5,0,3HBET;         1P      2\nS0000001G0000003D0000002P0000002                                        T      1\n",
+  "output": "original fixture                                                        S      1\n1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,32,38,6,308,17,7HprodG      1\nuct,1.0,2,2HMM,1,1.0,15HYYYYMMDD.HHMMSS,1.0000000000000000D-3,0,6HauthorG      2\n,3Horg,11,0,0H,0H;                                                      G      3\n     212       1       0       0       0       0       0       000000100D      1\n     212       0       0       2       0                    NOTE       0D      2\n212,2,5,20,4,1,1.5707963267948966D0,0,0,0,1,2,0,5HALPHA,3,12,3,        1P      1\n18,1.5707963267948966D0,2.5000000000000000D-1,1,1,4,5,0,3HBET;         1P      2\nS0000001G0000003D0000002P0000002                                        T      1\n",
   "report": {
     "census": {
       "basis": "target_records",
@@ -10,7 +10,7 @@
     "coverage": {
       "arenas": {
         "appearance_bindings": "written",
-        "appearances": "dropped",
+        "appearances": "written",
         "articulations": "omitted",
         "assembly_joints": "dropped",
         "assets": "dropped",

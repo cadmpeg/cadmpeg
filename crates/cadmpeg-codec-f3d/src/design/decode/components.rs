@@ -53,6 +53,8 @@ pub(crate) struct DecodedComponentOccurrences {
 
 /// Decode exact local component-occurrence records from every Design bulk stream.
 pub(crate) fn decode_component_occurrences(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    output: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
     scan: &ContainerScan,
 ) -> Result<DecodedComponentOccurrences, CodecError> {
     let mut occurrences = Vec::new();
@@ -95,7 +97,7 @@ pub(crate) fn decode_component_occurrences(
             } else {
                 (Vec::new(), Vec::new(), Vec::new(), Vec::new())
             };
-        let typed_primary = typed_frames
+        let typed_primary: std::collections::BTreeSet<_> = typed_frames
             .iter()
             .map(|frame| {
                 (
@@ -114,11 +116,16 @@ pub(crate) fn decode_component_occurrences(
             })
             .collect();
         let mut stream_occurrences = Vec::new();
+        let source = scan.entry_view(&entry.name).ok_or_else(|| {
+            CodecError::malformed("component occurrence stream has no source view")
+        })?;
         for frame in &frames {
-            let start = frame.start;
-            let end = frame.member_end;
-            if let Some(occurrence) = exact_component_occurrence_frame(bytes, start, end, &scope)
-                .or_else(|| attributed_component_occurrence_frame(bytes, start, end, &scope))
+            let typed = typed_primary.contains(&(
+                frame.entity_id,
+                cadmpeg_core::decode::u64_from_index(frame.start),
+            ));
+            if let Some(occurrence) =
+                occurrence_frame_part(ctx, output, source, &entry.name, &scope, frame, typed)?
             {
                 if let Some(loss) = unproven_identity_loss(&occurrence) {
                     losses.push(loss);
@@ -141,6 +148,59 @@ pub(crate) fn decode_component_occurrences(
         ambiguous_current_poses,
         paths,
     })
+}
+
+fn occurrence_frame_part(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    output: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
+    source: View<'_>,
+    stream: &str,
+    scope: &str,
+    frame: &crate::metastream::PrimaryRecordFrame,
+    typed: bool,
+) -> Result<Option<DesignComponentOccurrence>, CodecError> {
+    use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartSpec};
+    let bytes = source.window();
+    let parse = || {
+        exact_component_occurrence_frame(bytes, frame.start, frame.member_end, scope).or_else(
+            || attributed_component_occurrence_frame(bytes, frame.start, frame.member_end, scope),
+        )
+    };
+    if !typed && parse().is_none() {
+        return Ok(None);
+    }
+    let start = source
+        .start()
+        .checked_add(frame.start)
+        .ok_or_else(|| CodecError::malformed("occurrence start overflows"))?;
+    let end = source
+        .start()
+        .checked_add(frame.end)
+        .ok_or_else(|| CodecError::malformed("occurrence end overflows"))?;
+    let extent = source
+        .child(start, end)
+        .ok_or_else(|| CodecError::malformed("occurrence extent exceeds stream"))?;
+    let mut spec = PartSpec::new("f3d.bulk_record").holding([
+        cadmpeg_ir::document::ArenaClass::Model,
+        cadmpeg_ir::document::ArenaClass::Design,
+    ]);
+    if extent.location().space != cadmpeg_core::decode::SpaceId::ROOT {
+        spec = spec.in_stream(
+            cadmpeg_ir::StreamName::try_from(stream.to_owned()).map_err(CodecError::malformed)?,
+        );
+    }
+    Ok(ctx
+        .decode_part(output, extent, spec, |_| {
+            let occurrence = parse();
+            if typed && occurrence.is_none() {
+                return Err(CodecError::malformed(format_args!(
+                    "component occurrence {} has an invalid member sequence",
+                    frame.entity_id
+                )));
+            }
+            Ok(occurrence)
+        })?
+        .flatten())
 }
 
 /// The native component paths of one Design stream. An element is an
@@ -1549,6 +1609,66 @@ mod tests {
         typed_reference(&mut bytes, 277, super::OWNER_TYPE_GUID);
         indexed_header(&mut bytes, *b"333", 21);
         bytes
+    }
+
+    #[test]
+    fn damaged_registered_occurrence_keeps_its_sibling() {
+        use cadmpeg_core::decode::View;
+        use cadmpeg_ir::source_fidelity::parts::PartOutput;
+        let mut first = typed_fixed(false, false);
+        first.truncate(348);
+        let mut second = first.clone();
+        second[7..11].copy_from_slice(&21u32.to_le_bytes());
+        first[236] = 0;
+        first.extend_from_slice(&second);
+        let frames = [
+            crate::metastream::PrimaryRecordFrame {
+                entity_id: 20,
+                start: 0,
+                member_end: 348,
+                end: 348,
+            },
+            crate::metastream::PrimaryRecordFrame {
+                entity_id: 21,
+                start: 348,
+                member_end: first.len(),
+                end: first.len(),
+            },
+        ];
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
+        let source = View::over_retained(&first);
+        let mut recovered = Vec::new();
+        for frame in &frames {
+            if let Some(record) = super::occurrence_frame_part(
+                &ctx,
+                &mut output,
+                source,
+                "Design/BulkStream.dat",
+                "f3d:Design/BulkStream.dat",
+                frame,
+                true,
+            )
+            .unwrap()
+            {
+                recovered.push(record);
+            }
+        }
+        assert_eq!(recovered.len(), 1);
+        assert_eq!(recovered[0].record_index, 21);
+        let (_, native, fidelity, losses) = output.into_parts();
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code,
+            cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable
+                .note(String::new())
+                .code
+        );
+        assert_eq!(fidelity.retained_records().len(), 1);
+        assert_eq!(
+            native.namespace("f3d").unwrap().arenas()["unknowns"].len(),
+            1
+        );
     }
 
     #[test]
