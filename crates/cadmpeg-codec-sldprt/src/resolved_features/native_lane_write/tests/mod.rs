@@ -220,7 +220,7 @@ fn ownerless_native_scalar_survives_when_design_is_held() {
                 cadmpeg_ir::scalar::Length::new(70.0).unwrap(),
             )),
             driving: true,
-            properties: Default::default(),
+            properties: std::collections::BTreeMap::default(),
             pmi: None,
             native_ref: Some(source.feature_input_lanes[0].scalars[0].id.clone()),
         });

@@ -124,9 +124,8 @@ fn definition_at(
     {
         return Ok(None);
     }
-    let first = match crate::framed_string::read_framed_string(ctx, &mut view) {
-        Ok(first) => first,
-        Err(_) => return Ok(None),
+    let Ok(first) = crate::framed_string::read_framed_string(ctx, &mut view) else {
+        return Ok(None);
     };
     if first.is_none() {
         return Ok(None);

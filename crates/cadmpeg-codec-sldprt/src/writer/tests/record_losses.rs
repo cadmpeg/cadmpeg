@@ -162,7 +162,7 @@ fn omitted_appearance_fields_name_the_appearance() {
         source_entity_id: None,
         object_type: None,
         visible: None,
-        channels: Default::default(),
+        channels: std::collections::BTreeMap::default(),
     });
     ir.model.appearances.push(material);
     ir.model.finalize();

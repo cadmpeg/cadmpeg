@@ -193,6 +193,41 @@ pub fn retained_image_replays<E>(
     fresh.as_str() == current_hash
 }
 
+/// Check an available source image against the current document using the
+/// encode caller's resource session. The decoder callback must return the
+/// same local document digest as the original decode.
+pub fn retained_source_matches(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    fidelity: &crate::SourceFidelity,
+    format: &str,
+    source_image_id: &str,
+    decode_fresh: impl FnOnce(&DecodeContext<'_>, View<'_>) -> Option<String>,
+) -> Result<bool, CodecError> {
+    if let Some(refusal) = ctx.resource_refusal() {
+        return Err(refusal.into());
+    }
+    let Some(image) = fidelity
+        .retained_record(source_image_id)
+        .and_then(|record| record.data())
+    else {
+        return Ok(false);
+    };
+    if digest::Sha256Digest::digest(image) != fidelity.decode_digest {
+        return Ok(false);
+    }
+    let current = document_local_sha256(ctx, ir, ir.source.as_ref(), format, source_image_id)?;
+    let session = cadmpeg_core::encode::EncodeSession::from_context(ctx)?;
+    let arena = DecodeArena::new();
+    let (fresh_ctx, root) = DecodeContext::for_encode_session_root(&arena, &session, image)?;
+    let fresh = fresh_ctx
+        .run_part(|| Ok(decode_fresh(&fresh_ctx, root)))?
+        .ok()
+        .flatten();
+    session.finish()?;
+    Ok(fresh.as_deref() == Some(current.as_str()))
+}
+
 /// The decode depth that reproduces a document of `scope`.
 ///
 /// A design-only document has no depth of its own; decoding it at full depth
