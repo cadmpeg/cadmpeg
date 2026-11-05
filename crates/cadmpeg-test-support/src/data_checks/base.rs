@@ -145,8 +145,9 @@ fn is_deleted(
         // sketch table row counts. A stored-name prefix byte that the
         // MdlStatus rule reads as `tm_year` is not a name.
         "creo" => {
-            (arena == "parameters" && map == "properties" && key == "definition_id")
-                || (arena == "parameters" && map == "properties" && key == "direction_byte")
+            (arena == "parameters"
+                && map == "properties"
+                && matches!(key, "definition_id" | "direction_byte"))
                 || (arena == "features"
                     && map == "source_properties"
                     && matches!(
