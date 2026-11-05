@@ -3,7 +3,10 @@
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::sketches::{SketchEntityId, SketchGeometryDefinition, SketchId};
+use cadmpeg_ir::sketches::{
+    SketchConstraintDefinitionInput, SketchConstraintId, SketchEntityId, SketchGeometryDefinition,
+    SketchId,
+};
 
 use super::presentation::{GeneratedDesignRegistry, GeneratedDesignType};
 use super::records::{encode_design_metastream, native_lp_ascii, native_lp_utf16};
@@ -15,6 +18,7 @@ pub(super) struct SketchStream {
     pub(super) meta: Vec<u8>,
     pub(super) sketches: Vec<SketchId>,
     pub(super) entities: Vec<SketchEntityId>,
+    pub(super) constraints: Vec<SketchConstraintId>,
 }
 
 pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError> {
@@ -27,6 +31,8 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
     let mut companions = Vec::new();
     let mut lines = Vec::new();
     let mut circles = Vec::new();
+    let mut relation_ids = Vec::new();
+    let mut constraints = Vec::new();
     let mut sketches = Vec::new();
     let mut entities = Vec::new();
     let mut containers_used = std::collections::BTreeSet::new();
@@ -75,11 +81,6 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
         if crate::records::sketch_placement::SketchPlacementMatrix::try_from(frame).is_err()
             || sketch.configuration.is_some()
             || sketch.visible.is_some()
-            || target
-                .model
-                .sketch_constraints
-                .iter()
-                .any(|row| row.sketch == sketch.id)
         {
             continue;
         }
@@ -89,6 +90,43 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
             .iter()
             .filter(|row| row.sketch == sketch.id)
             .collect::<Vec<_>>();
+        let mut relations = Vec::new();
+        let mut relation_members = Vec::new();
+        for relation in target
+            .model
+            .sketch_constraints
+            .iter()
+            .filter(|row| row.sketch == sketch.id)
+        {
+            let (entity, mask) = match relation.definition.kind() {
+                SketchConstraintDefinitionInput::Horizontal { entity } => (entity, 0x40u64),
+                SketchConstraintDefinitionInput::Vertical { entity } => (entity, 0x80u64),
+                _ => continue,
+            };
+            if relation.name.is_some()
+                || relation.driving.is_some()
+                || relation.active.is_some()
+                || relation.virtual_space.is_some()
+                || relation.visible.is_some()
+                || relation.orientation.is_some()
+                || relation.label_distance.is_some()
+                || relation.label_position.is_some()
+                || relation.metadata.is_some()
+            {
+                continue;
+            }
+            let Some(member) = members.iter().position(|member| {
+                member.id() == entity
+                    && matches!(
+                        member.geometry.definition(),
+                        SketchGeometryDefinition::Line { .. }
+                    )
+            }) else {
+                continue;
+            };
+            relations.push(relation);
+            relation_members.push((member, mask));
+        }
         if members.iter().any(|row| {
             row.construction
                 || row.geometry_ref.is_some()
@@ -142,6 +180,16 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
         if member_indices.len() != members.len() {
             break;
         }
+        let mut allocated_relations = Vec::new();
+        for _ in &relations {
+            let Some(index) = allocate(&mut occupied, &mut next) else {
+                break;
+            };
+            allocated_relations.push(index);
+        }
+        if allocated_relations.len() != relations.len() {
+            break;
+        }
         if !profiles_match(
             sketch,
             &members,
@@ -186,7 +234,7 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
         bulk.extend_from_slice(&[0; 10]);
         containers.push(u64::from(container));
         heads.push(u64::from(head));
-        for (member, (point, companion)) in members.iter().zip(member_indices) {
+        for (member, &(point, companion)) in members.iter().zip(&member_indices) {
             let circular = match member.geometry.definition() {
                 SketchGeometryDefinition::Circle { center, radius } => {
                     Some((*center, *radius, 0.0, std::f64::consts::TAU))
@@ -282,6 +330,33 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
             companions.push(u64::from(companion));
             entities.push(member.id().clone());
         }
+        let mut relation_ordinals = std::collections::BTreeMap::<u32, u32>::new();
+        for ((relation, (member, mask)), index) in relations
+            .iter()
+            .zip(relation_members)
+            .zip(allocated_relations)
+        {
+            let entity = member_indices[member].0;
+            let ordinal = relation_ordinals.entry(entity).or_default();
+            mark(&mut primary, index, bulk.len())?;
+            header(&mut bulk, "263", index)?;
+            bulk.extend_from_slice(&[0; 8]);
+            bulk.push(1);
+            bulk.extend_from_slice(&1u32.to_le_bytes());
+            reference(&mut bulk, entity);
+            bulk.extend_from_slice(&ordinal.to_le_bytes());
+            *ordinal = ordinal.checked_add(1).ok_or_else(|| {
+                CodecError::InvalidInput("too many relations on F3D sketch entity".into())
+            })?;
+            bulk.push(0);
+            reference(&mut bulk, container);
+            bulk.extend_from_slice(&mask.to_le_bytes());
+            bulk.extend_from_slice(&1u32.to_le_bytes());
+            reference(&mut bulk, entity);
+            bulk.push(0);
+            relation_ids.push(u64::from(index));
+            constraints.push(relation.id.clone());
+        }
         sketches.push(sketch.id.clone());
         containers_used.insert(container);
     }
@@ -338,6 +413,13 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
             "Geometry",
             circles,
         ),
+        (
+            "60403D47-0C49-49B0-BDE8-1679608164A2",
+            "98542EB9-A4F2-4137-A808-DBB5B3CD6159",
+            3,
+            "MSketch",
+            relation_ids,
+        ),
     ]
     .into_iter()
     .map(|(guid, base, version, module, entity_ids)| {
@@ -362,6 +444,7 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
         meta,
         sketches,
         entities,
+        constraints,
     }))
 }
 
