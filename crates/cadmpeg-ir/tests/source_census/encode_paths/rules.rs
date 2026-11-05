@@ -237,6 +237,25 @@ impl<'a> Body<'a> {
                     self.owner,
                 )]))
             }
+            syn::Expr::Call(value) => {
+                if let syn::Expr::Path(callee) = value.func.as_ref() {
+                    let parts = path(&callee.path, &self.aliases, self.owner);
+                    if parts.len() >= 2 {
+                        return Value::Constructed {
+                            constructor: parts,
+                            unwrapped: false,
+                        };
+                    }
+                }
+                Value::Unknown
+            }
+            syn::Expr::Try(value) => match self.value(&value.expr) {
+                Value::Constructed { constructor, .. } => Value::Constructed {
+                    constructor,
+                    unwrapped: true,
+                },
+                other => other,
+            },
             syn::Expr::Paren(value) => self.value(&value.expr),
             syn::Expr::Group(value) => self.value(&value.expr),
             syn::Expr::Reference(value) => self.value(&value.expr),
@@ -251,7 +270,7 @@ impl<'a> Body<'a> {
                     self.calls.insert(Call::Function(path));
                 }
             }
-            Value::Unknown if invoked => {
+            Value::Unknown | Value::Constructed { .. } if invoked => {
                 let label = match expression {
                     syn::Expr::Path(path) => path
                         .path
@@ -267,7 +286,7 @@ impl<'a> Body<'a> {
                 };
                 self.calls.insert(Call::UnresolvedValue(label));
             }
-            Value::Unknown => {}
+            Value::Unknown | Value::Constructed { .. } => {}
         }
     }
 
@@ -356,7 +375,10 @@ impl<'ast> Visit<'ast> for Body<'_> {
     }
     fn visit_expr_path(&mut self, value: &'ast syn::ExprPath) {
         if value.path.get_ident().is_some_and(|name| {
-            matches!(self.bindings.get(&name.to_string()), Some(Value::Unknown))
+            matches!(
+                self.bindings.get(&name.to_string()),
+                Some(Value::Unknown | Value::Constructed { .. })
+            )
         }) {
             return;
         }
@@ -453,7 +475,25 @@ impl<'ast> Visit<'ast> for Body<'_> {
     }
     fn visit_expr_method_call(&mut self, value: &'ast syn::ExprMethodCall) {
         self.check(&[value.method.to_string()], value.method.span(), false);
-        self.calls.insert(Call::Method(value.method.to_string()));
+        let method = value.method.to_string();
+        self.calls.insert(Call::Method(method.clone()));
+        if let syn::Expr::Path(receiver) = value.receiver.as_ref() {
+            if let Some(name) = receiver.path.get_ident() {
+                if name == "self" {
+                    self.calls.insert(Call::SelfMethod(method.clone()));
+                } else if let Some(Value::Constructed {
+                    constructor,
+                    unwrapped,
+                }) = self.bindings.get(&name.to_string())
+                {
+                    self.calls.insert(Call::MethodOnConstructor {
+                        constructor: constructor.clone(),
+                        method,
+                        unwrapped: *unwrapped,
+                    });
+                }
+            }
+        }
         for argument in &value.args {
             self.callable(argument, false);
         }
