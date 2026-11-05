@@ -1248,25 +1248,18 @@ pub(crate) fn synthesize_feature_classes(
         .flat_map(|history| &history.features)
         .filter_map(crate::records::Feature::source_value)
         .collect::<std::collections::HashSet<_>>();
-    let mut next = 1u32;
+    let mut next = Some(1u32);
     for feature in native
         .feature_histories
         .iter_mut()
         .flat_map(|history| &mut history.features)
         .filter(|feature| feature.input_class.is_some() && feature.source_value().is_none())
     {
-        while used.contains(&next) {
-            next = next.checked_add(1).ok_or_else(|| {
-                cadmpeg_core::CodecError::malformed(
-                    "SLDPRT feature object identity space is exhausted",
-                )
-            })?;
-        }
-        let source = crate::records::FeatureSource::from_value(next).ok_or_else(|| {
-            cadmpeg_core::CodecError::malformed("SLDPRT feature object identity space is exhausted")
+        let id = crate::history::write::features::allocate_feature_source_id(&mut used, &mut next)?;
+        let source = crate::records::FeatureSource::from_value(id).ok_or_else(|| {
+            cadmpeg_core::CodecError::malformed("SLDPRT feature source identity is absent")
         })?;
         feature.source_id = Some(source);
-        used.insert(next);
     }
     let mut payload = Vec::new();
     for feature in native
