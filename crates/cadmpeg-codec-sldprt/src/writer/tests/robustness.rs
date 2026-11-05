@@ -403,3 +403,11 @@ fn compressed_sketch_lengths_report_their_target_fields() {
         );
     }
 }
+
+#[test]
+fn configuration_source_index_allocation_rejects_exhaustion() {
+    let mut used = std::collections::HashSet::from([u32::MAX]);
+    let mut next = u32::MAX;
+    let error = crate::writer::reserve_configuration_index(&mut used, &mut next).unwrap_err();
+    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+}
