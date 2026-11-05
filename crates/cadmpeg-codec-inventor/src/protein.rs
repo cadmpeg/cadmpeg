@@ -34,6 +34,8 @@ pub(crate) struct ProteinInstanceRecords {
     pub(crate) rejected: Vec<cadmpeg_protein::RejectedRecord>,
 }
 
+type ProteinInstances<'a> = Vec<(ProteinInstanceRecords, View<'a>)>;
+
 pub(crate) fn parse<'a>(
     ctx: &DecodeContext<'a>,
     snapshot: &CompoundSnapshot<'a>,
@@ -122,7 +124,7 @@ pub(crate) fn decode_instances_with_issue<'a>(
     ctx: &DecodeContext<'a>,
     output: &mut PartOutput,
     package: &ProteinEnvelope<'a>,
-) -> Result<(Vec<(ProteinInstanceRecords, View<'a>)>, Option<String>), CodecError> {
+) -> Result<(ProteinInstances<'a>, Option<String>), CodecError> {
     let catalog = match cadmpeg_protein::SchemaCatalog::load(ctx, package.payload) {
         Ok(catalog) => catalog,
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
