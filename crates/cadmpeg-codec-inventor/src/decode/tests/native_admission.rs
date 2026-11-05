@@ -780,7 +780,7 @@ fn assert_ufrx_give_up(decoded: &DecodeResult) {
         .expect("native namespace");
     let ufrx_issues = namespace
         .arena_as::<serde_json::Value>("structural_issues")
-        .map(|issues| {
+        .map_or(0, |issues| {
             issues
                 .iter()
                 .filter(|issue| {
@@ -790,8 +790,7 @@ fn assert_ufrx_give_up(decoded: &DecodeResult) {
                         .is_some_and(|scope| scope.starts_with("ufrx-"))
                 })
                 .count()
-        })
-        .unwrap_or(0);
+        });
     assert_eq!(
         ufrx_issues, 0,
         "no ufrx failure record survives a rejected record"
@@ -897,7 +896,7 @@ fn decode_ufrx(edit: impl FnOnce(&mut UfrxDocument<'_>)) -> Decoded {
         .namespace("inventor")
         .expect("native namespace")
         .arena_as::<serde_json::Value>("structural_issues")
-        .map(|issues| {
+        .map_or(0, |issues| {
             issues
                 .iter()
                 .filter(|issue| {
@@ -907,8 +906,7 @@ fn decode_ufrx(edit: impl FnOnce(&mut UfrxDocument<'_>)) -> Decoded {
                         .is_some_and(|scope| scope.starts_with("ufrx-"))
                 })
                 .count()
-        })
-        .unwrap_or(0);
+        });
     assert_eq!(
         ufrx_issues, 0,
         "no ufrx failure record survives a rejected record"
