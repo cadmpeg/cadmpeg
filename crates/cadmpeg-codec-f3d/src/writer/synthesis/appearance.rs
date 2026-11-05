@@ -12,6 +12,11 @@ pub(super) fn prepare(
     native: &crate::native::F3dNative,
     losses: &mut Vec<LossNote>,
 ) {
+    for appearance in &mut target.model.appearances {
+        if appearance.visual_guid.is_none() && appearance.asset_guid.is_none() {
+            appearance.asset_guid = Some(asset_guid(appearance.id.as_str()));
+        }
+    }
     let appearances = &target.model.appearances;
     let bodies = &target.model.bodies;
     let mut entity_counts = std::collections::BTreeMap::new();
@@ -162,10 +167,6 @@ pub(super) fn prepare(
             losses.push(F3dLossCode::WriterAppearancePropertiesOmitted.note(format!(
                 "appearance {} uses GenericSchema to retain its neutral color; the physical-only shader schema is omitted", appearance.id,
             )));
-        }
-        // A generated asset identity selects layout; it supplies no content.
-        if appearance.visual_guid.is_none() && appearance.asset_guid.is_none() {
-            appearance.asset_guid = Some(asset_guid(appearance.id.as_str()));
         }
         if !bound.contains(&appearance.id) && appearance.physical_token.take().is_some() {
             losses.push(F3dLossCode::WriterAppearancePropertiesOmitted.note(format!(

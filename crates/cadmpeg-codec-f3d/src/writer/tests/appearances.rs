@@ -98,6 +98,13 @@ fn neutral_body_material_authors_design_registry() {
         visible: None,
         channels: Default::default(),
     });
+    let mut without_guid = ir.clone();
+    without_guid.model.appearances[0].asset_guid = None;
+    without_guid.model.appearances[0].visual_guid = None;
+    let (written_without_guid, _) = super::source_less_analytic::synthesize_document(&without_guid, None);
+    assert_eq!(written_without_guid.ir().model.appearance_bindings.len(), 1);
+    assert_eq!(written_without_guid.ir().model.appearances[0].physical_token.as_deref(), Some("PrismMaterial-019"));
+    assert_eq!(written_without_guid.ir().model.appearances[0].base_color, without_guid.model.appearances[0].base_color);
     let (written, report) = super::source_less_analytic::synthesize_document(&ir, None);
     assert!(written.source_fidelity().unrepresented().is_empty());
     assert_eq!(written.ir().model.appearance_bindings.len(), 1);
