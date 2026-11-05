@@ -394,7 +394,7 @@ pub(crate) fn sync_neutral_configurations(
             existing.material.clone_from(&configuration.material);
             let display_state = existing.properties.get("DisplayState").cloned();
             existing.properties.clone_from(&configuration.properties);
-            if configuration.properties.get("DisplayState").is_none() {
+            if !configuration.properties.contains_key("DisplayState") {
                 if let Some(display_state) = display_state {
                     if let Some(key) = cadmpeg_core::text::NonBlankString::new("DisplayState") {
                         existing.properties.insert(key, display_state);
