@@ -99,7 +99,12 @@ pub(crate) fn synthesize_configuration_operations(
                 ConfigurationOperation::Extrusion(_) => record
                     .input_class
                     .as_deref()
-                    .filter(|class| matches!(*class, "moExtrusion_c" | "moICE_c" | "moCut_c"))
+                    .filter(|class| {
+                        matches!(
+                            *class,
+                            "moExtrusion_c" | "moICE_c" | "moCut_c" | "moExtruRefSurface_c"
+                        )
+                    })
                     .unwrap_or("moExtrusion_c"),
                 ConfigurationOperation::Revolution(_) => "moRevolution_c",
             };
@@ -187,7 +192,10 @@ pub(crate) fn synthesize(
                             &neutral.id,
                         ))
         });
-        if matches!(class, "moExtrusion_c" | "moICE_c" | "moCut_c") {
+        if matches!(
+            class,
+            "moExtrusion_c" | "moICE_c" | "moCut_c" | "moExtruRefSurface_c"
+        ) {
             let operation = neutral.and_then(|feature| match feature.evaluation.definition() {
                 FeatureDefinition::Operation(FeatureOperation::Extrude { op, .. }) => Some(*op),
                 _ => None,

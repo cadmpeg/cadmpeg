@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Decode the auxiliary BRep-cell carrier of a `SurfaceTrim` operation.
 
+use crate::design::decode::meta::cached_owned_primary_frames;
+use crate::metastream::PrimaryFrames;
 use cadmpeg_core::container::ContainerRole;
 
 use crate::container::ContainerScan;
 use crate::design::decode::operands::parse_entity_selection_frame;
 use crate::design::decode::scopes::shared_frames::exact_indexed_header_at;
 use crate::design::decode::scopes::shared_frames::marked_record_reference;
-use crate::design::decode::sketch::{
-    cached_owned_record_offsets, indexed_record_header_at, IndexedRecordOffsets,
-};
+use crate::design::decode::sketch::indexed_record_header_at;
 use crate::design::decode::text::design_record_id;
 use crate::ids::native_stream;
 use crate::records::feature::{
@@ -31,7 +31,7 @@ use std::collections::{HashMap, HashSet};
 /// of the operation's partition.
 fn exact_surface_trim_operation(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
 ) -> Option<DesignSurfaceTrimOperation> {
     let parsed_prefix = (|| {
@@ -204,7 +204,7 @@ pub(crate) fn decode_surface_trim_operations(
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
 ) -> Result<Vec<DesignSurfaceTrimOperation>, CodecError> {
-    let mut record_offsets = HashMap::<String, IndexedRecordOffsets>::new();
+    let mut record_offsets = HashMap::<String, Vec<crate::metastream::PrimaryRecordFrame>>::new();
     let mut out = Vec::new();
     for scope in scopes.iter().filter(|scope| {
         scope.kind() == crate::records::feature::scope::DesignFeatureKind::SurfaceTrim
@@ -218,7 +218,7 @@ pub(crate) fn decode_surface_trim_operations(
         };
         let bytes = scan.entry_bytes(&entry.name)?;
         let Some(records) =
-            cached_owned_record_offsets(&mut record_offsets, stream, bytes, scan, &entry.name)?
+            cached_owned_primary_frames(&mut record_offsets, stream, bytes, scan, &entry.name)?
         else {
             continue;
         };

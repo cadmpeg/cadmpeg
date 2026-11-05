@@ -40,20 +40,6 @@ pub(crate) fn plan(
         )?;
     }
     match resolved.target() {
-        ResolvedTarget::Preserved { .. } => {
-            let synthesis = resolved.for_synthesis().map_err(|error| match error {
-                cadmpeg_ir::codec::write::EncodeError::UnsupportedTarget(refusal) => {
-                    CodecError::UnsupportedTarget(refusal)
-                }
-                error => CodecError::malformed(error.to_string()),
-            })?;
-            let version = crate::IgesVersion::ALL[synthesis.index()];
-            synthesized_body(
-                input,
-                version,
-                SynthesisCause::from_resolution(input, synthesis.resolution()),
-            )
-        }
         ResolvedTarget::Explicit { index, .. }
         | ResolvedTarget::Inherited { index, .. }
         | ResolvedTarget::Default { index, .. } => {

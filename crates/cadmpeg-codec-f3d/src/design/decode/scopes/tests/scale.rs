@@ -12,7 +12,7 @@ const EPS_SCALE_VALUE: f64 = 1.0e-12;
 fn legacy_scale_resolves_explicit_point_data_center() {
     for extra_reference in [false, true] {
         let (bytes, scope, position_at) = legacy_scale_fixture(extra_reference);
-        let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+        let records = crate::design::test_support::test_primary_frames(&bytes);
         let operation = exact_scale_operation(&bytes, &records, &scope, &HashMap::new())
             .unwrap()
             .expect("legacy Scale operation");
@@ -36,7 +36,7 @@ fn legacy_scale_resolves_explicit_point_data_center() {
 #[test]
 fn modern_localized_scale_resolves_explicit_point_data_center() {
     let (bytes, scope, position_at) = modern_scale_fixture();
-    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let records = crate::design::test_support::test_primary_frames(&bytes);
     let operation = exact_scale_operation(&bytes, &records, &scope, &HashMap::new())
         .unwrap()
         .expect("modern localized Scale operation");

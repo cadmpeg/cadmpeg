@@ -2,11 +2,12 @@
 //! Exact mirror scopes and mirror construction binding.
 
 use crate::bytes::lp_utf16_bounded;
+use crate::design::decode::meta::cached_owned_primary_frames;
+use crate::metastream::PrimaryFrames;
 
 use super::shared_frames::marked_record_reference;
 use crate::container::ContainerScan;
 use crate::design::decode::operands::parse_face_operand;
-use crate::design::decode::sketch::{cached_owned_record_offsets, IndexedRecordOffsets};
 
 use crate::design::design_feature_family;
 use crate::design::DesignFeatureFamily;
@@ -40,14 +41,15 @@ use std::collections::HashMap;
 /// Design-parameter backlink.
 fn exact_legacy_mirror_scope_count(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
 ) -> Option<(u32, u64)> {
     if (scope.class_tag.as_str(), scope.paired_class_tag.as_str()) != ("441", "267") {
         return None;
     }
     let count_record_index = *scope.reference_members().values().nth(3)?;
-    let [start, paired] = records.offsets(count_record_index) else {
+    let record_offsets = records.offsets(count_record_index);
+    let [start, paired] = record_offsets.as_slice() else {
         return None;
     };
     if paired.checked_sub(*start)? != mirror_441_count::LEN {
@@ -255,7 +257,8 @@ pub(crate) fn bind_mirror_constructions(
         let key = (stream, header.record_index);
         headers_by_record.insert(key, header);
     }
-    let mut record_offset_index: HashMap<String, IndexedRecordOffsets> = HashMap::new();
+    let mut record_offset_index: HashMap<String, Vec<crate::metastream::PrimaryRecordFrame>> =
+        HashMap::new();
     for index in 0..scopes.len() {
         if design_feature_family(&scopes[index].kind()) != Some(DesignFeatureFamily::Mirror) {
             continue;
@@ -304,7 +307,7 @@ pub(crate) fn bind_mirror_constructions(
         let Some(plane_header) = headers_by_record.get(&(stream.as_str(), *plane_member)) else {
             continue;
         };
-        let Some(records) = cached_owned_record_offsets(
+        let Some(records) = cached_owned_primary_frames(
             &mut record_offset_index,
             &stream,
             bytes,
@@ -479,7 +482,7 @@ fn borrowed_ascii_tag(bytes: &[u8], at: usize) -> Option<(&[u8], usize)> {
 
 fn compact_feature_reference(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     header: &DesignRecordHeader,
 ) -> Option<(u32, u64)> {
     let header_offset = header.byte_offset?;
