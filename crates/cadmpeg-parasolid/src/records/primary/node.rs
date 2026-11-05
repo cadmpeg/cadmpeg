@@ -126,15 +126,22 @@ impl<'r> Node<'r> {
     /// A view over the named variable field when it holds `data_type`, and
     /// its element count.
     fn variable(&self, name: &str, data_type: DataType) -> Option<(View<'r>, usize)> {
+        let count = usize::try_from(self.record.variable_length?).ok()?;
+        let range = self.variable_range(name, data_type)?;
+        Some((View::over_retained(self.source.get(range)?), count))
+    }
+
+    /// The byte range of the named field when it is a transmitted variable
+    /// field of `data_type`.
+    #[must_use]
+    pub fn variable_range(&self, name: &str, data_type: DataType) -> Option<Range<usize>> {
         let fields = &self.record.definition.fields;
         let index = fields
             .iter()
             .position(|field| field.name.as_str() == name)?;
         let field = fields.get(index)?;
         (field.data_type == data_type && field.n_elements == 1 && field.transmit).then_some(())?;
-        let count = usize::try_from(self.record.variable_length?).ok()?;
-        let range = self.record.fields.get(index)?.clone();
-        Some((View::over_retained(self.source.get(range)?), count))
+        self.record.fields.get(index).cloned()
     }
 
     /// A view over the named field when it is a fixed array of `N` elements

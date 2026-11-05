@@ -255,6 +255,32 @@ fn variable_fields_read_their_counted_elements() {
     });
 }
 
+#[test]
+fn a_variable_range_requires_the_declared_type() {
+    let mut bytes = header();
+    let start = bytes.len();
+    bytes.extend(knot_set(3, &[0.0, 0.5]));
+    let end = bytes.len();
+    bytes.extend_from_slice(&[0, 1, 0, 1]);
+    with_decode_context(|_ctx| {
+        let records = PrimaryRecords::read(&bytes).unwrap().unwrap();
+        let node = records.nodes().next().unwrap();
+        assert_eq!(
+            node.variable_range("knots", crate::records::DataType::Real),
+            Some(end - 16..end)
+        );
+        assert_eq!(node.range(), start..end);
+        assert_eq!(
+            node.variable_range("knots", crate::records::DataType::Integer),
+            None
+        );
+        assert_eq!(
+            node.variable_range("absent", crate::records::DataType::Real),
+            None
+        );
+    });
+}
+
 /// A base-schema `BLEND_SURF` (56) whose `surface` array holds `surfaces`.
 fn blend_surf(index: u16, surfaces: [u16; 2]) -> Vec<u8> {
     let mut bytes = vec![0, 56, 255];
