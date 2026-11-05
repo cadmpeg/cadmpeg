@@ -384,7 +384,10 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 )));
             }
             if existing.is_none()
-                && (body_selection_value(target).is_none() || body_selection_value(tools).is_none())
+                && ((body_selection_value(target).is_none()
+                    && !matches!(target, BodySelection::Unresolved))
+                    || (body_selection_value(tools).is_none()
+                        && !matches!(tools, BodySelection::Unresolved)))
             {
                 return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} has unresolved combine semantics",
@@ -420,21 +423,23 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let existing = self.existing;
         Ok({
             require_same_family(existing, &feature.id, &["CutWithSurface", "SurfaceCut"])?;
-            let targets = body_selection_value(targets).ok_or_else(|| {
-                CodecError::UnsupportedContent(format!(
-                    "SLDPRT feature {} has no surface-cut target bodies",
+            let target_value = body_selection_value(targets);
+            let tool_value = face_selection_value(tools);
+            if (target_value.is_none() && !matches!(targets, BodySelection::Unresolved))
+                || (tool_value.is_none() && !matches!(tools, FaceSelection::Unresolved))
+            {
+                return Err(CodecError::UnsupportedContent(format!(
+                    "SLDPRT feature {} has unsupported surface-cut selections",
                     feature.id
-                ))
-            })?;
-            let tools = face_selection_value(tools).ok_or_else(|| {
-                CodecError::UnsupportedContent(format!(
-                    "SLDPRT feature {} has no surface-cut tools",
-                    feature.id
-                ))
-            })?;
+                )));
+            }
             let mut properties = self.base_properties();
-            properties.insert(cadmpeg_core::nonblank_literal!("Targets"), targets);
-            properties.insert(cadmpeg_core::nonblank_literal!("Tools"), tools);
+            if let Some(targets) = target_value {
+                properties.insert(cadmpeg_core::nonblank_literal!("Targets"), targets);
+            }
+            if let Some(tools) = tool_value {
+                properties.insert(cadmpeg_core::nonblank_literal!("Tools"), tools);
+            }
             if let Some(reverse) = reverse {
                 properties.insert(
                     cadmpeg_core::nonblank_literal!("Reverse"),
