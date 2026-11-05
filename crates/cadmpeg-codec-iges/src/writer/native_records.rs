@@ -273,6 +273,11 @@ fn text(value: Option<&Value>) -> Result<String, String> {
         return Ok(String::new());
     };
     let bytes = crate::text::field(value)?;
+    if bytes.is_empty() {
+        return Err(
+            "an explicit empty string has no Parameter Data Hollerith representation".into(),
+        );
+    }
     if !bytes
         .iter()
         .all(|byte| byte.is_ascii_graphic() || *byte == b' ')

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Adapt finite straight parameter curves to the IGES B-rep representation.
+//! Adapt parameter curves and provable isoparametric uses to IGES B-rep.
 
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
@@ -13,23 +13,46 @@ use cadmpeg_ir::CadIr;
 
 pub(super) fn admit(ir: &CadIr) -> (Cow<'_, CadIr>, Vec<LossNote>) {
     let mut used = BTreeSet::new();
+    let mut unknown_flags = BTreeSet::new();
+    let mut record_uses = |uses: &[PcurveUse]| {
+        for item in uses {
+            used.insert(item.pcurve.clone());
+            if item.isoparametric.is_none() {
+                unknown_flags.insert(item.pcurve.clone());
+            }
+        }
+    };
     for coedge in &ir.model.coedges {
-        used.extend(coedge.pcurves.iter().map(|item| item.pcurve.clone()));
+        record_uses(&coedge.pcurves);
     }
     for boundary in ir.model.loops.iter().map(|item| &item.boundary) {
         match boundary {
             LoopBoundary::Vertex { pcurves, .. } => {
-                used.extend(pcurves.iter().map(|item| item.pcurve.clone()));
+                record_uses(pcurves);
             }
             LoopBoundary::Ring(ring) => {
                 for vertex in ring.vertex_uses() {
-                    used.extend(vertex.pcurves.iter().map(|item| item.pcurve.clone()));
+                    record_uses(&vertex.pcurves);
                 }
             }
         }
     }
     let mut replacements = BTreeMap::new();
+    let mut flags = BTreeMap::new();
     for curve in &ir.model.pcurves {
+        if unknown_flags.contains(&curve.id) {
+            if let PcurveGeometry::Nurbs { nurbs } = &curve.geometry {
+                let points = nurbs.control_points();
+                if let Some(first) = points.first() {
+                    let first = first.get();
+                    if points.iter().all(|point| point.get().u == first.u)
+                        || points.iter().all(|point| point.get().v == first.v)
+                    {
+                        flags.insert(curve.id.clone(), true);
+                    }
+                }
+            }
+        }
         let PcurveGeometry::Line(line) = &curve.geometry else {
             continue;
         };
@@ -56,18 +79,16 @@ pub(super) fn admit(ir: &CadIr) -> (Cow<'_, CadIr>, Vec<LossNote>) {
         ) else {
             continue;
         };
-        replacements.insert(
-            curve.id.clone(),
-            (nurbs, direction.u == 0.0 || direction.v == 0.0),
-        );
+        flags.insert(curve.id.clone(), direction.u == 0.0 || direction.v == 0.0);
+        replacements.insert(curve.id.clone(), nurbs);
     }
-    if replacements.is_empty() {
+    if replacements.is_empty() && flags.is_empty() {
         return (Cow::Borrowed(ir), Vec::new());
     }
     let mut document = ir.clone();
     let mut losses = Vec::new();
     for curve in &mut document.model.pcurves {
-        if let Some((nurbs, _)) = replacements.get(&curve.id) {
+        if let Some(nurbs) = replacements.get(&curve.id) {
             curve.geometry = PcurveGeometry::Nurbs {
                 nurbs: nurbs.clone(),
             };
@@ -83,9 +104,9 @@ pub(super) fn admit(ir: &CadIr) -> (Cow<'_, CadIr>, Vec<LossNote>) {
     let mut adapt = |owner: &str, uses: &mut [PcurveUse]| {
         for item in uses {
             if item.isoparametric.is_none() {
-                if let Some((_, isoparametric)) = replacements.get(&item.pcurve) {
+                if let Some(isoparametric) = flags.get(&item.pcurve) {
                     item.isoparametric = Some(*isoparametric);
-                    losses.push(ExportLossCode::RecordResidualUnavailable.note(format!("IGES {owner} pcurve {} requires an isoparametric flag; its line determines {isoparametric}", item.pcurve)));
+                    losses.push(ExportLossCode::RecordResidualUnavailable.note(format!("IGES {owner} pcurve {} requires an isoparametric flag; its geometry determines {isoparametric}", item.pcurve)));
                 }
             }
         }
