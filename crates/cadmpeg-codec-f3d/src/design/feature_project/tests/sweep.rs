@@ -72,6 +72,50 @@ fn sweep_with_body_group_is_not_projected() {
     );
 }
 
+#[test]
+fn boolean_sweep_takes_one_body_group_of_either_role() {
+    let (mut scope, [profile, path]) = sweep_input();
+    let set_operation = |scope: &mut crate::records::feature::scope::DesignParameterScope,
+                         operation: DesignExtrudeOperation| {
+        if let crate::records::feature::scope::DesignScopePayloadMut::Sweep(Some(sweep)) =
+            scope.payload_mut()
+        {
+            sweep.construction.as_mut().unwrap().operation = operation;
+        }
+    };
+    set_operation(&mut scope, DesignExtrudeOperation::Cut);
+    let body = |record_index: u32, ordinal: u32, role: DesignOperandRole| {
+        let mut body = profile_group(record_index, ordinal);
+        body.operand_role = DesignConstructionOperandRole::Other(role);
+        body
+    };
+    let projected = |scope: &crate::records::feature::scope::DesignParameterScope,
+                     groups: &[crate::records::topology::construction::DesignConstructionOperandGroup]| {
+        crate::test_support::with_decode_context(|decode_ctx| project(decode_ctx, scope, groups))
+            .unwrap()
+    };
+    for role in [DesignOperandRole::BODIES_A, DesignOperandRole::BODIES_B] {
+        let groups = [profile.clone(), path.clone(), body(102, 2, role)];
+        assert!(
+            matches!(
+                projected(&scope, &groups),
+                Some(FeatureDefinition::Operation(FeatureOperation::Sweep { .. }))
+            ),
+            "{role:?}"
+        );
+    }
+    let two_bodies = [
+        profile.clone(),
+        path.clone(),
+        body(102, 2, DesignOperandRole::BODIES_A),
+        body(103, 3, DesignOperandRole::BODIES_B),
+    ];
+    assert!(projected(&scope, &two_bodies).is_none());
+    set_operation(&mut scope, DesignExtrudeOperation::NewBody);
+    let groups = [profile, path, body(102, 2, DesignOperandRole::BODIES_B)];
+    assert!(projected(&scope, &groups).is_none());
+}
+
 fn guide_surface_input() -> (
     crate::records::feature::scope::DesignParameterScope,
     Vec<crate::records::topology::construction::DesignConstructionOperandGroup>,
