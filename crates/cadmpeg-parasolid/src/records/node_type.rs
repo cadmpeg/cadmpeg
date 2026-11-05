@@ -19,6 +19,12 @@ pub const VERTEX: u16 = 18;
 pub const REGION: u16 = 19;
 /// A point, `POINT`.
 pub const POINT: u16 = 29;
+/// A straight line, `LINE`.
+pub const LINE: u16 = 30;
+/// A circle, `CIRCLE`.
+pub const CIRCLE: u16 = 31;
+/// An ellipse, `ELLIPSE`.
+pub const ELLIPSE: u16 = 32;
 /// A curve of intersection of two surfaces, `INTERSECTION`.
 pub const INTERSECTION: u16 = 38;
 /// The solved point chart of an intersection curve, `CHART`.
@@ -27,6 +33,16 @@ pub const CHART: u16 = 40;
 pub const LIMIT: u16 = 41;
 /// The control-point values of a B-spline, `BSPLINE_VERTICES`.
 pub const BSPLINE_VERTICES: u16 = 45;
+/// A plane, `PLANE`.
+pub const PLANE: u16 = 50;
+/// A circular cylinder, `CYLINDER`.
+pub const CYLINDER: u16 = 51;
+/// A circular cone, `CONE`.
+pub const CONE: u16 = 52;
+/// A sphere, `SPHERE`.
+pub const SPHERE: u16 = 53;
+/// A torus, `TORUS`.
+pub const TORUS: u16 = 54;
 /// A rolling-ball blend surface, `BLEND_SURF`.
 pub const BLEND_SURF: u16 = 56;
 /// One boundary of a blend surface, `BLEND_BOUND`.

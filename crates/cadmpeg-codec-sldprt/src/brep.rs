@@ -20,17 +20,8 @@ use self::index::scan_carriers;
 use self::spline::patch_nurbs_curve;
 
 use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_ir::features::FinitePoint3;
-use cadmpeg_ir::geometry::analytic::{
-    CircleCurve, ConeSurface, CylinderSurface, EllipseCurve, LineCurve, PlaneSurface,
-    SphereSurface, TorusSurface,
-};
-use cadmpeg_ir::geometry::{
-    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
-};
-use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::scalar::{Angle, NonNegativeLength, NonZeroLength, PositiveLength, PositiveReal};
-use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
+use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry, SurfaceGeometry};
+use cadmpeg_ir::math::Vector3;
 
 use crate::layout::compact_analytic_header as analytic;
 
@@ -98,24 +89,8 @@ pub(crate) struct PersistentFaceIdentity {
     pub(crate) trailing_fields: Vec<u32>,
 }
 
-fn scale_point(v: &[f64]) -> Point3 {
-    Point3::new(v[0] * LEN_TO_MM, v[1] * LEN_TO_MM, v[2] * LEN_TO_MM)
-}
-
 fn norm3(v: &[f64]) -> f64 {
     Vector3::from([v[0], v[1], v[2]]).norm()
-}
-
-/// The unit direction of a stored vector, absent when the vector is not
-/// finite or its length is within `f64::EPSILON` of zero.
-fn direction(v: &[f64]) -> Option<UnitVector3> {
-    UnitVector3::normalized(Vector3::from([v[0], v[1], v[2]]))
-}
-
-/// The frame of two stored directions, absent when either direction is
-/// degenerate or the two are not perpendicular.
-fn frame(axis: &[f64], reference: &[f64]) -> Option<OrthonormalFrame3> {
-    OrthonormalFrame3::from_units(direction(axis)?, direction(reference)?)
 }
 
 // ---- compact analytic carriers ([spec §8.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/sldprt.md#71-compact-analytic-records)) -----------------------------------
@@ -193,9 +168,10 @@ fn valid_carrier_scalars(tt: u8, values: &[f64]) -> bool {
         tag::CYLINDER => values[6] > 0.0,
         tag::CONE => {
             values[6] >= 0.0
-                && values[7] > f64::EPSILON
-                && values[7] < 1.0
-                && values[8] > 0.0
+                && values[7] != 0.0
+                && values[8] != 0.0
+                && values[7].abs() < 1.0
+                && values[8].abs() < 1.0
                 && (values[7] * values[7] + values[8] * values[8] - 1.0).abs()
                     <= EPS_BREP_VALID_CARRIER_SCALARS_E9
         }
@@ -402,8 +378,8 @@ pub(super) fn parse_carrier_for_role(body: &[u8], off: usize, deltas: bool) -> O
         .then_some(carrier)
 }
 
-/// Map a tag's decoded f64 run to IR geometry, applying the ×1000 length rule to
-/// coordinates and radii only.
+/// Map a tag's decoded f64 run to IR geometry through the shared analytic
+/// decoder, which applies the ×1000 length rule to coordinates and radii.
 fn decode_carrier_values(
     tt: u8,
     v: &[f64],
@@ -411,96 +387,29 @@ fn decode_carrier_values(
     (offset, end): (usize, usize),
     reversed: Option<bool>,
 ) -> Option<Carrier> {
-    let curve = |geometry| {
-        Carrier::Curve(CurveCarrier {
+    match cadmpeg_parasolid::geometry::analytic(u16::from(tt), v)? {
+        cadmpeg_parasolid::geometry::Analytic::Curve(geometry) => {
+            Some(Carrier::Curve(CurveCarrier {
+                attr,
+                offset,
+                end,
+                geometry,
+                parameter_range: None,
+                marker_reversed: reversed,
+            }))
+        }
+        cadmpeg_parasolid::geometry::Analytic::Surface {
+            geometry,
+            negative_major,
+        } => Some(Carrier::Surface(SurfaceCarrier {
             attr,
             offset,
             end,
             geometry,
-            parameter_range: None,
-            marker_reversed: reversed,
-        })
-    };
-    let surface = |geometry| {
-        Carrier::Surface(SurfaceCarrier {
-            attr,
-            offset,
-            end,
-            geometry,
-            orientation_reversed: tt == tag::TORUS && v[6].is_sign_negative(),
+            orientation_reversed: negative_major,
             marker_reversed: reversed == Some(true),
-        })
-    };
-    let g = match tt {
-        tag::LINE => curve(CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            LineCurve::new(
-                FinitePoint3::new(scale_point(&v[0..3]))?,
-                direction(&v[3..6])?,
-            ),
-        ))),
-        tag::CIRCLE => curve(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-            CircleCurve::new(
-                FinitePoint3::new(scale_point(&v[0..3]))?,
-                frame(&v[3..6], &v[6..9])?,
-                PositiveLength::new(v[9] * LEN_TO_MM)?,
-            ),
-        ))),
-        tag::ELLIPSE => curve(CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
-            EllipseCurve::try_from_parts(
-                FinitePoint3::new(scale_point(&v[0..3]))?,
-                frame(&v[3..6], &v[6..9])?,
-                PositiveLength::new(v[9] * LEN_TO_MM)?,
-                PositiveLength::new(v[10] * LEN_TO_MM)?,
-            )
-            .ok()?,
-        ))),
-        tag::PLANE => surface(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-            PlaneSurface::new(
-                FinitePoint3::new(scale_point(&v[0..3]))?,
-                frame(&v[3..6], &v[6..9])?,
-            ),
-        ))),
-        tag::CYLINDER => surface(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-            CylinderSurface::new(
-                FinitePoint3::new(scale_point(&v[0..3]))?,
-                frame(&v[3..6], &v[7..10])?,
-                PositiveLength::new(v[6] * LEN_TO_MM)?,
-            ),
-        ))),
-        tag::CONE => {
-            // origin(3) axis(3) radius sin cos refdir(3). Admission requires
-            // a positive sine below one and a positive cosine.
-            let half_angle = v[7].asin();
-            return Some(surface(SurfaceGeometry::Solved(
-                SolvedSurfaceGeometry::Cone(ConeSurface::new(
-                    FinitePoint3::new(scale_point(&v[0..3]))?,
-                    frame(&v[3..6], &v[9..12])?,
-                    NonNegativeLength::new(v[6] * LEN_TO_MM)?,
-                    PositiveReal::ONE,
-                    Angle::new(half_angle)?,
-                )),
-            )));
-        }
-        tag::SPHERE => surface(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-            SphereSurface::new(
-                FinitePoint3::new(scale_point(&v[0..3]))?,
-                frame(&v[4..7], &v[7..10])?,
-                NonZeroLength::new(v[3] * LEN_TO_MM)?,
-            ),
-        ))),
-        tag::TORUS => {
-            return Some(surface(SurfaceGeometry::Solved(
-                SolvedSurfaceGeometry::Torus(TorusSurface::new(
-                    FinitePoint3::new(scale_point(&v[0..3]))?,
-                    frame(&v[3..6], &v[8..11])?,
-                    PositiveLength::new(v[6].abs() * LEN_TO_MM)?,
-                    NonZeroLength::new(v[7] * LEN_TO_MM)?,
-                )),
-            )));
-        }
-        _ => return None,
-    };
-    Some(g)
+        })),
+    }
 }
 
 /// Return the typed curve carried by one stream-local attribute.
@@ -976,9 +885,7 @@ mod tests {
         }
     }
 
-    /// A stored cone sine outside the unit interval is not a CONE record: the
-    /// unit identity in `valid_carrier_scalars` refuses it, so it never reaches
-    /// `asin`.
+    /// A stored cone sine outside the unit interval is not a CONE record.
     #[test]
     fn a_cone_sine_outside_the_unit_interval_is_not_a_cone_record() {
         let bytes = compact_carrier(
@@ -990,9 +897,8 @@ mod tests {
         assert!(parse_carrier(&bytes, 0).is_none());
     }
 
-    /// A stored cone sine inside the unit interval is its own arcsine.
     #[test]
-    fn a_cone_sine_inside_the_unit_interval_is_its_own_arcsine() {
+    fn a_cone_half_angle_comes_from_its_sine_and_cosine() {
         let bytes = compact_carrier(
             tag::CONE,
             8,
@@ -1006,7 +912,7 @@ mod tests {
             panic!("expected cone");
         };
 
-        assert_eq!(cone_surface.half_angle().get(), 0.6_f64.asin());
+        assert!((cone_surface.half_angle().get() - 0.6_f64.atan2(0.8)).abs() <= f64::EPSILON);
     }
 
     #[test]
@@ -1023,7 +929,7 @@ mod tests {
     }
 
     #[test]
-    fn a_negative_cone_sine_is_refused_without_changing_its_chart() {
+    fn a_negative_cone_sine_gives_a_negative_half_angle() {
         let root_half = std::f64::consts::FRAC_1_SQRT_2;
         let bytes = compact_carrier(
             tag::CONE,
@@ -1032,7 +938,15 @@ mod tests {
                 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.001, -root_half, root_half, 1.0, 0.0, 0.0,
             ],
         );
-        assert!(parse_carrier(&bytes, 0).is_none());
+        let Carrier::Surface(carrier) = parse_carrier(&bytes, 0).expect("cone carrier") else {
+            panic!("expected surface carrier");
+        };
+        let Some(SolvedSurfaceGeometry::Cone(cone_surface)) = carrier.geometry.solved() else {
+            panic!("expected cone");
+        };
+        assert!(
+            (cone_surface.half_angle().get() + std::f64::consts::FRAC_PI_4).abs() <= f64::EPSILON
+        );
     }
 
     #[test]

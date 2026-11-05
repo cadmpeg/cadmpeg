@@ -15,25 +15,15 @@
 use crate::framing::node_kind::NodeKind;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::features::FinitePoint3;
-use cadmpeg_ir::geometry::analytic::{
-    CircleCurve, ConeSurface, CylinderSurface, EllipseCurve, LineCurve, PlaneSurface,
-    SphereSurface, TorusSurface,
-};
-use cadmpeg_ir::geometry::{
-    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
-};
-use cadmpeg_ir::math::{Point3, Vector3};
-use cadmpeg_ir::scalar::{
-    Angle, FiniteReal, Magnification, NonNegativeLength, PositiveLength, PositiveReal,
-};
-use cadmpeg_ir::units::{OrthonormalFrame3, UnitVector3};
+use cadmpeg_ir::geometry::{CurveGeometry, SurfaceGeometry};
+use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::scalar::Magnification;
 
 use crate::framing::{
     fixed_record_boundary, fixed_record_candidates, skip_sequence_at, FixedRecordFrame,
 };
 use crate::vec3_at::vec3_be_at;
-
-const EPS_GEOMETRY_CONE_E6: f64 = 1.0e-6;
+use cadmpeg_parasolid::geometry::Analytic;
 
 /// The analytic surface type tags and their fixed record lengths ([spec §4.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/siemens_nx.md#41-fixed-record-families)).
 enum AnalyticRecord {
@@ -182,20 +172,28 @@ fn select_analytic_candidate(
     }
 }
 
+fn analytic(record: &[u8], kind: NodeKind, shift: usize) -> Option<Analytic> {
+    let code = u16::from(kind.code());
+    let count = cadmpeg_parasolid::geometry::value_count(code)?;
+    let mut values = [0.0; 12];
+    for (index, value) in values.iter_mut().take(count).enumerate() {
+        *value = View::f64_be_at(record, shift + 19 + index * 8)?;
+    }
+    cadmpeg_parasolid::geometry::analytic(code, values.get(..count)?)
+}
+
 /// Decode a graph-owned analytic surface at its resolved payload shift.
 pub(crate) fn decode_surface_record(
     record: &[u8],
     kind: NodeKind,
     shift: usize,
 ) -> Option<SurfaceGeometry> {
-    let b = shift;
-    match kind {
-        NodeKind::Plane => plane(record, b),
-        NodeKind::Cylinder => cylinder(record, b),
-        NodeKind::Cone => cone(record, b),
-        NodeKind::Sphere => sphere(record, b),
-        NodeKind::Torus => torus(record, b),
-        _ => None,
+    match analytic(record, kind, shift)? {
+        Analytic::Surface {
+            geometry,
+            negative_major: false,
+        } => Some(geometry),
+        Analytic::Surface { .. } | Analytic::Curve(_) => None,
     }
 }
 
@@ -205,154 +203,15 @@ pub(crate) fn decode_curve_record(
     kind: NodeKind,
     shift: usize,
 ) -> Option<CurveGeometry> {
-    let b = shift;
-    match kind {
-        NodeKind::Line => line(record, b),
-        NodeKind::Circle => circle(record, b),
-        NodeKind::Ellipse => ellipse(record, b),
-        _ => None,
+    match analytic(record, kind, shift)? {
+        Analytic::Curve(geometry) => Some(geometry),
+        Analytic::Surface { .. } => None,
     }
-}
-
-// --- Surface decoders (offsets from the common header, [§5.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/siemens_nx.md#51-ownership-graph) / [§6.1](https://github.com/cadmpeg/cadmpeg/blob/main/docs/formats/siemens_nx.md#61-analytic-curves-and-surfaces)) ---
-
-fn plane(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
-    let origin = vec3_be_at(s, b + 19)?;
-    let normal = vec3_be_at(s, b + 43)?;
-    let x_axis = vec3_be_at(s, b + 67)?;
-    let frame = frame(normal, x_axis)?;
-    Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
-        PlaneSurface::new(mm_position(origin)?, frame),
-    )))
-}
-
-fn cylinder(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
-    let origin = vec3_be_at(s, b + 19)?;
-    let axis = vec3_be_at(s, b + 43)?;
-    let radius = View::f64_be_at(s, b + 67)?;
-    let x_axis = vec3_be_at(s, b + 75)?;
-    let frame = frame(axis, x_axis)?;
-    Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
-        CylinderSurface::new(mm_position(origin)?, frame, mm_radius(radius)?),
-    )))
-}
-
-fn cone(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
-    let origin = vec3_be_at(s, b + 19)?;
-    let axis = vec3_be_at(s, b + 43)?;
-    let radius = View::f64_be_at(s, b + 67)?;
-    let sin_half = View::f64_be_at(s, b + 75)?;
-    let cos_half = View::f64_be_at(s, b + 83)?;
-    let x_axis = vec3_be_at(s, b + 91)?;
-    let frame = frame(axis, x_axis)?;
-    let origin = mm_position(origin)?;
-    let radius = NonNegativeLength::new(radius * MILLIMETRES_PER_METRE)?;
-    // The cone's half-angle is carried as its sine/cosine; the identity gate
-    // rejects a coincidental offset that does not hold a real (sin, cos) pair.
-    let (Some(sin_half), Some(cos_half)) = (FiniteReal::new(sin_half), FiniteReal::new(cos_half))
-    else {
-        return None;
-    };
-    let (sine, cosine) = (sin_half.get(), cos_half.get());
-    if sine == 0.0
-        || cosine == 0.0
-        || (sine * sine + cosine * cosine - 1.0).abs() > EPS_GEOMETRY_CONE_E6
-    {
-        return None;
-    }
-    Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
-        ConeSurface::new(
-            origin,
-            frame,
-            radius,
-            PositiveReal::ONE,
-            Angle::from_assigned_real(sin_half.atan2(cos_half)),
-        ),
-    )))
-}
-
-fn sphere(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
-    let center = vec3_be_at(s, b + 19)?;
-    let radius = View::f64_be_at(s, b + 43)?;
-    let axis = vec3_be_at(s, b + 51)?;
-    let x_axis = vec3_be_at(s, b + 75)?;
-    let frame = frame(axis, x_axis)?;
-    Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
-        SphereSurface::new(mm_position(center)?, frame, mm_radius(radius)?.into()),
-    )))
-}
-
-fn torus(s: &[u8], b: usize) -> Option<SurfaceGeometry> {
-    let center = vec3_be_at(s, b + 19)?;
-    let axis = vec3_be_at(s, b + 43)?;
-    let major = View::f64_be_at(s, b + 67)?;
-    let minor = View::f64_be_at(s, b + 75)?;
-    let x_axis = vec3_be_at(s, b + 83)?;
-    // A horn torus (major == minor) is valid; both radii must be positive and
-    // finite. A zero major radius is degenerate and rejected.
-    let frame = frame(axis, x_axis)?;
-    Some(SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
-        TorusSurface::new(
-            mm_position(center)?,
-            frame,
-            mm_radius(major)?,
-            mm_radius(minor)?.into(),
-        ),
-    )))
-}
-
-// --- Curve decoders ---
-
-fn line(s: &[u8], b: usize) -> Option<CurveGeometry> {
-    let origin = vec3_be_at(s, b + 19)?;
-    let direction = vec3_be_at(s, b + 43)?;
-    let direction = UnitVector3::new(vec3(direction))?;
-    Some(CurveGeometry::Solved(SolvedCurveGeometry::Line(
-        LineCurve::new(mm_position(origin)?, direction),
-    )))
-}
-
-fn circle(s: &[u8], b: usize) -> Option<CurveGeometry> {
-    let center = vec3_be_at(s, b + 19)?;
-    let normal = vec3_be_at(s, b + 43)?;
-    let x_axis = vec3_be_at(s, b + 67)?;
-    let radius = View::f64_be_at(s, b + 91)?;
-    let frame = frame(normal, x_axis)?;
-    Some(CurveGeometry::Solved(SolvedCurveGeometry::Circle(
-        CircleCurve::new(mm_position(center)?, frame, mm_radius(radius)?),
-    )))
-}
-
-fn ellipse(s: &[u8], b: usize) -> Option<CurveGeometry> {
-    let center = vec3_be_at(s, b + 19)?;
-    let normal = vec3_be_at(s, b + 43)?;
-    let x_axis = vec3_be_at(s, b + 67)?;
-    let major = View::f64_be_at(s, b + 91)?;
-    let minor = View::f64_be_at(s, b + 99)?;
-    let frame = frame(normal, x_axis)?;
-    let center = mm_position(center)?;
-    // The order is read from the metre radii. Scaling can round a minor
-    // radius above the major one onto it, which the millimetre order admits.
-    Some(CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(
-        EllipseCurve::from_source_radii(
-            center,
-            frame,
-            [major, minor],
-            PositiveReal::from(Magnification::MILLIMETERS_PER_METER),
-        )?,
-    )))
 }
 
 // --- Primitives and gates ---
 
 const MILLIMETRES_PER_METRE: f64 = Magnification::MILLIMETERS_PER_METER.get();
-
-/// Admit the serialized analytic axis/reference frame. The admission refuses
-/// every non-finite component, since a non-finite component has no norm
-/// within the unit tolerance.
-fn frame(axis: [f64; 3], reference: [f64; 3]) -> Option<OrthonormalFrame3> {
-    OrthonormalFrame3::new(vec3(axis), vec3(reference))
-}
 
 /// Admit a metre position in millimetres. A scaled coordinate is finite only
 /// when the metre coordinate is, so the one admission states both.
@@ -362,17 +221,6 @@ fn mm_position(v: [f64; 3]) -> Option<FinitePoint3> {
         v[1] * MILLIMETRES_PER_METRE,
         v[2] * MILLIMETRES_PER_METRE,
     ))
-}
-
-/// Admit a positive metre radius in millimetres. Scaling a finite value by a
-/// thousand keeps its sign and cannot reach zero, so the one admission states
-/// the metre and millimetre conditions.
-fn mm_radius(radius: f64) -> Option<PositiveLength> {
-    PositiveLength::new(radius * MILLIMETRES_PER_METRE)
-}
-
-fn vec3(v: [f64; 3]) -> Vector3 {
-    Vector3::new(v[0], v[1], v[2])
 }
 
 #[cfg(test)]

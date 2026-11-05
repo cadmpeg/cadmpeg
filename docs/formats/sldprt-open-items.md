@@ -136,6 +136,14 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Conflict.** The specification's stated offsets and the decoder's read offsets disagree, and no open item tracked the native truth.
 
+### GC-49. Signs of the cone half-angle fields
+
+**Question.** Can a cone store a negative `sin` or `cos` half-angle field, and what surface does it then describe?
+
+**Known.** `sldprt.md` §7.1 "The line direction is unit length." gives the cone identity `sin² + cos² = 1` and the half-angle `atan2(sin, cos)`. `siemens_nx.md` §6.1 admits finite nonzero fields of either sign. The decoder admits either sign and gives a signed half-angle.
+
+**Need.** We must know whether a signed half-angle is a valid cone or a different surface before a negative field can transfer as exact geometry.
+
 ## 3. Container metadata
 
 ### CM-01. Cache-cell prefix

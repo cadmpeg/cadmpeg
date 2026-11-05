@@ -394,3 +394,21 @@ fn cone_preserves_serialized_signed_radial_slope() {
         assert_eq!(cone.radius().get(), 1000.0);
     }
 }
+
+#[test]
+fn a_torus_with_a_negative_major_radius_has_no_nx_surface() {
+    let mut bytes = record(0x36, 107);
+    put_ref(&mut bytes, 2, 2);
+    bytes[18] = b'+';
+    put_vec3(&mut bytes, 19, [0.0, 0.0, 0.0]);
+    put_vec3(&mut bytes, 43, [0.0, 0.0, 1.0]);
+    put_f64(&mut bytes, 75, 0.003);
+    put_vec3(&mut bytes, 83, [1.0, 0.0, 0.0]);
+    put_f64(&mut bytes, 67, 0.002);
+    assert!(matches!(
+        analytic_surfaces(&bytes).as_slice(),
+        [SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(_))]
+    ));
+    put_f64(&mut bytes, 67, -0.002);
+    assert!(analytic_surfaces(&bytes).is_empty());
+}
