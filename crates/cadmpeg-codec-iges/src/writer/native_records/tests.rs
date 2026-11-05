@@ -1419,3 +1419,181 @@ fn rectangular_do_mask_keeps_its_current_grid_positions() {
         .iter()
         .any(|feature| feature.name.as_deref() == Some("RECT")));
 }
+
+#[test]
+fn edited_circular_pattern_count_reaches_output() {
+    use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use cadmpeg_ir::features::patterns::{PatternKind, PatternTransform};
+    use cadmpeg_ir::features::{Dimension, FeatureDefinition, FeatureOperation};
+    use std::io::Cursor;
+    let entities = [
+        (116, "BASE", "116,0,0,0,0;"),
+        (414, "CIRCLE", "414,1,4,0,0,0,5,0,1.0,0,0;"),
+    ]
+    .into_iter()
+    .map(|(entity_type, label, parameters)| OwnedTestEntity {
+        entity_type,
+        form: 0,
+        label: label.into(),
+        status: "00000000",
+        parameters: parameters.into(),
+    })
+    .collect::<Vec<_>>();
+    let decoded = crate::IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&entities)),
+            &DecodeOptions::default(),
+        )
+        .expect("circular array decodes");
+    let mut ir = decoded.ir().clone();
+    let feature = ir
+        .model
+        .features
+        .iter_mut()
+        .find(|feature| feature.name.as_deref() == Some("CIRCLE"))
+        .expect("circular feature");
+    let mut definition = feature.evaluation.definition().clone();
+    let FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) = &mut definition
+    else {
+        panic!("pattern")
+    };
+    let mut transform = pattern.definition().clone();
+    let PatternTransform::Circular { count, .. } = &mut transform else {
+        panic!("circular pattern")
+    };
+    *count = Dimension::Literal(5);
+    *pattern = PatternKind::new(transform).expect("edited pattern remains valid");
+    feature.evaluation.set_definition(definition);
+    let output =
+        super::super::synthesize(&ir, crate::IgesVersion::V5_3).expect("edited circle synthesizes");
+    let after = crate::IgesCodec
+        .decode(&mut Cursor::new(output.bytes), &DecodeOptions::default())
+        .expect("circle re-decodes");
+    let feature = after
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("CIRCLE"))
+        .expect("written circular feature");
+    let FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) =
+        feature.evaluation.definition()
+    else {
+        panic!("written pattern")
+    };
+    let PatternTransform::Circular { count, .. } = pattern.definition() else {
+        panic!("written circular pattern")
+    };
+    assert_eq!(*count, Dimension::Literal(5));
+}
+
+#[test]
+fn circular_explicit_angles_keep_their_iges_mask() {
+    use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use std::io::Cursor;
+    let entities = [
+        (116, "BASE", "116,0,0,0,0;"),
+        (414, "PARTIAL", "414,1,4,0,0,0,5,0,1.0,2,1,2,4;"),
+    ]
+    .into_iter()
+    .map(|(entity_type, label, parameters)| OwnedTestEntity {
+        entity_type,
+        form: 0,
+        label: label.into(),
+        status: "00000000",
+        parameters: parameters.into(),
+    })
+    .collect::<Vec<_>>();
+    let decoded = crate::IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&entities)),
+            &DecodeOptions::default(),
+        )
+        .expect("partial circular array decodes");
+    assert!(decoded
+        .ir()
+        .model
+        .features
+        .iter()
+        .any(|feature| feature.name.as_deref() == Some("PARTIAL")));
+    let output = super::super::synthesize(decoded.ir(), crate::IgesVersion::V5_3)
+        .expect("partial circle synthesizes");
+    let after = crate::IgesCodec
+        .decode(&mut Cursor::new(output.bytes), &DecodeOptions::default())
+        .expect("partial circle re-decodes");
+    let native = &after.ir().native.namespace("iges").unwrap().arenas()["circular_arrays"][0];
+    assert_eq!(
+        native
+            .field("do_dont_flag")
+            .and_then(|value| value.as_i64()),
+        Some(1)
+    );
+    assert_eq!(native.field("positions"), Some(json!([2, 4])));
+    assert!(after
+        .ir()
+        .model
+        .features
+        .iter()
+        .any(|feature| feature.name.as_deref() == Some("PARTIAL")));
+}
+
+#[test]
+fn mixed_feature_kinds_follow_current_ordinals() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use std::io::Cursor;
+    let harness =
+        cadmpeg_test_support::golden::Harness::new(env!("CARGO_MANIFEST_DIR"), "igs", "unused");
+    let (_, bytes) = harness
+        .fixture_inputs()
+        .into_iter()
+        .find(|(name, _)| name == "procedural_and_boolean_solids")
+        .unwrap();
+    let decoded = crate::IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let expected = ir
+        .model
+        .features
+        .iter()
+        .map(|feature| (feature.name.clone(), feature.ordinal))
+        .collect::<BTreeMap<_, _>>();
+    let output = super::super::synthesize(&ir, crate::IgesVersion::V5_3).unwrap();
+    let after = crate::IgesCodec
+        .decode(&mut Cursor::new(output.bytes), &DecodeOptions::default())
+        .unwrap();
+    for feature in &after.ir().model.features {
+        assert_eq!(
+            Some(&feature.ordinal),
+            expected.get(&feature.name),
+            "{:?}",
+            feature.name
+        );
+    }
+    assert_eq!(after.ir().model.features.len(), ir.model.features.len());
+    let count = ir.model.features.len() as u64;
+    for feature in &mut ir.model.features {
+        feature.ordinal = count - feature.ordinal - 1;
+    }
+    let expected = ir
+        .model
+        .features
+        .iter()
+        .map(|feature| (feature.name.clone(), feature.ordinal))
+        .collect::<BTreeMap<_, _>>();
+    let output = super::super::synthesize(&ir, crate::IgesVersion::V5_3).unwrap();
+    let after = crate::IgesCodec
+        .decode(&mut Cursor::new(output.bytes), &DecodeOptions::default())
+        .unwrap();
+    for feature in &after.ir().model.features {
+        assert_eq!(
+            Some(&feature.ordinal),
+            expected.get(&feature.name),
+            "{:?}",
+            feature.name
+        );
+    }
+    assert_eq!(after.ir().model.features.len(), ir.model.features.len());
+}

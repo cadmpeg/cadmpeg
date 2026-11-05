@@ -83,6 +83,28 @@ fn source_less_t_spline_writes_symmetry_maps() {
     assert_eq!(written.ir().model.subds.len(), 1);
     assert_eq!(written.ir().model.subds[0].cage, ir.model.subds[0].cage);
     let cage = &ir.model.subds[0].cage;
+    let unsupported = SubdSymmetry::new(
+        SubdSymmetryKind::radial(
+            std::num::NonZeroU32::new(4).unwrap(),
+            1.0,
+            vec![SubdRadialSymmetryMap { selector: Selector::Ef, pairs: vec![[0, 1]] }],
+        ).unwrap(),
+        cage.symmetries()[1].plane.clone(),
+        vec![], vec![[0, 1]], vec![[0, 1]],
+    ).unwrap();
+    let retained_symmetry = cage.symmetries()[0].clone();
+    let mut reduced = ir.clone();
+    reduced.model.subds[0].cage = SubdCage::new(
+        cage.vertices().to_vec(), cage.edges().to_vec(), cage.faces().to_vec(),
+        vec![retained_symmetry.clone(), unsupported],
+    ).unwrap();
+    let (written, report) = super::source_less_analytic::synthesize_document(&reduced, None);
+    assert_eq!(written.ir().model.subds[0].cage.symmetries(), &[retained_symmetry]);
+    assert!(report.losses.iter().any(|loss| {
+        loss.message.contains(reduced.model.subds[0].id.as_str())
+            && loss.message.contains("symmetry 1")
+    }));
+    let cage = &ir.model.subds[0].cage;
     let plane = cage.symmetries()[1].plane.clone();
     let radial = SubdSymmetry::new(
         SubdSymmetryKind::radial(std::num::NonZeroU32::new(4).unwrap(), 1.0, Vec::new()).unwrap(),

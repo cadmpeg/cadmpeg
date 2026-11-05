@@ -1329,13 +1329,25 @@ fn semantic_writer_retains_unresolved_native_edge_treatments() {
         }])
     ));
 
-    for (index, reason) in [
-        (0, "unresolved fillet radius law"),
-        (1, "unresolved chamfer dimensions"),
-    ] {
+    for index in 0..2 {
         let mut detached = decoded.ir().clone();
         detached.model.features[index].native_ref = None;
-        assert_solved_feature_reduction(&detached, decoded.source_fidelity(), index, reason);
+        let expected = detached.model.features[index]
+            .evaluation
+            .definition()
+            .clone();
+        let mut bytes = Vec::new();
+        crate::test_support::plan_inherited_write(&detached, decoded.source_fidelity(), &mut bytes)
+            .unwrap();
+        let output = SldprtCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        assert!(output
+            .ir()
+            .model
+            .features
+            .iter()
+            .any(|feature| feature.evaluation.definition() == &expected));
     }
 
     decoded.ir_mut().model.features[0].name = Some("Renamed round".into());
@@ -1797,6 +1809,7 @@ fn semantic_writer_round_trips_all_typed_chamfer_forms() {
 
 #[test]
 fn semantic_writer_retains_partial_native_wall_operations() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
 
     let mut source = sldprt_with_body(&triangle_body());
@@ -1833,14 +1846,40 @@ fn semantic_writer_retains_partial_native_wall_operations() {
         }) if faces == "face:2"
     ));
 
-    for (index, reason) in [
-        (0, "unresolved shell construction"),
-        (1, "unresolved thicken construction"),
-    ] {
-        let mut detached = decoded.ir().clone();
-        detached.model.features[index].native_ref = None;
-        assert_solved_feature_reduction(&detached, decoded.source_fidelity(), index, reason);
-    }
+    let mut detached = decoded.ir().clone();
+    detached.model.features[0].native_ref = None;
+    let expected = detached.model.features[0].evaluation.definition().clone();
+    let id = detached.model.features[0].id.clone();
+    let plan = SldprtCodec
+        .plan(
+            EncodeInput::new(&detached, Some(decoded.source_fidelity())),
+            TargetRequest::Inherit,
+        )
+        .unwrap();
+    assert!(!plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(id.as_str()) && loss.message.contains("solved result")));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(output
+        .ir()
+        .model
+        .features
+        .iter()
+        .any(|feature| feature.evaluation.definition() == &expected));
+    let mut detached = decoded.ir().clone();
+    detached.model.features[1].native_ref = None;
+    assert_solved_feature_reduction(
+        &detached,
+        decoded.source_fidelity(),
+        1,
+        "unresolved thicken construction",
+    );
 
     decoded.ir_mut().model.features[0].name = Some("Renamed shell".into());
     decoded.ir_mut().model.features[1].name = Some("Renamed thicken".into());

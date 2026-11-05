@@ -3,9 +3,9 @@
 
 use super::{
     annotations, associations, attributes, coordinates, copious, count, directory_label, drawings,
-    entity, fem, fonts, levels, macros, products, real, shape, solids, structure, text, BTreeSet,
-    CadIr, DirectoryLineFont, Entity, EntityStatus, Fields, NativeExport, NativeRecord, Targets,
-    Value, ARENAS,
+    entity, fem, fonts, levels, macros, patterns, products, real, shape, solids, structure, text,
+    BTreeSet, CadIr, DirectoryLineFont, Entity, EntityStatus, Fields, NativeExport, NativeRecord,
+    Targets, Value, ARENAS,
 };
 use std::collections::BTreeMap;
 
@@ -25,10 +25,10 @@ fn encode(
         lenient,
         missing: Vec::new(),
     };
-    let pattern_feature = if arena == "rectangular_arrays" {
-        solids::apply_rectangular_pattern(ir, record, &mut fields)?
-    } else {
-        None
+    let pattern_feature = match arena {
+        "rectangular_arrays" => solids::apply_rectangular_pattern(ir, record, &mut fields)?,
+        "circular_arrays" => patterns::apply_circular(ir, record, &mut fields)?,
+        _ => None,
     };
     let boolean_feature = if arena == "boolean_trees" {
         solids::apply_combine(ir, record, &mut fields)?
