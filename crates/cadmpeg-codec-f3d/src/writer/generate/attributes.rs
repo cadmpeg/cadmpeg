@@ -237,27 +237,48 @@ impl<'a> AttributeIndex<'a> {
             .enumerate()
             .map(|(ordinal, coedge)| (coedge.id.as_str().to_owned(), ordinal))
             .collect();
-        let bodies = target.model.bodies.iter().map(|body| (&body.id, body)).collect::<HashMap<_, _>>();
-        let faces = target.model.faces.iter().map(|face| (&face.id, face)).collect::<HashMap<_, _>>();
-        let edges = target.model.edges.iter().map(|edge| &edge.id).collect::<std::collections::HashSet<_>>();
-        let vertices = target.model.vertices.iter().map(|vertex| &vertex.id).collect::<std::collections::HashSet<_>>();
-        let coedges = target.model.coedges.iter().map(|coedge| &coedge.id).collect::<std::collections::HashSet<_>>();
+        let bodies = target
+            .model
+            .bodies
+            .iter()
+            .map(|body| (&body.id, body))
+            .collect::<HashMap<_, _>>();
+        let faces = target
+            .model
+            .faces
+            .iter()
+            .map(|face| (&face.id, face))
+            .collect::<HashMap<_, _>>();
+        let edges = target
+            .model
+            .edges
+            .iter()
+            .map(|edge| &edge.id)
+            .collect::<std::collections::HashSet<_>>();
+        let vertices = target
+            .model
+            .vertices
+            .iter()
+            .map(|vertex| &vertex.id)
+            .collect::<std::collections::HashSet<_>>();
+        let coedges = target
+            .model
+            .coedges
+            .iter()
+            .map(|coedge| &coedge.id)
+            .collect::<std::collections::HashSet<_>>();
         let mut attribute_counts = std::collections::BTreeMap::new();
         for attribute in &target.model.attributes {
             *attribute_counts.entry(&attribute.target).or_insert(0usize) += 1;
         }
         let extra_owner_attributes = target.model.attributes.iter().filter(|attribute| {
             let owner_is_free = match &attribute.target {
-                AttributeTarget::Body(id) => bodies.get(id).is_some_and(|body| {
-                    body.name.is_none() && body.color.is_none()
-                        && !body_links.contains_key(id.as_str())
-                        && !body_timestamps.contains_key(id.as_str())
-                }),
-                AttributeTarget::Face(id) => faces.get(id).is_some_and(|face| {
-                    face.name.is_none() && face.color.is_none()
-                        && !face_tags.contains_key(id.as_str())
-                        && !face_timestamps.contains_key(id.as_str())
-                }),
+                AttributeTarget::Body(id) => bodies.contains_key(id)
+                    && !body_links.contains_key(id.as_str())
+                    && !body_timestamps.contains_key(id.as_str()),
+                AttributeTarget::Face(id) => faces.contains_key(id)
+                    && !face_tags.contains_key(id.as_str())
+                    && !face_timestamps.contains_key(id.as_str()),
                 AttributeTarget::Edge(id) => edges.contains(id)
                     && !edge_tags.contains_key(id.as_str()) && !edge_timestamps.contains_key(id.as_str()),
                 AttributeTarget::Vertex(id) => vertices.contains(id) && !vertex_timestamps.contains_key(id.as_str()),
@@ -431,7 +452,9 @@ fn existing_source_less_attribute_count(target: &CadIr, index: &AttributeIndex<'
 }
 
 pub(super) fn source_less_attribute_count(target: &CadIr, index: &AttributeIndex<'_>) -> usize {
-    existing_source_less_attribute_count(target, index) + index.creation_timestamps.len() + index.extra_owner_attributes.len()
+    existing_source_less_attribute_count(target, index)
+        + index.creation_timestamps.len()
+        + index.extra_owner_attributes.len()
 }
 
 pub(super) fn timestamp_attribute_ref(
@@ -571,9 +594,19 @@ pub(super) fn extra_attribute_ref(
     entity: &AttributeTarget,
     attribute_start: i64,
 ) -> Result<Option<i64>, CodecError> {
-    index.extra_owner_attributes.iter().position(|attribute| attribute.target == *entity)
-        .map(|ordinal| native_record_index(attribute_start, existing_source_less_attribute_count(target, index)
-            + index.creation_timestamps.len() + ordinal)).transpose()
+    index
+        .extra_owner_attributes
+        .iter()
+        .position(|attribute| attribute.target == *entity)
+        .map(|ordinal| {
+            native_record_index(
+                attribute_start,
+                existing_source_less_attribute_count(target, index)
+                    + index.creation_timestamps.len()
+                    + ordinal,
+            )
+        })
+        .transpose()
 }
 
 fn face_persistent_attribute_ref(
@@ -713,9 +746,16 @@ pub(super) fn sketch_link_attribute_ref(
         return Ok(reference);
     }
     let entity = AttributeTarget::Coedge(coedge.id.clone());
-    Ok(timestamp_attribute_ref(target, index, &entity, attribute_start)?
-        .or(extra_attribute_ref(target, index, &entity, attribute_start)?)
-        .unwrap_or(-1))
+    Ok(
+        timestamp_attribute_ref(target, index, &entity, attribute_start)?
+            .or(extra_attribute_ref(
+                target,
+                index,
+                &entity,
+                attribute_start,
+            )?)
+            .unwrap_or(-1),
+    )
 }
 
 fn attribute_before_timestamp(
@@ -856,10 +896,12 @@ fn compact_timestamp_payload<'a>(
 ) -> Option<&'a cadmpeg_ir::attributes::SourceAttribute> {
     use cadmpeg_ir::attributes::AttributeValue;
     let timestamp = index.timestamp(entity)?;
-    let candidates = target.model.attributes.iter().filter(|attribute| {
-        attribute.target == *entity
-            && compact_custom_shape(attribute)
-    }).collect::<Vec<_>>();
+    let candidates = target
+        .model
+        .attributes
+        .iter()
+        .filter(|attribute| attribute.target == *entity && compact_custom_shape(attribute))
+        .collect::<Vec<_>>();
     let indexed = candidates
         .iter()
         .copied()
@@ -923,7 +965,13 @@ pub(in crate::writer) fn represented_attributes(
         .iter()
         .filter_map(|attribute| {
             let schema = match &attribute.target {
-                _ if index.extra_owner_attributes.iter().any(|record| record.id == attribute.id) => true,
+                _ if index
+                    .extra_owner_attributes
+                    .iter()
+                    .any(|record| record.id == attribute.id) =>
+                {
+                    true
+                }
                 AttributeTarget::Body(id)
                     if target
                         .model
@@ -964,6 +1012,18 @@ pub(in crate::writer) fn represented_attributes(
                             target,
                             &attribute.target,
                             "generic_tag_attrib_def",
+                            &index,
+                        )
+                        .is_some_and(|record| record.id == attribute.id) =>
+                {
+                    true
+                }
+                AttributeTarget::Coedge(id)
+                    if index.coedge_sketch_links.contains_key(id.as_str())
+                        && compact_custom_payload(
+                            target,
+                            &attribute.target,
+                            "sketch_attrib_def",
                             &index,
                         )
                         .is_some_and(|record| record.id == attribute.id) =>
@@ -1192,7 +1252,9 @@ pub(super) fn encode_source_less_attributes(
         {
             reference
         } else {
-            timestamp_attribute_ref(target, index, &owner_target, attribute_start)?.unwrap_or(-1)
+            timestamp_attribute_ref(target, index, &owner_target, attribute_start)?
+                .or(extra_attribute_ref(target, index, &owner_target, attribute_start)?)
+                .unwrap_or(-1)
         };
         native_color_attribute(
             records,
@@ -1223,7 +1285,9 @@ pub(super) fn encode_source_less_attributes(
         {
             reference
         } else {
-            timestamp_attribute_ref(target, index, &owner_target, attribute_start)?.unwrap_or(-1)
+            timestamp_attribute_ref(target, index, &owner_target, attribute_start)?
+                .or(extra_attribute_ref(target, index, &owner_target, attribute_start)?)
+                .unwrap_or(-1)
         };
         native_color_attribute(
             records,
@@ -1252,7 +1316,9 @@ pub(super) fn encode_source_less_attributes(
         {
             reference
         } else {
-            timestamp_attribute_ref(target, index, &owner_target, attribute_start)?.unwrap_or(-1)
+            timestamp_attribute_ref(target, index, &owner_target, attribute_start)?
+                .or(extra_attribute_ref(target, index, &owner_target, attribute_start)?)
+                .unwrap_or(-1)
         };
         let previous = if body.color.is_none() {
             -1
@@ -1284,7 +1350,9 @@ pub(super) fn encode_source_less_attributes(
         {
             reference
         } else {
-            timestamp_attribute_ref(target, index, &owner_target, attribute_start)?.unwrap_or(-1)
+            timestamp_attribute_ref(target, index, &owner_target, attribute_start)?
+                .or(extra_attribute_ref(target, index, &owner_target, attribute_start)?)
+                .unwrap_or(-1)
         };
         let previous = if face.color.is_none() {
             -1
@@ -1415,12 +1483,21 @@ pub(super) fn encode_source_less_attributes(
             attribute_start,
         )?
         .unwrap_or(-1);
-        native_sketch_link_attribute(
-            records,
-            link,
-            next,
-            native_record_index(coedge_start, coedge_ordinal)?,
-        )?;
+        if let Some(attribute) = compact_custom_payload(
+            target,
+            &AttributeTarget::Coedge(coedge.id.clone()),
+            "sketch_attrib_def",
+            index,
+        ) {
+            native_compact_custom(records, next, attribute)?;
+        } else {
+            native_sketch_link_attribute(
+                records,
+                link,
+                next,
+                native_record_index(coedge_start, coedge_ordinal)?,
+            )?;
+        }
         records.push(0x11);
     }
     for (entity, owner_start, owner_ordinal) in

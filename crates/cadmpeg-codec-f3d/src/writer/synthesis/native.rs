@@ -817,11 +817,9 @@ pub(super) fn shed_design(target: &mut CadIr) -> Result<(), CodecError> {
 
 fn retain_mesh_sentinels(target: &CadIr, native: &mut F3dNative) {
     native.mesh_surface_sentinels.retain(|sentinel| {
-        cadmpeg_asm::brep::records::native_entity_id(&sentinel.source_namespace, sentinel.record_index)
-            .is_some_and(|id| target.model.surfaces.iter().any(|surface| {
-                surface.id.as_str() == id
-                    && matches!(surface.geometry.solved(), Some(cadmpeg_ir::geometry::SolvedSurfaceGeometry::Unknown { .. }))
-            }))
+        target.model.surfaces.iter().any(|surface| {
+            super::super::generate::preconditions::mesh_sentinel_matches(surface, sentinel)
+        })
     });
 }
 
@@ -1033,7 +1031,9 @@ pub(super) fn coverage(
                         .iter()
                         .find(|candidate| candidate.id() == record.id())
                 }) {
-                    let disposition = if candidate == record {
+                    let disposition = if arena.as_str() == "mesh_surface_sentinels" {
+                        NativeDisposition::Regenerated
+                    } else if candidate == record {
                         NativeDisposition::Written
                     } else {
                         NativeDisposition::Regenerated
