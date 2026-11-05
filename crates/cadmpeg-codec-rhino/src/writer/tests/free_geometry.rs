@@ -25,6 +25,172 @@ use crate::{RhinoArchiveVersion, RhinoCodec};
 use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
 
 #[test]
+fn authored_extrusion_payload_decodes_its_cap_and_carrier() {
+    let bytes = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/golden/fixtures/extrusion.3dm"
+    ));
+    let source = RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let candidate = super::super::extrusion::payload(source.ir(), RhinoArchiveVersion::V8)
+        .unwrap()
+        .expect("held extrusion admits a candidate");
+    let class = [
+        0x75, 0x31, 0xf5, 0x36, 0xb8, 0x72, 0x47, 0x4d, 0xbf, 0x1f, 0xb4, 0xe6, 0xfc, 0x24, 0xf4,
+        0xb9,
+    ];
+    let object =
+        super::super::framed_object_record(0x10, class, &candidate.payload, Some(&[]), None)
+            .unwrap();
+    let mut table = object;
+    table.extend(super::super::short_chunk(super::super::TCODE_ENDOFTABLE, 0));
+    let mut archive = super::super::header(RhinoArchiveVersion::V8);
+    archive.extend(super::super::long_chunk(1, b"cadmpeg").unwrap());
+    let mut settings = super::super::units_record(
+        source.ir().tolerances.linear.get(),
+        source.ir().tolerances.angular.get(),
+    )
+    .unwrap();
+    settings.extend(super::super::short_chunk(super::super::TCODE_ENDOFTABLE, 0));
+    archive
+        .extend(super::super::long_chunk(super::super::TCODE_SETTINGS_TABLE, &settings).unwrap());
+    archive.extend(super::super::long_chunk(super::super::TCODE_OBJECT_TABLE, &table).unwrap());
+    let final_size = super::super::archive_final_size(archive.len() as u64).unwrap();
+    archive.extend(
+        super::super::long_chunk(crate::chunks::TCODE_ENDOFFILE, &final_size.to_le_bytes())
+            .unwrap(),
+    );
+    let output = RhinoCodec
+        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        output.ir().model.procedural_surfaces.len(),
+        1,
+        "{:?}",
+        output.report()
+    );
+    assert_eq!(output.ir().model.pcurves.len(), 1, "{:?}", output.report());
+}
+
+#[test]
+fn capped_extrusion_retains_its_procedure_and_cap_pcurves() {
+    let bytes = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/golden/fixtures/extrusion.3dm"
+    ));
+    let source = RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(source.ir().model.procedural_surfaces.len(), 1);
+    assert_eq!(source.ir().model.pcurves.len(), 1);
+    for version in [
+        RhinoArchiveVersion::V5,
+        RhinoArchiveVersion::V6,
+        RhinoArchiveVersion::V7,
+        RhinoArchiveVersion::V8,
+    ] {
+        for visible in [true, false] {
+            let mut input = source.ir().clone();
+            input.model.bodies[0].visible = Some(visible);
+            let plan = RhinoCodec
+                .plan(
+                    EncodeInput::new(&input, None),
+                    TargetRequest::Explicit(version.descriptor().id.as_str()),
+                )
+                .unwrap();
+            let mut written = Vec::new();
+            plan.write_to(&mut written).unwrap();
+            let output = RhinoCodec
+                .decode(&mut Cursor::new(written), &DecodeOptions::default())
+                .unwrap();
+            assert_eq!(
+                output.ir().model.procedural_surfaces.len(),
+                1,
+                "{version:?}"
+            );
+            assert_eq!(output.ir().model.pcurves.len(), 1, "{version:?}");
+            assert_eq!(output.ir().model.bodies[0].visible, Some(visible));
+        }
+    }
+}
+
+#[test]
+fn extrusion_with_hole_retains_both_profiles_and_caps() {
+    let bytes = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/golden/fixtures/extrusion_hole.3dm"
+    ));
+    let source = RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(source.ir().model.procedural_surfaces.len(), 2);
+    assert_eq!(source.ir().model.pcurves.len(), 4);
+    for version in [
+        RhinoArchiveVersion::V5,
+        RhinoArchiveVersion::V6,
+        RhinoArchiveVersion::V7,
+        RhinoArchiveVersion::V8,
+    ] {
+        let plan = RhinoCodec
+            .plan(
+                EncodeInput::new(source.ir(), None),
+                TargetRequest::Explicit(version.descriptor().id.as_str()),
+            )
+            .unwrap();
+        let mut written = Vec::new();
+        plan.write_to(&mut written).unwrap();
+        let output = RhinoCodec
+            .decode(&mut Cursor::new(written), &DecodeOptions::default())
+            .unwrap();
+        assert_eq!(
+            output.ir().model.procedural_surfaces.len(),
+            2,
+            "{version:?}"
+        );
+        assert_eq!(output.ir().model.pcurves.len(), 4, "{version:?}");
+    }
+}
+
+#[test]
+fn edited_extrusion_cap_pcurve_is_not_replaced_by_the_original() {
+    use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
+    use cadmpeg_ir::math::Point2;
+    use cadmpeg_ir::units::FinitePoint2;
+
+    let bytes = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/golden/fixtures/extrusion.3dm"
+    ));
+    let source = RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let mut input = source.ir().clone();
+    let pcurve = &mut input.model.pcurves[0];
+    let PcurveGeometry::Nurbs { nurbs } = &mut pcurve.geometry else {
+        panic!("NURBS cap")
+    };
+    nurbs
+        .try_map_control_points(|_, point| {
+            let point = point.get();
+            Ok::<_, ()>(FinitePoint2::new(Point2::new(point.u + 1.0, point.v)).unwrap())
+        })
+        .unwrap();
+    let id = input.model.pcurves[0].id.to_string();
+    let plan = RhinoCodec
+        .plan(EncodeInput::new(&input, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(
+        plan.report()
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains(&id)),
+        "{:?}",
+        plan.report().losses
+    );
+}
+
+#[test]
 fn source_less_points_round_trip_across_target_versions() {
     let mut ir = CadIr::empty();
     ir.model.points.push(Point::new(
