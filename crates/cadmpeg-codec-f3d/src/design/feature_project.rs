@@ -6719,9 +6719,7 @@ fn project_circular_pattern_scalars(
             && !group.members().is_empty()
     });
     let (first, second) = (matching_groups.next(), matching_groups.next());
-    let Some(group) = first.filter(|_| second.is_none()) else {
-        return None;
-    };
+    let group = first.filter(|_| second.is_none())?;
     let seeds = pattern_group_seeds(
         scope,
         group,
@@ -6738,7 +6736,7 @@ fn project_circular_pattern_scalars(
             direction,
             ..
         } => {
-            let displacement = Vector3::from(*direction.as_raw());
+            let displacement = *direction.as_raw();
             Some((
                 cadmpeg_ir::features::FinitePoint3::new(Point3::new(
                     origin[0].get() * 10.0,

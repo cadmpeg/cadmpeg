@@ -29,7 +29,7 @@ fn fixtures() -> Vec<std::path::PathBuf> {
 fn native_arena_registry_matches_native_dispositions_on_every_golden() {
     let registry = crate::native_registry::ARENAS
         .iter()
-        .map(|arena| arena.to_string())
+        .map(ToString::to_string)
         .collect::<BTreeSet<_>>();
     let mut checked = 0;
     for path in fixtures() {
