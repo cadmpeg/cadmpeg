@@ -560,6 +560,9 @@ pub(crate) struct Graph {
     /// FACE identities grouped by their SHELL reference, in physical order.
     faces_by_shell: BTreeMap<u32, Vec<u32>>,
     primary_edge_refusals: Vec<usize>,
+    /// Supported non-EDGE nodes of a terminated sequence that the graph
+    /// leaves out, by kind and start.
+    primary_node_refusals: Vec<(NodeKind, usize)>,
     primary_unread_from: Option<usize>,
     /// The node ranges of a terminated primary sequence.
     primary_records: Option<Vec<std::ops::Range<usize>>>,

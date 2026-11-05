@@ -4,7 +4,7 @@ use super::{
     candidate_has_valid_family_framing, FixedRecordSelection, Graph, NodeCandidate, NodeKind,
 };
 use cadmpeg_core::CodecError;
-use cadmpeg_parasolid::records::primary::{Node, PrimaryRecord};
+use cadmpeg_parasolid::records::primary::PrimaryRecord;
 use cadmpeg_parasolid::records::{EdgeFrame, PrimaryRecords};
 use cadmpeg_parasolid::xmt::NonNullXmt;
 use std::ops::Range;
@@ -63,8 +63,9 @@ impl Graph {
             (frames, primary.stop_offset(), limit_term_use, selection)
         };
         let mut graph = match selection {
-            Some(selection) => {
+            Some((selection, node_refusals)) => {
                 let mut graph = selection.materialize(stream);
+                graph.primary_node_refusals = node_refusals;
                 let refusals = frames
                     .edges
                     .iter()
@@ -113,6 +114,10 @@ impl Graph {
         &self.primary_edge_refusals
     }
 
+    pub(crate) fn primary_node_refusals(&self) -> &[(NodeKind, usize)] {
+        &self.primary_node_refusals
+    }
+
     pub(crate) fn primary_unread_from(&self) -> Option<usize> {
         self.primary_unread_from
     }
@@ -144,11 +149,16 @@ impl Graph {
 
 /// The fixed records of a terminated node sequence: one candidate per
 /// supported node with the base field layout, with an identity that two nodes
-/// share left out before the family checks.
-fn node_selection(stream: &[u8], primary: &PrimaryRecords<'_>) -> FixedRecordSelection {
+/// share left out before the family checks. The starts of supported non-EDGE
+/// nodes without the base field layout follow the selection.
+fn node_selection(
+    stream: &[u8],
+    primary: &PrimaryRecords<'_>,
+) -> (FixedRecordSelection, Vec<(NodeKind, usize)>) {
     let mut typed = Vec::new();
     let mut ownership = Vec::new();
-    for node in primary.nodes().filter(Node::has_base_layout) {
+    let mut refusals = Vec::new();
+    for node in primary.nodes() {
         let Some(kind) = u8::try_from(node.kind())
             .ok()
             .and_then(|code| NodeKind::try_from(code).ok())
@@ -156,6 +166,12 @@ fn node_selection(stream: &[u8], primary: &PrimaryRecords<'_>) -> FixedRecordSel
             continue;
         };
         let range = node.range();
+        if !node.has_base_layout() {
+            if kind != NodeKind::Edge {
+                refusals.push((kind, range.start));
+            }
+            continue;
+        }
         let Some(shift) = node
             .fields_start()
             .zip(range.start.checked_add(4))
@@ -195,8 +211,9 @@ fn node_selection(stream: &[u8], primary: &PrimaryRecords<'_>) -> FixedRecordSel
             })
             .collect()
     };
-    FixedRecordSelection {
+    let selection = FixedRecordSelection {
         typed: valid(typed),
         ownership: valid(ownership),
-    }
+    };
+    (selection, refusals)
 }

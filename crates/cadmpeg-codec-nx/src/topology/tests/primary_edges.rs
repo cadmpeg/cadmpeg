@@ -405,3 +405,67 @@ fn terminated_edge_with_an_inserted_base_field_is_refused() {
         assert_eq!(graph.primary_edge_refusals(), [start]);
     });
 }
+
+/// A first-use VERTEX whose edit program either retypes `point` to a LINE
+/// pointer or inserts a pointer before `tolerance`.
+fn edited_vertex(xmt: u32, node_id: u32, retype_point: bool) -> Vec<u8> {
+    let mut bytes = u16::from(NodeKind::Vertex.code()).to_be_bytes().to_vec();
+    bytes.push(if retype_point { 8 } else { 9 });
+    if retype_point {
+        bytes.extend(b"CCCCCD");
+        bytes.push(b'I');
+        bytes.push(5);
+        bytes.extend(b"point");
+        bytes.extend(u16::from(NodeKind::Line.code()).to_be_bytes());
+    } else {
+        bytes.extend(b"CCCCCC");
+        bytes.push(b'I');
+        bytes.push(5);
+        bytes.extend(b"extra");
+        bytes.extend(12u16.to_be_bytes());
+    }
+    bytes.extend([0, 1]);
+    bytes.extend(b"CC");
+    bytes.push(b'Z');
+    bytes.extend(encoded_xmt(xmt));
+    bytes.extend(node_id.to_be_bytes());
+    for reference in [1, 1, 1, 1, 45] {
+        bytes.extend(encoded_xmt(reference));
+    }
+    if !retype_point {
+        bytes.extend(encoded_xmt(1));
+    }
+    bytes.extend(0.0f64.to_be_bytes());
+    bytes.extend(encoded_xmt(3));
+    bytes
+}
+
+#[test]
+fn terminated_vertex_with_an_edited_base_field_reports_its_unresolved_projection() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    for retype_point in [false, true] {
+        let mut bytes = header(13006, true);
+        let start = bytes.len();
+        bytes.extend(edited_vertex(7, 73, retype_point));
+        bytes.extend(END);
+        with_decode_context(|_ctx| {
+            let graph = parse(&bytes);
+            assert_eq!(graph.kind_count(NodeKind::Vertex), 0);
+            assert_eq!(graph.primary_node_refusals(), [(NodeKind::Vertex, start)]);
+        });
+        let file = crate::test_support::test_prt::prt_with_partition(&bytes);
+        let decoded = crate::NxCodec
+            .decode(&mut std::io::Cursor::new(file), &DecodeOptions::default())
+            .expect("retained edited VERTEX Source");
+        let code = crate::loss::NxLossCode::PrimaryNodeUnresolved.kind();
+        assert_eq!(
+            decoded
+                .report()
+                .losses
+                .iter()
+                .filter(|loss| loss.code == code)
+                .count(),
+            1
+        );
+    }
+}

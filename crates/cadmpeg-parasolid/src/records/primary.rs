@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The node sequence of a partition or plain stream.
 
-use super::{base, own_definition, positive, read_definition, BaseVersion, DataType, SchemaPlan};
+use super::{
+    base, own_definition, positive, read_definition, BaseVersion, BorrowedField, DataType,
+    SchemaField, SchemaPlan,
+};
 use crate::xmt::NonNullXmt;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
@@ -119,10 +122,25 @@ fn matches_base(version: BaseVersion, record: &PrimaryRecord) -> bool {
             })
 }
 
+/// Pointer-class edits that keep a base field's role: node type, field name,
+/// base class, and edited class.
+const ROLE_PRESERVING_CLASS_EDITS: [(u16, &str, u16, u16); 1] = [(12, "owner", 101, 1040)];
+
+fn keeps_pointer_role(kind: u16, actual: &SchemaField, base: &BorrowedField<'_>) -> bool {
+    actual.pointer_class == base.pointer_class
+        || ROLE_PRESERVING_CLASS_EDITS.contains(&(
+            kind,
+            base.name,
+            base.pointer_class,
+            actual.pointer_class,
+        ))
+}
+
 /// Whether a node's effective field list starts with fields encoded as the
-/// base fields of its type.
+/// base fields of its type, each in its base role.
 fn has_base_layout(version: BaseVersion, record: &PrimaryRecord) -> bool {
-    let Some(expected) = base::fields(version, record.definition.kind) else {
+    let kind = record.definition.kind;
+    let Some(expected) = base::fields(version, kind) else {
         return false;
     };
     record.definition.fields.len() >= expected.len()
@@ -134,6 +152,7 @@ fn has_base_layout(version: BaseVersion, record: &PrimaryRecord) -> bool {
             .all(|(actual, base)| {
                 actual.name.as_str() == base.name
                     && actual.data_type == base.data_type
+                    && keeps_pointer_role(kind, actual, base)
                     && actual.n_elements == base.n_elements
                     && actual.transmit == base.transmit
             })
