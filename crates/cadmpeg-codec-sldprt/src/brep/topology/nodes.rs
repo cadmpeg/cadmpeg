@@ -291,10 +291,12 @@ fn edge_use(node: &impl NodeFields, offset: usize) -> Option<EdgeUse> {
     })
 }
 
-/// Whether a FIN is the sole fin of a vertex loop, which bounds no edge and
-/// names no coedge.
+/// Whether a FIN is the sole fin of a vertex loop: sense `?`, both ring
+/// links to itself, and no edge or partner.
 fn is_vertex_loop_fin(node: &impl NodeFields) -> bool {
+    let index = node.index();
     node.char("sense") == Some(b'?')
+        && node.pointers(["forward", "backward", "edge", "other"]) == Some([index, index, 1, 1])
 }
 
 fn coedge(node: &impl NodeFields, offset: usize) -> Option<Coedge> {

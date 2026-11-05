@@ -313,7 +313,18 @@ fn a_vertex_loop_fin_names_no_coedge_and_keeps_the_node_tables() {
         .find(|node| node.kind() == 17)
         .unwrap()
         .index();
+    let own = u16::try_from(fin).unwrap().to_be_bytes();
     patch(&mut payload, 17, "sense", b"?");
+    assert!(read(&payload, body_offset).is_none());
+    for field in ["forward", "backward"] {
+        patch(&mut payload, 17, field, &own);
+    }
+    for field in ["edge", "other"] {
+        patch(&mut payload, 17, field, &1u16.to_be_bytes());
+    }
     let tables = read(&payload, body_offset).expect("node tables");
     assert!(!tables.coedges().contains_key(&fin));
+    assert!(!tables.coedge_frames.contains_key(&fin));
+    assert!(!tables.coedge_owners.contains_key(&fin));
+    assert!(!tables.loops().is_empty());
 }
