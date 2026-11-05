@@ -1770,7 +1770,7 @@ fn procedural_reduction_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> 
             )));
         }
     }
-    let surface_count = ir
+    let surfaces = ir
         .model
         .procedural_surfaces
         .iter()
@@ -1796,14 +1796,20 @@ fn procedural_reduction_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> 
                 procedural.definition(),
             )
         })
-        .count();
-    let curve_count = ir.model.procedural_curves.len();
-    if surface_count == 0 && curve_count == 0 {
-        return Ok(Vec::new());
-    }
-    Ok(vec![IgesLossCode::ProceduralReduced.note(format!(
-        "{surface_count} procedural surface definition(s) and {curve_count} procedural curve definition(s) were reduced to writable solved carriers"
-    ))])
+        .map(|procedural| procedural.id.as_str());
+    let curves = ir
+        .model
+        .procedural_curves
+        .iter()
+        .map(|procedural| procedural.id.as_str());
+    Ok(surfaces
+        .chain(curves)
+        .map(|id| {
+            IgesLossCode::ProceduralReduced.note(format!(
+                "IGES procedural definition {id} was reduced to a solved carrier"
+            ))
+        })
+        .collect())
 }
 
 fn is_native_surface_construction(
