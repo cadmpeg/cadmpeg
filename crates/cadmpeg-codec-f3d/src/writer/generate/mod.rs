@@ -25,6 +25,7 @@ mod parameters;
 pub(in crate::writer) mod preconditions;
 mod presentation;
 mod records;
+mod reindex;
 mod smbh;
 use parameters::encode_document_parameters;
 use preconditions::{
@@ -38,11 +39,24 @@ use presentation::GeneratedDesignRegistry;
 use records::{encode_design_bulkstream, encode_design_metastream};
 use smbh::encode_smbh;
 
-/// Write a canonical source-less F3D archive for the currently supported
-/// native construction profile, and state which model arenas it carries.
+#[cfg(test)]
 pub(crate) fn write_new(
     target: &CadIr,
     writer: &mut dyn Write,
+) -> Result<(ArenaDispositions, Vec<LossNote>), CodecError> {
+    write_with_limits(
+        target,
+        writer,
+        cadmpeg_core::decode::ResourceLimits::desktop(),
+    )
+}
+
+/// Write a canonical source-less F3D archive for the currently supported
+/// native construction profile, and state which model arenas it carries.
+pub(crate) fn write_with_limits(
+    target: &CadIr,
+    writer: &mut dyn Write,
+    limits: cadmpeg_core::decode::ResourceLimits,
 ) -> Result<(ArenaDispositions, Vec<LossNote>), CodecError> {
     // `subset_int_cur` states its interval and cache on the parameter of the
     // curve it trims.
@@ -158,7 +172,7 @@ pub(crate) fn write_new(
     }
     let design_registry = GeneratedDesignRegistry::new(target, design_bindings, &attributes)?;
     let brep_name = source_brep_name(&native, design_registry.body_map.is_some());
-    let smbh = encode_smbh(target, &native, &attributes)?;
+    let smbh = encode_smbh(target, &native, &attributes, limits)?;
     let mut staged = tempfile::tempfile()?;
     let mut archive = zip::ZipWriter::new(&mut staged);
     let options = crate::zip_write::file_options(zip::CompressionMethod::Stored);
@@ -314,12 +328,6 @@ pub(crate) fn write_new(
             }
             if feature.needs_recompute {
                 partial = true;
-                residual_losses.push(crate::loss::F3dLossCode::WriterDesignRecordsOmitted.note(
-                    format!(
-                        "feature {} retains its operation; its recompute state is not encoded",
-                        feature.id
-                    ),
-                ));
             }
             if !feature.evaluation.outputs().is_empty() {
                 partial = true;

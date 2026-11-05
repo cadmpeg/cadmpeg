@@ -9,13 +9,22 @@ use super::{
 use std::collections::BTreeMap;
 
 fn encode(
+    ir: &CadIr,
     arena: &str,
     record: &NativeRecord,
     targets: &Targets,
     claimed: &BTreeSet<u32>,
     lenient: bool,
 ) -> Result<(Entity, Vec<usize>, Vec<String>), String> {
-    let (type_code, form) = shape(arena, record)?;
+    let neutral = if arena == "primitive_solids" {
+        solids::neutral_primitive(ir, record).transpose()?
+    } else {
+        None
+    };
+    let (type_code, form) = match &neutral {
+        Some(entity) => (entity.type_code, entity.form),
+        None => shape(arena, record)?,
+    };
     let mut fields = Fields {
         values: record.fields().map_err(|error| error.to_string())?,
         targets,
@@ -52,8 +61,11 @@ fn encode(
         "views" | "view_visibility" | "segmented_visibility" | "drawings" => {
             drawings::encode(arena, &mut fields, type_code, form)?
         }
-        "primitive_solids"
-        | "procedural_solids"
+        "primitive_solids" => match neutral {
+            Some(entity) => entity,
+            None => solids::encode(arena, &mut fields, type_code, form)?,
+        },
+        "procedural_solids"
         | "boolean_trees"
         | "selected_components"
         | "rectangular_arrays"
@@ -260,6 +272,34 @@ pub(in crate::writer) fn append(
             directory_sequence(record),
         )
     });
+    // The primitive decoder assigns feature ordinals in Directory order.
+    // Preserve the current neutral order even when it differs from source.
+    let ordinals = ir
+        .model
+        .features
+        .iter()
+        .filter_map(|feature| {
+            feature
+                .native_ref
+                .as_deref()
+                .map(|id| (id, feature.ordinal))
+        })
+        .collect::<BTreeMap<_, _>>();
+    let slots = pending
+        .iter()
+        .enumerate()
+        .filter_map(|(index, (arena, record))| {
+            (*arena == "primitive_solids" && ordinals.contains_key(record.id())).then_some(index)
+        })
+        .collect::<Vec<_>>();
+    let mut ordered = slots
+        .iter()
+        .map(|index| pending[*index])
+        .collect::<Vec<_>>();
+    ordered.sort_by_key(|(_, record)| ordinals[record.id()]);
+    for (index, record) in slots.into_iter().zip(ordered) {
+        pending[index] = record;
+    }
     // Records emitted before every reference they name resolves carry null
     // pointers until a re-encode fills them: each entry names the entity
     // index holding the optimistic encoding with its arena and record.
@@ -355,20 +395,22 @@ impl Emitter<'_, '_> {
     /// owner and transformation target it names is already emitted.
     fn try_push(&mut self, arena: &str, record: &NativeRecord) -> Push {
         let Ok((mut entity, owners, _)) =
-            encode(arena, record, &self.targets, &self.claimed, false)
+            encode(self.ir, arena, record, &self.targets, &self.claimed, false)
         else {
             return Push::Deferred;
         };
         if !self.version.admits(&entity) {
             return Push::Deferred;
         }
-        if let Some(id) = record
-            .field("transformation")
-            .and_then(|value| value.as_str().map(str::to_owned))
-        {
-            match self.targets.get(&id).map(Vec::as_slice) {
-                Some([index]) => entity.transform_link = Some(*index),
-                _ => return Push::Deferred,
+        if entity.transform.is_none() && !self.has_neutral_primitive(arena, record) {
+            if let Some(id) = record
+                .field("transformation")
+                .and_then(|value| value.as_str().map(str::to_owned))
+            {
+                match self.targets.get(&id).map(Vec::as_slice) {
+                    Some([index]) => entity.transform_link = Some(*index),
+                    _ => return Push::Deferred,
+                }
             }
         }
         self.push_entity(arena, record, entity, owners);
@@ -411,7 +453,7 @@ impl Emitter<'_, '_> {
     /// unresolvable references; what remains missing decides the class.
     fn classify(&self, arena: &str, record: &NativeRecord, pending: &BTreeSet<String>) -> Class {
         let (entity, owners, missing) =
-            match encode(arena, record, &self.targets, &self.claimed, true) {
+            match encode(self.ir, arena, record, &self.targets, &self.claimed, true) {
                 Ok(ok) => ok,
                 Err(error) => {
                     // An owner that still waits for emission keeps the record
@@ -427,12 +469,14 @@ impl Emitter<'_, '_> {
         if !self.version.admits(&entity) {
             return Class::Drop;
         }
-        if let Some(id) = record
-            .field("transformation")
-            .and_then(|value| value.as_str().map(str::to_owned))
-        {
-            if !matches!(self.targets.get(&id).map(Vec::as_slice), Some([_])) {
-                return Class::Wait;
+        if entity.transform.is_none() && !self.has_neutral_primitive(arena, record) {
+            if let Some(id) = record
+                .field("transformation")
+                .and_then(|value| value.as_str().map(str::to_owned))
+            {
+                if !matches!(self.targets.get(&id).map(Vec::as_slice), Some([_])) {
+                    return Class::Wait;
+                }
             }
         }
         for id in &missing {
@@ -455,7 +499,8 @@ impl Emitter<'_, '_> {
     fn reencode(&mut self, entries: &[(usize, &str, &NativeRecord)]) -> bool {
         let mut progressed = false;
         for (index, arena, record) in entries {
-            let Ok((fresh, _, _)) = encode(arena, record, &self.targets, &self.claimed, false)
+            let Ok((fresh, _, _)) =
+                encode(self.ir, arena, record, &self.targets, &self.claimed, false)
             else {
                 continue;
             };
@@ -465,6 +510,16 @@ impl Emitter<'_, '_> {
             }
         }
         progressed
+    }
+
+    fn has_neutral_primitive(&self, arena: &str, record: &NativeRecord) -> bool {
+        arena == "primitive_solids"
+            && self
+                .ir
+                .model
+                .features
+                .iter()
+                .any(|feature| feature.native_ref.as_deref() == Some(record.id()))
     }
 }
 
