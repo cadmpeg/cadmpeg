@@ -74,3 +74,58 @@ pub(super) fn geometry(ir: &CadIr, id: &CurveId) -> Option<CurveGeometry> {
         self_intersect: None,
     }))
 }
+
+/// Name the owners whose composite definition loses an intermediate curve.
+pub(super) fn flattened_owner_losses(
+    ir: &CadIr,
+    emitted: &std::collections::BTreeSet<&String>,
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    let mut losses = Vec::new();
+    for curve in &ir.model.curves {
+        if !emitted.contains(&curve.id.to_string()) {
+            continue;
+        }
+        let Some(SolvedCurveGeometry::Composite { segments, .. }) = curve.geometry.solved() else {
+            continue;
+        };
+        let flattened = segments.iter().any(|segment| {
+            ir.model.curves.iter().any(|child| {
+                child.id == segment.curve
+                    && matches!(
+                        child.geometry.solved(),
+                        Some(SolvedCurveGeometry::Composite { .. })
+                    )
+            })
+        });
+        if !flattened {
+            continue;
+        }
+        losses.push(super::IgesLossCode::WriterEntityOmitted.note(format!(
+            "IGES curve {} loses a nested composite constituent in its representation",
+            curve.id
+        )));
+        for edge in ir
+            .model
+            .edges
+            .iter()
+            .filter(|edge| edge.curve() == Some(&curve.id))
+        {
+            losses.push(super::IgesLossCode::WriterEntityOmitted.note(format!(
+                "IGES edge {} uses curve {} with a flattened composite definition",
+                edge.id, curve.id
+            )));
+            for coedge in ir
+                .model
+                .coedges
+                .iter()
+                .filter(|coedge| coedge.edge == edge.id)
+            {
+                losses.push(super::IgesLossCode::WriterEntityOmitted.note(format!(
+                    "IGES coedge {} uses edge {} with a flattened composite definition",
+                    coedge.id, edge.id
+                )));
+            }
+        }
+    }
+    losses
+}
