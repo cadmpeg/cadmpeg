@@ -4493,7 +4493,7 @@ fn typed_prefix(out: &mut Vec<u8>, kind: u8, attr: u16, node_id: u32) {
 
 /// Emit one Parasolid XT pointer in its compact or extended two-cell form.
 ///
-/// The high bit of the first cell is the form discriminator, so `0x7fff` is
+/// The high bit of the first cell is the form discriminator, so `0x8000` is
 /// the first value that requires two cells. Two u16 cells provide 31 payload
 /// bits; refusing a larger value keeps the writer from emitting a truncated
 /// pointer.
@@ -4506,7 +4506,7 @@ fn typed_ref(out: &mut Vec<u8>, value: impl Into<u32>) -> Result<(), write_error
     if u64::from(value) > CAPACITY_FIELDS[31].limit {
         return Err(capacity());
     }
-    if value <= 0x7ffe {
+    if value <= 0x7fff {
         be16(out, u16::try_from(value).map_err(|_| capacity())?);
     } else {
         be16(
@@ -5461,7 +5461,7 @@ mod nurbs_write_tests {
     fn writes_typed_reference_boundaries() {
         for (value, expected) in [
             (0x7ffe_u32, vec![0x7f, 0xfe]),
-            (0x7fff_u32, vec![0xff, 0xff, 0, 0]),
+            (0x7fff_u32, vec![0x7f, 0xff]),
             (0x8000_u32, vec![0x80, 0, 0, 1]),
             (0x7fff_ffff_u32, vec![0xff, 0xff, 0xff, 0xff]),
         ] {
