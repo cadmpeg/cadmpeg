@@ -1308,7 +1308,7 @@ fn strip_unusable_face_topology(ir: &CadIr) -> (Option<CadIr>, Vec<LossNote>) {
         .model
         .bodies
         .retain(|body| !body.regions.is_empty());
-    let losses = bad
+    let mut losses = bad
         .into_iter()
         .map(|(face, missing)| {
             IgesLossCode::WriterEntityOmitted.note(format!(
@@ -1316,7 +1316,12 @@ fn strip_unusable_face_topology(ir: &CadIr) -> (Option<CadIr>, Vec<LossNote>) {
                 missing.join(", ")
             ))
         })
-        .collect();
+        .collect::<Vec<_>>();
+    for id in bad_loops.into_iter().chain(bad_coedges) {
+        losses.push(IgesLossCode::WriterEntityOmitted.note(format!(
+            "IGES boundary record {id} is omitted with its unsupported face"
+        )));
+    }
     (Some(document), losses)
 }
 
