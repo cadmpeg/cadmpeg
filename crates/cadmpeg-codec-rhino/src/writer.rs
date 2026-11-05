@@ -3351,7 +3351,7 @@ fn analytic_usage(surface_id: &str, ir: &CadIr) -> Result<[[f64; 2]; 2], WriteEr
         .filter(|face| face.surface.as_str() == surface_id)
     {
         faces += 1;
-        for loop_id in face.loops.iter() {
+        for loop_id in &face.loops {
             let Some(loop_) = ir
                 .model
                 .loops

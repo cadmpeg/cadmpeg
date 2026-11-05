@@ -339,7 +339,7 @@ pub(super) fn retain_faces(ir: &CadIr, selected: &BTreeSet<&str>) -> Result<CadI
         if let Some(cadmpeg_ir::geometry::SolvedCurveGeometry::Composite { segments, .. }) =
             curve.geometry.solved()
         {
-            for segment in segments.iter() {
+            for segment in segments {
                 if curve_ids.insert(segment.curve.as_str()) {
                     frontier.push(segment.curve.as_str());
                 }
@@ -497,7 +497,7 @@ fn face_closure(ir: &CadIr, face_id: &str) -> BTreeSet<String> {
         return ids;
     };
     ids.insert(face.surface.as_str().to_owned());
-    for loop_id in face.loops.iter() {
+    for loop_id in &face.loops {
         ids.insert(loop_id.as_str().to_owned());
         let Some(loop_) = ir.model.loops.iter().find(|row| row.id == *loop_id) else {
             continue;
