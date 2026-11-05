@@ -1352,9 +1352,8 @@ fn prepare_write<'a, 'budget>(
             &baked,
             &mut brep_records,
             &materials,
-            &mut carried,
+            salvage::SalvageRecords { carried: &mut carried, curves: &mut written_curves },
             &mut losses,
-            &mut written_curves,
         )?;
         if let Some(reason) = reason {
             if retained_body {

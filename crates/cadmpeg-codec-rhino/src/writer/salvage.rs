@@ -13,16 +13,21 @@ use super::{
     WriteError, POINT_CLASS,
 };
 
+pub(super) struct SalvageRecords<'a> {
+    pub(super) carried: &'a mut BTreeSet<String>,
+    pub(super) curves: &'a mut BTreeSet<String>,
+}
+
 pub(super) fn write(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
     body: &CadIr,
     output: &mut EncodeBuffer<'_>,
     materials: &MaterialPlan,
-    carried: &mut BTreeSet<String>,
+    records: SalvageRecords<'_>,
     losses: &mut Vec<LossNote>,
-    written_curves: &mut BTreeSet<String>,
 ) -> Result<usize, WriteError> {
+    let SalvageRecords { carried, curves: written_curves } = records;
     let mut count = 0;
     for point in &body.model.points {
         if carried.contains(point.id.as_str()) {

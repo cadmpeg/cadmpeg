@@ -53,7 +53,7 @@ pub(super) fn write(
     for surface in &ir.model.subds {
         if version.value() < 60 {
             match write_proxy(
-                ctx, ir, version, session, output, materials, surface, losses,
+                ctx, ir, version, session, output, materials, surface,
             ) {
                 Ok(()) => count += 1,
                 Err(WriteError::Omit(reason)) => losses.push(
@@ -133,7 +133,6 @@ fn write_proxy(
     output: &mut EncodeBuffer<'_>,
     materials: &super::MaterialPlan,
     surface: &SubdSurface,
-    _losses: &mut Vec<LossNote>,
 ) -> Result<(), WriteError> {
     if let Some(reason) = omission(surface, version) {
         return Err(WriteError::Omit(reason.into()));
