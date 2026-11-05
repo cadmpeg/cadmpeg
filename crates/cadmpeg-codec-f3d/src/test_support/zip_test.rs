@@ -1062,7 +1062,7 @@ pub(crate) fn f3d_with_generated_sketch_annotation(case: SketchAnnotationCase) -
         bulk[owner + 40..owner + 48].copy_from_slice(&100_000.0f64.to_le_bytes());
     }
     let mut frame = Vec::new();
-    crate::test_support::indexed_header(&mut frame, *b"273", 1304);
+    crate::test_support::indexed_header(&mut frame, *b"281", 1304);
     frame.extend_from_slice(&[0; 8]);
     frame.push(1);
     frame.extend_from_slice(&3u32.to_le_bytes());
@@ -1092,7 +1092,7 @@ pub(crate) fn f3d_with_generated_sketch_annotation(case: SketchAnnotationCase) -
     }
     frame.push(0);
     let paired = frame.len();
-    crate::test_support::indexed_header(&mut frame, *b"274", 1304);
+    crate::test_support::indexed_header(&mut frame, *b"282", 1304);
     frame.extend_from_slice(&[0; 8]);
     crate::test_support::push_marked_reference(&mut frame, 277);
     frame.resize(paired + 59, 0);
@@ -1175,7 +1175,7 @@ pub(crate) fn f3d_with_generated_sketch_presentation(
 ) -> Vec<u8> {
     let (mut bulk, mut records) = generated_design_sketch_dimension_bulkstream();
     let mut frame = Vec::new();
-    crate::test_support::indexed_header(&mut frame, *b"273", 1304);
+    crate::test_support::indexed_header(&mut frame, *b"281", 1304);
     frame.extend_from_slice(&[0; 8]);
     frame.push(1);
     frame.extend_from_slice(&2u32.to_le_bytes());
@@ -1185,7 +1185,7 @@ pub(crate) fn f3d_with_generated_sketch_presentation(
     }
     frame.extend_from_slice(&[0xaa, 0xbb, 0xcc]);
     let pair = frame.len();
-    crate::test_support::indexed_header(&mut frame, *b"274", 1304);
+    crate::test_support::indexed_header(&mut frame, *b"282", 1304);
     frame.extend_from_slice(&[0; 8]);
     crate::test_support::push_marked_reference(&mut frame, 277);
     frame.resize(pair + 59, 0);
