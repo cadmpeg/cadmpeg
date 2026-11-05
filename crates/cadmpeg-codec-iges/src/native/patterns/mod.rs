@@ -40,15 +40,15 @@ fn entry_rotation(
     native_id: &str,
     losses: &mut Vec<LossNote>,
     ctx: &DecodeContext<'_>,
-) -> Result<Option<Transform>, CodecError> {
+) -> Option<Transform> {
     let Some(entry) = entries.get(&sequence) else {
-        return Ok(None);
+        return None;
     };
     if entry.transform == 0 {
-        return Ok(None);
+        return None;
     }
     let Some(length_factor) = length_factor else {
-        return Ok(None);
+        return None;
     };
     match resolve_transform(
         entry.transform,
@@ -59,12 +59,12 @@ fn entry_rotation(
         &mut BTreeSet::new(),
         ctx,
     ) {
-        Ok(transform) => Ok(Some(transform)),
+        Ok(transform) => Some(transform),
         Err(_) => {
             losses.push(IgesLossCode::NeutralProjectionUnavailable.note(format!(
                 "{native_id}: array placement pointer is not a resolvable transformation"
             )));
-            Ok(None)
+            None
         }
     }
 }
@@ -210,7 +210,7 @@ fn project_rectangular(
         &record.id,
         losses,
         ctx,
-    )?;
+    );
     let rotate = |x: f64, y: f64| {
         let (sin, cos) = rotation.sin_cos();
         let vector = cadmpeg_ir::math::Vector3::new(x * cos - y * sin, x * sin + y * cos, 0.0);
@@ -344,7 +344,7 @@ fn project_circular(
         &record.id,
         losses,
         ctx,
-    )?;
+    );
     let mut axis = cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0);
     if let Some(placement) = placement {
         let Some(rotated) = placement.apply_vector(axis).and_then(|direction| {
