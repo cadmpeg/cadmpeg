@@ -173,7 +173,7 @@ pub(crate) fn write_new(
     let primary_records = design_bulk.as_ref().map_or(&[][..], |bulk_stream| {
         bulk_stream.primary_records.as_slice()
     });
-    if let Some(meta_stream) = encode_design_metastream(&design_registry, primary_records)? {
+    if let Some(meta_stream) = encode_design_metastream(&design_registry, primary_records, &[])? {
         archive
             .start_file(format!("{DESIGN_FOLDER}/Design1/MetaStream.dat"), options)
             .map_err(|error| {
