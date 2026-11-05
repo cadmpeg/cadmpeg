@@ -224,7 +224,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         return Err(CodecError::UnsupportedContent(format!("SLDPRT feature {} has a total-span linear pattern without a native end-to-end control", feature.id)));
                     };
                     if !omitted_instances.is_empty() {
-                        return Err(CodecError::NotImplemented(format!(
+                        return Err(CodecError::UnsupportedContent(format!(
                             "SLDPRT feature {} has omitted pattern instances",
                             feature.id
                         )));
