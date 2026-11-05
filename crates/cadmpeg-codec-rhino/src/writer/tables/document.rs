@@ -570,7 +570,7 @@ fn render_settings_record(
         {
             2
         } else {
-            u8::from(
+            i32::from(
                 fields
                     .get("obsolete_focal_blur")
                     .is_some_and(|value| !value.is_null()),
