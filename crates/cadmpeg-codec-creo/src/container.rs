@@ -1759,7 +1759,7 @@ fn detect_incomplete_sections(
         let mut truncated_strings = false;
         if let Some(marker) = payload.iter().rposition(|&byte| byte == 0xf8) {
             if let Some((count, after)) = crate::psb::complete_compact_int(payload, marker + 1) {
-                if count >= 1 && count <= 128 {
+                if (1..=128).contains(&count) {
                     let tail = &payload[after..];
                     if !tail.is_empty()
                         && tail
