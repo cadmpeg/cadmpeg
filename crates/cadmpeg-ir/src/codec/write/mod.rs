@@ -113,9 +113,7 @@ pub trait Encoder: encoder_sealed::Sealed {
     /// The static catalog of output flavors this encoder can produce.
     ///
     /// Every native writer synthesizes its catalog targets from the document.
-    /// Preservation of dialects outside the catalog is not listed here;
-    /// [`TargetRequest::Inherit`] asks for it. Ids come from this
-    /// encoder's own format namespace only.
+    /// Ids come from this encoder's own format namespace.
     fn targets(&self) -> TargetCatalog;
 
     /// The decode depth a caller requests for complete output.
