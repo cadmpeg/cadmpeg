@@ -575,10 +575,13 @@ pub(super) fn flatten_composite_curves(
         let mut touched = edges;
         touched.extend(coedges);
         if !touched.is_empty() {
-            message.push_str(&format!(
+            use std::fmt::Write as _;
+            write!(
+                message,
                 "; edges and coedges now carried by the leaf: {}",
                 touched.join(", ")
-            ));
+            )
+            .expect("writing to a string cannot fail");
         }
         losses.push(SldprtLossCode::WriterEntityOmitted.note(message));
     }
