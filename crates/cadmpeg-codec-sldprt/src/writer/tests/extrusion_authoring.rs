@@ -5,6 +5,7 @@ use crate::test_support::parasolid::triangle_body;
 use crate::SldprtCodec;
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::features::holes::{HoleConstruction, HoleKind};
 use cadmpeg_ir::features::{
     BooleanOp, FeatureDefinition, FeatureOperation, PlanarProfileRef, ProfileRef,
 };
@@ -592,7 +593,6 @@ fn source_less_hole_retains_partial_entry_dimensions() {
         let FeatureDefinition::Operation(FeatureOperation::Hole { shape, .. }) = &expected else {
             panic!("fixture must decode as a hole");
         };
-        use cadmpeg_ir::features::holes::{HoleConstruction, HoleKind};
         assert!(
             matches!(
                 shape.construction(),
@@ -648,7 +648,6 @@ fn source_less_hole_retains_unevaluated_entry_form() {
             .unwrap();
         let mut ir = decoded.ir().clone();
         let expected = ir.model.features[0].evaluation.definition().clone();
-        use cadmpeg_ir::features::holes::{HoleConstruction, HoleKind};
         let FeatureDefinition::Operation(FeatureOperation::Hole { shape, .. }) = &expected else {
             panic!("fixture must decode as a hole");
         };
