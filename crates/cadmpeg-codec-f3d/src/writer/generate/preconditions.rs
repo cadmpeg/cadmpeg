@@ -787,12 +787,6 @@ pub(super) fn validate_source_less_design_links(
     native: &F3dNative,
     attributes: &super::attributes::AttributeIndex<'_>,
 ) -> Result<(), CodecError> {
-    if let Some(sentinel) = native.mesh_surface_sentinels.first() {
-        return Err(CodecError::UnsupportedContent(format!(
-            "source-less F3D cannot serialize mesh-surface sentinel {} without its retained ASM record",
-            sentinel.id()
-        )));
-    }
     let coedges = target
         .model
         .coedges
