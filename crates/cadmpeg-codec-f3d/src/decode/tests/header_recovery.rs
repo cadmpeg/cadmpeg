@@ -143,6 +143,24 @@ fn truncated_stored_brep_keeps_its_complete_kernel_header() {
                 .code
             && loss.message.contains("zip.entry")
     }));
+    let partial_cut = cut - 9;
+    crate::test_support::zip_test::with_scan(&source[..partial_cut], |scan| {
+        let header = scan.partial_brep_header().unwrap();
+        let metadata = header.model_metadata().unwrap();
+        assert_eq!(metadata.linear, Some(1.0e-6));
+        assert_eq!(metadata.angular, None);
+    });
+    let partial = F3dCodec
+        .decode(
+            &mut Cursor::new(&source[..partial_cut]),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!((partial.ir().tolerances.linear.get() - 1.0e-5).abs() < HEADER_LINEAR_EPS_MM);
+    assert_eq!(
+        partial.ir().tolerances.angular,
+        cadmpeg_ir::units::Tolerances::default().angular
+    );
     let short = F3dCodec
         .decode(
             &mut Cursor::new(&source[..start]),

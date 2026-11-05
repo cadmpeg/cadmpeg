@@ -3,18 +3,17 @@
 
 use super::{
     reference_marker, synthesis_graph, unsupported_model_losses, BTreeMap, BTreeSet, BodyKind,
-    CadIr, CodecError, DecodeArena, DecodeContext, DecodePolicy, IgesLossCode, SynthesisGraph,
+    CadIr, CodecError, DecodeContext, IgesLossCode, SynthesisGraph,
 };
 use cadmpeg_ir::schema::rewrite::typed::RewriteIdentities;
 
 /// Preserve independent bodies and free carriers when one cannot be encoded.
 pub(super) fn graph(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     version: crate::IgesVersion,
     reason: &str,
 ) -> Result<SynthesisGraph, CodecError> {
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())?;
     let mut result = SynthesisGraph {
         entities: Vec::new(),
         presentations: BTreeMap::new(),
@@ -22,9 +21,9 @@ pub(super) fn graph(
     };
     let mut owned = BTreeSet::new();
     for body in &ir.model.bodies {
-        let (part, identities) = scoped(ir, &ctx, body.id.as_str())?;
+        let (part, identities) = scoped(ir, ctx, body.id.as_str())?;
         owned.extend(identities);
-        admit(&mut result, &part, version, body.id.as_str())?;
+        admit(ctx, &mut result, &part, version, body.id.as_str())?;
     }
     // Body-owned carriers must not reappear as free geometry after a body was
     // omitted. Each remaining independent carrier is admitted on its own.
@@ -40,9 +39,9 @@ pub(super) fn graph(
         if owned.contains(id) {
             continue;
         }
-        let (part, identities) = scoped(ir, &ctx, id)?;
+        let (part, identities) = scoped(ir, ctx, id)?;
         owned.extend(identities);
-        admit(&mut result, &part, version, id)?;
+        admit(ctx, &mut result, &part, version, id)?;
     }
     if result.entities.is_empty() && result.losses.is_empty() {
         result
@@ -53,19 +52,20 @@ pub(super) fn graph(
 }
 
 fn admit(
+    ctx: &DecodeContext<'_>,
     result: &mut SynthesisGraph,
     ir: &CadIr,
     version: crate::IgesVersion,
     identity: &str,
 ) -> Result<(), CodecError> {
-    match synthesis_graph(ir, version) {
+    match synthesis_graph(ctx, ir, version) {
         Ok(graph) => append(result, graph),
         Err(CodecError::UnsupportedContent(reason)) => {
             // Type 508 can carry the model-space edge boundary without UV
             // images. Prefer that degradation to discarding an entire body.
             if ir.model.bodies.len() == 1 && !ir.model.pcurves.is_empty() {
                 let without_uv = without_pcurves(ir)?;
-                match synthesis_graph(&without_uv, version) {
+                match synthesis_graph(ctx, &without_uv, version) {
                     Ok(mut graph) => {
                         for pcurve in &ir.model.pcurves {
                             graph.losses.push(IgesLossCode::WriterPcurvesOmitted.note(format!(
@@ -87,7 +87,7 @@ fn admit(
                 result.losses.push(IgesLossCode::WriterEntityOmitted.note(format!(
                     "IGES wire body {identity} loses its ownership; its carriers are written as free geometry: {reason}"
                 )));
-                return admit(result, &free, version, identity);
+                return admit(ctx, result, &free, version, identity);
             }
             if ir.model.bodies.len() == 1
                 && ir.model.bodies[0].kind == BodyKind::Sheet
@@ -98,12 +98,9 @@ fn admit(
                     .push(IgesLossCode::WriterEntityOmitted.note(format!(
                         "IGES sheet {identity} is split into independently admitted faces: {reason}"
                     )));
-                let arena = DecodeArena::new();
-                let (ctx, _) =
-                    DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())?;
                 for face in &ir.model.faces {
-                    let part = face_document(ir, &ctx, face)?;
-                    admit(result, &part, version, face.id.as_str())?;
+                    let part = face_document(ir, ctx, face)?;
+                    admit(ctx, result, &part, version, face.id.as_str())?;
                 }
                 return Ok(());
             }

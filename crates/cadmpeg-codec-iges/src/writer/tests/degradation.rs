@@ -238,7 +238,7 @@ fn face_with_missing_carrier_reports_each_removed_boundary_record() {
         .expect("trimmed sheet decodes");
     let mut ir = decoded.ir().clone();
     ir.model.edges[0].carrier = cadmpeg_ir::topology::EdgeCarrier::new(None, None).unwrap();
-    let (stripped, losses) = super::super::strip_unusable_face_topology(&ir);
+    let (stripped, losses) = super::super::admission::strip_unusable_face_topology(&ir);
     let stripped = stripped.expect("face with missing carrier is removed");
     assert!(!ir.model.loops.is_empty() && !ir.model.coedges.is_empty());
     assert!(stripped.model.loops.len() < ir.model.loops.len());
@@ -279,7 +279,10 @@ fn unsupported_solid_reports_its_omitted_topology() {
         )
         .expect("solid fixture decodes");
     let ir = decoded.ir();
-    let graph = super::super::degrade::graph(ir, IgesVersion::V4_0, "unsupported solid")
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let ctx = cadmpeg_core::decode::DecodeContext::for_encode(&arena, &policy);
+    let graph = super::super::degrade::graph(&ctx, ir, IgesVersion::V4_0, "unsupported solid")
         .expect("degradation reports unsupported topology");
     for id in ir
         .model
@@ -295,4 +298,178 @@ fn unsupported_solid_reports_its_omitted_topology() {
             graph.losses
         );
     }
+}
+
+#[test]
+fn dangling_coedge_keeps_other_faces_and_reports_opened_solid() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_tetrahedron_solid_file()),
+            &DecodeOptions::default(),
+        )
+        .expect("solid fixture decodes");
+    let mut ir = decoded.ir().clone();
+    let coedge_id = ir.model.coedges[0].id.to_string();
+    let body_id = ir.model.bodies[0].id.to_string();
+    ir.model.coedges[0].edge = "test:model:edge#missing".try_into().unwrap();
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).expect("invalid face degrades");
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(&coedge_id)));
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(&body_id)));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("remaining faces write");
+    let after = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("remaining faces decode");
+    assert!(!after.ir().model.faces.is_empty());
+    assert!(after.ir().model.faces.len() < ir.model.faces.len());
+    assert!(after
+        .ir()
+        .model
+        .bodies
+        .iter()
+        .all(|body| body.kind != cadmpeg_ir::topology::BodyKind::Solid));
+}
+
+#[test]
+fn only_a_proven_spherical_pole_becomes_a_vertex_use() {
+    use cadmpeg_ir::topology::{EdgeCarrier, LoopBoundary, LoopRing, Sense};
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_tetrahedron_solid_file()),
+            &DecodeOptions::default(),
+        )
+        .expect("solid fixture decodes");
+    let mut ir = decoded.ir().clone();
+    let boundary = &ir.model.loops[0];
+    let LoopBoundary::Ring(ring) = &boundary.boundary else {
+        panic!("coedge ring");
+    };
+    let mut ordered = ring.coedges().to_vec();
+    let vertex_uses = ring.vertex_uses().to_vec();
+    let first = ir
+        .model
+        .coedges
+        .iter()
+        .find(|coedge| coedge.id == ordered[0])
+        .unwrap()
+        .clone();
+    let first_edge = ir
+        .model
+        .edges
+        .iter()
+        .find(|edge| edge.id == first.edge)
+        .unwrap();
+    let vertex = match first.sense {
+        Sense::Forward => first_edge.end.clone(),
+        Sense::Reversed => first_edge.start.clone(),
+    };
+    let mut pole_edge = first_edge.clone();
+    pole_edge.id = "test:model:edge#pole".try_into().unwrap();
+    pole_edge.native_ref = None;
+    pole_edge.start = vertex.clone();
+    pole_edge.end = vertex;
+    pole_edge.carrier = EdgeCarrier::new(None, None).unwrap();
+    let mut pole_use = first;
+    pole_use.id = "test:model:coedge#pole".try_into().unwrap();
+    pole_use.native_ref = None;
+    pole_use.edge = pole_edge.id.clone();
+    pole_use.radial_next = pole_use.id.clone();
+    pole_use.pcurves.clear();
+    ordered.insert(1, pole_use.id.clone());
+    ir.model.loops[0].boundary = LoopBoundary::Ring(LoopRing::new(ordered, vertex_uses).unwrap());
+    ir.model.edges.push(pole_edge);
+    ir.model.coedges.push(pole_use);
+    let (unchanged, losses) = crate::writer::admission::pole_edges(&ir).unwrap();
+    assert!(losses.is_empty());
+    assert_eq!(unchanged.model.edges.len(), ir.model.edges.len());
+
+    use cadmpeg_ir::geometry::analytic::SphereSurface;
+    use cadmpeg_ir::geometry::pcurve::{LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata};
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+    use cadmpeg_ir::math::{Point2, Point3, Vector3};
+    use cadmpeg_ir::topology::PcurveUse;
+    let vertex = ir
+        .model
+        .vertices
+        .iter()
+        .find(|v| v.id == ir.model.edges.last().unwrap().start)
+        .unwrap();
+    let point = ir
+        .model
+        .points
+        .iter()
+        .find(|p| p.id == vertex.point)
+        .unwrap()
+        .position()
+        .get();
+    let surface_id = ir
+        .model
+        .faces
+        .iter()
+        .find(|face| face.id == ir.model.loops[0].face)
+        .unwrap()
+        .surface
+        .clone();
+    let surface = ir
+        .model
+        .surfaces
+        .iter_mut()
+        .find(|surface| surface.id == surface_id)
+        .unwrap();
+    surface.geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
+        SphereSurface::try_new(
+            Point3::new(point.x, point.y, point.z - 1.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            1.0,
+        )
+        .unwrap(),
+    ));
+    let id: cadmpeg_ir::ids::PcurveId = "test:model:pcurve#pole".try_into().unwrap();
+    ir.model.pcurves.push(Pcurve {
+        native_ref: None,
+        id: id.clone(),
+        geometry: PcurveGeometry::Line(
+            LinePcurve::try_new(
+                Point2::new(0.0, std::f64::consts::FRAC_PI_2),
+                Point2::new(1.0, 0.0),
+            )
+            .unwrap(),
+        ),
+        metadata: PcurveMetadata::default(),
+    });
+    ir.model
+        .coedges
+        .last_mut()
+        .unwrap()
+        .pcurves
+        .push(PcurveUse {
+            pcurve: id,
+            isoparametric: None,
+            parameter_range: None,
+        });
+    let (lowered, losses) = crate::writer::admission::pole_edges(&ir).unwrap();
+    for id in ["test:model:edge#pole", "test:model:coedge#pole"] {
+        assert!(
+            losses.iter().any(|loss| loss.message.contains(id)),
+            "missing loss for {id}"
+        );
+    }
+    assert_eq!(lowered.model.edges.len() + 1, ir.model.edges.len());
+    assert_eq!(lowered.model.coedges.len() + 1, ir.model.coedges.len());
+    let LoopBoundary::Ring(ring) = &lowered.model.loops[0].boundary else {
+        panic!("coedge ring")
+    };
+    assert!(ring
+        .vertex_uses()
+        .iter()
+        .any(|use_| use_.vertex == ir.model.edges.last().unwrap().start));
 }
