@@ -119,6 +119,45 @@ mod tests {
     use super::*;
 
     #[test]
+    fn empty_and_populated_custom_properties_redecode() {
+        use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+        use cadmpeg_ir::codec::{Codec, DecodeOptions};
+        use std::io::Cursor;
+
+        let mut ir = CadIr::empty();
+        for (name, value) in [("Comment", ""), ("Label", "Example")] {
+            ir.model.attributes.push(SourceAttribute {
+                id: cadmpeg_ir::ids::AttributeId::mint(format!("test:model:attribute#{name}"))
+                    .unwrap(),
+                native_ref: None,
+                target: AttributeTarget::Document,
+                name: name.into(),
+                values: vec![Some(AttributeValue::String(value.into()))],
+            });
+        }
+        let plan = crate::SldprtCodec
+            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+            .unwrap();
+        let mut bytes = Vec::new();
+        plan.write_to(&mut bytes).unwrap();
+        let decoded = crate::SldprtCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        for attribute in &ir.model.attributes {
+            assert!(
+                decoded
+                    .ir()
+                    .model
+                    .attributes
+                    .iter()
+                    .any(|value| value.name == attribute.name && value.values == attribute.values),
+                "{}",
+                attribute.name
+            );
+        }
+    }
+
+    #[test]
     fn custom_property_ordinal_capacity_is_declared() {
         assert!(crate::writer::CAPACITY_FIELDS.contains(&HISTORY_ORDINAL_CAPACITY));
     }

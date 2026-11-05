@@ -189,11 +189,7 @@ pub(super) fn reconcile(
         sketch_texts: original.sketch_texts.clone(),
         ..F3dNative::default()
     };
-    native.mesh_surface_sentinels.retain(|sentinel| {
-        target.model.surfaces.iter().any(|surface| {
-            super::super::generate::preconditions::mesh_sentinel_matches(surface, sentinel)
-        })
-    });
+    retain_mesh_sentinels(target, &mut native);
     super::streams::reconcile(&mut native, losses);
     // Native namespace storage orders every arena by record id, so the
     // generated registry follows id order rather than the decoded file
@@ -791,6 +787,7 @@ pub(super) fn shed_design(target: &mut CadIr) -> Result<(), CodecError> {
         edge_continuities: native.edge_continuities,
         edge_ownerships: native.edge_ownerships,
         face_native_keys: native.face_native_keys,
+        mesh_surface_sentinels: native.mesh_surface_sentinels,
         face_sidedness: native.face_sidedness,
         vertex_ownerships: native.vertex_ownerships,
         wire_topologies: native.wire_topologies,
@@ -818,13 +815,17 @@ pub(super) fn shed_design(target: &mut CadIr) -> Result<(), CodecError> {
     })
 }
 
-pub(super) fn prune(target: &mut CadIr) -> Result<(), CodecError> {
-    let mut native = super::super::primitives::f3d_native(target)?.unwrap_or_default();
+fn retain_mesh_sentinels(target: &CadIr, native: &mut F3dNative) {
     native.mesh_surface_sentinels.retain(|sentinel| {
         target.model.surfaces.iter().any(|surface| {
             super::super::generate::preconditions::mesh_sentinel_matches(surface, sentinel)
         })
     });
+}
+
+pub(super) fn prune(target: &mut CadIr) -> Result<(), CodecError> {
+    let mut native = super::super::primitives::f3d_native(target)?.unwrap_or_default();
+    retain_mesh_sentinels(target, &mut native);
     native.body_native_keys.retain(|record| {
         target
             .model

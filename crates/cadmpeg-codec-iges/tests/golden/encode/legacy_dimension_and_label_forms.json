@@ -235,7 +235,7 @@
               "disposition": "dropped"
             },
             "copious_data": {
-              "disposition": "regenerated",
+              "disposition": "dropped",
               "records": {
                 "iges:native:copious-data#D7": "regenerated"
               }

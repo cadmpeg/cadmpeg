@@ -92,15 +92,24 @@ pub(super) fn charge_smbh_records(
     } else {
         let mut count = 1usize;
         for amount in [
-            model.bodies.len(), model.regions.len(), model.shells.len(),
+            model.bodies.len(),
+            model.regions.len(),
+            model.shells.len(),
             model.shells.iter().map(source_less_wire_count).sum(),
-            model.edges.len(), model.curves.len(), model.edges.len(),
-            model.vertices.len(), model.points.len(),
-            model.bodies.iter().filter(|body| body.transform.is_some()).count(),
+            model.edges.len(),
+            model.curves.len(),
+            model.edges.len(),
+            model.vertices.len(),
+            model.points.len(),
+            model
+                .bodies
+                .iter()
+                .filter(|body| body.transform.is_some())
+                .count(),
         ] {
-            count = count.checked_add(amount).ok_or_else(|| CodecError::InvalidInput(
-                "F3D BREP record count exceeds usize".into()
-            ))?;
+            count = count.checked_add(amount).ok_or_else(|| {
+                CodecError::InvalidInput("F3D BREP record count exceeds usize".into())
+            })?;
         }
         i64::try_from(count).map_err(CodecError::malformed)?
     };
@@ -113,11 +122,15 @@ pub(super) fn charge_smbh_records(
     let histories = if native.asm_histories.is_empty() {
         1
     } else {
-        native.asm_histories.iter().map(|history| {
-            history.states().len() + usize::from(history.preamble.is_some())
-        }).sum()
+        native
+            .asm_histories
+            .iter()
+            .map(|history| history.states().len() + usize::from(history.preamble.is_some()))
+            .sum()
     };
-    let count = geometry.checked_add(attributes).and_then(|count| count.checked_add(histories))
+    let count = geometry
+        .checked_add(attributes)
+        .and_then(|count| count.checked_add(histories))
         .ok_or_else(|| CodecError::InvalidInput("F3D BREP record count exceeds usize".into()))?;
     for _ in 0..count {
         output.charge_entities(1, "F3D BREP record")?;
