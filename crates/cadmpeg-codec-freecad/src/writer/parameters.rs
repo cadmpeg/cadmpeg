@@ -185,15 +185,15 @@ pub(in crate::writer) fn render_expression_lossy(
 
 /// Allocate each ownerless parameter once. Existing typed `VarSets` remain the
 /// same owners; authored globals share one deterministic new
-/// `Spreadsheet::Sheet` named `Parameters`, which every FreeCAD version
-/// loads (`App::VarSet` does not load before FreeCAD 1.0). A `VarSet`
+/// `Spreadsheet::Sheet` named `Parameters`, which every `FreeCAD` version
+/// loads (`App::VarSet` does not load before `FreeCAD` 1.0). A `VarSet`
 /// object present as a native record is re-emitted as a `VarSet`
 /// (`writer/native/neutral.rs`); only the generated owner is a sheet.
 ///
 /// Ownerless parameters without cells become cells of the generated sheet:
 /// each is allocated a column-A address in parameter order, with the
 /// parameter name as its alias when the name is a valid free identifier.
-/// Cell parameters have no driving flag in FreeCAD, so a cleared driving
+/// Cell parameters have no driving flag in `FreeCAD`, so a cleared driving
 /// flag is a documented loss, as is a name with no valid alias (#238 §5.5).
 pub(super) fn prepare(
     ir: &CadIr,
@@ -315,7 +315,7 @@ pub(super) fn prepare(
                 continue;
             }
             let Some(address) =
-                cadmpeg_ir::CellAddress::new(count + 1, 1).map(|address| address.a1())
+                cadmpeg_ir::CellAddress::new(count + 1, 1).map(cadmpeg_ir::CellAddress::a1)
             else {
                 continue;
             };
@@ -456,7 +456,9 @@ pub(super) fn write(
             continue;
         }
         if let Some((sketch, path)) = constraints.get(parameter.id.as_str()) {
-            if !is_literal_binding(parameter) {
+            if is_literal_binding(parameter) {
+                report_literal_normalization(parameter, losses);
+            } else {
                 if let Some(name) = names.get(*sketch) {
                     expressions
                         .entry(name.clone())
@@ -466,8 +468,6 @@ pub(super) fn write(
                             &[("path", path.clone()), ("expression", expression.clone())],
                         ));
                 }
-            } else {
-                report_literal_normalization(parameter, losses);
             }
             continue;
         }
@@ -562,7 +562,9 @@ pub(super) fn write(
             );
         }
         object.set(property_name, property);
-        if !is_literal_binding(parameter) {
+        if is_literal_binding(parameter) {
+            report_literal_normalization(parameter, losses);
+        } else {
             expressions.entry(name).or_default().push(xml::element(
                 "Expression",
                 &[
@@ -570,8 +572,6 @@ pub(super) fn write(
                     ("expression", expression),
                 ],
             ));
-        } else {
-            report_literal_normalization(parameter, losses);
         }
     }
     controls::write(ir, objects, names, &mut expressions, losses)?;
