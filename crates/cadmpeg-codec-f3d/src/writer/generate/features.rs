@@ -127,7 +127,7 @@ fn select(target: &CadIr) -> Vec<Primitive> {
                             },
                         )
                     }
-                    _ => None,
+                    RadialDimension::Radius(_) => None,
                 };
                 (
                     "CylinderPrimitive",
