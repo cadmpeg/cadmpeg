@@ -264,10 +264,12 @@ pub(crate) fn synchronize_configuration_records(
     Ok(())
 }
 
+type GeneratedLaneObjects = (Vec<u8>, HashMap<u32, Option<usize>>);
+
 fn generated_lane_objects(
     native: &crate::native::SldprtNative,
     slot: &str,
-) -> Result<(Vec<u8>, HashMap<u32, Option<usize>>), CodecError> {
+) -> Result<GeneratedLaneObjects, CodecError> {
     let features = native
         .feature_histories
         .iter()

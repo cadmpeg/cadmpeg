@@ -3012,18 +3012,17 @@ fn metadata_attributes(ir: &CadIr) -> Vec<&cadmpeg_ir::attributes::SourceAttribu
         .collect()
 }
 
+type MetadataPayloads = (
+    Vec<u8>,
+    Option<Vec<u8>>,
+    Vec<cadmpeg_ir::report::loss::LossNote>,
+);
+
 fn metadata_payloads(
     ir: &CadIr,
     native: Option<&SldprtNative>,
     length_scale: f64,
-) -> Result<
-    (
-        Vec<u8>,
-        Option<Vec<u8>>,
-        Vec<cadmpeg_ir::report::loss::LossNote>,
-    ),
-    write_error::WriteError,
-> {
+) -> Result<MetadataPayloads, write_error::WriteError> {
     use cadmpeg_ir::attributes::AttributeTarget;
 
     let mut objects = Vec::new();
