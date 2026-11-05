@@ -783,7 +783,7 @@ fn compact_custom_payload<'a>(
     use cadmpeg_ir::attributes::AttributeValue;
     let mut matches = target.model.attributes.iter().filter(|attribute| {
         attribute.target == *entity
-            && attribute.name == "ATTRIB_CUSTOM-attrib"
+            && attribute.name.split('-').all(|part| !part.is_empty() && u8::try_from(part.len()).is_ok())
             && matches!(attribute.values.first(), Some(Some(AttributeValue::Reference(_))))
             && matches!(attribute.values.get(1), Some(Some(AttributeValue::String(value))) if value == kind)
             && attribute.values[1..].iter().all(|value| matches!(value,
@@ -887,13 +887,19 @@ pub(in crate::writer) fn represented_attributes(
 fn native_compact_custom(
     records: &mut Vec<u8>,
     next: i64,
-    payload: &[Option<cadmpeg_ir::attributes::AttributeValue>],
+    attribute: &cadmpeg_ir::attributes::SourceAttribute,
 ) -> Result<(), CodecError> {
     use cadmpeg_ir::attributes::AttributeValue;
-    native_subident(records, "ATTRIB_CUSTOM")?;
-    native_ident(records, "attrib")?;
+    let mut parts = attribute.name.split('-').peekable();
+    while let Some(part) = parts.next() {
+        if parts.peek().is_some() {
+            native_subident(records, part)?;
+        } else {
+            native_ident(records, part)?;
+        }
+    }
     native_ref(records, next);
-    for value in &payload[1..] {
+    for value in &attribute.values[1..] {
         match value {
             Some(AttributeValue::String(value)) => native_string(records, value)?,
             Some(AttributeValue::Integer(value)) => native_i64(records, *value),
@@ -1230,7 +1236,7 @@ pub(super) fn encode_source_less_attributes(
             "generic_tag_attrib_def",
             next != -1,
         ) {
-            native_compact_custom(records, next, &payload.values)?;
+            native_compact_custom(records, next, payload)?;
         } else {
             native_persistent_design_attribute(
                 records,
@@ -1357,7 +1363,7 @@ pub(super) fn encode_source_less_attributes(
         if let Some(payload) =
             compact_custom_payload(target, &entity, "Timestamp_attrib_def", false)
         {
-            native_compact_custom(records, -1, &payload.values)?;
+            native_compact_custom(records, -1, payload)?;
         } else {
             native_subident(records, "ATTRIB_CUSTOM")?;
             native_ident(records, "attrib")?;
