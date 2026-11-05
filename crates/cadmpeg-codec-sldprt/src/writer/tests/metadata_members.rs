@@ -914,3 +914,38 @@ fn duplicate_feature_owned_names_refuse_ambiguous_source_member_identity() {
     edit_radius(&mut decoded.ir_mut());
     synthesized_after_declined_patch(&decoded);
 }
+
+#[test]
+fn foreign_bounding_envelope_is_written_from_its_values() {
+    use cadmpeg_ir::attributes::{AttributeTarget, SourceAttribute};
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let id = cadmpeg_ir::ids::AttributeId::mint("foreign:metadata:attribute#bounds").unwrap();
+    let values = vec![Some(AttributeValue::vector([1.0, 2.0, 3.0, 4.0]).unwrap())];
+    ir.model.attributes.push(SourceAttribute {
+        id: id.clone(),
+        native_ref: None,
+        target: AttributeTarget::Document,
+        name: "bounding_envelope".into(),
+        values: values.clone(),
+    });
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(!plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(id.as_str())));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(decoded.ir().model.attributes.iter().any(|attribute| {
+        attribute.target == AttributeTarget::Document
+            && attribute.name == "bounding_envelope"
+            && attribute.values == values
+    }));
+}

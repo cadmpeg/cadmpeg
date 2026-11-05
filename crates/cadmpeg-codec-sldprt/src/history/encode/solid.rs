@@ -118,12 +118,6 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 )));
             }
-            if *op == BooleanOp::Unresolved && existing.is_none() {
-                return Err(CodecError::UnsupportedContent(format!(
-                    "SLDPRT feature {} requires retained extrusion operation data",
-                    feature.id
-                )));
-            }
             if existing.is_some_and(|record| !is_extrude(record)) {
                 return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} changes unsupported extrusion semantics",
@@ -185,12 +179,6 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 }))
                 && !parameters.contains_key("Depth");
             let mut properties = self.base_properties();
-            if extent_is_unresolved && existing.is_none() {
-                return Err(CodecError::UnsupportedContent(format!(
-                    "SLDPRT feature {} requires retained extrusion extent data",
-                    feature.id
-                )));
-            }
             if !extent_is_unresolved {
                 parameters.remove("Depth");
                 parameters.remove("Depth2");
@@ -377,6 +365,9 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     format_angle_rad(self.dimension(draft)?.into()),
                 );
             }
+            if *op == BooleanOp::Unresolved {
+                properties.remove("Operation");
+            }
             if *op != BooleanOp::Unresolved
                 && (existing.is_some_and(|record| record.properties.contains_key("Operation"))
                     || existing.and_then(extrude_feature_op).is_none())
@@ -389,15 +380,19 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             if let Some(profile_source) = profile_source {
                 properties.insert(cadmpeg_core::nonblank_literal!("Profile"), profile_source);
             }
-            let kind = existing.map_or_else(
-                || match op {
-                    BooleanOp::Unresolved => "Extrusion".into(),
-                    BooleanOp::Join => "BossExtrude".into(),
-                    BooleanOp::Cut => "CutExtrude".into(),
-                    BooleanOp::NewBody | BooleanOp::Intersect => "Extrusion".into(),
-                },
-                |record| record.kind.clone(),
-            );
+            let kind = if *op == BooleanOp::Unresolved {
+                "Extrusion".into()
+            } else {
+                existing.map_or_else(
+                    || match op {
+                        BooleanOp::Unresolved => "Extrusion".into(),
+                        BooleanOp::Join => "BossExtrude".into(),
+                        BooleanOp::Cut => "CutExtrude".into(),
+                        BooleanOp::NewBody | BooleanOp::Intersect => "Extrusion".into(),
+                    },
+                    |record| record.kind.clone(),
+                )
+            };
             NeutralFeatureEncoding {
                 kind,
                 parameters,
