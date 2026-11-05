@@ -644,7 +644,9 @@ pub(super) fn write_semantic_at(
         .transpose()?
         .flatten();
     let envelope = if source_envelope.is_some() {
-        envelope::build(&sections, &type_ids, source_scan.as_ref())?
+        let (envelope, residuals) = envelope::build(&sections, &type_ids, source_scan.as_ref())?;
+        normalization_losses.extend(residuals);
+        envelope
     } else if source_scan.is_none() {
         let (envelope, residuals) =
             envelope::build_fresh(outer_header(retained_records), &sections, &type_ids)?;
