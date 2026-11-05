@@ -1329,13 +1329,25 @@ fn semantic_writer_retains_unresolved_native_edge_treatments() {
         }])
     ));
 
-    for (index, reason) in [
-        (0, "unresolved fillet radius law"),
-        (1, "unresolved chamfer dimensions"),
-    ] {
+    for index in 0..2 {
         let mut detached = decoded.ir().clone();
         detached.model.features[index].native_ref = None;
-        assert_solved_feature_reduction(&detached, decoded.source_fidelity(), index, reason);
+        let expected = detached.model.features[index]
+            .evaluation
+            .definition()
+            .clone();
+        let mut bytes = Vec::new();
+        crate::test_support::plan_inherited_write(&detached, decoded.source_fidelity(), &mut bytes)
+            .unwrap();
+        let output = SldprtCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        assert!(output
+            .ir()
+            .model
+            .features
+            .iter()
+            .any(|feature| feature.evaluation.definition() == &expected));
     }
 
     decoded.ir_mut().model.features[0].name = Some("Renamed round".into());

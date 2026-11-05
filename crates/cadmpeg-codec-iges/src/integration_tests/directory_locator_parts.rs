@@ -78,10 +78,7 @@ fn unlocatable_parameter_data_keeps_its_readable_directory_entry_and_the_peer() 
         serde_json::to_value(&native.arenas()["entities"]).expect("current entities"),
         expected
     );
-    assert!(native
-        .arenas()
-        .get("quarantined_directory_records")
-        .is_none_or(Vec::is_empty));
+    crate::test_support::assert_given_up_homes(&decoded);
     let fidelity = decoded.source_fidelity();
     // The unlocated Parameter Data is a Parameter-section failure: every
     // given-up part lies inside the Parameter section.

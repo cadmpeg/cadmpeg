@@ -536,7 +536,7 @@ fn failed_composite_curve_does_not_export_its_children_as_roots() {
 }
 
 #[test]
-fn additional_carrier_name_attributes_are_reported_by_identity() {
+fn additional_carrier_name_attributes_are_written_as_properties() {
     use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("cube");
@@ -565,11 +565,14 @@ fn additional_carrier_name_attributes_are_reported_by_identity() {
     assert!(std::str::from_utf8(&bytes)
         .unwrap()
         .contains("PLANE('First',"));
+    let text = std::str::from_utf8(&bytes).unwrap();
+    assert!(text.contains("DESCRIPTIVE_REPRESENTATION_ITEM('','Second')"));
+    assert!(text.contains("DESCRIPTIVE_REPRESENTATION_ITEM('','First')"));
     for id in [
         "test:model:attribute#second",
         "test:model:attribute#duplicate",
     ] {
-        assert!(report.losses.iter().any(|loss| loss.code
+        assert!(!report.losses.iter().any(|loss| loss.code
             == StepLossCode::SourceAttributeNotWritten.kind()
             && loss.message.contains(id)));
     }
@@ -634,4 +637,108 @@ fn a_surface_shell_in_a_mixed_body_is_not_reported_as_an_omitted_wire_shell() {
     assert_eq!(losses.len(), 1);
     assert!(losses[0].message.contains(wire_shell.as_str()));
     assert!(!losses[0].message.contains(surface_shell.as_str()));
+}
+
+#[test]
+fn scalar_attributes_characterize_their_step_geometry_items() {
+    use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let face = ir.model.faces[0].id.clone();
+    let surface = ir.model.faces[0].surface.clone();
+    ir.model.attributes.push(SourceAttribute {
+        id: "test:model:attribute#face-finish".try_into().unwrap(),
+        native_ref: None,
+        target: AttributeTarget::Face(face),
+        name: "Finish".into(),
+        values: vec![Some(AttributeValue::String("brushed".into()))],
+    });
+    ir.model.attributes.push(SourceAttribute {
+        id: "test:model:attribute#surface-grade".try_into().unwrap(),
+        native_ref: None,
+        target: AttributeTarget::Record {
+            arena: cadmpeg_ir::document::ArenaName::parse("surfaces").unwrap(),
+            id: surface.as_str().into(),
+        },
+        name: "Grade".into(),
+        values: vec![Some(AttributeValue::Integer(7))],
+    });
+    let mut bytes = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut bytes,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .unwrap();
+    let text = String::from_utf8(bytes).unwrap();
+    for (name, expected_type, expected_value, attribute_id) in [
+        (
+            "Finish",
+            "ADVANCED_FACE",
+            "DESCRIPTIVE_REPRESENTATION_ITEM('','brushed')",
+            "test:model:attribute#face-finish",
+        ),
+        (
+            "Grade",
+            "PLANE",
+            "INTEGER_REPRESENTATION_ITEM('',7)",
+            "test:model:attribute#surface-grade",
+        ),
+    ] {
+        let prefix = format!("PROPERTY_DEFINITION('{name}','',#");
+        let property = text
+            .lines()
+            .find(|line| line.contains(&prefix))
+            .expect("property definition");
+        let owner = property
+            .split_once(&prefix)
+            .unwrap()
+            .1
+            .split(')')
+            .next()
+            .unwrap();
+        let owner_prefix = format!("#{owner} = CHARACTERIZED_ITEM_WITHIN_REPRESENTATION('','',#");
+        let owner_line = text
+            .lines()
+            .find(|line| line.starts_with(&owner_prefix))
+            .expect("characterized geometry");
+        let item = owner_line
+            .strip_prefix(&owner_prefix)
+            .unwrap()
+            .split(',')
+            .next()
+            .unwrap();
+        assert!(text
+            .lines()
+            .any(|line| line.starts_with(&format!("#{item} = {expected_type}("))));
+        let property_id = property.split_once(" = ").unwrap().0;
+        let link_prefix = format!("PROPERTY_DEFINITION_REPRESENTATION({property_id},#");
+        let link = text
+            .lines()
+            .find(|line| line.contains(&link_prefix))
+            .unwrap();
+        let rep = link
+            .split_once(&link_prefix)
+            .unwrap()
+            .1
+            .split(')')
+            .next()
+            .unwrap();
+        let rep_prefix = format!("#{rep} = REPRESENTATION('',(#");
+        let rep_line = text
+            .lines()
+            .find(|line| line.starts_with(&rep_prefix))
+            .unwrap();
+        let value = rep_line
+            .strip_prefix(&rep_prefix)
+            .unwrap()
+            .split(')')
+            .next()
+            .unwrap();
+        assert!(text.contains(&format!("#{value} = {expected_value}")));
+        assert!(!report
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains(attribute_id)));
+    }
 }
