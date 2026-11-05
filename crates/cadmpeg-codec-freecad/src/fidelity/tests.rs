@@ -68,3 +68,19 @@ fn application_payloads_link_real_entry_extents_without_an_extra_source_copy() {
         assert!(link.get(field).is_none(), "{field}");
     }
 }
+
+#[test]
+fn damaged_varset_value_keeps_both_possible_classes() {
+    use cadmpeg_ir::{ArenaClass, Codec, DecodeOptions};
+    let xml = "<Document SchemaVersion='4' FileVersion='1'><Objects Count='1'><Object name='Vars' type='App::VarSet'/></Objects><ObjectData Count='1'><Object name='Vars'><Properties Count='1'><Property name='Value' type='App::PropertyInteger'><Integer value='9223372036854775808'/></Property></Properties></Object></ObjectData></Document>";
+    let bytes = crate::test_support::test_archive::archive(xml);
+    let decoded = crate::FcstdCodec
+        .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let parts = crate::test_support::source_fidelity::given_up(decoded.source_fidelity());
+    let [(_, retained)] = parts.as_slice() else {
+        panic!("one damaged property value")
+    };
+    assert!(retained.untyped().contains(&ArenaClass::Model));
+    assert!(retained.untyped().contains(&ArenaClass::Design));
+}
