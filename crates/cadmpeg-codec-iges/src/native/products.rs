@@ -440,25 +440,20 @@ pub(super) fn project(
         let prototype = match target {
             Some(target) => {
                 let key = format!("iges:entity:directory#{target}");
-                if !definitions.contains_key(&key) {
-                    definitions.insert(
-                        key,
-                        ProductDefinition {
-                            sketches: Vec::new(),
-                            id: ids::product(&Stem::directory(target)),
-                            kind: ProductDefinitionKind::Part,
-                            source_name: None,
-                            label: entries
-                                .get(&target)
-                                .and_then(|entry| directory_label(entry)),
-                            description: None,
-                            part_number: None,
-                            bom_properties: BTreeMap::new(),
-                            bodies: Vec::new(),
-                            native_ref: Some(format!("iges:solid:boolean-tree#D{target}")),
-                        },
-                    );
-                }
+                definitions.entry(key).or_insert_with(|| ProductDefinition {
+                    sketches: Vec::new(),
+                    id: ids::product(&Stem::directory(target)),
+                    kind: ProductDefinitionKind::Part,
+                    source_name: None,
+                    label: entries
+                        .get(&target)
+                        .and_then(|entry| directory_label(entry)),
+                    description: None,
+                    part_number: None,
+                    bom_properties: BTreeMap::new(),
+                    bodies: Vec::new(),
+                    native_ref: Some(format!("iges:solid:boolean-tree#D{target}")),
+                });
                 match definitions.get(&format!("iges:entity:directory#{target}")) {
                     Some(definition) => PrototypeReference::Local {
                         definition: definition.id.clone(),
