@@ -531,9 +531,7 @@ fn f3z_archive_recursively_merges_nested_occurrences() {
 }
 
 #[test]
-fn f3z_nested_member_reference_obeys_session_depth_limit() {
-    use cadmpeg_core::decode::ResourceDimension;
-
+fn f3z_nested_member_part_depth_limit_keeps_root() {
     const CHILD_ROLE: &str = "11112222-3333-4444-5555-666677778888";
     let component = f3d_without_brep("component-design", "component.f3d", &[]);
     let middle = f3d_without_brep(
@@ -551,18 +549,19 @@ fn f3z_nested_member_reference_obeys_session_depth_limit() {
         ],
     );
     let mut options = DecodeOptions::default();
-    // The session ceiling includes member frames and decoded entity reconstruction.
     options.policy.limits.max_recursion_depth = 6;
-    let error =
+    let decoded =
         crate::test_support::archive_session::decode(&mut Cursor::new(archive.clone()), &options)
-            .expect_err("nested member redirections exceed the selected depth");
-    assert!(matches!(
-        error,
-        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-            if limit.dimension == ResourceDimension::RecursionDepth
-                && limit.limit == 6 && limit.used == 6 && limit.additional == 1
-                && limit.reason == cadmpeg_core::decode::ResourceFailure::BudgetExceeded
-    ));
+            .expect("the root survives the nested member part limit");
+    let losses: Vec<_> = decoded.report().losses.iter().filter(|loss| {
+        loss.code == cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable.note("").code
+    }).collect();
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].message.contains("middle.f3d"));
+    assert!(losses[0].message.contains("RecursionDepth"));
+    assert!(losses[0].message.contains("limit 6, used 6, requested 1"));
+    assert_eq!(decoded.ir().native_unknowns("f3d").unwrap().len(), 1);
+    assert!(decoded.ir().scope.model);
     crate::test_support::archive_session::decode(
         &mut Cursor::new(archive),
         &DecodeOptions::default(),
