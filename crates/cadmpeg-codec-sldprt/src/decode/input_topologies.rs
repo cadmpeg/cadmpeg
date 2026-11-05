@@ -105,6 +105,7 @@ pub(super) fn project(ir: &mut CadIr, lanes: &[FeatureInputLane], losses: &mut V
 
 fn state(owner: &FeatureId) -> FeatureInputTopology {
     FeatureInputTopology {
+        operands: Default::default(),
         id: FeatureInputTopologyId::compose(
             &cadmpeg_ir::identity_namespace!("sldprt", "model", "input-topology"),
             owner.key(),

@@ -420,6 +420,22 @@ fn source_less_compact_custom_attributes_preserve_values() {
     *value = cadmpeg_ir::scalar::FiniteReal::new(value.get() + 10.0).unwrap();
     let (output, _) = super::source_less_analytic::synthesize_document(&edited, None);
     assert_eq!(output.ir().model.attributes, edited.model.attributes);
+
+    let mut edited = decoded.ir().clone();
+    edited.model.attributes[0].values[9] = Some(cadmpeg_ir::attributes::AttributeValue::Integer(9));
+    edited.model.attributes[0].values[14] =
+        Some(cadmpeg_ir::attributes::AttributeValue::Integer(43));
+    let (output, _) = super::source_less_analytic::synthesize_document(&edited, None);
+    assert_eq!(output.ir().model.attributes, edited.model.attributes);
+    assert_eq!(
+        crate::test_support::native_test::f3d_native(output.ir()).body_native_keys[0].asm_body_key,
+        Some(43)
+    );
+    assert_eq!(
+        crate::test_support::native_test::f3d_native(output.ir()).persistent_design_links[0]
+            .design_reference,
+        9
+    );
 }
 
 #[test]

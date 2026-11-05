@@ -162,20 +162,27 @@ fn wide_parameter_with_discriminator_0_reads_after_the_narrow_form_fails() {
 fn decode_reports_frames_that_name_a_parameter_collection_and_match_no_grammar() {
     let stream = "FusionAssetName[Active]/Design1/BulkStream.dat";
     let mut bulk = parameter_record(Some(44), "first", "AlongDistance", Some("mm"), "d1", 1.0);
+    bulk[4..7].copy_from_slice(b"256");
+    let mut records = vec![(71, 0)];
     let mut rejected = parameter_record(Some(46), "second", "AlongDistance", Some("mm"), "d2", 2.0);
+    rejected[4..7].copy_from_slice(b"256");
     rejected[7] = 47;
     let expression_end = 46 + 4 + 2 * "second".len();
     rejected[expression_end] = 7;
+    records.push((47, u64::try_from(bulk.len()).unwrap()));
     bulk.extend_from_slice(&rejected);
     let mut other_target = rejected.clone();
     other_target[7] = 49;
     let tail = other_target.len() - 10;
     other_target[tail] = 20;
+    records.push((49, u64::try_from(bulk.len()).unwrap()));
     bulk.extend_from_slice(&other_target);
     // The document flag with another source kind matches no grammar.
     let mut localized =
         parameter_record(None, "12 mm", "Paramètre utilisateur", Some("mm"), "o", 1.2);
+    localized[4..7].copy_from_slice(b"256");
     localized[7] = 51;
+    records.push((51, u64::try_from(bulk.len()).unwrap()));
     bulk.extend_from_slice(&localized);
     // A non-finite value closes the grammar and defines no record; the decode
     // continues.
@@ -187,10 +194,14 @@ fn decode_reports_frames_that_name_a_parameter_collection_and_match_no_grammar()
         "n",
         f64::NAN,
     );
+    non_finite[4..7].copy_from_slice(b"256");
     non_finite[7] = 55;
+    records.push((55, u64::try_from(bulk.len()).unwrap()));
     bulk.extend_from_slice(&non_finite);
     let mut last = parameter_record(Some(52), "last", "AlongDistance", Some("mm"), "d3", 3.0);
+    last[4..7].copy_from_slice(b"256");
     last[7] = 53;
+    records.push((53, u64::try_from(bulk.len()).unwrap()));
     bulk.extend_from_slice(&last);
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
@@ -198,29 +209,65 @@ fn decode_reports_frames_that_name_a_parameter_collection_and_match_no_grammar()
     zip.start_file(stream, stored).unwrap();
     zip.write_all(&bulk).unwrap();
     let metadata = crate::test_support::streams_test::design_metastream_with_records(
-        &[(
-            "B0556F58-EE09-46A7-B18F-E296F48E5B13",
-            "A7AEA631-985B-4DD1-8CE2-DE2C-14B54081",
-            3,
-            "CommonData",
-            &[19],
-        )],
-        &[],
+        &[
+            (
+                "00000000-0000-0000-0000-000000000001",
+                "",
+                1,
+                "Fusion",
+                &[71, 47, 49, 51, 55, 53],
+            ),
+            (
+                "B0556F58-EE09-46A7-B18F-E296F48E5B13",
+                "A7AEA631-985B-4DD1-8CE2-DE2C-14B54081",
+                3,
+                "CommonData",
+                &[19],
+            ),
+        ],
+        &records,
     );
     zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
         .unwrap();
     zip.write_all(&metadata).unwrap();
     let archive = zip.finish().unwrap().into_inner();
-    let decoded = with_scan(&archive, decode_parameters).unwrap();
+    let decoded = decode_archive(&archive).unwrap();
     let names: Vec<_> = decoded
         .parameters
         .iter()
         .map(crate::records::parameters::DesignParameter::name)
         .collect();
     assert_eq!(names, ["d1", "d3"]);
-    let [unparsed] = decoded.unparsed.as_slice() else {
-        panic!("expected one stream with unparsed parameter frames");
-    };
-    assert_eq!(unparsed.stream, stream);
-    assert_eq!(unparsed.count, 3);
+    assert_eq!(decoded.losses.len(), 3);
+    assert!(decoded
+        .losses
+        .iter()
+        .all(|loss| loss.code.local_code() == "record.unreadable" && loss.provenance.is_some()));
+}
+
+#[test]
+fn owned_discriminated_parameter_retains_six_expression_flags() {
+    let mut frame = parameter_record(Some(44), "1", "TangencyWeight", None, "d287", 1.0);
+    let expression_end = 46 + 4 + 2;
+    frame.splice(
+        expression_end..expression_end + 9,
+        [0, 0, 0, 0, 0, 1, 0, 0, 0, 0],
+    );
+    let parameter = parse_design_parameter_record(&frame).expect("extended flag form");
+    assert_eq!(parameter.owner_record_index(), Some(44));
+    assert_eq!(parameter.expression(), "1");
+    assert_eq!(parameter.source_kind(), "TangencyWeight");
+    assert_eq!(parameter.name(), "d287");
+    assert_eq!(parameter.evaluated_value().get(), 1.0);
+    let value = serde_json::to_value(&parameter).unwrap();
+    assert_eq!(
+        value["expression_flags"],
+        serde_json::json!([false, true, false, false, false, false])
+    );
+    let roundtrip: crate::records::parameters::DesignParameter =
+        serde_json::from_value(value).unwrap();
+    assert_eq!(
+        serde_json::to_value(roundtrip).unwrap()["expression_flags"],
+        serde_json::json!([false, true, false, false, false, false])
+    );
 }
