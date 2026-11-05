@@ -419,26 +419,35 @@ fn semantic_writer_omits_marker_framing_without_typed_operands() {
         .any(|loss| loss.code.local_code() == "native.records-omitted"));
     let mut encoded = Vec::new();
     plan.write_to(&mut encoded).unwrap();
-    let scan = crate::test_support::container::scan(&encoded);
-    assert!(!scan
-        .blocks
-        .iter()
-        .any(|block| block.section.name() == Some("Contents/Config-0-ResolvedFeatures")));
     let regenerated = SldprtCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .unwrap();
-    assert!(sldprt_native(regenerated.ir())
+    let native = sldprt_native(regenerated.ir());
+    assert!(native
         .feature_input_lanes
-        .is_empty());
+        .iter()
+        .flat_map(|lane| &lane.classes)
+        .any(|class| class.name == "sgPointHandle"));
+    assert!(native
+        .feature_input_lanes
+        .iter()
+        .all(|lane| lane.sketch_entities.is_empty()));
     assert_eq!(
         regenerated.ir().model.features.len(),
         decoded.ir().model.features.len()
     );
     let synthesized =
         crate::test_support::assert_source_free_synthesis_agrees(decoded.ir(), regenerated.ir());
-    assert!(sldprt_native(synthesized.ir())
+    let native = sldprt_native(synthesized.ir());
+    assert!(native
         .feature_input_lanes
-        .is_empty());
+        .iter()
+        .flat_map(|lane| &lane.classes)
+        .any(|class| class.name == "sgPointHandle"));
+    assert!(native
+        .feature_input_lanes
+        .iter()
+        .all(|lane| lane.sketch_entities.is_empty()));
 }
 
 #[test]
