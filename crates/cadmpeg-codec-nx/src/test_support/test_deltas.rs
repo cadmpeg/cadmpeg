@@ -487,6 +487,7 @@ pub(crate) fn bspline_partition_stream() -> Vec<u8> {
 
     let mut descriptor = record(126, 48);
     put_ref(&mut descriptor, 2, 20);
+    put_ref(&mut descriptor, 34, 22);
     put_ref(&mut descriptor, 6, 1);
     put_ref(&mut descriptor, 8, 1);
     put_ref(&mut descriptor, 12, 2);
@@ -507,6 +508,7 @@ pub(crate) fn bspline_partition_stream() -> Vec<u8> {
     put_ref(&mut data, 2, 21);
     data[90] = b'+';
     data[91..95].copy_from_slice(&12u32.to_be_bytes());
+    put_ref(&mut data, 95, 22);
     for (index, value) in [
         0.0, 0.0, 0.0, 0.0, 0.02, 0.0, 0.01, 0.0, 0.0, 0.01, 0.02, 0.0,
     ]
@@ -550,12 +552,14 @@ pub(crate) fn bspline_partition_stream() -> Vec<u8> {
     put_ref(&mut curve_descriptor, 10, 3);
     put_ref(&mut curve_descriptor, 14, 2);
     curve_descriptor[16] = 5;
+    put_ref(&mut curve_descriptor, 21, 44);
     put_ref(&mut curve_descriptor, 23, 42);
     put_ref(&mut curve_descriptor, 25, 43);
     s.extend(curve_descriptor);
     let mut curve_data = record(135, 15 + 6 * 8);
     put_ref(&mut curve_data, 2, 41);
     curve_data[9..13].copy_from_slice(&6u32.to_be_bytes());
+    put_ref(&mut curve_data, 13, 44);
     for (index, value) in [0.0, 0.0, 0.0, 0.02, 0.0, 0.0].into_iter().enumerate() {
         put_f64(&mut curve_data, 15 + index * 8, value);
     }
@@ -622,7 +626,7 @@ pub(crate) fn extended_bspline_surface_stream() -> Vec<u8> {
 
     let xmt = encoded_xmt(payload_ref);
     let shift = xmt.len() - 2;
-    let first = encoded_xmt(40_020);
+    let first = encoded_xmt(40_009);
     let data_at = 95 + shift + first.len();
     let mut payload = vec![0u8; data_at + 12 * 8];
     payload[..2].copy_from_slice(&125u16.to_be_bytes());
@@ -671,6 +675,7 @@ pub(crate) fn bspline_surface_replacement_partition_stream() -> Vec<u8> {
     let mut stream = bspline_partition_stream();
     let mut descriptor = record(126, 48);
     put_ref(&mut descriptor, 2, 60);
+    put_ref(&mut descriptor, 34, 62);
     put_ref(&mut descriptor, 6, 1);
     put_ref(&mut descriptor, 8, 1);
     put_ref(&mut descriptor, 12, 2);
@@ -691,6 +696,7 @@ pub(crate) fn bspline_surface_replacement_partition_stream() -> Vec<u8> {
     put_ref(&mut data, 2, 61);
     data[90] = b'+';
     data[91..95].copy_from_slice(&12u32.to_be_bytes());
+    put_ref(&mut data, 95, 62);
     for (index, value) in [
         0.0, 0.0, 0.0, 0.0, 0.03, 0.0, 0.015, 0.0, 0.0, 0.015, 0.03, 0.0,
     ]
@@ -726,6 +732,7 @@ pub(crate) fn bspline_curve_replacement_partition_stream() -> Vec<u8> {
     put_ref(&mut descriptor, 10, 3);
     put_ref(&mut descriptor, 14, 2);
     descriptor[16] = 5;
+    put_ref(&mut descriptor, 21, 72);
     put_ref(&mut descriptor, 23, 42);
     put_ref(&mut descriptor, 25, 43);
     stream.extend(descriptor);
@@ -733,6 +740,7 @@ pub(crate) fn bspline_curve_replacement_partition_stream() -> Vec<u8> {
     let mut data = record(135, 15 + 6 * 8);
     put_ref(&mut data, 2, 71);
     data[9..13].copy_from_slice(&6u32.to_be_bytes());
+    put_ref(&mut data, 13, 72);
     for (index, value) in [0.0, 0.0, 0.0, 0.02, 0.01, 0.0].into_iter().enumerate() {
         put_f64(&mut data, 15 + index * 8, value);
     }

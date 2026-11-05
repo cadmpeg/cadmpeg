@@ -113,6 +113,8 @@ loss_codes! {
     AssemblyComponentsExternal => ("assembly.components-external", Blocking, AssemblyComponentsExternal),
     /// A carrier record of the right family states lanes the IR carrier refuses.
     CarrierLanesUnpaired => ("carrier.lanes-unpaired", Warning, ObjectRecordsUntransferred),
+    /// A B-spline carrier's descriptor names no control values that resolve to it.
+    CarrierControlsUnresolved => ("carrier.controls-unresolved", Warning, ObjectRecordsUntransferred),
     /// No gate-passing analytic carrier was found in the Parasolid streams.
     GeometryNotTransferred => ("geometry.not-transferred", Blocking, GeometryNotTransferred),
     /// A face loop states no resolvable coedge ring and is omitted from its face.
@@ -217,6 +219,7 @@ mod tests {
                 "stream.non-parasolid-omitted",
                 "assembly.components-external",
                 "carrier.lanes-unpaired",
+                "carrier.controls-unresolved",
                 "geometry.not-transferred",
                 "topology.loop-ring-unresolved",
                 "topology.face-loop-unresolved",

@@ -938,6 +938,7 @@ pub(crate) fn pcurve_topology_partition_stream() -> Vec<u8> {
     put_ref(&mut descriptor, 10, 2);
     put_ref(&mut descriptor, 14, 2);
     descriptor[16] = 5;
+    put_ref(&mut descriptor, 21, 26);
     put_ref(&mut descriptor, 23, 23);
     put_ref(&mut descriptor, 25, 24);
     stream.extend(descriptor);
@@ -945,6 +946,7 @@ pub(crate) fn pcurve_topology_partition_stream() -> Vec<u8> {
     let mut payload = record(135, 15 + 4 * 8);
     put_ref(&mut payload, 2, 22);
     payload[9..13].copy_from_slice(&4u32.to_be_bytes());
+    put_ref(&mut payload, 13, 26);
     for (index, value) in [0.01, 0.02, 0.01, 0.02].into_iter().enumerate() {
         put_f64(&mut payload, 15 + index * 8, value);
     }

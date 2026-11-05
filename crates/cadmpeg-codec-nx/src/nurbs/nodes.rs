@@ -2,8 +2,8 @@
 //! NURBS lanes read from a terminated node sequence.
 
 use super::{
-    finite_f64_bytes, unique_records, ArrayValues, Arrays, CurveBasis, CurveDescriptor,
-    CurveDescriptorReferences, Lanes, Payload, RecordIndex, SurfaceDescriptor,
+    carrier_payloads, finite_f64_bytes, unique_records, ArrayValues, Arrays, CurveBasis,
+    CurveDescriptor, CurveDescriptorReferences, Lanes, Payload, RecordIndex, SurfaceDescriptor,
 };
 use cadmpeg_parasolid::records::node_type::{
     BSPLINE_VERTICES, B_CURVE, B_SURFACE, KNOT_MULT, KNOT_SET, NURBS_CURVE, NURBS_SURF,
@@ -28,30 +28,27 @@ pub(super) fn lanes<'a>(bytes: &'a [u8], primary: &PrimaryRecords<'_>) -> Lanes<
     let field = |node: &Node<'_>, name: &str| bytes.get(node.field_range(name)?);
     let vertices = |nurbs_kind: u16, nurbs: u32| {
         let definition = node(nurbs_kind, nurbs)?;
-        let vertices = node(BSPLINE_VERTICES, definition.pointer("bspline_vertices")?)?;
-        let raw = field(&vertices, "vertices")?;
+        let reference = definition.pointer("bspline_vertices")?;
+        let raw = field(&node(BSPLINE_VERTICES, reference)?, "vertices")?;
         finite_f64_bytes(raw)?;
-        Some(Payload { raw })
+        Some(Payload {
+            raw,
+            vertices: reference,
+        })
     };
-    let payloads = |carrier: u16, nurbs_kind: u16| {
-        let mut index = RecordIndex::<Payload<'a>>::new();
-        for node in primary.nodes().filter(|node| node.kind() == carrier) {
-            let Some((data, payload)) = (|| {
-                let data = node.pointer("data").filter(|data| *data > 1)?;
-                Some((data, vertices(nurbs_kind, node.pointer("nurbs")?)?))
-            })() else {
-                continue;
-            };
-            index
-                .entry(data)
-                .and_modify(|entry| {
-                    if entry.is_some_and(|current| current.raw != payload.raw) {
-                        *entry = None;
-                    }
-                })
-                .or_insert(Some(payload));
-        }
-        index
+    let payloads = |carrier: u16, nurbs_kind: u16| -> RecordIndex<Payload<'a>> {
+        carrier_payloads(
+            primary
+                .nodes()
+                .filter(|node| node.kind() == carrier)
+                .filter_map(|node| {
+                    let data = node.pointer("data").filter(|data| *data > 1)?;
+                    let payload = node
+                        .pointer("nurbs")
+                        .and_then(|nurbs| vertices(nurbs_kind, nurbs));
+                    Some((data, payload))
+                }),
+        )
     };
     let mut u16s = RecordIndex::new();
     let mut f64s = RecordIndex::new();
@@ -165,6 +162,7 @@ fn surface_descriptor(node: &Node<'_>) -> Option<SurfaceDescriptor> {
         v_mult: node.pointer("v_knot_mult")?,
         u_knots: node.pointer("u_knots")?,
         v_knots: node.pointer("v_knots")?,
+        vertices: node.pointer("bspline_vertices")?,
         payload: None,
         vertex_layout: Some((node.short("vertex_dim")?, node.logical("rational")?)),
     })
@@ -185,6 +183,7 @@ fn curve_descriptor(node: &Node<'_>) -> Option<CurveDescriptor> {
             knot_type,
             periodic: node.logical("periodic")?,
         },
+        vertices: node.pointer("bspline_vertices")?,
         references: CurveDescriptorReferences::Status([
             reference("bspline_vertices")?,
             reference("knot_mult")?,

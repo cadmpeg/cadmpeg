@@ -49,25 +49,41 @@ fn reals(values: &[f64]) -> Vec<u8> {
         .collect()
 }
 
-/// A linear `B_CURVE` whose control points follow its knot nodes instead of
-/// its `CURVE_DATA` node.
-fn curve_stream() -> Vec<u8> {
-    let mut curve = 5u32.to_be_bytes().to_vec();
-    curve.extend(pointers(&[1, 1, 1, 1, 1]));
-    curve.push(b'+');
-    curve.extend(pointers(&[11, 12]));
+/// A `B_SURFACE` or `B_CURVE` node that names its descriptor and data nodes.
+fn carrier(kind: u16, index: u32, nurbs: u32, data: u32) -> Vec<u8> {
+    let mut carrier = 5u32.to_be_bytes().to_vec();
+    carrier.extend(pointers(&[1, 1, 1, 1, 1]));
+    carrier.push(b'+');
+    carrier.extend(pointers(&[nurbs, data]));
+    fixed(kind, index, &carrier)
+}
+
+/// A linear `NURBS_CURVE` over the knot nodes 14 and 15.
+fn curve_descriptor(index: u32, vertices: u32) -> Vec<u8> {
     let mut nurbs = 1u16.to_be_bytes().to_vec();
     nurbs.extend(2u32.to_be_bytes());
     nurbs.extend(3u16.to_be_bytes());
     nurbs.extend(2u32.to_be_bytes());
     nurbs.extend([2, 0, 0, 0, 0]);
-    nurbs.extend(pointers(&[13, 14, 15]));
+    nurbs.extend(pointers(&[vertices, 14, 15]));
+    fixed(136, index, &nurbs)
+}
+
+/// A linear `B_CURVE` whose control points follow its knot nodes instead of
+/// its `CURVE_DATA` node.
+fn curve_stream() -> Vec<u8> {
+    curve_stream_with(&[])
+}
+
+/// The linear `B_CURVE` stream with further nodes before its knot nodes.
+fn curve_stream_with(extra: &[u8]) -> Vec<u8> {
     let mut data = vec![0];
     data.extend(pointers(&[1]));
     let mut bytes = header();
-    bytes.extend(fixed(134, 10, &curve));
-    bytes.extend(fixed(136, 11, &nurbs));
+    bytes.extend(carrier(134, 10, 11, 12));
+    bytes.extend(curve_descriptor(11, 13));
     bytes.extend(fixed(135, 12, &data));
+    bytes.extend_from_slice(extra);
     bytes.extend(counted(127, 2, 14, &[0, 2, 0, 2]));
     bytes.extend(counted(128, 2, 15, &reals(&[0.0, 1.0])));
     bytes.extend(counted(
@@ -99,12 +115,8 @@ fn terminated_control_points_join_by_reference() {
     });
 }
 
-/// A bilinear `B_SURFACE` over a 2 by 2 grid in u-major order.
-fn surface_stream() -> Vec<u8> {
-    let mut surface = 5u32.to_be_bytes().to_vec();
-    surface.extend(pointers(&[1, 1, 1, 1, 1]));
-    surface.push(b'+');
-    surface.extend(pointers(&[11, 12]));
+/// A bilinear `NURBS_SURF` over the knot nodes 14 and 15.
+fn surface_descriptor(index: u32, vertices: u32) -> Vec<u8> {
     let mut nurbs = vec![0, 0];
     nurbs.extend(1u16.to_be_bytes());
     nurbs.extend(1u16.to_be_bytes());
@@ -115,15 +127,26 @@ fn surface_stream() -> Vec<u8> {
     nurbs.extend(2u32.to_be_bytes());
     nurbs.extend([0, 0, 0, 0]);
     nurbs.extend(3u16.to_be_bytes());
-    nurbs.extend(pointers(&[13, 14, 14, 15, 15]));
+    nurbs.extend(pointers(&[vertices, 14, 14, 15, 15]));
+    fixed(126, index, &nurbs)
+}
+
+/// A bilinear `B_SURFACE` over a 2 by 2 grid in u-major order.
+fn surface_stream() -> Vec<u8> {
+    surface_stream_with(&[])
+}
+
+/// The bilinear `B_SURFACE` stream with further nodes before its knot nodes.
+fn surface_stream_with(extra: &[u8]) -> Vec<u8> {
     let mut data = reals(&[0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0]);
     data.push(1);
     data.extend(b"BBBB????????");
     data.extend(pointers(&[1, 1, 1, 1]));
     let mut bytes = header();
-    bytes.extend(fixed(124, 10, &surface));
-    bytes.extend(fixed(126, 11, &nurbs));
+    bytes.extend(carrier(124, 10, 11, 12));
+    bytes.extend(surface_descriptor(11, 13));
     bytes.extend(fixed(125, 12, &data));
+    bytes.extend_from_slice(extra);
     bytes.extend(counted(127, 2, 14, &[0, 2, 0, 2]));
     bytes.extend(counted(128, 2, 15, &reals(&[0.0, 1.0])));
     bytes.extend(counted(
@@ -155,5 +178,50 @@ fn terminated_surface_grid_joins_by_reference() {
         assert!((poles[1].y - 1.0).abs() < COORDINATE_TOLERANCE_MM);
         assert!((poles[2].x - 1.0).abs() < COORDINATE_TOLERANCE_MM);
         assert!((poles[3].z - 2.0).abs() < COORDINATE_TOLERANCE_MM);
+    });
+}
+
+/// A second carrier shares `data` 12, and its descriptor names the absent
+/// type-45 node 23.
+fn shared_data_with_missing_controls(kind: u16, descriptor: Vec<u8>) -> Vec<u8> {
+    let mut extra = carrier(kind, 20, 21, 12);
+    extra.extend(descriptor);
+    extra
+}
+
+#[test]
+fn shared_curve_data_with_unresolved_controls_resolves_neither_carrier() {
+    with_decode_context(|_ctx| {
+        let bytes = curve_stream_with(&shared_data_with_missing_controls(
+            134,
+            curve_descriptor(21, 23),
+        ));
+        let graph = Graph::parse_source(&bytes).unwrap();
+        let parsed = super::super::parse_with_graph(&bytes, &graph);
+        assert!(parsed.curves.is_empty());
+        assert!(parsed.pcurves.is_empty());
+        assert_eq!(parsed.unresolved_controls.len(), 2);
+        assert!(parsed
+            .unresolved_controls
+            .iter()
+            .all(|carrier| carrier.family == "B_CURVE"));
+    });
+}
+
+#[test]
+fn shared_surface_data_with_unresolved_controls_resolves_neither_carrier() {
+    with_decode_context(|_ctx| {
+        let bytes = surface_stream_with(&shared_data_with_missing_controls(
+            124,
+            surface_descriptor(21, 23),
+        ));
+        let graph = Graph::parse_source(&bytes).unwrap();
+        let parsed = super::super::parse_with_graph(&bytes, &graph);
+        assert!(parsed.surfaces.is_empty());
+        assert_eq!(parsed.unresolved_controls.len(), 2);
+        assert!(parsed
+            .unresolved_controls
+            .iter()
+            .all(|carrier| carrier.family == "B_SURFACE"));
     });
 }

@@ -216,13 +216,11 @@ or regenerated current-design selection.
 
 ### PS-42. Control values outside a terminated sequence
 
-**Question.** In a stream that the shared node reader does not frame to its terminator, which type-45 node holds the control values of a type-126 or type-136 descriptor?
+**Question.** In a stream that the shared node reader does not frame to its terminator, where does the type-45 node that a type-126 or type-136 `bspline_vertices` field names begin?
 
-**Known.** `siemens_nx.md` §9.2 "names the type-45 node that holds the control values" gives the `bspline_vertices` reference. A terminated node sequence resolves that reference to a framed node.
+**Known.** `siemens_nx.md` §6.2 "Types 45, 125, 126, 135, and 136 may place" gives the `bspline_vertices` reference. A terminated node sequence resolves that reference to a framed node. In an unterminated stream the decoder reads the count, XMT, and values at a fixed offset after a type-125 or type-135 node, and admits the values only when that XMT equals the descriptor's `bspline_vertices` reference.
 
-**Need.** We must know the association to decode B-spline carriers in a stream whose node sequence stops before its terminator.
-
-**Conflict.** The decoder's scan reads the count, XMT, and values of the node that follows a type-125 or type-135 node at a fixed offset, and keys them by the type-125 or type-135 XMT. It does not resolve `bspline_vertices`.
+**Need.** We must know the node boundary to decode a B-spline carrier whose type-45 node does not follow its type-125 or type-135 node.
 
 ## 2. Object model and body composition
 

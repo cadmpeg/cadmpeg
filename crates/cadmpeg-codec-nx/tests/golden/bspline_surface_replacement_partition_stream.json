@@ -141,10 +141,10 @@
         "attributes": {
           "deltas_streams": "0",
           "directory_entries": "1",
-          "file_size": "366",
+          "file_size": "378",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
-          "footer_offset": "352",
+          "footer_offset": "364",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "partition_streams": "1",
@@ -239,7 +239,7 @@
         }
       ],
       "notes": [
-        "SPLMSSTR container: file tag 0, footer offset 352, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+        "SPLMSSTR container: file tag 0, footer offset 364, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
         "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid"
       ],
       "transfer": {
@@ -291,7 +291,7 @@
       "retained_records": {
         "nx:container:parasolid#0": {
           "bytes": {
-            "data": "UFMAAAAbOiBUUkFOU01JVCBGSUxFIChwYXJ0aXRpb24pAAAAD1NDSF9URVNUXzFfOTk5OQAAfAAKAAAAAAAAAAAAAAAAAAArABQAFQB+ABQAAAABAAEAAAACAAAAAgUFAAAAAgAAAAIAAAAAAAAAAAAeAB8AIAAhAH0AFQB9ABUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACsAAAAMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD+UeuFHrhR7AAAAAAAAAAA/hHrhR64UewAAAAAAAAAAAAAAAAAAAAA/hHrhR64Uez+UeuFHrhR7AAAAAAAAAAAAfwAAAAIAHgACAAIAfwAAAAIAHwACAAIAgAAAAAIAIAAAAAAAAAAAP/AAAAAAAAAAgAAAAAIAIQAAAAAAAAAAP/AAAAAAAAAAhgAyAAAAAAAAAAAAAAAAAAArACgAKQCIACgAAQAAAAIAAwAAAAIFAAAAAAAAACoAKwCHACkAAAAAAAAAAAYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD+UeuFHrhR7AAAAAAAAAAAAAAAAAAAAAAB/AAAAAgAqAAIAAgCAAAAAAgArAAAAAAAAAAA/8AAAAAAAAAB+ADwAAAABAAEAAAACAAAAAgUFAAAAAgAAAAIAAAAAAAAAAAAeAB8AIAAhAH0APQB9AD0AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACsAAAAMAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD+euFHrhR64AAAAAAAAAAA/jrhR64UeuAAAAAAAAAAAAAAAAAAAAAA/jrhR64UeuD+euFHrhR64AAAAAAAAAAA=",
+            "data": "UFMAAAAbOiBUUkFOU01JVCBGSUxFIChwYXJ0aXRpb24pAAAAD1NDSF9URVNUXzFfOTk5OQAAfAAKAAAAAAAAAAAAAAAAAAArABQAFQB+ABQAAAABAAEAAAACAAAAAgUFAAAAAgAAAAIAAAAAAAAAFgAeAB8AIAAhAH0AFQB9ABUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACsAAAAMABYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD+UeuFHrhR7AAAAAAAAAAA/hHrhR64UewAAAAAAAAAAAAAAAAAAAAA/hHrhR64Uez+UeuFHrhR7AAAAAAAAAAAAfwAAAAIAHgACAAIAfwAAAAIAHwACAAIAgAAAAAIAIAAAAAAAAAAAP/AAAAAAAAAAgAAAAAIAIQAAAAAAAAAAP/AAAAAAAAAAhgAyAAAAAAAAAAAAAAAAAAArACgAKQCIACgAAQAAAAIAAwAAAAIFAAAAAAAsACoAKwCHACkAAAAAAAAAAAYALAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD+UeuFHrhR7AAAAAAAAAAAAAAAAAAAAAAB/AAAAAgAqAAIAAgCAAAAAAgArAAAAAAAAAAA/8AAAAAAAAAB+ADwAAAABAAEAAAACAAAAAgUFAAAAAgAAAAIAAAAAAAAAPgAeAB8AIAAhAH0APQB9AD0AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACsAAAAMAD4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD+euFHrhR64AAAAAAAAAAA/jrhR64UeuAAAAAAAAAAAAAAAAAAAAAA/jrhR64UeuD+euFHrhR64AAAAAAAAAAA=",
             "retention": "inline"
           },
           "offset": 76,
@@ -313,18 +313,18 @@
         "role": "part-payload",
         "size": {
           "form": "exact",
-          "size": 276
+          "size": 288
         }
       },
       {
         "attributes": {
           "file_offset": "76",
           "kind": "partition",
-          "records.body": "0",
+          "records.body": "2",
           "records.edge": "0",
           "records.face": "0",
           "records.fin": "0",
-          "records.live.body": "0",
+          "records.live.body": "2",
           "records.live.edge": "0",
           "records.live.face": "0",
           "records.live.fin": "0",
@@ -380,7 +380,7 @@
       }
     ],
     "notes": [
-      "SPLMSSTR container: file tag 0, footer offset 352, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+      "SPLMSSTR container: file tag 0, footer offset 364, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
       "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid"
     ]
   }

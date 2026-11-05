@@ -709,6 +709,7 @@ fn decode_attaches_rational_pcurve_through_surface_curve() {
     let mut rational_payload = record(135, 15 + 6 * 8);
     put_ref(&mut rational_payload, 2, 22);
     rational_payload[9..13].copy_from_slice(&6u32.to_be_bytes());
+    put_ref(&mut rational_payload, 13, 26);
     // Homogeneous UV triples represent the same point with weights one and two.
     for (index, value) in [0.01, 0.02, 1.0, 0.02, 0.04, 2.0].into_iter().enumerate() {
         put_f64(&mut rational_payload, 15 + index * 8, value);
