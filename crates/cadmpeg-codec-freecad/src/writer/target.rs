@@ -147,13 +147,11 @@ pub(crate) fn plan(
             };
             match patch {
                 Some(Ok(body)) => return Ok(body),
-                Some(Err(error @ CodecError::UnsupportedContent(_)))
-                | Some(Err(
-                    error @ CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit {
+                Some(Err(error @ (CodecError::UnsupportedContent(_)
+                | CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit {
                         scope: cadmpeg_core::decode::LimitScope::Part,
                         ..
-                    }),
-                )) => reason = Some(error.to_string()),
+                    })))) => reason = Some(error.to_string()),
                 Some(Err(error)) => return Err(error),
                 None => {}
             }
