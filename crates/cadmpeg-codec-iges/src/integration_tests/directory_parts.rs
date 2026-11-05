@@ -42,11 +42,7 @@ fn public_fixed_ascii_decode_composes_shared_failure_and_keeps_real_point_conten
         serde_json::to_value(&decoded.ir().model.points[0]).unwrap(),
         serde_json::to_value(&baseline.ir().model.points[0]).unwrap()
     );
-    let native = decoded.ir().native.namespace("iges").unwrap();
-    assert!(native
-        .arenas()
-        .get("quarantined_directory_records")
-        .is_none_or(Vec::is_empty));
+    crate::test_support::assert_given_up_homes(&decoded);
     // #222: the damaged required transformation field is the one given-up
     // `iges.directory_field`; the record is not formed (#215 rule 1).
     let parts = crate::test_support::given_up_parts(decoded.source_fidelity());

@@ -103,6 +103,17 @@ pub(super) fn auxiliary(
     losses: &mut Vec<LossNote>,
     limits: cadmpeg_core::decode::ResourceLimits,
 ) -> Result<(), cadmpeg_core::CodecError> {
+    let mut attributes = std::collections::BTreeSet::new();
+    target.model.attributes.retain(|attribute| {
+        if attributes.insert(attribute.id.clone()) {
+            true
+        } else {
+            losses.push(F3dLossCode::WriterAuxiliaryOmitted.note(format!(
+                "attribute {} has a duplicate identity and is omitted", attribute.id
+            )));
+            false
+        }
+    });
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let policy = cadmpeg_core::decode::DecodePolicy {
         limits,
