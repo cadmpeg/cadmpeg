@@ -1714,3 +1714,37 @@ fn wire_trimmed_nonperiodic_nurbs_keeps_its_span() {
         );
     }
 }
+
+#[test]
+fn trimmed_nurbs_brep_edge_keeps_its_exact_span() {
+    use cadmpeg_ir::geometry::{nurbs::NurbsCurve, CurveGeometry, SolvedCurveGeometry};
+    let mut ir = sheet();
+    ir.model.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+        NurbsCurve::from_lanes(
+            1,
+            vec![-1.0, -1.0, 0.0, 4.0, 5.0, 5.0],
+            vec![
+                Point3::new(-1.0, 0.0, 0.0),
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(4.0, 0.0, 0.0),
+                Point3::new(5.0, 0.0, 0.0),
+            ],
+            None,
+            false,
+        )
+        .unwrap(),
+    ));
+    let (decoded, losses) = roundtrip(&ir);
+    assert_eq!(decoded.model.faces.len(), 1, "losses: {losses:?}");
+    let curve = decoded
+        .model
+        .curves
+        .iter()
+        .find(|curve| matches!(curve.geometry.solved(), Some(SolvedCurveGeometry::Nurbs(_))))
+        .expect("trimmed edge retains its NURBS carrier");
+    assert_eq!(curve_position(curve, 2.0), Point3::new(2.0, 0.0, 0.0));
+    assert!(losses
+        .iter()
+        .any(|loss| loss.message.contains(ir.model.curves[0].id.as_str())
+            && loss.message.contains("unused curve domain")));
+}
