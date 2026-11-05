@@ -518,7 +518,13 @@ impl Emitter<'_, '_> {
     ) {
         // A re-emitted boundary carrier keeps its source dependence: an
         // independent copy mints standalone topology on re-decode.
-        if arena == "copious_data" {
+        if matches!(
+            arena,
+            "annotations" | "drawings" | "views" | "view_visibility"
+        ) {
+            entity.status =
+                super::source_status(self.ir, record).unwrap_or(EntityStatus::Annotation);
+        } else if arena == "copious_data" {
             if let Some(status) = super::source_status(self.ir, record) {
                 entity.status = status;
             }
