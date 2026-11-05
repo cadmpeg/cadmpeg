@@ -376,7 +376,7 @@ mod tests {
                 value,
             });
         }
-        Ok(vec![value as u8])
+        Ok(vec![u8::try_from(value).expect("three-bit value fits u8")])
     }
 
     #[test]
