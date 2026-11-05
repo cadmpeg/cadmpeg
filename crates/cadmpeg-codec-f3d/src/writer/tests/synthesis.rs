@@ -126,7 +126,7 @@ fn source_less_primitive_feature_survives_synthesis() {
     let (output, report) = super::source_less_analytic::synthesize_document(&ir, None);
     assert_eq!(output.ir().model.features.len(), 2);
     assert!(report.losses.iter().any(|loss| {
-        loss.message.contains(&omitted) && loss.message.contains("recompute state")
+        loss.message.contains(&omitted) && loss.code.local_code() == "evaluation.stale"
     }));
 }
 
