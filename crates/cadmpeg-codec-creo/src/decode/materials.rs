@@ -565,8 +565,7 @@ fn project_section(
     if used.is_empty() {
         return Ok(());
     }
-    let namespace = crate::identity::section_namespace(section.name())
-        .ok_or_else(|| CodecError::malformed("material section without a namespace"))?;
+    let namespace = crate::identity::section_namespace(section.name());
     let native_ref =
         crate::identity::compose_checked::<cadmpeg_ir::ids::UnknownId>(&namespace, section_offset)
             .map(|id| id.as_str().to_owned())?;

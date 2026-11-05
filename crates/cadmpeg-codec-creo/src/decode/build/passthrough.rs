@@ -162,9 +162,7 @@ pub(super) fn preserve_passthrough_sections(
             let namespace = if expansion_failed {
                 cadmpeg_ir::identity_namespace!("creo", "compressed", "section")
             } else {
-                crate::identity::section_namespace(section.name()).ok_or_else(|| {
-                    CodecError::malformed("invalid Creo passthrough section namespace")
-                })?
+                crate::identity::section_namespace(section.name())
             };
             crate::identity::compose_checked::<UnknownId>(&namespace, offset)?
         };
