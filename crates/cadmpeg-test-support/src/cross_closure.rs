@@ -79,7 +79,17 @@ pub fn apply_storage(
             None => value.clone(),
         },
         ReducedStorage::F32 => match value.as_f64() {
-            Some(number) => Value::from(f64::from(number as f32)),
+            Some(number) => {
+                let max = f64::from(f32::MAX);
+                let overflow = max + 2.0_f64.powi(103);
+                if number.abs() >= overflow {
+                    Value::Null
+                } else {
+                    let rounded =
+                        cadmpeg_core::convert::f32_from_f64(number.clamp(-max, max)).map(f64::from);
+                    rounded.map_or(Value::Null, Value::from)
+                }
+            }
             None => value.clone(),
         },
         ReducedStorage::Decimal(places) => match value.as_f64() {
