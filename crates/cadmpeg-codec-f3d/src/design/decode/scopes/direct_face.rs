@@ -20,6 +20,7 @@ use crate::layout::move_transform_frame_253 as move_frame;
 use crate::layout::move_transform_frame_254 as move_frame_254;
 use crate::layout::move_transform_frame_273 as move_frame_273;
 use crate::layout::move_transform_frame_274 as move_frame_274;
+use crate::layout::scale_legacy_uniform_tail as scale_tail;
 use crate::records::feature::body_ops::DesignScaleOperation;
 use crate::records::feature::direct_face;
 use crate::records::feature::direct_face::DesignDirectFaceOperation;
@@ -579,9 +580,13 @@ pub(super) fn exact_scale_operation(
                         || scope.reference_count_offset() != scope.byte_offset().checked_add(154)?
                         || scope.kind_offset() != scope.byte_offset().checked_add(221)?
                         || scope.feature_ordinal_offset()
-                            != scope.paired_byte_offset().checked_sub(78)?
+                            != scope
+                                .paired_byte_offset()
+                                .checked_sub(u64::try_from(scale_tail::LEN).ok()?)?
                         || scope.previous_history_state_id_offset()
-                            != scope.feature_ordinal_offset().checked_add(31)
+                            != scope.feature_ordinal_offset().checked_add(
+                                u64::try_from(scale_tail::PREVIOUS_HISTORY_STATE_ID).ok()?,
+                            )
                     {
                         return None;
                     }

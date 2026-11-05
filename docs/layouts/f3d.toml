@@ -2943,9 +2943,9 @@ anchor = "marked references at offsets 29, 40, and 64 naming the final, first, a
 name = "scale_legacy_uniform_309"
 kind = "byte"
 section = "3.1"
-anchor = "A legacy uniform `Scale` scope also has a five-reference form with a 299-byte payload"
+anchor = "With the five-code-unit kind `Scale`, the kind code units occupy offsets 221 through 230"
 size = 309
-note = "Offsets are relative to the primary indexed header. The paired same-index header is outside this frame."
+note = "The 299-byte-payload form with the five-code-unit kind `Scale`. Offsets are relative to the primary indexed header; another kind spelling moves every offset from 231 on by its own UTF-16 length, and `scale_legacy_uniform_tail` gives the tail offsets for any spelling. The paired same-index header is outside this frame."
 parsed_by = ["crates/cadmpeg-codec-f3d/src/design/decode/scopes/direct_face.rs", "crates/cadmpeg-codec-f3d/src/design/decode/scopes/parameter_scope.rs"]
 
 [[record.field]]
@@ -3016,14 +3016,14 @@ name = "kind"
 offset = 221
 type = "bytes[10]"
 source = "spec"
-anchor = "`Scale` starts at offset 221"
+anchor = "the kind code units occupy offsets 221 through 230"
 
 [[record.field]]
 name = "feature_ordinal"
 offset = 231
 type = "u32"
 source = "spec"
-anchor = "The feature ordinal starts the 78-byte fixed tail at offset 231"
+anchor = "the feature ordinal is at offset 231"
 
 [[record.gap]]
 offset = 235
@@ -3035,12 +3035,44 @@ name = "previous_history_state_id"
 offset = 262
 type = "u32"
 source = "spec"
-anchor = "The preceding history-state identity is at offset 262"
+anchor = "the preceding history-state identity is at offset 262"
 
 [[record.gap]]
 offset = 266
 size = 43
 note = "Common fixed-tail fields up to the paired header at offset 309."
+
+[[record]]
+name = "scale_legacy_uniform_tail"
+kind = "byte"
+section = "3.1"
+anchor = "The 78-byte fixed tail follows the kind"
+size = 78
+note = "Offsets are relative to the first byte after the LP-UTF16 kind code units of the 299-byte-payload legacy uniform Scale form, for any kind spelling. The paired same-index header follows the tail."
+
+[[record.field]]
+name = "feature_ordinal"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "the feature ordinal is at tail offset 0"
+
+[[record.gap]]
+offset = 4
+size = 27
+note = "Common fixed-tail fields between the ordinal and preceding history state."
+
+[[record.field]]
+name = "previous_history_state_id"
+offset = 31
+type = "u32"
+source = "spec"
+anchor = "the preceding history-state identity is at tail offset 31"
+
+[[record.gap]]
+offset = 35
+size = 43
+note = "Common fixed-tail fields up to the paired header."
 
 
 [[record]]

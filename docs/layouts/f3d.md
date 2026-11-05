@@ -903,7 +903,7 @@ Unstated regions:
 
 Spec §3.1 · layout: byte offsets · size: 309 B
 
-Offsets are relative to the primary indexed header. The paired same-index header is outside this frame.
+The 299-byte-payload form with the five-code-unit kind `Scale`. Offsets are relative to the primary indexed header; another kind spelling moves every offset from 231 on by its own UTF-16 length, and `scale_legacy_uniform_tail` gives the tail offsets for any spelling. The paired same-index header is outside this frame.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes/direct_face.rs`
@@ -919,14 +919,30 @@ Parsed by:
 | 158 | 55 | `references` | `bytes[55]` | little | derived | Five eleven-byte references follow the four-byte count. |
 | 213 | 4 | `history_state_id` | `u32` | little | spec | The current history-state identity is at offset 213 |
 | 217 | 4 | `kind_code_unit_count` | `u32` | little | spec | the kind code-unit count is at offset 217 · value `5` |
-| 221 | 10 | `kind` | `bytes[10]` | little | spec | `Scale` starts at offset 221 |
-| 231 | 4 | `feature_ordinal` | `u32` | little | spec | The feature ordinal starts the 78-byte fixed tail at offset 231 |
-| 262 | 4 | `previous_history_state_id` | `u32` | little | spec | The preceding history-state identity is at offset 262 |
+| 221 | 10 | `kind` | `bytes[10]` | little | spec | the kind code units occupy offsets 221 through 230 |
+| 231 | 4 | `feature_ordinal` | `u32` | little | spec | the feature ordinal is at offset 231 |
+| 262 | 4 | `previous_history_state_id` | `u32` | little | spec | the preceding history-state identity is at offset 262 |
 
 Unstated regions:
 
 - `235..262` (27 B): Common fixed-tail fields between the ordinal and preceding history state.
 - `266..309` (43 B): Common fixed-tail fields up to the paired header at offset 309.
+
+## `scale_legacy_uniform_tail`
+
+Spec §3.1 · layout: byte offsets · size: 78 B
+
+Offsets are relative to the first byte after the LP-UTF16 kind code units of the 299-byte-payload legacy uniform Scale form, for any kind spelling. The paired same-index header follows the tail.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 4 | `feature_ordinal` | `u32` | little | spec | the feature ordinal is at tail offset 0 |
+| 31 | 4 | `previous_history_state_id` | `u32` | little | spec | the preceding history-state identity is at tail offset 31 |
+
+Unstated regions:
+
+- `4..31` (27 B): Common fixed-tail fields between the ordinal and preceding history state.
+- `35..78` (43 B): Common fixed-tail fields up to the paired header.
 
 ## `design_body_map_prefix_10`
 
