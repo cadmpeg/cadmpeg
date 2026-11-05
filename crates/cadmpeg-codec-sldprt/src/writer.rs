@@ -1943,12 +1943,9 @@ fn opaque_blocks(
         .iter()
         .filter(|record| record.id.as_str().starts_with("sldprt:file:block#"))
         .filter_map(|record| {
-            let provenance = match annotations.provenance.get(record.id.as_str()) {
-                Some(provenance) => provenance,
-                None => {
-                    unplaced.push(record.id.as_str().to_owned());
-                    return None;
-                }
+            let Some(provenance) = annotations.provenance.get(record.id.as_str()) else {
+                unplaced.push(record.id.as_str().to_owned());
+                return None;
             };
             let section = provenance.stream();
             if matches!(
