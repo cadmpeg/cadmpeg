@@ -67,6 +67,7 @@ fn macro_definition_and_instance_are_retained_in_v4_and_v5_profiles() {
                 b"ENDM".to_vec()
             ]
         );
+        assert!(result.source_fidelity().unrepresented().is_empty());
         let parameters = crate::test_support::retained_fixed_ascii(&result);
         let record = parameters
             .records
