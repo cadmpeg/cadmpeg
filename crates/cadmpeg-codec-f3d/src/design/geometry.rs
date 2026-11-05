@@ -116,6 +116,10 @@ struct SketchArrangementEdge {
 
 struct SketchArrangementFace {
     boundary: Vec<cadmpeg_ir::features::SketchProfileBoundaryUse>,
+    /// Boundary curves in walk order, one per stored fragment: consecutive
+    /// fragments of one curve that meet at a synthetic circle split node
+    /// are one fragment.
+    fragments: Vec<cadmpeg_ir::sketches::SketchEntityId>,
     /// Entities of coincident edges merged into the boundary edges.
     coincident: Vec<cadmpeg_ir::sketches::SketchEntityId>,
     polyline: Vec<Point2>,
@@ -294,15 +298,15 @@ fn arrangement_region_matching_curves(
     let mut selected = None;
     for face in &faces {
         let mut boundary = Vec::new();
-        for use_ in &face.boundary {
-            if matches!(selection, CurveProgram::Members(_))
-                || boundary.last().copied() != Some(&use_.entity)
-            {
-                boundary.push(&use_.entity);
-            }
-        }
         if matches!(selection, CurveProgram::Members(_)) {
+            boundary.extend(&face.fragments);
             boundary.extend(&face.coincident);
+        } else {
+            for use_ in &face.boundary {
+                if boundary.last().copied() != Some(&use_.entity) {
+                    boundary.push(&use_.entity);
+                }
+            }
         }
         if matches!(selection, CurveProgram::Ordered(_))
             && boundary.len() > 1
@@ -431,6 +435,7 @@ fn sketch_arrangement_faces_with_nodes(
             reversed: use_.reversed,
         });
     }
+    let mut synthetic_nodes = Vec::new();
     for (use_, center, radius) in circles {
         if radius.get() <= tolerance {
             return Ok(None);
@@ -443,7 +448,8 @@ fn sketch_arrangement_faces_with_nodes(
                 [Some(angles[0] + std::f64::consts::PI), None]
             };
             for angle in additional.into_iter().flatten() {
-                arrangement_node(
+                let count = nodes.len();
+                let index = arrangement_node(
                     &mut nodes,
                     Point2::new(
                         center.u + radius.get() * angle.cos(),
@@ -451,6 +457,9 @@ fn sketch_arrangement_faces_with_nodes(
                     ),
                     tolerance,
                 );
+                if nodes.len() > count {
+                    synthetic_nodes.push(index);
+                }
             }
             angles = arrangement_circle_angles(&nodes, center, radius, tolerance);
         }
@@ -659,6 +668,7 @@ fn sketch_arrangement_faces_with_nodes(
             let start = (edge_index, reversed);
             let mut current = start;
             let mut boundary = Vec::new();
+            let mut fragments = Vec::<cadmpeg_ir::sketches::SketchEntityId>::new();
             let mut coincident = Vec::new();
             let mut polyline = Vec::new();
             loop {
@@ -674,6 +684,10 @@ fn sketch_arrangement_faces_with_nodes(
                 let mut use_ = edge.boundary.clone();
                 if reverse {
                     use_.reversed = !use_.reversed;
+                }
+                let joint = edge.nodes[usize::from(reverse)];
+                if !(synthetic_nodes.contains(&joint) && fragments.last() == Some(&use_.entity)) {
+                    fragments.push(use_.entity.clone());
                 }
                 boundary.push(use_);
                 coincident.extend(edge.coincident.iter().cloned());
@@ -694,6 +708,12 @@ fn sketch_arrangement_faces_with_nodes(
                 let next = uses[(twin + uses.len() - 1) % uses.len()];
                 current = (next.0, next.1);
             }
+            if fragments.len() > 1
+                && fragments.first() == fragments.last()
+                && synthetic_nodes.contains(&edges[edge_index].nodes[usize::from(reversed)])
+            {
+                fragments.pop();
+            }
             if polyline.len() >= 3 && signed_polygon_area(&polyline) > tolerance * tolerance {
                 // Proven-disjoint components lie wholly inside or outside
                 // the face, so one node of each decides.
@@ -703,6 +723,7 @@ fn sketch_arrangement_faces_with_nodes(
                     .any(|root| *root != own && point_in_polygon(nodes[*root], &polyline));
                 faces.push(SketchArrangementFace {
                     boundary,
+                    fragments,
                     coincident,
                     polyline,
                     encloses_island,
