@@ -469,6 +469,21 @@ fn source_less_compact_custom_attributes_preserve_values() {
         .iter()
         .any(|loss| loss.message.contains(&native_id)));
 
+    let mut renamed_family = decoded.ir().clone();
+    renamed_family.model.attributes[1].values[1] = Some(
+        cadmpeg_ir::attributes::AttributeValue::String("Timestamp_attrib_defx".into()),
+    );
+    let (output, report) = super::source_less_analytic::synthesize_document(&renamed_family, None);
+    renamed_family.model.attributes[1].native_ref = None;
+    assert_eq!(
+        output.ir().model.attributes,
+        renamed_family.model.attributes
+    );
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(&native_id)));
+
     let mut edited = decoded.ir().clone();
     let timestamp = &mut edited.model.attributes[1];
     let Some(cadmpeg_ir::attributes::AttributeValue::Float(value)) = &mut timestamp.values[3]
