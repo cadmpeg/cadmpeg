@@ -131,3 +131,32 @@ fn source_less_compact_face_attribute_is_authored() {
     assert!(!report.losses.iter().any(|loss| loss.message.contains("authored:model:attribute#face")
         || loss.message.contains("authored:model:attribute#body")));
 }
+
+#[test]
+fn source_less_compact_edge_vertex_and_coedge_attributes_are_authored() {
+    use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
+    let source = crate::test_support::zip_test::f3d_with_smbh(
+        &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh());
+    let decoded = F3dCodec.decode(&mut Cursor::new(source), &DecodeOptions::default()).unwrap();
+    let mut ir = decoded.ir().clone();
+    let targets = [AttributeTarget::Edge(ir.model.edges[0].id.clone()),
+        AttributeTarget::Vertex(ir.model.vertices[0].id.clone()),
+        AttributeTarget::Coedge(ir.model.coedges[0].id.clone())];
+    for (ordinal, target) in targets.iter().enumerate() {
+        ir.model.attributes.push(SourceAttribute {
+            id: format!("authored:model:attribute#{ordinal}").try_into().unwrap(), native_ref: None,
+            target: target.clone(), name: "ATTRIB_CUSTOM-attrib".into(),
+            values: vec![Some(AttributeValue::Reference("f3d:brep:entity#-1".into())),
+                Some(AttributeValue::String(format!("value-{ordinal}")))],
+        });
+    }
+    let mut bytes = Vec::new();
+    let report = F3dCodec.plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap().write_to(&mut bytes).unwrap();
+    let output = F3dCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()).unwrap();
+    for (ordinal, target) in targets.iter().enumerate() {
+        let attribute = output.ir().model.attributes.iter().find(|attribute| &attribute.target == target).unwrap();
+        assert_eq!(attribute.values[1], Some(AttributeValue::String(format!("value-{ordinal}"))));
+        assert!(!report.losses.iter().any(|loss| loss.message.contains(&format!("authored:model:attribute#{ordinal}"))));
+    }
+}
