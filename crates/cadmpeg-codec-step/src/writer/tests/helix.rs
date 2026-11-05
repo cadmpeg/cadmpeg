@@ -41,7 +41,11 @@ fn helix_edge_doc(cache: bool) -> CadIr {
         None,
     );
     ir.model.edges[0].end = ir.model.edges[0].start.clone();
-    let fitted = cadmpeg_ir::eval::helix_nurbs::helix_nurbs(&helix, ir.tolerances.linear).unwrap();
+    let fitted = cadmpeg_ir::eval::helix_nurbs::helix_nurbs(
+        &helix,
+        ir.tolerances.linear.expect("stated linear tolerance"),
+    )
+    .unwrap();
     ir.model.curves.push(Curve {
         native_ref: None,
         parameter_range: None,
@@ -225,7 +229,8 @@ fn a_face_on_an_uncached_helix_surface_is_written_on_a_fitted_bspline_surface() 
 #[test]
 fn a_helix_without_a_bspline_within_the_tolerance_reports_its_failed_fit() {
     let mut ir = helix_edge_doc(false);
-    ir.tolerances.linear = cadmpeg_ir::scalar::PositiveLength::new(f64::MIN_POSITIVE).unwrap();
+    ir.tolerances.linear =
+        Some(cadmpeg_ir::scalar::PositiveLength::new(f64::MIN_POSITIVE).unwrap());
     let mut bytes = Vec::new();
     let report = write_step(
         &ir,

@@ -82,7 +82,7 @@ impl<'a> Approximator<'a> {
 
     /// The sampled residual limit in model length units.
     pub fn residual_limit(&self) -> f64 {
-        self.ir.tolerances.linear.get() * TOLERANCE_FRACTION
+        self.ir.tolerances.linear_or_default().get() * TOLERANCE_FRACTION
     }
 
     /// The first resource refusal encountered while fitting.
@@ -318,7 +318,7 @@ fn trims_meet_vertices(
                     edge.tolerance.map_or(0.0, crate::scalar::PositiveReal::get),
                 ]
                 .into_iter()
-                .fold(ir.tolerances.linear.get(), f64::max)
+                .fold(ir.tolerances.linear_or_default().get(), f64::max)
                     + residual;
                 for use_ in &coedge.pcurves {
                     let Some(range) = use_.parameter_range else {

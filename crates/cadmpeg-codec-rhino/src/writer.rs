@@ -55,7 +55,12 @@ fn stated_write_tolerance(
     owner: &str,
 ) -> Result<f64, WriteError> {
     let (field, value) = stated.map_or_else(
-        || ("document linear tolerance", ir.tolerances.linear.get()),
+        || {
+            (
+                "document linear tolerance",
+                ir.tolerances.linear_or_default().get(),
+            )
+        },
         |tolerance| ("tolerance", tolerance.get()),
     );
     if value >= EPS_WRITE_DEGENERATE {
@@ -181,30 +186,6 @@ fn write_buffered<'budget>(
     // consistent document passes through borrowed and unchanged.
     let (admitted, admit_losses) = scopes::admit(ir);
     let ir = admitted.as_ref();
-    if empty_model_archive(ir) {
-        output.append(&header(version), "retain Rhino archive bytes")?;
-        output.append(&long_chunk(1, b"cadmpeg")?, "retain Rhino archive bytes")?;
-        let history = tables::history::records(ir)?;
-        if !history.records.is_empty() {
-            output.append(
-                &table(ctx, TCODE_HISTORY_RECORD_TABLE, &history.records)?,
-                "retain Rhino archive bytes",
-            )?;
-        }
-        let final_size = archive_final_size(cadmpeg_core::decode::u64_from_index(output.len()))?;
-        output.append(
-            &long_chunk(TCODE_ENDOFFILE, &final_size.to_le_bytes())?,
-            "retain Rhino archive bytes",
-        )?;
-        return Ok(WriteOutcome {
-            losses: admit_losses.into_iter().chain(history.losses).collect(),
-            geometry_objects: 0,
-            subds: 0,
-            history_features: history.written_features,
-            face_colors: std::collections::BTreeSet::new(),
-            written_curves: std::collections::BTreeSet::new(),
-        });
-    }
     let extrusion = if ir.model.procedural_surfaces.iter().any(|surface| {
         matches!(
             surface.definition(),
@@ -235,6 +216,11 @@ fn write_buffered<'budget>(
         reduced
     });
     let mut plan = prepare_write(ctx, reduced.as_ref().unwrap_or(ir), version, session)?;
+    if !ir.scope.model {
+        plan.losses.push(RhinoLossCode::WriterScopeExpanded.note(
+            "the 3DM archive represents an empty model where the input model scope is absent",
+        ));
+    }
     if let Some((candidate, record)) = extrusion {
         ctx.charge_entities(
             1 + cadmpeg_core::decode::u64_from_index(candidate.profile_count),
@@ -496,29 +482,6 @@ fn write_buffered<'budget>(
     })
 }
 
-fn empty_model_archive(ir: &CadIr) -> bool {
-    if ir.scope.model || ir.tolerances != cadmpeg_ir::units::Tolerances::default() {
-        return false;
-    }
-    ir.native.namespace("rhino").is_none_or(|namespace| {
-        namespace
-            .arenas()
-            .iter()
-            .all(|(arena, records)| match arena.as_str() {
-                "unknowns" | "history_records" => true,
-                "document_settings" => {
-                    records.len() <= 1
-                        && records.iter().all(|record| {
-                            record
-                                .fields()
-                                .is_ok_and(|fields| fields.values().all(serde_json::Value::is_null))
-                        })
-                }
-                _ => records.is_empty(),
-            })
-    })
-}
-
 fn write_archive_prefix(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
@@ -547,7 +510,7 @@ fn write_archive_prefix(
         )));
     }
     let mut settings = vec![units_record(
-        ir.tolerances.linear.get(),
+        ir.tolerances.linear_or_default().get(),
         angular.min(std::f64::consts::PI),
     )?];
     let exported = tables::document::settings(ir, materials, &mut setting_losses)?;

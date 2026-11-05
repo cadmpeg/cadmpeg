@@ -4084,7 +4084,7 @@ fn select_associated_pcurve(
         .pcurves(candidate.as_str(), cadmpeg_ir::index::StandardIndex)
         .ok_or(PcurveSelectionFailure::Carrier)?;
     let geometry = &pcurve.geometry;
-    let bound = COINCIDENCE_TOLERANCE.max(index.ir().tolerances.linear.get());
+    let bound = COINCIDENCE_TOLERANCE.max(index.ir().tolerances.linear_or_default().get());
     let start = vdefs
         .get(&edge.vertices().0)
         .and_then(|vertex| point_positions.get(vertex.point))

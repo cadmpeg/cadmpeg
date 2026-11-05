@@ -25,6 +25,7 @@ pub(crate) fn dimension_value<Q: cadmpeg_ir::features::DimensionValue>(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ScalarUnit {
     Native,
+    Real,
     Length,
     Angle,
 }
@@ -149,6 +150,9 @@ pub(crate) fn enrich_history_parameters<'a>(
                     Some(crate::records::ArchiveParameterClass::Angle) => {
                         return Some((scalar.id.as_str(), ScalarUnit::Angle));
                     }
+                    Some(crate::records::ArchiveParameterClass::Scaler) => {
+                        return Some((scalar.id.as_str(), ScalarUnit::Real));
+                    }
                     Some(_) | None => {}
                 }
                 let name = names_by_id.get(scalar.name.as_str())?;
@@ -156,6 +160,7 @@ pub(crate) fn enrich_history_parameters<'a>(
                 let unit = match parameter_class.name.as_str() {
                     "moLengthParameter_c" => ScalarUnit::Length,
                     "moAngleParameter_c" => ScalarUnit::Angle,
+                    "moScalerParameter_c" => ScalarUnit::Real,
                     _ => return None,
                 };
                 Some((scalar.id.as_str(), unit))
@@ -341,6 +346,7 @@ pub(crate) fn enrich_history_parameters<'a>(
             continue;
         }
         let expression = match unit {
+            ScalarUnit::Real => Some(first.to_string()),
             ScalarUnit::Native => crate::history::parameters::format_native_scalar(
                 feature,
                 &name,

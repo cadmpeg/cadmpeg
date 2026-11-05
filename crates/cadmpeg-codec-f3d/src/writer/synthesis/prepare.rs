@@ -97,8 +97,29 @@ pub(super) fn pcurves(
     Ok(())
 }
 
-pub(super) fn auxiliary(target: &mut CadIr, losses: &mut Vec<LossNote>) {
-    target.model.subds.clear();
+pub(super) fn auxiliary(
+    target: &mut CadIr,
+    losses: &mut Vec<LossNote>,
+    limits: cadmpeg_core::decode::ResourceLimits,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy {
+        limits,
+        ..Default::default()
+    };
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
+    let mut retained = Vec::new();
+    for surface in std::mem::take(&mut target.model.subds) {
+        if super::super::generate::subd::encode(&ctx, &surface)?.is_some() {
+            retained.push(surface);
+        } else {
+            losses.push(F3dLossCode::WriterSubdOmitted.note(format!(
+                "subd {} has unsupported T-spline topology or controls",
+                surface.id
+            )));
+        }
+    }
+    target.model.subds = retained;
     target.model.assets.clear();
     target.model.tessellations.clear();
     for face in &mut target.model.faces {
@@ -133,6 +154,7 @@ pub(super) fn auxiliary(target: &mut CadIr, losses: &mut Vec<LossNote>) {
             )));
         }
     }
+    Ok(())
 }
 
 pub(super) fn solved_carriers(
