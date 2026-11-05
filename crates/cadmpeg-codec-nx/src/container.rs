@@ -1791,7 +1791,7 @@ fn directory_region_cut(
     let mut entries = Vec::new();
     let mut at = entries_offset;
     for _ in 0..count {
-        match try_entry_cut(data, at, Region::Header)? {
+        match try_entry_cut(data, at, Region::Header) {
             Some((entry, next)) => {
                 entries.push(entry);
                 at = next;
@@ -1810,36 +1810,36 @@ fn try_entry_cut(
     data: &[u8],
     o: usize,
     region: Region,
-) -> Result<Option<(DirEntry, usize)>, CodecError> {
+) -> Option<(DirEntry, usize)> {
     let Some(name_len) = View::u32_le_at(data, o).and_then(|value| usize::try_from(value).ok())
     else {
-        return Ok(None);
+        return None;
     };
     if !(6..=128).contains(&name_len) {
-        return Ok(None);
+        return None;
     }
     let Some(name_start) = o.checked_add(dir_entry::LEN) else {
-        return Ok(None);
+        return None;
     };
     let Some(name_end) = name_start.checked_add(name_len) else {
-        return Ok(None);
+        return None;
     };
     let Some(raw) = data.get(name_start..name_end) else {
-        return Ok(None);
+        return None;
     };
     if !raw.starts_with(b"/Root") || !raw.iter().all(|&b| (0x20..0x7f).contains(&b)) {
-        return Ok(None);
+        return None;
     }
     let payload = name_end;
     let Some(next) = payload.checked_add(file_payload::LEN) else {
-        return Ok(None);
+        return None;
     };
     if data.get(payload..next).is_none() {
-        return Ok(None);
+        return None;
     }
 
     let Ok(value) = std::str::from_utf8(raw) else {
-        return Ok(None);
+        return None;
     };
     let name = value.to_owned();
     let file_len = cadmpeg_core::decode::u64_from_index(data.len());
@@ -1862,7 +1862,7 @@ fn try_entry_cut(
         }
         _ => DirEntryBody::Directory,
     };
-    Ok(Some((DirEntry { name, region, body }, next)))
+    Some((DirEntry { name, region, body }, next))
 }
 
 #[cfg(test)]
