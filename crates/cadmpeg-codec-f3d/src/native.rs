@@ -49,6 +49,7 @@ use crate::records::{
         surface_ops::DesignSurfaceTrimOperation, work_geometry::DesignEdgeTreatmentVertexOperand,
     },
     mesh::DesignMeshFeature,
+    mesh_container::MeshContainerRecord,
     parameter_state::{
         DesignParameterDocumentHeader, DesignParameterState, DesignParameterStateCompanion,
     },
@@ -182,6 +183,7 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "face_native_keys",
     "face_sidedness",
     "lost_edge_references",
+    "mesh_containers",
     "mesh_surface_sentinels",
     "persistent_design_links",
     "persistent_references",
@@ -517,6 +519,16 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
             namespace.set_arena(ctx, row.arena, &model.design_mesh_features)
         },
         len: |model| model.design_mesh_features.len(),
+        counts_toward_emptiness: true,
+    },
+    F3dFamilyRow {
+        arena: "mesh_containers",
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.mesh_containers)
+        },
+        len: |model| model.mesh_containers.len(),
         counts_toward_emptiness: true,
     },
     F3dFamilyRow {
@@ -1350,6 +1362,9 @@ pub(crate) struct F3dNative {
     /// Complete typed `Base Mesh Feature` Design graphs.
     #[serde(default)]
     pub(crate) design_mesh_features: Vec<DesignMeshFeature>,
+    /// Decoded mesh containers whose local placement is unavailable.
+    #[serde(default)]
+    pub(crate) mesh_containers: Vec<MeshContainerRecord>,
     /// Exact local component-definition and placed-occurrence carriers.
     #[serde(default)]
     pub(crate) design_component_occurrences: Vec<DesignComponentOccurrence>,
@@ -1648,6 +1663,7 @@ impl F3dNative {
             design_canvas_images: read_arena!("design_canvas_images"),
             design_decal_images: read_arena!("design_decal_images"),
             design_mesh_features: read_arena!("design_mesh_features"),
+            mesh_containers: read_arena!("mesh_containers"),
             design_component_occurrences: read_arena!("design_component_occurrences"),
             design_component_paths: read_arena!("design_component_paths"),
             design_component_naming_spaces: read_arena!("design_component_naming_spaces"),

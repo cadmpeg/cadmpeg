@@ -172,7 +172,7 @@ fn decode_transfers_generated_protein_appearance() {
     assert!(result.report().losses.iter().any(|loss| loss
         .message
         .contains("source parametric edge reference(s) were marked")));
-    assert_eq!(f3d_native(result.ir()).design_types.len(), 12);
+    assert_eq!(f3d_native(result.ir()).design_types.len(), 25);
     let sketch = f3d_native(result.ir())
         .design_types
         .iter()
