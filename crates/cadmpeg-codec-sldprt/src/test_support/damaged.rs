@@ -14,7 +14,7 @@ const PMI_SECTION: &str = "Contents/PMISemanticDataDB";
 fn unswap_name(stored: &[u8]) -> Option<String> {
     let unswapped: Vec<u8> = stored
         .iter()
-        .map(|byte| (byte << 4) | (byte >> 4))
+        .map(|byte| byte.rotate_right(4))
         .collect();
     String::from_utf8(unswapped).ok()
 }
