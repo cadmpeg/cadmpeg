@@ -109,14 +109,11 @@ pub fn reduced_row_findings(
     let Some((arena, index, _)) = target else {
         return vec![format!("no record holds the reduced path {}", probe.path)];
     };
-    let probe_value = match writer_probe.or_else(|| quantum_probe(probe.storage)) {
-        Some(value) => value,
-        None => {
-            return vec![format!(
-                "the normalized row {} needs a writer probe",
-                probe.path
-            )];
-        }
+    let Some(probe_value) = writer_probe.or_else(|| quantum_probe(probe.storage)) else {
+        return vec![format!(
+            "the normalized row {} needs a writer probe",
+            probe.path
+        )];
     };
     let stored = apply_storage(probe.storage, &probe_value, probe.normalize);
     if stored == probe_value {
@@ -197,12 +194,9 @@ pub fn reduced_row_findings(
             }
         }
         storage => {
-            let (got, stored) = match (got.as_f64(), stored.as_f64()) {
-                (Some(got), Some(stored)) => (got, stored),
-                _ => {
-                    findings.push(format!("the re-decode on {} is not a number", probe.path));
-                    return findings;
-                }
+            let (Some(got), Some(stored)) = (got.as_f64(), stored.as_f64()) else {
+                findings.push(format!("the re-decode on {} is not a number", probe.path));
+                return findings;
             };
             if (got - stored).abs() > quantum(storage, stored) {
                 findings.push(format!(
