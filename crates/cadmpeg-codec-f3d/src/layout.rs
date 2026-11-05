@@ -8165,6 +8165,19 @@ pub(crate) mod assembly_version_three_prefix {
         [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
 }
 
+/// Byte offsets for the `assembly_version_four_prologue` record.
+///
+/// Spec §Assembly operands. Record length 32 B.
+///
+/// ```text
+/// Offsets are relative to the primary indexed scope header of a compact version-4 Assemble scope. The first connector reference follows the prologue.
+/// ```
+pub(crate) mod assembly_version_four_prologue {
+    /// Stated value of `prologue_zeros` (`bytes[8]`). Spec §Assembly operands.
+    pub(crate) const PROLOGUE_ZEROS_VALUE: [u8; 8] =
+        [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+}
+
 /// Byte offsets for the `assembly_version_five_scope` record.
 ///
 /// Spec §Assembly operands. Record length 945 B.
