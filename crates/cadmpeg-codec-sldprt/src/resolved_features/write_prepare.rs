@@ -1438,13 +1438,19 @@ fn source_less_lanes(
             }
         }
         let marker_id = |index: usize| -> Result<u16, crate::writer::write_error::WriteError> {
-            super::write_generate::local_marker_id(
-                cadmpeg_core::decode::u64_from_index(index).saturating_add(1),
-            )
+            let value = cadmpeg_core::decode::u64_from_index(index)
+                .checked_add(1)
+                .ok_or_else(|| {
+                    cadmpeg_core::CodecError::malformed("spatial marker count overflows u64")
+                })?;
+            super::write_generate::local_marker_id(value)
         };
         let marker_count = cadmpeg_core::decode::u64_from_index(lines.len())
-            .saturating_mul(3)
-            .saturating_add(cadmpeg_core::decode::u64_from_index(points.len()));
+            .checked_mul(3)
+            .and_then(|count| count.checked_add(cadmpeg_core::decode::u64_from_index(points.len())))
+            .ok_or_else(|| {
+                cadmpeg_core::CodecError::malformed("spatial marker count overflows u64")
+            })?;
         if marker_count != 0 {
             super::write_generate::local_marker_id(marker_count)?;
         }
