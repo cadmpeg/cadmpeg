@@ -868,3 +868,23 @@ fn an_existing_body_name_is_not_replaced() {
     );
     assert_eq!(names(&model), [Some("stored")]);
 }
+
+#[test]
+fn a_composite_member_link_join_does_not_count_as_a_second_wrapper() {
+    let wrapper = wrapper_at(7);
+    let mut model = model_with_bodies(&[("body:a", None)]);
+    let joins = HashMap::from([
+        (wrapper.id(), body("body:a")),
+        (
+            "inventor:design:composite-member-link#1".to_owned(),
+            body("body:a"),
+        ),
+    ]);
+    let inventory = FeatureInventory {
+        properties: vec![wrapper],
+        labels: vec![name_label(7, 3)],
+        ..FeatureInventory::default()
+    };
+    project(&mut model, &joins, &inventory);
+    assert_eq!(names(&model), [Some("Feature 3")]);
+}
