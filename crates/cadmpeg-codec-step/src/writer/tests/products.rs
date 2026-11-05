@@ -532,3 +532,157 @@ fn writer_preserves_an_identity_placed_root_occurrence() {
                 == Some(cadmpeg_ir::transform::Transform::identity())
     }));
 }
+
+#[test]
+fn product_scalar_attributes_are_step_properties_of_their_owner() {
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
+    let body = ir.model.bodies[0].id.clone();
+    let first = "test:model:product-definition#first";
+    let second = "test:model:product-definition#second";
+    ir.model.product_definitions = vec![
+        unnamed_definition(first, vec![body]),
+        unnamed_definition(second, vec![]),
+    ];
+    let attribute = |id: &str, target, name: &str, value: AttributeValue| SourceAttribute {
+        id: id.try_into().expect("identity grammar"),
+        native_ref: None,
+        target,
+        name: name.into(),
+        values: vec![Some(value)],
+    };
+    ir.model.attributes.push(attribute(
+        "test:model:attribute#first",
+        AttributeTarget::ProductDefinition(first.try_into().unwrap()),
+        "Finish",
+        AttributeValue::String("brushed".into()),
+    ));
+    ir.model.attributes.push(attribute(
+        "test:model:attribute#second",
+        AttributeTarget::Record {
+            arena: cadmpeg_ir::document::ArenaName::parse("product_definitions").unwrap(),
+            id: second.into(),
+        },
+        "Material",
+        AttributeValue::String("steel".into()),
+    ));
+    let owner = AttributeTarget::ProductDefinition(first.try_into().unwrap());
+    ir.model.attributes.push(attribute(
+        "test:model:attribute#count",
+        owner.clone(),
+        "Count",
+        AttributeValue::Integer(7),
+    ));
+    ir.model.attributes.push(attribute(
+        "test:model:attribute#ratio",
+        owner.clone(),
+        "Ratio",
+        AttributeValue::float(1.25).unwrap(),
+    ));
+    ir.model.attributes.push(attribute(
+        "test:model:attribute#enabled",
+        owner,
+        "Enabled",
+        AttributeValue::Boolean(true),
+    ));
+    let mut output = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut output,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .unwrap();
+    let text = String::from_utf8(output).unwrap();
+    for (name, item_text, product) in [
+        (
+            "Finish",
+            "DESCRIPTIVE_REPRESENTATION_ITEM('','brushed')",
+            first,
+        ),
+        (
+            "Material",
+            "DESCRIPTIVE_REPRESENTATION_ITEM('','steel')",
+            second,
+        ),
+        ("Count", "INTEGER_REPRESENTATION_ITEM('',7)", first),
+        ("Ratio", "REAL_REPRESENTATION_ITEM('',1.25)", first),
+        ("Enabled", "BOOLEAN_REPRESENTATION_ITEM('',.T.)", first),
+    ] {
+        let prefix = format!("PROPERTY_DEFINITION('{name}','',#");
+        let property = text
+            .lines()
+            .find(|line| line.contains(&prefix))
+            .expect("property definition");
+        let owner = property
+            .split_once(&prefix)
+            .unwrap()
+            .1
+            .split(')')
+            .next()
+            .unwrap();
+        assert!(text.lines().any(|line| line
+            .starts_with(&format!("#{owner} = PRODUCT_DEFINITION("))
+            && line.contains(product)));
+        let property_id = property.split_once(" = ").unwrap().0;
+        let relation_prefix = format!("PROPERTY_DEFINITION_REPRESENTATION({property_id},#");
+        let relation = text
+            .lines()
+            .find(|line| line.contains(&relation_prefix))
+            .expect("property representation link");
+        let representation = relation
+            .split_once(&relation_prefix)
+            .unwrap()
+            .1
+            .split(')')
+            .next()
+            .unwrap();
+        let rep_prefix = format!("#{representation} = REPRESENTATION('',(#");
+        let rep = text
+            .lines()
+            .find(|line| line.starts_with(&rep_prefix))
+            .expect("property representation");
+        let item = rep
+            .strip_prefix(&rep_prefix)
+            .unwrap()
+            .split(')')
+            .next()
+            .unwrap();
+        assert!(text.contains(&format!("#{item} = {item_text}")));
+    }
+    assert!(!report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("test:model:attribute#first")
+            || loss.message.contains("test:model:attribute#second")));
+}
+
+#[test]
+fn older_step_schema_reports_unwritten_product_boolean() {
+    let mut ir = unit_cube().expect("unit cube fixture is admitted");
+    let product = "test:model:product-definition#part";
+    ir.model.product_definitions = vec![unnamed_definition(
+        product,
+        vec![ir.model.bodies[0].id.clone()],
+    )];
+    ir.model.attributes.push(SourceAttribute {
+        id: "test:model:attribute#flag".try_into().unwrap(),
+        native_ref: None,
+        target: AttributeTarget::ProductDefinition(product.try_into().unwrap()),
+        name: "Enabled".into(),
+        values: vec![Some(AttributeValue::Boolean(true))],
+    });
+    let mut output = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut output,
+        StepSchema::Ap214,
+        &StepWriteOptions::default(),
+    )
+    .unwrap();
+    let text = String::from_utf8(output).unwrap();
+    assert!(!text.contains("BOOLEAN_REPRESENTATION_ITEM"));
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("test:model:attribute#flag")));
+}
