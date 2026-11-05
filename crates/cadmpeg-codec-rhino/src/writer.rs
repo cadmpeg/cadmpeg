@@ -602,6 +602,7 @@ struct BrepPayload {
 
 /// A native class identifier and the payload encoded for it.
 type ClassPayload = ([u8; 16], Vec<u8>);
+type SurfacePointAt = Box<dyn Fn(f64, f64) -> [f64; 3]>;
 
 #[derive(Clone)]
 struct SurfacePayload {
@@ -3619,7 +3620,7 @@ fn analytic_revolution(
         cadmpeg_ir::math::Point3,
         cadmpeg_ir::math::Point3,
         ClassPayload,
-        Box<dyn Fn(f64, f64) -> [f64; 3]>,
+        SurfacePointAt,
     ) = match analytic {
         SolvedSurfaceGeometry::Cylinder(_) | SolvedSurfaceGeometry::Cone(_) => {
             let from = profile_point(v0);
