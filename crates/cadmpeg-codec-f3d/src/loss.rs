@@ -99,6 +99,9 @@ pub(crate) enum F3dLossCode {
     LocalOccurrenceEnvelopeSuperseded,
     /// An identity carrier has an unresolved later ordinal.
     LocalOccurrenceIdentityOrdinalUnresolved,
+    /// An attributed occurrence whose source reference names no record of the occurrence source
+    /// type in its Design segment; the occurrence projects from its frame.
+    LocalOccurrenceSourceUnregistered,
     /// Saved free-edge bodies without a product-definition owner.
     SavedFreeEdgeBodyUnowned,
     /// Design assembly joint scopes whose operands, frames, limits, or alignment values do not
@@ -483,6 +486,7 @@ impl F3dLossCode {
         Self::RootInstanceDefinitionUnbound,
         Self::LocalOccurrenceEnvelopeSuperseded,
         Self::LocalOccurrenceIdentityOrdinalUnresolved,
+        Self::LocalOccurrenceSourceUnregistered,
         Self::SavedFreeEdgeBodyUnowned,
         Self::AssemblyJointUnprojected,
         Self::AssemblyAlignmentPartial,
@@ -687,6 +691,9 @@ impl F3dLossCode {
             Self::SavedFreeEdgeBodyUnowned => "assembly.saved-free-edge-body-unowned",
             Self::LocalOccurrenceIdentityOrdinalUnresolved => {
                 "assembly.local-occurrence-identity-ordinal-unresolved"
+            }
+            Self::LocalOccurrenceSourceUnregistered => {
+                "assembly.local-occurrence-source-unregistered"
             }
             Self::LocalOccurrenceEnvelopeSuperseded => {
                 "assembly.local-occurrence-envelope-superseded"
@@ -929,6 +936,7 @@ impl F3dLossCode {
             | Self::ComponentInsertOrderUnknown
             | Self::SavedFreeEdgeBodyUnowned
             | Self::LocalOccurrenceIdentityOrdinalUnresolved
+            | Self::LocalOccurrenceSourceUnregistered
             | Self::LocalOccurrenceEnvelopeSuperseded
             | Self::RootInstanceDefinitionUnbound
             | Self::ComponentDefinitionRevised
@@ -1212,6 +1220,7 @@ impl F3dLossCode {
             | Self::ComponentInsertOrderUnknown
             | Self::SavedFreeEdgeBodyUnowned
             | Self::LocalOccurrenceIdentityOrdinalUnresolved
+            | Self::LocalOccurrenceSourceUnregistered
             | Self::LocalOccurrenceEnvelopeSuperseded
             | Self::RootInstanceDefinitionUnbound
             | Self::ComponentDefinitionRevised
@@ -1347,6 +1356,7 @@ mod tests {
                 "assembly.root-instance-definition-unbound",
                 "assembly.local-occurrence-envelope-superseded",
                 "assembly.local-occurrence-identity-ordinal-unresolved",
+                "assembly.local-occurrence-source-unregistered",
                 "assembly.saved-free-edge-body-unowned",
                 "assembly.joint-unprojected",
                 "assembly.alignment-partial",
