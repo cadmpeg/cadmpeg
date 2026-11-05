@@ -42,6 +42,16 @@ pub(crate) fn other_type_row(meta_stream: &str, identity: u64) -> SegmentType {
     )
 }
 
+/// One row of the occurrence source type that lists only `identity`.
+pub(crate) fn occurrence_source_row(meta_stream: &str, identity: u64) -> SegmentType {
+    type_row(
+        meta_stream,
+        crate::records::feature::assembly_features::OCCURRENCE_SOURCE_TYPE_GUID,
+        400,
+        [identity],
+    )
+}
+
 const AXIS_TYPE_GUID: &str = "19031004-3AB6-4D13-ABBF-C51EE214688D";
 
 fn type_row(

@@ -4710,6 +4710,15 @@ fn validate_component_occurrences(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>
                 ..
             } => occurrence.class_tag.as_str() != "256" || ordinal.get() > 1,
         };
+        let source_registered = occurrence.source_record_index().is_none_or(|source| {
+            ctx.native.design_types.iter().any(|kind| {
+                ids::design_segment(kind.id()) == ids::design_segment(&occurrence.id)
+                    && kind.type_guid.as_str().eq_ignore_ascii_case(
+                        records::feature::assembly_features::OCCURRENCE_SOURCE_TYPE_GUID,
+                    )
+                    && kind.entities.values().any(|entity| *entity == source)
+            })
+        });
         // The duplicated references must agree within one carrier, which
         // the decoder checks. The component-record reference names the
         // definition; carriers of one definition can store different
@@ -4726,6 +4735,10 @@ fn validate_component_occurrences(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>
             (
                 placement_admitted,
                 "Fusion Design class-256 component occurrence has a placed frame at ordinal one",
+            ),
+            (
+                source_registered,
+                "Fusion Design component occurrence source reference names a record of another type",
             ),
         ] {
             if !holds {

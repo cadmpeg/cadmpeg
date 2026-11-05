@@ -420,8 +420,17 @@ fn attributed_component_occurrence(
     else {
         return None;
     };
-    let mut repeat_end = key_end + 1;
-    if frame.get(key_end) != Some(&0) || component_reference(frame, &mut repeat_end)? != component {
+    let mut repeat_end = key_end;
+    let source_record_index = if frame.get(key_end) == Some(&0) {
+        repeat_end += 1;
+        None
+    } else {
+        match crate::bytes::take_reference(frame, &mut repeat_end)?.local()? {
+            (target, None) if target != 0 => Some(target),
+            _ => return None,
+        }
+    };
+    if component_reference(frame, &mut repeat_end)? != component {
         return None;
     }
     let flag_at = repeat_end;
@@ -475,6 +484,7 @@ fn attributed_component_occurrence(
             path_discriminator,
             key_record_index,
             key_segment_index,
+            source_record_index,
             component_guid_offset: absolute(component_guid_at + 4)?,
             occurrence_guid_offset: absolute(occurrence_key_at + 4)?,
             transform_offset: match transform_offset {
@@ -1415,6 +1425,54 @@ mod tests {
         bytes.extend_from_slice(&[0; 2]);
         indexed_header(&mut bytes, *b"262", 20);
         bytes
+    }
+
+    #[test]
+    fn attributed_occurrence_retains_a_source_design_reference() {
+        let plain = attributed("34", 1, 2);
+        let marker = plain
+            .windows(9)
+            .position(|window| window[0] == 1 && window[1..] == 187_u64.to_le_bytes())
+            .expect("first component reference");
+        let repeat = plain[marker + 1..]
+            .windows(9)
+            .position(|window| window[0] == 1 && window[1..] == 187_u64.to_le_bytes())
+            .expect("repeated component reference")
+            + marker
+            + 1;
+        assert_eq!(plain[repeat - 1], 0);
+        let mut bytes = plain[..repeat - 1].to_vec();
+        bytes.push(1);
+        bytes.extend_from_slice(&90_u64.to_le_bytes());
+        bytes.extend_from_slice(&[0; 2]);
+        bytes.extend_from_slice(&plain[repeat..]);
+
+        let occurrence = attributed_component_occurrence(&bytes, 0, "f3d:Design/BulkStream.dat")
+            .expect("occurrence with a source reference");
+        assert_eq!(occurrence.component_record_index, 187);
+        assert_eq!(
+            occurrence.transform().expect("matrix").value.rows()[2][3],
+            4.0
+        );
+        let wire = serde_json::to_value(&occurrence).unwrap();
+        assert_eq!(wire["attributed"]["source_record_index"], 90);
+        let round_trip: crate::records::feature::assembly_features::DesignComponentOccurrence =
+            serde_json::from_value(wire).unwrap();
+        assert_eq!(round_trip, occurrence);
+
+        let plain_wire = serde_json::to_value(
+            attributed_component_occurrence(&plain, 0, "f3d:Design/BulkStream.dat")
+                .expect("occurrence without a source reference"),
+        )
+        .unwrap();
+        assert!(plain_wire["attributed"]
+            .get("source_record_index")
+            .is_none());
+
+        // A zero target is not a reference.
+        let target = repeat;
+        bytes[target..target + 8].fill(0);
+        assert!(attributed_component_occurrence(&bytes, 0, "f3d:Design/BulkStream.dat").is_none());
     }
 
     #[test]
