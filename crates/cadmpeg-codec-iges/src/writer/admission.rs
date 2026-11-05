@@ -38,6 +38,22 @@ pub(super) fn edge_carriers(ir: &CadIr) -> (Cow<'_, CadIr>, Vec<LossNote>) {
     (Cow::Owned(admitted), losses)
 }
 
+/// A loopless NURBS face retains the finite natural parameter domain.
+pub(super) fn natural_domain_face(ir: &CadIr, face: &cadmpeg_ir::topology::Face) -> bool {
+    face.loops.is_empty()
+        && ir
+            .model
+            .surfaces
+            .iter()
+            .find(|surface| surface.id == face.surface)
+            .is_some_and(|surface| {
+                matches!(
+                    surface.geometry.solved_cache(),
+                    Some(cadmpeg_ir::geometry::SolvedSurfaceGeometry::Nurbs(_))
+                )
+            })
+}
+
 /// Faces whose boundary no carrier reaches, with their topology stripped so
 /// the carrier surface still writes. A loop coedge whose edge names no model
 /// curve, or names one without solved geometry, can never supply a Type 141
@@ -97,7 +113,9 @@ pub(super) fn strip_unusable_face_topology(ir: &CadIr) -> (Option<CadIr>, Vec<Lo
                 }
             }
         }
-        if (!invalid_edges_only && !has_coedge) || !missing.is_empty() {
+        if (!invalid_edges_only && !has_coedge && !natural_domain_face(ir, face))
+            || !missing.is_empty()
+        {
             bad.push((face.id.as_str().to_owned(), missing));
         }
     }
