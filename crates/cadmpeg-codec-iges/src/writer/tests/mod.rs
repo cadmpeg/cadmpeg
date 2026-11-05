@@ -367,7 +367,7 @@ fn unusable_document_dates_are_reported_and_not_written_to_global() {
         ("model_date", "invalid"),
     ] {
         ir.model.attributes.push(SourceAttribute {
-            id: AttributeId::mint(format!("test:attribute:{name}#1")).unwrap(),
+            id: AttributeId::mint(format!("test:attribute:{name}#1")).expect("valid test value"),
             native_ref: None,
             target: AttributeTarget::Document,
             name: name.into(),
@@ -734,8 +734,8 @@ fn version_filter_updates_transformation_references() {
     let mut entities = vec![entity(999, None), entity(124, None), entity(110, Some(1))];
     let mut losses = Vec::new();
     let remap = ensure_version_support(&mut entities, IgesVersion::V5_3, &mut losses)
-        .unwrap()
-        .unwrap();
+        .expect("valid test value")
+        .expect("valid test value");
     assert_eq!(entities.len(), 2);
     assert_eq!(entities[1].transform_link, Some(0));
     let mut presentations = std::collections::BTreeMap::from([(
@@ -755,7 +755,8 @@ fn version_filter_updates_transformation_references() {
 
     let mut entities = vec![entity(999, None), entity(110, Some(0))];
     let mut losses = Vec::new();
-    ensure_version_support(&mut entities, IgesVersion::V5_3, &mut losses).unwrap();
+    ensure_version_support(&mut entities, IgesVersion::V5_3, &mut losses)
+        .expect("valid test value");
     assert!(entities.is_empty());
     assert_eq!(losses.len(), 2);
 
@@ -764,7 +765,8 @@ fn version_filter_updates_transformation_references() {
     owner.association_links = vec![0, 2];
     let mut entities = vec![entity(999, None), owner, entity(110, None)];
     let mut losses = Vec::new();
-    ensure_version_support(&mut entities, IgesVersion::V5_3, &mut losses).unwrap();
+    ensure_version_support(&mut entities, IgesVersion::V5_3, &mut losses)
+        .expect("valid test value");
     assert_eq!(entities.len(), 2);
     assert_eq!(entities[0].property_links, vec![1]);
     assert_eq!(entities[0].association_links, vec![1]);
@@ -815,13 +817,20 @@ fn generated_boundary_records_use_the_declared_dependent_status() {
         (Some(1.into()), Some(0.into()), Some(0.into()))
     );
     let bounded = regenerate(parametrically_bounded_plane_file());
-    let entities = &bounded.ir().native.namespace("iges").unwrap().arenas()["entities"];
+    let entities = &bounded
+        .ir()
+        .native
+        .namespace("iges")
+        .expect("valid test value")
+        .arenas()["entities"];
     let boundary = entities
         .iter()
         .find(|entity| entity.field("entity_type") == Some(141.into()))
-        .unwrap();
-    let parameters = boundary.field("parameters").unwrap();
-    let pcurve_sequence = parameters[8]["value"]["value"].as_u64().unwrap();
+        .expect("valid test value");
+    let parameters = boundary.field("parameters").expect("valid test value");
+    let pcurve_sequence = parameters[8]["value"]["value"]
+        .as_u64()
+        .expect("valid test value");
     let pcurve = entities
         .iter()
         .find(|entity| {
@@ -830,7 +839,7 @@ fn generated_boundary_records_use_the_declared_dependent_status() {
                 .and_then(|value| value.as_u64())
                 == Some(pcurve_sequence)
         })
-        .unwrap();
+        .expect("valid test value");
     assert_eq!(
         (
             pcurve.field("subordinate_status"),
@@ -1127,10 +1136,19 @@ fn generated_parameter_field_wider_than_a_card_is_refused() {
 #[test]
 fn card_capacity_helpers_admit_their_limits() {
     assert_eq!(super::capacity::CAPACITY_FIELDS.len(), 2);
-    let payload = vec![b' '; super::capacity::CAPACITY_FIELDS[0].limit as usize];
+    let payload = vec![
+        b' ';
+        usize::try_from(super::capacity::CAPACITY_FIELDS[0].limit)
+            .expect("payload limit fits usize")
+    ];
     assert!(card_payload(&payload).is_ok());
     assert!(card(&payload, b'S', 1).is_ok());
-    let overlong = vec![b' '; super::capacity::CAPACITY_FIELDS[0].limit as usize + 1];
+    let overlong = vec![
+        b' ';
+        usize::try_from(super::capacity::CAPACITY_FIELDS[0].limit)
+            .expect("payload limit fits usize")
+            + 1
+    ];
     assert!(card_payload(&overlong).is_err());
     assert!(card(&overlong, b'S', 1).is_err());
     let limit = super::capacity::CAPACITY_FIELDS[1].limit;

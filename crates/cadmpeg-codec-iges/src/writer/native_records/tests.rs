@@ -644,7 +644,7 @@ fn neutral_multiple_levels_write_a_definition_set() {
     for number in [2, 4] {
         ir.model.presentation_layers.push(PresentationLayer {
             id: cadmpeg_ir::ids::LayerId::mint(format!("test:presentation:layer#{number}"))
-                .unwrap(),
+                .expect("valid test value"),
             native_ref: None,
             name: number.to_string(),
             parent: None,
@@ -725,9 +725,9 @@ fn edited_neutral_box_dimensions_and_placement_replace_native_values() {
             [0.0, 1.0, 0.0, 9.0],
             [0.0, 0.0, 1.0, 10.0],
         ])
-        .unwrap(),
+        .expect("valid test value"),
     )
-    .unwrap();
+    .expect("valid test value");
     feature.evaluation.edit(|definition, _| {
         let FeatureDefinition::Operation(FeatureOperation::Primitive {
             solid, placement, ..
@@ -739,11 +739,11 @@ fn edited_neutral_box_dimensions_and_placement_replace_native_values() {
             panic!("box")
         };
         *solid = PrimitiveSolid::new(PrimitiveSolidKind::Box {
-            length: Dimension::Literal(Length::new(7.0).unwrap()),
+            length: Dimension::Literal(Length::new(7.0).expect("valid test value")),
             width: width.clone(),
             height: height.clone(),
         })
-        .unwrap();
+        .expect("valid test value");
         *placement = Some(desired);
     });
     let output =
@@ -763,7 +763,7 @@ fn edited_neutral_box_dimensions_and_placement_replace_native_values() {
     let PrimitiveSolidKind::Box { length, .. } = solid.kind() else {
         unreachable!()
     };
-    assert_eq!(length.literal().unwrap().get(), 7.0);
+    assert_eq!(length.literal().expect("valid test value").get(), 7.0);
     assert_eq!(*placement, Some(desired));
 }
 
@@ -788,7 +788,10 @@ fn edited_primitive_dimensions_round_trip_from_neutral_features() {
     let mut ir = decoded.ir().clone();
     let mut expected = BTreeMap::new();
     let changed = |value: &mut Dimension<Length>| {
-        *value = Dimension::Literal(Length::new(value.literal().unwrap().get() + 1.0).unwrap());
+        *value = Dimension::Literal(
+            Length::new(value.literal().expect("valid test value").get() + 1.0)
+                .expect("valid test value"),
+        );
     };
     for feature in &mut ir.model.features {
         let name = feature.name.clone().expect("source label");
@@ -867,13 +870,13 @@ fn primitive_feature_order_follows_current_ordinals() {
         .features
         .iter()
         .position(|feature| feature.name.as_deref() == Some("BLOCK"))
-        .unwrap();
+        .expect("valid test value");
     let second = ir
         .model
         .features
         .iter()
         .position(|feature| feature.name.as_deref() == Some("DEFAULT"))
-        .unwrap();
+        .expect("valid test value");
     let ordinal = ir.model.features[first].ordinal;
     ir.model.features[first].ordinal = ir.model.features[second].ordinal;
     ir.model.features[second].ordinal = ordinal;
@@ -893,7 +896,7 @@ fn primitive_feature_order_follows_current_ordinals() {
             .features
             .iter()
             .find(|feature| feature.name.as_deref() == Some(name))
-            .unwrap()
+            .expect("valid test value")
             .ordinal
     };
     assert!(ordinal("DEFAULT") < ordinal("BLOCK"));
@@ -919,7 +922,7 @@ fn source_less_primitive_feature_synthesizes_without_native_records() {
         .features
         .iter()
         .find(|feature| feature.name.as_deref() == Some("BLOCK"))
-        .unwrap()
+        .expect("valid test value")
         .clone();
     feature.native_ref = None;
     feature.ordinal = 0;
@@ -962,12 +965,13 @@ fn mixed_source_less_and_linked_primitives_follow_ordinals() {
         .features
         .iter()
         .find(|feature| feature.name.as_deref() == Some("BLOCK"))
-        .unwrap()
+        .expect("valid test value")
         .clone();
-    feature.id = cadmpeg_ir::features::FeatureId::mint("test:design:feature#new").unwrap();
+    feature.id =
+        cadmpeg_ir::features::FeatureId::mint("test:design:feature#new").expect("valid test value");
     feature.native_ref = None;
     feature.name = Some("NEW".into());
-    feature.ordinal = u64::try_from(ir.model.features.len()).unwrap();
+    feature.ordinal = u64::try_from(ir.model.features.len()).expect("valid test value");
     ir.model.features.push(feature);
     let output =
         super::super::synthesize(&ir, crate::IgesVersion::V5_3).expect("primitive synthesis");
@@ -980,10 +984,10 @@ fn mixed_source_less_and_linked_primitives_follow_ordinals() {
         .features
         .iter()
         .find(|feature| feature.name.as_deref() == Some("NEW"))
-        .unwrap();
+        .expect("valid test value");
     assert_eq!(
         new.ordinal,
-        u64::try_from(ir.model.features.len() - 1).unwrap()
+        u64::try_from(ir.model.features.len() - 1).expect("valid test value")
     );
 }
 
@@ -1127,20 +1131,27 @@ fn solid_assembly_is_written_with_definition_use_flag() {
             &mut Cursor::new(crate::test_support::test_solids_and_structure::solid_assembly_file()),
             &DecodeOptions::default(),
         )
-        .unwrap();
-    let plan = crate::test_support::plan_at(crate::IgesVersion::V5_3, decoded.ir(), None).unwrap();
+        .expect("valid test value");
+    let plan = crate::test_support::plan_at(crate::IgesVersion::V5_3, decoded.ir(), None)
+        .expect("valid test value");
     let mut bytes = Vec::new();
-    plan.write_to(&mut bytes).unwrap();
+    plan.write_to(&mut bytes).expect("valid test value");
     let directory = bytes
         .split(|byte| *byte == b'\n')
         .find(|line| line.get(72) == Some(&b'D') && line.get(..8) == Some(b"     184"))
-        .unwrap();
+        .expect("valid test value");
     assert_eq!(&directory[64..72], b"00000200");
     let output = crate::IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap();
+        .expect("valid test value");
     assert_eq!(
-        output.ir().native.namespace("iges").unwrap().arenas()["solid_assemblies"].len(),
+        output
+            .ir()
+            .native
+            .namespace("iges")
+            .expect("valid test value")
+            .arenas()["solid_assemblies"]
+            .len(),
         1
     );
 }
@@ -1328,7 +1339,12 @@ fn edited_rectangular_pattern_grid_reaches_output() {
         panic!("written linear pattern")
     };
     assert_eq!(*count, Dimension::Literal(3));
-    let native = &after.ir().native.namespace("iges").unwrap().arenas()["rectangular_arrays"][0];
+    let native = &after
+        .ir()
+        .native
+        .namespace("iges")
+        .expect("valid test value")
+        .arenas()["rectangular_arrays"][0];
     assert_eq!(
         native
             .field("do_dont_flag")
@@ -1362,14 +1378,14 @@ fn unsupported_rectangular_omission_mask_is_reported() {
             &mut Cursor::new(owned_test_file(&entities)),
             &DecodeOptions::default(),
         )
-        .unwrap();
+        .expect("valid test value");
     let mut ir = decoded.ir().clone();
     let feature = ir
         .model
         .features
         .iter_mut()
         .find(|feature| feature.name.as_deref() == Some("RECT"))
-        .unwrap();
+        .expect("valid test value");
     let feature_id = feature.id.to_string();
     let mut definition = feature.evaluation.definition().clone();
     let FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) = &mut definition
@@ -1381,16 +1397,16 @@ fn unsupported_rectangular_omission_mask_is_reported() {
         panic!("linear pattern")
     };
     *count = Dimension::Literal(3);
-    *pattern = PatternKind::new(transform).unwrap();
+    *pattern = PatternKind::new(transform).expect("valid test value");
     feature.evaluation.set_definition(definition);
-    let output = super::super::synthesize(&ir, crate::IgesVersion::V5_3).unwrap();
+    let output = super::super::synthesize(&ir, crate::IgesVersion::V5_3).expect("valid test value");
     assert!(output
         .losses
         .iter()
         .any(|loss| loss.message.contains(&feature_id)));
     let after = crate::IgesCodec
         .decode(&mut Cursor::new(output.bytes), &DecodeOptions::default())
-        .unwrap();
+        .expect("valid test value");
     assert!(after.report().losses.iter().all(|loss| !loss
         .message
         .contains("array base, dimensions, selection mask")));
@@ -1431,7 +1447,12 @@ fn rectangular_do_mask_keeps_its_current_grid_positions() {
     let after = crate::IgesCodec
         .decode(&mut Cursor::new(output.bytes), &DecodeOptions::default())
         .expect("DO mask re-decodes");
-    let native = &after.ir().native.namespace("iges").unwrap().arenas()["rectangular_arrays"][0];
+    let native = &after
+        .ir()
+        .native
+        .namespace("iges")
+        .expect("valid test value")
+        .arenas()["rectangular_arrays"][0];
     assert_eq!(
         native
             .field("do_dont_flag")
@@ -1550,7 +1571,12 @@ fn circular_explicit_angles_keep_their_iges_mask() {
     let after = crate::IgesCodec
         .decode(&mut Cursor::new(output.bytes), &DecodeOptions::default())
         .expect("partial circle re-decodes");
-    let native = &after.ir().native.namespace("iges").unwrap().arenas()["circular_arrays"][0];
+    let native = &after
+        .ir()
+        .native
+        .namespace("iges")
+        .expect("valid test value")
+        .arenas()["circular_arrays"][0];
     assert_eq!(
         native
             .field("do_dont_flag")
@@ -1576,10 +1602,10 @@ fn mixed_feature_kinds_follow_current_ordinals() {
         .fixture_inputs()
         .into_iter()
         .find(|(name, _)| name == "procedural_and_boolean_solids")
-        .unwrap();
+        .expect("valid test value");
     let decoded = crate::IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap();
+        .expect("valid test value");
     let mut ir = decoded.ir().clone();
     let expected = ir
         .model
@@ -1587,10 +1613,10 @@ fn mixed_feature_kinds_follow_current_ordinals() {
         .iter()
         .map(|feature| (feature.name.clone(), feature.ordinal))
         .collect::<BTreeMap<_, _>>();
-    let output = super::super::synthesize(&ir, crate::IgesVersion::V5_3).unwrap();
+    let output = super::super::synthesize(&ir, crate::IgesVersion::V5_3).expect("valid test value");
     let after = crate::IgesCodec
         .decode(&mut Cursor::new(output.bytes), &DecodeOptions::default())
-        .unwrap();
+        .expect("valid test value");
     for feature in &after.ir().model.features {
         assert_eq!(
             Some(&feature.ordinal),
@@ -1600,7 +1626,7 @@ fn mixed_feature_kinds_follow_current_ordinals() {
         );
     }
     assert_eq!(after.ir().model.features.len(), ir.model.features.len());
-    let count = ir.model.features.len() as u64;
+    let count = u64::try_from(ir.model.features.len()).expect("feature count fits u64");
     for feature in &mut ir.model.features {
         feature.ordinal = count - feature.ordinal - 1;
     }
@@ -1610,10 +1636,10 @@ fn mixed_feature_kinds_follow_current_ordinals() {
         .iter()
         .map(|feature| (feature.name.clone(), feature.ordinal))
         .collect::<BTreeMap<_, _>>();
-    let output = super::super::synthesize(&ir, crate::IgesVersion::V5_3).unwrap();
+    let output = super::super::synthesize(&ir, crate::IgesVersion::V5_3).expect("valid test value");
     let after = crate::IgesCodec
         .decode(&mut Cursor::new(output.bytes), &DecodeOptions::default())
-        .unwrap();
+        .expect("valid test value");
     for feature in &after.ir().model.features {
         assert_eq!(
             Some(&feature.ordinal),
@@ -1635,44 +1661,71 @@ fn damaged_units_data_retains_its_typed_values() {
         .fixture_inputs()
         .into_iter()
         .find(|(name, _)| name == "damaged/units_data")
-        .unwrap();
+        .expect("valid test value");
     let decoded = crate::IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap();
-    let before = &decoded.ir().native.namespace("iges").unwrap().arenas()["units_data"][0];
-    let output = super::super::synthesize(decoded.ir(), crate::IgesVersion::V5_3).unwrap();
+        .expect("valid test value");
+    let before = &decoded
+        .ir()
+        .native
+        .namespace("iges")
+        .expect("valid test value")
+        .arenas()["units_data"][0];
+    let output =
+        super::super::synthesize(decoded.ir(), crate::IgesVersion::V5_3).expect("valid test value");
     let after = crate::IgesCodec
         .decode(&mut Cursor::new(output.bytes), &DecodeOptions::default())
-        .unwrap();
-    let records = &after.ir().native.namespace("iges").unwrap().arenas()["units_data"];
+        .expect("valid test value");
+    let records = &after
+        .ir()
+        .native
+        .namespace("iges")
+        .expect("valid test value")
+        .arenas()["units_data"];
     assert_eq!(records.len(), 1);
-    assert_eq!(before.fields().unwrap(), records[0].fields().unwrap());
+    assert_eq!(
+        before.fields().expect("valid test value"),
+        records[0].fields().expect("valid test value")
+    );
     let source_directory = |ir: &CadIr, record: &NativeRecord| {
         let source = record
             .field("source_entity")
-            .unwrap()
+            .expect("valid test value")
             .as_str()
-            .unwrap()
+            .expect("valid test value")
             .to_owned();
-        ir.native.namespace("iges").unwrap().arenas()["entities"]
+        ir.native
+            .namespace("iges")
+            .expect("valid test value")
+            .arenas()["entities"]
             .iter()
             .find(|entity| entity.id() == source)
-            .unwrap()
+            .expect("valid test value")
             .field("label")
-            .unwrap()
+            .expect("valid test value")
     };
     assert_eq!(
         source_directory(decoded.ir(), before),
         source_directory(after.ir(), &records[0])
     );
-    let source = decoded.ir().native.namespace("iges").unwrap().arenas()["entities"]
+    let source = decoded
+        .ir()
+        .native
+        .namespace("iges")
+        .expect("valid test value")
+        .arenas()["entities"]
         .iter()
         .find(|e| e.id() == "iges:entity:directory#3")
-        .unwrap();
-    let output = after.ir().native.namespace("iges").unwrap().arenas()["entities"]
+        .expect("valid test value");
+    let output = after
+        .ir()
+        .native
+        .namespace("iges")
+        .expect("valid test value")
+        .arenas()["entities"]
         .iter()
         .find(|e| e.id() == "iges:entity:directory#3")
-        .unwrap();
+        .expect("valid test value");
     assert_eq!(source.field("use_flag"), output.field("use_flag"));
 }
 
@@ -1683,15 +1736,15 @@ fn removing_feature_name_does_not_restore_the_source_label() {
     let bytes = crate::test_support::test_solids_and_structure::primitive_solids_file();
     let decoded = crate::IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap();
+        .expect("valid test value");
     let mut ir = decoded.ir().clone();
     for feature in &mut ir.model.features {
         feature.name = None;
     }
-    let output = super::super::synthesize(&ir, crate::IgesVersion::V5_3).unwrap();
+    let output = super::super::synthesize(&ir, crate::IgesVersion::V5_3).expect("valid test value");
     let after = crate::IgesCodec
         .decode(&mut Cursor::new(output.bytes), &DecodeOptions::default())
-        .unwrap();
+        .expect("valid test value");
     assert!(!after.ir().model.features.is_empty());
     assert!(after
         .ir()
@@ -1729,13 +1782,13 @@ fn directory_pattern_number_is_declared_when_reemitted() {
         &entities,
         &BTreeMap::new(),
         crate::IgesVersion::V5_3,
-        Some(ir.tolerances.linear.unwrap().get()),
+        Some(ir.tolerances.linear.expect("valid test value").get()),
     )
-    .unwrap();
+    .expect("valid test value");
     let directory = bytes
         .split(|byte| *byte == b'\n')
         .find(|line| line.get(72) == Some(&b'D'))
-        .unwrap();
+        .expect("valid test value");
     assert_eq!(&directory[24..32], b"       3");
 }
 
@@ -1753,11 +1806,12 @@ fn directory_color_and_visibility_are_declared_when_reemitted() {
             "line_weight_mm": null, "view": 0, "visible": false
         }),
     );
-    let curve = cadmpeg_ir::ids::CurveId::mint("test:model:curve#level").unwrap();
+    let curve = cadmpeg_ir::ids::CurveId::mint("test:model:curve#level").expect("valid test value");
     ir.model
         .presentation_layers
         .push(cadmpeg_ir::presentation::PresentationLayer {
-            id: cadmpeg_ir::ids::LayerId::mint("test:presentation:layer#5").unwrap(),
+            id: cadmpeg_ir::ids::LayerId::mint("test:presentation:layer#5")
+                .expect("valid test value"),
             native_ref: None,
             name: "5".into(),
             parent: None,
@@ -1791,9 +1845,9 @@ fn directory_color_and_visibility_are_declared_when_reemitted() {
         &entities,
         &presentations,
         crate::IgesVersion::V5_3,
-        Some(ir.tolerances.linear.unwrap().get()),
+        Some(ir.tolerances.linear.expect("valid test value").get()),
     )
-    .unwrap();
+    .expect("valid test value");
     let cards = bytes
         .split(|byte| *byte == b'\n')
         .filter(|line| line.get(72) == Some(&b'D'))
@@ -1842,13 +1896,13 @@ fn directory_font_definition_is_declared_when_pointer_is_unchanged() {
         &entities,
         &BTreeMap::new(),
         crate::IgesVersion::V5_3,
-        Some(ir.tolerances.linear.unwrap().get()),
+        Some(ir.tolerances.linear.expect("valid test value").get()),
     )
-    .unwrap();
+    .expect("valid test value");
     let directory = bytes
         .split(|byte| *byte == b'\n')
         .find(|line| line.get(72) == Some(&b'D'))
-        .unwrap();
+        .expect("valid test value");
     assert_eq!(&directory[24..32], b"      -3");
     let zero = FiniteReal::ZERO;
     let one = FiniteReal::ONE;
@@ -1871,13 +1925,13 @@ fn directory_font_definition_is_declared_when_pointer_is_unchanged() {
         &entities,
         &BTreeMap::new(),
         crate::IgesVersion::V5_3,
-        Some(ir.tolerances.linear.unwrap().get()),
+        Some(ir.tolerances.linear.expect("valid test value").get()),
     )
-    .unwrap();
+    .expect("valid test value");
     let directory = bytes
         .split(|byte| *byte == b'\n')
         .find(|line| line.get(72) == Some(&b'D') && &line[..8] == b"     110")
-        .unwrap();
+        .expect("valid test value");
     assert_eq!(&directory[24..32], b"      -5");
 }
 
@@ -1908,12 +1962,12 @@ fn v4_generated_line_font_is_declared_when_it_matches() {
         &entities,
         &BTreeMap::new(),
         crate::IgesVersion::V4_0,
-        Some(ir.tolerances.linear.unwrap().get()),
+        Some(ir.tolerances.linear.expect("valid test value").get()),
     )
-    .unwrap();
+    .expect("valid test value");
     let directory = bytes
         .split(|byte| *byte == b'\n')
         .find(|line| line.get(72) == Some(&b'D'))
-        .unwrap();
+        .expect("valid test value");
     assert_eq!(&directory[24..32], b"       1");
 }
