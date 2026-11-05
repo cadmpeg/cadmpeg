@@ -2267,7 +2267,7 @@ fn admit_pcurve<'a>(
             // A partial circle pcurve decodes to NURBS; the 2D arc payload
             // still holds the exact arc over the trim range.
             let [lo, hi] = domain;
-            if !(hi > lo) || hi - lo > std::f64::consts::TAU + MAX_ARC_SPAN_EXCESS {
+            if hi.partial_cmp(&lo) != Some(std::cmp::Ordering::Greater) || hi - lo > std::f64::consts::TAU + MAX_ARC_SPAN_EXCESS {
                 return Err(WriteError::Omit(format!(
                     "pcurve {} is not a writable arc",
                     pcurve.id.as_str()
@@ -3510,7 +3510,7 @@ fn analytic_revolution(
     let id = surface.id.as_str();
     let usage = analytic_usage(id, ir)?;
     let [[u0, u1], [v0, v1]] = usage;
-    if !(u1 > u0) || !(v1 > v0) {
+    if u1.partial_cmp(&u0) != Some(std::cmp::Ordering::Greater) || v1.partial_cmp(&v0) != Some(std::cmp::Ordering::Greater) {
         return Err(WriteError::Omit(format!(
             "surface {id} analytic usage is degenerate",
         )));

@@ -1238,7 +1238,7 @@ impl<'a> WritableModel<'a> {
                     // round-trip as a circle; the arc payload still holds the
                     // exact arc. Only a span the arc payload states is exact.
                     let [lo, hi] = FiniteReal::raw_array(domain);
-                    if !(hi > lo) || hi - lo > std::f64::consts::TAU + super::MAX_ARC_SPAN_EXCESS {
+                    if hi.partial_cmp(&lo) != Some(std::cmp::Ordering::Greater) || hi - lo > std::f64::consts::TAU + super::MAX_ARC_SPAN_EXCESS {
                         return Err(WriteError::Omit(format!(
                             "edge {} circle carrier is not a writable arc",
                             edge.id.as_str()
