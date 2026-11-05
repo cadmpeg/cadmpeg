@@ -99,6 +99,19 @@ pub(crate) struct DesignRecipeReference {
     pub(crate) alternate_selector_edges: Vec<EdgeId>,
 }
 
+/// Byte width of the u32 selector field of a recipe reference.
+const RECIPE_SELECTOR_FIELD_BYTES: u64 = 4;
+
+impl DesignRecipeReference {
+    /// Whether the token bytes follow the u32 selector field without a length
+    /// prefix.
+    pub(crate) fn has_packed_token(&self) -> bool {
+        self.selector_offset
+            .checked_add(RECIPE_SELECTOR_FIELD_BYTES)
+            == Some(self.token_offset)
+    }
+}
+
 /// Paired-locus frame nested under a dimensional parameter companion.
 ///
 /// One frame shape covers both source forms: the two-locus form, which carries
