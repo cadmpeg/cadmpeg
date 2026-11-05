@@ -169,7 +169,7 @@ pub(super) fn generated_design_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
     ));
     let mut curve = vec![0u8; 229];
     curve[0..4].copy_from_slice(&3u32.to_le_bytes());
-    curve[4..7].copy_from_slice(b"264");
+    curve[4..7].copy_from_slice(b"280");
     curve[7..11].copy_from_slice(&600u32.to_le_bytes());
     curve[20] = 1;
     curve[21..25].copy_from_slice(&2u32.to_le_bytes());
