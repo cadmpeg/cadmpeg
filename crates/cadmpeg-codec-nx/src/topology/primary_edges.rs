@@ -63,9 +63,17 @@ impl Graph {
             (frames, primary.stop_offset(), limit_term_use, selection)
         };
         let mut graph = match selection {
-            Some((selection, node_refusals)) => {
+            Some((selection, supported)) => {
                 let mut graph = selection.materialize(stream);
-                graph.primary_node_refusals = node_refusals;
+                graph.primary_node_refusals = supported
+                    .into_iter()
+                    .filter(|&(kind, start)| {
+                        graph
+                            .by_pos
+                            .get(&start)
+                            .is_none_or(|(selected, _)| *selected != kind)
+                    })
+                    .collect();
                 let refusals = frames
                     .edges
                     .iter()
@@ -149,15 +157,15 @@ impl Graph {
 
 /// The fixed records of a terminated node sequence: one candidate per
 /// supported node with the base field layout, with an identity that two nodes
-/// share left out before the family checks. The starts of supported non-EDGE
-/// nodes without the base field layout follow the selection.
+/// share left out before the family checks. The kind and start of every
+/// supported non-EDGE node follow the selection.
 fn node_selection(
     stream: &[u8],
     primary: &PrimaryRecords<'_>,
 ) -> (FixedRecordSelection, Vec<(NodeKind, usize)>) {
     let mut typed = Vec::new();
     let mut ownership = Vec::new();
-    let mut refusals = Vec::new();
+    let mut supported = Vec::new();
     for node in primary.nodes() {
         let Some(kind) = u8::try_from(node.kind())
             .ok()
@@ -166,10 +174,10 @@ fn node_selection(
             continue;
         };
         let range = node.range();
+        if kind != NodeKind::Edge {
+            supported.push((kind, range.start));
+        }
         if !node.has_base_layout() {
-            if kind != NodeKind::Edge {
-                refusals.push((kind, range.start));
-            }
             continue;
         }
         let Some(shift) = node
@@ -215,5 +223,5 @@ fn node_selection(
         typed: valid(typed),
         ownership: valid(ownership),
     };
-    (selection, refusals)
+    (selection, supported)
 }

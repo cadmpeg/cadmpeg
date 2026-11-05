@@ -148,7 +148,7 @@ impl<'a> ParsedStreams<'a> {
                 })
                 .chain(graph.primary_node_refusals().iter().map(move |(kind, offset)| {
                     crate::loss::NxLossCode::PrimaryNodeUnresolved.note(format!(
-                        "Primary {kind:?} node in stream #{ordinal} at byte {offset} has no typed projection under its declared field contract; exact Source bytes remain retained."
+                        "Primary {kind:?} node in stream #{ordinal} at byte {offset} has no typed projection under its declared field contract and source identity; exact Source bytes remain retained."
                     ))
                 }))
                 .chain(graph.primary_unread_from().map(move |offset| {

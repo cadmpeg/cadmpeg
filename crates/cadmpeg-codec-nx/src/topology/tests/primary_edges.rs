@@ -469,3 +469,21 @@ fn terminated_vertex_with_an_edited_base_field_reports_its_unresolved_projection
         );
     }
 }
+
+#[test]
+fn terminated_vertices_that_share_an_identity_are_both_refused() {
+    with_decode_context(|_ctx| {
+        let mut bytes = header(13006, false);
+        let first = bytes.len();
+        bytes.extend(vertex(82, 73));
+        let second = bytes.len();
+        bytes.extend(vertex(82, 74));
+        bytes.extend(END);
+        let graph = parse(&bytes);
+        assert_eq!(graph.kind_count(NodeKind::Vertex), 0);
+        assert_eq!(
+            graph.primary_node_refusals(),
+            [(NodeKind::Vertex, first), (NodeKind::Vertex, second)]
+        );
+    });
+}
