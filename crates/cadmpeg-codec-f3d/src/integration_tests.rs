@@ -468,22 +468,6 @@ fn named_target(plan: &cadmpeg_ir::codec::write::ExportPlan) -> String {
     .to_string()
 }
 
-fn assert_default_source_unavailable(plan: &cadmpeg_ir::codec::write::ExportPlan) {
-    let unavailable: Vec<_> = plan
-        .report()
-        .losses
-        .iter()
-        .filter(|loss| {
-            loss.code == crate::loss::F3dLossCode::SourcePreservedImageUnavailable.kind()
-        })
-        .collect();
-    assert_eq!(unavailable.len(), 1);
-    assert_eq!(
-        unavailable[0].message,
-        "preserved F3D source image is unavailable; regenerated from IR"
-    );
-}
-
 fn assert_default_synthesis_output(
     plan: cadmpeg_ir::codec::write::ExportPlan,
 ) -> EditableDecodeResult {
@@ -518,27 +502,13 @@ fn assert_default_synthesis_output(
     output
 }
 
-/// The flagship case: `convert in.f3d -o out.f3d` on an archive that is not the
-/// catalog row keeps the archive it was handed, and says so.
-///
-/// The command line builds `Inherit` for a same-format conversion, and the
-/// resolved dialect is then the source's by construction, so the replay law
-/// admits preservation. Before resolution the report named no dialect at all,
-/// so the bytes went out with the claim unstated.
+/// An off-catalog source selects the catalog default even with retained bytes.
 #[test]
-fn inherit_replays_an_off_catalog_dialect_and_names_it() {
+fn inherit_synthesizes_the_default_for_a_retained_off_catalog_source() {
     let source = f3d_with_smbh_and_manifest_version(&synthetic_geometry_smbh(), "3-3-0-0");
-    let result = decode(source.clone());
-    let plan = plan(&result, true, TargetRequest::Inherit).expect("preservation is available");
-
-    assert!(matches!(
-        plan.report().write_path(),
-        cadmpeg_ir::report::export::WritePath::VerbatimReplay { .. }
-    ));
-    assert_eq!(named_target(&plan), "f3d:unknown");
-    let mut written = Vec::new();
-    plan.write_to(&mut written).unwrap();
-    assert_eq!(written, source);
+    let result = decode(source);
+    let plan = plan(&result, true, TargetRequest::Inherit).expect("catalog default");
+    assert_default_synthesis_output(plan);
 }
 
 /// Unrepresented source content selects synthesis at the catalog default.
@@ -564,11 +534,8 @@ fn inherit_synthesizes_the_default_when_off_catalog_source_content_is_unrepresen
             plan.report().write_path(),
             "fidelity"
         ),
-        cadmpeg_ir::report::export::FidelityResolution::Degraded {
-            reason: "preserved F3D source image is unavailable".into()
-        }
+        cadmpeg_ir::report::export::FidelityResolution::NotConsumed {}
     );
-    assert_default_source_unavailable(&plan);
     assert_default_synthesis_output(plan);
 }
 
@@ -589,7 +556,6 @@ fn inherit_synthesizes_the_default_for_an_off_catalog_source_with_no_retained_im
         ),
         cadmpeg_ir::report::export::FidelityResolution::NotProvided {}
     );
-    assert_default_source_unavailable(&plan);
     assert_default_synthesis_output(plan);
 }
 
@@ -730,7 +696,7 @@ fn an_altered_source_image_does_not_replay() {
     );
 }
 
-/// A supported point edit patches its source dialect; an explicit target synthesizes.
+/// Both inherited and explicit catalog targets write the edited point.
 #[test]
 fn an_edited_off_catalog_document_synthesizes_the_explicit_target() {
     let result = decode(f3d_with_smbh_and_manifest_version(
@@ -752,44 +718,20 @@ fn an_edited_off_catalog_document_synthesizes_the_explicit_target() {
             EncodeInput::new(&edited, Some(result.source_fidelity())),
             TargetRequest::Inherit,
         )
-        .expect("§5.0 retains a source dialect when the point edit can be patched");
+        .expect("§5.0 selects the catalog default");
     assert!(result.source_fidelity().unrepresented().is_empty());
-    assert!(matches!(
-        inherited.report().write_path(),
-        cadmpeg_ir::report::export::WritePath::Patched { .. }
-    ));
-    assert_eq!(named_target(&inherited), "f3d:unknown");
     assert_eq!(
         wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
             inherited.report().write_path(),
-            "fidelity"
+            "fidelity",
         ),
-        cadmpeg_ir::report::export::FidelityResolution::Replayed {}
+        cadmpeg_ir::report::export::FidelityResolution::NotConsumed {},
     );
     assert!(inherited.report().synthesis_cause().is_none());
-    assert!(inherited
-        .report()
-        .losses
-        .iter()
-        .all(|loss| loss.code != crate::loss::F3dLossCode::SourceDialectDisplaced.kind()));
-    let mut inherited_bytes = Vec::new();
-    inherited
-        .write_to(&mut inherited_bytes)
-        .expect("the supported point edit patches source layout");
-    let inherited_output = decode(inherited_bytes);
+    let inherited_output = assert_default_synthesis_output(inherited);
     assert_eq!(
         inherited_output.ir().model.points[0].position().get().x,
         moved.x + 1.0
-    );
-    assert_eq!(
-        inherited_output
-            .report()
-            .dialects()
-            .expect("native classification")
-            .primary()
-            .dialect()
-            .as_str(),
-        "f3d:unknown"
     );
     let plan = F3dCodec
         .plan(
