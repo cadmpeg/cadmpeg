@@ -73,6 +73,9 @@ fn cascade_validation_errors(
             if entity.is_empty() {
                 return false;
             }
+            if super::write_through_validation_error(projected, finding) {
+                return false;
+            }
             matches!(
                 finding.check,
                 Check::ReferentialIntegrity
@@ -84,7 +87,7 @@ fn cascade_validation_errors(
         let Some(finding) = cascaded else {
             let carried = pending
                 .iter()
-                .find(|finding| super::write_through_validation_error(finding));
+                .find(|finding| super::write_through_validation_error(projected, finding));
             if let Some(finding) = carried {
                 acknowledged.insert((
                     finding.entity.clone().unwrap_or_default(),
@@ -367,8 +370,26 @@ pub(super) fn plan(
             Err(error) => return Err(error),
         }
     }
-    let before_subset = projected;
+    let mut before_subset = projected;
+    before_subset
+        .model
+        .bodies
+        .sort_by_key(|body| !supported.contains(&body.id));
     projected = super::body_subset(&before_subset, &supported)?;
+    let kept_curves = projected
+        .model
+        .curves
+        .iter()
+        .map(|curve| &curve.id)
+        .collect::<std::collections::HashSet<_>>();
+    for curve in &before_subset.model.curves {
+        if !kept_curves.contains(&curve.id) {
+            losses.push(SldprtLossCode::WriterEntityOmitted.note(format!(
+                "curve {} omitted because no selected partition carries it",
+                curve.id
+            )));
+        }
+    }
     macro_rules! report_omitted_owners {
         ($records:ident, $owners:ident, $owner:ident) => {{
             let records = projected
