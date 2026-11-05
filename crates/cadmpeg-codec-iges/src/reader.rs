@@ -671,10 +671,24 @@ impl<'a> PhysicalParse<'a> {
             binary_admission,
             compressed,
         } = parsing;
-        let scan = match source {
+        let mut scan = match source {
             Some(source) => card::scan_source(source)?,
             None => card::scan(bytes)?,
         };
+        if compressed
+            .as_ref()
+            .is_some_and(|source| !source.source_terminated)
+        {
+            scan.lines.retain(|line| {
+                !matches!(
+                    line,
+                    card::ScannedLine::Card {
+                        section: card::Section::Terminate,
+                        ..
+                    }
+                )
+            });
+        }
         replay_framing_give_ups(&scan, ctx, &mut parts)?;
         if scan.source_end.ends_before_directory() {
             if let global::GlobalParse::Unfinished(error) = global::parse_if_complete(&scan)? {
@@ -1077,9 +1091,26 @@ fn decode_with_occurrence_limits(
     // projection below (#215 rule 1).
     merge_part_native(ctx, &mut ir, &mut part_native)?;
     let mut invalid_resolution = false;
-    if let Some(context) = &length_context {
+    let resolution_unavailable = match &parse.global {
+        global::GlobalRecord::Resolved(global) => !global.minimum_resolution_available(),
+        global::GlobalRecord::Unfinished => true,
+    };
+    let global_give_up = part_losses.iter_mut().rev().find(|loss| {
+        loss.code.local_code() == "record.unreadable"
+            && (loss.message.starts_with("part iges.global_field ")
+                || loss.message.starts_with("part iges.global_section "))
+    });
+    if resolution_unavailable {
+        if let Some(loss) = global_give_up {
+            ir.tolerances.linear = None;
+            loss.dropped_fields.push(DroppedField {
+                record: cadmpeg_ir::report::loss::DOCUMENT_HEADER.to_owned(),
+                field: "tolerances.linear".to_owned(),
+            });
+        }
+    } else if let Some(context) = &length_context {
         match cadmpeg_ir::scalar::PositiveLength::new(context.minimum_resolution_mm()) {
-            Some(value) => ir.tolerances.linear = value,
+            Some(value) => ir.tolerances.linear = Some(value),
             None => invalid_resolution = true,
         }
     }

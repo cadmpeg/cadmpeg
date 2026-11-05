@@ -142,11 +142,6 @@ const _: () = assert!(
         && is_ascii_text(WRITER_AUTHOR_ORGANIZATION)
 );
 
-const WRITER_ENTITY_TYPES: &[u32] = &[
-    100, 102, 104, 108, 110, 116, 120, 122, 123, 124, 126, 128, 134, 136, 138, 141, 142, 143, 144,
-    146, 148, 186, 190, 192, 194, 196, 198, 314, 406, 418, 502, 504, 508, 510, 514,
-];
-
 mod admission;
 mod brep_order;
 use brep_order::{brep_sense, edge_use_positions, edge_use_sense, pole_use_order};
@@ -154,10 +149,13 @@ mod appearance;
 mod attributes;
 mod degrade;
 mod display;
+mod feature_order;
 mod levels;
 mod native_records;
 mod pcurve_admission;
 pub(crate) mod target;
+mod units;
+mod version_support;
 
 fn body(
     bytes: Vec<u8>,
@@ -457,45 +455,6 @@ fn carrier_display_color(
     display_color(bound, owner, losses)
 }
 
-fn append_color_definitions(
-    entities: &mut Vec<Entity>,
-    presentations: &mut BTreeMap<usize, BodyPresentation>,
-) -> Result<(), CodecError> {
-    for presentation in presentations.values_mut() {
-        let BodyColor::Custom(color) = presentation.color else {
-            continue;
-        };
-        let components = [color.r(), color.g(), color.b()]
-            .map(|component| finite(f64::from(component) * 100.0, "color percentage"))
-            .into_iter()
-            .collect::<Result<Vec<_>, _>>()?;
-        let entity_index = entities.len();
-        entities.push(Entity {
-            structure: None,
-            property_links: Vec::new(),
-            association_links: Vec::new(),
-            line_font: None,
-            source_targets: Vec::new(),
-            type_code: 314,
-            form: 0,
-            label: String::new(),
-            status: EntityStatus::Definition,
-            subscript: 0,
-            parameter_body: format!(
-                "{},{},{},;",
-                number(components[0]),
-                number(components[1]),
-                number(components[2])
-            )
-            .into_bytes(),
-            transform: None,
-            transform_link: None,
-        });
-        presentation.color = BodyColor::Definition(entity_index);
-    }
-    Ok(())
-}
-
 fn append_name_properties(
     entities: &mut Vec<Entity>,
     presentations: &BTreeMap<usize, BodyPresentation>,
@@ -546,53 +505,6 @@ fn append_name_properties(
         });
     }
     Ok(())
-}
-
-/// How many appearance bindings the output states. A binding counts as
-/// written when an emitted entity carries its target record with a
-/// non-default color; tessellation, occurrence, edge and vertex targets have
-/// no Directory color and never count.
-fn appearance_binding_coverage(
-    ir: &CadIr,
-    entities: &[Entity],
-    presentations: &BTreeMap<usize, BodyPresentation>,
-) -> ArenaDisposition {
-    use cadmpeg_ir::appearance::AppearanceTarget;
-    if ir.model.appearance_bindings.is_empty() {
-        return ArenaDisposition::Written;
-    }
-    let mut expressed = 0;
-    for binding in &ir.model.appearance_bindings {
-        let target = binding
-            .target
-            .typed_record_target(&ir.model)
-            .unwrap_or_else(|| binding.target.clone());
-        let id = match &target {
-            AppearanceTarget::Body(id) => id.as_str(),
-            AppearanceTarget::Face(id) => id.as_str(),
-            AppearanceTarget::Surface(id) => id.as_str(),
-            AppearanceTarget::Curve(id) => id.as_str(),
-            AppearanceTarget::Point(id) => id.as_str(),
-            _ => continue,
-        };
-        let stated = entities.iter().enumerate().any(|(index, entity)| {
-            entity
-                .source_targets
-                .iter()
-                .any(|target| target.as_str() == id)
-                && presentations.get(&index).is_some_and(|presentation| {
-                    !matches!(presentation.color, BodyColor::Standard(0))
-                })
-        });
-        expressed += usize::from(stated);
-    }
-    if expressed == ir.model.appearance_bindings.len() {
-        ArenaDisposition::Written
-    } else if expressed == 0 {
-        ArenaDisposition::Dropped
-    } else {
-        ArenaDisposition::Reported
-    }
 }
 
 /// The Type 124 placement for a body's Directory transform, when the target
@@ -681,7 +593,7 @@ fn synthesize_with_admission(
     graph
         .losses
         .extend(unapplied_body_placement_losses(ir, &graph.entities));
-    append_color_definitions(&mut graph.entities, &mut graph.presentations)?;
+    appearance::append_color_definitions(ir, &mut graph.entities, &mut graph.presentations)?;
     native_records::solids::append_primitive_features(ir, &mut graph.entities);
     neutral_products::append(ir, &mut graph.entities, version);
     let mut native_export = native_records::append::append(ir, &mut graph.entities, version);
@@ -693,6 +605,7 @@ fn synthesize_with_admission(
     if let Some(remap) = ensure_version_support(&mut graph.entities, version, &mut graph.losses)? {
         remap_presentations(&mut graph.presentations, &remap);
     }
+    units::ensure_nonempty(&mut graph.entities, version);
     native_export.regenerated.retain(|id| {
         graph
             .entities
@@ -709,6 +622,7 @@ fn synthesize_with_admission(
         &graph.presentations,
         version,
     ));
+    feature_order::order(ir, &mut graph.entities, &mut graph.presentations)?;
     let emitted = graph
         .entities
         .iter()
@@ -877,7 +791,6 @@ fn synthesize_with_admission(
                 .note("the document holds no geometry that IGES can encode"),
         );
     }
-    let minimum_resolution = ir.tolerances.linear.get();
     let counts = entity_counts(&graph.entities);
     let mut coverage = SYNTHESIS_COVERAGE;
     coverage.features = feature_coverage;
@@ -905,13 +818,11 @@ fn synthesize_with_admission(
     } else {
         ArenaDisposition::Reported
     };
-    coverage.appearance_bindings =
-        appearance_binding_coverage(ir, &graph.entities, &graph.presentations);
-    graph.losses.extend(appearance::losses(
-        ir,
-        &graph.entities,
-        &graph.presentations,
-    ));
+    let (appearances, bindings, appearance_losses) =
+        appearance::coverage(ir, &graph.entities, &graph.presentations);
+    coverage.appearances = appearances;
+    coverage.appearance_bindings = bindings;
+    graph.losses.extend(appearance_losses);
     if graph
         .losses
         .iter()
@@ -950,7 +861,7 @@ fn synthesize_with_admission(
             &graph.entities,
             &graph.presentations,
             version,
-            minimum_resolution,
+            ir.tolerances.linear.map(|value| value.get()),
         )?,
         counts,
         losses: graph.losses,
@@ -1398,124 +1309,6 @@ fn reject_owned_wire_topology(ir: &CadIr) -> Result<(), CodecError> {
         return Err(CodecError::UnsupportedContent(message));
     }
     Ok(())
-}
-
-impl crate::IgesVersion {
-    fn admits(self, entity: &Entity) -> bool {
-        if matches!(
-            entity.type_code,
-            124 | 125
-                | 106
-                | 132
-                | 150
-                | 152
-                | 154
-                | 156
-                | 158
-                | 160
-                | 162
-                | 164
-                | 168
-                | 180
-                | 182
-                | 184
-                | 202
-                | 204
-                | 206
-                | 208
-                | 210
-                | 212
-                | 213
-                | 214
-                | 216
-                | 218
-                | 220
-                | 222
-                | 228
-                | 230
-                | 302
-                | 304
-                | 306
-                | 308
-                | 310
-                | 312
-                | 316
-                | 320
-                | 322
-                | 402
-                | 404
-                | 406
-                | 408
-                | 410
-                | 412
-                | 414
-                | 416
-                | 420
-                | 422
-                | 430
-        ) || crate::profile::macro_instance_type(i64::from(entity.type_code))
-        {
-            return crate::profile::envelope_a_admits(
-                i64::from(entity.type_code),
-                entity.form,
-                crate::version::VersionFlag::from_write_version(self).global_table(),
-            );
-        }
-        if !WRITER_ENTITY_TYPES.contains(&entity.type_code) {
-            return false;
-        }
-        match self {
-            crate::IgesVersion::V4_0 => matches!(
-                (entity.type_code, entity.form),
-                (
-                    100 | 102 | 108 | 110 | 116 | 120 | 122 | 124 | 126 | 128 | 142 | 144 | 314,
-                    0
-                ) | (104, 0 | 2 | 3)
-                    | (134 | 136 | 138 | 418, 0)
-                    | (146 | 148, 0..=34)
-                    | (406, 15)
-            ),
-            crate::IgesVersion::V5_0 => matches!(
-                (entity.type_code, entity.form),
-                (
-                    100 | 102
-                        | 108
-                        | 110
-                        | 116
-                        | 120
-                        | 122
-                        | 124
-                        | 126
-                        | 128
-                        | 141
-                        | 142
-                        | 143
-                        | 144
-                        | 314,
-                    0
-                ) | (104, 1..=3)
-                    | (134 | 136 | 138 | 418, 0)
-                    | (146 | 148, 0..=34)
-                    | (406, 15)
-            ),
-            crate::IgesVersion::V5_1 | crate::IgesVersion::V5_2 | crate::IgesVersion::V5_3 => {
-                match entity.type_code {
-                    100 | 102 | 110 | 116 | 120 | 122 | 123 | 124 | 126 | 128 | 141 | 142 | 143
-                    | 144 | 186 | 314 => entity.form == 0,
-                    104 => matches!(entity.form, 0 | 2 | 3),
-                    190 | 192 | 194 | 196 | 198 => entity.form == 1,
-                    502 | 504 | 508 | 510 => entity.form == 1,
-                    406 => entity.form == 15,
-                    134 | 136 | 138 | 418 => entity.form == 0,
-                    146 | 148 => (0..=34).contains(&entity.form),
-                    514 => {
-                        entity.form == 1 || (entity.form == 2 && self == crate::IgesVersion::V5_3)
-                    }
-                    _ => false,
-                }
-            }
-        }
-    }
 }
 
 fn ensure_version_support(
@@ -3480,9 +3273,10 @@ fn topology_entities(
                 ))
             })?;
         let loops = face_loop_order(ir, face)?;
-        let bounded = loops
-            .iter()
-            .all(|loop_| face.loop_role(&loop_.id) == LoopBoundaryRole::Unspecified);
+        let bounded = !loops.is_empty()
+            && loops
+                .iter()
+                .all(|loop_| face.loop_role(&loop_.id) == LoopBoundaryRole::Unspecified);
         for loop_ in loops {
             boundaries.push((
                 surface_index,
@@ -3632,9 +3426,10 @@ fn topology_entities(
     for face in &faces {
         let surface_index = surface_indices[face.surface.as_str()];
         let loops = face_loop_order(ir, face)?;
-        let bounded = loops
-            .iter()
-            .all(|loop_| face.loop_role(&loop_.id) == LoopBoundaryRole::Unspecified);
+        let bounded = !loops.is_empty()
+            && loops
+                .iter()
+                .all(|loop_| face.loop_role(&loop_.id) == LoopBoundaryRole::Unspecified);
         let mut parameters = if bounded {
             let representation = loops
                 .first()
@@ -3936,9 +3731,9 @@ fn validate_trimmed_sheet_topology<'a>(
             })?;
         surface_entities_for_ir(ctx, ir, surface, 0, version)?;
         let loops = face_loop_order(ir, face)?;
-        if loops.is_empty() {
+        if loops.is_empty() && !admission::natural_domain_face(ir, face) {
             return Err(CodecError::UnsupportedContent(format!(
-                "IGES semantic writer requires at least one boundary loop per face ({})",
+                "IGES semantic writer requires a boundary loop or finite NURBS domain ({})",
                 face.id
             )));
         }
@@ -5812,6 +5607,7 @@ fn entity_counts(entities: &[Entity]) -> BTreeMap<String, usize> {
             144 => "144_trimmed_surface",
             186 => "186_manifold_solid_brep",
             314 => "314_color_definition",
+            316 => "316_units_data",
             322 => "322_attribute_definition",
             406 if entity.form == 15 => "406_name_property",
             406 => "406_property",
@@ -9341,7 +9137,7 @@ fn encode_file(
     entities: &[Entity],
     body_presentations: &BTreeMap<usize, BodyPresentation>,
     version: crate::IgesVersion,
-    minimum_resolution: f64,
+    minimum_resolution: Option<f64>,
 ) -> Result<Vec<u8>, WriteError> {
     let metadata = DocumentMetadata::of(ir);
     let generation_timestamp = generation_timestamp_for(version, metadata.generation_date)?;
@@ -9350,9 +9146,7 @@ fn encode_file(
         version,
         &metadata,
         &generation_timestamp,
-        FiniteReal::new(minimum_resolution).ok_or_else(|| {
-            CodecError::malformed("IGES output graph has a non-finite Global minimum resolution")
-        })?,
+        minimum_resolution.and_then(FiniteReal::new),
         FiniteReal::new(maximum_coordinate).ok_or_else(|| {
             CodecError::malformed("IGES output graph has a non-finite Global maximum coordinate")
         })?,
@@ -9767,7 +9561,7 @@ fn generated_global(
     version: crate::IgesVersion,
     metadata: &DocumentMetadata<'_>,
     generation_timestamp: &str,
-    minimum_resolution: FiniteReal,
+    minimum_resolution: Option<FiniteReal>,
     maximum_coordinate: FiniteReal,
 ) -> Vec<u8> {
     let mut fields = vec![
@@ -9800,7 +9594,7 @@ fn generated_global(
         WRITER_MAXIMUM_LINE_WEIGHT_GRADATIONS.to_string(),
         WRITER_MAXIMUM_LINE_WIDTH.to_owned(),
         global_hollerith(generation_timestamp),
-        number(minimum_resolution),
+        minimum_resolution.map_or_else(String::new, number),
         number(maximum_coordinate),
         global_hollerith(metadata.author.unwrap_or(WRITER_AUTHOR_NAME)),
         global_hollerith(metadata.organization.unwrap_or(WRITER_AUTHOR_ORGANIZATION)),

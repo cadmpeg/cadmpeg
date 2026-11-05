@@ -1,14 +1,16 @@
 {
-  "output": "original fixture                                                        S      1\n1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,32,38,6,308,17,7HprodG      1\nuct,1.0,2,2HMM,1,1.0,15HYYYYMMDD.HHMMSS,1.0000000000000000D-3,0,6HauthorG      2\n,3Horg,11,0,0H,0H;                                                      G      3\nS0000001G0000003D0000000P0000000                                        T      1\n",
+  "output": "original fixture                                                        S      1\n1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,32,38,6,308,17,7HprodG      1\nuct,1.0,2,2HMM,1,1.0,15HYYYYMMDD.HHMMSS,1.0000000000000000D-3,0,6HauthorG      2\n,3Horg,11,0,0H,0H;                                                      G      3\n     416       1       0       0       0       0       0       000000000D      1\n     416       0       0       1       0                  EXTDEF       0D      2\n     416       2       0       0       0       0       0       000000000D      3\n     416       0       0       1       1                 EXTFILE       0D      4\n     416       3       0       0       0       0       0       000000000D      5\n     416       0       0       1       2                EXTLOGIC       0D      6\n     416       4       0       0       0       0       0       000000000D      7\n     416       0       0       1       3                  NATIVE       0D      8\n     416       5       0       0       0       0       0       000000000D      9\n     416       0       0       1       4                 LIBRARY       0D     10\n416,8Hpart.igs,7HBRACKET;                                              1P      1\n416,12Hassembly.igs;                                                   3P      2\n416,9Hsheet.igs,7HFLANGE1;                                             5P      3\n416,5HMOTOR;                                                           7P      4\n416,7HDEVICES,5HRELAY;                                                 9P      5\nS0000001G0000003D0000010P0000005                                        T      1\n",
   "report": {
     "census": {
       "basis": "target_records",
-      "counts": {}
+      "counts": {
+        "unknown_entity": 5
+      }
     },
     "coverage": {
       "arenas": {
         "appearance_bindings": "written",
-        "appearances": "dropped",
+        "appearances": "written",
         "articulations": "omitted",
         "assembly_joints": "dropped",
         "assets": "dropped",
@@ -24,7 +26,7 @@
         "faces": "written",
         "feature_input_topologies": "dropped",
         "feature_result_topologies": "dropped",
-        "features": "dropped",
+        "features": "written",
         "loops": "written",
         "mass_properties": "omitted",
         "occurrences": "dropped",
@@ -35,7 +37,7 @@
         "pmi": "dropped",
         "points": "reported",
         "presentation_documents": "dropped",
-        "presentation_layers": "dropped",
+        "presentation_layers": "written",
         "procedural_curves": "dropped",
         "procedural_surfaces": "reported",
         "product_definitions": "dropped",
@@ -81,7 +83,47 @@
           "namespace": "iges",
           "scope": "namespaced"
         },
-        "message": "IGES omits unsupported model arena occurrences",
+        "message": "IGES omits unsupported occurrences record iges:model:occurrence#D1",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "writer.arena-omitted",
+          "kind": "passthrough_record_omitted",
+          "namespace": "iges",
+          "scope": "namespaced"
+        },
+        "message": "IGES omits unsupported occurrences record iges:model:occurrence#D3",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "writer.arena-omitted",
+          "kind": "passthrough_record_omitted",
+          "namespace": "iges",
+          "scope": "namespaced"
+        },
+        "message": "IGES omits unsupported occurrences record iges:model:occurrence#D5",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "writer.arena-omitted",
+          "kind": "passthrough_record_omitted",
+          "namespace": "iges",
+          "scope": "namespaced"
+        },
+        "message": "IGES omits unsupported occurrences record iges:model:occurrence#D7",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "writer.arena-omitted",
+          "kind": "passthrough_record_omitted",
+          "namespace": "iges",
+          "scope": "namespaced"
+        },
+        "message": "IGES omits unsupported occurrences record iges:model:occurrence#D9",
         "severity": "warning"
       },
       {
@@ -102,27 +144,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 5 native record(s) from `iges.display_attributes`: iges:presentation:display-attributes#D1, iges:presentation:display-attributes#D3, iges:presentation:display-attributes#D5, iges:presentation:display-attributes#D7, iges:presentation:display-attributes#D9",
-        "severity": "info"
-      },
-      {
-        "code": {
-          "code": "native.records-omitted",
-          "kind": "record_not_typed",
-          "namespace": "export",
-          "scope": "namespaced"
-        },
         "message": "the iges write omits 5 native record(s) from `iges.entities`: iges:entity:directory#1, iges:entity:directory#3, iges:entity:directory#5, iges:entity:directory#7, iges:entity:directory#9",
-        "severity": "info"
-      },
-      {
-        "code": {
-          "code": "native.records-omitted",
-          "kind": "record_not_typed",
-          "namespace": "export",
-          "scope": "namespaced"
-        },
-        "message": "the iges write omits 5 native record(s) from `iges.external_references`: iges:product:external-reference#D1, iges:product:external-reference#D3, iges:product:external-reference#D5, iges:product:external-reference#D7, iges:product:external-reference#D9",
         "severity": "info"
       },
       {
@@ -180,7 +202,14 @@
               "disposition": "dropped"
             },
             "display_attributes": {
-              "disposition": "dropped"
+              "disposition": "regenerated",
+              "records": {
+                "iges:presentation:display-attributes#D1": "regenerated",
+                "iges:presentation:display-attributes#D3": "regenerated",
+                "iges:presentation:display-attributes#D5": "regenerated",
+                "iges:presentation:display-attributes#D7": "regenerated",
+                "iges:presentation:display-attributes#D9": "regenerated"
+              }
             },
             "drawings": {
               "disposition": "dropped"
@@ -189,7 +218,14 @@
               "disposition": "dropped"
             },
             "external_references": {
-              "disposition": "dropped"
+              "disposition": "regenerated",
+              "records": {
+                "iges:product:external-reference#D1": "regenerated",
+                "iges:product:external-reference#D3": "regenerated",
+                "iges:product:external-reference#D5": "regenerated",
+                "iges:product:external-reference#D7": "regenerated",
+                "iges:product:external-reference#D9": "regenerated"
+              }
             },
             "fem_entities": {
               "disposition": "dropped"

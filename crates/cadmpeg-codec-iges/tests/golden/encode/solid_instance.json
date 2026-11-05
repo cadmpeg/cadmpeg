@@ -1,14 +1,16 @@
 {
-  "output": "original fixture                                                        S      1\n1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,32,38,6,308,17,7HprodG      1\nuct,1.0,2,2HMM,1,1.0,15HYYYYMMDD.HHMMSS,1.0000000000000000D-3,0,6HauthorG      2\n,3Horg,11,0,0H,0H;                                                      G      3\nS0000001G0000003D0000000P0000000                                        T      1\n",
+  "output": "original fixture                                                        S      1\n1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,32,38,6,308,17,7HprodG      1\nuct,1.0,2,2HMM,1,1.0,15HYYYYMMDD.HHMMSS,1.0000000000000000D-3,0,6HauthorG      2\n,3Horg,11,0,0H,0H;                                                      G      3\n     158       1       0       0       0       0       0       000000000D      1\n     158       0       0       2       0                  SPHERE       0D      2\n     308       3       0       0       0       0       0       000000200D      3\n     308       0       0       1       0                               0D      4\n     408       4       0       0       0       0       0       000000000D      5\n     408       0       0       1       0                               0D      6\n     430       5       0       0       0       0       0       000000000D      7\n     430       0       0       1       0                INSTANCE       0D      8\n158,2.0000000000000000D0,1.0000000000000000D0,                         1P      1\n2.0000000000000000D0,3.0000000000000000D0;                             1P      2\n308,0,6HSPHERE,0;                                                      3P      3\n408,3,0,0,0,1;                                                         5P      4\n430,1;                                                                 7P      5\nS0000001G0000003D0000008P0000005                                        T      1\n",
   "report": {
     "census": {
       "basis": "target_records",
-      "counts": {}
+      "counts": {
+        "unknown_entity": 4
+      }
     },
     "coverage": {
       "arenas": {
         "appearance_bindings": "written",
-        "appearances": "dropped",
+        "appearances": "written",
         "articulations": "omitted",
         "assembly_joints": "dropped",
         "assets": "dropped",
@@ -24,10 +26,10 @@
         "faces": "written",
         "feature_input_topologies": "dropped",
         "feature_result_topologies": "dropped",
-        "features": "dropped",
+        "features": "written",
         "loops": "written",
         "mass_properties": "omitted",
-        "occurrences": "dropped",
+        "occurrences": "reported",
         "parameters": "dropped",
         "pcurves": "written",
         "physical_materials": "omitted",
@@ -35,10 +37,10 @@
         "pmi": "dropped",
         "points": "reported",
         "presentation_documents": "dropped",
-        "presentation_layers": "dropped",
+        "presentation_layers": "written",
         "procedural_curves": "dropped",
         "procedural_surfaces": "reported",
-        "product_definitions": "dropped",
+        "product_definitions": "reported",
         "regions": "written",
         "rigid_bodies": "omitted",
         "semantic_annotations": "dropped",
@@ -76,54 +78,13 @@
       },
       {
         "code": {
-          "code": "design.parametric-records-omitted",
-          "kind": "parametric_record_omitted",
-          "namespace": "iges",
-          "scope": "namespaced"
-        },
-        "message": "IGES omits unsupported model arena features",
-        "severity": "warning"
-      },
-      {
-        "code": {
           "code": "writer.arena-omitted",
           "kind": "passthrough_record_omitted",
           "namespace": "iges",
           "scope": "namespaced"
         },
-        "message": "IGES omits unsupported model arena product_definitions",
+        "message": "IGES occurrence iges:model:occurrence#D1:D3 does not preserve unspecified placement",
         "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "writer.arena-omitted",
-          "kind": "passthrough_record_omitted",
-          "namespace": "iges",
-          "scope": "namespaced"
-        },
-        "message": "IGES omits unsupported model arena occurrences",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "export.no-exportable-solids",
-          "kind": "no_exportable_solids",
-          "namespace": "iges",
-          "scope": "namespaced",
-          "strict_floor": "warning"
-        },
-        "message": "the document holds no geometry that IGES can encode",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "native.records-omitted",
-          "kind": "record_not_typed",
-          "namespace": "export",
-          "scope": "namespaced"
-        },
-        "message": "the iges write omits 2 native record(s) from `iges.display_attributes`: iges:presentation:display-attributes#D1, iges:presentation:display-attributes#D3",
-        "severity": "info"
       },
       {
         "code": {
@@ -142,27 +103,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 1 native record(s) from `iges.primitive_solids`: iges:solid:primitive#D1",
-        "severity": "info"
-      },
-      {
-        "code": {
-          "code": "native.records-omitted",
-          "kind": "record_not_typed",
-          "namespace": "export",
-          "scope": "namespaced"
-        },
         "message": "the iges write omits 1 native record(s) from `iges.product_occurrence_expansion`: iges:product:occurrence-expansion#state",
-        "severity": "info"
-      },
-      {
-        "code": {
-          "code": "native.records-omitted",
-          "kind": "record_not_typed",
-          "namespace": "export",
-          "scope": "namespaced"
-        },
-        "message": "the iges write omits 1 native record(s) from `iges.solid_instances`: iges:product:solid-instance#D3",
         "severity": "info"
       }
     ],
@@ -210,7 +151,11 @@
               "disposition": "dropped"
             },
             "display_attributes": {
-              "disposition": "dropped"
+              "disposition": "regenerated",
+              "records": {
+                "iges:presentation:display-attributes#D1": "regenerated",
+                "iges:presentation:display-attributes#D3": "regenerated"
+              }
             },
             "drawings": {
               "disposition": "dropped"
@@ -249,7 +194,10 @@
               "disposition": "dropped"
             },
             "primitive_solids": {
-              "disposition": "dropped"
+              "disposition": "regenerated",
+              "records": {
+                "iges:solid:primitive#D1": "regenerated"
+              }
             },
             "procedural_solids": {
               "disposition": "dropped"
@@ -279,7 +227,10 @@
               "disposition": "dropped"
             },
             "solid_instances": {
-              "disposition": "dropped"
+              "disposition": "regenerated",
+              "records": {
+                "iges:product:solid-instance#D3": "regenerated"
+              }
             },
             "subfigure_definitions": {
               "disposition": "dropped"

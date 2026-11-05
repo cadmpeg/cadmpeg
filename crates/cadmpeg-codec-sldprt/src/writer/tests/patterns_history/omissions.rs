@@ -3,7 +3,7 @@
 use super::*;
 
 #[test]
-fn semantic_writer_refuses_omitted_linear_pattern_instances() {
+fn semantic_writer_reports_omitted_linear_pattern_instances() {
     use cadmpeg_ir::features::{
         patterns::{PatternKind, PatternTransform},
         FeatureDefinition, FeatureOperation,
@@ -35,14 +35,27 @@ fn semantic_writer_refuses_omitted_linear_pattern_instances() {
             omitted_instances.push([1, 0]);
             *pattern = PatternKind::new(transform).unwrap();
         });
-    let error = crate::test_support::plan_fixture_write_with_native_envelope(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
+    let feature = decoded.ir().model.features[1].id.clone();
+    let plan = crate::test_support::plan_fixture_with_native_envelope(
+        EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+        TargetRequest::Inherit,
     )
-    .unwrap_err();
-    assert!(
-        error.to_string().contains("omitted pattern instances"),
-        "{error}"
-    );
+    .unwrap();
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(feature.as_str()) && loss.message.contains("[1, 0]")));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(output.ir().model.features.iter().any(|feature| matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. })
+        if matches!(pattern.definition(), PatternTransform::Linear { omitted_instances, count, distance, .. }
+            if omitted_instances.is_empty() && output.ir().dimension_value(count) == Some(3)
+                && output.ir().dimension_value(distance.dimension()).is_some_and(|value| value.get() == 10.0))
+    )));
 }

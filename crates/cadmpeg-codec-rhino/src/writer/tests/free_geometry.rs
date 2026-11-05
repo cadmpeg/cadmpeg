@@ -48,7 +48,12 @@ fn authored_extrusion_payload_decodes_its_cap_and_carrier() {
     let mut archive = super::super::header(RhinoArchiveVersion::V8);
     archive.extend(super::super::long_chunk(1, b"cadmpeg").unwrap());
     let mut settings = super::super::units_record(
-        source.ir().tolerances.linear.get(),
+        source
+            .ir()
+            .tolerances
+            .linear
+            .expect("stated linear tolerance")
+            .get(),
         source.ir().tolerances.angular.get(),
     )
     .unwrap();
@@ -149,6 +154,12 @@ fn extrusion_with_hole_retains_both_profiles_and_caps() {
                     .procedural_surfaces
                     .iter()
                     .any(|row| loss.message.contains(row.id.as_str()))));
+        for pcurve in &source.ir().model.pcurves {
+            assert!(plan.report().losses.iter().any(|loss| {
+                loss.code == crate::loss::RhinoLossCode::WriterPcurveReversalDefaulted.kind()
+                    && loss.message.contains(pcurve.id.as_str())
+            }));
+        }
         let mut written = Vec::new();
         plan.write_to(&mut written).unwrap();
         let output = RhinoCodec
@@ -246,7 +257,7 @@ fn source_less_points_round_trip_across_target_versions() {
 fn coarse_absolute_tolerance_writes_valid_independent_relative_tolerance() {
     let mut ir = CadIr::empty();
     ir.tolerances.linear =
-        cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("positive finite tolerance");
+        Some(cadmpeg_ir::scalar::PositiveLength::new(2.0).expect("positive finite tolerance"));
     ir.model.points.push(Point::new(
         PointId::mint("rhino:test:point#coarse-tolerance").expect("identity grammar"),
         cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
@@ -266,7 +277,15 @@ fn coarse_absolute_tolerance_writes_valid_independent_relative_tolerance() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("generated settings record remains valid");
 
-    assert_eq!(decoded.ir().tolerances.linear.get(), 2.0);
+    assert_eq!(
+        decoded
+            .ir()
+            .tolerances
+            .linear
+            .expect("stated linear tolerance")
+            .get(),
+        2.0
+    );
     assert!(decoded
         .report()
         .losses

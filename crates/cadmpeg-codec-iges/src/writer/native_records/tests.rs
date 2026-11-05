@@ -65,7 +65,7 @@ fn directory_pattern_number_is_written_from_typed_display() {
         &entities,
         &BTreeMap::new(),
         crate::IgesVersion::V5_3,
-        ir.tolerances.linear.get(),
+        Some(ir.tolerances.linear.expect("stated linear tolerance").get()),
     )
     .expect("typed directory pattern encodes");
     let directory = bytes
@@ -117,7 +117,7 @@ fn reemitted_font_definition_uses_current_directory_pointer() {
         &entities,
         &BTreeMap::new(),
         crate::IgesVersion::V5_3,
-        ir.tolerances.linear.get(),
+        Some(ir.tolerances.linear.expect("stated linear tolerance").get()),
     )
     .expect("current font definition encodes");
     let directory = bytes
@@ -456,7 +456,7 @@ fn reemitted_node_carries_its_subscript_into_the_directory() {
         &entities,
         &BTreeMap::new(),
         crate::IgesVersion::V5_3,
-        ir.tolerances.linear.get(),
+        Some(ir.tolerances.linear.expect("stated linear tolerance").get()),
     )
     .expect("finite-element node encodes");
     let cards: Vec<_> = bytes
@@ -1226,4 +1226,552 @@ fn boolean_feature_order_follows_current_ordinals() {
             .ordinal
     };
     assert!(ordinal("SECOND") < ordinal("FIRST"));
+}
+
+#[test]
+fn edited_rectangular_pattern_grid_reaches_output() {
+    use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use cadmpeg_ir::features::patterns::{PatternKind, PatternTransform};
+    use cadmpeg_ir::features::{Dimension, FeatureDefinition, FeatureOperation};
+    use std::io::Cursor;
+    let entities = [
+        (116, "BASE", "116,0,0,0,0;"),
+        (412, "RECT", "412,1,1,0,0,0,2,1,4,2,0.0,0,0;"),
+    ]
+    .into_iter()
+    .map(|(entity_type, label, parameters)| OwnedTestEntity {
+        entity_type,
+        form: 0,
+        label: label.into(),
+        status: "00000000",
+        parameters: parameters.into(),
+    })
+    .collect::<Vec<_>>();
+    let decoded = crate::IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&entities)),
+            &DecodeOptions::default(),
+        )
+        .expect("rectangular array decodes");
+    let mut ir = decoded.ir().clone();
+    let feature = ir
+        .model
+        .features
+        .iter_mut()
+        .find(|feature| feature.name.as_deref() == Some("RECT"))
+        .expect("rectangular feature");
+    let mut definition = feature.evaluation.definition().clone();
+    let FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) = &mut definition
+    else {
+        panic!("pattern")
+    };
+    let mut transform = pattern.definition().clone();
+    let PatternTransform::Linear { count, .. } = &mut transform else {
+        panic!("linear pattern")
+    };
+    *count = Dimension::Literal(3);
+    *pattern = PatternKind::new(transform).expect("edited grid remains valid");
+    feature.evaluation.set_definition(definition);
+    let output =
+        super::super::synthesize(&ir, crate::IgesVersion::V5_3).expect("edited array synthesizes");
+    let export_losses = output.losses.clone();
+    let after = crate::IgesCodec
+        .decode(&mut Cursor::new(output.bytes), &DecodeOptions::default())
+        .expect("array re-decodes");
+    let feature = after
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("RECT"))
+        .unwrap_or_else(|| {
+            panic!(
+                "written array feature; export: {export_losses:?}; decode: {:?}; features: {:?}",
+                after.report().losses,
+                after.ir().model.features
+            )
+        });
+    let FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) =
+        feature.evaluation.definition()
+    else {
+        panic!("written pattern")
+    };
+    let PatternTransform::Linear { count, .. } = pattern.definition() else {
+        panic!("written linear pattern")
+    };
+    assert_eq!(*count, Dimension::Literal(3));
+    let native = &after.ir().native.namespace("iges").unwrap().arenas()["rectangular_arrays"][0];
+    assert_eq!(
+        native
+            .field("do_dont_flag")
+            .and_then(|value| value.as_i64()),
+        Some(0)
+    );
+}
+
+#[test]
+fn unsupported_rectangular_omission_mask_is_reported() {
+    use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use cadmpeg_ir::features::patterns::{PatternKind, PatternTransform};
+    use cadmpeg_ir::features::{Dimension, FeatureDefinition, FeatureOperation};
+    use std::io::Cursor;
+    let entities = [
+        (116, "BASE", "116,0,0,0,0;"),
+        (412, "RECT", "412,1,1,0,0,0,2,1,4,2,0.0,1,1,2;"),
+    ]
+    .into_iter()
+    .map(|(entity_type, label, parameters)| OwnedTestEntity {
+        entity_type,
+        form: 0,
+        label: label.into(),
+        status: "00000000",
+        parameters: parameters.into(),
+    })
+    .collect::<Vec<_>>();
+    let decoded = crate::IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&entities)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let feature = ir
+        .model
+        .features
+        .iter_mut()
+        .find(|feature| feature.name.as_deref() == Some("RECT"))
+        .unwrap();
+    let feature_id = feature.id.to_string();
+    let mut definition = feature.evaluation.definition().clone();
+    let FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) = &mut definition
+    else {
+        panic!("pattern")
+    };
+    let mut transform = pattern.definition().clone();
+    let PatternTransform::Linear { count, .. } = &mut transform else {
+        panic!("linear pattern")
+    };
+    *count = Dimension::Literal(3);
+    *pattern = PatternKind::new(transform).unwrap();
+    feature.evaluation.set_definition(definition);
+    let output = super::super::synthesize(&ir, crate::IgesVersion::V5_3).unwrap();
+    assert!(output
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(&feature_id)));
+    let after = crate::IgesCodec
+        .decode(&mut Cursor::new(output.bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(after.report().losses.iter().all(|loss| !loss
+        .message
+        .contains("array base, dimensions, selection mask")));
+}
+
+#[test]
+fn rectangular_do_mask_keeps_its_current_grid_positions() {
+    use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use std::io::Cursor;
+    let entities = [
+        (116, "BASE", "116,0,0,0,0;"),
+        (412, "RECT", "412,1,1,0,0,0,4,1,4,2,0.0,2,0,1,3;"),
+    ]
+    .into_iter()
+    .map(|(entity_type, label, parameters)| OwnedTestEntity {
+        entity_type,
+        form: 0,
+        label: label.into(),
+        status: "00000000",
+        parameters: parameters.into(),
+    })
+    .collect::<Vec<_>>();
+    let decoded = crate::IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&entities)),
+            &DecodeOptions::default(),
+        )
+        .expect("DO mask decodes");
+    assert!(decoded
+        .ir()
+        .model
+        .features
+        .iter()
+        .any(|feature| feature.name.as_deref() == Some("RECT")));
+    let output =
+        super::super::synthesize(decoded.ir(), crate::IgesVersion::V5_3).expect("DO mask writes");
+    let after = crate::IgesCodec
+        .decode(&mut Cursor::new(output.bytes), &DecodeOptions::default())
+        .expect("DO mask re-decodes");
+    let native = &after.ir().native.namespace("iges").unwrap().arenas()["rectangular_arrays"][0];
+    assert_eq!(
+        native
+            .field("do_dont_flag")
+            .and_then(|value| value.as_i64()),
+        Some(0)
+    );
+    assert_eq!(native.field("positions"), Some(json!([1, 3])));
+    assert!(after
+        .ir()
+        .model
+        .features
+        .iter()
+        .any(|feature| feature.name.as_deref() == Some("RECT")));
+}
+
+#[test]
+fn edited_circular_pattern_count_reaches_output() {
+    use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use cadmpeg_ir::features::patterns::{PatternKind, PatternTransform};
+    use cadmpeg_ir::features::{Dimension, FeatureDefinition, FeatureOperation};
+    use std::io::Cursor;
+    let entities = [
+        (116, "BASE", "116,0,0,0,0;"),
+        (414, "CIRCLE", "414,1,4,0,0,0,5,0,1.0,0,0;"),
+    ]
+    .into_iter()
+    .map(|(entity_type, label, parameters)| OwnedTestEntity {
+        entity_type,
+        form: 0,
+        label: label.into(),
+        status: "00000000",
+        parameters: parameters.into(),
+    })
+    .collect::<Vec<_>>();
+    let decoded = crate::IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&entities)),
+            &DecodeOptions::default(),
+        )
+        .expect("circular array decodes");
+    let mut ir = decoded.ir().clone();
+    let feature = ir
+        .model
+        .features
+        .iter_mut()
+        .find(|feature| feature.name.as_deref() == Some("CIRCLE"))
+        .expect("circular feature");
+    let mut definition = feature.evaluation.definition().clone();
+    let FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) = &mut definition
+    else {
+        panic!("pattern")
+    };
+    let mut transform = pattern.definition().clone();
+    let PatternTransform::Circular { count, .. } = &mut transform else {
+        panic!("circular pattern")
+    };
+    *count = Dimension::Literal(5);
+    *pattern = PatternKind::new(transform).expect("edited pattern remains valid");
+    feature.evaluation.set_definition(definition);
+    let output =
+        super::super::synthesize(&ir, crate::IgesVersion::V5_3).expect("edited circle synthesizes");
+    let after = crate::IgesCodec
+        .decode(&mut Cursor::new(output.bytes), &DecodeOptions::default())
+        .expect("circle re-decodes");
+    let feature = after
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("CIRCLE"))
+        .expect("written circular feature");
+    let FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) =
+        feature.evaluation.definition()
+    else {
+        panic!("written pattern")
+    };
+    let PatternTransform::Circular { count, .. } = pattern.definition() else {
+        panic!("written circular pattern")
+    };
+    assert_eq!(*count, Dimension::Literal(5));
+}
+
+#[test]
+fn circular_explicit_angles_keep_their_iges_mask() {
+    use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use std::io::Cursor;
+    let entities = [
+        (116, "BASE", "116,0,0,0,0;"),
+        (414, "PARTIAL", "414,1,4,0,0,0,5,0,1.0,2,1,2,4;"),
+    ]
+    .into_iter()
+    .map(|(entity_type, label, parameters)| OwnedTestEntity {
+        entity_type,
+        form: 0,
+        label: label.into(),
+        status: "00000000",
+        parameters: parameters.into(),
+    })
+    .collect::<Vec<_>>();
+    let decoded = crate::IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&entities)),
+            &DecodeOptions::default(),
+        )
+        .expect("partial circular array decodes");
+    assert!(decoded
+        .ir()
+        .model
+        .features
+        .iter()
+        .any(|feature| feature.name.as_deref() == Some("PARTIAL")));
+    let output = super::super::synthesize(decoded.ir(), crate::IgesVersion::V5_3)
+        .expect("partial circle synthesizes");
+    let after = crate::IgesCodec
+        .decode(&mut Cursor::new(output.bytes), &DecodeOptions::default())
+        .expect("partial circle re-decodes");
+    let native = &after.ir().native.namespace("iges").unwrap().arenas()["circular_arrays"][0];
+    assert_eq!(
+        native
+            .field("do_dont_flag")
+            .and_then(|value| value.as_i64()),
+        Some(1)
+    );
+    assert_eq!(native.field("positions"), Some(json!([2, 4])));
+    assert!(after
+        .ir()
+        .model
+        .features
+        .iter()
+        .any(|feature| feature.name.as_deref() == Some("PARTIAL")));
+}
+
+#[test]
+fn mixed_feature_kinds_follow_current_ordinals() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use std::io::Cursor;
+    let harness =
+        cadmpeg_test_support::golden::Harness::new(env!("CARGO_MANIFEST_DIR"), "igs", "unused");
+    let (_, bytes) = harness
+        .fixture_inputs()
+        .into_iter()
+        .find(|(name, _)| name == "procedural_and_boolean_solids")
+        .unwrap();
+    let decoded = crate::IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let expected = ir
+        .model
+        .features
+        .iter()
+        .map(|feature| (feature.name.clone(), feature.ordinal))
+        .collect::<BTreeMap<_, _>>();
+    let output = super::super::synthesize(&ir, crate::IgesVersion::V5_3).unwrap();
+    let after = crate::IgesCodec
+        .decode(&mut Cursor::new(output.bytes), &DecodeOptions::default())
+        .unwrap();
+    for feature in &after.ir().model.features {
+        assert_eq!(
+            Some(&feature.ordinal),
+            expected.get(&feature.name),
+            "{:?}",
+            feature.name
+        );
+    }
+    assert_eq!(after.ir().model.features.len(), ir.model.features.len());
+    let count = ir.model.features.len() as u64;
+    for feature in &mut ir.model.features {
+        feature.ordinal = count - feature.ordinal - 1;
+    }
+    let expected = ir
+        .model
+        .features
+        .iter()
+        .map(|feature| (feature.name.clone(), feature.ordinal))
+        .collect::<BTreeMap<_, _>>();
+    let output = super::super::synthesize(&ir, crate::IgesVersion::V5_3).unwrap();
+    let after = crate::IgesCodec
+        .decode(&mut Cursor::new(output.bytes), &DecodeOptions::default())
+        .unwrap();
+    for feature in &after.ir().model.features {
+        assert_eq!(
+            Some(&feature.ordinal),
+            expected.get(&feature.name),
+            "{:?}",
+            feature.name
+        );
+    }
+    assert_eq!(after.ir().model.features.len(), ir.model.features.len());
+}
+
+#[test]
+fn damaged_units_data_retains_its_typed_values() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use std::io::Cursor;
+    let harness =
+        cadmpeg_test_support::golden::Harness::new(env!("CARGO_MANIFEST_DIR"), "igs", "unused");
+    let (_, bytes) = harness
+        .fixture_inputs()
+        .into_iter()
+        .find(|(name, _)| name == "damaged/units_data")
+        .unwrap();
+    let decoded = crate::IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let before = &decoded.ir().native.namespace("iges").unwrap().arenas()["units_data"][0];
+    let output = super::super::synthesize(decoded.ir(), crate::IgesVersion::V5_3).unwrap();
+    let after = crate::IgesCodec
+        .decode(&mut Cursor::new(output.bytes), &DecodeOptions::default())
+        .unwrap();
+    let records = &after.ir().native.namespace("iges").unwrap().arenas()["units_data"];
+    assert_eq!(records.len(), 1);
+    assert_eq!(before.fields().unwrap(), records[0].fields().unwrap());
+    let source_directory = |ir: &CadIr, record: &NativeRecord| {
+        let source = record
+            .field("source_entity")
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .to_owned();
+        ir.native.namespace("iges").unwrap().arenas()["entities"]
+            .iter()
+            .find(|entity| entity.id() == source)
+            .unwrap()
+            .field("label")
+            .unwrap()
+    };
+    assert_eq!(
+        source_directory(decoded.ir(), before),
+        source_directory(after.ir(), &records[0])
+    );
+    let source = decoded.ir().native.namespace("iges").unwrap().arenas()["entities"]
+        .iter()
+        .find(|e| e.id() == "iges:entity:directory#3")
+        .unwrap();
+    let output = after.ir().native.namespace("iges").unwrap().arenas()["entities"]
+        .iter()
+        .find(|e| e.id() == "iges:entity:directory#3")
+        .unwrap();
+    assert_eq!(source.field("use_flag"), output.field("use_flag"));
+}
+
+#[test]
+fn removing_feature_name_does_not_restore_the_source_label() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use std::io::Cursor;
+    let bytes = crate::test_support::test_solids_and_structure::primitive_solids_file();
+    let decoded = crate::IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    for feature in &mut ir.model.features {
+        feature.name = None;
+    }
+    let output = super::super::synthesize(&ir, crate::IgesVersion::V5_3).unwrap();
+    let after = crate::IgesCodec
+        .decode(&mut Cursor::new(output.bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(!after.ir().model.features.is_empty());
+    assert!(after
+        .ir()
+        .model
+        .features
+        .iter()
+        .all(|feature| feature.name.is_none()));
+}
+
+#[test]
+fn directory_pattern_number_is_declared_when_reemitted() {
+    let mut ir = CadIr::empty();
+    install(
+        &mut ir,
+        "display_attributes",
+        "iges:presentation:display#D1",
+        &json!({
+            "source_entity": "iges:entity:directory#1", "line_font_number": 3,
+            "line_font_definition": null, "level_number": 0, "level_definition": null,
+            "color_number": 0, "color_definition": null, "line_weight_number": 0,
+            "line_weight_mm": null, "view": 0, "visible": true
+        }),
+    );
+    let mut entities = vec![owner()];
+    append(&ir, &mut entities, crate::IgesVersion::V5_3);
+    let regenerated = super::super::display::regenerated(
+        &ir,
+        &entities,
+        &BTreeMap::new(),
+        crate::IgesVersion::V5_3,
+    );
+    assert!(regenerated.contains("iges:presentation:display#D1"));
+    let bytes = encode_file(
+        &ir,
+        &entities,
+        &BTreeMap::new(),
+        crate::IgesVersion::V5_3,
+        Some(ir.tolerances.linear.unwrap().get()),
+    )
+    .unwrap();
+    let directory = bytes
+        .split(|byte| *byte == b'\n')
+        .find(|line| line.get(72) == Some(&b'D'))
+        .unwrap();
+    assert_eq!(&directory[24..32], b"       3");
+}
+
+#[test]
+fn directory_color_and_visibility_are_declared_when_reemitted() {
+    let mut ir = CadIr::empty();
+    install(
+        &mut ir,
+        "display_attributes",
+        "iges:presentation:display#D1",
+        &json!({
+            "source_entity": "iges:entity:directory#1", "line_font_number": 0,
+            "line_font_definition": null, "level_number": 5, "level_definition": null,
+            "color_number": 2, "color_definition": null, "line_weight_number": 0,
+            "line_weight_mm": null, "view": 0, "visible": false
+        }),
+    );
+    let curve = cadmpeg_ir::ids::CurveId::mint("test:model:curve#level").unwrap();
+    ir.model
+        .presentation_layers
+        .push(cadmpeg_ir::presentation::PresentationLayer {
+            id: cadmpeg_ir::ids::LayerId::mint("test:presentation:layer#5").unwrap(),
+            native_ref: None,
+            name: "5".into(),
+            parent: None,
+            description: None,
+            visible: None,
+            items: vec![cadmpeg_ir::presentation::PresentationItem::Curve {
+                curve: curve.clone(),
+            }],
+        });
+    let mut entity = owner();
+    entity.source_targets.push(curve.to_string());
+    let entities = vec![entity];
+    let presentations = BTreeMap::from([(
+        0,
+        super::super::BodyPresentation {
+            label: None,
+            name: None,
+            color: super::super::BodyColor::Standard(2),
+            visible: Some(false),
+        },
+    )]);
+    let regenerated = super::super::display::regenerated(
+        &ir,
+        &entities,
+        &presentations,
+        crate::IgesVersion::V5_3,
+    );
+    assert!(regenerated.contains("iges:presentation:display#D1"));
+    let bytes = encode_file(
+        &ir,
+        &entities,
+        &presentations,
+        crate::IgesVersion::V5_3,
+        Some(ir.tolerances.linear.unwrap().get()),
+    )
+    .unwrap();
+    let cards = bytes
+        .split(|byte| *byte == b'\n')
+        .filter(|line| line.get(72) == Some(&b'D'))
+        .collect::<Vec<_>>();
+    assert_eq!(&cards[0][32..40], b"       5");
+    assert_eq!(&cards[0][64..72], b"01000000");
+    assert_eq!(&cards[1][16..24], b"       2");
 }

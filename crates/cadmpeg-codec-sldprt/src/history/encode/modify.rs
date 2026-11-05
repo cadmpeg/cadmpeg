@@ -37,9 +37,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             let edges = &group.edges;
             let radius = &group.radius;
             let selection = edge_selection_value(edges);
-            if selection.is_none()
-                && !(matches!(edges, EdgeSelection::Unresolved) && existing.is_some())
-            {
+            if selection.is_none() && !matches!(edges, EdgeSelection::Unresolved) {
                 return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} changes unsupported fillet semantics",
                     feature.id
@@ -58,8 +56,26 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     .keys()
                     .any(|name| indexed_name(name.as_str(), "Radius"));
             match radius {
-                RadiusSpec::Unresolved { .. } => {
-                    if existing.is_none() {
+                RadiusSpec::Unresolved { form } => {
+                    let unresolved_constant = matches!(
+                        form,
+                        Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Constant)
+                    ) && parameters.iter().any(|(name, value)| {
+                        matches!(name.as_str(), "Radius" | "D1")
+                            && crate::history::literals::nonfinite_parameter_literal(value)
+                    }) && parameters
+                        .iter()
+                        .filter(|(name, _)| matches!(name.as_str(), "Radius" | "D1"))
+                        .all(|(_, value)| {
+                            crate::history::literals::nonfinite_parameter_literal(value)
+                        })
+                        && !parameters
+                            .keys()
+                            .any(|name| indexed_name(name.as_str(), "Radius"));
+                    if existing.is_none()
+                        && !unresolved_constant
+                        && (form.is_some() || !parameters.is_empty())
+                    {
                         return Err(CodecError::UnsupportedContent(format!(
                             "SLDPRT feature {} has an unresolved fillet radius law",
                             feature.id
@@ -163,9 +179,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 )));
             }
             let selection = edge_selection_value(edges);
-            if selection.is_none()
-                && !(matches!(edges, EdgeSelection::Unresolved) && existing.is_some())
-            {
+            if selection.is_none() && !matches!(edges, EdgeSelection::Unresolved) {
                 return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} changes unsupported chamfer semantics",
                     feature.id
@@ -186,8 +200,26 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     .get("D2")
                     .is_some_and(|value| parse_bounded_angle_rad(value).is_some());
             match spec {
-                ChamferSpec::Unresolved { .. } => {
-                    if existing.is_none() {
+                ChamferSpec::Unresolved { form } => {
+                    let unresolved_distance = matches!(
+                        form,
+                        Some(cadmpeg_ir::features::edge_treatments::ChamferForm::Distance)
+                    ) && parameters.iter().any(|(name, value)| {
+                        matches!(name.as_str(), "Distance" | "D1")
+                            && crate::history::literals::nonfinite_parameter_literal(value)
+                    }) && parameters
+                        .iter()
+                        .filter(|(name, _)| matches!(name.as_str(), "Distance" | "D1"))
+                        .all(|(_, value)| {
+                            crate::history::literals::nonfinite_parameter_literal(value)
+                        })
+                        && ["Angle", "Distance1", "Distance2", "D2"]
+                            .iter()
+                            .all(|name| !parameters.contains_key(*name));
+                    if existing.is_none()
+                        && !unresolved_distance
+                        && (form.is_some() || !parameters.is_empty())
+                    {
                         return Err(CodecError::UnsupportedContent(format!(
                             "SLDPRT feature {} has unresolved chamfer dimensions",
                             feature.id
@@ -352,7 +384,10 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 )));
             }
             if existing.is_none()
-                && (body_selection_value(target).is_none() || body_selection_value(tools).is_none())
+                && ((body_selection_value(target).is_none()
+                    && !matches!(target, BodySelection::Unresolved))
+                    || (body_selection_value(tools).is_none()
+                        && !matches!(tools, BodySelection::Unresolved)))
             {
                 return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} has unresolved combine semantics",
@@ -388,21 +423,23 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         let existing = self.existing;
         Ok({
             require_same_family(existing, &feature.id, &["CutWithSurface", "SurfaceCut"])?;
-            let targets = body_selection_value(targets).ok_or_else(|| {
-                CodecError::UnsupportedContent(format!(
-                    "SLDPRT feature {} has no surface-cut target bodies",
+            let target_value = body_selection_value(targets);
+            let tool_value = face_selection_value(tools);
+            if (target_value.is_none() && !matches!(targets, BodySelection::Unresolved))
+                || (tool_value.is_none() && !matches!(tools, FaceSelection::Unresolved))
+            {
+                return Err(CodecError::UnsupportedContent(format!(
+                    "SLDPRT feature {} has unsupported surface-cut selections",
                     feature.id
-                ))
-            })?;
-            let tools = face_selection_value(tools).ok_or_else(|| {
-                CodecError::UnsupportedContent(format!(
-                    "SLDPRT feature {} has no surface-cut tools",
-                    feature.id
-                ))
-            })?;
+                )));
+            }
             let mut properties = self.base_properties();
-            properties.insert(cadmpeg_core::nonblank_literal!("Targets"), targets);
-            properties.insert(cadmpeg_core::nonblank_literal!("Tools"), tools);
+            if let Some(targets) = target_value {
+                properties.insert(cadmpeg_core::nonblank_literal!("Targets"), targets);
+            }
+            if let Some(tools) = tool_value {
+                properties.insert(cadmpeg_core::nonblank_literal!("Tools"), tools);
+            }
             if let Some(reverse) = reverse {
                 properties.insert(
                     cadmpeg_core::nonblank_literal!("Reverse"),

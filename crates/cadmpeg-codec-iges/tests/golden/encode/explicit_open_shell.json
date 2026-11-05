@@ -1,35 +1,45 @@
 {
-  "output": "original fixture                                                        S      1\n1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,32,38,6,308,17,7HprodG      1\nuct,1.0,2,2HMM,1,1.0,15HYYYYMMDD.HHMMSS,1.0000000000000000D-3,0,6HauthorG      2\n,3Horg,11,0,0H,0H;                                                      G      3\nS0000001G0000003D0000000P0000000                                        T      1\n",
+  "output": "original fixture                                                        S      1\n1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,32,38,6,308,17,7HprodG      1\nuct,1.0,2,2HMM,1,1.0,15HYYYYMMDD.HHMMSS,1.0000000000000000D-3,          G      2\n1.0000000000000000D0,6Hauthor,3Horg,11,0,0H,0H;                         G      3\n     116       1       0       0       0       0       0       000010000D      1\n     116       0       0       1       0                LOCATION       0D      2\n     123       2       0       0       0       0       0       000010000D      3\n     123       0       0       1       0                  NORMAL       0D      4\n     123       3       0       0       0       0       0       000010000D      5\n     123       0       0       1       0                               0D      6\n     190       4       0       0       0       0       0       000010000D      7\n     190       0       0       1       1                 SURFACE       0D      8\n     110       5       0       0       0       0       0       000010000D      9\n     110       0       0       1       0                   EDGE1       0D     10\n     110       6       0       0       0       0       0       000010000D     11\n     110       0       0       2       0                   EDGE2       0D     12\n     110       8       0       0       0       0       0       000010000D     13\n     110       0       0       2       0                   EDGE3       0D     14\n     110      10       0       0       0       0       0       000010000D     15\n     110       0       0       1       0                   EDGE4       0D     16\n     502      11       0       0       0       0       0       000010000D     17\n     502       0       0       2       1                               0D     18\n     504      13       0       0       0       0       0       000010001D     19\n     504       0       0       1       1                               0D     20\n     508      14       0       0       0       0       0       000010000D     21\n     508       0       0       1       1                               0D     22\n     510      15       0       0       0       0       0       000010000D     23\n     510       0       0       1       1                               0D     24\n     514      16       0       0       0       0       0       000000000D     25\n     514       0       0       1       2                               0D     26\n116,0,0,0,0;                                                           1P      1\n123,0,0,1;                                                             3P      2\n123,1.0000000000000000D0,0,0;                                          5P      3\n190,1,3,5;                                                             7P      4\n110,0,0,0,1.0000000000000000D0,0,0;                                    9P      5\n110,1.0000000000000000D0,0,0,1.0000000000000000D0,                    11P      6\n1.0000000000000000D0,0;                                               11P      7\n110,1.0000000000000000D0,1.0000000000000000D0,0,0,                    13P      8\n1.0000000000000000D0,0;                                               13P      9\n110,0,1.0000000000000000D0,0,0,0,0;                                   15P     10\n502,4,0,0,0,1.0000000000000000D0,0,0,1.0000000000000000D0,            17P     11\n1.0000000000000000D0,0,0,1.0000000000000000D0,0;                      17P     12\n504,4,9,17,1,17,2,11,17,2,17,3,13,17,3,17,4,15,17,4,17,1;             19P     13\n508,4,0,19,1,1,0,0,19,2,1,0,0,19,3,1,0,0,19,4,1,0;                    21P     14\n510,7,1,1,21;                                                         23P     15\n514,1,23,1;                                                           25P     16\nS0000001G0000003D0000026P0000016                                        T      1\n",
   "report": {
     "census": {
       "basis": "target_records",
-      "counts": {}
+      "counts": {
+        "110_line": 4,
+        "116_point": 1,
+        "123_direction": 2,
+        "190_pointer_plane": 1,
+        "502_vertex_list": 1,
+        "504_edge_list": 1,
+        "508_loop": 1,
+        "510_face": 1,
+        "514_shell": 1
+      }
     },
     "coverage": {
       "arenas": {
         "appearance_bindings": "written",
-        "appearances": "dropped",
+        "appearances": "written",
         "articulations": "omitted",
         "assembly_joints": "dropped",
         "assets": "dropped",
         "attributes": "reported",
-        "bodies": "reported",
-        "coedges": "reported",
+        "bodies": "written",
+        "coedges": "written",
         "colliders": "omitted",
         "configurations": "dropped",
         "curves": "reported",
         "declared_measures": "omitted",
         "drawings": "dropped",
         "edges": "reported",
-        "faces": "reported",
+        "faces": "written",
         "feature_input_topologies": "dropped",
         "feature_result_topologies": "dropped",
-        "features": "dropped",
-        "loops": "reported",
+        "features": "written",
+        "loops": "written",
         "mass_properties": "omitted",
         "occurrences": "dropped",
         "parameters": "dropped",
-        "pcurves": "reported",
+        "pcurves": "written",
         "physical_materials": "omitted",
         "physics_scenes": "omitted",
         "pmi": "dropped",
@@ -39,10 +49,10 @@
         "procedural_curves": "dropped",
         "procedural_surfaces": "reported",
         "product_definitions": "dropped",
-        "regions": "reported",
+        "regions": "written",
         "rigid_bodies": "omitted",
         "semantic_annotations": "dropped",
-        "shells": "reported",
+        "shells": "written",
         "sketch_constraints": "dropped",
         "sketch_entities": "dropped",
         "sketches": "dropped",
@@ -73,47 +83,6 @@
         },
         "message": "preserved IGES source image is unavailable; semantic regeneration is required",
         "severity": "blocking"
-      },
-      {
-        "code": {
-          "code": "writer.arena-omitted",
-          "kind": "passthrough_record_omitted",
-          "namespace": "iges",
-          "scope": "namespaced"
-        },
-        "message": "IGES omits unsupported model arena presentation_layers",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "writer.entity-omitted",
-          "kind": "geometry_not_transferred",
-          "namespace": "iges",
-          "scope": "namespaced",
-          "strict_floor": "warning"
-        },
-        "message": "IGES entity iges:model:body#D23 is omitted: IGES Type 144 requires parameter curves for every coedge (iges:model:loop#D23:D19)",
-        "severity": "error"
-      },
-      {
-        "code": {
-          "code": "writer.attribute-omitted",
-          "kind": "metadata_not_transferred",
-          "namespace": "iges",
-          "scope": "namespaced"
-        },
-        "message": "IGES attribute iges:application:attribute#D11:0:0 is omitted: its current owner has no emitted entity",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "writer.attribute-omitted",
-          "kind": "metadata_not_transferred",
-          "namespace": "iges",
-          "scope": "namespaced"
-        },
-        "message": "IGES attribute iges:application:attribute#D13:0:0 is omitted: its current owner has no emitted entity",
-        "severity": "warning"
       },
       {
         "code": {
@@ -157,54 +126,13 @@
       },
       {
         "code": {
-          "code": "writer.attribute-omitted",
-          "kind": "metadata_not_transferred",
+          "code": "writer.arena-omitted",
+          "kind": "passthrough_record_omitted",
           "namespace": "iges",
           "scope": "namespaced"
         },
-        "message": "IGES attribute iges:application:attribute#D5:0:0 is omitted: its current owner has no emitted entity",
+        "message": "IGES cannot fully encode presentation layers: iges:presentation:level#0",
         "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "writer.attribute-omitted",
-          "kind": "metadata_not_transferred",
-          "namespace": "iges",
-          "scope": "namespaced"
-        },
-        "message": "IGES attribute iges:application:attribute#D7:0:0 is omitted: its current owner has no emitted entity",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "writer.attribute-omitted",
-          "kind": "metadata_not_transferred",
-          "namespace": "iges",
-          "scope": "namespaced"
-        },
-        "message": "IGES attribute iges:application:attribute#D9:0:0 is omitted: its current owner has no emitted entity",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "export.no-exportable-solids",
-          "kind": "no_exportable_solids",
-          "namespace": "iges",
-          "scope": "namespaced",
-          "strict_floor": "warning"
-        },
-        "message": "the document holds no geometry that IGES can encode",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "native.records-omitted",
-          "kind": "record_not_typed",
-          "namespace": "export",
-          "scope": "namespaced"
-        },
-        "message": "the iges write omits 40 native record(s) from `iges.cards`: iges:physical:card#1, iges:physical:card#10, iges:physical:card#11, iges:physical:card#12, iges:physical:card#13, iges:physical:card#14, iges:physical:card#15, iges:physical:card#16, iges:physical:card#17, iges:physical:card#18, iges:physical:card#19, iges:physical:card#2, iges:physical:card#20, iges:physical:card#21, iges:physical:card#22, iges:physical:card#23, iges:physical:card#24, iges:physical:card#25, iges:physical:card#26, iges:physical:card#27, iges:physical:card#28, iges:physical:card#29, iges:physical:card#3, iges:physical:card#30, iges:physical:card#31, iges:physical:card#32, iges:physical:card#33, iges:physical:card#34, iges:physical:card#35, iges:physical:card#36, iges:physical:card#37, iges:physical:card#38, iges:physical:card#39, iges:physical:card#4, iges:physical:card#40, iges:physical:card#5, iges:physical:card#6, iges:physical:card#7, iges:physical:card#8, iges:physical:card#9",
-        "severity": "info"
       },
       {
         "code": {
@@ -223,7 +151,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 12 native record(s) from `iges.display_attributes`: iges:presentation:display-attributes#D1, iges:presentation:display-attributes#D11, iges:presentation:display-attributes#D13, iges:presentation:display-attributes#D15, iges:presentation:display-attributes#D17, iges:presentation:display-attributes#D19, iges:presentation:display-attributes#D21, iges:presentation:display-attributes#D23, iges:presentation:display-attributes#D3, iges:presentation:display-attributes#D5, iges:presentation:display-attributes#D7, iges:presentation:display-attributes#D9",
+        "message": "the iges write omits 5 native record(s) from `iges.display_attributes`: iges:presentation:display-attributes#D15, iges:presentation:display-attributes#D17, iges:presentation:display-attributes#D19, iges:presentation:display-attributes#D21, iges:presentation:display-attributes#D23",
         "severity": "info"
       },
       {
@@ -270,7 +198,7 @@
               "disposition": "dropped"
             },
             "cards": {
-              "disposition": "dropped"
+              "disposition": "regenerated"
             },
             "circular_arrays": {
               "disposition": "dropped"
@@ -282,7 +210,7 @@
               "disposition": "dropped"
             },
             "copious_data": {
-              "disposition": "dropped"
+              "disposition": "regenerated"
             },
             "definition_levels": {
               "disposition": "dropped"
@@ -291,7 +219,16 @@
               "disposition": "dropped"
             },
             "display_attributes": {
-              "disposition": "dropped"
+              "disposition": "dropped",
+              "records": {
+                "iges:presentation:display-attributes#D1": "regenerated",
+                "iges:presentation:display-attributes#D11": "regenerated",
+                "iges:presentation:display-attributes#D13": "regenerated",
+                "iges:presentation:display-attributes#D3": "regenerated",
+                "iges:presentation:display-attributes#D5": "regenerated",
+                "iges:presentation:display-attributes#D7": "regenerated",
+                "iges:presentation:display-attributes#D9": "regenerated"
+              }
             },
             "drawings": {
               "disposition": "dropped"
@@ -321,7 +258,7 @@
               "disposition": "dropped"
             },
             "manifold_solids": {
-              "disposition": "dropped"
+              "disposition": "regenerated"
             },
             "network_definitions": {
               "disposition": "dropped"
@@ -375,7 +312,7 @@
               "disposition": "dropped"
             },
             "transformations": {
-              "disposition": "dropped"
+              "disposition": "regenerated"
             },
             "units_data": {
               "disposition": "dropped"

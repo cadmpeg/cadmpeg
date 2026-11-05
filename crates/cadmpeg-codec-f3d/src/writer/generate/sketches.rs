@@ -32,14 +32,8 @@ pub(super) struct SketchStream {
 
 pub(super) fn encode(
     target: &CadIr,
-    limits: cadmpeg_core::decode::ResourceLimits,
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
 ) -> Result<Option<SketchStream>, CodecError> {
-    let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy {
-        limits,
-        ..Default::default()
-    };
-    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
     let mut bulk = Vec::new();
     let mut primary = Vec::new();
     let mut secondary = Vec::new();
@@ -236,12 +230,12 @@ pub(super) fn encode(
             sketch,
             &members,
             &member_indices,
-            target.tolerances.linear.get(),
-            &ctx,
+            target.tolerances.linear_or_default().get(),
+            ctx,
         )? {
             continue;
         }
-        mark(&mut primary, container, bulk.len())?;
+        mark(ctx, &mut primary, container, bulk.len())?;
         header(&mut bulk, "256", container)?;
         bulk.extend_from_slice(&0u32.to_le_bytes());
         bulk.extend_from_slice(&[0; 5]);
@@ -253,7 +247,7 @@ pub(super) fn encode(
         for (point, _) in &member_indices {
             reference(&mut bulk, *point);
         }
-        mark(&mut secondary, container, bulk.len())?;
+        mark(ctx, &mut secondary, container, bulk.len())?;
         header(&mut bulk, "257", container)?;
         bulk.extend_from_slice(&[0; 8]);
         reference(&mut bulk, head);
@@ -267,7 +261,7 @@ pub(super) fn encode(
         for (point, _) in &member_indices {
             reference(&mut bulk, *point);
         }
-        mark(&mut primary, head, bulk.len())?;
+        mark(ctx, &mut primary, head, bulk.len())?;
         header(&mut bulk, "258", head)?;
         bulk.extend_from_slice(&[0; 11]);
         for value in frame.into_iter().flatten() {
@@ -279,7 +273,7 @@ pub(super) fn encode(
         heads.push(u64::from(head));
         for (member, &(point, companion)) in members.iter().zip(&member_indices) {
             if let Some(text) = neutral_text(member, point, container) {
-                mark(&mut primary, point, bulk.len())?;
+                mark(ctx, &mut primary, point, bulk.len())?;
                 super::records::encode_sketch_text(&mut bulk, &text)?;
                 texts.push(u64::from(point));
                 text_entities.push(member.id().clone());
@@ -287,7 +281,7 @@ pub(super) fn encode(
                 continue;
             }
             if let Some(geometry) = neutral_nurbs(member) {
-                mark(&mut primary, point, bulk.len())?;
+                mark(ctx, &mut primary, point, bulk.len())?;
                 let mut record = Vec::new();
                 curve_header(&mut record, "265", point)?;
                 let subtype = "266".to_owned().try_into().map_err(CodecError::Malformed)?;
@@ -313,7 +307,7 @@ pub(super) fn encode(
             };
             if let Some((center, radius, start_angle, end_angle)) = circular {
                 let center = center.get();
-                mark(&mut primary, point, bulk.len())?;
+                mark(ctx, &mut primary, point, bulk.len())?;
                 curve_header(&mut bulk, "262", point)?;
                 for value in [
                     center.u / 10.0,
@@ -342,7 +336,7 @@ pub(super) fn encode(
                 let dx = end.u - start.u;
                 let dy = end.v - start.v;
                 let length = dx.hypot(dy);
-                mark(&mut primary, point, bulk.len())?;
+                mark(ctx, &mut primary, point, bulk.len())?;
                 curve_header(&mut bulk, "261", point)?;
                 for value in [
                     start.u / 10.0,
@@ -369,7 +363,7 @@ pub(super) fn encode(
                 continue;
             };
             let position = position.get();
-            mark(&mut primary, point, bulk.len())?;
+            mark(ctx, &mut primary, point, bulk.len())?;
             header(&mut bulk, "259", point)?;
             bulk.extend_from_slice(&[0; 10]);
             reference(&mut bulk, companion);
@@ -384,7 +378,7 @@ pub(super) fn encode(
             bulk.extend_from_slice(&[1, 1, 0, 0, 0, 0, 1, 0, 0, 0]);
             reference(&mut bulk, companion);
             reference(&mut bulk, container);
-            mark(&mut primary, companion, bulk.len())?;
+            mark(ctx, &mut primary, companion, bulk.len())?;
             header(&mut bulk, "260", companion)?;
             bulk.extend_from_slice(&[0; 10]);
             bulk.extend_from_slice(&0u32.to_le_bytes());
@@ -406,7 +400,7 @@ pub(super) fn encode(
                 .collect::<Vec<_>>();
             let count = u32::try_from(entities.len())
                 .map_err(|_| CodecError::InvalidInput("too many F3D relation members".into()))?;
-            mark(&mut primary, index, bulk.len())?;
+            mark(ctx, &mut primary, index, bulk.len())?;
             header(&mut bulk, "263", index)?;
             bulk.extend_from_slice(&[0; 8]);
             bulk.push(1);
@@ -715,10 +709,12 @@ fn unsupported_member(row: &cadmpeg_ir::sketches::SketchEntity) -> bool {
 }
 
 fn mark(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     rows: &mut Vec<crate::metastream::RecordIndexEntry>,
     id: u32,
     offset: usize,
 ) -> Result<(), CodecError> {
+    ctx.charge_entities(1, "F3D sketch record")?;
     rows.push(crate::metastream::RecordIndexEntry {
         entity_id: u64::from(id),
         bulk_offset: u64::try_from(offset)
@@ -982,3 +978,6 @@ fn join(parents: &mut [usize], a: usize, b: usize) {
     let b = root(parents, b);
     parents[a] = b;
 }
+
+#[cfg(test)]
+mod tests;

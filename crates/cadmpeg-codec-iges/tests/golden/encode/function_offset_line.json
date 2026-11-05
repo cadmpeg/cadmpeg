@@ -10,7 +10,7 @@
     "coverage": {
       "arenas": {
         "appearance_bindings": "written",
-        "appearances": "dropped",
+        "appearances": "written",
         "articulations": "omitted",
         "assembly_joints": "dropped",
         "assets": "dropped",
@@ -26,7 +26,7 @@
         "faces": "written",
         "feature_input_topologies": "dropped",
         "feature_result_topologies": "dropped",
-        "features": "dropped",
+        "features": "written",
         "loops": "written",
         "mass_properties": "omitted",
         "occurrences": "dropped",
@@ -83,18 +83,8 @@
           "namespace": "iges",
           "scope": "namespaced"
         },
-        "message": "0 procedural surface definition(s) and 1 procedural curve definition(s) were reduced to writable solved carriers",
+        "message": "IGES procedural definition iges:model:procedural-curve#D5 was reduced to a solved carrier",
         "severity": "info"
-      },
-      {
-        "code": {
-          "code": "writer.arena-omitted",
-          "kind": "passthrough_record_omitted",
-          "namespace": "iges",
-          "scope": "namespaced"
-        },
-        "message": "IGES omits unsupported model arena presentation_layers",
-        "severity": "warning"
       },
       {
         "code": {
@@ -140,22 +130,12 @@
       },
       {
         "code": {
-          "code": "writer.attribute-omitted",
-          "kind": "metadata_not_transferred",
+          "code": "writer.arena-omitted",
+          "kind": "passthrough_record_omitted",
           "namespace": "iges",
           "scope": "namespaced"
         },
-        "message": "IGES attribute iges:application:attribute#D5:0:1 is omitted: its current owner has no emitted entity",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "writer.attribute-omitted",
-          "kind": "metadata_not_transferred",
-          "namespace": "iges",
-          "scope": "namespaced"
-        },
-        "message": "IGES attribute iges:application:attribute#D5:0:2 is omitted: its current owner has no emitted entity",
+        "message": "IGES cannot fully encode presentation layers: iges:presentation:level#0",
         "severity": "warning"
       },
       {
@@ -165,7 +145,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 3 native record(s) from `iges.display_attributes`: iges:presentation:display-attributes#D1, iges:presentation:display-attributes#D3, iges:presentation:display-attributes#D5",
+        "message": "the iges write omits 2 native record(s) from `iges.display_attributes`: iges:presentation:display-attributes#D1, iges:presentation:display-attributes#D3",
         "severity": "info"
       },
       {
@@ -233,7 +213,10 @@
               "disposition": "dropped"
             },
             "display_attributes": {
-              "disposition": "dropped"
+              "disposition": "dropped",
+              "records": {
+                "iges:presentation:display-attributes#D5": "regenerated"
+              }
             },
             "drawings": {
               "disposition": "dropped"

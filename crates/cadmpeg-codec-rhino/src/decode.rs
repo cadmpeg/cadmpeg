@@ -5885,7 +5885,7 @@ fn build_ir(scan: &Scan<'_>) -> CadIr {
     let mut ir = CadIr::empty();
     if let Some(source_units) = &scan.metadata.settings.units {
         if let Some(linear) = source_units.absolute_tolerance_millimeters() {
-            ir.tolerances.linear = linear;
+            ir.tolerances.linear = Some(linear);
         }
         ir.tolerances.angular = source_units.angular_tolerance;
     }

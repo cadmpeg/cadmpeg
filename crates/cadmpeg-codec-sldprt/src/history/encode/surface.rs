@@ -230,9 +230,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 )));
             }
             let selection = face_selection_value(removed_faces);
-            if selection.is_none()
-                && !(matches!(removed_faces, FaceSelection::Unresolved) && existing.is_some())
-            {
+            if selection.is_none() && !matches!(removed_faces, FaceSelection::Unresolved) {
                 return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} changes unsupported shell semantics",
                     feature.id
@@ -241,12 +239,6 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             if existing.is_some_and(|record| !feature_family(record, "Shell")) {
                 return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} changes unsupported shell semantics",
-                    feature.id
-                )));
-            }
-            if existing.is_none() && (thickness.is_none() || outward.is_none()) {
-                return Err(CodecError::UnsupportedContent(format!(
-                    "SLDPRT feature {} has unresolved shell construction",
                     feature.id
                 )));
             }
@@ -303,8 +295,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             use cadmpeg_ir::features::ThickenSide;
 
             let selection = face_selection_value(faces);
-            if selection.is_none()
-                && !(matches!(faces, FaceSelection::Unresolved) && existing.is_some())
+            if selection.is_none() && !matches!(faces, FaceSelection::Unresolved)
                 || existing.is_some_and(|record| {
                     !feature_family(record, "Thicken")
                         && !feature_family(record, "Thickness")
@@ -316,7 +307,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 )));
             }
-            if existing.is_none() && (thickness.is_none() || side.is_none()) {
+            if existing.is_none() && side.is_none() {
                 return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} has unresolved thicken construction",
                     feature.id
@@ -581,15 +572,12 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             let faces = face_selection_value(face_selection);
             let neutral_plane = face_selection_value(plane_selection);
             let operands_supported = |selection: &FaceSelection, native: Option<&String>| {
-                native.is_some()
-                    || matches!(selection, FaceSelection::Unresolved) && existing.is_some()
+                native.is_some() || matches!(selection, FaceSelection::Unresolved)
             };
             if existing.is_some_and(|record| !feature_family(record, "Draft"))
                 || pull_plane.is_some()
                 || !operands_supported(face_selection, faces.as_ref())
                 || !operands_supported(plane_selection, neutral_plane.as_ref())
-                || existing.is_none()
-                    && (pull_direction.is_none() || angle.is_none() || outward.is_none())
             {
                 return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} changes unsupported draft semantics",
