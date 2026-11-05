@@ -70,6 +70,14 @@ fn source_chart_retains_frames_and_checks_its_wire() {
         wrong["sides"][side][field] = value;
         assert!(serde_json::from_value::<CatiaConsolidatedA5Chart>(wrong).is_err());
     }
+    let mut wrong = wire.clone();
+    let payload = wrong["sides"][0]["frame"]["payload"]
+        .as_str()
+        .expect("payload");
+    let mut changed = payload.to_owned();
+    changed.replace_range(2..4, "16");
+    wrong["sides"][0]["frame"]["payload"] = serde_json::json!(changed);
+    assert!(serde_json::from_value::<CatiaConsolidatedA5Chart>(wrong).is_err());
     let mut wrong = wire;
     wrong["sides"][3]["frame"]["byte_offset"] = serde_json::json!(u64::MAX);
     assert!(serde_json::from_value::<CatiaConsolidatedA5Chart>(wrong).is_err());
@@ -90,14 +98,19 @@ fn chart_follows_logical_source_across_reordered_extents() {
     let [chart] = charts.as_slice() else {
         panic!("one chart");
     };
-    assert_eq!(chart.carrier_byte_offset, u64::try_from(split).unwrap());
+    assert_eq!(
+        chart.carrier_byte_offset,
+        u64::try_from(split).expect("carrier offset")
+    );
     assert_eq!(chart.sides[0].frame.pos, 0);
     assert_eq!(
         chart.sides[0].source_offset,
-        u64::try_from(boundary).unwrap()
+        u64::try_from(boundary).expect("chart boundary")
     );
     assert_eq!(
-        derive(&bytes, &consolidated_records(&bytes)).unwrap().len(),
+        derive(&bytes, &consolidated_records(&bytes))
+            .expect("contiguous chart")
+            .len(),
         1
     );
 }
