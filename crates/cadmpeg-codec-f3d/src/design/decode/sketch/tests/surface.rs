@@ -53,6 +53,64 @@ fn canonical_surface_payload() -> Vec<u8> {
 }
 
 #[test]
+fn damaged_indexed_sketch_surface_keeps_a_valid_sibling() {
+    use cadmpeg_ir::source_fidelity::parts::PartOutput;
+    use std::io::{Cursor, Write};
+
+    let mut first = canonical_surface_payload();
+    first[0..4].copy_from_slice(&3u32.to_le_bytes());
+    first[4..7].copy_from_slice(b"256");
+    first[7..15].copy_from_slice(&10u64.to_le_bytes());
+    let mut second = first.clone();
+    second[7..15].copy_from_slice(&11u64.to_le_bytes());
+    first[127..131].copy_from_slice(&0u32.to_le_bytes());
+    let second_at = first.len();
+    first.extend_from_slice(&second);
+    let ids = [10u64, 11u64];
+    let meta = crate::test_support::streams_test::design_metastream_with_records(
+        &[(
+            "11111111-2222-4333-8444-555555555555",
+            "",
+            1,
+            "Geometry",
+            &ids,
+        )],
+        &[(10, 0), (11, u64::try_from(second_at).unwrap())],
+    );
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
+    crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+    zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored)
+        .unwrap();
+    zip.write_all(&first).unwrap();
+    zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
+        .unwrap();
+    zip.write_all(&meta).unwrap();
+    let bytes = zip.finish().unwrap().into_inner();
+    crate::test_support::zip_test::with_scan(&bytes, |scan| {
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
+        let surfaces = super::super::decode_sketch_surfaces(&ctx, &mut output, scan).unwrap();
+        assert_eq!(surfaces.len(), 1);
+        assert_eq!(surfaces[0].record_index, 11);
+        let (_, native, fidelity, losses) = output.into_parts();
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code,
+            cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable
+                .note(String::new())
+                .code
+        );
+        assert!(losses[0].message.contains("sketch surface 10"));
+        assert_eq!(fidelity.retained_records().len(), 1);
+        assert_eq!(
+            native.namespace("f3d").unwrap().arenas()["unknowns"].len(),
+            1
+        );
+    });
+}
+
+#[test]
 fn sketch_surface_parser_recovers_tensor_product_grid() {
     let payload = canonical_surface_payload();
     let surface = tested_parse_sketch_surface(&payload, 0)

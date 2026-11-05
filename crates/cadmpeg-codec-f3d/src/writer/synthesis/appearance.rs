@@ -20,6 +20,10 @@ pub(super) fn prepare(
             *entity_counts.entry(entity.clone()).or_insert(0usize) += 1;
         }
     }
+    let neutral_single_body = native.design_types.is_empty()
+        && native.design_material_assignments.is_empty()
+        && bodies.len() == 1
+        && target.model.appearance_bindings.len() == 1;
     target.model.appearance_bindings.retain(|binding| {
         let cadmpeg_ir::appearance::AppearanceTarget::Body(body_id) = &binding.target else {
             return false;
@@ -27,6 +31,27 @@ pub(super) fn prepare(
         let Some(body) = bodies.iter().find(|body| &body.id == body_id) else {
             return false;
         };
+        let Some(appearance) = appearances
+            .iter()
+            .find(|appearance| appearance.id == binding.appearance)
+        else {
+            return false;
+        };
+        let valid_appearance = appearance.base_color.is_some()
+            && appearance.physical_token.as_deref().is_some_and(|token| {
+                token.starts_with("PrismMaterial") && !token.contains("_physmat_aspects")
+            })
+            && appearance
+                .visual_guid
+                .as_deref()
+                .or(appearance.asset_guid.as_deref())
+                .is_some_and(|guid| crate::design::presentation::visual_token(guid).is_some());
+        if neutral_single_body && binding.source_entity_id.is_none() {
+            return body.visible.is_some()
+                && binding.visible.is_none()
+                && binding.channels.is_empty()
+                && valid_appearance;
+        }
         let Some(entity) = binding.source_entity_id.as_deref() else {
             return false;
         };
@@ -34,12 +59,6 @@ pub(super) fn prepare(
             .design_material_assignments
             .iter()
             .find(|assignment| assignment.entity_id.as_str() == entity)
-        else {
-            return false;
-        };
-        let Some(appearance) = appearances
-            .iter()
-            .find(|appearance| appearance.id == binding.appearance)
         else {
             return false;
         };
@@ -63,21 +82,13 @@ pub(super) fn prepare(
         body.visible.is_some()
             && channels_match
             && entity_counts.get(entity) == Some(&1)
-            && appearance.base_color.is_some()
+            && valid_appearance
             && body.native_ref.as_deref().is_some_and(|id| {
                 native.body_visibilities.iter().any(|visibility| {
                     visibility.body.as_str() == id
                         && visibility.entity_suffix == assignment.entity_id.suffix()
                 })
             })
-            && appearance.physical_token.as_deref().is_some_and(|token| {
-                token.starts_with("PrismMaterial") && !token.contains("_physmat_aspects")
-            })
-            && appearance
-                .visual_guid
-                .as_deref()
-                .or(appearance.asset_guid.as_deref())
-                .is_some_and(|guid| crate::design::presentation::visual_token(guid).is_some())
             && native.design_types.iter().any(|kind| {
                 kind.type_guid
                     .as_str()
