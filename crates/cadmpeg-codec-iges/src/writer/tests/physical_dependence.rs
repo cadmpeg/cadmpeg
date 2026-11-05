@@ -407,6 +407,11 @@ fn pointers(entity: &WrittenEntity) -> Vec<u32> {
             let count = usize::try_from(token(1)).expect("count");
             indices.extend((0..count).map(|face| 2 + 2 * face));
         }
+        108 => {
+            if token(5) != 0 {
+                indices.push(5);
+            }
+        }
         100 | 104 | 110 | 116 | 123 | 124 | 126 | 128 | 502 => {}
         _ => panic!(
             "the written file has entity type {} this check does not read",
