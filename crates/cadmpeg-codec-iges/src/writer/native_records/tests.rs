@@ -1890,3 +1890,66 @@ fn v4_generated_line_font_is_declared_when_it_matches() {
         .unwrap();
     assert_eq!(&directory[24..32], b"       1");
 }
+
+#[test]
+fn copious_linear_path_uses_current_curve_points() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
+    use std::io::Cursor;
+    let harness =
+        cadmpeg_test_support::golden::Harness::new(env!("CARGO_MANIFEST_DIR"), "igs", "unused");
+    let (_, bytes) = harness
+        .fixture_inputs()
+        .into_iter()
+        .find(|(name, _)| name == "copious_linear_path")
+        .unwrap();
+    let decoded = crate::IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let original = super::super::synthesize(decoded.ir(), crate::IgesVersion::V5_3).unwrap();
+    assert_eq!(original.counts.get("106_copious_data"), Some(&1));
+    let original_after = crate::IgesCodec
+        .decode(&mut Cursor::new(original.bytes), &DecodeOptions::default())
+        .unwrap();
+    let before_record = &decoded.ir().native.namespace("iges").unwrap().arenas()["copious_data"][0];
+    let after_record = &original_after
+        .ir()
+        .native
+        .namespace("iges")
+        .unwrap()
+        .arenas()["copious_data"][0];
+    assert_eq!(
+        before_record.fields().unwrap(),
+        after_record.fields().unwrap()
+    );
+    let mut ir = decoded.ir().clone();
+    let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) = &mut ir.model.curves[0].geometry
+    else {
+        panic!("linear path projects to NURBS");
+    };
+    curve
+        .try_map_control_points(|index, point| {
+            let mut point = point.get();
+            if index == 1 {
+                point.y = 0.5;
+            }
+            cadmpeg_ir::features::FinitePoint3::new(point).ok_or(())
+        })
+        .unwrap();
+    let output = super::super::synthesize(&ir, crate::IgesVersion::V5_3).unwrap();
+    assert_eq!(output.counts.get("106_copious_data"), Some(&1));
+    assert!(output
+        .regenerated_native
+        .contains("iges:native:copious-data#D1"));
+    let after = crate::IgesCodec
+        .decode(&mut Cursor::new(output.bytes), &DecodeOptions::default())
+        .unwrap();
+    let record = &after.ir().native.namespace("iges").unwrap().arenas()["copious_data"][0];
+    assert_eq!(record.field("tuples").unwrap()[1][1], json!(0.5));
+    let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) =
+        &after.ir().model.curves[0].geometry
+    else {
+        panic!("written path projects to NURBS");
+    };
+    assert_eq!(curve.control_points()[1].get().y, 0.5);
+}
