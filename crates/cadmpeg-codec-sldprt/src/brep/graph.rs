@@ -525,6 +525,9 @@ pub(crate) struct Stats {
     /// Faces withheld with their surface because a vertex loop of the face
     /// names no resolved vertex.
     pub(crate) withheld_vertex_loop_faces: usize,
+    /// Faces withheld with their surface because a loop of the face holds an
+    /// ambiguous FIN.
+    pub(crate) withheld_ambiguous_fin_faces: usize,
     /// Canonical faces that no explicit body record claims.
     pub(crate) unclaimed_faces: usize,
     /// Faces on a support surface this codec does not type; emitted with an
@@ -1089,6 +1092,40 @@ fn ensure_surface_support(
     })();
     resolving.remove(&attr);
     result
+}
+
+/// Whether a walked face enters the model with its surface.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum FaceAdmission {
+    Admitted,
+    VertexLoopUnresolved,
+    FinAmbiguous,
+    NoLoop,
+}
+
+fn face_admission(
+    face: &WalkedFace,
+    loop_set: &HashSet<u32>,
+    t: &topology::Tables,
+    carriers: &CarrierIndex,
+) -> FaceAdmission {
+    if face
+        .vertex_loops
+        .iter()
+        .any(|(loop_attr, _)| !loop_set.contains(loop_attr))
+    {
+        FaceAdmission::VertexLoopUnresolved
+    } else if !face.unresolved_fins.is_empty() {
+        FaceAdmission::FinAmbiguous
+    } else if face
+        .loop_attrs()
+        .any(|loop_attr| loop_set.contains(&loop_attr))
+        || covers_whole_sphere(face, t, carriers)
+    {
+        FaceAdmission::Admitted
+    } else {
+        FaceAdmission::NoLoop
+    }
 }
 
 /// Whether `face` stores no loop and lies on a sphere. A sphere is a closed
@@ -3717,10 +3754,7 @@ fn decode_graph(
     }
     let mut emitted_face_surface_by_carrier = HashMap::<u32, u32>::new();
     for face in &faces {
-        if face
-            .loop_attrs()
-            .any(|loop_attr| loop_set.contains(&loop_attr))
-        {
+        if face_admission(face, &loop_set, t, carriers) == FaceAdmission::Admitted {
             emitted_face_surface_by_carrier
                 .entry(face.surface_attr)
                 .and_modify(|bridge| *bridge = (*bridge).min(face.bridge_attr))
@@ -3728,23 +3762,26 @@ fn decode_graph(
         }
     }
     for f in &faces {
-        if f.vertex_loops
-            .iter()
-            .any(|(loop_attr, _)| !loop_set.contains(loop_attr))
-        {
-            out.stats.withheld_vertex_loop_faces += 1;
-            continue;
-        }
-        let mut loops = Vec::new();
-        for loop_attr in f.loop_attrs() {
-            if loop_set.contains(&loop_attr) {
-                loops.push(id_loop(loop_attr));
+        match face_admission(f, &loop_set, t, carriers) {
+            FaceAdmission::Admitted => {}
+            FaceAdmission::VertexLoopUnresolved => {
+                out.stats.withheld_vertex_loop_faces += 1;
+                continue;
+            }
+            FaceAdmission::FinAmbiguous => {
+                out.stats.withheld_ambiguous_fin_faces += 1;
+                continue;
+            }
+            FaceAdmission::NoLoop => {
+                out.stats.withheld_faces += 1;
+                continue;
             }
         }
-        if loops.is_empty() && !covers_whole_sphere(f, t, carriers) {
-            out.stats.withheld_faces += 1;
-            continue;
-        }
+        let loops: Vec<_> = f
+            .loop_attrs()
+            .filter(|loop_attr| loop_set.contains(loop_attr))
+            .map(id_loop)
+            .collect();
         // Support surface: a decoded surface carrier, else an opaque carrier.
         let surf_off = t.bridges().get(&f.bridge_attr).map_or(0, |r| r.offset);
         let mut surface_orientation_reversed = false;
