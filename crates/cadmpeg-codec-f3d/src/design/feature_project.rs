@@ -7801,7 +7801,7 @@ fn project_surface_patch(
             }
         }
         _ => return Ok(None),
-    };
+    }
     let boundary = if let [boundary] = groups.as_slice() {
         resolved_loft_path(
             boundary,
