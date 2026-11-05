@@ -221,6 +221,7 @@ fn source_less_wire_record_for_shell(
     native_record_index(wire_start, wire_ordinal)
 }
 
+#[derive(Clone, Copy)]
 struct WireRecordStarts {
     wire: i64,
     coedge: i64,
