@@ -1556,6 +1556,17 @@ fn detect_incomplete_sections(
     expressions: &[crate::curve::CurveExpressionRecord],
     expansion_losses: &[SectionExpansionLoss],
 ) -> Vec<IncompleteSection> {
+    const RECORD_LABELS: [&[u8]; 9] = [
+        b"srf_array\0",
+        b"crv_array\0",
+        b"topol_ref_data\0",
+        b"lo_array\0",
+        b"qlt_array\0",
+        b"entity(crv_fr_eqn)\0",
+        b"backup_ents(crv_fr_eqn)\0",
+        b"expression\0",
+        b"name\0",
+    ];
     let mut incomplete = Vec::new();
     let mut seen = std::collections::BTreeSet::new();
     let mut mark = |offset: usize, label: &'static str, exclude_rows: bool, reason: String| {
@@ -1725,17 +1736,6 @@ fn detect_incomplete_sections(
         // A payload cut mid-label, mid-word, or mid-expression never
         // completes its trailing token. Only fragments that reach EOF count;
         // well-formed payloads end at complete record boundaries.
-        const RECORD_LABELS: [&[u8]; 9] = [
-            b"srf_array\0",
-            b"crv_array\0",
-            b"topol_ref_data\0",
-            b"lo_array\0",
-            b"qlt_array\0",
-            b"entity(crv_fr_eqn)\0",
-            b"backup_ents(crv_fr_eqn)\0",
-            b"expression\0",
-            b"name\0",
-        ];
         let payload = section_payload(data, &last.section).unwrap_or(&[]);
         // A strict prefix of a known label reaches EOF: the label never
         // completes. Single bytes and short fragments match binary noise, so
@@ -1759,13 +1759,12 @@ fn detect_incomplete_sections(
         let mut truncated_strings = false;
         if let Some(marker) = payload.iter().rposition(|&byte| byte == 0xf8) {
             if let Some((count, after)) = crate::psb::complete_compact_int(payload, marker + 1) {
-                if count >= 1 && count <= 128 {
+                if (1..=128).contains(&count) {
                     let tail = &payload[after..];
                     if !tail.is_empty()
                         && tail
                             .iter()
                             .all(|byte| byte.is_ascii_graphic() || *byte == b' ' || *byte == b'\t')
-                        && tail.iter().filter(|&&byte| byte == 0).count() < count as usize
                     {
                         truncated_strings = true;
                     }
@@ -1895,7 +1894,7 @@ fn detect_incomplete_sections(
         }
         let row_bytes_left = row_region_start
             .and_then(|start| section.region.get(start..))
-            .map_or(0, |tail| tail.len());
+            .map_or(0, <[u8]>::len);
         let give_up = geometry_namespace && at_eof && row_bytes_left != 0;
         if usize::try_from(declared).is_ok_and(|bound| rows < bound) {
             mark(

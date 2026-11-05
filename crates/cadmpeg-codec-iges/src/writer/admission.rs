@@ -6,36 +6,64 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::{has_brep_topology, BodyKind, CadIr, IgesLossCode, LossNote};
 
-pub(super) fn edge_carriers(ir: &CadIr) -> (Cow<'_, CadIr>, Vec<LossNote>) {
+pub(super) fn edge_carriers(
+    ir: &CadIr,
+) -> Result<(Cow<'_, CadIr>, Vec<LossNote>), cadmpeg_core::CodecError> {
     let curves = ir
         .model
         .curves
         .iter()
         .map(|curve| &curve.id)
         .collect::<BTreeSet<_>>();
-    let invalid = ir
-        .model
-        .edges
-        .iter()
-        .filter(|edge| edge.curve().is_some_and(|curve| !curves.contains(curve)))
-        .map(|edge| edge.id.clone())
-        .collect::<BTreeSet<_>>();
+    let mut invalid = BTreeMap::new();
+    for edge in &ir.model.edges {
+        let Some(id) = edge.curve() else {
+            continue;
+        };
+        if !curves.contains(id) {
+            invalid.insert(edge.id.clone(), "has a dangling curve carrier");
+            continue;
+        }
+        if has_brep_topology(ir) || edge.param_range().is_none() {
+            continue;
+        }
+        let Some(curve) = ir.model.curves.iter().find(|curve| curve.id == *id) else {
+            continue;
+        };
+        let Some(solved) = curve.geometry.solved() else {
+            continue;
+        };
+        let Ok(geometry) = super::flatten_curve(solved) else {
+            continue;
+        };
+        match super::checked_edge_span(ir, edge, &geometry) {
+            Ok(None) => {
+                invalid.insert(
+                    edge.id.clone(),
+                    "has endpoints that disagree with its curve parameter range",
+                );
+            }
+            Err(cadmpeg_core::CodecError::ResourceLimit(limit)) => {
+                return Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+            }
+            _ => {}
+        }
+    }
     if invalid.is_empty() {
-        return (Cow::Borrowed(ir), Vec::new());
+        return Ok((Cow::Borrowed(ir), Vec::new()));
     }
     let mut admitted = ir.clone();
     let mut losses = Vec::new();
     for edge in &mut admitted.model.edges {
-        if invalid.contains(&edge.id) {
+        if let Some(reason) = invalid.get(&edge.id) {
             edge.carrier = cadmpeg_ir::topology::EdgeCarrier::new(None, None)
                 .expect("an absent curve has no parameter range");
-            losses.push(IgesLossCode::WriterEntityOmitted.note(format!(
-                "IGES edge {} has a dangling curve carrier",
-                edge.id
-            )));
+            losses.push(
+                IgesLossCode::WriterEntityOmitted.note(format!("IGES edge {} {reason}", edge.id)),
+            );
         }
     }
-    (Cow::Owned(admitted), losses)
+    Ok((Cow::Owned(admitted), losses))
 }
 
 /// A loopless NURBS face retains the finite natural parameter domain.
@@ -464,4 +492,67 @@ pub(super) fn pole_edges(
         }
     }
     Ok((Cow::Owned(admitted), losses))
+}
+
+/// A solid with a single non-closed or non-manifold shell can retain its faces as a sheet.
+pub(super) fn open_incomplete_solids(ir: &CadIr) -> (Cow<'_, CadIr>, Vec<LossNote>) {
+    let mut open = BTreeSet::new();
+    for body in &ir.model.bodies {
+        if body.kind != BodyKind::Solid || body.regions.len() != 1 {
+            continue;
+        }
+        let Some(region) = ir
+            .model
+            .regions
+            .iter()
+            .find(|region| region.id == body.regions[0])
+        else {
+            continue;
+        };
+        if region.shells.len() != 1 {
+            continue;
+        }
+        let shell = &region.shells[0];
+        let faces = ir
+            .model
+            .faces
+            .iter()
+            .filter(|face| face.shell == *shell)
+            .map(|face| &face.id)
+            .collect::<BTreeSet<_>>();
+        let loops = ir
+            .model
+            .loops
+            .iter()
+            .filter(|boundary| faces.contains(&boundary.face))
+            .map(|boundary| &boundary.id)
+            .collect::<BTreeSet<_>>();
+        let mut edges = BTreeMap::new();
+        for coedge in ir
+            .model
+            .coedges
+            .iter()
+            .filter(|coedge| loops.contains(&coedge.owner_loop))
+        {
+            *edges.entry(&coedge.edge).or_insert(0_usize) += 1;
+        }
+        if edges.values().any(|count| *count != 2) {
+            open.insert(body.id.clone());
+        }
+    }
+    if open.is_empty() {
+        return (Cow::Borrowed(ir), Vec::new());
+    }
+    let mut document = ir.clone();
+    let mut losses = Vec::new();
+    for body in &mut document.model.bodies {
+        if open.contains(&body.id) {
+            body.kind = BodyKind::Sheet;
+            losses.push(IgesLossCode::WriterEntityOmitted.note(format!(
+                "IGES solid {} has an open shell or non-manifold edge and is written as a sheet",
+                body.id
+            )));
+        }
+    }
+    (Cow::Owned(document), losses)
 }

@@ -408,7 +408,11 @@ pub(super) fn try_decode_geometry(
                 native_ref: None,
                 id: id.clone(),
                 geometry: surf.geometry,
-                source_object: Some(carrier_source(si, "nurbs-surface-record", surf.pos as u64)?),
+                source_object: Some(carrier_source(
+                    si,
+                    "nurbs-surface-record",
+                    cadmpeg_core::decode::u64_from_index(surf.pos),
+                )?),
             });
             if let Some(node) = graph.at_pos(surf.pos) {
                 surfaces_by_xmt.insert(node.xmt(), id);
@@ -653,7 +657,11 @@ pub(super) fn try_decode_geometry(
                 parameter_range: None,
                 id: id.clone(),
                 geometry: crv.geometry,
-                source_object: Some(carrier_source(si, "nurbs-curve-record", crv.pos as u64)?),
+                source_object: Some(carrier_source(
+                    si,
+                    "nurbs-curve-record",
+                    cadmpeg_core::decode::u64_from_index(crv.pos),
+                )?),
             });
             if let Some(node) = graph.at_pos(crv.pos) {
                 curves_by_xmt.insert(node.xmt(), id);

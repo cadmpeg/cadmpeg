@@ -434,17 +434,16 @@ impl Counts {
 fn build_metadata_ir(
     ctx: &DecodeContext<'_>,
     scan: &Scan,
+type MetadataIr = (
+    CadIr,
+    cadmpeg_ir::Annotations,
+    Vec<UnknownRecord>,
+    Vec<LossNote>,
+    RouteOutcome,
+);
+
     dialects: &DialectLayers,
-) -> Result<
-    (
-        CadIr,
-        cadmpeg_ir::Annotations,
-        Vec<UnknownRecord>,
-        Vec<LossNote>,
-        RouteOutcome,
-    ),
-    CodecError,
-> {
+) -> Result<MetadataIr, CodecError> {
     let mut unknowns = Vec::new();
     let mut ir = CadIr::decoded(source_meta(scan, dialects, None)?);
     let mut annotations = AnnotationBuilder::new();
