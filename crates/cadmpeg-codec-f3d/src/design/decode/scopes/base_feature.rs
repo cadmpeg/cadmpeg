@@ -814,15 +814,19 @@ impl TimelineBodyOwner {
 const NULL_GUID: &str = "00000000-0000-0000-0000-000000000000";
 const GUID_CODE_UNITS: usize = 36;
 
-/// Whether the bytes from `at` are zero up to an LP-UTF16 null-GUID key.
-fn null_removal_key_at(bytes: &[u8], at: usize) -> bool {
-    let Some(key_at) = bytes
+/// Whether the owner envelope, which ends at `end`, is zero from `at` up to
+/// an LP-UTF16 null-GUID key that also ends inside it.
+fn null_removal_key_at(bytes: &[u8], at: usize, end: usize) -> bool {
+    let Some(envelope) = bytes.get(..end) else {
+        return false;
+    };
+    let Some(key_at) = envelope
         .get(at..)
         .and_then(|rest| rest.iter().position(|byte| *byte != 0))
     else {
         return false;
     };
-    crate::bytes::lp_utf16_bounded(bytes, at + key_at, GUID_CODE_UNITS..=GUID_CODE_UNITS)
+    crate::bytes::lp_utf16_bounded(envelope, at + key_at, GUID_CODE_UNITS..=GUID_CODE_UNITS)
         .is_some_and(|(key, _)| key == NULL_GUID)
 }
 
@@ -905,7 +909,11 @@ fn parse_timeline_body_owner(
             record,
             body_count,
             reference_offset,
-            keeps_sources: null_removal_key_at(bytes, cursor),
+            keeps_sources: records
+                .offsets(record)
+                .iter()
+                .find(|offset| **offset > start)
+                .is_some_and(|end| null_removal_key_at(bytes, cursor, *end)),
         },
     ))
 }

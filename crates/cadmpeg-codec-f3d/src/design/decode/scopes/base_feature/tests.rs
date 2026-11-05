@@ -428,14 +428,26 @@ fn source_nodes() -> HashMap<String, Option<u64>> {
     ])
 }
 
-/// The copy sources a two-body paste object names.
+/// The copy sources a two-body paste object names when `after_reference` and
+/// then the object's paired header close its envelope.
 fn copy_sources(
     after_reference: &[u8],
     trailer: &[u8],
     nodes: &HashMap<String, Option<u64>>,
 ) -> Vec<u64> {
-    let (bytes, scope) =
-        owned_frames_with(&[(71, 61), (72, 62)], 4, &[0; 10], after_reference, trailer);
+    let mut owner_tail = after_reference.to_vec();
+    crate::test_support::indexed_header(&mut owner_tail, *b"259", 50);
+    owner_tail_copy_sources(&owner_tail, trailer, nodes)
+}
+
+/// The copy sources a two-body paste object names when `owner_tail` follows
+/// its reference to the owned scope.
+fn owner_tail_copy_sources(
+    owner_tail: &[u8],
+    trailer: &[u8],
+    nodes: &HashMap<String, Option<u64>>,
+) -> Vec<u64> {
+    let (bytes, scope) = owned_frames_with(&[(71, 61), (72, 62)], 4, &[0; 10], owner_tail, trailer);
     let records = crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes);
     let types = owner_types(PASTE_OBJECT);
     let owners = timeline_body_owners(&bytes, &records, types.iter());
@@ -486,6 +498,19 @@ fn a_paste_that_stores_a_removal_key_names_no_copy_source() {
         assert!(
             copy_sources(&after_reference, &two_source_pairs(), &source_nodes()).is_empty(),
             "{after_reference:?}"
+        );
+    }
+}
+
+#[test]
+fn a_removal_key_outside_the_owner_envelope_is_refused() {
+    let mut beyond_paired_header = vec![0; 29];
+    crate::test_support::indexed_header(&mut beyond_paired_header, *b"259", 50);
+    beyond_paired_header.extend(removal_key(0, NULL_KEY));
+    for owner_tail in [beyond_paired_header, removal_key(29, NULL_KEY)] {
+        assert!(
+            owner_tail_copy_sources(&owner_tail, &two_source_pairs(), &source_nodes()).is_empty(),
+            "{owner_tail:?}"
         );
     }
 }
