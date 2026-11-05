@@ -97,6 +97,63 @@ fn source_less_typed_sketch_text_survives_synthesis() {
         text.owner_reference
     );
 
+    let mut edited = ir.clone();
+    let sketch = cadmpeg_ir::sketches::Sketch {
+        id: "authored:model:sketch#42".try_into().unwrap(),
+        name: Some("Sketch_42".into()),
+        configuration: None,
+        visible: None,
+        placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+            cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+            cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+            cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: Default::default(),
+        native_ref: None,
+    };
+    let geometry = cadmpeg_ir::sketches::SketchGeometry::try_from(
+        cadmpeg_ir::sketches::SketchGeometryDefinition::Text {
+            text: cadmpeg_core::text::NonBlankString::new("Edited").unwrap(),
+            font_family: cadmpeg_core::text::NonBlankString::new("Arial").unwrap(),
+            font_weight: cadmpeg_ir::sketches::SketchFontWeight::Regular,
+            height: cadmpeg_ir::scalar::Length::new(10.0).unwrap(),
+            width_factor: Some(1.0),
+            placement: Some(cadmpeg_ir::sketches::TextPlacement {
+                anchor: cadmpeg_ir::math::Point2::new(0.0, 0.0),
+                rotation: cadmpeg_ir::scalar::Angle::new(0.0).unwrap(),
+            }),
+            horizontal_alignment: Some(cadmpeg_ir::sketches::SketchTextHorizontalAlignment::Left),
+            vertical_alignment: Some(cadmpeg_ir::sketches::SketchTextVerticalAlignment::Top),
+        },
+    )
+    .unwrap();
+    edited.model.sketch_entities.push(
+        cadmpeg_ir::sketches::SketchEntity::new(
+            "authored:model:sketch-entity#text".try_into().unwrap(),
+            sketch.id.clone(),
+            geometry.clone(),
+        )
+        .with_native_ref(Some(text.id.clone())),
+    );
+    edited.model.sketches.push(sketch);
+    let mut bytes = Vec::new();
+    F3dCodec
+        .plan(EncodeInput::new(&edited, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .unwrap();
+    let edited_output = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let edited_native = f3d_native(edited_output.ir());
+    assert_eq!(edited_native.sketch_texts.len(), 1);
+    assert_eq!(edited_native.sketch_texts[0].text, "Edited");
+    assert_eq!(edited_output.ir().model.sketch_entities.len(), 1);
+    assert_eq!(
+        edited_output.ir().model.sketch_entities[0].geometry,
+        geometry
+    );
+
     let mut native = f3d_native_mut(&mut ir);
     native.design_types[1].set_entities(ReferenceRun::unlocated(vec![20, 21]));
     native.design_entity_headers[0].registration =
