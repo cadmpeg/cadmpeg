@@ -466,7 +466,7 @@ pub(super) fn write_semantic_at(
     }
     if !ir.model.tessellations.is_empty() {
         let baseline = retained_source_baseline(&mut source_baseline, source_context.as_ref())?;
-        if let Some(retained) = retained_display_sections(ir, baseline, source_scan.as_ref())? {
+        if let Some(retained) = retained_display_sections(ir, baseline, source_scan.as_ref()) {
             for (section, payload) in retained {
                 push_generated_metadata_member(
                     &mut sections,
@@ -3179,9 +3179,9 @@ fn retained_display_sections(
     ir: &CadIr,
     baseline: Option<&cadmpeg_ir::codec::Decoded>,
     scan: Option<&crate::container::ContainerScan<'_>>,
-) -> Result<Option<RetainedDisplaySections>, CodecError> {
+) -> Option<RetainedDisplaySections> {
     let (Some(baseline), Some(scan)) = (baseline, scan) else {
-        return Ok(None);
+        return None;
     };
     let mut original = baseline.ir.model.tessellations.iter().collect::<Vec<_>>();
     let mut current = ir.model.tessellations.iter().collect::<Vec<_>>();
@@ -3191,7 +3191,7 @@ fn retained_display_sections(
         || baseline.ir.model.appearances != ir.model.appearances
         || baseline.ir.model.appearance_bindings != ir.model.appearance_bindings
     {
-        return Ok(None);
+        return None;
     }
     let mut names = HashSet::new();
     let mut result = Vec::new();
@@ -3200,28 +3200,19 @@ fn retained_display_sections(
             .source_fidelity
             .annotations
             .provenance
-            .get(mesh.id.as_str())
-            .ok_or_else(|| {
-                CodecError::NotImplemented(
-                    "retained tessellation has no proved source member".into(),
-                )
-            })?;
+            .get(mesh.id.as_str())?;
         let name = provenance.stream();
         if !names.insert(name.to_owned()) {
             continue;
         }
         let mut sources = scan.sections().filter(|source| source.name() == Some(name));
-        let source = sources.next().ok_or_else(|| {
-            CodecError::NotImplemented("retained display requires a named source member".into())
-        })?;
+        let source = sources.next()?;
         if sources.next().is_some() {
-            return Err(CodecError::NotImplemented(
-                "ambiguous retained display member identity".into(),
-            ));
+            return None;
         }
         result.push((name.to_owned(), source.payload().to_vec()));
     }
-    Ok(Some(result))
+    Some(result)
 }
 
 fn retained_history_sections(
