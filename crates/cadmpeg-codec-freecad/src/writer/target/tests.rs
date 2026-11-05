@@ -11,6 +11,25 @@ use cadmpeg_ir::{CadIr, Codec, DecodeOptions, SourceFidelity};
 use std::io::Cursor;
 
 #[test]
+fn retained_layout_decode_uses_the_caller_input_ceiling() {
+    let decoded = crate::FcstdCodec
+        .decode(
+            &mut Cursor::new(crate::test_support::test_archive::CORE_DESIGN_PRODUCT),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_input_bytes = 0;
+    let ctx = DecodeContext::for_encode(&arena, &policy);
+    assert!(matches!(
+        admit_unedited(&ctx, decoded.ir(), decoded.source_fidelity()),
+        Err(CodecError::ResourceLimit(limit))
+            if limit.dimension == ResourceDimension::InputBytes
+    ));
+}
+
+#[test]
 fn inherited_caller_refusal_precedes_retained_layout_admission() {
     let ir = CadIr::empty();
     let fidelity = SourceFidelity::with_annotations(
@@ -32,8 +51,7 @@ fn inherited_caller_refusal_precedes_retained_layout_admission() {
         admit_unedited(
             &ctx,
             &ir,
-            &fidelity,
-            cadmpeg_core::decode::ResourceLimits::desktop()
+            &fidelity
         ),
         Err(CodecError::ResourceLimit(actual)) if actual == refusal
     ));
@@ -90,8 +108,7 @@ fn represented_layout_admission_uses_the_actual_source_free_encode_context() {
         admit_unedited(
             &ctx,
             decoded.ir(),
-            &fidelity,
-            cadmpeg_core::decode::ResourceLimits::desktop()
+            &fidelity
         ),
         Err(CodecError::ResourceLimit(actual)) if actual == refusal
     ));

@@ -234,18 +234,25 @@ impl<'a> DecodeContext<'a> {
     }
 
     fn decompression_allowance(&self) -> u64 {
-        self.budget.decompression_allowance()
+        if self.encoding {
+            self.policy().limits.max_decompressed_bytes_total
+        } else {
+            self.budget.decompression_allowance()
+        }
     }
 
-    /// The largest size one expansion may declare: the smaller of
-    /// `max_decompressed_bytes_per_expand` and its input-proportional
-    /// allowance.
+    /// The largest size one expansion may declare. Decode uses the smaller
+    /// of `max_decompressed_bytes_per_expand` and its input-proportional
+    /// allowance. Encode uses the caller's total decompression ceiling.
     ///
     /// A codec compares a declared expansion size against it before
     /// [`DecodeContext::begin_expand`], so a declared size above it is a
     /// per-input bound that skips one member instead of fusing the session.
     #[must_use]
     pub fn per_expand_allowance(&self) -> u64 {
+        if self.encoding {
+            return self.policy().limits.max_decompressed_bytes_total;
+        }
         self.budget.proportional_allowance(
             self.budget
                 .policy()
@@ -514,7 +521,7 @@ impl<'a> DecodeContext<'a> {
         }
         if let ExpandSpec::Exact(size) = spec {
             let per_expand = self.per_expand_allowance();
-            if size > per_expand {
+            if !self.encoding && size > per_expand {
                 return Err(self.fuse(
                     ResourceFailure::BudgetExceeded,
                     AllowanceScope::PerExpand,
@@ -719,7 +726,7 @@ impl<'a> ExpandWriter<'_, 'a> {
             _ => {}
         }
         let per_expand = self.ctx.per_expand_allowance();
-        if new_written > per_expand {
+        if !self.ctx.encoding && new_written > per_expand {
             return Err(self.ctx.fuse(
                 ResourceFailure::BudgetExceeded,
                 AllowanceScope::PerExpand,
@@ -728,7 +735,13 @@ impl<'a> ExpandWriter<'_, 'a> {
                 "expand_write",
             ));
         }
-        self.ctx.budget.charge_decompressed(len, "expand_write")?;
+        if self.ctx.encoding {
+            self.ctx
+                .budget
+                .charge_decompressed_for_encode(len, "expand_write")?;
+        } else {
+            self.ctx.budget.charge_decompressed(len, "expand_write")?;
+        }
         self.buffer.try_reserve(data.len()).map_err(|_| {
             self.ctx.fuse(
                 ResourceFailure::AllocationFailed,
