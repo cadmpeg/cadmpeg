@@ -263,7 +263,7 @@ fn cacheless_helix_curve_inversion_is_seeded_and_forward_validated() {
     )
     .norm();
     assert!(
-        residual <= ir.tolerances.linear.get(),
+        residual <= ir.tolerances.linear.expect("stated linear tolerance").get(),
         "residual={residual}"
     );
     assert!(crate::eval::model_curve_parameter_near_point_in_index(
@@ -297,7 +297,10 @@ fn helix_inverse_finds_the_witness_without_retained_storage() {
         inverse.get(),
     )
     .unwrap();
-    assert!(evaluated.point.distance(target) <= ir.tolerances.linear.get());
+    assert!(
+        evaluated.point.distance(target)
+            <= ir.tolerances.linear.expect("stated linear tolerance").get()
+    );
     ctx.finish_session().unwrap();
 }
 
@@ -313,7 +316,10 @@ fn helix_inverse_returns_the_session_depth_refusal() {
         &ctx,
         expected_helix(1.7).0,
         1.5,
-        ir.tolerances.linear.into(),
+        ir.tolerances
+            .linear
+            .expect("stated linear tolerance")
+            .into(),
         ir.model.procedural_curves[0].definition(),
     )
     .unwrap_err() else {

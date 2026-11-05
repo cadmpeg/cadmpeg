@@ -180,7 +180,7 @@ impl<'a> Builder<'a> {
             };
             *corner = point.get();
         }
-        let tolerance = self.ir.tolerances.linear.get();
+        let tolerance = self.ir.tolerances.linear_or_default().get();
         for (index, corner) in corners.iter().enumerate() {
             if corners[index + 1..]
                 .iter()

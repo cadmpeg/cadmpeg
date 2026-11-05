@@ -585,3 +585,106 @@ pub(super) fn apply_combine(
     }
     Ok(Some(feature.id.to_string()))
 }
+
+/// Rebuild a rectangular array's grid from its current neutral pattern.
+pub(super) fn apply_rectangular_pattern(
+    ir: &super::CadIr,
+    record: &super::NativeRecord,
+    fields: &mut Fields<'_>,
+) -> Result<Option<String>, String> {
+    use cadmpeg_ir::features::patterns::PatternTransform;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+    let mut features = ir
+        .model
+        .features
+        .iter()
+        .filter(|feature| feature.native_ref.as_deref() == Some(record.id()));
+    let Some(feature) = features.next() else {
+        return Ok(None);
+    };
+    if features.next().is_some() {
+        return Err("multiple features name one rectangular array".into());
+    }
+    let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern }) =
+        feature.evaluation.definition()
+    else {
+        return Err("current feature is not a rectangular pattern".into());
+    };
+    if !seeds.is_empty() || fields.value("transformation").is_some() {
+        return Err("rectangular pattern has unsupported seeds or placement".into());
+    }
+    let PatternTransform::Linear {
+        direction: Some(direction),
+        distance,
+        count,
+        second: Some(second),
+        omitted_instances,
+    } = pattern.definition()
+    else {
+        return Err("current pattern has no two-direction rectangular grid".into());
+    };
+    let columns = ir
+        .dimension_value(count)
+        .ok_or("rectangular column count is unresolved")?;
+    let rows = ir
+        .dimension_value(&second.count)
+        .ok_or("rectangular row count is unresolved")?;
+    let column_spacing = distance
+        .resolved_spacing(ir, count)
+        .ok_or("rectangular column spacing is unresolved")?
+        .get();
+    let row_spacing = second
+        .distance
+        .resolved_spacing(ir, &second.count)
+        .ok_or("rectangular row spacing is unresolved")?
+        .get();
+    let first = direction.get();
+    let other = second.direction.get();
+    let rotation = first.y.atan2(first.x);
+    let (sin, cos) = rotation.sin_cos();
+    if first.z != 0.0
+        || other.z != 0.0
+        || first.x != cos
+        || first.y != sin
+        || other.x != -sin
+        || other.y != cos
+    {
+        return Err("rectangular directions have no exact IGES rotation".into());
+    }
+    let mut positions = Vec::with_capacity(omitted_instances.len());
+    for [column, row] in omitted_instances {
+        if *column >= columns || *row >= rows {
+            return Err("rectangular omitted instance is outside the grid".into());
+        }
+        let position = u64::from(*column)
+            .checked_mul(u64::from(rows))
+            .and_then(|value| value.checked_add(u64::from(*row)))
+            .and_then(|value| value.checked_add(1))
+            .and_then(|value| i64::try_from(value).ok())
+            .ok_or("rectangular position overflows the IGES integer field")?;
+        positions.push(Value::from(position));
+    }
+    let total = u64::from(columns) * u64::from(rows);
+    if !positions.is_empty()
+        && u64::try_from(positions.len()).map_err(|_| "rectangular mask count overflows")?
+            < total.div_ceil(2)
+    {
+        return Err("rectangular omission mask has no admitted IGES representation".into());
+    }
+    fields.values.insert("columns".into(), Value::from(columns));
+    fields.values.insert("rows".into(), Value::from(rows));
+    fields
+        .values
+        .insert("column_spacing".into(), serde_json::json!(column_spacing));
+    fields
+        .values
+        .insert("row_spacing".into(), serde_json::json!(row_spacing));
+    fields
+        .values
+        .insert("rotation".into(), serde_json::json!(rotation));
+    fields.values.insert("do_dont_flag".into(), Value::from(1));
+    fields
+        .values
+        .insert("positions".into(), Value::Array(positions));
+    Ok(Some(feature.id.to_string()))
+}

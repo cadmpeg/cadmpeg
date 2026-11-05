@@ -22,6 +22,68 @@ use cadmpeg_ir::sketches::{
 };
 use cadmpeg_ir::units::FinitePoint2;
 
+pub(crate) const SPATIAL_OPERAND_CAPACITY: cadmpeg_ir::codec::write::CapacityField =
+    cadmpeg_ir::codec::write::CapacityField {
+        field: "spatial.relation.operand_address",
+        limit: u16::MAX as u64,
+        source: "docs/formats/sldprt.md §2: scalar operand addresses are u16",
+        helper: "field_u16",
+    };
+
+fn native_spatial_operand_kind(kind: &str) -> Option<crate::records::FeatureInputOperandKind> {
+    use crate::records::FeatureInputOperandKind;
+    match kind {
+        "d6" => Some(FeatureInputOperandKind::D6),
+        "e1" => Some(FeatureInputOperandKind::E1),
+        _ if kind.len() == 4
+            && kind
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)) =>
+        {
+            let tag = u16::from_str_radix(kind, 16).ok()?.swap_bytes();
+            Some(FeatureInputOperandKind::Native(tag.try_into().ok()?))
+        }
+        _ => None,
+    }
+}
+
+pub(crate) fn native_spatial_relation_supported<U, L>(
+    definition: &cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput<U, L>,
+    parameters: &[cadmpeg_ir::features::DesignParameter],
+) -> bool {
+    let cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput::Native {
+        native_kind,
+        native_state: None,
+        parameter: Some(id),
+        operands,
+    } = definition
+    else {
+        return false;
+    };
+    native_kind.as_str() == "sgPntLineDist"
+        && parameters.iter().any(|parameter| {
+            &parameter.id == id
+                && (parameter.driving
+                    || parameter
+                        .name
+                        .strip_suffix("@reference")
+                        .is_some_and(|name| !name.is_empty()))
+                && matches!(
+                    parameter.value,
+                    Some(cadmpeg_ir::features::ParameterValue::Length(_))
+                )
+        })
+        && matches!(operands.as_slice(), [point, line]
+            if native_spatial_operand_kind(point.native_kind.as_str()).is_some()
+                && native_spatial_operand_kind(line.native_kind.as_str()).is_some()
+                && point.object_index.is_some()
+                && line.object_index.is_some()
+                && point.field.is_none()
+                && line.field.is_none()
+                && point.native_ref.is_none()
+                && line.native_ref.is_none())
+}
+
 /// Author input lanes from canonical sketch content.
 pub(crate) fn prepare_sketches_for_write(
     ir: &cadmpeg_ir::CadIr,
@@ -1399,6 +1461,10 @@ fn source_less_lanes(
         let mut points = Vec::new();
         let mut lines = Vec::new();
         for constraint in &constraints {
+            if native_spatial_relation_supported(constraint.definition.kind(), &ir.model.parameters)
+            {
+                continue;
+            }
             let cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput::PointLineDistance {
                 point,
                 line,
@@ -1522,6 +1588,80 @@ fn source_less_lanes(
                 super::write_feature_parameters::ScalarIdentities::new(native, Some(&configuration))
             });
         for constraint in constraints {
+            if let cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput::Native {
+                native_kind,
+                parameter: Some(parameter),
+                operands,
+                ..
+            } = constraint.definition.kind()
+            {
+                if !native_spatial_relation_supported(
+                    constraint.definition.kind(),
+                    &ir.model.parameters,
+                ) {
+                    return Err(cadmpeg_core::CodecError::UnsupportedContent(format!(
+                        "spatial sketch constraint {} has no native serializer",
+                        constraint.id
+                    ))
+                    .into());
+                }
+                let parameter = ir
+                    .model
+                    .parameters
+                    .iter()
+                    .find(|record| &record.id == parameter)
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("spatial relation parameter is missing")
+                    })?;
+                let Some(cadmpeg_ir::features::ParameterValue::Length(value)) =
+                    parameter.value.as_ref()
+                else {
+                    return Err(cadmpeg_core::CodecError::malformed(
+                        "spatial relation length is missing",
+                    )
+                    .into());
+                };
+                let operands = operands
+                    .iter()
+                    .map(|operand| {
+                        let address = operand.object_index.ok_or_else(|| {
+                            cadmpeg_core::CodecError::malformed(
+                                "spatial relation operand address is missing",
+                            )
+                        })?;
+                        let address = crate::writer::field_u16(
+                            &SPATIAL_OPERAND_CAPACITY,
+                            u64::from(address),
+                        )?;
+                        let kind = native_spatial_operand_kind(operand.native_kind.as_str())
+                            .ok_or_else(|| {
+                                cadmpeg_core::CodecError::malformed(
+                                    "spatial relation operand tag is invalid",
+                                )
+                            })?;
+                        Ok((kind, address))
+                    })
+                    .collect::<Result<Vec<_>, crate::writer::write_error::WriteError>>()?;
+                let name = if parameter.driving {
+                    parameter.name.as_str()
+                } else {
+                    parameter.name.strip_suffix("@reference").ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed(
+                            "spatial reference parameter name is invalid",
+                        )
+                    })?
+                };
+                super::write_generate::append_generated_scalar_with_role(
+                    &mut payload,
+                    native_kind.as_str(),
+                    name,
+                    value.get() * 0.001,
+                    scalar_ids.take()?,
+                    &operands,
+                    parameter.driving,
+                )?;
+                continue;
+            }
             let cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput::PointLineDistance {
                 point,
                 line,

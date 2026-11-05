@@ -100,7 +100,7 @@ pub(super) fn check(
             cache: None,
         };
         let tolerance = procedural_support_allowance(
-            ir.tolerances.linear,
+            ir.tolerances.linear_or_default(),
             definition
                 .cache_fit_tolerance()
                 .map(crate::geometry::FitTolerance::get),
