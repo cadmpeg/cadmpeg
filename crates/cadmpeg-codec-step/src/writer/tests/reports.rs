@@ -1309,12 +1309,11 @@ fn subds_tessellations_and_source_associations_are_reported_as_losses() {
                 .message
                 .contains("1 tessellation(s) require an AP242 target")
     }));
-    assert!(report.losses.iter().any(|loss| {
-        loss.code.category() == cadmpeg_ir::report::loss::LossCategory::Metadata
-            && loss
-                .message
-                .contains("2 source-object association(s) were not represented")
-    }));
+    for id in ["test:step:subd#0", "test:step:tessellation#0"] {
+        assert!(report.losses.iter().any(|loss| {
+            loss.code == StepLossCode::SourceAssociationOmitted.kind() && loss.message.contains(id)
+        }));
+    }
 }
 
 #[test]
