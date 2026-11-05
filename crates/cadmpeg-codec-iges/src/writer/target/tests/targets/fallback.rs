@@ -70,7 +70,7 @@ fn off_catalog_inherit_synthesizes_even_with_a_retained_source_image() {
         WritePath::Synthesized { .. }
     ));
     assert_eq!(
-        serde_json::to_value(plan.report()).unwrap()["identity"]["target"],
+        serde_json::to_value(plan.report()).expect("valid test value")["identity"]["target"],
         "iges:5.3-fixed-ascii"
     );
     assert!(plan
