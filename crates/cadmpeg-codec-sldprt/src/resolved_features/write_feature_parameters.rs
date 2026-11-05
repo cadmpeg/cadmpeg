@@ -9,7 +9,7 @@ use std::collections::HashSet;
 use crate::layout::extrusion_sparse_operation_trailer as extrusion_trailer;
 use crate::native::SldprtNative;
 
-const SCALAR_IDENTITY_CAPACITY: cadmpeg_ir::codec::write::CapacityField =
+pub(crate) const SCALAR_IDENTITY_CAPACITY: cadmpeg_ir::codec::write::CapacityField =
     cadmpeg_ir::codec::write::CapacityField {
         field: "feature_input.scalar_identity",
         limit: u32::MAX as u64,
