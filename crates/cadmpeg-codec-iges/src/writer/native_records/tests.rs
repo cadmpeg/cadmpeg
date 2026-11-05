@@ -1711,3 +1711,67 @@ fn directory_pattern_number_is_declared_when_reemitted() {
         .unwrap();
     assert_eq!(&directory[24..32], b"       3");
 }
+
+#[test]
+fn directory_color_and_visibility_are_declared_when_reemitted() {
+    let mut ir = CadIr::empty();
+    install(
+        &mut ir,
+        "display_attributes",
+        "iges:presentation:display#D1",
+        &json!({
+            "source_entity": "iges:entity:directory#1", "line_font_number": 0,
+            "line_font_definition": null, "level_number": 5, "level_definition": null,
+            "color_number": 2, "color_definition": null, "line_weight_number": 0,
+            "line_weight_mm": null, "view": 0, "visible": false
+        }),
+    );
+    let curve = cadmpeg_ir::ids::CurveId::mint("test:model:curve#level").unwrap();
+    ir.model
+        .presentation_layers
+        .push(cadmpeg_ir::presentation::PresentationLayer {
+            id: cadmpeg_ir::ids::LayerId::mint("test:presentation:layer#5").unwrap(),
+            native_ref: None,
+            name: "5".into(),
+            parent: None,
+            description: None,
+            visible: None,
+            items: vec![cadmpeg_ir::presentation::PresentationItem::Curve {
+                curve: curve.clone(),
+            }],
+        });
+    let mut entity = owner();
+    entity.source_targets.push(curve.to_string());
+    let entities = vec![entity];
+    let presentations = BTreeMap::from([(
+        0,
+        super::super::BodyPresentation {
+            label: None,
+            name: None,
+            color: super::super::BodyColor::Standard(2),
+            visible: Some(false),
+        },
+    )]);
+    let regenerated = super::super::display::regenerated(
+        &ir,
+        &entities,
+        &presentations,
+        crate::IgesVersion::V5_3,
+    );
+    assert!(regenerated.contains("iges:presentation:display#D1"));
+    let bytes = encode_file(
+        &ir,
+        &entities,
+        &presentations,
+        crate::IgesVersion::V5_3,
+        Some(ir.tolerances.linear.unwrap().get()),
+    )
+    .unwrap();
+    let cards = bytes
+        .split(|byte| *byte == b'\n')
+        .filter(|line| line.get(72) == Some(&b'D'))
+        .collect::<Vec<_>>();
+    assert_eq!(&cards[0][32..40], b"       5");
+    assert_eq!(&cards[0][64..72], b"01000000");
+    assert_eq!(&cards[1][16..24], b"       2");
+}
