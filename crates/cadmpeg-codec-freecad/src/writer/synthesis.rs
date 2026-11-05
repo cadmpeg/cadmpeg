@@ -1271,8 +1271,7 @@ pub(super) fn write(
     let file_version = facts
         .as_ref()
         .and_then(|documents| documents.first())
-        .map(|document| document.file_version.as_str().to_owned())
-        .unwrap_or_else(|| "1".to_owned());
+        .map_or_else(|| "1".to_owned(), |document| document.file_version.as_str().to_owned());
     let document = xml::document(
         &objects,
         &document_properties,
