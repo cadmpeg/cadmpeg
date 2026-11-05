@@ -4347,7 +4347,10 @@ fn write_body_hierarchy(
         let typed_only = body.regions.iter().any(|region| {
             regions
                 .get(region)
-                .is_some_and(|region| region.shells.len() > 6)
+                .is_some_and(|region| {
+                    region.shells.len() > 6
+                        || (body.kind == BodyKind::Sheet && region.shells.len() > 1)
+                })
         });
         if typed_only {
             for region_id in &body.regions {
@@ -4382,12 +4385,6 @@ fn write_body_hierarchy(
             let region = regions
                 .get(region_id)
                 .ok_or_else(|| CodecError::Malformed("body references missing region".into()))?;
-            if body.kind == BodyKind::Sheet && region.shells.len() > 1 {
-                return Err(CodecError::UnsupportedContent(
-                    "SLDPRT sheet regions support at most one shell".into(),
-                )
-                .into());
-            }
             let native_region = take_attr(next)?;
             native_regions.push(native_region);
             let mut native_lumps = Vec::new();

@@ -12,7 +12,7 @@ use cadmpeg_ir::geometry::{
     CurveGeometry, PlacedCurve, PlacedSurface, SolvedCurveGeometry, SolvedSurfaceGeometry,
     SurfaceGeometry,
 };
-use cadmpeg_ir::ids::{BodyId, FaceId, RegionId};
+use cadmpeg_ir::ids::{BodyId, FaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::topology::{Body, BodyKind};
@@ -310,7 +310,6 @@ pub(super) fn reduce_sheet(
         return Ok(false);
     }
     retain_faces(ir, &body.id, &kept);
-    split_sheet_regions(ir, &body.id, losses)?;
     match preflight(ir, body) {
         Ok(()) => Ok(true),
         Err(super::super::write_error::WriteError::Decline(_)) => Ok(false),
@@ -373,51 +372,6 @@ fn retain_faces(ir: &mut CadIr, body: &BodyId, kept: &HashSet<FaceId>) {
             candidate.regions.retain(|region| regions.contains(region));
         }
     }
-}
-
-fn split_sheet_regions(
-    ir: &mut CadIr,
-    body: &BodyId,
-    losses: &mut Vec<LossNote>,
-) -> Result<(), CodecError> {
-    let mut additional = Vec::new();
-    for region in &mut ir.model.regions {
-        if &region.body != body || region.shells.len() <= 1 {
-            continue;
-        }
-        let original = region.id.clone();
-        for (index, shell) in region.shells.iter().skip(1).enumerate() {
-            let mut next = region.clone();
-            next.id = RegionId::mint(format!(
-                "generated:sldprt:region#{}:{index}",
-                original.as_str().replace('%', "%25").replace('#', "%23")
-            ))
-            .map_err(|error| {
-                CodecError::malformed(format_args!("sheet region identity: {error}"))
-            })?;
-            next.shells = vec![shell.clone()];
-            for value in &mut ir.model.shells {
-                if &value.id == shell {
-                    value.region = next.id.clone();
-                }
-            }
-            additional.push(next);
-        }
-        region.shells.truncate(1);
-        losses.push(SldprtLossCode::WriterEntityOmitted.note(format!("sheet region {original}: multi-shell grouping replaced with one native region per shell")));
-    }
-    for region in additional {
-        if let Some(body) = ir
-            .model
-            .bodies
-            .iter_mut()
-            .find(|candidate| candidate.id == region.body)
-        {
-            body.regions.push(region.id.clone());
-        }
-        ir.model.regions.push(region);
-    }
-    Ok(())
 }
 
 /// Reduce composites to their segments when their carriers permit it.
