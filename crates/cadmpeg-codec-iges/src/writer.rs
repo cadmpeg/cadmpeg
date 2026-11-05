@@ -698,6 +698,43 @@ fn synthesize_with_admission(
         .iter()
         .flat_map(|entity| entity.source_targets.iter())
         .collect::<BTreeSet<_>>();
+    let mut emitted_occurrences = 0;
+    for occurrence in &ir.model.occurrences {
+        if !emitted.contains(&occurrence.id.to_string()) {
+            continue;
+        }
+        emitted_occurrences += 1;
+        let previous = format!(
+            "IGES omits unsupported occurrences record {}",
+            occurrence.id
+        );
+        graph.losses.retain(|loss| loss.message != previous);
+        let mut omitted = Vec::new();
+        if occurrence.transform.is_none() {
+            omitted.push("unspecified placement");
+        }
+        if occurrence.name.is_some() {
+            omitted.push("name");
+        }
+        if occurrence.visible.is_some() {
+            omitted.push("visibility");
+        }
+        if occurrence.linked_prototype.is_some() {
+            omitted.push("linked prototype placement");
+        }
+        if occurrence.link.is_some() {
+            omitted.push("link state");
+        }
+        if !omitted.is_empty() {
+            graph
+                .losses
+                .push(IgesLossCode::WriterArenaOmitted.note(format!(
+                    "IGES occurrence {} does not preserve {}",
+                    occurrence.id,
+                    omitted.join(", ")
+                )));
+        }
+    }
     let mut flattened = BTreeSet::new();
     for curve in &ir.model.curves {
         if !emitted.contains(&curve.id.to_string()) {
@@ -754,6 +791,9 @@ fn synthesize_with_admission(
     let counts = entity_counts(&graph.entities);
     let mut coverage = SYNTHESIS_COVERAGE;
     coverage.features = feature_coverage;
+    if emitted_occurrences > 0 {
+        coverage.occurrences = ArenaDisposition::Reported;
+    }
     coverage.presentation_layers = layer_coverage;
     coverage.attributes = if attribute_export.preserved.len() == ir.model.attributes.len() {
         ArenaDisposition::Written
