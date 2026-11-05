@@ -397,6 +397,69 @@ fn source_less_circle_round_trips_with_its_frame() {
 }
 
 #[test]
+fn bounded_support_circle_is_written_as_its_exact_arc() {
+    const DOMAIN_TOLERANCE: f64 = 1e-10;
+    const POSITION_TOLERANCE: f64 = 1e-10;
+    let mut ir = CadIr::empty();
+    let id = cadmpeg_ir::ids::CurveId::mint("test:model:curve#support-arc").unwrap();
+    ir.model.curves.push(cadmpeg_ir::geometry::Curve {
+        native_ref: None,
+        parameter_range: Some([0.0, std::f64::consts::FRAC_PI_2].try_into().unwrap()),
+        id: id.clone(),
+        geometry: cadmpeg_ir::geometry::CurveGeometry::Solved(SolvedCurveGeometry::Circle(
+            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0),
+                cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0),
+                1.0,
+            )
+            .unwrap(),
+        )),
+        source_object: Some(cadmpeg_ir::SourceObjectAssociation {
+            format: cadmpeg_ir::CodecFormat::Iges,
+            object_id: cadmpeg_core::nonblank_literal!("D7"),
+            geometry_role: Some(cadmpeg_ir::SourceGeometryRole::Support),
+            instance_path: Vec::new(),
+        }),
+    });
+    let plan = RhinoCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(id.as_str())));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let decoded = RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let [curve] = decoded.ir().model.curves.as_slice() else {
+        panic!("one arc");
+    };
+    let Some(SolvedCurveGeometry::Nurbs(nurbs)) = curve.geometry.solved() else {
+        panic!("bounded arc has an exact NURBS carrier");
+    };
+    let [start, end] = cadmpeg_ir::eval::nurbs_curve_parameter_domain(nurbs)
+        .expect("bounded arc domain")
+        .endpoints();
+    assert!(start.abs() < DOMAIN_TOLERANCE);
+    assert!((end - std::f64::consts::FRAC_PI_2).abs() < DOMAIN_TOLERANCE);
+    let evaluate = |parameter| {
+        cadmpeg_ir::eval::decode::curve_point(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &curve.geometry,
+            parameter,
+        )
+        .unwrap()
+        .get()
+    };
+    assert!(Point3::distance(evaluate(start), Point3::new(1.0, 0.0, 0.0)) < POSITION_TOLERANCE);
+    assert!(Point3::distance(evaluate(end), Point3::new(0.0, 1.0, 0.0)) < POSITION_TOLERANCE);
+}
+
+#[test]
 fn rational_nurbs_curve_round_trips_homogeneous_poles() {
     let mut ir = CadIr::empty();
     ir.model.curves.push(cadmpeg_ir::geometry::Curve {
@@ -1177,7 +1240,7 @@ fn mesh_coordinate_below_negative_f32_max_refuses_round_up() {
 }
 
 #[test]
-fn standalone_support_points_and_curves_are_withheld_with_counted_export_loss() {
+fn standalone_support_point_is_written_and_unbounded_line_is_named() {
     use cadmpeg_ir::{
         geometry::{analytic::LineCurve, Curve, CurveGeometry},
         SourceGeometryRole, SourceObjectAssociation,
@@ -1227,20 +1290,23 @@ fn standalone_support_points_and_curves_are_withheld_with_counted_export_loss() 
         .iter()
         .find(|loss| loss.code == crate::loss::RhinoLossCode::WriterSupportGeometryWithheld.kind())
         .expect("synthetic support fixture is admitted");
-    assert!(loss
-        .message
-        .starts_with("1 support point record(s) and 1 support curve record(s)"));
+    assert!(loss.message.contains("test:model:curve#support"));
     let mut output = Vec::new();
     plan.write_to(&mut output)
         .expect("synthetic support fixture is admitted");
     let decoded = RhinoCodec
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("synthetic support fixture is admitted");
-    assert_eq!(decoded.ir().model.points.len(), 1);
-    assert_eq!(
-        decoded.ir().model.points[0].position().get(),
-        Point3::new(1.0, 2.0, 3.0)
-    );
+    let positions = decoded
+        .ir()
+        .model
+        .points
+        .iter()
+        .map(|point| point.position().get())
+        .collect::<Vec<_>>();
+    assert_eq!(positions.len(), 2);
+    assert!(positions.contains(&Point3::new(1.0, 2.0, 3.0)));
+    assert!(positions.contains(&Point3::new(4.0, 5.0, 6.0)));
     assert!(decoded.ir().model.curves.is_empty());
 }
 
