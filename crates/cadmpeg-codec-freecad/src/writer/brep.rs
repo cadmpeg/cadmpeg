@@ -594,6 +594,7 @@ fn serialize_geometry_inner(
         super::polygon_sources::PolygonSources::new(ctx, ir)?
     };
     let mut polygon_representations = HashMap::new();
+    let mut paired_curves = HashSet::new();
     for edge in ir
         .model
         .edges
@@ -613,6 +614,9 @@ fn serialize_geometry_inner(
             )?,
             None => None,
         };
+        let (indexed, paired_curve) = indexed.map_or((None, None), |(representation, curve)| {
+            (Some(representation), curve)
+        });
         let fallback = indexed
             .is_none()
             .then(|| super::polygon_edges::polygon3d(ir, edge, &mut polygons3d))
@@ -633,6 +637,9 @@ fn serialize_geometry_inner(
             }
         }
         if let Some(representation) = indexed.or(fallback) {
+            if let Some(curve) = paired_curve {
+                paired_curves.insert(curve);
+            }
             polygon_representations.insert(edge.id.as_str(), representation);
         }
     }
@@ -646,6 +653,7 @@ fn serialize_geometry_inner(
         .iter()
         .filter(|curve| curves_needed.contains(curve.id.as_str()))
         .filter(|curve| !covered_by_replay(covered, &curve.source_object))
+        .filter(|curve| !paired_curves.contains(curve.id.as_str()))
     {
         let mut edge_uses = ir
             .model
