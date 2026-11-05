@@ -85,7 +85,13 @@ pub(super) fn write_with_limits(
     validate_source_less_procedural_carriers(target)?;
     validate_source_less_topology_tolerances(target, &native)?;
     validate_source_less_auxiliary_geometry(target)?;
-    let act_segments = act::encode(&native)?;
+    let output_arena = cadmpeg_core::decode::DecodeArena::new();
+    let output_policy = cadmpeg_core::decode::DecodePolicy {
+        limits,
+        ..Default::default()
+    };
+    let output_ctx = cadmpeg_core::decode::DecodeContext::for_encode(&output_arena, &output_policy);
+    let act_segments = act::encode(&native, &output_ctx)?;
     let design_bindings = validate_source_less_design_bindings(&native)?;
     let mut parameter_bytes = Vec::new();
     let mut parameter_meta = None;
@@ -201,12 +207,6 @@ pub(super) fn write_with_limits(
         }
     }
     let brep_name = source_brep_name(&native, design_registry.body_map.is_some());
-    let output_arena = cadmpeg_core::decode::DecodeArena::new();
-    let output_policy = cadmpeg_core::decode::DecodePolicy {
-        limits,
-        ..Default::default()
-    };
-    let output_ctx = cadmpeg_core::decode::DecodeContext::for_encode(&output_arena, &output_policy);
     let smbh = encode_smbh(target, &native, &attributes, limits, &output_ctx)?;
     let mut staged = tempfile::tempfile()?;
     let mut archive = zip::ZipWriter::new(&mut staged);

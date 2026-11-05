@@ -273,16 +273,12 @@ impl<'a> AttributeIndex<'a> {
         }
         let extra_owner_attributes = target.model.attributes.iter().filter(|attribute| {
             let owner_is_free = match &attribute.target {
-                AttributeTarget::Body(id) => bodies.get(id).is_some_and(|body| {
-                    body.name.is_none() && body.color.is_none()
-                        && !body_links.contains_key(id.as_str())
-                        && !body_timestamps.contains_key(id.as_str())
-                }),
-                AttributeTarget::Face(id) => faces.get(id).is_some_and(|face| {
-                    face.name.is_none() && face.color.is_none()
-                        && !face_tags.contains_key(id.as_str())
-                        && !face_timestamps.contains_key(id.as_str())
-                }),
+                AttributeTarget::Body(id) => bodies.contains_key(id)
+                    && !body_links.contains_key(id.as_str())
+                    && !body_timestamps.contains_key(id.as_str()),
+                AttributeTarget::Face(id) => faces.contains_key(id)
+                    && !face_tags.contains_key(id.as_str())
+                    && !face_timestamps.contains_key(id.as_str()),
                 AttributeTarget::Edge(id) => edges.contains(id)
                     && !edge_tags.contains_key(id.as_str()) && !edge_timestamps.contains_key(id.as_str()),
                 AttributeTarget::Vertex(id) => vertices.contains(id) && !vertex_timestamps.contains_key(id.as_str()),
@@ -875,15 +871,11 @@ fn compact_custom_shape(attribute: &cadmpeg_ir::attributes::SourceAttribute) -> 
             attribute.values.first(),
             Some(Some(AttributeValue::Reference(_)))
         )
-        && attribute.values[1..].iter().all(|value| {
-            matches!(
-                value,
-                Some(
-                    AttributeValue::String(_)
-                        | AttributeValue::Integer(_)
-                        | AttributeValue::Float(_)
-                )
-            )
+        && attribute.values[1..].iter().all(|value| match value {
+            Some(AttributeValue::String(_) | AttributeValue::Integer(_)
+                | AttributeValue::Float(_) | AttributeValue::Boolean(_)) => true,
+            Some(AttributeValue::Vector(values)) => matches!(values.len(), 2 | 3),
+            _ => false,
         })
 }
 
@@ -1062,6 +1054,13 @@ fn native_compact_custom(
             Some(AttributeValue::String(value)) => native_string(records, value)?,
             Some(AttributeValue::Integer(value)) => native_i64(records, *value),
             Some(AttributeValue::Float(value)) => native_f64(records, value.get()),
+            Some(AttributeValue::Boolean(value)) => records.push(crate::writer::primitives::native_bool(*value)),
+            Some(AttributeValue::Vector(values)) if matches!(values.len(), 2 | 3) => {
+                records.push(if values.len() == 2 { 0x16 } else { 0x14 });
+                for value in values {
+                    records.extend_from_slice(&value.get().to_le_bytes());
+                }
+            }
             _ => {
                 return Err(CodecError::UnsupportedContent(
                     "unsupported compact F3D attribute value".into(),
@@ -1251,7 +1250,9 @@ pub(super) fn encode_source_less_attributes(
         {
             reference
         } else {
-            timestamp_attribute_ref(target, index, &owner_target, attribute_start)?.unwrap_or(-1)
+            timestamp_attribute_ref(target, index, &owner_target, attribute_start)?
+                .or(extra_attribute_ref(target, index, &owner_target, attribute_start)?)
+                .unwrap_or(-1)
         };
         output.charge_entities(1, "F3D BREP record")?;
         native_color_attribute(
@@ -1283,7 +1284,9 @@ pub(super) fn encode_source_less_attributes(
         {
             reference
         } else {
-            timestamp_attribute_ref(target, index, &owner_target, attribute_start)?.unwrap_or(-1)
+            timestamp_attribute_ref(target, index, &owner_target, attribute_start)?
+                .or(extra_attribute_ref(target, index, &owner_target, attribute_start)?)
+                .unwrap_or(-1)
         };
         output.charge_entities(1, "F3D BREP record")?;
         native_color_attribute(
@@ -1313,7 +1316,9 @@ pub(super) fn encode_source_less_attributes(
         {
             reference
         } else {
-            timestamp_attribute_ref(target, index, &owner_target, attribute_start)?.unwrap_or(-1)
+            timestamp_attribute_ref(target, index, &owner_target, attribute_start)?
+                .or(extra_attribute_ref(target, index, &owner_target, attribute_start)?)
+                .unwrap_or(-1)
         };
         let previous = if body.color.is_none() {
             -1
@@ -1346,7 +1351,9 @@ pub(super) fn encode_source_less_attributes(
         {
             reference
         } else {
-            timestamp_attribute_ref(target, index, &owner_target, attribute_start)?.unwrap_or(-1)
+            timestamp_attribute_ref(target, index, &owner_target, attribute_start)?
+                .or(extra_attribute_ref(target, index, &owner_target, attribute_start)?)
+                .unwrap_or(-1)
         };
         let previous = if face.color.is_none() {
             -1
