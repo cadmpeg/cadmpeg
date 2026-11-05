@@ -1389,3 +1389,56 @@ fn source_less_sketch_circle_profile_survives_synthesis() {
     );
     assert!(!profile[0].reversed);
 }
+
+#[test]
+fn source_less_sketch_arc_survives_synthesis() {
+    use cadmpeg_ir::math::{Point2, Point3, Vector3};
+    use cadmpeg_ir::sketches::{
+        Sketch, SketchEntity, SketchGeometry, SketchGeometryDefinition, SketchPlacement,
+        SketchProfiles,
+    };
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let sketch_id = "authored:model:sketch#arc".try_into().unwrap();
+    ir.model.sketches.push(Sketch {
+        id: sketch_id,
+        name: Some("Arc_1".into()),
+        configuration: None,
+        visible: None,
+        placement: SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: SketchProfiles::default(),
+        native_ref: None,
+    });
+    let geometry = SketchGeometry::try_from(SketchGeometryDefinition::Arc {
+        center: Point2::new(10.0, 20.0),
+        radius: cadmpeg_ir::scalar::Length::new(5.0).unwrap(),
+        start_angle: cadmpeg_ir::scalar::Angle::new(0.0).unwrap(),
+        end_angle: cadmpeg_ir::scalar::Angle::new(std::f64::consts::FRAC_PI_2).unwrap(),
+    })
+    .unwrap();
+    ir.model.sketch_entities.push(SketchEntity::new(
+        "authored:model:sketch-entity#arc".try_into().unwrap(),
+        ir.model.sketches[0].id.clone(),
+        geometry.clone(),
+    ));
+    let mut bytes = Vec::new();
+    let plan = F3dCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("plan arc sketch");
+    assert!(!plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "writer.design-records-omitted"));
+    plan.write_to(&mut bytes).expect("write arc sketch");
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode arc sketch");
+    assert_eq!(decoded.ir().model.sketch_entities.len(), 1);
+    assert_eq!(decoded.ir().model.sketch_entities[0].geometry, geometry);
+    assert!(decoded.ir().model.sketches[0].profiles.is_empty());
+}
