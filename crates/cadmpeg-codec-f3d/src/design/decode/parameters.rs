@@ -11,6 +11,8 @@ use crate::design::decode::dimension_frames::companion_owned_interval;
 use crate::design::decode::sketch::{next_indexed_record_offset, IndexedRecordOffsets};
 use crate::design::decode::text::design_record_id;
 use crate::ids::{self, native_stream};
+use crate::layout::design_parameter_comment_discriminated_prefix as comment_prefix;
+use crate::layout::design_parameter_comment_expression_trailer as comment_trailer;
 use crate::layout::design_parameter_compact_owned_expression_trailer as compact_trailer;
 use crate::layout::design_parameter_legacy_287_prefix as legacy_287;
 use crate::layout::design_parameter_owner_legacy_68 as legacy_owner_68;
@@ -150,6 +152,7 @@ pub(in crate::design) struct ParsedDesignParameter {
     record_index: u32,
     source_ordinal: u32,
     source_kind: String,
+    document: Option<bool>,
     owner_record_index: Option<u32>,
     family_discriminator: Option<crate::records::parameters::DesignParameterDiscriminator>,
     /// Frame-relative offset of the family discriminator.
@@ -216,10 +219,11 @@ impl ParsedDesignParameter {
                 class_tag: self.class_tag,
                 record_index: self.record_index,
                 source_ordinal: self.source_ordinal,
-                source: crate::records::parameters::DesignParameterSource::new(
+                source: crate::records::parameters::DesignParameterSource::from_document_flag(
                     self.source_kind,
                     self.owner_record_index,
                     family_discriminator,
+                    self.document,
                 )
                 .ok()?,
                 expression: self.expression,
@@ -308,25 +312,27 @@ pub(in crate::design) fn parse_design_parameter(
             && payload.get(30) == Some(&1)
             && payload.get(35..41) == Some(&[0; 6]);
         let discriminated = !compact_owned && payload.get(30) == Some(&0);
-        if !compact_owned && !discriminated {
-            return match parse_legacy_design_parameter(payload, class_tag, record_index) {
+        let header = if compact_owned || discriminated {
+            parse_header_form(payload, class_tag.clone(), record_index, discriminated, 0).or_else(
+                || {
+                    wide_discriminated_parameter(payload).then(|| {
+                        parse_header_form(
+                            payload,
+                            class_tag.clone(),
+                            record_index,
+                            true,
+                            WIDE_DISCRIMINATED_SHIFT,
+                        )
+                    })?
+                },
+            )
+        } else {
+            match parse_legacy_design_parameter(payload, class_tag.clone(), record_index) {
                 Ok(value) => value.map(Ok),
                 Err(error) => Some(Err(error)),
-            };
-        }
-        parse_header_form(payload, class_tag.clone(), record_index, discriminated, 0).or_else(
-            || {
-                wide_discriminated_parameter(payload).then(|| {
-                    parse_header_form(
-                        payload,
-                        class_tag,
-                        record_index,
-                        true,
-                        WIDE_DISCRIMINATED_SHIFT,
-                    )
-                })?
-            },
-        )
+            }
+        };
+        header.or_else(|| parse_comment_discriminated_parameter(payload, class_tag, record_index))
     })();
     parsed.transpose()
 }
@@ -550,6 +556,7 @@ fn parse_header_form(
         record_index,
         source_ordinal,
         source_kind,
+        document: None,
         owner_record_index,
         family_discriminator,
         discriminator_offset: u64_from_index(discriminator_at),
@@ -572,6 +579,105 @@ fn parse_header_form(
             value: text_value,
             offset: FrameRelative(i128::from(u64_from_index(source_kind_end + 4))),
         }),
+    }))
+}
+
+fn parse_comment_discriminated_parameter(
+    payload: &[u8],
+    class_tag: crate::records::references::DesignClassTag,
+    record_index: u32,
+) -> Option<Result<ParsedDesignParameter, CodecError>> {
+    if payload.get(comment_prefix::ZERO_RUN_11..comment_prefix::FAMILY_DISCRIMINATOR)
+        != Some(&[0; 11])
+    {
+        return None;
+    }
+    let discriminator = View::u32_le_at(payload, comment_prefix::FAMILY_DISCRIMINATOR)?;
+    let family_discriminator = crate::records::parameters::DesignParameterDiscriminator::try_from(
+        u64::from(discriminator),
+    )
+    .ok()?;
+    let (comment, comment_end) =
+        lp_utf16_bounded(payload, comment_prefix::COMMENT_LENGTH, 0..=4096)?;
+    let source_ordinal = View::u32_le_at(payload, comment_end)?;
+    let owner_at = comment_end.checked_add(4)?;
+    let (owner_record_index, expression_at) = match payload.get(owner_at)? {
+        0 => (None, owner_at.checked_add(1)?),
+        1 => {
+            let index_at = owner_at.checked_add(1)?;
+            let zeros_at = index_at.checked_add(4)?;
+            let expression_at = zeros_at.checked_add(6)?;
+            if payload.get(zeros_at..expression_at) != Some(&[0; 6]) {
+                return None;
+            }
+            (Some(View::u32_le_at(payload, index_at)?), expression_at)
+        }
+        _ => return None,
+    };
+    let (expression, expression_end) = lp_utf16_bounded(payload, expression_at, 1..=256)?;
+    let source_kind_at = expression_end.checked_add(comment_trailer::LEN)?;
+    let trailer = payload.get(expression_end..source_kind_at)?;
+    if trailer.get(comment_trailer::RESERVED_1) != Some(&comment_trailer::RESERVED_1_VALUE)
+        || trailer.get(comment_trailer::RESERVED_3) != Some(&comment_trailer::RESERVED_3_VALUE)
+    {
+        return None;
+    }
+    let flags = crate::records::parameters::DesignParameterFlags {
+        driven: trailer_flag(trailer, comment_trailer::DRIVEN)?,
+        favorite: trailer_flag(trailer, comment_trailer::FAVORITE)?,
+    };
+    let document = trailer_flag(trailer, comment_trailer::DOCUMENT)?;
+    if document && owner_record_index.is_some() {
+        return None;
+    }
+    let (source_kind, first_at) = lp_utf16_bounded(payload, source_kind_at, 1..=256)?;
+    let reading = |with_unit: bool| {
+        let (unit, name_at) = if with_unit {
+            let (value, end) = lp_utf16_bounded(payload, first_at, 0..=256)?;
+            (
+                (!value.is_empty()).then(|| ParsedParameterUnit {
+                    value,
+                    offset: FrameRelative(i128::from(u64_from_index(first_at + 4))),
+                }),
+                end,
+            )
+        } else {
+            (None, first_at)
+        };
+        let (name, name_end) = lp_utf16_bounded(payload, name_at, 1..=256)?;
+        let evaluated_value = View::f64_le_at(payload, name_end)?;
+        if !is_parameter_tail(payload.get(name_end.checked_add(8)?..)?) {
+            return None;
+        }
+        Some((unit, name, name_at, name_end, evaluated_value))
+    };
+    let ((Some(value), None) | (None, Some(value))) = (reading(true), reading(false)) else {
+        return None;
+    };
+    let (unit, name, name_at, name_end, evaluated_value) = value;
+    Some(Ok(ParsedDesignParameter {
+        class_tag,
+        record_index,
+        source_ordinal,
+        source_kind,
+        document: Some(document),
+        owner_record_index,
+        family_discriminator: Some(family_discriminator),
+        discriminator_offset: u64_from_index(comment_prefix::FAMILY_DISCRIMINATOR),
+        expression,
+        expression_offset: FrameRelative(i128::from(u64_from_index(expression_at + 4))),
+        source_kind_offset: FrameRelative(i128::from(u64_from_index(source_kind_at + 4))),
+        unit,
+        name,
+        name_offset: FrameRelative(i128::from(u64_from_index(name_at + 4))),
+        evaluated_value,
+        evaluated_value_offset: FrameRelative(i128::from(u64_from_index(name_end))),
+        comment: (!comment.trim().is_empty()).then(|| ParsedParameterUnit {
+            value: comment,
+            offset: FrameRelative(i128::from(u64_from_index(comment_prefix::LEN))),
+        }),
+        flags,
+        text_value: None,
     }))
 }
 
@@ -653,6 +759,7 @@ fn parse_legacy_287_design_parameter(
             record_index,
             source_ordinal,
             source_kind,
+            document: None,
             owner_record_index: Some(owner_record_index),
             family_discriminator: None,
             discriminator_offset: 0,
@@ -874,6 +981,7 @@ fn parse_typed_compact_design_parameter(
             record_index,
             source_ordinal,
             source_kind,
+            document: None,
             owner_record_index,
             family_discriminator: None,
             discriminator_offset: 0,
@@ -927,6 +1035,7 @@ fn parse_legacy_design_parameter(
             record_index,
             source_ordinal,
             source_kind,
+            document: None,
             owner_record_index: Some(owner_record_index),
             family_discriminator: None,
             discriminator_offset: 0,
