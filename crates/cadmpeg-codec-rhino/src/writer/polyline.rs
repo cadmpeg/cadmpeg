@@ -47,7 +47,7 @@ pub(super) fn convert(
         )
         .map_err(|failure| match failure {
             cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit) => {
-                WriteError::Fail(cadmpeg_core::CodecError::ResourceLimit(limit))
+                WriteError::Encode(limit.into())
             }
             _ => fail(),
         })

@@ -23,6 +23,9 @@ pub(super) fn regenerate(
             && entry
                 .entry_name()
                 .starts_with(crate::manifest::GENERATED_DESIGN_ASSET_FOLDER)
+            && target.model.configurations.iter().any(|configuration| {
+                configuration.native_ref.as_deref() == Some(entry.id().as_str())
+            })
     });
     let previous_table = match (previous_tables.next(), previous_tables.next()) {
         (Some(table), None) => Some(table),
@@ -179,18 +182,37 @@ pub(super) fn regenerate(
         if let Some(active) = active {
             payload.insert("active".into(), Value::String(active));
         }
+        let name = if let Some(table) = previous_table {
+            table.entry_name().clone()
+        } else {
+            let mut suffix = 0usize;
+            loop {
+                let discriminator = if suffix == 0 {
+                    String::new()
+                } else {
+                    format!("-{suffix}")
+                };
+                let candidate = format!(
+                    "{}/DesignConfigurationTable.generated{discriminator}.dsgcfg",
+                    crate::manifest::GENERATED_DESIGN_ASSET_FOLDER
+                );
+                if !previous
+                    .iter()
+                    .any(|entry| entry.entry_name() == &candidate)
+                {
+                    break candidate;
+                }
+                suffix = suffix.checked_add(1).ok_or_else(|| {
+                    CodecError::UnsupportedContent(
+                        "F3D configuration table name space exhausted".into(),
+                    )
+                })?;
+            }
+        };
         native
             .design_configurations
             .push(DesignConfiguration::try_new(
-                previous_table.map_or_else(
-                    || {
-                        format!(
-                            "{}/DesignConfigurationTable.generated.dsgcfg",
-                            crate::manifest::GENERATED_DESIGN_ASSET_FOLDER
-                        )
-                    },
-                    |table| table.entry_name().clone(),
-                ),
+                name,
                 DesignConfigurationKind::Table,
                 order,
                 payload,
@@ -244,6 +266,21 @@ pub(super) fn regenerate(
                 Vec::new(),
                 payload,
             )?);
+    }
+    for entry in &previous {
+        if entry.kind() == DesignConfigurationKind::Table
+            && entry.variants().is_empty()
+            && entry.active().is_none()
+            && entry
+                .entry_name()
+                .starts_with(crate::manifest::GENERATED_DESIGN_ASSET_FOLDER)
+            && !native
+                .design_configurations
+                .iter()
+                .any(|written| written.entry_name() == entry.entry_name())
+        {
+            native.design_configurations.push(entry.clone());
+        }
     }
     for entry in &previous {
         if entry.kind() != DesignConfigurationKind::Rule

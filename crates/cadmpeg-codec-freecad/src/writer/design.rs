@@ -74,24 +74,29 @@ pub(in crate::writer) fn spreadsheet_expression(
     parameter: &cadmpeg_ir::features::DesignParameter,
     names: &HashMap<String, String>,
 ) -> String {
-    if let Some(cadmpeg_ir::features::ParameterValue::String(value)) = &parameter.value {
-        if parameter.expression
-            == cadmpeg_ir::features::Expression::literal(
-                &cadmpeg_ir::features::ParameterValue::String(value.clone()),
-            )
-        {
-            // FreeCAD text cells carry a leading quote; without it the
-            // content re-decodes as a bare identifier with no value.
-            return format!("'{value}");
-        }
+    let literal = super::parameters::cell_literal_value(parameter);
+    if let Some(cadmpeg_ir::features::ParameterValue::String(value)) = &literal {
+        return format!("'{value}");
     }
-    super::parameters::render_expression_lossy(ir, parameter, names)
+    if let Some(rendered) = super::parameters::render_expression(ir, parameter, names) {
+        if literal.is_some() || rendered.starts_with('=') || rendered.is_empty() {
+            return rendered;
+        }
+        return format!("={rendered}");
+    }
+    let rendered = super::parameters::render_expression_lossy(ir, parameter, names);
+    if rendered.starts_with('\'') {
+        rendered
+    } else {
+        format!("'{rendered}")
+    }
 }
 
 pub(super) fn spreadsheets(
     ir: &CadIr,
     objects: &mut Vec<Object>,
     names: &mut HashMap<String, String>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), CodecError> {
     for sheet in &ir.model.spreadsheets {
         let name = names
@@ -121,15 +126,14 @@ pub(super) fn spreadsheets(
                 .ok_or_else(|| {
                     CodecError::malformed("spreadsheet cell references absent parameter")
                 })?;
+            let cell_content = spreadsheet_expression(ir, parameter, names);
+            super::parameters::report_cell_normalization(parameter, &cell_content, losses);
             let mut attributes: Vec<(&str, String)> = parameter
                 .properties
                 .iter()
                 .map(|(key, value)| (key.as_str(), value.clone()))
                 .collect();
-            attributes.extend([
-                ("address", cell.address.a1()),
-                ("content", spreadsheet_expression(ir, parameter, names)),
-            ]);
+            attributes.extend([("address", cell.address.a1()), ("content", cell_content)]);
             let symbol = names
                 .get(&format!("parameter-path:{}", parameter.id))
                 .unwrap_or(&parameter.name);
@@ -209,4 +213,84 @@ pub(super) fn spreadsheets(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cadmpeg_ir::features::{
+        DesignParameter, Expression, ExpressionToken, ParameterId, ParameterValue,
+    };
+
+    fn parameter(expression: Expression, value: Option<ParameterValue>) -> DesignParameter {
+        DesignParameter {
+            product_definition: None,
+            id: ParameterId::mint("cadir:model:parameter#text").unwrap(),
+            owner: None,
+            ordinal: 0,
+            name: "Text".into(),
+            expression,
+            display: None,
+            value,
+            driving: true,
+            properties: Default::default(),
+            pmi: None,
+            native_ref: None,
+        }
+    }
+
+    #[test]
+    fn spreadsheet_text_literal_uses_its_expression_value() {
+        let parameter = parameter(
+            Expression::text(r#""\u0061""#),
+            Some(ParameterValue::String("old".into())),
+        );
+        assert_eq!(
+            spreadsheet_expression(&CadIr::empty(), &parameter, &HashMap::new()),
+            "'a"
+        );
+    }
+
+    #[test]
+    fn spreadsheet_marks_formulas_and_keeps_missing_references_as_text() {
+        let mut ir = CadIr::empty();
+        let target = ParameterId::mint("cadir:model:parameter#width").unwrap();
+        let mut dependency = parameter(Expression::text("2"), None);
+        dependency.id = target.clone();
+        dependency.name = "Width".into();
+        ir.model.parameters.push(dependency);
+        let formula = parameter(
+            Expression {
+                tokens: vec![
+                    ExpressionToken::Parameter(target.clone()),
+                    ExpressionToken::Text(" * 2".into()),
+                ],
+            },
+            None,
+        );
+        let names = HashMap::from([
+            (format!("parameter-owner:{target}"), "Sheet".to_owned()),
+            (format!("parameter-path:{target}"), "Width".to_owned()),
+        ]);
+        assert_eq!(
+            spreadsheet_expression(&ir, &formula, &names),
+            "=Sheet.Width * 2"
+        );
+        let missing = ParameterId::mint("cadir:model:parameter#missing").unwrap();
+        let unresolved = parameter(
+            Expression {
+                tokens: vec![
+                    ExpressionToken::Text("2*".into()),
+                    ExpressionToken::Parameter(missing.clone()),
+                ],
+            },
+            None,
+        );
+        assert_eq!(
+            spreadsheet_expression(&ir, &unresolved, &names),
+            format!("'2*{missing}")
+        );
+        let literal = parameter(Expression::text("2 mm"), None);
+        assert_eq!(spreadsheet_expression(&ir, &literal, &names), "2 mm");
+    }
 }

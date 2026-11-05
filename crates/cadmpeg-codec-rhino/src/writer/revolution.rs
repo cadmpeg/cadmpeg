@@ -2,8 +2,8 @@
 //! Native revolution construction from held procedural surfaces.
 
 use super::{
-    revolution_surface_payload, CadIr, CodecError, RevolutionSurface, SurfacePayload,
-    WritableObjectCurve, WriteError, MAX_ARC_SPAN_EXCESS,
+    revolution_surface_payload, CadIr, RevolutionSurface, SurfacePayload, WritableObjectCurve,
+    WriteError, MAX_ARC_SPAN_EXCESS,
 };
 
 pub(super) fn held_revolution(
@@ -53,7 +53,9 @@ pub(super) fn held_revolution(
     let Some(SolvedCurveGeometry::Nurbs(nurbs)) = curve.geometry.solved() else {
         return Ok(None);
     };
-    let degree = usize::try_from(nurbs.degree()).map_err(CodecError::malformed)?;
+    let Ok(degree) = usize::try_from(nurbs.degree()) else {
+        return Ok(None);
+    };
     let profile_domain = [nurbs.knots()[degree], nurbs.knots()[nurbs.pole_count()]];
     let transposed = !*revolution.transposed();
     let domain = if transposed {
