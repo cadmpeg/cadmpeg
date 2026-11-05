@@ -62,22 +62,60 @@ pub(super) fn regenerate(
     })?;
     let form = record.field("form")?.as_i64()?;
     let interpretation = record.field("interpretation")?.as_i64()?;
-    if !matches!((form, interpretation), (11, 1) | (12, 2)) {
+    if !matches!((form, interpretation), (11, 1) | (12, 2) | (13, 3)) {
         return None;
     }
     let positions = points.iter().map(|point| point.get()).collect::<Vec<_>>();
     if interpretation == 1 && positions.iter().any(|point| point.z != positions[0].z) {
         return None;
     }
+    let vectors = if interpretation == 3 {
+        let directory = ir
+            .native
+            .namespace("iges")?
+            .arenas()
+            .get("entities")?
+            .iter()
+            .find(|entity| entity.id() == source_id)?;
+        if directory.field("transform")?.as_i64()? != 0 {
+            return None;
+        }
+        let tuples = record.field("tuples")?;
+        let tuples = tuples.as_array()?;
+        if tuples.len() != positions.len() {
+            return None;
+        }
+        Some(
+            tuples
+                .iter()
+                .map(|tuple| {
+                    let tuple = tuple.as_array()?;
+                    if tuple.len() != 6 {
+                        return None;
+                    }
+                    Some([
+                        FiniteReal::new(tuple[3].as_f64()?)?,
+                        FiniteReal::new(tuple[4].as_f64()?)?,
+                        FiniteReal::new(tuple[5].as_f64()?)?,
+                    ])
+                })
+                .collect::<Option<Vec<_>>>()?,
+        )
+    } else {
+        None
+    };
     let mut values = vec![interpretation.to_string(), positions.len().to_string()];
     if interpretation == 1 {
         values.push(number(FiniteReal::new(positions[0].z)?));
     }
-    for point in positions {
+    for (index, point) in positions.into_iter().enumerate() {
         values.push(number(FiniteReal::new(point.x)?));
         values.push(number(FiniteReal::new(point.y)?));
-        if interpretation == 2 {
+        if interpretation != 1 {
             values.push(number(FiniteReal::new(point.z)?));
+        }
+        if let Some(vectors) = &vectors {
+            values.extend(vectors[index].iter().copied().map(number));
         }
     }
     let mut entity = Entity {

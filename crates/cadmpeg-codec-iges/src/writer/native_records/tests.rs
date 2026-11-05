@@ -1953,3 +1953,28 @@ fn copious_linear_path_uses_current_curve_points() {
     };
     assert_eq!(curve.control_points()[1].get().y, 0.5);
 }
+
+#[test]
+fn copious_linear_path_retains_typed_vectors() {
+    use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use std::io::Cursor;
+    let bytes = owned_test_file(&[OwnedTestEntity {
+        entity_type: 106,
+        form: 13,
+        label: "PATH".into(),
+        status: "00000000",
+        parameters: "106,3,2,0,0,0,1,0,0,2,0,0,0,1,0;".into(),
+    }]);
+    let decoded = crate::IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let before = &decoded.ir().native.namespace("iges").unwrap().arenas()["copious_data"][0];
+    let output = super::super::synthesize(decoded.ir(), crate::IgesVersion::V5_3).unwrap();
+    assert_eq!(output.counts.get("106_copious_data"), Some(&1));
+    let after = crate::IgesCodec
+        .decode(&mut Cursor::new(output.bytes), &DecodeOptions::default())
+        .unwrap();
+    let record = &after.ir().native.namespace("iges").unwrap().arenas()["copious_data"][0];
+    assert_eq!(record.field("tuples"), before.field("tuples"));
+}
