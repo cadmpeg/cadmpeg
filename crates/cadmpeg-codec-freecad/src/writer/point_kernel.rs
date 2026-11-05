@@ -164,11 +164,32 @@ pub(super) fn write<'a>(
         let Some(object) = objects.iter_mut().find(|object| object.name == *name) else {
             continue;
         };
+        let prefix = crate::native::model_id("point", &property.id, "");
+        let siblings: Vec<_> = properties
+            .iter()
+            .filter(|other| other.owner == property.owner && other.type_name == property.type_name)
+            .collect();
         let matching = |point: &&Point| {
             point.source_object.as_ref().is_some_and(|source| {
                 source.format.as_str() == "fcstd"
                     && source.object_id.as_str() == property.owner
                     && source.instance_path.is_empty()
+                    && (point
+                        .id
+                        .as_str()
+                        .strip_prefix(&prefix)
+                        .is_some_and(|index| index.parse::<usize>().is_ok())
+                        || (siblings
+                            .first()
+                            .is_some_and(|first| first.id == property.id)
+                            && !siblings.iter().any(|other| {
+                                let other_prefix = crate::native::model_id("point", &other.id, "");
+                                point
+                                    .id
+                                    .as_str()
+                                    .strip_prefix(&other_prefix)
+                                    .is_some_and(|index| index.parse::<usize>().is_ok())
+                            })))
             })
         };
         let mut points = Vec::new();
@@ -178,7 +199,6 @@ pub(super) fn write<'a>(
             "FreeCAD point-kernel points",
         )?;
         points.extend(ir.model.points.iter().filter(matching));
-        let prefix = crate::native::model_id("point", &property.id, "");
         points.sort_by_key(|point| {
             let index = point
                 .id
@@ -187,26 +207,6 @@ pub(super) fn write<'a>(
                 .and_then(|index| index.parse::<usize>().ok());
             (index.is_none(), index)
         });
-        let siblings = properties
-            .iter()
-            .filter(|other| other.owner == property.owner && other.type_name == property.type_name)
-            .count();
-        if siblings != 1 {
-            object.properties.shift_remove(&property.name);
-            let first = properties.iter().find(|other| {
-                other.owner == property.owner && other.type_name == property.type_name
-            });
-            if first.is_some_and(|first| first.id == property.id) {
-                exclude(
-                    ctx,
-                    points.iter().copied().map(|point| point.id.as_str()),
-                    &mut excluded,
-                    losses,
-                    "the owner has multiple indistinguishable kernels",
-                )?;
-            }
-            continue;
-        }
         let Some(original_file) = property
             .side_entries()
             .first()
