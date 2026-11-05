@@ -116,20 +116,42 @@ fn validate_recipe_class_headers<'a>(
 pub(crate) fn write_semantic(
     target: &CadIr,
     source_image: &[u8],
+    limits: cadmpeg_core::decode::ResourceLimits,
     writer: &mut dyn Write,
     notes: &mut Vec<String>,
 ) -> Result<(), CodecError> {
-    // Semantic patching reserializes native records under the default decode
-    // policy, the same policy the accompanied document was decoded with. The
-    // patch oracle compares the baseline-derived document against that
-    // document, so a policy mismatch would decline every patch whose design
-    // content decodes policy-dependently.
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let (encode_ctx, source_root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        source_image,
+    let policy = cadmpeg_core::decode::DecodePolicy {
+        limits,
+        ..Default::default()
+    };
+    let context = cadmpeg_core::decode::DecodeContext::for_encode(&arena, &policy);
+    let session = cadmpeg_core::encode::EncodeSession::from_context(&context)?;
+    let (encode_ctx, source_root) = cadmpeg_core::decode::DecodeContext::for_encode_session_root(
         &arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
+        &session,
+        source_image,
     )?;
+    let result = write_with_context(
+        target,
+        source_image,
+        writer,
+        notes,
+        &encode_ctx,
+        source_root,
+    );
+    session.finish()?;
+    result
+}
+
+fn write_with_context<'a>(
+    target: &CadIr,
+    source_image: &[u8],
+    writer: &mut dyn Write,
+    notes: &mut Vec<String>,
+    encode_ctx: &cadmpeg_core::decode::DecodeContext<'a>,
+    source_root: cadmpeg_core::decode::View<'a>,
+) -> Result<(), CodecError> {
     let target_native = f3d_native(target)?;
     if let Some(native) = target_native.as_ref() {
         validate_configuration_projection(target, native)?;
@@ -137,7 +159,7 @@ pub(crate) fn write_semantic(
     } else {
         validate_assembly_projection(target, None)?;
     }
-    let baseline = decode::decode_patch_baseline(&encode_ctx, source_root)?;
+    let baseline = decode::decode_patch_baseline(encode_ctx, source_root)?;
     let baseline_native = baseline.native_layout.as_ref();
     let natives = PatchNatives {
         baseline: baseline_native,
@@ -242,7 +264,7 @@ pub(crate) fn write_semantic(
     let sketch_relation_edits = validate_sketch_relation_edits(natives)?;
     let persistent_reference_edits = validate_persistent_reference_edits(natives)?;
     let construction_recipe_edits = validate_construction_recipe_edits(natives)?;
-    validate_recipe_class_headers(&encode_ctx, source_root, &construction_recipe_edits)?;
+    validate_recipe_class_headers(encode_ctx, source_root, &construction_recipe_edits)?;
     let body_member_edits = validate_body_member_edits(natives)?;
     let entity_header_edits = validate_entity_header_edits(natives)?;
     let design_type_edits = validate_design_type_edits(natives)?;
@@ -491,7 +513,7 @@ pub(crate) fn write_semantic(
         supported
             .wire_topologies
             .clone_from(&target_native.wire_topologies);
-        supported.store(&encode_ctx, supported_target.native.namespace_mut("f3d"))?;
+        supported.store(encode_ctx, supported_target.native.namespace_mut("f3d"))?;
     }
     if decode::document_local_sha256(&supported_target)? != decode::document_local_sha256(target)? {
         return Err(CodecError::UnsupportedContent(
@@ -729,7 +751,7 @@ pub(crate) fn write_semantic(
         };
         let expanded = zstd.then(|| bytes.clone());
         if let Some(cage) = user_knot_edits.remove(&name) {
-            bytes = crate::tsm::user_knots::rewrite(&encode_ctx, &name, &bytes, &cage)?;
+            bytes = crate::tsm::user_knots::rewrite(encode_ctx, &name, &bytes, &cage)?;
         }
         if let Some(configuration) = configuration_edits.get(&name) {
             bytes.clone_from(configuration);

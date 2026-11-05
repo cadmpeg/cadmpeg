@@ -170,7 +170,7 @@ impl F3dCodec {
             },
         );
         if !replays {
-            writer::patch::write_semantic(ir, data, writer, notes)?;
+            writer::patch::write_semantic(ir, data, limits, writer, notes)?;
             return Ok(PreservedWritePath::Patched);
         }
         writer.write_all(data)?;
