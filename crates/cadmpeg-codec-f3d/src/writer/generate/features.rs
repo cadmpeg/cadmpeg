@@ -101,7 +101,7 @@ fn select(target: &CadIr) -> Vec<Primitive> {
                 op,
             }) => {
                 let PrimitiveSolidKind::Cylinder {
-                    radius: RadialDimension::Diameter(diameter),
+                    radius,
                     height,
                     angle: Dimension::Literal(angle),
                 } = solid.kind()
@@ -111,6 +111,24 @@ fn select(target: &CadIr) -> Vec<Primitive> {
                 if *angle != cadmpeg_ir::scalar::Angle::FULL_TURN {
                     continue;
                 }
+                let diameter = match radius {
+                    RadialDimension::Diameter(diameter) => {
+                        scalar(target, &feature.id, "Diameter", 1, diameter)
+                    }
+                    RadialDimension::Radius(Dimension::Literal(radius)) => {
+                        let value = radius.get() / 10.0 * 2.0;
+                        (value.is_finite() && value != 0.0 && (value * 10.0).is_finite()).then_some(
+                            Scalar {
+                                kind: "Diameter",
+                                value,
+                                parameter: None,
+                                name: None,
+                                expression: None,
+                            },
+                        )
+                    }
+                    _ => None,
+                };
                 (
                     "CylinderPrimitive",
                     vec![
@@ -118,7 +136,7 @@ fn select(target: &CadIr) -> Vec<Primitive> {
                             Some(value) => value,
                             None => continue,
                         },
-                        match scalar(target, &feature.id, "Diameter", 1, diameter) {
+                        match diameter {
                             Some(value) => value,
                             None => continue,
                         },
