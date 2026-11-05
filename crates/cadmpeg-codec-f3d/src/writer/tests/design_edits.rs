@@ -349,7 +349,7 @@ fn recipe_identity_overlapping_indexed_class_declines_patch() {
 
     let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
     let decoded = F3dCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .unwrap();
     let mut edited = decoded.ir().clone();
     crate::test_support::native_test::update_f3d_native(&mut edited, |native| {
@@ -370,8 +370,21 @@ fn recipe_identity_overlapping_indexed_class_declines_patch() {
         plan.report().write_path(),
         WritePath::Synthesized { .. }
     ));
-    assert!(matches!(plan.report().synthesis_cause(),
-        Some(SynthesisCause::PatchDeclined { reason }) if reason.contains("overlaps an indexed record class")));
+    assert!(matches!(
+        plan.report().synthesis_cause(),
+        Some(SynthesisCause::SourceUnrepresented { .. })
+    ));
+    let error = crate::writer::patch::write_semantic(
+        &edited,
+        &source,
+        cadmpeg_core::decode::ResourceLimits::desktop(),
+        &mut Vec::new(),
+        &mut Vec::new(),
+    )
+    .expect_err("the indexed class cannot be patched as a recipe identity");
+    assert!(error
+        .to_string()
+        .contains("overlaps an indexed record class"));
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).unwrap();
     let output = F3dCodec
@@ -393,7 +406,7 @@ fn lost_edge_index_edit_declines_patch() {
     use cadmpeg_ir::report::export::WritePath;
     let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
     let decoded = F3dCodec
-        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .unwrap();
     let mut edited = decoded.ir().clone();
     crate::test_support::native_test::update_f3d_native(&mut edited, |native| {
@@ -409,8 +422,21 @@ fn lost_edge_index_edit_declines_patch() {
         plan.report().write_path(),
         WritePath::Synthesized { .. }
     ));
-    assert!(matches!(plan.report().synthesis_cause(),
-        Some(SynthesisCause::PatchDeclined { reason }) if reason.contains("changes an indexed record identity")));
+    assert!(matches!(
+        plan.report().synthesis_cause(),
+        Some(SynthesisCause::SourceUnrepresented { .. })
+    ));
+    let error = crate::writer::patch::write_semantic(
+        &edited,
+        &source,
+        cadmpeg_core::decode::ResourceLimits::desktop(),
+        &mut Vec::new(),
+        &mut Vec::new(),
+    )
+    .expect_err("an indexed lost-edge identity cannot be patched in place");
+    assert!(error
+        .to_string()
+        .contains("changes an indexed record identity"));
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).unwrap();
     let output = F3dCodec
