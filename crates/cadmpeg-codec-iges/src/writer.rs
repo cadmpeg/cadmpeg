@@ -142,11 +142,6 @@ const _: () = assert!(
         && is_ascii_text(WRITER_AUTHOR_ORGANIZATION)
 );
 
-const WRITER_ENTITY_TYPES: &[u32] = &[
-    100, 102, 104, 108, 110, 116, 120, 122, 123, 124, 126, 128, 134, 136, 138, 141, 142, 143, 144,
-    146, 148, 186, 190, 192, 194, 196, 198, 314, 406, 418, 502, 504, 508, 510, 514,
-];
-
 mod admission;
 mod brep_order;
 use brep_order::{brep_sense, edge_use_positions, edge_use_sense, pole_use_order};
@@ -154,10 +149,13 @@ mod appearance;
 mod attributes;
 mod degrade;
 mod display;
+mod feature_order;
 mod levels;
 mod native_records;
 mod pcurve_admission;
 pub(crate) mod target;
+mod units;
+mod version_support;
 
 fn body(
     bytes: Vec<u8>,
@@ -693,6 +691,7 @@ fn synthesize_with_admission(
     if let Some(remap) = ensure_version_support(&mut graph.entities, version, &mut graph.losses)? {
         remap_presentations(&mut graph.presentations, &remap);
     }
+    units::ensure_nonempty(&mut graph.entities, version);
     native_export.regenerated.retain(|id| {
         graph
             .entities
@@ -709,6 +708,7 @@ fn synthesize_with_admission(
         &graph.presentations,
         version,
     ));
+    feature_order::order(ir, &mut graph.entities, &mut graph.presentations)?;
     let emitted = graph
         .entities
         .iter()
@@ -877,7 +877,6 @@ fn synthesize_with_admission(
                 .note("the document holds no geometry that IGES can encode"),
         );
     }
-    let minimum_resolution = ir.tolerances.linear.map(|value| value.get());
     let counts = entity_counts(&graph.entities);
     let mut coverage = SYNTHESIS_COVERAGE;
     coverage.features = feature_coverage;
@@ -950,7 +949,7 @@ fn synthesize_with_admission(
             &graph.entities,
             &graph.presentations,
             version,
-            minimum_resolution,
+            ir.tolerances.linear.map(|value| value.get()),
         )?,
         counts,
         losses: graph.losses,
@@ -1398,124 +1397,6 @@ fn reject_owned_wire_topology(ir: &CadIr) -> Result<(), CodecError> {
         return Err(CodecError::UnsupportedContent(message));
     }
     Ok(())
-}
-
-impl crate::IgesVersion {
-    fn admits(self, entity: &Entity) -> bool {
-        if matches!(
-            entity.type_code,
-            124 | 125
-                | 106
-                | 132
-                | 150
-                | 152
-                | 154
-                | 156
-                | 158
-                | 160
-                | 162
-                | 164
-                | 168
-                | 180
-                | 182
-                | 184
-                | 202
-                | 204
-                | 206
-                | 208
-                | 210
-                | 212
-                | 213
-                | 214
-                | 216
-                | 218
-                | 220
-                | 222
-                | 228
-                | 230
-                | 302
-                | 304
-                | 306
-                | 308
-                | 310
-                | 312
-                | 316
-                | 320
-                | 322
-                | 402
-                | 404
-                | 406
-                | 408
-                | 410
-                | 412
-                | 414
-                | 416
-                | 420
-                | 422
-                | 430
-        ) || crate::profile::macro_instance_type(i64::from(entity.type_code))
-        {
-            return crate::profile::envelope_a_admits(
-                i64::from(entity.type_code),
-                entity.form,
-                crate::version::VersionFlag::from_write_version(self).global_table(),
-            );
-        }
-        if !WRITER_ENTITY_TYPES.contains(&entity.type_code) {
-            return false;
-        }
-        match self {
-            crate::IgesVersion::V4_0 => matches!(
-                (entity.type_code, entity.form),
-                (
-                    100 | 102 | 108 | 110 | 116 | 120 | 122 | 124 | 126 | 128 | 142 | 144 | 314,
-                    0
-                ) | (104, 0 | 2 | 3)
-                    | (134 | 136 | 138 | 418, 0)
-                    | (146 | 148, 0..=34)
-                    | (406, 15)
-            ),
-            crate::IgesVersion::V5_0 => matches!(
-                (entity.type_code, entity.form),
-                (
-                    100 | 102
-                        | 108
-                        | 110
-                        | 116
-                        | 120
-                        | 122
-                        | 124
-                        | 126
-                        | 128
-                        | 141
-                        | 142
-                        | 143
-                        | 144
-                        | 314,
-                    0
-                ) | (104, 1..=3)
-                    | (134 | 136 | 138 | 418, 0)
-                    | (146 | 148, 0..=34)
-                    | (406, 15)
-            ),
-            crate::IgesVersion::V5_1 | crate::IgesVersion::V5_2 | crate::IgesVersion::V5_3 => {
-                match entity.type_code {
-                    100 | 102 | 110 | 116 | 120 | 122 | 123 | 124 | 126 | 128 | 141 | 142 | 143
-                    | 144 | 186 | 314 => entity.form == 0,
-                    104 => matches!(entity.form, 0 | 2 | 3),
-                    190 | 192 | 194 | 196 | 198 => entity.form == 1,
-                    502 | 504 | 508 | 510 => entity.form == 1,
-                    406 => entity.form == 15,
-                    134 | 136 | 138 | 418 => entity.form == 0,
-                    146 | 148 => (0..=34).contains(&entity.form),
-                    514 => {
-                        entity.form == 1 || (entity.form == 2 && self == crate::IgesVersion::V5_3)
-                    }
-                    _ => false,
-                }
-            }
-        }
-    }
 }
 
 fn ensure_version_support(
@@ -3480,9 +3361,10 @@ fn topology_entities(
                 ))
             })?;
         let loops = face_loop_order(ir, face)?;
-        let bounded = loops
-            .iter()
-            .all(|loop_| face.loop_role(&loop_.id) == LoopBoundaryRole::Unspecified);
+        let bounded = !loops.is_empty()
+            && loops
+                .iter()
+                .all(|loop_| face.loop_role(&loop_.id) == LoopBoundaryRole::Unspecified);
         for loop_ in loops {
             boundaries.push((
                 surface_index,
@@ -3632,9 +3514,10 @@ fn topology_entities(
     for face in &faces {
         let surface_index = surface_indices[face.surface.as_str()];
         let loops = face_loop_order(ir, face)?;
-        let bounded = loops
-            .iter()
-            .all(|loop_| face.loop_role(&loop_.id) == LoopBoundaryRole::Unspecified);
+        let bounded = !loops.is_empty()
+            && loops
+                .iter()
+                .all(|loop_| face.loop_role(&loop_.id) == LoopBoundaryRole::Unspecified);
         let mut parameters = if bounded {
             let representation = loops
                 .first()
@@ -3936,9 +3819,9 @@ fn validate_trimmed_sheet_topology<'a>(
             })?;
         surface_entities_for_ir(ctx, ir, surface, 0, version)?;
         let loops = face_loop_order(ir, face)?;
-        if loops.is_empty() {
+        if loops.is_empty() && !admission::natural_domain_face(ir, face) {
             return Err(CodecError::UnsupportedContent(format!(
-                "IGES semantic writer requires at least one boundary loop per face ({})",
+                "IGES semantic writer requires a boundary loop or finite NURBS domain ({})",
                 face.id
             )));
         }
@@ -5812,6 +5695,7 @@ fn entity_counts(entities: &[Entity]) -> BTreeMap<String, usize> {
             144 => "144_trimmed_surface",
             186 => "186_manifold_solid_brep",
             314 => "314_color_definition",
+            316 => "316_units_data",
             322 => "322_attribute_definition",
             406 if entity.form == 15 => "406_name_property",
             406 => "406_property",
