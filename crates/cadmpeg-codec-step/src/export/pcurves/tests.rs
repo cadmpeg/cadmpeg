@@ -684,3 +684,55 @@ fn reflected_ellipse_uses_follow_edge_ranges_and_loop_shifts() {
         assert!((after.v - before.v).abs() < EPS_KNOT);
     }
 }
+
+#[test]
+fn seam_curve_keeps_two_associations_and_names_the_extra_use() {
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let edge_id = ir.model.edges[0].id.clone();
+    let curve_id = ir.model.edges[0].curve().unwrap().clone();
+    ir.model.edges[0].set_param_range(Some(ParameterInterval::new([TAU - 1.0, TAU]).unwrap()));
+    ir.model
+        .curves
+        .iter_mut()
+        .find(|curve| curve.id == curve_id)
+        .unwrap()
+        .geometry = circle();
+    let pcurve_id = cadmpeg_ir::ids::PcurveId::mint("test:model:pcurve#shared").unwrap();
+    ir.model.pcurves.push(cadmpeg_ir::geometry::pcurve::Pcurve {
+        native_ref: None,
+        id: pcurve_id.clone(),
+        geometry: spline(),
+        metadata: PcurveMetadata::default(),
+    });
+    let uses: Vec<_> = (0..3)
+        .map(|_| cadmpeg_ir::topology::PcurveUse {
+            pcurve: pcurve_id.clone(),
+            isoparametric: None,
+            parameter_range: Some(DirectedParameterRange::new([-1.0, 0.0]).unwrap()),
+        })
+        .collect();
+    let uses = uses
+        .iter()
+        .enumerate()
+        .map(|(index, use_)| super::super::PcurveUse {
+            use_,
+            coedge: ir.model.coedges[index].id.as_str(),
+            surface: ir.model.surfaces[usize::from(index == 2)].id.as_str(),
+            face: ir.model.faces[usize::from(index == 2)].id.as_str(),
+        })
+        .collect();
+    let mut writer = builder(&ir);
+    writer.emit_edge_curve(edge_id.as_str(), uses).unwrap();
+    assert!(writer.losses.iter().any(|loss| {
+        loss.code == crate::loss::StepLossCode::PcurveAssociationLimit.kind()
+            && loss.message.contains(ir.model.coedges[2].id.as_str())
+            && loss.message.contains(pcurve_id.as_str())
+    }));
+    let lines = writer.emitter.into_lines().unwrap();
+    let seam = lines
+        .iter()
+        .find(|line| line.contains("SEAM_CURVE("))
+        .unwrap();
+    let associated = seam.split("),").next().unwrap().rsplit_once('(').unwrap().1;
+    assert_eq!(associated.split(',').count(), 2);
+}
