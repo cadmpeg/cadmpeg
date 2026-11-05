@@ -1638,6 +1638,15 @@ fn damaged_units_data_retains_its_typed_values() {
         source_directory(decoded.ir(), before),
         source_directory(after.ir(), &records[0])
     );
+    let source = decoded.ir().native.namespace("iges").unwrap().arenas()["entities"]
+        .iter()
+        .find(|e| e.id() == "iges:entity:directory#3")
+        .unwrap();
+    let output = after.ir().native.namespace("iges").unwrap().arenas()["entities"]
+        .iter()
+        .find(|e| e.id() == "iges:entity:directory#3")
+        .unwrap();
+    assert_eq!(source.field("use_flag"), output.field("use_flag"));
 }
 
 #[test]
