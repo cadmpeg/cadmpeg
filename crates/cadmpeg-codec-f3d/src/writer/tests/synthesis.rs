@@ -13,6 +13,7 @@ use crate::F3dCodec;
 mod box_placement;
 mod configuration_features;
 mod cylinder_radius;
+mod limits;
 mod neutral_text;
 mod sketch_nurbs;
 mod write_errors;
