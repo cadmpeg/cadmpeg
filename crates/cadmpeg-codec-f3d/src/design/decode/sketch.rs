@@ -61,6 +61,8 @@ fn entity_meta_scope(bulk_scope: &str) -> Option<String> {
 /// stream interval even though its generic reference table does not repeat
 /// the entity suffix.
 pub(crate) fn decode_sketch_placements(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    output: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
     entities: &[DesignEntityHeader],
@@ -89,7 +91,6 @@ pub(crate) fn decode_sketch_placements(
         .iter()
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
-        let bytes = scan.entry_bytes(&entry.name)?;
         let Some(metadata) = metadata_for_bulk_stream(scan, &entry.name)? else {
             continue;
         };
@@ -97,7 +98,12 @@ pub(crate) fn decode_sketch_placements(
         let Some((key, _)) = record_offsets.get_key_value(&scope) else {
             continue;
         };
-        for (entity_suffix, visibility) in decode_sketch_visibilities_in_stream(bytes, &metadata)? {
+        let source = scan
+            .entry_view(&entry.name)
+            .ok_or_else(|| CodecError::malformed("F3D sketch stream has no source view"))?;
+        for (entity_suffix, visibility) in
+            decode_sketch_visibilities_with_parts(ctx, output, source, &entry.name, &metadata)?
+        {
             if visibilities.contains_key(&(key.as_str(), entity_suffix)) {
                 return Err(crate::design::text::malformed_design(format_args!(
                     "F3D Design stream {} repeats sketch visibility for entity {entity_suffix}",
@@ -265,6 +271,7 @@ const SKETCH_CONTAINER_MEMBER_VERSION: u32 = 4;
 /// Decode the direct display flag in every current sketch container's typed
 /// Geometry member. Other sketch-container versions do not expose this member
 /// layout and therefore leave neutral visibility unknown.
+#[cfg(test)]
 fn decode_sketch_visibilities_in_stream(
     bytes: &[u8],
     metadata: &crate::metastream::MetaStream,
@@ -282,96 +289,110 @@ fn decode_sketch_visibilities_in_stream(
         if frame.design_type.version != CURRENT_SKETCH_CONTAINER_VERSION {
             continue;
         }
-        if frame.design_type.module != DESIGN_MODULE_SKETCH
-            || !frame
-                .design_type
-                .base_type_guid
-                .value()
-                .map(crate::records::mesh::DesignRelaxedGuidText::as_str)
-                .is_some_and(|base| base.eq_ignore_ascii_case(SKETCH_CONTAINER_MEMBER_TYPE_GUID))
-        {
-            return Err(crate::design::text::malformed_design(format_args!(
-                "F3D sketch container {} has incompatible registration metadata",
-                frame.entity_id
-            )));
-        }
-        let Some(NamedEntityHeader {
-            entity_id,
-            end: header_end,
-            ..
-        }) = (match parse_settled_entity_header(&bytes[..frame.end], frame.start) {
-            Some(header) => Some(header),
-            None => parse_genesis_entity_header(&bytes[..frame.end], frame.start),
-        })
-        else {
-            return Err(crate::design::text::malformed_design(format_args!(
-                "F3D sketch container {} has an invalid entity header",
-                frame.entity_id
-            )));
-        };
-        let entity_suffix = entity_id.suffix();
-        if entity_suffix != frame.entity_id {
-            return Err(crate::design::text::malformed_design(format_args!(
-                "F3D sketch container {} disagrees with its entity header {entity_suffix}",
-                frame.entity_id
-            )));
-        }
-        let member_at = metadata
-            .secondary_records
-            .iter()
-            .find(|record| record.entity_id == frame.entity_id)
-            .and_then(|record| usize::try_from(record.bulk_offset).ok())
-            .filter(|offset| *offset >= header_end && *offset < frame.end)
-            .ok_or_else(|| {
-                crate::design::text::malformed_design(format_args!(
-                    "F3D sketch container {entity_suffix} has no typed Geometry member"
-                ))
-            })?;
-        let Some((class_tag, after_tag)) =
-            lp_ascii_filtered_view(bytes, member_at, 3..=3, u8::is_ascii_digit)
-        else {
-            return Err(crate::design::text::malformed_design(format_args!(
-                "F3D sketch container {entity_suffix} has an invalid Geometry-member class tag"
-            )));
-        };
-        let member_type = class_tag
-            .parse::<usize>()
-            .ok()
-            .and_then(|tag| tag.checked_sub(256))
-            .and_then(|ordinal| metadata.types.get(ordinal));
-        if after_tag != member_at + 7
-            || !member_type.is_some_and(|member_type| {
-                member_type
-                    .type_guid
-                    .as_str()
-                    .eq_ignore_ascii_case(SKETCH_CONTAINER_MEMBER_TYPE_GUID)
-                    && member_type.version == SKETCH_CONTAINER_MEMBER_VERSION
-                    && member_type.module == "Geometry"
-                    && member_type
-                        .base_type_guid
-                        .value()
-                        .map(crate::records::mesh::DesignRelaxedGuidText::as_str)
-                        .is_some_and(|base| {
-                            base.eq_ignore_ascii_case(SKETCH_CONTAINER_MEMBER_BASE_TYPE_GUID)
-                        })
-            })
-        {
-            return Err(crate::design::text::malformed_design(format_args!(
-                "F3D sketch container {entity_suffix} has an incompatible Geometry member"
-            )));
-        }
-        let Some(visibility) =
-            decode_sketch_visibility_member(&bytes[..frame.end], member_at, entity_suffix)
-        else {
-            return Err(crate::design::text::malformed_design(format_args!(
-                "F3D sketch container {entity_suffix} has an invalid visibility member"
-            )));
-        };
-
-        out.push((entity_suffix, visibility));
+        out.push(decode_sketch_visibility_frame(bytes, metadata, frame)?);
     }
-    if out.is_empty() {
-        return Ok(out);
+    let Some(rejected) =
+        validate_sketch_visibility_collections(bytes, metadata, &out, &Default::default(), None)?
+    else {
+        return Ok(Vec::new());
+    };
+    out.retain(|(entity, _)| !rejected.contains(entity));
+    Ok(out)
+}
+
+fn decode_sketch_visibilities_with_parts(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    output: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
+    source: View<'_>,
+    stream: &str,
+    metadata: &crate::metastream::MetaStream,
+) -> Result<Vec<(u64, DesignSketchVisibility)>, CodecError> {
+    let bytes = source.window();
+    let Ok(frames) = super::meta::typed_primary_frames(
+        bytes,
+        metadata,
+        SKETCH_CONTAINER_TYPE_GUID,
+        "sketch-container",
+    ) else {
+        return Ok(Vec::new());
+    };
+    let mut out = Vec::new();
+    let mut failed = std::collections::HashSet::new();
+    for frame in frames {
+        if frame.design_type.version != CURRENT_SKETCH_CONTAINER_VERSION {
+            continue;
+        }
+        match sketch_visibility_part(ctx, output, source, stream, frame, || {
+            decode_sketch_visibility_frame(bytes, metadata, frame)
+        })? {
+            Some(visibility) => out.push(visibility),
+            None => {
+                failed.insert(frame.entity_id);
+            }
+        }
+    }
+    let Some(rejected) = validate_sketch_visibility_collections(
+        bytes,
+        metadata,
+        &out,
+        &failed,
+        Some((ctx, output, source, stream)),
+    )?
+    else {
+        return Ok(Vec::new());
+    };
+    out.retain(|(entity, _)| !rejected.contains(entity));
+    Ok(out)
+}
+
+fn sketch_visibility_part<T>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    output: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
+    source: View<'_>,
+    stream: &str,
+    frame: super::meta::TypedPrimaryFrame<'_>,
+    parse: impl FnOnce() -> Result<T, CodecError>,
+) -> Result<Option<T>, CodecError> {
+    use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartSpec};
+    let start = source
+        .start()
+        .checked_add(frame.start)
+        .ok_or_else(|| CodecError::malformed("sketch record start overflows"))?;
+    let end = source
+        .start()
+        .checked_add(frame.end)
+        .ok_or_else(|| CodecError::malformed("sketch record end overflows"))?;
+    let extent = source
+        .child(start, end)
+        .ok_or_else(|| CodecError::malformed("sketch record exceeds its stream"))?;
+    let spec = PartSpec::new("f3d.bulk_record").holding([
+        cadmpeg_ir::document::ArenaClass::Model,
+        cadmpeg_ir::document::ArenaClass::Design,
+    ]);
+    let spec = if extent.location().space == cadmpeg_core::decode::SpaceId::ROOT {
+        spec
+    } else {
+        spec.in_stream(
+            cadmpeg_ir::StreamName::try_from(stream.to_owned()).map_err(CodecError::malformed)?,
+        )
+    };
+    ctx.decode_part(output, extent, spec, |_| parse())
+}
+
+fn validate_sketch_visibility_collections(
+    bytes: &[u8],
+    metadata: &crate::metastream::MetaStream,
+    out: &[(u64, DesignSketchVisibility)],
+    failed: &std::collections::HashSet<u64>,
+    mut parts: Option<(
+        &cadmpeg_core::decode::DecodeContext<'_>,
+        &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
+        View<'_>,
+        &str,
+    )>,
+) -> Result<Option<std::collections::HashSet<u64>>, CodecError> {
+    if out.is_empty() && failed.is_empty() {
+        return Ok(Some(Default::default()));
     }
     let visibilities = out
         .iter()
@@ -385,56 +406,206 @@ fn decode_sketch_visibilities_in_stream(
         "5275CBA4-3D7D-40DC-A651-1DFF3FC8AFBF",
         "sketch ordinal collection",
     ) else {
-        return Ok(Vec::new());
+        return Ok(None);
     };
+    let mut failed_collections = std::collections::HashSet::new();
     for frame in ordinal_frames {
-        let members = ([3, 4].contains(&frame.design_type.version)
-            && frame.design_type.module == "Geometry"
-            && frame
-                .design_type
-                .base_type_guid
-                .value()
-                .is_some_and(|base| {
-                    base.as_str()
-                        .eq_ignore_ascii_case(SKETCH_CONTAINER_MEMBER_BASE_TYPE_GUID)
-                }))
-        .then(|| {
-            ordinal_collection_members(&bytes[frame.start..frame.end], frame.design_type.version)
-        })
-        .flatten();
-        let Some(members) = members else {
-            return Err(crate::design::text::malformed_design(format_args!(
-                "F3D sketch ordinal collection {} has an invalid member run",
-                frame.entity_id
-            )));
-        };
-        collections.insert(frame.entity_id);
-        for target in members {
-            if !listed.insert(target)
-                || !visibilities.get(&target).is_some_and(|visibility| {
-                    visibility.ordinal_collection.map(std::num::NonZeroU64::get)
-                        == Some(frame.entity_id)
-                })
-            {
-                return Err(crate::design::text::malformed_design(format_args!(
-                    "F3D sketch ordinal collection {} has an invalid sketch member {target}",
+        let parse = || {
+            let members = ([3, 4].contains(&frame.design_type.version)
+                && frame.design_type.module == "Geometry"
+                && frame
+                    .design_type
+                    .base_type_guid
+                    .value()
+                    .is_some_and(|base| {
+                        base.as_str()
+                            .eq_ignore_ascii_case(SKETCH_CONTAINER_MEMBER_BASE_TYPE_GUID)
+                    }))
+            .then(|| {
+                ordinal_collection_members(
+                    &bytes[frame.start..frame.end],
+                    frame.design_type.version,
+                )
+            })
+            .flatten()
+            .ok_or_else(|| {
+                crate::design::text::malformed_design(format_args!(
+                    "F3D sketch ordinal collection {} has an invalid member run",
                     frame.entity_id
-                )));
+                ))
+            })?;
+            let mut targets = std::collections::HashSet::new();
+            for target in members {
+                if listed.contains(&target)
+                    || !targets.insert(target)
+                    || (!failed.contains(&target)
+                        && !visibilities.get(&target).is_some_and(|visibility| {
+                            visibility.ordinal_collection.map(std::num::NonZeroU64::get)
+                                == Some(frame.entity_id)
+                        }))
+                {
+                    return Err(crate::design::text::malformed_design(format_args!(
+                        "F3D sketch ordinal collection {} has an invalid sketch member {target}",
+                        frame.entity_id
+                    )));
+                }
             }
+            Ok(targets)
+        };
+        let targets = match parts.as_mut() {
+            Some((ctx, output, source, stream)) => {
+                sketch_visibility_part(ctx, output, *source, stream, frame, parse)?
+            }
+            None => Some(parse()?),
+        };
+        if let Some(targets) = targets {
+            collections.insert(frame.entity_id);
+            listed.extend(targets);
+        } else {
+            failed_collections.insert(frame.entity_id);
         }
     }
-    for (entity, visibility) in &out {
+    let mut rejected = std::collections::HashSet::new();
+    let mut container_frames = None;
+    for (entity, visibility) in out {
         let collection_valid = match visibility.ordinal_collection {
-            Some(collection) => collections.contains(&collection.get()) && listed.contains(entity),
+            Some(collection) => {
+                failed_collections.contains(&collection.get())
+                    || (collections.contains(&collection.get()) && listed.contains(entity))
+            }
             None => !listed.contains(entity),
         };
         if !collection_valid {
-            return Err(crate::design::text::malformed_design(format_args!(
-                "F3D sketch container {entity} has an invalid ordinal collection"
-            )));
+            let error = || {
+                crate::design::text::malformed_design(format_args!(
+                    "F3D sketch container {entity} has an invalid ordinal collection"
+                ))
+            };
+            match parts.as_mut() {
+                Some((ctx, output, source, stream)) => {
+                    if container_frames.is_none() {
+                        let frames = super::meta::typed_primary_frames(
+                            bytes,
+                            metadata,
+                            SKETCH_CONTAINER_TYPE_GUID,
+                            "sketch-container",
+                        )?;
+                        container_frames = Some(
+                            frames
+                                .into_iter()
+                                .map(|frame| (frame.entity_id, frame))
+                                .collect::<HashMap<_, _>>(),
+                        );
+                    }
+                    let frame = container_frames
+                        .as_ref()
+                        .and_then(|frames| frames.get(entity))
+                        .copied()
+                        .ok_or_else(|| error())?;
+                    sketch_visibility_part(ctx, output, *source, stream, frame, || {
+                        Err::<(), CodecError>(error())
+                    })?;
+                    rejected.insert(*entity);
+                }
+                None => return Err(error()),
+            }
         }
     }
-    Ok(out)
+    Ok(Some(rejected))
+}
+
+fn decode_sketch_visibility_frame(
+    bytes: &[u8],
+    metadata: &crate::metastream::MetaStream,
+    frame: super::meta::TypedPrimaryFrame<'_>,
+) -> Result<(u64, DesignSketchVisibility), CodecError> {
+    if frame.design_type.module != DESIGN_MODULE_SKETCH
+        || !frame
+            .design_type
+            .base_type_guid
+            .value()
+            .map(crate::records::mesh::DesignRelaxedGuidText::as_str)
+            .is_some_and(|base| base.eq_ignore_ascii_case(SKETCH_CONTAINER_MEMBER_TYPE_GUID))
+    {
+        return Err(crate::design::text::malformed_design(format_args!(
+            "F3D sketch container {} has incompatible registration metadata",
+            frame.entity_id
+        )));
+    }
+    let Some(NamedEntityHeader {
+        entity_id,
+        end: header_end,
+        ..
+    }) = (match parse_settled_entity_header(&bytes[..frame.end], frame.start) {
+        Some(header) => Some(header),
+        None => parse_genesis_entity_header(&bytes[..frame.end], frame.start),
+    })
+    else {
+        return Err(crate::design::text::malformed_design(format_args!(
+            "F3D sketch container {} has an invalid entity header",
+            frame.entity_id
+        )));
+    };
+    let entity_suffix = entity_id.suffix();
+    if entity_suffix != frame.entity_id {
+        return Err(crate::design::text::malformed_design(format_args!(
+            "F3D sketch container {} disagrees with its entity header {entity_suffix}",
+            frame.entity_id
+        )));
+    }
+    let member_at = metadata
+        .secondary_records
+        .iter()
+        .find(|record| record.entity_id == frame.entity_id)
+        .and_then(|record| usize::try_from(record.bulk_offset).ok())
+        .filter(|offset| *offset >= header_end && *offset < frame.end)
+        .ok_or_else(|| {
+            crate::design::text::malformed_design(format_args!(
+                "F3D sketch container {entity_suffix} has no typed Geometry member"
+            ))
+        })?;
+    let Some((class_tag, after_tag)) =
+        lp_ascii_filtered_view(bytes, member_at, 3..=3, u8::is_ascii_digit)
+    else {
+        return Err(crate::design::text::malformed_design(format_args!(
+            "F3D sketch container {entity_suffix} has an invalid Geometry-member class tag"
+        )));
+    };
+    let member_type = class_tag
+        .parse::<usize>()
+        .ok()
+        .and_then(|tag| tag.checked_sub(256))
+        .and_then(|ordinal| metadata.types.get(ordinal));
+    if after_tag != member_at + 7
+        || !member_type.is_some_and(|member_type| {
+            member_type
+                .type_guid
+                .as_str()
+                .eq_ignore_ascii_case(SKETCH_CONTAINER_MEMBER_TYPE_GUID)
+                && member_type.version == SKETCH_CONTAINER_MEMBER_VERSION
+                && member_type.module == "Geometry"
+                && member_type
+                    .base_type_guid
+                    .value()
+                    .map(crate::records::mesh::DesignRelaxedGuidText::as_str)
+                    .is_some_and(|base| {
+                        base.eq_ignore_ascii_case(SKETCH_CONTAINER_MEMBER_BASE_TYPE_GUID)
+                    })
+        })
+    {
+        return Err(crate::design::text::malformed_design(format_args!(
+            "F3D sketch container {entity_suffix} has an incompatible Geometry member"
+        )));
+    }
+    let Some(visibility) =
+        decode_sketch_visibility_member(&bytes[..frame.end], member_at, entity_suffix)
+    else {
+        return Err(crate::design::text::malformed_design(format_args!(
+            "F3D sketch container {entity_suffix} has an invalid visibility member"
+        )));
+    };
+
+    Ok((entity_suffix, visibility))
 }
 
 fn ordinal_collection_members(

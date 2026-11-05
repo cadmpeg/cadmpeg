@@ -110,15 +110,6 @@ pub(crate) fn write_step_outcome(
     let file_name_fields = b.file_name_fields.clone();
     let lines = b.emitter.into_lines()?;
     let session = cadmpeg_core::encode::EncodeSession::from_context(ctx)?;
-    session.charge_entities(
-        cadmpeg_core::decode::u64_from_index(lines.len()),
-        "write STEP DATA records",
-    )?;
-    session.charge_entities(
-        cadmpeg_core::decode::u64_from_index(emitter_anchors.len()),
-        "write STEP REFERENCE records",
-    )?;
-
     write_header(
         w,
         schema,
@@ -130,12 +121,14 @@ pub(crate) fn write_step_outcome(
         emitter_anchors.sort_by_key(|(id, _)| *id);
         writeln!(w, "REFERENCE;")?;
         for (id, uri) in &emitter_anchors {
+            session.charge_entities(1, "write STEP REFERENCE record")?;
             writeln!(w, "#{id}=<{uri}>;")?;
         }
         writeln!(w, "ENDSEC;")?;
     }
     writeln!(w, "DATA;")?;
     for line in &lines {
+        session.charge_entities(1, "write STEP DATA record")?;
         writeln!(w, "{line}")?;
     }
     writeln!(w, "ENDSEC;")?;
@@ -5290,27 +5283,36 @@ impl<'a> Builder<'a> {
                 self.unwritten_pcurve_carriers.insert(pcurve_id.to_string());
             }
         }
-        // Two pcurves on one surface leave no surface selector: Part 42
-        // provides the association only through a `SEAM_EDGE` use with an
-        // explicit pcurve reference, so the curve is a `SEAM_CURVE`.
-        let mut surface_uses: HashMap<&str, usize> = HashMap::new();
-        for (use_, _) in &emitted {
-            *surface_uses.entry(use_.surface).or_default() += 1;
-        }
-        let seam = surface_uses.values().any(|uses| *uses >= 2);
-        if seam {
-            for (use_, pcurve) in &emitted {
-                if surface_uses
-                    .get(use_.surface)
-                    .is_some_and(|uses| *uses >= 2)
-                {
+        // Part 42 permits at most two associated geometries; a seam requires
+        // exactly two pcurves on the same surface.
+        let seam_pair = emitted.iter().enumerate().find_map(|(first, (use_, _))| {
+            emitted
+                .iter()
+                .enumerate()
+                .skip(first + 1)
+                .find(|(_, (other, _))| other.surface == use_.surface)
+                .map(|(second, _)| (first, second))
+        });
+        let selected = seam_pair
+            .map(|(first, second)| vec![first, second])
+            .unwrap_or_else(|| (0..emitted.len().min(2)).collect());
+        let seam = seam_pair.is_some();
+        let mut pcurve_refs = Vec::new();
+        for (index, (use_, pcurve)) in emitted.into_iter().enumerate() {
+            if selected.contains(&index) {
+                if seam {
                     self.seam_coedge_pcurves
                         .entry(use_.coedge.to_owned())
-                        .or_insert(*pcurve);
+                        .or_insert(pcurve);
                 }
+                pcurve_refs.push(pcurve);
+            } else {
+                self.loss(
+                    StepLossCode::PcurveAssociationLimit,
+                    format!("edge '{edge_id}' cannot associate pcurve '{}' on coedge '{}' with surface '{}' because STEP surface curves admit at most two associated geometries", use_.use_.pcurve, use_.coedge, use_.surface),
+                );
             }
         }
-        let pcurve_refs: Vec<Ref> = emitted.into_iter().map(|(_, pcurve)| pcurve).collect();
         let curve_ref = if pcurve_refs.is_empty() {
             basis_curve
         } else if seam {
@@ -5757,6 +5759,9 @@ impl<'a> Builder<'a> {
                 let direction = cadmpeg_ir::units::DirectionAboveEpsilon::new(
                     definition_payload.direction().get(),
                 )?;
+                if !direction.norm().is_finite() {
+                    return None;
+                }
                 let directrix = self.emit_curve(definition_payload.directrix().as_str())?;
                 let direction_ref = geometry::direction(&mut self.emitter, direction);
                 let vector = self.emitter.emit(
