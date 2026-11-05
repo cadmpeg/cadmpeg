@@ -172,6 +172,7 @@ fn encode(
         }
         _ => return Err("record has no native writer".into()),
     };
+    super::numeric::retain(ir, record, &mut result);
     if let Some(definition) = definition {
         result.source_targets.push(definition.id.to_string());
     }
