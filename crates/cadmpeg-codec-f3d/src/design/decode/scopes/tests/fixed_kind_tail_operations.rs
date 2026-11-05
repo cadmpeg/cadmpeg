@@ -1506,6 +1506,20 @@ pub(super) fn fixed_kind_tail_operations(
             },
         }
     );
+    let grouped_at = bytes.len() - grouped.len();
+    let mut renumbered = bytes.clone();
+    for at in [grouped_at + 71, grouped_at + 83] {
+        assert_eq!(renumbered[at..at + 4], 252u32.to_le_bytes());
+        renumbered[at..at + 4].copy_from_slice(&260u32.to_le_bytes());
+    }
+    assert_eq!(
+        tested_surface_offset_operation(
+            &renumbered,
+            &crate::design::test_support::indexed_record_offsets_for_test(&renumbered),
+            &grouped_scope,
+        ),
+        Some(grouped_operation)
+    );
 
     bytes[extend_boundary_at + 21..extend_boundary_at + 25]
         .copy_from_slice(&u32::MAX.to_le_bytes());

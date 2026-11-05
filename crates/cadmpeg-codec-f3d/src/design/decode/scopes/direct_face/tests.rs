@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::exact_scale_operation;
-use crate::design::decode::scopes::parameter_scope::parse_parameter_scope;
+use crate::design::decode::scopes::parameter_scope::{
+    parse_parameter_scope, parse_parameter_scope_with_type_guid,
+};
 use crate::design::test_support::indexed_record_offsets_for_test;
 use crate::records::feature::body_ops::DesignScaleOperation;
 use crate::records::feature::scope::DesignParameterScope;
@@ -10,6 +12,7 @@ use cadmpeg_core::decode::u64_from_index;
 use std::collections::HashMap;
 
 const EPS_SCALE_VALUE: f64 = 1.0e-12;
+const SCALE_TYPE_GUID: &str = "D45FD6C4-161B-4240-BFAC-83A7C2C97A0C";
 
 #[test]
 fn legacy_scale_with_78_byte_tail_resolves_center_and_history_states() {
@@ -125,6 +128,30 @@ fn legacy_scale_requires_an_admitted_frame_length_and_reference_count_pair() {
 }
 
 #[test]
+fn a_legacy_scale_form_is_selected_by_payload_length_under_any_kind_spelling() {
+    for (count, tail_length) in [(5, 76), (5, 78), (6, 76)] {
+        let (english, _) = named_scale_fixture("Scale", count, tail_length, 0);
+        let (french, _) = named_scale_fixture("Echelle", count, tail_length, 0);
+        let english = decode_typed_scale(&english).expect("English legacy Scale");
+        let french = decode_typed_scale(&french).expect("French legacy Scale");
+        assert_eq!(
+            french.body_group_record_index,
+            english.body_group_record_index
+        );
+        assert_eq!(french.center_record_index, english.center_record_index);
+        assert_eq!(french.uniform_factor_offset, english.uniform_factor_offset);
+        assert!((french.uniform_factor.get() - 2.5).abs() < EPS_SCALE_VALUE);
+    }
+    for (count, tail_length) in [(5, 77), (6, 78)] {
+        let (french, _) = named_scale_fixture("Echelle", count, tail_length, 0);
+        assert!(
+            decode_typed_scale(&french).is_none(),
+            "{count} {tail_length}"
+        );
+    }
+}
+
+#[test]
 fn legacy_scale_with_extended_tail_requires_a_complete_scope_envelope() {
     let (bytes, _) = scale_fixture(5, 78, 0);
     assert!(decode_scale(&bytes, 0, &HashMap::new()).is_some());
@@ -159,6 +186,21 @@ fn parse_scope(bytes: &[u8], start: usize) -> Option<DesignParameterScope> {
     parse_parameter_scope(bytes, &records, 100, &class_tag, u64_from_index(start)).unwrap()
 }
 
+fn decode_typed_scale(bytes: &[u8]) -> Option<DesignScaleOperation> {
+    let records = indexed_record_offsets_for_test(bytes);
+    let class_tag = "350".to_owned().try_into().unwrap();
+    let scope = parse_parameter_scope_with_type_guid(
+        bytes,
+        &records,
+        100,
+        &class_tag,
+        0,
+        Some(SCALE_TYPE_GUID),
+    )
+    .unwrap()?;
+    exact_scale_operation(bytes, &records, &scope, &HashMap::new()).unwrap()
+}
+
 fn decode_scale(
     bytes: &[u8],
     start: usize,
@@ -170,6 +212,15 @@ fn decode_scale(
 }
 
 fn scale_fixture(reference_count: usize, tail_length: usize, start: usize) -> (Vec<u8>, usize) {
+    named_scale_fixture("Scale", reference_count, tail_length, start)
+}
+
+fn named_scale_fixture(
+    kind: &str,
+    reference_count: usize,
+    tail_length: usize,
+    start: usize,
+) -> (Vec<u8>, usize) {
     let mut bytes = vec![0; start];
     bytes.extend_from_slice(&3u32.to_le_bytes());
     bytes.extend_from_slice(b"350");
@@ -202,7 +253,7 @@ fn scale_fixture(reference_count: usize, tail_length: usize, start: usize) -> (V
         bytes.extend_from_slice(&[0; 2]);
     }
     bytes.extend_from_slice(&19u32.to_le_bytes());
-    lp_utf16(&mut bytes, "Scale");
+    lp_utf16(&mut bytes, kind);
     let tail_at = bytes.len();
     bytes.resize(tail_at + tail_length, 0);
     bytes[tail_at..tail_at + 4].copy_from_slice(&3u32.to_le_bytes());

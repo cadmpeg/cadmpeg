@@ -561,11 +561,14 @@ pub(super) fn exact_scale_operation(
                 )
             } else if scope.kind() == scope::DesignFeatureKind::Scale
                 && matches!(
-                    (scope.frame_length(), scope.reference_members().len()),
-                    (307 | 309, 5) | (318, 6)
+                    (
+                        parameter_scope_payload_length(scope),
+                        scope.reference_members().len()
+                    ),
+                    (Some(297 | 299), 5) | (Some(308), 6)
                 )
             {
-                if scope.frame_length() == 309 {
+                if parameter_scope_payload_length(scope) == Some(299) {
                     let (guid, _) = crate::bytes::lp_utf16_bounded_view(
                         bytes,
                         start.checked_add(75)?,
@@ -575,9 +578,10 @@ pub(super) fn exact_scale_operation(
                         || View::u24_le_at(bytes, start.checked_add(151)?)? != 0
                         || scope.reference_count_offset() != scope.byte_offset().checked_add(154)?
                         || scope.kind_offset() != scope.byte_offset().checked_add(221)?
-                        || scope.feature_ordinal_offset() != scope.byte_offset().checked_add(231)?
+                        || scope.feature_ordinal_offset()
+                            != scope.paired_byte_offset().checked_sub(78)?
                         || scope.previous_history_state_id_offset()
-                            != scope.byte_offset().checked_add(262)
+                            != scope.feature_ordinal_offset().checked_add(31)
                     {
                         return None;
                     }

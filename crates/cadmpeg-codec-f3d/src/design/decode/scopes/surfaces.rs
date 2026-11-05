@@ -69,33 +69,29 @@ pub(super) fn exact_surface_offset_operation(
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Result<Option<DesignSurfaceOffsetOperation>, CodecError> {
-    if let Some(operation) = exact_surface_offset_face_groups(bytes, records, scope)? {
-        return Ok(Some(operation));
-    }
     let Some(operation) = exact_surface_boundary_operation(
         bytes,
         records,
         scope,
         DesignFeatureFamily::SurfaceOffset,
         65,
-    ) else {
-        return Ok(None);
-    };
-    Ok(
-        (operation.mode == 1).then_some(DesignSurfaceOffsetOperation {
-            distance: operation.distance,
-            distance_offset: operation.distance_offset,
-            distance_record_index: operation.distance_record_index,
-            support: DesignSurfaceOffsetSupport::BoundaryCarrier {
-                boundary_record_index: operation.boundary_record_index,
-                boundary_reference_record_index: operation.boundary_reference_record_index,
-                boundary_reference_offset: operation.boundary_reference_offset,
-                edge_record_indices: operation.edge_record_indices,
-                tolerance: operation.tolerance,
-                tolerance_offset: operation.tolerance_offset,
-            },
-        }),
     )
+    .filter(|operation| operation.mode == 1) else {
+        return exact_surface_offset_face_groups(bytes, records, scope);
+    };
+    Ok(Some(DesignSurfaceOffsetOperation {
+        distance: operation.distance,
+        distance_offset: operation.distance_offset,
+        distance_record_index: operation.distance_record_index,
+        support: DesignSurfaceOffsetSupport::BoundaryCarrier {
+            boundary_record_index: operation.boundary_record_index,
+            boundary_reference_record_index: operation.boundary_reference_record_index,
+            boundary_reference_offset: operation.boundary_reference_offset,
+            edge_record_indices: operation.edge_record_indices,
+            tolerance: operation.tolerance,
+            tolerance_offset: operation.tolerance_offset,
+        },
+    }))
 }
 
 fn exact_surface_offset_face_groups(
@@ -141,7 +137,6 @@ fn exact_surface_offset_face_groups(
                 Err(error) => return Some(Err(error)),
             };
             if group.role() != DesignOperandRole::PROFILE
-                || group.frame.opaque_index.get() != 252
                 || group.members().is_empty()
                 || covered_references.contains(&group.record_index)
             {

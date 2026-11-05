@@ -2861,7 +2861,7 @@ anchor = "the marked reference at offset 68 names the second ordered reference"
 name = "scale_legacy_operation_prefix"
 kind = "byte"
 section = "3.1"
-anchor = "A legacy English `Scale` scope has a 307-byte frame with five ordered references or a 318-byte frame with six ordered references"
+anchor = "A legacy `Scale` scope has a 297-byte payload with five ordered references or a 308-byte payload with six"
 size = 75
 note = "Offsets are relative to the legacy Scale scope's primary indexed header. The frame tail carries the ordered-reference members."
 
@@ -2943,7 +2943,7 @@ anchor = "marked references at offsets 29, 40, and 64 naming the final, first, a
 name = "scale_legacy_uniform_309"
 kind = "byte"
 section = "3.1"
-anchor = "A legacy uniform `Scale` scope also has a 309-byte five-reference form"
+anchor = "A legacy uniform `Scale` scope also has a five-reference form with a 299-byte payload"
 size = 309
 note = "Offsets are relative to the primary indexed header. The paired same-index header is outside this frame."
 parsed_by = ["crates/cadmpeg-codec-f3d/src/design/decode/scopes/direct_face.rs", "crates/cadmpeg-codec-f3d/src/design/decode/scopes/parameter_scope.rs"]
