@@ -671,10 +671,24 @@ impl<'a> PhysicalParse<'a> {
             binary_admission,
             compressed,
         } = parsing;
-        let scan = match source {
+        let mut scan = match source {
             Some(source) => card::scan_source(source)?,
             None => card::scan(bytes)?,
         };
+        if compressed
+            .as_ref()
+            .is_some_and(|source| !source.source_terminated)
+        {
+            scan.lines.retain(|line| {
+                !matches!(
+                    line,
+                    card::ScannedLine::Card {
+                        section: card::Section::Terminate,
+                        ..
+                    }
+                )
+            });
+        }
         replay_framing_give_ups(&scan, ctx, &mut parts)?;
         if scan.source_end.ends_before_directory() {
             if let global::GlobalParse::Unfinished(error) = global::parse_if_complete(&scan)? {

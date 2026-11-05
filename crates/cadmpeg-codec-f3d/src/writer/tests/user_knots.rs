@@ -225,19 +225,13 @@ fn retained_f3d_round_trips_user_knot_edits_and_extension_removal() {
         })
         .expect("user-knot edit");
     let mut encoded = Vec::new();
-    crate::writer::patch::write_semantic(
-        &edited,
-        &source,
-        cadmpeg_core::decode::ResourceLimits::desktop(),
-        &mut encoded,
-        &mut Vec::new(),
-    )
-    .expect("patch user knots");
+    crate::test_support::plan_inherited_write(&edited, &fidelity, &mut encoded)
+        .expect("write user knots");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(&encoded), &DecodeOptions::default())
         .expect("read user knots");
     assert_eq!(round_trip.ir().model.subds, edited.model.subds);
-    let (mut removed, _, _) = round_trip.into_parts();
+    let (mut removed, _, fidelity) = round_trip.into_parts();
     removed.model.subds[0]
         .cage
         .edit_edges(|edges| {
@@ -248,14 +242,8 @@ fn retained_f3d_round_trips_user_knot_edits_and_extension_removal() {
         })
         .expect("remove extension");
     let mut removed_bytes = Vec::new();
-    crate::writer::patch::write_semantic(
-        &removed,
-        &encoded,
-        cadmpeg_core::decode::ResourceLimits::desktop(),
-        &mut removed_bytes,
-        &mut Vec::new(),
-    )
-    .expect("patch extension removal");
+    crate::test_support::plan_inherited_write(&removed, &fidelity, &mut removed_bytes)
+        .expect("write extension removal");
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(removed_bytes), &DecodeOptions::default())
         .expect("read extension removal");
