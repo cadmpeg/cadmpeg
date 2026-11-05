@@ -2,6 +2,21 @@
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
 #[test]
+fn compressed_flag_without_a_start_part_is_truncated() {
+    use cadmpeg_ir::codec::{Codec, DecodeFailure, DecodeOptions};
+    let original = crate::test_support::compressed_parts::points(false, false);
+    let flag = &original[..82];
+    let result =
+        crate::IgesCodec.decode(&mut std::io::Cursor::new(flag), &DecodeOptions::default());
+    assert!(matches!(
+        result,
+        Err(DecodeFailure::Codec(
+            cadmpeg_core::CodecError::Truncated { .. }
+        ))
+    ));
+}
+
+#[test]
 fn cut_global_card_keeps_readable_fields_and_gives_up_the_unfinished_field() {
     let original = crate::test_support::compressed_parts::points(false, false);
     let date = b"15H20260714.000000";

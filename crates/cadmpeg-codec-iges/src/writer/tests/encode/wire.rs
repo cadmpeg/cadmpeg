@@ -130,7 +130,9 @@ fn encode_reports_orphan_wire_vertex_as_malformed() {
     let Err(error) = plan_at(IgesVersion::V5_0, decoded.ir(), None) else {
         panic!("orphan vertex was accepted");
     };
-    assert!(matches!(error, cadmpeg_ir::codec::write::EncodeError::Io(ref inner) if matches!(inner.get_ref().and_then(|source| source.downcast_ref::<cadmpeg_core::CodecError>()), Some(cadmpeg_core::CodecError::Malformed(_)))));
+    assert!(
+        matches!(error, cadmpeg_ir::codec::write::EncodeError::Io(ref inner) if matches!(inner.get_ref().and_then(|source| source.downcast_ref::<cadmpeg_core::CodecError>()), Some(cadmpeg_core::CodecError::Malformed(_))))
+    );
     assert!(
         error.to_string().contains("no wire or face owner"),
         "{error}"
@@ -251,7 +253,10 @@ fn synthesized_wire_reports_missing_edge_as_malformed() {
     let error = crate::writer::synthesize(&ir, IgesVersion::V5_3)
         .err()
         .expect("missing edge must be refused");
-    assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+    assert!(matches!(
+        error,
+        crate::writer::WriteError::Codec(cadmpeg_core::CodecError::Malformed(_))
+    ));
     assert!(error.to_string().contains("missing edge"), "{error}");
 }
 

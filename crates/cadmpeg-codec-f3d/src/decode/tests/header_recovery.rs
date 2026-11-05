@@ -6,6 +6,8 @@ use crate::F3dCodec;
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use std::io::Cursor;
 
+const HEADER_LINEAR_EPS_MM: f64 = 1.0e-12;
+
 const SPHERE_SMT: &str = concat!(
     "23200 0 2 2\n",
     "16 Autodesk Neutron 21 ASM 232.4.0.65535 OSX 9 Synthetic\n",
@@ -101,6 +103,68 @@ fn binary_product_encoding_recovery_keeps_independent_geometry() {
             .is_ok());
         cursor += 2 + usize::from(original[cursor + 1]);
     }
+}
+
+#[test]
+fn truncated_stored_brep_keeps_its_complete_kernel_header() {
+    use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
+    use crate::test_support::smbh_header_test::smbh_header_prefix;
+    use crate::test_support::zip_test::f3d_with_smbh;
+
+    let source = f3d_with_smbh(&synthetic_geometry_smbh());
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, root) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&source, &arena, &policy).unwrap();
+    let archive = cadmpeg_container::ArchiveSnapshot::new(&ctx, root).unwrap();
+    let entry = archive
+        .entries()
+        .iter()
+        .find(|entry| entry.name.ends_with("Body1.smbh"))
+        .unwrap();
+    let local_header = usize::try_from(entry.header_start).unwrap();
+    let start = usize::try_from(entry.data_start.unwrap()).unwrap();
+    let cut = start + smbh_header_prefix().len();
+    crate::test_support::zip_test::with_scan(&source[..cut], |scan| {
+        let header = scan
+            .partial_brep_header()
+            .expect("complete partial BREP header");
+        assert_eq!(header.model_metadata().unwrap().linear, Some(1.0e-6));
+    });
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(&source[..cut]), &DecodeOptions::default())
+        .unwrap();
+    assert!((decoded.ir().tolerances.linear.get() - 1.0e-5).abs() < HEADER_LINEAR_EPS_MM);
+    assert_eq!(decoded.ir().tolerances.angular.get(), 1.0e-10);
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code
+            == cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable
+                .note(String::new())
+                .code
+            && loss.message.contains("zip.entry")
+    }));
+    let short = F3dCodec
+        .decode(
+            &mut Cursor::new(&source[..start]),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert_eq!(
+        short.ir().tolerances,
+        cadmpeg_ir::units::Tolerances::default()
+    );
+    const ZIP_LOCAL_COMPRESSED_LENGTH_OFFSET: usize = 18;
+    let mut invalid = source[..cut].to_vec();
+    invalid[local_header + ZIP_LOCAL_COMPRESSED_LENGTH_OFFSET
+        ..local_header + ZIP_LOCAL_COMPRESSED_LENGTH_OFFSET + 4]
+        .copy_from_slice(&1_u32.to_le_bytes());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(invalid), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        decoded.ir().tolerances,
+        cadmpeg_ir::units::Tolerances::default()
+    );
 }
 
 #[test]

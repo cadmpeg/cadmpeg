@@ -13,9 +13,9 @@ use crate::loss::IgesLossCode;
 pub(crate) fn plan(
     input: EncodeInput<'_>,
     resolved: &ResolvedWrite<'_>,
-) -> Result<ExportBody, CodecError> {
+) -> Result<ExportBody, super::WriteError> {
     debug_assert!(
-        crate::writer::CAPACITY_FIELDS.len() == 2,
+        super::capacity::CAPACITY_FIELDS.len() == 2,
         "IGES card layout declares payload and sequence rows"
     );
     debug_assert!(
@@ -45,7 +45,7 @@ pub(crate) fn plan(
 fn replay_or_synthesize(
     input: EncodeInput<'_>,
     version: crate::IgesVersion,
-) -> Result<ExportBody, CodecError> {
+) -> Result<ExportBody, super::WriteError> {
     let replay_failure = match replay_bytes(input)? {
         Replay::Replayed { bytes } => return Ok(replayed_body(input.ir, bytes)),
         Replay::Declined(reason) => reason,
@@ -79,7 +79,7 @@ fn synthesized_body(
     input: EncodeInput<'_>,
     version: crate::IgesVersion,
     cause: SynthesisCause,
-) -> Result<ExportBody, CodecError> {
+) -> Result<ExportBody, super::WriteError> {
     let synthesis_cause = cause.report_cause();
     let (consumption, loss) = cause.into_fidelity();
     let mut losses = loss.into_iter().collect::<Vec<_>>();
@@ -92,19 +92,12 @@ fn synthesized_body(
     let ctx = cadmpeg_core::decode::DecodeContext::for_encode(&arena, &policy);
     let session = cadmpeg_core::encode::EncodeSession::from_context(&ctx)?;
     let synthesis = super::synthesize_with_admission(&recovered.document, version, |entities| {
-        session.charge_entities(
-            cadmpeg_core::decode::u64_from_index(entities.len()),
-            "write IGES entities",
-        )?;
-        session.charge_entities(
-            cadmpeg_core::decode::u64_from_index(
-                entities
-                    .iter()
-                    .filter(|entity| entity.transform.is_some())
-                    .count(),
-            ),
-            "write IGES transformation entities",
-        )?;
+        for entity in entities {
+            if entity.transform.is_some() {
+                session.charge_entities(1, "write IGES transformation entity")?;
+            }
+            session.charge_entities(1, "write IGES entity")?;
+        }
         Ok(())
     })?;
     losses.extend(synthesis.losses.clone());

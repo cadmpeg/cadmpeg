@@ -8298,76 +8298,53 @@ impl<'a> Builder<'a> {
                 self.loss(StepLossCode::PmiAnnotationNotWritten, message);
             }
         }
-        // STEP-native source associations identify records already represented
-        // by the writer's own STEP graph. They are not lossy foreign-source
-        // metadata. Associations from other codecs are omitted with a loss
-        // because this writer cannot reproduce their source semantics.
-        let source_object_count = self
-            .ir
-            .model
-            .surfaces
-            .iter()
-            .filter(|surface| {
+        let source_object_ids = std::iter::empty()
+            .chain(self.ir.model.surfaces.iter().filter_map(|surface| {
                 surface
                     .source_object
                     .as_ref()
-                    .is_some_and(|source| source.format != cadmpeg_ir::CodecFormat::Step)
-            })
-            .count()
-            + self
-                .ir
-                .model
-                .curves
-                .iter()
-                .filter(|curve| {
-                    curve
-                        .source_object
-                        .as_ref()
-                        .is_some_and(|source| source.format != cadmpeg_ir::CodecFormat::Step)
-                })
-                .count()
-            + self
-                .ir
-                .model
-                .subds
-                .iter()
-                .filter(|subd| {
-                    subd.source_object
-                        .as_ref()
-                        .is_some_and(|source| source.format != cadmpeg_ir::CodecFormat::Step)
-                })
-                .count()
-            + self
-                .ir
-                .model
-                .tessellations
-                .iter()
-                .filter(|tessellation| {
-                    tessellation
-                        .source_object
-                        .as_ref()
-                        .is_some_and(|source| source.format != cadmpeg_ir::CodecFormat::Step)
-                })
-                .count();
-        let source_object_count = source_object_count
-            + self
-                .ir
-                .model
-                .points
-                .iter()
-                .filter(|point| {
-                    point
-                        .source_object
-                        .as_ref()
-                        .is_some_and(|source| source.format != cadmpeg_ir::CodecFormat::Step)
-                })
-                .count();
-        if source_object_count > 0 {
+                    .filter(|source| source.format != cadmpeg_ir::CodecFormat::Step)
+                    .map(|_| surface.id.as_str())
+            }))
+            .chain(self.ir.model.curves.iter().filter_map(|curve| {
+                curve
+                    .source_object
+                    .as_ref()
+                    .filter(|source| source.format != cadmpeg_ir::CodecFormat::Step)
+                    .map(|_| curve.id.as_str())
+            }))
+            .chain(self.ir.model.subds.iter().filter_map(|subd| {
+                subd.source_object
+                    .as_ref()
+                    .filter(|source| source.format != cadmpeg_ir::CodecFormat::Step)
+                    .map(|_| subd.id.as_str())
+            }))
+            .chain(
+                self.ir
+                    .model
+                    .tessellations
+                    .iter()
+                    .filter_map(|tessellation| {
+                        tessellation
+                            .source_object
+                            .as_ref()
+                            .filter(|source| source.format != cadmpeg_ir::CodecFormat::Step)
+                            .map(|_| tessellation.id.as_str())
+                    }),
+            )
+            .chain(self.ir.model.points.iter().filter_map(|point| {
+                point
+                    .source_object
+                    .as_ref()
+                    .filter(|source| source.format != cadmpeg_ir::CodecFormat::Step)
+                    .map(|_| point.id.as_str())
+            }))
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        for id in source_object_ids {
             self.loss(
                 StepLossCode::SourceAssociationOmitted,
-                format!(
-                    "{source_object_count} source-object association(s) were not represented in STEP"
-                ),
+                format!("source-object association of '{id}' was not represented in STEP"),
             );
         }
         if self.unstyled_colors > 0 {
