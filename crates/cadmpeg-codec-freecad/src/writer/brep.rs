@@ -813,11 +813,10 @@ fn serialize_geometry_inner(
                     let Some(range) = edge.param_range() else {
                         continue;
                     };
-                    let geometry = edge
+                    let curve_record = edge
                         .curve()
-                        .and_then(|id| ir.model.curves.iter().find(|curve| curve.id == *id))
-                        .and_then(|curve| curve.geometry.solved());
-                    let Some(range) = occt_curve_range(geometry, range.get()) else {
+                        .and_then(|id| ir.model.curves.iter().find(|curve| curve.id == *id));
+                    let Some(range) = occt_curve_range(ir, curve_record, range.get()) else {
                         continue;
                     };
                     format!("1 {curve} {location} {} {}", range[0], range[1])
@@ -1626,6 +1625,30 @@ fn trimmed_supports<'a>(
 /// Map a neutral curve parameter range to the OCCT parameterization that
 /// `topology_transfer::normalize_occt_curve_range` reads.
 fn occt_curve_range(
+    ir: &CadIr,
+    curve: Option<&cadmpeg_ir::geometry::Curve>,
+    range: [f64; 2],
+) -> Option<[f64; 2]> {
+    if let Some(curve) = curve {
+        if geometry::curve_record(ir, curve).is_some_and(|row| row.starts_with("8 ")) {
+            let construction = curve.geometry.procedural_construction()?;
+            let definition = ir
+                .model
+                .procedural_curves
+                .iter()
+                .find(|record| record.id == *construction)?
+                .definition();
+            if let cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(subset) = definition {
+                let first = subset.parameter_range().endpoints()[0];
+                return Some(range.map(|value| value + first))
+                    .filter(|range| range.iter().all(|value| value.is_finite()));
+            }
+        }
+    }
+    occt_solved_curve_range(curve.and_then(|curve| curve.geometry.solved()), range)
+}
+
+fn occt_solved_curve_range(
     curve: Option<&cadmpeg_ir::geometry::SolvedCurveGeometry>,
     range: [f64; 2],
 ) -> Option<[f64; 2]> {
@@ -1641,7 +1664,7 @@ fn occt_curve_range(
             ])
         }
         Some(SolvedCurveGeometry::Transformed(placed)) => {
-            occt_curve_range(Some(placed.basis()), range)
+            occt_solved_curve_range(Some(placed.basis()), range)
         }
         _ => Some(range),
     }
