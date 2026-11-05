@@ -30,7 +30,12 @@ fn tested_parse_sketch_member_run(
     from: usize,
     entity_suffix: u64,
 ) -> Vec<crate::records::identity::Located<u32>> {
-    crate::design::decode::sketch::parse_sketch_member_run(bytes, from, entity_suffix)
+    let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
+    records
+        .next_at_or_after(from)
+        .map_or_else(Vec::new, |paired| {
+            crate::design::decode::sketch::parse_sketch_member_run(bytes, paired, entity_suffix)
+        })
 }
 
 fn tested_parse_legacy_sketch_member_run(
@@ -38,7 +43,9 @@ fn tested_parse_legacy_sketch_member_run(
     primary_at: usize,
     entity_suffix: u32,
 ) -> Option<Vec<crate::records::identity::Located<u32>>> {
-    crate::design::decode::sketch::parse_legacy_sketch_member_run(bytes, primary_at, entity_suffix)
+    let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
+    let paired = records.next_at_or_after(primary_at.checked_add(11)?)?;
+    crate::design::decode::sketch::parse_legacy_sketch_member_run(bytes, paired, entity_suffix)
 }
 
 fn tested_parse_legacy_sketch_container_members(

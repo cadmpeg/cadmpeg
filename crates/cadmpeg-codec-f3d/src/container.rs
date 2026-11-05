@@ -269,9 +269,7 @@ pub(crate) struct ContainerScan<'a> {
     /// byte span. Complete stored bytes remain in `source_image`; decode
     /// gives up each entry as a `zip.entry` part.
     pub(crate) unreadable_entries: Vec<UnreadableEntryPart>,
-    /// Design `BulkStream` record runs after the last indexed record, by
-    /// entry name, with the stream's stored length. Their entry views end
-    /// where the run starts; complete stored bytes remain in `source_image`.
+    #[cfg(test)]
     pub(crate) unindexed_record_runs: Vec<(
         String,
         crate::design::decode::meta::UnindexedRecordRun,
@@ -312,6 +310,7 @@ impl<'a> ContainerScan<'a> {
             kind: self.kind.clone(),
             manifest_diagnostics: self.manifest_diagnostics.clone(),
             unreadable_entries: self.unreadable_entries.clone(),
+            #[cfg(test)]
             unindexed_record_runs: self.unindexed_record_runs.clone(),
             inflated_entries: self.inflated_entries.clone(),
             archive: self.archive.clone(),
@@ -777,6 +776,7 @@ pub(crate) fn scan<'a>(
         kind,
         manifest_diagnostics,
         unreadable_entries,
+        #[cfg(test)]
         unindexed_record_runs: Vec::new(),
         inflated_entries,
         archive,
@@ -785,7 +785,8 @@ pub(crate) fn scan<'a>(
         scope_entry_indices,
         metastream_cache: std::sync::Mutex::new(std::collections::HashMap::new()),
     };
-    bound_design_bulk_streams(&mut scan);
+    #[cfg(test)]
+    collect_unindexed_record_runs(&mut scan);
     for index in 0..scan.entries.len() {
         let entry = &scan.entries[index];
         if entry.role != ContainerRole::BrepText
@@ -820,9 +821,8 @@ pub(crate) fn scan<'a>(
     Ok(scan)
 }
 
-/// End each Design `BulkStream` view at the record run after its last indexed
-/// record, so that decoders read only the records its `MetaStream` indexes.
-fn bound_design_bulk_streams(scan: &mut ContainerScan<'_>) {
+#[cfg(test)]
+fn collect_unindexed_record_runs(scan: &mut ContainerScan<'_>) {
     let bulk_streams = scan
         .entries
         .iter()
@@ -840,16 +840,10 @@ fn bound_design_bulk_streams(scan: &mut ContainerScan<'_>) {
         else {
             continue;
         };
-        let Some(run) = crate::design::decode::meta::unindexed_record_run(view.window(), &meta)
-        else {
-            continue;
-        };
-        let Some(bounded) = view.child(view.start(), view.start() + run.start) else {
-            continue;
-        };
-        let stored = view.window().len();
-        scan.inflated_entries.insert(name.clone(), bounded);
-        scan.unindexed_record_runs.push((name, run, stored));
+        if let Some(run) = crate::design::decode::meta::unindexed_record_run(view.window(), &meta) {
+            scan.unindexed_record_runs
+                .push((name, run, view.window().len()));
+        }
     }
 }
 

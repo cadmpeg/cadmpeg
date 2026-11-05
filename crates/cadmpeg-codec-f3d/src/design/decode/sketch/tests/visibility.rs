@@ -88,6 +88,7 @@ fn visibility_stream() -> (Vec<u8>, crate::metastream::MetaStream) {
     for unit in "0_201".encode_utf16() {
         bytes.extend_from_slice(&unit.to_le_bytes());
     }
+    let member_at = cadmpeg_core::decode::u64_from_index(bytes.len());
     let mut visibility = member(1, 1);
     visibility[4..7].copy_from_slice(b"257");
     bytes.extend_from_slice(&visibility);
@@ -147,7 +148,10 @@ fn visibility_stream() -> (Vec<u8>, crate::metastream::MetaStream) {
             entity_id: ENTITY_SUFFIX,
             bulk_offset: 0,
         }],
-        secondary_records: Vec::new(),
+        secondary_records: vec![crate::metastream::RecordIndexEntry {
+            entity_id: ENTITY_SUFFIX,
+            bulk_offset: member_at,
+        }],
     };
 
     (bytes, metadata)
