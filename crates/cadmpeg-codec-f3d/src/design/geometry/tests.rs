@@ -1607,6 +1607,7 @@ fn arrangement_cycle_scan_skips_when_its_work_count_overflows() {
             nodes: [index, (index + 1) % 3],
             boundary: boundary.clone(),
             polyline: Vec::new(),
+            coincident: Vec::new(),
         })
         .collect();
     assert_eq!(super::arrangement_cycle_work(edges.len(), usize::MAX), None);
@@ -1633,6 +1634,7 @@ fn arrangement_ring_cycle_scan_skips_past_local_budget() {
             nodes: [index, (index + 1) % 500],
             boundary: boundary.clone(),
             polyline: Vec::new(),
+            coincident: Vec::new(),
         })
         .collect();
     let budget = cadmpeg_core::decode::WorkBudget::new(1);

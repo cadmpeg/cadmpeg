@@ -141,10 +141,7 @@ fn work_plane_modern_join_uses_member_identity_independent_of_table_position_and
 
 #[test]
 fn work_plane_modern_frames_admit_both_checked_direction_values() {
-    for placement in crate::test_support::placement_construction::modern_placements()
-        .into_iter()
-        .filter(|placement| placement.type_version == 16)
-    {
+    for placement in crate::test_support::placement_construction::modern_placements() {
         for direction in [0, 1] {
             let mut candidate = placement.clone();
             candidate.fields.use_u_direction.as_mut().unwrap().value = direction;

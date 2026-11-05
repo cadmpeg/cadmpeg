@@ -181,17 +181,7 @@ pub(super) fn exact_work_plane_frame(
                 work_plane_direct_352::LEN
                 | work_plane_direct_363::LEN
                 | work_plane_direct_374::LEN
-                    if matches!(
-                        (
-                            frame_length,
-                            bytes.get(start + 4..start + 7),
-                            bytes.get(paired + 4..paired + 7),
-                        ),
-                        (work_plane_direct_352::LEN, Some(b"293"), Some(b"261"),)
-                            | (work_plane_direct_352::LEN, Some(b"316"), Some(b"260"),)
-                            | (work_plane_direct_363::LEN, Some(b"289"), Some(b"258"),)
-                            | (work_plane_direct_374::LEN, Some(b"267"), Some(b"258"),)
-                    ) && bytes.get(start + work_plane_direct_352::MARKER)
+                    if bytes.get(start + work_plane_direct_352::MARKER)
                         == Some(&work_plane_direct_352::MARKER_VALUE)
                         && bytes.get(
                             start + work_plane_direct_352::ZERO_RUN
