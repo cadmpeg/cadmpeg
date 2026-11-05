@@ -550,15 +550,6 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let prefix_offset = usize::try_from(compact_split_scope.byte_offset()).unwrap();
-    let mut prefix = vec![0; prefix_offset + 32];
-    prefix[prefix_offset + 22] = 1;
-    prefix[prefix_offset + 27] = 1;
-    prefix[prefix_offset + 28] = 1;
-    crate::design::decode::scopes::parameter_scope::mark_split_face_compact_prefix(
-        &prefix,
-        &mut compact_split_scope,
-    );
     let crate::design::feature_project::ProjectedParameterDesign {
         features: compact_features,
         ..

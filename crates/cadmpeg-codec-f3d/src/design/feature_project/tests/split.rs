@@ -391,8 +391,6 @@ fn compact_split_face_fixture() -> (DesignParameterScope, [DesignConstructionOpe
         })
         .unwrap();
 
-    mark_compact_split_face_prefix(&mut scope, 0, 1);
-
     let groups = [
         group(
             scope_record_index,
@@ -488,17 +486,8 @@ fn split_face_checks_count_position_and_tail() {
     }
 }
 
-fn mark_compact_split_face_prefix(scope: &mut DesignParameterScope, byte_11: u8, byte_22: u8) {
-    let mut bytes = vec![0; 32];
-    bytes[11] = byte_11;
-    bytes[22] = byte_22;
-    bytes[27] = 1;
-    bytes[28] = 1;
-    crate::design::decode::scopes::parameter_scope::mark_split_face_compact_prefix(&bytes, scope);
-}
-
 #[test]
-fn compact_split_face_rejects_invalid_prefix_and_reference_count_offset() {
+fn split_face_rejects_reference_count_offset_outside_the_frame_set() {
     let (scope, groups) = compact_split_face_fixture();
     let encoded = serde_json::to_value(&scope).unwrap();
     let decoded: DesignParameterScope = serde_json::from_value(encoded).unwrap();
@@ -507,16 +496,6 @@ fn compact_split_face_rejects_invalid_prefix_and_reference_count_offset() {
             .unwrap()
             .is_some()
     );
-    for (byte_11, byte_22) in [(1, 1), (0, 2)] {
-        let mut invalid = scope.clone();
-        mark_compact_split_face_prefix(&mut invalid, byte_11, byte_22);
-        assert!(
-            project_split_face(&invalid, &[invalid.clone()], &groups, &[], &[], &[])
-                .unwrap()
-                .is_none()
-        );
-    }
-
     let mut invalid = scope.clone();
     invalid
         .try_edit(|draft| {
@@ -524,7 +503,6 @@ fn compact_split_face_rejects_invalid_prefix_and_reference_count_offset() {
             draft.layout_fixture_references();
         })
         .unwrap();
-    mark_compact_split_face_prefix(&mut invalid, 0, 1);
     assert!(
         project_split_face(&invalid, &[invalid.clone()], &groups, &[], &[], &[])
             .unwrap()
@@ -747,8 +725,6 @@ fn direct_single_identity_split_face_member_projects_historical_edge_path() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-
-    mark_compact_split_face_prefix(&mut scope, 0, 1);
 
     let groups = [
         group(

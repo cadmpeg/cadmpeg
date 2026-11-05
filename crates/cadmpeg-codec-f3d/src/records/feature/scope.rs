@@ -71,11 +71,6 @@ cadmpeg_core::named_optional_field!(
 
 cadmpeg_core::named_optional_field!(deserialize_source_kind, String, "source_kind");
 cadmpeg_core::named_optional_field!(
-    deserialize_split_face_compact_prefix,
-    bool,
-    "split_face_compact_prefix"
-);
-cadmpeg_core::named_optional_field!(
     deserialize_assembly_alignment,
     DesignAssemblyAlignment,
     "assembly_alignment"
@@ -708,7 +703,6 @@ pub(crate) struct DesignParameterScope {
     reference_members: ReferenceRun<u32>,
     /// Component ownership and placement recorded by paste operations.
     pub(crate) occurrence_transfer: Option<super::occurrence_transfer::DesignOccurrenceTransfer>,
-    pub(crate) split_face_compact_prefix: bool,
     /// Family-specific construction records.
     payload: DesignScopePayload,
     /// Reference members whose records open a construction-operand group the
@@ -797,12 +791,6 @@ struct DesignParameterScopeSerde {
     source_kind: Option<String>,
     /// Byte offset of the kind's UTF-16LE code units.
     kind_offset: u64,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_split_face_compact_prefix"
-    )]
-    split_face_compact_prefix: Option<bool>,
     /// Extrude prologue, fixed parameters, and profile.
     #[serde(flatten)]
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -2051,7 +2039,6 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                 "occurrence_transfer disagrees with scope".into(),
             ));
         }
-        admitted.split_face_compact_prefix = wire.split_face_compact_prefix == Some(true);
         admitted.source_kind = wire.source_kind;
         admitted.occurrence_transfer = occurrence_transfer;
         Ok(admitted)
@@ -2074,7 +2061,6 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             kind,
             source_kind: scope.source_kind,
             kind_offset: scope.kind_offset,
-            split_face_compact_prefix: scope.split_face_compact_prefix.then_some(true),
             extrude: None,
             coil: None,
             feature_ordinal: scope.feature_ordinal.get(),
@@ -2463,7 +2449,6 @@ impl DesignParameterScope {
             reference_count_offset: draft.reference_count_offset,
             reference_members: draft.reference_members,
             occurrence_transfer: None,
-            split_face_compact_prefix: false,
             payload: draft.payload,
             unclosed_construction_operand_groups: draft.unclosed_construction_operand_groups,
             deleted_sketch_members: draft.deleted_sketch_members,

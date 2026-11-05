@@ -8519,10 +8519,7 @@ fn project_split_face(
         return Ok(None);
     }
     let (count_offset, tail_length) = or_none!(face_scope_frame(scope));
-    if !matches!(count_offset, 168 | 172 | 176)
-        || !matches!(tail_length, 77 | 78 | 87)
-        || (count_offset == 168 && !scope.split_face_compact_prefix)
-    {
+    if !matches!(count_offset, 168 | 172 | 176) || !matches!(tail_length, 77 | 78 | 87) {
         return Ok(None);
     }
     let stream = or_none!(native_stream(&scope.id));

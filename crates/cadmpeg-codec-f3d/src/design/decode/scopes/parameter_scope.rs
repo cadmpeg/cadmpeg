@@ -63,7 +63,6 @@ use crate::ids::native_stream;
 use crate::layout::canvas_scope_tail_98 as canvas_tail;
 use crate::layout::canvas_scope_typed_tail as typed_canvas_tail;
 use crate::layout::reciprocal_hole_tail as hole_tail;
-use crate::layout::split_face_compact_prefix as split_face_prefix;
 use crate::layout::typed_reference_parameter_scope_tail as typed_tail;
 use crate::records::feature::assembly;
 use crate::records::feature::coil;
@@ -1627,7 +1626,6 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
             paired_byte_offset: u64_from_index(paired_at),
         })
         .ok()?;
-        mark_split_face_compact_prefix(bytes, &mut scope);
         scope.source_kind = source_kind;
         if let Some(prologue) = extrude_prologue {
             {
@@ -1893,25 +1891,6 @@ fn extrude_extent_native_loss(
             scope.id
         ))
     })
-}
-
-pub(crate) fn mark_split_face_compact_prefix(bytes: &[u8], scope: &mut DesignParameterScope) {
-    let frame = usize::try_from(scope.byte_offset()).ok().and_then(|start| {
-        start
-            .checked_add(split_face_prefix::LEN)
-            .and_then(|end| bytes.get(start..end))
-    });
-    scope.split_face_compact_prefix = scope.kind() == scope::DesignFeatureKind::SplitFace
-        && frame.is_some_and(|frame| {
-            frame.get(split_face_prefix::ZERO_RUN_11..split_face_prefix::FIRST_MARKER)
-                == Some(&[0; 11])
-                && frame.get(split_face_prefix::FIRST_MARKER) == Some(&1)
-                && frame.get(split_face_prefix::ZERO_RUN_4..split_face_prefix::MARKER_PAIR)
-                    == Some(&[0; 4])
-                && frame.get(split_face_prefix::MARKER_PAIR..split_face_prefix::ZERO_RUN_3)
-                    == Some(&[1, 1])
-                && frame.get(split_face_prefix::ZERO_RUN_3..split_face_prefix::LEN) == Some(&[0; 3])
-        });
 }
 
 #[cfg(test)]
