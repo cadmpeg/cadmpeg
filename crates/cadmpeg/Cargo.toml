@@ -78,6 +78,7 @@ tempfile.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+cadmpeg-asm.workspace = true
 cadmpeg-measure = { workspace = true, features = ["test-support"] }
 proc-macro2.workspace = true
 syn.workspace = true

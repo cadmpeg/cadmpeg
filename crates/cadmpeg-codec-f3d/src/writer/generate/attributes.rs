@@ -392,6 +392,10 @@ fn existing_source_less_attribute_count(target: &CadIr, index: &AttributeIndex<'
         + index.coedge_sketch_links.len()
 }
 
+pub(super) fn source_less_attribute_count(target: &CadIr, index: &AttributeIndex<'_>) -> usize {
+    existing_source_less_attribute_count(target, index) + index.creation_timestamps.len()
+}
+
 pub(super) fn timestamp_attribute_ref(
     target: &CadIr,
     index: &AttributeIndex<'_>,
@@ -806,7 +810,6 @@ fn compact_timestamp_payload<'a>(
     let candidates = target.model.attributes.iter().filter(|attribute| {
         attribute.target == *entity
             && compact_custom_shape(attribute)
-            && matches!(attribute.values.first(), Some(Some(AttributeValue::Reference(reference))) if reference.ends_with(":entity#-1"))
     }).collect::<Vec<_>>();
     let indexed = candidates
         .iter()

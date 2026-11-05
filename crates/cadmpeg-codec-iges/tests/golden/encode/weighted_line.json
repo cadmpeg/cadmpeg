@@ -10,11 +10,11 @@
     "coverage": {
       "arenas": {
         "appearance_bindings": "written",
-        "appearances": "dropped",
+        "appearances": "written",
         "articulations": "omitted",
         "assembly_joints": "dropped",
         "assets": "dropped",
-        "attributes": "reported",
+        "attributes": "written",
         "bodies": "written",
         "coedges": "written",
         "colliders": "omitted",
@@ -26,7 +26,7 @@
         "faces": "written",
         "feature_input_topologies": "dropped",
         "feature_result_topologies": "dropped",
-        "features": "dropped",
+        "features": "written",
         "loops": "written",
         "mass_properties": "omitted",
         "occurrences": "dropped",
@@ -83,27 +83,7 @@
           "namespace": "iges",
           "scope": "namespaced"
         },
-        "message": "IGES omits unsupported model arena presentation_layers",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "writer.attribute-omitted",
-          "kind": "metadata_not_transferred",
-          "namespace": "iges",
-          "scope": "namespaced"
-        },
-        "message": "IGES attribute iges:application:attribute#D1:0:1 is omitted: its current owner has no emitted entity",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "writer.attribute-omitted",
-          "kind": "metadata_not_transferred",
-          "namespace": "iges",
-          "scope": "namespaced"
-        },
-        "message": "IGES attribute iges:application:attribute#D1:0:2 is omitted: its current owner has no emitted entity",
+        "message": "IGES cannot fully encode presentation layers: iges:presentation:level#0",
         "severity": "warning"
       },
       {

@@ -356,6 +356,21 @@ impl TryFrom<SubdPlaneFrameWire> for SubdPlaneFrame {
 }
 
 impl SubdPlaneFrame {
+    /// Point on the symmetry plane.
+    pub const fn origin(&self) -> FinitePoint3 {
+        self.origin
+    }
+
+    /// First in-plane axis.
+    pub const fn first_axis(&self) -> UnitVector3 {
+        self.first_axis
+    }
+
+    /// Second in-plane axis.
+    pub const fn second_axis(&self) -> UnitVector3 {
+        self.second_axis
+    }
+
     /// Construct a finite plane frame with orthonormal axes.
     pub fn new(
         origin: Point3,
@@ -426,6 +441,21 @@ impl TryFrom<SubdRadialSymmetryWire> for SubdRadialSymmetry {
 }
 
 impl SubdRadialSymmetry {
+    /// Number of radial segments.
+    pub const fn segments(&self) -> std::num::NonZeroU32 {
+        self.segments
+    }
+
+    /// Native radial sweep.
+    pub const fn sweep(&self) -> FiniteReal {
+        self.sweep
+    }
+
+    /// Native selector-preserving radial maps.
+    pub fn radial_maps(&self) -> &[SubdRadialSymmetryMap] {
+        &self.radial_maps
+    }
+
     fn new(
         segments: std::num::NonZeroU32,
         sweep: f64,
@@ -557,6 +587,26 @@ struct SubdSymmetryWire {
 }
 
 impl SubdSymmetry {
+    /// Symmetry mode and radial controls.
+    pub const fn kind(&self) -> &SubdSymmetryKind {
+        &self.kind
+    }
+
+    /// Forward face correspondences.
+    pub fn face_pairs(&self) -> &[[u32; 2]] {
+        &self.face_pairs
+    }
+
+    /// Forward edge correspondences.
+    pub fn edge_pairs(&self) -> &[[u32; 2]] {
+        &self.edge_pairs
+    }
+
+    /// Forward vertex correspondences.
+    pub fn vertex_pairs(&self) -> &[[u32; 2]] {
+        &self.vertex_pairs
+    }
+
     /// Construct symmetry state with admitted distinct correspondences.
     pub fn new(
         kind: SubdSymmetryKind,

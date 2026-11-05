@@ -1,5 +1,5 @@
 {
-  "output": "original fixture                                                        S      1\n1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,32,38,6,308,17,7HprodG      1\nuct,1.0,2,2HMM,1,1.0,15HYYYYMMDD.HHMMSS,1.0000000000000000D-3,0,6HauthorG      2\n,3Horg,11,0,0H,0H;                                                      G      3\n     312       1       0       0       0       0       0       000000200D      1\n     312       0       0       3       0                               0D      2\n     312       4       0       0       0       0       0       000000200D      3\n     312       0       0       3       1                               0D      4\n312,4.0000000000000000D0,2.0000000000000000D0,1,                       1P      1\n1.5707963267948966D0,0,0,0,1.0000000000000000D1,                       1P      2\n2.0000000000000000D1,0;                                                1P      3\n312,3.0000000000000000D0,1.0000000000000000D0,18,                      3P      4\n1.5707963267948966D0,2.5000000000000000D-1,1,1,                        3P      5\n2.0000000000000000D0,-1.0000000000000000D0,0;                          3P      6\nS0000001G0000003D0000004P0000006                                        T      1\n",
+  "output": "original fixture                                                        S      1\n1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,32,38,6,308,17,7HprodG      1\nuct,1.0,2,2HMM,1,1.0,15HYYYYMMDD.HHMMSS,1.0000000000000000D-3,0,6HauthorG      2\n,3Horg,11,0,0H,0H;                                                      G      3\n     312       1       0       0       0       0       0       000000200D      1\n     312       0       0       1       0                 ABSTEXT       0D      2\n     312       2       0       0       0       0       0       000000200D      3\n     312       0       0       2       1                 INCTEXT       0D      4\n312,4,2,1,1.5707963267948966D0,0,0,0,10,20,0;                          1P      1\n312,3,1,18,1.5707963267948966D0,2.5000000000000000D-1,1,1,2,-1,        3P      2\n0;                                                                     3P      3\nS0000001G0000003D0000004P0000003                                        T      1\n",
   "report": {
     "census": {
       "basis": "target_records",
@@ -10,7 +10,7 @@
     "coverage": {
       "arenas": {
         "appearance_bindings": "written",
-        "appearances": "dropped",
+        "appearances": "written",
         "articulations": "omitted",
         "assembly_joints": "dropped",
         "assets": "dropped",
@@ -26,7 +26,7 @@
         "faces": "written",
         "feature_input_topologies": "dropped",
         "feature_result_topologies": "dropped",
-        "features": "dropped",
+        "features": "written",
         "loops": "written",
         "mass_properties": "omitted",
         "occurrences": "dropped",
@@ -37,7 +37,7 @@
         "pmi": "dropped",
         "points": "reported",
         "presentation_documents": "dropped",
-        "presentation_layers": "dropped",
+        "presentation_layers": "written",
         "procedural_curves": "dropped",
         "procedural_surfaces": "reported",
         "product_definitions": "dropped",
@@ -86,16 +86,6 @@
         },
         "message": "the document holds no geometry that IGES can encode",
         "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "native.records-omitted",
-          "kind": "record_not_typed",
-          "namespace": "export",
-          "scope": "namespaced"
-        },
-        "message": "the iges write omits 2 native record(s) from `iges.display_attributes`: iges:presentation:display-attributes#D1, iges:presentation:display-attributes#D3",
-        "severity": "info"
       },
       {
         "code": {
@@ -162,7 +152,11 @@
               "disposition": "dropped"
             },
             "display_attributes": {
-              "disposition": "dropped"
+              "disposition": "regenerated",
+              "records": {
+                "iges:presentation:display-attributes#D1": "regenerated",
+                "iges:presentation:display-attributes#D3": "regenerated"
+              }
             },
             "drawings": {
               "disposition": "dropped"

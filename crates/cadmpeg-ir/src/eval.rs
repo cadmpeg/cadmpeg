@@ -4740,7 +4740,7 @@ pub fn model_curve_parameter_near_point_in_index(
         curve_id,
         point,
         seed,
-        NonNegativeLength::from(index.ir().tolerances.linear),
+        NonNegativeLength::from(index.ir().tolerances.linear_or_default()),
     )
 }
 
@@ -7373,7 +7373,7 @@ fn cacheless_circular_variable_blend_section(
     let tolerance = index
         .ir()
         .tolerances
-        .linear
+        .linear_or_default()
         .get()
         .max(256.0 * f64::EPSILON * scale.max(1.0));
 
@@ -7509,7 +7509,7 @@ fn cacheless_constant_rolling_ball_section(
         return Err(refusal.into());
     }
     let [first_point, second_point] = [first.point(), second.point()];
-    let tolerance = index.ir().tolerances.linear.get().max(
+    let tolerance = index.ir().tolerances.linear_or_default().get().max(
         256.0
             * f64::EPSILON
             * radius

@@ -948,7 +948,7 @@ fn generated_source_less_writes_document_tolerance_contract() {
         .set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
         .unwrap();
     source_less.tolerances.linear =
-        cadmpeg_ir::scalar::PositiveLength::new(2.5e-7).expect("positive finite tolerance");
+        Some(cadmpeg_ir::scalar::PositiveLength::new(2.5e-7).expect("positive finite tolerance"));
     source_less.tolerances.angular =
         cadmpeg_ir::scalar::PositiveAngle::new(4.0e-11).expect("positive finite tolerance");
 

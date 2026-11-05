@@ -2912,7 +2912,6 @@ impl<'a> F3dDecodeSession<'a> {
                 self.ir.model.appearance_bindings = materials.bindings;
                 let face_losses =
                     resolve_face_appearance_bindings(&mut self.ir, &materials.face_assignments)?;
-                apply_appearance_base_colors(&mut self.ir);
                 apply_body_presentation_names(&mut self.ir, scan, &prereqs.design_body_bindings)?;
                 self.ir
                     .model
@@ -4667,7 +4666,38 @@ fn decode_result(
             .extend(design_stubs);
     }
     let entry_parts = give_up_unreadable_entries(ctx, scan)?;
-    let (_, mut entry_native, entry_fidelity, entry_losses) = entry_parts.into_parts();
+    let (_, mut entry_native, entry_fidelity, mut entry_losses) = entry_parts.into_parts();
+    if container::design_breps(scan).next().is_none()
+        && container::text_brep_names(scan).next().is_none()
+        && scan
+            .partial_brep_header()
+            .and_then(crate::container::KernelFraming::model_metadata)
+            .and_then(|header| header.linear)
+            .is_none()
+    {
+        let mut candidates = scan
+            .unreadable_entries
+            .iter()
+            .enumerate()
+            .filter(|(_, part)| {
+                scan.belongs_to_design_asset(&part.name)
+                    && matches!(
+                        crate::container::classify(&part.name),
+                        ContainerRole::BrepSmbh | ContainerRole::BrepSmb | ContainerRole::BrepText
+                    )
+            });
+        if let Some((ordinal, _)) = candidates.next().filter(|_| candidates.next().is_none()) {
+            ir.tolerances.linear = None;
+            let loss = entry_losses
+                .get_mut(ordinal)
+                .ok_or_else(|| CodecError::malformed("unreadable BREP entry has no part loss"))?;
+            loss.dropped_fields
+                .push(cadmpeg_ir::report::loss::DroppedField {
+                    record: cadmpeg_ir::report::loss::DOCUMENT_HEADER.to_owned(),
+                    field: "tolerances.linear".to_owned(),
+                });
+        }
+    }
     if let Some(stubs) = entry_native
         .namespace_mut("f3d")
         .arenas_mut()
@@ -5254,7 +5284,7 @@ fn admit_kernel_tolerances(
                 linear.get()
             )));
         }
-        tolerances.linear = linear;
+        tolerances.linear = Some(linear);
     }
     if let Some(angular) = resnor.and_then(cadmpeg_ir::scalar::PositiveAngle::new) {
         tolerances.angular = angular;
@@ -5857,46 +5887,6 @@ pub(crate) fn resolve_face_appearance_bindings(
     drop(bound_faces);
     ir.model.appearance_bindings.extend(new_bindings);
     Ok(losses)
-}
-
-/// Fill absent explicit topology colors from uniquely bound appearance assets.
-/// Native RGB/truecolor attributes remain authoritative on the same target.
-fn insert_appearance_color<'a, K: Eq + std::hash::Hash>(
-    colors: &mut std::collections::HashMap<&'a K, Option<cadmpeg_ir::topology::Color>>,
-    id: &'a K,
-    color: cadmpeg_ir::topology::Color,
-) {
-    if let Some(existing) = colors.get_mut(id) {
-        *existing = None;
-    } else {
-        colors.insert(id, Some(color));
-    }
-}
-
-fn apply_appearance_base_colors(ir: &mut CadIr) {
-    use cadmpeg_ir::appearance::AppearanceTarget;
-
-    let colors = ir
-        .model
-        .appearances
-        .iter()
-        .filter_map(|appearance| Some((&appearance.id, appearance.base_color?)))
-        .collect::<std::collections::HashMap<_, _>>();
-    let mut body_colors = std::collections::HashMap::new();
-    for binding in &ir.model.appearance_bindings {
-        let Some(color) = colors.get(&binding.appearance).copied() else {
-            continue;
-        };
-        match &binding.target {
-            AppearanceTarget::Body(id) => insert_appearance_color(&mut body_colors, id, color),
-            _ => {}
-        }
-    }
-    for body in &mut ir.model.bodies {
-        if body.color.is_none() {
-            body.color = body_colors.get(&body.id).copied().flatten();
-        }
-    }
 }
 
 pub(crate) fn is_default_body_name(name: &str) -> bool {

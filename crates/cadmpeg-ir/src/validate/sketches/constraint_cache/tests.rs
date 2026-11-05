@@ -182,7 +182,7 @@ fn repeated_distance_reads_the_canonical_parameter_and_per_measurement_axis() {
 fn cache_checks_use_the_declared_tolerance_and_do_not_measure_arc_chords_as_lines() {
     let mut ir = CadIr::empty();
     ir.tolerances.linear =
-        crate::scalar::PositiveLength::new(1.0e-12).expect("positive test linear tolerance");
+        Some(crate::scalar::PositiveLength::new(1.0e-12).expect("positive test linear tolerance"));
     assert!(!close(&ir, 1.0, 1.0 + 1.0e-10));
     let entity = id("arc");
     let arc: SketchGeometry = Geometry::Arc {

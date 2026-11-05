@@ -55,7 +55,12 @@ fn stated_write_tolerance(
     owner: &str,
 ) -> Result<f64, WriteError> {
     let (field, value) = stated.map_or_else(
-        || ("document linear tolerance", ir.tolerances.linear.get()),
+        || {
+            (
+                "document linear tolerance",
+                ir.tolerances.linear_or_default().get(),
+            )
+        },
         |tolerance| ("tolerance", tolerance.get()),
     );
     if value >= EPS_WRITE_DEGENERATE {
@@ -505,7 +510,7 @@ fn write_archive_prefix(
         )));
     }
     let mut settings = vec![units_record(
-        ir.tolerances.linear.get(),
+        ir.tolerances.linear_or_default().get(),
         angular.min(std::f64::consts::PI),
     )?];
     let exported = tables::document::settings(ir, materials, &mut setting_losses)?;
@@ -1993,8 +1998,9 @@ fn generated_projected_brep_c2_curve(
             .map_err(|error| WriteError::Omit(error.to_string()))?;
         if sense == Sense::Reversed {
             let sum = projected.knots()[usize::try_from(projected.degree()).map_err(|_| {
-                WriteError::Fail(CodecError::Malformed(
-                    "Rhino count exceeds address space".into(),
+                WriteError::Omit(format!(
+                    "edge {} NURBS degree exceeds address space",
+                    edge.source.id
                 ))
             })?] + projected.knots()[projected.pole_count()];
             projected.reverse_parameterization();
@@ -2088,11 +2094,9 @@ fn canonicalize_native_curve_knots(
     curve: &mut cadmpeg_ir::geometry::nurbs::NurbsCurve,
     id: &str,
 ) -> Result<(), WriteError> {
-    let order = usize::try_from(curve.degree()).map_err(|_| {
-        WriteError::Fail(CodecError::Malformed(
-            "Rhino count exceeds address space".into(),
-        ))
-    })? + 1;
+    let order = usize::try_from(curve.degree())
+        .map_err(|_| WriteError::Omit(format!("curve {id} NURBS degree exceeds address space")))?
+        + 1;
     let count = curve.control_points().len();
     let stored = curve.knots()[1..curve.knots().len() - 1].to_vec();
     let reconstructed = crate::surfaces::reconstruct_knots(&stored, order, count)
@@ -2150,8 +2154,9 @@ fn admit_pcurve<'a>(
             if curve.periodic()
                 || [
                     curve.knots()[usize::try_from(curve.degree()).map_err(|_| {
-                        WriteError::Fail(CodecError::Malformed(
-                            "Rhino count exceeds address space".into(),
+                        WriteError::Omit(format!(
+                            "pcurve {} NURBS degree exceeds address space",
+                            pcurve.id
                         ))
                     })?],
                     curve.knots()[count],
@@ -2262,16 +2267,18 @@ fn check_nurbs_trim(
     let v_count = surface.v_count();
     let u_domain = [
         surface.u_knots()[usize::try_from(surface.u_degree()).map_err(|_| {
-            WriteError::Fail(CodecError::Malformed(
-                "Rhino count exceeds address space".into(),
+            WriteError::Omit(format!(
+                "pcurve {} uses a surface whose NURBS degree exceeds address space",
+                explicit.source.id
             ))
         })?],
         surface.u_knots()[u_count],
     ];
     let v_domain = [
         surface.v_knots()[usize::try_from(surface.v_degree()).map_err(|_| {
-            WriteError::Fail(CodecError::Malformed(
-                "Rhino count exceeds address space".into(),
+            WriteError::Omit(format!(
+                "pcurve {} uses a surface whose NURBS degree exceeds address space",
+                explicit.source.id
             ))
         })?],
         surface.v_knots()[v_count],
@@ -2718,14 +2725,10 @@ fn check_nurbs_surface(
     surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
 ) -> Result<i32, WriteError> {
     let u_order = usize::try_from(surface.u_degree()).map_err(|_| {
-        WriteError::Fail(CodecError::Malformed(
-            "Rhino count exceeds address space".into(),
-        ))
+        WriteError::Omit(format!("surface {id} NURBS degree exceeds address space"))
     })? + 1;
     let v_order = usize::try_from(surface.v_degree()).map_err(|_| {
-        WriteError::Fail(CodecError::Malformed(
-            "Rhino count exceeds address space".into(),
-        ))
+        WriteError::Omit(format!("surface {id} NURBS degree exceeds address space"))
     })? + 1;
     let u_count = surface.u_count();
     let v_count = surface.v_count();
@@ -2761,11 +2764,9 @@ fn check_nurbs_curve(
     id: &str,
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
 ) -> Result<(), WriteError> {
-    let order = usize::try_from(curve.degree()).map_err(|_| {
-        WriteError::Fail(CodecError::Malformed(
-            "Rhino count exceeds address space".into(),
-        ))
-    })? + 1;
+    let order = usize::try_from(curve.degree())
+        .map_err(|_| WriteError::Omit(format!("curve {id} NURBS degree exceeds address space")))?
+        + 1;
     let count = curve.control_points().len();
     let count_error = || format!("curve {id} cannot be represented by Rhino NURBS counts");
     if order < 2 {

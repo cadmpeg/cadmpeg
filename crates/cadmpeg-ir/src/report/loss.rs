@@ -589,11 +589,14 @@ pub struct LossNote {
 #[cfg_attr(feature = "schema", derive(JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct DroppedField {
-    /// The record that contains the given-up part.
+    /// The record that contains the given-up part, or [`DOCUMENT_HEADER`].
     pub record: String,
-    /// The record field whose bytes lie inside the part.
+    /// The field whose bytes lie inside the part; header fields use dotted paths.
     pub field: String,
 }
+
+/// Identity used for fields of the document header in a part give-up.
+pub const DOCUMENT_HEADER: &str = "$document";
 
 impl LossNote {
     /// Creates a loss note with the kind's default severity and no provenance.
