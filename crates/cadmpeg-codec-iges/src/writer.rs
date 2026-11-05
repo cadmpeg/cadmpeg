@@ -616,13 +616,13 @@ fn synthesize_with_admission(
         .regenerated
         .extend(native_export.regenerated);
     append_name_properties(&mut graph.entities, &graph.presentations)?;
+    feature_order::order(ir, &mut graph.entities, &mut graph.presentations)?;
     attribute_export.regenerated.extend(display::regenerated(
         ir,
         &graph.entities,
         &graph.presentations,
         version,
     ));
-    feature_order::order(ir, &mut graph.entities, &mut graph.presentations)?;
     let emitted = graph
         .entities
         .iter()

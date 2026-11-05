@@ -38,11 +38,7 @@ fn public_parameter_failure_keeps_one_shared_source_home_and_checked_peer_conten
         serde_json::to_value(peer).unwrap(),
         serde_json::to_value(original).unwrap()
     );
-    let native = decoded.ir().native.namespace("iges").unwrap();
-    assert!(native
-        .arenas()
-        .get("quarantined_parameter_records")
-        .is_none_or(Vec::is_empty));
+    crate::test_support::assert_given_up_homes(&decoded);
     let first = bytes
         .chunks_exact(81)
         .position(|card| card[72] == b'P')
@@ -110,16 +106,7 @@ fn conflicted_parameter_parts_keep_an_unrelated_current_point_and_exact_source_h
         serde_json::to_value(peer).unwrap(),
         serde_json::to_value(original).unwrap()
     );
-    let native = decoded.ir().native.namespace("iges").unwrap();
-    assert!(native
-        .arenas()
-        .get("quarantined_directory_records")
-        .is_none());
-
-    assert!(native
-        .arenas()
-        .get("quarantined_parameter_records")
-        .is_none());
+    crate::test_support::assert_given_up_homes(&decoded);
     let mut homes = crate::test_support::given_up_parts(decoded.source_fidelity());
     assert_eq!(homes.len(), 2);
     homes.sort_unstable_by_key(|part| part.offset());
@@ -181,15 +168,7 @@ fn original_duplicate_claims_match_one_independent_physical_frame_and_one_helper
     let native = decoded.ir().native.namespace("iges").unwrap();
     assert_eq!(native.arenas()["entities"].len(), 2);
     assert!(decoded.ir().model.points.is_empty());
-    assert!(native
-        .arenas()
-        .get("quarantined_directory_records")
-        .is_none());
-
-    assert!(native
-        .arenas()
-        .get("quarantined_parameter_records")
-        .is_none());
+    crate::test_support::assert_given_up_homes(&decoded);
     let parts = crate::test_support::given_up_parts(decoded.source_fidelity());
     assert_eq!(parts.len(), 1);
     let part = parts[0];
@@ -526,12 +505,7 @@ fn unequal_overlapping_parameter_claims_give_up_only_the_proved_section_ancestor
         assert!(decoded.ir().model.points.is_empty());
         assert!(decoded.ir().model.vertices.is_empty());
         let native = decoded.ir().native.namespace("iges").unwrap();
-        for arena in [
-            "quarantined_directory_records",
-            "quarantined_parameter_records",
-        ] {
-            assert!(native.arenas().get(arena).is_none_or(Vec::is_empty));
-        }
+        crate::test_support::assert_given_up_homes(&decoded);
         let mut expected_entities = serde_json::to_value(
             &baseline.ir().native.namespace("iges").unwrap().arenas()["entities"],
         )
@@ -650,12 +624,7 @@ fn a_missing_declared_parameter_owner_has_one_actual_unclaimed_section_home() {
     assert!(decoded.ir().model.points.is_empty());
     assert!(decoded.ir().model.vertices.is_empty());
     let native = decoded.ir().native.namespace("iges").unwrap();
-    for name in [
-        "quarantined_directory_records",
-        "quarantined_parameter_records",
-    ] {
-        assert!(native.arenas().get(name).is_none_or(Vec::is_empty));
-    }
+    crate::test_support::assert_given_up_homes(&decoded);
     let mut expected =
         serde_json::to_value(&baseline.ir().native.namespace("iges").unwrap().arenas()["entities"])
             .unwrap();

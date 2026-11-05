@@ -522,7 +522,10 @@ enum ObjectCurveGeometry<'a> {
         to: [f64; 3],
         domain: [f64; 2],
     },
-    Circle(&'a cadmpeg_ir::geometry::analytic::CircleCurve),
+    Circle {
+        circle: &'a cadmpeg_ir::geometry::analytic::CircleCurve,
+        domain: [f64; 2],
+    },
     Nurbs(&'a NurbsCurve),
     NurbsOwned(NurbsCurve),
 }
@@ -548,7 +551,25 @@ impl<'a> WritableObjectCurve<'a> {
             }),
             Some(SolvedCurveGeometry::Circle(circle)) => {
                 check_frame(curve.id.as_str(), *circle.frame(), "circle")?;
-                Some(ObjectCurveGeometry::Circle(circle))
+                let domain = curve.parameter_range.map_or(
+                    [0.0, std::f64::consts::TAU],
+                    |range| range.endpoints(),
+                );
+                if domain[0] >= domain[1]
+                    || domain[1] - domain[0] > std::f64::consts::TAU + super::MAX_ARC_SPAN_EXCESS
+                {
+                    return Err(WriteError::Omit(format!(
+                        "curve {} has no writable Rhino arc interval",
+                        curve.id
+                    )));
+                }
+                if domain[1] - domain[0] < std::f64::consts::TAU - super::MAX_ARC_SPAN_EXCESS {
+                    conversion = Some(RhinoLossCode::WriterCarrierResolved.note(format!(
+                        "circle curve {} is written as an exact bounded arc",
+                        curve.id
+                    )));
+                }
+                Some(ObjectCurveGeometry::Circle { circle, domain })
             }
             Some(SolvedCurveGeometry::Nurbs(nurbs)) => {
                 match check_nurbs_curve(curve.id.as_str(), nurbs) {
@@ -653,7 +674,7 @@ impl<'a> WritableObjectCurve<'a> {
                 super::LINE_CLASS,
                 super::bounded_line_payload(*from, *to, *domain, 3)?,
             ),
-            ObjectCurveGeometry::Circle(circle) => {
+            ObjectCurveGeometry::Circle { circle, domain } => {
                 let center = circle.center().get();
                 let axis = circle.frame().axis().as_raw();
                 let ref_direction = circle.frame().reference().as_raw();
@@ -665,8 +686,8 @@ impl<'a> WritableObjectCurve<'a> {
                         *axis,
                         *ref_direction,
                         radius,
-                        [0.0, std::f64::consts::TAU],
-                        [0.0, std::f64::consts::TAU],
+                        *domain,
+                        *domain,
                         3,
                     )?,
                 )

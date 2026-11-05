@@ -88,3 +88,19 @@ fn source_less_brep_budget_matches_framed_records() {
     input.limits.max_entities = count;
     F3dCodec.plan(input, TargetRequest::Inherit).unwrap();
 }
+
+#[test]
+fn source_less_parameter_charges_its_collection_and_record() {
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model.parameters.push(parameter(
+        "width", 0, ParameterValue::Length(cadmpeg_ir::scalar::Length::new(42.0).unwrap()),
+    ));
+    let mut limited = EncodeInput::new(&ir, None);
+    limited.limits.max_entities = 3;
+    assert!(matches!(F3dCodec.plan(limited, TargetRequest::Inherit),
+        Err(cadmpeg_ir::codec::write::EncodeError::ResourceLimit(limit))
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities));
+    let mut exact = EncodeInput::new(&ir, None);
+    exact.limits.max_entities = 4;
+    F3dCodec.plan(exact, TargetRequest::Inherit).unwrap();
+}

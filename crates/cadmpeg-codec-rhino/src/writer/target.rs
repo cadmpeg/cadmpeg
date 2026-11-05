@@ -281,13 +281,6 @@ pub(crate) fn plan(
             recovered.sampled_fits.len(), recovered.residual_limit
         )));
     }
-    let owned_points = input
-        .ir
-        .model
-        .vertices
-        .iter()
-        .map(|vertex| &vertex.point)
-        .collect::<std::collections::BTreeSet<_>>();
     let owned_curves = input
         .ir
         .model
@@ -295,16 +288,6 @@ pub(crate) fn plan(
         .iter()
         .filter_map(cadmpeg_ir::topology::Edge::curve)
         .collect::<std::collections::BTreeSet<_>>();
-    let points = input
-        .ir
-        .model
-        .points
-        .iter()
-        .filter(|point| {
-            !owned_points.contains(&point.id) && super::is_support(point.source_object.as_ref())
-        })
-        .map(|point| point.id.as_str())
-        .collect::<Vec<_>>();
     let curves = input
         .ir
         .model
@@ -316,8 +299,8 @@ pub(crate) fn plan(
                 && super::is_support(curve.source_object.as_ref())
         })
         .collect::<Vec<_>>();
-    if !points.is_empty() || !curves.is_empty() {
-        let mut withheld: Vec<&str> = points.clone();
+    if !curves.is_empty() {
+        let mut withheld = Vec::new();
         withheld.extend(curves.iter().map(|curve| curve.id.as_str()));
         for curve in &curves {
             if let Some(construction) = curve.geometry.procedural_construction() {
@@ -325,8 +308,7 @@ pub(crate) fn plan(
             }
         }
         losses.push(RhinoLossCode::WriterSupportGeometryWithheld.note(format!(
-            "{} support point record(s) and {} support curve record(s) were withheld; Rhino cannot encode dependent standalone geometry: {}",
-            points.len(),
+            "{} support curve record(s) were withheld; Rhino cannot encode their standalone form: {}",
             curves.len(),
             withheld.join(", ")
         )));
