@@ -3,6 +3,7 @@
 //! Integration contracts over synthesized `FCStd` archives and application graphs.
 
 mod authored_assembly;
+mod authored_binary_shape;
 mod authored_constraints;
 mod authored_drawing;
 mod authored_history;
