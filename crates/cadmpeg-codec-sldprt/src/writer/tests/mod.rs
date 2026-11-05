@@ -12,6 +12,7 @@ mod homogeneous_poles;
 mod metadata_members;
 mod native_properties;
 mod normalization;
+mod parameters_equation_aliases;
 mod parameters_extrude;
 mod patterns_history;
 mod record_losses;
