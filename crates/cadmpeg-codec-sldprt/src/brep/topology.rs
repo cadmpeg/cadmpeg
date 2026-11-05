@@ -1290,6 +1290,7 @@ fn parse_point_short(buf: &[u8], off: usize, prefixed: bool) -> Option<Point> {
     })
 }
 
+#[derive(Clone)]
 struct RecordFrame {
     partition: bool,
     bytes: Option<Vec<u8>>,
@@ -1336,7 +1337,7 @@ fn merge_framed_records<T>(
 }
 
 /// The topology record tables of one stream, each keyed by `attr`.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub(crate) struct Tables {
     bridges: HashMap<u32, Bridge>,
     bridge_frames: HashMap<u32, RecordFrame>,

@@ -213,3 +213,55 @@ fn the_framed_nodes_of_a_stopped_deltas_stream_join_the_agreement() {
     assert!(site_has_plane(&[&partition, &framed, &stopped(0.0)]));
     assert!(!site_has_plane(&[&partition, &framed, &stopped(0.001)]));
 }
+
+/// The curves the site of `streams` decodes.
+fn site_curves(streams: &[&Vec<u8>]) -> usize {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    let headers: Vec<_> = streams
+        .iter()
+        .map(|stream| crate::parasolid::stream_header(stream).unwrap().unwrap())
+        .collect();
+    let bodies: Vec<(&[u8], &crate::parasolid::StreamHeader)> = streams
+        .iter()
+        .zip(&headers)
+        .map(|(stream, header)| (stream.as_slice(), header))
+        .collect();
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("root");
+    super::decode_bodies(&ctx, &bodies, &cadmpeg_ir::stream_name!("mixed"))
+        .unwrap()
+        .curves
+        .len()
+}
+
+#[test]
+fn a_shared_edge_use_admitted_through_partition_evidence_is_withheld() {
+    use crate::test_support::parasolid::{
+        edge_use, line_carrier, parasolid_with_body, suffix_prefixed_edge_use, triangle_body,
+    };
+    use cadmpeg_parasolid::test_support::test_pmarks::{complete, prefix};
+    // Edge use 40 has two framings; only the partition's line 259 selects
+    // one, and the selected edge use binds the line.
+    let curve = 259;
+    let mut partition = triangle_body();
+    let edge = edge_use(40, 0);
+    let at = partition
+        .windows(edge.len())
+        .position(|window| window == edge.as_slice())
+        .expect("partition edge use");
+    partition.drain(at..at + edge.len());
+    partition.extend(line_carrier(curve, [0.0; 3], [1.0, 0.0, 0.0]));
+    let partition = parasolid_with_body("partition body", "SCH_SW_33103_11000", &partition);
+    let scanned = parasolid_with_body(
+        "deltas body",
+        "SCH_SW_33103_11000",
+        &suffix_prefixed_edge_use(40, curve),
+    );
+    let mut framed = prefix(1);
+    framed.extend(deltas_plane(true, 40, 0.0));
+    let framed = complete(framed);
+    assert_eq!(site_curves(&[&partition]), 0);
+    assert_eq!(site_curves(&[&partition, &scanned]), 1);
+    assert_eq!(site_curves(&[&partition, &framed, &scanned]), 0);
+}

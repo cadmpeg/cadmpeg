@@ -691,7 +691,7 @@ pub(super) fn index_carriers_with_nodes(
 
 /// The carriers of one stream read from its node sequence. A family that
 /// the node sequence does not supply is scanned.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub(super) struct NodeCarriers {
     pub(super) analytic: Option<Vec<Carrier>>,
     pub(super) splines: Option<spline::nodes::NodeSplines>,

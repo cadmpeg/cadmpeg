@@ -164,6 +164,7 @@ fn blend_from_raw(raw: &RawCarrier, offset: usize) -> Option<BlendCarrier> {
     })
 }
 
+#[derive(Clone)]
 pub(super) struct BlendCarriers {
     pub blends: HashMap<u32, BlendCarrier>,
     pub pairs: HashMap<u32, SupportPairCarrier>,
