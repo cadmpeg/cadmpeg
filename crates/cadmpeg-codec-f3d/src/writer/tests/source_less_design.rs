@@ -462,6 +462,41 @@ fn generated_source_less_writes_design_recipes_and_persistent_references() {
     .expect("valid lost-edge record layout")];
 
     drop(native);
+    let mut reordered = source_less.clone();
+    {
+        let mut native = f3d_native_mut(&mut reordered);
+        let original = native.design_types.remove(163);
+        let mut data = (*original).clone();
+        data.byte_offset = Some(10);
+        native.design_types.push(
+            crate::records::entity_header::SegmentType::try_new(
+                "f3d:generated/MetaStream.dat:design-type#10".into(),
+                data,
+            )
+            .unwrap(),
+        );
+    }
+    let mut reordered_bytes = Vec::new();
+    F3dCodec
+        .plan(EncodeInput::new(&reordered, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut reordered_bytes))
+        .expect("reordered Design registry encode");
+    let reordered_output = F3dCodec
+        .decode(&mut Cursor::new(reordered_bytes), &DecodeOptions::default())
+        .expect("reordered Design registry decode");
+    let reordered_native = f3d_native(reordered_output.ir());
+    assert_eq!(reordered_native.lost_edge_references.len(), 1);
+    assert_eq!(
+        reordered_native.lost_edge_references[0].class_tag.as_str(),
+        "256"
+    );
+    assert_eq!(
+        reordered_native.lost_edge_references[0]
+            .next_class_tag
+            .as_str(),
+        "256"
+    );
+    assert_eq!(reordered_native.persistent_references.len(), 3);
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
