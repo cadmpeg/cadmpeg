@@ -317,6 +317,56 @@ pub(crate) fn f3d_with_smbh_and_instance_properties(
     )
 }
 
+pub(crate) fn indexed_fixture_metastream(bulk: &[u8], primary: &[u32], paired: &[u32]) -> Vec<u8> {
+    let headers: Vec<_> = bulk
+        .windows(11)
+        .enumerate()
+        .filter_map(|(offset, bytes)| {
+            if bytes[..4] != 3_u32.to_le_bytes() || !bytes[4..7].iter().all(u8::is_ascii_digit) {
+                return None;
+            }
+            let tag = std::str::from_utf8(&bytes[4..7])
+                .ok()?
+                .parse::<usize>()
+                .ok()?;
+            let id = u32::from_le_bytes(bytes[7..11].try_into().ok()?);
+            primary.contains(&id).then_some((offset, tag, id))
+        })
+        .collect();
+    let mut records = Vec::new();
+    let mut secondary = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for &(offset, tag, id) in &headers {
+        if seen.insert(id) {
+            records.push((u64::from(id), u64::try_from(offset).unwrap(), tag));
+        } else if paired.contains(&id)
+            && !secondary.iter().any(|(entity, _)| *entity == u64::from(id))
+        {
+            secondary.push((u64::from(id), u64::try_from(offset).unwrap()));
+        }
+    }
+    assert_eq!(records.len(), primary.len());
+    assert_eq!(secondary.len(), paired.len());
+    let highest = headers.iter().map(|(_, tag, _)| *tag).max().unwrap();
+    let mut entities = vec![Vec::new(); highest - 255];
+    for &(id, _, tag) in &records {
+        entities[tag - 256].push(id);
+    }
+    let guids: Vec<_> = (256..=highest)
+        .map(|tag| format!("00000000-0000-4000-8000-{tag:012X}"))
+        .collect();
+    let types: Vec<_> = guids
+        .iter()
+        .zip(&entities)
+        .map(|(guid, ids)| (guid.as_str(), "", 1, "Fusion", ids.as_slice()))
+        .collect();
+    let records: Vec<_> = records
+        .into_iter()
+        .map(|(id, offset, _)| (id, offset))
+        .collect();
+    design_metastream_with_records_and_secondary(&types, &records, &secondary)
+}
+
 fn sketch_dimension_metastream(
     records: &[(u64, u64)],
     extra_types: &[(

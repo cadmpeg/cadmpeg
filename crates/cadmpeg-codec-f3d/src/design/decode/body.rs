@@ -6,7 +6,6 @@ use cadmpeg_core::container::ContainerRole;
 
 use crate::bytes::take_reference;
 use crate::container::ContainerScan;
-use crate::design::decode::sketch::next_indexed_record_offset;
 use crate::design::decode::text::design_record_id;
 use crate::design::RECIPES;
 use crate::ids::native_stream;
@@ -20,22 +19,21 @@ use crate::records::{
 };
 use cadmpeg_asm::brep::records::BodyNativeKey;
 use cadmpeg_core::bytes::find_from;
-use cadmpeg_core::decode::{bounded_len, index_from_u32, u64_from_index, View};
+use cadmpeg_core::decode::{u64_from_index, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::FiniteReal;
 use std::collections::{HashMap, HashSet};
 
-/// Decode the `BodiesRoot` member list following the doubled `BodiesRoot`
-/// marker in each design `BulkStream` entry in `scan`: each member's entity
-/// suffix and flags. The decode is rejected (no members returned for that
-/// stream) unless the declared count is fully consumed and immediately
-/// followed by a zero byte.
+/// Decode each indexed `BodiesRoot` list as one recoverable Design part.
 pub(crate) fn decode_body_members(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
-) -> Result<Vec<DesignBodyMember>, CodecError> {
-    let mut out = Vec::new();
+    output: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
+) -> Result<(), CodecError> {
+    use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartSpec};
+
     let mut prefix = Vec::new();
     prefix.extend_from_slice(&10u32.to_le_bytes());
     prefix.extend_from_slice(b"BodiesRoot");
@@ -47,59 +45,99 @@ pub(crate) fn decode_body_members(
         .iter()
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
-        let bytes = scan.entry_bytes(&entry.name)?;
-        let Some(start) = bytes
-            .windows(prefix.len())
-            .position(|window| window == prefix)
-        else {
+        let Some(source) = scan.entry_view(&entry.name) else {
             continue;
         };
-        let count_offset = start + prefix.len();
-        let mut view = View::over_retained(bytes);
-        if view.seek(count_offset).is_none() {
-            continue;
-        }
-        let Some(count) = view.u32_le().map(index_from_u32) else {
+        let bytes = source.window();
+        let Some(meta) = super::meta::metadata_for_bulk_stream(scan, &entry.name)? else {
             continue;
         };
-        if count > 100_000 {
-            continue;
-        }
-        let Some(count) = bounded_len(u64_from_index(count), 11, view.remaining()) else {
-            continue;
-        };
-
-        let mut decoded = Vec::new();
-        for _ in 0..count {
-            let cursor = view.position();
-            if view.u8() != Some(1) {
-                decoded.clear();
-                break;
+        for frame in super::meta::design_primary_frames(bytes, &meta)? {
+            let Some(record) = bytes.get(frame.start..frame.member_end) else {
+                continue;
+            };
+            let Some(count_offset) = [
+                indexed_design_record_header::LEN,
+                indexed_design_record_header::LEN + std::mem::size_of::<u32>(),
+            ]
+            .into_iter()
+            .find_map(|header| {
+                record
+                    .get(header..header + prefix.len())
+                    .filter(|field| *field == prefix.as_slice())
+                    .map(|_| header + prefix.len())
+            }) else {
+                continue;
+            };
+            let start = source
+                .start()
+                .checked_add(frame.start)
+                .ok_or_else(|| CodecError::malformed("BodiesRoot start overflows"))?;
+            let end = source
+                .start()
+                .checked_add(frame.end)
+                .ok_or_else(|| CodecError::malformed("BodiesRoot end overflows"))?;
+            let members_end = source
+                .start()
+                .checked_add(frame.member_end)
+                .ok_or_else(|| CodecError::malformed("BodiesRoot members end overflows"))?;
+            let extent = source
+                .child(start, end)
+                .ok_or_else(|| CodecError::malformed("BodiesRoot extent exceeds its stream"))?;
+            let mut members = source
+                .child(start, members_end)
+                .ok_or_else(|| CodecError::malformed("BodiesRoot members exceed their stream"))?;
+            let mut spec = PartSpec::new("f3d.bulk_record").holding([
+                cadmpeg_ir::document::ArenaClass::Model,
+                cadmpeg_ir::document::ArenaClass::Design,
+            ]);
+            if extent.location().space != cadmpeg_core::decode::SpaceId::ROOT {
+                spec = spec.in_stream(
+                    cadmpeg_ir::StreamName::try_from(entry.name.clone())
+                        .map_err(CodecError::malformed)?,
+                );
             }
-            let Some(entity_suffix) = view.u64_le() else {
-                decoded.clear();
-                break;
-            };
-            let Some(flags) = view.u16_le() else {
-                decoded.clear();
-                break;
-            };
-            let id = design_record_id(&entry.name, ":design-body-member#", u64_from_index(cursor));
-            decoded.push(
-                DesignBodyMember::try_from(crate::records::bodies::DesignBodyMemberWire {
-                    id,
-                    byte_offset: u64_from_index(cursor),
-                    entity_suffix,
-                    flags,
-                })
-                .map_err(CodecError::Malformed)?,
-            );
-        }
-        if decoded.len() == count && bytes.get(view.position()) == Some(&0) {
-            out.extend(decoded);
+            ctx.decode_part(output, extent, spec, |stage| {
+                members
+                    .seek(start + count_offset)
+                    .ok_or_else(|| CodecError::malformed("BodiesRoot count exceeds its record"))?;
+                let count = members.req_u32_le()?;
+                let count = members
+                    .counted(u64::from(count), 11)
+                    .ok_or_else(|| {
+                        CodecError::malformed("BodiesRoot member count exceeds its record")
+                    })?
+                    .get();
+                for _ in 0..count {
+                    let cursor = members.position() - source.start();
+                    if members.req_u8()? != 1 {
+                        return Err(CodecError::malformed("BodiesRoot member marker is invalid"));
+                    }
+                    let entity_suffix = members.req_u64_le()?;
+                    let flags = members.req_u16_le()?;
+                    let id = design_record_id(
+                        &entry.name,
+                        ":design-body-member#",
+                        u64_from_index(cursor),
+                    );
+                    let member =
+                        DesignBodyMember::try_from(crate::records::bodies::DesignBodyMemberWire {
+                            id,
+                            byte_offset: u64_from_index(cursor),
+                            entity_suffix,
+                            flags,
+                        })
+                        .map_err(CodecError::Malformed)?;
+                    stage.insert_native(ctx, "design_body_members", member)?;
+                }
+                if members.req_u8()? != 0 {
+                    return Err(CodecError::malformed("BodiesRoot terminator is invalid"));
+                }
+                Ok(())
+            })?;
         }
     }
-    Ok(out)
+    Ok(())
 }
 
 /// Decode the three consecutive indexed records that cache each Design body's
@@ -121,6 +159,10 @@ pub(crate) fn decode_body_bounds(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
+        let Some(meta) = super::meta::metadata_for_bulk_stream(scan, &entry.name)? else {
+            continue;
+        };
+        let frames = super::meta::design_primary_frames(bytes, &meta)?;
         let Some(start) = entity
             .byte_offset
             .and_then(|offset| usize::try_from(offset).ok())
@@ -151,14 +193,14 @@ pub(crate) fn decode_body_bounds(
         else {
             continue;
         };
-        let mut record_offsets = [0; 3];
+        let mut intervals = [(0, 0); 3];
         let mut unique = true;
         for (ordinal, wanted) in record_indices.into_iter().enumerate() {
-            let mut matches = indexed_headers_in(bytes, start, end)
-                .filter(|(_, record_index)| *record_index == wanted)
-                .map(|(offset, _)| offset);
+            let mut matches = frames.iter().filter(|frame| {
+                frame.entity_id == u64::from(wanted) && frame.start >= start && frame.end <= end
+            });
             match (matches.next(), matches.next()) {
-                (Some(offset), None) => record_offsets[ordinal] = offset,
+                (Some(frame), None) => intervals[ordinal] = (frame.start, frame.member_end),
                 _ => {
                     unique = false;
                     break;
@@ -168,17 +210,10 @@ pub(crate) fn decode_body_bounds(
         if !unique {
             continue;
         }
-        let [first, second, third] = record_offsets;
+        let [first, second, third] = intervals.map(|(start, _)| start);
         if !(first < second && second < third) {
             continue;
         }
-        let Some(search_at) = third.checked_add(11) else {
-            continue;
-        };
-        let third_end = next_indexed_record_offset(bytes, search_at)
-            .filter(|offset| *offset <= end)
-            .unwrap_or(end);
-        let intervals = [(first, second), (second, third), (third, third_end)];
         let mut repeated = body_bound_candidates(bytes, intervals[0].0, intervals[0].1).filter_map(
             |(marker_offset, values)| {
                 let frame = bytes.get(marker_offset..marker_offset + 49)?;
@@ -240,33 +275,6 @@ pub(crate) fn decode_body_bounds(
     }
     out.sort_by(|a, b| a.id().cmp(b.id()));
     Ok(out)
-}
-
-fn indexed_headers_in(
-    bytes: &[u8],
-    mut position: usize,
-    end: usize,
-) -> impl Iterator<Item = (usize, u32)> + '_ {
-    std::iter::from_fn(move || {
-        while position + 11 <= end {
-            let at = position;
-            position += 1;
-            if View::u32_le_at(bytes, at) != Some(3) {
-                continue;
-            }
-            let Some(class_tag) = bytes.get(at + 4..at + 7) else {
-                continue;
-            };
-            if !class_tag.iter().all(u8::is_ascii_digit) {
-                continue;
-            }
-            let Some(record_index) = View::u32_le_at(bytes, at + 7) else {
-                continue;
-            };
-            return Some((at, record_index));
-        }
-        None
-    })
 }
 
 fn body_bound_candidates(
@@ -1476,6 +1484,7 @@ mod tests {
     fn body_members_decode_one_member_identity() {
         const ENTRY: &str = "FusionAssetName[Active]/Design1/BulkStream.dat";
         let mut bulk = Vec::new();
+        indexed_header(&mut bulk, *b"256", 7);
         bulk.extend_from_slice(&10_u32.to_le_bytes());
         bulk.extend_from_slice(b"BodiesRoot");
         bulk.extend_from_slice(&0_u16.to_le_bytes());
@@ -1492,13 +1501,111 @@ mod tests {
         write_synthetic_manifests(&mut zip, stored);
         zip.start_file(ENTRY, stored).unwrap();
         zip.write_all(&bulk).unwrap();
+        let meta = crate::test_support::streams_test::design_metastream_with_records(
+            &[("00000000-0000-0000-0000-000000000001", "", 1, "Body", &[7])],
+            &[(7, 0)],
+        );
+        zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
+            .unwrap();
+        zip.write_all(&meta).unwrap();
         let archive = zip.finish().unwrap().into_inner();
         with_scan(&archive, |scan| {
-            let members = super::decode_body_members(scan).unwrap();
+            let ctx = cadmpeg_test_support::service_decode_context();
+            let mut parts = cadmpeg_ir::source_fidelity::parts::PartOutput::new(
+                cadmpeg_ir::CodecFormat::F3d,
+                &ctx,
+            );
+            super::decode_body_members(&ctx, scan, &mut parts).unwrap();
+            let (_, native, _, losses) = parts.into_parts();
+            assert!(losses.is_empty());
+            let members: Vec<crate::records::bodies::DesignBodyMember> = native
+                .namespace("f3d")
+                .unwrap()
+                .arena_as_for_decode(&ctx, "design_body_members")
+                .unwrap();
             assert_eq!(members.len(), 1);
             assert_eq!(
                 members[0].id(),
                 &crate::ids::native_design_body_member_id(ENTRY, member_offset)
+            );
+        });
+    }
+
+    #[test]
+    fn damaged_body_member_list_preserves_its_sibling() {
+        const ENTRY: &str = "FusionAssetName[Active]/Design1/BulkStream.dat";
+        let mut bulk = Vec::new();
+        let mut primary = Vec::new();
+        let mut dropped_offset = 0;
+        for (index, damaged) in [(7_u32, true), (8, false)] {
+            primary.push((u64::from(index), u64::try_from(bulk.len()).unwrap()));
+            indexed_header(&mut bulk, *b"256", index);
+            bulk.extend_from_slice(&10_u32.to_le_bytes());
+            bulk.extend_from_slice(b"BodiesRoot");
+            bulk.extend_from_slice(&0_u16.to_le_bytes());
+            bulk.extend_from_slice(&10_u32.to_le_bytes());
+            bulk.extend_from_slice(b"BodiesRoot");
+            bulk.extend_from_slice(&(if damaged { 2_u32 } else { 1 }).to_le_bytes());
+            if damaged {
+                dropped_offset = bulk.len();
+            }
+            bulk.push(1);
+            bulk.extend_from_slice(&9_u64.to_le_bytes());
+            bulk.extend_from_slice(&2_u16.to_le_bytes());
+            if damaged {
+                bulk.push(2);
+                bulk.extend_from_slice(&10_u64.to_le_bytes());
+                bulk.extend_from_slice(&0_u16.to_le_bytes());
+            }
+            bulk.push(0);
+        }
+        let meta = crate::test_support::streams_test::design_metastream_with_records(
+            &[(
+                "00000000-0000-0000-0000-000000000001",
+                "",
+                1,
+                "Body",
+                &[7, 8],
+            )],
+            &primary,
+        );
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+        write_synthetic_manifests(&mut zip, stored);
+        zip.start_file(ENTRY, stored).unwrap();
+        zip.write_all(&bulk).unwrap();
+        zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
+            .unwrap();
+        zip.write_all(&meta).unwrap();
+        let archive = zip.finish().unwrap().into_inner();
+        with_scan(&archive, |scan| {
+            let ctx = cadmpeg_test_support::service_decode_context();
+            let mut parts = cadmpeg_ir::source_fidelity::parts::PartOutput::new(
+                cadmpeg_ir::CodecFormat::F3d,
+                &ctx,
+            );
+            super::decode_body_members(&ctx, scan, &mut parts).unwrap();
+            let (_, native, _, losses) = parts.into_parts();
+            let namespace = native.namespace("f3d").unwrap();
+            let members: Vec<crate::records::bodies::DesignBodyMember> = namespace
+                .arena_as_for_decode(&ctx, "design_body_members")
+                .unwrap();
+            assert_eq!(members.len(), 1);
+            assert_eq!(members[0].entity_suffix, 9);
+            assert_eq!(namespace.arenas()["unknowns"].len(), 1);
+            assert_eq!(losses.len(), 1);
+            assert_eq!(
+                losses[0].dropped,
+                vec![crate::ids::native_design_body_member_id(
+                    ENTRY,
+                    dropped_offset
+                )]
+            );
+            assert_eq!(
+                losses[0].code,
+                cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable
+                    .note(String::new())
+                    .code
             );
         });
     }
@@ -2726,6 +2833,11 @@ mod tests {
         write_synthetic_manifests(&mut zip, stored);
         zip.start_file(ENTRY, stored).unwrap();
         zip.write_all(&bulk).unwrap();
+        let meta =
+            crate::test_support::zip_test::indexed_fixture_metastream(&bulk, &[7, 8, 9, 10], &[]);
+        zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
+            .unwrap();
+        zip.write_all(&meta).unwrap();
         let archive = zip.finish().unwrap().into_inner();
         with_scan(&archive, |scan| {
             let bounds = super::decode_body_bounds(scan, std::slice::from_ref(&entity)).unwrap();
