@@ -381,6 +381,27 @@ fn omitted_scalar_attributes_are_named_and_geometry_survives() {
 }
 
 #[test]
+fn duplicate_attribute_identity_is_named_in_loss() {
+    use crate::test_support::smbh_geometry_test::synthetic_geometry_with_attribute_smbh;
+    use crate::test_support::zip_test::f3d_with_smbh;
+    let decoded = F3dCodec.decode(
+        &mut Cursor::new(f3d_with_smbh(&synthetic_geometry_with_attribute_smbh())),
+        &DecodeOptions::default(),
+    ).unwrap();
+    let mut ir = decoded.ir().clone();
+    ir.model.attributes[1].id = ir.model.attributes[0].id.clone();
+    let plan = F3dCodec.plan(EncodeInput::new(&ir, None), TargetRequest::Inherit).unwrap();
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.message.contains(ir.model.attributes[0].id.as_str())
+            && loss.message.contains("duplicate identity")
+    }));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = F3dCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()).unwrap();
+    assert_eq!(output.ir().model.bodies.len(), 1);
+}
+
+#[test]
 fn unreferenced_composite_does_not_drop_a_supported_body() {
     use cadmpeg_ir::geometry::{
         CompositeCurveSegment, CompositeCurveTransition, Curve, CurveGeometry, SolvedCurveGeometry,

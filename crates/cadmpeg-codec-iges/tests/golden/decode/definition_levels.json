@@ -22,36 +22,6 @@
           ]
         },
         {
-          "id": "iges:application:attribute#D3:0:1",
-          "name": "name",
-          "native_ref": "iges:entity:directory#3",
-          "target": {
-            "id": "iges:model:point#D3-end",
-            "kind": "point"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "LINE"
-            }
-          ]
-        },
-        {
-          "id": "iges:application:attribute#D3:0:2",
-          "name": "name",
-          "native_ref": "iges:entity:directory#3",
-          "target": {
-            "id": "iges:model:point#D3-start",
-            "kind": "point"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "LINE"
-            }
-          ]
-        },
-        {
           "id": "iges:application:attribute#document:author",
           "name": "author",
           "target": {
