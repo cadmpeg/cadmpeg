@@ -675,25 +675,28 @@ pub(crate) fn bind_extrude_profile_selections(
                                 curve_resolution.sketch_entities,
                             )
                         });
-                    let mut unresolved_region_selection = false;
                     if explicit_profiles.is_none() {
                         if let Some((operand, stream)) = scope
                             .extrude_profile()
                             .zip(native_stream(&scope.id))
                             .filter(|(operand, _)| operand.region_selection.is_some())
                         {
-                            unresolved_region_selection = true;
-                            if let Some(selected) = region_members::resolve(
+                            let selected = region_members::resolve(
                                 stream,
                                 operand,
                                 sketch,
                                 curve_resolution.curve_identities,
                                 curve_resolution.sketch_entities,
                                 scoped_resolution,
-                            )? {
-                                *profile = ProfileRef::Planar(selected);
-                                break 'feature_edit;
-                            }
+                            )?;
+                            *profile = ProfileRef::Planar(selected.unwrap_or_else(|| {
+                                PlanarProfileRef::sketch_selection(
+                                    sketch_id.clone(),
+                                    vec![scope.id.clone()],
+                                )
+                                .unwrap_or_else(|_| PlanarProfileRef::Native(scope.id.clone()))
+                            }));
+                            break 'feature_edit;
                         }
                     }
                     if !matching_groups.is_empty() {
@@ -748,15 +751,6 @@ pub(crate) fn bind_extrude_profile_selections(
                         break 'feature_edit;
                     }
                     if matching_groups.is_empty() {
-                        if unresolved_region_selection {
-                            *profile = ProfileRef::Planar(
-                                PlanarProfileRef::sketch_selection(
-                                    sketch_id.clone(),
-                                    vec![scope.id.clone()],
-                                )
-                                .unwrap_or_else(|_| PlanarProfileRef::Native(scope.id.clone())),
-                            );
-                        }
                         break 'feature_edit;
                     }
                     let group_ids: Vec<_> = matching_groups
