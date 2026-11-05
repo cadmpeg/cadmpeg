@@ -8,7 +8,6 @@ use crate::bytes::lp_ascii_filtered_view;
 use crate::container::ContainerScan;
 use crate::design::construction_recipe_family_name_len;
 use crate::design::decode::meta::{decode_types, stream_types_by_class_tag};
-use crate::design::decode::sketch::{indexed_record_offsets, next_indexed_record_offset};
 use crate::design::decode::text::design_record_id;
 use crate::ids::native_stream;
 use crate::layout::dimension_annotation_genesis_metadata as annotation_genesis;
@@ -148,6 +147,10 @@ pub(crate) fn decode_dimension_recipe_records(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
+        let Some(meta) = super::meta::metadata_for_bulk_stream(scan, &entry.name)? else {
+            continue;
+        };
+        let frames = primary_record_extents(bytes, &meta)?;
         let Some(payload) = companion.payload() else {
             continue;
         };
@@ -176,7 +179,7 @@ pub(crate) fn decode_dimension_recipe_records(
                 continue;
             };
             let Some((at, class_tag, record_index, record_end)) =
-                indexed_record_containing(bytes, start, end, recipe_offset)
+                indexed_record_containing(bytes, &frames, start, end, recipe_offset)
             else {
                 continue;
             };
@@ -867,31 +870,38 @@ pub(super) fn recipe_record_prefix(
     Some((prefix_offset, prefix))
 }
 
-fn indexed_record_containing(
+fn primary_record_extents(
     bytes: &[u8],
+    meta: &crate::metastream::MetaStream,
+) -> Result<Vec<crate::metastream::PrimaryRecordFrame>, CodecError> {
+    Ok(super::meta::design_primary_frames(bytes, meta)?
+        .into_iter()
+        .map(|frame| crate::metastream::PrimaryRecordFrame {
+            entity_id: frame.entity_id,
+            start: frame.start,
+            member_end: frame.member_end,
+            end: frame.end,
+        })
+        .collect())
+}
+
+fn indexed_record_containing<'a>(
+    bytes: &'a [u8],
+    frames: &[crate::metastream::PrimaryRecordFrame],
     start: usize,
     end: usize,
     member_offset: usize,
-) -> Option<(usize, &str, u32, usize)> {
+) -> Option<(usize, &'a str, u32, usize)> {
     if start > member_offset || member_offset >= end || end > bytes.len() {
         return None;
     }
-    let mut cursor = start;
-    let mut containing = None;
-    while let Some(at) = next_indexed_record_offset(bytes, cursor) {
-        if at >= end {
-            break;
-        }
-        if at > member_offset {
-            return containing
-                .map(|(offset, class_tag, record_index)| (offset, class_tag, record_index, at));
-        }
-        let (class_tag, after_tag) =
-            lp_ascii_filtered_view(bytes, at, 0..=2000, u8::is_ascii_graphic)?;
-        containing = Some((at, class_tag, View::u32_le_at(bytes, after_tag)?));
-        cursor = at + 11;
-    }
-    containing.map(|(offset, class_tag, record_index)| (offset, class_tag, record_index, end))
+    let frame = frames.iter().find(|frame| {
+        frame.start >= start && frame.start <= member_offset && member_offset < frame.end
+    })?;
+    let (class_tag, after_tag) =
+        lp_ascii_filtered_view(bytes, frame.start, 0..=2000, u8::is_ascii_graphic)?;
+    let record_index = View::u32_le_at(bytes, after_tag)?;
+    Some((frame.start, class_tag, record_index, frame.end.min(end)))
 }
 
 pub(super) fn contiguous_i32_program(bytes: &[u8], start: usize, end: usize) -> Option<Vec<i32>> {
@@ -948,8 +958,13 @@ pub(crate) fn decode_dimension_locus_pairs(
         ) else {
             continue;
         };
+        let Some(meta) = super::meta::metadata_for_bulk_stream(scan, &entry.name)? else {
+            continue;
+        };
+        let frames = primary_record_extents(bytes, &meta)?;
         let Some(mut pair) = find_dimension_locus_pair(
             bytes,
+            &frames,
             start,
             end,
             companion.record_index(),
@@ -1016,42 +1031,30 @@ where
 
 fn find_dimension_locus_pair(
     bytes: &[u8],
+    frames: &[crate::metastream::PrimaryRecordFrame],
     start: usize,
     end: usize,
     companion_record_index: u32,
     geometry_indices: &HashSet<u32>,
 ) -> Option<DesignDimensionLocusPair> {
-    let parse = |at| {
-        parse_dimension_locus_pair(bytes, at, companion_record_index, geometry_indices).filter(
-            |pair| {
-                pair.paired_byte_offset()
-                    .is_some_and(|offset| offset < u64_from_index(end))
-            },
-        )
-    };
-    let mut candidate = parse(start);
-    let mut position = start.checked_add(1);
-    while let Some(at) = position.and_then(|position| next_indexed_record_offset(bytes, position)) {
-        if at >= end {
-            break;
-        }
-        if let Some(pair) = parse(at) {
-            if candidate.is_some() {
-                return None;
-            }
-            candidate = Some(pair);
-        }
-        position = at.checked_add(1);
-    }
-    candidate
+    let mut candidates = frames
+        .iter()
+        .filter(|frame| frame.start >= start && frame.member_end < end)
+        .filter_map(|frame| {
+            parse_dimension_locus_pair(bytes, frame, companion_record_index, geometry_indices)
+        });
+    let candidate = candidates.next()?;
+    candidates.next().is_none().then_some(candidate)
 }
 
 fn parse_dimension_locus_pair(
     bytes: &[u8],
-    start: usize,
+    frame: &crate::metastream::PrimaryRecordFrame,
     companion_record_index: u32,
     geometry_indices: &HashSet<u32>,
 ) -> Option<DesignDimensionLocusPair> {
+    let start = frame.start;
+    let bytes = bytes.get(..frame.end)?;
     let (class_tag, after_tag) =
         lp_ascii_filtered_view(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
     let record_index = View::u32_le_at(bytes, after_tag)?;
@@ -1076,16 +1079,15 @@ fn parse_dimension_locus_pair(
     {
         return None;
     }
-    let mut position = start.checked_add(69)?;
-    let (paired_byte_offset, paired_class_tag) = loop {
-        let at = next_indexed_record_offset(bytes, position)?;
-        let (candidate_tag, candidate_after_tag) =
-            lp_ascii_filtered_view(bytes, at, 0..=2000, u8::is_ascii_graphic)?;
-        if View::u32_le_at(bytes, candidate_after_tag) == Some(record_index) {
-            break (at, candidate_tag);
-        }
-        position = at.checked_add(1)?;
-    };
+    let paired_byte_offset = frame.member_end;
+    if paired_byte_offset < start.checked_add(69)? || paired_byte_offset >= frame.end {
+        return None;
+    }
+    let (paired_class_tag, paired_after_tag) =
+        lp_ascii_filtered_view(bytes, paired_byte_offset, 0..=2000, u8::is_ascii_graphic)?;
+    if View::u32_le_at(bytes, paired_after_tag) != Some(record_index) {
+        return None;
+    }
     DesignDimensionLocusPair::try_new(crate::records::dimensions::DesignDimensionLocusPairDraft {
         id: String::new(),
         companion_record_index,
@@ -1173,8 +1175,13 @@ pub(crate) fn decode_dimension_null_locus_pairs(
         ) else {
             continue;
         };
+        let Some(meta) = super::meta::metadata_for_bulk_stream(scan, &entry.name)? else {
+            continue;
+        };
+        let frames = primary_record_extents(bytes, &meta)?;
         let Some(mut pair) = find_dimension_null_locus_pair(
             bytes,
+            &frames,
             start,
             end,
             companion.record_index(),
@@ -1211,42 +1218,30 @@ pub(crate) fn decode_dimension_null_locus_pairs(
 
 fn find_dimension_null_locus_pair(
     bytes: &[u8],
+    frames: &[crate::metastream::PrimaryRecordFrame],
     start: usize,
     end: usize,
     companion_record_index: u32,
     geometry_indices: &HashSet<u32>,
 ) -> Option<DesignDimensionLocusPair> {
-    let parse = |at| {
-        parse_dimension_null_locus_pair(bytes, at, companion_record_index, geometry_indices).filter(
-            |pair| {
-                pair.paired_byte_offset()
-                    .is_some_and(|offset| offset < u64_from_index(end))
-            },
-        )
-    };
-    let mut candidate = parse(start);
-    let mut position = start.checked_add(1);
-    while let Some(at) = position.and_then(|position| next_indexed_record_offset(bytes, position)) {
-        if at >= end {
-            break;
-        }
-        if let Some(pair) = parse(at) {
-            if candidate.is_some() {
-                return None;
-            }
-            candidate = Some(pair);
-        }
-        position = at.checked_add(1);
-    }
-    candidate
+    let mut candidates = frames
+        .iter()
+        .filter(|frame| frame.start >= start && frame.member_end < end)
+        .filter_map(|frame| {
+            parse_dimension_null_locus_pair(bytes, frame, companion_record_index, geometry_indices)
+        });
+    let candidate = candidates.next()?;
+    candidates.next().is_none().then_some(candidate)
 }
 
 fn parse_dimension_null_locus_pair(
     bytes: &[u8],
-    start: usize,
+    frame: &crate::metastream::PrimaryRecordFrame,
     companion_record_index: u32,
     geometry_indices: &HashSet<u32>,
 ) -> Option<DesignDimensionLocusPair> {
+    let start = frame.start;
+    let bytes = bytes.get(..frame.end)?;
     let (class_tag, after_tag) =
         lp_ascii_filtered_view(bytes, start, 0..=2000, u8::is_ascii_graphic)?;
     let record_index = View::u32_le_at(bytes, after_tag)?;
@@ -1266,16 +1261,15 @@ fn parse_dimension_null_locus_pair(
     if !geometry_indices.contains(&geometry_record_index) {
         return None;
     }
-    let mut position = start.checked_add(54)?;
-    let (paired_byte_offset, paired_class_tag) = loop {
-        let at = next_indexed_record_offset(bytes, position)?;
-        let (candidate_tag, candidate_after_tag) =
-            lp_ascii_filtered_view(bytes, at, 0..=2000, u8::is_ascii_graphic)?;
-        if View::u32_le_at(bytes, candidate_after_tag) == Some(record_index) {
-            break (at, candidate_tag);
-        }
-        position = at.checked_add(1)?;
-    };
+    let paired_byte_offset = frame.member_end;
+    if paired_byte_offset < start.checked_add(54)? || paired_byte_offset >= frame.end {
+        return None;
+    }
+    let (paired_class_tag, paired_after_tag) =
+        lp_ascii_filtered_view(bytes, paired_byte_offset, 0..=2000, u8::is_ascii_graphic)?;
+    if View::u32_le_at(bytes, paired_after_tag) != Some(record_index) {
+        return None;
+    }
     DesignDimensionLocusPair::try_new(crate::records::dimensions::DesignDimensionLocusPairDraft {
         id: String::new(),
         companion_record_index,
@@ -1361,6 +1355,10 @@ pub(crate) fn decode_dimension_annotation_frames(
             governed_owners.insert(owner.record_index(), owner.companion_record_index());
         }
         let bytes = scan.entry_bytes(&entry.name)?;
+        let Some(meta) = super::meta::metadata_for_bulk_stream(scan, &entry.name)? else {
+            continue;
+        };
+        let frames = primary_record_extents(bytes, &meta)?;
         let mut intervals = Vec::new();
         for companion in companions
             .iter()
@@ -1409,51 +1407,30 @@ pub(crate) fn decode_dimension_annotation_frames(
             intervals.push(interval);
         }
         for (start, end, containing_companion_record_index) in intervals {
-            let mut position = start;
-            while position < end {
-                let at = next_indexed_record_offset(bytes, position);
-                let Some(at) = at.filter(|at| *at < end) else {
-                    break;
-                };
+            for primary in frames.iter().filter(|frame| {
+                frame.start >= start && frame.member_end < end && frame.member_end < frame.end
+            }) {
                 if let Some(mut frame) = parse_dimension_annotation_frame(
-                    bytes,
-                    at,
+                    &bytes[..primary.end],
+                    primary.start,
+                    primary.member_end,
                     containing_companion_record_index,
                     &governed_owners,
                     &geometry_indices,
                     &sketch_entities,
                 ) {
                     let Some(frame_offset) = frame.byte_offset() else {
-                        position = at + 1;
                         continue;
                     };
-                    let Some(paired_offset) = frame.paired_byte_offset() else {
-                        position = at + 1;
-                        continue;
-                    };
-                    if paired_offset >= u64_from_index(end) {
-                        position = at + 1;
-                        continue;
-                    }
                     frame.id = design_record_id(
                         &entry.name,
                         ":design-dimension-annotation-frame#",
                         frame_offset,
                     );
-                    let Ok(paired_at) = usize::try_from(paired_offset) else {
-                        return Err(CodecError::Malformed(
-                            "F3D annotation paired offset is not representable".into(),
-                        ));
-                    };
-                    position = paired_at + 1;
                     let key = (stream, frame_offset);
-                    if !decoded_offsets.contains(&key) {
-                        decoded_offsets.insert(key);
-
+                    if decoded_offsets.insert(key) {
                         out.push(frame);
                     }
-                } else {
-                    position = at + 1;
                 }
             }
         }
@@ -1465,6 +1442,7 @@ pub(crate) fn decode_dimension_annotation_frames(
 fn parse_dimension_annotation_frame(
     bytes: &[u8],
     start: usize,
+    paired_byte_offset: usize,
     companion_record_index: Option<u32>,
     governed_owners: &HashMap<u32, u32>,
     geometry_indices: &HashSet<u32>,
@@ -1535,15 +1513,14 @@ fn parse_dimension_annotation_frame(
             }
             _ => return None,
         };
-    let mut paired_search = annotation_byte_offset;
-    let (paired_byte_offset, paired_class_tag) = loop {
-        let at = next_indexed_record_offset(bytes, paired_search)?;
-        let (tag, after) = lp_ascii_filtered_view(bytes, at, 0..=2000, u8::is_ascii_graphic)?;
-        if View::u32_le_at(bytes, after) == Some(record_index) {
-            break (at, tag);
-        }
-        paired_search = at.checked_add(1)?;
-    };
+    if paired_byte_offset < annotation_byte_offset {
+        return None;
+    }
+    let (paired_class_tag, after) =
+        lp_ascii_filtered_view(bytes, paired_byte_offset, 0..=2000, u8::is_ascii_graphic)?;
+    if View::u32_le_at(bytes, after) != Some(record_index) {
+        return None;
+    }
     let mut matched_tail = None;
     for tail in paired_byte_offset
         .checked_sub(15)
@@ -1757,14 +1734,22 @@ pub(crate) fn decode_dimension_presentation_frames(
             sketch_entities.insert(index);
         }
         let bytes = scan.entry_bytes(&entry.name)?;
-        for header in indexed_record_offsets(bytes) {
-            let start = header.offset;
-            let Some(primary_type_guid) = presentation_classes.get(&header.class_tag.code()) else {
+        let Some(meta) = super::meta::metadata_for_bulk_stream(scan, &entry.name)? else {
+            continue;
+        };
+        for indexed in super::meta::design_primary_frames(bytes, &meta)? {
+            if indexed.member_end == indexed.end {
+                continue;
+            }
+            let start = indexed.start;
+            let Some(primary_type_guid) = presentation_classes.get(&indexed.class_tag.code())
+            else {
                 continue;
             };
             let Some(parsed) = parse_dimension_presentation_frame(
-                bytes,
+                &bytes[..indexed.end],
                 start,
+                indexed.member_end,
                 primary_type_guid,
                 &geometry_indices,
                 &sketch_entities,
@@ -1820,6 +1805,7 @@ pub(crate) fn decode_dimension_presentation_frames(
 fn parse_dimension_presentation_frame(
     bytes: &[u8],
     start: usize,
+    paired_byte_offset: usize,
     primary_type_guid: &str,
     geometry_indices: &HashSet<u32>,
     sketch_entities: &HashSet<u32>,
@@ -1863,24 +1849,22 @@ fn parse_dimension_presentation_frame(
         position = position.checked_add(15)?;
     }
     let presentation_byte_offset = position;
-    let mut paired_search = position;
-    let (paired_byte_offset, paired_class_tag) = loop {
-        let at = next_indexed_record_offset(bytes, paired_search)?;
-        let (tag, after) = lp_ascii_filtered_view(bytes, at, 3..=3, u8::is_ascii_digit)?;
-        if View::u32_le_at(bytes, after) == Some(record_index)
-            && !tag.starts_with('0')
-            && tag
-                .parse::<u64>()
-                .ok()
-                .is_some_and(|class_tag| paired_classes.contains(&class_tag))
-        {
-            if bytes.get(at + 11..at + 19) != Some(&[0; 8]) || bytes.get(at + 19) != Some(&1) {
-                return None;
-            }
-            break (at, tag);
-        }
-        paired_search = at.checked_add(1)?;
-    };
+    if paired_byte_offset < presentation_byte_offset {
+        return None;
+    }
+    let (paired_class_tag, after) =
+        lp_ascii_filtered_view(bytes, paired_byte_offset, 3..=3, u8::is_ascii_digit)?;
+    if View::u32_le_at(bytes, after) != Some(record_index)
+        || paired_class_tag.starts_with('0')
+        || !paired_class_tag
+            .parse::<u64>()
+            .ok()
+            .is_some_and(|class_tag| paired_classes.contains(&class_tag))
+        || bytes.get(paired_byte_offset + 11..paired_byte_offset + 19) != Some(&[0; 8])
+        || bytes.get(paired_byte_offset + 19) != Some(&1)
+    {
+        return None;
+    }
     let owner_reference = View::u32_le_at(bytes, paired_byte_offset + 20)?;
     if !sketch_entities.contains(&owner_reference) {
         return None;
@@ -1961,8 +1945,13 @@ pub(crate) fn decode_dimension_locus_groups(
         ) else {
             continue;
         };
+        let Some(meta) = super::meta::metadata_for_bulk_stream(scan, &entry.name)? else {
+            continue;
+        };
+        let frames = primary_record_extents(bytes, &meta)?;
         let candidates = find_dimension_locus_groups(
             bytes,
+            &frames,
             start,
             end,
             companion.record_index(),
@@ -1985,43 +1974,38 @@ pub(crate) fn decode_dimension_locus_groups(
 
 fn find_dimension_locus_groups(
     bytes: &[u8],
+    frames: &[crate::metastream::PrimaryRecordFrame],
     start: usize,
     end: usize,
     companion_record_index: u32,
     geometry_indices: &HashSet<u32>,
     sketch_entities: &HashSet<u32>,
 ) -> Vec<DesignDimensionLocusGroup> {
-    let parse = |at| {
-        parse_dimension_locus_group(
-            bytes,
-            at,
-            companion_record_index,
-            geometry_indices,
-            sketch_entities,
-        )
-        .filter(|group| {
-            group
-                .next_byte_offset
-                .is_some_and(|offset| offset <= u64_from_index(end))
+    frames
+        .iter()
+        .filter(|frame| frame.start >= start && frame.start < end)
+        .filter_map(|frame| {
+            let boundary = if frame.member_end < frame.end {
+                frame.member_end
+            } else if frames.iter().any(|next| next.start == frame.end) {
+                frame.end
+            } else {
+                return None;
+            };
+            if boundary > end {
+                return None;
+            }
+            let limit = boundary.checked_add(11)?.min(bytes.len());
+            let group = parse_dimension_locus_group(
+                &bytes[..limit],
+                frame.start,
+                companion_record_index,
+                geometry_indices,
+                sketch_entities,
+            )?;
+            (group.next_byte_offset == Some(u64_from_index(boundary))).then_some(group)
         })
-    };
-    let mut candidates = Vec::new();
-    if let Some(group) = parse(start) {
-        candidates.push(group);
-    }
-    let mut position = start.checked_add(1);
-    while let Some(at) = position.and_then(|position| next_indexed_record_offset(bytes, position)) {
-        if at >= end {
-            break;
-        }
-        if let Some(group) = parse(at) {
-            candidates.push(group);
-        }
-        position = at.checked_add(1);
-    }
-    candidates.sort_by_key(|group| group.byte_offset);
-    candidates.dedup_by_key(|group| group.byte_offset);
-    candidates
+        .collect()
 }
 
 pub(super) fn companion_owned_interval<'a>(

@@ -8,8 +8,7 @@ use crate::design::decode::operands::parse_entity_selection_frame;
 use crate::design::decode::scopes::shared_frames::exact_indexed_header_at;
 use crate::design::decode::scopes::shared_frames::marked_record_reference;
 use crate::design::decode::sketch::{
-    cached_owned_record_offsets, indexed_record_header_at, next_indexed_record_offset,
-    IndexedRecordOffsets,
+    cached_owned_record_offsets, indexed_record_header_at, IndexedRecordOffsets,
 };
 use crate::design::decode::text::design_record_id;
 use crate::ids::native_stream;
@@ -47,6 +46,7 @@ fn exact_surface_trim_operation(
             exact_indexed_header_at(bytes, selection_byte_offset, selection_record_index)?;
         let selection = parse_entity_selection_frame(
             bytes,
+            records,
             selection_record_index,
             u64::try_from(selection_byte_offset).ok()?,
             &selection_class_tag,
@@ -55,7 +55,10 @@ fn exact_surface_trim_operation(
         let mut chain_start = usize::try_from(selection.next_byte_offset).ok()?;
         let mut next_chain_record = || {
             let parsed = indexed_record_header_at(bytes, chain_start)?;
-            let frame_end = next_indexed_record_offset(bytes, chain_start.checked_add(11)?)?;
+            if !records.offsets(parsed.record_index).contains(&chain_start) {
+                return None;
+            }
+            let frame_end = records.next_at_or_after(chain_start.checked_add(11)?)?;
             let frame_length = u64::try_from(frame_end.checked_sub(chain_start)?).ok()?;
             let record = DesignSurfaceTrimChainRecord {
                 record_index: parsed.record_index,
@@ -214,7 +217,11 @@ pub(crate) fn decode_surface_trim_operations(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let records = cached_owned_record_offsets(&mut record_offsets, stream, bytes);
+        let Some(records) =
+            cached_owned_record_offsets(&mut record_offsets, stream, bytes, scan, &entry.name)?
+        else {
+            continue;
+        };
         let Some(mut operation) = exact_surface_trim_operation(bytes, records, scope) else {
             continue;
         };

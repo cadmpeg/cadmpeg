@@ -69,7 +69,12 @@ fn a_scope_group_record_is_not_a_face_operand() {
         recipe_index: 0,
         record_index: None,
     };
-    let archive = crate::test_support::body_reference_tail_test::archive(&bytes, &[]);
+    let metadata = crate::test_support::zip_test::indexed_fixture_metastream(
+        &bytes,
+        &[100, 101, 102, 103, 104],
+        &[100],
+    );
+    let archive = crate::test_support::body_reference_tail_test::archive(&bytes, &metadata);
     crate::test_support::with_decode_context(|ctx| {
         crate::test_support::zip_test::with_scan(&archive, |scan| {
             let operands = |groups: &[DesignConstructionOperandGroup]| {
