@@ -641,6 +641,16 @@ fn edited_network_occurrence_placement_is_written_from_the_document() {
         .unwrap();
     assert_eq!(after.ir().model.occurrences.len(), 1);
     assert_eq!(after.ir().model.occurrences[0].transform, Some(edited));
+    let before_points = &ir.native.namespace("iges").unwrap().arenas()["connect_points"];
+    let after_points = &after.ir().native.namespace("iges").unwrap().arenas()["connect_points"];
+    assert_eq!(before_points.len(), after_points.len());
+    for (before, after) in before_points.iter().zip(after_points) {
+        assert_eq!(before.field("owner"), after.field("owner"));
+    }
+    assert_eq!(
+        after.ir().model.occurrences[0].id,
+        ir.model.occurrences[0].id
+    );
 }
 
 #[test]

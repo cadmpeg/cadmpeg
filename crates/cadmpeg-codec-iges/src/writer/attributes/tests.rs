@@ -233,3 +233,44 @@ fn structured_and_empty_link_values_are_not_coerced_into_generic_scalars() {
         assert!(output.losses[0].message.contains(id.as_str()));
     }
 }
+
+#[test]
+fn empty_string_value_is_reported_and_other_values_are_written() {
+    let mut ir = CadIr::empty();
+    let point = cadmpeg_ir::ids::PointId::mint("test:model:point#empty-string")
+        .expect("valid point identity");
+    let id = cadmpeg_ir::ids::AttributeId::mint("test:model:attribute#empty-string")
+        .expect("valid attribute identity");
+    ir.model.attributes.push(SourceAttribute {
+        id: id.clone(),
+        native_ref: None,
+        target: AttributeTarget::Point(point.clone()),
+        name: "mixed".into(),
+        values: vec![
+            Some(AttributeValue::String(String::new())),
+            Some(AttributeValue::Integer(7)),
+        ],
+    });
+    let mut owner = entity(116, 0, "0,0,0;".into());
+    owner.source_targets.push(point.to_string());
+    let mut entities = vec![owner];
+    let output = append(&ir, &mut entities, crate::IgesVersion::V5_3);
+    assert_eq!(entities[1].parameter_body, b"4,5Hmixed,1,1,7;");
+    assert!(output
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(id.as_str())
+            && loss.message.contains("position 0")
+            && loss.message.contains("empty string")));
+
+    ir.model.attributes[0].values.truncate(1);
+    let mut owner = entity(116, 0, "0,0,0;".into());
+    owner.source_targets.push(point.to_string());
+    let mut entities = vec![owner];
+    let output = append(&ir, &mut entities, crate::IgesVersion::V5_3);
+    assert_eq!(entities.len(), 1);
+    assert!(output
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(id.as_str()) && loss.message.contains("empty string")));
+}
