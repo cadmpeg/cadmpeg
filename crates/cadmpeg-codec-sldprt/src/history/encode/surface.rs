@@ -572,15 +572,12 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             let faces = face_selection_value(face_selection);
             let neutral_plane = face_selection_value(plane_selection);
             let operands_supported = |selection: &FaceSelection, native: Option<&String>| {
-                native.is_some()
-                    || matches!(selection, FaceSelection::Unresolved) && existing.is_some()
+                native.is_some() || matches!(selection, FaceSelection::Unresolved)
             };
             if existing.is_some_and(|record| !feature_family(record, "Draft"))
                 || pull_plane.is_some()
                 || !operands_supported(face_selection, faces.as_ref())
                 || !operands_supported(plane_selection, neutral_plane.as_ref())
-                || existing.is_none()
-                    && (pull_direction.is_none() || angle.is_none() || outward.is_none())
             {
                 return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} changes unsupported draft semantics",
