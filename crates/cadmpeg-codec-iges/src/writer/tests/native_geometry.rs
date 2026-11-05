@@ -14,25 +14,31 @@ fn copious_linear_path_uses_current_curve_points() {
         .fixture_inputs()
         .into_iter()
         .find(|(name, _)| name == "copious_linear_path")
-        .unwrap();
+        .expect("valid test value");
     let decoded = crate::IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap();
-    let original = crate::writer::synthesize(decoded.ir(), crate::IgesVersion::V5_3).unwrap();
+        .expect("valid test value");
+    let original = crate::writer::synthesize(decoded.ir(), crate::IgesVersion::V5_3)
+        .expect("valid test value");
     assert_eq!(original.counts.get("106_copious_data"), Some(&1));
     let original_after = crate::IgesCodec
         .decode(&mut Cursor::new(original.bytes), &DecodeOptions::default())
-        .unwrap();
-    let before_record = &decoded.ir().native.namespace("iges").unwrap().arenas()["copious_data"][0];
+        .expect("valid test value");
+    let before_record = &decoded
+        .ir()
+        .native
+        .namespace("iges")
+        .expect("valid test value")
+        .arenas()["copious_data"][0];
     let after_record = &original_after
         .ir()
         .native
         .namespace("iges")
-        .unwrap()
+        .expect("valid test value")
         .arenas()["copious_data"][0];
     assert_eq!(
-        before_record.fields().unwrap(),
-        after_record.fields().unwrap()
+        before_record.fields().expect("valid test value"),
+        after_record.fields().expect("valid test value")
     );
     let mut ir = decoded.ir().clone();
     let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) = &mut ir.model.curves[0].geometry
@@ -47,17 +53,26 @@ fn copious_linear_path_uses_current_curve_points() {
             }
             cadmpeg_ir::features::FinitePoint3::new(point).ok_or(())
         })
-        .unwrap();
-    let output = crate::writer::synthesize(&ir, crate::IgesVersion::V5_3).unwrap();
+        .expect("valid test value");
+    let output =
+        crate::writer::synthesize(&ir, crate::IgesVersion::V5_3).expect("valid test value");
     assert_eq!(output.counts.get("106_copious_data"), Some(&1));
     assert!(output
         .regenerated_native
         .contains("iges:native:copious-data#D1"));
     let after = crate::IgesCodec
         .decode(&mut Cursor::new(output.bytes), &DecodeOptions::default())
-        .unwrap();
-    let record = &after.ir().native.namespace("iges").unwrap().arenas()["copious_data"][0];
-    assert_eq!(record.field("tuples").unwrap()[1][1], json!(0.5));
+        .expect("valid test value");
+    let record = &after
+        .ir()
+        .native
+        .namespace("iges")
+        .expect("valid test value")
+        .arenas()["copious_data"][0];
+    assert_eq!(
+        record.field("tuples").expect("valid test value")[1][1],
+        json!(0.5)
+    );
     let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)) =
         &after.ir().model.curves[0].geometry
     else {
@@ -80,14 +95,25 @@ fn copious_linear_path_retains_typed_vectors() {
     }]);
     let decoded = crate::IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap();
-    let before = &decoded.ir().native.namespace("iges").unwrap().arenas()["copious_data"][0];
-    let output = crate::writer::synthesize(decoded.ir(), crate::IgesVersion::V5_3).unwrap();
+        .expect("valid test value");
+    let before = &decoded
+        .ir()
+        .native
+        .namespace("iges")
+        .expect("valid test value")
+        .arenas()["copious_data"][0];
+    let output = crate::writer::synthesize(decoded.ir(), crate::IgesVersion::V5_3)
+        .expect("valid test value");
     assert_eq!(output.counts.get("106_copious_data"), Some(&1));
     let after = crate::IgesCodec
         .decode(&mut Cursor::new(output.bytes), &DecodeOptions::default())
-        .unwrap();
-    let record = &after.ir().native.namespace("iges").unwrap().arenas()["copious_data"][0];
+        .expect("valid test value");
+    let record = &after
+        .ir()
+        .native
+        .namespace("iges")
+        .expect("valid test value")
+        .arenas()["copious_data"][0];
     assert_eq!(record.field("tuples"), before.field("tuples"));
 }
 
@@ -101,18 +127,32 @@ fn canonical_type_108_plane_retains_its_directory_fields() {
         .fixture_inputs()
         .into_iter()
         .find(|(name, _)| name == "plane")
-        .unwrap();
+        .expect("valid test value");
     let decoded = crate::IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap();
-    let original = &decoded.ir().native.namespace("iges").unwrap().arenas()["entities"][0];
-    let output = crate::writer::synthesize(decoded.ir(), crate::IgesVersion::V5_3).unwrap();
+        .expect("valid test value");
+    let original = &decoded
+        .ir()
+        .native
+        .namespace("iges")
+        .expect("valid test value")
+        .arenas()["entities"][0];
+    let output = crate::writer::synthesize(decoded.ir(), crate::IgesVersion::V5_3)
+        .expect("valid test value");
     assert_eq!(output.counts.get("108_plane"), Some(&1));
     let after = crate::IgesCodec
         .decode(&mut Cursor::new(output.bytes), &DecodeOptions::default())
-        .unwrap();
-    let regenerated = &after.ir().native.namespace("iges").unwrap().arenas()["entities"][0];
-    assert_eq!(original.fields().unwrap(), regenerated.fields().unwrap());
+        .expect("valid test value");
+    let regenerated = &after
+        .ir()
+        .native
+        .namespace("iges")
+        .expect("valid test value")
+        .arenas()["entities"][0];
+    assert_eq!(
+        original.fields().expect("valid test value"),
+        regenerated.fields().expect("valid test value")
+    );
     assert_eq!(
         decoded.ir().model.surfaces[0].geometry,
         after.ir().model.surfaces[0].geometry
@@ -129,23 +169,31 @@ fn native_level_definition_keeps_its_directory_order_and_pointer() {
         .fixture_inputs()
         .into_iter()
         .find(|(name, _)| name == "definition_levels")
-        .unwrap();
+        .expect("valid test value");
     let decoded = crate::IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap();
-    let output = crate::writer::synthesize(decoded.ir(), crate::IgesVersion::V5_3).unwrap();
+        .expect("valid test value");
+    let output = crate::writer::synthesize(decoded.ir(), crate::IgesVersion::V5_3)
+        .expect("valid test value");
     let after = crate::IgesCodec
         .decode(&mut Cursor::new(output.bytes), &DecodeOptions::default())
-        .unwrap();
-    let native = after.ir().native.namespace("iges").unwrap();
+        .expect("valid test value");
+    let native = after
+        .ir()
+        .native
+        .namespace("iges")
+        .expect("valid test value");
     let definition = &native.arenas()["definition_levels"][0];
     assert_eq!(
-        definition.field("source_entity").unwrap(),
+        definition.field("source_entity").expect("valid test value"),
         json!("iges:entity:directory#1")
     );
     let display = native.arenas()["display_attributes"]
         .iter()
         .find(|record| record.field("source_entity") == Some(json!("iges:entity:directory#3")))
-        .unwrap();
-    assert_eq!(display.field("level_definition").unwrap(), definition.id());
+        .expect("valid test value");
+    assert_eq!(
+        display.field("level_definition").expect("valid test value"),
+        definition.id()
+    );
 }

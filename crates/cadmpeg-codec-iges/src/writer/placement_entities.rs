@@ -113,7 +113,7 @@ impl Interval {
     }
 }
 
-fn matrix_form(placement: Placement) -> Option<i64> {
+pub(super) fn matrix_form(placement: Placement) -> Option<i64> {
     let values: [[Interval; 3]; 3] = std::array::from_fn(|row| {
         std::array::from_fn(|column| Interval::coefficient(placement.rows[row][column].get()))
     });

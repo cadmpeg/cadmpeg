@@ -168,7 +168,7 @@ fn nested_single_line_composites_use_the_owning_edge_endpoints() {
                 transition: CompositeCurveTransition::Continuous,
             }]
             .try_into()
-            .unwrap(),
+            .expect("valid test value"),
             self_intersect: Some(false),
         })
     };
@@ -193,7 +193,7 @@ fn nested_single_line_composites_use_the_owning_edge_endpoints() {
         .curves
         .iter()
         .find(|curve| curve.id == id("outer"))
-        .unwrap()
+        .expect("valid test value")
         .geometry;
     let span = edge_span(&ir, &ir.model.edges[0], geometry).expect("edge bounds the child line");
     assert_eq!(span.range.get(), [0.0, 3.0]);
@@ -238,7 +238,7 @@ fn inconsistent_edge_span_reports_edge_and_keeps_its_curve() {
     use std::io::Cursor;
 
     let mut ir = vertices_at(&[Point3::new(10.0, 0.0, 0.0), Point3::new(0.0, 10.0, 0.0)]);
-    let curve_id = CurveId::mint("test:model:curve#circle").unwrap();
+    let curve_id = CurveId::mint("test:model:curve#circle").expect("valid test value");
     ir.model.curves.push(Curve {
         id: curve_id.clone(),
         geometry: circle(),
@@ -247,21 +247,22 @@ fn inconsistent_edge_span_reports_edge_and_keeps_its_curve() {
         parameter_range: None,
     });
     let mut edge = closed_edge("edge", "circle", "v0");
-    edge.end = VertexId::mint("test:model:vertex#v1").unwrap();
-    edge.carrier =
-        cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), Some([0.0, 1.0])).unwrap();
+    edge.end = VertexId::mint("test:model:vertex#v1").expect("valid test value");
+    edge.carrier = cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), Some([0.0, 1.0]))
+        .expect("valid test value");
     let edge_id = edge.id.clone();
     ir.model.edges.push(edge);
-    let plan = crate::test_support::plan_at(crate::IgesVersion::V5_3, &ir, None).unwrap();
+    let plan = crate::test_support::plan_at(crate::IgesVersion::V5_3, &ir, None)
+        .expect("valid test value");
     assert!(plan
         .report()
         .losses
         .iter()
         .any(|loss| loss.message.contains(edge_id.as_str()) && loss.message.contains("endpoints")));
     let mut bytes = Vec::new();
-    plan.write_to(&mut bytes).unwrap();
+    plan.write_to(&mut bytes).expect("valid test value");
     let decoded = crate::IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap();
+        .expect("valid test value");
     assert_eq!(decoded.ir().model.curves.len(), 1);
 }
