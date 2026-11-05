@@ -153,6 +153,7 @@ use brep_order::{brep_sense, edge_use_positions, edge_use_sense, pole_use_order}
 mod appearance;
 mod attributes;
 mod degrade;
+mod display;
 mod levels;
 mod native_records;
 mod pcurve_admission;
@@ -702,6 +703,12 @@ fn synthesize_with_admission(
         .regenerated
         .extend(native_export.regenerated);
     append_name_properties(&mut graph.entities, &graph.presentations)?;
+    attribute_export.regenerated.extend(display::regenerated(
+        ir,
+        &graph.entities,
+        &graph.presentations,
+        version,
+    ));
     let emitted = graph
         .entities
         .iter()
@@ -6043,7 +6050,8 @@ fn synthesized_native_dispositions(
         let regenerated = match arena.as_str() {
             "properties" | "product_properties" => represented_names,
             "cards" | "copious_data" | "transformations" | "manifold_solids" => !degraded_geometry,
-            "macro_definitions"
+            "display_attributes"
+            | "macro_definitions"
             | "macro_instances"
             | "definition_levels"
             | "subfigure_definitions"
