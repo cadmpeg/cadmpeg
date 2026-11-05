@@ -17,7 +17,7 @@ use std::collections::{HashMap, HashSet};
 
 /// The NURBS carriers of one node sequence, keyed by `B_CURVE` and `B_SURFACE`
 /// index. `pcurves` holds the parameter-space `B_CURVE`s.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub(in crate::brep) struct NodeSplines {
     pub(in crate::brep) curves: HashMap<u32, CurveCarrier>,
     pub(in crate::brep) surfaces: HashMap<u32, SurfaceCarrier>,

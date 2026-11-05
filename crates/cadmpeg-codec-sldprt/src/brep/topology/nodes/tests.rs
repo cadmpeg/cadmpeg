@@ -303,3 +303,28 @@ fn deltas_versions_agree_across_the_streams_of_a_site() {
         .collect();
     assert_eq!(second_indices, vec![42]);
 }
+
+#[test]
+fn a_rejected_partition_edge_is_not_filled_from_deltas() {
+    use cadmpeg_parasolid::records::DeltasRecords;
+    use cadmpeg_parasolid::test_support::test_pmarks;
+    let (mut payload, body_offset) = topology_sequence();
+    let edge = *read(&payload, body_offset)
+        .unwrap()
+        .edge_uses()
+        .keys()
+        .next()
+        .unwrap();
+    patch(&mut payload, 16, "tolerance", &(-1.0f64).to_be_bytes());
+    let mut partition = read(&payload, body_offset).unwrap();
+    assert!(!partition.edge_uses().contains_key(&edge));
+    let mut bytes = test_pmarks::prefix(1);
+    bytes.extend(deltas_edge(true, u16::try_from(edge).unwrap(), 30));
+    let bytes = test_pmarks::complete(bytes);
+    let records = DeltasRecords::read(&bytes).unwrap();
+    let agreement = super::DeltasAgreement::new([(&records, bytes.as_slice())]);
+    let deltas = super::deltas_tables(&records, &bytes, 0, &agreement).unwrap();
+    assert!(deltas.edge_uses().contains_key(&edge));
+    partition.merge_deltas(deltas, None);
+    assert!(!partition.edge_uses().contains_key(&edge));
+}

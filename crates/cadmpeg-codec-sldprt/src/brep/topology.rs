@@ -1290,6 +1290,7 @@ fn parse_point_short(buf: &[u8], off: usize, prefixed: bool) -> Option<Point> {
     })
 }
 
+#[derive(Clone)]
 struct RecordFrame {
     partition: bool,
     bytes: Option<Vec<u8>>,
@@ -1336,7 +1337,7 @@ fn merge_framed_records<T>(
 }
 
 /// The topology record tables of one stream, each keyed by `attr`.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub(crate) struct Tables {
     bridges: HashMap<u32, Bridge>,
     bridge_frames: HashMap<u32, RecordFrame>,
@@ -1352,9 +1353,51 @@ pub(crate) struct Tables {
     owner_classes: HashSet<u32>,
     points: HashMap<u32, Point>,
     point_frames: HashMap<u32, RecordFrame>,
+    /// Partition EDGE identities whose framed record the decoder rejects.
+    rejected_edges: HashSet<u32>,
 }
 
 impl Tables {
+    /// Drop every record whose attribute `attrs` holds.
+    pub(super) fn remove_attrs(&mut self, attrs: &HashSet<u32>) {
+        let keep = |attr: &u32| !attrs.contains(attr);
+        self.bridges.retain(|attr, _| keep(attr));
+        self.bridge_frames.retain(|attr, _| keep(attr));
+        self.loops.retain(|attr, _| keep(attr));
+        self.loop_frames.retain(|attr, _| keep(attr));
+        self.edge_uses.retain(|attr, _| keep(attr));
+        self.coedges.retain(|attr, _| keep(attr));
+        self.coedge_frames.retain(|attr, _| keep(attr));
+        self.coedge_owners.retain(|attr, _| keep(attr));
+        self.vertex_uses.retain(|attr, _| keep(attr));
+        self.vertex_frames.retain(|attr, _| keep(attr));
+        self.vertex_classes.retain(|attr, _| keep(attr));
+        self.points.retain(|attr, _| keep(attr));
+        self.point_frames.retain(|attr, _| keep(attr));
+    }
+
+    /// The attribute of every record and frame of `self`.
+    pub(super) fn attrs(&self) -> impl Iterator<Item = u32> + '_ {
+        self.bridges
+            .keys()
+            .chain(self.bridge_frames.keys())
+            .chain(self.loops.keys())
+            .chain(self.loop_frames.keys())
+            .chain(self.edge_uses.keys())
+            .chain(self.coedges.keys())
+            .chain(self.coedge_frames.keys())
+            .chain(self.vertex_uses.keys())
+            .chain(self.vertex_frames.keys())
+            .chain(self.points.keys())
+            .chain(self.point_frames.keys())
+            .copied()
+    }
+
+    /// Record a partition EDGE identity whose framed record is rejected.
+    pub(super) fn reject_edge(&mut self, attr: u32) {
+        self.rejected_edges.insert(attr);
+    }
+
     pub(super) fn bridges(&self) -> &HashMap<u32, Bridge> {
         &self.bridges
     }
@@ -1506,6 +1549,9 @@ impl Tables {
             deltas.loops,
             deltas.loop_frames,
         );
+        deltas
+            .edge_uses
+            .retain(|attr, _| !self.rejected_edges.contains(attr));
         merge_missing(&mut self.edge_uses, deltas.edge_uses);
         for (attr, frame) in deltas.coedge_frames {
             let record = deltas.coedges.remove(&attr);

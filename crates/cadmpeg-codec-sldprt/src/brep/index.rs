@@ -587,6 +587,23 @@ impl CarrierIndex {
     }
 
     /// Drop every carrier whose attribute `attrs` holds.
+    /// The attribute of every carrier of `self`.
+    pub(super) fn attrs(&self) -> impl Iterator<Item = u32> + '_ {
+        self.curves
+            .keys()
+            .chain(self.surfaces.keys())
+            .chain(self.sp_curves.keys())
+            .chain(self.surface_curves.keys())
+            .chain(self.sweeps.keys())
+            .chain(self.blends.keys())
+            .chain(self.offsets.keys())
+            .chain(self.blend_support_pairs.keys())
+            .chain(self.blend_bounds.keys())
+            .chain(self.chartless_intersections.keys())
+            .copied()
+            .chain(self.traced.iter().map(|traced| traced.attr))
+    }
+
     pub(super) fn remove_attrs(&mut self, attrs: &HashSet<u32>) {
         let keep = |attr: &u32| !attrs.contains(attr);
         self.curves.retain(|attr, _| keep(attr));
@@ -651,23 +668,30 @@ pub(super) fn scan_carriers(
     ctx: &DecodeContext<'_>,
     body: &[u8],
 ) -> Result<CarrierIndex, cadmpeg_core::CodecError> {
-    scan_carriers_with_framing(ctx, body, Framing::Scan(None))
+    scan_carriers_with_framing(ctx, body, Framing::Scan(None), &HashSet::new())
 }
 
 /// Index the carriers of `body` with its compact analytic and NURBS carriers
-/// taken from `carriers`, read from the stream's node sequence.
+/// taken from `carriers`, read from the stream's node sequence, leaving out
+/// the identities that `exclude` holds.
 pub(super) fn index_carriers_with_nodes(
     ctx: &DecodeContext<'_>,
     body: &[u8],
     carriers: NodeCarriers,
     deltas: Option<bool>,
+    exclude: &HashSet<u32>,
 ) -> Result<CarrierIndex, cadmpeg_core::CodecError> {
-    scan_carriers_with_framing(ctx, body, Framing::Nodes(Box::new(carriers), deltas))
+    scan_carriers_with_framing(
+        ctx,
+        body,
+        Framing::Nodes(Box::new(carriers), deltas),
+        exclude,
+    )
 }
 
 /// The carriers of one stream read from its node sequence. A family that
 /// the node sequence does not supply is scanned.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub(super) struct NodeCarriers {
     pub(super) analytic: Option<Vec<Carrier>>,
     pub(super) splines: Option<spline::nodes::NodeSplines>,
@@ -693,14 +717,18 @@ pub(super) fn scan_carriers_for_role(
     ctx: &DecodeContext<'_>,
     body: &[u8],
     deltas: bool,
+    exclude: &HashSet<u32>,
 ) -> Result<CarrierIndex, cadmpeg_core::CodecError> {
-    scan_carriers_with_framing(ctx, body, Framing::Scan(Some(deltas)))
+    scan_carriers_with_framing(ctx, body, Framing::Scan(Some(deltas)), exclude)
 }
 
+/// Index the carriers of `body`. The identities that `exclude` holds leave
+/// each family before a wrapper resolves against it.
 fn scan_carriers_with_framing(
     ctx: &DecodeContext<'_>,
     body: &[u8],
     framing: Framing,
+    exclude: &HashSet<u32>,
 ) -> Result<CarrierIndex, cadmpeg_core::CodecError> {
     let mut out = CarrierIndex::default();
     let mut lane_refusals = Vec::new();
@@ -755,7 +783,9 @@ fn scan_carriers_with_framing(
     for carrier in surfaces.into_values() {
         out.insert(Carrier::Surface(carrier));
     }
-    let bounded = node_bounded.unwrap_or_else(|| subset::records(body));
+    out.remove_attrs(exclude);
+    let mut bounded = node_bounded.unwrap_or_else(|| subset::records(body));
+    bounded.retain(|record| !exclude.contains(&record.attr()));
     for wrapper in subset::resolve(ctx, &bounded, &out, subset::Pass::Exact)? {
         if let subset::Wrapper::Curve(carrier) = wrapper {
             out.insert(Carrier::Curve(carrier));
@@ -771,6 +801,7 @@ fn scan_carriers_with_framing(
     out.blend_support_pairs = pairs;
     out.blend_bounds = bounds;
     out.offsets = node_offsets.unwrap_or_else(|| offset::scan(body));
+    out.remove_attrs(exclude);
     let mut intersections =
         node_intersections.or_else(|| intersection::scan_inputs(body, &mut lane_refusals));
     if let Some(inputs) = &mut intersections {
@@ -802,14 +833,18 @@ fn scan_carriers_with_framing(
     }
     // SP_CURVEs read on the supports indexed above.
     if body.windows(2).any(|tag| tag == [0x00, 0x89]) {
-        out.sp_curves = node_sp_curves
-            .unwrap_or_else(|| sp_curve::scan(body, &spline::scan_pcurve_carriers(body)));
+        out.sp_curves = node_sp_curves.unwrap_or_else(|| {
+            let mut pcurves = spline::scan_pcurve_carriers(body);
+            pcurves.retain(|attr, _| !exclude.contains(attr));
+            sp_curve::scan(body, &pcurves)
+        });
         for wrapper in subset::resolve(ctx, &bounded, &out, subset::Pass::SurfaceCurves)? {
             if let subset::Wrapper::SurfaceCurve(carrier) = wrapper {
                 out.surface_curves.insert(carrier.attr, *carrier);
             }
         }
     }
+    out.remove_attrs(exclude);
     out.lane_refusals = lane_refusals;
     Ok(out)
 }
@@ -820,6 +855,30 @@ mod sp_curve_tests;
 #[cfg(test)]
 mod tests {
     use super::{blend, CarrierIndex};
+
+    #[test]
+    fn an_excluded_curve_resolves_no_bounded_wrapper() {
+        use crate::test_support::parasolid::{bounded_curve_wrapper, line_carrier};
+        use std::collections::HashSet;
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let mut body = line_carrier(30, [0.0; 3], [1.0, 0.0, 0.0]);
+        body.extend(bounded_curve_wrapper(
+            31,
+            30,
+            [0.0; 3],
+            [0.001, 0.0, 0.0],
+            0.0,
+            0.001,
+        ));
+        let framing = || super::Framing::Scan(None);
+        let all =
+            super::scan_carriers_with_framing(&ctx, &body, framing(), &HashSet::new()).unwrap();
+        assert!(all.curve_attrs().is_superset(&HashSet::from([30, 31])));
+        let excluded =
+            super::scan_carriers_with_framing(&ctx, &body, framing(), &HashSet::from([30]))
+                .unwrap();
+        assert!(excluded.curve_attrs().is_disjoint(&HashSet::from([30, 31])));
+    }
 
     #[test]
     fn merge_retains_zero_offset_blend_support_pairs() {
