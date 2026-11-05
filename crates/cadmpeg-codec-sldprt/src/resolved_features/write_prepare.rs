@@ -1862,7 +1862,7 @@ pub(crate) fn validate_lane_against_payload(
         return Ok(());
     }
     let mut entities = lane.sketch_entities.clone();
-    entities.sort_by_key(|entity| entity.ordinal());
+    entities.sort_by_key(crate::records::SketchInputEntity::ordinal);
     for (position, entity) in entities.iter().enumerate() {
         if cadmpeg_core::decode::u64_from_index(position) != u64::from(entity.ordinal()) {
             return Err(format!(
@@ -1872,11 +1872,11 @@ pub(crate) fn validate_lane_against_payload(
         }
         entity
             .validate_against_payload(&lane.native_payload)
-            .map_err(|error| error.to_owned())?;
+            .map_err(std::borrow::ToOwned::to_owned)?;
     }
     let entity_ids = entities
         .iter()
-        .map(|entity| entity.id())
+        .map(crate::records::SketchInputEntity::id)
         .collect::<std::collections::HashSet<_>>();
     for scalar in &lane.scalars {
         for operand in &scalar.operands {
@@ -1979,7 +1979,7 @@ pub(crate) fn validate_lane_against_payload(
         // synthesis drops it. Authored bytes are rewritten from the records.
         if source_trust == crate::writer::SourceTrust::Trustworthy {
             let mut expected_entities = expected.sketch_entities.clone();
-            expected_entities.sort_by_key(|entity| entity.ordinal());
+            expected_entities.sort_by_key(crate::records::SketchInputEntity::ordinal);
             if !sketch_entities_match(&entities, &expected_entities) {
                 return Err(format!(
                     "feature-input lane {} sketch entities do not match their native payload",

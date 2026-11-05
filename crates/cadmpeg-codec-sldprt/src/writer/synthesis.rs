@@ -1383,7 +1383,7 @@ fn reduce_design(
                 ..
             }) = definition
             {
-                if let Some(condition) = continuity.resolved().and_then(|value| value.uniform()) {
+                if let Some(condition) = continuity.resolved().and_then(cadmpeg_ir::features::FilledSurfaceContinuity::uniform) {
                     if condition.weight().is_some() {
                         *continuity = cadmpeg_ir::features::FilledSurfaceContinuityState::uniform(
                             condition.continuity(),

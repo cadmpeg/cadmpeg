@@ -283,7 +283,7 @@ fn generated_lane_objects(
             .names
             .iter()
             .filter_map(|name| {
-                let id = name.object_id.and_then(|id| id.value())?;
+                let id = name.object_id.and_then(crate::records::ObjectId::value)?;
                 features
                     .contains(&(id, name.value.as_str()))
                     .then_some((name.offset, id))
