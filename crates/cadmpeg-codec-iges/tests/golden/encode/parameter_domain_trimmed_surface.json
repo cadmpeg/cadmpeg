@@ -1,9 +1,12 @@
 {
-  "output": "original fixture                                                        S      1\n1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,32,38,6,308,17,7HprodG      1\nuct,1.0,2,2HMM,1,1.0,15HYYYYMMDD.HHMMSS,1.0000000000000000D-3,0,6HauthorG      2\n,3Horg,11,0,0H,0H;                                                      G      3\nS0000001G0000003D0000000P0000000                                        T      1\n",
+  "output": "original fixture                                                        S      1\n1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,32,38,6,308,17,7HprodG      1\nuct,1.0,2,2HMM,1,1.0,15HYYYYMMDD.HHMMSS,1.0000000000000000D-3,0,6HauthorG      2\n,3Horg,11,0,0H,0H;                                                      G      3\n     128       1       0       0       0       0       0       000010000D      1\n     128       0       0       7       0                 SURFACE       0D      2\n     144       8       0       0       0       0       0       000000000D      3\n     144       0       0       1       0                               0D      4\n128,1,1,1,1,0,0,1,0,0,0,0,1.0000000000000000D0,                        1P      1\n1.0000000000000000D0,0,0,1.0000000000000000D0,                         1P      2\n1.0000000000000000D0,1.0000000000000000D0,1.0000000000000000D0,        1P      3\n1.0000000000000000D0,1.0000000000000000D0,0,0,0,                       1P      4\n1.0000000000000000D0,0,0,0,1.0000000000000000D0,0,                     1P      5\n1.0000000000000000D0,1.0000000000000000D0,0,0,                         1P      6\n1.0000000000000000D0,0,1.0000000000000000D0;                           1P      7\n144,1,0,0,0;                                                           3P      8\nS0000001G0000003D0000004P0000008                                        T      1\n",
   "report": {
     "census": {
       "basis": "target_records",
-      "counts": {}
+      "counts": {
+        "128_nurbs_surface": 1,
+        "144_trimmed_surface": 1
+      }
     },
     "coverage": {
       "arenas": {
@@ -12,37 +15,37 @@
         "articulations": "omitted",
         "assembly_joints": "dropped",
         "assets": "dropped",
-        "attributes": "reported",
-        "bodies": "reported",
-        "coedges": "reported",
+        "attributes": "written",
+        "bodies": "written",
+        "coedges": "written",
         "colliders": "omitted",
         "configurations": "dropped",
         "curves": "reported",
         "declared_measures": "omitted",
         "drawings": "dropped",
         "edges": "reported",
-        "faces": "reported",
+        "faces": "written",
         "feature_input_topologies": "dropped",
         "feature_result_topologies": "dropped",
         "features": "written",
-        "loops": "reported",
+        "loops": "written",
         "mass_properties": "omitted",
         "occurrences": "dropped",
         "parameters": "dropped",
-        "pcurves": "reported",
+        "pcurves": "written",
         "physical_materials": "omitted",
         "physics_scenes": "omitted",
         "pmi": "dropped",
         "points": "reported",
         "presentation_documents": "dropped",
-        "presentation_layers": "dropped",
+        "presentation_layers": "written",
         "procedural_curves": "dropped",
         "procedural_surfaces": "reported",
         "product_definitions": "dropped",
-        "regions": "reported",
+        "regions": "written",
         "rigid_bodies": "omitted",
         "semantic_annotations": "dropped",
-        "shells": "reported",
+        "shells": "written",
         "sketch_constraints": "dropped",
         "sketch_entities": "dropped",
         "sketches": "dropped",
@@ -86,75 +89,12 @@
       },
       {
         "code": {
-          "code": "writer.support-geometry-not-represented",
-          "kind": "geometry_not_transferred",
-          "namespace": "iges",
-          "scope": "namespaced",
-          "strict_floor": "warning"
-        },
-        "message": "1 support geometry record (iges:model:surface#D1) has no exported owner and was withheld",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "writer.entity-omitted",
-          "kind": "geometry_not_transferred",
-          "namespace": "iges",
-          "scope": "namespaced",
-          "strict_floor": "warning"
-        },
-        "message": "IGES face iges:model:face#D3 has no usable boundary carrier and is omitted: ",
-        "severity": "error"
-      },
-      {
-        "code": {
-          "code": "writer.attribute-omitted",
-          "kind": "metadata_not_transferred",
-          "namespace": "iges",
-          "scope": "namespaced"
-        },
-        "message": "IGES attribute iges:application:attribute#D1:0:0 is omitted: its current owner has no emitted entity",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "writer.arena-omitted",
-          "kind": "passthrough_record_omitted",
-          "namespace": "iges",
-          "scope": "namespaced"
-        },
-        "message": "IGES cannot fully encode presentation layers: iges:presentation:level#0",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "export.no-exportable-solids",
-          "kind": "no_exportable_solids",
-          "namespace": "iges",
-          "scope": "namespaced",
-          "strict_floor": "warning"
-        },
-        "message": "the document holds no geometry that IGES can encode",
-        "severity": "warning"
-      },
-      {
-        "code": {
           "code": "native.records-omitted",
           "kind": "record_not_typed",
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 11 native record(s) from `iges.cards`: iges:physical:card#1, iges:physical:card#10, iges:physical:card#11, iges:physical:card#2, iges:physical:card#3, iges:physical:card#4, iges:physical:card#5, iges:physical:card#6, iges:physical:card#7, iges:physical:card#8, iges:physical:card#9",
-        "severity": "info"
-      },
-      {
-        "code": {
-          "code": "native.records-omitted",
-          "kind": "record_not_typed",
-          "namespace": "export",
-          "scope": "namespaced"
-        },
-        "message": "the iges write omits 2 native record(s) from `iges.display_attributes`: iges:presentation:display-attributes#D1, iges:presentation:display-attributes#D3",
+        "message": "the iges write omits 1 native record(s) from `iges.display_attributes`: iges:presentation:display-attributes#D3",
         "severity": "info"
       },
       {
@@ -201,7 +141,7 @@
               "disposition": "dropped"
             },
             "cards": {
-              "disposition": "dropped"
+              "disposition": "regenerated"
             },
             "circular_arrays": {
               "disposition": "dropped"
@@ -213,7 +153,7 @@
               "disposition": "dropped"
             },
             "copious_data": {
-              "disposition": "dropped"
+              "disposition": "regenerated"
             },
             "definition_levels": {
               "disposition": "dropped"
@@ -222,7 +162,10 @@
               "disposition": "dropped"
             },
             "display_attributes": {
-              "disposition": "dropped"
+              "disposition": "dropped",
+              "records": {
+                "iges:presentation:display-attributes#D1": "regenerated"
+              }
             },
             "drawings": {
               "disposition": "dropped"
@@ -252,7 +195,7 @@
               "disposition": "dropped"
             },
             "manifold_solids": {
-              "disposition": "dropped"
+              "disposition": "regenerated"
             },
             "network_definitions": {
               "disposition": "dropped"
@@ -306,7 +249,7 @@
               "disposition": "dropped"
             },
             "transformations": {
-              "disposition": "dropped"
+              "disposition": "regenerated"
             },
             "units_data": {
               "disposition": "dropped"

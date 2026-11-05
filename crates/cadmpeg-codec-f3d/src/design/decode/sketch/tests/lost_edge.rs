@@ -20,6 +20,65 @@ fn lost_edge_bytes() -> Vec<u8> {
 }
 
 #[test]
+fn damaged_lost_edge_record_keeps_a_sibling() {
+    use cadmpeg_ir::source_fidelity::parts::PartOutput;
+    use std::io::{Cursor, Write};
+
+    for truncated in [false, true] {
+        let mut first = lost_edge_bytes();
+        let mut second = lost_edge_bytes();
+        second[7..11].copy_from_slice(&43u32.to_le_bytes());
+        second[55..59].copy_from_slice(&44u32.to_le_bytes());
+        if truncated {
+            drop(first.drain(40..48));
+        } else {
+            first[25..29].copy_from_slice(&0u32.to_le_bytes());
+        }
+        first.extend_from_slice(&second);
+        let meta = crate::test_support::zip_test::indexed_fixture_metastream(
+            &first,
+            &[41, 42, 43, 44],
+            &[],
+        );
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
+        crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+        zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored)
+            .unwrap();
+        zip.write_all(&first).unwrap();
+        zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
+            .unwrap();
+        zip.write_all(&meta).unwrap();
+        let bytes = zip.finish().unwrap().into_inner();
+        crate::test_support::zip_test::with_scan(&bytes, |scan| {
+            let ctx = cadmpeg_test_support::service_decode_context();
+            let mut parts = PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
+            let references =
+                super::super::decode_lost_edge_references(&ctx, &mut parts, scan).unwrap();
+            assert_eq!(references.len(), 1);
+            assert_eq!(
+                (references[0].record_index, references[0].next_record_index),
+                (43, 44)
+            );
+            let (_, native, fidelity, losses) = parts.into_parts();
+            assert_eq!(losses.len(), 1);
+            assert_eq!(
+                losses[0].code,
+                cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable
+                    .note(String::new())
+                    .code
+            );
+            assert!(losses[0].message.contains("lost-edge reference 41"));
+            assert_eq!(fidelity.retained_records().len(), 1);
+            assert_eq!(
+                native.namespace("f3d").unwrap().arenas()["unknowns"].len(),
+                1
+            );
+        });
+    }
+}
+
+#[test]
 fn lost_edge_reference_scan_preserves_record_fields() {
     let bytes = lost_edge_bytes();
     let mut references = Vec::new();
