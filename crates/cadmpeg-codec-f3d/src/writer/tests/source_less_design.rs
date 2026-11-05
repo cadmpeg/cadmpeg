@@ -377,10 +377,10 @@ fn generated_source_less_writes_design_recipes_and_persistent_references() {
     native.design_types = (0..=163_u32)
         .map(|ordinal| {
             crate::records::entity_header::SegmentType::try_new(
-                format!("f3d:generated/MetaStream.dat:design-type#{ordinal:03}"),
+                format!("f3d:generated/MetaStream.dat:design-type#{}", ordinal + 100),
                 crate::records::entity_header::SegmentTypeData {
                     class_tag: (256 + ordinal).to_string().try_into().unwrap(),
-                    byte_offset: Some(u64::from(ordinal)),
+                    byte_offset: Some(u64::from(ordinal + 100)),
                     module: "Geometry".into(),
                     entities: crate::records::identity::ReferenceRun::unlocated(
                         if ordinal == 163 {
