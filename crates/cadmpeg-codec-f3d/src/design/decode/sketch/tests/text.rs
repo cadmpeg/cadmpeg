@@ -613,6 +613,58 @@ fn damaged_sketch_text_keeps_an_indexed_sibling() {
 }
 
 #[test]
+fn damaged_sketch_curve_keeps_an_indexed_sibling() {
+    use crate::metastream::RecordIndexEntry;
+    use crate::records::identity::{Located, ReferenceRun};
+    use cadmpeg_core::decode::View;
+    use cadmpeg_ir::source_fidelity::parts::PartOutput;
+
+    let (mut bytes, mut meta, _, curve_at, text_at, _) = indexed_sketch_fixture();
+    let mut second = bytes[curve_at..text_at].to_vec();
+    second[7..11].copy_from_slice(&151u32.to_le_bytes());
+    bytes[curve_at + 20] = 2;
+    meta.records.push(RecordIndexEntry {
+        entity_id: 151,
+        bulk_offset: u64_from_index(bytes.len()),
+    });
+    bytes.extend_from_slice(&second);
+    meta.types[2].entities = ReferenceRun::located(vec![
+        Located {
+            value: 51,
+            offset: 0,
+        },
+        Located {
+            value: 151,
+            offset: 0,
+        },
+    ]);
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut parts = PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
+    let curves = super::super::decode_sketch_curve_identities_with_parts(
+        &bytes,
+        &meta,
+        "Design/BulkStream.dat",
+        Some((&ctx, &mut parts, View::over_retained(&bytes))),
+    )
+    .unwrap();
+    assert_eq!(curves.len(), 1);
+    assert_eq!(curves[0].record_index, 151);
+    let (_, native, fidelity, losses) = parts.into_parts();
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable
+            .note(String::new())
+            .code
+    );
+    assert_eq!(
+        native.namespace("f3d").unwrap().arenas()["unknowns"].len(),
+        1
+    );
+    assert_eq!(fidelity.retained_records().len(), 1);
+}
+
+#[test]
 fn sketch_records_use_the_primary_index_live_copy() {
     use crate::records::sketch_geometry::SketchCurveGeometry;
     use cadmpeg_ir::math::{Point2, Point3};
