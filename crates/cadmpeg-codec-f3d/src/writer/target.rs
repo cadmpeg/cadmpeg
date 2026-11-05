@@ -16,21 +16,6 @@ pub(crate) fn plan(
     input: EncodeInput<'_>,
     target: &ResolvedWrite<'_>,
 ) -> Result<ExportBody, CodecError> {
-    if target.entry().is_none() {
-        return match preserve(input)? {
-            Preservation::Written {
-                bytes,
-                write_path,
-                notes,
-            } => Ok(preserved_body(input.ir, write_path, bytes, notes)),
-            Preservation::PatchDeclined { reason } => {
-                synthesize_displaced(input, target, SynthesisCause::PatchDeclined { reason })
-            }
-            Preservation::SourceImageUnavailable => {
-                synthesize_displaced(input, target, SynthesisCause::SourceImageUnavailable)
-            }
-        };
-    }
     if target.preserves_source() {
         return match preserve(input)? {
             Preservation::Written {
@@ -59,25 +44,6 @@ pub(crate) fn plan(
         SynthesisCause::Fresh
     };
     synthesized_body(input, cause)
-}
-
-fn synthesize_displaced(
-    input: EncodeInput<'_>,
-    target: &ResolvedWrite<'_>,
-    cause: SynthesisCause,
-) -> Result<ExportBody, CodecError> {
-    // An off-catalog `Inherit` resolves to the catalog default with a
-    // displacement loss; a missing default still synthesizes.
-    let message = target
-        .for_synthesis()
-        .ok()
-        .and_then(|synthesis| synthesis.resolution().displacement_message());
-    let mut body = synthesized_body(input, cause)?;
-    if let Some(message) = message {
-        body.losses
-            .push(F3dLossCode::SourceDialectDisplaced.note(message));
-    }
-    Ok(body)
 }
 
 enum Preservation {
