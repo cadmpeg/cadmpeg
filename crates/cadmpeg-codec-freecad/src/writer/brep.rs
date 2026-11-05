@@ -8,6 +8,7 @@ use cadmpeg_ir::document::CadIr;
 use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::topology::{Body, BodyKind, Sense};
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::fmt::Write as _;
 
 use super::geometry;
 mod reachable;
@@ -543,20 +544,22 @@ fn triangulation_sections(
                 .map_or(0.0, cadmpeg_ir::scalar::NonNegativeReal::get)
         );
         for vertex in vertices {
-            row.push_str(&format!("\n{}", geometry::point(vertex.get())));
+            write!(row, "\n{}", geometry::point(vertex.get())).expect("write to string");
         }
         for triangle in triangles {
-            row.push_str(&format!(
+            write!(
+                row,
                 "\n{} {} {}",
                 u64::from(triangle[0]) + 1,
                 u64::from(triangle[1]) + 1,
                 u64::from(triangle[2]) + 1
-            ));
+            )
+            .expect("write to string");
         }
         if has_normals {
             for normal in normals {
                 let normal = normal.get();
-                row.push_str(&format!("\n{} {} {}", normal.x, normal.y, normal.z));
+                write!(row, "\n{} {} {}", normal.x, normal.y, normal.z).expect("write to string");
             }
         }
         rows.push(row);
@@ -1085,10 +1088,12 @@ fn serialize_geometry_inner(
                 }
                 _ => {
                     if let Some((curve, range, _, _)) = rows.first() {
-                        representation.push_str(&format!(
+                        write!(
+                            representation,
                             " 2 {curve} {surface} {location} {} {}",
                             range[0], range[1]
-                        ));
+                        )
+                        .expect("write to string");
                     }
                     for (_, _, _, pcurve) in rows.into_iter().skip(1) {
                         losses.push(
