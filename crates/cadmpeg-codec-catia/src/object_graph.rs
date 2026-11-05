@@ -994,9 +994,8 @@ fn parse_candidate(
         },
         None => return (None, skipped),
     };
-    let end = match pos.checked_add(total_len) {
-        Some(end) => end,
-        None => return (None, skipped),
+    let Some(end) = pos.checked_add(total_len) else {
+        return (None, skipped);
     };
     if total_len < 15 || end > data.len() {
         return (None, skipped);
@@ -1012,9 +1011,8 @@ fn parse_candidate(
             },
             None => return (None, skipped),
         };
-        let record_end = match at.checked_add(record_len) {
-            Some(record_end) => record_end,
-            None => return (None, skipped),
+        let Some(record_end) = at.checked_add(record_len) else {
+            return (None, skipped);
         };
         if record_len < 6 || record_end > end {
             return (None, skipped);
@@ -1043,15 +1041,13 @@ fn parse_candidate(
             at = record_end;
             continue;
         }
-        let body = match data.get(head_start..record_end) {
-            Some(body) => body,
-            None => return (None, skipped),
+        let Some(body) = data.get(head_start..record_end) else {
+            return (None, skipped);
         };
         let (lead, body_form) = match child {
             Some((child, _)) => {
-                let head_bytes = match data.get(head_start..child) {
-                    Some(head_bytes) => head_bytes,
-                    None => return (None, skipped),
+                let Some(head_bytes) = data.get(head_start..child) else {
+                    return (None, skipped);
                 };
                 let lead = match head_bytes.first() {
                     Some(lead) => *lead,
