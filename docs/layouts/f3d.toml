@@ -28753,6 +28753,23 @@ source = "spec"
 anchor = "it [begins with two xyz f64 points](../layouts/f3d.md)"
 
 [[record]]
+name = "dimension_annotation_absent_metadata"
+kind = "byte"
+section = "3.1"
+anchor = "A frame without a metadata block stores `u8 0` alone"
+size = 1
+note = "Starts immediately after the annotation operand run. The annotation byte payload follows it."
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/dimension_frames.rs"
+
+[[record.field]]
+name = "present"
+offset = 0
+type = "u8"
+value = 0
+source = "spec"
+anchor = "A frame without a metadata block stores `u8 0` alone"
+
+[[record]]
 name = "dimension_annotation_genesis_metadata"
 kind = "byte"
 section = "3.1"

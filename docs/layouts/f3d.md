@@ -8446,6 +8446,19 @@ Parsed by:
 | 0 | 24 | `first_point` | `f64[3]` | little | spec | it [begins with two xyz f64 points](../layouts/f3d.md) |
 | 24 | 24 | `second_point` | `f64[3]` | little | spec | it [begins with two xyz f64 points](../layouts/f3d.md) |
 
+## `dimension_annotation_absent_metadata`
+
+Spec §3.1 · layout: byte offsets · size: 1 B
+
+Starts immediately after the annotation operand run. The annotation byte payload follows it.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/dimension_frames.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `present` | `u8` | little | spec | A frame without a metadata block stores `u8 0` alone · value `0` |
+
 ## `dimension_annotation_genesis_metadata`
 
 Spec §3.1 · layout: byte offsets · size: 57 B

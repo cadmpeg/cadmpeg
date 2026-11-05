@@ -8122,6 +8122,22 @@ pub(crate) mod dimension_annotation_payload_points {
     pub(crate) const SECOND_POINT: usize = 24;
 }
 
+/// Byte offsets for the `dimension_annotation_absent_metadata` record.
+///
+/// Spec §3.1. Record length 1 B.
+///
+/// ```text
+/// Starts immediately after the annotation operand run. The annotation byte payload follows it.
+/// ```
+pub(crate) mod dimension_annotation_absent_metadata {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 1;
+    /// Offset of `present` (`u8`). Spec §3.1.
+    pub(crate) const PRESENT: usize = 0;
+    /// Stated value of `present` (`u8`). Spec §3.1.
+    pub(crate) const PRESENT_VALUE: u8 = 0;
+}
+
 /// Byte offsets for the `dimension_annotation_genesis_metadata` record.
 ///
 /// Spec §3.1. Record length 57 B.
