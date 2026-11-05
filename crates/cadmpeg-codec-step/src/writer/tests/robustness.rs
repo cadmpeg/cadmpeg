@@ -77,6 +77,20 @@ fn max_entities_refuses_an_over_ceiling_plan() {
 }
 
 #[test]
+fn empty_document_charges_the_records_step_writes() {
+    let ir = cadmpeg_ir::CadIr::empty();
+    let mut input = EncodeInput::new(&ir, None);
+    input.limits.max_entities = 0;
+    let error = StepCodec::default()
+        .plan(input, request())
+        .expect_err("STEP writes records for an empty document");
+    assert!(matches!(
+        error,
+        cadmpeg_ir::codec::write::EncodeError::ResourceLimit(_)
+    ));
+}
+
+#[test]
 fn reduced_rows_are_empty_for_step() {
     // STEP stores no JSON path in reduced form; every written value
     // round-trips at full precision (#232 §5.2).

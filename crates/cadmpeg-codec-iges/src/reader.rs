@@ -1032,15 +1032,18 @@ fn decode_with_occurrence_limits(
     // Parameter sections and defines no design part; design is overdelivered
     // with model, which the depth harness pins.
     let required = ctx.depth().required_scope();
-    let model_part = parse.scan.lines.iter().any(|line| {
-        matches!(
-            line,
-            card::ScannedLine::Card {
-                section: card::Section::Directory | card::Section::Parameter,
-                ..
-            }
-        )
-    });
+    let model_part = part_fidelity
+        .unrepresented()
+        .contains(&cadmpeg_ir::ArenaClass::Model)
+        || parse.scan.lines.iter().any(|line| {
+            matches!(
+                line,
+                card::ScannedLine::Card {
+                    section: card::Section::Directory | card::Section::Parameter,
+                    ..
+                }
+            )
+        });
     ir.model = part_model;
     // Part give-ups stage their unknowns stubs as native records. Merge them
     // into the document; the model, fidelity and losses merge with the
