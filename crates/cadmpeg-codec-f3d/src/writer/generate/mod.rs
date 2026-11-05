@@ -180,10 +180,10 @@ pub(super) fn write_with_limits(
         validate_source_less_recipes(&native)?;
         validate_source_less_design_links(target, &native, &attributes)?;
     }
-    let generated_features = features::encode(target)?;
+    let generated_features = features::encode(target, &output_ctx)?;
     let mut design_registry = GeneratedDesignRegistry::new(target, design_bindings, &attributes)?;
     if !records::needs_design_bulk(target, &native) {
-        if let Some((_, meta, _, _, _, _)) = &generated_features {
+        if let Some((_, meta, _, _, _)) = &generated_features {
             let generated = crate::metastream::parse(meta, "generated feature MetaStream")?;
             let mut ordinal = 0;
             design_registry.types.retain(|_| {
@@ -352,9 +352,6 @@ pub(super) fn write_with_limits(
         }
     }
     for segment in act_segments {
-        for _ in 0..segment.record_count {
-            output_ctx.charge_entities(1, "F3D ACT record")?;
-        }
         archive
             .start_file(format!("{}/BulkStream.dat", segment.folder), options)
             .map_err(|error| CodecError::malformed(error.to_string()))?;
@@ -405,12 +402,7 @@ pub(super) fn write_with_limits(
         )));
     }
     let mut written_owned_parameters = Vec::new();
-    if let Some((bulk, meta, ids, parameter_ids, collection_index, record_count)) =
-        generated_features
-    {
-        for _ in 0..record_count {
-            output_ctx.charge_entities(1, "F3D feature record")?;
-        }
+    if let Some((bulk, meta, ids, parameter_ids, collection_index)) = generated_features {
         written_features = ids;
         written_owned_parameters = parameter_ids;
         residual_losses.push(collection_residual(
