@@ -144,14 +144,14 @@ fn compressed_and_binary_representations_are_detected_and_binary_is_validated() 
         .unwrap_err();
     assert_eq!(
         inspect_error.to_string(),
-        "malformed container: IGES Compressed ASCII: Start section is missing after the flag record"
+        "truncated input during IGES Compressed ASCII Start section at space 0 offset 80"
     );
     assert_eq!(
         IgesCodec
             .decode(&mut Cursor::new(compressed), &DecodeOptions::default())
             .unwrap_err()
             .to_string(),
-        "malformed container: IGES Compressed ASCII: Start section is missing after the flag record"
+        "truncated input during IGES Compressed ASCII Start section at space 0 offset 80"
     );
 
     let mut binary = vec![0_u8; 80];
