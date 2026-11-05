@@ -1,5 +1,5 @@
 {
-  "output": "original fixture                                                        S      1\n1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,32,38,6,308,17,7HprodG      1\nuct,1.0,2,2HMM,1,1.0,15HYYYYMMDD.HHMMSS,1.0000000000000000D-3,0,6HauthorG      2\n,3Horg,11,0,0H,0H;                                                      G      3\n     410       1       0       0       0       0       0       000000100D      1\n     410       0       0       1       0                               0D      2\n     410       2       0       0       0       0       0       000000100D      3\n     410       0       0       2       1                               0D      4\n410,1,,0,0,0,0,0,0;                                                    1P      1\n410,2,1.5000000000000000D0,0,0,1,0,0,0,0,0,10,0,1,0,5,-2,2,-1,1,       3P      2\n3,-5,5;                                                                3P      3\nS0000001G0000003D0000004P0000003                                        T      1\n",
+  "output": "original fixture                                                        S      1\n1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,32,38,6,308,17,7HprodG      1\nuct,1.0,2,2HMM,1,1.0,15HYYYYMMDD.HHMMSS,1.0000000000000000D-3,0,6HauthorG      2\n,3Horg,11,0,0H,0H;                                                      G      3\n     410       1       0       0       0       0       0       000000100D      1\n     410       0       0       1       0                   ORTHO       0D      2\n     410       2       0       0       0       0       0       000000100D      3\n     410       0       0       2       1                   PERSP       0D      4\n410,1,,0,0,0,0,0,0;                                                    1P      1\n410,2,1.5000000000000000D0,0,0,1,0,0,0,0,0,10,0,1,0,5,-2,2,-1,1,       3P      2\n3,-5,5;                                                                3P      3\nS0000001G0000003D0000004P0000003                                        T      1\n",
   "report": {
     "census": {
       "basis": "target_records",
@@ -10,7 +10,7 @@
     "coverage": {
       "arenas": {
         "appearance_bindings": "written",
-        "appearances": "dropped",
+        "appearances": "written",
         "articulations": "omitted",
         "assembly_joints": "dropped",
         "assets": "dropped",

@@ -926,7 +926,6 @@ pub(super) fn encode_sketch_nurbs(
 ) -> Result<(), CodecError> {
     let knots = geometry.knots();
     let poles = geometry.poles();
-    let payload_start = record.len();
     record.extend_from_slice(
         &carrier_reference
             .unwrap_or(NULL_CARRIER_REFERENCE)
@@ -935,7 +934,8 @@ pub(super) fn encode_sketch_nurbs(
     record.extend_from_slice(&3u32.to_le_bytes());
     record.extend_from_slice(subtype_class_tag.as_bytes());
     record.extend_from_slice(&subtype_record_index.to_le_bytes());
-    zero_fill_to(record, payload_start.saturating_add(88));
+    const NURBS_PREFIX_PADDING: usize = 88 - (8 + 4 + 3 + 4);
+    record.extend_from_slice(&[0; NURBS_PREFIX_PADDING]);
     record.push(1);
     record.push(0);
     record.extend_from_slice(&geometry.degree().to_le_bytes());
