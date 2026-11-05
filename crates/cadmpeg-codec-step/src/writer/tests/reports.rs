@@ -1929,3 +1929,63 @@ fn source_native_record_reduction_is_reported() {
         ["f3d:test:asm-history#0"]
     );
 }
+
+#[test]
+fn parameter_bound_pmi_reports_its_omitted_reference() {
+    use cadmpeg_ir::features::{DesignParameter, Dimension, ParameterId, ParameterValue};
+    use cadmpeg_ir::pmi::{DimensionKind, PmiAnnotation, PmiDefinition, PmiDimension};
+
+    let mut ir = unit_cube().expect("cube");
+    let parameter = ParameterId::mint("test:model:parameter#dimension").expect("identity");
+    ir.model.parameters.push(DesignParameter {
+        id: parameter.clone(),
+        native_ref: None,
+        product_definition: None,
+        owner: None,
+        ordinal: 0,
+        name: "width".into(),
+        expression: "2 mm".into(),
+        driving: true,
+        display: None,
+        value: Some(ParameterValue::Length(
+            cadmpeg_ir::scalar::Length::new(2.0).unwrap(),
+        )),
+        properties: std::collections::BTreeMap::new(),
+        pmi: None,
+    });
+    ir.model.pmi.push(PmiAnnotation {
+        id: "test:model:pmi#bound".try_into().expect("identity"),
+        native_ref: None,
+        name: None,
+        visible: None,
+        targets: Vec::new(),
+        definition: PmiDefinition::Dimension(
+            PmiDimension::new(
+                DimensionKind::Size,
+                Some(Dimension::Parameter(parameter)),
+                None,
+            )
+            .expect("dimension"),
+        ),
+    });
+    let mut bytes = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut bytes,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .expect("write");
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == StepLossCode::PmiParameterReferenceOmitted.kind()
+            && loss.message.contains("test:model:pmi#bound")
+            && loss.message.contains("test:model:parameter#dimension")
+    }));
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode");
+    assert!(decoded.ir().model.pmi.iter().any(|annotation| {
+        matches!(&annotation.definition, PmiDefinition::Dimension(dimension)
+            if dimension.resolved_nominal(decoded.ir()).is_some_and(|value| value.value.get() == 2.0))
+    }));
+}
