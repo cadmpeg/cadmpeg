@@ -2457,7 +2457,7 @@ pub(in super::super) fn transfer_native_brep(
                                 range = Some(sampled_range);
                                 sampled_sweep_circles.insert(*curve_id);
                             }
-                            SampledCircleRange::Refused(loss) => losses.push(loss),
+                            SampledCircleRange::Refused(loss) => losses.push(*loss),
                             SampledCircleRange::Unrelated => {}
                         }
                         if unrelated {
@@ -2483,7 +2483,7 @@ pub(in super::super) fn transfer_native_brep(
                                     range = Some(hole_range);
                                     sampled_hole_circles.insert(*curve_id);
                                 }
-                                SampledCircleRange::Refused(loss) => losses.push(loss),
+                                SampledCircleRange::Refused(loss) => losses.push(*loss),
                                 SampledCircleRange::Unrelated => {}
                             }
                         }
