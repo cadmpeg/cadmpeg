@@ -252,6 +252,8 @@ pub(crate) enum StepLossCode {
     VertexPcurveUseOmitted,
     /// A pcurve shared by different surfaces was split.
     PcurveSplitAcrossSurfaces,
+    /// A surface curve cannot associate another pcurve beyond its STEP limit.
+    PcurveAssociationLimit,
     /// Coedge-local 3D curve uses were not represented.
     CoedgeUseCurveNotRepresented,
     /// Topology metadata values were not represented.
@@ -524,6 +526,7 @@ impl StepLossCode {
         Self::PcurveUseNativeMetadata,
         Self::VertexPcurveUseOmitted,
         Self::PcurveSplitAcrossSurfaces,
+        Self::PcurveAssociationLimit,
         Self::CoedgeUseCurveNotRepresented,
         Self::TopologyMetadataNotRepresented,
         Self::SubdOmitted,
@@ -730,6 +733,7 @@ impl StepLossCode {
             Self::PcurveUseNativeMetadata => "pcurve.use-native-metadata",
             Self::VertexPcurveUseOmitted => "pcurve.vertex-use-omitted",
             Self::PcurveSplitAcrossSurfaces => "pcurve.split-across-surfaces",
+            Self::PcurveAssociationLimit => "pcurve.association-limit",
             Self::CoedgeUseCurveNotRepresented => "topology.coedge-use-curve-not-represented",
             Self::TopologyMetadataNotRepresented => "topology.metadata-not-represented",
             Self::SubdOmitted => "geometry.subd-omitted",
@@ -854,6 +858,7 @@ impl StepLossCode {
             | Self::CoedgePcurveNativeMetadata
             | Self::PcurveUseNativeMetadata
             | Self::PcurveSplitAcrossSurfaces
+            | Self::PcurveAssociationLimit
             | Self::CoedgeUseCurveNotRepresented
             | Self::TopologyMetadataNotRepresented
             | Self::ParametricDesignRecordsOmitted
@@ -1018,7 +1023,8 @@ impl StepLossCode {
             | Self::CoedgePcurveNativeMetadata
             | Self::PcurveUseNativeMetadata
             | Self::VertexPcurveUseOmitted
-            | Self::PcurveSplitAcrossSurfaces => LossTaxonomy::PcurveOmitted,
+            | Self::PcurveSplitAcrossSurfaces
+            | Self::PcurveAssociationLimit => LossTaxonomy::PcurveOmitted,
             Self::FaceMultipleOuterBounds
             | Self::ShellDisconnectedFaces
             | Self::EdgeVertexOffCarrier => LossTaxonomy::SourceTopologyInvalid,
@@ -1209,6 +1215,7 @@ mod tests {
                 "pcurve.use-native-metadata",
                 "pcurve.vertex-use-omitted",
                 "pcurve.split-across-surfaces",
+                "pcurve.association-limit",
                 "topology.coedge-use-curve-not-represented",
                 "topology.metadata-not-represented",
                 "geometry.subd-omitted",
