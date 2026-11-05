@@ -32,6 +32,8 @@ pub struct StepCodec {
 
 impl EncoderBackend for StepCodec {
     const REUSES_SOURCE: bool = false;
+    const REDUCED_FIELDS: &'static [cadmpeg_ir::codec::write::ReducedField] =
+        crate::writer::REDUCED_FIELDS;
     const FORMAT: FormatId = <Self as CodecBackend>::FORMAT;
     /// Writes B-rep, product structure, presentation and PMI; design arenas are
     /// reported as omitted, not read.
