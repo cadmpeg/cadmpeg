@@ -497,11 +497,22 @@ fn face_closure(ir: &CadIr, face_id: &str) -> BTreeSet<String> {
         return ids;
     };
     ids.insert(face.surface.as_str().to_owned());
+    if let Some(construction) = ir
+        .model
+        .surfaces
+        .iter()
+        .find(|row| row.id == face.surface)
+        .and_then(|row| row.geometry.procedural_construction())
+    {
+        ids.insert(construction.as_str().to_owned());
+    }
+    let mut vertices = BTreeSet::new();
     for loop_id in &face.loops {
         ids.insert(loop_id.as_str().to_owned());
         let Some(loop_) = ir.model.loops.iter().find(|row| row.id == *loop_id) else {
             continue;
         };
+        vertices.extend(loop_.vertices().map(|id| id.as_str()));
         for coedge_id in loop_.coedges() {
             ids.insert(coedge_id.as_str().to_owned());
             let Some(coedge) = ir.model.coedges.iter().find(|row| row.id == *coedge_id) else {
@@ -509,6 +520,8 @@ fn face_closure(ir: &CadIr, face_id: &str) -> BTreeSet<String> {
             };
             ids.insert(coedge.edge.as_str().to_owned());
             if let Some(edge) = ir.model.edges.iter().find(|row| row.id == coedge.edge) {
+                vertices.insert(edge.start.as_str());
+                vertices.insert(edge.end.as_str());
                 if let Some(curve) = edge.curve() {
                     ids.insert(curve.as_str().to_owned());
                 }
@@ -522,6 +535,21 @@ fn face_closure(ir: &CadIr, face_id: &str) -> BTreeSet<String> {
         }
         for use_ in loop_.vertex_pcurves() {
             ids.insert(use_.pcurve.as_str().to_owned());
+        }
+    }
+    for vertex in &ir.model.vertices {
+        if vertices.contains(vertex.id.as_str()) {
+            ids.insert(vertex.id.as_str().to_owned());
+            ids.insert(vertex.point.as_str().to_owned());
+        }
+    }
+    for curve in &ir.model.curves {
+        if let Some(construction) = curve
+            .geometry
+            .procedural_construction()
+            .filter(|_| ids.contains(curve.id.as_str()))
+        {
+            ids.insert(construction.as_str().to_owned());
         }
     }
     ids
