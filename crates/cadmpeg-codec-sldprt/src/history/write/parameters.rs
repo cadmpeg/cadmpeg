@@ -8,7 +8,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 
 use super::features::generated_feature_record_id;
 use crate::history::parameters::{
-    global_parameter_owners, parameters_with_incoherent_dependencies, render_parameter_expression,
+    global_parameter_owners, parameters_with_incoherent_dependencies, render_identifier,
 };
 
 pub(crate) fn synchronize_parameter_records(
@@ -52,17 +52,68 @@ fn sync_neutral_parameters(
             "SLDPRT parameter expressions reference missing canonical identities",
         ));
     }
+    let aliases = parameters
+        .iter()
+        .filter_map(|parameter| {
+            let owner = ir
+                .model
+                .features
+                .iter()
+                .find(|feature| parameter.owner.as_ref() == Some(&feature.id))?;
+            let record = native
+                .as_ref()?
+                .feature_histories
+                .iter()
+                .flat_map(|history| &history.features)
+                .find(|record| {
+                    owner.native_ref.as_deref() == Some(record.id.as_str())
+                        || (owner.native_ref.is_none()
+                            && record.id == generated_feature_record_id(&owner.id))
+                })?;
+            let alias = parameter.properties.get("EquationId").or_else(|| {
+                record
+                    .dimension_properties
+                    .get(parameter.name.as_str())?
+                    .get("EquationId")
+            })?;
+            Some((parameter.id.clone(), alias.clone()))
+        })
+        .collect::<HashMap<_, _>>();
     let rendered = parameters
         .iter()
         .map(|parameter| {
-            let text =
-                render_parameter_expression(parameter, parameters, &feature_names, &global_owners)
-                    .ok_or_else(|| {
-                        CodecError::malformed(format_args!(
-                            "SLDPRT parameter {} references an unrenderable canonical identity",
-                            parameter.id
-                        ))
-                    })?;
+            let text = parameter
+                .expression
+                .render_with(|id| {
+                    let target = parameters.iter().find(|target| &target.id == id)?;
+                    let alias = aliases.get(id).map(String::as_str);
+                    let mut name = alias
+                        .map(|alias| alias.split('@').next().unwrap_or(alias))
+                        .unwrap_or(&target.name)
+                        .to_owned();
+                    if (alias.is_some()
+                        || (target.owner != parameter.owner
+                            && !target
+                                .owner
+                                .as_ref()
+                                .is_some_and(|owner| global_owners.contains(owner))))
+                        && target
+                            .owner
+                            .as_ref()
+                            .and_then(|owner| feature_names.get(owner))
+                            .is_some()
+                    {
+                        name.push('@');
+                        name.push_str(feature_names.get(target.owner.as_ref()?)?);
+                    }
+                    Some(render_identifier(&name))
+                })
+                .ok_or_else(|| {
+                    CodecError::malformed(format_args!(
+                        "SLDPRT parameter {} references an unrenderable canonical identity",
+                        parameter.id
+                    ))
+                })?;
             let text = match parameter.display {
                 Some(cadmpeg_ir::features::DimensionDisplay::Diameter) => {
                     format!("<MOD-DIAM>{text}")
@@ -176,12 +227,7 @@ fn sync_neutral_parameters(
                 let mut properties = parameter.properties.clone();
                 properties.remove("Value");
                 properties.remove("Driven");
-                properties.remove("EquationId");
-                if let Some(alias) = record
-                    .dimension_properties
-                    .get(parameter.name.as_str())
-                    .and_then(|properties| properties.get("EquationId"))
-                {
+                if let Some(alias) = aliases.get(&parameter.id) {
                     let alias = match alias.split_once('@') {
                         Some((name, _)) => format!("{name}@{}", record.name),
                         None => alias.clone(),

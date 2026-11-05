@@ -433,3 +433,43 @@ fn damaged_object_data_section_keeps_object_declarations() {
         Some("<ObjectData Count='1'><Object name='A'><Properties Count='0'/></Object>".as_bytes())
     );
 }
+
+#[test]
+fn damaged_declaration_keeps_readable_data_owned_by_its_stub() {
+    let xml = document(4,
+        "<Object name='Peer' type='Vendor::Feature'/><Object name='Bad' type='Vendor::Feature'>",
+        "<Object name='Peer'><Properties Count='1'><Property name='Label' type='App::PropertyString'><String value='independent'/></Property></Properties></Object><Object name='Bad'><Properties Count='1'><Property name='Label' type='App::PropertyString'><String value='still readable'/></Property></Properties></Object>");
+    let bytes = zip_fixture::archive(&[RawEntry::stored("Document.xml", xml.as_bytes())]);
+    let decoded = crate::FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let namespace = decoded.ir().native.namespace("fcstd").unwrap();
+    let objects = namespace
+        .arena_as::<crate::native::ObjectRecord>("objects")
+        .unwrap();
+    assert!(objects.iter().any(|object| object.name() == "Peer"));
+    assert!(!objects.iter().any(|object| object.name() == "Bad"));
+    let parts = crate::test_support::source_fidelity::given_up(decoded.source_fidelity());
+    let [(id, retained)] = parts.as_slice() else {
+        panic!("one damaged declaration")
+    };
+    assert_eq!(
+        retained.data(),
+        Some("<Object name='Bad' type='Vendor::Feature'>".as_bytes())
+    );
+    let properties = namespace
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .unwrap();
+    let property = properties
+        .iter()
+        .find(|property| property.owner == *id && property.name == "Label")
+        .unwrap();
+    assert_eq!(
+        property.values()[0]
+            .attributes
+            .get("value")
+            .map(String::as_str),
+        Some("still readable")
+    );
+    assert!(crate::test_support::validate_native(decoded.ir()).is_empty());
+}

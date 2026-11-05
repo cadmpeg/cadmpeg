@@ -357,7 +357,7 @@ impl_entity_schema!(
     crate::features::FeatureInputTopology,
     FeatureInputTopology,
     id;
-    id, input_of, bodies, faces, edges, vertices, edge_geometry, native_ref
+    id, input_of, bodies, faces, edges, vertices, operands, edge_geometry, native_ref
 );
 impl EntitySchema for crate::features::FeatureResultTopology {
     fn native_reference(&self) -> Option<&str> {

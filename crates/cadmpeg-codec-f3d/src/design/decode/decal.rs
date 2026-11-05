@@ -58,6 +58,12 @@ pub(crate) fn project_decal_images(
 ) -> Result<Vec<Asset>, CodecError> {
     let mut assets = Vec::new();
     for image in images {
+        let Some(mut asset) = embedded_image_asset(ctx, scan, image.asset.name())? else {
+            continue;
+        };
+        asset.native_ref = Some(image.id.clone());
+        let asset_id = asset.id.clone();
+        assets.push(asset);
         if image.mapping_mode != crate::records::decal::DesignDecalMappingMode::FitToFaces {
             continue;
         }
@@ -96,15 +102,10 @@ pub(crate) fn project_decal_images(
         if faces.is_empty() {
             continue;
         }
-        let Some(mut asset) = embedded_image_asset(ctx, scan, image.asset.name())? else {
-            continue;
-        };
-        asset.native_ref = Some(image.id.clone());
         let feature_id = crate::ids::neutral_feature_id(scope);
         let Some(feature) = features.iter_mut().find(|feature| feature.id == feature_id) else {
             continue;
         };
-        let asset_id = asset.id.clone();
         feature
             .evaluation
             .set_definition(FeatureDefinition::Operation(FeatureOperation::Decal {
@@ -116,7 +117,6 @@ pub(crate) fn project_decal_images(
                 mapping: DecalMapping::FitToFaces,
                 opacity: None,
             }));
-        assets.push(asset);
     }
     assets.sort_by(|a, b| a.id.cmp(&b.id));
     assets.dedup_by(|a, b| a.id == b.id);
@@ -477,6 +477,7 @@ mod tests {
         zip.write_all(b"PNG").unwrap();
         let archive = zip.finish().unwrap().into_inner();
         crate::test_support::zip_test::with_scan(&archive, |scan| {
+            let mut features = [feature()];
             let assets = super::project_decal_images(
                 &cadmpeg_test_support::service_decode_context(),
                 scan,
@@ -484,11 +485,27 @@ mod tests {
                 std::slice::from_ref(&image),
                 std::slice::from_ref(&group),
                 std::slice::from_ref(&operand),
-                &mut [feature()],
+                &mut features,
             )
             .unwrap();
             assert_eq!(assets.len(), 1);
             assert_eq!(assets[0].id, crate::ids::neutral_asset_id(ENTRY));
+            assert!(matches!(features[0].definition(),
+                FeatureDefinition::Operation(FeatureOperation::Decal {
+                    asset, faces: cadmpeg_ir::features::FaceSelection::Resolved { faces, native }, ..
+                }) if *asset == assets[0].id && faces.as_slice() == [face.clone()] && native == &operand.id));
+            let unbound = super::project_decal_images(
+                &cadmpeg_test_support::service_decode_context(),
+                scan,
+                std::slice::from_ref(&scope),
+                std::slice::from_ref(&image),
+                &[],
+                &[],
+                &mut [feature()],
+            )
+            .unwrap();
+            assert_eq!(unbound.len(), 1);
+            assert_eq!(unbound[0].id, assets[0].id);
         });
     }
 }

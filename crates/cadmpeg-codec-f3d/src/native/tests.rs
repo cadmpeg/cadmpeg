@@ -1460,9 +1460,7 @@ fn oversized_nested_protein_entry_is_rejected_before_allocation() {
 }
 
 #[test]
-fn nested_protein_decode_charges_through_session_expand_ceilings() {
-    use cadmpeg_core::decode::ResourceDimension;
-
+fn nested_protein_decode_gives_up_oversized_expansion() {
     let target = b"AssetData/InstanceProperties.bin";
     let mut nested = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let deflated = crate::zip_write::file_options(CompressionMethod::Deflated);
@@ -1492,23 +1490,20 @@ fn nested_protein_decode_charges_through_session_expand_ceilings() {
     outer.write_all(&protein).unwrap();
     let archive = outer.finish().unwrap().into_inner();
 
-    let error = F3dCodec
+    let decoded = F3dCodec
         .decode(&mut Cursor::new(archive), &DecodeOptions::default())
-        .expect_err("nested Protein inflate must refuse session expand ceilings");
-    assert!(
-        matches!(
-            error,
-            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::DecompressedBytes
-        ),
-        "{error:?}"
-    );
+        .expect("a part expansion limit gives up the Protein part");
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "record.unreadable"
+            && loss.message.contains("f3d.protein_record")));
+    assert_eq!(decoded.ir().native_unknowns("f3d").unwrap().len(), 1);
 }
 
 #[test]
 fn nested_protein_decode_honors_operator_per_expand_ceiling() {
-    use cadmpeg_core::decode::ResourceDimension;
-
     let target = b"AssetData/InstanceProperties.bin";
     let payload = vec![b'x'; 64 * 1024];
     let mut nested = zip::ZipWriter::new(Cursor::new(Vec::new()));
@@ -1540,17 +1535,26 @@ fn nested_protein_decode_honors_operator_per_expand_ceiling() {
 
     let mut options = DecodeOptions::default();
     options.policy.limits.max_decompressed_bytes_per_expand = 1024;
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(archive.clone()), &options)
+        .expect("the per-expand ceiling gives up the Protein part");
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "record.unreadable"
+            && loss.message.contains("f3d.protein_record")));
+    assert_eq!(decoded.ir().native_unknowns("f3d").unwrap().len(), 1);
+
+    let mut session_options = DecodeOptions::default();
+    session_options.policy.limits.max_decompressed_bytes_total = 32 * 1024;
     let error = F3dCodec
-        .decode(&mut Cursor::new(archive), &options)
-        .expect_err("operator per-expand ceiling must bind nested Protein inflate");
-    assert!(
-        matches!(
-            error,
-            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
-                if limit.dimension == ResourceDimension::DecompressedBytes
-        ),
-        "{error:?}"
-    );
+        .decode(&mut Cursor::new(archive), &session_options)
+        .expect_err("the session expansion budget refuses the document");
+    assert!(matches!(error,
+        cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
+            if limit.scope == cadmpeg_core::decode::LimitScope::Session
+                && limit.dimension == cadmpeg_core::decode::ResourceDimension::DecompressedBytes));
 }
 
 #[test]
