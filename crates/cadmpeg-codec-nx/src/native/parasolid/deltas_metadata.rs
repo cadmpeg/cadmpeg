@@ -264,7 +264,7 @@ mod tests {
             ("entries", json!([[1, 19]])),
             ("entries", json!([[7, 1]])),
             ("entries", json!([[u32::MAX, 19]])),
-            ("terminal_word", json!(0x8000)),
+            ("terminal_word", json!(u64::from(u32::MAX) + 1)),
             ("extra", json!(0)),
         ] {
             let mut bad = original.clone();

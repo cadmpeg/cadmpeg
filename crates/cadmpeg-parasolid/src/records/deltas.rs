@@ -146,8 +146,6 @@ pub enum StopReason {
     MissingSection,
     /// An index map is incomplete or invalid.
     InvalidMap,
-    /// The map's terminal word has no defined width.
-    UnresolvedMapWordWidth,
     /// A PMARK packet is incomplete or invalid.
     InvalidPmark,
 }
@@ -439,12 +437,7 @@ fn read_map(view: &mut View<'_>, maximum: u16) -> Result<Metadata, StopReason> {
             None => return Err(StopReason::InvalidMap),
         }
     }
-    if view.u16_be() != Some(0) {
-        return Err(StopReason::InvalidMap);
-    }
-    let word = view.u16_be().ok_or(StopReason::InvalidMap)?;
-    let terminal_word =
-        TerminalWord::try_from(word).map_err(|_| StopReason::UnresolvedMapWordWidth)?;
+    let terminal_word = TerminalWord::from(view.u32_be().ok_or(StopReason::InvalidMap)?);
     Ok(Metadata::Map {
         entries,
         terminal_word,

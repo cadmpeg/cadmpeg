@@ -459,7 +459,7 @@ fn enclosure_requires_closed_sections_and_its_exact_end_form() {
 }
 
 #[test]
-fn maps_require_canonical_entries_zero_slot_bounded_kind_and_word() {
+fn maps_require_canonical_entries_and_bounded_kinds() {
     let prefix = map_start();
     let start = prefix.len();
     for (map, reason) in [
@@ -468,8 +468,6 @@ fn maps_require_canonical_entries_zero_slot_bounded_kind_and_word() {
         (vec![128, 0, 0, 1], StopReason::InvalidMap),
         (vec![0, 2, 0, 1], StopReason::InvalidMap),
         (vec![0, 2, 0, 240], StopReason::InvalidMap),
-        (vec![0, 1, 0, 2, 0, 0], StopReason::InvalidMap),
-        (vec![0, 1, 0, 0, 128, 0], StopReason::UnresolvedMapWordWidth),
     ] {
         let mut bytes = prefix.clone();
         bytes.extend(map);
@@ -516,8 +514,32 @@ fn maps_require_canonical_entries_zero_slot_bounded_kind_and_word() {
             serde_json::to_value(entries).unwrap(),
             serde_json::json!([[32768, 2], [7, 239]])
         );
-        assert_eq!(u16::from(*terminal_word), 0x7fff);
+        assert_eq!(u32::from(*terminal_word), 0x7fff);
     });
+}
+
+#[test]
+fn a_map_tail_is_one_32_bit_terminal_word() {
+    for (tail, word) in [
+        ([0, 0, 0xb8, 0x60], 0xb860),
+        ([0, 3, 0x69, 0xe7], 0x0003_69e7),
+    ] {
+        let mut bytes = map_start();
+        bytes.extend([0, 2, 0, 7, 0, 1]);
+        bytes.extend(tail);
+        bytes.extend(test_pmarks::TERMINATOR);
+        bytes.extend(test_pmarks::TERMINATOR);
+        with_decode_context(|_ctx| {
+            let owner = DeltasRecords::read(&bytes).unwrap();
+            assert_eq!(owner.end(), &DeltasEnd::Complete);
+            let EventContent::Metadata(super::Metadata::Map { terminal_word, .. }) =
+                owner.events()[3].content()
+            else {
+                panic!("map");
+            };
+            assert_eq!(u32::from(*terminal_word), word);
+        });
+    }
 }
 
 #[test]
@@ -718,7 +740,7 @@ fn unsupported_heads_and_invalid_prefix_or_pmark_fields_do_not_commit_sections()
     });
     let end = bytes.len();
     bytes.extend(test_pmarks::node(9, 1, 1, 0));
-    assert_stop(&bytes, end, StopReason::InvalidMap, 1, 3);
+    assert_stop(&bytes, end, StopReason::UnsupportedPacket, 1, 3);
 }
 
 #[test]

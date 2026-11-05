@@ -123,9 +123,9 @@ until their enclosing sequence is established.
 
 **Question.** Which transmit context or history edge owns each deltas reference/type map, what action does each entry encode, and what does its terminal word mean?
 
-**Known.** `siemens_nx.md` §4.2 defines map-section ownership, canonical nonnull XMT/kind pairs, the null XMT and zero slot, the terminal word, and transactional section closure. The terminal word is below `0x8000`. Its value is not a section-node count. Section order does not assign a map's history edge or action.
+**Known.** `siemens_nx.md` §4.2 defines map-section ownership, canonical nonnull XMT/kind pairs, the null XMT, the 32-bit terminal word, and transactional section closure. The terminal word's value is not a section-node count. Section order does not assign a map's history edge or action.
 
-**Need.** Establish the preceding and succeeding state relation, the exact typed create/modify/delete key sets, the terminal word's namespace, and the encoding width for terminal words with the high bit set before applying a map to entities.
+**Need.** Establish the preceding and succeeding state relation, the exact typed create/modify/delete key sets, and the terminal word's namespace before applying a map to entities.
 
 ### PS-25. Inline type-12 `BODY` instance state
 
