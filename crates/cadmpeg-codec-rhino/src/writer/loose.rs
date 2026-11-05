@@ -501,7 +501,6 @@ fn curve_payload(
                     )));
                 };
                 let converted = super::conics::unperiod_curve(curve.id.as_str(), nurbs, range)?;
-                check_nurbs_curve(curve.id.as_str(), &converted)?;
                 conversion = Some(RhinoLossCode::WriterCarrierResolved.note(format!(
                     "wire edge {} periodic NURBS carrier {} was clamped to an exact nonperiodic span",
                     edge.id, curve.id
