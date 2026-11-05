@@ -156,6 +156,7 @@ mod levels;
 mod native_plane;
 mod native_records;
 mod pcurve_admission;
+mod placement_entities;
 pub(crate) mod target;
 mod units;
 mod version_support;
@@ -635,6 +636,7 @@ fn synthesize_with_admission(
     }
 
     append_name_properties(&mut graph.entities, &graph.presentations)?;
+    placement_entities::materialize(&mut graph.entities)?;
     entity_order::source_order(ir, &mut graph.entities, &mut graph.presentations)?;
     feature_order::order(ir, &mut graph.entities, &mut graph.presentations)?;
     attribute_export.regenerated.extend(display::regenerated(
