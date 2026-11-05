@@ -1145,3 +1145,20 @@ fn synthesis_preserves_brep_record_indices_when_curves_follow_topology() {
     assert_eq!(original.edge_continuities, written.edge_continuities);
     assert_eq!(original.vertex_ownerships, written.vertex_ownerships);
 }
+
+#[test]
+fn brep_index_framing_uses_caller_entity_limit() {
+    use crate::test_support::smbh_geometry_test::synthetic_geometry_with_degenerate_curve_smbh;
+    use crate::test_support::zip_test::f3d_with_smbh;
+
+    let source = f3d_with_smbh(&synthetic_geometry_with_degenerate_curve_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode synthetic BREP");
+    let mut input = EncodeInput::new(decoded.ir(), None);
+    input.limits.max_entities = 0;
+    assert!(matches!(
+        F3dCodec.plan(input, TargetRequest::Inherit),
+        Err(cadmpeg_ir::codec::write::EncodeError::ResourceLimit(_))
+    ));
+}
