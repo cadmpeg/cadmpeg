@@ -93,7 +93,17 @@ pub(crate) fn unpaired_after_allowances(
     after: &Value,
     allowances: &Allowances,
 ) -> Result<BTreeSet<String>, String> {
-    let before = without_fields(before, &allowances.removed_fields);
+    let full = unpaired_only(before, after, false)?;
+    if full.is_empty() {
+        return Ok(full);
+    }
+    let fields = allowances
+        .removed_fields
+        .iter()
+        .filter(|(id, _)| full.contains(id))
+        .cloned()
+        .collect();
+    let before = without_fields(before, &fields);
     let original = unpaired_only(&before, after, false)?;
     let removed: BTreeSet<_> = original
         .intersection(&allowances.removed)
