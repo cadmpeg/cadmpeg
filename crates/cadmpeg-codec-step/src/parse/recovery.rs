@@ -148,7 +148,7 @@ impl Parser<'_, '_, '_> {
                     }
                     self.budget
                         .decode_part(parts, extent, spec, |_| {
-                            Err::<(), CodecError>(CodecError::malformed(reason.to_owned()))
+                            Err::<(), CodecError>(CodecError::malformed(reason.clone()))
                         })
                         .map_err(ParseError::from)?;
                     omitted.push(start..end);
