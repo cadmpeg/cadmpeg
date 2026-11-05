@@ -1233,15 +1233,6 @@ fn decode_with_occurrence_limits(
             &parse.directory,
         );
     }
-    let untyped_records = native::untyped_records(&ir);
-    for record in &untyped_records {
-        losses.push(IgesLossCode::EntityRetainedUnprojected.note(format!(
-            "native record {record} contains source-only text or macro statements; their evidence is retained but their content is not typed"
-        )));
-    }
-    if !untyped_records.is_empty() {
-        source_fidelity.mark_untyped(crate::SOURCE_IMAGE_ID, [cadmpeg_ir::ArenaClass::Model])?;
-    }
     let global_table = match &parse.global {
         global::GlobalRecord::Resolved(global) => Some(global.global_table()),
         global::GlobalRecord::Unfinished => None,
