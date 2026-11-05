@@ -80,6 +80,9 @@ fn synthesized_material_reports_quantized_color() {
             && loss.message.contains(id.as_str())
             && loss.message.contains("alpha")
     }));
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.code.local_code() == "record.residual-unavailable" && loss.message.contains("Steel")
+    }));
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).unwrap();
     let output = SldprtCodec
@@ -93,6 +96,24 @@ fn synthesized_material_reports_quantized_color() {
         output.ir().model.appearances[0].base_color.unwrap().a(),
         1.0
     );
+}
+
+#[test]
+fn generated_visual_property_has_a_complete_empty_tail() {
+    let color = cadmpeg_ir::topology::Color::new(0.25, 0.5, 0.75, 1.0).unwrap();
+    let payload = super::super::material_payload("Steel", color).unwrap();
+    let start = b"moVisualProperties_c".len() + 12 + 4 + 4 + 5 * 2;
+    let tail = &payload[start..];
+    assert_eq!(tail.len(), 197);
+    assert_eq!(&tail[..48], &[0; 48]);
+    assert_eq!(&tail[48..72], &[0; 24]);
+    assert_eq!(&tail[72..76], &[0xff, 0xfe, 0xff, 0]);
+    assert_eq!(&tail[76..92], &[0; 16]);
+    assert_eq!(&tail[92..96], &[0xff, 0xfe, 0xff, 0]);
+    assert_eq!(&tail[96..177], &[0; 81]);
+    assert_eq!(&tail[177..181], &[0xff, 0xfe, 0xff, 0]);
+    assert_eq!(&tail[181..193], &[0; 12]);
+    assert_eq!(&tail[193..197], &[0xff, 0xfe, 0xff, 0]);
 }
 
 #[test]

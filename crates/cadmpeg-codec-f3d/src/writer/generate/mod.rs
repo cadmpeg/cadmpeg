@@ -296,6 +296,7 @@ pub(super) fn write_with_limits(
     let design_bulk =
         encode_design_bulkstream(target, &native, &design_registry, Vec::new(), brep_name)?;
     if let Some(bulk_stream) = &design_bulk {
+        residual_losses.extend(bulk_stream.losses.iter().cloned());
         archive
             .start_file(format!("{DESIGN_FOLDER}/Design1/BulkStream.dat"), options)
             .map_err(|error| {
