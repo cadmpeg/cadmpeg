@@ -2,14 +2,14 @@
 //! Native revolution construction from held procedural surfaces.
 
 use super::{
-    revolution_surface_payload, CadIr, ClassPayload, CodecError, RevolutionSurface,
-    WritableObjectCurve, WriteError, MAX_ARC_SPAN_EXCESS, REV_SURFACE_CLASS,
+    revolution_surface_payload, CadIr, CodecError, RevolutionSurface, SurfacePayload,
+    WritableObjectCurve, WriteError, MAX_ARC_SPAN_EXCESS,
 };
 
 pub(super) fn held_revolution(
     ir: &CadIr,
     surface: &cadmpeg_ir::geometry::Surface,
-) -> Result<Option<(cadmpeg_ir::ids::CurveId, ClassPayload)>, WriteError> {
+) -> Result<Option<(cadmpeg_ir::ids::CurveId, SurfacePayload)>, WriteError> {
     use cadmpeg_ir::geometry::{ProceduralSurfaceDefinition, SolvedCurveGeometry};
 
     let Some(construction) = surface.geometry.procedural_construction().and_then(|id| {
@@ -91,6 +91,6 @@ pub(super) fn held_revolution(
     };
     Ok(Some((
         curve.id.clone(),
-        (REV_SURFACE_CLASS, revolution_surface_payload(&native)?),
+        revolution_surface_payload(&native)?,
     )))
 }
