@@ -206,9 +206,9 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             }
             match pattern.definition() {
                 PatternTransform::Unresolved { .. } => {
-                    if existing.is_none() {
+                    if existing.is_none() && expected_form.is_none() {
                         return Err(CodecError::UnsupportedContent(format!(
-                            "SLDPRT feature {} has unresolved pattern construction",
+                            "SLDPRT feature {} has no native pattern form",
                             feature.id
                         )));
                     }
