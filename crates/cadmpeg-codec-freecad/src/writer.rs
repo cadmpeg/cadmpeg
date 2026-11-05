@@ -14,6 +14,7 @@ mod dispositions;
 mod drawings;
 mod geometry;
 mod indexed_polygon;
+mod mesh_kernel;
 mod names;
 mod native;
 mod native_geometry;
