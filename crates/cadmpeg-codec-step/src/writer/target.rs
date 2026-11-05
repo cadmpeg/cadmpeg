@@ -25,10 +25,6 @@ pub(crate) fn plan(
         crate::writer::CAPACITY_FIELDS.is_empty(),
         "STEP declares no capacity rows"
     );
-    debug_assert!(
-        crate::writer::REDUCED_FIELDS.is_empty(),
-        "STEP stores no reduced fields"
-    );
     // Synthesis visits every input record, so the caller's entity ceiling
     // applies to the input record count before any building (#217 §5.0).
     let arena = DecodeArena::new();

@@ -451,12 +451,6 @@ fn existing_source_less_attribute_count(target: &CadIr, index: &AttributeIndex<'
         + index.coedge_sketch_links.len()
 }
 
-pub(super) fn source_less_attribute_count(target: &CadIr, index: &AttributeIndex<'_>) -> usize {
-    existing_source_less_attribute_count(target, index)
-        + index.creation_timestamps.len()
-        + index.extra_owner_attributes.len()
-}
-
 pub(super) fn timestamp_attribute_ref(
     target: &CadIr,
     index: &AttributeIndex<'_>,
@@ -1179,6 +1173,7 @@ pub(super) fn encode_source_less_attributes(
     index: &AttributeIndex<'_>,
     attribute_start: i64,
     owners: AttributeOwnerStarts,
+    output: &cadmpeg_core::decode::DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     let model = &target.model;
     let (faces, coedges) = match owners.surface {
@@ -1259,6 +1254,7 @@ pub(super) fn encode_source_less_attributes(
                 .or(extra_attribute_ref(target, index, &owner_target, attribute_start)?)
                 .unwrap_or(-1)
         };
+        output.charge_entities(1, "F3D BREP record")?;
         native_color_attribute(
             records,
             color,
@@ -1292,6 +1288,7 @@ pub(super) fn encode_source_less_attributes(
                 .or(extra_attribute_ref(target, index, &owner_target, attribute_start)?)
                 .unwrap_or(-1)
         };
+        output.charge_entities(1, "F3D BREP record")?;
         native_color_attribute(
             records,
             color,
@@ -1333,6 +1330,7 @@ pub(super) fn encode_source_less_attributes(
                 attribute_start,
             )?
         };
+        output.charge_entities(1, "F3D BREP record")?;
         native_name_attribute(
             records,
             name,
@@ -1367,6 +1365,7 @@ pub(super) fn encode_source_less_attributes(
                 attribute_start,
             )?
         };
+        output.charge_entities(1, "F3D BREP record")?;
         native_name_attribute(
             records,
             name,
@@ -1401,6 +1400,7 @@ pub(super) fn encode_source_less_attributes(
                     attribute_start,
                 )?
             };
+        output.charge_entities(1, "F3D BREP record")?;
         if let Some(payload) = compact_custom_payload(
             target,
             &AttributeTarget::Body(body.id.clone()),
@@ -1445,6 +1445,7 @@ pub(super) fn encode_source_less_attributes(
                     attribute_start,
                 )?
             };
+        output.charge_entities(1, "F3D BREP record")?;
         native_persistent_subentity_attribute(
             records,
             tags,
@@ -1466,6 +1467,7 @@ pub(super) fn encode_source_less_attributes(
             attribute_start,
         )?
         .unwrap_or(-1);
+        output.charge_entities(1, "F3D BREP record")?;
         native_persistent_subentity_attribute(
             records,
             tags,
@@ -1486,6 +1488,7 @@ pub(super) fn encode_source_less_attributes(
             attribute_start,
         )?
         .unwrap_or(-1);
+        output.charge_entities(1, "F3D BREP record")?;
         if let Some(attribute) = compact_custom_payload(
             target,
             &AttributeTarget::Coedge(coedge.id.clone()),
@@ -1540,6 +1543,7 @@ pub(super) fn encode_source_less_attributes(
         };
         let previous =
             attribute_before_timestamp(target, index, &entity, owner_ordinal, attribute_start)?;
+        output.charge_entities(1, "F3D BREP record")?;
         if let Some(payload) = compact_timestamp_payload(target, &entity, index) {
             native_compact_custom(records, -1, payload)?;
         } else {
@@ -1558,6 +1562,7 @@ pub(super) fn encode_source_less_attributes(
         records.push(0x11);
     }
     for attribute in &index.extra_owner_attributes {
+        output.charge_entities(1, "F3D BREP record")?;
         native_compact_custom(records, -1, attribute)?;
         records.push(0x11);
     }

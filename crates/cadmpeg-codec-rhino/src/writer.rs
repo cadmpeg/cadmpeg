@@ -1109,7 +1109,7 @@ fn prepare_write<'a, 'budget>(
             }
             Err(error) => return Err(error),
         }
-        if let Some((wire, curve_id)) = wire::single_line(&baked, archive_version)? {
+        if let Some((wire, curve_id, conversion)) = wire::single_curve(&baked, archive_version)? {
             let body = &baked.model.bodies[0];
             let edge = &baked.model.edges[0];
             let display = presentation::display(
@@ -1134,7 +1134,17 @@ fn prepare_write<'a, 'budget>(
                 "body {} wire ownership is written as a 3DM Brep without shell membership: region {}, shell {}",
                 body.id, baked.model.regions[0].id, baked.model.shells[0].id
             )));
+            losses.extend(conversion);
             if let Some(curve) = baked.model.curves.iter().find(|curve| curve.id == curve_id) {
+                if matches!(
+                    curve.geometry.solved(),
+                    Some(cadmpeg_ir::geometry::SolvedCurveGeometry::Circle(_))
+                ) {
+                    losses.push(RhinoLossCode::WriterCarrierResolved.note(format!(
+                        "curve {} is written as its exact bounded 3DM arc",
+                        curve.id
+                    )));
+                }
                 if !is_support(curve.source_object.as_ref()) {
                     losses.push(RhinoLossCode::WriterCarrierResolved.note(format!(
                         "curve {} is written as a Brep edge carrier",
