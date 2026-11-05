@@ -1664,6 +1664,20 @@ fn source_less_sketch_horizontal_constraint_survives_synthesis() {
         matches!(decoded.ir().model.sketch_constraints[0].definition.kind(),
         SketchConstraintDefinitionInput::Horizontal { entity } if entity == decoded.ir().model.sketch_entities[0].id())
     );
+    let mut underflow_placement = ir.clone();
+    underflow_placement.model.sketches[0].placement = SketchPlacement::try_resolved(
+        Point3::new(f64::from_bits(1), 0.0, 0.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(1.0, 0.0, 0.0),
+    )
+    .unwrap();
+    let (output, report) =
+        super::source_less_analytic::synthesize_document(&underflow_placement, None);
+    assert!(output.ir().model.sketches.is_empty());
+    assert!(report.losses.iter().any(|loss| {
+        loss.message
+            .contains(underflow_placement.model.sketches[0].id.as_str())
+    }));
     let mut unsupported = ir.model.sketch_constraints[0].clone();
     unsupported.id = "authored:model:sketch-constraint#2".try_into().unwrap();
     unsupported.name = Some("named relation".into());
@@ -1688,6 +1702,14 @@ fn source_less_sketch_horizontal_constraint_survives_synthesis() {
     .try_into()
     .unwrap();
     ir.model.sketch_entities.push(omitted_entity);
+    ir.model.sketch_entities.push(SketchEntity::new(
+        "authored:model:sketch-entity#underflow".try_into().unwrap(),
+        ir.model.sketches[0].id.clone(),
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
+            position: Point2::new(f64::from_bits(1), 0.0),
+        })
+        .unwrap(),
+    ));
     ir.model.sketch_constraints.push(dependent);
     let mut partial_bytes = Vec::new();
     let plan = F3dCodec
@@ -1700,6 +1722,7 @@ fn source_less_sketch_horizontal_constraint_survives_synthesis() {
         .any(|loss| { loss.message.contains("authored:model:sketch-constraint#2") }));
     for id in [
         "authored:model:sketch-entity#omitted",
+        "authored:model:sketch-entity#underflow",
         "authored:model:sketch-constraint#dependent",
     ] {
         assert!(
