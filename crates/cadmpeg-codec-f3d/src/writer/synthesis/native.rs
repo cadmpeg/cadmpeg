@@ -597,6 +597,7 @@ pub(super) fn reconcile(
     // Geometry and visibility values are always authored from the neutral model.
     super::design::reconcile_body_tags(target, &mut native);
     super::body_keys::reconcile(target, &mut native)?;
+    super::materials::author_neutral(target, &mut native, losses)?;
     native.design_material_assignments.retain_mut(|assignment| {
         let Some(binding) = target.model.appearance_bindings.iter().find(|binding| {
             binding.source_entity_id.as_deref() == Some(assignment.entity_id.as_str())
