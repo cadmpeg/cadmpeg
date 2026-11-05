@@ -21,6 +21,8 @@ pub(crate) mod ordinals;
 mod parameters;
 mod pcurves;
 mod polygon_edges;
+mod polygon_nodes;
+mod polygon_pair;
 mod polygon_sources;
 mod presentation;
 pub(crate) mod products;

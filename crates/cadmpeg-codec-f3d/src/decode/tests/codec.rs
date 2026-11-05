@@ -49,6 +49,44 @@ use crate::F3dCodec;
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
 
 #[test]
+fn retained_untyped_act_record_marks_its_content_classes() {
+    use crate::test_support::act_stream_test::{
+        generated_act_bulkstream, generated_act_metastream,
+    };
+    use cadmpeg_ir::document::ArenaClass;
+
+    let (bulk, records) = generated_act_bulkstream();
+    let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    crate::test_support::manifest_test::write_synthetic_manifests(&mut archive, stored);
+    archive
+        .start_file(
+            "FusionAssetName[Active]/FusionACTSegmentType1/BulkStream.dat",
+            stored,
+        )
+        .unwrap();
+    archive.write_all(&bulk).unwrap();
+    archive
+        .start_file(
+            "FusionAssetName[Active]/FusionACTSegmentType1/MetaStream.dat",
+            stored,
+        )
+        .unwrap();
+    archive
+        .write_all(&generated_act_metastream(&records))
+        .unwrap();
+    let bytes = archive.finish().unwrap().into_inner();
+    let parsed = with_scan(&bytes, |scan| crate::act::decode(scan).unwrap());
+    assert_eq!(parsed.untyped_records, 1);
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let unrepresented = decoded.source_fidelity().unrepresented();
+    assert!(unrepresented.contains(&ArenaClass::Model));
+    assert!(unrepresented.contains(&ArenaClass::Design));
+}
+
+#[test]
 fn kernel_tolerance_floor_uses_millimetres() {
     let admitted = super::super::admit_kernel_tolerances(
         Some(ABOVE_FLOOR_RESABS_CM),

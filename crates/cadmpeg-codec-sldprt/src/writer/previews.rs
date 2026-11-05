@@ -63,10 +63,9 @@ pub(super) fn reduce(
 
 fn payload(asset: &Asset) -> Result<Vec<u8>, super::write_error::WriteError> {
     let AssetContent::Embedded { data } = &asset.content else {
-        return Err(CodecError::UnsupportedContent(
+        return Err(super::write_error::WriteError::Decline(
             "SLDPRT previews require embedded image content".into(),
-        )
-        .into());
+        ));
     };
     let bytes = data.as_bytes();
     if bytes.starts_with(&[0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a]) {
@@ -74,7 +73,7 @@ fn payload(asset: &Asset) -> Result<Vec<u8>, super::write_error::WriteError> {
     }
     if bytes.starts_with(b"BM") && View::u32_le_at(bytes, 14) == Some(40) {
         let dib = bytes.get(14..).ok_or_else(|| {
-            CodecError::UnsupportedContent("SLDPRT bitmap has no DIB body".into())
+            super::write_error::WriteError::Decline("SLDPRT bitmap has no DIB body".into())
         })?;
         let size = thumbnail_size(dib.len())?;
         let mut out = Vec::new();
@@ -87,10 +86,9 @@ fn payload(asset: &Asset) -> Result<Vec<u8>, super::write_error::WriteError> {
             return Ok(out);
         }
     }
-    Err(CodecError::UnsupportedContent(
+    Err(super::write_error::WriteError::Decline(
         "asset has no PNG or BITMAPINFOHEADER thumbnail encoding".into(),
-    )
-    .into())
+    ))
 }
 
 fn thumbnail_size(dib_length: usize) -> Result<u32, super::write_error::WriteError> {
