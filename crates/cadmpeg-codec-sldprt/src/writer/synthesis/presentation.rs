@@ -46,12 +46,7 @@ pub(super) fn reduce(
         } else {
             None
         };
-        if matches!(
-            projected,
-            Some(super::super::MetadataRecord::TransformedReferenceEnclosure { .. })
-        ) {
-            attributes.push(attribute);
-        } else if projected.is_some() {
+        if projected.is_some() {
             attributes.push(attribute);
         } else {
             losses.push(SldprtLossCode::WriterAttributesOmitted.note(format!(
