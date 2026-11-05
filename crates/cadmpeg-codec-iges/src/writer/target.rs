@@ -35,7 +35,7 @@ pub(crate) fn plan(
         };
         let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Geometry);
         ctx.charge_entities(
-            u64_from_index(input.ir.model.entity_count()),
+            u64_from_index(input.ir.census().values().sum()),
             "write IGES records",
         )?;
     }
