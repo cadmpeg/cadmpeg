@@ -444,12 +444,15 @@ fn indexed(props: &Props<'_>, group: &str) -> Vec<usize> {
         }
     }
     let contiguous: Vec<usize> = indices.into_iter().collect();
-    contiguous
+    if contiguous
         .iter()
         .enumerate()
         .all(|(position, index)| position == *index)
-        .then_some(contiguous)
-        .unwrap_or_default()
+    {
+        contiguous
+    } else {
+        Vec::new()
+    }
 }
 
 fn check_count(
