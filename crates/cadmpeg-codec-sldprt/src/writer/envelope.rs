@@ -4,7 +4,6 @@
 use std::collections::BTreeSet;
 
 use cadmpeg_core::decode::View;
-use cadmpeg_core::CodecError;
 
 use crate::container::{
     native_layout::{self, tail_location},
@@ -15,11 +14,16 @@ use crate::layout::outer_header as outer;
 use crate::layout::zip_central_descriptor as descriptor;
 use crate::layout::zip_central_header as central;
 
-fn unsupported() -> CodecError {
-    CodecError::NotImplemented("SLDPRT envelope regeneration needs validated retained local, central and EOCD signature tokens".into())
+fn unsupported() -> super::write_error::WriteError {
+    super::write_error::WriteError::Decline(
+        "SLDPRT envelope regeneration needs a complete retained local and central directory".into(),
+    )
 }
 
-fn bytes_array<const N: usize>(source: &[u8], start: usize) -> Result<[u8; N], CodecError> {
+fn bytes_array<const N: usize>(
+    source: &[u8],
+    start: usize,
+) -> Result<[u8; N], super::write_error::WriteError> {
     let end = start.checked_add(N).ok_or_else(unsupported)?;
     source
         .get(start..end)
@@ -28,9 +32,11 @@ fn bytes_array<const N: usize>(source: &[u8], start: usize) -> Result<[u8; N], C
 }
 
 fn unique<const N: usize>(values: &BTreeSet<[u8; N]>) -> Option<[u8; N]> {
-    (values.len() == 1)
-        .then(|| values.first().copied())
-        .flatten()
+    if values.len() == 1 {
+        values.first().copied()
+    } else {
+        None
+    }
 }
 
 pub(super) struct Regenerated {
@@ -47,7 +53,7 @@ pub(super) fn build_fresh(
     use cadmpeg_ir::codec::write::ExportLossCode;
 
     if sections.len() != time_dates.len() {
-        return Err(unsupported().into());
+        return Err(unsupported());
     }
     let count = envelope_u16(&super::CAPACITY_FIELDS[6], sections.len())?;
     let mut output = header.to_vec();
@@ -128,7 +134,7 @@ pub(super) fn build(
     )?
     .ok_or_else(unsupported)?;
     if sections.len() != time_dates.len() {
-        return Err(unsupported().into());
+        return Err(unsupported());
     }
     let count = envelope_u16(&super::CAPACITY_FIELDS[6], sections.len())?;
     let mut local_tokens = BTreeSet::new();
@@ -155,7 +161,7 @@ pub(super) fn build(
     for ((name, payload), time_date) in sections.iter().zip(time_dates) {
         envelope_u16(&super::CAPACITY_FIELDS[7], name.len())?;
         if name.is_empty() || !name.bytes().all(|byte| (0x20..0x7f).contains(&byte)) {
-            return Err(unsupported().into());
+            return Err(unsupported());
         }
         let mut matches = envelope
             .entries
@@ -401,18 +407,14 @@ mod tests {
     fn source_less_and_unproved_signature_envelopes_abstain() {
         assert!(matches!(
             build(&[], &[], None),
-            Err(super::super::write_error::WriteError::Fatal(
-                CodecError::NotImplemented(_)
-            ))
+            Err(super::super::write_error::WriteError::Decline(_))
         ));
         let mut legacy = outer_header();
         legacy.extend(make_block(10, "A", b"old"));
         let scan = crate::test_support::container::scan(&legacy);
         assert!(matches!(
             build(&[("A".into(), b"new".to_vec())], &[10], Some(&scan)),
-            Err(super::super::write_error::WriteError::Fatal(
-                CodecError::NotImplemented(_)
-            ))
+            Err(super::super::write_error::WriteError::Decline(_))
         ));
     }
 
