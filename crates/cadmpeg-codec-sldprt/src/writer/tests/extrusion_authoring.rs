@@ -506,3 +506,56 @@ fn source_less_thicken_retains_absent_thickness() {
         .iter()
         .any(|feature| feature.evaluation.definition() == &expected));
 }
+
+#[test]
+fn source_less_edge_treatments_retain_unresolved_construction() {
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(0x42, "Contents/Keywords", br#"<Keywords><Fillet Name="Partial fillet" Type="Fillet" id="151"/><Chamfer Name="Partial chamfer" Type="Chamfer" id="152"/></Keywords>"#));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    assert!(matches!(
+        ir.model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Fillet { .. })
+    ));
+    assert!(matches!(
+        ir.model.features[1].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Chamfer { .. })
+    ));
+    let expected = ir
+        .model
+        .features
+        .iter()
+        .map(|feature| feature.evaluation.definition().clone())
+        .collect::<Vec<_>>();
+    ir.source = None;
+    ir.native = cadmpeg_ir::Native::default();
+    for feature in &mut ir.model.features {
+        feature.native_ref = None;
+    }
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    for feature in &ir.model.features {
+        assert!(!plan
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains(feature.id.as_str())
+                && loss.message.contains("solved result")));
+    }
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    for expected in expected {
+        assert!(output
+            .ir()
+            .model
+            .features
+            .iter()
+            .any(|feature| feature.evaluation.definition() == &expected));
+    }
+}

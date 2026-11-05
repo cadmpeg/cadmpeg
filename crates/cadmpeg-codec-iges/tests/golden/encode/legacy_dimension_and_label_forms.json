@@ -1,9 +1,14 @@
 {
-  "output": "original fixture                                                        S      1\n1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,32,38,6,308,17,7HprodG      1\nuct,1.0,2,2HMM,1,1.0,15HYYYYMMDD.HHMMSS,1.0000000000000000D-3,0,6HauthorG      2\n,3Horg,11,0,0H,0H;                                                      G      3\nS0000001G0000003D0000000P0000000                                        T      1\n",
+  "output": "original fixture                                                        S      1\n1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,32,38,6,308,17,7HprodG      1\nuct,1.0,2,2HMM,1,1.0,15HYYYYMMDD.HHMMSS,1.0000000000000000D-3,0,6HauthorG      2\n,3Horg,11,0,0H,0H;                                                      G      3\n     124       1       0       0       0       0       0       000000000D      1\n     124       0       0       2       0                               0D      2\n     100       3       0       0       0       0       1       000010100D      3\n     100       0       0       2       0                  CURVE2       0D      4\n     110       5       0       0       0       0       0       000010100D      5\n     110       0       0       1       0                  CURVE1       0D      6\n     212       6       0       0       0       0       0       000010100D      7\n     212       0       0       1       0                               0D      8\n     214       7       0       0       0       0       0       000010100D      9\n     214       0       0       1       1                               0D     10\n     214       8       0       0       0       0       0       000010100D     11\n     214       0       0       1       1                               0D     12\n     106       9       0       0       0       0       0       000010100D     13\n     106       0       0       1      40                               0D     14\n     202      10       0       0       0       0       0       000000100D     15\n     202       0       0       1       0                               0D     16\n     204      11       0       0       0       0       0       000000100D     17\n     204       0       0       1       0                               0D     18\n     206      12       0       0       0       0       0       000000100D     19\n     206       0       0       1       0                               0D     20\n     208      13       0       0       0       0       0       000000100D     21\n     208       0       0       1       0                               0D     22\n     210      14       0       0       0       0       0       000000100D     23\n     210       0       0       1       0                               0D     24\n124,1.0000000000000000D0,0,0,0,0,1.0000000000000000D0,0,0,0,0,         1P      1\n1.0000000000000000D0,0;                                                1P      2\n100,0,0,0,1.0000000000000000D0,0,6.1232339957367660D-17,               3P      3\n1.0000000000000000D0;                                                  3P      4\n110,0,0,0,1.0000000000000000D0,0,0;                                    5P      5\n212,1,1,1,1,1,1.5707963267948966D0,0,0,0,0,0,0,1HA;                    7P      6\n214,1,2,1,0,0,0,2,0;                                                   9P      7\n214,1,2,1,0,1,0,3,0;                                                  11P      8\n106,1,3,0,0,0,1,0,1,1;                                                13P      9\n202,7,13,0,0,0,2,9,11;                                                15P     10\n204,7,5,3,9,11,13,0;                                                  17P     11\n206,7,9,0,0,0;                                                        19P     12\n208,0,0,0,0,7,2,9,11;                                                 21P     13\n210,7,1,9;                                                            23P     14\nS0000001G0000003D0000024P0000014                                        T      1\n",
   "report": {
     "census": {
       "basis": "target_records",
-      "counts": {}
+      "counts": {
+        "100_circular_arc": 1,
+        "106_copious_data": 1,
+        "110_line": 1,
+        "unknown_entity": 8
+      }
     },
     "coverage": {
       "arenas": {
@@ -12,7 +17,7 @@
         "articulations": "omitted",
         "assembly_joints": "dropped",
         "assets": "dropped",
-        "attributes": "reported",
+        "attributes": "written",
         "bodies": "written",
         "coedges": "written",
         "colliders": "omitted",
@@ -24,7 +29,7 @@
         "faces": "written",
         "feature_input_topologies": "dropped",
         "feature_result_topologies": "dropped",
-        "features": "dropped",
+        "features": "written",
         "loops": "written",
         "mass_properties": "omitted",
         "occurrences": "dropped",
@@ -35,13 +40,13 @@
         "pmi": "dropped",
         "points": "reported",
         "presentation_documents": "dropped",
-        "presentation_layers": "dropped",
+        "presentation_layers": "written",
         "procedural_curves": "dropped",
         "procedural_surfaces": "reported",
         "product_definitions": "dropped",
         "regions": "written",
         "rigid_bodies": "omitted",
-        "semantic_annotations": "dropped",
+        "semantic_annotations": "reported",
         "shells": "written",
         "sketch_constraints": "dropped",
         "sketch_entities": "dropped",
@@ -81,7 +86,7 @@
           "namespace": "iges",
           "scope": "namespaced"
         },
-        "message": "IGES omits unsupported model arena semantic_annotations",
+        "message": "IGES does not fully preserve semantic_annotations record iges:model:semantic-annotation#D1",
         "severity": "warning"
       },
       {
@@ -91,81 +96,78 @@
           "namespace": "iges",
           "scope": "namespaced"
         },
-        "message": "IGES omits unsupported model arena presentation_layers",
+        "message": "IGES does not fully preserve semantic_annotations record iges:model:semantic-annotation#D13",
         "severity": "warning"
       },
       {
         "code": {
-          "code": "writer.support-geometry-not-represented",
-          "kind": "geometry_not_transferred",
-          "namespace": "iges",
-          "scope": "namespaced",
-          "strict_floor": "warning"
-        },
-        "message": "1 support geometry record (iges:model:curve#D11) has no exported owner and was withheld",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "writer.support-geometry-not-represented",
-          "kind": "geometry_not_transferred",
-          "namespace": "iges",
-          "scope": "namespaced",
-          "strict_floor": "warning"
-        },
-        "message": "1 support geometry record (iges:model:curve#D9) has no exported owner and was withheld",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "writer.attribute-omitted",
-          "kind": "metadata_not_transferred",
+          "code": "writer.arena-omitted",
+          "kind": "passthrough_record_omitted",
           "namespace": "iges",
           "scope": "namespaced"
         },
-        "message": "IGES attribute iges:application:attribute#D11:0:0 is omitted: its current owner has no emitted entity",
+        "message": "IGES does not fully preserve semantic_annotations record iges:model:semantic-annotation#D15",
         "severity": "warning"
       },
       {
         "code": {
-          "code": "writer.attribute-omitted",
-          "kind": "metadata_not_transferred",
+          "code": "writer.arena-omitted",
+          "kind": "passthrough_record_omitted",
           "namespace": "iges",
           "scope": "namespaced"
         },
-        "message": "IGES attribute iges:application:attribute#D9:0:0 is omitted: its current owner has no emitted entity",
+        "message": "IGES does not fully preserve semantic_annotations record iges:model:semantic-annotation#D17",
         "severity": "warning"
       },
       {
         "code": {
-          "code": "export.no-exportable-solids",
-          "kind": "no_exportable_solids",
+          "code": "writer.arena-omitted",
+          "kind": "passthrough_record_omitted",
           "namespace": "iges",
-          "scope": "namespaced",
-          "strict_floor": "warning"
+          "scope": "namespaced"
         },
-        "message": "the document holds no geometry that IGES can encode",
+        "message": "IGES does not fully preserve semantic_annotations record iges:model:semantic-annotation#D19",
         "severity": "warning"
       },
       {
         "code": {
-          "code": "native.records-omitted",
-          "kind": "record_not_typed",
-          "namespace": "export",
+          "code": "writer.arena-omitted",
+          "kind": "passthrough_record_omitted",
+          "namespace": "iges",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 8 native record(s) from `iges.annotations`: iges:presentation:annotation#D1, iges:presentation:annotation#D13, iges:presentation:annotation#D15, iges:presentation:annotation#D17, iges:presentation:annotation#D19, iges:presentation:annotation#D21, iges:presentation:annotation#D3, iges:presentation:annotation#D5",
-        "severity": "info"
+        "message": "IGES does not fully preserve semantic_annotations record iges:model:semantic-annotation#D21",
+        "severity": "warning"
       },
       {
         "code": {
-          "code": "native.records-omitted",
-          "kind": "record_not_typed",
-          "namespace": "export",
+          "code": "writer.arena-omitted",
+          "kind": "passthrough_record_omitted",
+          "namespace": "iges",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 11 native record(s) from `iges.display_attributes`: iges:presentation:display-attributes#D1, iges:presentation:display-attributes#D11, iges:presentation:display-attributes#D13, iges:presentation:display-attributes#D15, iges:presentation:display-attributes#D17, iges:presentation:display-attributes#D19, iges:presentation:display-attributes#D21, iges:presentation:display-attributes#D3, iges:presentation:display-attributes#D5, iges:presentation:display-attributes#D7, iges:presentation:display-attributes#D9",
-        "severity": "info"
+        "message": "IGES does not fully preserve semantic_annotations record iges:model:semantic-annotation#D3",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "writer.arena-omitted",
+          "kind": "passthrough_record_omitted",
+          "namespace": "iges",
+          "scope": "namespaced"
+        },
+        "message": "IGES does not fully preserve semantic_annotations record iges:model:semantic-annotation#D5",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "writer.arena-omitted",
+          "kind": "passthrough_record_omitted",
+          "namespace": "iges",
+          "scope": "namespaced"
+        },
+        "message": "IGES does not fully preserve semantic_annotations record iges:model:semantic-annotation#D7",
+        "severity": "warning"
       },
       {
         "code": {
@@ -193,7 +195,17 @@
         "iges": {
           "arenas": {
             "annotations": {
-              "disposition": "dropped"
+              "disposition": "regenerated",
+              "records": {
+                "iges:presentation:annotation#D1": "regenerated",
+                "iges:presentation:annotation#D13": "regenerated",
+                "iges:presentation:annotation#D15": "regenerated",
+                "iges:presentation:annotation#D17": "regenerated",
+                "iges:presentation:annotation#D19": "regenerated",
+                "iges:presentation:annotation#D21": "regenerated",
+                "iges:presentation:annotation#D3": "regenerated",
+                "iges:presentation:annotation#D5": "regenerated"
+              }
             },
             "associativities": {
               "disposition": "dropped"
@@ -223,7 +235,10 @@
               "disposition": "dropped"
             },
             "copious_data": {
-              "disposition": "regenerated"
+              "disposition": "regenerated",
+              "records": {
+                "iges:native:copious-data#D7": "regenerated"
+              }
             },
             "definition_levels": {
               "disposition": "dropped"
@@ -232,7 +247,20 @@
               "disposition": "dropped"
             },
             "display_attributes": {
-              "disposition": "dropped"
+              "disposition": "regenerated",
+              "records": {
+                "iges:presentation:display-attributes#D1": "regenerated",
+                "iges:presentation:display-attributes#D11": "regenerated",
+                "iges:presentation:display-attributes#D13": "regenerated",
+                "iges:presentation:display-attributes#D15": "regenerated",
+                "iges:presentation:display-attributes#D17": "regenerated",
+                "iges:presentation:display-attributes#D19": "regenerated",
+                "iges:presentation:display-attributes#D21": "regenerated",
+                "iges:presentation:display-attributes#D3": "regenerated",
+                "iges:presentation:display-attributes#D5": "regenerated",
+                "iges:presentation:display-attributes#D7": "regenerated",
+                "iges:presentation:display-attributes#D9": "regenerated"
+              }
             },
             "drawings": {
               "disposition": "dropped"

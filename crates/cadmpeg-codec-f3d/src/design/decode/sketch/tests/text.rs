@@ -476,6 +476,143 @@ fn indexed_sketch_fixture() -> (
 }
 
 #[test]
+fn damaged_sketch_point_keeps_an_indexed_sibling() {
+    use crate::metastream::RecordIndexEntry;
+    use crate::records::identity::{Located, ReferenceRun};
+    use cadmpeg_core::decode::View;
+    use cadmpeg_ir::source_fidelity::parts::PartOutput;
+
+    let (mut bytes, mut meta, point_at, curve_at, _, _) = indexed_sketch_fixture();
+    let companion_at = usize::try_from(meta.records.last().unwrap().bulk_offset).unwrap();
+    let mut second_point = bytes[point_at..curve_at].to_vec();
+    second_point[7..11].copy_from_slice(&150u32.to_le_bytes());
+    let old_ref = [1, 60, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    let new_ref = [1, 160, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    for at in (0..second_point.len() - old_ref.len()).rev() {
+        if second_point[at..at + old_ref.len()] == old_ref {
+            second_point[at..at + old_ref.len()].copy_from_slice(&new_ref);
+        }
+    }
+    let mut second_companion = bytes[companion_at..].to_vec();
+    second_companion[7..11].copy_from_slice(&160u32.to_le_bytes());
+    let old_ref = [1, 50, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    let at = second_companion
+        .windows(old_ref.len())
+        .position(|v| v == old_ref)
+        .unwrap();
+    second_companion[at + 1] = 150;
+    bytes[point_at + 20] = 2;
+    meta.records.push(RecordIndexEntry {
+        entity_id: 150,
+        bulk_offset: u64_from_index(bytes.len()),
+    });
+    bytes.extend_from_slice(&second_point);
+    meta.records.push(RecordIndexEntry {
+        entity_id: 160,
+        bulk_offset: u64_from_index(bytes.len()),
+    });
+    bytes.extend_from_slice(&second_companion);
+    meta.types[1].entities = ReferenceRun::located(vec![
+        Located {
+            value: 50,
+            offset: 0,
+        },
+        Located {
+            value: 150,
+            offset: 0,
+        },
+    ]);
+    meta.types[5].entities = ReferenceRun::located(vec![
+        Located {
+            value: 60,
+            offset: 0,
+        },
+        Located {
+            value: 160,
+            offset: 0,
+        },
+    ]);
+
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut parts = PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
+    let points = super::super::decode_sketch_points_with_parts(
+        &bytes,
+        &meta,
+        "Design/BulkStream.dat",
+        Some((&ctx, &mut parts, View::over_retained(&bytes))),
+    )
+    .unwrap();
+    assert_eq!(points.len(), 1);
+    assert_eq!(points[0].record_index, 150);
+    let (_, native, fidelity, losses) = parts.into_parts();
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable
+            .note(String::new())
+            .code
+    );
+    assert_eq!(
+        native.namespace("f3d").unwrap().arenas()["unknowns"].len(),
+        1
+    );
+    assert_eq!(fidelity.retained_records().len(), 1);
+}
+
+#[test]
+fn damaged_sketch_text_keeps_an_indexed_sibling() {
+    use crate::metastream::RecordIndexEntry;
+    use crate::records::identity::{Located, ReferenceRun};
+    use cadmpeg_core::decode::View;
+    use cadmpeg_ir::source_fidelity::parts::PartOutput;
+
+    let (mut bytes, mut meta, _, _, text_at, _) = indexed_sketch_fixture();
+    let companion_at = usize::try_from(meta.records.last().unwrap().bulk_offset).unwrap();
+    let mut second = bytes[text_at..companion_at].to_vec();
+    second[7..11].copy_from_slice(&152u32.to_le_bytes());
+    bytes[text_at + 20] = 2;
+    meta.records.push(RecordIndexEntry {
+        entity_id: 152,
+        bulk_offset: u64_from_index(bytes.len()),
+    });
+    bytes.extend_from_slice(&second);
+    meta.types[3].entities = ReferenceRun::located(vec![
+        Located {
+            value: 52,
+            offset: 0,
+        },
+        Located {
+            value: 152,
+            offset: 0,
+        },
+    ]);
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut parts = PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
+    let texts = super::super::decode_sketch_texts_with_parts(
+        &bytes,
+        &meta,
+        "Design/BulkStream.dat",
+        Some((&ctx, &mut parts, View::over_retained(&bytes))),
+    )
+    .unwrap();
+    assert_eq!(texts.len(), 1);
+    assert_eq!(texts[0].record_index, 152);
+    let (_, native, fidelity, losses) = parts.into_parts();
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable
+            .note(String::new())
+            .code
+    );
+    assert_eq!(
+        native.namespace("f3d").unwrap().arenas()["unknowns"].len(),
+        1
+    );
+    assert_eq!(fidelity.retained_records().len(), 1);
+}
+
+#[test]
 fn sketch_records_use_the_primary_index_live_copy() {
     use crate::records::sketch_geometry::SketchCurveGeometry;
     use cadmpeg_ir::math::{Point2, Point3};
