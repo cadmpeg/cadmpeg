@@ -376,13 +376,14 @@ impl Writer<'_> {
                 &["prepend apiSchemas = [\"MaterialBindingAPI\"]".to_owned()],
             );
             self.out.open();
-            self.out.line("uniform token elementType = \"face\"");
+            self.out.property("uniform token elementType = \"face\"");
             self.out.array(
                 "int[] indices",
                 &indices.iter().map(ToString::to_string).collect::<Vec<_>>(),
                 "",
             );
-            self.out.line(&format!("rel material:binding = <{path}>"));
+            self.out
+                .property(&format!("rel material:binding = <{path}>"));
             self.out.close();
         }
     }

@@ -869,31 +869,31 @@ impl UfrxRecord {
     pub(crate) fn representation(&self) -> Option<&UfrxRepresentationRecord> {
         match self {
             Self::ParsedPrefix(payload) => payload.representation.as_ref(),
-            _ => None,
+            Self::Absent { .. } => None,
         }
     }
     pub(crate) fn model_states(&self) -> &[UfrxModelStateRecord] {
         match self {
             Self::ParsedPrefix(payload) => &payload.model_states,
-            _ => &[],
+            Self::Absent { .. } => &[],
         }
     }
     pub(crate) fn external_references(&self) -> &[ExternalReferenceRecord] {
         match self {
             Self::ParsedPrefix(payload) => &payload.external_references,
-            _ => &[],
+            Self::Absent { .. } => &[],
         }
     }
     pub(crate) fn embedded_references(&self) -> &[EmbeddedReferenceRecord] {
         match self {
             Self::ParsedPrefix(payload) => &payload.embedded_references,
-            _ => &[],
+            Self::Absent { .. } => &[],
         }
     }
     pub(crate) fn occurrences(&self) -> &[UfrxOccurrenceRecord] {
         match self {
             Self::ParsedPrefix(payload) => &payload.occurrences,
-            _ => &[],
+            Self::Absent { .. } => &[],
         }
     }
     pub(crate) fn install(
@@ -1352,27 +1352,25 @@ mod tests {
 
     #[test]
     fn nonparsed_states_reject_incompatible_fields() {
-        for record in [UfrxRecord::Absent {
+        let record = UfrxRecord::Absent {
             id: "inventor:ufrx:state#root".into(),
-        }] {
-            let mut namespace = NativeNamespace::default();
+        };
+        let mut namespace = NativeNamespace::default();
+        record
+            .install(&crate::native::test_ctx(), &mut namespace)
+            .expect("valid test fixture");
+        assert_eq!(
+            UfrxRecord::read(&crate::native::test_ctx(), &namespace).expect("valid test fixture"),
             record
-                .install(&crate::native::test_ctx(), &mut namespace)
-                .expect("valid test fixture");
-            assert_eq!(
-                UfrxRecord::read(&crate::native::test_ctx(), &namespace)
-                    .expect("valid test fixture"),
-                record
-            );
-            let mut wire = namespace
-                .arena_as::<serde_json::Value>("ufrx")
-                .expect("valid test fixture");
-            wire[0]["caption"] = serde_json::json!("orphan");
-            namespace
-                .set_arena(&crate::native::test_ctx(), "ufrx", &wire)
-                .expect("valid test fixture");
-            assert!(UfrxRecord::read(&crate::native::test_ctx(), &namespace).is_err());
-        }
+        );
+        let mut wire = namespace
+            .arena_as::<serde_json::Value>("ufrx")
+            .expect("valid test fixture");
+        wire[0]["caption"] = serde_json::json!("orphan");
+        namespace
+            .set_arena(&crate::native::test_ctx(), "ufrx", &wire)
+            .expect("valid test fixture");
+        assert!(UfrxRecord::read(&crate::native::test_ctx(), &namespace).is_err());
     }
 
     /// A top-level optional key on a UFRX record names itself in its refusal.

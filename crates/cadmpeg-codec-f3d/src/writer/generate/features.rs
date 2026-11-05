@@ -127,7 +127,7 @@ fn select(target: &CadIr) -> Vec<Primitive> {
                             },
                         )
                     }
-                    _ => None,
+                    RadialDimension::Radius(_) => None,
                 };
                 (
                     "CylinderPrimitive",
@@ -194,7 +194,7 @@ fn select(target: &CadIr) -> Vec<Primitive> {
             }
             _ => continue,
         };
-        let generated_name = format!("{} {}", kind, u64::from(feature.ordinal) + 1);
+        let generated_name = format!("{} {}", kind, feature.ordinal + 1);
         if feature
             .name
             .as_ref()
@@ -224,19 +224,12 @@ pub(in crate::writer) fn authored_feature_ids(
         .collect()
 }
 
+type EncodedFeatures = (Vec<u8>, Vec<u8>, Vec<FeatureId>, Vec<ParameterId>, u32);
+
 pub(super) fn encode(
     target: &CadIr,
-) -> Result<
-    Option<(
-        Vec<u8>,
-        Vec<u8>,
-        Vec<cadmpeg_ir::features::FeatureId>,
-        Vec<ParameterId>,
-        u32,
-        usize,
-    )>,
-    CodecError,
-> {
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+) -> Result<Option<EncodedFeatures>, CodecError> {
     let mut primitives = select(target);
     if primitives.is_empty() {
         return Ok(None);
@@ -264,7 +257,7 @@ pub(super) fn encode(
             .and_then(|v| v.checked_add(1))
             .ok_or_else(|| CodecError::InvalidInput("too many F3D feature records".into()))?;
         scopes.push(u64::from(base));
-        mark(&mut primary, base, out.len())?;
+        mark_primary(ctx, &mut primary, base, out.len())?;
         header(&mut out, "257", base)?;
         out.extend_from_slice(&[0; 9]);
         out.extend_from_slice(&operation.to_le_bytes());
@@ -309,6 +302,7 @@ pub(super) fn encode(
         out.extend_from_slice(&[0, 1, 0, 0, 1, 13]);
         out.extend_from_slice(&1u64.to_le_bytes());
         out.extend_from_slice(&[0; 3]);
+        ctx.charge_entities(1, "F3D feature record")?;
         mark(&mut secondary, base, out.len())?;
         header(&mut out, "256", base)?;
         for (local, scalar) in values.iter().enumerate() {
@@ -332,7 +326,8 @@ pub(super) fn encode(
                 companion_record_index: owner_index + 2,
             })
             .map_err(CodecError::Malformed)?;
-            mark(&mut primary, owner_index, out.len())?;
+            mark_primary(ctx, &mut primary, owner_index, out.len())?;
+            ctx.charge_entities(1, "F3D feature record")?;
             super::parameter_links::encode(&mut out, &[owner], &[])?;
             mark(
                 &mut secondary,
@@ -353,7 +348,7 @@ pub(super) fn encode(
                 expression: scalar
                     .expression
                     .clone()
-                    .unwrap_or_else(|| format!("{} cm", value)),
+                    .unwrap_or_else(|| format!("{value} cm")),
                 unit: Some("cm".into()),
                 name: scalar
                     .name
@@ -362,14 +357,14 @@ pub(super) fn encode(
                 evaluated_value: value,
             })
             .map_err(CodecError::Malformed)?;
-            mark(&mut primary, parameter_index, out.len())?;
+            mark_primary(ctx, &mut primary, parameter_index, out.len())?;
             out.extend_from_slice(&super::parameters::encode_document_parameters(
                 &[parameter],
                 collection_index,
             )?);
         }
     }
-    mark(&mut primary, timeline, out.len())?;
+    mark_primary(ctx, &mut primary, timeline, out.len())?;
     native_lp_ascii(&mut out, "260")?;
     out.extend_from_slice(&u64::from(timeline).to_le_bytes());
     native_lp_ascii(&mut out, "Timeline")?;
@@ -386,7 +381,7 @@ pub(super) fn encode(
         out.extend_from_slice(&scope.to_le_bytes());
         out.extend_from_slice(&[0; 2]);
     }
-    mark(&mut primary, collection_index, out.len())?;
+    mark_primary(ctx, &mut primary, collection_index, out.len())?;
     let parameter_indices = parameters
         .iter()
         .map(|value| {
@@ -471,8 +466,17 @@ pub(super) fn encode(
         written,
         written_parameters,
         collection_index,
-        primary.len(),
     )))
+}
+
+fn mark_primary(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    records: &mut Vec<crate::metastream::RecordIndexEntry>,
+    id: u32,
+    offset: usize,
+) -> Result<(), CodecError> {
+    ctx.charge_entities(1, "F3D feature record")?;
+    mark(records, id, offset)
 }
 
 fn mark(
