@@ -244,9 +244,16 @@ fn generated_f3d_neutral_appearance_wins_over_assignment_divergence() {
     let (output, report) =
         super::source_less_analytic::synthesize_document(&edited, Some(&fidelity));
     super::source_less_analytic::assert_native_omission(&report);
-    assert!(crate::test_support::native_test::f3d_native(output.ir())
-        .design_material_assignments
-        .is_empty());
+    let native = f3d_native(output.ir());
+    assert_eq!(native.design_material_assignments.len(), 1);
+    assert_eq!(
+        native.design_material_assignments[0]
+            .physical_token
+            .as_ref()
+            .map(|token| token.value.as_str()),
+        edited.model.appearances[0].physical_token.as_deref()
+    );
+    assert_eq!(output.ir().model.appearance_bindings.len(), 1);
     assert_eq!(output.ir().model.bodies.len(), edited.model.bodies.len());
     assert_eq!(
         output.ir().model.appearances[0].base_color,
@@ -360,8 +367,8 @@ fn generated_f3d_routes_appearance_edits_across_multiple_protein_assets() {
     assert_eq!(round_trip.ir().model.appearances, edited.model.appearances);
     let (_, report) = super::source_less_analytic::synthesize_document(&edited, None);
     assert!(report.losses.iter().any(|loss| {
-        loss.code == crate::loss::F3dLossCode::WriterAppearancePropertiesOmitted.kind()
-            && loss.message.contains("physical")
+        loss.code.local_code() == "record.residual-unavailable"
+            && loss.message.contains("physical asset identity")
     }));
 }
 
