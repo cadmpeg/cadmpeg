@@ -260,10 +260,12 @@ fn write_buffered<'budget>(
     let body_start = output.len() - brep_len;
     let rotated = output.rotate_tail_to_front(brep_len);
     debug_assert!(rotated, "the staged B-rep records precede the prefix");
-    for point in ir.model.points.iter().filter(|point| {
-        !plan.topology_points.contains(point.id.as_str())
-            && !is_support(point.source_object.as_ref())
-    }) {
+    for point in ir
+        .model
+        .points
+        .iter()
+        .filter(|point| !plan.topology_points.contains(point.id.as_str()))
+    {
         let position = point.position().get();
         let mut payload = vec![0x10];
         payload.extend(position.x.to_le_bytes());
@@ -287,6 +289,13 @@ fn write_buffered<'budget>(
             )?,
             "retain Rhino archive bytes",
         )?;
+        if is_support(point.source_object.as_ref()) {
+            plan.losses
+                .push(RhinoLossCode::WriterCarrierResolved.note(format!(
+                    "support point {} is written as an independent point object",
+                    point.id
+                )));
+        }
     }
     for (id, payload) in &plan.curves {
         let Some(curve) = ir
@@ -462,10 +471,7 @@ fn write_buffered<'budget>(
         .model
         .points
         .iter()
-        .filter(|point| {
-            !plan.topology_points.contains(point.id.as_str())
-                && !is_support(point.source_object.as_ref())
-        })
+        .filter(|point| !plan.topology_points.contains(point.id.as_str()))
         .count();
     Ok(WriteOutcome {
         geometry_objects: plan.brep_count
@@ -886,8 +892,10 @@ fn prepare_write<'a, 'budget>(
     let compound_children = compounds::children(ir);
     let unrooted_curves = compounds::unrooted_members(ir);
     let mut curves = Vec::new();
-    let mut written_curves = std::collections::BTreeSet::new();
-    let mut expanded_curves = std::collections::BTreeSet::new();
+    let mut written_curves = revolution_profiles
+        .iter()
+        .map(ToString::to_string)
+        .collect::<std::collections::BTreeSet<_>>();
     let mut pending = model
         .curves
         .iter()
@@ -895,8 +903,6 @@ fn prepare_write<'a, 'budget>(
             (!compound_children.contains(&curve.id) || unrooted_curves.contains(&curve.id))
                 && !revolution_profiles.contains(&curve.id)
                 && !topology_curves.contains(curve.id.as_str())
-                && (!is_support(curve.source_object.as_ref())
-                    || unrooted_curves.contains(&curve.id))
         })
         .collect::<std::collections::VecDeque<_>>();
     let mut covered = std::collections::BTreeSet::new();
@@ -909,11 +915,10 @@ fn prepare_write<'a, 'budget>(
             Ok((payload, reduction_notes)) => {
                 for child in compounds::unrepresented_children(ir, curve, &payload.represented) {
                     if !topology_curves.contains(child.id.as_str()) {
-                        expanded_curves.insert(child.id.clone());
                         pending.push_back(child);
                     }
                 }
-                if expanded_curves.contains(&curve.id) && is_support(curve.source_object.as_ref()) {
+                if is_support(curve.source_object.as_ref()) {
                     losses.push(RhinoLossCode::WriterCarrierResolved.note(format!(
                         "support curve {} is written as an independent curve object",
                         curve.id
