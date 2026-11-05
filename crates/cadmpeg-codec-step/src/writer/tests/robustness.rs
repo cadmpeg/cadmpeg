@@ -169,3 +169,37 @@ fn residual_specs(seed: &cadmpeg_ir::CadIr) -> Vec<ResidualSpec> {
     let _ = seed;
     Vec::new()
 }
+#[test]
+fn max_entities_counts_each_written_step_record() {
+    let ir = cadmpeg_ir::CadIr::empty();
+    let codec = StepCodec::default();
+    let mut bytes = Vec::new();
+    codec
+        .plan(EncodeInput::new(&ir, None), request())
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .expect("the empty document writes");
+    let text = std::str::from_utf8(&bytes).expect("STEP is UTF-8");
+    let records = u64::try_from(text.lines().filter(|line| line.starts_with('#')).count())
+        .expect("record count fits");
+    assert!(records > 0);
+    let mut input = EncodeInput::new(&ir, None);
+    input.limits.max_entities = records;
+    codec
+        .plan(input, request())
+        .expect("the exact limit writes");
+    input.limits.max_entities = records - 1;
+    let error = codec
+        .plan(input, request())
+        .expect_err("one fewer record is refused");
+    let cadmpeg_ir::codec::write::EncodeError::ResourceLimit(limit) = error else {
+        panic!("the entity ceiling returns a resource limit");
+    };
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::Entities
+    );
+    assert_eq!(
+        (limit.limit, limit.used, limit.additional),
+        (records - 1, records - 1, 1)
+    );
+}

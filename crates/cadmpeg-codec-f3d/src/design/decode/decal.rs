@@ -267,6 +267,13 @@ pub(crate) fn project_decal_images(
         }) else {
             continue;
         };
+        if operand
+            .references()
+            .iter()
+            .any(|reference| reference.candidate_faces.is_empty())
+        {
+            continue;
+        }
         let mut faces: Vec<_> = operand
             .references()
             .iter()
@@ -710,6 +717,7 @@ mod tests {
             },
         ).unwrap();
         let face = cadmpeg_ir::ids::FaceId::mint("test:model:face#1").unwrap();
+        let second_face = cadmpeg_ir::ids::FaceId::mint("test:model:face#2").unwrap();
         let operand = crate::records::topology::body_recipe::DesignBodyRecipeOperand::try_new(
             crate::records::topology::body_recipe::DesignBodyRecipeOperandDraft {
                 id: "f3d:Design/BulkStream.dat:body-operand#100".into(),
@@ -726,12 +734,12 @@ mod tests {
                     "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE".to_owned(),
                 )
                 .unwrap(),
-                asset_id_offset: 1056,
+                asset_id_offset: 1068,
                 context_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
                     "11111111-2222-4333-8444-555555555555".to_owned(),
                 )
                 .unwrap(),
-                context_id_offset: 1090,
+                context_id_offset: 1102,
                 selector_tail: None,
                 references: vec![
                     crate::records::topology::body_recipe::DesignBodyRecipeReference {
@@ -743,9 +751,18 @@ mod tests {
                         preceding_candidate_faces: Vec::new(),
                         preceding_body_slots: Vec::new(),
                     },
+                    crate::records::topology::body_recipe::DesignBodyRecipeReference {
+                        design_reference: 2,
+                        design_reference_offset: Some(1037),
+                        form: 1,
+                        form_offset: Some(1045),
+                        candidate_faces: vec![second_face.clone()],
+                        preceding_candidate_faces: Vec::new(),
+                        preceding_body_slots: Vec::new(),
+                    },
                 ],
                 nested_record_index: 103,
-                nested_record_index_offset: 1038,
+                nested_record_index_offset: 1050,
                 recipe_id: "f3d:Design/BulkStream.dat:recipe#1".into(),
                 resolved_face_slot: None,
                 resolved_body_state_id: None,
@@ -798,7 +815,30 @@ mod tests {
             assert!(matches!(features[0].definition(),
                 FeatureDefinition::Operation(FeatureOperation::Decal {
                     asset, faces: cadmpeg_ir::features::FaceSelection::Resolved { faces, native }, ..
-                }) if *asset == assets[0].id && faces.as_slice() == [face.clone()] && native == &operand.id));
+                }) if *asset == assets[0].id && faces.as_slice() == [face.clone(), second_face.clone()] && native == &operand.id));
+            let mut partial_operand = operand.clone();
+            partial_operand
+                .reference_bindings_mut()
+                .nth(1)
+                .unwrap()
+                .candidate_faces
+                .clear();
+            let mut partial_feature = [feature()];
+            let partial_assets = super::project_decal_images(
+                &cadmpeg_test_support::service_decode_context(),
+                scan,
+                std::slice::from_ref(&scope),
+                std::slice::from_ref(&image),
+                std::slice::from_ref(&group),
+                std::slice::from_ref(&partial_operand),
+                &mut partial_feature,
+            )
+            .unwrap();
+            assert_eq!(partial_assets.len(), 1);
+            assert!(matches!(
+                partial_feature[0].definition(),
+                FeatureDefinition::Operation(FeatureOperation::Sketch { .. })
+            ));
             let unbound = super::project_decal_images(
                 &cadmpeg_test_support::service_decode_context(),
                 scan,

@@ -864,12 +864,42 @@ fn prepare_write<'a, 'budget>(
         .flat_map(|scope| scope.points.iter().cloned())
         .collect::<std::collections::BTreeSet<_>>();
     let mut revolutions = std::collections::BTreeMap::new();
+    let mut extrusions = std::collections::BTreeMap::new();
     let mut revolution_profiles = std::collections::BTreeSet::new();
     for surface in model
         .surfaces
         .iter()
         .filter(|surface| !topology_surfaces.contains(surface.id.as_str()))
     {
+        let native_extrusion = match extrusion::separate(session, ir, surface, archive_version)? {
+            Some(value) => Some(value),
+            None => extrusion::sum(session, ir, surface, archive_version)?,
+        };
+        if let Some((profile, payload)) = native_extrusion {
+            let independently_presented = model.appearance_bindings.iter().any(|binding| matches!(&binding.target, cadmpeg_ir::appearance::AppearanceTarget::Curve(id) if *id == profile))
+                || model.attributes.iter().any(|attribute| matches!(&attribute.target, cadmpeg_ir::attributes::AttributeTarget::Curve(id) if *id == profile))
+                || model.presentation_layers.iter().any(|layer| layer.items.iter().any(|item| matches!(item, cadmpeg_ir::presentation::PresentationItem::Curve { curve } if *curve == profile)))
+                || model.view_presentations.iter().any(|view| view.object.as_deref() == Some(profile.as_str()));
+            if !independently_presented && !topology_curves.contains(profile.as_str()) {
+                revolution_profiles.insert(profile.clone());
+            }
+            let is_sum = payload.class == crate::surfaces::SUM_SURFACE.to_wire();
+            let carrier_kind = if is_sum { "sum surface" } else { "extrusion" };
+            losses.push(RhinoLossCode::WriterCarrierResolved.note(format!(
+                "surface {} and profile {} are written as an independent {carrier_kind} object",
+                surface.id, profile
+            )));
+            if is_sum {
+                if let Some(construction) = surface.geometry.procedural_construction() {
+                    losses.push(RhinoLossCode::WriterProceduralReduced.note(format!(
+                        "surface {} extrusion construction {} is converted to an exact sum-surface carrier",
+                        surface.id, construction
+                    )));
+                }
+            }
+            extrusions.insert(surface.id.as_str(), payload);
+            continue;
+        }
         if let Some((profile, payload)) = revolution::held_revolution(ir, surface)? {
             let independently_presented = model.appearance_bindings.iter().any(|binding| matches!(&binding.target, cadmpeg_ir::appearance::AppearanceTarget::Curve(id) if *id == profile))
                 || model.attributes.iter().any(|attribute| matches!(&attribute.target, cadmpeg_ir::attributes::AttributeTarget::Curve(id) if *id == profile))
@@ -960,8 +990,10 @@ fn prepare_write<'a, 'budget>(
         .iter()
         .filter(|surface| !topology_surfaces.contains(surface.id.as_str()))
     {
-        let written_revolution = revolutions.get(surface.id.as_str());
-        match written_revolution.cloned().map_or_else(
+        let written_native = extrusions
+            .get(surface.id.as_str())
+            .or_else(|| revolutions.get(surface.id.as_str()));
+        match written_native.cloned().map_or_else(
             || {
                 WritableFaceSurface::try_new(surface, ir).and_then(|(face, loss)| {
                     losses.extend(loss);
@@ -975,7 +1007,7 @@ fn prepare_write<'a, 'budget>(
                 if let Some(construction) = surface
                     .geometry
                     .procedural_construction()
-                    .filter(|_| written_revolution.is_none())
+                    .filter(|_| written_native.is_none())
                 {
                     losses.push(RhinoLossCode::WriterProceduralReduced.note(format!(
                         "surface {} procedural construction {} was reduced to a held solved carrier",
@@ -2664,6 +2696,12 @@ fn class_wrapper_with_direct(
 
 fn check_mesh(mesh: &cadmpeg_ir::tessellation::Tessellation) -> Result<(), WriteError> {
     let vertex_count = mesh.vertices().len();
+    if mesh.triangles().is_empty() {
+        return Err(WriteError::Omit(format!(
+            "mesh {} has no faces for a native Rhino mesh",
+            mesh.id
+        )));
+    }
     if vertex_count == 0
         || i32::try_from(vertex_count).is_err()
         || i32::try_from(mesh.triangles().len()).is_err()
@@ -3961,7 +3999,11 @@ fn surface_object_record(
     materials: &MaterialPlan,
 ) -> Result<Vec<u8>, CodecError> {
     framed_object_record(
-        8,
+        if payload.class == crate::extrusion::ON_EXTRUSION.to_wire() {
+            0x10
+        } else {
+            8
+        },
         payload.class,
         &payload.body,
         payload.direct.as_deref(),

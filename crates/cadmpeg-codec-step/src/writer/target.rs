@@ -28,13 +28,13 @@ pub(crate) fn plan(
         crate::writer::REDUCED_FIELDS.is_empty(),
         "STEP stores no reduced fields"
     );
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodeDepth, DecodePolicy};
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let arena = DecodeArena::new();
     let policy = DecodePolicy {
         mode: cadmpeg_core::decode::DecodeMode::Salvage,
         limits: input.limits,
     };
-    let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Geometry);
+    let ctx = DecodeContext::for_encode(&arena, &policy);
     let synthesis = resolved.for_synthesis()?;
     let resolved = synthesis.resolution();
     let schema = StepSchema::from_target_index(synthesis.index());
@@ -237,12 +237,14 @@ fn report_reductions(coverage: &mut ArenaDispositions, losses: &[LossNote]) {
     }
     if has(&[
         StepLossCode::PcurveCarrierUnwritable,
+        StepLossCode::PcurveAssociationLimit,
         StepLossCode::CoedgePcurveNativeMetadata,
     ]) {
         coverage.pcurves = Reported;
     }
     if has(&[
         StepLossCode::PcurveCarrierUnwritable,
+        StepLossCode::PcurveAssociationLimit,
         StepLossCode::CoedgePcurveNoGeometry,
         StepLossCode::CoedgePcurveNativeMetadata,
         StepLossCode::PcurveUseNativeMetadata,

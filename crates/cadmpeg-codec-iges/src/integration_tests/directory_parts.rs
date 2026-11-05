@@ -92,7 +92,7 @@ fn a_pointer_into_a_given_up_directory_entry_is_unresolved() {
     // like one naming an absent entry (#222).
     let third = second_entry(&damaged);
     damaged[third + 40..third + 48].copy_from_slice(b"       1");
-    let decoded = crate::test_support::decode(damaged);
+    let decoded = crate::test_support::decode(damaged.clone());
     assert_eq!(decoded.ir().model.points.len(), 1);
     assert_eq!(
         serde_json::to_value(&decoded.ir().model.points[0]).unwrap(),
@@ -107,6 +107,9 @@ fn a_pointer_into_a_given_up_directory_entry_is_unresolved() {
             .count(),
         1
     );
+    let parts = crate::test_support::given_up_parts(decoded.source_fidelity());
+    assert_eq!(parts.len(), 1);
+    assert_eq!(parts[0].data(), Some(&damaged[first..first + 8]));
     assert_eq!(
         decoded
             .report()
