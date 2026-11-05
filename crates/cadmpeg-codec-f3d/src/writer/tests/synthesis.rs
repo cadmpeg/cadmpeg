@@ -334,6 +334,111 @@ fn a_single_segment_composite_edge_keeps_the_body() {
 }
 
 #[test]
+fn unedited_typed_mesh_sentinel_replays() {
+    use crate::test_support::smbh_geometry_test::synthetic_geometry_with_mesh_surface_smbh;
+    use crate::test_support::zip_test::f3d_with_smbh;
+
+    let source = f3d_with_smbh(&synthetic_geometry_with_mesh_surface_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+        .unwrap();
+    assert!(decoded.source_fidelity().unrepresented().is_empty());
+    let plan = F3dCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+            TargetRequest::Inherit,
+        )
+        .unwrap();
+    assert!(matches!(
+        plan.report().write_path(),
+        WritePath::VerbatimReplay { .. }
+    ));
+    let mut output = Vec::new();
+    plan.write_to(&mut output).unwrap();
+    assert_eq!(output, source);
+}
+
+#[test]
+fn source_less_synthesis_preserves_native_brep_name() {
+    use crate::test_support::native_test::{f3d_native, f3d_native_mut};
+    use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
+    use crate::test_support::zip_test::f3d_with_smbh;
+    let source = f3d_with_smbh(&synthetic_geometry_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+        .unwrap();
+    let (output, _) = super::source_less_analytic::synthesize_document(decoded.ir(), None);
+    assert_eq!(
+        f3d_native(output.ir()).body_native_keys[0]
+            .source_brep
+            .as_deref(),
+        Some("Body1.smbh")
+    );
+    let mut ir = decoded.ir().clone();
+    f3d_native_mut(&mut ir).body_native_keys[0].source_brep = Some("BREP.synthetic.smbh".into());
+    let before = f3d_native(&ir).body_native_keys[0].source_brep.clone();
+    let (output, _) = super::source_less_analytic::synthesize_document(&ir, None);
+    assert_eq!(
+        f3d_native(output.ir()).body_native_keys[0].source_brep,
+        before
+    );
+}
+
+#[test]
+fn source_less_compact_custom_attributes_preserve_values() {
+    use crate::test_support::smbh_geometry_test::synthetic_geometry_with_attribute_smbh;
+    use crate::test_support::zip_test::f3d_with_smbh;
+
+    let source = f3d_with_smbh(&synthetic_geometry_with_attribute_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(decoded.ir().model.attributes.len(), 2);
+    let plan = F3dCodec
+        .plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Inherit)
+        .unwrap();
+    for attribute in &decoded.ir().model.attributes {
+        assert!(!plan
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains(attribute.id.as_str())));
+    }
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(output.ir().model.attributes, decoded.ir().model.attributes);
+
+    let mut edited = decoded.ir().clone();
+    let timestamp = &mut edited.model.attributes[1];
+    let Some(cadmpeg_ir::attributes::AttributeValue::Float(value)) = &mut timestamp.values[3]
+    else {
+        panic!("timestamp value");
+    };
+    *value = cadmpeg_ir::scalar::FiniteReal::new(value.get() + 10.0).unwrap();
+    let (output, _) = super::source_less_analytic::synthesize_document(&edited, None);
+    assert_eq!(output.ir().model.attributes, edited.model.attributes);
+
+    let mut edited = decoded.ir().clone();
+    edited.model.attributes[0].values[9] = Some(cadmpeg_ir::attributes::AttributeValue::Integer(9));
+    edited.model.attributes[0].values[14] =
+        Some(cadmpeg_ir::attributes::AttributeValue::Integer(43));
+    let (output, _) = super::source_less_analytic::synthesize_document(&edited, None);
+    assert_eq!(output.ir().model.attributes, edited.model.attributes);
+    assert_eq!(
+        crate::test_support::native_test::f3d_native(output.ir()).body_native_keys[0].asm_body_key,
+        Some(43)
+    );
+    assert_eq!(
+        crate::test_support::native_test::f3d_native(output.ir()).persistent_design_links[0]
+            .design_reference,
+        9
+    );
+}
+
+#[test]
 fn direct_opacity_reduces_color_without_dropping_geometry() {
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("cube");
     ir.model.bodies[0].color = Some(cadmpeg_ir::topology::Color::from_rgba8(10, 20, 30, 100));
@@ -382,6 +487,9 @@ fn an_unsupported_face_keeps_the_other_faces_as_an_open_shell() {
         .iter()
         .any(|loss| loss.code.local_code() == "writer.geometry-omitted"
             && loss.severity == Severity::Error));
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.message.contains("model.surfaces:") && loss.message.contains(surface.as_str())
+    }));
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).expect("write open shell");
     let output = F3dCodec
