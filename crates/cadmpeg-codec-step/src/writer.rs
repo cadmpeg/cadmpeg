@@ -18,9 +18,14 @@ pub(crate) mod target;
 /// there is no capacity row (#233).
 pub(crate) const CAPACITY_FIELDS: &[cadmpeg_ir::codec::write::CapacityField] = &[];
 
-/// STEP stores no JSON path in reduced form; every written value round-trips
-/// at full precision (#232 §5.2).
-pub(crate) const REDUCED_FIELDS: &[cadmpeg_ir::codec::write::ReducedField] = &[];
+/// Target-imposed changes to written CADIR fields (#232 §5.2).
+pub(crate) const REDUCED_FIELDS: &[cadmpeg_ir::codec::write::ReducedField] =
+    &[cadmpeg_ir::codec::write::ReducedField {
+        path: "model.surfaces[].geometry",
+        storage: cadmpeg_ir::codec::write::ReducedStorage::Normalized {
+            loss: "step/geometry.analytic-surface-normalized",
+        },
+    }];
 
 /// A STEP instance name such as `#42`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

@@ -231,3 +231,37 @@ fn closed_circle_edge_off_the_period_origin_is_refused() {
     let edge = closed_edge("circle", "circle", "v0");
     assert!(refusal(&ir, &edge, &circle()).starts_with(MISSING_RANGE));
 }
+
+#[test]
+fn inconsistent_edge_span_reports_edge_and_keeps_its_curve() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use std::io::Cursor;
+
+    let mut ir = vertices_at(&[Point3::new(10.0, 0.0, 0.0), Point3::new(0.0, 10.0, 0.0)]);
+    let curve_id = CurveId::mint("test:model:curve#circle").unwrap();
+    ir.model.curves.push(Curve {
+        id: curve_id.clone(),
+        geometry: circle(),
+        native_ref: None,
+        source_object: None,
+        parameter_range: None,
+    });
+    let mut edge = closed_edge("edge", "circle", "v0");
+    edge.end = VertexId::mint("test:model:vertex#v1").unwrap();
+    edge.carrier =
+        cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), Some([0.0, 1.0])).unwrap();
+    let edge_id = edge.id.clone();
+    ir.model.edges.push(edge);
+    let plan = crate::test_support::plan_at(crate::IgesVersion::V5_3, &ir, None).unwrap();
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(edge_id.as_str()) && loss.message.contains("endpoints")));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let decoded = crate::IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(decoded.ir().model.curves.len(), 1);
+}
