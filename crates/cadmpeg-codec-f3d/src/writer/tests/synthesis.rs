@@ -197,6 +197,27 @@ fn source_less_primitive_feature_survives_synthesis() {
         .losses
         .iter()
         .any(|loss| loss.message.contains(retained)));
+    ir.model.features[1].ordinal = 1;
+    ir.model.features[1].evaluation = FeatureEvaluation::from_definition(
+        FeatureDefinition::Operation(FeatureOperation::Primitive {
+            placement: None,
+            solid: PrimitiveSolid::new(PrimitiveSolidKind::Cylinder {
+                radius: RadialDimension::Diameter(Dimension::Literal(
+                    Length::new(f64::from_bits(1)).unwrap(),
+                )),
+                height: Dimension::Literal(Length::new(30.0).unwrap()),
+                angle: cadmpeg_ir::scalar::Angle::FULL_TURN.into(),
+            })
+            .unwrap(),
+            op: BooleanOp::NewBody,
+        }),
+    );
+    let (output, report) = super::source_less_analytic::synthesize_document(&ir, None);
+    assert_eq!(output.ir().model.features.len(), 1);
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(&omitted)));
 }
 
 #[test]
