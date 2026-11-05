@@ -116,7 +116,7 @@ pub(in super::super) fn build_report(
             .sections
             .iter()
             .find(|section| section.offset() == incomplete.offset)
-            .map_or(0, |section| section.length());
+            .map_or(0, crate::container::Section::length);
         let mut provenance = cadmpeg_ir::SourceProvenance::root(
             "creo",
             cadmpeg_core::decode::u64_from_index(incomplete.offset),

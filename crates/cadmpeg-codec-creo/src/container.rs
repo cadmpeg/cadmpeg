@@ -1895,7 +1895,7 @@ fn detect_incomplete_sections(
         }
         let row_bytes_left = row_region_start
             .and_then(|start| section.region.get(start..))
-            .map_or(0, |tail| tail.len());
+            .map_or(0, <[u8]>::len);
         let give_up = geometry_namespace && at_eof && row_bytes_left != 0;
         if usize::try_from(declared).is_ok_and(|bound| rows < bound) {
             mark(
