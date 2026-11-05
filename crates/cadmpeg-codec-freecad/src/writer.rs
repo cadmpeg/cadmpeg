@@ -115,6 +115,12 @@ pub(crate) const REDUCED_FIELDS: &[cadmpeg_ir::codec::write::ReducedField] = &[
             loss: "fcstd/parameter.driving-not-transferred",
         },
     },
+    cadmpeg_ir::codec::write::ReducedField {
+        path: "model.parameters[].expression",
+        storage: cadmpeg_ir::codec::write::ReducedStorage::Normalized {
+            loss: "fcstd/parameter.expression-normalized",
+        },
+    },
 ];
 
 trait WriteSeek: Write + Seek {}
