@@ -17,6 +17,18 @@ pub(super) fn regenerate(
     parameters: &[DesignParameter],
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
+    let previous = std::mem::take(&mut native.design_configurations);
+    let mut previous_tables = previous.iter().filter(|entry| {
+        entry.kind() == DesignConfigurationKind::Table
+            && entry
+                .entry_name()
+                .starts_with(crate::manifest::GENERATED_DESIGN_ASSET_FOLDER)
+    });
+    let previous_table = match (previous_tables.next(), previous_tables.next()) {
+        (Some(table), None) => Some(table),
+        _ => None,
+    };
+    let previous_payload = previous_table.map(DesignConfiguration::payload);
     let mut ordered = target.model.configurations.iter().collect::<Vec<_>>();
     ordered.sort_by(|left, right| (left.ordinal, &left.id).cmp(&(right.ordinal, &right.id)));
     let mut variants = Map::new();
@@ -42,7 +54,23 @@ pub(super) fn regenerate(
             )));
             continue;
         }
-        let mut variant = Map::new();
+        let mut variant = previous_table
+            .and_then(|table| {
+                let variants = previous_payload
+                    .as_ref()?
+                    .get("configurations")?
+                    .as_object()?;
+                variants.iter().find_map(|(old_name, value)| {
+                    (crate::ids::neutral_configuration_id(table.entry_name(), old_name)
+                        == configuration.id)
+                        .then(|| value.as_object().cloned())
+                        .flatten()
+                })
+            })
+            .unwrap_or_default();
+        variant.remove("parameters");
+        variant.remove("suppressed");
+        variant.remove("material");
         let mut overrides = Map::new();
         let mut suppressed = Vec::new();
         for (key, value) in &configuration.properties {
@@ -145,7 +173,8 @@ pub(super) fn regenerate(
         order.push(name.clone());
     }
     if !variants.is_empty() {
-        let mut payload = Map::new();
+        let mut payload = previous_payload.unwrap_or_default();
+        payload.remove("active");
         payload.insert("configurations".into(), Value::Object(variants));
         if let Some(active) = active {
             payload.insert("active".into(), Value::String(active));
@@ -153,9 +182,14 @@ pub(super) fn regenerate(
         native
             .design_configurations
             .push(DesignConfiguration::try_new(
-                format!(
-                    "{}/DesignConfigurationTable.generated.dsgcfg",
-                    crate::manifest::GENERATED_DESIGN_ASSET_FOLDER
+                previous_table.map_or_else(
+                    || {
+                        format!(
+                            "{}/DesignConfigurationTable.generated.dsgcfg",
+                            crate::manifest::GENERATED_DESIGN_ASSET_FOLDER
+                        )
+                    },
+                    |table| table.entry_name().clone(),
                 ),
                 DesignConfigurationKind::Table,
                 order,

@@ -136,6 +136,7 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
         design_entity_headers: original.design_entity_headers.clone(),
         design_record_headers: original.design_record_headers.clone(),
         design_parameters: original.design_parameters.clone(),
+        design_configurations: original.design_configurations.clone(),
         body_native_keys: original.body_native_keys,
         body_visibilities: original.body_visibilities,
         edge_continuities: original.edge_continuities,
@@ -746,8 +747,7 @@ pub(super) fn coverage(
                 .and_then(|namespace| namespace.arenas().get(arena));
             if matches!(
                 arena.as_str(),
-                "design_configurations"
-                    | "act_tables"
+                "act_tables"
                     | "act_types"
                     | "act_entities"
                     | "act_guids"
