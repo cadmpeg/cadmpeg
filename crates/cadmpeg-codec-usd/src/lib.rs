@@ -129,7 +129,7 @@ impl EncoderBackend for UsdCodec {
         let binary = target
             .entry()
             .is_some_and(|entry| entry.id == dialect::USD_USDC_0_8_0);
-        let (mut body, members) = writer::plan(input, &target, packaged);
+        let (mut body, members) = writer::plan(input, &target, packaged)?;
         if binary {
             body.bytes = crate_layer(&body.bytes, input.limits).map_err(transitional_from_codec)?;
             body.notes = vec!["USDC 0.8.0 binary layer, metre units".to_owned()];
