@@ -19,6 +19,7 @@ mod native_geometry;
 pub(crate) mod ordinals;
 mod parameters;
 mod pcurves;
+mod polygon_edges;
 mod presentation;
 pub(crate) mod products;
 mod synthesis;

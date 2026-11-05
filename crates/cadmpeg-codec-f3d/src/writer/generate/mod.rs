@@ -16,7 +16,7 @@ use crate::writer::primitives::{
 };
 mod act;
 pub(super) mod attributes;
-mod features;
+pub(super) mod features;
 mod index;
 pub(in crate::writer) mod native_bytes;
 pub(crate) mod native_geometry;
@@ -459,6 +459,17 @@ pub(super) fn write_with_limits(
             }
             if feature.needs_recompute {
                 partial = true;
+            }
+            if matches!(feature.evaluation.definition(),
+            cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::Primitive { solid, .. }
+            ) if matches!(solid.kind(), cadmpeg_ir::features::PrimitiveSolidKind::Cylinder {
+                radius: cadmpeg_ir::features::RadialDimension::Radius(_), ..
+            })) {
+                partial = true;
+                residual_losses.push(crate::loss::F3dLossCode::WriterDesignRecordsOmitted.note(
+                    format!("feature {} encodes its radius as a diameter", feature.id),
+                ));
             }
             if !feature.evaluation.outputs().is_empty() {
                 partial = true;

@@ -561,6 +561,7 @@ fn serialize_geometry_inner(
     } = reachable;
     let (triangulations, face_triangulations) =
         triangulation_sections(ir, bodies, &faces, free, covered, losses);
+    let (mut polygons3d, polygons_indexed) = polygon_sections(ir, bodies, losses)?;
     let mut locations = Vec::new();
     let mut curves = Vec::new();
     let mut curve_ids = HashMap::new();
@@ -572,6 +573,18 @@ fn serialize_geometry_inner(
         .filter(|curve| curves_needed.contains(curve.id.as_str()))
         .filter(|curve| !covered_by_replay(covered, &curve.source_object))
     {
+        let mut edge_uses = ir
+            .model
+            .edges
+            .iter()
+            .filter(|edge| edges.contains(edge.id.as_str()) && edge.curve() == Some(&curve.id))
+            .peekable();
+        if edge_uses.peek().is_some()
+            && edge_uses
+                .all(|edge| super::polygon_edges::polygon3d(ir, edge, &mut polygons3d).is_some())
+        {
+            continue;
+        }
         let located = geometry::located_curve(ir, curve).or_else(|| {
             ir.model
                 .edges
@@ -823,6 +836,8 @@ fn serialize_geometry_inner(
                 });
         let mut representation = if degenerate {
             String::new()
+        } else if let Some(polygon) = super::polygon_edges::polygon3d(ir, edge, &mut polygons3d) {
+            polygon
         } else {
             match edge.curve() {
                 Some(curve) => {
@@ -1169,11 +1184,53 @@ fn serialize_geometry_inner(
                     };
                     children.push((*index, Sense::Forward));
                 }
-                if children.is_empty() && degraded {
+                if degraded {
                     let mut retained_edges = HashSet::new();
                     let mut retained_vertices = std::collections::BTreeSet::new();
                     let mut represented_vertices = HashSet::new();
+                    for edge in shell.wire_edges().iter().filter_map(|id| {
+                        indices
+                            .get(id.as_str())
+                            .and_then(|_| ir.model.edges.iter().find(|edge| edge.id == *id))
+                    }) {
+                        retained_edges.insert(edge.id.as_str());
+                        represented_vertices.insert(edge.start.as_str());
+                        represented_vertices.insert(edge.end.as_str());
+                    }
+                    represented_vertices.extend(
+                        shell
+                            .free_vertices()
+                            .iter()
+                            .filter(|id| indices.contains_key(id.as_str()))
+                            .map(|id| id.as_str()),
+                    );
+                    for face in shell.faces().iter().filter_map(|id| {
+                        indices
+                            .get(id.as_str())
+                            .and_then(|_| ir.model.faces.iter().find(|face| face.id == *id))
+                    }) {
+                        for wire in face
+                            .loops
+                            .iter()
+                            .filter_map(|id| ir.model.loops.iter().find(|wire| wire.id == *id))
+                        {
+                            for coedge in wire.coedges().iter().filter_map(|id| {
+                                ir.model.coedges.iter().find(|coedge| coedge.id == *id)
+                            }) {
+                                retained_edges.insert(coedge.edge.as_str());
+                                if let Some(edge) =
+                                    ir.model.edges.iter().find(|edge| edge.id == coedge.edge)
+                                {
+                                    represented_vertices.insert(edge.start.as_str());
+                                    represented_vertices.insert(edge.end.as_str());
+                                }
+                            }
+                        }
+                    }
                     for face_id in shell.faces() {
+                        if indices.contains_key(face_id.as_str()) {
+                            continue;
+                        }
                         let Some(face) = ir.model.faces.iter().find(|face| face.id == *face_id)
                         else {
                             continue;
@@ -1467,7 +1524,6 @@ fn serialize_geometry_inner(
         }
     }
     topology.finish(&shapes, &indices, &roots)?;
-    let (polygons3d, polygons_indexed) = polygon_sections(ir, bodies, losses)?;
     // Empty tables keep the historical spelling so polygon-free members
     // byte-match their previous output.
     let polygons3d = if polygons3d.is_empty() {

@@ -33,6 +33,10 @@ fn scalar<Q: DimensionValue>(
     else {
         return None;
     };
+    let source_value = value.get() / 10.0;
+    if value.get() != 0.0 && source_value == 0.0 {
+        return None;
+    }
     let parameter = match dimension {
         Dimension::Literal(_) => None,
         Dimension::Parameter(id) => Some(
@@ -68,28 +72,20 @@ fn scalar<Q: DimensionValue>(
     };
     Some(Scalar {
         kind,
-        value: value.get() / 10.0,
+        value: source_value,
         parameter: parameter.map(|parameter| parameter.id.clone()),
         name: parameter.map(|parameter| parameter.name.clone()),
         expression,
     })
 }
 
-pub(super) fn encode(
-    target: &CadIr,
-) -> Result<
-    Option<(
-        Vec<u8>,
-        Vec<u8>,
-        Vec<cadmpeg_ir::features::FeatureId>,
-        Vec<ParameterId>,
-        u32,
-    )>,
-    CodecError,
-> {
+type Primitive = (u64, &'static str, Vec<Scalar>, u32, FeatureId);
+
+fn select(target: &CadIr) -> Vec<Primitive> {
     let mut primitives = Vec::new();
     for feature in &target.model.features {
-        if feature.suppressed == Some(true)
+        if feature.ordinal >= u64::from(u32::MAX)
+            || feature.suppressed == Some(true)
             || !feature.dependencies.is_empty()
             || !feature.source_properties.is_empty()
             || feature.source_text.is_some()
@@ -105,7 +101,7 @@ pub(super) fn encode(
                 op,
             }) => {
                 let PrimitiveSolidKind::Cylinder {
-                    radius: RadialDimension::Diameter(diameter),
+                    radius,
                     height,
                     angle: Dimension::Literal(angle),
                 } = solid.kind()
@@ -115,6 +111,24 @@ pub(super) fn encode(
                 if *angle != cadmpeg_ir::scalar::Angle::FULL_TURN {
                     continue;
                 }
+                let diameter = match radius {
+                    RadialDimension::Diameter(diameter) => {
+                        scalar(target, &feature.id, "Diameter", 1, diameter)
+                    }
+                    RadialDimension::Radius(Dimension::Literal(radius)) => {
+                        let value = radius.get() / 10.0 * 2.0;
+                        (value.is_finite() && value != 0.0 && (value * 10.0).is_finite()).then_some(
+                            Scalar {
+                                kind: "Diameter",
+                                value,
+                                parameter: None,
+                                name: None,
+                                expression: None,
+                            },
+                        )
+                    }
+                    _ => None,
+                };
                 (
                     "CylinderPrimitive",
                     vec![
@@ -122,7 +136,7 @@ pub(super) fn encode(
                             Some(value) => value,
                             None => continue,
                         },
-                        match scalar(target, &feature.id, "Diameter", 1, diameter) {
+                        match diameter {
                             Some(value) => value,
                             None => continue,
                         },
@@ -139,6 +153,9 @@ pub(super) fn encode(
                 if rows[0][0..3] != [1.0, 0.0, 0.0]
                     || rows[1][0..3] != [0.0, 1.0, 0.0]
                     || rows[2] != [0.0, 0.0, 1.0, 0.0]
+                    || [rows[0][3], rows[1][3]]
+                        .into_iter()
+                        .any(|value| value != 0.0 && value / 10.0 == 0.0)
                 {
                     continue;
                 }
@@ -195,6 +212,31 @@ pub(super) fn encode(
         };
         primitives.push((feature.ordinal, kind, values, operation, feature.id.clone()));
     }
+    primitives
+}
+
+pub(in crate::writer) fn authored_feature_ids(
+    target: &CadIr,
+) -> std::collections::BTreeSet<FeatureId> {
+    select(target)
+        .into_iter()
+        .map(|(_, _, _, _, id)| id)
+        .collect()
+}
+
+pub(super) fn encode(
+    target: &CadIr,
+) -> Result<
+    Option<(
+        Vec<u8>,
+        Vec<u8>,
+        Vec<cadmpeg_ir::features::FeatureId>,
+        Vec<ParameterId>,
+        u32,
+    )>,
+    CodecError,
+> {
+    let mut primitives = select(target);
     if primitives.is_empty() {
         return Ok(None);
     }
