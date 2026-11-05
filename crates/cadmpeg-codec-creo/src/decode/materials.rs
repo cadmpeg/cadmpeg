@@ -393,8 +393,10 @@ fn element_table(bytes: &[u8], color_count: usize) -> Option<Vec<ElementRow>> {
     Some(rows)
 }
 
+type ColorProperty = (&'static str, fn(&ColorRow) -> f64);
+
 /// Property keys for the mapped non-color scalars, in grammar order.
-const COLOR_PROPERTIES: [(&str, fn(&ColorRow) -> f64); 5] = [
+const COLOR_PROPERTIES: [ColorProperty; 5] = [
     ("ambient", |row| row.ambient),
     ("diffuse", |row| row.diffuse),
     ("specular", |row| row.specular),
@@ -419,11 +421,13 @@ fn admit_appearances(
         let Some(row) = colors.get(offset) else {
             continue;
         };
-        if !row.rgb.iter().all(|value| value.is_finite()) {
+        let [Some(r), Some(g), Some(b)] = row.rgb.map(cadmpeg_core::convert::f32_from_f64) else {
             continue;
-        }
-        let [r, g, b] = row.rgb.map(|value| value as f32);
-        let alpha = 1.0 - row.transmission as f32;
+        };
+        let Some(transmission) = cadmpeg_core::convert::f32_from_f64(row.transmission) else {
+            continue;
+        };
+        let alpha = 1.0 - transmission;
         let Some(base_color) = Color::new(r, g, b, alpha) else {
             continue;
         };
@@ -565,8 +569,7 @@ fn project_section(
     if used.is_empty() {
         return Ok(());
     }
-    let namespace = crate::identity::section_namespace(section.name())
-        .ok_or_else(|| CodecError::malformed("material section without a namespace"))?;
+    let namespace = crate::identity::section_namespace(section.name());
     let native_ref =
         crate::identity::compose_checked::<cadmpeg_ir::ids::UnknownId>(&namespace, section_offset)
             .map(|id| id.as_str().to_owned())?;

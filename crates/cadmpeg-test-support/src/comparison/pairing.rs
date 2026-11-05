@@ -229,11 +229,11 @@ pub(super) fn pair(
     if cross {
         loop {
             let mut claims = BTreeMap::<usize, Vec<usize>>::new();
-            for left in 0..before.records.len() {
+            for (left, candidate) in candidates.iter().enumerate() {
                 if pairs.contains_key(&left) {
                     continue;
                 }
-                let mut available = candidates[left].iter().copied().filter(|right| {
+                let mut available = candidate.iter().copied().filter(|right| {
                     !owners.contains_key(right)
                         && references_agree_with_pairs(
                             &before.records[left].value,
