@@ -1119,3 +1119,43 @@ fn regenerated_associativities_retain_required_back_pointers() {
         output.report().losses
     );
 }
+
+#[test]
+fn edited_boolean_operation_reaches_the_regenerated_tree() {
+    use cadmpeg_ir::features::{BooleanKind, FeatureDefinition, FeatureOperation};
+    let decoded = IgesCodec.decode(
+        &mut Cursor::new(crate::test_support::test_solids_and_structure::explicit_tetrahedron_solid_with_boolean_file()),
+        &DecodeOptions::default(),
+    ).expect("Boolean fixture decodes");
+    let mut ir = decoded.ir().clone();
+    let feature = ir
+        .model
+        .features
+        .iter_mut()
+        .find(|feature| {
+            matches!(
+                feature.evaluation.definition(),
+                FeatureDefinition::Operation(FeatureOperation::Combine { .. })
+            )
+        })
+        .expect("Boolean feature");
+    let mut definition = feature.evaluation.definition().clone();
+    let FeatureDefinition::Operation(FeatureOperation::Combine { op, .. }) = &mut definition else {
+        unreachable!()
+    };
+    *op = BooleanKind::Cut;
+    feature.evaluation.set_definition(definition);
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).expect("edited Boolean synthesizes");
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("Boolean re-decodes");
+    assert!(output.ir().model.features.iter().any(|feature| matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Combine {
+            op: BooleanKind::Cut,
+            ..
+        })
+    )));
+}
