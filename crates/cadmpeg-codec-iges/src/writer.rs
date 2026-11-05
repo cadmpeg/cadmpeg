@@ -152,6 +152,7 @@ mod degrade;
 mod display;
 mod feature_order;
 mod levels;
+mod native_plane;
 mod native_records;
 mod pcurve_admission;
 pub(crate) mod target;
@@ -6371,6 +6372,9 @@ fn surface_entities_for_ir(
     version: crate::IgesVersion,
 ) -> Result<Vec<Entity>, CodecError> {
     let geometry = &surface.geometry;
+    if let Some(entity) = native_plane::regenerate(ir, surface) {
+        return Ok(vec![entity]);
+    }
     if let Some(solved) = geometry.solved() {
         if let SolvedSurfaceGeometry::Nurbs(nurbs) = solved {
             let construction = geometry.procedural_construction().and_then(|id| {
