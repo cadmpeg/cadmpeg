@@ -161,10 +161,12 @@ pub(super) fn build(
             .entries
             .iter()
             .filter(|entry| entry.name == *name && entry.type_id == *time_date);
-        let source = matches.next();
-        if matches.next().is_some() {
-            return Err(unsupported().into());
-        }
+        let first = matches.next();
+        let source = if matches.next().is_some() {
+            None
+        } else {
+            first
+        };
         let (local_token, central_token, attributes) = if let Some(entry) = source {
             let relative = View::u32_le_at(&entry.descriptor, descriptor::LOCAL_OFFSET)
                 .ok_or_else(unsupported)?;
@@ -184,6 +186,11 @@ pub(super) fn build(
                 bytes_array::<10>(&entry.descriptor, 0)?,
             )
         } else {
+            residuals.push(
+                cadmpeg_ir::codec::write::ExportLossCode::RecordResidualUnavailable.note(format!(
+                    "central ZIP record {name}: attributes are unspecified"
+                )),
+            );
             let local_token = unique(&local_tokens).unwrap_or_else(|| {
                 residuals.push(
                     cadmpeg_ir::codec::write::ExportLossCode::RecordResidualUnavailable.note(
@@ -427,7 +434,10 @@ mod tests {
             ];
             let (regenerated, residuals) =
                 build(&sections, &[10, 11, 12], Some(&original)).unwrap();
-            assert!(residuals.is_empty());
+            assert!(residuals
+                .iter()
+                .any(|loss| loss.message.contains("central ZIP record C")
+                    && loss.message.contains("attributes")));
             assert_eq!(regenerated.omitted_envelope_bytes, 100);
             let output = regenerated.bytes;
             let written = crate::test_support::container::scan(&output);
@@ -531,6 +541,24 @@ mod tests {
             == "record.residual-unavailable"
             && loss.message.contains("central ZIP record C")));
     }
+
+    #[test]
+    fn duplicate_retained_member_names_do_not_refuse_new_content() {
+        let mut source = outer_header();
+        source.extend(make_block(10, "A", b"first"));
+        source.extend(make_block(10, "A", b"second"));
+        let source = native_envelope_fixture(&source);
+        let original = crate::test_support::container::scan(&source);
+        let sections = vec![("A".into(), b"updated".to_vec())];
+        let (written, residuals) = build(&sections, &[10], Some(&original)).unwrap();
+        let output = crate::test_support::container::scan(&written.bytes);
+        assert_eq!(output.blocks.len(), 1);
+        assert_eq!(output.blocks[0].payload, b"updated");
+        assert!(residuals.iter().any(|loss| loss.code.local_code()
+            == "record.residual-unavailable"
+            && loss.message.contains("central ZIP record A")
+            && loss.message.contains("attributes")));
+    }
     #[test]
     fn omitted_padding_and_unretained_cache_bytes_have_one_counted_loss() {
         for fill in [0, 0xff] {
@@ -629,7 +657,15 @@ mod tests {
             ];
             for (sections, time_dates) in cases {
                 let (omitted, residuals) = build(&sections, &time_dates, Some(&original)).unwrap();
-                assert!(residuals.is_empty());
+                let generated = time_dates
+                    .iter()
+                    .filter(|time| ![0x0021_0049, 0x0021_004a].contains(time))
+                    .count();
+                assert_eq!(residuals.len(), generated);
+                assert!(residuals.iter().all(|loss| loss.code.local_code()
+                    == "record.residual-unavailable"
+                    && loss.message.contains("central ZIP record A")
+                    && loss.message.contains("attributes")));
                 assert_eq!(omitted.omitted_envelope_bytes, 100);
                 assert!(auxiliary_loss(omitted.omitted_envelope_bytes).is_some());
                 let parsed = crate::test_support::container::scan(&omitted.bytes);
