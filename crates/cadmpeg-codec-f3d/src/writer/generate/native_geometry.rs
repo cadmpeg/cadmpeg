@@ -4656,7 +4656,7 @@ fn native_increasing_interval_curve(
 /// reduces it to the solved carrier with its loss instead. The bound is
 /// checked before any allocation, and the allocations below are fallible, so
 /// no allocation scales with the unbounded interval.
-const MAX_GENERATED_CONIC_SPANS: usize = 2_147_483_645;
+const MAX_GENERATED_CONIC_SPANS: u32 = (u32::MAX - 4) / 2;
 
 fn native_conic_interval_curve(
     center: Point3,
@@ -4690,7 +4690,9 @@ fn native_conic_interval_curve(
         )
     };
     let spans = truncate_f64_to_usize(span_count)
-        .filter(|spans| *spans <= MAX_GENERATED_CONIC_SPANS)
+        .filter(|spans| {
+            u32::try_from(*spans).is_ok_and(|spans| spans <= MAX_GENERATED_CONIC_SPANS)
+        })
         .ok_or_else(too_large)?;
     let step = delta / f64_from_index(spans).ok_or_else(too_large)?;
 
@@ -4767,6 +4769,20 @@ mod native_interval_curve_tests {
             bound *= 2.0;
         }
         bound
+    }
+
+    #[test]
+    fn conic_with_knot_count_above_u32_reduces_without_allocating() {
+        let spans = f64::from(u32::MAX / 2);
+        let result = super::native_conic_interval_curve(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            1.0,
+            1.0,
+            [0.0, spans * std::f64::consts::FRAC_PI_2],
+        );
+        assert!(matches!(result, Err(CodecError::UnsupportedContent(_))));
     }
 
     #[test]

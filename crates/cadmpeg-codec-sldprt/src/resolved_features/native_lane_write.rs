@@ -363,7 +363,10 @@ pub(crate) fn regenerate(
         }
         let existing = native.feature_input_lanes.iter().position(|candidate| {
             candidate.configuration == lane.configuration
-                && candidate.id.starts_with("sldprt:generated:feature-input#")
+                && (candidate.id.starts_with("sldprt:generated:feature-input#")
+                    || candidate
+                        .id
+                        .starts_with("sldprt:generated:configuration-input#"))
         });
         let generated = if let Some(index) = existing {
             let target = &native.feature_input_lanes[index];

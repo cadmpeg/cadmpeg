@@ -9,6 +9,7 @@ use cadmpeg_core::CodecError;
 
 use crate::bytes::lp_ascii_filtered_view;
 use crate::container::ContainerScan;
+#[cfg(test)]
 use crate::design::decode::sketch::next_indexed_record_offset;
 
 use crate::records::feature::assembly_features::{
@@ -78,7 +79,15 @@ pub(crate) fn decode_component_occurrences(
                 let magic =
                     crate::metastream::serializer_magic(scan.entry_bytes(&meta_name)?, &meta_name)?;
                 (
-                    crate::metastream::primary_record_frames(&meta, bytes.len())?,
+                    super::meta::design_primary_frames(bytes, &meta)?
+                        .into_iter()
+                        .map(|frame| crate::metastream::PrimaryRecordFrame {
+                            entity_id: frame.entity_id,
+                            start: frame.start,
+                            member_end: frame.member_end,
+                            end: frame.end,
+                        })
+                        .collect::<Vec<_>>(),
                     occurrence_frames(bytes, &meta)?,
                     crate::xref::local_component_path_poses(bytes, &meta, Some(magic))?,
                     crate::xref::component_path_carriers(bytes, &meta, Some(magic))?,
@@ -104,20 +113,12 @@ pub(crate) fn decode_component_occurrences(
                 )
             })
             .collect();
-        let frame_ends = frames
-            .iter()
-            .map(|frame| (frame.start, frame.member_end))
-            .collect::<std::collections::BTreeMap<_, _>>();
         let mut stream_occurrences = Vec::new();
-        let mut at = 0;
-        while let Some(start) = next_indexed_record_offset(bytes, at) {
-            let end = frame_ends
-                .get(&start)
-                .copied()
-                .or_else(|| next_indexed_record_offset(bytes, start.checked_add(1)?));
-            if let Some(occurrence) = end
-                .and_then(|end| exact_component_occurrence_frame(bytes, start, end, &scope))
-                .or_else(|| attributed_component_occurrence(bytes, start, &scope))
+        for frame in &frames {
+            let start = frame.start;
+            let end = frame.member_end;
+            if let Some(occurrence) = exact_component_occurrence_frame(bytes, start, end, &scope)
+                .or_else(|| attributed_component_occurrence_frame(bytes, start, end, &scope))
             {
                 if let Some(loss) = unproven_identity_loss(&occurrence) {
                     losses.push(loss);
@@ -125,10 +126,6 @@ pub(crate) fn decode_component_occurrences(
                     stream_occurrences.push(occurrence);
                 }
             }
-            let Some(next_at) = start.checked_add(1) else {
-                break;
-            };
-            at = next_at;
         }
         superseded += admit_occurrence_envelopes(&mut stream_occurrences, &primary, &typed_primary);
         ambiguous_current_poses += bind_current_poses(&mut stream_occurrences, &poses);
@@ -328,10 +325,21 @@ pub(crate) fn superseded_occurrences_loss(
 
 /// Most attributes an attributed occurrence frame can carry.
 const MAX_OCCURRENCE_ATTRIBUTES: u32 = 16;
-/// Read stored local occurrence attributes and its occurrence key.
+#[cfg(test)]
 fn attributed_component_occurrence(
     bytes: &[u8],
     start: usize,
+    stream: &str,
+) -> Option<DesignComponentOccurrence> {
+    let end = next_indexed_record_offset(bytes, start.checked_add(1)?)?;
+    attributed_component_occurrence_frame(bytes, start, end, stream)
+}
+
+/// Read stored local occurrence attributes and its occurrence key.
+fn attributed_component_occurrence_frame(
+    bytes: &[u8],
+    start: usize,
+    end: usize,
     stream: &str,
 ) -> Option<DesignComponentOccurrence> {
     use crate::records::feature::assembly_features::{
@@ -341,7 +349,6 @@ fn attributed_component_occurrence(
     };
     let (class_tag, after_tag) = lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)?;
     let record_index = View::u32_le_at(bytes, after_tag)?;
-    let end = next_indexed_record_offset(bytes, start.checked_add(1)?)?;
     let frame = bytes.get(start..end)?;
     if frame.get(attributed_prefix::EMPTY_INSTANCE_NAME..attributed_prefix::PATH_MARKER)? != [0; 8]
         || frame.get(attributed_prefix::PATH_MARKER) != Some(&attributed_prefix::PATH_MARKER_VALUE)

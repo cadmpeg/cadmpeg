@@ -12,7 +12,6 @@ use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
 use cadmpeg_ir::report::Severity;
 use zip::CompressionMethod;
 
-use crate::loss::F3dLossCode;
 use crate::test_support::manifest_test::write_synthetic_manifests;
 use crate::test_support::native_test::{f3d_native, f3d_native_mut, update_f3d_native};
 use crate::test_support::smbh_blocks_test::{
@@ -1403,11 +1402,16 @@ fn malformed_paramesh_reports_its_entry_and_parser_failure() {
         .decode(&mut Cursor::new(archive), &DecodeOptions::default())
         .expect("independent malformed mesh entry must not abort document decode");
     assert!(decoded.report().losses.iter().any(|loss| {
-        loss.code == F3dLossCode::MeshContainerUndecoded.kind()
+        loss.code
+            == cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable
+                .note("")
+                .code
             && loss.severity == Severity::Error
             && loss.message.contains(entry)
             && loss.message.contains("paramesh container has no magic")
+            && loss.provenance.is_some()
     }));
+    assert_eq!(decoded.ir().native_unknowns("f3d").unwrap().len(), 1);
 }
 
 #[test]
