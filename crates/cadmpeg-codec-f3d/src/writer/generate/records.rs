@@ -243,20 +243,13 @@ pub(super) fn encode_design_bulkstream(
     }
     encode_browser_nodes(&mut out, &mut primary_records, registry)?;
     for assignment in &native.design_material_assignments {
-        if !encode_material_assignment(
+        if encode_material_assignment(
             &mut out,
             &mut primary_records,
             registry,
             target,
             assignment,
         )? {
-            losses.push(
-                crate::loss::F3dLossCode::WriterNativeRecordsOmitted.note(format!(
-                    "material assignment {} has no complete registered body presentation",
-                    assignment.id
-                )),
-            );
-        } else {
             if let Some(binding) = target.model.appearance_bindings.iter().find(|binding| {
                 binding.source_entity_id.as_deref() == Some(assignment.entity_id.as_str())
             }) {
@@ -265,6 +258,13 @@ pub(super) fn encode_design_bulkstream(
             losses.push(
                 cadmpeg_ir::codec::write::ExportLossCode::RecordResidualUnavailable.note(format!(
                     "material assignment {}: the physical asset identity is generated",
+                    assignment.id
+                )),
+            );
+        } else {
+            losses.push(
+                crate::loss::F3dLossCode::WriterNativeRecordsOmitted.note(format!(
+                    "material assignment {} has no complete registered body presentation",
                     assignment.id
                 )),
             );
@@ -924,6 +924,7 @@ pub(super) fn encode_sketch_nurbs(
     subtype_record_index: u32,
     geometry: &crate::records::sketch_geometry::SketchNurbsGeometry,
 ) -> Result<(), CodecError> {
+    const NURBS_PREFIX_PADDING: usize = 88 - (8 + 4 + 3 + 4);
     let knots = geometry.knots();
     let poles = geometry.poles();
     record.extend_from_slice(
@@ -934,7 +935,6 @@ pub(super) fn encode_sketch_nurbs(
     record.extend_from_slice(&3u32.to_le_bytes());
     record.extend_from_slice(subtype_class_tag.as_bytes());
     record.extend_from_slice(&subtype_record_index.to_le_bytes());
-    const NURBS_PREFIX_PADDING: usize = 88 - (8 + 4 + 3 + 4);
     record.extend_from_slice(&[0; NURBS_PREFIX_PADDING]);
     record.push(1);
     record.push(0);
