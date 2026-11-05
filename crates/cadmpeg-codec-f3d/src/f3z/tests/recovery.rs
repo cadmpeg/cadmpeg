@@ -6,7 +6,7 @@ use crate::test_support::assembly_test::{
 };
 use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
 use crate::test_support::zip_test::f3d_with_smbh;
-use crate::{F3dCodec, F3dLossCode};
+use crate::F3dCodec;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, InspectOptions};
 use cadmpeg_ir::codec::CodecBackend;
 use cadmpeg_ir::{Codec, DecodeOptions};
@@ -48,6 +48,11 @@ fn unreadable_unrelated_members_preserve_geometry_source_image_and_named_loss() 
             .unwrap(),
         );
         assert_eq!(decoded.ir().model, baseline.ir().model);
+        assert!(decoded
+            .source_fidelity()
+            .unrepresented()
+            .contains(&cadmpeg_ir::document::ArenaClass::Model));
+        assert_eq!(decoded.ir().native_unknowns("f3d").unwrap().len(), 1);
         assert!(cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new())
             .unwrap()
             .is_ok());
@@ -105,11 +110,34 @@ fn unreadable_unreferenced_document_does_not_hide_a_readable_model_root() {
     )
     .unwrap();
     assert_eq!(decoded.ir().model, baseline.ir().model);
-    assert!(decoded
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code == F3dLossCode::XrefMemberUndecoded.note("").code));
+    assert!(decoded.report().losses.iter().any(|loss| loss.code
+        == cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable
+            .note("")
+            .code));
+}
+
+#[test]
+fn malformed_nested_document_is_retained_as_its_own_part() {
+    let root = f3d_with_smbh(&synthetic_geometry_smbh());
+    let archive = f3z_archive(
+        "root.f3d",
+        &[("root.f3d", &root), ("broken.f3d", b"invalid document")],
+    );
+    let decoded = crate::test_support::archive_session::decode(
+        &mut Cursor::new(archive),
+        &DecodeOptions::default(),
+    )
+    .unwrap();
+    assert!(!decoded.ir().model.faces.is_empty());
+    assert_eq!(decoded.ir().native_unknowns("f3d").unwrap().len(), 1);
+    assert!(decoded.report().losses.iter().any(|loss| {
+        loss.code
+            == cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable
+                .note("")
+                .code
+            && loss.message.contains("zip.entry")
+            && loss.provenance.is_some()
+    }));
 }
 
 #[test]
@@ -171,11 +199,6 @@ fn unreadable_referenced_document_withholds_the_occurrence_with_named_losses() {
     .unwrap();
     assert!(decoded.ir().model.faces.is_empty());
     assert!(decoded.ir().model.surfaces.is_empty());
-    assert!(decoded
-        .report()
-        .losses
-        .iter()
-        .any(|loss| loss.code == F3dLossCode::XrefMemberUndecoded.note("").code));
     assert!(decoded.report().losses.iter().any(|loss| {
         loss.code
             == cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable
@@ -187,7 +210,7 @@ fn unreadable_referenced_document_withholds_the_occurrence_with_named_losses() {
 }
 
 #[test]
-fn failed_member_placed_by_two_parents_reports_each_reference() {
+fn failed_member_placed_by_two_parents_is_given_up_once() {
     // An invalid text BREP stream passes the archive scan and fails inside
     // member decode.
     let component = f3d_with_text_brep_stream(
@@ -213,20 +236,22 @@ fn failed_member_placed_by_two_parents_reports_each_reference() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(&archive), &DecodeOptions::default())
         .unwrap();
-    let failures = decoded
-        .report()
-        .losses
-        .iter()
-        .filter(|loss| {
-            loss.code == F3dLossCode::XrefMemberUndecoded.note("").code
-                && loss
-                    .message
-                    .contains("member component.f3d failed to decode")
-        })
-        .map(|loss| loss.message.split(": member ").nth(1).unwrap_or_default())
-        .collect::<Vec<_>>();
-    assert_eq!(failures.len(), 2, "{failures:?}");
-    assert_eq!(failures[0], failures[1]);
+    assert_eq!(decoded.ir().native_unknowns("f3d").unwrap().len(), 1);
+    assert_eq!(
+        decoded
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| {
+                loss.code
+                    == cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable
+                        .note("")
+                        .code
+                    && loss.message.contains("zip.entry")
+            })
+            .count(),
+        1
+    );
     assert!(decoded
         .source_fidelity()
         .retained_record("f3d:file:source-image#root")

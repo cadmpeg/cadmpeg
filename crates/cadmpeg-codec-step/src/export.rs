@@ -17,8 +17,8 @@ use cadmpeg_ir::geometry::{
     ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
 };
 use cadmpeg_ir::ids::{
-    AppearanceBindingId, AppearanceId, BodyId, EdgeId, LoopId, OccurrenceId, ProductDefinitionId,
-    ShellId, VertexId,
+    AppearanceBindingId, AppearanceId, AttributeId, BodyId, EdgeId, LoopId, OccurrenceId,
+    ProductDefinitionId, ShellId, VertexId,
 };
 use cadmpeg_ir::pmi::{
     DatumTargetForm, DimensionKind, DimensionTolerance, GeometricToleranceKind, PmiDefinition,
@@ -477,7 +477,7 @@ pub(crate) struct Builder<'a> {
     /// Owning-record names for geometry carriers, from neutral `name`
     /// attributes. A named carrier is emitted with its name; unnamed
     /// carriers keep the empty name the reader treats as absent.
-    carrier_names: HashMap<String, String>,
+    carrier_names: HashMap<String, CarrierName>,
     /// Neutral asset and attribute records the writer carried into the file.
     /// `note_unrepresented` charges only the remainder.
     written_asset_ids: BTreeSet<String>,
@@ -630,12 +630,17 @@ impl FileNameFields {
     }
 }
 
+struct CarrierName {
+    value: String,
+    attribute: AttributeId,
+}
+
 /// Owning-record names for geometry carriers, from neutral `name` attributes.
 ///
 /// Only the decoder's geometry-name attributes qualify: one string value on
 /// a point, curve or surface record. Any other attribute keeps its
 /// `attribute.source-record-not-written` loss below.
-fn carrier_names(ir: &CadIr) -> HashMap<String, String> {
+fn carrier_names(ir: &CadIr) -> HashMap<String, CarrierName> {
     let mut names = HashMap::new();
     for attribute in &ir.model.attributes {
         if attribute.name != "name" {
@@ -657,7 +662,10 @@ fn carrier_names(ir: &CadIr) -> HashMap<String, String> {
         };
         names
             .entry(target.to_owned())
-            .or_insert_with(|| name.clone());
+            .or_insert_with(|| CarrierName {
+                value: name.clone(),
+                attribute: attribute.id.clone(),
+            });
     }
     names
 }
@@ -960,8 +968,8 @@ impl<'a> Builder<'a> {
     /// The owning record's name for a geometry carrier, or empty when the
     /// document holds no neutral name for it. Takes the name map instead of
     /// the whole writer so callers can borrow the emitter at the same time.
-    fn carrier_name<'m>(names: &'m HashMap<String, String>, id: &str) -> &'m str {
-        names.get(id).map(String::as_str).unwrap_or("")
+    fn carrier_name<'m>(names: &'m HashMap<String, CarrierName>, id: &str) -> &'m str {
+        names.get(id).map_or("", |name| name.value.as_str())
     }
 
     /// Whether the writer carried `attribute` into the file.
@@ -987,18 +995,23 @@ impl<'a> Builder<'a> {
         if name.is_empty() {
             return false;
         }
-        match &attribute.target {
+        let (target, emitted) = match &attribute.target {
             cadmpeg_ir::attributes::AttributeTarget::Point(id) => {
-                self.point_refs.contains_key(id.as_str())
+                (id.as_str(), self.point_refs.contains_key(id.as_str()))
             }
             cadmpeg_ir::attributes::AttributeTarget::Curve(id) => {
-                self.curve_refs.contains_key(id.as_str())
+                (id.as_str(), self.curve_refs.contains_key(id.as_str()))
             }
             cadmpeg_ir::attributes::AttributeTarget::Surface(id) => {
-                self.surface_refs.contains_key(id.as_str())
+                (id.as_str(), self.surface_refs.contains_key(id.as_str()))
             }
-            _ => false,
-        }
+            _ => return false,
+        };
+        emitted
+            && self
+                .carrier_names
+                .get(target)
+                .is_some_and(|name| name.attribute == attribute.id)
     }
 
     fn topology_relation_loss(&mut self, identity: String, code: StepLossCode, message: String) {

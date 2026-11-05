@@ -573,7 +573,16 @@ fn serialize_geometry_inner(
         .filter(|curve| curves_needed.contains(curve.id.as_str()))
         .filter(|curve| !covered_by_replay(covered, &curve.source_object))
     {
-        if let Some((row, location)) = geometry::located_curve(ir, curve) {
+        let located = geometry::located_curve(ir, curve).or_else(|| {
+            ir.model
+                .edges
+                .iter()
+                .any(|edge| edges.contains(edge.id.as_str()) && edge.curve() == Some(&curve.id))
+                .then(|| geometry::single_composite_line(ir, curve))
+                .flatten()
+                .and_then(|line| geometry::located_curve(ir, line))
+        });
+        if let Some((row, location)) = located {
             if !location_supported(location)
                 || (free
                     && location != cadmpeg_ir::transform::Transform::identity()
@@ -582,6 +591,17 @@ fn serialize_geometry_inner(
                     }))
             {
                 continue;
+            }
+            if matches!(
+                curve.geometry.solved(),
+                Some(cadmpeg_ir::geometry::SolvedCurveGeometry::Composite { .. })
+            ) {
+                losses.push(
+                    crate::loss::FreecadLossCode::ExportGeometryNotTransferred.note(format!(
+                        "composite curve {} is written as its single segment",
+                        curve.id
+                    )),
+                );
             }
             let key = geometry::curve_layout_key(ir, curve);
             let index = *curve_slots.entry(key).or_insert_with(|| {
@@ -810,14 +830,24 @@ fn serialize_geometry_inner(
                     let Some((curve, location)) = curve_ids.get(curve.as_str()) else {
                         continue;
                     };
-                    let Some(range) = edge.param_range() else {
-                        continue;
-                    };
-                    let geometry = edge
+                    let curve_record = edge
                         .curve()
-                        .and_then(|id| ir.model.curves.iter().find(|curve| curve.id == *id))
-                        .and_then(|curve| curve.geometry.solved());
-                    let Some(range) = occt_curve_range(geometry, range.get()) else {
+                        .and_then(|id| ir.model.curves.iter().find(|curve| curve.id == *id));
+                    let range = edge.param_range().map(cadmpeg_ir::units::FiniteVector::get);
+                    let range = if let Some(curve) = curve_record.filter(|curve| {
+                        matches!(
+                            curve.geometry.solved(),
+                            Some(cadmpeg_ir::geometry::SolvedCurveGeometry::Composite { .. })
+                        )
+                    }) {
+                        composite_line_range(ir, edge, curve)
+                            .filter(|derived| range.is_none_or(|stored| stored == *derived))
+                    } else {
+                        range
+                    };
+                    let Some(range) =
+                        range.and_then(|range| occt_curve_range(ir, curve_record, range))
+                    else {
                         continue;
                     };
                     format!("1 {curve} {location} {} {}", range[0], range[1])
@@ -1626,6 +1656,62 @@ fn trimmed_supports<'a>(
 /// Map a neutral curve parameter range to the OCCT parameterization that
 /// `topology_transfer::normalize_occt_curve_range` reads.
 fn occt_curve_range(
+    ir: &CadIr,
+    curve: Option<&cadmpeg_ir::geometry::Curve>,
+    range: [f64; 2],
+) -> Option<[f64; 2]> {
+    if let Some(curve) = curve {
+        if geometry::curve_record(ir, curve).is_some_and(|row| row.starts_with("8 ")) {
+            let construction = curve.geometry.procedural_construction()?;
+            let definition = ir
+                .model
+                .procedural_curves
+                .iter()
+                .find(|record| record.id == *construction)?
+                .definition();
+            if let cadmpeg_ir::geometry::ProceduralCurveDefinition::Subset(subset) = definition {
+                let first = subset.parameter_range().endpoints()[0];
+                return Some(range.map(|value| value + first))
+                    .filter(|range| range.iter().all(|value| value.is_finite()));
+            }
+        }
+    }
+    occt_solved_curve_range(curve.and_then(|curve| curve.geometry.solved()), range)
+}
+
+fn composite_line_range(
+    ir: &CadIr,
+    edge: &cadmpeg_ir::topology::Edge,
+    curve: &cadmpeg_ir::geometry::Curve,
+) -> Option<[f64; 2]> {
+    use cadmpeg_ir::geometry::SolvedCurveGeometry;
+    let curve = geometry::single_composite_line(ir, curve)?;
+    let SolvedCurveGeometry::Line(line) = curve.geometry.solved()? else {
+        return None;
+    };
+    let origin = line.origin().get();
+    let direction = *line.direction().as_raw();
+    let tolerance = edge
+        .tolerance
+        .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get);
+    let parameter = |id: &cadmpeg_ir::ids::VertexId| {
+        let vertex = ir.model.vertices.iter().find(|vertex| vertex.id == *id)?;
+        let point = ir
+            .model
+            .points
+            .iter()
+            .find(|point| point.id == vertex.point)?
+            .position()
+            .get();
+        let value = point.vector_from(origin).dot(direction);
+        (value.is_finite() && point.distance(origin.translated(direction, value)) <= tolerance)
+            .then_some(value)
+    };
+    let range = [parameter(&edge.start)?, parameter(&edge.end)?];
+    (range[0] <= range[1]).then_some(range)
+}
+
+fn occt_solved_curve_range(
     curve: Option<&cadmpeg_ir::geometry::SolvedCurveGeometry>,
     range: [f64; 2],
 ) -> Option<[f64; 2]> {
@@ -1641,7 +1727,7 @@ fn occt_curve_range(
             ])
         }
         Some(SolvedCurveGeometry::Transformed(placed)) => {
-            occt_curve_range(Some(placed.basis()), range)
+            occt_solved_curve_range(Some(placed.basis()), range)
         }
         _ => Some(range),
     }

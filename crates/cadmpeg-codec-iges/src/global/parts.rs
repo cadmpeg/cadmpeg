@@ -67,7 +67,7 @@ pub(crate) fn parse_cards(
     let mut inputs = Vec::new();
     for card in cards {
         let payload = source
-            .child(card.start, card.start + 72)
+            .child(card.start, (card.start + 72).min(card.end))
             .ok_or_else(|| super::malformed("card payload exceeds its source"))?;
         append_global_item(ctx, &mut inputs, payload)?;
     }
@@ -111,6 +111,28 @@ pub(crate) fn parse_cards(
         },
     )?;
     Ok(parsed.unwrap_or_else(super::given_up))
+}
+
+pub(crate) fn unfinished(
+    ctx: &DecodeContext<'_>,
+    source: View<'_>,
+    cards: &[GlobalCard],
+) -> Result<bool, CodecError> {
+    let mut inputs = Vec::new();
+    for card in cards {
+        let payload = source
+            .child(card.start, (card.start + 72).min(card.end))
+            .ok_or_else(|| super::malformed("card payload exceeds its source"))?;
+        append_global_item(ctx, &mut inputs, payload)?;
+    }
+    let stream = ctx.concat_views(&inputs)?;
+    match parse_raw_with(stream.window(), |_, frame| {
+        Ok(frame.window_value(stream.window()))
+    }) {
+        Ok(raw) => Ok(raw.unframed.is_some()),
+        Err(CodecError::Malformed(_)) => Ok(true),
+        Err(error) => Err(error),
+    }
 }
 
 fn read_value(

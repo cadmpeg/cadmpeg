@@ -774,20 +774,72 @@ fn native_attribute_base(records: &mut Vec<u8>, next: i64, previous: i64, owner:
     native_ref(records, owner);
 }
 
+fn compact_custom_shape(attribute: &cadmpeg_ir::attributes::SourceAttribute) -> bool {
+    use cadmpeg_ir::attributes::AttributeValue;
+    attribute
+        .name
+        .split('-')
+        .all(|part| !part.is_empty() && u8::try_from(part.len()).is_ok())
+        && matches!(
+            attribute.values.first(),
+            Some(Some(AttributeValue::Reference(_)))
+        )
+        && attribute.values[1..].iter().all(|value| {
+            matches!(
+                value,
+                Some(
+                    AttributeValue::String(_)
+                        | AttributeValue::Integer(_)
+                        | AttributeValue::Float(_)
+                )
+            )
+        })
+}
+
+fn compact_timestamp_payload<'a>(
+    target: &'a CadIr,
+    entity: &AttributeTarget,
+    index: &AttributeIndex<'_>,
+) -> Option<&'a cadmpeg_ir::attributes::SourceAttribute> {
+    use cadmpeg_ir::attributes::AttributeValue;
+    let timestamp = index.timestamp(entity)?;
+    let candidates = target.model.attributes.iter().filter(|attribute| {
+        attribute.target == *entity
+            && compact_custom_shape(attribute)
+            && matches!(attribute.values.first(), Some(Some(AttributeValue::Reference(reference))) if reference.ends_with(":entity#-1"))
+    }).collect::<Vec<_>>();
+    let indexed = candidates
+        .iter()
+        .copied()
+        .filter(|attribute| {
+            cadmpeg_asm::brep::attributes::attribute_key(attribute)
+                == timestamp.record_index.to_string()
+        })
+        .collect::<Vec<_>>();
+    match indexed.as_slice() {
+        [attribute] => Some(*attribute),
+        [] => {
+            let mut family = candidates.into_iter().filter(|attribute| {
+                matches!(attribute.values.get(1), Some(Some(AttributeValue::String(value))) if value == "Timestamp_attrib_def")
+            });
+            let first = family.next()?;
+            family.next().is_none().then_some(first)
+        }
+        _ => None,
+    }
+}
+
 fn compact_custom_payload<'a>(
     target: &'a CadIr,
     entity: &AttributeTarget,
     kind: &str,
-    has_next: bool,
+    index: &AttributeIndex<'_>,
 ) -> Option<&'a cadmpeg_ir::attributes::SourceAttribute> {
     use cadmpeg_ir::attributes::AttributeValue;
     let mut matches = target.model.attributes.iter().filter(|attribute| {
         attribute.target == *entity
-            && attribute.name == "ATTRIB_CUSTOM-attrib"
-            && matches!(attribute.values.first(), Some(Some(AttributeValue::Reference(_))))
+            && compact_custom_shape(attribute)
             && matches!(attribute.values.get(1), Some(Some(AttributeValue::String(value))) if value == kind)
-            && attribute.values[1..].iter().all(|value| matches!(value,
-                Some(AttributeValue::String(_) | AttributeValue::Integer(_) | AttributeValue::Float(_))))
     });
     let attribute = matches.next()?;
     if matches.next().is_some() {
@@ -796,8 +848,8 @@ fn compact_custom_payload<'a>(
     let Some(Some(AttributeValue::Reference(reference))) = attribute.values.first() else {
         return None;
     };
-    if has_next {
-        let next = compact_custom_payload(target, entity, "Timestamp_attrib_def", false)?;
+    if index.indexed_timestamp(entity).is_some() {
+        let next = compact_timestamp_payload(target, entity, index)?;
         let expected = next.id.as_str().replace(":attribute#", ":entity#");
         if reference != &expected {
             return None;
@@ -820,6 +872,37 @@ pub(in crate::writer) fn represented_attributes(
         .filter_map(|attribute| {
             let schema = match &attribute.target {
                 AttributeTarget::Body(id)
+                    if target
+                        .model
+                        .bodies
+                        .iter()
+                        .enumerate()
+                        .any(|(ordinal, body)| {
+                            body.id == *id
+                                && body.name.is_none()
+                                && index.body_links.get(id.as_str()).is_none_or(Vec::is_empty)
+                                && index.indexed_timestamp(&attribute.target).is_none()
+                                && body.color.is_some_and(|color| {
+                                    i64::try_from(ordinal)
+                                        .ok()
+                                        .and_then(|ordinal| ordinal.checked_add(1))
+                                        .is_some_and(|owner| {
+                                            retained_color_values(
+                                                target,
+                                                &attribute.target,
+                                                color,
+                                                -1,
+                                                owner,
+                                            )
+                                            .is_some()
+                                        })
+                                })
+                        })
+                        && attribute.name == "rgb_color-st-attrib" =>
+                {
+                    true
+                }
+                AttributeTarget::Body(id)
                     if index
                         .body_links
                         .get(id.as_str())
@@ -828,7 +911,7 @@ pub(in crate::writer) fn represented_attributes(
                             target,
                             &attribute.target,
                             "generic_tag_attrib_def",
-                            index.indexed_timestamp(&attribute.target).is_some(),
+                            &index,
                         )
                         .is_some_and(|record| record.id == attribute.id) =>
                 {
@@ -836,13 +919,8 @@ pub(in crate::writer) fn represented_attributes(
                 }
                 entity
                     if index.indexed_timestamp(entity).is_some()
-                        && compact_custom_payload(
-                            target,
-                            entity,
-                            "Timestamp_attrib_def",
-                            false,
-                        )
-                        .is_some_and(|record| record.id == attribute.id) =>
+                        && compact_timestamp_payload(target, entity, &index)
+                            .is_some_and(|record| record.id == attribute.id) =>
                 {
                     true
                 }
@@ -856,13 +934,19 @@ pub(in crate::writer) fn represented_attributes(
 fn native_compact_custom(
     records: &mut Vec<u8>,
     next: i64,
-    payload: &[Option<cadmpeg_ir::attributes::AttributeValue>],
+    attribute: &cadmpeg_ir::attributes::SourceAttribute,
 ) -> Result<(), CodecError> {
     use cadmpeg_ir::attributes::AttributeValue;
-    native_subident(records, "ATTRIB_CUSTOM")?;
-    native_ident(records, "attrib")?;
+    let mut parts = attribute.name.split('-').peekable();
+    while let Some(part) = parts.next() {
+        if parts.peek().is_some() {
+            native_subident(records, part)?;
+        } else {
+            native_ident(records, part)?;
+        }
+    }
     native_ref(records, next);
-    for value in &payload[1..] {
+    for value in &attribute.values[1..] {
         match value {
             Some(AttributeValue::String(value)) => native_string(records, value)?,
             Some(AttributeValue::Integer(value)) => native_i64(records, *value),
@@ -1062,6 +1146,13 @@ pub(super) fn encode_source_less_attributes(
             color,
             next,
             native_record_index(owners.body, body_ordinal)?,
+            retained_color_values(
+                target,
+                &owner_target,
+                color,
+                next,
+                native_record_index(owners.body, body_ordinal)?,
+            ),
         )?;
         records.push(0x11);
     }
@@ -1086,6 +1177,13 @@ pub(super) fn encode_source_less_attributes(
             color,
             next,
             native_record_index(face_start, face_ordinal)?,
+            retained_color_values(
+                target,
+                &owner_target,
+                color,
+                next,
+                native_record_index(face_start, face_ordinal)?,
+            ),
         )?;
         records.push(0x11);
     }
@@ -1183,9 +1281,9 @@ pub(super) fn encode_source_less_attributes(
             target,
             &AttributeTarget::Body(body.id.clone()),
             "generic_tag_attrib_def",
-            next != -1,
+            index,
         ) {
-            native_compact_custom(records, next, &payload.values)?;
+            native_compact_custom(records, next, payload)?;
         } else {
             native_persistent_design_attribute(
                 records,
@@ -1309,10 +1407,8 @@ pub(super) fn encode_source_less_attributes(
         };
         let previous =
             attribute_before_timestamp(target, index, &entity, owner_ordinal, attribute_start)?;
-        if let Some(payload) =
-            compact_custom_payload(target, &entity, "Timestamp_attrib_def", false)
-        {
-            native_compact_custom(records, -1, &payload.values)?;
+        if let Some(payload) = compact_timestamp_payload(target, &entity, index) {
+            native_compact_custom(records, -1, payload)?;
         } else {
             native_subident(records, "ATTRIB_CUSTOM")?;
             native_ident(records, "attrib")?;
@@ -1350,11 +1446,52 @@ fn native_name_attribute(
     native_string(records, name)
 }
 
+fn retained_color_values(
+    target: &CadIr,
+    entity: &AttributeTarget,
+    color: Color,
+    next: i64,
+    owner: i64,
+) -> Option<[f64; 4]> {
+    use cadmpeg_ir::attributes::AttributeValue;
+    let mut records =
+        target.model.attributes.iter().filter(|attribute| {
+            attribute.target == *entity && attribute.name == "rgb_color-st-attrib"
+        });
+    let attribute = records.next()?;
+    if records.next().is_some() {
+        return None;
+    }
+    let [Some(AttributeValue::Reference(reserved)), Some(AttributeValue::Integer(-1)), Some(AttributeValue::Reference(next_ref)), Some(AttributeValue::Reference(previous)), Some(AttributeValue::Reference(owner_ref)), Some(AttributeValue::Float(r)), Some(AttributeValue::Float(g)), Some(AttributeValue::Float(b)), Some(AttributeValue::Float(a))] =
+        attribute.values.as_slice()
+    else {
+        return None;
+    };
+    if !reserved.ends_with(":entity#-1")
+        || !previous.ends_with(":entity#-1")
+        || !next_ref.ends_with(&format!(":entity#{next}"))
+        || !owner_ref.ends_with(&format!(":entity#{owner}"))
+    {
+        return None;
+    }
+    let values = [r.get(), g.get(), b.get(), a.get()];
+    let channels = values.map(cadmpeg_core::convert::f32_from_f64);
+    (channels
+        == [
+            Some(color.r()),
+            Some(color.g()),
+            Some(color.b()),
+            Some(color.a()),
+        ])
+    .then_some(values)
+}
+
 fn native_color_attribute(
     records: &mut Vec<u8>,
     color: Color,
     next: i64,
     owner: i64,
+    retained: Option<[f64; 4]>,
 ) -> Result<(), CodecError> {
     if color.a() != 1.0 {
         return Err(CodecError::UnsupportedContent(
@@ -1365,9 +1502,13 @@ fn native_color_attribute(
     native_subident(records, "st")?;
     native_ident(records, "attrib")?;
     native_attribute_base(records, next, -1, owner);
-    native_f64(records, f64::from(color.r()));
-    native_f64(records, f64::from(color.g()));
-    native_f64(records, f64::from(color.b()));
-    native_f64(records, 1.0);
+    for value in retained.unwrap_or([
+        f64::from(color.r()),
+        f64::from(color.g()),
+        f64::from(color.b()),
+        1.0,
+    ]) {
+        native_f64(records, value);
+    }
     Ok(())
 }
