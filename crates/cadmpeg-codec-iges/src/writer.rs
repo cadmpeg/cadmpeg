@@ -5871,7 +5871,7 @@ fn synthesized_native_dispositions(
     for arena in namespace.arenas().keys() {
         let regenerated = match arena.as_str() {
             "properties" | "product_properties" => represented_names,
-            "cards" | "transformations" | "manifold_solids" => !degraded_geometry,
+            "transformations" | "manifold_solids" => !degraded_geometry,
             "display_attributes"
             | "macro_definitions"
             | "macro_instances"

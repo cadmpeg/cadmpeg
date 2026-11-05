@@ -381,10 +381,10 @@ pub(in super::super) fn transfer_feature_dimensions(
         // The expression renders the cached value in canonical literal
         // form: a bare angle number now reads as degrees (#209 D5), so the
         // stored radian value needs its `rad` suffix to stay equal.
-        let expression = value
-            .as_ref()
-            .map(ParameterValue::literal_expression)
-            .unwrap_or_else(|| Expression::text(String::new()));
+        let expression = value.as_ref().map_or_else(
+            || Expression::text(String::new()),
+            ParameterValue::literal_expression,
+        );
         ctx.charge_entities(1, "admit Creo model parameters")?;
         source_carriers.admit_parameter(
             ir,
