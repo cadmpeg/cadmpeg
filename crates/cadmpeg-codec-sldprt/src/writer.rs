@@ -4568,26 +4568,39 @@ fn write_typed_body_hierarchy(
     }
 
     for shell in &ir.model.shells {
-        let body = ir
-            .model
-            .regions
-            .iter()
-            .find(|region| region.shells.iter().any(|candidate| candidate == &shell.id))
-            .map(|region| &region.body)
-            .ok_or_else(|| CodecError::Malformed("typed shell has no region".into()))?;
         let region = ir
             .model
             .regions
             .iter()
             .find(|region| region.shells.iter().any(|candidate| candidate == &shell.id))
             .ok_or_else(|| CodecError::Malformed("typed shell has no region".into()))?;
+        let position = region
+            .shells
+            .iter()
+            .position(|candidate| candidate == &shell.id)
+            .ok_or_else(|| {
+                CodecError::Malformed("typed region does not reference its shell".into())
+            })?;
+        let next_shell = region
+            .shells
+            .get(position + 1)
+            .map_or(1, |id| shell_attrs[id]);
         typed_prefix(
             out,
             0x0d,
             shell_attrs[&shell.id],
             next_typed_node_id(&mut node_id)?,
         );
-        for value in [1, body_attrs[body], 1, 1, 1, 1, region_attrs[&region.id], 1] {
+        for value in [
+            1,
+            body_attrs[&region.body],
+            next_shell,
+            1,
+            1,
+            1,
+            region_attrs[&region.id],
+            1,
+        ] {
             typed_ref(out, value)?;
         }
     }
