@@ -1426,7 +1426,7 @@ fn reduce_design(
         Ok(())
     };
     match prepare(&mut *ir, &mut *losses) {
-        Ok(_) => return Ok(()),
+        Ok(()) => return Ok(()),
         Err(super::write_error::WriteError::Decline(_)) => {}
         Err(error) => return Err(error),
     }
@@ -1438,7 +1438,7 @@ fn reduce_design(
         let solved = ir.model.features[index].clone();
         ir.model.features[index] = feature;
         match prepare(&mut *ir, &mut *losses) {
-            Ok(_) => {}
+            Ok(()) => {}
             Err(super::write_error::WriteError::Decline(reason)) => {
                 losses.push(SldprtLossCode::WriterDesignReduced.note(format!(
                     "feature {} retains its solved result instead of its operation: {reason}",
