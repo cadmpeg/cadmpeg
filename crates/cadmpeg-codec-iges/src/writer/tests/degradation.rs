@@ -1191,3 +1191,40 @@ fn reconstructed_default_display_record_is_declared_regenerated() {
         assert_eq!(before.field(field), after.field(field), "{field}");
     }
 }
+
+#[test]
+fn empty_note_text_is_reported_without_invalid_hollerith() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(
+                crate::test_support::test_drawing_and_trimming::bounded_associativity_forms_file(),
+            ),
+            &DecodeOptions::default(),
+        )
+        .expect("associativity fixture decodes");
+    let mut ir = decoded.ir().clone();
+    let note = ir
+        .model
+        .semantic_annotations
+        .iter_mut()
+        .find(|item| !item.text.is_empty())
+        .expect("text note");
+    note.text[0].clear();
+    let note_id = note.id.to_string();
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).expect("empty note synthesizes");
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(&note_id)));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("output re-decodes");
+    assert!(output
+        .report()
+        .losses
+        .iter()
+        .all(|loss| !loss.message.contains("hollerith-count-zero")));
+}

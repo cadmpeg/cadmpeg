@@ -675,6 +675,21 @@ fn unchanged_history_replays_full_source_xml_and_an_edited_history_regenerates()
     assert!(String::from_utf8(regenerated)
         .unwrap()
         .contains("EditedTree"));
+    let ambiguous = [
+        (
+            changed.clone(),
+            "Contents/Keywords".into(),
+            b"first".to_vec(),
+        ),
+        (
+            changed.clone(),
+            "Contents/Keywords".into(),
+            b"second".to_vec(),
+        ),
+    ];
+    let output =
+        crate::writer::retained_history_payload(&changed, "Contents/Keywords", &ambiguous).unwrap();
+    assert!(String::from_utf8(output).unwrap().contains("EditedTree"));
 }
 
 #[test]
@@ -791,7 +806,7 @@ fn changed_display_semantics_do_not_replay_an_unchanged_source_member() {
         &cadmpeg_core::decode::DecodePolicy::desktop(),
     )
     .unwrap();
-    let baseline = crate::decode::decode(&ctx, root).unwrap();
+    let mut baseline = crate::decode::decode(&ctx, root).unwrap();
     let scan_arena = cadmpeg_core::decode::DecodeArena::new();
     let (scan_ctx, scan_root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
         source,
@@ -802,12 +817,41 @@ fn changed_display_semantics_do_not_replay_an_unchanged_source_member() {
     let scan = crate::container::scan(&scan_ctx, scan_root).unwrap();
     let retained =
         crate::writer::retained_display_sections(decoded.ir(), Some(&baseline), Some(&scan))
-            .unwrap()
             .unwrap();
-    assert_eq!(retained, vec![("Contents/DisplayLists".into(), display)]);
+    assert_eq!(
+        retained,
+        vec![("Contents/DisplayLists".into(), display.clone())]
+    );
     assert!(
-        crate::writer::retained_display_sections(&changed, Some(&baseline), Some(&scan))
-            .unwrap()
+        crate::writer::retained_display_sections(&changed, Some(&baseline), Some(&scan)).is_none()
+    );
+    let mut missing = outer_header();
+    missing.extend(make_block(1, "Other", b"other"));
+    let missing_scan = crate::test_support::container::scan(&missing);
+    assert!(crate::writer::retained_display_sections(
+        decoded.ir(),
+        Some(&baseline),
+        Some(&missing_scan)
+    )
+    .is_none());
+    let mut duplicate = outer_header();
+    duplicate.extend(make_block(1, "Contents/DisplayLists", &display));
+    duplicate.extend(make_block(2, "Contents/DisplayLists", &display));
+    let duplicate_scan = crate::test_support::container::scan(&duplicate);
+    assert!(crate::writer::retained_display_sections(
+        decoded.ir(),
+        Some(&baseline),
+        Some(&duplicate_scan)
+    )
+    .is_none());
+    let mesh = baseline.ir.model.tessellations[0].id.clone();
+    baseline
+        .source_fidelity
+        .annotations
+        .provenance
+        .remove(mesh.as_str());
+    assert!(
+        crate::writer::retained_display_sections(decoded.ir(), Some(&baseline), Some(&scan))
             .is_none()
     );
 }
