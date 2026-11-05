@@ -17,6 +17,7 @@ cadmpeg_core::named_optional_field!(
 cadmpeg_core::named_optional_field!(deserialize_owner_record_index, u32, "owner_record_index");
 cadmpeg_core::named_optional_field!(deserialize_unit, String, "unit");
 cadmpeg_core::named_optional_field!(deserialize_parameter_state, String, "parameter_state");
+cadmpeg_core::named_optional_field!(deserialize_expression_flags, Vec<bool>, "expression_flags");
 cadmpeg_core::named_optional_field!(deserialize_variant, u8, "variant");
 /// Semantic family of one Design parameter record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -192,6 +193,8 @@ pub(crate) struct DesignParameter {
     source: DesignParameterSource,
     /// Typed state selected by the parameter tail reference.
     parameter_state: Option<String>,
+    /// Flags that follow the expression in a discriminated parameter.
+    expression_flags: Option<Vec<bool>>,
     /// Literal or symbolic source expression.
     expression: NonBlankString,
     /// Byte offset of the expression's UTF-16LE code units.
@@ -228,6 +231,7 @@ impl Clone for DesignParameter {
             source_ordinal: self.source_ordinal,
             source: self.source.clone(),
             parameter_state: self.parameter_state.clone(),
+            expression_flags: self.expression_flags.clone(),
             expression: self.expression.clone(),
             expression_offset: self.expression_offset,
             source_kind_offset: self.source_kind_offset,
@@ -299,6 +303,7 @@ impl TryFrom<DesignParameterDraft> for DesignParameter {
             source_ordinal: draft.source_ordinal,
             source: draft.source,
             parameter_state: None,
+            expression_flags: None,
             expression,
             expression_offset: Some(draft.expression_offset),
             source_kind_offset: Some(draft.source_kind_offset),
@@ -338,6 +343,13 @@ fn check_parameter_discriminator_offset(
 }
 
 impl DesignParameter {
+    pub(crate) fn set_expression_flags(&mut self, flags: Vec<bool>) -> Result<(), String> {
+        if !(5..=7).contains(&flags.len()) {
+            return Err("expression_flags must contain five to seven flags".into());
+        }
+        self.expression_flags = Some(flags);
+        Ok(())
+    }
     pub(crate) fn set_parameter_state(&mut self, state: String) {
         self.parameter_state = Some(state);
     }
@@ -349,6 +361,7 @@ impl DesignParameter {
             source_ordinal: content.source_ordinal,
             source: content.source.without_layout(),
             parameter_state: None,
+            expression_flags: None,
             expression: NonBlankString::new(content.expression)
                 .ok_or("expression must not be empty")?,
             unit: content
@@ -483,6 +496,8 @@ impl Serialize for DesignParameter {
             #[serde(skip_serializing_if = "Option::is_none")]
             owner_record_index: Option<u32>,
             expression: &'a str,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            expression_flags: Option<&'a [bool]>,
             source_kind: &'a str,
             #[serde(skip_serializing_if = "Option::is_none")]
             parameter_state: Option<&'a str>,
@@ -499,6 +514,7 @@ impl Serialize for DesignParameter {
             family_discriminator: self.family_discriminator().map(|value| value.value.code()),
             owner_record_index: self.owner_record_index(),
             expression: self.expression(),
+            expression_flags: self.expression_flags.as_deref(),
             source_kind: self.source_kind_str(),
             parameter_state: self.parameter_state.as_deref(),
             unit: self.unit().map(|value| value.value.as_str()),
@@ -549,6 +565,8 @@ struct DesignParameterSerde {
     )]
     owner_record_index: Option<u32>,
     expression: String,
+    #[serde(default, deserialize_with = "deserialize_expression_flags")]
+    expression_flags: Option<Vec<bool>>,
     source_kind: String,
     /// Typed state selected by the parameter tail reference.
     #[serde(
@@ -595,6 +613,9 @@ impl TryFrom<DesignParameterSerde> for DesignParameter {
             evaluated_value: wire.evaluated_value,
         })?;
         value.parameter_state = parameter_state;
+        if let Some(flags) = wire.expression_flags {
+            value.set_expression_flags(flags)?;
+        }
         Ok(value)
     }
 }
@@ -614,6 +635,7 @@ impl From<DesignParameter> for DesignParameterSerde {
             family_discriminator,
             owner_record_index,
             expression: parameter.expression.to_string(),
+            expression_flags: parameter.expression_flags,
             source_kind,
             parameter_state: parameter.parameter_state,
             unit: parameter.unit.map(|value| value.value.to_string()),

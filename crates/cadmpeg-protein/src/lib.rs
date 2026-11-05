@@ -311,6 +311,16 @@ pub fn decode_frames_for_edit(
     decode_frames(&ctx, &mut catalog, frames)
 }
 
+/// Decode one framed record against a parsed schema catalog.
+pub fn decode_frame(
+    ctx: &DecodeContext<'_>,
+    catalog: &mut SchemaCatalog,
+    frame: &framing::RecordFrame,
+    ordinal: u64,
+) -> Result<Option<DecodedRecord>, CodecError> {
+    decode_record(ctx, frame.bytes(), catalog, ordinal, frame.logical_offset())
+}
+
 /// Decode framed records against one parsed schema catalog.
 pub fn decode_frames(
     ctx: &DecodeContext<'_>,
@@ -320,7 +330,7 @@ pub fn decode_frames(
     let mut outcome = DecodeOutcome::default();
     for (ordinal, frame) in frames.iter().enumerate() {
         let ordinal = cadmpeg_core::decode::u64_from_index(ordinal);
-        match decode_record(ctx, frame.bytes(), catalog, ordinal, frame.logical_offset()) {
+        match decode_frame(ctx, catalog, frame, ordinal) {
             Ok(Some(record)) => {
                 outcome.records.push(record);
             }
@@ -975,8 +985,8 @@ mod tests {
 
     #[test]
     fn schema_past_the_zstd_window_allowance_is_unsupported_without_a_refusal() {
-        use cadmpeg_test_support::zip_fixture::{self, RawEntry};
         use cadmpeg_core::decode::{LimitScope, ResourceFailure};
+        use cadmpeg_test_support::zip_fixture::{self, RawEntry};
         let xml = br#"<Schema><UID val="Simple"/><String id="comment"/></Schema>"#;
         // A streamed frame as a level-22 encoder writes it: a 128 MiB window and no
         // content size. Laid out by `zip_fixture`: `zip` is built without its `zstd`

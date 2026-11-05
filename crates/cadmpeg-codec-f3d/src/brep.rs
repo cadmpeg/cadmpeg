@@ -50,12 +50,13 @@ pub(crate) struct Brep {
 
 impl Brep {
     /// Wrap a decoded ASM graph and derive the Fusion attribute links.
-    fn from_asm(asm: AsmBrep) -> Result<Self, CodecError> {
+    fn from_asm(mut asm: AsmBrep) -> Result<Self, CodecError> {
         let mut sketch_curve_links = Vec::new();
         let mut persistent_design_links = Vec::new();
         let mut persistent_subentity_tags = Vec::new();
         let mut creation_timestamps = Vec::new();
-        for attribute in &asm.attributes {
+        for index in 0..asm.attributes.len() {
+            let attribute = &asm.attributes[index];
             if let Some(link) = sketch_curve_link(&asm, attribute) {
                 sketch_curve_links.push(link);
             }
@@ -66,6 +67,7 @@ impl Brep {
                 persistent_subentity_tags.push(tag);
             }
             if let Some(timestamp) = creation_timestamp(&asm, attribute) {
+                asm.attributes[index].native_ref = Some(timestamp.id.clone());
                 creation_timestamps.push(timestamp);
             }
         }

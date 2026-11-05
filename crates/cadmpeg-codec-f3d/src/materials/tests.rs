@@ -196,9 +196,26 @@ fn protein_rejections_preserve_valid_records_and_report_notes() {
             .collect::<Vec<_>>(),
         [Some("first-guid"), Some("third-guid")]
     );
-    assert!(decoded.report().notes.iter().any(|note| note
-        .contains("ProteinAsset.0.protein record 1 rejected")
-        && note.contains("MissingSchema")));
+    let losses = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "record.unreadable")
+        .collect::<Vec<_>>();
+    let [loss] = losses.as_slice() else {
+        panic!("expected one unreadable Protein record");
+    };
+    assert!(loss.message.contains("protein.record") && loss.message.contains("MissingSchema"));
+    let provenance = loss.provenance.as_ref().expect("Protein record location");
+    assert_eq!(
+        provenance.offset,
+        u64::try_from(STREAM_HEADER_LEN + super::PAGE_SIZE).unwrap()
+    );
+    assert_eq!(
+        provenance.byte_len(),
+        Some(u64::try_from(super::PAGE_SIZE).unwrap())
+    );
+    assert_eq!(decoded.ir().native_unknowns("f3d").unwrap().len(), 1);
 }
 
 /// A Protein ZIP whose members are Zstandard (method 93) is decoded and patched.

@@ -172,13 +172,69 @@ fn semantic_writer_renders_source_equation_aliases_from_current_parameter_names(
             vec![&target.id]
         );
         assert!(!target.properties.contains_key("EquationId"));
-        assert!(sldprt_native(decoded.ir())
+        let native = sldprt_native(decoded.ir());
+        let records = native
             .feature_histories
             .iter()
             .flat_map(|history| &history.features)
-            .flat_map(|feature| feature.dimension_properties.values())
-            .all(|properties| !properties.contains_key("EquationId")));
+            .collect::<Vec<_>>();
+        assert_eq!(
+            records
+                .iter()
+                .find(|feature| feature.name == "Sketch1")
+                .unwrap()
+                .dimension_properties[name]
+                .get("EquationId")
+                .map(String::as_str),
+            Some("D1")
+        );
+        assert_eq!(
+            records
+                .iter()
+                .find(|feature| feature.name == "Equations")
+                .unwrap()
+                .parameters["Result"],
+            "D1@Sketch1 * 2"
+        );
     }
+}
+
+#[test]
+fn semantic_writer_qualifies_local_equation_aliases() {
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(0x42, "Contents/Keywords", br#"<Keywords><Feature Name="Sketch1" Type="Sketch" id="10"><Dimension Name="Width" EquationId="D1">2mm</Dimension><Dimension Name="Result">D1 * 2</Dimension></Feature></Keywords>"#));
+    let mut decoded = cadmpeg_test_support::EditableDecodeResult::from(
+        SldprtCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .unwrap(),
+    );
+    decoded
+        .ir_mut()
+        .model
+        .features
+        .iter_mut()
+        .find(|feature| feature.name.as_deref() == Some("Sketch1"))
+        .unwrap()
+        .name = Some("Profile".into());
+    let mut encoded = Vec::new();
+    crate::test_support::serialize_edited_history(
+        decoded.ir(),
+        decoded.source_fidelity(),
+        &mut encoded,
+    )
+    .unwrap();
+    let regenerated = SldprtCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let native = sldprt_native(regenerated.ir());
+    let sketch = native
+        .feature_histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .find(|feature| feature.name == "Profile")
+        .unwrap();
+    assert_eq!(sketch.parameters["Result"], "D1@Profile * 2");
+    assert_eq!(sketch.dimension_properties["Width"]["EquationId"], "D1");
 }
 
 #[test]
@@ -240,6 +296,30 @@ fn semantic_writer_rewrites_parameter_owners_when_features_are_renamed() {
         .find(|parameter| parameter.name == "Gauge")
         .unwrap();
     assert!(!gauge.properties.contains_key("EquationId"));
+    let native = sldprt_native(regenerated.ir());
+    let records = native
+        .feature_histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        records
+            .iter()
+            .find(|feature| feature.name == "Profile")
+            .unwrap()
+            .dimension_properties["Gauge"]
+            .get("EquationId")
+            .map(String::as_str),
+        Some("D1@Profile")
+    );
+    assert_eq!(
+        records
+            .iter()
+            .find(|feature| feature.name == "Equations")
+            .unwrap()
+            .parameters["Result"],
+        "D1@Profile * 2"
+    );
     let result = regenerated
         .ir()
         .model

@@ -436,6 +436,11 @@ fn subd_without_a_layer_does_not_create_an_unresolved_layer_reference() {
             .losses
             .iter()
             .any(|loss| loss.message.contains("layer index")));
+        assert!(!written
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains("material selector -1")));
     }
 }
 

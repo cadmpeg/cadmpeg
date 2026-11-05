@@ -124,6 +124,7 @@ pub(in crate::feature) fn project(
                 "project Inventor historical attachment edges",
             )?;
             states.push(FeatureInputTopology {
+                operands: Default::default(),
                 id,
                 input_of: features[target].id.clone(),
                 bodies: DistinctMembers::default(),
