@@ -21,6 +21,28 @@ use cadmpeg_ir::sketches::{
 };
 use std::collections::HashMap;
 
+pub(crate) const LOCAL_MARKER_CAPACITY: cadmpeg_ir::codec::write::CapacityField =
+    cadmpeg_ir::codec::write::CapacityField {
+        field: "sketch.marker.local_link_id",
+        limit: u16::MAX as u64,
+        source: "docs/formats/sldprt.md §2: feature-local link identifiers are u16",
+        helper: "local_marker_id",
+    };
+pub(crate) const COORDINATE_LINK_CAPACITY: cadmpeg_ir::codec::write::CapacityField =
+    cadmpeg_ir::codec::write::CapacityField {
+        field: "sketch.coordinate_marker.local_links",
+        limit: 2,
+        source: "docs/formats/sldprt.md §2: coordinate marker local-link count",
+        helper: "append_coordinate_marker_link",
+    };
+
+fn local_marker_id(value: u64) -> Result<u16, crate::writer::write_error::WriteError> {
+    u16::try_from(value).map_err(|_| crate::writer::write_error::WriteError::Capacity {
+        field: &LOCAL_MARKER_CAPACITY,
+        value,
+    })
+}
+
 pub(super) enum GeneratedMarkerRelation<'a> {
     Unary(SketchRelationKind, &'a SketchEntityId),
     Binary(SketchRelationKind, &'a SketchEntityId, &'a SketchEntityId),
@@ -289,12 +311,7 @@ pub(super) fn append_generated_sketch_markers(
             ),
         };
         if let Some(owner) = reverse_owner {
-            let relation_id = u16::try_from(next_id).map_err(|_| {
-                cadmpeg_core::CodecError::malformed(format_args!(
-                    "source-less SLDPRT sketch {} exceeds the marker-local id space",
-                    sketch.id.as_str()
-                ))
-            })?;
+            let relation_id = local_marker_id(u64::from(next_id))?;
             append_coordinate_marker_link(payload, owner, relation_id)?;
         }
         append_reference_marker(payload, kind, links, next_id);
@@ -493,7 +510,8 @@ pub(super) fn append_generated_sketch_markers(
 pub(super) fn generated_marker_layout(
     ir: &cadmpeg_ir::CadIr,
     sketch: &Sketch,
-) -> Result<Vec<(SketchLocus, Point2, SketchInputKind, u16)>, cadmpeg_core::CodecError> {
+) -> Result<Vec<(SketchLocus, Point2, SketchInputKind, u16)>, crate::writer::write_error::WriteError>
+{
     let mut layout = Vec::new();
     for entity in ir
         .model
@@ -505,15 +523,7 @@ pub(super) fn generated_marker_layout(
             continue;
         };
         for (point, locus) in markers.loci() {
-            let id = layout
-                .len()
-                .checked_add(1)
-                .and_then(|id| u16::try_from(id).ok())
-                .ok_or_else(|| {
-                    cadmpeg_core::CodecError::malformed(
-                        "SLDPRT sketch exceeds its u16 marker-local id space",
-                    )
-                })?;
+            let id = local_marker_id(cadmpeg_core::decode::u64_from_index(layout.len()) + 1)?;
             layout.push((locus.clone(), *point, markers.kind(), id));
         }
     }
@@ -810,7 +820,7 @@ pub(super) fn append_coordinate_marker_link(
     payload: &mut [u8],
     owner_local_id: u16,
     relation_local_id: u16,
-) -> Result<(), cadmpeg_core::CodecError> {
+) -> Result<(), crate::writer::write_error::WriteError> {
     const SELECTOR: u16 = 0x8386;
     let offsets = payload
         .windows(SKETCH_MARKER.len())
@@ -822,7 +832,8 @@ pub(super) fn append_coordinate_marker_link(
     let [offset] = offsets.as_slice() else {
         return Err(cadmpeg_core::CodecError::UnsupportedContent(format!(
             "source-less SLDPRT reverse relation cannot identify coordinate marker {owner_local_id}"
-        )));
+        ))
+        .into());
     };
     let count = usize::from(View::u16_le_at(payload, *offset + 84).ok_or_else(|| {
         cadmpeg_core::CodecError::Malformed(
@@ -830,15 +841,16 @@ pub(super) fn append_coordinate_marker_link(
         )
     })?);
     if count >= 2 {
-        // (O-capacity): the target field cannot encode a value outside its width.
-        return Err(cadmpeg_core::CodecError::NotImplemented(format!(
-            "source-less SLDPRT coordinate marker {owner_local_id} exceeds two reverse relations"
-        )));
+        return Err(crate::writer::write_error::WriteError::Capacity {
+            field: &COORDINATE_LINK_CAPACITY,
+            value: cadmpeg_core::decode::u64_from_index(count) + 1,
+        });
     }
     if count > 0 && payload.get(*offset + 86..*offset + 88) != Some(&SELECTOR.to_le_bytes()) {
         return Err(cadmpeg_core::CodecError::Malformed(
             "source-less SLDPRT coordinate marker changed reverse-relation selector".into(),
-        ));
+        )
+        .into());
     }
     let cell = offset + 86 + count * 12;
     let end = cell + 18;
@@ -997,6 +1009,33 @@ mod writer_rule_tests {
                 "marker carries its native relation code"
             );
             assert_eq!(kind.native_code(), code);
+        }
+    }
+    #[test]
+    fn marker_local_link_id_reports_capacity() {
+        assert_eq!(
+            super::local_marker_id(u64::from(u16::MAX)).unwrap(),
+            u16::MAX
+        );
+        let error: cadmpeg_ir::codec::write::EncodeError =
+            super::local_marker_id(u64::from(u16::MAX) + 1)
+                .unwrap_err()
+                .into();
+        assert!(
+            matches!(error, cadmpeg_ir::codec::write::EncodeError::TargetCapacity {
+            field, limit: 65535, value: 65536
+        } if field.field == "sketch.marker.local_link_id")
+        );
+    }
+
+    #[test]
+    fn generated_identity_and_link_capacities_are_declared() {
+        for field in [
+            super::LOCAL_MARKER_CAPACITY,
+            super::COORDINATE_LINK_CAPACITY,
+            crate::resolved_features::write_feature_parameters::SCALAR_IDENTITY_CAPACITY,
+        ] {
+            assert!(crate::writer::CAPACITY_FIELDS.contains(&field), "{field:?}");
         }
     }
 }
