@@ -187,10 +187,15 @@ fn truncated_stored_brep_keeps_its_complete_kernel_header() {
             &DecodeOptions::default(),
         )
         .unwrap();
-    assert_eq!(
-        short.ir().tolerances,
-        cadmpeg_ir::units::Tolerances::default()
-    );
+    assert_eq!(short.ir().tolerances.linear, None);
+    assert!(short
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.dropped_fields.iter().any(|field| {
+            field.record == cadmpeg_ir::report::loss::DOCUMENT_HEADER
+                && field.field == "tolerances.linear"
+        })));
     const ZIP_LOCAL_COMPRESSED_LENGTH_OFFSET: usize = 18;
     let mut invalid = source[..cut].to_vec();
     invalid[local_header + ZIP_LOCAL_COMPRESSED_LENGTH_OFFSET
@@ -199,10 +204,7 @@ fn truncated_stored_brep_keeps_its_complete_kernel_header() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(invalid), &DecodeOptions::default())
         .unwrap();
-    assert_eq!(
-        decoded.ir().tolerances,
-        cadmpeg_ir::units::Tolerances::default()
-    );
+    assert_eq!(decoded.ir().tolerances.linear, None);
 }
 
 #[test]
