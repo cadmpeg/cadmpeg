@@ -182,6 +182,8 @@ pub(crate) enum InventorLossCode {
     ParameterGraphOpen,
     /// Parameter records have an expression whose text passes the local cap.
     ParameterExpressionBounded,
+    /// Parameter records whose root literal has an unrecognised unit type carry their value and no expression text.
+    ParameterExpressionNative,
     /// Parameter records whose parameter table has no established owning model.
     ParameterScopeUnresolved,
     /// Sketch, entity, or constraint records have a neutral graph that is not closed.
@@ -316,6 +318,7 @@ impl InventorLossCode {
         Self::FeatureCoilOperandsNative,
         Self::ParameterGraphOpen,
         Self::ParameterExpressionBounded,
+        Self::ParameterExpressionNative,
         Self::ParameterScopeUnresolved,
         Self::SketchGraphOpen,
         Self::RseStreamUnpaired,
@@ -439,6 +442,7 @@ impl InventorLossCode {
             Self::FeatureCoilOperandsNative => "feature.coil-operands-native",
             Self::ParameterGraphOpen => "parameter.graph-open",
             Self::ParameterExpressionBounded => "parameter.expression-bounded",
+            Self::ParameterExpressionNative => "parameter.expression-native",
             Self::ParameterScopeUnresolved => "parameter.scope-unresolved",
             Self::SketchGraphOpen => "sketch.graph-open",
             Self::RseStreamUnpaired => "rse.stream-unpaired",
@@ -566,6 +570,7 @@ impl InventorLossCode {
             | Self::SketchGraphOpen => LossTaxonomy::FeatureHistoryRetained,
             Self::ParameterGraphOpen
             | Self::ParameterExpressionBounded
+            | Self::ParameterExpressionNative
             | Self::ParameterScopeUnresolved => LossTaxonomy::ParametricRecordOmitted,
             Self::MetadataPropertyUnmapped
             | Self::FeatureLabelUnusable
@@ -698,6 +703,7 @@ mod tests {
                 "feature.coil-operands-native",
                 "parameter.graph-open",
                 "parameter.expression-bounded",
+                "parameter.expression-native",
                 "parameter.scope-unresolved",
                 "sketch.graph-open",
                 "rse.stream-unpaired",
