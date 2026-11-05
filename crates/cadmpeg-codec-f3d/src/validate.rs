@@ -3792,7 +3792,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                         },
                     )
             }
-                _ => true,
+                records::feature::extrude::DesignExtrudePrologue::LegacyDistance { .. } => true,
             }) && match &scope.payload() {
             records::feature::scope::DesignScopePayload::SurfaceStitch(operation) => {
                 operation.gap_tolerance_offset > scope.paired_byte_offset()
@@ -7556,7 +7556,6 @@ fn validate_face_operands<'a>(
         let expected_unreferenced_faces = expected_faces
             .iter()
             .cloned()
-            .filter(|face| !referenced_faces.contains(&face))
             .collect::<Vec<_>>();
         let mut expected_alternate_selector_faces = expected_references
             .iter()
@@ -7567,6 +7566,7 @@ fn validate_face_operands<'a>(
         expected_alternate_selector_faces.dedup();
         let expected_node_offsets = operand
             .recipe_program
+            .filter(|face| !referenced_faces.contains(face))
             .windows(3)
             .enumerate()
             .filter(|(_, values)| *values == [-1, -1, 2])
