@@ -326,7 +326,7 @@ pub(super) fn project(
             &instance.id,
             &mut losses,
             ctx,
-        )?;
+        );
         placed.push((
             *sequence,
             occurrence_id(&path)?,
@@ -397,7 +397,7 @@ pub(super) fn project(
                 &assembly.id,
                 &mut losses,
                 ctx,
-            )?;
+            );
             let id = occurrence_id(
                 [
                     assembly.source_entity.clone(),
@@ -479,7 +479,7 @@ pub(super) fn project(
             &component.id,
             &mut losses,
             ctx,
-        )?;
+        );
         placed.push((
             sequence,
             occurrence_id(&path)?,
@@ -696,15 +696,15 @@ fn entry_placement(
     native_id: &str,
     losses: &mut Vec<LossNote>,
     ctx: &DecodeContext<'_>,
-) -> Result<Option<Transform>, CodecError> {
+) -> Option<Transform> {
     let Some(entry) = entries.get(&sequence) else {
-        return Ok(None);
+        return None;
     };
     if entry.transform == 0 {
-        return Ok(None);
+        return None;
     }
     let Some(length_factor) = length_factor else {
-        return Ok(None);
+        return None;
     };
     match resolve_transform(
         entry.transform,
@@ -715,12 +715,12 @@ fn entry_placement(
         &mut BTreeSet::new(),
         ctx,
     ) {
-        Ok(transform) => Ok(Some(transform)),
+        Ok(transform) => Some(transform),
         Err(_) => {
             losses.push(IgesLossCode::NeutralProjectionUnavailable.note(format!(
                 "{native_id}: solid placement pointer is not a resolvable transformation"
             )));
-            Ok(None)
+            None
         }
     }
 }
@@ -734,12 +734,12 @@ fn item_placement(
     native_id: &str,
     losses: &mut Vec<LossNote>,
     ctx: &DecodeContext<'_>,
-) -> Result<Option<Transform>, CodecError> {
+) -> Option<Transform> {
     let Some(sequence) = transformation.and_then(native_transformation_sequence) else {
-        return Ok(None);
+        return None;
     };
     let Some(length_factor) = length_factor else {
-        return Ok(None);
+        return None;
     };
     match resolve_transform(
         i64::from(sequence),
@@ -750,12 +750,12 @@ fn item_placement(
         &mut BTreeSet::new(),
         ctx,
     ) {
-        Ok(transform) => Ok(Some(transform)),
+        Ok(transform) => Some(transform),
         Err(_) => {
             losses.push(IgesLossCode::NeutralProjectionUnavailable.note(format!(
                 "{native_id}: assembly member placement pointer is not a resolvable transformation"
             )));
-            Ok(None)
+            None
         }
     }
 }
