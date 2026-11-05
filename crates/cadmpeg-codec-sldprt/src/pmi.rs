@@ -884,7 +884,7 @@ fn collect_dimensions(
     Ok(())
 }
 
-/// Parse one UnQLite cell value as its PMI record.
+/// Parse one `UnQLite` cell value as its PMI record.
 ///
 /// The value holds exactly one record at its start. The work budget scales
 /// with the cell value, not the enclosing section.
@@ -908,7 +908,7 @@ fn parse_cell_record(
     extract_dimension(ctx, value, image.key.len(), guid, parent, &work, false)
 }
 
-/// The source extent of one UnQLite cell value for a part give-up.
+/// The source extent of one `UnQLite` cell value for a part give-up.
 ///
 /// A value inside one database piece gives up exactly its bytes. An overflow
 /// value spans pages without one source extent; its first piece stands in

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Writer harness wiring for SolidWorks (#237 item, #217 §5.0, #232 §3.3 and §5.2).
+//! Writer harness wiring for `SolidWorks` (#237 item, #217 §5.0, #232 §3.3 and §5.2).
 //!
 //! Injected-error, capacity-helper and `max_entities` runners from
 //! `cadmpeg-test-support`; the residual checker over the §3.3 statement list;
@@ -452,7 +452,7 @@ fn synthesized_records_carry_their_specified_residuals() {
     );
 }
 
-/// Residual positions the SolidWorks writer synthesizes, from `docs/formats/`.
+/// Residual positions the `SolidWorks` writer synthesizes, from `docs/formats/`.
 ///
 /// No residual rule is stated in `docs/formats/sldprt.md` yet; the first
 /// stated rule adds its spec here (#232 §3.3).

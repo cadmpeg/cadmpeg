@@ -679,9 +679,9 @@ fn malformed_uppercase_pmi_guid_keeps_normalized_loss_text() {
         .contains("abcdef01-89ab-cdef-0123-456789abcdef"));
 }
 
-/// A damaged UnQLite page graph is not a part: its bytes stay retained and
+/// A damaged `UnQLite` page graph is not a part: its bytes stay retained and
 /// untyped (§1.3), named by a loss that gives their stream, offset and
-/// length, and the MessagePack scan recovers what it can.
+/// length, and the `MessagePack` scan recovers what it can.
 #[test]
 fn damaged_page_graph_is_untyped_not_a_part() {
     let mut payload = vec![0u8; 512];
