@@ -19,6 +19,7 @@ mod fonts;
 mod levels;
 mod macros;
 mod numeric;
+mod patterns;
 mod products;
 pub(super) mod solids;
 mod structure;
