@@ -479,12 +479,6 @@ pub(in crate::writer) fn validate_source_less_sketch_graph(
         geometry_owners.insert(curve.record_index, owner_reference);
     }
     for relation in &native.sketch_relations {
-        if !root_indices.contains(&relation.record_index) {
-            return Err(CodecError::InvalidInput(format!(
-                "F3D sketch relation {} is not reachable from a sketch header",
-                relation.id
-            )));
-        }
         if !sketch_owners.contains(&u64::from(relation.owner_reference)) {
             return Err(CodecError::InvalidInput(format!(
                 "F3D sketch relation {} references missing sketch owner {}",

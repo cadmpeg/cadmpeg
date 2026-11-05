@@ -2948,6 +2948,11 @@ fn scaled<const N: usize>(values: [f64; N], scale: f64) -> Option<[f64; N]> {
         .then_some(products)
 }
 
+fn supports_metadata_attribute(attribute: &cadmpeg_ir::attributes::SourceAttribute) -> bool {
+    attribute.target == cadmpeg_ir::attributes::AttributeTarget::Document
+        && matches!(MetadataRecord::project(attribute, 0.001, |_| Ok(())), Ok(Some(_)))
+}
+
 /// This codec's document attributes, ordered by source payload position.
 ///
 /// Arena order is by identifier name; writing that order would move every
@@ -2955,7 +2960,7 @@ fn scaled<const N: usize>(values: [f64; N], scale: f64) -> Option<[f64; N]> {
 fn metadata_attributes(ir: &CadIr) -> Vec<&cadmpeg_ir::attributes::SourceAttribute> {
     let mut positioned = Vec::new();
     for attribute in &ir.model.attributes {
-        if attribute.id.as_str().starts_with("sldprt:")
+        if (attribute.id.as_str().starts_with("sldprt:") || supports_metadata_attribute(attribute))
             && !accounting::requires_attribute_omission(attribute)
             && !custom_properties::represents(attribute)
             && !crate::pmi::write::attribute_supported(attribute)
