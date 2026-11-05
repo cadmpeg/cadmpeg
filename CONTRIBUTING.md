@@ -127,13 +127,15 @@ The checks cover recurring review points, not all of them. A check is a `scripts
 
 ## Windows
 
-The scripts under `scripts/` run on Windows with these steps:
+The Python scripts under `scripts/` run on Windows with these steps:
 
 - Run them with `py -3` (for example `py -3 scripts/preflight.py`) or the full path of a real Python. A bare `python3` can resolve to the Microsoft Store stub, which prints "Python was not found" and fails. `scripts/preflight.py` starts its child checks with the interpreter that runs it.
 - Install the GitHub CLI (`winget install GitHub.cli`) and run `gh auth login`. The `open-prs` check needs it.
 - Set a git identity before a rebase: `git config user.name "NAME"` and `git config user.email "EMAIL"`.
-- Run the scripts from Git Bash, or from a shell where `git` and `cargo` are on `PATH`. The shell scripts (`*.sh`) need Git Bash.
-- Set `git config core.autocrlf false` before you clone or check out. CRLF line endings change the bytes of fixtures and generated files, and the checks that compare them byte for byte then fail.
+- Run the scripts from Git Bash, or from a shell where `git` and `cargo` are on `PATH`.
+- Set `git config --global core.autocrlf false` before you clone. Or clone with `git clone -c core.autocrlf=false <url>`, which sets it in the new repository before checkout. CRLF line endings change the bytes of fixtures and generated files, and the checks that compare them byte for byte then fail.
+
+The shell scripts (`*.sh`) need Git Bash and the commands that each script checks for at its start. For example, `scripts/verify-step-signatures.sh` needs `base64`, `fold`, `git`, `openssl`, `python3`, and `tr` on `PATH`. In that script `python3` must be a real interpreter, not the Store stub. Put a real Python first on `PATH` under that name, or run the script on Linux or macOS.
 
 ---
 
