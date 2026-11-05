@@ -25,6 +25,7 @@ mod parameters;
 pub(in crate::writer) mod preconditions;
 mod presentation;
 mod records;
+mod reindex;
 mod smbh;
 use parameters::encode_document_parameters;
 use preconditions::{
