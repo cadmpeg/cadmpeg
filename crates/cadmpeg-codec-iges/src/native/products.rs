@@ -158,10 +158,10 @@ pub(super) fn project(
             // definition lists only bodies. A missing solid body is already
             // reported by its own projection or give-up.
             for body in &ir.model.bodies {
-                if sequences.body_neutral_form(&body.id) == Some(sequence) {
-                    if !definition.bodies.contains(&body.id) {
-                        definition.bodies.push(body.id.clone());
-                    }
+                if sequences.body_neutral_form(&body.id) == Some(sequence)
+                    && !definition.bodies.contains(&body.id)
+                {
+                    definition.bodies.push(body.id.clone());
                 }
             }
         }
