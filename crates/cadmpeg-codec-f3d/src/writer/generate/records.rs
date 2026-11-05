@@ -924,6 +924,7 @@ pub(super) fn encode_sketch_nurbs(
     subtype_record_index: u32,
     geometry: &crate::records::sketch_geometry::SketchNurbsGeometry,
 ) -> Result<(), CodecError> {
+    const NURBS_PREFIX_PADDING: usize = 88 - (8 + 4 + 3 + 4);
     let knots = geometry.knots();
     let poles = geometry.poles();
     record.extend_from_slice(
@@ -934,7 +935,6 @@ pub(super) fn encode_sketch_nurbs(
     record.extend_from_slice(&3u32.to_le_bytes());
     record.extend_from_slice(subtype_class_tag.as_bytes());
     record.extend_from_slice(&subtype_record_index.to_le_bytes());
-    const NURBS_PREFIX_PADDING: usize = 88 - (8 + 4 + 3 + 4);
     record.extend_from_slice(&[0; NURBS_PREFIX_PADDING]);
     record.push(1);
     record.push(0);
