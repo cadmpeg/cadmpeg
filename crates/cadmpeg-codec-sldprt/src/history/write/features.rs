@@ -560,6 +560,24 @@ fn synchronize_features(
             .iter_mut()
             .flat_map(|history| &mut history.features)
             .find(|candidate| record_ids.get(&feature.id) == Some(&candidate.id));
+        if patch_input_names {
+            if let FeatureDefinition::Operation(FeatureOperation::Extrude {
+                solid: Some(solid),
+                ..
+            }) = feature.evaluation.definition()
+            {
+                let source_is_surface = existing
+                    .as_deref()
+                    .and_then(|record| record.input_class.as_deref())
+                    == Some("moExtruRefSurface_c");
+                if source_is_surface == *solid {
+                    return Err(crate::writer::write_error::WriteError::Decline(format!(
+                        "feature {} changes the native extrusion class",
+                        feature.id
+                    )));
+                }
+            }
+        }
         if patch_input_names
             && existing
                 .as_deref()
