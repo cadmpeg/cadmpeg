@@ -3137,7 +3137,9 @@ pub(crate) fn bind_loft_sketch_point_sections(
     features: &mut [cadmpeg_ir::features::Feature],
     sources: &LoftPointSources<'_>,
 ) {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, LoftPointSection, LoftSection};
+    use cadmpeg_ir::features::{
+        FeatureDefinition, FeatureOperation, LoftPointSection, LoftSection,
+    };
 
     for feature in features.iter_mut() {
         feature.evaluation.edit(|definition, _| {
@@ -3194,7 +3196,12 @@ fn loft_sketch_point(
     else {
         return None;
     };
-    let sketch = only(sources.sketches.iter().filter(|sketch| sketch.id == entity.sketch))?;
+    let sketch = only(
+        sources
+            .sketches
+            .iter()
+            .filter(|sketch| sketch.id == entity.sketch),
+    )?;
     crate::design::geometry::sketch_point_to_model(sketch, position.get())
 }
 

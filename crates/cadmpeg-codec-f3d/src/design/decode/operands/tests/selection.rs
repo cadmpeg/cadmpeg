@@ -931,3 +931,114 @@ fn sketch_profile_region_selection_retains_partial_curve_incidence_words() {
         assert!(parse_sketch_profile_region_selection(&invalid, 100, 0).is_none());
     }
 }
+
+/// A nested entity-selection member 100 whose `N+3` identity record carries
+/// `identity` after its indexed header.
+fn nested_selection_with_identity(identity: &[u8]) -> Vec<u8> {
+    use crate::test_support::{indexed_header, lp_utf16};
+    let record_index = 100;
+    let mut bytes = Vec::new();
+    indexed_header(&mut bytes, *b"369", record_index);
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.push(1);
+    bytes.extend_from_slice(&(record_index + 3).to_le_bytes());
+    bytes.extend_from_slice(&[0; 6]);
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    lp_utf16(&mut bytes, "7b3dec6f-f69c-4bfa-a537-9274f341c66e");
+    lp_utf16(&mut bytes, "2b40eee7-408c-429b-9216-8b6f7e9a62c9");
+    bytes.extend_from_slice(&2u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 4]);
+    indexed_header(&mut bytes, *b"257", record_index);
+    indexed_header(&mut bytes, *b"306", record_index + 1);
+    indexed_header(&mut bytes, *b"359", record_index + 2);
+    indexed_header(&mut bytes, *b"360", record_index + 3);
+    bytes.extend_from_slice(identity);
+    indexed_header(&mut bytes, *b"400", record_index + 4);
+    bytes
+}
+
+fn compact_sketch_point_identity(sketch: u64, point: u64) -> Vec<u8> {
+    let mut identity = vec![0; 10];
+    identity.extend_from_slice(&sketch.to_le_bytes());
+    identity.extend_from_slice(&point.to_le_bytes());
+    identity
+}
+
+#[test]
+fn a_nested_selection_reads_the_compact_sketch_point_identity() {
+    let frame = super::super::parse_entity_selection_frame(
+        &nested_selection_with_identity(&compact_sketch_point_identity(265, 110)),
+        100,
+        0,
+        "369",
+    )
+    .expect("compact sketch-point identity");
+    assert_eq!(frame.identity_record_offset, 229);
+    assert_eq!(frame.primary_identity, 265);
+    assert_eq!(frame.primary_identity_offset, 250);
+    let secondary = frame.secondary.expect("point identity");
+    assert_eq!(secondary.identity.value, 110);
+    assert_eq!(secondary.identity.offset, 258);
+    assert!(secondary.curve_identity.is_none());
+    assert_eq!(frame.next_record_index, 104);
+    assert_eq!(frame.next_byte_offset, 266);
+
+    let mut nonzero_prefix = compact_sketch_point_identity(265, 110);
+    nonzero_prefix[9] = 1;
+    let mut short = compact_sketch_point_identity(265, 110);
+    short.truncate(22);
+    for identity in [nonzero_prefix, short] {
+        assert!(super::super::parse_entity_selection_frame(
+            &nested_selection_with_identity(&identity),
+            100,
+            0,
+            "369",
+        )
+        .is_none());
+    }
+}
+
+#[test]
+fn a_compact_sketch_point_identity_round_trips_through_the_operand_record() {
+    use crate::records::topology::entity_selection::{
+        DesignEntitySelectionOperand, DesignEntitySelectionOperandDraft,
+    };
+    let frame = super::super::parse_entity_selection_frame(
+        &nested_selection_with_identity(&compact_sketch_point_identity(265, 110)),
+        100,
+        0,
+        "369",
+    )
+    .expect("compact sketch-point identity");
+    let draft = DesignEntitySelectionOperandDraft {
+        id: "f3d:Design/BulkStream.dat:design-entity-selection-operand#0".to_owned(),
+        scope_record_index: 12,
+        group_record_index: 50,
+        group_member_ordinal: 0,
+        record_index: frame.record_index,
+        byte_offset: frame.byte_offset,
+        class_tag: "369".to_owned().try_into().unwrap(),
+        asset_id: frame.asset_id.clone().try_into().unwrap(),
+        asset_id_offset: frame.asset_id_offset,
+        context_id: frame.context_id.clone().try_into().unwrap(),
+        context_id_offset: frame.context_id_offset,
+        identity_record_index: frame.identity_record_index,
+        identity_record_offset: frame.identity_record_offset,
+        primary_identity: frame.primary_identity,
+        primary_identity_offset: frame.primary_identity_offset,
+        secondary: frame.secondary,
+        historical_edge_candidates: Vec::new(),
+        historical_face_candidates: Vec::new(),
+        resolved_edge_slot: None,
+        next_record_index: frame.next_record_index,
+        next_byte_offset: frame.next_byte_offset,
+    };
+    let operand = DesignEntitySelectionOperand::try_new(draft).expect("admitted operand");
+    assert_eq!(operand.primary_identity_offset(), 250);
+    assert_eq!(operand.secondary(), frame.secondary);
+    assert_eq!(operand.next_record_index(), 104);
+    assert_eq!(operand.next_byte_offset(), 266);
+    let wire = serde_json::to_value(&operand).unwrap();
+    let reloaded: DesignEntitySelectionOperand = serde_json::from_value(wire).unwrap();
+    assert_eq!(reloaded, operand);
+}

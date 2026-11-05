@@ -4298,7 +4298,8 @@ pub(super) fn parse_entity_selection_frame(
         == [0; 10]
         && identity_at.checked_add(compact_identity::LEN)? == next_at
     {
-        let primary_identity_offset = identity_at.checked_add(compact_identity::SKETCH_RECORD_INDEX)?;
+        let primary_identity_offset =
+            identity_at.checked_add(compact_identity::SKETCH_RECORD_INDEX)?;
         let secondary_identity_offset =
             identity_at.checked_add(compact_identity::POINT_PERSISTENT_ID)?;
         (
