@@ -356,6 +356,37 @@ fn generated_global_uses_fixed_profile_and_emitted_coordinate_bound() {
 }
 
 #[test]
+fn unusable_document_dates_are_reported_and_not_written_to_global() {
+    use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
+    use cadmpeg_ir::ids::AttributeId;
+    let mut ir = CadIr::empty();
+    for (name, value) in [
+        ("generation_date", "2024-01-01T10:00:00Z"),
+        ("model_date", "invalid"),
+    ] {
+        ir.model.attributes.push(SourceAttribute {
+            id: AttributeId::mint(format!("test:attribute:{name}#1")).unwrap(),
+            native_ref: None,
+            target: AttributeTarget::Document,
+            name: name.into(),
+            values: vec![Some(AttributeValue::String(value.into()))],
+        });
+    }
+    let output = super::synthesize(&ir, IgesVersion::V5_3).expect("document synthesizes");
+    for attribute in &ir.model.attributes {
+        assert!(output
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains(attribute.id.as_str())));
+    }
+    let scan = crate::card::scan(&output.bytes).expect("cards scan");
+    let (global, losses) = crate::test_support::parse_global(&scan).expect("global parses");
+    assert!(losses.is_empty(), "{losses:#?}");
+    assert!(global.generation_date().is_some());
+    assert_eq!(global.model_date(), None);
+}
+
+#[test]
 fn generated_global_matches_the_4_0_and_5_0_field_contracts() {
     for (version, name, timestamp, tail) in [
         (IgesVersion::V4_0, "4.0", "260714.000000", ",6,0;"),

@@ -955,7 +955,7 @@ pub(crate) fn f3d_with_generated_sketch_annotation(case: SketchAnnotationCase) -
         bulk[owner + 40..owner + 48].copy_from_slice(&100_000.0f64.to_le_bytes());
     }
     let mut frame = Vec::new();
-    crate::test_support::indexed_header(&mut frame, *b"274", 1304);
+    crate::test_support::indexed_header(&mut frame, *b"273", 1304);
     frame.extend_from_slice(&[0; 8]);
     frame.push(1);
     frame.extend_from_slice(&3u32.to_le_bytes());
@@ -985,13 +985,34 @@ pub(crate) fn f3d_with_generated_sketch_annotation(case: SketchAnnotationCase) -
     }
     frame.push(0);
     let paired = frame.len();
-    crate::test_support::indexed_header(&mut frame, *b"273", 1304);
+    crate::test_support::indexed_header(&mut frame, *b"274", 1304);
     frame.extend_from_slice(&[0; 8]);
     crate::test_support::push_marked_reference(&mut frame, 277);
     frame.resize(paired + 59, 0);
+    let insertion = records.iter().find(|(id, _)| *id == 1202).unwrap().1 + 58;
     insert_frame_in_preceding_companion(&mut bulk, &mut records, &frame);
-    let meta = sketch_dimension_metastream(&records, &[]);
-    let meta = fixture_secondary_index(meta, &bulk, &[584, 1100, 1400, 1600]);
+    records.push((1304, insertion));
+    records.sort_by_key(|(_, offset)| *offset);
+    let meta = sketch_dimension_metastream(
+        &records,
+        &[
+            (
+                "00000000-0000-4000-8000-000000000273",
+                "",
+                3,
+                "Fusion",
+                &[1304],
+            ),
+            (
+                "00000000-0000-4000-8000-000000000274",
+                "",
+                1,
+                "Dimension",
+                &[],
+            ),
+        ],
+    );
+    let meta = fixture_secondary_index(meta, &bulk, &[584, 1100, 1304, 1400, 1600]);
     f3d_with_smbh_and_instance_properties_and_design_with_metastream(
         &synthetic_geometry_smbh(),
         &[],
