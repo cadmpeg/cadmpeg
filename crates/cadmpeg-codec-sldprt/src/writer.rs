@@ -207,7 +207,6 @@ pub(super) fn write_semantic_at(
         &mut normalized.model.configurations,
         &mut normalization_losses,
     );
-    normalized.model.configurations = configurations_for_write(&normalized);
     sort_arenas(&mut normalized);
     // Export precondition on the normalized input. Keeps full validate_neutral:
     // writer refusal depends on non-core Checks (e.g. Counts for duplicate
@@ -822,13 +821,6 @@ fn push_xml_attribute_value(output: &mut String, value: &str) {
             _ => output.push(character),
         }
     }
-}
-
-/// The document's configuration snapshots are content regardless of how they were authored.
-pub(crate) fn configurations_for_write(
-    ir: &CadIr,
-) -> Vec<cadmpeg_ir::features::DesignConfiguration> {
-    ir.model.configurations.clone()
 }
 
 fn sort_arenas(ir: &mut CadIr) {
