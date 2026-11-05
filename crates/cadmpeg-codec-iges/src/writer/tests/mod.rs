@@ -389,6 +389,26 @@ fn unusable_document_dates_are_reported_and_not_written_to_global() {
 }
 
 #[test]
+fn generated_global_leaves_an_absent_resolution_empty() {
+    let timestamp = "20260714.000000";
+    let bytes = generated_global(
+        IgesVersion::V5_3,
+        &DocumentMetadata::of(&CadIr::empty()),
+        timestamp,
+        None,
+        real(1000.0),
+    );
+    let expected = format!(
+        "{},,{}",
+        super::global_hollerith(timestamp),
+        number(real(1000.0))
+    );
+    assert!(bytes
+        .windows(expected.len())
+        .any(|part| part == expected.as_bytes()));
+}
+
+#[test]
 fn generated_global_matches_the_4_0_and_5_0_field_contracts() {
     for (version, name, timestamp, tail) in [
         (IgesVersion::V4_0, "4.0", "260714.000000", ",6,0;"),
@@ -398,7 +418,7 @@ fn generated_global_matches_the_4_0_and_5_0_field_contracts() {
             version,
             &DocumentMetadata::of(&CadIr::empty()),
             timestamp,
-            real(0.001),
+            Some(real(0.001)),
             real(1000.0),
         );
         let fixture = fixed_ascii_with_global(&global_bytes);
@@ -437,7 +457,7 @@ fn generated_global_matches_the_4_0_and_5_0_field_contracts() {
 fn encode_uses_neutral_linear_tolerance_as_global_floor() {
     let mut ir = CadIr::empty();
     ir.tolerances.linear =
-        cadmpeg_ir::scalar::PositiveLength::new(2.5).expect("positive finite tolerance");
+        Some(cadmpeg_ir::scalar::PositiveLength::new(2.5).expect("positive finite tolerance"));
     ir.model.points.push(Point::new(
         PointId::mint("test:model:point#resolution-floor").expect("identity grammar"),
         cadmpeg_ir::features::FinitePoint3::new(Point3::new(1.0, 2.0, 3.0))
@@ -478,7 +498,15 @@ fn encode_preserves_the_declared_source_resolution() {
             &DecodeOptions::default(),
         )
         .expect("source resolution witness decodes");
-    assert_eq!(decoded.ir().tolerances.linear.get(), 0.001);
+    assert_eq!(
+        decoded
+            .ir()
+            .tolerances
+            .linear
+            .expect("stated linear tolerance")
+            .get(),
+        0.001
+    );
 
     let plan = crate::IgesCodec
         .plan(
@@ -1117,7 +1145,7 @@ fn generated_parameter_layout_uses_its_own_input_allowance() {
         &[entity],
         &std::collections::BTreeMap::new(),
         IgesVersion::V5_3,
-        0.001,
+        Some(0.001),
     )
     .is_ok());
 }

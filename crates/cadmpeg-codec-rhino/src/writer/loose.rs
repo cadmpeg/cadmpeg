@@ -641,7 +641,7 @@ fn curve_payload(
             })?
             .get();
         let tolerance = edge.tolerance.or(vertex.tolerance).map_or(
-            ir.tolerances.linear.get(),
+            ir.tolerances.linear_or_default().get(),
             cadmpeg_ir::scalar::PositiveReal::get,
         );
         if !close_point(expected, point.position().get(), tolerance) {

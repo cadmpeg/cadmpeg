@@ -138,7 +138,23 @@ fn semantic_writer_retains_partial_native_revolution_construction() {
     ));
     let mut detached = decoded.ir().clone();
     detached.model.features[0].native_ref = None;
-    crate::test_support::assert_synthesis_fallback(&detached, decoded.source_fidelity());
+    let expected = detached.model.features[0].evaluation.definition().clone();
+    let mut detached_bytes = Vec::new();
+    crate::test_support::plan_inherited_write(
+        &detached,
+        decoded.source_fidelity(),
+        &mut detached_bytes,
+    )
+    .unwrap();
+    let detached_output = SldprtCodec
+        .decode(&mut Cursor::new(detached_bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(detached_output
+        .ir()
+        .model
+        .features
+        .iter()
+        .any(|feature| feature.evaluation.definition() == &expected));
     decoded.ir_mut().model.features[0].name = Some("Renamed turn".into());
 
     let mut encoded = Vec::new();

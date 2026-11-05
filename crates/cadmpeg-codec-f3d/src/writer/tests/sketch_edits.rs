@@ -43,9 +43,25 @@ fn generated_f3d_rewrites_native_sketch_point_coordinates() {
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated F3D decode");
     assert_eq!(
-        f3d_native(round_trip.ir()).sketch_points[0].coordinates(),
+        f3d_native(round_trip.ir())
+            .sketch_points
+            .iter()
+            .find(|point| point.persistent_id() == Some(500))
+            .expect("edited point survives")
+            .coordinates(),
         expected
     );
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder, SynthesisCause};
+    let plan = F3dCodec
+        .plan(
+            EncodeInput::new(&edited, Some(&fidelity)),
+            TargetRequest::Inherit,
+        )
+        .unwrap();
+    assert!(matches!(
+        plan.report().synthesis_cause(),
+        Some(SynthesisCause::SourceUnrepresented { .. })
+    ));
 }
 
 #[test]
@@ -261,7 +277,23 @@ fn generated_f3d_rewrites_native_sketch_nurbs_values() {
         .decode(&mut Cursor::new(regenerated), &DecodeOptions::default())
         .expect("regenerated F3D decode");
     assert_eq!(
-        f3d_native(round_trip.ir()).sketch_curve_identities[1].geometry,
+        f3d_native(round_trip.ir())
+            .sketch_curve_identities
+            .iter()
+            .find(|curve| curve.primary_id.get() == 700)
+            .expect("edited curve survives")
+            .geometry,
         expected
     );
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder, SynthesisCause};
+    let plan = F3dCodec
+        .plan(
+            EncodeInput::new(&edited, Some(&fidelity)),
+            TargetRequest::Inherit,
+        )
+        .unwrap();
+    assert!(matches!(
+        plan.report().synthesis_cause(),
+        Some(SynthesisCause::SourceUnrepresented { .. })
+    ));
 }

@@ -2740,13 +2740,13 @@ pub(crate) fn decode_v1(ctx: &DecodeContext<'_>, data: &[u8]) -> Result<Decoded,
                     })?
             };
             let linear = reader.f64().map_err(|error| malformed(&error))? * scale.value();
-            ir.tolerances.linear = crate::decode::admitted_tolerance(
+            ir.tolerances.linear = Some(crate::decode::admitted_tolerance(
                 cadmpeg_ir::scalar::PositiveLength::new(linear),
                 linear,
-                CadIr::empty().tolerances.linear,
+                CadIr::empty().tolerances.linear_or_default(),
                 "linear",
                 &mut tolerance_losses,
-            );
+            ));
             let _relative_tolerance = reader.f64().map_err(|error| malformed(&error))?;
             let angular = reader.f64().map_err(|error| malformed(&error))?;
             ir.tolerances.angular = crate::decode::admitted_tolerance(
@@ -4256,7 +4256,15 @@ mod tests {
             decode_v1(&v1_settings_archive()).expect("valid V1 settings stream"),
             false,
         ));
-        assert_eq!(result.ir().tolerances.linear.get(), 10.0);
+        assert_eq!(
+            result
+                .ir()
+                .tolerances
+                .linear
+                .expect("stated linear tolerance")
+                .get(),
+            10.0
+        );
         assert_eq!(result.source_fidelity().retained_records().len(), 3);
         assert_eq!(
             result

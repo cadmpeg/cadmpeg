@@ -89,16 +89,56 @@ pub(super) fn pcurves(
         .pcurves
         .retain(|pcurve| !omitted.contains(&pcurve.id));
     if !omitted.is_empty() {
+        let identities = omitted.iter().map(|id| id.as_str()).collect::<Vec<_>>().join(", ");
         losses.push(F3dLossCode::WriterPcurveOmitted.note(format!(
-            "{} unsupported parameter-space curves are omitted; spatial edge carriers remain",
+            "{} unsupported parameter-space curves are omitted: {identities}; spatial edge carriers remain",
             omitted.len(),
         )));
     }
     Ok(())
 }
 
-pub(super) fn auxiliary(target: &mut CadIr, losses: &mut Vec<LossNote>) {
-    target.model.subds.clear();
+pub(super) fn auxiliary(
+    target: &mut CadIr,
+    losses: &mut Vec<LossNote>,
+    limits: cadmpeg_core::decode::ResourceLimits,
+) -> Result<(), cadmpeg_core::CodecError> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy {
+        limits,
+        ..Default::default()
+    };
+    let ctx = cadmpeg_core::decode::DecodeContext::for_encode(&arena, &policy);
+    let mut retained = Vec::new();
+    for mut surface in std::mem::take(&mut target.model.subds) {
+        let cage = &surface.cage;
+        let mut symmetries = Vec::new();
+        for (index, symmetry) in cage.symmetries().iter().enumerate() {
+            if super::super::generate::subd::encode_symmetry(
+                &ctx, false, &mut String::new(), symmetry, cage.faces().len(), cage.edges().len(), cage.vertices().len(),
+            )? {
+                symmetries.push(symmetry.clone());
+            } else {
+                losses.push(F3dLossCode::WriterSubdOmitted.note(format!(
+                    "subd {} symmetry {index} has unsupported T-spline controls", surface.id
+                )));
+            }
+        }
+        if symmetries.len() != cage.symmetries().len() {
+            surface.cage = cadmpeg_ir::subd::SubdCage::new(
+                cage.vertices().to_vec(), cage.edges().to_vec(), cage.faces().to_vec(), symmetries,
+            ).map_err(cadmpeg_core::CodecError::malformed)?;
+        }
+        if super::super::generate::subd::encode(&ctx, &surface, false)?.is_some() {
+            retained.push(surface);
+        } else {
+            losses.push(F3dLossCode::WriterSubdOmitted.note(format!(
+                "subd {} has unsupported T-spline topology or controls",
+                surface.id
+            )));
+        }
+    }
+    target.model.subds = retained;
     target.model.assets.clear();
     target.model.tessellations.clear();
     for face in &mut target.model.faces {
@@ -133,6 +173,7 @@ pub(super) fn auxiliary(target: &mut CadIr, losses: &mut Vec<LossNote>) {
             )));
         }
     }
+    Ok(())
 }
 
 pub(super) fn solved_carriers(

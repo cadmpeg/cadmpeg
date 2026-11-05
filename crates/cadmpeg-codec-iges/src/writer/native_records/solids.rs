@@ -585,3 +585,138 @@ pub(super) fn apply_combine(
     }
     Ok(Some(feature.id.to_string()))
 }
+
+/// Rebuild a rectangular array's grid from its current neutral pattern.
+pub(super) fn apply_rectangular_pattern(
+    ir: &super::CadIr,
+    record: &super::NativeRecord,
+    fields: &mut Fields<'_>,
+) -> Result<Option<String>, String> {
+    use cadmpeg_ir::features::patterns::PatternTransform;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+    let mut features = ir
+        .model
+        .features
+        .iter()
+        .filter(|feature| feature.native_ref.as_deref() == Some(record.id()));
+    let Some(feature) = features.next() else {
+        return Ok(None);
+    };
+    if features.next().is_some() {
+        return Err("multiple features name one rectangular array".into());
+    }
+    let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, pattern }) =
+        feature.evaluation.definition()
+    else {
+        return Err("current feature is not a rectangular pattern".into());
+    };
+    if !seeds.is_empty() || fields.value("transformation").is_some() {
+        return Err("rectangular pattern has unsupported seeds or placement".into());
+    }
+    let PatternTransform::Linear {
+        direction: Some(direction),
+        distance,
+        count,
+        second: Some(second),
+        omitted_instances,
+    } = pattern.definition()
+    else {
+        return Err("current pattern has no two-direction rectangular grid".into());
+    };
+    let columns = ir
+        .dimension_value(count)
+        .ok_or("rectangular column count is unresolved")?;
+    let rows = ir
+        .dimension_value(&second.count)
+        .ok_or("rectangular row count is unresolved")?;
+    let column_spacing = distance
+        .resolved_spacing(ir, count)
+        .ok_or("rectangular column spacing is unresolved")?
+        .get();
+    let row_spacing = second
+        .distance
+        .resolved_spacing(ir, &second.count)
+        .ok_or("rectangular row spacing is unresolved")?
+        .get();
+    let first = direction.get();
+    let other = second.direction.get();
+    let rotation = first.y.atan2(first.x);
+    let (sin, cos) = rotation.sin_cos();
+    if first.z != 0.0
+        || other.z != 0.0
+        || first.x != cos
+        || first.y != sin
+        || other.x != -sin
+        || other.y != cos
+    {
+        return Err("rectangular directions have no exact IGES rotation".into());
+    }
+    let flag = fields
+        .value("do_dont_flag")
+        .and_then(Value::as_i64)
+        .filter(|flag| matches!(flag, 0 | 1))
+        .ok_or("rectangular array has no admitted selection flag")?;
+    let mut omitted = std::collections::BTreeSet::new();
+    for [column, row] in omitted_instances {
+        if *column >= columns || *row >= rows {
+            return Err("rectangular omitted instance is outside the grid".into());
+        }
+        let position = u64::from(*column)
+            .checked_mul(u64::from(rows))
+            .and_then(|value| value.checked_add(u64::from(*row)))
+            .and_then(|value| value.checked_add(1))
+            .ok_or("rectangular position overflows")?;
+        omitted.insert(position);
+    }
+    let total = u64::from(columns) * u64::from(rows);
+    let omitted_count =
+        u64::try_from(omitted.len()).map_err(|_| "rectangular mask count overflows")?;
+    let mut positions = Vec::new();
+    if !omitted.is_empty() {
+        let count = if flag == 0 {
+            total - omitted_count
+        } else {
+            omitted_count
+        };
+        if (flag == 0 && count > total / 2) || (flag == 1 && count < total.div_ceil(2)) {
+            return Err("rectangular omission mask has no admitted IGES representation".into());
+        }
+        let capacity = usize::try_from(count).map_err(|_| "rectangular mask count overflows")?;
+        positions
+            .try_reserve_exact(capacity)
+            .map_err(|_| "rectangular mask allocation failed")?;
+        if flag == 0 {
+            for position in 1..=total {
+                if !omitted.contains(&position) {
+                    positions.push(Value::from(i64::try_from(position).map_err(|_| {
+                        "rectangular position overflows the IGES integer field"
+                    })?));
+                }
+            }
+        } else {
+            for position in omitted {
+                positions.push(Value::from(i64::try_from(position).map_err(|_| {
+                    "rectangular position overflows the IGES integer field"
+                })?));
+            }
+        }
+    }
+    fields.values.insert("columns".into(), Value::from(columns));
+    fields.values.insert("rows".into(), Value::from(rows));
+    fields
+        .values
+        .insert("column_spacing".into(), serde_json::json!(column_spacing));
+    fields
+        .values
+        .insert("row_spacing".into(), serde_json::json!(row_spacing));
+    fields
+        .values
+        .insert("rotation".into(), serde_json::json!(rotation));
+    fields
+        .values
+        .insert("do_dont_flag".into(), Value::from(flag));
+    fields
+        .values
+        .insert("positions".into(), Value::Array(positions));
+    Ok(Some(feature.id.to_string()))
+}

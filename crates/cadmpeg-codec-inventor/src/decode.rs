@@ -2030,7 +2030,7 @@ fn apply_kernel_header(
     }
     if let Some(value) = header.linear {
         if let Some(linear) = cadmpeg_ir::scalar::PositiveLength::new(value * 10.0) {
-            ir.tolerances.linear = linear;
+            ir.tolerances.linear = Some(linear);
         } else {
             losses.push(InventorLossCode::KernelHeaderToleranceUnresolved.note(format!(
                 "kernel linear tolerance {value} cannot supply a positive finite millimetre tolerance; keeping the default"

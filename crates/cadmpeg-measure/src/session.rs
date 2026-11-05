@@ -473,7 +473,7 @@ impl<'ir> Measurer<'ir> {
         Ok(MeasureReport {
             occurrence: space.map(|space| space.report),
             tolerances: ReportTolerances {
-                linear: self.input.ir.tolerances.linear.get(),
+                linear: self.input.ir.tolerances.linear_or_default().get(),
                 angular: self.input.ir.tolerances.angular.get(),
             },
             caveats,

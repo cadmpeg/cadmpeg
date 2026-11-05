@@ -63,12 +63,13 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
 
     /// Preserve document-owned native detail while regenerating canonical fields.
     fn base_properties(&self) -> BTreeMap<NonBlankString, String> {
-        let Some(existing) = self.existing else {
-            return self.feature.source_properties.clone();
-        };
         let consumed = consumed_keys(self.feature.evaluation.definition());
-        existing
-            .properties
+        let properties = self
+            .existing
+            .map_or(&self.feature.source_properties, |existing| {
+                &existing.properties
+            });
+        properties
             .iter()
             .filter(|(key, _)| !consumed.contains(&key.as_str()))
             .map(|(key, value)| (key.clone(), value.clone()))

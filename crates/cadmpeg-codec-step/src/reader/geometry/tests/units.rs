@@ -472,7 +472,17 @@ pub(crate) fn decode_resolves_conversion_units_and_linear_uncertainty() {
 
     assert_eq!(result.ir().model.points.len(), 1);
     assert_eq!(result.ir().model.points[0].position().get().x, 50.8);
-    assert!((result.ir().tolerances.linear.get() - 0.0254).abs() < EPS_LINEAR_UNCERTAINTY);
+    assert!(
+        (result
+            .ir()
+            .tolerances
+            .linear
+            .expect("stated linear tolerance")
+            .get()
+            - 0.0254)
+            .abs()
+            < EPS_LINEAR_UNCERTAINTY
+    );
 }
 
 #[test]
@@ -482,7 +492,17 @@ fn decode_selects_a_length_uncertainty_after_an_angular_measure() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode mixed uncertainty units");
 
-    assert!((result.ir().tolerances.linear.get() - 0.0508).abs() < EPS_LINEAR_UNCERTAINTY);
+    assert!(
+        (result
+            .ir()
+            .tolerances
+            .linear
+            .expect("stated linear tolerance")
+            .get()
+            - 0.0508)
+            .abs()
+            < EPS_LINEAR_UNCERTAINTY
+    );
     assert!(!result
         .report()
         .losses
@@ -497,7 +517,17 @@ fn decode_prefers_named_length_uncertainty_when_several_lengths_are_present() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode named uncertainty");
 
-    assert!((result.ir().tolerances.linear.get() - 0.2).abs() < EPS_LINEAR_UNCERTAINTY);
+    assert!(
+        (result
+            .ir()
+            .tolerances
+            .linear
+            .expect("stated linear tolerance")
+            .get()
+            - 0.2)
+            .abs()
+            < EPS_LINEAR_UNCERTAINTY
+    );
     assert!(!result
         .report()
         .losses
@@ -521,7 +551,17 @@ fn decode_named_uncertainty_selection_is_order_independent() {
                 &DecodeOptions::default(),
             )
             .expect("decode ordered uncertainty");
-        assert!((result.ir().tolerances.linear.get() - 0.2).abs() < EPS_LINEAR_UNCERTAINTY);
+        assert!(
+            (result
+                .ir()
+                .tolerances
+                .linear
+                .expect("stated linear tolerance")
+                .get()
+                - 0.2)
+                .abs()
+                < EPS_LINEAR_UNCERTAINTY
+        );
         assert!(result
             .report()
             .losses
@@ -541,13 +581,24 @@ fn decode_uses_uncertainty_name_not_description() {
         .expect("decode uncertainty labels");
 
     assert_eq!(
-        result.ir().tolerances.linear.get(),
-        cadmpeg_ir::units::Tolerances::default().linear.get()
+        result
+            .ir()
+            .tolerances
+            .linear
+            .expect("stated linear tolerance")
+            .get(),
+        cadmpeg_ir::units::Tolerances::default()
+            .linear
+            .expect("default linear tolerance")
+            .get()
     );
     assert_ambiguous_length_uncertainty(
         &result.report().losses,
         &[0.1, 0.2],
-        cadmpeg_ir::units::Tolerances::default().linear.get(),
+        cadmpeg_ir::units::Tolerances::default()
+            .linear
+            .expect("default linear tolerance")
+            .get(),
     );
 }
 
@@ -561,7 +612,17 @@ fn decode_keeps_representation_uncertainty_scoped_to_native_source() {
         )
         .expect("decode scoped uncertainty");
 
-    assert!((result.ir().tolerances.linear.get() - 0.1).abs() < EPS_LINEAR_UNCERTAINTY);
+    assert!(
+        (result
+            .ir()
+            .tolerances
+            .linear
+            .expect("stated linear tolerance")
+            .get()
+            - 0.1)
+            .abs()
+            < EPS_LINEAR_UNCERTAINTY
+    );
     assert!(result
         .ir()
         .native_unknowns("step")
@@ -583,8 +644,21 @@ fn decode_reports_ambiguous_length_uncertainty() {
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode ambiguous uncertainty");
 
-    let default_linear = cadmpeg_ir::units::Tolerances::default().linear.get();
-    assert!((result.ir().tolerances.linear.get() - default_linear).abs() < EPS_LINEAR_UNCERTAINTY);
+    let default_linear = cadmpeg_ir::units::Tolerances::default()
+        .linear
+        .expect("default linear tolerance")
+        .get();
+    assert!(
+        (result
+            .ir()
+            .tolerances
+            .linear
+            .expect("stated linear tolerance")
+            .get()
+            - default_linear)
+            .abs()
+            < EPS_LINEAR_UNCERTAINTY
+    );
     assert_ambiguous_length_uncertainty(&result.report().losses, &[0.1, 0.2], default_linear);
 }
 
@@ -599,7 +673,14 @@ fn decode_resolves_agreeing_context_uncertainties_without_ambiguity() {
         .expect("decode agreeing context uncertainty");
 
     assert!(
-        (result.ir().tolerances.linear.get() - DECLARED_CONTEXT_UNCERTAINTY_MM).abs()
+        (result
+            .ir()
+            .tolerances
+            .linear
+            .expect("stated linear tolerance")
+            .get()
+            - DECLARED_CONTEXT_UNCERTAINTY_MM)
+            .abs()
             < EPS_LINEAR_UNCERTAINTY
     );
     assert!(result
@@ -622,8 +703,21 @@ fn decode_reports_distinct_context_uncertainties_as_ambiguous() {
         )
         .expect("decode distinct context uncertainty");
 
-    let default_linear = cadmpeg_ir::units::Tolerances::default().linear.get();
-    assert!((result.ir().tolerances.linear.get() - default_linear).abs() < EPS_LINEAR_UNCERTAINTY);
+    let default_linear = cadmpeg_ir::units::Tolerances::default()
+        .linear
+        .expect("default linear tolerance")
+        .get();
+    assert!(
+        (result
+            .ir()
+            .tolerances
+            .linear
+            .expect("stated linear tolerance")
+            .get()
+            - default_linear)
+            .abs()
+            < EPS_LINEAR_UNCERTAINTY
+    );
     assert_ambiguous_length_uncertainty(&result.report().losses, &[0.1, 0.2], default_linear);
 }
 
@@ -659,8 +753,21 @@ fn decode_does_not_let_a_named_context_uncertainty_mask_another_context() {
     // The named measure of the first context does not answer for the second
     // context, which has no named measure and contributes both of its length
     // measures.
-    let default_linear = cadmpeg_ir::units::Tolerances::default().linear.get();
-    assert!((result.ir().tolerances.linear.get() - default_linear).abs() < EPS_LINEAR_UNCERTAINTY);
+    let default_linear = cadmpeg_ir::units::Tolerances::default()
+        .linear
+        .expect("default linear tolerance")
+        .get();
+    assert!(
+        (result
+            .ir()
+            .tolerances
+            .linear
+            .expect("stated linear tolerance")
+            .get()
+            - default_linear)
+            .abs()
+            < EPS_LINEAR_UNCERTAINTY
+    );
     assert_ambiguous_length_uncertainty(&result.report().losses, &[0.1, 0.2], default_linear);
 }
 

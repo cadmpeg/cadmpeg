@@ -225,7 +225,7 @@ pub(super) fn check_procedural_support_consistency(
                 ))
             })?;
             let bound = procedural_support_allowance(
-                ir.tolerances.linear,
+                ir.tolerances.linear_or_default(),
                 procedural
                     .cache_fit_tolerance()
                     .map(crate::geometry::FitTolerance::get),
@@ -357,7 +357,7 @@ pub(super) fn check_procedural_support_consistency(
             measured_point(crate::eval::decode::curve_point(ctx, curve, parameter))
         })?;
         let bound = procedural_support_allowance(
-            ir.tolerances.linear,
+            ir.tolerances.linear_or_default(),
             procedural
                 .cache_fit_tolerance()
                 .map(crate::geometry::FitTolerance::get),
@@ -459,7 +459,10 @@ pub fn cache_support_endpoint_failures(
             index,
             pass: &evaluations,
         },
-        procedural_support_allowance(index.ir().tolerances.linear, cache_fit_tolerance),
+        procedural_support_allowance(
+            index.ir().tolerances.linear_or_default(),
+            cache_fit_tolerance,
+        ),
         |side, _mismatch| sides.push(side),
     )?;
     Ok(sides)
@@ -507,7 +510,7 @@ fn visit_support_failures(
                     })
             });
         let bound = bound.max(procedural_support_allowance(
-            model.index.ir().tolerances.linear,
+            model.index.ir().tolerances.linear_or_default(),
             support_fit.map(crate::geometry::FitTolerance::get),
         ));
         // A non-finite pcurve or support point is measured as a finite one
@@ -733,7 +736,7 @@ pub(super) fn check_edge_endpoint_consistency(
             continue;
         };
         let bound = allowance(
-            ir.tolerances.linear,
+            ir.tolerances.linear_or_default(),
             &[
                 edge.tolerance.map(crate::scalar::PositiveReal::get),
                 *start_tol,
@@ -815,7 +818,7 @@ pub(super) fn check_edge_endpoint_consistency(
             continue;
         };
         let bound = allowance(
-            ir.tolerances.linear,
+            ir.tolerances.linear_or_default(),
             &[
                 edge.tolerance.map(crate::scalar::PositiveReal::get),
                 *start_tol,
@@ -958,7 +961,7 @@ pub(super) fn check_pcurve_surface_consistency(
             None => None,
         };
         let bound = allowance(
-            ir.tolerances.linear,
+            ir.tolerances.linear_or_default(),
             &[
                 edge.tolerance.map(crate::scalar::PositiveReal::get),
                 *start_tol,
@@ -975,7 +978,7 @@ pub(super) fn check_pcurve_surface_consistency(
         // inverse recovery move an explicitly ranged occurrence onto a
         // different, merely nearby part of the carrier.
         let recovery_bound = allowance(
-            ir.tolerances.linear,
+            ir.tolerances.linear_or_default(),
             &[
                 edge.tolerance.map(crate::scalar::PositiveReal::get),
                 *start_tol,

@@ -335,3 +335,227 @@ fn edited_extrusion_changes_between_solid_and_surface() {
         }
     }
 }
+
+#[test]
+fn source_less_feature_uses_its_operation_instead_of_stale_native_controls() {
+    let mut ir = source_less_extrusion();
+    ir.model.features[0].source_properties.insert(
+        cadmpeg_core::nonblank_literal!("DissectableRoot"),
+        "true".into(),
+    );
+    ir.model.features[0]
+        .source_properties
+        .insert(cadmpeg_core::nonblank_literal!("Note"), "kept".into());
+    ir.model.finalize();
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let native = crate::test_support::native::sldprt_native(output.ir());
+    let feature = native
+        .feature_histories
+        .iter()
+        .flat_map(|history| &history.features)
+        .find(|feature| feature.name == "Boss")
+        .unwrap();
+    assert!(!feature.properties.contains_key("DissectableRoot"));
+    assert_eq!(
+        feature.properties.get("Note").map(String::as_str),
+        Some("kept")
+    );
+    assert!(output.ir().model.features.iter().any(|feature| matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Extrude {
+            op: BooleanOp::Join,
+            ..
+        })
+    )));
+}
+
+#[test]
+fn source_less_shell_retains_unresolved_construction() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Shell Name="Partial" Type="Shell" id="151"/></Keywords>"#,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    assert!(matches!(
+        ir.model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Shell { .. })
+    ));
+    let expected = ir.model.features[0].evaluation.definition().clone();
+    ir.source = None;
+    ir.native = cadmpeg_ir::Native::default();
+    ir.model.features[0].native_ref = None;
+    let id = ir.model.features[0].id.clone();
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(!plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(id.as_str()) && loss.message.contains("solved result")));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(output
+        .ir()
+        .model
+        .features
+        .iter()
+        .any(|feature| feature.evaluation.definition() == &expected));
+}
+
+#[test]
+fn source_less_hole_retains_absent_diameter() {
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Hole Name="Partial" Type="Hole" id="151"/></Keywords>"#,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    assert!(matches!(
+        ir.model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Hole { .. })
+    ));
+    let expected = ir.model.features[0].evaluation.definition().clone();
+    ir.source = None;
+    ir.native = cadmpeg_ir::Native::default();
+    ir.model.features[0].native_ref = None;
+    let id = ir.model.features[0].id.clone();
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(!plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(id.as_str()) && loss.message.contains("solved result")));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(output
+        .ir()
+        .model
+        .features
+        .iter()
+        .any(|feature| feature.evaluation.definition() == &expected));
+}
+
+#[test]
+fn source_less_thicken_retains_absent_thickness() {
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Thicken Name="Partial" Type="Thicken" id="151"/></Keywords>"#,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    assert!(matches!(
+        ir.model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Thicken {
+            thickness: None,
+            ..
+        })
+    ));
+    let expected = ir.model.features[0].evaluation.definition().clone();
+    ir.source = None;
+    ir.native = cadmpeg_ir::Native::default();
+    ir.model.features[0].native_ref = None;
+    let id = ir.model.features[0].id.clone();
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(!plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(id.as_str()) && loss.message.contains("solved result")));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(output
+        .ir()
+        .model
+        .features
+        .iter()
+        .any(|feature| feature.evaluation.definition() == &expected));
+}
+
+#[test]
+fn source_less_edge_treatments_retain_unresolved_construction() {
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(0x42, "Contents/Keywords", br#"<Keywords><Fillet Name="Partial fillet" Type="Fillet" id="151"/><Chamfer Name="Partial chamfer" Type="Chamfer" id="152"/></Keywords>"#));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    assert!(matches!(
+        ir.model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Fillet { .. })
+    ));
+    assert!(matches!(
+        ir.model.features[1].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Chamfer { .. })
+    ));
+    let expected = ir
+        .model
+        .features
+        .iter()
+        .map(|feature| feature.evaluation.definition().clone())
+        .collect::<Vec<_>>();
+    ir.source = None;
+    ir.native = cadmpeg_ir::Native::default();
+    for feature in &mut ir.model.features {
+        feature.native_ref = None;
+    }
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    for feature in &ir.model.features {
+        assert!(!plan
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains(feature.id.as_str())
+                && loss.message.contains("solved result")));
+    }
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    for expected in expected {
+        assert!(output
+            .ir()
+            .model
+            .features
+            .iter()
+            .any(|feature| feature.evaluation.definition() == &expected));
+    }
+}
