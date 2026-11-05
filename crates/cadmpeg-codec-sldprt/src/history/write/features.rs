@@ -407,6 +407,22 @@ fn synchronize_features(
             .or_default()
             .insert(name, text);
     }
+    let mut parameter_properties = HashMap::new();
+    for record in native
+        .feature_histories
+        .iter()
+        .flat_map(|history| &history.features)
+    {
+        for (ordinal, name) in crate::history::project::projected_parameter_names(record)
+            .into_iter()
+            .enumerate()
+        {
+            if let Some(properties) = record.dimension_properties.get(name.as_str()) {
+                let id = crate::history::project::neutral_parameter_id(record, ordinal)?;
+                parameter_properties.insert(id, properties.clone());
+            }
+        }
+    }
     let desired_record_ids = record_ids
         .values()
         .cloned()
@@ -554,20 +570,16 @@ fn synchronize_features(
                 None => source_id.map(crate::records::TreeParent::Source),
             }
         });
+        let dimension_properties = parameters
+            .iter()
+            .filter(|parameter| parameter.owner.as_ref() == Some(&feature.id))
+            .filter_map(|parameter| {
+                parameter_properties
+                    .get(&parameter.id)
+                    .map(|properties| (parameter.name.clone(), properties.clone()))
+            })
+            .collect();
         if let Some(existing) = existing.as_mut() {
-            let mut dimension_properties = BTreeMap::new();
-            for (ordinal, old_name) in crate::history::project::projected_parameter_names(existing)
-                .into_iter()
-                .enumerate()
-            {
-                let id = crate::history::project::neutral_parameter_id(existing, ordinal)?;
-                if let (Some(parameter), Some(properties)) = (
-                    parameters.iter().find(|parameter| parameter.id == id),
-                    existing.dimension_properties.get(old_name.as_str()),
-                ) {
-                    dimension_properties.insert(parameter.name.clone(), properties.clone());
-                }
-            }
             if let Some(tag) = &feature.source_tag {
                 existing.xml_tag.clone_from(tag);
             }
@@ -606,7 +618,7 @@ fn synchronize_features(
                 input_class: None,
                 suppressed,
                 parameters: encoded_parameters,
-                dimension_properties: BTreeMap::new(),
+                dimension_properties,
                 properties,
                 text: feature.source_text.clone(),
                 content: feature
