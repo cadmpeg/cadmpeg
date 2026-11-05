@@ -100,3 +100,34 @@ fn source_less_compact_body_attribute_is_authored() {
     let output = F3dCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()).unwrap();
     assert_eq!(output.ir().model.bodies.len(), 1);
 }
+
+#[test]
+fn source_less_compact_face_attribute_is_authored() {
+    use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
+    let source = crate::test_support::zip_test::f3d_with_smbh(
+        &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh());
+    let decoded = F3dCodec.decode(&mut Cursor::new(source), &DecodeOptions::default()).unwrap();
+    let mut ir = decoded.ir().clone();
+    let target = AttributeTarget::Face(ir.model.faces[0].id.clone());
+    let values = vec![Some(AttributeValue::Reference("f3d:brep:entity#-1".into())),
+        Some(AttributeValue::String("face-value".into())), Some(AttributeValue::Integer(42))];
+    ir.model.attributes.push(SourceAttribute {
+        id: "authored:model:attribute#face".try_into().unwrap(), native_ref: None,
+        target: target.clone(), name: "ATTRIB_CUSTOM-attrib".into(), values: values.clone(),
+    });
+    let body_target = AttributeTarget::Body(ir.model.bodies[0].id.clone());
+    ir.model.attributes.push(SourceAttribute {
+        id: "authored:model:attribute#body".try_into().unwrap(), native_ref: None,
+        target: body_target.clone(), name: "ATTRIB_CUSTOM-attrib".into(), values: values.clone(),
+    });
+    let mut bytes = Vec::new();
+    let report = F3dCodec.plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap().write_to(&mut bytes).unwrap();
+    let output = F3dCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()).unwrap();
+    let attribute = output.ir().model.attributes.iter().find(|attribute| attribute.target == target).unwrap();
+    assert_eq!(attribute.values, values);
+    let body_attribute = output.ir().model.attributes.iter().find(|attribute| attribute.target == body_target).unwrap();
+    assert_eq!(body_attribute.values, values);
+    assert!(!report.losses.iter().any(|loss| loss.message.contains("authored:model:attribute#face")
+        || loss.message.contains("authored:model:attribute#body")));
+}
