@@ -504,7 +504,9 @@ fn sketches(
     let parameters = &ir.model.parameters;
     let spatial_entities = &ir.model.spatial_sketch_entities;
     ir.model.spatial_sketch_constraints.retain(|constraint| {
-        if matches!(constraint.definition.kind(),
+        if crate::resolved_features::write_prepare::native_spatial_relation_supported(
+            constraint.definition.kind(), parameters,
+        ) || matches!(constraint.definition.kind(),
             cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput::PointLineDistance {
                 point, line, parameter: cadmpeg_ir::features::Dimension::Parameter(id),
             } if parameters.iter().any(|parameter| &parameter.id == id && parameter.driving && matches!(parameter.value, Some(cadmpeg_ir::features::ParameterValue::Length(_))))

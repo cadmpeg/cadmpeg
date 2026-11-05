@@ -510,8 +510,11 @@ fn diff_native_namespaces(left: &CadIr, right: &CadIr) -> Vec<ArenaDiff> {
 /// Whether two tolerance declarations agree, each component within the
 /// comparator's tolerance.
 fn tolerances_agree(left: crate::units::Tolerances, right: crate::units::Tolerances) -> bool {
-    floats_agree(left.linear.get(), right.linear.get())
-        && floats_agree(left.angular.get(), right.angular.get())
+    (match (left.linear, right.linear) {
+        (Some(left), Some(right)) => floats_agree(left.get(), right.get()),
+        (None, None) => true,
+        _ => false,
+    }) && floats_agree(left.angular.get(), right.angular.get())
 }
 
 /// Compare the source metadata of two documents, classifying each differing
@@ -722,15 +725,37 @@ mod tests {
     fn a_last_place_tolerance_move_is_not_a_difference() {
         let left = unit_cube().expect("valid unit cube fixture");
         let mut right = left.clone();
-        right.tolerances.linear = crate::scalar::PositiveLength::new(f64::from_bits(
-            left.tolerances.linear.get().to_bits() + 1,
-        ))
-        .expect("positive finite tolerance");
+        right.tolerances.linear = Some(
+            crate::scalar::PositiveLength::new(f64::from_bits(
+                left.tolerances
+                    .linear
+                    .expect("stated linear tolerance")
+                    .get()
+                    .to_bits()
+                    + 1,
+            ))
+            .expect("positive finite tolerance"),
+        );
         assert!(diff(&left, &right).is_empty());
 
-        right.tolerances.linear =
-            crate::scalar::PositiveLength::new(left.tolerances.linear.get() * 2.0)
-                .expect("positive finite tolerance");
+        right.tolerances.linear = Some(
+            crate::scalar::PositiveLength::new(
+                left.tolerances
+                    .linear
+                    .expect("stated linear tolerance")
+                    .get()
+                    * 2.0,
+            )
+            .expect("positive finite tolerance"),
+        );
+        assert!(diff(&left, &right).tolerance_change.is_some());
+    }
+
+    #[test]
+    fn an_absent_tolerance_differs_from_the_default_value() {
+        let left = unit_cube().expect("valid unit cube fixture");
+        let mut right = left.clone();
+        right.tolerances.linear = None;
         assert!(diff(&left, &right).tolerance_change.is_some());
     }
 

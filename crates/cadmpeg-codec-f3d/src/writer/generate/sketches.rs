@@ -236,7 +236,7 @@ pub(super) fn encode(
             sketch,
             &members,
             &member_indices,
-            target.tolerances.linear.get(),
+            target.tolerances.linear_or_default().get(),
             &ctx,
         )? {
             continue;

@@ -877,7 +877,7 @@ fn synthesize_with_admission(
                 .note("the document holds no geometry that IGES can encode"),
         );
     }
-    let minimum_resolution = ir.tolerances.linear.get();
+    let minimum_resolution = ir.tolerances.linear.map(|value| value.get());
     let counts = entity_counts(&graph.entities);
     let mut coverage = SYNTHESIS_COVERAGE;
     coverage.features = feature_coverage;
@@ -9341,7 +9341,7 @@ fn encode_file(
     entities: &[Entity],
     body_presentations: &BTreeMap<usize, BodyPresentation>,
     version: crate::IgesVersion,
-    minimum_resolution: f64,
+    minimum_resolution: Option<f64>,
 ) -> Result<Vec<u8>, WriteError> {
     let metadata = DocumentMetadata::of(ir);
     let generation_timestamp = generation_timestamp_for(version, metadata.generation_date)?;
@@ -9350,9 +9350,7 @@ fn encode_file(
         version,
         &metadata,
         &generation_timestamp,
-        FiniteReal::new(minimum_resolution).ok_or_else(|| {
-            CodecError::malformed("IGES output graph has a non-finite Global minimum resolution")
-        })?,
+        minimum_resolution.and_then(FiniteReal::new),
         FiniteReal::new(maximum_coordinate).ok_or_else(|| {
             CodecError::malformed("IGES output graph has a non-finite Global maximum coordinate")
         })?,
@@ -9767,7 +9765,7 @@ fn generated_global(
     version: crate::IgesVersion,
     metadata: &DocumentMetadata<'_>,
     generation_timestamp: &str,
-    minimum_resolution: FiniteReal,
+    minimum_resolution: Option<FiniteReal>,
     maximum_coordinate: FiniteReal,
 ) -> Vec<u8> {
     let mut fields = vec![
@@ -9800,7 +9798,7 @@ fn generated_global(
         WRITER_MAXIMUM_LINE_WEIGHT_GRADATIONS.to_string(),
         WRITER_MAXIMUM_LINE_WIDTH.to_owned(),
         global_hollerith(generation_timestamp),
-        number(minimum_resolution),
+        minimum_resolution.map_or_else(String::new, number),
         number(maximum_coordinate),
         global_hollerith(metadata.author.unwrap_or(WRITER_AUTHOR_NAME)),
         global_hollerith(metadata.organization.unwrap_or(WRITER_AUTHOR_ORGANIZATION)),
