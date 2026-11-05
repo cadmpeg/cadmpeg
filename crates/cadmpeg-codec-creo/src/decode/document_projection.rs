@@ -294,7 +294,7 @@ mod tests {
         ir.model.parameters.push(named_length_parameter());
         let mut losses = Vec::new();
         crate::decode::with_service_context(|ctx| {
-            project(ctx, &scan, &mut ir, &mut losses).expect("project configurations")
+            project(ctx, &scan, &mut ir, &mut losses).expect("project configurations");
         });
         assert!(losses.is_empty(), "{losses:#?}");
         assert_eq!(ir.model.configurations.len(), 1);
