@@ -5479,33 +5479,38 @@ fn build_metadata_ir(scan: &ContainerScan) -> Result<MetadataIr, CodecError> {
         attributes.insert("modeling_length_unit".to_owned(), unit);
     }
 
-    if let Some(brep) = container::select_fallback_brep(scan) {
-        if let Some(h) = brep
-            .kernel
-            .as_ref()
-            .and_then(crate::container::KernelFraming::model_metadata)
-        {
-            if let Some(pf) = &h.product_family {
-                {
-                    let copy = pf.to_owned();
-                    attributes.insert("product_family".to_owned(), copy);
-                }
+    let brep = container::select_fallback_brep(scan);
+    let partial_header = if brep.is_none() {
+        scan.partial_brep_header()
+    } else {
+        None
+    };
+    if let Some(h) = brep
+        .and_then(|brep| brep.kernel.as_ref())
+        .or(partial_header)
+        .and_then(crate::container::KernelFraming::model_metadata)
+    {
+        if let Some(pf) = &h.product_family {
+            {
+                let copy = pf.to_owned();
+                attributes.insert("product_family".to_owned(), copy);
             }
-            if let Some(pv) = &h.product_version {
-                {
-                    let copy = pv.to_owned();
-                    attributes.insert("product_version".to_owned(), copy);
-                }
-            }
-            if let Some(sd) = &h.save_date {
-                {
-                    let copy = sd.to_owned();
-                    attributes.insert("save_date".to_owned(), copy);
-                }
-            }
-            ir.tolerances = admit_kernel_tolerances(h.linear, h.angular)?;
         }
-
+        if let Some(pv) = &h.product_version {
+            {
+                let copy = pv.to_owned();
+                attributes.insert("product_version".to_owned(), copy);
+            }
+        }
+        if let Some(sd) = &h.save_date {
+            {
+                let copy = sd.to_owned();
+                attributes.insert("save_date".to_owned(), copy);
+            }
+        }
+        ir.tolerances = admit_kernel_tolerances(h.linear, h.angular)?;
+    }
+    if let Some(brep) = brep {
         append_metadata_unknown(&mut unknowns, brep)?;
     }
 
