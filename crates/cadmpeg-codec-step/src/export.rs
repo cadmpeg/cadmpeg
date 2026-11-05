@@ -110,15 +110,6 @@ pub(crate) fn write_step_outcome(
     let file_name_fields = b.file_name_fields.clone();
     let lines = b.emitter.into_lines()?;
     let session = cadmpeg_core::encode::EncodeSession::from_context(ctx)?;
-    session.charge_entities(
-        cadmpeg_core::decode::u64_from_index(lines.len()),
-        "write STEP DATA records",
-    )?;
-    session.charge_entities(
-        cadmpeg_core::decode::u64_from_index(emitter_anchors.len()),
-        "write STEP REFERENCE records",
-    )?;
-
     write_header(
         w,
         schema,
@@ -130,12 +121,14 @@ pub(crate) fn write_step_outcome(
         emitter_anchors.sort_by_key(|(id, _)| *id);
         writeln!(w, "REFERENCE;")?;
         for (id, uri) in &emitter_anchors {
+            session.charge_entities(1, "write STEP REFERENCE record")?;
             writeln!(w, "#{id}=<{uri}>;")?;
         }
         writeln!(w, "ENDSEC;")?;
     }
     writeln!(w, "DATA;")?;
     for line in &lines {
+        session.charge_entities(1, "write STEP DATA record")?;
         writeln!(w, "{line}")?;
     }
     writeln!(w, "ENDSEC;")?;
