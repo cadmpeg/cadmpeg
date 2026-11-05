@@ -313,6 +313,39 @@ fn decode_synthesizes_vertex_for_closed_null_vertex_fin() {
 }
 
 #[test]
+fn decode_keeps_a_closed_edge_whose_partner_fin_has_no_links() {
+    let mut stream = topology_partition_stream();
+    let fin = stream
+        .windows(4)
+        .position(|window| window == [0, 17, 0, 7])
+        .expect("fin record");
+    put_ref(&mut stream, fin + 12, 1);
+    put_ref(&mut stream, fin + 14, 20);
+
+    let mut partner = record(17, 23);
+    put_ref(&mut partner, 2, 20);
+    put_ref(&mut partner, 6, 1); // not a loop member
+    put_ref(&mut partner, 8, 1); // no forward link
+    put_ref(&mut partner, 10, 1); // no backward link
+    put_ref(&mut partner, 12, 1); // null vertex
+    put_ref(&mut partner, 14, 7); // partner fin
+    put_ref(&mut partner, 16, 8); // same edge
+    put_ref(&mut partner, 18, 9); // same curve
+    partner[22] = b'-';
+    stream.extend(partner);
+
+    let mut input = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec
+        .decode(&mut input, &DecodeOptions::default())
+        .unwrap();
+
+    let edge = result.ir().model.edges.first().expect("closed edge");
+    assert_eq!(edge.start, edge.end);
+    assert_eq!(result.ir().model.loops.len(), 1);
+    assert_eq!(result.ir().model.coedges.len(), 1);
+}
+
+#[test]
 fn decode_aliases_partner_closed_null_vertex_fin_to_edge_start() {
     let mut stream = topology_partition_stream();
     let fin = stream

@@ -87,7 +87,7 @@ fn decode_surfaces(
                 .payload
                 .is_none_or(|payload| payload == refs[1])
                 .then_some(())?;
-            let payload = payloads.get(&refs[1])?.as_ref()?;
+            let payload = arrays.controls(descriptor.vertices, payloads.get(&refs[1]))?;
             let poles = descriptor.u_count.checked_mul(descriptor.v_count)?;
             let value_count = payload.value_count();
             let stride = value_count.checked_div(poles)?;
@@ -249,7 +249,7 @@ fn decode_pcurves(
                 (2, None | Some(false)) | (3, Some(true))
             )
             .then_some(())?;
-            let control = controls.get(&refs[1])?.as_ref()?;
+            let control = arrays.controls(descriptor.vertices, controls.get(&refs[1]))?;
             let value_count = control.value_count();
             let stride = value_count.checked_div(descriptor.basis.poles)?;
             let expected_values = descriptor.basis.poles.checked_mul(stride)?;
@@ -366,7 +366,7 @@ fn decode_curves(
             let refs = node.compact_tail_references::<2>()?;
             let descriptor = descriptors.get(&refs[0])?.as_ref()?;
             matches!(descriptor.basis.dimension, 3 | 4).then_some(())?;
-            let control = controls.get(&refs[1])?.as_ref()?;
+            let control = arrays.controls(descriptor.vertices, controls.get(&refs[1]))?;
             let value_count = control.value_count();
             let stride = value_count.checked_div(descriptor.basis.poles)?;
             let expected_values = descriptor.basis.poles.checked_mul(stride)?;
@@ -547,6 +547,24 @@ fn insert_if_vacant<T>(records: &mut RecordIndex<T>, reference: u32, value: Opti
 struct Arrays<'bytes> {
     u16s: RecordIndex<ArrayValues<'bytes>>,
     f64s: RecordIndex<ArrayValues<'bytes>>,
+    vertices: RecordIndex<Payload<'bytes>>,
+}
+
+impl<'bytes> Arrays<'bytes> {
+    /// A descriptor's vertex array when it can be identified, otherwise the values at the
+    /// payload's fixed position. A form record between the payload and its vertex array moves
+    /// the values away from that position.
+    fn controls(
+        &self,
+        vertices: u32,
+        payload: Option<&Option<Payload<'bytes>>>,
+    ) -> Option<Payload<'bytes>> {
+        self.vertices
+            .get(&vertices)
+            .copied()
+            .flatten()
+            .or_else(|| payload.copied().flatten())
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -608,7 +626,34 @@ fn arrays(bytes: &[u8]) -> Arrays<'_> {
             }
         }
     }
-    Arrays { u16s, f64s }
+    Arrays {
+        u16s,
+        f64s,
+        vertices: vertex_arrays(bytes),
+    }
+}
+
+fn vertex_arrays(bytes: &[u8]) -> RecordIndex<Payload<'_>> {
+    let records = bytes
+        .len()
+        .checked_sub(7)
+        .into_iter()
+        .flat_map(|last| 0..last)
+        .map(|pos| vertex_array_at(bytes, pos));
+    unique_records(records)
+}
+
+fn vertex_array_at(bytes: &[u8], pos: usize) -> Option<(u32, Payload<'_>)> {
+    (bytes.get(pos..pos + 2) == Some(&[0, 45])).then_some(())?;
+    let escape = usize::from(bytes.get(pos + 2) == Some(&0xff));
+    let count = usize::try_from(View::u32_be_at(bytes, pos + 2 + escape)?).ok()?;
+    (count > 0).then_some(())?;
+    let (reference, reference_len) = read_xmt(bytes, pos + 6 + escape)?;
+    NonNullXmt::try_from(reference).ok()?;
+    let data = pos + 6 + escape + reference_len;
+    let raw = bytes.get(data..data.checked_add(count.checked_mul(8)?)?)?;
+    finite_f64_bytes(raw)?;
+    Some((reference, Payload { raw }))
 }
 
 fn array_record_at(bytes: &[u8], pos: usize) -> Option<ArrayRecord<'_>> {
@@ -751,6 +796,7 @@ struct SurfaceDescriptor {
     v_knots: u32,
     payload: Option<u32>,
     vertex_layout: Option<(u16, bool)>,
+    vertices: u32,
 }
 
 fn surface_descriptors(bytes: &[u8]) -> RecordIndex<SurfaceDescriptor> {
@@ -761,7 +807,7 @@ fn surface_descriptors(bytes: &[u8]) -> RecordIndex<SurfaceDescriptor> {
         .into_iter()
         .flat_map(|last| 0..last)
     {
-        let Some((xmt, descriptor, _)) = surface_descriptor_at(bytes, pos) else {
+        let Some((xmt, mut descriptor, _)) = surface_descriptor_at(bytes, pos) else {
             continue;
         };
 
@@ -769,6 +815,7 @@ fn surface_descriptors(bytes: &[u8]) -> RecordIndex<SurfaceDescriptor> {
             let Some(current) = state.take() else {
                 continue;
             };
+            descriptor.vertices = current.vertices;
 
             *state = if current == descriptor {
                 None
@@ -838,11 +885,12 @@ fn surface_descriptor_at(bytes: &[u8], pos: usize) -> Option<(u32, SurfaceDescri
         .then_some(())?;
     let mut vertex_layout = None;
     let short = View::u16_be_at(bytes, pos + 44 + shift) == Some(125);
-    let (u_mult, v_mult, u_knots, v_knots, payload, end) = if short {
+    let (vertices, u_mult, v_mult, u_knots, v_knots, payload, end) = if short {
         let payload_at = pos + 46 + shift;
         let (payload, payload_len) = read_enveloped_xmt(bytes, payload_at)?;
         (payload > 1).then_some(())?;
         (
+            u32::from(View::u16_be_at(bytes, pos + 34 + shift)?),
             u32::from(View::u16_be_at(bytes, pos + 36 + shift)?),
             u32::from(View::u16_be_at(bytes, pos + 38 + shift)?),
             u32::from(View::u16_be_at(bytes, pos + 40 + shift)?),
@@ -863,6 +911,7 @@ fn surface_descriptor_at(bytes: &[u8], pos: usize) -> Option<(u32, SurfaceDescri
             let (payload, payload_len) = read_enveloped_xmt(bytes, payload_at)?;
             (payload > 1).then_some(())?;
             (
+                refs[0],
                 refs[1],
                 refs[2],
                 refs[3],
@@ -884,7 +933,7 @@ fn surface_descriptor_at(bytes: &[u8], pos: usize) -> Option<(u32, SurfaceDescri
                 View::u16_be_at(bytes, pos + surf_desc::DIMENSION + shift)?,
                 logical_at(bytes, pos + surf_desc::RATIONAL + shift)?,
             ));
-            (refs[1], refs[2], refs[3], refs[4], None, at)
+            (refs[0], refs[1], refs[2], refs[3], refs[4], None, at)
         }
     };
     Some((
@@ -906,6 +955,7 @@ fn surface_descriptor_at(bytes: &[u8], pos: usize) -> Option<(u32, SurfaceDescri
             v_knots,
             payload,
             vertex_layout,
+            vertices,
         },
         end,
     ))
@@ -915,6 +965,7 @@ fn surface_descriptor_at(bytes: &[u8], pos: usize) -> Option<(u32, SurfaceDescri
 struct CurveDescriptor {
     basis: CurveBasis,
     references: CurveDescriptorReferences,
+    vertices: u32,
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -936,7 +987,7 @@ fn curve_descriptors(bytes: &[u8]) -> RecordIndex<CurveDescriptor> {
         .into_iter()
         .flat_map(|last| 0..last)
     {
-        let Some((xmt, descriptor, _)) = curve_descriptor_at(bytes, pos, true) else {
+        let Some((xmt, mut descriptor, _)) = curve_descriptor_at(bytes, pos, true) else {
             continue;
         };
 
@@ -944,6 +995,7 @@ fn curve_descriptors(bytes: &[u8]) -> RecordIndex<CurveDescriptor> {
             let Some(current) = state.take() else {
                 continue;
             };
+            descriptor.vertices = current.vertices;
 
             *state = if current == descriptor {
                 None
@@ -1019,6 +1071,7 @@ fn curve_descriptor_at(
                         periodic,
                     },
                     references: CurveDescriptorReferences::Status(references),
+                    vertices: references[0].into(),
                 },
                 at,
             ));
@@ -1042,6 +1095,7 @@ fn curve_descriptor_at(
                 periodic,
             },
             references: CurveDescriptorReferences::Compact([mult, knots]),
+            vertices: u32::from(View::u16_be_at(bytes, pos + 21 + shift)?),
         },
         pos + 23 + shift + mult_len + knots_len,
     ))
