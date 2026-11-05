@@ -12,6 +12,7 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use zip::CompressionMethod;
 
 use crate::container;
+use crate::test_support::act_stream_test::{generated_act_bulkstream, generated_act_metastream};
 use crate::test_support::lost_edge_test::remove_body_lost_edge_bulkstream;
 use crate::test_support::manifest_test::{
     write_synthetic_manifests, write_synthetic_manifests_with_version,
@@ -25,8 +26,7 @@ use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
 use crate::test_support::smbh_header_test::synthetic_smbh;
 use crate::test_support::smbh_revision_test::scrubbed_definition;
 use crate::test_support::streams_test::{
-    design_metastream_with_records_and_secondary, generated_act_bulkstream,
-    generated_act_metastream, generated_design_base_feature_bulkstream,
+    design_metastream_with_records_and_secondary, generated_design_base_feature_bulkstream,
     generated_design_base_feature_metastream, generated_design_base_flange_bulkstream,
     generated_design_base_flange_metastream, generated_design_canvas_bulkstream,
     generated_design_canvas_metastream, generated_design_copy_paste_bodies_bulkstream,
