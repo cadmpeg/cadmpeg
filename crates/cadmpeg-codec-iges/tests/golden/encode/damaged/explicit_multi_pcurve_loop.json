@@ -251,6 +251,16 @@
           "namespace": "export",
           "scope": "namespaced"
         },
+        "message": "the iges write omits 42 native record(s) from `iges.cards`: iges:physical:card#10, iges:physical:card#11, iges:physical:card#12, iges:physical:card#13, iges:physical:card#14, iges:physical:card#15, iges:physical:card#16, iges:physical:card#17, iges:physical:card#18, iges:physical:card#19, iges:physical:card#20, iges:physical:card#21, iges:physical:card#22, iges:physical:card#23, iges:physical:card#24, iges:physical:card#25, iges:physical:card#26, iges:physical:card#27, iges:physical:card#28, iges:physical:card#29, iges:physical:card#30, iges:physical:card#31, iges:physical:card#32, iges:physical:card#33, iges:physical:card#34, iges:physical:card#35, iges:physical:card#36, iges:physical:card#37, iges:physical:card#38, iges:physical:card#39, iges:physical:card#4, iges:physical:card#40, iges:physical:card#41, iges:physical:card#42, iges:physical:card#43, iges:physical:card#44, iges:physical:card#45, iges:physical:card#46, iges:physical:card#47, iges:physical:card#7, iges:physical:card#8, iges:physical:card#9",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "native.records-omitted",
+          "kind": "record_not_typed",
+          "namespace": "export",
+          "scope": "namespaced"
+        },
         "message": "the iges write omits 1 native record(s) from `iges.directions`: iges:native:direction#D3",
         "severity": "info"
       },
@@ -308,7 +318,14 @@
               "disposition": "dropped"
             },
             "cards": {
-              "disposition": "regenerated"
+              "disposition": "dropped",
+              "records": {
+                "iges:physical:card#1": "written",
+                "iges:physical:card#2": "written",
+                "iges:physical:card#3": "written",
+                "iges:physical:card#5": "written",
+                "iges:physical:card#6": "written"
+              }
             },
             "circular_arrays": {
               "disposition": "dropped"
