@@ -70,7 +70,7 @@ fn source_less_brep_budget_matches_framed_records() {
     F3dCodec.plan(EncodeInput::new(decoded.ir(), None), TargetRequest::Inherit)
         .unwrap().write_to(&mut bytes).unwrap();
     let mut archive = zip::ZipArchive::new(Cursor::new(bytes)).unwrap();
-    let name = archive.file_names().filter_map(Result::ok).find(|name| name.ends_with(".smbh")).unwrap().into_owned();
+    let name = archive.file_names().map(|name| name.unwrap()).find(|name| name.ends_with(".smbh")).unwrap().into_owned();
     let mut smbh = Vec::new();
     archive.by_name(&name).unwrap().read_to_end(&mut smbh).unwrap();
     let start = cadmpeg_asm::asm_header::record_stream_start(&smbh).unwrap();
