@@ -119,7 +119,7 @@ loss_codes! {
     /// A CONE record's stored sine and cosine break the unit identity.
     CarrierConeHalfAngleIdentityRefused => ("carrier.cone-half-angle-identity-refused", Warning, ObjectRecordsUntransferred),
     /// A TORUS record stores a negative major radius, whose surface is
-    /// unresolved (`PS-41`).
+    /// unresolved (`PS-43`).
     CarrierTorusNegativeMajorUnresolved => ("carrier.torus-negative-major-unresolved", Warning, ObjectRecordsUntransferred),
     /// No gate-passing analytic carrier was found in the Parasolid streams.
     GeometryNotTransferred => ("geometry.not-transferred", Blocking, GeometryNotTransferred),

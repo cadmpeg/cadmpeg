@@ -30,7 +30,7 @@ use cadmpeg_parasolid::geometry::{Analytic, Refusal};
 pub(crate) enum SurfaceRefusal {
     /// The shared analytic decoder refuses the value fields.
     Analytic(Refusal),
-    /// A TORUS stores a negative major radius (`PS-41`).
+    /// A TORUS stores a negative major radius (`PS-43`).
     NegativeMajorRadius,
 }
 

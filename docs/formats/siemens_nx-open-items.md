@@ -214,7 +214,7 @@ or regenerated current-design selection.
 
 **Need.** We must know the section boundary to extract every stream of a payload that holds both forms without one section's bytes containing another.
 
-### PS-41. TORUS with a negative major radius
+### PS-43. TORUS with a negative major radius
 
 **Question.** Can an NX TORUS record store a negative major radius, and what surface and face sense does it then describe?
 
