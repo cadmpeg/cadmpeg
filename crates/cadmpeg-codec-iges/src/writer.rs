@@ -580,7 +580,7 @@ fn unapplied_body_placement_losses(ir: &CadIr, entities: &[Entity]) -> Vec<LossN
         .iter()
         .filter(|entity| entity.transform.is_some())
         .flat_map(|entity| entity.source_targets.iter())
-        .map(|target| target.as_str())
+        .map(String::as_str)
         .collect::<BTreeSet<_>>();
     let mut losses = Vec::new();
     for body in &ir.model.bodies {
@@ -926,7 +926,9 @@ fn synthesize_with_admission(
             &graph.entities,
             &graph.presentations,
             version,
-            ir.tolerances.linear.map(|value| value.get()),
+            ir.tolerances
+                .linear
+                .map(cadmpeg_ir::scalar::PositiveLength::get),
         )?,
         counts,
         losses: graph.losses,

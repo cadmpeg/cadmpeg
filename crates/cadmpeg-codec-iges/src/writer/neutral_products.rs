@@ -15,7 +15,7 @@ pub(super) fn append(ir: &CadIr, entities: &mut Vec<Entity>, version: crate::Ige
                 .into_iter()
                 .flat_map(|arena| ns.arenas().get(arena).into_iter().flatten())
         })
-        .map(|record| record.id())
+        .map(cadmpeg_ir::NativeRecord::id)
         .collect::<std::collections::BTreeSet<_>>();
     let mut definitions = BTreeMap::new();
     let mut names = BTreeMap::new();
