@@ -10,7 +10,29 @@ use syn::visit::{self, Visit};
 use super::bindings::Value;
 use super::resolve::Item;
 use super::rules::{self, Aliases, Body};
-use super::{absolute, module_scope, Function, Graph};
+use super::{absolute, module_scope, Function, Graph, SelfReturn};
+
+fn returns_self(signature: &syn::Signature) -> Option<SelfReturn> {
+    let syn::ReturnType::Type(_, ty) = &signature.output else {
+        return None;
+    };
+    let syn::Type::Path(ty) = ty.as_ref() else {
+        return None;
+    };
+    let Some(segment) = ty.path.segments.last() else {
+        return None;
+    };
+    if segment.ident == "Self" {
+        return Some(SelfReturn::Direct);
+    }
+    if segment.ident != "Result" && segment.ident != "Option" {
+        return None;
+    }
+    let syn::PathArguments::AngleBracketed(arguments) = &segment.arguments else {
+        return None;
+    };
+    matches!(arguments.args.first(), Some(syn::GenericArgument::Type(syn::Type::Path(inner))) if inner.qself.is_none() && inner.path.is_ident("Self")).then_some(SelfReturn::Wrapped)
+}
 
 fn test_only(attrs: &[syn::Attribute]) -> bool {
     attrs.iter().any(|attribute| {
@@ -390,6 +412,7 @@ impl Loader<'_> {
                             root: false,
                             root_trait: None,
                             is_macro: true,
+                            returns_self: None,
                             generics: BTreeSet::new(),
                             calls: scan.calls,
                             sites: scan.sites,
@@ -516,6 +539,7 @@ impl Loader<'_> {
             root,
             root_trait,
             is_macro: false,
+            returns_self: returns_self(signature),
             generics,
             calls: scan.calls,
             sites: scan.sites,
