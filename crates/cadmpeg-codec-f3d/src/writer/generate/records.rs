@@ -774,7 +774,7 @@ pub(in crate::writer) fn sketch_text_supported(text: &SketchText) -> bool {
         && text.persistent_id.is_some()
 }
 
-fn encode_sketch_text(out: &mut Vec<u8>, text: &SketchText) -> Result<(), CodecError> {
+pub(super) fn encode_sketch_text(out: &mut Vec<u8>, text: &SketchText) -> Result<(), CodecError> {
     use crate::records::sketch_geometry::SketchTextLayout;
     if !sketch_text_supported(text) {
         return Err(CodecError::UnsupportedContent(format!(

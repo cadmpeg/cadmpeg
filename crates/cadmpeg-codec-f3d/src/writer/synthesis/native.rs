@@ -260,7 +260,50 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
     native
         .sketch_curve_identities
         .retain(|record| record.owner_reference.is_some());
-    native.sketch_texts.retain(|text| {
+    native.sketch_texts.retain_mut(|text| {
+        let mut projected = target
+            .model
+            .sketch_entities
+            .iter()
+            .filter(|entity| entity.native_ref.as_deref() == Some(text.id.as_str()));
+        if let Some(entity) = projected.next() {
+            let owner_matches = target
+                .model
+                .sketches
+                .iter()
+                .find(|sketch| sketch.id == entity.sketch)
+                .and_then(|sketch| sketch.native_ref.as_deref())
+                .and_then(|id| {
+                    original
+                        .design_sketch_placements
+                        .iter()
+                        .find(|p| p.id == id)
+                })
+                .is_some_and(|placement| {
+                    placement.entity_id.suffix() == u64::from(text.owner_reference)
+                        && crate::ids::native_stream(&placement.id)
+                            == crate::ids::native_stream(&text.id)
+                });
+            if projected.next().is_some()
+                || entity.geometry_ref.is_some()
+                || !entity.endpoint_refs.is_empty()
+                || !owner_matches
+            {
+                return false;
+            }
+            let Some(authored) = super::super::generate::sketches::neutral_text(
+                entity,
+                text.record_index,
+                text.owner_reference,
+            ) else {
+                return false;
+            };
+            text.text = authored.text;
+            text.font_family = authored.font_family;
+            text.font_weight = authored.font_weight;
+            text.height = authored.height;
+            text.layout = authored.layout;
+        }
         super::super::generate::records::sketch_text_supported(text)
             && text
                 .class_tag
