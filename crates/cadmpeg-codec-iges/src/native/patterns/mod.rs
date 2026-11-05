@@ -106,7 +106,7 @@ fn rectangular_positions(
     flag: Option<i64>,
     positions: &[Option<i64>],
 ) -> Option<Vec<[u32; 2]>> {
-    let total = (columns as u64).checked_mul(rows as u64)?;
+    let total = u64::from(columns).checked_mul(u64::from(rows))?;
     let mut listed = BTreeSet::new();
     for position in positions.iter().flatten() {
         let position = u32::try_from(*position).ok()?;
@@ -118,15 +118,16 @@ fn rectangular_positions(
     if positions.iter().any(Option::is_none) && matches!(flag, Some(1 | 2)) {
         return None;
     }
+    let total_positions = u32::try_from(total & u64::from(u32::MAX)).ok()?;
     let included: BTreeSet<u32> = if positions.is_empty() {
-        (1..=(total as u32)).collect()
+        (1..=total_positions).collect()
     } else {
         match flag {
             Some(0) => listed,
-            Some(1) => (1..=(total as u32))
+            Some(1) => (1..=total_positions)
                 .filter(|n| !listed.contains(n))
                 .collect(),
-            _ => (1..=(total as u32)).collect(),
+            _ => (1..=total_positions).collect(),
         }
     };
     let mut omitted = Vec::new();
@@ -380,7 +381,7 @@ fn project_circular(
             _ => (1..=count).collect(),
         }
     };
-    let transform = if included.len() as u64 == total {
+    let transform = if u64::try_from(included.len()).ok() == Some(total) {
         if count == 1 {
             let Some(zero) = cadmpeg_ir::scalar::Angle::new(0.0) else {
                 unavailable(losses);
