@@ -91,7 +91,7 @@ pub(super) fn mesh_options(index: &ModelIndex<'_>, body: &Body) -> cadmpeg_tesse
         .map(|axis| (high[axis] - low[axis]).powi(2))
         .sum::<f64>()
         .sqrt();
-    let tolerance = index.ir().tolerances.linear.get();
+    let tolerance = index.ir().tolerances.linear_or_default().get();
     let chord = if diagonal.is_finite() && diagonal > 0.0 {
         (diagonal * CHORD_RATIO).max(tolerance * MIN_CHORD_TOLERANCES)
     } else {

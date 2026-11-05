@@ -87,7 +87,7 @@ fn push_native_unknown(
 /// does not have. The route refuses such a document by name here, once, and
 /// every recogniser below reads the stated tolerance as stated.
 fn admit_hole_recognition_tolerances(ir: &CadIr) -> Result<(), CodecError> {
-    let linear = ir.tolerances.linear.get();
+    let linear = ir.tolerances.linear_or_default().get();
     if linear < MIN_LINEAR_TOLERANCE {
         return Err(CodecError::InvalidInput(format!(
             "document linear tolerance {linear} is finer than the NX hole recognition bound {MIN_LINEAR_TOLERANCE}"

@@ -374,6 +374,101 @@ fn source_less_spatial_mixed_point_roles_reach_output() {
 }
 
 #[test]
+fn source_less_native_spatial_relation_keeps_its_operands() {
+    check_native_spatial_relation(true, ["d6", "e1"], 10);
+}
+
+#[test]
+fn source_less_native_spatial_reference_relation_keeps_its_operands() {
+    check_native_spatial_relation(false, ["2a81", "2a81"], 10);
+}
+
+#[test]
+fn native_spatial_operand_address_has_a_checked_capacity() {
+    check_native_spatial_relation(true, ["d6", "e1"], 65536);
+}
+
+fn check_native_spatial_relation(driving: bool, tags: [&str; 2], address: u32) {
+    use cadmpeg_ir::codec::write::Encoder;
+    use cadmpeg_ir::features::{DesignParameter, ParameterId, ParameterValue};
+    use cadmpeg_ir::sketches::{
+        SketchConstraintId, SketchNativeOperand, SpatialSketchConstraint,
+        SpatialSketchConstraintDefinitionInput,
+    };
+
+    let mut ir = source_less_spatial_line(Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0));
+    let id = ParameterId::mint("synthetic:test:parameter#native-distance").unwrap();
+    ir.model.parameters.push(DesignParameter {
+        product_definition: None,
+        id: id.clone(),
+        owner: Some(ir.model.features[0].id.clone()),
+        ordinal: 0,
+        name: if driving { "D1" } else { "D1@reference" }.into(),
+        expression: "4mm".into(),
+        driving,
+        display: None,
+        value: Some(ParameterValue::Length(
+            cadmpeg_ir::scalar::Length::new(4.0).unwrap(),
+        )),
+        properties: BTreeMap::new(),
+        pmi: None,
+        native_ref: None,
+    });
+    let operand = |kind: &str, address| SketchNativeOperand {
+        native_kind: cadmpeg_core::text::NonBlankString::new(kind).unwrap(),
+        field: None,
+        object_index: Some(address),
+        native_ref: None,
+    };
+    let constraint_id = SketchConstraintId::mint("synthetic:test:constraint#native").unwrap();
+    ir.model
+        .spatial_sketch_constraints
+        .push(SpatialSketchConstraint {
+            id: constraint_id.clone(),
+            sketch: ir.model.spatial_sketches[0].id.clone(),
+            definition: SpatialSketchConstraintDefinitionInput::Native {
+                native_kind: cadmpeg_core::text::NonBlankString::new("sgPntLineDist").unwrap(),
+                native_state: None,
+                parameter: Some(id),
+                operands: vec![operand(tags[0], address), operand(tags[1], 20)],
+            }
+            .try_into()
+            .unwrap(),
+            native_ref: None,
+        });
+    let result = crate::SldprtCodec.plan(EncodeInput::new(&ir, None), TargetRequest::Inherit);
+    if address > u16::MAX as u32 {
+        assert!(
+            matches!(result, Err(cadmpeg_ir::codec::write::EncodeError::TargetCapacity {
+            field, limit: 65535, value: 65536
+        }) if field.field == "spatial.relation.operand_address")
+        );
+        return;
+    }
+    let plan = result.unwrap();
+    assert!(!plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(constraint_id.as_str())));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = crate::SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(output.ir().model.spatial_sketch_constraints.iter().any(|constraint| matches!(
+        constraint.definition.kind(),
+        SpatialSketchConstraintDefinitionInput::Native { native_kind, parameter: Some(parameter), operands, .. }
+            if native_kind.as_str() == "sgPntLineDist" && operands.len() == 2
+                && operands[0].native_kind.as_str() == tags[0] && operands[0].object_index == Some(10)
+                && operands[1].native_kind.as_str() == tags[1] && operands[1].object_index == Some(20)
+                && output.ir().model.parameters.iter().any(|record| &record.id == parameter && record.driving == driving
+                    && record.name == if driving { "D1" } else { "D1@reference" }
+                    && matches!(record.value, Some(ParameterValue::Length(value)) if value.get() == 4.0))
+    )), "constraints: {:#?}; parameters: {:#?}", output.ir().model.spatial_sketch_constraints, output.ir().model.parameters);
+}
+
+#[test]
 fn inactive_configuration_retains_its_spatial_sketch() {
     use cadmpeg_ir::codec::write::Encoder;
     use cadmpeg_ir::features::{

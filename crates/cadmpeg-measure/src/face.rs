@@ -263,7 +263,7 @@ impl<'ir> FaceInput<'_, 'ir> {
             .flat_map(cadmpeg_ir::topology::Loop::coedges)
             .filter_map(|coedge| owners.coedge(coedge.as_str()))
             .collect();
-        let linear = owners.ir.tolerances.linear.get();
+        let linear = owners.ir.tolerances.linear_or_default().get();
         let mut local: Vec<f64> = face
             .tolerance
             .map(cadmpeg_ir::scalar::PositiveReal::get)
