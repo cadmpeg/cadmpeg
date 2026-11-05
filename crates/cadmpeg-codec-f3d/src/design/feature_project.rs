@@ -6719,9 +6719,7 @@ fn project_circular_pattern_scalars(
             && !group.members().is_empty()
     });
     let (first, second) = (matching_groups.next(), matching_groups.next());
-    let Some(group) = first.filter(|_| second.is_none()) else {
-        return None;
-    };
+    let group = first.filter(|_| second.is_none())?;
     let seeds = pattern_group_seeds(
         scope,
         group,
