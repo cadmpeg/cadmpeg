@@ -403,3 +403,14 @@ fn compressed_sketch_lengths_report_their_target_fields() {
         );
     }
 }
+
+#[test]
+fn configuration_source_index_allocation_rejects_exhaustion() {
+    let mut used = std::collections::HashSet::from([u32::MAX]);
+    let mut next = u32::MAX;
+    let error = crate::writer::reserve_configuration_index(&mut used, &mut next).unwrap_err();
+    assert!(
+        matches!(error, crate::writer::write_error::WriteError::Capacity { field, value }
+        if field.field == "configuration.source_index" && field.limit == u64::from(u32::MAX) && value == u64::from(u32::MAX) + 1)
+    );
+}
