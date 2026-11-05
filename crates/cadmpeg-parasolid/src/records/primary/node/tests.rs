@@ -64,6 +64,7 @@ fn nodes_expose_their_fields_by_schema_name() {
         let point = nodes[0];
         assert_eq!((point.kind(), point.index()), (29, 3));
         assert_eq!(point.range().start, point_at);
+        assert_eq!(point.fields_start(), Some(point_at + 5));
         assert_eq!(point.integer("node_id"), Some(99));
         assert_eq!(point.pointer("owner"), Some(12));
         assert_eq!(point.pointer("next"), Some(1));
@@ -84,6 +85,122 @@ fn nodes_expose_their_fields_by_schema_name() {
         assert_eq!(face.char("sense"), Some(b'+'));
         let sense = face.field_range("sense").unwrap();
         assert_eq!(bytes[sense], [b'+']);
+    });
+}
+
+/// A scalar pointer field descriptor of an edit program.
+fn descriptor(bytes: &mut Vec<u8>, op: u8, name: &[u8], class: u16) {
+    bytes.push(op);
+    bytes.push(u8::try_from(name.len()).unwrap());
+    bytes.extend_from_slice(name);
+    bytes.extend_from_slice(&class.to_be_bytes());
+    bytes.extend_from_slice(&[0, 1]);
+}
+
+/// A REGION whose first use edits the base fields: an optional `frame`
+/// inserted before `type`, then an appended `owner`.
+fn edited_region(index: u16, frame: bool) -> Vec<u8> {
+    let mut bytes = vec![0, 19, if frame { 9 } else { 8 }];
+    bytes.extend_from_slice(b"CCCCCC");
+    if frame {
+        descriptor(&mut bytes, b'I', b"frame", 230);
+    }
+    bytes.push(b'C');
+    descriptor(&mut bytes, b'A', b"owner", 12);
+    bytes.push(b'Z');
+    bytes.extend_from_slice(&index.to_be_bytes());
+    bytes.extend_from_slice(&41u32.to_be_bytes());
+    for pointer in [1u16, 3, 1, 1, 1] {
+        bytes.extend_from_slice(&pointer.to_be_bytes());
+    }
+    if frame {
+        bytes.extend_from_slice(&1u16.to_be_bytes());
+    }
+    bytes.push(b'S');
+    bytes.extend_from_slice(&3u16.to_be_bytes());
+    bytes
+}
+
+#[test]
+fn base_layout_survives_appended_fields_and_breaks_at_an_insert() {
+    with_decode_context(|_ctx| {
+        for frame in [false, true] {
+            let mut bytes = header();
+            bytes.extend(point(2, 99, 1, [0.0; 3]));
+            bytes.extend(edited_region(5, frame));
+            bytes.extend_from_slice(&[0, 1, 0, 1]);
+            let records = PrimaryRecords::read(&bytes).unwrap().unwrap();
+            assert!(records.is_terminated());
+            let nodes: Vec<_> = records.nodes().collect();
+            assert!(nodes[0].has_base_layout());
+            assert_eq!(nodes[1].kind(), 19);
+            assert_eq!(nodes[1].pointer("owner"), Some(3));
+            assert_eq!(nodes[1].has_base_layout(), !frame);
+        }
+    });
+}
+
+/// A BODY whose first use deletes the base `owner` and inserts an `owner`
+/// with pointer class `owner_class` at the same position.
+fn retyped_owner_body(index: u16, owner_class: u16) -> Vec<u8> {
+    let mut bytes = vec![0, 12, 23];
+    bytes.extend_from_slice(&[b'C'; 13]);
+    bytes.push(b'D');
+    descriptor(&mut bytes, b'I', b"owner", owner_class);
+    bytes.extend_from_slice(&[b'C'; 9]);
+    bytes.push(b'Z');
+    bytes.extend_from_slice(&index.to_be_bytes());
+    bytes.extend_from_slice(&40u32.to_be_bytes());
+    for _ in 0..6 {
+        bytes.extend_from_slice(&1u16.to_be_bytes());
+    }
+    bytes.extend_from_slice(&1.0e3f64.to_be_bytes());
+    bytes.extend_from_slice(&1.0e-8f64.to_be_bytes());
+    for _ in 0..3 {
+        bytes.extend_from_slice(&1u16.to_be_bytes());
+    }
+    bytes.push(0);
+    bytes.extend_from_slice(&1u16.to_be_bytes());
+    bytes.extend_from_slice(&[1, 0]);
+    for _ in 0..7 {
+        bytes.extend_from_slice(&1u16.to_be_bytes());
+    }
+    bytes
+}
+
+/// A REGION whose first use deletes the base `body` and inserts a `body`
+/// with pointer class `body_class` at the same position.
+fn retyped_body_region(index: u16, body_class: u16) -> Vec<u8> {
+    let mut bytes = vec![0, 19, 7];
+    bytes.extend_from_slice(b"CCD");
+    descriptor(&mut bytes, b'I', b"body", body_class);
+    bytes.extend_from_slice(b"CCCCZ");
+    bytes.extend_from_slice(&index.to_be_bytes());
+    bytes.extend_from_slice(&41u32.to_be_bytes());
+    for pointer in [1u16, 3, 1, 1, 1] {
+        bytes.extend_from_slice(&pointer.to_be_bytes());
+    }
+    bytes.push(b'S');
+    bytes
+}
+
+#[test]
+fn base_layout_admits_only_the_body_owner_class_edit() {
+    with_decode_context(|_ctx| {
+        for (owner_class, body_class) in [(1040, 12), (12, 12), (1040, 13)] {
+            let mut bytes = header();
+            bytes.extend(retyped_owner_body(3, owner_class));
+            bytes.extend(retyped_body_region(5, body_class));
+            bytes.extend_from_slice(&[0, 1, 0, 1]);
+            let records = PrimaryRecords::read(&bytes).unwrap().unwrap();
+            assert!(records.is_terminated());
+            let nodes: Vec<_> = records.nodes().collect();
+            assert_eq!(nodes[0].kind(), 12);
+            assert_eq!(nodes[1].kind(), 19);
+            assert_eq!(nodes[1].pointer("body"), Some(3));
+            assert_eq!(nodes[0].has_base_layout(), owner_class == 1040);
+            assert_eq!(nodes[1].has_base_layout(), body_class == 12);
+        }
     });
 }
 

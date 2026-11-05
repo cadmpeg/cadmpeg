@@ -835,6 +835,13 @@ Parasolid XT node type.
 
 Types carrying `node_id:u32` place it at record offset `+4` (after shifts). Every `u32` value is valid; node admission has no smaller numerical bound. FIN has no `node_id`. EDGE and VERTEX candidates with denormal tolerance (`abs(tol) < 1e-100`) are payload coincidences, not records. Every POINT coordinate is finite and its converted millimeter value is finite; no normality or model-magnitude condition applies.
 
+In a terminated node sequence, a node keeps these field positions and roles
+when its effective field list begins with the base fields of its type. Each
+leading field has its base name, data type, extent, transmit flag, and
+pointer class. BODY `owner` also keeps its role with pointer class 1040; its
+base class is 101. Fields after the base fields do not move the base
+positions.
+
 A complete body-topology graph owns all of its fixed node frames. A typed XMT
 slot also owns one unique fixed node of the required family: SHELL owns BODY and
 REGION; FACE owns a surface carrier; EDGE and FIN own curve carriers; and
