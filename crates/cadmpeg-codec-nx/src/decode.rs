@@ -431,9 +431,6 @@ impl Counts {
     }
 }
 
-fn build_metadata_ir(
-    ctx: &DecodeContext<'_>,
-    scan: &Scan,
 type MetadataIr = (
     CadIr,
     cadmpeg_ir::Annotations,
@@ -445,6 +442,9 @@ type MetadataIr = (
     dialects: &DialectLayers,
 ) -> Result<MetadataIr, CodecError> {
     let mut unknowns = Vec::new();
+fn build_metadata_ir(
+    ctx: &DecodeContext<'_>,
+    scan: &Scan,
     let mut ir = CadIr::decoded(source_meta(scan, dialects, None)?);
     let mut annotations = AnnotationBuilder::new();
     let mut losses = Vec::new();
