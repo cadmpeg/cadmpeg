@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Source-unit geometry retained for analyses during IR construction.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -25,6 +25,7 @@ pub(super) struct SourceUnitCarriers {
     procedural_index: cadmpeg_ir::document::procedural::ProceduralIndex,
     length_scale_mm: Option<PositiveReal>,
     surfaces: BTreeMap<SurfaceId, SurfaceGeometry>,
+    topology_bound_planes: BTreeSet<SurfaceId>,
     curves: BTreeMap<CurveId, CurveGeometry>,
     edge_parameter_ranges: BTreeMap<EdgeId, [f64; 2]>,
     sketch_entities: BTreeMap<SketchEntityId, SketchGeometry>,
@@ -36,6 +37,7 @@ impl SourceUnitCarriers {
             procedural_index: cadmpeg_ir::document::procedural::ProceduralIndex::default(),
             length_scale_mm: length_scale_mm.filter(|scale| scale.get() != 1.0),
             surfaces: BTreeMap::new(),
+            topology_bound_planes: BTreeSet::new(),
             curves: BTreeMap::new(),
             edge_parameter_ranges: BTreeMap::new(),
             sketch_entities: BTreeMap::new(),
@@ -198,6 +200,14 @@ impl SourceUnitCarriers {
         Ok(())
     }
 
+    pub(super) fn mark_topology_bound_plane(&mut self, id: SurfaceId) {
+        self.topology_bound_planes.insert(id);
+    }
+
+    pub(super) fn is_topology_bound_plane(&self, id: &SurfaceId) -> bool {
+        self.topology_bound_planes.contains(id)
+    }
+
     pub(super) fn admit_surface(
         &mut self,
         ctx: &DecodeContext<'_>,
@@ -231,6 +241,7 @@ impl SourceUnitCarriers {
         let source_id =
             SurfaceId::mint(surface.id.as_str().to_owned()).map_err(CodecError::malformed)?;
         let source_geometry = geometry.clone();
+        self.topology_bound_planes.remove(&source_id);
         if let (Some(scale), SurfaceGeometry::Solved(solved)) =
             (self.length_scale_mm, &mut geometry)
         {
@@ -548,6 +559,7 @@ impl SourceUnitCarriers {
     }
 
     pub(super) fn remove_surface(&mut self, id: &SurfaceId) {
+        self.topology_bound_planes.remove(id);
         self.surfaces.remove(id);
     }
 }
