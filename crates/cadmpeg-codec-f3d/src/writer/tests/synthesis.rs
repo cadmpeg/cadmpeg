@@ -10,6 +10,8 @@ use cadmpeg_ir::report::{export::WritePath, Severity};
 
 use crate::F3dCodec;
 
+mod box_placement;
+
 fn parameter(name: &str, ordinal: u32, value: ParameterValue) -> DesignParameter {
     DesignParameter {
         product_definition: None,
