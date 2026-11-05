@@ -1255,6 +1255,24 @@ pub(crate) const CAPACITY_FIELDS: &[cadmpeg_ir::codec::write::CapacityField] = &
         source: "docs/formats/sldprt.md §8: feature source identifiers occupy u32 fields",
         helper: "allocate_feature_source_id",
     },
+    cadmpeg_ir::codec::write::CapacityField {
+        field: "sketch.frame_uncompressed_length",
+        limit: u32::MAX as u64,
+        source: "docs/formats/sldprt.md §1: frame uncompressed length is u32 LE",
+        helper: "field_u32",
+    },
+    cadmpeg_ir::codec::write::CapacityField {
+        field: "sketch.frame_compressed_length",
+        limit: u32::MAX as u64,
+        source: "docs/formats/sldprt.md §1: frame compressed length is u32 LE",
+        helper: "field_u32",
+    },
+    cadmpeg_ir::codec::write::CapacityField {
+        field: "sketch.wrapper_length",
+        limit: u32::MAX as u64,
+        source: "docs/formats/sldprt.md §1: nested wrapper length is u32 LE",
+        helper: "field_u32",
+    },
 ];
 
 /// Reduced rows: neutral paths the lump stores in reduced form (#232 §5.2).
@@ -5424,7 +5442,7 @@ pub(crate) fn field_u16(
     u16::try_from(value).map_err(|_| write_error::WriteError::Capacity { field, value })
 }
 
-fn field_u32(
+pub(crate) fn field_u32(
     field: &'static cadmpeg_ir::codec::write::CapacityField,
     length: usize,
 ) -> Result<u32, write_error::WriteError> {
