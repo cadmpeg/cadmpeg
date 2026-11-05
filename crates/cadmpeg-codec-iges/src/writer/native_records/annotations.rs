@@ -454,3 +454,92 @@ fn leaders_pair(fields: &Fields<'_>) -> [Option<Value>; 2] {
     }
     pair
 }
+
+/// Apply the current neutral text to a native note's formatted text runs.
+pub(super) fn apply_text(
+    ir: &cadmpeg_ir::CadIr,
+    record: &super::NativeRecord,
+    fields: &mut Fields<'_>,
+) -> Result<Option<String>, String> {
+    let mut matching = ir
+        .model
+        .semantic_annotations
+        .iter()
+        .filter(|annotation| annotation.native_ref == record.id());
+    let Some(annotation) = matching.next() else {
+        return Ok(None);
+    };
+    if matching.next().is_some() {
+        return Err("multiple semantic annotations name one native note".into());
+    }
+    let kind = fields.value("kind").and_then(Value::as_str);
+    if !matches!(kind, Some("general_note" | "new_general_note")) {
+        return Ok(Some(annotation.id.to_string()));
+    }
+    let nested = kind == Some("new_general_note");
+    let Some(runs) = fields
+        .values
+        .get_mut("strings")
+        .and_then(Value::as_array_mut)
+    else {
+        return Err("current note has no formatted text runs".into());
+    };
+    if annotation.text.len() != runs.len() {
+        if annotation.text.is_empty()
+            && runs.iter().all(|run| {
+                let run = if nested {
+                    run.get("text").unwrap_or(&Value::Null)
+                } else {
+                    run
+                };
+                run.get("text").is_none_or(Value::is_null)
+            })
+        {
+            return Ok(Some(annotation.id.to_string()));
+        }
+        return Err("current note text does not match its formatted runs".into());
+    }
+    let single_run = runs.len() == 1;
+    for (run, text) in runs.iter_mut().zip(&annotation.text) {
+        if text.is_empty()
+            || ((single_run || nested) && text == " ")
+            || !text
+                .bytes()
+                .all(|byte| byte.is_ascii_graphic() || byte == b' ')
+        {
+            return Err("current note text has no exact printable IGES spelling".into());
+        }
+        let run = if nested {
+            run.get_mut("text")
+        } else {
+            Some(run)
+        };
+        let run = run
+            .and_then(Value::as_object_mut)
+            .ok_or("current note has an invalid formatted run")?;
+        if run.get("font_code").and_then(Value::as_i64) == Some(2001) {
+            let bytes = text.as_bytes();
+            if !bytes.len().is_multiple_of(4)
+                || !bytes.chunks_exact(4).all(|character| {
+                    character.chunks_exact(2).all(|pair| {
+                        std::str::from_utf8(pair)
+                            .ok()
+                            .and_then(|pair| u8::from_str_radix(pair, 16).ok())
+                            .is_some_and(|value| (0x21..=0x7e).contains(&value))
+                    })
+                })
+            {
+                return Err("current note text violates the IGES font 2001 encoding".into());
+            }
+        }
+        run.insert("declared_character_count".into(), Value::from(text.len()));
+        run.insert(
+            "text".into(),
+            serde_json::to_value(cadmpeg_ir::native::bytes::NativeBytes::from(
+                text.as_bytes().to_vec(),
+            ))
+            .map_err(|error| error.to_string())?,
+        );
+    }
+    Ok(Some(annotation.id.to_string()))
+}
