@@ -12,13 +12,12 @@ use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_parasolid::records::node_type::{
     BSPLINE_VERTICES, B_CURVE, B_SURFACE, KNOT_MULT, KNOT_SET, NURBS_CURVE, NURBS_SURF,
 };
-use cadmpeg_parasolid::records::primary::Node;
-use cadmpeg_parasolid::records::PrimaryRecords;
+use cadmpeg_parasolid::records::{NodeFields, PrimaryRecords};
 use std::collections::{HashMap, HashSet};
 
 /// The NURBS carriers of one node sequence, keyed by `B_CURVE` and `B_SURFACE`
 /// index. `pcurves` holds the parameter-space `B_CURVE`s.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub(in crate::brep) struct NodeSplines {
     pub(in crate::brep) curves: HashMap<u32, CurveCarrier>,
     pub(in crate::brep) surfaces: HashMap<u32, SurfaceCarrier>,
@@ -32,6 +31,15 @@ pub(in crate::brep) struct NodeSplines {
 /// lane refusals are recorded in `refusals`.
 pub(in crate::brep) fn carriers(
     records: &PrimaryRecords<'_>,
+    body_offset: usize,
+    refusals: &mut Vec<LossNote>,
+) -> Option<NodeSplines> {
+    carriers_of(&records.nodes().collect::<Vec<_>>(), body_offset, refusals)
+}
+
+/// [`carriers`] over any node instances, in stream order.
+pub(in crate::brep) fn carriers_of<N: NodeFields>(
+    nodes: &[N],
     body_offset: usize,
     refusals: &mut Vec<LossNote>,
 ) -> Option<NodeSplines> {
@@ -55,7 +63,7 @@ pub(in crate::brep) fn carriers(
                 | NURBS_CURVE
         )
     };
-    for node in records.nodes().filter(|node| spline(node.kind())) {
+    for node in nodes.iter().filter(|node| spline(node.kind())) {
         indices.insert(node.index()).then_some(())?;
         match node.kind() {
             BSPLINE_VERTICES => {
@@ -83,7 +91,7 @@ pub(in crate::brep) fn carriers(
         }
     }
     let mut out = NodeSplines::default();
-    for node in records.nodes() {
+    for node in nodes {
         let attr = node.index();
         let offset = node.range().start.checked_sub(body_offset)?;
         match node.kind() {
@@ -119,7 +127,7 @@ pub(in crate::brep) fn carriers(
 
 /// A `NURBS_CURVE` descriptor, and whether it is a model-space or
 /// parameter-space curve inside the guards of its compact form.
-fn curve_descriptor(node: &Node<'_>) -> Option<(CurveDescriptor, bool)> {
+fn curve_descriptor(node: &impl NodeFields) -> Option<(CurveDescriptor, bool)> {
     let descriptor = CurveDescriptor {
         degree: u32::from(node.short("degree")?),
         periodic: node.logical("periodic")?,
@@ -138,7 +146,10 @@ fn curve_descriptor(node: &Node<'_>) -> Option<(CurveDescriptor, bool)> {
 
 /// A `NURBS_SURF` descriptor, and whether it is inside the guards of its
 /// compact form.
-fn surface_descriptor(node: &Node<'_>, body_offset: usize) -> Option<(SurfaceDescriptor, bool)> {
+fn surface_descriptor(
+    node: &impl NodeFields,
+    body_offset: usize,
+) -> Option<(SurfaceDescriptor, bool)> {
     let descriptor = SurfaceDescriptor {
         end: node.range().end.checked_sub(body_offset)?,
         attr: node.index(),

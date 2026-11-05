@@ -966,13 +966,12 @@ Closes the enclosing leading, map, or PMARK section. In the exact final position
 
 Spec §4.2 · layout: byte offsets · size: 6 B
 
-Relative to the endpoint of the variable-width nonnull XMT/kind pairs. The terminal word is below 0x8000 and does not frame nodes or select a state.
+Relative to the endpoint of the variable-width nonnull XMT/kind pairs.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 2 | `null_xmt` | `u16` | big | spec | XMT at `+0`, zero at `+2`, and terminal word at `+4`, relative to the end of the · value `1` |
-| 2 | 2 | `zero` | `u16` | big | spec | XMT at `+0`, zero at `+2`, and terminal word at `+4`, relative to the end of the · value `0` |
-| 4 | 2 | `terminal_word` | `u16` | big | spec | XMT at `+0`, zero at `+2`, and terminal word at `+4`, relative to the end of the |
+| 0 | 2 | `null_xmt` | `u16` | big | spec | at `+0` and the terminal bytes at `+2`, relative to the end of the entry pairs. · value `1` |
+| 2 | 4 | `terminal_bytes` | `bytes[4]` | big | spec | at `+0` and the terminal bytes at `+2`, relative to the end of the entry pairs. |
 
 ## Not tabulated
 

@@ -43,6 +43,36 @@ The 11-byte size is the spec's own "eleven-byte indexed header". §3.1 states th
 | 4 | 3 | `class_tag` | `bytes[3]` | little | spec | a three-digit ASCII dynamic-class tag |
 | 7 | 4 | `record_index` | `u32` | little | spec | then `u32 record_index` |
 
+## `record_timestamp_table_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 31 B
+
+Offsets are relative to the table's indexed header. The entries follow the prefix.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 14 | `zero_run` | `bytes[14]` | little | spec | fourteen zero bytes, `01 01`, and a u32 entry count |
+| 25 | 1 | `first_marker` | `u8` | little | spec | fourteen zero bytes, `01 01`, and a u32 entry count · value `1` |
+| 26 | 1 | `second_marker` | `u8` | little | spec | fourteen zero bytes, `01 01`, and a u32 entry count · value `1` |
+| 27 | 4 | `entry_count` | `u32` | little | spec | and a u32 entry count |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed Design record header (indexed_design_record_header).
+
+## `record_timestamp_entry`
+
+Spec §3.1 · layout: byte offsets · size: 19 B
+
+The owner reference after the entries uses this form and is followed by eight zero bytes.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `marker` | `u8` | little | spec | each entry is `01 + u32 record_index · value `1` |
+| 1 | 4 | `record_index` | `u32` | little | spec | u32 record_index + six zero bytes |
+| 5 | 6 | `zero_run` | `bytes[6]` | little | spec | six zero bytes + u64 timestamp |
+| 11 | 8 | `timestamp` | `u64` | little | spec | A timestamp is a Unix-epoch value in microseconds |
+
 ## `construction_operand_extended_path_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 65 B
@@ -756,23 +786,6 @@ Parsed by:
 | 0 | 2 | `prefix` | `bytes[2]` | little | spec | Type version `4` stores the extent controls `01 01 X 00` directly |
 | 2 | 1 | `extent_control` | `u8` | little | spec | The extent control `X` is `0` for Distance and `1` for a non-distance extent |
 | 3 | 1 | `suffix` | `u8` | little | spec | Type version `4` stores the extent controls `01 01 X 00` directly |
-
-## `design_hole_direction_control`
-
-Spec §3.1 · layout: byte offsets · size: 29 B
-
-Offsets are relative to the start of the Hole extent controls of type versions 5 and 7.
-
-Parsed by:
-- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/hole.rs`
-
-| Offset | Size | Field | Type | Endian | Src | Meaning |
-| -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 28 | 1 | `control` | `u8` | little | spec | Type versions `5` and `7` store a direction control |
-
-Unstated regions:
-
-- `0..28` (28 B): The extent controls and the fields that follow them are not part of this record.
 
 ## `design_hole_point_data_v1_prefix`
 
@@ -3100,6 +3113,27 @@ Offsets are relative to the primary indexed scope header. The two marked referen
 | 30 | 11 | `fifth_reference` | `bytes[11]` | little | spec | Marked references at offsets 30 and 41 repeat the fifth and ninth ordered scope references. |
 | 41 | 11 | `ninth_reference` | `bytes[11]` | little | spec | Marked references at offsets 30 and 41 repeat the fifth and ninth ordered scope references. |
 
+## `coil_ten_reference_compact_prologue`
+
+Spec §3.1 · layout: byte offsets · size: 56 B
+
+Offsets are relative to the primary indexed scope header. The section lanes at offsets 92 and 107 are those of coil_compact_scope_discriminators.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An indexed Design record header is `u32 class_tag_length` |
+| 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | nine zero bytes at offsets 11 through 19 |
+| 20 | 4 | `operation` | `u32` | little | spec | the u32 operation at offset 20 |
+| 25 | 1 | `left_hand` | `u8` | little | spec | the left-hand Boolean at offset 25 |
+| 26 | 4 | `structural_constant` | `u32` | little | spec | u32 `1` at offset 26 · value `1` |
+| 30 | 4 | `extent` | `u32` | little | spec | the u32 extent selector at offset 30 |
+| 34 | 11 | `fifth_reference` | `bytes[11]` | little | spec | Marked references at offsets 34 and 45 repeat the fifth and ninth ordered scope references. |
+| 45 | 11 | `ninth_reference` | `bytes[11]` | little | spec | Marked references at offsets 34 and 45 repeat the fifth and ninth ordered scope references. |
+
+Unstated regions:
+
+- `24..25` (1 B): The compact form keeps this byte for the SpirePrimitive clockwise lane.
+
 ## `coil_long_scope_matrix`
 
 Spec §3.1 · layout: byte offsets · size: 128 B
@@ -3494,7 +3528,7 @@ Unstated regions:
 
 Spec §3.1 · layout: byte offsets · size: 352 B
 
-Offsets are relative to the primary indexed placement header (class 293 paired with class 261, or class 316 paired with class 260). The two-byte lane at offset 62 is opaque.
+Offsets are relative to the primary indexed placement header. The two-byte lane at offset 62 is opaque.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -3514,7 +3548,7 @@ Unstated regions:
 
 Spec §3.1 · layout: byte offsets · size: 363 B
 
-Offsets are relative to the class-289 primary indexed placement header paired with class 258. The two-byte lane at offset 62 is opaque.
+Offsets are relative to the primary indexed placement header. The two-byte lane at offset 62 is opaque.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -3534,7 +3568,7 @@ Unstated regions:
 
 Spec §3.1 · layout: byte offsets · size: 374 B
 
-Offsets are relative to the class-267 primary indexed placement header paired with class 258. The two-byte lane at offset 62 is opaque.
+Offsets are relative to the primary indexed placement header. The two-byte lane at offset 62 is opaque.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -8397,6 +8431,33 @@ Parsed by:
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 1 | `present` | `u8` | little | spec | The metadata header stores `u8 1` and a u32 entry count. · value `1` |
 | 1 | 4 | `entry_count` | `u32` | little | spec | The metadata header stores `u8 1` and a u32 entry count. |
+
+## `dimension_annotation_payload_points`
+
+Spec §3.1 · layout: byte offsets · size: 48 B
+
+Offsets are relative to the start of the annotation byte payload of a two-point Linear Dimension frame whose payload holds at least 48 bytes. The rest of the payload follows the two points.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/dimensions.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 24 | `first_point` | `f64[3]` | little | spec | it [begins with two xyz f64 points](../layouts/f3d.md) |
+| 24 | 24 | `second_point` | `f64[3]` | little | spec | it [begins with two xyz f64 points](../layouts/f3d.md) |
+
+## `dimension_annotation_absent_metadata`
+
+Spec §3.1 · layout: byte offsets · size: 1 B
+
+Starts immediately after the annotation operand run. The annotation byte payload follows it.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/dimension_frames.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `present` | `u8` | little | spec | A frame without a metadata block stores `u8 0` alone · value `0` |
 
 ## `dimension_annotation_genesis_metadata`
 

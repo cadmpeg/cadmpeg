@@ -584,6 +584,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             edge_identity_operands: &design.design_edge_identity_operands,
             edge_treatment_vertex_operands: &design.design_edge_treatment_vertex_operands,
             entity_selection_operands: &design.design_entity_selection_operands,
+            design_types: &prereqs.design_types,
             curve_identities: &design.sketch_curve_identities,
             face_operands: &design.design_face_operands,
             body_recipe_operands: &design.design_body_recipe_operands,
@@ -767,8 +768,8 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &design.design_construction_operand_groups,
         &design.design_entity_selection_operands,
         &design.design_face_operands,
-        geometry.faces,
-        geometry.surfaces,
+        (geometry.faces, geometry.surfaces),
+        &prereqs.design_types,
     );
     let planar = crate::design::sketch_project::project_sketch_design(
         ctx,
@@ -1238,6 +1239,11 @@ fn extend_related_design_records(
     design.design_record_headers.extend(scope_headers);
     let indices = scope_related_indices(&design.design_parameter_scopes);
     append_related_record_headers(scan, &mut design.design_record_headers, &indices)?;
+    crate::design::decode::deleted_members::mark_deleted_members(
+        scan,
+        &mut design.design_parameter_scopes,
+        &mut design.design_record_headers,
+    )?;
     let profile_losses = crate::design::decode::operands::bind_sketch_profiles(
         scan,
         &mut design.design_parameter_scopes,
@@ -1351,13 +1357,19 @@ fn extend_related_design_records(
             &design.design_record_headers,
         )?;
     design.design_construction_operand_identities = identities;
+    let indices = collect_related_indices(
+        crate::design::decode::operands::tracking_path_record_indices(
+            &design.design_construction_operand_identities,
+        ),
+    );
+    append_related_record_headers(scan, &mut design.design_record_headers, &indices)?;
     let scopes = design
         .design_parameter_scopes
         .iter()
         .filter_map(|scope| {
             Some((
                 (crate::ids::native_stream(&scope.id)?, scope.record_index),
-                scope.kind(),
+                scope,
             ))
         })
         .collect::<std::collections::HashMap<_, _>>();
@@ -1392,9 +1404,9 @@ fn extend_related_design_records(
         let Some(stream) = crate::ids::native_stream(&group.id) else {
             return true;
         };
-        let kind = scopes.get(&(stream, group.scope_record_index));
+        let scope = scopes.get(&(stream, group.scope_record_index)).copied();
         crate::design::decode::operands::construction_operand_group_is_retained(
-            kind,
+            scope,
             identified_groups.contains(&(stream, group.record_index))
                 || identity_member_groups.contains(&(stream, group.record_index)),
         )
@@ -1627,6 +1639,7 @@ fn extend_related_design_records(
         &design.design_face_operands,
         &design.design_construction_operand_identities,
         &design.asm_histories,
+        &prereqs.design_types,
     );
     crate::history::selection::bind_edge_identity_bounded_face_rules(
         &mut design.design_edge_identity_operands,

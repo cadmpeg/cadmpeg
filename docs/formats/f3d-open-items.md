@@ -34,11 +34,11 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### DR-220. Hole carrier placement forms
 
-**Question.** Which placement does a Hole carrier state when its `refType` is not `13` or `19`?
+**Question.** Which placement does a Hole carrier state when its `refType` is not `13`, `14`, or `19`?
 
-**Known.** `f3d.md` §3.1 "The carrier `refType` states how" defines the two admitted forms. The point-data record `refType` values `5`, `6`, and `17` occur on carrier `refType` `19` and do not change its placement. A Hole placed by a point on a construction plane has carrier `refType` `14`, a zero carrier position, and one point-data record with `refType` `12`.
+**Known.** `f3d.md` §3.1 "The carrier `refType` states how" defines the three admitted forms. The point-data record `refType` values `5`, `6`, and `17` occur on carrier `refType` `19` and do not change its placement.
 
-**Need.** Independent selections that vary the construction plane and the point of carrier `refType` `14`, and a file with a Hole carrier of any further `refType`.
+**Need.** A file with a Hole carrier of any further `refType`.
 
 **Conflict.** None.
 
@@ -236,7 +236,7 @@ travel.
 
 **Known.** `f3d.md` §3.1 "A typed-reference profile selection is a construction-operand group member" gives the record grammar and the exact join. The twelve bytes are three u32 values; observed values are small, and the first is `0` or `1`. Some typed Extrude profile groups name members that are not typed profile selections.
 
-**Need.** The loop roles and entry fields can distinguish outer and inner boundaries and curve orientation, and the other member form keeps those Extrude profiles native.
+**Need.** Controlled saves must vary one selected region to two selected regions, then add a hole and a nonempty second list while keeping the Sketch and feature operation fixed. Compare the zero region terminators with both counted-list boundaries. Vary each entry operand independently and compare the selected outer and inner boundaries and curve orientation. The other member form remains native until its complete grammar resolves.
 
 ### DR-80. Parameter collection fields
 
@@ -369,14 +369,6 @@ travel.
 **Known.** `f3d.md` §3.1 "A Fillet selection set can store its face selections" defines the face group and its radius when the scope has one edge group, one face group, and one constant radius. With one radius per group, `f3d.md` §3.1 "Within a scope of the Fillet family" pairs groups and radii in scope-reference order, and that pairing gives the face group the radius at its position. Groups and parameters store no assignment cross-reference. A scope with several role-`0x0000000800000000` edge groups, one or more role-`0x0000001000000000` face groups, and one radius and tangency weight per edge group pairs the edge groups with the radii in scope order; a face group then has no pairing, because the groups outnumber the radii.
 
 **Need.** The scope-order pairing must be confirmed or replaced for face groups before a Fillet with several selection sets and face selections transfers its radii as authored.
-
-### DR-108. Sketch scope references without a record
-
-**Question.** What did a Sketch scope reference name when the Design stream contains no record with that index?
-
-**Known.** `f3d.md` §3.1 "A parameter scope is one logical indexed record" defines the ordered reference table. A Sketch scope can name record indices that occur in no indexed header and in no other record of the stream. Its other references name records that only the generic indexed header classifies. `f3d.md` §3.1 "An owner frame whose stored scope record is absent" defines detached parameter owners, which remain after their dimension is deleted.
-
-**Need.** A rule must tell a deleted sketch member from a missing record before the scope can pass structural validation without its absent references.
 
 ### DR-101. Fixed typed occurrence path discriminator
 
@@ -755,13 +747,13 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** The decoder admits the flag bytes and does not project them.
 
-### DR-222. `MoveFace` and `OffsetFaces` selections that the transition leaves open
+### DR-222. `MoveFace` and `OffsetFaces` member recipes that resolve no face
 
-**Question.** Which faces does a `MoveFace` or `OffsetFaces` group select when its transition deletes a face, updates a face without a plane or cylinder row, or moves more faces than the group has distinct members?
+**Question.** Which face does a `MoveFace` or `OffsetFaces` bounded-face member select when the `DeleteFace` bounded-face rule resolves no unique face for its recipe?
 
-**Known.** The specification states the selection from the surface rows of the transition when no selected face can be missing from the moved set. A selected face can leave the moved set by deletion, and a selected face on a cone, sphere, torus, or spline surface has no row to compare. A face tangent to a selected face moves with it, so a larger moved set holds unselected faces. Each group member is a bounded-face recipe.
+**Known.** A member selects the face that its bounded-face recipe resolves in the input state (`f3d.md`, "The members of a `MoveFace` or `OffsetFaces` group also state the selection"). The rule resolves nothing for a member with a node whose structure matches no recipe-structure form, a positive program header that differs from the node count, or node ordinals beyond the prefix operands.
 
-**Need.** The mapping from a bounded-face member recipe to the face it selects, or a surface comparison for the other surface forms.
+**Need.** The grammar of these node forms.
 
 **Conflict.** None.
 
@@ -814,6 +806,18 @@ The first closing reference run identifies a direct contained child by its local
 **Conflict.** None.
 
 **Note.** Keep the group as the native face selection.
+
+### DR-254. Reference edges of a Hole's placement distances
+
+**Question.** Which role-`0x0000002100000000` group does each of `RefDim1` and `RefDim2` measure from, and does a distance carry a sign?
+
+**Known.** A Hole placed by distances from two edges stores both parameters and two role-`0x0000002100000000` groups, and its carrier point stores the resulting position. In the control both distances are 10 mm from two perpendicular edges.
+
+**Need.** Controls with two different distances, with the edges selected in both orders, and with a hole on the other side of an edge.
+
+**Conflict.** None.
+
+**Note.** The Hole projects from its carrier point and reports `feature.hole-reference-dimensions-native`.
 
 ### DR-124. Partial-curve operands in profile selections
 
@@ -1031,18 +1035,6 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** No authored file has a fixed-length frame.
 
-### DR-203. Origin-plane identities outside Draft
-
-**Question.** Does a primary identity of `42`, `43`, or `44` name an origin plane in every feature when an ASM entity has the same number?
-
-**Known.** `f3d.md` §3.1 treats these identities in a `Draft` neutral-plane member as origin planes. Other features give historical candidates precedence. In a controlled `Draft` on the XY plane of a body above that plane, identity `42` has a candidate face that is not on the plane.
-
-**Need.** Controlled features of the other families that select an origin plane on bodies that do not touch it, and a selection that names a real ASM entity with one of these numbers.
-
-**Conflict.** The precedence that other families use selects a face that does not lie on the origin plane in the `Draft` controls.
-
-**Note.** No stored field separates an origin identity from an ASM identity with the same number.
-
 ### DR-204. Row default flag and revision members of configuration tables
 
 **Question.** What do a row `default` value `true`, a column `isCustom` value `true`, a nonempty `cachedRevIds` object, and the row `configRevisionId` state in a configuration table?
@@ -1247,15 +1239,15 @@ when the operation transition carries no candidate for the group members?
 
 ### DR-248. Closing reference and owner of unadmitted legacy placements
 
-**Question.** How does the closing reference of an unadmitted legacy occurrence-placement carrier identify its owner, and how does that owner place the carrier's matrix in the document frame?
+**Question.** How does the closing reference of a legacy placement carrier identify its owner, including a 531-byte carrier whose closing target differs from `4`? Which saved state supplies the owner frame, and how do the instance key and metadata UUIDs bind its six-name envelope?
 
-**Known.** The 403-byte identity and 531-byte matrix envelopes in §1.4 close with a fixed target value `4`. One local archive has eight XREF rows with undecoded placements. Five target members decode. Five role-matched 531-byte carriers have nonidentity matrices and non-null closing references whose targets differ from `4`. Two public OSII Mini archives have 86 plain repeated-target carriers: four 404-byte identity forms and 82 532-byte matrix forms, with a one-byte metadata-prefix extension and variable closing component references. Multiple carriers can share one reference role. One public Meanwell assembly has eight six-name attributed matrix envelopes of 740 or 744 bytes. These three public root documents have zero saved world scenes and zero joint scopes. One local root document also has zero saved world scenes. In one measured assembly, nine decoded placements share a unique admitted identity owner carrier to the document root. Its body-ownership gate defers neutral occurrence projection; the carrier chain supplies its external children's world frame. The three-property control-1 identity grammar is in §1.4. A reference with an undecoded placement in an XREF-only table keeps the identity fallback and emits `xref.placement-identity-assumed`. The same reference in a table with DERIVED rows stays native and emits `xref.occurrence-unplaced`. A decoded placement with an unresolved owner keeps its document-root placement and emits `xref.owner-unresolved`.
+**Known.** The 403-byte identity and 531-byte matrix envelopes in §1.4 close with target value `4`. One local archive has eight XREF rows with undecoded placements; five target members decode, and five role-matched 531-byte carriers have nonidentity matrices and other non-null closing targets. Two public OSII Mini archives each have 43 refused version-2 Component placement carriers: two 404-byte identity spans and 41 532-byte matrix spans. The plain prefix has an extra byte, with values `0` and `1`, before its metadata count. Its closing references select five local owners. Each of the 82 matrices has a byte-identical copy in another form in its Design stream. Each root also has seven unadmitted 234-byte local identity carriers. Two local component paths retain translated frames while the corresponding local carriers store identity; one translation is `-3.6` cm on Z. One public Meanwell assembly has eight refused version-2 six-name matrix carriers: one 740-byte span and seven 744-byte spans. Each matrix also occurs in a CommonData path that names its placement carrier. Each closing owner is the document root. The six stored names are `Appearance`, `Geometry`, `PhysicalMaterial`, `Properties`, `StructureChange`, and `Transform`. These three public roots have zero saved display scenes and zero joint scopes. Their baseline losses are respectively 43, 43, and 8 `xref.placement-undecoded`, and 14, 14, and 5 `xref.placement-identity-assumed`. Multiple carriers share a reference role. In one measured assembly, nine decoded placements share a unique admitted identity owner carrier to the document root; its carrier chain supplies its external children's world frame. The three-property control-1 identity grammar is in §1.4. An undecoded XREF placement in an XREF-only table retains identity and emits `xref.placement-identity-assumed`. In a table with DERIVED rows it stays native and emits `xref.occurrence-unplaced`. A decoded placement with an unresolved owner retains its document-root placement and emits `xref.owner-unresolved`.
 
-**Need.** Controlled public placements that vary the closing target and owner transform separately. The plain metadata-prefix extension and the six-name envelope each require a complete carrier grammar. Each new grammar requires owner binding and an independent scene or closing-joint check for each emitted placement.
+**Need.** For a 531-byte carrier with a closing target other than `4`, public saves that vary the closing target and the owner transform separately, with a retained display scene or closing joint for each placement. These saves must show how the closing reference selects the owner and how the owner places the stored matrix in the document frame. For the plain envelope, save a public assembly with two distinct local owners and one asymmetric external child in each. Put owner A at identity and owner B at translation `(11, 13, 17)` cm with a 180-degree rotation about root Z. Put each child at translation `(1, 0, 0)` cm in its owner frame. Save the baseline, translate owner A by `(2, 3, 5)` cm, rotate it by 90 degrees about root Z through its own origin, then move its child by `(7, 0, 0)` cm in the owner frame, with a separate save after each change. Repeat the child below a second instance of its owner. Keep the child fixed while changing the active captured position, and save both positions. Retain a display scene or dimensioned mating geometry for each save. These pairs must distinguish the stored child frame, the owner's current frame, and the selected captured state, and must close the local owner-carrier grammar. For the six-name envelope, make a second public assembly with an asymmetric inserted part, two instances of that part, and an instance below a moved local owner. Save each insertion separately, add controlled copies until the stored instance key gains one decimal digit, change one tracked channel at a time, and save before and after a captured-position change. Add one fixed joint to each instance in separate saves with the poses held fixed, and compare its operand path to the instance key and both metadata UUIDs. Keep all three repeated target references, the counted name run, the instance key, both metadata UUIDs, and the closing owner in the comparison. Require a complete indexed span, registered type and version, occurrence binding, and an independently established owner-relative pose for each admitted form.
 
 **Conflict.** None.
 
-**Note.** DERIVED-row admission preserves adjacent XREF rows. A unique owner chain composes admitted placements to the document root. The identity fallback preserves the earlier placement of references in XREF-only tables. Its warning records the missing placement proof.
+**Note.** Equal matrix bytes corroborate a stored frame. Selection of an owner's current frame and of a captured state remains part of occurrence placement. The identity fallback records the unresolved placement proof.
 
 ### DR-252. Saved scene framing and state selection
 
@@ -1280,3 +1272,15 @@ when the operation transition carries no candidate for the group members?
 **Conflict.** The nonzero words change the admitted identity suffix. Treating them as padding would discard stored values.
 
 **Note.** The current path decoder retains these scopes natively. Their thirteen paired-frame findings remain errors until the identity state has a complete grammar and binding rule.
+
+### DR-255. Decal target selected by a face-recipe entity selection
+
+**Question.** What does a Decal target group carry when its one member is a persistent entity selection whose identity record holds a face recipe instead of a whole-body recipe envelope, and which faces does it select?
+
+**Known.** `f3d.md` §3.1 "A `Decal` scope is a presentation timeline object" gives the scope prologue and a target group with role `0x0000000400000000` whose member is a whole-body recipe envelope. A localized `Aufkleber` scope selects the `Decal` family by its class type GUID. It stores mapping mode `0` at offset 32 and the marked target-group reference at offset 33, so the Decal image record decodes with an unrecognized mapping mode. Its target group has one member `N`. The records `N` through `N + 3` follow the entity-selection frame: a prefix with an asset GUID and a context GUID, the paired header `N`, and the nested records `N + 1` and `N + 2`. The identity record `N + 3` is 90 bytes long and contains a `face_recipe_data` program. Record `N + 4` stores the same asset and context GUIDs. The entity-selection frame grammar admits 29-byte and 45-byte identity records and the 49-byte class-338 sketch-curve identity with a class-361 identity record, so this member decodes as neither an entity-selection operand nor a body-recipe operand. Validation then refuses the Decal image join because the target member has no body-recipe operand. Projection keeps the Decal native because mapping mode `0` selects no neutral mapping.
+
+**Need.** Make controlled saves of one Decal on one planar face and on one cylindrical face, each with mapping mode `0x60` and `0`. Compare the target member records with the whole-body recipe form. Establish the grammar of the 90-byte identity record and of record `N + 4`, how the face recipe resolves to faces, and the meaning of mapping mode `0`.
+
+**Conflict.** The specification gives mapping mode `0x60` and a whole-body recipe member. This scope stores mode `0` and a face-recipe entity selection.
+
+**Note.** None.

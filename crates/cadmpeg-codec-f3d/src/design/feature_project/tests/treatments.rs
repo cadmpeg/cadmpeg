@@ -187,7 +187,11 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
         std::num::NonZeroU64::new(1).unwrap(),
     )
     .unwrap();
-    let project = |selection: &DesignEntitySelectionOperand| {
+    let origin = crate::test_support::origin_types::origin_design_types(
+        "f3d:test/Design/MetaStream.dat",
+        39,
+    );
+    let project_with = |selection: &DesignEntitySelectionOperand, design_types| {
         crate::test_support::with_decode_context(|decode_ctx| {
             crate::design::feature_project::project_parameter_design_with_edge_identities(
                 decode_ctx,
@@ -196,12 +200,26 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
                     timelines: std::slice::from_ref(&timeline),
                     construction_groups: &groups,
                     entity_selection_operands: std::slice::from_ref(selection),
+                    design_types,
                     ..Default::default()
                 },
             )
         })
         .expect("authored Draft timeline")
     };
+    let project = |selection: &DesignEntitySelectionOperand| project_with(selection, &origin);
+    let native = |features: &[cadmpeg_ir::features::Feature]| {
+        matches!(
+            features[0].evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::Native {
+                kind: cadmpeg_ir::features::NativeFeatureKind::Draft,
+                ..
+            })
+        )
+    };
+    // Without a complete origin run, the identity can still name an origin plane.
+    assert!(native(&project_with(&selection, &[]).features));
+    assert!(native(&project_with(&selection, &origin[..1]).features));
 
     let crate::design::feature_project::ProjectedParameterDesign { features, .. } =
         project(&selection);
@@ -404,7 +422,7 @@ fn localized_fillet_scope() -> DesignParameterScope {
 }
 
 fn localized_fillet_scope_without_owners() -> DesignParameterScope {
-    DesignParameterScope::try_new(
+    let mut scope = DesignParameterScope::try_new(
         DesignParameterScopeDraft {
             id: "f3d:native/BulkStream.dat:scope#12".into(),
             byte_offset: 100,
@@ -425,14 +443,17 @@ fn localized_fillet_scope_without_owners() -> DesignParameterScope {
                 "reference_members",
             )
             .unwrap(),
-            payload: DesignFeatureKind::Conge.try_into().unwrap(),
+            payload: DesignFeatureKind::Fillet.try_into().unwrap(),
             unclosed_construction_operand_groups: Vec::new(),
+            deleted_members: None,
             paired_class_tag: DesignClassTag::try_from("261".to_owned()).unwrap(),
             paired_byte_offset: 300,
         }
         .with_fixture_layout(),
     )
-    .unwrap()
+    .unwrap();
+    scope.source_kind = Some("Congé".to_owned());
+    scope
 }
 
 fn localized_fillet_group(
@@ -815,13 +836,7 @@ fn localized_fillet_radius_parameters_pair_with_counted_edge_groups_in_order() {
         owner(40, 41, 3),
     ];
     let mut indexed_scope = scope.clone();
-    if let DesignScopePayloadMut::Fillet(slot)
-    | DesignScopePayloadMut::Conge(slot)
-    | DesignScopePayloadMut::Abrundung(slot)
-    | DesignScopePayloadMut::Arredondamento(slot)
-    | DesignScopePayloadMut::Empalme(slot)
-    | DesignScopePayloadMut::FilletJa(slot) = indexed_scope.payload_mut()
-    {
+    if let DesignScopePayloadMut::Fillet(slot) = indexed_scope.payload_mut() {
         *slot = Some(DesignFixedFilletParameters {
             groups: vec![DesignFixedFilletGroup::try_new(
                 Some(DesignFixedFilletScalar {

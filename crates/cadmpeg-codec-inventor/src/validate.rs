@@ -3856,6 +3856,9 @@ pub(crate) fn sketch_constraint_references(constraint: &PmDcSketchConstraint) ->
         PmDcSketchConstraintKind::BlockGroup { ref members } => {
             references.extend(members.references().iter().map(|member| member.index()));
         }
+        PmDcSketchConstraintKind::PolygonControl {
+            reference, vertex, ..
+        } => references.extend([reference.index(), vertex[0].index(), vertex[1].index()]),
         PmDcSketchConstraintKind::PolygonRelation {
             first,
             second,
