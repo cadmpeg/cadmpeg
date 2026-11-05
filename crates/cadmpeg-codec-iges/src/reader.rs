@@ -274,7 +274,7 @@ fn name_cut_absent_fields(
     }
     let mut fields = Vec::new();
     if let Some(namespace) = ir.native.namespace("iges") {
-        for (arena, records) in namespace.arenas().iter() {
+        for (arena, records) in namespace.arenas() {
             // A property lists the entries that link it; entries whose
             // Parameter Data the cut removed contribute no links, so the
             // list may be incomplete whenever the cut removes any record.

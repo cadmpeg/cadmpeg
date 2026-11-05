@@ -342,7 +342,7 @@ pub(super) fn project(
         let Ok(assembly_sequence) = source_sequence(&assembly.source_entity) else {
             continue;
         };
-        for item in assembly.items.iter() {
+        for item in &assembly.items {
             let Some(target) = item
                 .item
                 .as_ref()
