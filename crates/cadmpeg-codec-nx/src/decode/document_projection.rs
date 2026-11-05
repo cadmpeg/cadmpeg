@@ -66,10 +66,11 @@ pub(super) fn project(
                 .get("prototype")
                 .and_then(Value::as_str)
                 .and_then(|prototype| prototypes.get(prototype))
-                .map(|definition| PrototypeReference::Local {
-                    definition: definition.clone(),
-                })
-                .unwrap_or(PrototypeReference::Unresolved {});
+                .map_or(PrototypeReference::Unresolved {}, |definition| {
+                    PrototypeReference::Local {
+                        definition: definition.clone(),
+                    }
+                });
             let ordinal = fields
                 .get("ordinal")
                 .and_then(Value::as_u64)
