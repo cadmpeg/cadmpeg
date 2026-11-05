@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
-use cadmpeg_ir::math::Point3;
+use cadmpeg_ir::math::{Point2, Point3};
 
 use crate::decode::analytic::pcurves::{unique_oriented_native_pcurve, NativePcurveCandidates};
 use crate::decode::uniqueness::exactly_one;
@@ -192,18 +192,75 @@ fn arcs_cross(first: &CircularArc, second: &CircularArc) -> bool {
     })
 }
 
+fn simple_polygon(polygon: &[[f64; 2]]) -> bool {
+    if polygon.len() < 3 || polygon.iter().flatten().any(|value| !value.is_finite()) {
+        return false;
+    }
+    let scale = polygon
+        .iter()
+        .flatten()
+        .map(|value| value.abs())
+        .fold(1.0, f64::max);
+    let tolerance = EPS_REGION * scale;
+    for i in 0..polygon.len() {
+        let a = Point2::new(polygon[i][0], polygon[i][1]);
+        let b = Point2::new(
+            polygon[(i + 1) % polygon.len()][0],
+            polygon[(i + 1) % polygon.len()][1],
+        );
+        let length = (b.u - a.u).hypot(b.v - a.v);
+        if !length.is_finite() || length <= tolerance {
+            return false;
+        }
+        let c = Point2::new(
+            polygon[(i + 2) % polygon.len()][0],
+            polygon[(i + 2) % polygon.len()][1],
+        );
+        let first = [b.u - a.u, b.v - a.v];
+        let second = [c.u - b.u, c.v - b.v];
+        let turn = first[0] * second[1] - first[1] * second[0];
+        let along = first[0] * second[0] + first[1] * second[1];
+        if !turn.is_finite()
+            || !along.is_finite()
+            || (turn.abs() <= tolerance * first[0].hypot(first[1]).max(second[0].hypot(second[1]))
+                && along < 0.0)
+        {
+            return false;
+        }
+        for j in i + 1..polygon.len() {
+            if j == i + 1 || (i == 0 && j + 1 == polygon.len()) {
+                continue;
+            }
+            let c = Point2::new(polygon[j][0], polygon[j][1]);
+            let d = Point2::new(
+                polygon[(j + 1) % polygon.len()][0],
+                polygon[(j + 1) % polygon.len()][1],
+            );
+            if cadmpeg_ir::math::planar::segments_intersect(a, b, c, d, tolerance) {
+                return false;
+            }
+        }
+    }
+    true
+}
+
 fn outer_region(
     lp: &crate::topology::Loop,
     surface: &SurfaceGeometry,
     polygon: Vec<[f64; 2]>,
     world: &[[Point3; 2]],
     evidence: NativeCurveEvidence<'_>,
+    allow_nonconvex: bool,
 ) -> Option<OuterRegion> {
     let SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(plane)) = surface else {
         return None;
     };
-    crate::decode::sweep::revolution_cap::convex_polygon_contains_circles(&polygon, &[])
-        .then_some(())?;
+    if allow_nonconvex {
+        simple_polygon(&polygon).then_some(())?;
+    } else {
+        crate::decode::sweep::revolution_cap::convex_polygon_contains_circles(&polygon, &[])
+            .then_some(())?;
+    }
     let winding = cross(polygon[0], polygon[1], polygon[2]).signum();
     let mut bounds = [[f64::INFINITY; 2], [f64::NEG_INFINITY; 2]];
     for point in &polygon {
@@ -212,15 +269,21 @@ fn outer_region(
             bounds[1][axis] = bounds[1][axis].max(point[axis]);
         }
     }
+    let edge_curves: Vec<_> = lp
+        .half_edges()
+        .iter()
+        .map(|half_edge| {
+            exactly_one(evidence.model_curves.iter().filter(|curve| {
+                crate::identity::matches_numbered_identity(
+                    curve.id.as_str(),
+                    "creo:visibgeom:curve#",
+                    half_edge.curve_id,
+                )
+            }))
+        })
+        .collect::<Option<_>>()?;
     let mut arcs = Vec::new();
-    for (index, half_edge) in lp.half_edges().iter().enumerate() {
-        let curve = exactly_one(evidence.model_curves.iter().filter(|curve| {
-            crate::identity::matches_numbered_identity(
-                curve.id.as_str(),
-                "creo:visibgeom:curve#",
-                half_edge.curve_id,
-            )
-        }))?;
+    for (index, curve) in edge_curves.iter().enumerate() {
         let geometry = evidence.source_carriers.curve_geometry(curve);
         match geometry {
             CurveGeometry::Solved(SolvedCurveGeometry::Line(line)) => {
@@ -241,7 +304,13 @@ fn outer_region(
                 .then_some(())?;
                 let [start, end] = curve.parameter_range?.endpoints();
                 let span = (end - start).abs();
-                (span > EPS_REGION && span <= std::f64::consts::PI + EPS_REGION).then_some(())?;
+                (span > EPS_REGION
+                    && if allow_nonconvex {
+                        span < std::f64::consts::TAU - EPS_REGION
+                    } else {
+                        span <= std::f64::consts::PI + EPS_REGION
+                    })
+                .then_some(())?;
                 let reference = circle.frame().reference().as_raw();
                 let transverse = circle.frame().axis().as_raw().cross(*reference);
                 let project = |angle: f64| {
@@ -261,9 +330,11 @@ fn outer_region(
                 let middle = project(start.midpoint(end))?;
                 let chord_length = (polygon[next][0] - polygon[index][0])
                     .hypot(polygon[next][1] - polygon[index][1]);
-                (winding * cross(polygon[index], polygon[next], middle)
-                    < -EPS_REGION * chord_length * chord_length.max(1.0))
-                .then_some(())?;
+                if !allow_nonconvex {
+                    (winding * cross(polygon[index], polygon[next], middle)
+                        < -EPS_REGION * chord_length * chord_length.max(1.0))
+                    .then_some(())?;
+                }
                 let center = cadmpeg_ir::eval::analytic_surface_parameters(surface, center)?.get();
                 let carrier = ([center.u, center.v], circle.radius().get());
                 let bounded_arc = CircularArc {
@@ -276,7 +347,12 @@ fn outer_region(
                     .all(|previous| !arcs_cross(previous, &bounded_arc))
                     .then_some(())?;
                 for (other, point) in polygon.iter().enumerate() {
-                    if other == index {
+                    if other == index
+                        || matches!(
+                            evidence.source_carriers.curve_geometry(edge_curves[other]),
+                            CurveGeometry::Solved(SolvedCurveGeometry::Circle(_))
+                        )
+                    {
                         continue;
                     }
                     let after = (other + 1) % polygon.len();
@@ -310,6 +386,7 @@ pub(super) fn partition<'a>(
 ) -> Result<Option<Vec<Vec<&'a crate::topology::Loop>>>, cadmpeg_core::CodecError> {
     let mut outer = Vec::new();
     let mut holes = Vec::new();
+    let allow_nonconvex = loops.iter().all(|lp| lp.half_edges().len() != 2);
     for lp in loops {
         let Some(ProjectedRing { polygon, world }) =
             projected_ring(lp, face.1, incidence, vertices)
@@ -342,7 +419,8 @@ pub(super) fn partition<'a>(
             };
             holes.push((*lp, circle));
         } else {
-            let Some(region) = outer_region(lp, face.1, polygon, &world, evidence) else {
+            let Some(region) = outer_region(lp, face.1, polygon, &world, evidence, allow_nonconvex)
+            else {
                 return Ok(None);
             };
             outer.push((*lp, region));

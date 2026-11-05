@@ -1605,6 +1605,39 @@ fn nist_ctc_01_planar_face_keeps_both_bores() {
 }
 
 #[test]
+fn nist_ctc_01_cut_caps_keep_disjoint_boundaries() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../corpus/nist-pmi/creo/nist_ctc_01_asme1_rd_cr10030.prt.5");
+    let result = decode(std::fs::read(path).expect("read NIST CTC-01 Creo part"));
+    let model = &result.ir().model;
+    let faces: Vec<_> = model
+        .faces
+        .iter()
+        .filter(|face| face.surface.as_str() == "creo:visibgeom:surface#3682")
+        .collect();
+    assert_eq!(faces.len(), 2);
+    for (outer, edge_count) in [(3683, 12), (3695, 20)] {
+        let lp = model
+            .loops
+            .iter()
+            .find(|lp| {
+                faces
+                    .iter()
+                    .any(|face| face.loops.iter().any(|id| id == &lp.id))
+                    && lp.coedges().iter().any(|id| {
+                        model.coedges.iter().any(|coedge| {
+                            &coedge.id == id
+                                && coedge.edge.as_str() == format!("creo:visibgeom:edge#{outer}")
+                        })
+                    })
+            })
+            .expect("cut cap loop");
+        assert_eq!(lp.coedges().len(), edge_count);
+    }
+    assert_valid(&result);
+}
+
+#[test]
 fn nist_ctc_01_disjoint_planar_regions_keep_their_bores() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../corpus/nist-pmi/creo/nist_ctc_01_asme1_rd_cr10030.prt.5");

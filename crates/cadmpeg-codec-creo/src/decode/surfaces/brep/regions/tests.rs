@@ -15,7 +15,9 @@ use crate::decode::analytic::pcurves::NativePcurveCandidates;
 use crate::topology::HalfEdgeId;
 
 use super::super::NativeCurveEvidence;
-use super::{arcs_cross, outer_region, partition, segment_arc_crosses, CircularArc};
+use super::{
+    arcs_cross, outer_region, partition, segment_arc_crosses, simple_polygon, CircularArc,
+};
 
 #[test]
 fn disjoint_planar_regions_keep_each_hole_with_its_outer_ring() {
@@ -261,8 +263,33 @@ fn bounded_arc_must_bulge_outside_and_follow_its_source_interval() {
             source_carriers: &carriers,
         };
         assert_eq!(
-            outer_region(&lp, &plane, points.to_vec(), &world, evidence).is_some(),
+            outer_region(&lp, &plane, points.to_vec(), &world, evidence, false).is_some(),
             valid
         );
     }
+}
+
+#[test]
+fn disjoint_regions_require_simple_boundaries() {
+    let concave = [[0.0, 0.0], [3.0, 0.0], [3.0, 3.0], [1.5, 1.0], [0.0, 3.0]];
+    let crossed = [[0.0, 0.0], [3.0, 3.0], [0.0, 3.0], [3.0, 0.0]];
+    let touching = [[0.0, 0.0], [3.0, 0.0], [3.0, 3.0], [1.5, 0.0], [0.0, 3.0]];
+    let reversed_edge = [[0.0, 0.0], [3.0, 0.0], [1.5, 0.0], [3.0, 3.0], [0.0, 3.0]];
+    assert!(simple_polygon(&concave));
+    assert!(!simple_polygon(&crossed));
+    assert!(!simple_polygon(&touching));
+    assert!(!simple_polygon(&reversed_edge));
+}
+
+#[test]
+fn major_arc_intersections_follow_the_stored_interval() {
+    let h = std::f64::consts::FRAC_1_SQRT_2;
+    let arc = CircularArc {
+        circle: ([0.0, 0.0], 1.0),
+        endpoints: [[1.0, 0.0], [0.0, -1.0]],
+        midpoint: [-h, h],
+        span: 3.0 * std::f64::consts::FRAC_PI_2,
+    };
+    assert!(segment_arc_crosses([-2.0, 0.0], [-0.5, 0.0], &arc));
+    assert!(!segment_arc_crosses([0.5, -0.5], [1.0, -1.0], &arc));
 }
