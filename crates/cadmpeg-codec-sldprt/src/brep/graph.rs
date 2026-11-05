@@ -2367,7 +2367,6 @@ pub(crate) fn decode_bodies(
     let mut carriers = CarrierIndex::default();
     let mut tables = topology::Tables::default();
     let mut facts = entity::Facts::default();
-    let mut typed_facts = typed::Facts::default();
     let mut initialized = false;
     let mut ordered: Vec<&(&[u8], &StreamHeader)> = Vec::new();
     ordered.extend(bodies.iter());
@@ -2377,20 +2376,25 @@ pub(crate) fn decode_bodies(
         let body = header_body(payload, header)?;
         entity_streams.push((body, is_deltas_stream(header)));
     }
-    let deltas_records: Vec<_> = ordered
+    let framed: Vec<_> = ordered
         .iter()
         .zip(&entity_streams)
         .map(|((payload, _), (_, prefixed))| {
             prefixed
                 .then(|| cadmpeg_parasolid::records::DeltasRecords::read(payload).ok())
                 .flatten()
-                .filter(|records| {
-                    *records.end() == cadmpeg_parasolid::records::deltas::DeltasEnd::Complete
-                })
+        })
+        .collect();
+    let deltas_records: Vec<_> = framed
+        .iter()
+        .map(|records| {
+            records.as_ref().filter(|records| {
+                *records.end() == cadmpeg_parasolid::records::deltas::DeltasEnd::Complete
+            })
         })
         .collect();
     let agreement = topology::nodes::DeltasAgreement::new(
-        deltas_records
+        framed
             .iter()
             .zip(&ordered)
             .filter_map(|(records, (payload, _))| Some((records.as_ref()?, *payload))),
@@ -2446,7 +2450,6 @@ pub(crate) fn decode_bodies(
                 ))
             });
         let deltas_stream = deltas
-            .as_ref()
             .filter(|_| node_stream.is_none())
             .and_then(|records| {
                 let offset = header.body_offset;
@@ -2524,18 +2527,25 @@ pub(crate) fn decode_bodies(
             }
         }
     }
-    let conflicted = agreement.conflicted_indices();
-    for stream_typed_facts in &typed_streams {
-        typed_facts.merge_missing(stream_typed_facts.clone());
+    let mut conflicted = agreement.conflicted_indices();
+    let no_conflicts = HashSet::new();
+    if !deltas_from_nodes {
+        let scanned = incomplete_deltas_identities(
+            ctx,
+            &ordered,
+            &deltas_records,
+            &typed_streams,
+            &node_tables,
+            &conflicted,
+        )?;
+        conflicted.extend(unframed_shared(&entity_streams, &framed, scanned));
+        for (facts, (_, prefixed)) in typed_streams.iter_mut().zip(&entity_streams) {
+            if *prefixed {
+                *facts = std::mem::take(facts).without(&conflicted);
+            }
+        }
     }
-    let owner_attrs = typed::topology_owner_attrs_for_streams(
-        entity_streams
-            .iter()
-            .zip(&typed_streams)
-            .map(|((body, deltas), facts)| (facts, *body, *deltas)),
-    );
-    let typed_bridge_attrs = typed_facts.valid_ownership_face_attrs();
-    let selected_bridge_attrs = typed_bridge_attrs.as_ref();
+    let evidence = SiteEvidence::of(&entity_streams, &typed_streams);
     for (stream_order, ((((payload, header), stream_typed_facts), node_tables), attributes)) in
         ordered
             .into_iter()
@@ -2546,41 +2556,28 @@ pub(crate) fn decode_bodies(
     {
         let body = header_body(payload, header)?;
         let is_deltas = is_deltas_stream(header);
-        let typed_face_offsets =
-            stream_typed_facts.selected_face_offsets(typed_bridge_attrs.as_ref());
         let (node_tables, node_carriers) = node_tables.unzip();
-        let mut stream_carriers = match node_carriers.flatten() {
-            Some(carriers) => {
-                index_carriers_with_nodes(ctx, body, carriers, is_deltas.then_some(true))?
-            }
-            None => scan_carriers_for_role(ctx, body, is_deltas)?,
-        };
-        if is_deltas && deltas_from_nodes {
-            stream_carriers.remove_attrs(&conflicted);
-        }
-        carriers.merge_missing(stream_carriers);
-        let curve_attrs = carriers.curve_attrs();
-        let scanned_tables = if let Some(mut tables) = node_tables {
-            topology::nodes::own(&mut tables, &typed_face_offsets, &owner_attrs);
-            tables
-        } else if is_deltas {
-            topology::scan_deltas_with_owner_attrs(
-                body,
-                &curve_attrs,
-                &typed_face_offsets,
-                &tables,
-                &owner_attrs,
-            )
-        } else if crate::parasolid::is_body_stream(header) {
-            topology::scan_with_owner_attrs(body, &curve_attrs, &typed_face_offsets, &owner_attrs)
+        let exclude = if is_deltas {
+            &conflicted
         } else {
-            topology::scan_plain_with_owner_attrs(
-                body,
-                &curve_attrs,
-                &typed_face_offsets,
-                &owner_attrs,
-            )
+            &no_conflicts
         };
+        carriers.merge_missing(stream_carriers(
+            ctx,
+            body,
+            is_deltas,
+            node_carriers.flatten(),
+            exclude,
+        )?);
+        let scanned_tables = stream_topology(
+            (body, header),
+            &stream_typed_facts,
+            node_tables,
+            &carriers.curve_attrs(),
+            &evidence,
+            &tables,
+            exclude,
+        );
         let (attributes, entities) = attributes;
         let attributes = attributes.unwrap_or_else(|| attrib::Records::scan(body));
         let mut scanned_facts = entity::metadata(body, is_deltas, &attributes, entities);
@@ -2590,21 +2587,202 @@ pub(crate) fn decode_bodies(
         for version in &mut scanned_facts.face_color_versions {
             version.stream_order = stream_order;
         }
-        if !initialized || !is_deltas {
-            if initialized {
-                tables.merge_deltas(scanned_tables, selected_bridge_attrs);
-                append_entity_facts(&mut facts, scanned_facts);
-            } else {
-                tables = scanned_tables;
-                facts = scanned_facts;
-                initialized = true;
-            }
-        } else {
-            tables.merge_deltas(scanned_tables, selected_bridge_attrs);
+        if initialized {
+            tables.merge_deltas(scanned_tables, evidence.bridge_attrs.as_ref());
             append_entity_facts(&mut facts, scanned_facts);
+        } else {
+            tables = scanned_tables;
+            facts = scanned_facts;
+            initialized = true;
         }
     }
-    decode_graph(ctx, &mut carriers, &tables, facts, &typed_facts, stream)
+    decode_graph(ctx, &mut carriers, &tables, facts, &evidence.typed, stream)
+}
+
+/// The site-level evidence that the topology scan of each stream reads.
+struct SiteEvidence {
+    /// The typed facts of every stream of the site.
+    typed: typed::Facts,
+    owner_attrs: HashSet<u32>,
+    bridge_attrs: Option<HashSet<u32>>,
+}
+
+impl SiteEvidence {
+    fn of(entity_streams: &[(&[u8], bool)], typed_streams: &[typed::Facts]) -> Self {
+        let mut typed = typed::Facts::default();
+        for stream_typed_facts in typed_streams {
+            typed.merge_missing(stream_typed_facts.clone());
+        }
+        let owner_attrs = typed::topology_owner_attrs_for_streams(
+            entity_streams
+                .iter()
+                .zip(typed_streams)
+                .map(|((body, deltas), facts)| (facts, *body, *deltas)),
+        );
+        let bridge_attrs = typed.valid_ownership_face_attrs();
+        Self {
+            typed,
+            owner_attrs,
+            bridge_attrs,
+        }
+    }
+}
+
+/// The carriers of one stream of a site.
+fn stream_carriers(
+    ctx: &DecodeContext<'_>,
+    body: &[u8],
+    is_deltas: bool,
+    node_carriers: Option<NodeCarriers>,
+    exclude: &HashSet<u32>,
+) -> Result<CarrierIndex, cadmpeg_core::CodecError> {
+    match node_carriers {
+        Some(carriers) => {
+            index_carriers_with_nodes(ctx, body, carriers, is_deltas.then_some(true), exclude)
+        }
+        None => scan_carriers_for_role(ctx, body, is_deltas, exclude),
+    }
+}
+
+/// The topology tables of one stream of a site. A scanned Deltas stream
+/// reads the site's carriers and the `base` tables of the streams before it.
+fn stream_topology(
+    (body, header): (&[u8], &StreamHeader),
+    stream_typed_facts: &typed::Facts,
+    node_tables: Option<topology::Tables>,
+    curve_attrs: &HashSet<u32>,
+    evidence: &SiteEvidence,
+    base: &topology::Tables,
+    exclude: &HashSet<u32>,
+) -> topology::Tables {
+    let typed_face_offsets =
+        stream_typed_facts.selected_face_offsets(evidence.bridge_attrs.as_ref());
+    if let Some(mut tables) = node_tables {
+        topology::nodes::own(&mut tables, &typed_face_offsets, &evidence.owner_attrs);
+        tables
+    } else if is_deltas_stream(header) {
+        let mut scanned = topology::scan_deltas_with_owner_attrs(
+            body,
+            curve_attrs,
+            &typed_face_offsets,
+            base,
+            &evidence.owner_attrs,
+        );
+        scanned.remove_attrs(exclude);
+        scanned
+    } else if crate::parasolid::is_body_stream(header) {
+        topology::scan_with_owner_attrs(
+            body,
+            curve_attrs,
+            &typed_face_offsets,
+            &evidence.owner_attrs,
+        )
+    } else {
+        topology::scan_plain_with_owner_attrs(
+            body,
+            curve_attrs,
+            &typed_face_offsets,
+            &evidence.owner_attrs,
+        )
+    }
+}
+
+/// The typed-fact, carrier and topology identities of each Deltas stream of
+/// a site that has no complete node sequence. The streams are read in decode
+/// order with the site evidence and accumulated tables of the decode scan,
+/// excluding `exclude`.
+fn incomplete_deltas_identities(
+    ctx: &DecodeContext<'_>,
+    ordered: &[&(&[u8], &StreamHeader)],
+    complete: &[Option<&cadmpeg_parasolid::records::DeltasRecords<'_>>],
+    typed_streams: &[typed::Facts],
+    node_tables: &[Option<(topology::Tables, Option<NodeCarriers>)>],
+    exclude: &HashSet<u32>,
+) -> Result<Vec<HashSet<u32>>, cadmpeg_core::CodecError> {
+    let incomplete = |(entry, complete): (&&(&[u8], &StreamHeader), &Option<_>)| {
+        is_deltas_stream(entry.1) && complete.is_none()
+    };
+    let Some(last) = ordered.iter().zip(complete).rposition(incomplete) else {
+        return Ok(vec![HashSet::new(); ordered.len()]);
+    };
+    let mut entity_streams = Vec::new();
+    for (payload, header) in ordered {
+        entity_streams.push((header_body(payload, header)?, is_deltas_stream(header)));
+    }
+    let evidence = SiteEvidence::of(&entity_streams, typed_streams);
+    let no_conflicts = HashSet::new();
+    let mut carriers = CarrierIndex::default();
+    let mut tables: Option<topology::Tables> = None;
+    let mut identities = vec![HashSet::new(); ordered.len()];
+    for (index, ((((_, header), complete), facts), node)) in ordered
+        .iter()
+        .zip(complete)
+        .zip(typed_streams)
+        .zip(node_tables)
+        .enumerate()
+        .take(last + 1)
+    {
+        let (body, is_deltas) = entity_streams[index];
+        let (node_tables, node_carriers) = node.clone().unzip();
+        let exclude = if is_deltas { exclude } else { &no_conflicts };
+        let stream_carriers =
+            stream_carriers(ctx, body, is_deltas, node_carriers.flatten(), exclude)?;
+        let scanned_carriers: HashSet<u32> = stream_carriers.attrs().collect();
+        carriers.merge_missing(stream_carriers);
+        let scanned = stream_topology(
+            (body, header),
+            facts,
+            node_tables,
+            &carriers.curve_attrs(),
+            &evidence,
+            tables.as_ref().unwrap_or(&topology::Tables::default()),
+            exclude,
+        );
+        if is_deltas && complete.is_none() {
+            identities[index] = facts
+                .attrs()
+                .chain(scanned_carriers)
+                .chain(scanned.attrs())
+                .collect();
+        }
+        match &mut tables {
+            Some(tables) => tables.merge_deltas(scanned, evidence.bridge_attrs.as_ref()),
+            None => tables = Some(scanned),
+        }
+    }
+    Ok(identities)
+}
+
+/// The identities that two Deltas streams of a site carry where one stream
+/// carries the identity outside its framed nodes. No comparison of framed
+/// versions establishes their agreement. `scanned` holds the identities of
+/// each incomplete Deltas stream.
+fn unframed_shared(
+    entity_streams: &[(&[u8], bool)],
+    framed: &[Option<cadmpeg_parasolid::records::DeltasRecords<'_>>],
+    scanned: Vec<HashSet<u32>>,
+) -> HashSet<u32> {
+    let mut streams = HashMap::<u32, usize>::new();
+    let mut unframed = HashSet::new();
+    for (((_, prefixed), framed), scanned) in entity_streams.iter().zip(framed).zip(scanned) {
+        if !prefixed {
+            continue;
+        }
+        let mut identities: HashSet<u32> = framed
+            .iter()
+            .flat_map(|records| records.nodes().map(|node| node.index()))
+            .collect();
+        for attr in scanned {
+            if identities.insert(attr) {
+                unframed.insert(attr);
+            }
+        }
+        for attr in identities {
+            *streams.entry(attr).or_default() += 1;
+        }
+    }
+    unframed.retain(|attr| streams.get(attr).is_some_and(|count| *count > 1));
+    unframed
 }
 
 fn decode_body(
@@ -2613,7 +2791,7 @@ fn decode_body(
     stream: &cadmpeg_ir::StreamName,
     deltas: bool,
 ) -> Result<Brep, cadmpeg_core::CodecError> {
-    let mut carriers = scan_carriers_for_role(ctx, body, deltas)?;
+    let mut carriers = scan_carriers_for_role(ctx, body, deltas, &HashSet::new())?;
     let curve_attrs = carriers.curve_attrs();
     let typed_facts = typed::scan(body);
     let owner_attrs = typed::topology_owner_attrs_for_streams([(&typed_facts, body, false)]);
