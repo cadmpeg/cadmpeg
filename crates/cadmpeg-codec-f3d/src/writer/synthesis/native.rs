@@ -57,6 +57,7 @@ const WRITTEN: &[&str] = &[
     "edge_continuities",
     "face_sidedness",
     "face_native_keys",
+    "mesh_surface_sentinels",
     "design_parameters",
     "design_configurations",
     "creation_timestamps",
@@ -170,6 +171,7 @@ pub(super) fn reconcile(
         edge_continuities: original.edge_continuities,
         face_sidedness: original.face_sidedness,
         face_native_keys: original.face_native_keys,
+        mesh_surface_sentinels: original.mesh_surface_sentinels,
         creation_timestamps: original.creation_timestamps,
         edge_ownerships: original.edge_ownerships,
         vertex_ownerships: original.vertex_ownerships,
@@ -187,6 +189,11 @@ pub(super) fn reconcile(
         sketch_texts: original.sketch_texts.clone(),
         ..F3dNative::default()
     };
+    native.mesh_surface_sentinels.retain(|sentinel| {
+        target.model.surfaces.iter().any(|surface| {
+            super::super::generate::preconditions::mesh_sentinel_matches(surface, sentinel)
+        })
+    });
     super::streams::reconcile(&mut native, losses);
     // Native namespace storage orders every arena by record id, so the
     // generated registry follows id order rather than the decoded file
@@ -813,6 +820,11 @@ pub(super) fn shed_design(target: &mut CadIr) -> Result<(), CodecError> {
 
 pub(super) fn prune(target: &mut CadIr) -> Result<(), CodecError> {
     let mut native = super::super::primitives::f3d_native(target)?.unwrap_or_default();
+    native.mesh_surface_sentinels.retain(|sentinel| {
+        target.model.surfaces.iter().any(|surface| {
+            super::super::generate::preconditions::mesh_sentinel_matches(surface, sentinel)
+        })
+    });
     native.body_native_keys.retain(|record| {
         target
             .model
@@ -1018,7 +1030,9 @@ pub(super) fn coverage(
                         .iter()
                         .find(|candidate| candidate.id() == record.id())
                 }) {
-                    let disposition = if candidate == record {
+                    let disposition = if arena.as_str() == "mesh_surface_sentinels" {
+                        NativeDisposition::Regenerated
+                    } else if candidate == record {
                         NativeDisposition::Written
                     } else {
                         NativeDisposition::Regenerated
