@@ -50,6 +50,9 @@ pub(crate) fn dialect_loss(global: &GlobalRecord) -> Option<LossNote> {
             "IGES file ends before a complete Global record and states no version, model scale, or length unit",
         ));
     };
+    if !global.version_field_available() {
+        return None;
+    }
     let DialectRecovery::Unverified(recovery) = global.dialect_recovery() else {
         return None;
     };

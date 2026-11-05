@@ -1121,6 +1121,7 @@ fn decode_with_occurrence_limits(
     losses.append(&mut part_losses);
     losses.extend(projection_losses);
     if invalid_resolution
+        && matches!(&parse.global, global::GlobalRecord::Resolved(global) if global.minimum_resolution_available())
         && !losses.iter().any(|loss| {
             loss.code.local_code() == IgesLossCode::GlobalSemanticContextSubstituted.code()
         })
