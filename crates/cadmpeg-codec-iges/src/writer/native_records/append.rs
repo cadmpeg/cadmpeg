@@ -52,7 +52,7 @@ fn encode(
             .map_err(|error| error.to_string())?,
         );
     }
-    let occurrence = products::current_root_occurrence(ir, arena, record);
+    let occurrence = products::current_occurrence(ir, arena, record);
     let mut placement = None;
     if let Some(occurrence) = occurrence {
         let cadmpeg_ir::products::PrototypeReference::Local { definition } = &occurrence.prototype
@@ -262,6 +262,25 @@ fn line_fonts(ir: &CadIr, entities: &mut [Entity], targets: &Targets) {
             }
         }
     }
+}
+
+fn source_directory_label(ir: &CadIr, record: &NativeRecord) -> Option<String> {
+    let source = record.field("source_entity")?.as_str()?.to_owned();
+    let entity = ir
+        .native
+        .namespace("iges")?
+        .arenas()
+        .get("entities")?
+        .iter()
+        .find(|entity| entity.id() == source)?;
+    let bytes: cadmpeg_ir::native::bytes::NativeBytes =
+        serde_json::from_value(entity.field("label")?).ok()?;
+    let label = std::str::from_utf8(bytes.as_ref()).ok()?;
+    (label.len() <= 8
+        && label
+            .bytes()
+            .all(|byte| byte.is_ascii_graphic() || byte == b' '))
+    .then(|| label.to_owned())
 }
 
 /// Directory labels from the neutral records a native record projects to.
@@ -503,7 +522,18 @@ impl Emitter<'_, '_> {
                 entity.status = status;
             }
         }
-        if let Some(label) = self
+        if matches!(
+            arena,
+            "subfigure_definitions"
+                | "network_definitions"
+                | "subfigure_instances"
+                | "network_instances"
+                | "connect_points"
+        ) {
+            if let Some(label) = source_directory_label(self.ir, record) {
+                entity.label = label;
+            }
+        } else if let Some(label) = self
             .labels
             .get(record.id())
             .and_then(|name| directory_label(name))

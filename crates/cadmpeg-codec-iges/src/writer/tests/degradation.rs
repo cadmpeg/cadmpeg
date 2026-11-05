@@ -585,6 +585,18 @@ fn network_occurrence_survives_synthesis_with_its_placement() {
         .unwrap();
     assert_eq!(after.ir().model.occurrences.len(), 1);
     assert_eq!(after.ir().model.occurrences[0].transform, transform);
+    let original = &decoded.ir().native.namespace("iges").unwrap().arenas()["entities"];
+    let rewritten = &after.ir().native.namespace("iges").unwrap().arenas()["entities"];
+    assert_eq!(
+        original
+            .iter()
+            .map(|entity| entity.field("label"))
+            .collect::<Vec<_>>(),
+        rewritten
+            .iter()
+            .map(|entity| entity.field("label"))
+            .collect::<Vec<_>>()
+    );
     assert!(!after
         .report()
         .losses
@@ -682,4 +694,29 @@ fn edited_network_definition_name_is_written_from_the_document() {
         Some("current network")
     );
     assert_eq!(after.ir().model.occurrences.len(), 1);
+}
+
+#[test]
+fn edited_nested_occurrence_placement_is_written_from_the_document() {
+    let bytes = crate::test_support::test_drawing_and_trimming::nested_subfigure_file();
+    let decoded = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    assert_eq!(ir.model.occurrences.len(), 2);
+    let edited = cadmpeg_ir::transform::Transform::affine([
+        [1.0, 0.0, 0.0, 7.0],
+        [0.0, 1.0, 0.0, 8.0],
+        [0.0, 0.0, 1.0, 9.0],
+    ])
+    .unwrap();
+    ir.model.occurrences[1].transform = Some(edited);
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let after = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(after.ir().model.occurrences.len(), 2);
+    assert_eq!(after.ir().model.occurrences[1].transform, Some(edited));
 }
