@@ -239,7 +239,7 @@ struct ParsedInstance {
 
 fn parse_instance(
     props: &Props<'_>,
-    prefix: String,
+    prefix: &str,
     record: &str,
 ) -> Result<ParsedInstance, WriteError> {
     let key = |name: &str| format!("{prefix}.{name}");
@@ -323,7 +323,7 @@ fn parse_reference(
         {
             break;
         }
-        instances.push(parse_instance(props, candidate, record)?);
+        instances.push(parse_instance(props, &candidate, record)?);
         index += 1;
     }
     if let Some(count) = props.get(key("instance_count").as_str()) {
