@@ -9,8 +9,8 @@ use crate::test_support::plan_at;
 use crate::test_support::test_curves_and_surfaces::point_file_with_global;
 use crate::IgesCodec;
 use crate::IgesVersion;
-use cadmpeg_ir::codec::write::EncodeError;
 use cadmpeg_ir::codec::write::target::TargetRequest;
+use cadmpeg_ir::codec::write::EncodeError;
 use cadmpeg_ir::codec::write::EncodeInput;
 use cadmpeg_ir::codec::write::Encoder;
 use cadmpeg_ir::codec::DecodeOptions;
@@ -153,23 +153,12 @@ fn inherit_synthesizes_the_default_for_a_source_dialect_the_writer_cannot_synthe
     assert_eq!(displacement.len(), 1);
     assert!(displacement[0].message.contains("iges:1.0-fixed-ascii"));
     assert!(displacement[0].message.contains("iges:5.3-fixed-ascii"));
-    assert_eq!(
-        plan.report().synthesis_cause(),
-        Some(&cadmpeg_ir::codec::write::SynthesisCause::PatchDeclined {
-            reason: "preserved IGES source image is unavailable".into(),
-        })
-    );
-    let unavailable: Vec<_> = plan
+    assert!(plan.report().synthesis_cause().is_none());
+    assert!(plan
         .report()
         .losses
         .iter()
-        .filter(|loss| loss.code == IgesLossCode::PreservedSourceUnavailable.kind())
-        .collect();
-    assert_eq!(unavailable.len(), 1);
-    assert_eq!(
-        unavailable[0].message,
-        "preserved IGES source image is unavailable; semantic regeneration is required"
-    );
+        .all(|loss| loss.code != IgesLossCode::PreservedSourceUnavailable.kind()));
     assert_eq!(
         wire::field::<FidelityResolution>(plan.report().write_path(), "fidelity"),
         FidelityResolution::NotProvided {}

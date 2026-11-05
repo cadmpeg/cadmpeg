@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! `ON_Surface::ISO` classification of the actual written trim carrier.
 
-use cadmpeg_core::CodecError;
+use super::WriteError;
 use cadmpeg_ir::geometry::{nurbs::NurbsCurve, pcurve::PcurveGeometry};
 use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::FiniteReal;
@@ -29,8 +29,9 @@ impl Carrier {
     fn nurbs(
         curve: &NurbsCurve,
         mut project: impl FnMut(Point3) -> [f64; 2],
-    ) -> Result<Self, CodecError> {
-        let degree = usize::try_from(curve.degree()).map_err(CodecError::malformed)?;
+    ) -> Result<Self, WriteError> {
+        let degree =
+            usize::try_from(curve.degree()).map_err(|error| WriteError::Omit(error.to_string()))?;
         let count = curve.pole_count();
         let knots = curve.knots();
         let clamped = knots[..=degree].iter().all(|knot| *knot == knots[degree])
@@ -60,7 +61,7 @@ impl Carrier {
 pub(super) fn classify(
     model: &WritableModel<'_>,
     coedge: &WritableCoedge<'_>,
-) -> Result<i32, CodecError> {
+) -> Result<i32, WriteError> {
     let face = &model.faces[model.loops[coedge.owner_loop].face];
     let surface = model.surfaces[face.surface].clone();
     let edge = &model.edges[coedge.edge];
@@ -69,13 +70,13 @@ pub(super) fn classify(
         WritableFaceSurface::Revolution { usage, .. } => usage,
         WritableFaceSurface::Nurbs { surface, .. } => [
             [
-                surface.u_knots()
-                    [usize::try_from(surface.u_degree()).map_err(CodecError::malformed)?],
+                surface.u_knots()[usize::try_from(surface.u_degree())
+                    .map_err(|error| WriteError::Omit(error.to_string()))?],
                 surface.u_knots()[surface.u_count()],
             ],
             [
-                surface.v_knots()
-                    [usize::try_from(surface.v_degree()).map_err(CodecError::malformed)?],
+                surface.v_knots()[usize::try_from(surface.v_degree())
+                    .map_err(|error| WriteError::Omit(error.to_string()))?],
                 surface.v_knots()[surface.v_count()],
             ],
         ],
@@ -97,40 +98,38 @@ pub(super) fn classify(
             PcurveGeometry::Nurbs { nurbs } => {
                 let lifted = nurbs
                     .lift(|uv| Point3::new(uv.u, uv.v, 0.0))
-                    .map_err(CodecError::malformed)?;
+                    .map_err(|error| {
+                        WriteError::Omit(format!("pcurve {} cannot be lifted: {error}", pcurve.id))
+                    })?;
                 Carrier::nurbs(&lifted, |point| [point.x, point.y])?
             }
             PcurveGeometry::Circle(_) => {
                 use cadmpeg_ir::eval::admission::EvaluationAdmission;
                 let [start, end] = FiniteReal::raw_array(coedge.trim_domain(edge));
-                let mut points = Vec::new();
-                for parameter in [start, end] {
+                let mut points = [[0.0; 2]; 2];
+                for (point, parameter) in points.iter_mut().zip([start, end]) {
                     let uv = match cadmpeg_ir::eval::decode::pcurve_uv(
                         EvaluationAdmission::Standard,
                         &pcurve.geometry,
                         parameter,
                     ) {
                         Ok(uv) => uv.get(),
-                        Err(failure) => failure
-                            .non_finite()
-                            .map_err(CodecError::from)?
-                            .ok_or_else(|| {
-                                CodecError::malformed(
-                                    "admitted Rhino trim circle has no finite endpoint",
-                                )
-                            })?,
+                        Err(failure) => failure.non_finite()?.ok_or_else(|| {
+                            WriteError::Omit(format!(
+                                "coedge {} trim circle has no finite endpoint",
+                                coedge.source.id
+                            ))
+                        })?,
                     };
-                    points.push([uv.u, uv.v]);
+                    *point = [uv.u, uv.v];
                 }
-                let [from, to] = points
-                    .try_into()
-                    .map_err(|_| CodecError::malformed("admitted Rhino trim circle is empty"))?;
-                Carrier::line(from, to)
+                Carrier::line(points[0], points[1])
             }
             _ => {
-                return Err(CodecError::malformed(
-                    "admitted Rhino trim lost its line, circle, or NURBS carrier",
-                ))
+                return Err(WriteError::Omit(format!(
+                    "coedge {} trim has no line, circle, or NURBS carrier",
+                    coedge.source.id
+                )))
             }
         }
     } else {
@@ -140,9 +139,10 @@ pub(super) fn classify(
             u_axis,
         } = surface
         else {
-            return Err(CodecError::malformed(
-                "admitted Rhino NURBS trim lost its explicit pcurve",
-            ));
+            return Err(WriteError::Omit(format!(
+                "coedge {} surface trim has no pcurve",
+                coedge.source.id
+            )));
         };
         let project = |point| {
             let uv = super::plane_uv(point, origin, u_axis, normal.cross(u_axis));
@@ -150,9 +150,10 @@ pub(super) fn classify(
         };
         match &edge.curve {
             WritableEdgeCurve::Singular => {
-                return Err(CodecError::malformed(
-                    "singular trim has no explicit pcurve",
-                ))
+                return Err(WriteError::Omit(format!(
+                    "coedge {} singular trim has no pcurve",
+                    coedge.source.id
+                )))
             }
             WritableEdgeCurve::Line(_) => Carrier::line(
                 project(model.vertices[edge.start].point),
@@ -166,18 +167,19 @@ pub(super) fn classify(
                 for step in 0..=8 {
                     let at = start + (end - start) * f64::from(step) / 8.0;
                     let parameter = FiniteReal::new(at).ok_or_else(|| {
-                        CodecError::malformed("admitted Rhino trim circle sample is non-finite")
+                        WriteError::Omit(format!(
+                            "coedge {} trim circle sample is non-finite",
+                            coedge.source.id
+                        ))
                     })?;
                     let point = match edge.curve.point(parameter) {
                         Ok(point) => point.get(),
-                        Err(failure) => failure
-                            .non_finite()
-                            .map_err(CodecError::from)?
-                            .ok_or_else(|| {
-                                CodecError::malformed(
-                                    "admitted Rhino trim circle sample is non-finite",
-                                )
-                            })?,
+                        Err(failure) => failure.non_finite()?.ok_or_else(|| {
+                            WriteError::Omit(format!(
+                                "coedge {} trim circle sample is non-finite",
+                                coedge.source.id
+                            ))
+                        })?,
                     };
                     points.push(project(point));
                 }
