@@ -2,9 +2,9 @@
 
 use cadmpeg_test_support::EditableDecodeResult;
 
+use super::capacity::card_payload;
+use super::capacity::card_sequence;
 use super::card;
-use super::card_payload;
-use super::card_sequence;
 use super::curve_entity;
 use super::encode_file;
 use super::ensure_version_support;
@@ -48,9 +48,11 @@ use std::io::Cursor;
 use std::time::UNIX_EPOCH;
 
 #[test]
-fn generated_card_sequence_exhaustion_is_not_implemented() {
+fn generated_card_sequence_exhaustion_reports_capacity() {
     let error = card(b"", b'D', 10_000_000).expect_err("seven-digit sequence field");
-    assert!(matches!(error, CodecError::InvalidInput(_)));
+    assert!(
+        matches!(error, cadmpeg_ir::codec::write::EncodeError::TargetCapacity { field, limit: 9_999_999, value: 10_000_000 } if field == &super::capacity::CAPACITY_FIELDS[1])
+    );
 }
 
 use crate::loss::IgesLossCode;
@@ -1075,14 +1077,14 @@ fn generated_parameter_field_wider_than_a_card_is_refused() {
 
 #[test]
 fn card_capacity_helpers_admit_their_limits() {
-    assert_eq!(super::CAPACITY_FIELDS.len(), 2);
-    let payload = vec![b' '; super::CAPACITY_FIELDS[0].limit as usize];
+    assert_eq!(super::capacity::CAPACITY_FIELDS.len(), 2);
+    let payload = vec![b' '; super::capacity::CAPACITY_FIELDS[0].limit as usize];
     assert!(card_payload(&payload).is_ok());
     assert!(card(&payload, b'S', 1).is_ok());
-    let overlong = vec![b' '; super::CAPACITY_FIELDS[0].limit as usize + 1];
+    let overlong = vec![b' '; super::capacity::CAPACITY_FIELDS[0].limit as usize + 1];
     assert!(card_payload(&overlong).is_err());
     assert!(card(&overlong, b'S', 1).is_err());
-    let limit = super::CAPACITY_FIELDS[1].limit;
+    let limit = super::capacity::CAPACITY_FIELDS[1].limit;
     let sequence = u32::try_from(limit).expect("seven-digit limit fits u32");
     assert_eq!(card_sequence(sequence).expect("limit writes"), sequence);
     assert!(card(b"1H;", b'S', sequence).is_ok());
