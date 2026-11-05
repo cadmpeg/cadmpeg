@@ -1701,3 +1701,40 @@ fn differing_vertex_names_are_reported_without_sharing_one_label() {
         .unwrap();
     assert!(!output.ir().model.attributes.iter().any(|attribute| attribute.name == "name" && matches!(attribute.values.as_slice(), [Some(cadmpeg_ir::attributes::AttributeValue::String(value))] if value == "OTHER" || value == "VERTICES")));
 }
+
+#[test]
+fn associativity_directory_use_flags_survive_synthesis() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(
+                crate::test_support::test_drawing_and_trimming::bounded_associativity_forms_file(),
+            ),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let before = decoded.ir().native.namespace("iges").unwrap();
+    let after = output.ir().native.namespace("iges").unwrap();
+    for record in &before.arenas()["associativities"] {
+        let source = record.field("source_entity").unwrap();
+        let source = source.as_str().unwrap();
+        let original = before.arenas()["entities"]
+            .iter()
+            .find(|entity| entity.id() == source)
+            .unwrap();
+        let actual = after.arenas()["entities"]
+            .iter()
+            .find(|entity| entity.id() == source)
+            .unwrap();
+        assert_eq!(
+            actual.field("use_flag"),
+            original.field("use_flag"),
+            "{source}"
+        );
+    }
+}
