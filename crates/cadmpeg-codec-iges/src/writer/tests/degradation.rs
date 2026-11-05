@@ -1577,3 +1577,33 @@ fn reflected_occurrence_uses_left_handed_matrix() {
         .unwrap();
     assert_eq!(output.ir().model.occurrences[0].transform, Some(reflected));
 }
+
+#[test]
+fn network_rotation_and_axis_scales_round_trip_together() {
+    let bytes = crate::test_support::test_drawing_and_trimming::connected_network_subfigure_file();
+    let decoded = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let transform = cadmpeg_ir::transform::Transform::affine([
+        [0.0, -3.0, 0.0, 12.0],
+        [2.0, 0.0, 0.0, 23.0],
+        [0.0, 0.0, 4.0, 34.0],
+    ])
+    .unwrap();
+    ir.model.occurrences[0].transform = Some(transform);
+    let id = ir.model.occurrences[0].id.clone();
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    assert!(!plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(id.as_str()) && loss.message.contains("not applied")));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(output.ir().model.occurrences[0].transform, Some(transform));
+    assert_eq!(output.ir().model.occurrences[0].id, id);
+}
