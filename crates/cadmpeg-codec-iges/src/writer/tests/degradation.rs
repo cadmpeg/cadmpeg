@@ -1059,3 +1059,36 @@ fn regenerated_annotation_records_keep_their_semantic_projection() {
         decoded.ir().model.semantic_annotations.len()
     );
 }
+
+#[test]
+fn edited_semantic_note_text_reaches_regenerated_parameters() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(
+                crate::test_support::test_drawing_and_trimming::bounded_associativity_forms_file(),
+            ),
+            &DecodeOptions::default(),
+        )
+        .expect("associativity fixture decodes");
+    let mut ir = decoded.ir().clone();
+    let note = ir
+        .model
+        .semantic_annotations
+        .iter_mut()
+        .find(|item| !item.text.is_empty())
+        .expect("text note");
+    note.text[0].push('x');
+    let expected = note.text.clone();
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).expect("edited note synthesizes");
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("edited note re-decodes");
+    assert!(output
+        .ir()
+        .model
+        .semantic_annotations
+        .iter()
+        .any(|item| item.text == expected));
+}
