@@ -689,6 +689,9 @@ pub(crate) struct DesignParameterScope {
     pub(crate) feature_ordinal: std::num::NonZeroU32,
     /// Byte offset of `feature_ordinal`.
     feature_ordinal_offset: u64,
+    /// Label and offset of its UTF-16LE code units.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) label: Option<crate::records::identity::Located<String>>,
     /// ASM delta-state identity produced by this scope, when active.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     history_state_id: Option<i64>,
@@ -737,6 +740,8 @@ pub(crate) struct DesignParameterScopeDraft {
     pub(crate) feature_ordinal: std::num::NonZeroU32,
     /// Byte offset of `feature_ordinal`.
     pub(crate) feature_ordinal_offset: u64,
+    /// Label and offset of its UTF-16LE code units.
+    pub(crate) label: Option<crate::records::identity::Located<String>>,
     /// ASM delta-state identity produced by this scope, when active.
     pub(crate) history_state_id: Option<i64>,
     /// ASM delta-state identity immediately preceding this scope, when active.
@@ -805,6 +810,9 @@ struct DesignParameterScopeSerde {
     feature_ordinal: u32,
     /// Byte offset of `feature_ordinal`.
     feature_ordinal_offset: u64,
+    /// Label and offset of its UTF-16LE code units.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    label: Option<crate::records::identity::Located<String>>,
     /// ASM delta-state identity produced by this scope, when active.
     #[serde(
         default,
@@ -2012,6 +2020,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                 DesignParameterScopePayloadError("feature_ordinal must be nonzero".into())
             })?,
             feature_ordinal_offset: wire.feature_ordinal_offset,
+            label: wire.label,
             history_state_id: wire.history_state_id,
             previous_history_state_id: wire.previous_history_state_id,
             previous_history_state_id_offset: wire.previous_history_state_id_offset,
@@ -2065,6 +2074,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             coil: None,
             feature_ordinal: scope.feature_ordinal.get(),
             feature_ordinal_offset: scope.feature_ordinal_offset,
+            label: scope.label,
             history_state_id: scope.history_state_id,
             history_state_id_offset,
             previous_history_state_id: scope.previous_history_state_id,
@@ -2315,6 +2325,18 @@ impl DesignParameterScope {
             .checked_sub(draft.feature_ordinal_offset)
             .and_then(|length| usize::try_from(length).ok())
             .ok_or_else(|| fail("feature_ordinal_offset"))?;
+        if let Some(label) = &draft.label {
+            let units = label.value.encode_utf16().count();
+            if units == 0
+                || units > 256
+                || label.value.chars().any(char::is_control)
+                || draft.feature_ordinal_offset.checked_add(12) != Some(label.offset)
+                || 78usize.checked_add(units * 2) != Some(tail)
+                || draft.previous_history_state_id_offset.is_some()
+            {
+                return Err(fail("label"));
+            }
+        }
         // The reference-table stride shows the reference spelling: 11-byte
         // plain references or 51-byte typed references.
         // A table that fits neither width falls through to the plain checks.
@@ -2443,6 +2465,7 @@ impl DesignParameterScope {
             history_state_id_offset,
             feature_ordinal: draft.feature_ordinal,
             feature_ordinal_offset: draft.feature_ordinal_offset,
+            label: draft.label,
             history_state_id: draft.history_state_id,
             previous_history_state_id: draft.previous_history_state_id,
             previous_history_state_id_offset: draft.previous_history_state_id_offset,
@@ -2475,6 +2498,7 @@ impl DesignParameterScope {
             kind_offset: self.kind_offset,
             feature_ordinal: self.feature_ordinal,
             feature_ordinal_offset: self.feature_ordinal_offset,
+            label: self.label,
             history_state_id: self.history_state_id,
             previous_history_state_id: self.previous_history_state_id,
             previous_history_state_id_offset: self.previous_history_state_id_offset,
@@ -3169,6 +3193,7 @@ impl DesignParameterScope {
             kind_offset: 32,
             feature_ordinal: std::num::NonZeroU32::MIN,
             feature_ordinal_offset: 48,
+            label: None,
             history_state_id: None,
             previous_history_state_id: None,
             previous_history_state_id_offset: None,

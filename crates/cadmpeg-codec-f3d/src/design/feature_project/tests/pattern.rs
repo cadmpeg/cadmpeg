@@ -433,6 +433,7 @@ fn seed_scope(record_index: u32, history_state_id: Option<i64>) -> DesignParamet
         kind_offset: 32,
         feature_ordinal: std::num::NonZeroU32::MIN,
         feature_ordinal_offset: 48,
+        label: None,
         history_state_id,
         previous_history_state_id: None,
         previous_history_state_id_offset: None,

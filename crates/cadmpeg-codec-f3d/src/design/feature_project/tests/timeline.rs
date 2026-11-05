@@ -839,6 +839,7 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
                 kind_offset: byte_offset + 100,
                 feature_ordinal: std::num::NonZeroU32::MIN,
                 feature_ordinal_offset: 0,
+                label: None,
                 history_state_id: current,
 
                 previous_history_state_id: previous,

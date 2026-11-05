@@ -86,6 +86,7 @@ fn edge_treatments_and_holes_project_typed_dimensions_and_native_selections() {
                 kind_offset: byte_offset + 100,
                 feature_ordinal: std::num::NonZeroU32::MIN,
                 feature_ordinal_offset: 0,
+                label: None,
                 history_state_id: None,
 
                 previous_history_state_id: None,

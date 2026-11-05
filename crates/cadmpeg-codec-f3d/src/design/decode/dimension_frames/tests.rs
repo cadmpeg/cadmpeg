@@ -796,6 +796,7 @@ fn companion_interval_ends_before_a_foreign_scope_member() {
             kind_offset: 180,
             feature_ordinal: std::num::NonZeroU32::MIN,
             feature_ordinal_offset: 0,
+            label: None,
             history_state_id: None,
             previous_history_state_id: None,
             previous_history_state_id_offset: None,

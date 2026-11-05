@@ -111,9 +111,7 @@ fn two_sided_revolve_construction(
     ))
 }
 
-/// A referenced-angle `Revolve` scope: the marked prologue with six ordered
-/// references or the unmarked prologue with eight. Its angle owner can store a
-/// negative angle.
+/// A referenced-angle `Revolve` scope whose angle owner can store a negative angle.
 fn referenced_angle_revolve_construction(
     bytes: &[u8],
     scope: &DesignParameterScope,
@@ -127,8 +125,12 @@ fn referenced_angle_revolve_construction(
         parameter_scope_payload_length(scope)?,
         scope.reference_members().len(),
     ) {
-        (351, 6)
-            if bytes.get(start + referenced_revolve::MARKER) == Some(&1)
+        (length @ (351 | 373), count @ (6 | 8))
+            if matches!(
+                (length, count, View::u32_le_at(bytes, start + referenced_revolve::OPERATION)),
+                (351, 6, Some(4)) | (373, 8, Some(1..=3))
+            )
+                && bytes.get(start + referenced_revolve::MARKER) == Some(&1)
                 && View::u32_le_at(bytes, start + referenced_revolve::ZERO_VALUE) == Some(0)
                 && View::u32_le_at(bytes, start + referenced_revolve::EXTENT_KIND) == Some(2)
                 && bytes.get(start + referenced_revolve::DIRECTION_KIND) == Some(&0) =>
@@ -353,6 +355,7 @@ pub(super) fn exact_path_feature_construction(
     match design_feature_family(&scope.kind())? {
         DesignFeatureFamily::Revolve
             if matches!(scope.reference_members().len(), 6 | 8)
+                && !matches!(parameter_scope_payload_length(scope), Some(351 | 373))
                 && bytes.get(start + revolve::MARKER) == Some(&1)
                 && View::u32_le_at(bytes, start + revolve::ZERO_VALUE) == Some(0)
                 && View::u32_le_at(bytes, start + revolve::EXTENT_KIND) == Some(2)
