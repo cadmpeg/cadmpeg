@@ -1167,3 +1167,63 @@ fn reemitted_drawings_redecode_to_their_typed_records() {
     assert_fixture_round_trips("dimension_forms", &["annotations"]);
     assert_fixture_round_trips("leader_forms", &["annotations"]);
 }
+
+#[test]
+fn boolean_feature_order_follows_current_ordinals() {
+    use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use std::io::Cursor;
+    let entities = [
+        (158, 0, "SPHERE1", "158,1,0,0,0;"),
+        (158, 0, "SPHERE2", "158,1,3,0,0;"),
+        (180, 0, "FIRST", "180,3,-1,-3,1;"),
+        (180, 0, "SECOND", "180,3,-1,-3,1;"),
+    ]
+    .into_iter()
+    .map(|(entity_type, form, label, parameters)| OwnedTestEntity {
+        entity_type,
+        form,
+        label: label.into(),
+        status: "00000000",
+        parameters: parameters.into(),
+    })
+    .collect::<Vec<_>>();
+    let decoded = crate::IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&entities)),
+            &DecodeOptions::default(),
+        )
+        .expect("Boolean fixtures decode");
+    let mut ir = decoded.ir().clone();
+    let first = ir
+        .model
+        .features
+        .iter()
+        .position(|feature| feature.name.as_deref() == Some("FIRST"))
+        .expect("first Boolean");
+    let second = ir
+        .model
+        .features
+        .iter()
+        .position(|feature| feature.name.as_deref() == Some("SECOND"))
+        .expect("second Boolean");
+    let ordinal = ir.model.features[first].ordinal;
+    ir.model.features[first].ordinal = ir.model.features[second].ordinal;
+    ir.model.features[second].ordinal = ordinal;
+    let output = super::super::synthesize(&ir, crate::IgesVersion::V5_3)
+        .expect("Boolean features synthesize");
+    let after = crate::IgesCodec
+        .decode(&mut Cursor::new(output.bytes), &DecodeOptions::default())
+        .expect("Boolean features re-decode");
+    let ordinal = |name: &str| {
+        after
+            .ir()
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .expect("written Boolean feature")
+            .ordinal
+    };
+    assert!(ordinal("SECOND") < ordinal("FIRST"));
+}

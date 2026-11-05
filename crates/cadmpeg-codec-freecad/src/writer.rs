@@ -20,7 +20,10 @@ mod native_geometry;
 pub(crate) mod ordinals;
 mod parameters;
 mod pcurves;
+mod point_kernel;
 mod polygon_edges;
+mod polygon_nodes;
+mod polygon_pair;
 mod polygon_sources;
 mod presentation;
 pub(crate) mod products;
@@ -138,6 +141,7 @@ impl<T: Write + Seek> WriteSeek for T {}
 fn write_seekable(
     output: &mut dyn WriteSeek,
     resolution: &Resolution<'_>,
+    encode_context: &cadmpeg_core::decode::DecodeContext<'_>,
 ) -> Result<WriteOutcome, CodecError> {
     let target = resolution.target();
     let ir = resolution.ir();
@@ -151,12 +155,13 @@ fn write_seekable(
     let properties = namespace.arena_as::<PropertyRecord>("properties")?;
     let archive_image = crate::source_archive::image(fidelity)?;
     let source_arena = cadmpeg_core::decode::DecodeArena::new();
-    let source_policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (source_context, source_root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        archive_image,
-        &source_arena,
-        &source_policy,
-    )?;
+    let session = cadmpeg_core::encode::EncodeSession::from_context(encode_context)?;
+    let (source_context, source_root) =
+        cadmpeg_core::decode::DecodeContext::for_encode_session_root(
+            &source_arena,
+            &session,
+            archive_image,
+        )?;
     let source_archive = cadmpeg_container::ArchiveSnapshot::new(&source_context, source_root)?;
     let mut payloads = HashMap::new();
     for entry in &entries {
@@ -190,9 +195,11 @@ fn write_seekable(
         .window()
         .to_vec();
     let arena = cadmpeg_core::decode::DecodeArena::new();
-    let policy = cadmpeg_core::decode::DecodePolicy::default();
-    let (ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&document_xml, &arena, &policy)?;
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::for_encode_session_root(
+        &arena,
+        &session,
+        &document_xml,
+    )?;
     let written_xml = crate::container::admit_document(&ctx, &document_xml)?;
     let mut written_graph = crate::persistence::parse_document(
         &written_xml,
@@ -225,6 +232,7 @@ fn write_seekable(
         }
     }
 
+    session.finish()?;
     {
         let mut archive = zip::ZipWriter::new(&mut *output);
         let file_options = SimpleFileOptions::default()

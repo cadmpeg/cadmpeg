@@ -62,6 +62,7 @@ enum EntityStatus {
     PhysicallyDependent,
     LogicallyDependent,
     BothDependent,
+    Annotation,
     AnnotationDependent,
     PhysicallyDependentEdgeList,
     ParameterCurve,
@@ -87,6 +88,7 @@ impl EntityStatus {
             Self::PhysicallyDependent => "00010000",
             Self::LogicallyDependent => "00020000",
             Self::BothDependent => "00030000",
+            Self::Annotation => "00000100",
             Self::AnnotationDependent => "00010100",
             Self::PhysicallyDependentEdgeList => "00010001",
             Self::ParameterCurve => "00010500",
@@ -146,11 +148,15 @@ const WRITER_ENTITY_TYPES: &[u32] = &[
 ];
 
 mod admission;
+mod brep_order;
+use brep_order::{brep_sense, edge_use_positions, edge_use_sense, pole_use_order};
 mod appearance;
 mod attributes;
 mod degrade;
+mod display;
 mod levels;
 mod native_records;
+mod pcurve_admission;
 pub(crate) mod target;
 
 fn body(
@@ -658,7 +664,8 @@ fn synthesize_with_admission(
             .is_none_or(|solved| flatten_curve(solved).is_err())
     })?;
     let (poles, pole_losses) = admission::pole_edges(lowered.as_ref())?;
-    let (admitted, admission_losses) = admission::edge_carriers(poles.as_ref());
+    let (pcurves, pcurve_losses) = pcurve_admission::admit(poles.as_ref());
+    let (admitted, admission_losses) = admission::edge_carriers(pcurves.as_ref());
     let (stripped, strip_losses) = admission::strip_unusable_face_topology(admitted.as_ref());
     let ir = stripped.as_ref().unwrap_or(admitted.as_ref());
     let mut graph = match synthesis_graph(ctx, ir, version) {
@@ -666,7 +673,9 @@ fn synthesize_with_admission(
         Err(CodecError::UnsupportedContent(reason)) => degrade::graph(ctx, ir, version, &reason)?,
         Err(error) => return Err(error.into()),
     };
+    let pcurves_adapted = !pcurve_losses.is_empty();
     graph.losses.extend(pole_losses);
+    graph.losses.extend(pcurve_losses);
     graph.losses.extend(admission_losses);
     graph.losses.extend(strip_losses);
     graph
@@ -694,11 +703,40 @@ fn synthesize_with_admission(
         .regenerated
         .extend(native_export.regenerated);
     append_name_properties(&mut graph.entities, &graph.presentations)?;
+    attribute_export.regenerated.extend(display::regenerated(
+        ir,
+        &graph.entities,
+        &graph.presentations,
+        version,
+    ));
     let emitted = graph
         .entities
         .iter()
         .flat_map(|entity| entity.source_targets.iter())
         .collect::<BTreeSet<_>>();
+    let mut emitted_compounds = 0;
+    for procedural in &ir.model.procedural_curves {
+        let Some(owner) = ir.model.procedural_curve_owner(&procedural.id) else {
+            continue;
+        };
+        if compound::geometry(ir, owner).is_some()
+            && graph.entities.iter().any(|entity| {
+                entity.type_code == 102
+                    && matches!(entity.status, EntityStatus::Independent)
+                    && entity
+                        .source_targets
+                        .iter()
+                        .any(|target| target == owner.as_str())
+            })
+        {
+            emitted_compounds += 1;
+            let previous = format!(
+                "IGES procedural definition {} was reduced to a solved carrier",
+                procedural.id
+            );
+            graph.losses.retain(|loss| loss.message != previous);
+        }
+    }
     let mut emitted_products = 0;
     for product in &ir.model.product_definitions {
         if !emitted.contains(&product.id.to_string()) {
@@ -814,11 +852,19 @@ fn synthesize_with_admission(
             }
         }
     }
+    graph
+        .losses
+        .extend(compound::flattened_owner_losses(ir, &emitted));
     for id in flattened {
         graph.losses.push(IgesLossCode::WriterEntityOmitted.note(format!(
             "IGES composite constituent {id} is flattened because Type 102 cannot contain another Type 102"
         )));
     }
+    let emitted_annotations = ir
+        .model
+        .semantic_annotations
+        .iter()
+        .any(|annotation| emitted.contains(&annotation.id.to_string()));
     resolve_entity_references(&mut graph.entities)?;
     let (feature_coverage, feature_losses) =
         native_records::primitive_feature_coverage(ir, &graph.entities);
@@ -835,6 +881,16 @@ fn synthesize_with_admission(
     let counts = entity_counts(&graph.entities);
     let mut coverage = SYNTHESIS_COVERAGE;
     coverage.features = feature_coverage;
+    if emitted_annotations {
+        coverage.semantic_annotations = ArenaDisposition::Reported;
+    }
+    if pcurves_adapted {
+        coverage.coedges = ArenaDisposition::Reported;
+        coverage.pcurves = ArenaDisposition::Reported;
+    }
+    if emitted_compounds > 0 {
+        coverage.procedural_curves = ArenaDisposition::Reported;
+    }
     if emitted_products > 0 {
         coverage.product_definitions = ArenaDisposition::Reported;
     }
@@ -1075,9 +1131,14 @@ fn synthesis_graph(
                 )));
                 continue;
             }
-            let geometry = flatten_curve(curve.geometry.solved().ok_or_else(|| {
-                CodecError::UnsupportedContent("IGES curve carrier has no solved geometry".into())
-            })?)?;
+            let geometry = match compound::geometry(ir, curve_id) {
+                Some(geometry) => geometry,
+                None => flatten_curve(curve.geometry.solved().ok_or_else(|| {
+                    CodecError::UnsupportedContent(
+                        "IGES curve carrier has no solved geometry".into(),
+                    )
+                })?)?,
+            };
             let span = edge_span(ir, edge, &geometry)?;
             let curve_index = append_curve_entity(
                 &mut entities,
@@ -3125,42 +3186,6 @@ fn brep_entities(
         );
     }
     Ok(entities)
-}
-
-/// The Type 508 edge-use orientation of a coedge. A Type 508 loop keeps its
-/// face on the left about the support normal, and a reversed face keeps it on
-/// the left about the reversed normal, so a reversed face writes its loops
-/// backward.
-fn edge_use_sense(coedge: Sense, face: Sense) -> Sense {
-    if coedge == face {
-        Sense::Forward
-    } else {
-        Sense::Reversed
-    }
-}
-
-/// The pcurve uses of a pole-vertex use in Type 508 order. A reversed face
-/// writes its loops backward, so it writes the uses in reverse order.
-fn pole_use_order(uses: &[PcurveUse], face: Sense) -> Vec<&PcurveUse> {
-    match face {
-        Sense::Forward => uses.iter().collect(),
-        Sense::Reversed => uses.iter().rev().collect(),
-    }
-}
-
-/// The ring positions of a loop in Type 508 edge-use order.
-fn edge_use_positions(count: usize, face: Sense) -> Vec<usize> {
-    match face {
-        Sense::Forward => (0..count).collect(),
-        Sense::Reversed => (0..count).rev().collect(),
-    }
-}
-
-fn brep_sense(sense: Sense) -> i32 {
-    match sense {
-        Sense::Forward => 1,
-        Sense::Reversed => 0,
-    }
 }
 
 fn used_brep_pcurve_ids(ir: &CadIr) -> std::collections::BTreeSet<String> {
@@ -5875,8 +5900,13 @@ fn unsupported_model_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
             } else {
                 IgesLossCode::WriterArenaOmitted
             };
-            ids.into_iter()
-                .map(move |id| code.note(format!("IGES omits unsupported {arena} record {id}")))
+            ids.into_iter().map(move |id| {
+                if arena == "semantic_annotations" {
+                    code.note(format!("IGES does not fully preserve {arena} record {id}"))
+                } else {
+                    code.note(format!("IGES omits unsupported {arena} record {id}"))
+                }
+            })
         })
         .collect();
     for vertex in &ir.model.vertices {
@@ -6020,7 +6050,8 @@ fn synthesized_native_dispositions(
         let regenerated = match arena.as_str() {
             "properties" | "product_properties" => represented_names,
             "cards" | "copious_data" | "transformations" | "manifold_solids" => !degraded_geometry,
-            "macro_definitions"
+            "display_attributes"
+            | "macro_definitions"
             | "macro_instances"
             | "definition_levels"
             | "subfigure_definitions"
@@ -8079,9 +8110,12 @@ fn append_unowned_curves(
             dependent.push((curve, status));
             continue;
         }
-        let geometry = flatten_curve(curve.geometry.solved().ok_or_else(|| {
-            CodecError::UnsupportedContent("IGES curve carrier has no solved geometry".into())
-        })?)?;
+        let geometry = match compound::geometry(ir, &curve.id) {
+            Some(geometry) => geometry,
+            None => flatten_curve(curve.geometry.solved().ok_or_else(|| {
+                CodecError::UnsupportedContent("IGES curve carrier has no solved geometry".into())
+            })?)?,
+        };
         let span = curve
             .parameter_range
             .map(|_| curve_reference_span(ir, &curve.id, &geometry))
@@ -8179,6 +8213,22 @@ fn mark_curve_descendants(
     if let Some(SolvedCurveGeometry::Composite { segments, .. }) = curve.geometry.solved() {
         for segment in segments {
             mark_curve_descendants(ir, &segment.curve, consumed, active)?;
+        }
+    }
+    if compound::geometry(ir, curve_id).is_some() {
+        if let Some(record) = curve.geometry.procedural_construction().and_then(|id| {
+            ir.model
+                .procedural_curves
+                .iter()
+                .find(|record| &record.id == id)
+        }) {
+            if let cadmpeg_ir::geometry::ProceduralCurveDefinition::Compound(compound) =
+                record.definition()
+            {
+                for component in compound.components() {
+                    mark_curve_descendants(ir, &component.component, consumed, active)?;
+                }
+            }
         }
     }
     active.remove(curve_id);
@@ -9949,6 +9999,7 @@ fn finite(value: f64, field: &str) -> Result<FiniteReal, CodecError> {
 #[cfg(test)]
 mod tests;
 
+mod compound;
 mod neutral_products;
 mod ownership;
 mod support_records;

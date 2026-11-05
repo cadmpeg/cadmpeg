@@ -241,6 +241,12 @@ fn parasolid_header_reports_field_capacity() {
 
 #[test]
 fn capacity_helpers_follow_their_rows() {
+    for field in [
+        crate::writer::CONFIGURATION_INDEX_CAPACITY,
+        crate::writer::TYPED_NODE_ID_CAPACITY,
+    ] {
+        assert!(crate::writer::CAPACITY_FIELDS.contains(&field), "{field:?}");
+    }
     for field in crate::writer::CAPACITY_FIELDS
         .iter()
         .filter(|field| field.helper == "field_u16")
