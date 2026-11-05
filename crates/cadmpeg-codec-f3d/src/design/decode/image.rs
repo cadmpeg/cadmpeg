@@ -124,9 +124,11 @@ pub(super) fn decode_scoped_image_records<'s, T>(
 /// parses to nothing is dropped without a part; a parse failure gives up the
 /// record's extent through the part helper and decodes nothing for it.
 pub(super) fn decode_scoped_image_records_with_parts<'s, T>(
-    ctx: &DecodeContext<'_>,
-    output: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
-    part_label: &'static str,
+    part: (
+        &DecodeContext<'_>,
+        &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
+        &'static str,
+    ),
     scan: &ContainerScan<'s>,
     scopes: &[crate::records::feature::scope::DesignParameterScope],
     kind: &crate::records::feature::scope::DesignFeatureKind,
@@ -147,6 +149,7 @@ pub(super) fn decode_scoped_image_records_with_parts<'s, T>(
         &ImageRead<'s, '_>,
     ) -> Result<Option<T>, CodecError>,
 ) -> Result<Vec<T>, CodecError> {
+    let (ctx, output, part_label) = part;
     use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartSpec};
 
     let mut images = Vec::new();
