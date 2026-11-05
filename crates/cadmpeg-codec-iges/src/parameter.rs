@@ -3683,7 +3683,7 @@ fn resolve_ownership<'a>(
                     ),
                     format_args!("the back-pointer census run of {} card(s)", run.len()),
                 )?;
-            };
+            }
 
             resolved.push(Ownership {
                 entry,

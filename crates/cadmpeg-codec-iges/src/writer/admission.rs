@@ -121,7 +121,7 @@ pub(super) fn strip_unusable_face_topology(ir: &CadIr) -> (Option<CadIr>, Vec<Lo
     for face in &ir.model.faces {
         let mut missing = Vec::new();
         let mut has_coedge = false;
-        for loop_id in face.loops.iter() {
+        for loop_id in &face.loops {
             let Some(loop_) = loops.get(loop_id.as_str()) else {
                 continue;
             };

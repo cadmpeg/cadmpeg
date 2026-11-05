@@ -38,7 +38,7 @@ pub(super) fn from_edge(
     edge: &Edge,
     length_scale: f64,
 ) -> Result<Option<BoundedCurve>, CodecError> {
-    let Some(range) = edge.param_range().map(|range| range.get()) else {
+    let Some(range) = edge.param_range().map(cadmpeg_ir::units::FiniteVector::get) else {
         return Ok(None);
     };
     let Some(id) = edge.curve() else {
@@ -60,7 +60,7 @@ pub(super) fn from_edge(
                 &curve.geometry,
                 parameter,
             ))?
-            .map(|point| point.get()),
+            .map(cadmpeg_ir::features::FinitePoint3::get),
         )
     };
     let (Some(first), Some(second)) = (point(range[0])?, point(range[1])?) else {

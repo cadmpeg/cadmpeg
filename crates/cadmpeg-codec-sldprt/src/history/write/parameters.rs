@@ -117,8 +117,7 @@ fn sync_neutral_parameters(
                     let target = parameters.iter().find(|target| &target.id == id)?;
                     let alias = aliases.get(id).map(String::as_str);
                     let mut name = alias
-                        .map(|alias| alias.split('@').next().unwrap_or(alias))
-                        .unwrap_or(&target.name)
+                        .map_or(target.name.as_str(), |alias| alias.split('@').next().unwrap_or(alias))
                         .to_owned();
                     if (alias.is_some()
                         || (target.owner != parameter.owner

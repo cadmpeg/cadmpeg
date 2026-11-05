@@ -813,10 +813,7 @@ pub(super) fn project(
                 .map_err(|_| {
                     CodecError::malformed("IGES semantic annotation identity is invalid")
                 })?;
-        let entity_type = entries
-            .get(&sequence)
-            .map(|entry| entry.entity_type)
-            .unwrap_or(0);
+        let entity_type = entries.get(&sequence).map_or(0, |entry| entry.entity_type);
         let mut semantic = SemanticAnnotation::new(
             semantic_id,
             source_entity.clone(),
@@ -850,40 +847,39 @@ fn bind_annotation_color(
 ) -> Result<(), CodecError> {
     use cadmpeg_ir::appearance::{AppearanceBinding, AppearanceTarget};
 
-    let color = if color_number > 0 {
-        crate::entities::presentation::standard_color(color_number)
-    } else if color_number < 0 {
-        let Some(negated) = color_number.checked_neg() else {
-            return Ok(());
-        };
-        let Ok(color_sequence) = u32::try_from(negated) else {
-            return Ok(());
-        };
-        let Some(definition) = colors
-            .iter()
-            .find(|color| color.source_entity == format!("iges:entity:directory#{color_sequence}"))
-        else {
-            return Ok(());
-        };
-        let (Some(red), Some(green), Some(blue)) = (
-            definition.red_percent,
-            definition.green_percent,
-            definition.blue_percent,
-        ) else {
-            return Ok(());
-        };
-        let Some(color) = cadmpeg_core::convert::f32_from_f64(red / 100.0)
-            .zip(cadmpeg_core::convert::f32_from_f64(green / 100.0))
-            .zip(cadmpeg_core::convert::f32_from_f64(blue / 100.0))
-            .and_then(|((red, green), blue)| {
-                cadmpeg_ir::topology::Color::new(red, green, blue, 1.0)
-            })
-        else {
-            return Ok(());
-        };
-        Some(color)
-    } else {
-        return Ok(());
+    let color = match color_number.cmp(&0) {
+        std::cmp::Ordering::Greater => crate::entities::presentation::standard_color(color_number),
+        std::cmp::Ordering::Less => {
+            let Some(negated) = color_number.checked_neg() else {
+                return Ok(());
+            };
+            let Ok(color_sequence) = u32::try_from(negated) else {
+                return Ok(());
+            };
+            let Some(definition) = colors.iter().find(|color| {
+                color.source_entity == format!("iges:entity:directory#{color_sequence}")
+            }) else {
+                return Ok(());
+            };
+            let (Some(red), Some(green), Some(blue)) = (
+                definition.red_percent,
+                definition.green_percent,
+                definition.blue_percent,
+            ) else {
+                return Ok(());
+            };
+            let Some(color) = cadmpeg_core::convert::f32_from_f64(red / 100.0)
+                .zip(cadmpeg_core::convert::f32_from_f64(green / 100.0))
+                .zip(cadmpeg_core::convert::f32_from_f64(blue / 100.0))
+                .and_then(|((red, green), blue)| {
+                    cadmpeg_ir::topology::Color::new(red, green, blue, 1.0)
+                })
+            else {
+                return Ok(());
+            };
+            Some(color)
+        }
+        std::cmp::Ordering::Equal => return Ok(()),
     };
     let Some(color) = color else {
         return Ok(());

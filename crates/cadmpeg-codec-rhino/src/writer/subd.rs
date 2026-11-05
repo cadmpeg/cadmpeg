@@ -53,7 +53,7 @@ pub(super) fn write(
     for surface in &ir.model.subds {
         if version.value() < 60 {
             match write_proxy(
-                ctx, ir, version, session, output, materials, surface, losses,
+                ctx, ir, version, session, output, materials, surface,
             ) {
                 Ok(()) => count += 1,
                 Err(WriteError::Omit(reason)) => losses.push(
@@ -123,8 +123,8 @@ pub(super) fn write(
 
 /// The archive-50 control-net proxy (`docs/formats/rhino_3dm.md` §7.2.6):
 /// a top-level `ON_Mesh` carrying the cage, with a proxy userdata item
-/// holding the embedded SubD. A modern reader promotes the mesh back to
-/// the exact SubD; an archive-50 reader keeps the control net.
+/// holding the embedded `SubD`. A modern reader promotes the mesh back to
+/// the exact `SubD`; an archive-50 reader keeps the control net.
 fn write_proxy(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
@@ -133,7 +133,6 @@ fn write_proxy(
     output: &mut EncodeBuffer<'_>,
     materials: &super::MaterialPlan,
     surface: &SubdSurface,
-    _losses: &mut Vec<LossNote>,
 ) -> Result<(), WriteError> {
     if let Some(reason) = omission(surface, version) {
         return Err(WriteError::Omit(reason.into()));
@@ -270,7 +269,7 @@ fn proxy_count(value: usize) -> Result<i32, WriteError> {
     i32::try_from(value).map_err(|_| WriteError::Omit("SubD proxy count exceeds i32".into()))
 }
 
-/// The `ON_SubDMeshProxyUserData` item: identity transform, embedded SubD,
+/// The `ON_SubDMeshProxyUserData` item: identity transform, embedded `SubD`,
 /// parent counts, and parent-array hashes, per the proxy contract.
 fn proxy_item(
     fingerprint: &crate::subd::MeshProxyFingerprint,
@@ -329,7 +328,7 @@ const WRITER_VERSION: i32 = 202_401_010;
 /// The proxy item version: class-userdata 2.2.
 const PROXY_ITEM_VERSION: u8 = 0x22;
 
-/// A mesh object record carrying the SubD proxy userdata item.
+/// A mesh object record carrying the `SubD` proxy userdata item.
 fn mesh_object_with_proxy(
     ir: &CadIr,
     payload: &super::MeshPayload,

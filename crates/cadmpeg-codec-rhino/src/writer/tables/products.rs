@@ -465,7 +465,7 @@ fn linked_definition(
         attributes.push(1);
         attributes.extend(utf16("")?);
         let mut body = crc_chunk_with_direct(0x4000_8002, &attributes, &attributes)?;
-        let mut children = vec![0..body.len()];
+        let mut children = std::iter::once(0..body.len()).collect::<Vec<_>>();
         body.extend(3_u32.to_le_bytes());
         let start = body.len();
         body.extend(units);

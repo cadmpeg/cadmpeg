@@ -473,7 +473,7 @@ fn face_display_color(
 /// no body fallback at emission; an unbound carrier keeps the default.
 fn carrier_display_color(
     ir: &CadIr,
-    target: cadmpeg_ir::appearance::AppearanceTarget,
+    target: &cadmpeg_ir::appearance::AppearanceTarget,
     owner: &str,
     losses: &mut Vec<LossNote>,
 ) -> BodyColor {
@@ -486,7 +486,7 @@ fn carrier_display_color(
                 .target
                 .typed_record_target(&ir.model)
                 .unwrap_or_else(|| binding.target.clone())
-                == target
+                == *target
         })
         .find_map(|binding| {
             ir.model
@@ -1063,9 +1063,8 @@ fn synthesis_graph(
             append_surface_entities(
                 ctx,
                 &mut entities,
-                ir,
+                (ir, version),
                 surface,
-                version,
                 &ownership,
                 &mut body_presentations,
                 &mut losses,
@@ -1133,8 +1132,8 @@ fn synthesis_graph(
             )?;
             let color = carrier_display_color(
                 ir,
-                cadmpeg_ir::appearance::AppearanceTarget::Curve(curve_id.clone()),
-                &format!("curve {}", curve_id),
+                &cadmpeg_ir::appearance::AppearanceTarget::Curve(curve_id.clone()),
+                &format!("curve {curve_id}"),
                 &mut losses,
             );
             if !matches!(color, BodyColor::Standard(0)) {
@@ -2311,7 +2310,7 @@ fn validate_brep_topology<'a>(
 fn brep_entities(
     ctx: &DecodeContext<'_>,
     topology: ValidatedTopology<'_>,
-    mut body_presentations: &mut BTreeMap<usize, BodyPresentation>,
+    body_presentations: &mut BTreeMap<usize, BodyPresentation>,
     losses: &mut Vec<LossNote>,
 ) -> Result<Vec<Entity>, CodecError> {
     let ir = topology.ir;
@@ -2360,11 +2359,10 @@ fn brep_entities(
         if let Some(index) = append_surface_entities(
             ctx,
             &mut entities,
-            ir,
+            (ir, version),
             surface,
-            version,
             &ownership,
-            &mut body_presentations,
+            body_presentations,
             losses,
         )? {
             surface_indices.insert(surface.id.as_str().to_owned(), index);
@@ -2448,7 +2446,7 @@ fn brep_entities(
             version,
             ownership: &ownership,
             ignored: &ignored_carriers.curves,
-            presentations: &mut body_presentations,
+            presentations: body_presentations,
         },
         &mut entities,
         &mut consumed_curve_ids,
@@ -3054,7 +3052,7 @@ fn brep_entities(
             ir,
             point,
             &ownership,
-            &mut body_presentations,
+            body_presentations,
             losses,
         );
     }
@@ -3305,7 +3303,7 @@ fn same_float(left: f64, right: f64) -> bool {
 fn topology_entities(
     ctx: &DecodeContext<'_>,
     topology: ValidatedTopology<'_>,
-    mut body_presentations: &mut BTreeMap<usize, BodyPresentation>,
+    body_presentations: &mut BTreeMap<usize, BodyPresentation>,
     losses: &mut Vec<LossNote>,
 ) -> Result<Vec<Entity>, CodecError> {
     let ir = topology.ir;
@@ -3326,11 +3324,10 @@ fn topology_entities(
         if let Some(index) = append_surface_entities(
             ctx,
             &mut entities,
-            ir,
+            (ir, version),
             surface,
-            version,
             &ownership,
-            &mut body_presentations,
+            body_presentations,
             losses,
         )? {
             surface_indices.insert(surface.id.as_str().to_owned(), index);
@@ -3451,7 +3448,7 @@ fn topology_entities(
             version,
             ownership: &ownership,
             ignored: &ignored_carriers.curves,
-            presentations: &mut body_presentations,
+            presentations: body_presentations,
         },
         &mut entities,
         &mut consumed_curves,
@@ -3628,7 +3625,7 @@ fn topology_entities(
             ir,
             point,
             &ownership,
-            &mut body_presentations,
+            body_presentations,
             losses,
         );
     }
@@ -6063,7 +6060,7 @@ fn append_free_point_entity(
     entities.push(entity);
     let color = carrier_display_color(
         ir,
-        cadmpeg_ir::appearance::AppearanceTarget::Point(point.id.clone()),
+        &cadmpeg_ir::appearance::AppearanceTarget::Point(point.id.clone()),
         &format!("point {}", point.id),
         losses,
     );
@@ -6183,13 +6180,13 @@ fn analytic_surface_family(geometry: &SolvedSurfaceGeometry) -> Option<AnalyticS
 fn append_surface_entities(
     ctx: &DecodeContext<'_>,
     entities: &mut Vec<Entity>,
-    ir: &CadIr,
+    input: (&CadIr, crate::IgesVersion),
     surface: &Surface,
-    version: crate::IgesVersion,
     ownership: &ownership::SourceOwnership<'_>,
     presentations: &mut BTreeMap<usize, BodyPresentation>,
     losses: &mut Vec<LossNote>,
 ) -> Result<Option<usize>, CodecError> {
+    let (ir, version) = input;
     let Some(status) = ownership.surface_status(surface) else {
         report_unowned_support(losses, surface.id.as_str());
         return Ok(None);
@@ -6216,7 +6213,7 @@ fn append_surface_entities(
     {
         let color = carrier_display_color(
             ir,
-            cadmpeg_ir::appearance::AppearanceTarget::Surface(surface.id.clone()),
+            &cadmpeg_ir::appearance::AppearanceTarget::Surface(surface.id.clone()),
             &format!("surface {}", surface.id),
             losses,
         );
@@ -8036,7 +8033,7 @@ fn append_unowned_curves(
         }
         let color = carrier_display_color(
             ir,
-            cadmpeg_ir::appearance::AppearanceTarget::Curve(curve.id.clone()),
+            &cadmpeg_ir::appearance::AppearanceTarget::Curve(curve.id.clone()),
             &format!("curve {}", curve.id),
             losses,
         );

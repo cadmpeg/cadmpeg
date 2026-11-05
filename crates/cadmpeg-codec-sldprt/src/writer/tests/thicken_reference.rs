@@ -1274,6 +1274,58 @@ fn semantic_writer_round_trips_typed_replace_face() {
 }
 
 #[test]
+fn source_less_move_face_keeps_unresolved_selection() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    use cadmpeg_ir::features::{FaceMotion, FaceSelection, FeatureDefinition, FeatureOperation};
+
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><MoveFace Name="Partial" Type="MoveFace" id="21" Mode="Offset"><Dimension Name="Distance">2mm</Dimension></MoveFace></Keywords>"#,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    assert!(matches!(
+        decoded.ir().model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::MoveFace {
+            faces: FaceSelection::Unresolved,
+            motion: FaceMotion::Offset { .. }
+        })
+    ));
+    let mut ir = decoded.ir().clone();
+    ir.source = None;
+    ir.native = cadmpeg_ir::Native::default();
+    for feature in &mut ir.model.features {
+        feature.native_ref = None;
+    }
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let definition = output
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Partial"))
+        .unwrap()
+        .evaluation
+        .definition();
+    assert!(
+        matches!(definition, FeatureDefinition::Operation(FeatureOperation::MoveFace {
+        faces: FaceSelection::Unresolved,
+        motion: FaceMotion::Offset { distance },
+    }) if output.ir().dimension_value(distance).unwrap().get() == 2.0)
+    );
+}
+
+#[test]
 fn semantic_writer_round_trips_all_move_face_forms() {
     use cadmpeg_ir::math::{Point3, Vector3};
     use cadmpeg_ir::{

@@ -359,6 +359,11 @@ fn dangling_coedge_keeps_other_faces_and_reports_opened_solid() {
 
 #[test]
 fn only_a_proven_spherical_pole_becomes_a_vertex_use() {
+    use cadmpeg_ir::geometry::analytic::SphereSurface;
+    use cadmpeg_ir::geometry::pcurve::{LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata};
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+    use cadmpeg_ir::math::{Point2, Point3, Vector3};
+    use cadmpeg_ir::topology::PcurveUse;
     use cadmpeg_ir::topology::{EdgeCarrier, LoopBoundary, LoopRing, Sense};
     let decoded = IgesCodec
         .decode(
@@ -413,11 +418,6 @@ fn only_a_proven_spherical_pole_becomes_a_vertex_use() {
     assert!(losses.is_empty());
     assert_eq!(unchanged.model.edges.len(), ir.model.edges.len());
 
-    use cadmpeg_ir::geometry::analytic::SphereSurface;
-    use cadmpeg_ir::geometry::pcurve::{LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata};
-    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
-    use cadmpeg_ir::math::{Point2, Point3, Vector3};
-    use cadmpeg_ir::topology::PcurveUse;
     let vertex = ir
         .model
         .vertices
