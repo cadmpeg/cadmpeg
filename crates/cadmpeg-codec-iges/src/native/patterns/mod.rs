@@ -57,15 +57,11 @@ fn entry_rotation(
         length_factor,
         precision,
     } = sources;
-    let Some(entry) = entries.get(&sequence) else {
-        return None;
-    };
+    let entry = entries.get(&sequence)?;
     if entry.transform == 0 {
         return None;
     }
-    let Some(length_factor) = length_factor else {
-        return None;
-    };
+    let length_factor = length_factor?;
     match resolve_transform(
         entry.transform,
         entries,

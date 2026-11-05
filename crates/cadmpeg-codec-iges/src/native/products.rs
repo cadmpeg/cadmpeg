@@ -713,15 +713,11 @@ fn entry_placement(
     ctx: &DecodeContext<'_>,
 ) -> Option<Transform> {
     let SourceMaps { entries, records } = maps;
-    let Some(entry) = entries.get(&sequence) else {
-        return None;
-    };
+    let entry = entries.get(&sequence)?;
     if entry.transform == 0 {
         return None;
     }
-    let Some(length_factor) = length_factor else {
-        return None;
-    };
+    let length_factor = length_factor?;
     match resolve_transform(
         entry.transform,
         entries,
@@ -751,12 +747,8 @@ fn item_placement(
     ctx: &DecodeContext<'_>,
 ) -> Option<Transform> {
     let SourceMaps { entries, records } = maps;
-    let Some(sequence) = transformation.and_then(native_transformation_sequence) else {
-        return None;
-    };
-    let Some(length_factor) = length_factor else {
-        return None;
-    };
+    let sequence = transformation.and_then(native_transformation_sequence)?;
+    let length_factor = length_factor?;
     match resolve_transform(
         i64::from(sequence),
         entries,
