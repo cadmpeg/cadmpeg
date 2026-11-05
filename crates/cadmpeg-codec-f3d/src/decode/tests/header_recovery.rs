@@ -122,6 +122,7 @@ fn truncated_stored_brep_keeps_its_complete_kernel_header() {
         .iter()
         .find(|entry| entry.name.ends_with("Body1.smbh"))
         .unwrap();
+    let local_header = usize::try_from(entry.header_start).unwrap();
     let start = usize::try_from(entry.data_start.unwrap()).unwrap();
     let cut = start + smbh_header_prefix().len();
     crate::test_support::zip_test::with_scan(&source[..cut], |scan| {
@@ -150,6 +151,18 @@ fn truncated_stored_brep_keeps_its_complete_kernel_header() {
         .unwrap();
     assert_eq!(
         short.ir().tolerances,
+        cadmpeg_ir::units::Tolerances::default()
+    );
+    const ZIP_LOCAL_COMPRESSED_LENGTH_OFFSET: usize = 18;
+    let mut invalid = source[..cut].to_vec();
+    invalid[local_header + ZIP_LOCAL_COMPRESSED_LENGTH_OFFSET
+        ..local_header + ZIP_LOCAL_COMPRESSED_LENGTH_OFFSET + 4]
+        .copy_from_slice(&1_u32.to_le_bytes());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(invalid), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        decoded.ir().tolerances,
         cadmpeg_ir::units::Tolerances::default()
     );
 }

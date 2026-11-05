@@ -1276,6 +1276,9 @@ pub(crate) const CAPACITY_FIELDS: &[cadmpeg_ir::codec::write::CapacityField] = &
         source: "docs/formats/sldprt.md §1: nested wrapper length is u32 LE",
         helper: "field_u32",
     },
+    crate::resolved_features::write_generate::LOCAL_MARKER_CAPACITY,
+    crate::resolved_features::write_generate::COORDINATE_LINK_CAPACITY,
+    crate::resolved_features::write_feature_parameters::SCALAR_IDENTITY_CAPACITY,
 ];
 
 /// Reduced rows: neutral paths the lump stores in reduced form (#232 §5.2).
