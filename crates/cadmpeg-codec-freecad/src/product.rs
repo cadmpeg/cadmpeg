@@ -661,17 +661,64 @@ pub(crate) fn transfer_neutral(
             native_ref: Some((*object).to_owned()),
         });
     }
-    let mut next_ordinal = HashMap::<Option<String>, u32>::new();
-    for occurrence in &mut occurrences {
-        let parent = match &occurrence.parent {
-            OccurrenceParent::Root {} => None,
-            OccurrenceParent::Occurrence { occurrence } => Some(occurrence.as_str().to_owned()),
-        };
-        let ordinal = next_ordinal.entry(parent).or_default();
-        occurrence.ordinal = *ordinal;
-        *ordinal = ordinal
-            .checked_add(1)
-            .ok_or_else(|| CodecError::malformed("product occurrence ordinal exceeds u32"))?;
+    let ordinals = {
+        let mut by_source = HashMap::<&str, Vec<usize>>::new();
+        for (index, occurrence) in occurrences.iter().enumerate() {
+            if let Some(source) = occurrence.native_ref.as_deref() {
+                by_source.entry(source).or_default().push(index);
+            }
+        }
+        let mut assigned =
+            ctx.alloc_filled(occurrences.len(), false, "freecad occurrence order")?;
+        let mut ordinals =
+            ctx.alloc_filled(occurrences.len(), 0_u32, "freecad occurrence ordinals")?;
+        let mut next_ordinal = HashMap::<Option<String>, u32>::new();
+        for record in records.iter().filter(|record| {
+            matches!(
+                record.node,
+                ProductNode::Part(_) | ProductNode::LinkGroup { .. }
+            )
+        }) {
+            let parent = container_occurrence_id(&record.object)?;
+            let mut ordinal = 0_u32;
+            for member in record
+                .members()
+                .iter()
+                .chain(record.element_objects().iter())
+            {
+                for &index in by_source.get(member.as_str()).into_iter().flatten() {
+                    if assigned[index]
+                        || !matches!(&occurrences[index].parent, OccurrenceParent::Occurrence { occurrence } if occurrence == &parent)
+                    {
+                        continue;
+                    }
+                    assigned[index] = true;
+                    ordinals[index] = ordinal;
+                    ordinal = ordinal.checked_add(1).ok_or_else(|| {
+                        CodecError::malformed("product occurrence ordinal exceeds u32")
+                    })?;
+                }
+            }
+            next_ordinal.insert(Some(parent.as_str().to_owned()), ordinal);
+        }
+        for (index, occurrence) in occurrences.iter().enumerate() {
+            if assigned[index] {
+                continue;
+            }
+            let parent = match &occurrence.parent {
+                OccurrenceParent::Root {} => None,
+                OccurrenceParent::Occurrence { occurrence } => Some(occurrence.as_str().to_owned()),
+            };
+            let ordinal = next_ordinal.entry(parent).or_default();
+            ordinals[index] = *ordinal;
+            *ordinal = ordinal
+                .checked_add(1)
+                .ok_or_else(|| CodecError::malformed("product occurrence ordinal exceeds u32"))?;
+        }
+        ordinals
+    };
+    for (occurrence, ordinal) in occurrences.iter_mut().zip(ordinals) {
+        occurrence.ordinal = ordinal;
     }
     Ok((definitions, occurrences))
 }
