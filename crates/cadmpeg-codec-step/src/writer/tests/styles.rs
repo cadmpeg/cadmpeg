@@ -266,3 +266,41 @@ fn body_appearance_keeps_its_owner_when_faces_inherit_its_color() {
         .expect("bound material");
     assert_eq!(material.base_color, Some(color));
 }
+
+#[test]
+fn unbound_appearance_does_not_style_an_unrelated_carrier() {
+    use cadmpeg_ir::appearance::Appearance;
+    use cadmpeg_ir::ids::AppearanceId;
+    use cadmpeg_ir::topology::Color;
+
+    let mut ir = unit_cube().expect("unit cube");
+    let id = AppearanceId::mint("test:model:appearance#unbound").expect("appearance id");
+    ir.model.appearances.push(Appearance {
+        id: id.clone(),
+        native_ref: None,
+        name: Some("unbound".into()),
+        asset_guid: None,
+        library_id: None,
+        visual_guid: None,
+        physical_token: None,
+        schema: None,
+        category: None,
+        base_color: Some(Color::new(0.125, 0.25, 0.5, 0.75).expect("color")),
+        properties: Default::default(),
+        textures: Vec::new(),
+    });
+    let mut bytes = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut bytes,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .expect("write unbound color");
+    let text = String::from_utf8(bytes).expect("STEP text");
+    assert!(text.contains("COLOUR_RGB('unbound',0.125,0.25,0.5)"));
+    assert!(!text.contains("STYLED_ITEM("));
+    assert!(report.losses.iter().any(|loss| loss.code
+        == crate::loss::StepLossCode::AppearanceReducedToBaseColor.kind()
+        && loss.message.contains(id.as_str())));
+}

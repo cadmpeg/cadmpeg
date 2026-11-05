@@ -294,7 +294,7 @@ fn external_assets_are_written_from_content_after_identity_changes() {
 }
 
 #[test]
-fn unbound_appearance_survives_on_written_surface() {
+fn unbound_appearances_do_not_acquire_surface_bindings() {
     use cadmpeg_ir::appearance::Appearance;
     use cadmpeg_ir::ids::AppearanceId;
     use cadmpeg_ir::topology::Color;
@@ -323,21 +323,21 @@ fn unbound_appearance_survives_on_written_surface() {
     let plan = StepCodec::default()
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .expect("write appearance");
-    assert!(plan.report().losses.iter().all(|loss| {
-        loss.code != crate::loss::StepLossCode::AppearanceReducedToBaseColor.kind()
-    }));
+    for id in [
+        "test:model:appearance#unbound",
+        "test:model:appearance#other",
+    ] {
+        assert!(plan.report().losses.iter().any(|loss| {
+            loss.code == crate::loss::StepLossCode::AppearanceReducedToBaseColor.kind()
+                && loss.message.contains(id)
+        }));
+    }
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).expect("write STEP");
-    let decoded = StepCodec::default()
-        .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
-        .expect("decode STEP");
-    assert!(decoded.ir().model.appearances.iter().any(|appearance| {
-        appearance.name.as_deref() == Some("material") && appearance.base_color == Some(color)
-    }));
-    assert!(decoded.ir().model.appearances.iter().any(|appearance| {
-        appearance.name.as_deref() == Some("other material")
-            && appearance.base_color == Color::new(0.75, 0.25, 0.125, 1.0)
-    }));
+    let text = String::from_utf8(bytes).expect("STEP text");
+    assert!(text.contains("COLOUR_RGB('material',0.125,0.25,0.5)"));
+    assert!(text.contains("COLOUR_RGB('other material',0.75,0.25,0.125)"));
+    assert!(!text.contains("STYLED_ITEM("));
 
     ir.model.appearances[0].category = Some("unrepresented category".into());
     let reduced = StepCodec::default()
