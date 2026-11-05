@@ -2364,7 +2364,7 @@ fn brep_entities(
             surface,
             version,
             &ownership,
-            &mut body_presentations,
+            body_presentations,
             losses,
         )? {
             surface_indices.insert(surface.id.as_str().to_owned(), index);
@@ -2448,7 +2448,7 @@ fn brep_entities(
             version,
             ownership: &ownership,
             ignored: &ignored_carriers.curves,
-            presentations: &mut body_presentations,
+            presentations: body_presentations,
         },
         &mut entities,
         &mut consumed_curve_ids,
@@ -3054,7 +3054,7 @@ fn brep_entities(
             ir,
             point,
             &ownership,
-            &mut body_presentations,
+            body_presentations,
             losses,
         );
     }
@@ -3330,7 +3330,7 @@ fn topology_entities(
             surface,
             version,
             &ownership,
-            &mut body_presentations,
+            body_presentations,
             losses,
         )? {
             surface_indices.insert(surface.id.as_str().to_owned(), index);
@@ -3451,7 +3451,7 @@ fn topology_entities(
             version,
             ownership: &ownership,
             ignored: &ignored_carriers.curves,
-            presentations: &mut body_presentations,
+            presentations: body_presentations,
         },
         &mut entities,
         &mut consumed_curves,
@@ -3628,7 +3628,7 @@ fn topology_entities(
             ir,
             point,
             &ownership,
-            &mut body_presentations,
+            body_presentations,
             losses,
         );
     }
