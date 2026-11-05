@@ -185,3 +185,154 @@ fn a_representation_with_an_unused_bit_is_refused() {
     let error = refused.expect_err("refused").to_string();
     assert!(error.contains("bits 56 to 59"), "{error}");
 }
+
+#[test]
+fn output_entity_limit_counts_written_prims_and_properties() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeError, EncodeInput, Encoder};
+
+    let (_, source) = inputs("usda")
+        .into_iter()
+        .find(|(name, _)| name == "assembly_instances")
+        .expect("assembly fixture");
+    let decoded = UsdCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode assembly");
+    let plan = UsdCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), None),
+            TargetRequest::Explicit("usda-1.0"),
+        )
+        .expect("plan text output");
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("write text output");
+    let count = written_entities(&bytes);
+    assert!(count > 0);
+    for target in ["usda-1.0", "usdc", "usdz"] {
+        let mut limited = EncodeInput::new(decoded.ir(), None);
+        limited.limits.max_entities = count - 1;
+        assert!(
+            matches!(UsdCodec.plan(limited, TargetRequest::Explicit(target)),
+            Err(EncodeError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::Entities)
+        );
+        let mut exact = EncodeInput::new(decoded.ir(), None);
+        exact.limits.max_entities = count;
+        UsdCodec
+            .plan(exact, TargetRequest::Explicit(target))
+            .expect("exact output entity budget");
+    }
+}
+
+fn written_entities(bytes: &[u8]) -> u64 {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    fn count(body: &crate::text::syntax::PrimBody) -> u64 {
+        assert!(body.variant_sets.is_empty());
+        u64::try_from(body.properties.len()).unwrap()
+            + body
+                .children
+                .iter()
+                .map(|prim| 1 + count(&prim.body))
+                .sum::<u64>()
+    }
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    let ctx = DecodeContext::for_encode(&arena, &policy);
+    let layer = crate::text::grammar::parse_layer(&ctx, bytes).expect("parse written layer");
+    layer.prims.iter().map(|prim| 1 + count(&prim.body)).sum()
+}
+
+#[test]
+fn omitted_solver_target_does_not_consume_output_entity_budget() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeError, EncodeInput, Encoder};
+    use cadmpeg_ir::physics::solver::{SolverTarget, SolverValue};
+
+    let (_, source) = inputs("usda")
+        .into_iter()
+        .find(|(name, _)| name == "physx_arm")
+        .expect("PhysX fixture");
+    let decoded = UsdCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode PhysX fixture");
+    let mut ir = decoded.ir().clone();
+    let settings = ir
+        .model
+        .solver_settings
+        .iter_mut()
+        .find(|settings| settings.schema == "PhysxMimicJointAPI:transX")
+        .expect("mimic settings");
+    let value = settings
+        .values
+        .get_mut("physxMimicJoint:transX:referenceJoint")
+        .expect("mimic target");
+    let SolverValue::Targets { targets } = value else {
+        panic!("target list")
+    };
+    *targets = vec![SolverTarget::Joint {
+        joint: cadmpeg_ir::products::JointId::mint("test:usd:joint#missing").unwrap(),
+    }];
+    let plan = UsdCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit("usda-1.0"),
+        )
+        .expect("plan with omitted relationship");
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("solver properties")));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    assert!(
+        !String::from_utf8_lossy(&bytes).contains("rel physxMimicJoint:transX:referenceJoint =")
+    );
+    let count = written_entities(&bytes);
+    assert!(count > 0);
+    let mut below = EncodeInput::new(&ir, None);
+    below.limits.max_entities = count - 1;
+    assert!(
+        matches!(UsdCodec.plan(below, TargetRequest::Explicit("usda-1.0")),
+        Err(EncodeError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::Entities)
+    );
+    let mut exact = EncodeInput::new(&ir, None);
+    exact.limits.max_entities = count;
+    UsdCodec
+        .plan(exact, TargetRequest::Explicit("usda-1.0"))
+        .expect("omitted relationship does not consume a record");
+}
+
+#[test]
+fn every_text_fixture_uses_the_written_record_budget() {
+    use cadmpeg_core::decode::ResourceDimension;
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeError, EncodeInput, Encoder};
+
+    let fixtures = inputs("usda");
+    assert!(!fixtures.is_empty());
+    for (name, source) in fixtures {
+        let decoded = UsdCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .unwrap_or_else(|error| panic!("{name}: {error}"));
+        let target = TargetRequest::Explicit("usda-1.0");
+        let plan = UsdCodec
+            .plan(EncodeInput::new(decoded.ir(), None), target)
+            .unwrap_or_else(|error| panic!("{name}: {error}"));
+        let mut bytes = Vec::new();
+        plan.write_to(&mut bytes).unwrap();
+        let count = written_entities(&bytes);
+        if let Some(below_count) = count.checked_sub(1) {
+            let mut below = EncodeInput::new(decoded.ir(), None);
+            below.limits.max_entities = below_count;
+            assert!(
+                matches!(UsdCodec.plan(below, target),
+                Err(EncodeError::ResourceLimit(limit)) if limit.dimension == ResourceDimension::Entities),
+                "{name}: {count} written records"
+            );
+        }
+        let mut exact = EncodeInput::new(decoded.ir(), None);
+        exact.limits.max_entities = count;
+        UsdCodec
+            .plan(exact, target)
+            .unwrap_or_else(|error| panic!("{name}: {count} records: {error}"));
+    }
+}
