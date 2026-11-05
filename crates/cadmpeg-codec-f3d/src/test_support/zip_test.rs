@@ -24,19 +24,20 @@ use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
 use crate::test_support::smbh_header_test::synthetic_smbh;
 use crate::test_support::smbh_revision_test::scrubbed_definition;
 use crate::test_support::streams_test::{
-    design_metastream_with_records, generated_act_bulkstream, generated_act_metastream,
-    generated_design_base_feature_bulkstream, generated_design_base_feature_metastream,
-    generated_design_base_flange_bulkstream, generated_design_base_flange_metastream,
-    generated_design_bulkstream, generated_design_canvas_bulkstream,
-    generated_design_canvas_metastream, generated_design_copy_paste_bodies_bulkstream,
-    generated_design_copy_paste_bodies_metastream, generated_design_copy_paste_bulkstream,
-    generated_design_copy_paste_metastream, generated_design_form_bulkstream,
-    generated_design_form_metastream, generated_design_metastream,
-    generated_design_remove_body_bulkstream, generated_design_remove_body_metastream,
-    generated_design_sketch_dimension_bulkstream, generated_design_sketch_dimension_metastream,
-    generated_design_surface_stitch_bulkstream, generated_design_surface_stitch_metastream,
-    generated_design_types, generated_flat_pattern_settings_bulkstream,
-    generated_flat_pattern_settings_metastream, GeneratedDesignMetastreamVariant,
+    design_metastream_with_records_and_secondary,
+    generated_act_bulkstream, generated_act_metastream, generated_design_base_feature_bulkstream,
+    generated_design_base_feature_metastream, generated_design_base_flange_bulkstream,
+    generated_design_base_flange_metastream, generated_design_bulkstream,
+    generated_design_canvas_bulkstream, generated_design_canvas_metastream,
+    generated_design_copy_paste_bodies_bulkstream, generated_design_copy_paste_bodies_metastream,
+    generated_design_copy_paste_bulkstream, generated_design_copy_paste_metastream,
+    generated_design_form_bulkstream, generated_design_form_metastream,
+    generated_design_metastream, generated_design_remove_body_bulkstream,
+    generated_design_remove_body_metastream, generated_design_sketch_dimension_bulkstream,
+    generated_design_sketch_dimension_metastream, generated_design_surface_stitch_bulkstream,
+    generated_design_surface_stitch_metastream, generated_design_types,
+    generated_flat_pattern_settings_bulkstream, generated_flat_pattern_settings_metastream,
+    GeneratedDesignMetastreamVariant,
 };
 use crate::F3dCodec;
 
@@ -315,12 +316,37 @@ pub(crate) fn f3d_with_smbh_and_instance_properties(
     )
 }
 
+fn sketch_dimension_metastream(
+    records: &[(u64, u64)],
+    extra_types: &[(
+        &'static str,
+        &'static str,
+        u32,
+        &'static str,
+        &'static [u64],
+    )],
+) -> Vec<u8> {
+    let owner_length =
+        u64::try_from(crate::design::test_support::parameter_owner_frame().len()).unwrap();
+    let secondary: Vec<_> = records
+        .iter()
+        .filter(|(id, _)| matches!(id, 1200 | 1203))
+        .map(|(id, offset)| (*id, offset + owner_length))
+        .collect();
+    if secondary.is_empty() && extra_types.is_empty() {
+        return generated_design_sketch_dimension_metastream(records);
+    }
+    let mut types = generated_design_types(GeneratedDesignMetastreamVariant::SketchDimension);
+    types.extend_from_slice(extra_types);
+    design_metastream_with_records_and_secondary(&types, records, &secondary)
+}
+
 pub(crate) fn f3d_with_smbh_and_protein_with_generated_sketch_dimension(smbh: &[u8]) -> Vec<u8> {
     let properties = vec![generated_instance_properties_for(
         "11111111-2222-3333-4444-555555555555",
     )];
     let (design_bulk, design_records) = generated_design_sketch_dimension_bulkstream();
-    let design_metastream = generated_design_sketch_dimension_metastream(&design_records);
+    let design_metastream = sketch_dimension_metastream(&design_records, &[]);
     f3d_with_smbh_and_instance_properties_and_design_with_metastream(
         smbh,
         &properties,
@@ -803,7 +829,7 @@ pub(crate) fn f3d_with_generated_sketch_annotation(case: SketchAnnotationCase) -
     crate::test_support::push_marked_reference(&mut frame, 277);
     frame.resize(paired + 59, 0);
     insert_frame_in_preceding_companion(&mut bulk, &mut records, &frame);
-    let meta = generated_design_sketch_dimension_metastream(&records);
+    let meta = sketch_dimension_metastream(&records, &[]);
     f3d_with_smbh_and_instance_properties_and_design_with_metastream(
         &synthetic_geometry_smbh(),
         &[],
@@ -875,10 +901,13 @@ pub(crate) fn f3d_with_generated_sketch_presentation(
     crate::test_support::push_marked_reference(&mut frame, 277);
     frame.resize(pair + 59, 0);
     insert_frame_in_preceding_companion(&mut bulk, &mut records, &frame);
-    let mut types = generated_design_types(GeneratedDesignMetastreamVariant::SketchDimension);
-    types.push((primary, "", 3, "Fusion", &[]));
-    types.push((paired, "", 1, "Dimension", &[]));
-    let meta = design_metastream_with_records(&types, &records);
+    let meta = sketch_dimension_metastream(
+        &records,
+        &[
+            (primary, "", 3, "Fusion", &[]),
+            (paired, "", 1, "Dimension", &[]),
+        ],
+    );
     f3d_with_smbh_and_instance_properties_and_design_with_metastream(
         &synthetic_geometry_smbh(),
         &[],

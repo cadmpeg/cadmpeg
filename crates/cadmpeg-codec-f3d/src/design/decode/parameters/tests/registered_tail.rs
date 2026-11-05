@@ -2,18 +2,26 @@
 
 use std::io::{Cursor, Write};
 
-use super::super::decode_parameters;
 use crate::design::test_support::parameter_record;
 use crate::test_support::manifest_test::write_synthetic_manifests;
 use crate::test_support::streams_test::design_metastream_with_records;
-use crate::test_support::zip_test::with_scan;
 
 const TAIL_BASE_TYPE_GUID: &str = "A7AEA631-985B-4DD1-8CE2-DE2C-14B54081";
 
-fn registered_tail_archive(frame: Vec<u8>, type_guid: &str, target: u64) -> Vec<u8> {
+fn registered_tail_archive(mut frame: Vec<u8>, type_guid: &str, target: u64) -> Vec<u8> {
+    frame[4..7].copy_from_slice(b"256");
     let metadata = design_metastream_with_records(
-        &[(type_guid, TAIL_BASE_TYPE_GUID, 3, "CommonData", &[target])],
-        &[],
+        &[
+            (
+                "00000000-0000-0000-0000-000000000001",
+                "",
+                1,
+                "Fusion",
+                &[71],
+            ),
+            (type_guid, TAIL_BASE_TYPE_GUID, 3, "CommonData", &[target]),
+        ],
+        &[(71, 0)],
     );
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
@@ -54,16 +62,13 @@ fn parameter_registered_tail_resolves_full_record_identity_and_refuses_wrong_typ
             let tail = frame.len() - 12;
             frame[tail + 2..tail + 10].copy_from_slice(&target.to_le_bytes());
             let archive = registered_tail_archive(frame, type_guid, target);
-            let decoded = with_scan(&archive, decode_parameters).unwrap();
+            let decoded = super::decode_archive(&archive).unwrap();
             assert_eq!(decoded.parameters.len(), usize::from(admitted));
-            assert_eq!(
-                decoded.unparsed.iter().map(|row| row.count).sum::<usize>(),
-                unparsed
-            );
+            assert_eq!(decoded.losses.len(), unparsed);
             if admitted {
                 assert_eq!(decoded.parameters[0].name(), "Width");
                 assert_eq!(decoded.parameters[0].expression(), "3 mm");
-                assert!(decoded.unparsed.is_empty());
+                assert!(decoded.losses.is_empty());
             }
         }
     }
@@ -81,9 +86,9 @@ fn parameter_registered_tail_target_byte_is_not_a_family_marker() {
             super::super::PARAMETER_TAIL_TYPE_GUID,
             target,
         );
-        let decoded = with_scan(&archive, decode_parameters).unwrap();
+        let decoded = super::decode_archive(&archive).unwrap();
         assert_eq!(decoded.parameters.len(), 1, "target {target:#x}");
-        assert!(decoded.unparsed.is_empty());
+        assert!(decoded.losses.is_empty());
     }
 }
 
@@ -111,10 +116,10 @@ fn parameter_registered_tail_admits_compact_owned_frame() {
     frame.extend_from_slice(&target.to_le_bytes());
     frame.extend_from_slice(&[0, 0]);
     let archive = registered_tail_archive(frame, super::super::PARAMETER_TAIL_TYPE_GUID, target);
-    let decoded = with_scan(&archive, decode_parameters).unwrap();
+    let decoded = super::decode_archive(&archive).unwrap();
     assert_eq!(decoded.parameters.len(), 1);
     assert_eq!(decoded.parameters[0].name(), "Width");
-    assert!(decoded.unparsed.is_empty());
+    assert!(decoded.losses.is_empty());
 }
 
 /// When the stream registers a parameter collection, a parameter tail names it.
@@ -126,27 +131,24 @@ fn parameter_tail_names_a_registered_collection() {
     frame[tail + 2] = 0x11;
     let archive =
         registered_tail_archive(frame.clone(), super::super::PARAMETER_TAIL_TYPE_GUID, 0x11);
-    let decoded = with_scan(&archive, decode_parameters).unwrap();
+    let decoded = super::decode_archive(&archive).unwrap();
     assert_eq!(decoded.parameters.len(), 1);
     assert_eq!(decoded.parameters[0].name(), "Width");
-    assert!(decoded.unparsed.is_empty());
+    assert!(decoded.losses.is_empty());
 
     // A nonzero byte after the low byte names another record.
     let mut corrupt = frame.clone();
     corrupt[tail + 5] = 1;
     let archive = registered_tail_archive(corrupt, super::super::PARAMETER_TAIL_TYPE_GUID, 0x11);
-    let decoded = with_scan(&archive, decode_parameters).unwrap();
+    let decoded = super::decode_archive(&archive).unwrap();
     assert!(decoded.parameters.is_empty());
 
     // A frame that names a record outside the registered collections is
     // reported.
     let archive = registered_tail_archive(frame, super::super::PARAMETER_TAIL_TYPE_GUID, 0x12);
-    let decoded = with_scan(&archive, decode_parameters).unwrap();
+    let decoded = super::decode_archive(&archive).unwrap();
     assert!(decoded.parameters.is_empty());
-    assert_eq!(
-        decoded.unparsed.iter().map(|row| row.count).sum::<usize>(),
-        1
-    );
+    assert_eq!(decoded.losses.len(), 1);
 }
 
 /// A feature input or dimension with discriminator `6` and a registered plain
@@ -164,11 +166,11 @@ fn parameter_registered_tail_admits_discriminator_six_feature_inputs() {
             let frame = with_registered_tail(radius(Some(40), kind, unit), target);
             let archive =
                 registered_tail_archive(frame, super::super::PARAMETER_TAIL_TYPE_GUID, target);
-            let decoded = with_scan(&archive, decode_parameters).unwrap();
+            let decoded = super::decode_archive(&archive).unwrap();
             assert_eq!(decoded.parameters.len(), 1, "{kind} {target:#x}");
             assert_eq!(decoded.parameters[0].source_kind(), kind);
             assert_eq!(decoded.parameters[0].name(), "d302");
-            assert!(decoded.unparsed.is_empty());
+            assert!(decoded.losses.is_empty());
         }
     }
     let target = 181u64;
@@ -176,7 +178,7 @@ fn parameter_registered_tail_admits_discriminator_six_feature_inputs() {
     let refused = |frame: Vec<u8>| {
         let archive =
             registered_tail_archive(frame, super::super::PARAMETER_TAIL_TYPE_GUID, target);
-        let decoded = with_scan(&archive, decode_parameters).unwrap();
+        let decoded = super::decode_archive(&archive).unwrap();
         assert!(decoded.parameters.is_empty());
     };
     let tail = good.len() - 12;

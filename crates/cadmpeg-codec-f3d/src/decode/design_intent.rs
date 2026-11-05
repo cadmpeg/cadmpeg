@@ -586,10 +586,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         crate::design::configurations::project_configurations(&design.design_configurations)?;
     design.design_sheet_metal_settings =
         crate::design::decode::sheet_metal_settings::decode_settings(scan)?;
-    let projection_parameters = crate::design::decode::parameters::parameters_for_projection(
-        &prereqs.design_parameters,
-        &prereqs.design_parameter_owner_unparsed,
-    );
+    let projection_parameters = &prereqs.design_parameters;
     let body_key_bodies = inputs
         .geometry
         .bodies
@@ -603,7 +600,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     let projected = crate::design::feature_project::project_parameter_design_with_edge_identities(
         ctx,
         &crate::design::feature_project::ProjectInputs {
-            native: &projection_parameters,
+            native: projection_parameters,
             owners: &prereqs.design_parameter_owners,
             scopes: &design.design_parameter_scopes,
             timelines,
@@ -1187,12 +1184,7 @@ fn extend_related_design_records(
             .map(move |record_index| (scope, record_index))
         }));
     append_related_record_headers(scan, &mut design.design_record_headers, &indices)?;
-    design.design_parameter_companions =
-        crate::design::decode::parameters::decode_parameter_companions(
-            scan,
-            &prereqs.design_parameter_owners,
-            &design.design_record_headers,
-        );
+    design.design_parameter_companions = prereqs.design_parameter_companions.clone();
     design.design_face_source_groups = crate::design::decode::operands::decode_face_source_groups(
         ctx,
         scan,
