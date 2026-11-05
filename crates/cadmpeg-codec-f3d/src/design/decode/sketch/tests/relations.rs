@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::design::decode::sketch::decode_pattern_definition;
-use crate::design::decode::sketch::next_indexed_record_offset;
-use crate::design::decode::sketch::next_indexed_record_offset_with_index;
 use crate::design::decode::sketch::parse_classed_sketch_relation;
 use crate::design::decode::sketch::parse_genesis_entity_header;
 use crate::design::decode::sketch::parse_settled_entity_header;
@@ -48,7 +46,8 @@ fn variable_width_relation_uses_counted_runs_and_next_record_boundary() {
     bytes.extend_from_slice(b"277");
     bytes.extend_from_slice(&1240u32.to_le_bytes());
 
-    assert_eq!(next_indexed_record_offset(&bytes, 11), Some(127));
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    assert_eq!(records.next_at_or_after(11), Some(127));
     let parsed = tested_parse_classed_sketch_relation(&record, SketchRelationClass::Plain).unwrap();
     assert_eq!(
         parsed
@@ -103,11 +102,9 @@ fn indexed_record_search_requires_the_expected_identity() {
     bytes.extend_from_slice(b"306");
     bytes.extend_from_slice(&42u32.to_le_bytes());
 
-    assert_eq!(next_indexed_record_offset(&bytes, 0), Some(decoy));
-    assert_eq!(
-        next_indexed_record_offset_with_index(&bytes, 0, 42),
-        Some(expected)
-    );
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    assert_eq!(records.next_at_or_after(0), Some(decoy));
+    assert_eq!(records.first_at_or_after(0, 42), Some(expected));
 }
 
 #[test]
