@@ -644,11 +644,13 @@ pub(crate) fn bind_vertex_recipe_candidates(
                     reference,
                     tags,
                     Some(&scope_id),
-                    bodies,
-                    faces,
-                    edges,
-                    vertices,
-                    coedges,
+                    crate::design::decode::dimension_frames::BrepTopology {
+                        bodies,
+                        faces,
+                        edges,
+                        vertices,
+                        coedges,
+                    },
                 );
             }
         }
@@ -661,11 +663,13 @@ pub(crate) fn bind_vertex_recipe_candidates(
                     reference,
                     tags,
                     Some(&scope_id),
-                    bodies,
-                    faces,
-                    edges,
-                    vertices,
-                    coedges,
+                    crate::design::decode::dimension_frames::BrepTopology {
+                        bodies,
+                        faces,
+                        edges,
+                        vertices,
+                        coedges,
+                    },
                 );
             }
         }
@@ -688,11 +692,13 @@ pub(crate) fn bind_edge_treatment_vertex_candidates(
                 reference,
                 tags,
                 Some(&operand.id),
-                bodies,
-                faces,
-                edges,
-                vertices,
-                coedges,
+                crate::design::decode::dimension_frames::BrepTopology {
+                    bodies,
+                    faces,
+                    edges,
+                    vertices,
+                    coedges,
+                },
             );
         }
     }
@@ -1575,12 +1581,15 @@ pub(crate) fn bind_face_operand_candidates(
     operands: &mut [DesignFaceOperand],
     recipes: &[ConstructionRecipe],
     tags: &[PersistentSubentityTag],
-    bodies: &[cadmpeg_ir::topology::Body],
-    faces: &[cadmpeg_ir::topology::Face],
-    edges: &[cadmpeg_ir::topology::Edge],
-    vertices: &[cadmpeg_ir::topology::Vertex],
-    coedges: &[cadmpeg_ir::topology::Coedge],
+    topology: crate::design::decode::dimension_frames::BrepTopology<'_>,
 ) {
+    let crate::design::decode::dimension_frames::BrepTopology {
+        bodies,
+        faces,
+        edges,
+        vertices,
+        coedges,
+    } = topology;
     let recipes = indexed_operand_recipes(recipes);
     for operand in operands {
         operand.alternate_selector_candidate_faces.clear();
@@ -1589,11 +1598,13 @@ pub(crate) fn bind_face_operand_candidates(
                 reference,
                 tags,
                 Some(&operand.id),
-                bodies,
-                faces,
-                edges,
-                vertices,
-                coedges,
+                crate::design::decode::dimension_frames::BrepTopology {
+                    bodies,
+                    faces,
+                    edges,
+                    vertices,
+                    coedges,
+                },
             );
         }
         let Some(design_reference) = recipes
@@ -1656,12 +1667,15 @@ pub(crate) fn bind_edge_operand_candidates(
     operands: &mut [DesignEdgeOperand],
     recipes: &[ConstructionRecipe],
     tags: &[PersistentSubentityTag],
-    bodies: &[cadmpeg_ir::topology::Body],
-    faces: &[cadmpeg_ir::topology::Face],
-    edges: &[cadmpeg_ir::topology::Edge],
-    vertices: &[cadmpeg_ir::topology::Vertex],
-    coedges: &[cadmpeg_ir::topology::Coedge],
+    topology: crate::design::decode::dimension_frames::BrepTopology<'_>,
 ) {
+    let crate::design::decode::dimension_frames::BrepTopology {
+        bodies,
+        faces,
+        edges,
+        vertices,
+        coedges,
+    } = topology;
     let recipes = indexed_operand_recipes(recipes);
     for operand in operands {
         operand.candidate_faces.clear();
@@ -1670,11 +1684,13 @@ pub(crate) fn bind_edge_operand_candidates(
                 reference,
                 tags,
                 Some(&operand.id),
-                bodies,
-                faces,
-                edges,
-                vertices,
-                coedges,
+                crate::design::decode::dimension_frames::BrepTopology {
+                    bodies,
+                    faces,
+                    edges,
+                    vertices,
+                    coedges,
+                },
             );
         }
         let Some(design_reference) = recipes
@@ -1714,12 +1730,15 @@ pub(crate) fn edge_operand_candidate_faces(
     design_reference: i64,
     tags: &[PersistentSubentityTag],
     owner_id: Option<&str>,
-    bodies: &[cadmpeg_ir::topology::Body],
-    faces: &[cadmpeg_ir::topology::Face],
-    edges: &[cadmpeg_ir::topology::Edge],
-    vertices: &[cadmpeg_ir::topology::Vertex],
-    coedges: &[cadmpeg_ir::topology::Coedge],
+    topology: crate::design::decode::dimension_frames::BrepTopology<'_>,
 ) -> Vec<cadmpeg_ir::ids::FaceId> {
+    let crate::design::decode::dimension_frames::BrepTopology {
+        bodies,
+        faces,
+        edges,
+        vertices,
+        coedges,
+    } = topology;
     let mut faces = tags
         .iter()
         .filter(|tag| {
@@ -4919,12 +4938,15 @@ pub(crate) fn bind_body_recipe_operand_candidates(
     recipes: &[ConstructionRecipe],
     tags: &[PersistentSubentityTag],
     scopes: &[DesignParameterScope],
-    bodies: &[cadmpeg_ir::topology::Body],
-    faces: &[cadmpeg_ir::topology::Face],
-    edges: &[cadmpeg_ir::topology::Edge],
-    vertices: &[cadmpeg_ir::topology::Vertex],
-    coedges: &[cadmpeg_ir::topology::Coedge],
+    topology: crate::design::decode::dimension_frames::BrepTopology<'_>,
 ) {
+    let crate::design::decode::dimension_frames::BrepTopology {
+        bodies,
+        faces,
+        edges,
+        vertices,
+        coedges,
+    } = topology;
     let mut recipes_by_id = HashMap::<_, Option<&ConstructionRecipe>>::new();
     for recipe in recipes {
         if let Some(existing) = recipes_by_id.get_mut(recipe.id.as_str()) {

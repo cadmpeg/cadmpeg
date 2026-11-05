@@ -447,7 +447,7 @@ pub(crate) fn original_design_fixture(bytes: Vec<u8>, remove_body: bool) -> Vec<
         .iter()
         .position(|(name, _)| name == "FusionAssetName[Active]/Design1/BulkStream.dat")
         .unwrap();
-    let (meta, header_offset, indexed_offsets) = {
+    let (meta, header_offset, indexed_offsets, circle_offset, canvas_offsets) = {
         let parsed =
             crate::metastream::parse(&entries[meta_index].1, &entries[meta_index].0).unwrap();
         let offset = |id| {
@@ -464,11 +464,14 @@ pub(crate) fn original_design_fixture(bytes: Vec<u8>, remove_body: bool) -> Vec<
             .types
             .iter()
             .map(|ty| {
-                ty.entities
-                    .values()
-                    .copied()
+                let mut ids: Vec<_> = ty.entities.values().copied().collect();
+                if ty.type_guid.as_str() == "00000000-0000-4000-8000-000000000264" {
+                    ids.push(600);
+                    ids.sort_unstable();
+                }
+                ids.into_iter()
                     .filter(|id| match ty.type_guid.as_str() {
-                        "F0130424-8B7E-4092-93C9-1CA807482534" => {
+                        "00000000-0000-4000-8000-000000000264" => {
                             !matches!(*id, 123 | 1701 | 1702 | 1703 | 4645 | 4646)
                                 && !(remove_body && *id == 1700)
                         }
@@ -482,9 +485,17 @@ pub(crate) fn original_design_fixture(bytes: Vec<u8>, remove_body: bool) -> Vec<
             .types
             .iter()
             .zip(&entities)
+            .filter(|(ty, _)| {
+                ty.module != "Fixture"
+                    && ty.type_guid.as_str() != "F0130424-8B7E-4092-93C9-1CA807482534"
+            })
             .map(|(ty, ids)| {
                 (
-                    ty.type_guid.as_str(),
+                    if ty.type_guid.as_str() == "00000000-0000-4000-8000-000000000264" {
+                        "F0130424-8B7E-4092-93C9-1CA807482534"
+                    } else {
+                        ty.type_guid.as_str()
+                    },
                     ty.base_type_guid.value().map_or("", |base| base.as_str()),
                     ty.version,
                     ty.module.as_str(),
@@ -511,9 +522,27 @@ pub(crate) fn original_design_fixture(bytes: Vec<u8>, remove_body: bool) -> Vec<
             design_metastream_with_records(&types, &records),
             header_offset,
             indexed_offsets,
+            offset(600),
+            parsed.types.iter().any(|ty| ty.type_guid.as_str() == "c0a00000-0000-4000-8000-000000000001").then(|| (offset(10), offset(20), offset(30))),
         )
     };
     let bulk = &mut entries[bulk_index].1;
+    if let Some((geometry, asset, scope)) = canvas_offsets {
+        for (offset, newer, original) in [
+            (geometry, b"281", b"273"),
+            (geometry + 219, b"282", b"274"),
+            (asset, b"283", b"275"),
+            (scope, b"284", b"276"),
+            (scope + 163, b"285", b"277"),
+        ] {
+            let at = usize::try_from(offset).unwrap() + 4;
+            assert_eq!(&bulk[at..at + 3], newer);
+            bulk[at..at + 3].copy_from_slice(original);
+        }
+    }
+    let circle = usize::try_from(circle_offset).unwrap();
+    assert_eq!(&bulk[circle + 4..circle + 7], b"280");
+    bulk[circle + 4..circle + 7].copy_from_slice(b"264");
     for (ordinal, offset) in indexed_offsets.into_iter().enumerate() {
         let at = usize::try_from(offset).unwrap();
         assert_eq!(&bulk[at + 4..at + 7], b"264");
