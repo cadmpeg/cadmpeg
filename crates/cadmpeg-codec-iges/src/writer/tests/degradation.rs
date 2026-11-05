@@ -191,6 +191,12 @@ fn unsupported_uv_images_preserve_the_model_space_boundary() {
         loss.code == IgesLossCode::WriterPcurvesOmitted.kind()
             && loss.severity == cadmpeg_ir::report::Severity::Error
     }));
+    for pcurve in &ir.model.pcurves {
+        assert!(plan.report().losses.iter().any(|loss| {
+            loss.code == IgesLossCode::WriterPcurvesOmitted.kind()
+                && loss.message.contains(pcurve.id.as_str())
+        }));
+    }
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes)
         .expect("supported model-space boundary writes");

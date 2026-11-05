@@ -55,7 +55,7 @@ fn parameter_scope_parses_named_variable_tail() {
     };
     let scope = parse_parameter_scope(
         &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &crate::design::test_support::test_primary_frames(&bytes),
         header.record_index,
         &header.class_tag,
         header.byte_offset.expect("actual scanner header position"),
@@ -133,7 +133,7 @@ fn parameter_scope_parses_named_variable_tail() {
     ];
     let operation = exact_draft_operation_with_owners(
         &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &crate::design::test_support::test_primary_frames(&bytes),
         &owner_scope,
         &owners,
     )

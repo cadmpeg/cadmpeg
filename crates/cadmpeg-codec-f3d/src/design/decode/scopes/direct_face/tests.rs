@@ -2,7 +2,7 @@
 
 use super::exact_scale_operation;
 use crate::design::decode::scopes::parameter_scope::parse_parameter_scope;
-use crate::design::test_support::indexed_record_offsets_for_test;
+use crate::design::test_support::test_primary_frames;
 use crate::records::feature::body_ops::DesignScaleOperation;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::test_support::lp_utf16;
@@ -154,7 +154,7 @@ fn legacy_scale_with_extended_tail_requires_a_complete_scope_envelope() {
 }
 
 fn parse_scope(bytes: &[u8], start: usize) -> Option<DesignParameterScope> {
-    let records = indexed_record_offsets_for_test(bytes);
+    let records = test_primary_frames(bytes);
     let class_tag = "350".to_owned().try_into().unwrap();
     parse_parameter_scope(bytes, &records, 100, &class_tag, u64_from_index(start)).unwrap()
 }
@@ -165,7 +165,7 @@ fn decode_scale(
     stream_types: &HashMap<u64, (&str, u32)>,
 ) -> Option<DesignScaleOperation> {
     let scope = parse_scope(bytes, start)?;
-    let records = indexed_record_offsets_for_test(bytes);
+    let records = test_primary_frames(bytes);
     exact_scale_operation(bytes, &records, &scope, stream_types).unwrap()
 }
 

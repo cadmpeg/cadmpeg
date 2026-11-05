@@ -3,7 +3,7 @@
 
 use super::shared_frames::marked_record_reference;
 use crate::bytes::lp_ascii_filtered_view;
-use crate::design::decode::sketch::IndexedRecordOffsets;
+use crate::metastream::PrimaryFrames;
 use crate::records::feature::body_ops;
 use crate::records::feature::body_ops::DesignCopyPasteBodiesOperation;
 use crate::records::feature::scope;
@@ -12,7 +12,7 @@ use cadmpeg_core::decode::View;
 
 pub(super) fn exact_copy_paste_bodies_operation(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
 ) -> Option<DesignCopyPasteBodiesOperation> {
     if scope.kind() != scope::DesignFeatureKind::CopyPasteBodies

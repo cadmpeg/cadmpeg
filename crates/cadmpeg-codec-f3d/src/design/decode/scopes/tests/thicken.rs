@@ -64,7 +64,7 @@ fn class_347_thicken_frame_admits_group_before_scalar() {
         })
         .unwrap();
     assert!(matches!(
-        exact_direct_face_operation(&bytes, &crate::design::test_support::indexed_record_offsets_for_test(&bytes), &scope),
+        exact_direct_face_operation(&bytes, &crate::design::test_support::test_primary_frames(&bytes), &scope),
         Some(DesignDirectFaceOperation::Thicken(
             crate::records::feature::direct_face::DesignThickenOperation {
                 signed_thickness,
@@ -79,7 +79,7 @@ fn class_347_thicken_frame_admits_group_before_scalar() {
     assert_eq!(
         exact_direct_face_operation(
             &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &crate::design::test_support::test_primary_frames(&bytes),
             &scope
         ),
         None

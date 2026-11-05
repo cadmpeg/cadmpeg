@@ -245,6 +245,7 @@ pub(super) fn plan(
     let resolved = synthesis_target.resolution();
     let mut projected = input.ir.clone();
     let mut losses = Vec::new();
+    repair_multiple_active_configurations(&mut projected.model.configurations, &mut losses);
     // Write the canonical side of an active configuration that carries state
     // instead of refusing on its validation Error (#217, #237).
     crate::history::write::configurations::normalize_active_configuration_state(
@@ -252,6 +253,7 @@ pub(super) fn plan(
         &mut losses,
     );
     repair_duplicate_configuration_indices(&mut projected.model.configurations, &mut losses);
+    repair_configuration_names(&mut projected.model.configurations, &mut losses);
     // Native lane and history records require names; default blank feature
     // names to their identity as configurations do (#237).
     normalize_feature_names(&mut projected.model.features, &mut losses);
@@ -837,8 +839,64 @@ fn prepare_native(
     Ok(())
 }
 
-/// Default blank feature names to their identity, as configurations do.
-///
+fn repair_multiple_active_configurations(
+    configurations: &mut [cadmpeg_ir::features::DesignConfiguration],
+    losses: &mut Vec<LossNote>,
+) {
+    let mut order = (0..configurations.len()).collect::<Vec<_>>();
+    order.sort_by_key(|index| configurations[*index].ordinal);
+    let mut active_seen = false;
+    for position in order {
+        let configuration = &mut configurations[position];
+        if configuration.active {
+            if active_seen {
+                configuration.active = false;
+                losses.push(SldprtLossCode::WriterFieldsOmitted.note(format!(
+                    "configuration {}: an additional active state was cleared",
+                    configuration.id
+                )));
+            }
+            active_seen = true;
+        }
+    }
+}
+
+fn repair_configuration_names(
+    configurations: &mut [cadmpeg_ir::features::DesignConfiguration],
+    losses: &mut Vec<LossNote>,
+) {
+    let mut reserved = configurations
+        .iter()
+        .filter_map(|configuration| configuration.name.clone())
+        .collect::<std::collections::HashSet<_>>();
+    let mut seen = std::collections::HashSet::new();
+    let mut order = (0..configurations.len()).collect::<Vec<_>>();
+    order.sort_by_key(|index| configurations[*index].ordinal);
+    for position in order {
+        let configuration = &mut configurations[position];
+        if let Some(name) = configuration
+            .name
+            .as_ref()
+            .filter(|name| !name.trim().is_empty())
+        {
+            if seen.insert(name.clone()) {
+                continue;
+            }
+        }
+        let mut replacement = configuration.id.as_str().to_owned();
+        while reserved.contains(&replacement) {
+            replacement.push('_');
+        }
+        reserved.insert(replacement.clone());
+        seen.insert(replacement.clone());
+        configuration.name = Some(replacement);
+        losses.push(SldprtLossCode::WriterFieldsOmitted.note(format!(
+            "configuration {}: missing or duplicate name was replaced by a unique identity",
+            configuration.id
+        )));
+    }
+}
+
 fn repair_duplicate_configuration_indices(
     configurations: &mut [cadmpeg_ir::features::DesignConfiguration],
     losses: &mut Vec<LossNote>,

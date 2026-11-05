@@ -61,7 +61,7 @@ fn rigid_as_built_scope_reads_its_two_wide_operand_paths_without_owners() {
     use super::compact_wide::exact_assembly_alignment_with_types;
     use crate::records::feature::assembly::TYPED_OCCURRENCE_PATH_TYPE_GUID;
     let bytes = rigid_as_built_stream();
-    let records = crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes);
+    let records = crate::design::test_support::test_primary_frames(&bytes);
     let class_tag = crate::records::references::DesignClassTag::try_from("405".to_owned()).unwrap();
     let mut scope = crate::design::decode::scopes::parameter_scope::parse_parameter_scope(
         &bytes, &records, 10, &class_tag, 0,
@@ -79,7 +79,7 @@ fn rigid_as_built_scope_reads_its_two_wide_operand_paths_without_owners() {
     let mut retagged = bytes.clone();
     retagged[4..7].copy_from_slice(b"328");
     retagged[257 + 4..257 + 7].copy_from_slice(b"264");
-    let retagged_records = crate::design::decode::sketch::IndexedRecordOffsets::build(&retagged);
+    let retagged_records = crate::design::test_support::test_primary_frames(&retagged);
     let retagged_class =
         crate::records::references::DesignClassTag::try_from("328".to_owned()).unwrap();
     let retagged_scope = crate::design::decode::scopes::parameter_scope::parse_parameter_scope(
@@ -100,7 +100,7 @@ fn rigid_as_built_scope_reads_its_two_wide_operand_paths_without_owners() {
         .position(|window| window == [b'A', 0, b's', 0])
         .expect("the kind name");
     other[kind_at] = b'B';
-    let other_records = crate::design::decode::sketch::IndexedRecordOffsets::build(&other);
+    let other_records = crate::design::test_support::test_primary_frames(&other);
     assert!(
         crate::design::decode::scopes::parameter_scope::parse_parameter_scope(
             &other,
@@ -187,7 +187,7 @@ fn rigid_group_reads_every_member_after_its_first_two() {
         DesignAssemblyOperandQualifier, TYPED_OCCURRENCE_PATH_TYPE_GUID,
     };
     let bytes = three_member_rigid_group_stream();
-    let records = crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes);
+    let records = crate::design::test_support::test_primary_frames(&bytes);
     let class_tag = crate::records::references::DesignClassTag::try_from("328".to_owned()).unwrap();
     let mut scope = crate::design::decode::scopes::parameter_scope::parse_parameter_scope(
         &bytes, &records, 10, &class_tag, 0,
@@ -247,8 +247,7 @@ fn rigid_group_reads_every_member_after_its_first_two() {
     // A locator count that disagrees with the frame length is no rigid group.
     let mut miscounted = bytes.clone();
     miscounted[37..41].copy_from_slice(&2_u32.to_le_bytes());
-    let miscounted_records =
-        crate::design::decode::sketch::IndexedRecordOffsets::build(&miscounted);
+    let miscounted_records = crate::design::test_support::test_primary_frames(&miscounted);
     assert!(
         crate::design::decode::scopes::parameter_scope::parse_parameter_scope(
             &miscounted,
@@ -306,7 +305,7 @@ fn typed_rigid_group_closes_with_its_stored_count_and_reference_width() {
     let bytes = typed_rigid_group_stream();
     let class = "328".to_owned().try_into().unwrap();
     let parse = |bytes: &[u8]| {
-        let records = crate::design::decode::sketch::IndexedRecordOffsets::build(bytes);
+        let records = crate::design::test_support::test_primary_frames(bytes);
         crate::design::decode::scopes::parameter_scope::parse_parameter_scope(
             bytes, &records, 10, &class, 0,
         )
@@ -330,7 +329,7 @@ fn typed_rigid_group_closes_with_its_stored_count_and_reference_width() {
             ]
         })
         .collect();
-    let records = crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes);
+    let records = crate::design::test_support::test_primary_frames(&bytes);
     let alignment = exact_assembly_alignment_with_types(&bytes, &records, &scope, &[], &types)
         .unwrap()
         .unwrap();
@@ -394,7 +393,7 @@ fn rigid_group_lengths_and_dynamic_classes_do_not_select_owner_generations() {
             );
         }
         push_header(&mut bytes, b"300", 5000);
-        let records = crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes);
+        let records = crate::design::test_support::test_primary_frames(&bytes);
         let class = "283".to_owned().try_into().unwrap();
         let mut scope = crate::design::decode::scopes::parameter_scope::parse_parameter_scope(
             &bytes, &records, 10, &class, 0,
@@ -435,7 +434,7 @@ fn ordinary_rigid_group_tail_checks_its_references_and_zero_fields() {
     use crate::layout::assembly_alternate_rigid_group_prefix as prefix;
     use crate::layout::assembly_rigid_as_built_scope as canonical;
     let parse = |bytes: &[u8]| {
-        let records = crate::design::decode::sketch::IndexedRecordOffsets::build(bytes);
+        let records = crate::design::test_support::test_primary_frames(bytes);
         let class = "405".to_owned().try_into().unwrap();
         crate::design::decode::scopes::parameter_scope::parse_parameter_scope(
             bytes, &records, 10, &class, 0,
@@ -516,7 +515,7 @@ fn ordinary_rigid_group_tail_checks_its_references_and_zero_fields() {
                 .try_edit(|draft| draft.reference_count_offset -= u64::try_from(shift).unwrap())
                 .is_err());
         }
-        let records = crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes);
+        let records = crate::design::test_support::test_primary_frames(&bytes);
         let types = [64, 67]
             .into_iter()
             .flat_map(|index| {
