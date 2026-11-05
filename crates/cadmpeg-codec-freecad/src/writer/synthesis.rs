@@ -1070,10 +1070,34 @@ pub(super) fn write(
     // native record keep their appended positions.
     {
         let mut source_of: HashMap<&str, &str> = HashMap::new();
-        for id in &replayed {
-            if let Some(name) = names.get(id.as_str()) {
-                source_of.insert(name.as_str(), id.as_str());
+        for source in &native_objects {
+            if let Some(name) = names.get(source.id().as_str()) {
+                source_of.insert(name.as_str(), source.id().as_str());
             }
+        }
+        let mut parameter_order: HashMap<&str, Vec<_>> = HashMap::new();
+        for (index, parameter) in ir.model.parameters.iter().enumerate() {
+            if names.contains_key(&format!("parameter-cell:{}", parameter.id)) {
+                continue;
+            }
+            let owner = parameter
+                .owner
+                .as_ref()
+                .and_then(|id| names.get(id.as_str()))
+                .or_else(|| names.get(&format!("parameter-owner:{}", parameter.id)));
+            let selector = names
+                .get(&format!("parameter-path:{}", parameter.id))
+                .map_or(parameter.name.as_str(), String::as_str);
+            if let Some(owner) = owner {
+                parameter_order.entry(owner.as_str()).or_default().push((
+                    parameter.ordinal,
+                    index,
+                    selector,
+                ));
+            }
+        }
+        for parameters in parameter_order.values_mut() {
+            parameters.sort_by_key(|(ordinal, index, _)| (*ordinal, *index));
         }
         let mut sequence: HashMap<&str, Vec<&str>> = HashMap::new();
         let mut ordered: Vec<&PropertyRecord> = native_properties.iter().collect();
@@ -1097,10 +1121,27 @@ pub(super) fn write(
             let Some(names) = sequence.get(*id) else {
                 continue;
             };
+            let parameters = parameter_order.get(object.name.as_str());
+            let parameter_names: HashSet<&str> = parameters
+                .into_iter()
+                .flatten()
+                .map(|(_, _, name)| *name)
+                .filter(|name| names.contains(name) && object.properties.contains_key(*name))
+                .collect();
+            let mut ordered_parameters = parameters
+                .into_iter()
+                .flatten()
+                .map(|(_, _, name)| *name)
+                .filter(|name| parameter_names.contains(name));
             let mut rebuilt = indexmap::IndexMap::new();
             for name in names {
-                if let Some(value) = object.properties.shift_remove(*name) {
-                    rebuilt.insert((*name).to_owned(), value);
+                let name = if parameter_names.contains(name) {
+                    ordered_parameters.next().unwrap_or(*name)
+                } else {
+                    *name
+                };
+                if let Some(value) = object.properties.shift_remove(name) {
+                    rebuilt.insert(name.to_owned(), value);
                 }
             }
             for (name, value) in object.properties.drain(..) {

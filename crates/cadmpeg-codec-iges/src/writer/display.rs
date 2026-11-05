@@ -10,9 +10,6 @@ pub(super) fn regenerated(
     presentations: &BTreeMap<usize, BodyPresentation>,
     version: crate::IgesVersion,
 ) -> BTreeSet<String> {
-    if version == crate::IgesVersion::V4_0 {
-        return BTreeSet::new();
-    }
     let Some(records) = ir
         .native
         .namespace("iges")
@@ -31,12 +28,7 @@ pub(super) fn regenerated(
                     return None;
                 }
             }
-            for field in [
-                "color_definition",
-                "level_definition",
-                "line_font_definition",
-                "line_weight_mm",
-            ] {
+            for field in ["color_definition", "level_definition", "line_weight_mm"] {
                 if fields.get(field).is_some_and(|value| !value.is_null()) {
                     return None;
                 }
@@ -47,9 +39,31 @@ pub(super) fn regenerated(
             };
             let entity = entities.get(*index)?;
             let font = match entity.line_font {
-                Some(DirectoryLineFont::Number(number)) => number,
-                None => super::generated_line_font(version, entity.type_code, entity.form),
-                Some(DirectoryLineFont::Definition(_)) => return None,
+                Some(DirectoryLineFont::Number(number)) => {
+                    if fields
+                        .get("line_font_definition")
+                        .is_some_and(|value| !value.is_null())
+                    {
+                        return None;
+                    }
+                    number
+                }
+                None => {
+                    if fields
+                        .get("line_font_definition")
+                        .is_some_and(|value| !value.is_null())
+                    {
+                        return None;
+                    }
+                    super::generated_line_font(version, entity.type_code, entity.form)
+                }
+                Some(DirectoryLineFont::Definition(font)) => {
+                    let definition = fields.get("line_font_definition")?.as_str()?;
+                    if targets.get(definition).map(Vec::as_slice) != Some(&[font][..]) {
+                        return None;
+                    }
+                    -directory_sequence(entities, font)?
+                }
             };
             if fields
                 .get("line_font_number")
@@ -96,4 +110,15 @@ pub(super) fn regenerated(
             Some(record.id().to_owned())
         })
         .collect()
+}
+
+/// Directory pointers count inserted placement entities as well as carriers.
+fn directory_sequence(entities: &[Entity], index: usize) -> Option<i64> {
+    let placement_count = entities
+        .get(..=index)?
+        .iter()
+        .filter(|entity| entity.transform.is_some())
+        .count();
+    let expanded = index.checked_add(placement_count)?;
+    i64::try_from(expanded.checked_mul(2)?.checked_add(1)?).ok()
 }

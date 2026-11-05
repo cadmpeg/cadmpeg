@@ -10,6 +10,7 @@ mod degradation;
 mod one_fact;
 mod polygon;
 mod polygon_pair;
+mod property_order;
 mod robustness;
 mod synthesis;
 mod triangulated_pcurve;
