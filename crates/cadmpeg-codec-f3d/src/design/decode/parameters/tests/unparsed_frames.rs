@@ -59,6 +59,68 @@ fn decode_reports_typed_parameter_frames_that_match_no_grammar() {
 }
 
 #[test]
+fn owner_of_given_up_parameter_is_named_in_the_parameter_loss() {
+    let stream = "FusionAssetName[Active]/Design1/BulkStream.dat";
+    let mut parameter = typed_parameter_record(45, Some(44), "AlongDistance");
+    parameter[4..7].copy_from_slice(b"256");
+    parameter[81 + 4 + 2 * "3 mm".len()] = 7;
+    let mut owner = crate::design::test_support::parameter_owner_frame();
+    owner[4..7].copy_from_slice(b"257");
+    let owner_at = parameter.len();
+    parameter.extend_from_slice(&owner);
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    write_synthetic_manifests(&mut zip, stored);
+    zip.start_file(stream, stored).unwrap();
+    zip.write_all(&parameter).unwrap();
+    let metadata = crate::test_support::streams_test::design_metastream_with_records(
+        &[
+            (
+                "7A6A3D31-BE74-4E19-9115-20642944C2E4",
+                "",
+                1,
+                "Fusion",
+                &[45],
+            ),
+            (
+                "D91D429C-1BB5-4640-B49F-69AF14F463E9",
+                "",
+                1,
+                "Fusion",
+                &[44],
+            ),
+        ],
+        &[(45, 0), (44, u64::try_from(owner_at).unwrap())],
+    );
+    zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
+        .unwrap();
+    zip.write_all(&metadata).unwrap();
+    let archive = zip.finish().unwrap().into_inner();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, root) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&archive, &arena, &policy).unwrap();
+    let scan = crate::container::scan(&ctx, root).unwrap();
+    let mut output =
+        cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
+    let mut parameters =
+        super::super::decode_parameters(&ctx, &scan, &mut output, &mut Default::default()).unwrap();
+    let owners =
+        super::super::decode_parameter_owners(&ctx, &scan, &mut parameters, &mut output).unwrap();
+    assert!(parameters.is_empty());
+    assert!(owners.is_empty());
+    let (_, native, _, losses) = output.into_parts();
+    assert_eq!(
+        native.namespace("f3d").unwrap().arenas()["unknowns"].len(),
+        1
+    );
+    assert_eq!(losses.len(), 1);
+    assert!(losses
+        .iter()
+        .any(|loss| loss.message.contains("design-parameter-owner#")));
+}
+
+#[test]
 fn decode_reports_untyped_parameter_frames_that_match_no_grammar() {
     let stream = "FusionAssetName[Active]/Design1/BulkStream.dat";
     let mut bulk = parameter_record(
