@@ -332,6 +332,23 @@ fn run_step_other_format(format: &str, observed: &StepObserved) -> Vec<String> {
     let encoder = cadmpeg_registry::build_encoder(Format::Step);
     let source = codec(format);
     let step = codec("step");
+    let reduced: Vec<_> = encoder
+        .reduced_fields()
+        .iter()
+        .map(|row| cadmpeg_test_support::cross_closure::ReducedProbe {
+            path: row.path,
+            storage: row.storage,
+            normalize: match row.storage {
+                cadmpeg_ir::codec::write::ReducedStorage::Normalized {
+                    loss: "step/geometry.analytic-surface-normalized",
+                } => Some(cadmpeg_test_support::reduced::step_cone_chart),
+                cadmpeg_ir::codec::write::ReducedStorage::Normalized { loss } => {
+                    panic!("unknown STEP normalization {loss}")
+                }
+                _ => None,
+            },
+        })
+        .collect();
     let mut findings = Vec::new();
     for path in sampled(format) {
         let bytes = std::fs::read(&path).expect("fixture bytes");
@@ -355,7 +372,7 @@ fn run_step_other_format(format: &str, observed: &StepObserved) -> Vec<String> {
                     carried: &observed.carried,
                     fixed_paths: &observed.fixed_paths,
                     known_losses: &observed.known_losses,
-                    reduced: &[],
+                    reduced: &reduced,
                     members: &[],
                 },
             )
