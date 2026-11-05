@@ -7,7 +7,7 @@ use crate::bytes::finite_reals_at;
 use crate::bytes::lp_ascii_filtered_view;
 use crate::bytes::take_reference;
 use crate::design::decode::operands::parse_entity_selection_frame;
-use crate::design::decode::sketch::IndexedRecordOffsets;
+use crate::metastream::PrimaryFrames;
 use crate::records::feature::hole;
 use crate::records::feature::hole::DesignHoleConstruction;
 use crate::records::feature::hole::DesignHoleFaceSelection;
@@ -53,7 +53,7 @@ const EPS_HOLE_DIRECTION_NORM: f64 = 1.0e-12;
 /// dynamic class tag does not.
 pub(in crate::design::decode) fn exact_hole_construction(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
     stream_types: &HashMap<u64, (&str, u32)>,
     required_scope_kind: &scope::DesignFeatureKind,
@@ -120,7 +120,7 @@ pub(in crate::design::decode) fn exact_hole_construction(
 /// stand for the Hole's placements.
 fn hole_locations(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
     stream_types: &HashMap<u64, (&str, u32)>,
 ) -> Vec<DesignHoleLocation> {
@@ -242,7 +242,7 @@ fn hole_extent_payload(
 
 fn exact_hole_face_selection(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
     stream_types: &HashMap<u64, (&str, u32)>,
 ) -> Option<DesignHoleFaceSelection> {
@@ -315,7 +315,7 @@ fn exact_hole_face_selection(
 
 fn hole_construction_frame_at(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     start: usize,
     paired_at: usize,
     payload_at: usize,

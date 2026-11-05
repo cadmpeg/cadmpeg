@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-use crate::design::decode::sketch::{
-    decode_headers_for_indices_from_stream, entity_meta_scope, IndexedRecordOffsets,
-};
+use crate::design::decode::sketch::{decode_headers_for_indices_from_stream, entity_meta_scope};
+use crate::metastream::PrimaryFrames;
 
 fn indexed_header(index: u32) -> [u8; 11] {
     let mut bytes = [0; 11];
@@ -16,7 +15,7 @@ fn indexed_record_offsets_list_each_offset_per_key() {
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&indexed_header(7));
     bytes.extend_from_slice(&indexed_header(7));
-    let records = IndexedRecordOffsets::build(&bytes);
+    let records = crate::design::test_support::test_primary_frames(&bytes);
     assert_eq!(records.offsets(7), &[0, 11]);
 }
 
@@ -29,7 +28,7 @@ fn primary_frames_do_not_select_a_header_shaped_payload() {
     let metadata = crate::test_support::zip_test::indexed_fixture_metastream(&bytes, &[7, 8], &[]);
     let metadata = crate::metastream::parse(&metadata, "MetaStream.dat").unwrap();
     let frames = crate::design::decode::meta::design_primary_frames(&bytes, &metadata).unwrap();
-    let records = IndexedRecordOffsets::from_primary_frames(&frames);
+    let records = crate::design::decode::meta::primary_frame_extents(&frames);
     assert!(records.offsets(42).is_empty());
     assert_eq!(records.next_at_or_after(11), Some(22));
 }

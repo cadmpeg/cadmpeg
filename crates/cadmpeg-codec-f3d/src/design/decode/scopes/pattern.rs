@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact rectangular and circular pattern constructions and their axes.
 
+use crate::metastream::PrimaryFrames;
 use cadmpeg_core::convert::{f64_from_index, truncate_f64_to_u32};
 use cadmpeg_core::decode::u64_from_index;
 
@@ -8,7 +9,6 @@ use super::shared_frames::exact_fixed_scalar;
 use super::shared_frames::marked_record_reference;
 use crate::bytes::lp_ascii_filtered_view;
 use crate::bytes::{f64s_at, finite_reals_at};
-use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::decode::text::relaxed_guid_end;
 use crate::design::design_feature_family;
 use crate::design::DesignFeatureFamily;
@@ -34,7 +34,7 @@ const EPS_SCOPES_SAME_TRANSFORM_BASIS_E10: f64 = 1.0e-10;
 
 pub(super) fn exact_rectangular_pattern_construction(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
     parameter_owners: &[DesignParameterOwner],
 ) -> Result<Option<DesignRectangularPatternConstruction>, CodecError> {
@@ -136,7 +136,7 @@ pub(super) fn exact_rectangular_pattern_construction(
 /// The direction records of a rectangular-pattern scope, in reference order.
 fn exact_rectangular_pattern_directions(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
 ) -> Vec<patterns::DesignRectangularPatternDirection> {
     let mut directions = Vec::new();
@@ -250,7 +250,7 @@ fn exact_rectangular_pattern_direction(
 
 fn exact_rectangular_pattern_secondary_direction(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
     construction: &DesignRectangularPatternConstruction,
     directions: &[patterns::DesignRectangularPatternDirection],
@@ -266,7 +266,7 @@ fn exact_rectangular_pattern_secondary_direction(
     }
     let mut found = None;
     for (_, offsets) in records.records() {
-        for &start in offsets {
+        for &start in &offsets {
             let owners = construction.owner_record_indices;
             if bytes.get(start + prefix::ZERO_HEAD..start + prefix::FLAG) != Some(&[0; 8])
                 || bytes.get(start + prefix::FLAG) != Some(&1)
@@ -338,7 +338,7 @@ enum InstanceSearch {
 
 fn exact_rectangular_pattern_instances(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
     construction: &DesignRectangularPatternConstruction,
 ) -> InstanceSearch {
@@ -570,7 +570,7 @@ fn translation_delta(
 
 pub(super) fn exact_circular_pattern_construction_with_owners(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
     parameter_owners: &[crate::records::parameters::DesignParameterOwner],
 ) -> Result<Option<DesignCircularPatternConstruction>, CodecError> {
@@ -746,7 +746,7 @@ fn select_circular_pattern_axis(candidates: &[CircularPatternAxisCandidate]) -> 
 
 fn exact_legacy_circular_pattern_axis(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     start: usize,
     paired_at: usize,
     record_index: u32,
@@ -886,10 +886,11 @@ fn exact_legacy_circular_pattern_axis(
 }
 fn exact_pattern_identity_wrapper(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     record_index: u32,
 ) -> Option<(u64, u64)> {
-    let [start] = records.offsets(record_index) else {
+    let record_offsets = records.offsets(record_index);
+    let [start] = record_offsets.as_slice() else {
         return None;
     };
     let start = *start;
@@ -1002,7 +1003,7 @@ fn exact_circular_pattern_axis(
 
 fn exact_fixed_pattern_count(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     record_index: u32,
     scope_record_index: u32,
 ) -> Option<(u32, u64)> {

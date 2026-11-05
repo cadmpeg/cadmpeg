@@ -96,7 +96,7 @@ fn legacy_work_plane_325_byte_frames_decode_their_matrix() {
             .unwrap();
         let decoded = exact_work_plane_frame(
             &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &crate::design::test_support::test_primary_frames(&bytes),
             &scope,
         )
         .expect("325-byte WorkPlane frame");

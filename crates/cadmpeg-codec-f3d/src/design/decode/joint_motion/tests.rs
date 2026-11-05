@@ -8,7 +8,7 @@ fn decode_stream(
     stream: &str,
     scopes: &HashMap<u32, bool>,
 ) -> Vec<crate::records::feature::joint_motion::DesignJointMotion> {
-    let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
+    let records = crate::design::test_support::test_primary_frames(bytes);
     super::decode_stream(bytes, stream, scopes, &records)
 }
 
