@@ -17,6 +17,74 @@ fn tested_parse_classed_sketch_relation(
 }
 
 #[test]
+fn damaged_indexed_relation_keeps_a_valid_sibling() {
+    use cadmpeg_ir::source_fidelity::parts::PartOutput;
+    use std::io::{Cursor, Write};
+
+    let mut first =
+        crate::test_support::sketch_relations::rectangular_pattern_record(2, 1.0, [0, 0, 0], 1);
+    let mut second = first.clone();
+    second[7..15].copy_from_slice(&11u64.to_le_bytes());
+    first[28..32].copy_from_slice(&u32::MAX.to_le_bytes());
+    let second_at = first.len();
+    first.extend_from_slice(&second);
+    let ids = [10u64, 11u64];
+    let mut types = vec![
+        (
+            "00000000-0000-0000-0000-000000000000",
+            "",
+            1,
+            "Geometry",
+            &[][..]
+        );
+        44
+    ];
+    types.push((
+        super::super::RECTANGULAR_PATTERN_RELATION_TYPE_GUID,
+        "",
+        1,
+        "Geometry",
+        &ids[..],
+    ));
+    let meta = crate::test_support::streams_test::design_metastream_with_records(
+        &types,
+        &[(10, 0), (11, u64::try_from(second_at).unwrap())],
+    );
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
+    crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+    zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored)
+        .unwrap();
+    zip.write_all(&first).unwrap();
+    zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
+        .unwrap();
+    zip.write_all(&meta).unwrap();
+    let bytes = zip.finish().unwrap().into_inner();
+    crate::test_support::zip_test::with_scan(&bytes, |scan| {
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let mut output = PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
+        let relations =
+            super::super::decode_sketch_relations(&ctx, &mut output, scan, &[]).unwrap();
+        assert_eq!(relations.len(), 1);
+        assert_eq!(relations[0].record_index, 11);
+        let (_, native, fidelity, losses) = output.into_parts();
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code,
+            cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable
+                .note(String::new())
+                .code
+        );
+        assert!(losses[0].message.contains("sketch relation 10"));
+        assert_eq!(fidelity.retained_records().len(), 1);
+        assert_eq!(
+            native.namespace("f3d").unwrap().arenas()["unknowns"].len(),
+            1
+        );
+    });
+}
+
+#[test]
 fn variable_width_relation_uses_counted_runs_and_next_record_boundary() {
     // The eleven-byte reference form puts each pair at fifteen bytes: the
     // reference at `marker`, its relation ordinal four bytes later.
