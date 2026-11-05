@@ -1163,6 +1163,14 @@ section = "4.1"
 anchor = "| 18 | VERTEX | 28 | 60 | OFFSET_SURF | 31 |"
 
 [[token]]
+tag = "67"
+name = "SWEPT_SURF"
+payload_bytes = 53
+note = "logical fixed record length"
+section = "4.1"
+anchor = "| 32 | ELLIPSE | 107 | 67 | SWEPT_SURF | 53 |"
+
+[[token]]
 tag = "124"
 name = "B_SURFACE"
 payload_bytes = 23

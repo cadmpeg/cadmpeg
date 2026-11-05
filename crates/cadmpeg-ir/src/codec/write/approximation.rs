@@ -5,14 +5,16 @@ use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 
 use crate::eval::{
-    admission::EvaluationAdmission, decode::pcurve_uv, finite_or_refusal, model_curve_point_by_id,
-    model_surface_point_by_id, nurbs_curve_parameter_domain, EvaluationFailure,
+    admission::EvaluationAdmission, decode::pcurve_uv, exact_blend_cap_point,
+    exact_blend_rail_point, exact_intersection_point, finite_or_refusal, model_curve_point_by_id,
+    model_surface_point_by_id, nurbs_curve_parameter_domain, spine_rolling_ball_domain,
+    EvaluationFailure,
 };
 use crate::geometry::{
     nurbs::{NurbsCurve, NurbsPoleGrid, NurbsPoles3, NurbsSurface, NurbsSurfaceAxis},
     pcurve::PcurveGeometry,
     ProceduralCurveDefinition, ProceduralSurfaceDefinition, SolvedCurveGeometry,
-    SolvedSurfaceGeometry,
+    SolvedSurfaceGeometry, SurfaceGeometry,
 };
 use crate::ids::{CurveId, SurfaceId};
 use crate::index::{ModelIndex, StandardIndex};
@@ -28,7 +30,9 @@ const MAX_POLES: usize = 1 << 20;
 /// Point evaluations one export may spend on sampling and residual probes.
 const MAX_SAMPLES: usize = 1 << 23;
 /// Model evaluation work one export may spend.
-const MAX_EVALUATION_WORK: usize = 1 << 26;
+const MAX_EVALUATION_WORK: usize = 1 << 31;
+/// Model evaluation work one export may spend on exact curves, which can fall back to their charts.
+const MAX_EXACT_CURVE_WORK: usize = 1 << 26;
 /// Share of the model linear tolerance that one sampled carrier may use.
 const TOLERANCE_FRACTION: f64 = 0.25;
 /// Relative slack for a trim parameter at the end of a sampled domain.
@@ -37,6 +41,16 @@ const DOMAIN_SLACK_RELATIVE: f64 = 1.0e-9;
 const PROBES: [f64; 5] = [0.0, 0.125, 0.5, 0.875, 1.0];
 /// Initial patch count along a sampled parameter axis.
 const SEED_PATCHES: usize = 4;
+/// Residual limit for a blend with a free-form support, in model length units. A
+/// piecewise support makes the blend only piecewise smooth, so the strict limit
+/// would spend the export's whole evaluation budget without being reached.
+const FREE_FORM_BLEND_RESIDUAL: f64 = 1.0e-3;
+/// Residual limit for a blend on analytic supports, in model length units. The
+/// patch count along each direction grows with the inverse fourth root of the
+/// limit, and the strict limit makes a single blend face megabytes long.
+const ANALYTIC_BLEND_RESIDUAL: f64 = 1.0e-4;
+/// Intervals sampled along each edge of a blend face without trim pcurves.
+const EDGE_DOMAIN_SAMPLES: usize = 16;
 
 /// A point evaluation: `Some` point, or `None` when the carrier states no
 /// point there or a budget ran out.
@@ -44,6 +58,9 @@ type Evaluate<'f> = dyn FnMut(f64, f64) -> Option<Point3> + 'f;
 
 struct FitEvaluation {
     work: WorkBudget,
+    // Separate from `work`, because an exact curve can fall back to its chart while a
+    // surface that runs out of work drops its face from the shell.
+    exact_curve_work: WorkBudget,
     refusal: Cell<Option<ResourceLimit>>,
 }
 
@@ -61,6 +78,10 @@ pub struct Approximator<'a> {
     poles: usize,
     curves: HashMap<String, Option<SolvedCurveGeometry>>,
     failed_surfaces: HashSet<String>,
+    free_form_blends: usize,
+    analytic_blends: usize,
+    free_form_curves: usize,
+    exact_intersections: HashMap<String, Option<SolvedCurveGeometry>>,
 }
 
 impl<'a> Approximator<'a> {
@@ -71,18 +92,41 @@ impl<'a> Approximator<'a> {
             index: None,
             evaluation: FitEvaluation {
                 work: WorkBudget::new(MAX_EVALUATION_WORK),
+                exact_curve_work: WorkBudget::new(MAX_EXACT_CURVE_WORK),
                 refusal: Cell::new(None),
             },
             samples: MAX_SAMPLES,
             poles: MAX_POLES,
             curves: HashMap::new(),
             failed_surfaces: HashSet::new(),
+            free_form_blends: 0,
+            analytic_blends: 0,
+            free_form_curves: 0,
+            exact_intersections: HashMap::new(),
         }
     }
 
     /// The sampled residual limit in model length units.
     pub fn residual_limit(&self) -> f64 {
         self.ir.tolerances.linear.get() * TOLERANCE_FRACTION
+    }
+
+    /// The number of sampled blends with a free-form support, and their residual
+    /// limit in model length units, which differs from [`Self::residual_limit`].
+    pub fn free_form_blend_fits(&self) -> (usize, f64) {
+        (self.free_form_blends, FREE_FORM_BLEND_RESIDUAL)
+    }
+
+    /// The number of sampled blends on analytic supports, and their residual limit
+    /// in model length units, which differs from [`Self::residual_limit`].
+    pub fn analytic_blend_fits(&self) -> (usize, f64) {
+        (self.analytic_blends, ANALYTIC_BLEND_RESIDUAL)
+    }
+
+    /// The number of fitted curves that lie on a free-form surface, and their residual
+    /// limit in model length units, which differs from [`Self::residual_limit`].
+    pub fn free_form_curve_fits(&self) -> (usize, f64) {
+        (self.free_form_curves, FREE_FORM_BLEND_RESIDUAL)
     }
 
     /// The first resource refusal encountered while fitting.
@@ -105,12 +149,21 @@ impl<'a> Approximator<'a> {
 
     fn sample_surface(&mut self, surface: &str) -> Option<SolvedSurfaceGeometry> {
         let ir = self.ir;
-        let tolerance = self.residual_limit();
+        let strict_tolerance = self.residual_limit();
         let index = &*self
             .index
             .get_or_insert_with(|| ModelIndex::new_model_only(ir));
         let procedural = index.procedural_surface_for_surface(surface, StandardIndex)?;
         let owner = &index.surfaces(surface, StandardIndex)?.id;
+        let free_form_blend = blend_has_free_form_support(index, procedural.definition());
+        let analytic_blend = !free_form_blend && is_spine_blend(procedural.definition());
+        let tolerance = if free_form_blend {
+            FREE_FORM_BLEND_RESIDUAL
+        } else if analytic_blend {
+            ANALYTIC_BLEND_RESIDUAL
+        } else {
+            strict_tolerance
+        };
         let (ranges, seeds) = match procedural.definition() {
             ProceduralSurfaceDefinition::Helix { .. } => return None,
             ProceduralSurfaceDefinition::Ruled { first, second, .. } => {
@@ -128,7 +181,18 @@ impl<'a> Approximator<'a> {
                 ],
                 [SEED_PATCHES; 2],
             ),
-            _ => (face_domain(ir, index, owner)?, [SEED_PATCHES; 2]),
+            definition => {
+                let evaluation = &self.evaluation;
+                let by_spine = || spine_blend_face_domain(ir, index, owner, definition, evaluation);
+                // Pcurves of closed rails can start past the seam of a closed spine, and a band
+                // that stops short of its seam has no surface for the two rails to bound.
+                let ranges = if has_closed_rail(ir, index, owner) {
+                    by_spine().or_else(|| face_domain(ir, index, owner))
+                } else {
+                    face_domain(ir, index, owner).or_else(by_spine)
+                };
+                (ranges?, [SEED_PATCHES; 2])
+            }
         };
         let evaluation = &self.evaluation;
         let mut evaluate = |u: f64, v: f64| {
@@ -169,7 +233,149 @@ impl<'a> Approximator<'a> {
         )
         .ok()?;
         self.poles = self.poles.checked_sub(count)?;
+        self.free_form_blends += usize::from(free_form_blend);
+        self.analytic_blends += usize::from(analytic_blend);
         Some(SolvedSurfaceGeometry::Nurbs(surface))
+    }
+
+    /// A B-spline carrier on the exact intersection of two solved surfaces, for
+    /// an intersection curve whose stored carrier is a coarse degree-one chart. It
+    /// keeps the chart's parameter interval, so edge ranges and pcurves stay valid.
+    pub fn exact_intersection(&mut self, curve: &str) -> Option<SolvedCurveGeometry> {
+        if let Some(fitted) = self.exact_intersections.get(curve) {
+            return fitted.clone();
+        }
+        let fitted = self.fit_exact_intersection(curve);
+        self.exact_intersections
+            .insert(curve.to_owned(), fitted.clone());
+        fitted
+    }
+
+    /// Whether the written carrier of `curve` departs from its stored chart. The
+    /// curve's pcurves follow the stored chart, so they would contradict such a
+    /// carrier.
+    pub fn replaces_stored_chart(&mut self, curve: &str) -> bool {
+        if self.exact_intersection(curve).is_some() {
+            return true;
+        }
+        let Some(moved) = self.chart_on_edge_vertices(curve) else {
+            return false;
+        };
+        let ir = self.ir;
+        let index = &*self
+            .index
+            .get_or_insert_with(|| ModelIndex::new_model_only(ir));
+        index
+            .curves(curve, StandardIndex)
+            .and_then(|owner| owner.geometry.solved())
+            .is_some_and(|stored| *stored != moved)
+    }
+
+    /// A degree-one intersection chart with its ends on the vertices of its edges,
+    /// for a curve with no exact carrier.
+    pub fn chart_on_edge_vertices(&mut self, curve: &str) -> Option<SolvedCurveGeometry> {
+        let ir = self.ir;
+        let index = &*self
+            .index
+            .get_or_insert_with(|| ModelIndex::new_model_only(ir));
+        let procedural = index
+            .procedural_curves_for_curve(curve, StandardIndex)?
+            .first()?;
+        let ProceduralCurveDefinition::Intersection { cache, .. } = procedural.definition() else {
+            return None;
+        };
+        let owner = index.curves(curve, StandardIndex)?;
+        let SolvedCurveGeometry::Nurbs(chart) = owner.geometry.solved()? else {
+            return None;
+        };
+        (chart.degree() == 1).then_some(())?;
+        chart_ending_on_edge_vertices(ir, index, &owner.id, chart, cache.as_ref())
+            .map(SolvedCurveGeometry::Nurbs)
+    }
+
+    fn fit_exact_intersection(&mut self, curve: &str) -> Option<SolvedCurveGeometry> {
+        let ir = self.ir;
+        let strict_limit = self.residual_limit();
+        let index = &*self
+            .index
+            .get_or_insert_with(|| ModelIndex::new_model_only(ir));
+        let procedural = index
+            .procedural_curves_for_curve(curve, StandardIndex)?
+            .first()?;
+        let ProceduralCurveDefinition::Intersection { context, cache, .. } =
+            procedural.definition()
+        else {
+            return None;
+        };
+        let owner = &index.curves(curve, StandardIndex)?.id;
+        let SolvedCurveGeometry::Nurbs(chart) =
+            index.curves(curve, StandardIndex)?.geometry.solved()?
+        else {
+            return None;
+        };
+        if chart.degree() != 1 {
+            return None;
+        }
+        let chart = &chart_ending_on_edge_vertices(ir, index, owner, chart, cache.as_ref())?;
+        let carrier = exact_carrier(index, context)?;
+        let free_form = carrier.has_free_form_surface();
+        let tolerance = if free_form {
+            FREE_FORM_BLEND_RESIDUAL.max(strict_limit)
+        } else {
+            strict_limit
+        };
+        let range = nurbs_curve_parameter_domain(chart)
+            .map(crate::topology::IncreasingParameterInterval::endpoints)?;
+        let evaluation = &self.evaluation;
+        let mut evaluate = |u: f64, _: f64| {
+            keep_refusal(
+                &evaluation.refusal,
+                EvaluationAdmission::Standard.within_work_slice(
+                    &evaluation.exact_curve_work,
+                    |admission| match carrier {
+                        ExactCarrier::Intersection(supports) => {
+                            exact_intersection_point(admission, supports, chart, u)
+                        }
+                        ExactCarrier::BlendRail {
+                            supports,
+                            side,
+                            radius,
+                        } => exact_blend_rail_point(admission, supports, side, radius, chart, u),
+                        ExactCarrier::BlendCap {
+                            supports,
+                            radius,
+                            other,
+                        } => exact_blend_cap_point(admission, supports, radius, other, chart, u),
+                    },
+                ),
+            )
+            .map(crate::features::FinitePoint3::get)
+        };
+        let grid = sample(
+            [range, [0.0, 1.0]],
+            [SEED_PATCHES, 1],
+            true,
+            tolerance,
+            &mut self.samples,
+            self.poles,
+            &mut evaluate,
+        )?;
+        let points: Vec<_> = grid
+            .rows
+            .into_iter()
+            .filter_map(|row| row.first().copied())
+            .collect();
+        let count = points.len();
+        let fitted = NurbsCurve::new(
+            3,
+            knots(range, grid.patches[0]),
+            NurbsPoles3::Polynomial { points },
+            false,
+        )
+        .ok()?;
+        self.poles = self.poles.checked_sub(count)?;
+        self.free_form_curves += usize::from(free_form);
+        Some(SolvedCurveGeometry::Nurbs(fitted))
     }
 
     /// A sampled B-spline carrier for a procedural curve, sampled once.
@@ -210,6 +416,12 @@ impl<'a> Approximator<'a> {
             return None;
         }
         let evaluation = &self.evaluation;
+        if let Some(exact) = spline_through_plane(index, procedural.definition(), range, evaluation)
+            .or_else(|| isocurve_of_spline_surface(index, procedural.definition(), evaluation))
+            .or_else(|| isocurve_of_linear_sweep(index, procedural.definition()))
+        {
+            return Some(SolvedCurveGeometry::Nurbs(exact));
+        }
         let mut evaluate = |u: f64, _: f64| {
             keep_refusal(
                 &evaluation.refusal,
@@ -219,31 +431,263 @@ impl<'a> Approximator<'a> {
             )
             .map(crate::features::FinitePoint3::get)
         };
-        let grid = sample(
-            [range, [0.0, 1.0]],
-            [SEED_PATCHES, 1],
-            true,
-            tolerance,
-            &mut self.samples,
-            self.poles,
-            &mut evaluate,
-        )?;
-        let points: Vec<_> = grid
-            .rows
-            .into_iter()
-            .filter_map(|row| row.first().copied())
-            .collect();
+        // A uniform fit cannot converge across a corner that falls between its samples, so each
+        // smooth stretch is fitted alone and the stretches share a pole at the corner.
+        let mut breaks = vec![range[0]];
+        breaks.extend(curve_corner_parameters(procedural.definition(), range));
+        breaks.push(range[1]);
+        let mut points: Vec<Point3> = Vec::new();
+        let mut joined_knots: Vec<f64> = Vec::new();
+        for stretch in breaks.windows(2) {
+            let stretch = [*stretch.first()?, *stretch.get(1)?];
+            let grid = sample(
+                [stretch, [0.0, 1.0]],
+                [SEED_PATCHES, 1],
+                true,
+                tolerance,
+                &mut self.samples,
+                self.poles.checked_sub(points.len())?,
+                &mut evaluate,
+            )?;
+            let poles = grid.rows.into_iter().filter_map(|row| row.first().copied());
+            let stretch_knots = knots(stretch, grid.patches[0]);
+            if points.is_empty() {
+                points.extend(poles);
+                joined_knots.extend(stretch_knots);
+            } else {
+                points.extend(poles.skip(1));
+                joined_knots.pop();
+                joined_knots.extend(stretch_knots.into_iter().skip(4));
+            }
+        }
         let count = points.len();
-        let curve = NurbsCurve::new(
-            3,
-            knots(range, grid.patches[0]),
-            NurbsPoles3::Polynomial { points },
-            false,
-        )
-        .ok()?;
+        let curve =
+            NurbsCurve::new(3, joined_knots, NurbsPoles3::Polynomial { points }, false).ok()?;
         self.poles = self.poles.checked_sub(count)?;
         Some(SolvedCurveGeometry::Nurbs(curve))
     }
+}
+
+/// The exact spline of a parameter-space spline on a plane. A plane is affine in its parameters,
+/// so the curve keeps its knots, including the corners that a uniform sampled fit cannot resolve.
+fn spline_through_plane(
+    index: &ModelIndex<'_>,
+    definition: &ProceduralCurveDefinition,
+    range: [f64; 2],
+    evaluation: &FitEvaluation,
+) -> Option<NurbsCurve> {
+    let ProceduralCurveDefinition::SurfaceCurve {
+        family:
+            crate::geometry::SurfaceCurveFamily::Parametric {
+                context,
+                tail: None,
+            },
+    } = definition
+    else {
+        return None;
+    };
+    let [side, other] = context.sides();
+    if other.surface.is_some() || other.pcurve.is_some() {
+        return None;
+    }
+    let surface = side.surface.as_ref()?;
+    let carrier = index.surfaces(surface.as_str(), StandardIndex)?;
+    if !matches!(
+        carrier.geometry.solved(),
+        Some(SolvedSurfaceGeometry::Plane(_))
+    ) {
+        return None;
+    }
+    let PcurveGeometry::Nurbs { nurbs } = &side.pcurve.as_ref()?.geometry else {
+        return None;
+    };
+    let knots = nurbs.knots().as_slice();
+    if knots.first() != Some(&range[0]) || knots.last() != Some(&range[1]) {
+        return None;
+    }
+    let on_plane = |u: f64, v: f64| {
+        keep_refusal(
+            &evaluation.refusal,
+            EvaluationAdmission::Standard.within_work_slice(&evaluation.work, |admission| {
+                model_surface_point_by_id(admission, index, surface, u, v)
+            }),
+        )
+        .map(crate::features::FinitePoint3::get)
+    };
+    let origin = on_plane(0.0, 0.0)?;
+    let along_u = on_plane(1.0, 0.0)?;
+    let along_v = on_plane(0.0, 1.0)?;
+    let points = nurbs
+        .pole_rows()
+        .raw_points()
+        .into_iter()
+        .map(|pole| {
+            Point3::new(
+                origin.x + (along_u.x - origin.x) * pole.u + (along_v.x - origin.x) * pole.v,
+                origin.y + (along_u.y - origin.y) * pole.u + (along_v.y - origin.y) * pole.v,
+                origin.z + (along_u.z - origin.z) * pole.u + (along_v.z - origin.z) * pole.v,
+            )
+        })
+        .collect();
+    NurbsCurve::from_lanes(
+        nurbs.degree(),
+        knots.to_vec(),
+        points,
+        nurbs.pole_rows().weights(),
+        nurbs.periodic(),
+    )
+    .ok()
+}
+
+/// The parameters inside `range` where the parameter-space spline of a surface curve has only
+/// position continuity: its interior knots repeated as often as its degree.
+fn curve_corner_parameters(definition: &ProceduralCurveDefinition, range: [f64; 2]) -> Vec<f64> {
+    let ProceduralCurveDefinition::SurfaceCurve {
+        family: crate::geometry::SurfaceCurveFamily::Parametric { context, .. },
+    } = definition
+    else {
+        return Vec::new();
+    };
+    let [side, _] = context.sides();
+    let Some(PcurveGeometry::Nurbs { nurbs }) = side.pcurve.as_ref().map(|pcurve| &pcurve.geometry)
+    else {
+        return Vec::new();
+    };
+    let Ok(degree) = usize::try_from(nurbs.degree()) else {
+        return Vec::new();
+    };
+    nurbs
+        .knots()
+        .as_slice()
+        .chunk_by(|a, b| a == b)
+        .filter(|run| run.len() >= degree)
+        .filter_map(|run| run.first().copied())
+        .filter(|knot| *knot > range[0] && *knot < range[1])
+        .collect()
+}
+
+/// The exact isocurve of a straight parameter-space line that crosses a whole spline surface at a
+/// constant parameter. Its knots can be far too dense for a uniform sampled fit to resolve.
+fn isocurve_of_spline_surface(
+    index: &ModelIndex<'_>,
+    definition: &ProceduralCurveDefinition,
+    evaluation: &FitEvaluation,
+) -> Option<NurbsCurve> {
+    let ProceduralCurveDefinition::SurfaceCurve {
+        family:
+            crate::geometry::SurfaceCurveFamily::Parametric {
+                context,
+                tail: None,
+            },
+    } = definition
+    else {
+        return None;
+    };
+    let [side, other] = context.sides();
+    if other.surface.is_some() || other.pcurve.is_some() {
+        return None;
+    }
+    let carrier = index.surfaces(side.surface.as_ref()?.as_str(), StandardIndex)?;
+    let Some(SolvedSurfaceGeometry::Nurbs(surface)) = carrier.geometry.solved() else {
+        return None;
+    };
+    let PcurveGeometry::Nurbs { nurbs } = &side.pcurve.as_ref()?.geometry else {
+        return None;
+    };
+    let ([first, last], 1) = (
+        <[Point2; 2]>::try_from(nurbs.pole_rows().raw_points()).ok()?,
+        nurbs.degree(),
+    ) else {
+        return None;
+    };
+    let domain = |knots: &[f64]| Some((*knots.first()?, *knots.last()?));
+    let spans = |domain: (f64, f64), a: f64, b: f64| a.min(b) == domain.0 && a.max(b) == domain.1;
+    let (axis, at) = if first.v == last.v
+        && spans(domain(surface.u_knots().as_slice())?, first.u, last.u)
+    {
+        (crate::geometry::nurbs::SurfaceParameterAxis::V, first.v)
+    } else if first.u == last.u && spans(domain(surface.v_knots().as_slice())?, first.v, last.v) {
+        (crate::geometry::nurbs::SurfaceParameterAxis::U, first.u)
+    } else {
+        return None;
+    };
+    match crate::eval::nurbs_surface_isocurve(EvaluationAdmission::Standard, surface, axis, at) {
+        Ok(curve) => curve,
+        Err(limit) => {
+            if evaluation.refusal.get().is_none() {
+                evaluation.refusal.set(Some(limit));
+            }
+            None
+        }
+    }
+}
+
+/// The directrix of a linear sweep, moved along the sweep, for a straight parameter-space line
+/// that crosses the whole sweep at a constant sweep parameter. Its knots can be far too dense for
+/// a uniform sampled fit to resolve.
+fn isocurve_of_linear_sweep(
+    index: &ModelIndex<'_>,
+    definition: &ProceduralCurveDefinition,
+) -> Option<NurbsCurve> {
+    let ProceduralCurveDefinition::SurfaceCurve {
+        family:
+            crate::geometry::SurfaceCurveFamily::Parametric {
+                context,
+                tail: None,
+            },
+    } = definition
+    else {
+        return None;
+    };
+    let [side, other] = context.sides();
+    if other.surface.is_some() || other.pcurve.is_some() {
+        return None;
+    }
+    let procedural =
+        index.procedural_surface_for_surface(side.surface.as_ref()?.as_str(), StandardIndex)?;
+    let ProceduralSurfaceDefinition::LinearSweep(sweep) = procedural.definition() else {
+        return None;
+    };
+    let PcurveGeometry::Nurbs { nurbs } = &side.pcurve.as_ref()?.geometry else {
+        return None;
+    };
+    let ([first, last], 1) = (
+        <[Point2; 2]>::try_from(nurbs.pole_rows().raw_points()).ok()?,
+        nurbs.degree(),
+    ) else {
+        return None;
+    };
+    let directrix = index.curves(sweep.directrix().as_str(), StandardIndex)?;
+    let Some(SolvedCurveGeometry::Nurbs(directrix)) = directrix.geometry.solved() else {
+        return None;
+    };
+    let knots = directrix.knots().as_slice();
+    let spans_directrix =
+        first.u.min(last.u) == *knots.first()? && first.u.max(last.u) == *knots.last()?;
+    if first.v != last.v || !spans_directrix {
+        return None;
+    }
+    let direction = sweep.direction().get();
+    let points = directrix
+        .pole_rows()
+        .raw_points()
+        .into_iter()
+        .map(|pole| {
+            Point3::new(
+                pole.x + direction.x * first.v,
+                pole.y + direction.y * first.v,
+                pole.z + direction.z * first.v,
+            )
+        })
+        .collect();
+    NurbsCurve::from_lanes(
+        directrix.degree(),
+        knots.to_vec(),
+        points,
+        directrix.pole_rows().weights(),
+        directrix.periodic(),
+    )
+    .ok()
 }
 
 fn keep_refusal<T, R>(
@@ -419,6 +863,251 @@ fn face_domain(ir: &CadIr, index: &ModelIndex<'_>, surface: &SurfaceId) -> Optio
         }
     }
     bounds
+}
+
+/// How to evaluate an intersection curve exactly.
+#[derive(Clone, Copy)]
+enum ExactCarrier<'ir> {
+    /// A transversal intersection of two solved surfaces.
+    Intersection([&'ir SurfaceGeometry; 2]),
+    /// The contact of a constant blend with its solved support `side`.
+    BlendRail {
+        supports: [&'ir SurfaceGeometry; 2],
+        side: usize,
+        radius: f64,
+    },
+    /// A constant blend's crossing with a solved surface that is not a support.
+    BlendCap {
+        supports: [&'ir SurfaceGeometry; 2],
+        radius: f64,
+        other: &'ir SurfaceGeometry,
+    },
+}
+
+impl ExactCarrier<'_> {
+    fn has_free_form_surface(&self) -> bool {
+        let is_free_form = |surface: &&SurfaceGeometry| {
+            matches!(surface.solved(), Some(SolvedSurfaceGeometry::Nurbs(_)))
+        };
+        match self {
+            Self::Intersection(supports) | Self::BlendRail { supports, .. } => {
+                supports.iter().any(&is_free_form)
+            }
+            Self::BlendCap {
+                supports, other, ..
+            } => is_free_form(other) || supports.iter().any(&is_free_form),
+        }
+    }
+}
+
+fn exact_carrier<'ir>(
+    index: &ModelIndex<'ir>,
+    context: &crate::geometry::IntcurveSupportContext,
+) -> Option<ExactCarrier<'ir>> {
+    let [first, second] = context.sides();
+    let solved = |surface: &SurfaceId| {
+        let geometry = &index.surfaces(surface.as_str(), StandardIndex)?.geometry;
+        geometry.solved().map(|_| geometry)
+    };
+    let first = first.surface.as_ref()?;
+    let second = second.surface.as_ref()?;
+    if let (Some(first), Some(second)) = (solved(first), solved(second)) {
+        return Some(ExactCarrier::Intersection([first, second]));
+    }
+    let (blend, other) = if solved(first).is_none() {
+        (first, second)
+    } else {
+        (second, first)
+    };
+    let ProceduralSurfaceDefinition::Blend(payload) = index
+        .procedural_surface_for_surface(blend.as_str(), StandardIndex)?
+        .definition()
+    else {
+        return None;
+    };
+    let crate::geometry::BlendRadiusLaw::Constant { signed_radius } = payload.radius() else {
+        return None;
+    };
+    let [support_a, support_b] = payload.supports();
+    let support_a = &support_a.as_ref()?.surface;
+    let support_b = &support_b.as_ref()?.surface;
+    let supports = [solved(support_a)?, solved(support_b)?];
+    let other_geometry = solved(other)?;
+    let radius = signed_radius.get().abs();
+    Some(
+        match supports
+            .iter()
+            .position(|support| support.solved() == other_geometry.solved())
+        {
+            Some(side) => ExactCarrier::BlendRail {
+                supports,
+                side,
+                radius,
+            },
+            None => ExactCarrier::BlendCap {
+                supports,
+                radius,
+                other: other_geometry,
+            },
+        },
+    )
+}
+
+/// Copy a degree-one chart with each end moved onto a vertex of an edge on the
+/// curve when the vertex lies within the chart's fit tolerance. A chart can stop
+/// short of a tangential end of its curve, and a fitted carrier must reach the
+/// vertices of its edges.
+fn chart_ending_on_edge_vertices(
+    ir: &CadIr,
+    index: &ModelIndex<'_>,
+    curve: &CurveId,
+    chart: &NurbsCurve,
+    cache: Option<&crate::geometry::LegacyCache>,
+) -> Option<NurbsCurve> {
+    let Some(tolerance) = cache.map(|cache| cache.fit_tolerance.get()) else {
+        return Some(chart.clone());
+    };
+    let vertices = ir
+        .model
+        .edges
+        .iter()
+        .filter(|edge| edge.curve() == Some(curve))
+        .flat_map(|edge| [&edge.start, &edge.end])
+        .filter_map(|vertex| {
+            let vertex = index.vertices(vertex.as_str(), StandardIndex)?;
+            Some(
+                index
+                    .points(vertex.point.as_str(), StandardIndex)?
+                    .position()
+                    .get(),
+            )
+        })
+        .collect::<Vec<_>>();
+    let last = chart.pole_rows().raw_points().len().checked_sub(1)?;
+    let mut pole = 0;
+    chart.map_control_points(|point| {
+        let ordinal = pole;
+        pole += 1;
+        if ordinal != 0 && ordinal != last {
+            return point;
+        }
+        vertices
+            .iter()
+            .copied()
+            .filter(|vertex| vertex.distance(point) <= tolerance)
+            .min_by(|a, b| a.distance(point).total_cmp(&b.distance(point)))
+            .unwrap_or(point)
+    })
+}
+
+/// Whether a surface is a blend without a stored section cache.
+fn is_spine_blend(definition: &ProceduralSurfaceDefinition) -> bool {
+    matches!(definition, ProceduralSurfaceDefinition::Blend(payload) if payload.native().is_none())
+}
+
+/// Whether a blend without a stored section cache rests on a NURBS surface.
+fn blend_has_free_form_support(
+    index: &ModelIndex<'_>,
+    definition: &ProceduralSurfaceDefinition,
+) -> bool {
+    let ProceduralSurfaceDefinition::Blend(payload) = definition else {
+        return false;
+    };
+    payload.native().is_none()
+        && payload.supports().iter().flatten().any(|support| {
+            index
+                .surfaces(support.surface.as_str(), StandardIndex)
+                .and_then(|surface| surface.geometry.solved())
+                .is_some_and(|solved| matches!(solved, SolvedSurfaceGeometry::Nurbs(_)))
+        })
+}
+
+fn has_closed_rail(ir: &CadIr, index: &ModelIndex<'_>, surface: &SurfaceId) -> bool {
+    ir.model
+        .faces
+        .iter()
+        .filter(|face| &face.surface == surface)
+        .flat_map(|face| &face.loops)
+        .filter_map(|loop_id| index.loops(loop_id.as_str(), StandardIndex))
+        .flat_map(crate::topology::Loop::coedges)
+        .filter_map(|coedge| index.coedges(coedge.as_str(), StandardIndex))
+        .filter_map(|coedge| index.edges(coedge.edge.as_str(), StandardIndex))
+        .any(|edge| edge.start == edge.end)
+}
+
+/// The domain of a blend from sample points along the edges of its faces.
+fn spine_blend_face_domain(
+    ir: &CadIr,
+    index: &ModelIndex<'_>,
+    surface: &SurfaceId,
+    definition: &ProceduralSurfaceDefinition,
+    evaluation: &FitEvaluation,
+) -> Option<[[f64; 2]; 2]> {
+    let ProceduralSurfaceDefinition::Blend(payload) = definition else {
+        return None;
+    };
+    if payload.native().is_some() {
+        return None;
+    }
+    let mut points = Vec::new();
+    let mut whole_spine = false;
+    for face in ir
+        .model
+        .faces
+        .iter()
+        .filter(|face| &face.surface == surface)
+    {
+        for loop_id in &face.loops {
+            let loop_ = index.loops(loop_id.as_str(), StandardIndex)?;
+            for coedge_id in loop_.coedges() {
+                let coedge = index.coedges(coedge_id.as_str(), StandardIndex)?;
+                let edge = index.edges(coedge.edge.as_str(), StandardIndex)?;
+                whole_spine |= edge.start == edge.end;
+                for vertex in [&edge.start, &edge.end] {
+                    let vertex = index.vertices(vertex.as_str(), StandardIndex)?;
+                    points.push(
+                        index
+                            .points(vertex.point.as_str(), StandardIndex)?
+                            .position()
+                            .get(),
+                    );
+                }
+                let Some((curve, range)) = edge.curve().and_then(|curve| {
+                    let range = edge
+                        .param_range()
+                        .map(crate::units::FiniteVector::get)
+                        .or_else(|| curve_domain(ir, index, curve))?;
+                    Some((curve, range))
+                }) else {
+                    continue;
+                };
+                for step in 0..=EDGE_DOMAIN_SAMPLES {
+                    let fraction = real(step) / real(EDGE_DOMAIN_SAMPLES);
+                    let point = keep_refusal(
+                        &evaluation.refusal,
+                        EvaluationAdmission::Standard.within_work_slice(
+                            &evaluation.work,
+                            |admission| {
+                                model_curve_point_by_id(
+                                    admission,
+                                    index,
+                                    curve,
+                                    parameter(range, fraction),
+                                )
+                            },
+                        ),
+                    )?;
+                    points.push(point.get());
+                }
+            }
+        }
+    }
+    keep_refusal(
+        &evaluation.refusal,
+        EvaluationAdmission::Standard.within_work_slice(&evaluation.work, |admission| {
+            spine_rolling_ball_domain(admission, index, payload, &points, whole_spine)
+        }),
+    )?
 }
 
 /// The parameter domain of a rail curve: its stated range, its solved

@@ -647,6 +647,51 @@ pub(crate) fn extract_segment_lineage(
     })
 }
 
+/// Drop cached-body images when a selected body comes from a partition: a run
+/// of cached images leads up to its partition, which holds the current state.
+pub(crate) fn without_images_before_partition(
+    selected: BTreeSet<BodyId>,
+    bindings: &[SegmentBodyBinding],
+) -> BTreeSet<BodyId> {
+    let partition = selected
+        .iter()
+        .filter(|body| {
+            bindings.iter().any(|binding| {
+                binding.stream_kind == crate::parasolid::StreamKind::Partition
+                    && body
+                        .as_str()
+                        .starts_with(&format!("nx:s{}:", binding.stream_ordinal))
+            })
+        })
+        .cloned()
+        .collect::<BTreeSet<_>>();
+    if partition.is_empty() {
+        selected
+    } else {
+        partition
+    }
+}
+
+/// The emitted bodies that come from a partition stream, identified by the kind of the stream a
+/// body identity names. Legacy containers have no segment bindings to name the partition.
+pub(crate) fn partition_bodies(
+    emitted: &BTreeSet<BodyId>,
+    kinds: &[crate::parasolid::StreamKind],
+) -> BTreeSet<BodyId> {
+    emitted
+        .iter()
+        .filter(|body| {
+            body.as_str()
+                .strip_prefix("nx:s")
+                .and_then(|text| text.split_once(':'))
+                .and_then(|(ordinal, _)| ordinal.parse::<usize>().ok())
+                .and_then(|ordinal| kinds.get(ordinal))
+                == Some(&crate::parasolid::StreamKind::Partition)
+        })
+        .cloned()
+        .collect()
+}
+
 /// Select emitted body images whose complete segment binding has a terminal
 /// status. The mapping must cover every emitted body image before selection is
 /// admitted; a partial mapping is not a body-selection proof.

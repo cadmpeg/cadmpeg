@@ -44,6 +44,8 @@ pub(crate) mod token {
     pub(crate) const BLEND_SURF: u8 = 56;
     /// `OFFSET_SURF` (`60`). Spec §4.1.
     pub(crate) const OFFSET_SURF: u8 = 60;
+    /// `SWEPT_SURF` (`67`). Spec §4.1.
+    pub(crate) const SWEPT_SURF: u8 = 67;
     /// `B_SURFACE` (`124`). Spec §4.1.
     pub(crate) const B_SURFACE: u8 = 124;
     /// `TRIMMED_CURVE` (`133`). Spec §4.1.

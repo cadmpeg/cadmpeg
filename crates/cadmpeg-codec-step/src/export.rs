@@ -44,6 +44,39 @@ mod representations;
 mod wire;
 
 const EPS_IDENTITY: f64 = 1.0e-12;
+/// End-pole gap, as a fraction of the polygon's length, below which a control polygon is closed.
+const CLOSED_POLYGON_GAP: f64 = 1.0e-6;
+
+/// The distance along a control polygon of the polygon point nearest to `point`.
+fn polygon_position(
+    poles: &[cadmpeg_ir::math::Point3],
+    point: cadmpeg_ir::math::Point3,
+) -> Option<f64> {
+    let mut walked = 0.0;
+    let mut nearest: Option<(f64, f64)> = None;
+    for pair in poles.windows(2) {
+        let (a, b) = (pair[0], pair[1]);
+        let span = cadmpeg_ir::math::Vector3::new(b.x - a.x, b.y - a.y, b.z - a.z);
+        let arm = cadmpeg_ir::math::Vector3::new(point.x - a.x, point.y - a.y, point.z - a.z);
+        let length = span.norm();
+        let along = if length > 0.0 {
+            (arm.dot(span) / (length * length)).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        let foot = cadmpeg_ir::math::Point3::new(
+            a.x + span.x * along,
+            a.y + span.y * along,
+            a.z + span.z * along,
+        );
+        let distance = foot.distance(point);
+        if nearest.is_none_or(|(best, _)| distance < best) {
+            nearest = Some((distance, walked + length * along));
+        }
+        walked += length;
+    }
+    nearest.map(|(_, position)| position)
+}
 
 /// Serializes an IR document as an ISO 10303-21 STEP Part 21 file declaring
 /// `schema`.
@@ -2917,6 +2950,7 @@ impl<'a> Builder<'a> {
 
     fn shell_is_closed(&self, shell: &Shell) -> bool {
         let mut uses: BTreeMap<&str, [usize; 2]> = BTreeMap::new();
+        let mut vertex_bounded = false;
         for face_id in shell.faces() {
             let Some(face) = self.faces.get(face_id.as_str()) else {
                 return false;
@@ -2925,6 +2959,7 @@ impl<'a> Builder<'a> {
                 let Some(lp) = self.loops.get(loop_id.as_str()) else {
                     return false;
                 };
+                vertex_bounded |= lp.singular_vertex().is_some();
                 for coedge_id in lp.coedges() {
                     let Some(coedge) = self.coedges.get(coedge_id.as_str()) else {
                         return false;
@@ -2952,7 +2987,9 @@ impl<'a> Builder<'a> {
                 }
             }
         }
-        !uses.is_empty() && uses.values().all(|[forward, reversed]| forward == reversed)
+        // A whole sphere is closed with no edges at all: only pole vertices bound it.
+        (vertex_bounded || !uses.is_empty())
+            && uses.values().all(|[forward, reversed]| forward == reversed)
     }
 
     /// Writes the face use, or its reverse when `reversed` is set: the
@@ -3651,12 +3688,15 @@ impl<'a> Builder<'a> {
             );
             return None;
         };
+        let replaces_chart = self.approximations.replaces_stored_chart(curve_id.as_str());
         let mut pcurve_refs = Vec::new();
         for use_ in associated {
             let pcurve_id = use_.use_.pcurve.as_str();
             let surface_id = use_.surface;
             let face_id = use_.face;
-            if let Some(pcurve) = self.emit_pcurve(use_, edge) {
+            if replaces_chart {
+                self.unwritten_pcurve_carriers.insert(pcurve_id.to_string());
+            } else if let Some(pcurve) = self.emit_pcurve(use_, edge) {
                 pcurve_refs.push(pcurve);
             } else if self.surface_is_fitted_helix(surface_id) {
                 self.fitted_surface_pcurves.insert(pcurve_id.to_string());
@@ -3680,11 +3720,70 @@ impl<'a> Builder<'a> {
             )
         };
         // same_sense = .T.: the edge runs start→end along the curve's own
-        // parameterization, the convention IR curves follow.
-        Some(
-            self.emitter
-                .emit("EDGE_CURVE", &format!("'',{v1},{v2},{curve_ref},.T.")),
-        )
+        // parameterization, the convention IR curves follow. A decoder can only
+        // orient an edge that has a parameter range, so a spline edge without one
+        // can still run from the end of its curve to the start.
+        let same_sense = if self.spline_edge_runs_against_curve(edge, curve_id.as_str()) {
+            ".F."
+        } else {
+            ".T."
+        };
+        Some(self.emitter.emit(
+            "EDGE_CURVE",
+            &format!("'',{v1},{v2},{curve_ref},{same_sense}"),
+        ))
+    }
+
+    /// Whether the vertices of an open edge without a parameter range sit on its open spline in
+    /// the reverse order. The control polygon stays close to the spline, and the position of a
+    /// vertex along the polygon needs no evaluation of the curve.
+    fn spline_edge_runs_against_curve(&mut self, edge: &Edge, curve_id: &str) -> bool {
+        if edge.start == edge.end || edge.param_range().is_some() {
+            return false;
+        }
+        let position = |exporter: &Self, vertex: &str| {
+            let vertex = exporter.vertices.get(vertex)?;
+            exporter
+                .points
+                .get(vertex.point.as_str())
+                .map(|point| point.position().get())
+        };
+        let (Some(start), Some(end)) = (
+            position(self, edge.start.as_str()),
+            position(self, edge.end.as_str()),
+        ) else {
+            return false;
+        };
+        let geometry = match self
+            .curves
+            .get(curve_id)
+            .and_then(|curve| curve.geometry.solved())
+        {
+            Some(solved) => Some(solved.clone()),
+            None => self.approximations.curve(curve_id),
+        };
+        let Some(SolvedCurveGeometry::Nurbs(nurbs)) = geometry else {
+            return false;
+        };
+        let poles = nurbs.pole_rows().raw_points();
+        let (Some(first), Some(last)) = (poles.first(), poles.last()) else {
+            return false;
+        };
+        let length = poles
+            .windows(2)
+            .map(|pair| pair[0].distance(pair[1]))
+            .sum::<f64>();
+        // A curve that closes on itself has a seam, so the order of two positions says nothing.
+        if first.distance(*last) <= length * CLOSED_POLYGON_GAP {
+            return false;
+        }
+        let (Some(from), Some(to)) = (
+            polygon_position(&poles, start),
+            polygon_position(&poles, end),
+        ) else {
+            return false;
+        };
+        to < from
     }
 
     fn emit_pcurve(&mut self, use_: PcurveUse<'a>, edge: &Edge) -> Option<Ref> {
@@ -4265,6 +4364,13 @@ impl<'a> Builder<'a> {
                     geometry::curve(&mut self.emitter, &SolvedCurveGeometry::Nurbs(fitted))?;
                 self.fitted_helix_curves.insert(id.to_owned());
                 reference
+            } else if let Some(exact) = self.approximations.exact_intersection(curve_id) {
+                let procedural = self.procedural_curves.get(curve_id)?.id.to_string();
+                let reference = geometry::curve(&mut self.emitter, &exact)?;
+                self.sampled_curves.insert(procedural);
+                reference
+            } else if let Some(chart) = self.approximations.chart_on_edge_vertices(curve_id) {
+                geometry::curve(&mut self.emitter, &chart)?
             } else if geometry::curve_is_supported(&geometry) {
                 geometry::curve(&mut self.emitter, geometry.solved()?)?
             } else {
@@ -6207,6 +6313,34 @@ impl<'a> Builder<'a> {
                     self.sampled_curves.len(),
                     self.sampled_surfaces.len(),
                     self.approximations.residual_limit()
+                ),
+            );
+        }
+        let (free_form_blends, free_form_residual) = self.approximations.free_form_blend_fits();
+        if free_form_blends > 0 {
+            self.loss(
+                StepLossCode::ProceduralSampledToBspline,
+                format!(
+                    "{free_form_blends} of those procedural surfaces are blends on free-form supports, sampled within {free_form_residual} instead"
+                ),
+            );
+        }
+        let (analytic_blends, analytic_residual) = self.approximations.analytic_blend_fits();
+        if analytic_blends > 0 {
+            self.loss(
+                StepLossCode::ProceduralSampledToBspline,
+                format!(
+                    "{analytic_blends} of those procedural surfaces are blends on analytic supports, sampled within {analytic_residual} instead"
+                ),
+            );
+        }
+        let (free_form_curves, free_form_curve_residual) =
+            self.approximations.free_form_curve_fits();
+        if free_form_curves > 0 {
+            self.loss(
+                StepLossCode::ProceduralSampledToBspline,
+                format!(
+                    "{free_form_curves} of those procedural curves lie on free-form surfaces, sampled within {free_form_curve_residual} instead"
                 ),
             );
         }

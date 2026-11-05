@@ -47,6 +47,7 @@ record states which lane it is in.
 | `54` | TORUS | 107 B | logical fixed record length | §4.1 |
 | `56` | BLEND_SURF | variable | 66 bytes plus escape and large-index shifts | §4.1 |
 | `60` | OFFSET_SURF | 31 B | logical fixed record length | §4.1 |
+| `67` | SWEPT_SURF | 53 B | logical fixed record length | §4.1 |
 | `124` | B_SURFACE | 23 B | logical fixed record length | §4.1 |
 | `133` | TRIMMED_CURVE | variable | 85 bytes plus escape and large-index shifts | §4.1 |
 | `134` | B_CURVE | 23 B | logical fixed record length | §4.1 |

@@ -257,7 +257,8 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-ir`             | `src/codec/write/approximation.rs`                 | `MAX_PATCHES`                             | `1024`                                                  | N    | Export fitting: sampled B-spline patches along one parameter axis. A fit that needs more is not written; not a decode path. |
 | `cadmpeg-ir`             | `src/codec/write/approximation.rs`                 | `MAX_POLES`                               | `1 << 20`                                               | N    | Export fitting: sampled approximation poles of one export. A carrier that does not fit is not written; not a decode path. |
 | `cadmpeg-ir`             | `src/codec/write/approximation.rs`                 | `MAX_SAMPLES`                             | `1 << 23`                                               | N    | Export fitting: procedural point evaluations of one export for sampling and residual probes. Exhaustion leaves the carrier unwritten; not a decode path. |
-| `cadmpeg-ir`             | `src/codec/write/approximation.rs`                 | `MAX_EVALUATION_WORK`                     | `1 << 26`                                               | N    | Export fitting: model evaluation work of one export's sampled carriers, trim checks included. Exhaustion leaves the carrier unwritten and does not fail the export; not a decode path. |
+| `cadmpeg-ir`             | `src/codec/write/approximation.rs`                 | `MAX_EVALUATION_WORK`                     | `1 << 31`                                               | N    | Export fitting: model evaluation work of one export's sampled carriers, trim checks included. Exhaustion leaves the carrier unwritten and does not fail the export; not a decode path. |
+| `cadmpeg-ir`             | `src/codec/write/approximation.rs`                 | `MAX_EXACT_CURVE_WORK`                    | `1 << 26`                                               | N    | Export fitting: model evaluation work of one export's exact curves. Exhaustion leaves the curve on its chart; not a decode path. |
 | `cadmpeg-ir`             | `src/codec/write/edge_recovery.rs`                 | `MAX_RECOVERY_WORK`                       | `1 << 26`                                               | N    | Writer model-evaluation work for edge-curve recovery in one export. Exhaustion leaves the remaining candidate edges unrecovered; not a decode path. |
 | `cadmpeg-codec-iges`     | `src/native.rs`                                    | `MAX_PRODUCT_OCCURRENCES`                 | `100_000`                                               | 4    | Occurrence expansion output (`OccurrenceExpansion::expand`). At the limit expansion stops and `reader.rs` reports `occurrence.expansion-output-truncated`.                                                                                                                   |
 | `cadmpeg-codec-iges`     | `src/native.rs`                                    | `MAX_PRODUCT_OCCURRENCE_DEPTH`            | `64`                                                    | 4    | Occurrence path depth; `reader::decode` takes `min` with `max_recursion_depth`, and each level charges `enter_nested`. At the limit the branch stops and `occurrence.expansion-depth-truncated` is reported.                                                                 |
@@ -354,6 +355,7 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-nx`       | `src/om.rs`                                        | `MAX_INDEXED_SECTION_REGISTRY_WORK`       | `1 << 28`                                               | 4    | `WorkBudget` per directory entry for the indexed object-model section search (`container.rs`). Exhaustion skips the remaining sections; `decode.rs` reports `source.scan-bounded`.                                                                                           |
 | `cadmpeg-codec-nx`       | `src/native/om.rs`                                 | `MAX_STABLE_GRAPH_WORK`                   | `8 * 1024 * 1024`                                       | 4    | Hand-rolled work counter for canonical object-record graph identities, shared by one section. A record whose graph passes the remainder keeps no stable identity and smaller graphs still run; `native/attach.rs` reports `native.record-identity-bounded`.                  |
 | `cadmpeg-codec-nx`       | `src/parasolid/entity_references.rs`               | `MAX_TRAILING_REFERENCE_COUNT`            | `32`                                                    | 1    | Trailing entity references in one record, `1..=32`.                                                                                                                                                                                                                          |
+| `cadmpeg-codec-nx`       | `src/topology.rs`                                  | `MAX_MASKED_ATTRIBUTE_RECORD_BYTES`       | `16_384`                                                | 1    | Largest attribute record that masks its interior bytes from node admission. A longer span is a candidate that does not match. |
 | `cadmpeg-codec-nx`       | `src/decode/emit.rs`                               | `MAX_CURVE_POINT_CACHE_ENTRIES`           | `131_072`                                               | N    | Curve-point cache capacity. When full, results are not cached; output is unchanged.                                                                                                                                                                                          |
 | `cadmpeg-codec-nx`       | `src/decode/blend.rs`                              | `MAX_BLEND_SURFACE_FRAME_CACHE_ENTRIES`   | `512`                                                   | N    | Blend surface-frame cache capacity; the oldest entry is evicted.                                                                                                                                                                                                             |
 | `cadmpeg-codec-nx`       | `src/decode/blend.rs`                              | `MAX_BLEND_BOUNDARY_POINT_CACHE_ENTRIES`  | `2_048`                                                 | N    | Blend boundary-point cache capacity; the oldest entry is evicted.                                                                                                                                                                                                            |
@@ -522,25 +524,25 @@ are the slice mechanisms themselves.
 
 ## Totals
 
-Production `MAX_*` constants: 307.
+Production `MAX_*` constants: 309.
 
 | Kind | Meaning                    | Count |
 | ---- | -------------------------- | ----- |
-| 1    | Format or reader invariant | 39    |
+| 1    | Format or reader invariant | 40    |
 | 2    | Per-input bound            | 74    |
 | 3    | Session ceiling            | 0     |
 | 4    | Local work cap             | 153   |
-| N    | Not a decode bound         | 41    |
-|      | Total                      | 307   |
+| N    | Not a decode bound         | 42    |
+|      | Total                      | 309   |
 
 The six `ResourceLimits` fields are the session ceilings and are not
 `MAX_*` constants. No `MAX_*` constant is kind 3.
 
-By crate: `cadmpeg-core` 3, `cadmpeg-ir` 17, `cadmpeg-parasolid` 1, `cadmpeg-measure` 21, `cadmpeg-asm` 4,
+By crate: `cadmpeg-core` 3, `cadmpeg-ir` 18, `cadmpeg-parasolid` 1, `cadmpeg-measure` 21, `cadmpeg-asm` 4,
 `cadmpeg-protein` 3, `cadmpeg` 3, `cadmpeg-codec-step` 8,
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 3,
 `cadmpeg-codec-freecad` 16, `cadmpeg-codec-rhino` 32, `cadmpeg-codec-f3d` 23,
-`cadmpeg-codec-nx` 26, `cadmpeg-codec-creo` 22, `cadmpeg-codec-sldprt` 34,
+`cadmpeg-codec-nx` 27, `cadmpeg-codec-creo` 22, `cadmpeg-codec-sldprt` 34,
 `cadmpeg-codec-catia` 57, `cadmpeg-codec-pvz` 3, `cadmpeg-codec-usd` 11, and
 `cadmpeg-tessellate` 4.
 

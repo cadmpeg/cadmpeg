@@ -831,6 +831,87 @@ fn nurbs_mixed_curve_layouts_do_not_prove_coalescence() {
     assert!(curves.is_empty());
 }
 
+/// Replaces a payload's inline control values with a form record and a separate vertex array.
+fn move_controls_behind_a_form_record(
+    stream: &mut Vec<u8>,
+    payload_head: [u8; 4],
+    tag_offset: usize,
+    form_tag: u8,
+    values: &[f64],
+    vertices: u16,
+) {
+    let payload = stream
+        .windows(4)
+        .position(|window| window == payload_head)
+        .expect("payload");
+    let tag = payload + tag_offset;
+    let end = tag + 8 + values.len() * 8;
+    let mut moved = vec![0, form_tag, 0x04, 0xe5];
+    moved.extend_from_slice(&[0; 64]);
+    moved.extend_from_slice(&[0, 45]);
+    moved.extend_from_slice(&u32::try_from(values.len()).unwrap().to_be_bytes());
+    moved.extend_from_slice(&vertices.to_be_bytes());
+    for value in values {
+        moved.extend_from_slice(&value.to_be_bytes());
+    }
+    stream.splice(tag..end, moved);
+}
+
+#[test]
+fn surface_controls_behind_a_helical_form_resolve_through_the_descriptor() {
+    let mut stream = bspline_partition_stream();
+    let descriptor = stream
+        .windows(4)
+        .position(|window| window == [0, 126, 0, 20])
+        .expect("surface descriptor");
+    stream[descriptor + 34..descriptor + 36].copy_from_slice(&22u16.to_be_bytes());
+    move_controls_behind_a_form_record(
+        &mut stream,
+        [0, 125, 0, 21],
+        89,
+        163,
+        &[
+            0.0, 0.0, 0.0, 0.0, 0.02, 0.0, 0.01, 0.0, 0.0, 0.01, 0.02, 0.0,
+        ],
+        22,
+    );
+
+    let surfaces = crate::nurbs::surfaces(&stream).0;
+    assert_eq!(surfaces.len(), 1);
+    let Some(SolvedSurfaceGeometry::Nurbs(surface)) = surfaces[0].geometry.solved() else {
+        panic!("expected NURBS surface");
+    };
+    let poles = surface.poles();
+    assert_eq!(poles.len(), 4);
+    assert_eq!(poles[3].y, 20.0);
+}
+
+#[test]
+fn curve_controls_behind_a_helical_form_resolve_through_the_descriptor() {
+    let mut stream = bspline_partition_stream();
+    let descriptor = stream
+        .windows(4)
+        .position(|window| window == [0, 136, 0, 40])
+        .expect("curve descriptor");
+    stream[descriptor + 21..descriptor + 23].copy_from_slice(&44u16.to_be_bytes());
+    move_controls_behind_a_form_record(
+        &mut stream,
+        [0, 135, 0, 41],
+        7,
+        184,
+        &[0.0, 0.0, 0.0, 0.02, 0.0, 0.0],
+        44,
+    );
+
+    let curves = crate::nurbs::curves(&stream).0;
+    assert_eq!(curves.len(), 1);
+    let Some(SolvedCurveGeometry::Nurbs(curve)) = curves[0].geometry.solved() else {
+        panic!("expected NURBS curve");
+    };
+    assert_eq!(curve.control_points().len(), 2);
+    assert_eq!(curve.control_points()[1].x, 20.0);
+}
+
 #[test]
 fn nurbs_decodes_escaped_curve_descriptor_and_payload_count() {
     let mut stream = bspline_partition_stream();

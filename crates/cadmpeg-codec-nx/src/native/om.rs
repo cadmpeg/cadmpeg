@@ -2997,6 +2997,29 @@ pub(super) fn external_reference_empty_records(
     output
 }
 
+/// The name of a record among `records`. Each stream numbers its records from its own start, so a
+/// number that two streams use also names the stream.
+fn external_record_key(
+    record: &ExternalReferenceRecord,
+    records: &[ExternalReferenceRecord],
+) -> String {
+    let number = |record: &ExternalReferenceRecord| {
+        record
+            .id
+            .rsplit_once('#')
+            .map_or(record.id.clone(), |(_, key)| key.to_owned())
+    };
+    let key = number(record);
+    let shared = records
+        .iter()
+        .any(|other| other.source_entry != record.source_entry && number(other) == key);
+    if shared {
+        format!("{}-{key}", record.source_entry)
+    } else {
+        key
+    }
+}
+
 /// Decode exact adjacent reference pairs from bounded handle-set tails.
 pub(super) fn external_reference_tail_reference_pairs(
     container: &Container,
@@ -3021,10 +3044,7 @@ pub(super) fn external_reference_tail_reference_pairs(
                 .into_iter()
                 .enumerate()
         {
-            let record_key = record
-                .id
-                .split_once('#')
-                .map_or(record.id.as_str(), |(_, key)| key);
+            let record_key = external_record_key(record, records);
             let id = format!("nx:external-reference:tail-reference-pair#{record_key}-{ordinal}");
             let ordinal = u32::try_from(ordinal).map_err(|_| {
                 CodecError::malformed(
@@ -3084,10 +3104,7 @@ pub(super) fn external_reference_record_string_uses(
             .into_iter()
             .zip([first, second, third, fourth])
         {
-            let record_key = record
-                .id
-                .split_once('#')
-                .map_or(record.id.as_str(), |(_, key)| key);
+            let record_key = external_record_key(record, records);
             let id = format!(
                 "nx:external-reference:record-string-use#{record_key}-{}",
                 u8::from(slot)

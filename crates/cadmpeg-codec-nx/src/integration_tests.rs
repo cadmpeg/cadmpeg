@@ -25,7 +25,9 @@ use crate::test_support::test_deltas::deltas_point_partition_stream;
 use crate::test_support::test_deltas::deltas_shell_partition_stream;
 use crate::test_support::test_deltas::ellipse_topology_partition_stream;
 use crate::test_support::test_deltas::sphere_topology_partition_stream;
+use crate::test_support::test_deltas::swept_surface_topology_partition_stream;
 use crate::test_support::test_deltas::torus_topology_partition_stream;
+use crate::test_support::test_deltas::whole_sphere_partition_stream;
 use crate::test_support::test_prt::boolean_target_body_lineage_prt;
 use crate::test_support::test_prt::composed_feature_history_prt;
 use crate::test_support::test_prt::extract_body_feature_history_prt;
@@ -322,6 +324,70 @@ fn analytic_topology_pipeline_covers_every_supported_quadric_and_conic_family() 
         assert!(!result.ir().model.surfaces.is_empty());
         assert_valid(&result);
     }
+}
+
+#[test]
+fn loopless_sphere_face_is_bounded_by_a_vertex_loop_at_each_pole() {
+    let result = decode(prt_with_partition(&whole_sphere_partition_stream()));
+    let model = &result.ir().model;
+    assert_eq!(model.faces.len(), 1);
+    assert_eq!(model.faces[0].loops.iter().count(), 2);
+    let mut heights = model
+        .loops
+        .iter()
+        .map(|candidate| {
+            let cadmpeg_ir::topology::LoopBoundary::Vertex { vertex, .. } = &candidate.boundary
+            else {
+                panic!("a whole sphere is bounded by vertex loops");
+            };
+            let vertex = model.vertices.iter().find(|v| &v.id == vertex).unwrap();
+            let point = model.points.iter().find(|p| p.id == vertex.point).unwrap();
+            let position = point.position().get();
+            assert_eq!((position.x, position.y), (0.0, 0.0));
+            position.z
+        })
+        .collect::<Vec<_>>();
+    heights.sort_by(f64::total_cmp);
+    assert_eq!(heights, [-10.0, 10.0]);
+    assert_valid(&result);
+}
+
+#[test]
+fn swept_surface_face_rests_on_a_linear_sweep_of_its_section() {
+    let result = decode(prt_with_partition(
+        &swept_surface_topology_partition_stream(),
+    ));
+    let model = &result.ir().model;
+    let surface = model
+        .surfaces
+        .iter()
+        .find(|candidate| candidate.id == model.faces[0].surface)
+        .unwrap();
+    let cadmpeg_ir::geometry::SurfaceGeometry::Procedural { construction, .. } = &surface.geometry
+    else {
+        panic!("a swept surface is a procedural surface");
+    };
+    let procedural = model
+        .procedural_surfaces
+        .iter()
+        .find(|candidate| &candidate.id == construction)
+        .unwrap();
+    let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::LinearSweep(sweep) =
+        procedural.definition()
+    else {
+        panic!("a swept surface is a linear sweep");
+    };
+    let direction = sweep.direction().get();
+    assert_eq!((direction.x, direction.y, direction.z), (0.0, 0.0, 20.0));
+    let section = model
+        .curves
+        .iter()
+        .find(|candidate| &candidate.id == sweep.directrix())
+        .unwrap();
+    assert!(matches!(
+        section.geometry.solved(),
+        Some(cadmpeg_ir::geometry::SolvedCurveGeometry::Line(_))
+    ));
 }
 
 #[test]

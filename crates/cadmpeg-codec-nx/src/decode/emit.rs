@@ -175,6 +175,13 @@ pub(super) fn emit_topology(
                 valid_vertex_xmts.insert(vertex);
             }
         }
+        if let Some(vertex) = graph
+            .get(NodeKind::Fin, *xmt)
+            .and_then(Node::vertex_fin_fields)
+            .and_then(|fields| fields.vertex.map(u32::from))
+        {
+            valid_vertex_xmts.insert(vertex);
+        }
     }
     let mut first_body_shells = BTreeMap::new();
     for shell in graph.body_shape_shells() {
@@ -399,11 +406,24 @@ pub(super) fn emit_topology(
         let Some(fin_fields) = fin.fin_fields() else {
             continue;
         };
-        let curve_xmt = [fields.curve, fin_fields.curve_xmt]
+        // A tolerant edge carries one curve per FIN, each on its own surface. A FIN whose surface
+        // has no parameter conversion loses its pcurve, so the partner FIN supplies the carrier.
+        let partner_curve = fin_fields
+            .other
+            .and_then(|target| graph.get(NodeKind::Fin, u32::from(target)))
+            .and_then(Node::fin_fields)
+            .and_then(|partner| partner.curve_xmt);
+        let carrier_candidates = [fields.curve, fin_fields.curve_xmt, partner_curve]
             .into_iter()
             .flatten()
             .map(u32::from)
-            .find(|xmt| *xmt > 1);
+            .filter(|xmt| *xmt > 1)
+            .collect::<Vec<_>>();
+        let curve_xmt = carrier_candidates
+            .iter()
+            .copied()
+            .find(|xmt| curves.contains_key(xmt) || pcurves.contains_key(xmt))
+            .or_else(|| carrier_candidates.first().copied());
         let mut curve = curve_xmt.and_then(|xmt| curves.get(&xmt)).cloned();
         let mut param_range = curve_xmt.and_then(|xmt| trim_ranges.get(&xmt)).copied();
         if curve.is_none() {
@@ -548,15 +568,13 @@ pub(super) fn emit_topology(
             .vertex
             .and_then(|target| vertices.get(&u32::from(target)))
             .cloned();
-        if end.is_none()
-            && end_fields.vertex.is_none()
-            && end_fields.forward == end_fin
-            && end_fields.backward == end_fin
-        {
-            // A partnered closed FIN repeats the null vertex and closes its own
-            // forward/backward links. Its endpoint is the same analytic point
-            // as the current FIN's synthesized start, even when `end_fin` is a
-            // distinct radial partner record.
+        let partner_closes = (end_fields.forward == end_fin && end_fields.backward == end_fin)
+            || (end_fields.forward.is_none() && end_fields.backward.is_none());
+        if end.is_none() && end_fields.vertex.is_none() && partner_closes {
+            // A partnered closed FIN repeats the null vertex and either closes its own
+            // forward/backward links or, on a free edge of a sheet, has no links at all.
+            // Its endpoint is the same analytic point as the current FIN's synthesized
+            // start, even when `end_fin` is a distinct radial partner record.
             end = Some(start.clone());
         }
         let Some(end) = end else {
@@ -678,12 +696,21 @@ pub(super) fn emit_topology(
                 .map_err(cadmpeg_core::CodecError::from)?;
         }
 
+        let sense = if fields
+            .surface
+            .and_then(|target| analytic_surface_sense(graph, u32::from(target)))
+            == Some(cadmpeg_ir::topology::Sense::Reversed)
+        {
+            reversed(fields.sense)
+        } else {
+            fields.sense
+        };
         pending_faces.push(PendingFace {
             xmt: node.xmt(),
             id: id.clone(),
             shell: shell_ref.clone(),
             surface: surface_ref.clone(),
-            sense: fields.sense,
+            sense,
             tolerance: decoded_tolerance(fields.tolerance()),
         });
         faces.insert(node.xmt(), id);
@@ -703,14 +730,19 @@ pub(super) fn emit_topology(
         let id: LoopId =
             scope.id_from_display(&cadmpeg_ir::identity_component!("loop"), node.xmt())?;
         let ring_resolves = valid_loop_rings[&loop_xmt].iter().all(|fin_xmt| {
-            graph
-                .get(NodeKind::Fin, *fin_xmt)
-                .and_then(Node::fin_fields)
-                .is_some_and(|fields| {
-                    fields
-                        .edge
-                        .is_some_and(|target| edges.contains_key(&u32::from(target)))
-                })
+            let Some(fin) = graph.get(NodeKind::Fin, *fin_xmt) else {
+                return false;
+            };
+            if let Some(vertex_fin) = fin.vertex_fin_fields() {
+                return vertex_fin
+                    .vertex
+                    .is_some_and(|target| vertices.contains_key(&u32::from(target)));
+            }
+            fin.fin_fields().is_some_and(|fields| {
+                fields
+                    .edge
+                    .is_some_and(|target| edges.contains_key(&u32::from(target)))
+            })
         });
         if !ring_resolves {
             topology_losses.push(crate::loss::NxLossCode::TopologyLoopRingUnresolved.note(
@@ -1070,22 +1102,38 @@ pub(super) fn emit_topology(
             let Some((id, face)) = loop_specs.get(loop_xmt) else {
                 continue;
             };
-            let mut coedges = Vec::new();
-            let mut all_resolved = true;
-            for fin_xmt in fin_xmts {
-                let Some(fin_id) = fin_ids.get(fin_xmt) else {
-                    all_resolved = false;
-                    break;
-                };
-
-                coedges.push(fin_id.clone());
-            }
-            let ring = if all_resolved {
-                cadmpeg_ir::topology::LoopRing::new(coedges, Vec::new()).ok()
+            let vertex_fin = fin_xmts
+                .first()
+                .and_then(|fin_xmt| graph.get(NodeKind::Fin, *fin_xmt))
+                .and_then(Node::vertex_fin_fields);
+            let boundary = if let Some(vertex_fin) = vertex_fin {
+                vertex_fin
+                    .vertex
+                    .and_then(|target| vertices.get(&u32::from(target)))
+                    .map(|vertex| cadmpeg_ir::topology::LoopBoundary::Vertex {
+                        vertex: vertex.clone(),
+                        pcurves: Vec::new(),
+                    })
             } else {
-                None
+                let mut coedges = Vec::new();
+                let mut all_resolved = true;
+                for fin_xmt in fin_xmts {
+                    let Some(fin_id) = fin_ids.get(fin_xmt) else {
+                        all_resolved = false;
+                        break;
+                    };
+
+                    coedges.push(fin_id.clone());
+                }
+                if all_resolved {
+                    cadmpeg_ir::topology::LoopRing::new(coedges, Vec::new())
+                        .ok()
+                        .map(cadmpeg_ir::topology::LoopBoundary::Ring)
+                } else {
+                    None
+                }
             };
-            let Some(ring) = ring else {
+            let Some(boundary) = boundary else {
                 topology_losses.push(crate::loss::NxLossCode::TopologyLoopRingUnresolved.note(
                     format!("parasolid#{stream_index} LOOP {loop_xmt} of {face} states no resolvable coedge ring: loop {id} is omitted from its face"),
                 ));
@@ -1095,7 +1143,7 @@ pub(super) fn emit_topology(
             ir.model.loops.push(Loop {
                 id: id.clone(),
                 face: face.clone(),
-                boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
+                boundary,
             });
             let key: FaceId = face.clone();
 
@@ -1108,13 +1156,27 @@ pub(super) fn emit_topology(
         }
     }
     for pending in pending_faces {
-        if let Some(failure) = face_loop_failures.remove(&pending.xmt) {
+        let boundary_failed = if let Some(failure) = face_loop_failures.remove(&pending.xmt) {
             topology_losses.push(crate::loss::NxLossCode::TopologyFaceLoopUnresolved.note(
                 format!("parasolid#{stream_index} FACE {} has an unresolved boundary: {failure}; face is emitted without loops",
                 pending.xmt),
             ));
+            true
+        } else {
+            false
+        };
+        let mut loops = face_loops.remove(&pending.id).unwrap_or_default();
+        if loops.is_empty() && !boundary_failed {
+            loops = whole_sphere_pole_loops(
+                ir,
+                annotations,
+                &scope,
+                source_stream,
+                graph.get(NodeKind::Face, pending.xmt),
+                &pending.id,
+                &pending.surface,
+            )?;
         }
-        let loops = face_loops.remove(&pending.id).unwrap_or_default();
 
         ir.model.faces.push(Face {
             id: pending.id,
@@ -1174,6 +1236,11 @@ pub(super) fn emit_topology(
     let mut retained_vertices: BTreeSet<VertexId> = BTreeSet::new();
     for edge in &ir.model.edges {
         for vertex in [&edge.start, &edge.end] {
+            retained_vertices.insert(vertex.clone());
+        }
+    }
+    for loop_ in &ir.model.loops {
+        if let Some((vertex, _)) = loop_.singular_vertex() {
             retained_vertices.insert(vertex.clone());
         }
     }
@@ -1409,6 +1476,87 @@ fn synthesize_closed_edge_vertex_with_curve_index_and_budget(
     Ok(Some(vertex))
 }
 
+/// Bound a face that covers a whole sphere by a vertex loop at each pole. Parasolid
+/// stores such a face with no loop at all, but a neutral face needs a boundary.
+fn whole_sphere_pole_loops(
+    ir: &mut CadIr,
+    annotations: &mut AnnotationBuilder,
+    scope: &IdScope,
+    source_stream: &cadmpeg_ir::annotations::StreamHandle,
+    node: Option<&Node>,
+    face: &FaceId,
+    surface: &SurfaceId,
+) -> Result<Vec<LoopId>, CodecError> {
+    let Some(node) = node else {
+        return Ok(Vec::new());
+    };
+    let Some(sphere) = ir
+        .model
+        .surfaces
+        .iter()
+        .find(|candidate| &candidate.id == surface)
+        .and_then(|candidate| candidate.geometry.solved())
+        .and_then(|solved| match solved {
+            SolvedSurfaceGeometry::Sphere(sphere) => Some(sphere),
+            _ => None,
+        })
+    else {
+        return Ok(Vec::new());
+    };
+    let center = sphere.center().get();
+    let axis = *sphere.frame().axis().as_raw();
+    let radius = sphere.radius().get();
+    let mut loops = Vec::new();
+    for (name, signed) in [("south", -radius), ("north", radius)] {
+        let Some(position) = FinitePoint3::new(Point3::new(
+            center.x + signed * axis.x,
+            center.y + signed * axis.y,
+            center.z + signed * axis.z,
+        )) else {
+            return Ok(Vec::new());
+        };
+        let label = format_args!("sphere-pole-{}-{name}", node.xmt());
+        let point: PointId =
+            scope.id_from_display(&cadmpeg_ir::identity_component!("point"), label)?;
+        let vertex: VertexId =
+            scope.id_from_display(&cadmpeg_ir::identity_component!("vertex"), label)?;
+        let id: LoopId = scope.id_from_display(&cadmpeg_ir::identity_component!("loop"), label)?;
+        let offset = cadmpeg_core::decode::u64_from_index(node.pos());
+        annotations.note(
+            point.as_str(),
+            source_stream,
+            offset,
+            Some("SPHERE_POLE_POINT"),
+        );
+        annotations.exactness(point.as_str(), Exactness::Inferred);
+        annotations.note(
+            vertex.as_str(),
+            source_stream,
+            offset,
+            Some("SPHERE_POLE_VERTEX"),
+        );
+        annotations.exactness(vertex.as_str(), Exactness::Inferred);
+        ir.model
+            .points
+            .push(Point::new(point.clone(), position, None));
+        ir.model.vertices.push(Vertex {
+            id: vertex.clone(),
+            point,
+            tolerance: None,
+        });
+        ir.model.loops.push(Loop {
+            id: id.clone(),
+            face: face.clone(),
+            boundary: cadmpeg_ir::topology::LoopBoundary::Vertex {
+                vertex,
+                pcurves: Vec::new(),
+            },
+        });
+        loops.push(id);
+    }
+    Ok(loops)
+}
+
 pub(super) fn canonical_trim_range(geometry: &CurveGeometry, raw: [f64; 2]) -> Option<[f64; 2]> {
     match geometry {
         CurveGeometry::Solved(SolvedCurveGeometry::Line(_)) => {
@@ -1487,6 +1635,22 @@ fn curve_sense(graph: &Graph, xmt: u32) -> Option<cadmpeg_ir::topology::Sense> {
         NodeKind::BCurve,
         NodeKind::TrimmedCurve,
         NodeKind::SpCurve,
+    ]
+    .into_iter()
+    .find_map(|kind| graph.get(kind, xmt))
+    .and_then(Node::common_header)
+    .map(|(sense, _)| sense)
+}
+
+/// Sense of an analytic surface carrier's common header relative to its neutral normal.
+fn analytic_surface_sense(graph: &Graph, xmt: u32) -> Option<cadmpeg_ir::topology::Sense> {
+    [
+        NodeKind::Plane,
+        NodeKind::Cylinder,
+        NodeKind::Cone,
+        NodeKind::Sphere,
+        NodeKind::Torus,
+        NodeKind::SweptSurface,
     ]
     .into_iter()
     .find_map(|kind| graph.get(kind, xmt))

@@ -214,6 +214,14 @@ or regenerated current-design selection.
 
 **Need.** We must know the section boundary to extract every stream of a payload that holds both forms without one section's bytes containing another.
 
+### PS-41. SWEPT_SURF surface parameterization
+
+**Question.** What is the role of `scale` in the SWEPT_SURF parameterization, and what are the pcurve parameters when the section is a LINE or another analytic curve?
+
+**Known.** `siemens_nx.md` §6.2a defines the record and the linear sweep along `sweep × scale`. A pcurve at constant `v` across the full `u` range of a B-curve section is the section moved along the sweep. The decoder keeps pcurve parameters unchanged on this surface.
+
+**Need.** We must know the parameterization to evaluate a pcurve on every swept surface.
+
 ## 2. Object model and body composition
 
 ### OM-01. Per-class OM field serialization
