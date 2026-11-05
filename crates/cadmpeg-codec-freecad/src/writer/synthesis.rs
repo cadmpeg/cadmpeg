@@ -1325,27 +1325,27 @@ pub(super) fn write(
         .map_err(std::io::Error::other)?
         .into_inner();
     for curve in &ir.model.curves {
-        if curve.geometry.procedural_construction().is_some()
-            && super::geometry::located_curve(ir, curve)
+        if let Some(construction) = curve.geometry.procedural_construction().filter(|_| {
+            super::geometry::located_curve(ir, curve)
                 .is_some_and(|(row, _)| !row.starts_with("8 ") && !row.starts_with("9 "))
-        {
+        }) {
             losses.push(FreecadLossCode::ExportProceduralReduced.note(format!(
-                "curve {} is written through its current solved carrier",
-                curve.id
+                "curve {} is written through its current solved carrier; construction {} is omitted",
+                curve.id, construction
             )));
         }
     }
     for surface in &ir.model.surfaces {
-        if surface.geometry.procedural_construction().is_some()
-            && super::geometry::located_surface(ir, surface).is_some_and(|(row, _)| {
+        if let Some(construction) = surface.geometry.procedural_construction().filter(|_| {
+            super::geometry::located_surface(ir, surface).is_some_and(|(row, _)| {
                 !["6 ", "7 ", "10 ", "11 "]
                     .iter()
                     .any(|prefix| row.starts_with(prefix))
             })
-        {
+        }) {
             losses.push(FreecadLossCode::ExportProceduralReduced.note(format!(
-                "surface {} is written through its current solved carrier",
-                surface.id
+                "surface {} is written through its current solved carrier; construction {} is omitted",
+                surface.id, construction
             )));
         }
     }
