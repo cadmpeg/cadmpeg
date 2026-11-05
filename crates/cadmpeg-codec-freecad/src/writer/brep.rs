@@ -331,7 +331,7 @@ fn unowned_geometry(
         .curves
         .iter()
         .filter(|curve| reachable.curves.contains(curve.id.as_str()))
-        .filter(|curve| !covered_by_replay(covered, &curve.source_object))
+        .filter(|curve| !covered_by_replay(covered, curve.source_object.as_ref()))
     {
         if geometry::curve_record(ir, curve).is_none() {
             losses.push(
@@ -347,7 +347,7 @@ fn unowned_geometry(
         .surfaces
         .iter()
         .filter(|surface| reachable.surfaces.contains(surface.id.as_str()))
-        .filter(|surface| !covered_by_replay(covered, &surface.source_object))
+        .filter(|surface| !covered_by_replay(covered, surface.source_object.as_ref()))
     {
         if geometry::surface_record(ir, surface).is_none() {
             losses.push(
@@ -493,7 +493,7 @@ fn triangulation_sections(
     let mut rows = Vec::new();
     let mut face_rows = HashMap::new();
     for mesh in &ir.model.tessellations {
-        if covered_by_replay(covered, &mesh.source_object) {
+        if covered_by_replay(covered, mesh.source_object.as_ref()) {
             continue;
         }
         let selected = if free {
@@ -577,9 +577,9 @@ fn triangulation_sections(
 /// needs no independent `FreeGeometry` copy.
 fn covered_by_replay(
     covered: &HashSet<String>,
-    source: &Option<cadmpeg_ir::SourceObjectAssociation>,
+    source: Option<&cadmpeg_ir::SourceObjectAssociation>,
 ) -> bool {
-    source.as_ref().is_some_and(|source| {
+    source.is_some_and(|source| {
         source.format.as_str() == "fcstd" && covered.contains(source.object_id.as_str())
     })
 }
@@ -678,7 +678,7 @@ fn serialize_geometry_inner(
         .curves
         .iter()
         .filter(|curve| curves_needed.contains(curve.id.as_str()))
-        .filter(|curve| !covered_by_replay(covered, &curve.source_object))
+        .filter(|curve| !covered_by_replay(covered, curve.source_object.as_ref()))
         .filter(|curve| !paired_curves.contains(curve.id.as_str()))
     {
         let mut edge_uses = ir
@@ -743,7 +743,7 @@ fn serialize_geometry_inner(
         .surfaces
         .iter()
         .filter(|surface| surfaces_needed.contains(surface.id.as_str()))
-        .filter(|surface| !covered_by_replay(covered, &surface.source_object))
+        .filter(|surface| !covered_by_replay(covered, surface.source_object.as_ref()))
     {
         if let Some((row, location)) = geometry::located_surface(ir, surface) {
             if let Some(trimmed) = trimmed_supports.get(surface.id.as_str()) {
