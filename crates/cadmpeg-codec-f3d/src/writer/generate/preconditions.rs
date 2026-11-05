@@ -1081,7 +1081,7 @@ pub(super) fn validate_source_less_design_links(
         &native.body_native_keys,
         |row: &cadmpeg_asm::brep::records::BodyNativeKey| owners
             .get(row.id().as_str())
-            .map(|id| id.to_string()),
+            .map(ToString::to_string),
         bodies,
         "body-native-key"
     );
@@ -1089,7 +1089,7 @@ pub(super) fn validate_source_less_design_links(
         &native.body_visibilities,
         |row: &crate::records::bodies::BodyVisibility| owners
             .get(row.body.as_str())
-            .map(|id| id.to_string()),
+            .map(ToString::to_string),
         bodies,
         "body-visibility",
         [id()],
@@ -1115,7 +1115,7 @@ pub(super) fn validate_source_less_design_links(
         &native.transform_hints,
         |row: &cadmpeg_asm::brep::records::TransformHints| owners
             .get(row.owner.as_str())
-            .map(|id| id.to_string()),
+            .map(ToString::to_string),
         bodies,
         "transform-hint",
         [id()],
@@ -1132,7 +1132,7 @@ pub(super) fn validate_source_less_design_links(
         &native.edge_continuities,
         |row: &cadmpeg_asm::brep::records::EdgeContinuity| owners
             .get(row.owner.as_str())
-            .map(|id| id.to_string()),
+            .map(ToString::to_string),
         edges,
         "edge-continuity"
     );
@@ -1140,7 +1140,7 @@ pub(super) fn validate_source_less_design_links(
         &native.edge_ownerships,
         |row: &cadmpeg_asm::brep::records::EdgeOwnership| owners
             .get(row.id().as_str())
-            .map(|id| id.to_string()),
+            .map(ToString::to_string),
         edges,
         "edge-ownership"
     );
@@ -1148,7 +1148,7 @@ pub(super) fn validate_source_less_design_links(
         &native.vertex_ownerships,
         |row: &cadmpeg_asm::brep::records::VertexOwnership| owners
             .get(row.id().as_str())
-            .map(|id| id.to_string()),
+            .map(ToString::to_string),
         vertices,
         "vertex-ownership"
     );
@@ -1183,7 +1183,7 @@ pub(super) fn validate_source_less_design_links(
         &native.tolerant_edge_tails,
         |row: &cadmpeg_asm::brep::records::TolerantEdgeTail| owners
             .get(row.owner.as_str())
-            .map(|id| id.to_string()),
+            .map(ToString::to_string),
         edges,
         "tolerant-edge",
         [id()],
@@ -1200,7 +1200,7 @@ pub(super) fn validate_source_less_design_links(
         &native.tolerant_vertex_tails,
         |row: &cadmpeg_asm::brep::records::TolerantVertexTail| owners
             .get(row.owner.as_str())
-            .map(|id| id.to_string()),
+            .map(ToString::to_string),
         vertices,
         "tolerant-vertex",
         [id()],
@@ -1224,8 +1224,8 @@ pub(super) fn validate_source_less_design_links(
             .members
             .edges()
             .iter()
-            .map(|member| member.as_str())
-            .chain(wire.members.free_vertex().map(|vertex| vertex.as_str()))
+            .map(cadmpeg_asm::brep::records::identity::NativeRowId::as_str)
+            .chain(wire.members.free_vertex().map(cadmpeg_asm::brep::records::identity::NativeRowId::as_str))
             .filter_map(|member| owners.get(member).copied())
             .collect::<Vec<_>>();
         let shell = target
