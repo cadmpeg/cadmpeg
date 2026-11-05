@@ -3,6 +3,234 @@
 
 use super::{entity, integer, real, Entity, Fields, Value};
 
+/// Regenerate a linked primitive from the current neutral feature. A record
+/// with no linked feature still follows native re-emission.
+pub(super) fn neutral_primitive(
+    ir: &super::CadIr,
+    record: &super::NativeRecord,
+) -> Option<Result<Entity, String>> {
+    use cadmpeg_ir::features::{
+        BooleanOp, FeatureDefinition, FeatureOperation, PrimitiveSolidKind,
+    };
+    use cadmpeg_ir::features::{Dimension, RadialDimension};
+    use cadmpeg_ir::scalar::{Angle, Length};
+    use std::f64::consts::{FRAC_PI_2, PI, TAU};
+
+    let feature = ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.native_ref.as_deref() == Some(record.id()))?;
+    Some((|| {
+        let FeatureDefinition::Operation(FeatureOperation::Primitive {
+            solid,
+            placement,
+            op,
+        }) = feature.evaluation.definition()
+        else {
+            return Err("linked feature is not a primitive solid".into());
+        };
+        if *op != BooleanOp::NewBody {
+            return Err("primitive Boolean operation has no exact IGES primitive form".into());
+        }
+        let length = |value: &Dimension<Length>| {
+            ir.dimension_value(value)
+                .map(Length::get)
+                .ok_or_else(|| "primitive length is unresolved".to_owned())
+        };
+        let radius = |value: &RadialDimension<Length>| {
+            value
+                .resolved_radius(ir)
+                .map(Length::get)
+                .ok_or_else(|| "primitive radius is unresolved".to_owned())
+        };
+        let angle = |value: &Dimension<Angle>, expected: f64| -> Result<(), String> {
+            if ir
+                .dimension_value(value)
+                .is_some_and(|value| value.get() == expected)
+            {
+                Ok(())
+            } else {
+                Err("primitive angular bounds have no exact IGES primitive form".into())
+            }
+        };
+        let (type_code, dimensions) = match solid.kind() {
+            PrimitiveSolidKind::Box {
+                length: x,
+                width: y,
+                height: z,
+            } => (150, vec![length(x)?, length(y)?, length(z)?]),
+            PrimitiveSolidKind::Cylinder {
+                radius: r,
+                height,
+                angle: a,
+            } => {
+                angle(a, TAU)?;
+                (154, vec![length(height)?, radius(r)?])
+            }
+            PrimitiveSolidKind::Cone {
+                radius1,
+                radius2,
+                height,
+                angle: a,
+            } => {
+                angle(a, TAU)?;
+                (
+                    156,
+                    vec![length(height)?, radius(radius1)?, radius(radius2)?],
+                )
+            }
+            PrimitiveSolidKind::Sphere {
+                radius: r,
+                latitude1,
+                latitude2,
+                longitude,
+            } => {
+                angle(latitude1, -FRAC_PI_2)?;
+                angle(latitude2, FRAC_PI_2)?;
+                angle(longitude, TAU)?;
+                (158, vec![radius(r)?])
+            }
+            PrimitiveSolidKind::Torus {
+                major_radius,
+                minor_radius,
+                latitude1,
+                latitude2,
+                longitude,
+            } => {
+                angle(latitude1, -PI)?;
+                angle(latitude2, PI)?;
+                angle(longitude, TAU)?;
+                (160, vec![radius(major_radius)?, radius(minor_radius)?])
+            }
+            PrimitiveSolidKind::Ellipsoid {
+                x_radius,
+                y_radius,
+                z_radius,
+                latitude1,
+                latitude2,
+                longitude,
+            } => {
+                angle(latitude1, -FRAC_PI_2)?;
+                angle(latitude2, FRAC_PI_2)?;
+                angle(longitude, TAU)?;
+                (
+                    168,
+                    vec![radius(x_radius)?, radius(y_radius)?, radius(z_radius)?],
+                )
+            }
+            PrimitiveSolidKind::Wedge {
+                xmin,
+                ymin,
+                zmin,
+                x2min,
+                z2min,
+                xmax,
+                ymax,
+                zmax,
+                x2max,
+                z2max,
+            } => {
+                if [
+                    length(xmin)?,
+                    length(ymin)?,
+                    length(zmin)?,
+                    length(x2min)?,
+                    length(z2min)?,
+                ]
+                .iter()
+                .any(|value| *value != 0.0)
+                    || length(z2max)? != length(zmax)?
+                {
+                    return Err("wedge bounds have no exact IGES primitive form".into());
+                }
+                (
+                    152,
+                    vec![length(xmax)?, length(ymax)?, length(zmax)?, length(x2max)?],
+                )
+            }
+            PrimitiveSolidKind::Prism { .. } => {
+                return Err("prism has no exact IGES primitive form".into())
+            }
+        };
+        let placement = placement
+            .as_ref()
+            .ok_or("primitive placement is unresolved")?;
+        let affine = placement.affine_rows();
+        let x = cadmpeg_ir::math::Vector3::new(affine[0][0], affine[1][0], affine[2][0]);
+        let z = cadmpeg_ir::math::Vector3::new(affine[0][2], affine[1][2], affine[2][2]);
+        let standard_z = cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0);
+        let standard_x = cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0);
+        let derived_x = if z.x.abs() < z.y.abs() {
+            standard_x.cross(z).unit()
+        } else {
+            cadmpeg_ir::math::Vector3::new(0.0, 1.0, 0.0)
+                .cross(z)
+                .unit()
+        }
+        .and_then(|x| z.cross(x).unit())
+        .and_then(|y| y.cross(z).unit());
+        let matches_axis = |left: cadmpeg_ir::math::Vector3, right: cadmpeg_ir::math::Vector3| {
+            left.x == right.x && left.y == right.y && left.z == right.z
+        };
+        let transformed = match type_code {
+            158 => !matches_axis(x, standard_x) || !matches_axis(z, standard_z),
+            154 | 156 | 160 => derived_x.is_none_or(|derived| !matches_axis(x, derived)),
+            _ => false,
+        };
+        let mut values = dimensions
+            .into_iter()
+            .map(|value| {
+                super::FiniteReal::new(value)
+                    .map(super::number)
+                    .ok_or_else(|| "primitive dimension is non-finite".to_owned())
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let vector = |values: [f64; 3]| {
+            values
+                .into_iter()
+                .map(|value| {
+                    super::FiniteReal::new(value)
+                        .map(super::number)
+                        .ok_or_else(|| "primitive placement is non-finite".to_owned())
+                })
+                .collect::<Result<Vec<_>, _>>()
+        };
+        let origin = if transformed {
+            [0.0, 0.0, 0.0]
+        } else {
+            [affine[0][3], affine[1][3], affine[2][3]]
+        };
+        values.extend(vector(origin)?);
+        if matches!(type_code, 150 | 152 | 168) {
+            values.extend(vector(if transformed {
+                [1.0, 0.0, 0.0]
+            } else {
+                [x.x, x.y, x.z]
+            })?);
+        }
+        if matches!(type_code, 150 | 152 | 154 | 156 | 160 | 168) {
+            values.extend(vector(if transformed {
+                [0.0, 0.0, 1.0]
+            } else {
+                [z.x, z.y, z.z]
+            })?);
+        }
+        let mut output = entity(type_code, 0, values);
+        if transformed {
+            let mut rows = [[super::FiniteReal::ONE; 4]; 3];
+            for (row, values) in rows.iter_mut().zip(affine) {
+                for (slot, value) in row.iter_mut().zip(values) {
+                    *slot =
+                        super::FiniteReal::new(value).ok_or("primitive placement is non-finite")?;
+                }
+            }
+            output.transform = Some(super::super::Placement { rows });
+        }
+        Ok(output)
+    })())
+}
+
 fn operand(fields: &mut Fields<'_>, term: &Value) -> Result<String, String> {
     let item = term
         .as_object()
