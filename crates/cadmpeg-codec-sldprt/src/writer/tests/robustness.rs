@@ -309,9 +309,9 @@ fn capacity_helpers_follow_their_rows() {
         field, limit: 255, value: 256
     } if field.field == "feature_input.name_length")
     );
-    let name = "n".repeat(crate::writer::CAPACITY_FIELDS[0].limit as usize);
+    let name = "n".repeat(usize::try_from(crate::writer::CAPACITY_FIELDS[0].limit).expect("capacity fits usize"));
     assert!(crate::writer::material_name_len(&name).is_ok());
-    let overlong = "n".repeat(crate::writer::CAPACITY_FIELDS[0].limit as usize + 1);
+    let overlong = "n".repeat(usize::try_from(crate::writer::CAPACITY_FIELDS[0].limit).expect("capacity fits usize") + 1);
     assert!(crate::writer::material_name_len(&overlong).is_err());
     let limit = crate::writer::CAPACITY_FIELDS[1].limit;
     let index = usize::try_from(limit).expect("type-id limit fits usize");

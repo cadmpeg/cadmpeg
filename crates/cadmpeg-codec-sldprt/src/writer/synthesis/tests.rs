@@ -24,7 +24,7 @@ fn cascade_names_each_feature_with_a_removed_regeneration_parent() {
         ir.model.features.push(Feature {
             product_definition: None,
             id,
-            ordinal: ordinal as u64,
+            ordinal: cadmpeg_core::decode::u64_from_index(ordinal),
             name: None,
             suppressed: Some(false),
             needs_recompute: false,
