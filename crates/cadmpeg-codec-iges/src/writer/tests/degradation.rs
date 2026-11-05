@@ -804,3 +804,78 @@ fn source_less_product_and_root_occurrence_write_as_subfigures() {
         ir.model.occurrences[0].transform
     );
 }
+
+#[test]
+fn source_less_nested_products_keep_occurrence_hierarchy_and_placement() {
+    use cadmpeg_ir::products::{Occurrence, ProductDefinition};
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    for (id, label) in [("parent", "Parent"), ("child", "Child")] {
+        ir.model.product_definitions.push(
+            serde_json::from_value::<ProductDefinition>(serde_json::json!({
+                "id": format!("test:model:product#{id}"), "kind":"part", "label":label
+            }))
+            .unwrap(),
+        );
+    }
+    ir.model.occurrences.push(serde_json::from_value::<Occurrence>(serde_json::json!({
+        "id":"test:model:occurrence#parent", "prototype":{"scope":"local","definition":"test:model:product#parent"},
+        "parent":{"kind":"root"}, "ordinal":0, "transform":[[1,0,0,0],[0,1,0,0],[0,0,1,0]]
+    })).unwrap());
+    ir.model.occurrences.push(serde_json::from_value::<Occurrence>(serde_json::json!({
+        "id":"test:model:occurrence#child", "prototype":{"scope":"local","definition":"test:model:product#child"},
+        "parent":{"kind":"occurrence","occurrence":"test:model:occurrence#parent"}, "ordinal":1,
+        "transform":[[1,0,0,4],[0,1,0,5],[0,0,1,6]]
+    })).unwrap());
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let after = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(after.ir().model.product_definitions.len(), 2);
+    assert_eq!(after.ir().model.occurrences.len(), 2);
+    assert_eq!(
+        after.ir().model.occurrences[1].transform,
+        ir.model.occurrences[1].transform
+    );
+    assert!(
+        matches!(&after.ir().model.occurrences[1].parent, cadmpeg_ir::products::OccurrenceParent::Occurrence { occurrence } if *occurrence == after.ir().model.occurrences[0].id)
+    );
+}
+
+#[test]
+fn shared_source_less_definition_names_an_unrepresentable_child() {
+    use cadmpeg_ir::products::{Occurrence, ProductDefinition};
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    for (id, label) in [("parent", "Parent"), ("child", "Child")] {
+        ir.model.product_definitions.push(
+            serde_json::from_value::<ProductDefinition>(serde_json::json!({
+                "id": format!("test:model:product#{id}"), "kind":"part", "label":label
+            }))
+            .unwrap(),
+        );
+    }
+    for (id, ordinal) in [("first", 0), ("second", 1)] {
+        ir.model.occurrences.push(serde_json::from_value::<Occurrence>(serde_json::json!({
+            "id":format!("test:model:occurrence#{id}"), "prototype":{"scope":"local","definition":"test:model:product#parent"},
+            "parent":{"kind":"root"}, "ordinal":ordinal, "transform":[[1,0,0,0],[0,1,0,0],[0,0,1,0]]
+        })).unwrap());
+    }
+    ir.model.occurrences.push(serde_json::from_value::<Occurrence>(serde_json::json!({
+        "id":"test:model:occurrence#child", "prototype":{"scope":"local","definition":"test:model:product#child"},
+        "parent":{"kind":"occurrence","occurrence":"test:model:occurrence#first"}, "ordinal":2,
+        "transform":[[1,0,0,4],[0,1,0,5],[0,0,1,6]]
+    })).unwrap());
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("test:model:occurrence#child")));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let after = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(after.ir().model.occurrences.len(), 2);
+}
