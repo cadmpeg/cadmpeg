@@ -11431,7 +11431,7 @@ kind = "byte"
 section = "3.1"
 anchor = "The 352-, 363-, and 374-byte direct forms store"
 size = 352
-note = "Offsets are relative to the primary indexed placement header (class 293 paired with class 261, or class 316 paired with class 260). The two-byte lane at offset 62 is opaque."
+note = "Offsets are relative to the primary indexed placement header. The two-byte lane at offset 62 is opaque."
 
 [[record.gap]]
 offset = 0
@@ -11490,7 +11490,7 @@ kind = "byte"
 section = "3.1"
 anchor = "The 352-, 363-, and 374-byte direct forms store"
 size = 363
-note = "Offsets are relative to the class-289 primary indexed placement header paired with class 258. The two-byte lane at offset 62 is opaque."
+note = "Offsets are relative to the primary indexed placement header. The two-byte lane at offset 62 is opaque."
 
 [[record.gap]]
 offset = 0
@@ -11549,7 +11549,7 @@ kind = "byte"
 section = "3.1"
 anchor = "The 352-, 363-, and 374-byte direct forms store"
 size = 374
-note = "Offsets are relative to the class-267 primary indexed placement header paired with class 258. The two-byte lane at offset 62 is opaque."
+note = "Offsets are relative to the primary indexed placement header. The two-byte lane at offset 62 is opaque."
 
 [[record.gap]]
 offset = 0
