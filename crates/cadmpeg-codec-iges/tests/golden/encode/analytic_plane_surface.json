@@ -85,7 +85,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 2 native record(s) from `iges.directions`: iges:native:direction#D3, iges:native:direction#D5",
+        "message": "the iges write omits 3 native record(s) from `iges.cards`: iges:physical:card#12, iges:physical:card#16, iges:physical:card#4",
         "severity": "info"
       },
       {
@@ -95,7 +95,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 4 native record(s) from `iges.entities`: iges:entity:directory#1, iges:entity:directory#3, iges:entity:directory#5, iges:entity:directory#7",
+        "message": "the iges write omits 2 native record(s) from `iges.directions`: iges:native:direction#D3, iges:native:direction#D5",
         "severity": "info"
       },
       {
@@ -132,7 +132,22 @@
               "disposition": "dropped"
             },
             "cards": {
-              "disposition": "regenerated"
+              "disposition": "dropped",
+              "records": {
+                "iges:physical:card#1": "written",
+                "iges:physical:card#10": "written",
+                "iges:physical:card#11": "written",
+                "iges:physical:card#13": "written",
+                "iges:physical:card#14": "written",
+                "iges:physical:card#15": "written",
+                "iges:physical:card#2": "written",
+                "iges:physical:card#3": "written",
+                "iges:physical:card#5": "written",
+                "iges:physical:card#6": "written",
+                "iges:physical:card#7": "written",
+                "iges:physical:card#8": "written",
+                "iges:physical:card#9": "written"
+              }
             },
             "circular_arrays": {
               "disposition": "dropped"
@@ -165,7 +180,13 @@
               "disposition": "dropped"
             },
             "entities": {
-              "disposition": "dropped"
+              "disposition": "dropped",
+              "records": {
+                "iges:entity:directory#1": "written",
+                "iges:entity:directory#3": "written",
+                "iges:entity:directory#5": "written",
+                "iges:entity:directory#7": "written"
+              }
             },
             "external_references": {
               "disposition": "dropped"
