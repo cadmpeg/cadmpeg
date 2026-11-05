@@ -16,7 +16,7 @@ use super::{
 
 fn parsed_serializers(
     bytes: &[u8],
-    records: &crate::design::decode::sketch::IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
 ) -> FormCageSerializers {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
@@ -65,7 +65,7 @@ fn reads_owned_cage_objects() {
     assert_eq!(
         form_cage_objects(
             &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &crate::design::test_support::test_primary_frames(&bytes),
             2196,
             2190
         ),
@@ -76,7 +76,7 @@ fn reads_owned_cage_objects() {
     assert_eq!(
         form_cage_objects(
             &alternate_pair,
-            &crate::design::test_support::indexed_record_offsets_for_test(&alternate_pair),
+            &crate::design::test_support::test_primary_frames(&alternate_pair),
             2196,
             2190
         ),
@@ -99,7 +99,7 @@ fn reads_owned_cage_objects() {
     assert_eq!(
         form_cage_objects(
             &empty,
-            &crate::design::test_support::indexed_record_offsets_for_test(&empty),
+            &crate::design::test_support::test_primary_frames(&empty),
             2196,
             2190
         ),
@@ -122,7 +122,7 @@ fn reads_single_cage_list_with_opaque_tail() {
     assert_eq!(
         form_cage_objects(
             &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &crate::design::test_support::test_primary_frames(&bytes),
             2196,
             2190
         ),
@@ -150,7 +150,7 @@ fn resolves_cage_surface_through_owned_object_chain() {
     assert_eq!(
         form_cage_surface(
             &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &crate::design::test_support::test_primary_frames(&bytes),
             8300,
             2190,
         ),
@@ -159,7 +159,7 @@ fn resolves_cage_surface_through_owned_object_chain() {
     assert_eq!(
         form_cage_surface(
             &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &crate::design::test_support::test_primary_frames(&bytes),
             8300,
             2191,
         ),
@@ -184,7 +184,7 @@ fn form_cage_surfaces_reject_another_scope() {
     carrier[340..348].copy_from_slice(&8304u64.to_le_bytes());
     let paired = indexed_frame(b"264", 8303, 15);
     let bytes = [object, first_wrapper, second_wrapper, carrier, paired].concat();
-    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let records = crate::design::test_support::test_primary_frames(&bytes);
     assert!(form_cage_surfaces(&bytes, &records, &[8300], 2191).is_none());
 }
 
@@ -205,7 +205,7 @@ fn serializer_joins_surface_to_exact_cage_entry_name() {
         assert_eq!(
             parsed_serializers(
                 &bytes,
-                &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+                &crate::design::test_support::test_primary_frames(&bytes),
             )
             .entry_name(8304),
             Some(entry_name)
@@ -227,7 +227,7 @@ fn form_serializer_unicode_name_round_trips() {
     serializer[122..130].copy_from_slice(&8304u64.to_le_bytes());
     let following = indexed_frame(b"457", 8306, 15);
     let bytes = [serializer, following].concat();
-    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let records = crate::design::test_support::test_primary_frames(&bytes);
     assert_eq!(
         parsed_serializers(&bytes, &records).entry_name(8304),
         Some(entry_name.as_str())
@@ -251,7 +251,7 @@ fn serializer_joins_class_335_surface_with_class_331_pair() {
     assert_eq!(
         parsed_serializers(
             &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &crate::design::test_support::test_primary_frames(&bytes),
         )
         .entry_name(8304),
         Some(entry_name)
@@ -261,7 +261,7 @@ fn serializer_joins_class_335_surface_with_class_331_pair() {
     wrong_pair[132 + 4..132 + 7].copy_from_slice(b"457");
     assert!(!parsed_serializers(
         &wrong_pair,
-        &crate::design::test_support::indexed_record_offsets_for_test(&wrong_pair),
+        &crate::design::test_support::test_primary_frames(&wrong_pair),
     )
     .ordered
     .contains(&8304));
@@ -270,7 +270,7 @@ fn serializer_joins_class_335_surface_with_class_331_pair() {
     nonzero_tail[131] = 1;
     assert!(!parsed_serializers(
         &nonzero_tail,
-        &crate::design::test_support::indexed_record_offsets_for_test(&nonzero_tail),
+        &crate::design::test_support::test_primary_frames(&nonzero_tail),
     )
     .ordered
     .contains(&8304));
@@ -299,14 +299,14 @@ fn serializers_preserve_primary_frame_order() {
     let bytes = chunks.concat();
     let serializers = parsed_serializers(
         &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &crate::design::test_support::test_primary_frames(&bytes),
     );
     assert_eq!(serializers.ordered, vec![8304, 8307]);
 }
 
 fn class_328_form_fixture() -> (
     Vec<u8>,
-    crate::design::decode::sketch::IndexedRecordOffsets,
+    Vec<crate::metastream::PrimaryRecordFrame>,
     crate::records::feature::scope::DesignParameterScope,
 ) {
     let scope_record = 201;
@@ -430,7 +430,7 @@ fn class_328_form_fixture() -> (
     ]);
     chunks.extend((4000..4019).map(|record| indexed_frame(b"320", record, 15)));
     let bytes = chunks.concat();
-    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    let records = crate::design::test_support::test_primary_frames(&bytes);
     let mut scope = crate::records::feature::scope::DesignParameterScope::empty(
         "scope",
         crate::records::feature::scope::DesignFeatureKind::Form,
@@ -462,7 +462,7 @@ fn reads_class_328_form_envelope() {
     wrong_pair[paired_class..paired_class + 3].copy_from_slice(b"266");
     assert!(!form_class_328_envelope(
         &wrong_pair,
-        &crate::design::test_support::indexed_record_offsets_for_test(&wrong_pair),
+        &crate::design::test_support::test_primary_frames(&wrong_pair),
         &scope,
     ));
 }
@@ -502,7 +502,7 @@ fn reads_class_325_cage_table_entries() {
     assert_eq!(
         form_class_325_cage_objects(
             &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &crate::design::test_support::test_primary_frames(&bytes),
             scope_record,
             [owner_record].into_iter()
         )
@@ -514,7 +514,7 @@ fn reads_class_325_cage_table_entries() {
     assert_eq!(
         form_class_325_cage_objects(
             &duplicate_discriminator,
-            &crate::design::test_support::indexed_record_offsets_for_test(&duplicate_discriminator),
+            &crate::design::test_support::test_primary_frames(&duplicate_discriminator),
             scope_record,
             [owner_record].into_iter()
         )
@@ -534,7 +534,7 @@ fn resolves_class_325_cage_surface_from_unique_class_310_reference() {
     assert_eq!(
         form_class_325_cage_surface(
             &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &crate::design::test_support::test_primary_frames(&bytes),
             1_000,
         ),
         Some(700)
@@ -561,7 +561,7 @@ fn duplicate_surface_serializers_stay_ambiguous() {
     let bytes = chunks.concat();
     let serializers = parsed_serializers(
         &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &crate::design::test_support::test_primary_frames(&bytes),
     );
     assert_eq!(serializers.ordered, vec![8304, 8307]);
     assert_eq!(serializers.entry_name(8304), None);

@@ -69,7 +69,7 @@ fn axial_assembly_selectors_bind_component_insert_occurrences_exactly() {
 
     bind_axial_assembly_operand_targets(
         &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &crate::design::test_support::test_primary_frames(&bytes),
         &mut scopes,
     )
     .unwrap();
@@ -150,7 +150,7 @@ fn axial_assembly_selectors_bind_component_insert_occurrences_exactly() {
     let mut mismatched_scopes = unresolved_scopes;
     bind_axial_assembly_operand_targets(
         &mismatched,
-        &crate::design::test_support::indexed_record_offsets_for_test(&mismatched),
+        &crate::design::test_support::test_primary_frames(&mismatched),
         &mut mismatched_scopes,
     )
     .unwrap();
@@ -220,7 +220,7 @@ fn axial_assembly_selector_binds_a_document_root_joint_origin() {
 
     bind_axial_assembly_operand_targets(
         &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &crate::design::test_support::test_primary_frames(&bytes),
         &mut scopes,
     )
     .unwrap();

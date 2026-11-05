@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::*;
+use crate::metastream::PrimaryFrames;
 use crate::records::feature::assembly_features::OCCURRENCE_PLACEMENT_TYPE_GUID;
 use crate::test_support::lp_utf16;
 
@@ -126,7 +127,7 @@ fn fixture(cut: bool, identity: bool, shift: usize) -> (Vec<u8>, DesignParameter
     bytes[ordinal_at..ordinal_at + 4].copy_from_slice(&1u32.to_le_bytes());
     let paired = bytes.len();
     header(&mut bytes, 21);
-    let records = IndexedRecordOffsets::build(&bytes);
+    let records = crate::design::test_support::test_primary_frames(&bytes);
     let scope = crate::design::decode::scopes::parameter_scope::parse_parameter_scope(
         &bytes,
         &records,
@@ -151,7 +152,7 @@ fn fixture(cut: bool, identity: bool, shift: usize) -> (Vec<u8>, DesignParameter
 fn occurrence_transfer_decodes_cut_owners_and_identity_or_matrix_placement() {
     for (identity, shift) in [(true, 0), (false, 0), (false, 4)] {
         let (bytes, scope) = fixture(true, identity, shift);
-        let records = IndexedRecordOffsets::build(&bytes);
+        let records = crate::design::test_support::test_primary_frames(&bytes);
         let value = exact_occurrence_transfer(&bytes, &records, &scope, &types()).unwrap();
         assert_eq!(value.target_owner.component, 3);
         assert_eq!(value.target_owner.context, 6);
@@ -177,7 +178,7 @@ fn occurrence_transfer_decodes_cut_owners_and_identity_or_matrix_placement() {
 fn occurrence_transfer_decodes_copy_placements_without_guessing_source_occurrence() {
     for shift in [0, 4] {
         let (bytes, scope) = fixture(false, false, shift);
-        let records = IndexedRecordOffsets::build(&bytes);
+        let records = crate::design::test_support::test_primary_frames(&bytes);
         let value = exact_occurrence_transfer(&bytes, &records, &scope, &types()).unwrap();
         let DesignOccurrenceTransferSource::Copy {
             source_transform, ..
@@ -193,12 +194,12 @@ fn occurrence_transfer_decodes_copy_placements_without_guessing_source_occurrenc
 #[test]
 fn occurrence_transfer_rejects_changed_relation_marker_and_source_owner() {
     let (mut bytes, scope) = fixture(false, false, 0);
-    let records = IndexedRecordOffsets::build(&bytes);
+    let records = crate::design::test_support::test_primary_frames(&bytes);
     bytes[usize::try_from(scope.byte_offset().unwrap()).unwrap() + 177] = 0;
     assert!(exact_occurrence_transfer(&bytes, &records, &scope, &types()).is_none());
 
     let (mut bytes, scope) = fixture(true, false, 0);
-    let records = IndexedRecordOffsets::build(&bytes);
+    let records = crate::design::test_support::test_primary_frames(&bytes);
     let relation_at = records.first_at_or_after(0, 12).unwrap();
     bytes[relation_at + 77..relation_at + 81].copy_from_slice(&9u32.to_le_bytes());
     assert!(exact_occurrence_transfer(&bytes, &records, &scope, &types()).is_none());
@@ -207,7 +208,7 @@ fn occurrence_transfer_rejects_changed_relation_marker_and_source_owner() {
 #[test]
 fn occurrence_transfer_rejects_non_rigid_and_truncated_placement() {
     let (mut bytes, scope) = fixture(false, false, 0);
-    let records = IndexedRecordOffsets::build(&bytes);
+    let records = crate::design::test_support::test_primary_frames(&bytes);
     let at = usize::try_from(scope.byte_offset().unwrap()).unwrap() + 190;
     bytes[at..at + 8].copy_from_slice(&f64::NAN.to_le_bytes());
     assert!(exact_occurrence_transfer(&bytes, &records, &scope, &types()).is_none());
@@ -217,7 +218,7 @@ fn occurrence_transfer_rejects_non_rigid_and_truncated_placement() {
 #[test]
 fn occurrence_transfer_requires_typed_context_and_collection_ownership() {
     let (bytes, scope) = fixture(false, false, 0);
-    let records = IndexedRecordOffsets::build(&bytes);
+    let records = crate::design::test_support::test_primary_frames(&bytes);
     let mut incomplete = types();
     incomplete.remove(&6);
     assert!(exact_occurrence_transfer(&bytes, &records, &scope, &incomplete).is_none());
@@ -229,7 +230,7 @@ fn occurrence_transfer_requires_typed_context_and_collection_ownership() {
 #[test]
 fn occurrence_transfer_rejects_other_types_with_an_occurrence_prefix() {
     let (bytes, scope) = fixture(false, false, 0);
-    let records = IndexedRecordOffsets::build(&bytes);
+    let records = crate::design::test_support::test_primary_frames(&bytes);
     let mut wrong_type = types();
     wrong_type.insert(10, (COMPONENT_TYPE, 0));
     assert!(exact_occurrence_transfer(&bytes, &records, &scope, &wrong_type).is_none());

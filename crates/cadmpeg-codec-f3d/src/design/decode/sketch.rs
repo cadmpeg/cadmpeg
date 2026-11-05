@@ -2,6 +2,7 @@
 //! Parse Design sketch placements, headers, relations, and geometry.
 
 use crate::bytes::lp_utf16_bounded;
+use crate::metastream::PrimaryFrames;
 use cadmpeg_core::decode::u64_from_index;
 
 use crate::records::sketch_placement::{
@@ -49,134 +50,9 @@ use super::meta::{
 
 const EPS_SKETCH_DECODE_LINE_COMPONENTS_E12: f64 = 1.0e-12;
 
-/// Byte offsets of every indexed-record header in one `BulkStream`, grouped by
-/// the record index carried at header offset seven.
-pub(in crate::design) struct IndexedRecordOffsets {
-    by_record_index: HashMap<u32, Vec<usize>>,
-}
-
-impl IndexedRecordOffsets {
-    pub(in crate::design) fn from_primary_frames(
-        frames: &[super::meta::DesignPrimaryFrame<'_>],
-    ) -> Self {
-        let mut by_record_index = HashMap::<u32, Vec<usize>>::new();
-        for frame in frames {
-            let Ok(index) = u32::try_from(frame.entity_id) else {
-                continue;
-            };
-            let offsets = by_record_index.entry(index).or_default();
-            offsets.push(frame.start);
-            if frame.member_end < frame.end {
-                offsets.push(frame.member_end);
-            }
-        }
-        for offsets in by_record_index.values_mut() {
-            offsets.sort_unstable();
-        }
-        Self { by_record_index }
-    }
-
-    /// Index every exact indexed-record header in `bytes` in one forward pass.
-    #[cfg(test)]
-    pub(in crate::design) fn build(bytes: &[u8]) -> Self {
-        let mut by_record_index = HashMap::<u32, Vec<usize>>::new();
-        for header in indexed_record_offsets(bytes) {
-            by_record_index
-                .entry(header.record_index)
-                .or_default()
-                .push(header.offset);
-        }
-        Self { by_record_index }
-    }
-
-    /// Ascending header offsets carrying `record_index`.
-    pub(in crate::design) fn offsets(&self, record_index: u32) -> &[usize] {
-        self.by_record_index
-            .get(&record_index)
-            .map_or(&[], Vec::as_slice)
-    }
-
-    pub(in crate::design) fn next_at_or_after(&self, position: usize) -> Option<usize> {
-        self.by_record_index
-            .values()
-            .filter_map(|offsets| {
-                offsets
-                    .get(offsets.partition_point(|offset| *offset < position))
-                    .copied()
-            })
-            .min()
-    }
-
-    /// Record indexes and their ascending header offsets.
-    pub(in crate::design) fn records(&self) -> impl Iterator<Item = (u32, &[usize])> {
-        self.by_record_index
-            .iter()
-            .map(|(record_index, offsets)| (*record_index, offsets.as_slice()))
-    }
-
-    /// The first header at or after `position` that carries `record_index`.
-    pub(super) fn first_at_or_after(&self, position: usize, record_index: u32) -> Option<usize> {
-        let offsets = self.offsets(record_index);
-        offsets
-            .get(offsets.partition_point(|offset| *offset < position))
-            .copied()
-    }
-
-    /// Consecutive header offsets carrying `record_index`, each pair delimiting
-    /// one frame of that record.
-    pub(in crate::design) fn frames(
-        &self,
-        record_index: u32,
-    ) -> impl Iterator<Item = (usize, usize)> + '_ {
-        self.offsets(record_index)
-            .windows(2)
-            .map(|pair| (pair[0], pair[1]))
-    }
-}
-
 fn entity_meta_scope(bulk_scope: &str) -> Option<String> {
     let prefix = bulk_scope.strip_suffix("BulkStream.dat")?;
     Some(format!("{prefix}MetaStream.dat"))
-}
-
-/// Cache a stream index under its borrowed identity.
-pub(in crate::design) fn cached_borrowed_record_offsets<'a, 's>(
-    cache: &'a mut HashMap<&'s str, IndexedRecordOffsets>,
-    stream: &'s str,
-    bytes: &[u8],
-    scan: &ContainerScan,
-    entry_name: &str,
-) -> Result<Option<&'a IndexedRecordOffsets>, CodecError> {
-    Ok(Some(match cache.entry(stream) {
-        std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
-        std::collections::hash_map::Entry::Vacant(entry) => {
-            let Some(meta) = metadata_for_bulk_stream(scan, entry_name)? else {
-                return Ok(None);
-            };
-            let frames = design_primary_frames(bytes, &meta)?;
-            entry.insert(IndexedRecordOffsets::from_primary_frames(&frames))
-        }
-    }))
-}
-
-/// Cache a stream index under owned stream text.
-pub(in crate::design) fn cached_owned_record_offsets<'a>(
-    cache: &'a mut HashMap<String, IndexedRecordOffsets>,
-    stream: &str,
-    bytes: &[u8],
-    scan: &ContainerScan,
-    entry_name: &str,
-) -> Result<Option<&'a IndexedRecordOffsets>, CodecError> {
-    Ok(Some(match cache.entry(stream.to_owned()) {
-        std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
-        std::collections::hash_map::Entry::Vacant(entry) => {
-            let Some(meta) = metadata_for_bulk_stream(scan, entry_name)? else {
-                return Ok(None);
-            };
-            let frames = design_primary_frames(bytes, &meta)?;
-            entry.insert(IndexedRecordOffsets::from_primary_frames(&frames))
-        }
-    }))
 }
 
 /// Decode the unique local-to-model placement frame referenced by every
@@ -202,7 +78,10 @@ pub(crate) fn decode_sketch_placements(
             continue;
         };
         let frames = design_primary_frames(bytes, &meta)?;
-        record_offsets.insert(scope, IndexedRecordOffsets::from_primary_frames(&frames));
+        record_offsets.insert(
+            scope,
+            crate::design::decode::meta::primary_frame_extents(&frames),
+        );
     }
     let mut visibilities = HashMap::new();
     for entry in scan
@@ -698,7 +577,7 @@ fn parse_member_run_head_placement(
     bytes: &[u8],
     entity_byte_offset: u64,
     entity_id: &crate::records::identity::DesignEntityId,
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
 ) -> Option<DesignSketchPlacement> {
     let parsed = (|| {
         let start = usize::try_from(entity_byte_offset).ok()?;
@@ -801,7 +680,7 @@ fn parse_sketch_placement_candidates(
     scope_record_index: u32,
     entity_id: &crate::records::identity::DesignEntityId,
     record_index: u32,
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
 ) -> Vec<DesignSketchPlacement> {
     let mut out = Vec::new();
     for pair in records.offsets(record_index).windows(2) {
@@ -1435,7 +1314,7 @@ fn parse_legacy_sketch_container_members(
     bytes: &[u8],
     primary_at: usize,
     entity_suffix: u32,
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
 ) -> Option<Vec<crate::records::identity::Located<u32>>> {
     let paired_at = records.first_at_or_after(primary_at.checked_add(1)?, entity_suffix)?;
     if let Some(members) = parse_legacy_sketch_member_run(bytes, paired_at, entity_suffix) {
@@ -1583,7 +1462,7 @@ pub(crate) fn decode_entity_headers(
         let Some(candidates) = candidates.filter(|candidates| !candidates.is_empty()) else {
             continue;
         };
-        let records = IndexedRecordOffsets::from_primary_frames(&frames);
+        let records = crate::design::decode::meta::primary_frame_extents(&frames);
         let mut existing = std::collections::HashSet::new();
         for entity in out
             .iter()
@@ -5209,10 +5088,8 @@ fn parse_text_glyph_run(payload: &[u8], at: usize) -> Result<Option<TextGlyphRun
     parsed.transpose()
 }
 
-/// Validated indexed-record identity and byte offset.
+/// Validated indexed-record identity.
 pub(in crate::design::decode) struct IndexedRecordHeader {
-    #[cfg(test)]
-    pub(super) offset: usize,
     pub(super) record_index: u32,
     pub(super) class_tag: crate::records::references::DesignClassTag,
 }
@@ -5227,34 +5104,9 @@ pub(super) fn indexed_record_header_at(bytes: &[u8], at: usize) -> Option<Indexe
         .try_into()
         .ok()?;
     Some(IndexedRecordHeader {
-        #[cfg(test)]
-        offset: at,
         record_index: View::u32_le_at(bytes, at + 7)?,
         class_tag,
     })
-}
-
-#[cfg(test)]
-pub(in crate::design) fn next_indexed_record_offset(
-    bytes: &[u8],
-    position: usize,
-) -> Option<usize> {
-    indexed_record_offsets(bytes.get(position..)?)
-        .next()
-        .map(|header| position + header.offset)
-}
-
-/// Header offsets of every indexed record whose class tag is three characters.
-///
-/// A class tag is `256` plus an index into the segment's own type table, so a
-/// tag reaches four characters only in a segment registering more than 744
-/// types. No segment registers that many.
-#[cfg(test)]
-pub(super) fn indexed_record_offsets(
-    bytes: &[u8],
-) -> impl Iterator<Item = IndexedRecordHeader> + '_ {
-    memchr::memmem::find_iter(bytes, &[3, 0, 0, 0])
-        .filter_map(|at| indexed_record_header_at(bytes, at))
 }
 
 fn marked_u32(bytes: &[u8], position: usize) -> Option<(u32, usize)> {

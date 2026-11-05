@@ -24,7 +24,6 @@ pub(super) struct ExtrudeDefinition<'a> {
     pub(super) start: &'a ExtrudeStart,
     pub(super) extent: &'a ExtrudeExtent,
     pub(super) op: &'a BooleanOp,
-    pub(super) solid: Option<bool>,
     pub(super) face_maker: Option<&'a FaceMaker>,
     pub(super) inner_wire_taper: Option<&'a InnerWireTaper>,
     pub(super) length_along_profile_normal: Option<bool>,
@@ -60,7 +59,6 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             start,
             extent,
             op,
-            solid,
             face_maker,
             inner_wire_taper,
             length_along_profile_normal,
@@ -106,7 +104,6 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             if !matches!(start, cadmpeg_ir::features::ExtrudeStart::ProfilePlane {})
                 || second_side_draft.is_some()
                 || direction_source.is_some()
-                || solid == Some(false)
                 || face_maker.is_some()
                 || inner_wire_taper.is_some()
                 || any_side_offset

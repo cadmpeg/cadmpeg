@@ -7,7 +7,7 @@ use crate::test_support::indexed_header;
 
 fn parse_edge_operand(
     bytes: &[u8],
-    records: &crate::design::decode::sketch::IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
     ordinal: u32,
     header: &DesignRecordHeader,
@@ -32,7 +32,7 @@ fn parse_edge_operand(
 
 fn parse_face_operand(
     bytes: &[u8],
-    records: &crate::design::decode::sketch::IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
     (ordinal, group_ownership): (u32, Option<(u32, u32)>),
     next_byte_offset: Option<u64>,
@@ -61,7 +61,7 @@ fn parse_face_operand(
 
 fn parse_vertex_recipe(
     bytes: &[u8],
-    records: &crate::design::decode::sketch::IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     stream: &str,
     header: &DesignRecordHeader,
     recipes: &[ConstructionRecipe],
@@ -86,7 +86,7 @@ fn face_recipe_boundary_accepts_omitted_n_plus_four() {
     assert_eq!(
         crate::design::decode::operands::face_recipe_next_boundary(
             &ordinary,
-            &crate::design::test_support::indexed_record_offsets_for_test(&ordinary),
+            &crate::design::test_support::test_primary_frames(&ordinary),
             ordinary_position,
             100,
             None,
@@ -105,7 +105,7 @@ fn face_recipe_boundary_accepts_omitted_n_plus_four() {
     assert_eq!(
         crate::design::decode::operands::face_recipe_next_boundary(
             &omitted,
-            &crate::design::test_support::indexed_record_offsets_for_test(&omitted),
+            &crate::design::test_support::test_primary_frames(&omitted),
             position,
             100,
             None
@@ -122,7 +122,7 @@ fn face_recipe_boundary_accepts_omitted_n_plus_four() {
     assert_eq!(
         crate::design::decode::operands::face_recipe_next_boundary(
             &arbitrary,
-            &crate::design::test_support::indexed_record_offsets_for_test(&arbitrary),
+            &crate::design::test_support::test_primary_frames(&arbitrary),
             arbitrary_position,
             100,
             None,

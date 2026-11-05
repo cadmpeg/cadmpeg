@@ -44,6 +44,70 @@ pub(crate) struct PrimaryRecordFrame {
     pub(crate) end: usize,
 }
 
+pub(crate) trait PrimaryFrames {
+    fn offsets(&self, record_index: u32) -> Vec<usize>;
+    fn first_at_or_after(&self, position: usize, record_index: u32) -> Option<usize>;
+    fn next_at_or_after(&self, position: usize) -> Option<usize>;
+    fn frames(&self, record_index: u32) -> impl Iterator<Item = (usize, usize)> + '_;
+    fn records(&self) -> impl Iterator<Item = (u32, Vec<usize>)> + '_;
+}
+
+impl PrimaryFrames for [PrimaryRecordFrame] {
+    fn offsets(&self, record_index: u32) -> Vec<usize> {
+        self.iter()
+            .filter(|frame| frame.entity_id == u64::from(record_index))
+            .flat_map(|frame| {
+                [
+                    Some(frame.start),
+                    (frame.member_end < frame.end).then_some(frame.member_end),
+                ]
+            })
+            .flatten()
+            .collect()
+    }
+    fn first_at_or_after(&self, position: usize, record_index: u32) -> Option<usize> {
+        self.iter()
+            .filter(|frame| frame.entity_id == u64::from(record_index))
+            .flat_map(|frame| {
+                [
+                    Some(frame.start),
+                    (frame.member_end < frame.end).then_some(frame.member_end),
+                ]
+            })
+            .flatten()
+            .find(|offset| *offset >= position)
+    }
+    fn next_at_or_after(&self, position: usize) -> Option<usize> {
+        let next = self.partition_point(|frame| frame.start < position);
+        let primary = self.get(next).map(|frame| frame.start);
+        let paired = next
+            .checked_sub(1)
+            .and_then(|index| self.get(index))
+            .and_then(|frame| {
+                (frame.member_end < frame.end && frame.member_end >= position)
+                    .then_some(frame.member_end)
+            });
+        primary.into_iter().chain(paired).min()
+    }
+    fn frames(&self, record_index: u32) -> impl Iterator<Item = (usize, usize)> + '_ {
+        self.iter()
+            .filter(move |frame| {
+                frame.entity_id == u64::from(record_index) && frame.member_end < frame.end
+            })
+            .map(|frame| (frame.start, frame.member_end))
+    }
+    fn records(&self) -> impl Iterator<Item = (u32, Vec<usize>)> + '_ {
+        self.iter().filter_map(|frame| {
+            let id = u32::try_from(frame.entity_id).ok()?;
+            let mut offsets = vec![frame.start];
+            if frame.member_end < frame.end {
+                offsets.push(frame.member_end);
+            }
+            Some((id, offsets))
+        })
+    }
+}
+
 /// Resolve the primary index to nonempty, strictly ordered sibling-BulkStream
 /// extents.
 pub(crate) fn primary_record_frames(
@@ -492,7 +556,7 @@ pub(crate) fn parse(bytes: &[u8], stream: &str) -> Result<MetaStream, CodecError
 
 #[cfg(test)]
 mod tests {
-    use super::{MetaStream, RecordIndexEntry};
+    use super::{MetaStream, PrimaryFrames, RecordIndexEntry};
     use crate::test_support::streams_test::design_metastream;
     use crate::test_support::{lp_ascii, lp_utf16};
 
@@ -705,6 +769,13 @@ mod tests {
         assert_eq!(frames[1].start, 9);
         assert_eq!(frames[1].member_end, 14);
         assert_eq!(frames[1].end, 14);
+        assert_eq!(frames.offsets(11), [3, 7]);
+        assert_eq!(frames.offsets(12), [9]);
+        assert_eq!(frames.next_at_or_after(4), Some(7));
+        assert_eq!(frames.next_at_or_after(8), Some(9));
+        assert_eq!(frames.next_at_or_after(10), None);
+        assert_eq!(frames.first_at_or_after(4, 11), Some(7));
+        assert_eq!(frames.frames(11).collect::<Vec<_>>(), [(3, 7)]);
 
         let empty = MetaStream {
             types: Vec::new(),
