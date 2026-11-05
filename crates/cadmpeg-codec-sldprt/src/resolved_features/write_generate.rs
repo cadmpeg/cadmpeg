@@ -810,8 +810,15 @@ pub(super) fn append_coordinate_marker_link(
     payload: &mut [u8],
     owner_local_id: u16,
     relation_local_id: u16,
-) -> Result<(), cadmpeg_core::CodecError> {
+) -> Result<(), crate::writer::write_error::WriteError> {
     const SELECTOR: u16 = 0x8386;
+    const CAPACITY: cadmpeg_ir::codec::write::CapacityField =
+        cadmpeg_ir::codec::write::CapacityField {
+            field: "sketch.coordinate_marker.local_links",
+            limit: 2,
+            source: "docs/formats/sldprt.md §2: coordinate marker local-link count",
+            helper: "append_coordinate_marker_link",
+        };
     let offsets = payload
         .windows(SKETCH_MARKER.len())
         .enumerate()
@@ -822,7 +829,8 @@ pub(super) fn append_coordinate_marker_link(
     let [offset] = offsets.as_slice() else {
         return Err(cadmpeg_core::CodecError::UnsupportedContent(format!(
             "source-less SLDPRT reverse relation cannot identify coordinate marker {owner_local_id}"
-        )));
+        ))
+        .into());
     };
     let count = usize::from(View::u16_le_at(payload, *offset + 84).ok_or_else(|| {
         cadmpeg_core::CodecError::Malformed(
@@ -830,15 +838,16 @@ pub(super) fn append_coordinate_marker_link(
         )
     })?);
     if count >= 2 {
-        // (O-capacity): the target field cannot encode a value outside its width.
-        return Err(cadmpeg_core::CodecError::NotImplemented(format!(
-            "source-less SLDPRT coordinate marker {owner_local_id} exceeds two reverse relations"
-        )));
+        return Err(crate::writer::write_error::WriteError::Capacity {
+            field: &CAPACITY,
+            value: cadmpeg_core::decode::u64_from_index(count) + 1,
+        });
     }
     if count > 0 && payload.get(*offset + 86..*offset + 88) != Some(&SELECTOR.to_le_bytes()) {
         return Err(cadmpeg_core::CodecError::Malformed(
             "source-less SLDPRT coordinate marker changed reverse-relation selector".into(),
-        ));
+        )
+        .into());
     }
     let cell = offset + 86 + count * 12;
     let end = cell + 18;
