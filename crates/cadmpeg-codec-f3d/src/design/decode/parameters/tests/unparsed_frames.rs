@@ -102,10 +102,10 @@ fn owner_of_given_up_parameter_is_named_in_the_parameter_loss() {
     let scan = crate::container::scan(&ctx, root).unwrap();
     let mut output =
         cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
-    let mut parameters =
+    let parameters =
         super::super::decode_parameters(&ctx, &scan, &mut output, &mut Default::default()).unwrap();
     let owners =
-        super::super::decode_parameter_owners(&ctx, &scan, &mut parameters, &mut output).unwrap();
+        super::super::decode_parameter_owners(&ctx, &scan, &parameters, &mut output).unwrap();
     assert!(parameters.is_empty());
     assert!(owners.is_empty());
     let (_, native, _, losses) = output.into_parts();
@@ -117,6 +117,68 @@ fn owner_of_given_up_parameter_is_named_in_the_parameter_loss() {
     assert!(losses
         .iter()
         .any(|loss| loss.message.contains("design-parameter-owner#")));
+}
+
+#[test]
+fn damaged_owner_keeps_the_readable_parameter() {
+    let stream = "FusionAssetName[Active]/Design1/BulkStream.dat";
+    let mut parameter = typed_parameter_record(45, Some(44), "AlongDistance");
+    parameter[4..7].copy_from_slice(b"256");
+    let mut owner = crate::design::test_support::parameter_owner_frame();
+    owner[4..7].copy_from_slice(b"257");
+    owner[19] = 7;
+    let owner_at = parameter.len();
+    parameter.extend_from_slice(&owner);
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    write_synthetic_manifests(&mut zip, stored);
+    zip.start_file(stream, stored).unwrap();
+    zip.write_all(&parameter).unwrap();
+    let metadata = crate::test_support::streams_test::design_metastream_with_records(
+        &[
+            (
+                "7A6A3D31-BE74-4E19-9115-20642944C2E4",
+                "",
+                1,
+                "Fusion",
+                &[45],
+            ),
+            (
+                "D91D429C-1BB5-4640-B49F-69AF14F463E9",
+                "",
+                1,
+                "Fusion",
+                &[44],
+            ),
+        ],
+        &[(45, 0), (44, u64::try_from(owner_at).unwrap())],
+    );
+    zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
+        .unwrap();
+    zip.write_all(&metadata).unwrap();
+    let archive = zip.finish().unwrap().into_inner();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, root) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&archive, &arena, &policy).unwrap();
+    let scan = crate::container::scan(&ctx, root).unwrap();
+    let mut output =
+        cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
+    let parameters =
+        super::super::decode_parameters(&ctx, &scan, &mut output, &mut Default::default()).unwrap();
+    let owners =
+        super::super::decode_parameter_owners(&ctx, &scan, &parameters, &mut output).unwrap();
+    assert_eq!(parameters.len(), 1);
+    assert_eq!(parameters[0].record_index, 45);
+    assert!(owners.is_empty());
+    let (_, native, _, losses) = output.into_parts();
+    assert_eq!(
+        native.namespace("f3d").unwrap().arenas()["unknowns"].len(),
+        1
+    );
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].code.local_code(), "record.unreadable");
+    assert!(losses[0].message.contains("44"));
 }
 
 #[test]
@@ -269,4 +331,80 @@ fn parameter_primary_index_bounds_each_record() {
     assert_eq!(frames.len(), 2);
     assert_eq!((frames[0].start, frames[0].end), (0, valid_at));
     assert_eq!((frames[1].start, frames[1].end), (valid_at, bulk.len()));
+}
+
+#[test]
+fn damaged_companion_keeps_the_readable_owner() {
+    const STREAM: &str = "FusionAssetName[Active]/Design1/BulkStream.dat";
+    let mut prefix = vec![0; 58];
+    prefix[0..4].copy_from_slice(&3u32.to_le_bytes());
+    prefix[4..7].copy_from_slice(b"256");
+    prefix[7..11].copy_from_slice(&46u32.to_le_bytes());
+    prefix[31] = 1;
+    prefix[32..36].copy_from_slice(&44u32.to_le_bytes());
+
+    let owner = crate::records::parameters::DesignParameterOwner::try_from(
+        crate::records::parameters::DesignParameterOwnerWire {
+            id: format!(
+                "{}:design-parameter-owner#1",
+                crate::ids::native_scope(STREAM)
+            ),
+            byte_offset: 1,
+            frame_length: 104,
+            class_tag: crate::records::references::DesignClassTag::try_from("292".to_owned())
+                .unwrap(),
+            record_index: 44,
+            scope_record_index: 10,
+            local_ordinal: 0,
+            evaluated_value: 2.0,
+            evaluated_value_offset: 41,
+            parameter_record_index: 45,
+            owned_ordinal: 0,
+            variant: Some(0),
+            companion_record_index: 46,
+        },
+    )
+    .unwrap();
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    write_synthetic_manifests(&mut zip, stored);
+    zip.start_file(STREAM, stored).unwrap();
+    zip.write_all(&prefix).unwrap();
+    let metadata = crate::test_support::streams_test::design_metastream_with_records(
+        &[(
+            "00000000-0000-0000-0000-000000000001",
+            "",
+            1,
+            "Fusion",
+            &[46],
+        )],
+        &[(46, 0)],
+    );
+    zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
+        .unwrap();
+    zip.write_all(&metadata).unwrap();
+    let archive = zip.finish().unwrap().into_inner();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, root) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&archive, &arena, &policy).unwrap();
+    let scan = crate::container::scan(&ctx, root).unwrap();
+    let mut output =
+        cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
+    {
+        let owners = vec![owner];
+        let decoded =
+            super::super::decode_parameter_companions(&ctx, &scan, &owners, &mut output).unwrap();
+        assert!(decoded.is_empty());
+        assert_eq!(owners.len(), 1);
+        assert_eq!(owners[0].record_index(), 44);
+    }
+    let (_, native, _, losses) = output.into_parts();
+    assert_eq!(
+        native.namespace("f3d").unwrap().arenas()["unknowns"].len(),
+        1
+    );
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].code.local_code(), "record.unreadable");
+    assert!(losses[0].message.contains("46"));
 }

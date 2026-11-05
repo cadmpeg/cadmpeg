@@ -574,14 +574,12 @@ fn every_card_prefix_and_three_byte_cuts_per_card_keep_complete_records() {
             // case the decode uses the declared owner instead of the
             // back-pointer fallback and charges one fewer framing note.
             // Anything else must decode exactly like its card prefix.
-            let ends_in_parameter = crate::card::scan(&bytes)
-                .map(|scan| {
-                    matches!(
-                        scan.source_end,
-                        crate::card::SourceEnd::EndsIn(crate::card::OpenSection::Parameter)
-                    )
-                })
-                .unwrap_or(false);
+            let ends_in_parameter = crate::card::scan(&bytes).is_ok_and(|scan| {
+                matches!(
+                    scan.source_end,
+                    crate::card::SourceEnd::EndsIn(crate::card::OpenSection::Parameter)
+                )
+            });
             let fragment_resolves = ends_in_parameter
                 && file.cards[index].section == Section::Parameter
                 && file.entities.iter().any(|entity| {
@@ -592,14 +590,12 @@ fn every_card_prefix_and_three_byte_cuts_per_card_keep_complete_records() {
             if fragment_resolves && expected_byte_cut_framing > 0 {
                 expected_byte_cut_framing -= 1;
             }
-            let ends_in_parameter = crate::card::scan(&bytes)
-                .map(|scan| {
-                    matches!(
-                        scan.source_end,
-                        crate::card::SourceEnd::EndsIn(crate::card::OpenSection::Parameter)
-                    )
-                })
-                .unwrap_or(false);
+            let ends_in_parameter = crate::card::scan(&bytes).is_ok_and(|scan| {
+                matches!(
+                    scan.source_end,
+                    crate::card::SourceEnd::EndsIn(crate::card::OpenSection::Parameter)
+                )
+            });
             let outcome = assert_truncated(
                 &format!("byte {offset} of card {index}"),
                 &bytes,

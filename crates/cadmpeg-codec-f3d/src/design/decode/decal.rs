@@ -73,10 +73,10 @@ pub(crate) fn decode_decal_images(
             else {
                 continue;
             };
-            if !assets.contains_key(&asset_index) {
+            if let std::collections::hash_map::Entry::Vacant(slot) = assets.entry(asset_index) {
                 let asset =
                     decode_decal_asset(ctx, output, source, &entry.name, &frames, asset_index)?;
-                assets.insert(asset_index, asset);
+                slot.insert(asset);
             }
             let Some(asset) = assets.get(&asset_index).and_then(Option::as_ref).cloned() else {
                 continue;

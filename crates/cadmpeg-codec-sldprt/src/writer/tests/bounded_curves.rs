@@ -41,7 +41,7 @@ fn linear_edge_parameter_range_is_authored_as_a_bounded_curve() {
         .model
         .edges
         .iter()
-        .any(|edge| edge.param_range().map(|range| range.get()) == Some([0.0, 10.0])));
+        .any(|edge| edge.param_range().map(cadmpeg_ir::units::FiniteVector::get) == Some([0.0, 10.0])));
 }
 
 #[test]
@@ -92,7 +92,7 @@ fn circular_edge_parameter_range_survives_synthesis() {
         .model
         .edges
         .iter()
-        .filter_map(|edge| edge.param_range())
+        .filter_map(cadmpeg_ir::topology::Edge::param_range)
         .any(|actual| {
             actual
                 .get()
@@ -137,7 +137,7 @@ fn nurbs_edge_parameter_range_survives_synthesis() {
         .unwrap();
     assert!(written.ir().model.edges.iter().any(|edge| edge
         .param_range()
-        .map(|range| range.get())
+        .map(cadmpeg_ir::units::FiniteVector::get)
         == Some([0.0, 10.0])
         && edge
             .curve()

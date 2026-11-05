@@ -31,25 +31,37 @@ fn scale_length(value: f64, factor: f64) -> Option<cadmpeg_ir::scalar::Length> {
     cadmpeg_ir::scalar::Length::new(value * factor)
 }
 
+#[derive(Clone, Copy)]
+pub(super) struct Sources<'a> {
+    pub(super) entries: &'a BTreeMap<u32, &'a DirectoryEntry>,
+    pub(super) records: &'a BTreeMap<u32, &'a ParameterRecord>,
+    pub(super) length_factor: Option<f64>,
+    pub(super) precision: RealPrecision,
+}
+
+pub(super) struct Arrays<'a> {
+    pub(super) rectangular: &'a [NativeRectangularArray],
+    pub(super) circular: &'a [NativeCircularArray],
+}
+
 fn entry_rotation(
-    entries: &BTreeMap<u32, &DirectoryEntry>,
-    records: &BTreeMap<u32, &ParameterRecord>,
-    length_factor: Option<f64>,
-    precision: RealPrecision,
+    sources: Sources<'_>,
     sequence: u32,
     native_id: &str,
     losses: &mut Vec<LossNote>,
     ctx: &DecodeContext<'_>,
-) -> Result<Option<Transform>, CodecError> {
-    let Some(entry) = entries.get(&sequence) else {
-        return Ok(None);
-    };
+) -> Option<Transform> {
+    let Sources {
+        entries,
+        records,
+        length_factor,
+        precision,
+    } = sources;
+    let entry = entries.get(&sequence)?;
     if entry.transform == 0 {
-        return Ok(None);
+        return None;
     }
-    let Some(length_factor) = length_factor else {
-        return Ok(None);
-    };
+    let length_factor = length_factor?;
     match resolve_transform(
         entry.transform,
         entries,
@@ -59,12 +71,12 @@ fn entry_rotation(
         &mut BTreeSet::new(),
         ctx,
     ) {
-        Ok(transform) => Ok(Some(transform)),
+        Ok(transform) => Some(transform),
         Err(_) => {
             losses.push(IgesLossCode::NeutralProjectionUnavailable.note(format!(
                 "{native_id}: array placement pointer is not a resolvable transformation"
             )));
-            Ok(None)
+            None
         }
     }
 }
@@ -106,7 +118,7 @@ fn rectangular_positions(
     flag: Option<i64>,
     positions: &[Option<i64>],
 ) -> Option<Vec<[u32; 2]>> {
-    let total = (columns as u64).checked_mul(rows as u64)?;
+    let total = u64::from(columns).checked_mul(u64::from(rows))?;
     let mut listed = BTreeSet::new();
     for position in positions.iter().flatten() {
         let position = u32::try_from(*position).ok()?;
@@ -118,15 +130,16 @@ fn rectangular_positions(
     if positions.iter().any(Option::is_none) && matches!(flag, Some(1 | 2)) {
         return None;
     }
+    let total_positions = u32::try_from(total & u64::from(u32::MAX)).ok()?;
     let included: BTreeSet<u32> = if positions.is_empty() {
-        (1..=(total as u32)).collect()
+        (1..=total_positions).collect()
     } else {
         match flag {
             Some(0) => listed,
-            Some(1) => (1..=(total as u32))
+            Some(1) => (1..=total_positions)
                 .filter(|n| !listed.contains(n))
                 .collect(),
-            _ => (1..=(total as u32)).collect(),
+            _ => (1..=total_positions).collect(),
         }
     };
     let mut omitted = Vec::new();
@@ -144,10 +157,7 @@ fn rectangular_positions(
 fn project_rectangular(
     ir: &mut CadIr,
     record: &NativeRectangularArray,
-    entries: &BTreeMap<u32, &DirectoryEntry>,
-    records: &BTreeMap<u32, &ParameterRecord>,
-    length_factor: Option<f64>,
-    precision: RealPrecision,
+    sources: Sources<'_>,
     ordinal: &mut u64,
     losses: &mut Vec<LossNote>,
     ctx: &DecodeContext<'_>,
@@ -157,6 +167,13 @@ fn project_rectangular(
         LinearPatternDirection, PatternDistance, PatternKind, PatternSeed, PatternTransform,
     };
     use cadmpeg_ir::features::{Dimension, FeatureDefinition, FeatureDirection3, FeatureOperation};
+
+    let Sources {
+        entries,
+        records,
+        length_factor,
+        precision,
+    } = sources;
 
     let sequence = super::products::source_sequence(&record.source_entity)?;
     if !admitted.contains(&sequence) {
@@ -201,15 +218,17 @@ fn project_rectangular(
         return Ok(());
     }
     let placement = entry_rotation(
-        entries,
-        records,
-        Some(length_factor),
-        precision,
+        Sources {
+            entries,
+            records,
+            length_factor: Some(length_factor),
+            precision,
+        },
         sequence,
         &record.id,
         losses,
         ctx,
-    )?;
+    );
     let rotate = |x: f64, y: f64| {
         let (sin, cos) = rotation.sin_cos();
         let vector = cadmpeg_ir::math::Vector3::new(x * cos - y * sin, x * sin + y * cos, 0.0);
@@ -273,10 +292,7 @@ fn project_rectangular(
 fn project_circular(
     ir: &mut CadIr,
     record: &NativeCircularArray,
-    entries: &BTreeMap<u32, &DirectoryEntry>,
-    records: &BTreeMap<u32, &ParameterRecord>,
-    length_factor: Option<f64>,
-    precision: RealPrecision,
+    sources: Sources<'_>,
     ordinal: &mut u64,
     losses: &mut Vec<LossNote>,
     ctx: &DecodeContext<'_>,
@@ -286,6 +302,13 @@ fn project_circular(
         CircularPatternDistribution, PatternAngle, PatternKind, PatternSeed, PatternTransform,
     };
     use cadmpeg_ir::features::{Dimension, FeatureDefinition, FeatureDirection3, FeatureOperation};
+
+    let Sources {
+        entries,
+        records,
+        length_factor,
+        precision,
+    } = sources;
 
     let sequence = super::products::source_sequence(&record.source_entity)?;
     if !admitted.contains(&sequence) {
@@ -335,15 +358,17 @@ fn project_circular(
     // discarded-value: the circular start angle stays in the native array record only.
     let _ = start;
     let placement = entry_rotation(
-        entries,
-        records,
-        Some(length_factor),
-        precision,
+        Sources {
+            entries,
+            records,
+            length_factor: Some(length_factor),
+            precision,
+        },
         sequence,
         &record.id,
         losses,
         ctx,
-    )?;
+    );
     let mut axis = cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0);
     if let Some(placement) = placement {
         let Some(rotated) = placement.apply_vector(axis).and_then(|direction| {
@@ -380,7 +405,7 @@ fn project_circular(
             _ => (1..=count).collect(),
         }
     };
-    let transform = if included.len() as u64 == total {
+    let transform = if u64::try_from(included.len()).ok() == Some(total) {
         if count == 1 {
             let Some(zero) = cadmpeg_ir::scalar::Angle::new(0.0) else {
                 unavailable(losses);
@@ -452,44 +477,22 @@ fn project_circular(
 
 pub(super) fn project(
     ir: &mut CadIr,
-    rectangular: &[NativeRectangularArray],
-    circular: &[NativeCircularArray],
-    entries: &BTreeMap<u32, &DirectoryEntry>,
-    records: &BTreeMap<u32, &ParameterRecord>,
-    length_factor: Option<f64>,
-    precision: RealPrecision,
+    arrays: &Arrays<'_>,
+    sources: Sources<'_>,
     ordinal: &mut u64,
     losses: &mut Vec<LossNote>,
     ctx: &DecodeContext<'_>,
     admitted: &BTreeSet<u32>,
 ) -> Result<(), CodecError> {
+    let &Arrays {
+        rectangular,
+        circular,
+    } = arrays;
     for record in rectangular {
-        project_rectangular(
-            ir,
-            record,
-            entries,
-            records,
-            length_factor,
-            precision,
-            ordinal,
-            losses,
-            ctx,
-            admitted,
-        )?;
+        project_rectangular(ir, record, sources, ordinal, losses, ctx, admitted)?;
     }
     for record in circular {
-        project_circular(
-            ir,
-            record,
-            entries,
-            records,
-            length_factor,
-            precision,
-            ordinal,
-            losses,
-            ctx,
-            admitted,
-        )?;
+        project_circular(ir, record, sources, ordinal, losses, ctx, admitted)?;
     }
     Ok(())
 }

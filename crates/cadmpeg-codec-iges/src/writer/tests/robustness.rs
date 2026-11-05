@@ -69,6 +69,7 @@ fn injected_errors_succeed_and_name_the_record() {
 
 #[test]
 fn capacity_helpers_follow_their_rows() {
+    use cadmpeg_ir::codec::write::EncodeError;
     assert_eq!(super::super::capacity::CAPACITY_FIELDS.len(), 2);
     assert_eq!(
         super::super::capacity::CAPACITY_FIELDS[0].field,
@@ -80,9 +81,8 @@ fn capacity_helpers_follow_their_rows() {
         "card.sequence"
     );
     assert_eq!(super::super::capacity::CAPACITY_FIELDS[1].limit, 9_999_999);
-    use cadmpeg_ir::codec::write::EncodeError;
     let fields = super::super::capacity::CAPACITY_FIELDS;
-    let payload = vec![b'A'; fields[0].limit as usize];
+    let payload = vec![b'A'; usize::try_from(fields[0].limit).expect("payload limit fits usize")];
     let sequence = u32::try_from(fields[1].limit).expect("seven-digit limit fits u32");
     let bytes = super::super::card(&payload, b'S', sequence).expect("limits write");
     let scan = crate::card::scan(&bytes).expect("written card scans");
@@ -198,7 +198,7 @@ fn reduced_rows_are_empty_for_iges() {
     // round-trips at full precision (#232 §5.2).
     assert!(super::super::REDUCED_FIELDS.is_empty());
     let seed = seed_golden();
-    let encoder = &IgesCodec as &dyn Encoder;
+    let encoder: &dyn Encoder = &IgesCodec;
     let redecode = |written: &[u8]| {
         let result = IgesCodec
             .decode(&mut Cursor::new(written), &DecodeOptions::default())

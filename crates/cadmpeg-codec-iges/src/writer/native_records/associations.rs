@@ -44,7 +44,7 @@ pub(super) fn link(ir: &CadIr, entities: &mut [Entity], targets: &Targets) {
                 );
             }
             Some("dimensioned_geometry") => {
-                members.extend(fields.get("dimension").and_then(Value::as_str))
+                members.extend(fields.get("dimension").and_then(Value::as_str));
             }
             _ => continue,
         }
