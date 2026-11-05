@@ -1190,6 +1190,87 @@ fn omitted_body_reports_each_owned_topology_record() {
 }
 
 #[test]
+fn omitted_sheet_face_names_the_face_when_its_shell_survives() {
+    let mut ir = crate::test_support::ir::source_less_cube();
+    ir.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Sheet;
+    let face = ir.model.faces[0].id.clone();
+    let surface = ir.model.faces[0].surface.clone();
+    ir.model
+        .surfaces
+        .iter_mut()
+        .find(|record| record.id == surface)
+        .unwrap()
+        .geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("a sheet with a writable face can be synthesized");
+    assert!(
+        plan.report().losses.iter().any(|loss| {
+            loss.code == crate::loss::SldprtLossCode::WriterEntityOmitted.kind()
+                && loss.message.contains(face.as_str())
+        }),
+        "the omitted face must have its own loss"
+    );
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let written = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(
+        !written.ir().model.faces.is_empty(),
+        "a writable sheet face remains"
+    );
+}
+
+#[test]
+fn omitted_sheet_shell_has_a_loss_when_its_region_survives() {
+    let mut ir = crate::test_support::ir::source_less_cube();
+    ir.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Sheet;
+    let face = ir.model.faces[0].id.clone();
+    let surface = ir.model.faces[0].surface.clone();
+    let shell = cadmpeg_ir::ids::ShellId::mint("synthetic:test:shell#unsupported").unwrap();
+    let region = ir.model.regions[0].id.clone();
+    let other_faces = ir.model.shells[0]
+        .faces()
+        .iter()
+        .filter(|id| **id != face)
+        .cloned()
+        .collect();
+    ir.model.shells[0].replace_faces(other_faces).unwrap();
+    ir.model.faces[0].shell = shell.clone();
+    ir.model
+        .shells
+        .push(cadmpeg_ir::topology::Shell::with_faces(shell.clone(), region, vec![face]).unwrap());
+    ir.model.regions[0].shells.push(shell.clone());
+    ir.model
+        .surfaces
+        .iter_mut()
+        .find(|record| record.id == surface)
+        .unwrap()
+        .geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None });
+    ir.model.finalize();
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("a sheet with a writable shell can be synthesized");
+    assert!(
+        plan.report().losses.iter().any(|loss| {
+            loss.code == crate::loss::SldprtLossCode::WriterEntityOmitted.kind()
+                && loss.message.contains(shell.as_str())
+        }),
+        "the omitted shell must have its own loss"
+    );
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let written = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(
+        !written.ir().model.shells.is_empty(),
+        "a writable sheet shell remains"
+    );
+}
+
+#[test]
 fn wire_body_is_reported_without_discarding_a_solid() {
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("cube admitted");
     let wire_id = cadmpeg_ir::ids::BodyId::mint("synthetic:test:body#wire").expect("body id");
