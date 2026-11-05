@@ -748,11 +748,16 @@ fn null_dangling(before: &Value, required: &BTreeSet<String>) -> Value {
 ///
 /// Paths use the collapsed `[]` spelling of [`record_paths`] and
 /// [`project_document`] (`model.bodies[].color`). A row names a value
-/// position; when that value is a container, the row's storage applies to
-/// every scalar below it, so per-channel numbers quantize while tags and
-/// other non-numeric leaves pass through [`apply_storage`] unchanged.
+/// position; quantized container values apply to every scalar below them.
+/// A named normalization receives the complete value at its declared path.
 fn apply_reduced(before: &Value, reduced: &[ReducedProbe], normalize: bool) -> Value {
     fn apply_row(value: &mut Value, row: &ReducedProbe) {
+        if matches!(row.storage, ReducedStorage::Normalized { .. }) {
+            if let Some(normalize) = row.normalize {
+                *value = normalize(value);
+                return;
+            }
+        }
         match value {
             Value::Array(items) => {
                 for item in items {
@@ -900,6 +905,37 @@ mod tests {
         assert_eq!(single.as_f64().expect("number"), f64::from(0.1_f32));
         let decimal = apply_storage(ReducedStorage::Decimal(2), &json!(1.005), None);
         assert!((decimal.as_f64().expect("number") - 1.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn cone_normalization_compares_the_angle_and_axis_together() {
+        let rows = [ReducedProbe {
+            path: "geometry",
+            storage: ReducedStorage::Normalized {
+                loss: "step/geometry.analytic-surface-normalized",
+            },
+            normalize: Some(crate::reduced::step_cone_chart),
+        }];
+        let source = json!({"model":{"surfaces":[{"geometry":{
+            "kind":"cone", "half_angle":-0.5, "axis":{"x":0.0,"y":0.0,"z":-1.0}, "radius":2.0
+        }}]}});
+        let target = json!({"model":{"surfaces":[{"geometry":{
+            "kind":"cone", "half_angle":0.5, "axis":{"x":0.0,"y":0.0,"z":1.0}, "radius":2.0
+        }}]}});
+        let mut wrong = target.clone();
+        wrong["model"]["surfaces"][0]["geometry"]["radius"] = json!(3.0);
+        assert_eq!(
+            apply_reduced(&source, &rows, true),
+            apply_reduced(&target, &rows, false)
+        );
+        assert_ne!(
+            apply_reduced(&source, &rows, true),
+            apply_reduced(&wrong, &rows, false)
+        );
+        assert_ne!(
+            apply_reduced(&source, &rows, false),
+            apply_reduced(&target, &rows, false)
+        );
     }
 
     #[test]
