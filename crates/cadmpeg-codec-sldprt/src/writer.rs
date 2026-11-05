@@ -4840,6 +4840,7 @@ fn write_attribute_list(
     Ok(())
 }
 
+#[derive(Clone, Copy)]
 enum AttributeCount {
     One,
     Two,
