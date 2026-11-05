@@ -1556,6 +1556,17 @@ fn detect_incomplete_sections(
     expressions: &[crate::curve::CurveExpressionRecord],
     expansion_losses: &[SectionExpansionLoss],
 ) -> Vec<IncompleteSection> {
+    const RECORD_LABELS: [&[u8]; 9] = [
+        b"srf_array\0",
+        b"crv_array\0",
+        b"topol_ref_data\0",
+        b"lo_array\0",
+        b"qlt_array\0",
+        b"entity(crv_fr_eqn)\0",
+        b"backup_ents(crv_fr_eqn)\0",
+        b"expression\0",
+        b"name\0",
+    ];
     let mut incomplete = Vec::new();
     let mut seen = std::collections::BTreeSet::new();
     let mut mark = |offset: usize, label: &'static str, exclude_rows: bool, reason: String| {
@@ -1725,17 +1736,6 @@ fn detect_incomplete_sections(
         // A payload cut mid-label, mid-word, or mid-expression never
         // completes its trailing token. Only fragments that reach EOF count;
         // well-formed payloads end at complete record boundaries.
-        const RECORD_LABELS: [&[u8]; 9] = [
-            b"srf_array\0",
-            b"crv_array\0",
-            b"topol_ref_data\0",
-            b"lo_array\0",
-            b"qlt_array\0",
-            b"entity(crv_fr_eqn)\0",
-            b"backup_ents(crv_fr_eqn)\0",
-            b"expression\0",
-            b"name\0",
-        ];
         let payload = section_payload(data, &last.section).unwrap_or(&[]);
         // A strict prefix of a known label reaches EOF: the label never
         // completes. Single bytes and short fragments match binary noise, so
