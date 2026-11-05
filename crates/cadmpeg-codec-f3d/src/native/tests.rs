@@ -12,7 +12,6 @@ use cadmpeg_ir::geometry::ProceduralSurfaceDefinition;
 use cadmpeg_ir::report::Severity;
 use zip::CompressionMethod;
 
-use crate::loss::F3dLossCode;
 use crate::test_support::manifest_test::write_synthetic_manifests;
 use crate::test_support::native_test::{f3d_native, f3d_native_mut, update_f3d_native};
 use crate::test_support::smbh_blocks_test::{
@@ -1403,29 +1402,50 @@ fn malformed_paramesh_reports_its_entry_and_parser_failure() {
         .decode(&mut Cursor::new(archive), &DecodeOptions::default())
         .expect("independent malformed mesh entry must not abort document decode");
     assert!(decoded.report().losses.iter().any(|loss| {
-        loss.code == F3dLossCode::MeshContainerUndecoded.kind()
+        loss.code
+            == cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable
+                .note("")
+                .code
             && loss.severity == Severity::Error
             && loss.message.contains(entry)
             && loss.message.contains("paramesh container has no magic")
+            && loss.provenance.is_some()
     }));
+    assert_eq!(decoded.ir().native_unknowns("f3d").unwrap().len(), 1);
 }
 
 #[test]
-fn oversized_zip_entry_declaration_is_rejected_before_allocation() {
+fn oversized_zip_entry_is_given_up_before_allocation() {
     let mut archive = f3d_with_deflated_smbh(&synthetic_geometry_smbh());
     let target = b"FusionAssetName[Active]/Breps.BlobParts/Body1.smbh";
     set_zip_entry_uncompressed_size(&mut archive, target, u32::MAX - 1);
 
-    let error = F3dCodec
+    let decoded = F3dCodec
         .decode(&mut Cursor::new(archive), &DecodeOptions::default())
-        .expect_err("oversized inflated entry must be rejected");
-    assert!(
-        matches!(
-            error,
-            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(_))
-        ),
-        "{error:?}"
-    );
+        .expect("the oversized entry is an independently recoverable part");
+    assert!(decoded.ir().model.bodies.is_empty());
+    assert_eq!(decoded.ir().native_unknowns("f3d").unwrap().len(), 1);
+    let losses: Vec<_> = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.code
+                == cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable
+                    .note("")
+                    .code
+        })
+        .collect();
+    let [loss] = losses.as_slice() else {
+        panic!("expected one unreadable ZIP entry");
+    };
+    assert!(loss.message.contains("Body1.smbh"));
+    assert!(loss.message.contains("DecompressedBytes"));
+    assert!(loss.message.contains("scope Part"));
+    assert!(decoded
+        .source_fidelity()
+        .unrepresented()
+        .contains(&cadmpeg_ir::document::ArenaClass::Model,));
 }
 
 #[test]

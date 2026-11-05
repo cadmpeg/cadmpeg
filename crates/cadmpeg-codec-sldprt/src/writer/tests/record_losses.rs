@@ -30,6 +30,57 @@ fn cube() -> CadIr {
     ir
 }
 
+#[test]
+fn omitted_wire_body_names_each_lost_topology_record() {
+    let mut ir = cube();
+    ir.model.bodies[0].kind = BodyKind::Wire;
+    let edge = ir.model.edges[0].clone();
+    let shell = &ir.model.shells[0];
+    ir.model.shells[0] = cadmpeg_ir::topology::Shell::with_wire_edge(
+        shell.id.clone(),
+        shell.region.clone(),
+        edge.id.clone(),
+    );
+    ir.model.faces.clear();
+    ir.model.loops.clear();
+    ir.model.coedges.clear();
+    ir.model.surfaces.clear();
+    ir.model.edges.retain(|item| item.id == edge.id);
+    ir.model
+        .vertices
+        .retain(|vertex| vertex.id == edge.start || vertex.id == edge.end);
+    ir.model.points.retain(|point| {
+        ir.model
+            .vertices
+            .iter()
+            .any(|vertex| vertex.point == point.id)
+    });
+    ir.model
+        .curves
+        .retain(|curve| Some(&curve.id) == edge.curve());
+    ir.model.finalize();
+    let ids = std::iter::once(ir.model.bodies[0].id.to_string())
+        .chain(ir.model.regions.iter().map(|record| record.id.to_string()))
+        .chain(ir.model.shells.iter().map(|record| record.id.to_string()))
+        .chain(ir.model.edges.iter().map(|record| record.id.to_string()))
+        .chain(ir.model.vertices.iter().map(|record| record.id.to_string()))
+        .chain(ir.model.points.iter().map(|record| record.id.to_string()))
+        .chain(ir.model.curves.iter().map(|record| record.id.to_string()))
+        .collect::<Vec<_>>();
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    for id in ids {
+        assert!(
+            plan.report()
+                .losses
+                .iter()
+                .any(|loss| loss.message.contains(&id)),
+            "missing loss for {id}"
+        );
+    }
+}
+
 fn appearance(schema: Option<&str>) -> Appearance {
     Appearance {
         native_ref: None,
@@ -60,6 +111,73 @@ fn assert_loss(ir: &CadIr, code: SldprtLossCode, prefix: &str) {
         .find(|loss| loss.code == code.kind() && loss.message.starts_with(prefix))
         .unwrap();
     assert!(loss.message.starts_with(prefix), "{}", loss.message);
+}
+
+#[test]
+fn omitted_body_face_and_edge_fields_name_their_records() {
+    let mut ir = cube();
+    let body = ir.model.bodies[0].id.clone();
+    let face = ir.model.faces[0].id.clone();
+    let edge = ir.model.edges[0].id.clone();
+    ir.model.bodies[0].name = Some("Part body".into());
+    ir.model.bodies[0].color = Some(Color::new(0.2, 0.3, 0.4, 1.0).unwrap());
+    ir.model.faces[0].name = Some("Face name".into());
+    ir.model.edges[0].set_param_range(Some(
+        cadmpeg_ir::topology::ParameterInterval::new([0.0, 1.0]).unwrap(),
+    ));
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    for (id, field) in [
+        (body.as_str(), "name"),
+        (face.as_str(), "name"),
+        (edge.as_str(), "carrier.param_range"),
+    ] {
+        assert!(
+            plan.report().losses.iter().any(|loss| loss.code
+                == SldprtLossCode::WriterFieldsOmitted.kind()
+                && loss.message.contains(id)
+                && loss.message.contains(field)),
+            "missing loss for {id} {field}"
+        );
+    }
+}
+
+#[test]
+fn omitted_appearance_fields_name_the_appearance() {
+    let mut ir = cube();
+    let mut material = appearance(None);
+    material.library_id = Some("library".into());
+    material.category = Some("category".into());
+    material.properties.insert(
+        cadmpeg_core::nonblank_literal!("roughness"),
+        cadmpeg_ir::scalar::FiniteReal::new(0.4).unwrap(),
+    );
+    let id = material.id.clone();
+    ir.model.appearance_bindings.push(AppearanceBinding {
+        native_ref: None,
+        id: "test:model:appearance-binding#face".try_into().unwrap(),
+        target: AppearanceTarget::Face(ir.model.faces[0].id.clone()),
+        appearance: id.clone(),
+        source_entity_id: None,
+        object_type: None,
+        visible: None,
+        channels: Default::default(),
+    });
+    ir.model.appearances.push(material);
+    ir.model.finalize();
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    for field in ["library_id", "category", "properties"] {
+        assert!(
+            plan.report().losses.iter().any(|loss| loss.code
+                == SldprtLossCode::WriterFieldsOmitted.kind()
+                && loss.message.contains(id.as_str())
+                && loss.message.contains(field)),
+            "missing loss for {id} {field}"
+        );
+    }
 }
 
 #[test]

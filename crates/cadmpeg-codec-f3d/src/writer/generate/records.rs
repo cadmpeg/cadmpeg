@@ -115,6 +115,26 @@ pub(super) fn native_tolerant_coedge_extension(
     }
 }
 
+pub(super) fn needs_design_bulk(target: &CadIr, native: &F3dNative) -> bool {
+    !native.construction_recipes.is_empty()
+        || !native.persistent_references.is_empty()
+        || !native.lost_edge_references.is_empty()
+        || !native.design_body_members.is_empty()
+        || !native.design_entity_headers.is_empty()
+        || !native.design_record_headers.is_empty()
+        || !native.design_face_source_groups.is_empty()
+        || !native.design_material_assignments.is_empty()
+        || !native.sketch_points.is_empty()
+        || !native.sketch_curve_identities.is_empty()
+        || !native.sketch_relations.is_empty()
+        || !native.sketch_texts.is_empty()
+        || target
+            .model
+            .bodies
+            .iter()
+            .any(|body| body.visible.is_some())
+}
+
 pub(super) fn encode_design_bulkstream(
     target: &CadIr,
     native: &F3dNative,
@@ -168,11 +188,9 @@ pub(super) fn encode_design_bulkstream(
             },
         )?
         .parameters;
-    // W2: synthesis regenerates the native Design parameters from the
-    // neutral model, and the neutral model is rewritten from that same
-    // projection, so agreement holds by construction.
+    // W2: document parameters are rewritten from the regenerated Design projection.
     debug_assert!(
-        target.model.parameters == projected_parameters,
+        target.model.parameters.iter().filter(|parameter| parameter.owner.is_none()).eq(projected_parameters.iter()),
         "regenerated F3D Design parameters must project back to the neutral parameters they were authored from"
     );
     if !native.design_parameter_companions.is_empty()
@@ -195,26 +213,7 @@ pub(super) fn encode_design_bulkstream(
             "source-less F3D Design parameter records are not writable".into(),
         ));
     }
-    let has_body_visibility = target
-        .model
-        .bodies
-        .iter()
-        .any(|body| body.visible.is_some());
-    if parameter_bytes.is_empty()
-        && native.construction_recipes.is_empty()
-        && native.persistent_references.is_empty()
-        && native.lost_edge_references.is_empty()
-        && native.design_body_members.is_empty()
-        && native.design_entity_headers.is_empty()
-        && native.design_record_headers.is_empty()
-        && native.design_face_source_groups.is_empty()
-        && native.design_material_assignments.is_empty()
-        && native.sketch_points.is_empty()
-        && native.sketch_curve_identities.is_empty()
-        && native.sketch_relations.is_empty()
-        && native.sketch_texts.is_empty()
-        && !has_body_visibility
-    {
+    if parameter_bytes.is_empty() && !needs_design_bulk(target, native) {
         return Ok(None);
     }
 
@@ -275,6 +274,31 @@ pub(super) fn encode_design_bulkstream(
         }
     }
     if !native.design_body_members.is_empty() {
+        let (ordinal, kind) = registry
+            .types
+            .iter()
+            .enumerate()
+            .find(|(_, kind)| {
+                kind.type_guid
+                    .as_str()
+                    .eq_ignore_ascii_case(super::presentation::BODY_ROOT_TYPE_GUID)
+            })
+            .ok_or_else(|| CodecError::Malformed("missing generated BodiesRoot type".into()))?;
+        let record_index = *kind
+            .entity_ids
+            .first()
+            .ok_or_else(|| CodecError::Malformed("missing generated BodiesRoot identity".into()))?;
+        primary_records.push(primary_record_u64(record_index, out.len())?);
+        native_lp_ascii(
+            &mut out,
+            super::presentation::dynamic_class_tag(ordinal)?.as_str(),
+        )?;
+        out.extend_from_slice(
+            &u32::try_from(record_index)
+                .map_err(|_| CodecError::InvalidInput("BodiesRoot index exceeds u32".into()))?
+                .to_le_bytes(),
+        );
+        out.extend_from_slice(&[0; 4]);
         native_lp_ascii(&mut out, "BodiesRoot")?;
         out.extend_from_slice(&0u16.to_le_bytes());
         native_lp_ascii(&mut out, "BodiesRoot")?;

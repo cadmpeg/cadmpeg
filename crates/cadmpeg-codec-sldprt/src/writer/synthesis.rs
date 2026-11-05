@@ -73,6 +73,9 @@ fn cascade_validation_errors(
             if entity.is_empty() {
                 return false;
             }
+            if super::write_through_validation_error(projected, finding) {
+                return false;
+            }
             matches!(
                 finding.check,
                 Check::ReferentialIntegrity
@@ -84,7 +87,7 @@ fn cascade_validation_errors(
         let Some(finding) = cascaded else {
             let carried = pending
                 .iter()
-                .find(|finding| super::write_through_validation_error(finding));
+                .find(|finding| super::write_through_validation_error(projected, finding));
             if let Some(finding) = carried {
                 acknowledged.insert((
                     finding.entity.clone().unwrap_or_default(),
@@ -316,7 +319,12 @@ pub(super) fn plan(
     prepare_native(&mut projected, &mut losses)?;
     crate::pmi::write::reduce(&mut projected, &mut losses)?;
     super::previews::reduce(&mut projected, &mut losses)?;
-    reduce_fields(&mut projected, &mut losses, retained_native.as_ref());
+    reduce_fields(
+        &slot_context,
+        &mut projected,
+        &mut losses,
+        retained_native.as_ref(),
+    )?;
     presentation::reduce(&mut projected, &mut losses)?;
     // A solved cache is the document's carrier, independently of the source partition.
     for surface in &mut projected.model.surfaces {
@@ -367,8 +375,26 @@ pub(super) fn plan(
             Err(error) => return Err(error),
         }
     }
-    let before_subset = projected;
+    let mut before_subset = projected;
+    before_subset
+        .model
+        .bodies
+        .sort_by_key(|body| !supported.contains(&body.id));
     projected = super::body_subset(&before_subset, &supported)?;
+    let kept_curves = projected
+        .model
+        .curves
+        .iter()
+        .map(|curve| &curve.id)
+        .collect::<std::collections::HashSet<_>>();
+    for curve in &before_subset.model.curves {
+        if !kept_curves.contains(&curve.id) {
+            losses.push(SldprtLossCode::WriterEntityOmitted.note(format!(
+                "curve {} omitted because no selected partition carries it",
+                curve.id
+            )));
+        }
+    }
     macro_rules! report_omitted_owners {
         ($records:ident, $owners:ident, $owner:ident) => {{
             let records = projected
@@ -398,6 +424,77 @@ pub(super) fn plan(
     report_omitted_owners!(faces, shells, shell);
     report_omitted_owners!(loops, faces, face);
     report_omitted_owners!(coedges, loops, owner_loop);
+    let wire_bodies = before_subset
+        .model
+        .bodies
+        .iter()
+        .filter(|body| body.kind == cadmpeg_ir::topology::BodyKind::Wire)
+        .map(|body| &body.id)
+        .collect::<std::collections::HashSet<_>>();
+    let wire_regions = before_subset
+        .model
+        .regions
+        .iter()
+        .filter(|region| wire_bodies.contains(&region.body))
+        .map(|region| &region.id)
+        .collect::<std::collections::HashSet<_>>();
+    let mut wire_edges = std::collections::HashSet::new();
+    let mut wire_vertices = std::collections::HashSet::new();
+    for shell in before_subset
+        .model
+        .shells
+        .iter()
+        .filter(|shell| wire_regions.contains(&shell.region))
+    {
+        wire_edges.extend(shell.wire_edges().iter());
+        wire_vertices.extend(shell.free_vertices().iter());
+    }
+    let kept_edges = projected
+        .model
+        .edges
+        .iter()
+        .map(|edge| &edge.id)
+        .collect::<std::collections::HashSet<_>>();
+    for edge in &before_subset.model.edges {
+        if wire_edges.contains(&edge.id) && !kept_edges.contains(&edge.id) {
+            losses.push(
+                SldprtLossCode::WriterEntityOmitted
+                    .note(format!("wire edge {} omitted with its wire body", edge.id)),
+            );
+            wire_vertices.insert(&edge.start);
+            wire_vertices.insert(&edge.end);
+        }
+    }
+    let kept_vertices = projected
+        .model
+        .vertices
+        .iter()
+        .map(|vertex| &vertex.id)
+        .collect::<std::collections::HashSet<_>>();
+    let mut wire_points = std::collections::HashSet::new();
+    for vertex in &before_subset.model.vertices {
+        if wire_vertices.contains(&vertex.id) && !kept_vertices.contains(&vertex.id) {
+            losses.push(SldprtLossCode::WriterEntityOmitted.note(format!(
+                "wire vertex {} omitted with its wire body",
+                vertex.id
+            )));
+            wire_points.insert(&vertex.point);
+        }
+    }
+    let kept_points = projected
+        .model
+        .points
+        .iter()
+        .map(|point| &point.id)
+        .collect::<std::collections::HashSet<_>>();
+    for point in &before_subset.model.points {
+        if wire_points.contains(&point.id) && !kept_points.contains(&point.id) {
+            losses.push(SldprtLossCode::WriterEntityOmitted.note(format!(
+                "wire point {} omitted with its wire body",
+                point.id
+            )));
+        }
+    }
     if supported.len() != input.ir.model.bodies.len() {
         // Design remains meaningful when solved results could not be exported.
         for feature in &mut projected.model.features {
@@ -996,27 +1093,52 @@ fn push_unnamed_drop_losses(input: &CadIr, projected: &CadIr, losses: &mut Vec<L
     }
 }
 
-fn reduce_fields(ir: &mut CadIr, losses: &mut Vec<LossNote>, native: Option<&SldprtNative>) {
-    let mut count = 0;
+fn reduce_fields(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    losses: &mut Vec<LossNote>,
+    native: Option<&SldprtNative>,
+) -> Result<(), CodecError> {
+    let mut bounded = std::collections::HashSet::new();
+    for edge in &ir.model.edges {
+        if super::bounded_curve::derived_sphere_seam(ir, edge)
+            || super::bounded_curve::from_edge(ctx, ir, edge, 0.001)?.is_some()
+        {
+            bounded.insert(edge.id.clone());
+        }
+    }
     for parameter in &mut ir.model.parameters {
         if !crate::history::write::parameters::is_pmi_parameter(parameter, native) {
             parameter.native_ref = None;
         }
-        let original = parameter.properties.len();
-        parameter
-            .properties
-            .retain(|key, _| crate::history::write::xml::valid_xml_name(key.as_str()));
-        count += original - parameter.properties.len();
+        parameter.properties.retain(|key, _| {
+            let supported = crate::history::write::xml::valid_xml_name(key.as_str());
+            if !supported {
+                losses.push(SldprtLossCode::WriterFieldsOmitted.note(format!(
+                    "parameter {}: property {} omitted",
+                    parameter.id, key
+                )));
+            }
+            supported
+        });
     }
     for feature in &mut ir.model.features {
-        let original = feature.source_properties.len();
-        feature
-            .source_properties
-            .retain(|key, _| crate::history::write::xml::valid_xml_name(key.as_str()));
-        count += original - feature.source_properties.len();
+        feature.source_properties.retain(|key, _| {
+            let supported = crate::history::write::xml::valid_xml_name(key.as_str());
+            if !supported {
+                losses.push(SldprtLossCode::WriterFieldsOmitted.note(format!(
+                    "feature {}: source property {} omitted",
+                    feature.id, key
+                )));
+            }
+            supported
+        });
         if feature.suppressed.is_none() {
             feature.suppressed = Some(false);
-            count += 1;
+            losses.push(SldprtLossCode::WriterFieldsOmitted.note(format!(
+                "feature {}: unresolved suppression written as active",
+                feature.id
+            )));
         }
         if feature
             .source_tag
@@ -1024,36 +1146,67 @@ fn reduce_fields(ir: &mut CadIr, losses: &mut Vec<LossNote>, native: Option<&Sld
             .is_some_and(|tag| !crate::history::write::xml::valid_xml_name(tag))
         {
             feature.source_tag = None;
-            count += 1;
+            losses.push(
+                SldprtLossCode::WriterFieldsOmitted
+                    .note(format!("feature {}: source tag omitted", feature.id)),
+            );
         }
     }
     for body in &mut ir.model.bodies {
-        if body.color.is_none() {
-            count += usize::from(body.name.take().is_some());
+        if body.name.take().is_some() {
+            losses.push(
+                SldprtLossCode::WriterFieldsOmitted.note(format!("body {}: name omitted", body.id)),
+            );
         }
     }
     for face in &mut ir.model.faces {
-        count += usize::from(face.name.take().is_some());
+        if face.name.take().is_some() {
+            losses.push(
+                SldprtLossCode::WriterFieldsOmitted.note(format!("face {}: name omitted", face.id)),
+            );
+        }
     }
     for edge in &mut ir.model.edges {
-        count += usize::from(edge.param_range().is_some());
-        edge.set_param_range(None);
+        if edge.param_range().is_some() && !bounded.contains(&edge.id) {
+            losses.push(
+                SldprtLossCode::WriterFieldsOmitted
+                    .note(format!("edge {}: carrier.param_range omitted", edge.id)),
+            );
+            edge.set_param_range(None);
+        }
     }
     for appearance in &mut ir.model.appearances {
-        count += usize::from(appearance.library_id.take().is_some());
-        count += appearance.textures.len();
-        appearance.textures.clear();
-        count += usize::from(appearance.asset_guid.take().is_some());
-        count += usize::from(appearance.visual_guid.take().is_some());
-        count += usize::from(appearance.physical_token.take().is_some());
-        count += usize::from(appearance.category.take().is_some());
-        count += appearance.properties.len();
-        appearance.properties.clear();
-    }
-    if count != 0 {
-        losses.push(SldprtLossCode::WriterFieldsOmitted.note(format!(
-            "{count} name, range, and appearance field(s) have no SLDPRT encoding"
-        )));
+        let mut fields = Vec::new();
+        if appearance.library_id.take().is_some() {
+            fields.push("library_id");
+        }
+        if !appearance.textures.is_empty() {
+            fields.push("textures");
+            appearance.textures.clear();
+        }
+        if appearance.asset_guid.take().is_some() {
+            fields.push("asset_guid");
+        }
+        if appearance.visual_guid.take().is_some() {
+            fields.push("visual_guid");
+        }
+        if appearance.physical_token.take().is_some() {
+            fields.push("physical_token");
+        }
+        if appearance.category.take().is_some() {
+            fields.push("category");
+        }
+        if !appearance.properties.is_empty() {
+            fields.push("properties");
+            appearance.properties.clear();
+        }
+        if !fields.is_empty() {
+            losses.push(SldprtLossCode::WriterFieldsOmitted.note(format!(
+                "appearance {}: {} omitted",
+                appearance.id,
+                fields.join(", ")
+            )));
+        }
     }
     for sketch in &mut ir.model.sketches {
         sketch.native_ref = None;
@@ -1092,6 +1245,7 @@ fn reduce_fields(ir: &mut CadIr, losses: &mut Vec<LossNote>, native: Option<&Sld
         presentation_layers,
         pcurves
     );
+    Ok(())
 }
 
 fn reduce_design(

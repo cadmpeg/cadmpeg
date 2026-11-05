@@ -424,9 +424,6 @@ pub(crate) enum F3dLossCode {
     /// Content outside the synthesized F3D encoding profile.
     WriterSourceAssociationOmitted,
 
-    /// A Design `BulkStream` stores a record run after its last indexed
-    /// record; the run is not decoded and its bytes are retained natively.
-    UnindexedRecordsRetained,
     /// Design-intent decoding failed; its sketches, features and history were dropped.
     DesignIntentUndecoded,
 }
@@ -605,7 +602,6 @@ impl F3dLossCode {
         Self::KernelHeaderToleranceUnresolved,
         Self::KernelHeaderMetadataUnresolved,
         Self::ManifestMetadataUnresolved,
-        Self::UnindexedRecordsRetained,
         Self::DesignIntentUndecoded,
         Self::ActRecordUntyped,
         Self::RecipePrefixUntyped,
@@ -834,7 +830,6 @@ impl F3dLossCode {
             Self::WriterProductOmitted => "writer.product-omitted",
             Self::WriterSourceAssociationOmitted => "writer.source-association-omitted",
 
-            Self::UnindexedRecordsRetained => "source.unindexed-records-retained",
             Self::DesignIntentUndecoded => "design.intent-undecoded",
         }
     }
@@ -1027,8 +1022,7 @@ impl F3dLossCode {
             | Self::TextHeaderNoncanonical
             | Self::KernelHeaderToleranceUnresolved
             | Self::KernelHeaderMetadataUnresolved
-            | Self::ManifestMetadataUnresolved
-            | Self::UnindexedRecordsRetained => Severity::Warning,
+            | Self::ManifestMetadataUnresolved => Severity::Warning,
         }
     }
 
@@ -1225,7 +1219,6 @@ impl F3dLossCode {
             Self::KernelHeaderToleranceUnresolved => LossTaxonomy::GeometryNotTransferred,
             Self::KernelHeaderMetadataUnresolved => LossTaxonomy::NoncanonicalSourceSyntax,
             Self::ManifestMetadataUnresolved => LossTaxonomy::NoncanonicalSourceSyntax,
-            Self::UnindexedRecordsRetained => LossTaxonomy::RecordNotTyped,
         }
     }
 
@@ -1445,7 +1438,6 @@ mod tests {
                 "brep.header-tolerance-unresolved",
                 "brep.header-metadata-unresolved",
                 "source.manifest-metadata-unresolved",
-                "source.unindexed-records-retained",
                 "design.intent-undecoded",
                 "act.record-untyped",
                 "dimension.recipe-prefix-untyped",

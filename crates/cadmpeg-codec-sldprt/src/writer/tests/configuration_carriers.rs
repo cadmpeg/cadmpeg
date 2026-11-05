@@ -1077,19 +1077,31 @@ fn untyped_feature_framing_is_not_written_as_content() {
                 && loss.code.local_code() == "native.records-omitted"));
         let mut written = Vec::new();
         plan.write_to(&mut written).unwrap();
-        let scan = crate::test_support::container::scan(&written);
-        assert!(!scan.blocks.iter().any(|block| block
-            .section
-            .name()
-            .is_some_and(|name| name.ends_with("ResolvedFeatures"))));
         let output = SldprtCodec
             .decode(&mut Cursor::new(written), &DecodeOptions::default())
             .unwrap();
+        let native = sldprt_native(output.ir());
+        assert!(native
+            .feature_input_lanes
+            .iter()
+            .flat_map(|lane| &lane.classes)
+            .any(|class| class.name == "sgPointHandle"));
+        assert!(native
+            .feature_input_lanes
+            .iter()
+            .all(|lane| lane.sketch_entities.is_empty()));
         let synthesized =
             crate::test_support::assert_source_free_synthesis_agrees(&document, output.ir());
-        assert!(sldprt_native(synthesized.ir())
+        let native = sldprt_native(synthesized.ir());
+        assert!(native
             .feature_input_lanes
-            .is_empty());
+            .iter()
+            .flat_map(|lane| &lane.classes)
+            .any(|class| class.name == "sgPointHandle"));
+        assert!(native
+            .feature_input_lanes
+            .iter()
+            .all(|lane| lane.sketch_entities.is_empty()));
     }
 }
 

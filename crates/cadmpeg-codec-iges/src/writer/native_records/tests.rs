@@ -586,6 +586,47 @@ fn reemitted_definition_levels_redecode_to_their_level_set() {
 }
 
 #[test]
+fn edited_definition_levels_replace_the_source_set() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use std::io::Cursor;
+
+    let decoded = crate::IgesCodec
+        .decode(
+            &mut Cursor::new(
+                crate::test_support::test_solids_and_structure::definition_levels_file(),
+            ),
+            &DecodeOptions::default(),
+        )
+        .expect("levels fixture decodes");
+    let mut ir = decoded.ir().clone();
+    ir.model
+        .presentation_layers
+        .iter_mut()
+        .find(|layer| layer.name == "7")
+        .expect("level seven")
+        .name = "8".into();
+    let output =
+        super::super::synthesize(&ir, crate::IgesVersion::V5_3).expect("levels synthesize");
+    let after = crate::IgesCodec
+        .decode(&mut Cursor::new(output.bytes), &DecodeOptions::default())
+        .expect("output decodes");
+    let names = after
+        .ir()
+        .model
+        .presentation_layers
+        .iter()
+        .map(|layer| layer.name.as_str())
+        .collect::<BTreeSet<_>>();
+    assert_eq!(names, BTreeSet::from(["2", "8", "11"]));
+    assert!(after
+        .ir()
+        .model
+        .presentation_layers
+        .iter()
+        .all(|layer| !layer.items.is_empty()));
+}
+
+#[test]
 fn neutral_multiple_levels_write_a_definition_set() {
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
     use cadmpeg_ir::presentation::{PresentationItem, PresentationLayer};
@@ -856,6 +897,94 @@ fn primitive_feature_order_follows_current_ordinals() {
             .ordinal
     };
     assert!(ordinal("DEFAULT") < ordinal("BLOCK"));
+}
+
+#[test]
+fn source_less_primitive_feature_synthesizes_without_native_records() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PrimitiveSolidKind};
+    use std::io::Cursor;
+
+    let decoded = crate::IgesCodec
+        .decode(
+            &mut Cursor::new(
+                crate::test_support::test_solids_and_structure::primitive_solids_file(),
+            ),
+            &DecodeOptions::default(),
+        )
+        .expect("primitive fixture decodes");
+    let mut feature = decoded
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("BLOCK"))
+        .unwrap()
+        .clone();
+    feature.native_ref = None;
+    feature.ordinal = 0;
+    let mut ir = CadIr::empty();
+    ir.model.features.push(feature);
+    let output = super::super::synthesize(&ir, crate::IgesVersion::V5_3)
+        .expect("source-less primitive synthesis");
+    assert_eq!(
+        output.coverage.features,
+        cadmpeg_ir::codec::write::ArenaDisposition::Written
+    );
+    assert!(!output
+        .losses
+        .iter()
+        .any(|loss| loss.code == crate::loss::IgesLossCode::NoExportableSolids.kind()));
+    let after = crate::IgesCodec
+        .decode(&mut Cursor::new(output.bytes), &DecodeOptions::default())
+        .expect("output decodes");
+    assert!(after.ir().model.features.iter().any(|feature| matches!(
+        feature.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::Primitive { solid, .. })
+            if matches!(solid.kind(), PrimitiveSolidKind::Box { .. })
+    )));
+}
+
+#[test]
+fn mixed_source_less_and_linked_primitives_follow_ordinals() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use std::io::Cursor;
+    let decoded = crate::IgesCodec
+        .decode(
+            &mut Cursor::new(
+                crate::test_support::test_solids_and_structure::primitive_solids_file(),
+            ),
+            &DecodeOptions::default(),
+        )
+        .expect("primitive fixture decodes");
+    let mut ir = decoded.ir().clone();
+    let mut feature = ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("BLOCK"))
+        .unwrap()
+        .clone();
+    feature.id = cadmpeg_ir::features::FeatureId::mint("test:design:feature#new").unwrap();
+    feature.native_ref = None;
+    feature.name = Some("NEW".into());
+    feature.ordinal = u64::try_from(ir.model.features.len()).unwrap();
+    ir.model.features.push(feature);
+    let output =
+        super::super::synthesize(&ir, crate::IgesVersion::V5_3).expect("primitive synthesis");
+    let after = crate::IgesCodec
+        .decode(&mut Cursor::new(output.bytes), &DecodeOptions::default())
+        .expect("output decodes");
+    let new = after
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("NEW"))
+        .unwrap();
+    assert_eq!(
+        new.ordinal,
+        u64::try_from(ir.model.features.len() - 1).unwrap()
+    );
 }
 
 /// Decode one committed golden fixture, regenerate it, and require the named

@@ -105,37 +105,17 @@ pub(crate) fn decode_types(scan: &ContainerScan) -> Result<Vec<SegmentType>, Cod
     Ok(out)
 }
 
-/// The header offset and record index of the indexed record holding `at`.
-fn enclosing_record(headers: &[(usize, u32)], at: usize) -> Option<(usize, u32)> {
-    headers
-        .get(
-            headers
-                .partition_point(|(offset, _)| *offset <= at)
-                .checked_sub(1)?,
-        )
-        .copied()
-}
-
-/// One component's context bindings, each with the indexed record holding it.
-type ComponentBindings = HashMap<u64, Vec<(DesignComponentNamingSpace, Option<(usize, u32)>)>>;
-
-/// Where a binding starts: its marker offset and the indexed record holding it.
-#[derive(Clone, Copy)]
-struct BindingSite {
-    marker: usize,
-    record: Option<(usize, u32)>,
-}
+type ComponentBindings = HashMap<u64, DesignComponentNamingSpace>;
 
 fn insert_component_naming_space(
     by_component: &mut ComponentBindings,
     bulk_name: &str,
-    site: BindingSite,
+    marker: usize,
     component_record_index: u64,
     context_uuid: crate::records::mesh::DesignRelaxedGuidText,
     context_uuid_offset: usize,
     name: Option<(String, usize)>,
 ) -> Result<(), CodecError> {
-    let BindingSite { marker, record } = site;
     let name_offset = name
         .as_ref()
         .map(|(_, at)| u64::try_from(*at))
@@ -145,13 +125,12 @@ fn insert_component_naming_space(
         .map_err(|_| CodecError::malformed("f3d component naming marker offset exceeds u64"))?;
     let context_uuid_offset = u64::try_from(context_uuid_offset)
         .map_err(|_| CodecError::malformed("f3d component naming UUID offset exceeds u64"))?;
-    let bindings = by_component.entry(component_record_index).or_default();
-    if let Some((existing, existing_record)) = bindings
-        .iter_mut()
-        .find(|(existing, _)| existing.context_uuid == context_uuid)
-    {
-        // A named hit is the binding in the definition record, so its site
-        // replaces the unnamed hit's.
+    if let Some(existing) = by_component.get_mut(&component_record_index) {
+        if existing.context_uuid != context_uuid {
+            return Err(crate::design::text::malformed_design(format_args!(
+                "Design component {component_record_index} has conflicting context UUID bindings"
+            )));
+        }
         if existing.name.is_none() && name.is_some() {
             existing.name = name.map(|(name, _)| name);
             existing.name_offset = name_offset;
@@ -159,31 +138,12 @@ fn insert_component_naming_space(
             existing.context_uuid_offset = Some(context_uuid_offset);
             existing.id =
                 design_record_id(bulk_name, ":design-component-naming-space#", byte_offset);
-            *existing_record = record;
         }
         return Ok(());
     }
-    // A component definition stored as revisions, in different records that
-    // repeat one record index and each carry the component's name, binds one
-    // context UUID in each. Any other second UUID conflicts.
-    let new_name = name.as_ref().map(|(name, _)| name);
-    let revision = |binding: &(DesignComponentNamingSpace, Option<(usize, u32)>)| {
-        binding.0.name.as_ref() == new_name
-            && match (binding.1, record) {
-                (Some((offset, index)), Some((new_offset, new_index))) => {
-                    index == new_index && offset != new_offset
-                }
-                _ => false,
-            }
-    };
-    if !bindings.is_empty() && (name.is_none() || !bindings.iter().all(revision)) {
-        return Err(crate::design::text::malformed_design(format_args!(
-            "Design component {component_record_index} has conflicting context UUID bindings"
-        )));
-    }
-
     let id = design_record_id(bulk_name, ":design-component-naming-space#", byte_offset);
-    bindings.push((
+    by_component.insert(
+        component_record_index,
         DesignComponentNamingSpace {
             id,
             byte_offset: Some(byte_offset),
@@ -193,8 +153,7 @@ fn insert_component_naming_space(
             name: name.map(|(name, _)| name),
             name_offset,
         },
-        record,
-    ));
+    );
     Ok(())
 }
 
@@ -208,12 +167,7 @@ fn component_name_after_context_uuid(bytes: &[u8], uuid_offset: usize) -> Option
         return None;
     }
     let after = end.checked_add(2)?;
-    let record_ends = after == bytes.len()
-        || (View::u32_le_at(bytes, after) == Some(3)
-            && bytes
-                .get(after.checked_add(4)?..after.checked_add(7)?)
-                .is_some_and(|tag| tag.iter().all(u8::is_ascii_digit)));
-    record_ends.then_some((name, name_at))
+    (after == bytes.len()).then_some((name, name_at))
 }
 
 /// The counted context UUID after a typed component reference and its offset.
@@ -251,6 +205,7 @@ impl LinkEntities {
 /// followed by its reserved zero bytes, then the context UUID.
 fn linked_component_binding(
     bytes: &[u8],
+    start: usize,
     marker: usize,
     component_entities: &HashSet<u64>,
     link_entities: &LinkEntities,
@@ -262,7 +217,7 @@ fn linked_component_binding(
         (bytes.get(at) == Some(&1) && target(entity) && reserved.iter().all(|byte| *byte == 0))
             .then_some(entity)
     };
-    if marker > 0 && bytes.get(marker - 1) == Some(&1) {
+    if marker > start && bytes.get(marker - 1) == Some(&1) {
         return None;
     }
     let component_record_index = reference(marker, &|entity| component_entities.contains(&entity))?;
@@ -275,6 +230,7 @@ fn linked_component_binding(
 }
 
 /// A run of records after a Design `BulkStream`'s last indexed record.
+#[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct UnindexedRecordRun {
     /// Offset of the run's first indexed header, where the indexed extent ends.
@@ -287,6 +243,7 @@ pub(crate) struct UnindexedRecordRun {
 
 /// The unindexed suffix whose first header has a lower record index than
 /// the header at the greatest offset in either `MetaStream` index.
+#[cfg(test)]
 pub(crate) fn unindexed_record_run(
     bulk: &[u8],
     meta: &crate::metastream::MetaStream,
@@ -352,51 +309,56 @@ pub(crate) fn decode_component_naming_spaces(
         }
         let bulk_name = paired_bulk_entry_name(scan, meta_entry.prefix)?;
         let bytes = scan.entry_bytes(bulk_name)?;
-        let headers = super::sketch::indexed_record_offsets(bytes)
-            .map(|header| (header.offset, header.record_index))
-            .collect::<Vec<_>>();
+        let frames = design_primary_frames(bytes, &meta)?;
         let mut by_component = ComponentBindings::new();
         for reserved_len in COMPONENT_UUID_RESERVED_LENGTHS {
             let prefix_len = 1 + 8 + reserved_len;
-            for uuid_offset in bytes
-                .len()
-                .checked_sub(4)
-                .into_iter()
-                .flat_map(|last| prefix_len..last)
-            {
-                let marker = uuid_offset - prefix_len;
-                if bytes[marker] != 1
-                    || (marker > 0 && bytes[marker - 1] == 1)
-                    || !bytes[marker + 9..uuid_offset].iter().all(|byte| *byte == 0)
-                {
-                    continue;
-                }
-                let Some(component_record_index) = View::u64_le_at(bytes, marker + 1) else {
+            for (start, end) in frames.iter().flat_map(|frame| {
+                [
+                    (frame.start, frame.member_end),
+                    (frame.member_end, frame.end),
+                ]
+            }) {
+                let bytes = &bytes[..end];
+                let Some(first) = start.checked_add(prefix_len) else {
                     continue;
                 };
-                if !component_entities.contains(&component_record_index) {
-                    continue;
-                }
-                let Some((context_uuid, _)) = lp_utf16_bounded(bytes, uuid_offset, 36..=36) else {
+                let Some(last) = end.checked_sub(4) else {
                     continue;
                 };
-                let Ok(context_uuid) =
-                    crate::records::mesh::DesignRelaxedGuidText::try_from(context_uuid)
-                else {
-                    continue;
-                };
-                insert_component_naming_space(
-                    &mut by_component,
-                    bulk_name,
-                    BindingSite {
+                for uuid_offset in first..last {
+                    let marker = uuid_offset - prefix_len;
+                    if bytes[marker] != 1
+                        || (marker > start && bytes[marker - 1] == 1)
+                        || !bytes[marker + 9..uuid_offset].iter().all(|byte| *byte == 0)
+                    {
+                        continue;
+                    }
+                    let Some(component_record_index) = View::u64_le_at(bytes, marker + 1) else {
+                        continue;
+                    };
+                    if !component_entities.contains(&component_record_index) {
+                        continue;
+                    }
+                    let Some((context_uuid, _)) = lp_utf16_bounded(bytes, uuid_offset, 36..=36)
+                    else {
+                        continue;
+                    };
+                    let Ok(context_uuid) =
+                        crate::records::mesh::DesignRelaxedGuidText::try_from(context_uuid)
+                    else {
+                        continue;
+                    };
+                    insert_component_naming_space(
+                        &mut by_component,
+                        bulk_name,
                         marker,
-                        record: enclosing_record(&headers, marker),
-                    },
-                    component_record_index,
-                    context_uuid,
-                    uuid_offset,
-                    component_name_after_context_uuid(bytes, uuid_offset),
-                )?;
+                        component_record_index,
+                        context_uuid,
+                        uuid_offset,
+                        component_name_after_context_uuid(bytes, uuid_offset),
+                    )?;
+                }
             }
         }
         let link_entities = LinkEntities {
@@ -424,81 +386,98 @@ pub(crate) fn decode_component_naming_spaces(
                 )
                 .collect(),
         };
-        for marker in 0..bytes.len() {
-            let Some((component_record_index, context_uuid, uuid_offset)) =
-                linked_component_binding(bytes, marker, &component_entities, &link_entities)
-            else {
-                continue;
-            };
-            insert_component_naming_space(
-                &mut by_component,
-                bulk_name,
-                BindingSite {
+        for (start, end) in frames.iter().flat_map(|frame| {
+            [
+                (frame.start, frame.member_end),
+                (frame.member_end, frame.end),
+            ]
+        }) {
+            let bytes = &bytes[..end];
+            for marker in start..end {
+                let Some((component_record_index, context_uuid, uuid_offset)) =
+                    linked_component_binding(
+                        bytes,
+                        start,
+                        marker,
+                        &component_entities,
+                        &link_entities,
+                    )
+                else {
+                    continue;
+                };
+                insert_component_naming_space(
+                    &mut by_component,
+                    bulk_name,
                     marker,
-                    record: enclosing_record(&headers, marker),
-                },
-                component_record_index,
-                context_uuid,
-                uuid_offset,
-                component_name_after_context_uuid(bytes, uuid_offset),
-            )?;
-        }
-        for marker in 0..bytes.len() {
-            let mut uuid_offset = marker;
-            let Some(reference) = take_reference(bytes, &mut uuid_offset) else {
-                continue;
-            };
-            let Some((component_record_index, Some(inline_type_guid))) = reference.local() else {
-                continue;
-            };
-            if !meta.types.iter().any(|design_type| {
-                design_type.module == COMPONENT_MODULE
-                    && design_type
-                        .base_type_guid
-                        .value()
-                        .map(crate::records::mesh::DesignRelaxedGuidText::as_str)
-                        .is_some_and(|base| {
-                            base.eq_ignore_ascii_case(COMPONENT_NAMING_SPACE_BASE_TYPE_GUID)
-                        })
-                    && design_type
-                        .type_guid
-                        .as_str()
-                        .eq_ignore_ascii_case(inline_type_guid)
-                    && design_type
-                        .entities
-                        .values()
-                        .any(|registered| *registered == component_record_index)
-            }) {
-                continue;
+                    component_record_index,
+                    context_uuid,
+                    uuid_offset,
+                    component_name_after_context_uuid(bytes, uuid_offset),
+                )?;
             }
-            let Some((context_uuid, uuid_offset)) =
-                typed_component_context_uuid(bytes, uuid_offset)
-            else {
-                continue;
-            };
-            let Ok(context_uuid) =
-                crate::records::mesh::DesignRelaxedGuidText::try_from(context_uuid)
-            else {
-                continue;
-            };
-            insert_component_naming_space(
-                &mut by_component,
-                bulk_name,
-                BindingSite {
+        }
+        for (start, end) in frames.iter().flat_map(|frame| {
+            [
+                (frame.start, frame.member_end),
+                (frame.member_end, frame.end),
+            ]
+        }) {
+            let bytes = &bytes[..end];
+            for marker in start..end {
+                let mut uuid_offset = marker;
+                let Some(reference) = take_reference(bytes, &mut uuid_offset) else {
+                    continue;
+                };
+                let Some((component_record_index, Some(inline_type_guid))) = reference.local()
+                else {
+                    continue;
+                };
+                if !meta.types.iter().any(|design_type| {
+                    design_type.module == COMPONENT_MODULE
+                        && design_type
+                            .base_type_guid
+                            .value()
+                            .map(crate::records::mesh::DesignRelaxedGuidText::as_str)
+                            .is_some_and(|base| {
+                                base.eq_ignore_ascii_case(COMPONENT_NAMING_SPACE_BASE_TYPE_GUID)
+                            })
+                        && design_type
+                            .type_guid
+                            .as_str()
+                            .eq_ignore_ascii_case(inline_type_guid)
+                        && design_type
+                            .entities
+                            .values()
+                            .any(|registered| *registered == component_record_index)
+                }) {
+                    continue;
+                }
+                let Some((context_uuid, uuid_offset)) =
+                    typed_component_context_uuid(bytes, uuid_offset)
+                else {
+                    continue;
+                };
+                let Ok(context_uuid) =
+                    crate::records::mesh::DesignRelaxedGuidText::try_from(context_uuid)
+                else {
+                    continue;
+                };
+                insert_component_naming_space(
+                    &mut by_component,
+                    bulk_name,
                     marker,
-                    record: enclosing_record(&headers, marker),
-                },
-                component_record_index,
-                context_uuid,
-                uuid_offset,
-                component_name_after_context_uuid(bytes, uuid_offset),
-            )?;
+                    component_record_index,
+                    context_uuid,
+                    uuid_offset,
+                    component_name_after_context_uuid(bytes, uuid_offset),
+                )?;
+            }
         }
         unbound += component_entities
             .iter()
             .filter(|entity| !by_component.contains_key(entity))
             .count();
-        out.extend(by_component.into_values().flatten().map(|(space, _)| space));
+        out.extend(by_component.into_values());
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(DecodedComponentNamingSpaces {
@@ -528,15 +507,15 @@ pub(crate) fn metadata_for_bulk_stream(
 /// One live Design record selected by the primary index and resolved through
 /// its segment-local class tag.
 #[derive(Clone)]
-pub(in crate::design::decode) struct DesignPrimaryFrame<'a> {
-    pub(super) entity_id: u64,
-    pub(super) class_tag: crate::records::references::DesignClassTag,
-    pub(super) start: usize,
+pub(crate) struct DesignPrimaryFrame<'a> {
+    pub(crate) entity_id: u64,
+    pub(crate) class_tag: crate::records::references::DesignClassTag,
+    pub(crate) start: usize,
     /// End of the primary class-member sequence: the secondary nested header,
     /// or `end` when the record has none.
-    pub(super) member_end: usize,
-    pub(super) end: usize,
-    pub(super) design_type: &'a SegmentTypeData,
+    pub(crate) member_end: usize,
+    pub(crate) end: usize,
+    pub(crate) design_type: &'a SegmentTypeData,
 }
 
 pub(super) fn dynamic_type<'a>(
@@ -664,14 +643,11 @@ pub(in crate::design::decode) fn partition_primary_frames<'a>(
 /// registers that entity. A secondary entry supplies the exact end of the
 /// primary class-member sequence and must point to a nested header for the same
 /// entity.
-pub(super) fn design_primary_frames<'a>(
+pub(crate) fn design_primary_frames<'a>(
     bytes: &[u8],
     meta: &'a crate::metastream::MetaStream,
 ) -> Result<Vec<DesignPrimaryFrame<'a>>, CodecError> {
-    let (frames, faults) = partition_primary_frames(bytes, meta)?;
-    if let Some(fault) = faults.into_iter().next() {
-        return Err(CodecError::Malformed(fault.reason.into()));
-    }
+    let (frames, _) = partition_primary_frames(bytes, meta)?;
     Ok(frames)
 }
 
@@ -712,9 +688,11 @@ pub(super) fn typed_primary_frames<'a>(
         }
     }
 
-    let mut resolved_entities = HashSet::new();
+    let (primary_frames, faults) = partition_primary_frames(bytes, meta)?;
+    let mut resolved_entities: HashSet<_> =
+        faults.into_iter().map(|fault| fault.entity_id).collect();
     let mut frames = Vec::new();
-    for primary_frame in design_primary_frames(bytes, meta)? {
+    for primary_frame in primary_frames {
         if !primary_frame
             .design_type
             .type_guid
@@ -789,7 +767,10 @@ pub(crate) fn admit_damaged_bulk_records(
                     "F3D damaged bulk record exceeds its stream",
                 ));
             };
-            let spec = PartSpec::new("f3d.bulk_record");
+            let spec = PartSpec::new("f3d.bulk_record").holding([
+                cadmpeg_ir::document::ArenaClass::Model,
+                cadmpeg_ir::document::ArenaClass::Design,
+            ]);
             let spec = if extent.location().space == cadmpeg_core::decode::SpaceId::ROOT {
                 spec
             } else {
@@ -804,7 +785,16 @@ pub(crate) fn admit_damaged_bulk_records(
         let bytes = scan.entry_bytes(&entry.name)?;
         match partition_primary_frames(bytes, &meta) {
             Ok((_, faults)) => {
+                let state_entities: HashSet<_> =
+                    super::parameter_state::selected_frames(ctx, source, &meta)?
+                        .into_iter()
+                        .flatten()
+                        .map(|frame| frame.entity_id)
+                        .collect();
                 for fault in faults {
+                    if state_entities.contains(&fault.entity_id) {
+                        continue;
+                    }
                     give_up(
                         &mut output,
                         fault.start,

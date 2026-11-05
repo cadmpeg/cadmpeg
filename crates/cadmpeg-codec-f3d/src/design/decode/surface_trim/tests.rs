@@ -81,6 +81,14 @@ fn surface_trim_output_carries_its_scope_identifier() {
     crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
     zip.start_file(ENTRY, stored).unwrap();
     zip.write_all(&bytes).unwrap();
+    let metadata = crate::test_support::zip_test::indexed_fixture_metastream(
+        &bytes,
+        &[811, 812, 813, 814, 815, 816, 817, 819, 820],
+        &[811, 817],
+    );
+    zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
+        .unwrap();
+    zip.write_all(&metadata).unwrap();
     let archive = zip.finish().unwrap().into_inner();
     crate::test_support::zip_test::with_scan(&archive, |scan| {
         let operations = super::decode_surface_trim_operations(scan, &[scope.clone()]).unwrap();

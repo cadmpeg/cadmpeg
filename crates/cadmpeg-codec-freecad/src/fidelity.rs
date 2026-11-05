@@ -120,8 +120,8 @@ pub(crate) fn mark_untyped(
         .map_err(CodecError::malformed)
 }
 
-/// The classes a failed property value can hold. A document or design
-/// property can project to model attributes as well as design records.
+/// The classes a failed property value can hold. Document properties and
+/// VarSet controls can project to model attributes as well as design records.
 pub(crate) fn property_value_classes(
     objects: &[crate::native::ObjectRecord],
     owner: &str,
@@ -138,8 +138,9 @@ pub(crate) fn property_value_classes(
         .iter()
         .find(|object| object.id().as_str() == owner)
         .map(|object| {
-            if crate::design::is_design_kind(&object.type_name) || object.type_name == "App::VarSet"
-            {
+            if crate::design::is_design_kind(&object.type_name) {
+                ArenaClasses::from([ArenaClass::Design])
+            } else if object.type_name == "App::VarSet" {
                 ArenaClasses::from([ArenaClass::Model, ArenaClass::Design])
             } else {
                 ArenaClasses::from([ArenaClass::Model])
@@ -172,17 +173,29 @@ pub(crate) fn property_class(
 #[derive(Debug, Clone)]
 pub(crate) struct ValueSourceRanges {
     record: Range<usize>,
+    value: Option<Range<usize>>,
 }
 
 impl ValueSourceRanges {
     pub(crate) fn record_range(&self) -> Range<usize> {
         self.record.clone()
     }
+
+    pub(crate) fn value_range(&self) -> Option<Range<usize>> {
+        self.value.clone()
+    }
 }
 
 pub(crate) fn property_source(node: roxmltree::Node<'_, '_>) -> ValueSourceRanges {
+    let mut values = node.children().filter(roxmltree::Node::is_element);
+    let value = values.next().map(|first| {
+        let start = first.range().start;
+        let end = values.last().unwrap_or(first).range().end;
+        start..end
+    });
     ValueSourceRanges {
         record: node.range(),
+        value,
     }
 }
 

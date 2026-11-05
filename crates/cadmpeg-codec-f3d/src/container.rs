@@ -269,9 +269,7 @@ pub(crate) struct ContainerScan<'a> {
     /// byte span. Complete stored bytes remain in `source_image`; decode
     /// gives up each entry as a `zip.entry` part.
     pub(crate) unreadable_entries: Vec<UnreadableEntryPart>,
-    /// Design `BulkStream` record runs after the last indexed record, by
-    /// entry name, with the stream's stored length. Their entry views end
-    /// where the run starts; complete stored bytes remain in `source_image`.
+    #[cfg(test)]
     pub(crate) unindexed_record_runs: Vec<(
         String,
         crate::design::decode::meta::UnindexedRecordRun,
@@ -312,6 +310,7 @@ impl<'a> ContainerScan<'a> {
             kind: self.kind.clone(),
             manifest_diagnostics: self.manifest_diagnostics.clone(),
             unreadable_entries: self.unreadable_entries.clone(),
+            #[cfg(test)]
             unindexed_record_runs: self.unindexed_record_runs.clone(),
             inflated_entries: self.inflated_entries.clone(),
             archive: self.archive.clone(),
@@ -332,6 +331,28 @@ impl<'a> ContainerScan<'a> {
     /// Returns an entry's payload view.
     pub(crate) fn entry_view(&self, name: &str) -> Option<View<'a>> {
         self.inflated_entries.get(name).copied()
+    }
+
+    pub(crate) fn stored_entry_view(&self, name: &str) -> Result<View<'a>, CodecError> {
+        let entry = self
+            .archive
+            .as_ref()
+            .and_then(|archive| archive.entry(name))
+            .ok_or_else(|| CodecError::malformed(format_args!("entry {name} not found")))?;
+        let range = entry.stored_range()?;
+        let start = self
+            .source_view
+            .start()
+            .checked_add(usize::try_from(range.start).map_err(CodecError::malformed)?)
+            .ok_or_else(|| CodecError::malformed("ZIP entry start overflows"))?;
+        let end = self
+            .source_view
+            .start()
+            .checked_add(usize::try_from(range.end).map_err(CodecError::malformed)?)
+            .ok_or_else(|| CodecError::malformed("ZIP entry end overflows"))?;
+        self.source_view
+            .child(start, end)
+            .ok_or_else(|| CodecError::malformed("ZIP entry extends beyond its archive"))
     }
 
     #[cfg(test)]
@@ -546,13 +567,15 @@ pub(crate) fn scan<'a>(
                     .is_some_and(|extension| extension.eq_ignore_ascii_case("f2d")));
         let checkpoint = ctx.checkpoint();
         let temporary = DecodeArena::new();
-        let opened = if deferred {
-            ctx.with_arena(&temporary, |local| {
-                archive.open(local, &file.name).map(|_| None)
-            })
-        } else {
-            archive.open(ctx, &file.name).map(Some)
-        };
+        let opened = ctx.run_part(|| {
+            if deferred {
+                ctx.with_arena(&temporary, |local| {
+                    archive.open(local, &file.name).map(|_| None)
+                })
+            } else {
+                archive.open(ctx, &file.name).map(Some)
+            }
+        })?;
         let view = match opened {
             Ok(view) => {
                 if deferred {
@@ -560,13 +583,18 @@ pub(crate) fn scan<'a>(
                 }
                 view
             }
-            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(error)
                 if matches!(
                     role,
                     ContainerRole::Preview
                         | ContainerRole::Image
                         | ContainerRole::OgsCache
+                        | ContainerRole::BrepSmbh
+                        | ContainerRole::BrepSmb
+                        | ContainerRole::BrepText
+                        | ContainerRole::ProteinAssets
+                        | ContainerRole::Paramesh
+                        | ContainerRole::Properties
                         | ContainerRole::Other
                 ) =>
             {
@@ -584,7 +612,7 @@ pub(crate) fn scan<'a>(
             Err(error) => return Err(error),
         };
         let buf = view.map_or(&[][..], |view| view.window());
-        if is_brep {
+        if is_brep && view.is_some() {
             let kernel = if asm_header::has_asm_magic(buf) {
                 asm_header::parse(buf).map(|header| KernelFraming::Asm {
                     solved_record_limit: asm_header::solved_record_limit_with_header(buf, &header),
@@ -748,6 +776,7 @@ pub(crate) fn scan<'a>(
         kind,
         manifest_diagnostics,
         unreadable_entries,
+        #[cfg(test)]
         unindexed_record_runs: Vec::new(),
         inflated_entries,
         archive,
@@ -756,10 +785,14 @@ pub(crate) fn scan<'a>(
         scope_entry_indices,
         metastream_cache: std::sync::Mutex::new(std::collections::HashMap::new()),
     };
-    bound_design_bulk_streams(&mut scan);
+    #[cfg(test)]
+    collect_unindexed_record_runs(&mut scan);
     for index in 0..scan.entries.len() {
         let entry = &scan.entries[index];
-        if entry.role != ContainerRole::BrepText || !scan.belongs_to_design_asset(&entry.name) {
+        if entry.role != ContainerRole::BrepText
+            || !scan.belongs_to_design_asset(&entry.name)
+            || !scan.has_entry(&entry.name)
+        {
             continue;
         }
         let bytes = scan.entry_bytes(&entry.name)?;
@@ -788,9 +821,8 @@ pub(crate) fn scan<'a>(
     Ok(scan)
 }
 
-/// End each Design `BulkStream` view at the record run after its last indexed
-/// record, so that decoders read only the records its `MetaStream` indexes.
-fn bound_design_bulk_streams(scan: &mut ContainerScan<'_>) {
+#[cfg(test)]
+fn collect_unindexed_record_runs(scan: &mut ContainerScan<'_>) {
     let bulk_streams = scan
         .entries
         .iter()
@@ -808,16 +840,10 @@ fn bound_design_bulk_streams(scan: &mut ContainerScan<'_>) {
         else {
             continue;
         };
-        let Some(run) = crate::design::decode::meta::unindexed_record_run(view.window(), &meta)
-        else {
-            continue;
-        };
-        let Some(bounded) = view.child(view.start(), view.start() + run.start) else {
-            continue;
-        };
-        let stored = view.window().len();
-        scan.inflated_entries.insert(name.clone(), bounded);
-        scan.unindexed_record_runs.push((name, run, stored));
+        if let Some(run) = crate::design::decode::meta::unindexed_record_run(view.window(), &meta) {
+            scan.unindexed_record_runs
+                .push((name, run, view.window().len()));
+        }
     }
 }
 
@@ -965,7 +991,9 @@ pub(crate) fn text_brep_names<'s>(
     scan.entries
         .iter()
         .filter(|entry| {
-            entry.role == ContainerRole::BrepText && scan.belongs_to_design_asset(&entry.name)
+            entry.role == ContainerRole::BrepText
+                && scan.belongs_to_design_asset(&entry.name)
+                && scan.has_entry(&entry.name)
         })
         .map(|entry| entry.name.as_str())
 }

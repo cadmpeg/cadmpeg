@@ -98,8 +98,12 @@ pub(crate) fn align_archive(
     zip.write_all(&bytes).unwrap();
     zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", options)
         .unwrap();
-    zip.write_all(&super::streams_test::design_metastream(&[]))
-        .unwrap();
+    zip.write_all(&super::zip_test::indexed_fixture_metastream(
+        &bytes,
+        &[800, 806],
+        &[800, 806],
+    ))
+    .unwrap();
     zip.finish().unwrap().into_inner()
 }
 
