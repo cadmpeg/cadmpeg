@@ -12,6 +12,7 @@ fn global_declaration_lossy_text_preserves_replacement_boundaries() {
         let resolution = Resolution {
             values: vec![Value::Malformed(bytes.to_vec())],
             losses: Vec::new(),
+            unframed_from: None,
         };
         assert_eq!(resolution.declaration_text(0), expected);
     }

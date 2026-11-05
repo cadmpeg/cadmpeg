@@ -12,6 +12,7 @@ fn code_strings_are_pinned() {
         codes,
         [
             "source.dialect-unverified",
+            "target.source-dialect-displaced",
             "composition.sublayers-not-composed",
             "composition.external-arc",
             "composition.layer-unavailable",
