@@ -3273,9 +3273,7 @@ fn retained_history_payload(
         .filter(|(original, name, _)| original.id == history.id && name == section);
     let original = originals.next();
     if originals.next().is_some() {
-        return Err(CodecError::NotImplemented(
-            "ambiguous retained SLDPRT history".into(),
-        ));
+        return history_payload(history);
     }
     if let Some((original, _, payload)) = original {
         if original == history {
