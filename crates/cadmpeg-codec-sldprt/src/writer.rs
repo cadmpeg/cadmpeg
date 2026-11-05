@@ -1291,6 +1291,7 @@ pub(crate) const CAPACITY_FIELDS: &[cadmpeg_ir::codec::write::CapacityField] = &
     crate::resolved_features::write_feature_parameters::SCALAR_IDENTITY_CAPACITY,
     custom_properties::HISTORY_ORDINAL_CAPACITY,
     CONFIGURATION_INDEX_CAPACITY,
+    crate::resolved_features::write_prepare::SPATIAL_OPERAND_CAPACITY,
     TYPED_NODE_ID_CAPACITY,
 ];
 
