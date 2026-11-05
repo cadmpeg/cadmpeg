@@ -245,6 +245,53 @@ fn typed_primary_frames_index_one_typed_frame() {
 }
 
 #[test]
+fn damaged_primary_header_preserves_its_indexed_sibling() {
+    let mut bytes = Vec::new();
+    lp_ascii(&mut bytes, "999");
+    bytes.extend_from_slice(&42_u32.to_le_bytes());
+    let sibling_offset = bytes.len();
+    lp_ascii(&mut bytes, "256");
+    bytes.extend_from_slice(&43_u32.to_le_bytes());
+    let type_guid = "00000000-0000-0000-0000-000000000001";
+    let meta = crate::metastream::MetaStream {
+        types: vec![crate::design::test_support::design_type(
+            256,
+            type_guid,
+            None,
+            0,
+            "Test",
+            vec![42, 43],
+        )],
+        records: vec![
+            crate::design::test_support::primary_record(42, 0),
+            crate::design::test_support::primary_record(43, sibling_offset),
+        ],
+        secondary_records: Vec::new(),
+    };
+    let (frames, faults) = super::partition_primary_frames(&bytes, &meta).unwrap();
+    assert_eq!(faults.len(), 1);
+    assert_eq!(
+        (faults[0].entity_id, faults[0].start, faults[0].end),
+        (42, 0, sibling_offset)
+    );
+    assert_eq!(
+        frames
+            .iter()
+            .map(|frame| frame.entity_id)
+            .collect::<Vec<_>>(),
+        [43]
+    );
+    let frames = super::typed_primary_frames(&bytes, &meta, type_guid, "test").unwrap();
+    assert_eq!(
+        frames
+            .iter()
+            .map(|frame| frame.entity_id)
+            .collect::<Vec<_>>(),
+        [43]
+    );
+}
+
+#[test]
 fn feature_timeline_items_follow_the_counted_vector() {
     use std::collections::HashMap;
 

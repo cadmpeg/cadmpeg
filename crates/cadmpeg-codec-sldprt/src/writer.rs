@@ -1209,6 +1209,12 @@ pub(crate) const CAPACITY_FIELDS: &[cadmpeg_ir::codec::write::CapacityField] = &
         source: "docs/formats/sldprt.md §4: two-cell XT pointer",
         helper: "typed_ref",
     },
+    cadmpeg_ir::codec::write::CapacityField {
+        field: "feature.source_id",
+        limit: u32::MAX as u64,
+        source: "docs/formats/sldprt.md §8: feature source identifiers occupy u32 fields",
+        helper: "allocate_feature_source_id",
+    },
 ];
 
 /// Reduced rows: neutral paths the lump stores in reduced form (#232 §5.2).
