@@ -238,6 +238,7 @@ pub(super) fn plan(
     cause: SynthesisCause,
 ) -> Result<ExportBody, super::write_error::WriteError> {
     let mut projected = input.ir.clone();
+    super::sort_arenas(&mut projected);
     let mut losses = Vec::new();
     repair_multiple_active_configurations(&mut projected.model.configurations, &mut losses);
     // Write the canonical side of an active configuration that carries state
