@@ -645,6 +645,11 @@ pub(super) fn write_semantic_at(
         .flatten();
     let envelope = if source_envelope.is_some() {
         envelope::build(&sections, &type_ids, source_scan.as_ref())?
+    } else if source_scan.is_none() {
+        let (envelope, residuals) =
+            envelope::build_fresh(outer_header(retained_records), &sections, &type_ids)?;
+        normalization_losses.extend(residuals);
+        envelope
     } else {
         let mut bytes = outer_header(retained_records).to_vec();
         let mut compressed_sizes = Vec::with_capacity(sections.len());
