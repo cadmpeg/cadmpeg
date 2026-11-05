@@ -202,3 +202,46 @@ fn a_scanned_stream_names_the_analytic_carriers_of_its_role() {
         assert_eq!(analytic, [admitted], "{description}");
     }
 }
+
+#[test]
+fn a_deltas_edge_use_the_partition_admits_is_named_in_the_site_ledger() {
+    use crate::test_support::parasolid::{
+        line_carrier, parasolid_with_body, suffix_prefixed_edge_use,
+    };
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+    // Edge use 40 has two framings; only the partition's line 259 selects one.
+    let partition = parasolid_with_body(
+        "partition body",
+        "SCH_SW_33103_11000",
+        &line_carrier(259, [0.0; 3], [1.0, 0.0, 0.0]),
+    );
+    let deltas = parasolid_with_body(
+        "deltas body",
+        "SCH_SW_33103_11000",
+        &suffix_prefixed_edge_use(40, 259),
+    );
+    let headers: Vec<_> = [&partition, &deltas]
+        .iter()
+        .map(|payload| crate::parasolid::stream_header(payload).unwrap().unwrap())
+        .collect();
+    let arena = DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service()).expect("root");
+    let edge_uses = |spans: &[super::RawSpan]| {
+        spans
+            .iter()
+            .filter(|span| span.tag == 0x10)
+            .map(|span| span.record)
+            .collect::<Vec<_>>()
+    };
+    let deltas_body = &deltas[headers[1].body_offset..];
+    assert!(edge_uses(&super::scanned(deltas_body, &headers[1], false)).is_empty());
+    let site =
+        super::site_scanned(&ctx, &[(&partition, &headers[0]), (&deltas, &headers[1])]).unwrap();
+    assert_eq!(
+        edge_uses(site[1].as_deref().expect("scanned Deltas stream")),
+        [40]
+    );
+    let alone = super::site_scanned(&ctx, &[(&deltas, &headers[1])]).unwrap();
+    assert!(edge_uses(alone[0].as_deref().expect("scanned Deltas stream")).is_empty());
+}

@@ -4,8 +4,10 @@
 //! [`node_spans`] names the nodes the node readers admit in each stream of a
 //! site that the decoder reads from its node sequence, one span over each
 //! node's complete range. [`collect`] re-runs the scan admission predicates
-//! over a stream body the decoder scans and records the byte range each
-//! admitted record interprets. Topology spans name admitted records. Analytic spans name
+//! over a stream body and records the byte range each admitted record
+//! interprets. [`site_scanned`] names, for each stream of a site that the
+//! decoder scans, the topology records of the decoder's site scan. Topology
+//! spans name admitted records. Analytic spans name
 //! every carrier the carrier scan admits. Spline spans name the wrapper,
 //! descriptor, and semantic array values of every admitted NURBS carrier; the
 //! wrapper, descriptor, and array spans of one carrier are separate entries.
@@ -42,9 +44,18 @@ impl RawSpan {
 /// `plain` reads a plain stream (spec §3.3). `Some(deltas)` selects the
 /// analytic record framing of one stream role.
 pub(crate) fn collect(stream_body: &[u8], plain: bool, role: Option<bool>) -> Vec<RawSpan> {
-    let mut spans = Vec::new();
+    with_topology(
+        stream_body,
+        role,
+        super::topology::topology_spans(stream_body, plain),
+    )
+}
+
+/// The analytic and spline spans of a stream body with the analytic record
+/// framing `role`, joined to its `topology` spans in offset order.
+fn with_topology(stream_body: &[u8], role: Option<bool>, topology: Vec<RawSpan>) -> Vec<RawSpan> {
+    let mut spans = topology;
     spans.extend(super::analytic_spans(stream_body, role));
-    spans.extend(super::topology::topology_spans(stream_body, plain));
     spans.extend(super::spline::spline_spans(stream_body));
     spans.sort_by(|left, right| {
         (left.offset, left.length, left.tag, left.record).cmp(&(
@@ -69,6 +80,27 @@ pub(crate) fn scanned(
         plain,
         Some(super::graph::is_deltas_stream(header)),
     )
+}
+
+/// The exact-read spans of each stream of one site that the decoder scans,
+/// in the order of `bodies`. Topology spans name the records of the
+/// decoder's site scan: a Deltas stream reads the carriers, the partition
+/// tables, and the owner attributes of the whole site. `None` names a stream
+/// whose topology the decoder reads from its node sequence.
+pub(crate) fn site_scanned(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    bodies: &[(&[u8], &crate::parasolid::StreamHeader)],
+) -> Result<Vec<Option<Vec<RawSpan>>>, cadmpeg_core::CodecError> {
+    let mut out = vec![None; bodies.len()];
+    super::graph::observe_site(ctx, bodies, &mut |stream| {
+        if stream.from_nodes {
+            return;
+        }
+        let topology = super::topology::table_spans(stream.body, stream.tables, false);
+        let role = super::graph::is_deltas_stream(bodies[stream.index].1);
+        out[stream.index] = Some(with_topology(stream.body, Some(role), topology));
+    })?;
+    Ok(out)
 }
 
 /// The exact-read spans of each stream of one site, in the order of

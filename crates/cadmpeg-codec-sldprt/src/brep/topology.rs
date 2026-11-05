@@ -1917,7 +1917,16 @@ pub(super) fn scan_deltas_with_owner_attrs(
 /// the admission predicates matched, in match order. `plain` reads a plain
 /// stream (spec §3.3).
 pub(super) fn topology_spans(body: &[u8], plain: bool) -> Vec<super::read_ledger::RawSpan> {
-    let tables = scan_stream(body, plain);
+    table_spans(body, &scan_stream(body, plain), plain)
+}
+
+/// Exact-read spans of the records of `tables`, which a scan of `body`
+/// admits, as [`topology_spans`] names them.
+pub(super) fn table_spans(
+    body: &[u8],
+    tables: &Tables,
+    plain: bool,
+) -> Vec<super::read_ledger::RawSpan> {
     let mut spans = Vec::new();
     for record in tables.bridges.values() {
         if let Some(end) = bridge_end(body, record.offset, plain) {

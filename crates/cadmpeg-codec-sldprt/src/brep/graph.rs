@@ -2296,14 +2296,51 @@ pub(crate) fn decode_bodies(
     bodies: &[(&[u8], &StreamHeader)],
     stream: &cadmpeg_ir::StreamName,
 ) -> Result<Brep, cadmpeg_core::CodecError> {
+    let mut site = scan_site(ctx, bodies, &mut |_| {})?;
+    decode_graph(
+        ctx,
+        &mut site.carriers,
+        &site.tables,
+        site.facts,
+        &site.typed_facts,
+        stream,
+    )
+}
+
+/// The merged record state of one site.
+struct SiteState {
+    carriers: CarrierIndex,
+    tables: topology::Tables,
+    facts: entity::Facts,
+    typed_facts: typed::Facts,
+}
+
+/// The topology tables the site scan reads from one stream, before they
+/// merge into the site tables.
+pub(super) struct StreamTopology<'a> {
+    /// The position of the stream in the site's `bodies`.
+    pub(super) index: usize,
+    pub(super) body: &'a [u8],
+    /// Whether the tables come from the stream's node sequence.
+    pub(super) from_nodes: bool,
+    pub(super) tables: &'a topology::Tables,
+}
+
+/// Read the streams of one site into one record state. `observe` receives
+/// the topology tables of each stream in scan order.
+fn scan_site(
+    ctx: &DecodeContext<'_>,
+    bodies: &[(&[u8], &StreamHeader)],
+    observe: &mut dyn FnMut(StreamTopology<'_>),
+) -> Result<SiteState, cadmpeg_core::CodecError> {
     let mut carriers = CarrierIndex::default();
     let mut tables = topology::Tables::default();
     let mut facts = entity::Facts::default();
     let mut typed_facts = typed::Facts::default();
     let mut initialized = false;
-    let mut ordered: Vec<&(&[u8], &StreamHeader)> = Vec::new();
-    ordered.extend(bodies.iter());
-    ordered.sort_by_key(|entry| is_deltas_stream(entry.1));
+    let mut order: Vec<usize> = (0..bodies.len()).collect();
+    order.sort_by_key(|index| is_deltas_stream(bodies[*index].1));
+    let ordered: Vec<&(&[u8], &StreamHeader)> = order.iter().map(|index| &bodies[*index]).collect();
     let mut entity_streams = Vec::new();
     for (payload, header) in &ordered {
         let body = header_body(payload, header)?;
@@ -2468,13 +2505,16 @@ pub(crate) fn decode_bodies(
     );
     let typed_bridge_attrs = typed_facts.valid_ownership_face_attrs();
     let selected_bridge_attrs = typed_bridge_attrs.as_ref();
-    for (stream_order, ((((payload, header), stream_typed_facts), node_tables), attributes)) in
-        ordered
-            .into_iter()
-            .zip(typed_streams)
-            .zip(node_tables)
-            .zip(node_attributes)
-            .enumerate()
+    for (
+        stream_order,
+        (((((payload, header), stream_typed_facts), node_tables), attributes), index),
+    ) in ordered
+        .into_iter()
+        .zip(typed_streams)
+        .zip(node_tables)
+        .zip(node_attributes)
+        .zip(order)
+        .enumerate()
     {
         let body = header_body(payload, header)?;
         let is_deltas = is_deltas_stream(header);
@@ -2492,6 +2532,7 @@ pub(crate) fn decode_bodies(
         }
         carriers.merge_missing(stream_carriers);
         let curve_attrs = carriers.curve_attrs();
+        let from_nodes = node_tables.is_some();
         let scanned_tables = if let Some(mut tables) = node_tables {
             topology::nodes::own(&mut tables, &typed_face_offsets, &owner_attrs);
             tables
@@ -2513,6 +2554,12 @@ pub(crate) fn decode_bodies(
                 &owner_attrs,
             )
         };
+        observe(StreamTopology {
+            index,
+            body,
+            from_nodes,
+            tables: &scanned_tables,
+        });
         let (attributes, entities) = attributes;
         let attributes = attributes.unwrap_or_else(|| attrib::Records::scan(body));
         let mut scanned_facts = entity::metadata(body, is_deltas, &attributes, entities);
@@ -2536,7 +2583,22 @@ pub(crate) fn decode_bodies(
             append_entity_facts(&mut facts, scanned_facts);
         }
     }
-    decode_graph(ctx, &mut carriers, &tables, facts, &typed_facts, stream)
+    Ok(SiteState {
+        carriers,
+        tables,
+        facts,
+        typed_facts,
+    })
+}
+
+/// Read the streams of one site as [`decode_bodies`] does, without building
+/// the B-rep. `observe` receives the topology tables of each stream.
+pub(super) fn observe_site(
+    ctx: &DecodeContext<'_>,
+    bodies: &[(&[u8], &StreamHeader)],
+    observe: &mut dyn FnMut(StreamTopology<'_>),
+) -> Result<(), cadmpeg_core::CodecError> {
+    scan_site(ctx, bodies, observe).map(|_| ())
 }
 
 fn decode_body(
