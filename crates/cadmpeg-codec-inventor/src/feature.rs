@@ -902,22 +902,20 @@ pub(crate) fn inventory(
                     }
                 }
                 SURFACE_TYPE => {
-                    if let Some(surface) =
+                    if let Some(Some(surface)) =
                         admit_record_part(ctx, parts, record.payload, token, || {
                             parse_surface(record.payload, version)
                         })?
                     {
-                        if let Some(surface) = surface {
-                            push_record(
-                                ctx,
-                                &mut inventory.properties,
-                                surface,
-                                record.type_id,
-                                segment.pair.token.key(),
-                                record.ordinal,
-                                "admit Inventor PmDc surface record",
-                            )?;
-                        }
+                        push_record(
+                            ctx,
+                            &mut inventory.properties,
+                            surface,
+                            record.type_id,
+                            segment.pair.token.key(),
+                            record.ordinal,
+                            "admit Inventor PmDc surface record",
+                        )?;
                     }
                 }
                 type_id => {
