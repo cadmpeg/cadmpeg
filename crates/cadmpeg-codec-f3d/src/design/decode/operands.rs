@@ -4294,6 +4294,24 @@ pub(super) fn parse_entity_selection_frame(
                 .filter(|identity| identity.value != 0),
             }),
         )
+    } else if bytes.get(identity_at + 11..identity_at + compact_identity::SKETCH_RECORD_INDEX)?
+        == [0; 10]
+        && identity_at.checked_add(compact_identity::LEN)? == next_at
+    {
+        let primary_identity_offset = identity_at.checked_add(compact_identity::SKETCH_RECORD_INDEX)?;
+        let secondary_identity_offset =
+            identity_at.checked_add(compact_identity::POINT_PERSISTENT_ID)?;
+        (
+            primary_identity_offset,
+            View::u64_le_at(bytes, primary_identity_offset)?,
+            Some(crate::records::identity::DesignSecondaryIdentity {
+                identity: crate::records::identity::Located {
+                    value: View::u64_le_at(bytes, secondary_identity_offset)?,
+                    offset: u64::try_from(secondary_identity_offset).ok()?,
+                },
+                curve_identity: None,
+            }),
+        )
     } else if bytes.get(identity_at + 11..identity_at + 21)? == [0; 10]
         && identity_at.checked_add(29)? == next_at
     {

@@ -195,6 +195,20 @@ impl DesignEntitySelectionOperand {
                     secondary: secondary.identity.value,
                 }
             }
+            Some(secondary)
+                if draft.identity_record_offset.checked_add(u64_from_index(
+                    crate::layout::work_point_sketch_point_compact_identity::SKETCH_RECORD_INDEX,
+                )) == Some(draft.primary_identity_offset)
+                    && draft.identity_record_offset.checked_add(u64_from_index(
+                        crate::layout::work_point_sketch_point_compact_identity::POINT_PERSISTENT_ID,
+                    )) == Some(secondary.identity.offset)
+                    && secondary.curve_identity.is_none() =>
+            {
+                EntitySelectionFrame::SketchPoint {
+                    secondary: secondary.identity.value,
+                    next_record_index: draft.next_record_index,
+                }
+            }
             _ => return Err(
                 "primary_identity_offset/secondary_identity_offset disagree with selection frame"
                     .into(),
@@ -310,6 +324,9 @@ impl DesignEntitySelectionOperand {
         match self.selection {
             EntitySelectionFrame::Primary { next_record_index }
             | EntitySelectionFrame::Pair {
+                next_record_index, ..
+            }
+            | EntitySelectionFrame::SketchPoint {
                 next_record_index, ..
             } => next_record_index,
             EntitySelectionFrame::SketchCurve { .. } => self.frame.index(4),
@@ -874,6 +891,10 @@ enum EntitySelectionFrame {
     SketchCurve {
         secondary: u64,
     },
+    SketchPoint {
+        secondary: u64,
+        next_record_index: u32,
+    },
 }
 
 impl EntitySelectionFrame {
@@ -881,6 +902,9 @@ impl EntitySelectionFrame {
         match self {
             Self::Primary { .. } => 21,
             Self::Pair { .. } => 29,
+            Self::SketchPoint { .. } => u64_from_index(
+                crate::layout::work_point_sketch_point_compact_identity::SKETCH_RECORD_INDEX,
+            ),
             Self::SketchCurve { .. } => {
                 u64_from_index(crate::layout::class_338_sketch_curve_identity::OWNER_RECORD_INDEX)
             }
@@ -890,6 +914,9 @@ impl EntitySelectionFrame {
         match self {
             Self::Primary { .. } => 29,
             Self::Pair { .. } => 45,
+            Self::SketchPoint { .. } => {
+                u64_from_index(crate::layout::work_point_sketch_point_compact_identity::LEN)
+            }
             Self::SketchCurve { .. } => {
                 u64_from_index(crate::layout::class_338_sketch_curve_identity::LEN)
             }
@@ -916,6 +943,16 @@ impl EntitySelectionFrame {
                     offset: offset
                         + u64_from_index(
                             crate::layout::class_338_sketch_curve_identity::CURVE_PERSISTENT_ID,
+                        ),
+                },
+                curve_identity: None,
+            }),
+            Self::SketchPoint { secondary, .. } => Some(DesignSecondaryIdentity {
+                identity: Located {
+                    value: secondary,
+                    offset: offset
+                        + u64_from_index(
+                            crate::layout::work_point_sketch_point_compact_identity::POINT_PERSISTENT_ID,
                         ),
                 },
                 curve_identity: None,

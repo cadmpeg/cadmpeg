@@ -5092,6 +5092,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                                 | DesignOperandRole::PROFILE
                                 | DesignOperandRole::ROLE_0X43
                                 | DesignOperandRole::ROLE_0X7
+                                | DesignOperandRole::ROLE_0X21
                         ))
                         && group.extrude_role().is_none()
                 }
@@ -5370,6 +5371,7 @@ pub(crate) fn loft_operand_roles_are_valid(
     const FACE_SECTION: DesignOperandRole = DesignOperandRole::ROLE_0X43;
     const GUIDE: DesignOperandRole = DesignOperandRole::ROLE_0X5;
     const CENTERLINE: DesignOperandRole = DesignOperandRole::ROLE_0X7;
+    const POINT: DesignOperandRole = DesignOperandRole::ROLE_0X21;
     let is_body = |role: DesignOperandRole| {
         matches!(
             role,
@@ -5401,6 +5403,12 @@ pub(crate) fn loft_operand_roles_are_valid(
 
     if operation != records::feature::extrude::DesignExtrudeOperation::NewBody {
         return false;
+    }
+
+    if operands().any(|(role, _)| *role == POINT) {
+        return operands().count() == 2
+            && operands().filter(|(role, _)| *role == SECTION).count() == 1
+            && operands().any(|(role, member_count)| *role == POINT && *member_count == 1);
     }
 
     if section_count == 1 && operands().all(|(role, _)| matches!(*role, FACE_SECTION | GUIDE)) {

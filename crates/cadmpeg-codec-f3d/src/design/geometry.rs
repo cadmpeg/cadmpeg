@@ -3143,6 +3143,21 @@ pub(super) fn project_to_sketch(
     Some(Point2::new(offset.dot(u_axis.get()), offset.dot(v_axis)))
 }
 
+/// Model-space position of the sketch-plane point `point`.
+pub(super) fn sketch_point_to_model(
+    sketch: &cadmpeg_ir::sketches::Sketch,
+    point: Point2,
+) -> Option<cadmpeg_ir::features::FinitePoint3> {
+    let (origin, normal, u_axis) = sketch.resolved_placement()?;
+    let v_axis = normal.cross(u_axis.get());
+    cadmpeg_ir::features::FinitePoint3::new(
+        origin
+            .get()
+            .translated(u_axis.get(), point.u)
+            .translated(v_axis, point.v),
+    )
+}
+
 pub(super) fn point_on_sketch_entity(
     point: Point2,
     entity: &cadmpeg_ir::sketches::SketchEntity,
