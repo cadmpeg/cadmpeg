@@ -79,8 +79,17 @@ pub fn apply_storage(
             None => value.clone(),
         },
         ReducedStorage::F32 => match value.as_f64() {
-            Some(number) => serde_json::from_value::<f32>(Value::from(number))
-                .map_or(Value::Null, |rounded| Value::from(f64::from(rounded))),
+            Some(number) => {
+                let max = f64::from(f32::MAX);
+                let overflow = max + 2.0_f64.powi(103);
+                if number.abs() >= overflow {
+                    Value::Null
+                } else {
+                    let rounded =
+                        cadmpeg_core::convert::f32_from_f64(number.clamp(-max, max)).map(f64::from);
+                    rounded.map_or(Value::Null, Value::from)
+                }
+            }
             None => value.clone(),
         },
         ReducedStorage::Decimal(places) => match value.as_f64() {
@@ -1187,9 +1196,6 @@ mod tests {
         assert!(findings[0].contains("body#1"), "{findings:?}");
     }
 
-    /// The `product_assembly.FCStd` record that exposed the occurrence
-    /// questions: the occurrence name is also a foreign native record id,
-    /// and the writer nests former roots under one added synthetic root.
     fn assembly_before() -> serde_json::Value {
         json!({
             "model": {
