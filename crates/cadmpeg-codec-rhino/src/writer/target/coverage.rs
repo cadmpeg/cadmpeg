@@ -11,7 +11,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::decode::{DecodeContext, View};
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{ArenaDisposition, ArenaDispositions};
 use cadmpeg_ir::codec::Codec;
 use cadmpeg_ir::schema::rewrite::{self, typed::RewriteIdentities};
@@ -143,11 +142,16 @@ fn agrees<T: Clone + Serialize + RewriteIdentities>(
     if left.is_empty() || left.len() != right.len() {
         return false;
     }
+    let missing = std::cell::Cell::new(false);
     let rewritten = rewrite::identities(ctx, left.to_vec(), |id| {
-        ids.get(id)
-            .cloned()
-            .ok_or_else(|| CodecError::UnsupportedContent("unmapped synthesized identity".into()))
+        Ok(ids.get(id).cloned().unwrap_or_else(|| {
+            missing.set(true);
+            id.to_owned()
+        }))
     });
+    if missing.get() {
+        return false;
+    }
     let Ok(rewritten) = rewritten else {
         return false;
     };
