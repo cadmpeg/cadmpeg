@@ -239,10 +239,16 @@ fn every_relation_checks_its_geometric_operand_slots_for_native_helpers() -> Tes
 }
 
 #[test]
-fn a_polygon_control_relation_must_name_one_vertex_point_twice() -> TestResult {
+fn a_polygon_control_relation_with_two_different_vertices_still_requires_resolution() -> TestResult
+{
     let null_reference = PmDcReference::from_packed(0);
     let other_reference = PmDcReference::from_packed(0x8000_0002);
-    for (second, expected) in [(null_reference, false), (other_reference, true)] {
+    // (second vertex reference, whether its target record exists, expected finding)
+    for (second, target_exists, expect_finding) in [
+        (null_reference, false, false),
+        (other_reference, true, false),
+        (other_reference, false, true),
+    ] {
         let mut wire = serde_json::to_value(crate::test_support::sketch_curves::spline_midpoint())?;
         wire["header"]["content"]["context"] = serde_json::json!(null_reference);
         wire["header"]["group"] = serde_json::json!(null_reference);
@@ -251,14 +257,34 @@ fn a_polygon_control_relation_must_name_one_vertex_point_twice() -> TestResult {
             "position": [0.0, 0.0], "flags": "000001"});
         wire["type_id"] = serde_json::json!("845c3bbfd2112ae960004bb38932edb0");
         let source: crate::sketch::PmDcSketchConstraint = serde_json::from_value(wire)?;
+        let token = source.identity.segment_token.as_str().to_owned();
+        let own = source.identity.record_ordinal;
+        let type_id = source.identity.type_id.as_str().to_owned();
         let mut data = empty_data();
         data.pm_dc_sketch_constraints.push(source);
+        let ordinals = if target_exists {
+            vec![own, 1]
+        } else {
+            vec![own]
+        };
+        for ordinal in ordinals {
+            data.records.push(serde_json::from_value(serde_json::json!({
+                "id": format!("inventor:rse:record#{token}-{ordinal}"),
+                "token": token, "ordinal": ordinal, "selector": 0, "type_index": 0,
+                "type_id": type_id,
+                "payload_offset": 0, "payload_len": 0, "payload_sha256": "",
+                "trailing_payload_len": 0, "trailer_len": 0, "trailer_sha256": ""
+            }))?);
+        }
         let mut findings = Vec::new();
         super::super::validate_sketches(&data, &cadmpeg_ir::CadIr::empty(), &mut findings);
-        let unequal = findings
-            .iter()
-            .any(|finding| finding.message.contains("two different vertex points"));
-        assert_eq!(unequal, expected, "{findings:?}");
+        assert_eq!(!findings.is_empty(), expect_finding, "{findings:?}");
+        assert!(
+            findings
+                .iter()
+                .all(|finding| !finding.message.contains("two different vertex points")),
+            "{findings:?}"
+        );
     }
     Ok(())
 }

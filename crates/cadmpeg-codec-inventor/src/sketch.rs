@@ -1429,11 +1429,6 @@ fn parse_constraint(
                 cursor.reference("polygon control vertex reference")?,
                 cursor.reference("polygon control second vertex reference")?,
             ];
-            if vertex[0] != vertex[1] {
-                return Err(CodecError::malformed(
-                    "Inventor PmDc polygon control relation names two different vertex points",
-                ));
-            }
             PmDcSketchConstraintKind::PolygonControl {
                 value,
                 reference,
@@ -1930,6 +1925,30 @@ pub(crate) fn graph_loss(
     (sketches != 0 || entities != 0 || constraints != 0).then(|| {
         crate::loss::InventorLossCode::SketchGraphOpen.note(format!(
             "Retained {sketches} Inventor sketch record(s), {entities} sketch-entity record(s), and {constraints} sketch-constraint record(s) whose neutral graph is not closed."
+        ))
+    })
+}
+
+/// The loss for polygon control relations whose two vertex references differ.
+/// The relation repeats one vertex reference in every record that shows the
+/// pattern, but that reading is not proven, so a relation with two different
+/// vertices is kept native without it. The relation defines no geometry, so
+/// the sketch still closes.
+pub(crate) fn polygon_control_vertex_loss(
+    constraints: &[PmDcSketchConstraint],
+) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    let count = constraints
+        .iter()
+        .filter(|constraint| {
+            matches!(
+                constraint.kind,
+                PmDcSketchConstraintKind::PolygonControl { vertex, .. } if vertex[0] != vertex[1]
+            )
+        })
+        .count();
+    (count != 0).then(|| {
+        crate::loss::InventorLossCode::SketchPolygonControlVerticesDiffer.note(format!(
+            "Retained {count} Inventor polygon control relation(s) with two different vertex references natively: the reading that the relation repeats one vertex reference is not proven and is not applied."
         ))
     })
 }

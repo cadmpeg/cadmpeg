@@ -365,10 +365,55 @@ fn duplicate_native_members_and_relations_keep_the_sketch_unresolved() {
 }
 
 #[test]
-fn a_polygon_control_record_with_two_different_vertices_becomes_an_issue() {
+fn a_polygon_control_record_with_two_different_vertices_keeps_both_and_reports_a_loss() {
     let bytes = polygon_control_bytes(11, [4, 5, 6], [0, 0, 1]);
+    let parsed = parse(&bytes, |_, source| {
+        parse_constraint(SketchConstraintTag::PolygonControl, source, 22).expect("polygon control")
+    });
+    let PmDcSketchConstraintKind::PolygonControl { vertex, .. } = &parsed.kind else {
+        panic!("polygon control form");
+    };
+    assert_eq!(vertex.map(crate::pmdc::PmDcReference::index), [5, 6]);
+    let equal = parse(
+        &polygon_control_bytes(11, [4, 5, 5], [0, 0, 1]),
+        |_, source| {
+            parse_constraint(SketchConstraintTag::PolygonControl, source, 22)
+                .expect("polygon control")
+        },
+    );
+    let equal = located(equal, POLYGON_CONTROL_TYPE, 11);
+    assert!(super::super::polygon_control_vertex_loss(std::slice::from_ref(&equal)).is_none());
+    let unequal = located(parsed, POLYGON_CONTROL_TYPE, 12);
+    let losses = super::super::polygon_control_vertex_loss(&[equal, unequal])
+        .expect("unequal vertices report a loss");
+    assert_eq!(losses.code.namespace(), "inventor");
+    assert_eq!(
+        losses.code.local_code(),
+        crate::loss::InventorLossCode::SketchPolygonControlVerticesDiffer.code()
+    );
+    assert!(losses.message.contains("Retained 1"));
     let admitted = inventory_with_record(POLYGON_CONTROL_TYPE, &bytes, DecodePolicy::service())
-        .expect("unequal polygon control becomes an issue");
-    assert!(admitted.constraints.is_empty());
-    assert_eq!(admitted.issues.len(), 1);
+        .expect("unequal polygon control is admitted");
+    assert_eq!(admitted.constraints.len(), 1);
+    assert!(admitted.issues.is_empty());
+}
+
+#[test]
+fn a_polygon_control_relation_with_two_different_vertices_keeps_the_sketch_closed() {
+    let (mut inventory, _) = closed_square_inventory();
+    let control = parse(
+        &polygon_control_bytes(11, [4, 5, 6], [0, 0, 1]),
+        |_, source| {
+            parse_constraint(SketchConstraintTag::PolygonControl, source, 22)
+                .expect("polygon control")
+        },
+    );
+    inventory
+        .constraints
+        .push(located(control, POLYGON_CONTROL_TYPE, 11));
+    add_members(&mut inventory, &[12]);
+    let projected = projection(&inventory);
+    assert_eq!(projected.sketches.len(), 1);
+    assert_eq!(projected.unresolved_sketches, 0);
+    assert_eq!(projected.unresolved_constraints, 1);
 }

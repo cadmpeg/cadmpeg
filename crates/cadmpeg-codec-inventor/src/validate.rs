@@ -760,16 +760,6 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
                 Some(constraint.id()),
             ));
         }
-        if let PmDcSketchConstraintKind::PolygonControl { vertex, .. } = &constraint.kind {
-            if vertex[0] != vertex[1] {
-                findings.push(finding(
-                    Check::NativeLinks,
-                    "Inventor PmDc polygon control relation names two different vertex points"
-                        .into(),
-                    Some(constraint.id()),
-                ));
-            }
-        }
     }
     for direction in &data.pm_dc_directions {
         if !record_is_exact(

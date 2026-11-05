@@ -64,6 +64,9 @@ pub(crate) enum InventorLossCode {
     SketchCurveNative,
     /// A listed sketch member has unresolved record and curve semantics.
     SketchMemberNative,
+    /// A polygon control relation names two different vertex references; the
+    /// repeated-vertex reading does not apply and both references stay native.
+    SketchPolygonControlVerticesDiffer,
     /// A spline-point relation retains unresolved locus and parameter roles.
     SketchSplinePointNative,
     /// A spline entity retains its source curve pending exact operands.
@@ -258,6 +261,7 @@ impl InventorLossCode {
         Self::SketchPairedAssociationUnprojected,
         Self::SketchCurveNative,
         Self::SketchMemberNative,
+        Self::SketchPolygonControlVerticesDiffer,
         Self::SketchSplinePointNative,
         Self::SketchSplineCurveNative,
         Self::SketchEllipseCurveNative,
@@ -367,6 +371,7 @@ impl InventorLossCode {
             Self::SketchPairedAssociationUnprojected => "sketch.paired-association-unprojected",
             Self::SketchCurveNative => "sketch.curve-native",
             Self::SketchMemberNative => "sketch.member-native",
+            Self::SketchPolygonControlVerticesDiffer => "sketch.polygon-control-vertices-differ",
             Self::SketchSplinePointNative => "sketch.spline-point-native",
             Self::SketchSplineCurveNative => "sketch.spline-curve-native",
             Self::SketchEllipseCurveNative => "sketch.ellipse-curve-native",
@@ -552,6 +557,7 @@ impl InventorLossCode {
             | Self::SketchPairedAssociationUnprojected
             | Self::SketchCurveNative
             | Self::SketchMemberNative
+            | Self::SketchPolygonControlVerticesDiffer
             | Self::SketchSplinePointNative
             | Self::SketchSplineCurveNative
             | Self::SketchEllipseCurveNative
@@ -640,6 +646,7 @@ mod tests {
                 "sketch.paired-association-unprojected",
                 "sketch.curve-native",
                 "sketch.member-native",
+                "sketch.polygon-control-vertices-differ",
                 "sketch.spline-point-native",
                 "sketch.spline-curve-native",
                 "sketch.ellipse-curve-native",
