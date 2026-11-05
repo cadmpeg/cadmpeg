@@ -235,6 +235,7 @@ fn written_history_feature_has_no_omission_loss() {
     use cadmpeg_ir::codec::write::{
         target::TargetRequest, ArenaCoverage, ArenaDisposition, EncodeInput, Encoder,
     };
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
     let source = document();
     let mut bytes = Vec::new();
@@ -242,7 +243,6 @@ fn written_history_feature_has_no_omission_loss() {
         .plan(EncodeInput::new(&source, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut bytes))
         .expect("write the history feature");
-    use cadmpeg_ir::codec::{Codec, DecodeOptions};
     let decoded = crate::RhinoCodec
         .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
         .expect("read the history feature");
