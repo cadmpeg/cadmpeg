@@ -2,10 +2,10 @@
 //! Order native definitions by their current typed references.
 
 use super::{
-    annotations, attributes, coordinates, copious, count, directory_label, drawings, entity, fem,
-    fonts, levels, macros, products, real, shape, solids, structure, text, BTreeSet, CadIr,
-    DirectoryLineFont, Entity, EntityStatus, Fields, NativeExport, NativeRecord, Targets, Value,
-    ARENAS,
+    annotations, associations, attributes, coordinates, copious, count, directory_label, drawings,
+    entity, fem, fonts, levels, macros, products, real, shape, solids, structure, text, BTreeSet,
+    CadIr, DirectoryLineFont, Entity, EntityStatus, Fields, NativeExport, NativeRecord, Targets,
+    Value, ARENAS,
 };
 use std::collections::BTreeMap;
 
@@ -469,6 +469,7 @@ pub(in crate::writer) fn append(
         ..
     } = emitter;
     line_fonts(ir, entities, &targets);
+    associations::link(ir, entities, &targets);
     result
 }
 /// Emission state for one native re-emission pass: the read-only document
