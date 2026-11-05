@@ -184,7 +184,7 @@ fn unsupported_uv_images_preserve_the_model_space_boundary() {
     for curve in &mut ir.model.pcurves {
         use cadmpeg_ir::geometry::pcurve::{PcurveGeometry, PcurveNurbs, PcurveNurbsPoles};
         use cadmpeg_ir::math::Point2;
-        let [start, end] = curve.parameter_range().unwrap().get();
+        let [start, end] = curve.parameter_range().expect("valid test value").get();
         curve.geometry = PcurveGeometry::Nurbs {
             nurbs: PcurveNurbs::new(
                 1,
@@ -194,7 +194,7 @@ fn unsupported_uv_images_preserve_the_model_space_boundary() {
                 },
                 false,
             )
-            .unwrap(),
+            .expect("valid test value"),
         };
     }
     for coedge in &mut ir.model.coedges {
@@ -253,7 +253,8 @@ fn face_with_missing_carrier_reports_each_removed_boundary_record() {
         )
         .expect("trimmed sheet decodes");
     let mut ir = decoded.ir().clone();
-    ir.model.edges[0].carrier = cadmpeg_ir::topology::EdgeCarrier::new(None, None).unwrap();
+    ir.model.edges[0].carrier =
+        cadmpeg_ir::topology::EdgeCarrier::new(None, None).expect("valid test value");
     let (stripped, losses) = super::super::admission::strip_unusable_face_topology(&ir);
     let stripped = stripped.expect("face with missing carrier is removed");
     assert!(!ir.model.loops.is_empty() && !ir.model.coedges.is_empty());
@@ -327,7 +328,9 @@ fn dangling_coedge_keeps_other_faces_and_reports_opened_solid() {
     let mut ir = decoded.ir().clone();
     let coedge_id = ir.model.coedges[0].id.to_string();
     let body_id = ir.model.bodies[0].id.to_string();
-    ir.model.coedges[0].edge = "test:model:edge#missing".try_into().unwrap();
+    ir.model.coedges[0].edge = "test:model:edge#missing"
+        .try_into()
+        .expect("valid test value");
     let plan = plan_at(IgesVersion::V5_3, &ir, None).expect("invalid face degrades");
     assert!(plan
         .report()
@@ -356,6 +359,11 @@ fn dangling_coedge_keeps_other_faces_and_reports_opened_solid() {
 
 #[test]
 fn only_a_proven_spherical_pole_becomes_a_vertex_use() {
+    use cadmpeg_ir::geometry::analytic::SphereSurface;
+    use cadmpeg_ir::geometry::pcurve::{LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata};
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+    use cadmpeg_ir::math::{Point2, Point3, Vector3};
+    use cadmpeg_ir::topology::PcurveUse;
     use cadmpeg_ir::topology::{EdgeCarrier, LoopBoundary, LoopRing, Sense};
     let decoded = IgesCodec
         .decode(
@@ -375,55 +383,53 @@ fn only_a_proven_spherical_pole_becomes_a_vertex_use() {
         .coedges
         .iter()
         .find(|coedge| coedge.id == ordered[0])
-        .unwrap()
+        .expect("valid test value")
         .clone();
     let first_edge = ir
         .model
         .edges
         .iter()
         .find(|edge| edge.id == first.edge)
-        .unwrap();
+        .expect("valid test value");
     let vertex = match first.sense {
         Sense::Forward => first_edge.end.clone(),
         Sense::Reversed => first_edge.start.clone(),
     };
     let mut pole_edge = first_edge.clone();
-    pole_edge.id = "test:model:edge#pole".try_into().unwrap();
+    pole_edge.id = "test:model:edge#pole".try_into().expect("valid test value");
     pole_edge.native_ref = None;
     pole_edge.start = vertex.clone();
     pole_edge.end = vertex;
-    pole_edge.carrier = EdgeCarrier::new(None, None).unwrap();
+    pole_edge.carrier = EdgeCarrier::new(None, None).expect("valid test value");
     let mut pole_use = first;
-    pole_use.id = "test:model:coedge#pole".try_into().unwrap();
+    pole_use.id = "test:model:coedge#pole"
+        .try_into()
+        .expect("valid test value");
     pole_use.native_ref = None;
     pole_use.edge = pole_edge.id.clone();
     pole_use.radial_next = pole_use.id.clone();
     pole_use.pcurves.clear();
     ordered.insert(1, pole_use.id.clone());
-    ir.model.loops[0].boundary = LoopBoundary::Ring(LoopRing::new(ordered, vertex_uses).unwrap());
+    ir.model.loops[0].boundary =
+        LoopBoundary::Ring(LoopRing::new(ordered, vertex_uses).expect("valid test value"));
     ir.model.edges.push(pole_edge);
     ir.model.coedges.push(pole_use);
-    let (unchanged, losses) = crate::writer::admission::pole_edges(&ir).unwrap();
+    let (unchanged, losses) = crate::writer::admission::pole_edges(&ir).expect("valid test value");
     assert!(losses.is_empty());
     assert_eq!(unchanged.model.edges.len(), ir.model.edges.len());
 
-    use cadmpeg_ir::geometry::analytic::SphereSurface;
-    use cadmpeg_ir::geometry::pcurve::{LinePcurve, Pcurve, PcurveGeometry, PcurveMetadata};
-    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
-    use cadmpeg_ir::math::{Point2, Point3, Vector3};
-    use cadmpeg_ir::topology::PcurveUse;
     let vertex = ir
         .model
         .vertices
         .iter()
-        .find(|v| v.id == ir.model.edges.last().unwrap().start)
-        .unwrap();
+        .find(|v| v.id == ir.model.edges.last().expect("valid test value").start)
+        .expect("valid test value");
     let point = ir
         .model
         .points
         .iter()
         .find(|p| p.id == vertex.point)
-        .unwrap()
+        .expect("valid test value")
         .position()
         .get();
     let surface_id = ir
@@ -431,7 +437,7 @@ fn only_a_proven_spherical_pole_becomes_a_vertex_use() {
         .faces
         .iter()
         .find(|face| face.id == ir.model.loops[0].face)
-        .unwrap()
+        .expect("valid test value")
         .surface
         .clone();
     let surface = ir
@@ -439,7 +445,7 @@ fn only_a_proven_spherical_pole_becomes_a_vertex_use() {
         .surfaces
         .iter_mut()
         .find(|surface| surface.id == surface_id)
-        .unwrap();
+        .expect("valid test value");
     surface.geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Sphere(
         SphereSurface::try_new(
             Point3::new(point.x, point.y, point.z - 1.0),
@@ -447,9 +453,11 @@ fn only_a_proven_spherical_pole_becomes_a_vertex_use() {
             Vector3::new(1.0, 0.0, 0.0),
             1.0,
         )
-        .unwrap(),
+        .expect("valid test value"),
     ));
-    let id: cadmpeg_ir::ids::PcurveId = "test:model:pcurve#pole".try_into().unwrap();
+    let id: cadmpeg_ir::ids::PcurveId = "test:model:pcurve#pole"
+        .try_into()
+        .expect("valid test value");
     ir.model.pcurves.push(Pcurve {
         native_ref: None,
         id: id.clone(),
@@ -458,21 +466,21 @@ fn only_a_proven_spherical_pole_becomes_a_vertex_use() {
                 Point2::new(0.0, std::f64::consts::FRAC_PI_2),
                 Point2::new(1.0, 0.0),
             )
-            .unwrap(),
+            .expect("valid test value"),
         ),
         metadata: PcurveMetadata::default(),
     });
     ir.model
         .coedges
         .last_mut()
-        .unwrap()
+        .expect("valid test value")
         .pcurves
         .push(PcurveUse {
             pcurve: id,
             isoparametric: None,
             parameter_range: None,
         });
-    let (lowered, losses) = crate::writer::admission::pole_edges(&ir).unwrap();
+    let (lowered, losses) = crate::writer::admission::pole_edges(&ir).expect("valid test value");
     for id in ["test:model:edge#pole", "test:model:coedge#pole"] {
         assert!(
             losses.iter().any(|loss| loss.message.contains(id)),
@@ -487,7 +495,7 @@ fn only_a_proven_spherical_pole_becomes_a_vertex_use() {
     assert!(ring
         .vertex_uses()
         .iter()
-        .any(|use_| use_.vertex == ir.model.edges.last().unwrap().start));
+        .any(|use_| use_.vertex == ir.model.edges.last().expect("valid test value").start));
 }
 
 #[test]
@@ -499,7 +507,9 @@ fn unsupported_free_surface_names_its_procedural_definition() {
     };
     use cadmpeg_ir::math::{Point3, Vector3};
     let mut ir = cadmpeg_ir::CadIr::empty();
-    let id: cadmpeg_ir::ids::SurfaceId = "test:model:surface#torus".try_into().unwrap();
+    let id: cadmpeg_ir::ids::SurfaceId = "test:model:surface#torus"
+        .try_into()
+        .expect("valid test value");
     ir.model.surfaces.push(Surface {
         native_ref: None,
         id: id.clone(),
@@ -512,20 +522,22 @@ fn unsupported_free_surface_names_its_procedural_definition() {
                 1.0,
                 2.0,
             )
-            .unwrap(),
+            .expect("valid test value"),
         )),
     });
     ir.model
         .add_procedural_surface(
             &id,
             ProceduralSurface::new(
-                "test:model:procedure#degenerate-torus".try_into().unwrap(),
+                "test:model:procedure#degenerate-torus"
+                    .try_into()
+                    .expect("valid test value"),
                 ProceduralSurfaceDefinition::DegenerateTorus { select_outer: true },
                 None,
             ),
         )
-        .unwrap();
-    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+        .expect("valid test value");
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).expect("valid test value");
     for id in [
         "test:model:surface#torus",
         "test:model:procedure#degenerate-torus",
@@ -551,7 +563,7 @@ fn unsupported_solid_names_each_owned_topology_record() {
             &mut Cursor::new(explicit_tetrahedron_solid_file()),
             &DecodeOptions::default(),
         )
-        .unwrap();
+        .expect("valid test value");
     let mut ir = decoded.ir().clone();
     ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Torus(
         TorusSurface::try_new(
@@ -561,9 +573,9 @@ fn unsupported_solid_names_each_owned_topology_record() {
             1.0,
             2.0,
         )
-        .unwrap(),
+        .expect("valid test value"),
     ));
-    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).expect("valid test value");
     let owned = ir
         .model
         .regions
@@ -590,19 +602,29 @@ fn network_occurrence_survives_synthesis_with_its_placement() {
     let bytes = crate::test_support::test_drawing_and_trimming::connected_network_subfigure_file();
     let decoded = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap();
+        .expect("valid test value");
     assert_eq!(decoded.ir().model.occurrences.len(), 1);
     let transform = decoded.ir().model.occurrences[0].transform;
-    let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).unwrap();
+    let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).expect("valid test value");
     let mut bytes = Vec::new();
-    plan.write_to(&mut bytes).unwrap();
+    plan.write_to(&mut bytes).expect("valid test value");
     let after = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap();
+        .expect("valid test value");
     assert_eq!(after.ir().model.occurrences.len(), 1);
     assert_eq!(after.ir().model.occurrences[0].transform, transform);
-    let original = &decoded.ir().native.namespace("iges").unwrap().arenas()["entities"];
-    let rewritten = &after.ir().native.namespace("iges").unwrap().arenas()["entities"];
+    let original = &decoded
+        .ir()
+        .native
+        .namespace("iges")
+        .expect("valid test value")
+        .arenas()["entities"];
+    let rewritten = &after
+        .ir()
+        .native
+        .namespace("iges")
+        .expect("valid test value")
+        .arenas()["entities"];
     assert_eq!(
         original
             .iter()
@@ -630,16 +652,16 @@ fn edited_network_occurrence_placement_is_written_from_the_document() {
     let bytes = crate::test_support::test_drawing_and_trimming::connected_network_subfigure_file();
     let decoded = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap();
+        .expect("valid test value");
     let mut ir = decoded.ir().clone();
     let edited = cadmpeg_ir::transform::Transform::affine([
         [0.0, -1.0, 0.0, 12.0],
         [1.0, 0.0, 0.0, 23.0],
         [0.0, 0.0, 1.0, 34.0],
     ])
-    .unwrap();
+    .expect("valid test value");
     ir.model.occurrences[0].transform = Some(edited);
-    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).expect("valid test value");
     let id = ir.model.occurrences[0].id.to_string();
     assert!(
         !plan
@@ -651,14 +673,23 @@ fn edited_network_occurrence_placement_is_written_from_the_document() {
         plan.report().losses
     );
     let mut bytes = Vec::new();
-    plan.write_to(&mut bytes).unwrap();
+    plan.write_to(&mut bytes).expect("valid test value");
     let after = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap();
+        .expect("valid test value");
     assert_eq!(after.ir().model.occurrences.len(), 1);
     assert_eq!(after.ir().model.occurrences[0].transform, Some(edited));
-    let before_points = &ir.native.namespace("iges").unwrap().arenas()["connect_points"];
-    let after_points = &after.ir().native.namespace("iges").unwrap().arenas()["connect_points"];
+    let before_points = &ir
+        .native
+        .namespace("iges")
+        .expect("valid test value")
+        .arenas()["connect_points"];
+    let after_points = &after
+        .ir()
+        .native
+        .namespace("iges")
+        .expect("valid test value")
+        .arenas()["connect_points"];
     assert_eq!(before_points.len(), after_points.len());
     for (before, after) in before_points.iter().zip(after_points) {
         assert_eq!(before.field("owner"), after.field("owner"));
@@ -674,27 +705,31 @@ fn edited_network_translation_and_scale_use_instance_parameters() {
     let bytes = crate::test_support::test_drawing_and_trimming::connected_network_subfigure_file();
     let decoded = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap();
+        .expect("valid test value");
     let mut ir = decoded.ir().clone();
     let edited = cadmpeg_ir::transform::Transform::affine([
         [2.0, 0.0, 0.0, 12.0],
         [0.0, 3.0, 0.0, 23.0],
         [0.0, 0.0, 4.0, 34.0],
     ])
-    .unwrap();
+    .expect("valid test value");
     ir.model.occurrences[0].transform = Some(edited);
-    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).expect("valid test value");
     let mut bytes = Vec::new();
-    plan.write_to(&mut bytes).unwrap();
+    plan.write_to(&mut bytes).expect("valid test value");
     let after = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap();
+        .expect("valid test value");
     assert_eq!(after.ir().model.occurrences[0].transform, Some(edited));
     assert_eq!(
         after.ir().model.occurrences[0].id,
         ir.model.occurrences[0].id
     );
-    let namespace = after.ir().native.namespace("iges").unwrap();
+    let namespace = after
+        .ir()
+        .native
+        .namespace("iges")
+        .expect("valid test value");
     assert!(namespace
         .arenas()
         .get("transformations")
@@ -706,21 +741,21 @@ fn missing_network_placement_does_not_replay_the_old_placement() {
     let bytes = crate::test_support::test_drawing_and_trimming::connected_network_subfigure_file();
     let decoded = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap();
+        .expect("valid test value");
     let mut ir = decoded.ir().clone();
     ir.model.occurrences[0].transform = None;
     let id = ir.model.occurrences[0].id.to_string();
-    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).expect("valid test value");
     assert!(plan
         .report()
         .losses
         .iter()
         .any(|loss| loss.message.contains(&id)));
     let mut bytes = Vec::new();
-    plan.write_to(&mut bytes).unwrap();
+    plan.write_to(&mut bytes).expect("valid test value");
     let after = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap();
+        .expect("valid test value");
     assert_eq!(
         after.ir().model.occurrences[0].transform,
         Some(cadmpeg_ir::transform::Transform::identity())
@@ -732,11 +767,11 @@ fn edited_network_definition_name_is_written_from_the_document() {
     let bytes = crate::test_support::test_drawing_and_trimming::connected_network_subfigure_file();
     let decoded = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap();
+        .expect("valid test value");
     let mut ir = decoded.ir().clone();
     ir.model.product_definitions[0].label = Some("current, network".into());
     let id = ir.model.product_definitions[0].id.to_string();
-    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).expect("valid test value");
     assert!(
         !plan
             .report()
@@ -747,10 +782,10 @@ fn edited_network_definition_name_is_written_from_the_document() {
         plan.report().losses
     );
     let mut bytes = Vec::new();
-    plan.write_to(&mut bytes).unwrap();
+    plan.write_to(&mut bytes).expect("valid test value");
     let after = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap();
+        .expect("valid test value");
     assert_eq!(
         after.ir().model.product_definitions[0].label.as_deref(),
         Some("current, network")
@@ -763,7 +798,7 @@ fn edited_nested_occurrence_placement_is_written_from_the_document() {
     let bytes = crate::test_support::test_drawing_and_trimming::nested_subfigure_file();
     let decoded = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap();
+        .expect("valid test value");
     let mut ir = decoded.ir().clone();
     assert_eq!(ir.model.occurrences.len(), 2);
     let edited = cadmpeg_ir::transform::Transform::affine([
@@ -771,14 +806,14 @@ fn edited_nested_occurrence_placement_is_written_from_the_document() {
         [0.0, 1.0, 0.0, 8.0],
         [0.0, 0.0, 1.0, 9.0],
     ])
-    .unwrap();
+    .expect("valid test value");
     ir.model.occurrences[1].transform = Some(edited);
-    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).expect("valid test value");
     let mut bytes = Vec::new();
-    plan.write_to(&mut bytes).unwrap();
+    plan.write_to(&mut bytes).expect("valid test value");
     let after = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap();
+        .expect("valid test value");
     assert_eq!(after.ir().model.occurrences.len(), 2);
     assert_eq!(after.ir().model.occurrences[1].transform, Some(edited));
 }
@@ -791,7 +826,7 @@ fn explicit_curve_bounded_surface_names_its_reduced_construction() {
             &mut Cursor::new(crate::test_support::test_surface_fixtures::bounded_plane_file()),
             &DecodeOptions::default(),
         )
-        .unwrap();
+        .expect("valid test value");
     let mut ir = decoded.ir().clone();
     let owner = ir.model.faces[0].surface.clone();
     let mut support = ir
@@ -799,9 +834,11 @@ fn explicit_curve_bounded_surface_names_its_reduced_construction() {
         .surfaces
         .iter()
         .find(|surface| surface.id == owner)
-        .unwrap()
+        .expect("valid test value")
         .clone();
-    support.id = "test:model:surface#support".try_into().unwrap();
+    support.id = "test:model:surface#support"
+        .try_into()
+        .expect("valid test value");
     support.source_object = None;
     let support_id = support.id.clone();
     ir.model.surfaces.push(support);
@@ -809,7 +846,9 @@ fn explicit_curve_bounded_surface_names_its_reduced_construction() {
         .add_procedural_surface(
             &owner,
             ProceduralSurface::new(
-                "test:model:procedure#explicit-boundary".try_into().unwrap(),
+                "test:model:procedure#explicit-boundary"
+                    .try_into()
+                    .expect("valid test value"),
                 ProceduralSurfaceDefinition::CurveBounded {
                     support: support_id,
                     boundaries: Vec::new(),
@@ -819,8 +858,8 @@ fn explicit_curve_bounded_surface_names_its_reduced_construction() {
                 None,
             ),
         )
-        .unwrap();
-    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+        .expect("valid test value");
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).expect("valid test value");
     assert!(
         plan.report().losses.iter().any(|loss| loss
             .message
@@ -838,19 +877,19 @@ fn source_less_product_and_root_occurrence_write_as_subfigures() {
         serde_json::from_value::<ProductDefinition>(serde_json::json!({
             "id":"test:model:product#one", "kind":"part", "label":"Assembly part"
         }))
-        .unwrap(),
+        .expect("valid test value"),
     );
     ir.model.occurrences.push(serde_json::from_value::<Occurrence>(serde_json::json!({
         "id":"test:model:occurrence#one", "prototype":{"scope":"local","definition":"test:model:product#one"},
         "parent":{"kind":"root"}, "ordinal":0,
         "transform":[[0.0,-1.0,0.0,4.0],[1.0,0.0,0.0,5.0],[0.0,0.0,1.0,6.0]]
-    })).unwrap());
-    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    })).expect("valid test value"));
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).expect("valid test value");
     let mut bytes = Vec::new();
-    plan.write_to(&mut bytes).unwrap();
+    plan.write_to(&mut bytes).expect("valid test value");
     let after = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap();
+        .expect("valid test value");
     assert_eq!(after.ir().model.product_definitions.len(), 1);
     assert_eq!(
         after.ir().model.product_definitions[0].label.as_deref(),
@@ -872,24 +911,24 @@ fn source_less_nested_products_keep_occurrence_hierarchy_and_placement() {
             serde_json::from_value::<ProductDefinition>(serde_json::json!({
                 "id": format!("test:model:product#{id}"), "kind":"part", "label":label
             }))
-            .unwrap(),
+            .expect("valid test value"),
         );
     }
     ir.model.occurrences.push(serde_json::from_value::<Occurrence>(serde_json::json!({
         "id":"test:model:occurrence#parent", "prototype":{"scope":"local","definition":"test:model:product#parent"},
         "parent":{"kind":"root"}, "ordinal":0, "transform":[[1,0,0,0],[0,1,0,0],[0,0,1,0]]
-    })).unwrap());
+    })).expect("valid test value"));
     ir.model.occurrences.push(serde_json::from_value::<Occurrence>(serde_json::json!({
         "id":"test:model:occurrence#child", "prototype":{"scope":"local","definition":"test:model:product#child"},
         "parent":{"kind":"occurrence","occurrence":"test:model:occurrence#parent"}, "ordinal":1,
         "transform":[[1,0,0,4],[0,1,0,5],[0,0,1,6]]
-    })).unwrap());
-    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    })).expect("valid test value"));
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).expect("valid test value");
     let mut bytes = Vec::new();
-    plan.write_to(&mut bytes).unwrap();
+    plan.write_to(&mut bytes).expect("valid test value");
     let after = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap();
+        .expect("valid test value");
     assert_eq!(after.ir().model.product_definitions.len(), 2);
     assert_eq!(after.ir().model.occurrences.len(), 2);
     assert_eq!(
@@ -910,31 +949,31 @@ fn shared_source_less_definition_names_an_unrepresentable_child() {
             serde_json::from_value::<ProductDefinition>(serde_json::json!({
                 "id": format!("test:model:product#{id}"), "kind":"part", "label":label
             }))
-            .unwrap(),
+            .expect("valid test value"),
         );
     }
     for (id, ordinal) in [("first", 0), ("second", 1)] {
         ir.model.occurrences.push(serde_json::from_value::<Occurrence>(serde_json::json!({
             "id":format!("test:model:occurrence#{id}"), "prototype":{"scope":"local","definition":"test:model:product#parent"},
             "parent":{"kind":"root"}, "ordinal":ordinal, "transform":[[1,0,0,0],[0,1,0,0],[0,0,1,0]]
-        })).unwrap());
+        })).expect("valid test value"));
     }
     ir.model.occurrences.push(serde_json::from_value::<Occurrence>(serde_json::json!({
         "id":"test:model:occurrence#child", "prototype":{"scope":"local","definition":"test:model:product#child"},
         "parent":{"kind":"occurrence","occurrence":"test:model:occurrence#first"}, "ordinal":2,
         "transform":[[1,0,0,4],[0,1,0,5],[0,0,1,6]]
-    })).unwrap());
-    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    })).expect("valid test value"));
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).expect("valid test value");
     assert!(plan
         .report()
         .losses
         .iter()
         .any(|loss| loss.message.contains("test:model:occurrence#child")));
     let mut bytes = Vec::new();
-    plan.write_to(&mut bytes).unwrap();
+    plan.write_to(&mut bytes).expect("valid test value");
     let after = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap();
+        .expect("valid test value");
     assert_eq!(after.ir().model.occurrences.len(), 2);
 }
 
@@ -943,9 +982,9 @@ fn compound_curve_keeps_its_components_and_construction() {
     let bytes = crate::test_support::test_curves_and_surfaces::composite_curve_file();
     let decoded = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap();
+        .expect("valid test value");
     assert_eq!(decoded.ir().model.procedural_curves.len(), 1);
-    let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).unwrap();
+    let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).expect("valid test value");
     let construction = decoded.ir().model.procedural_curves[0].id.to_string();
     assert!(
         !plan
@@ -957,10 +996,10 @@ fn compound_curve_keeps_its_components_and_construction() {
         plan.report().losses
     );
     let mut bytes = Vec::new();
-    plan.write_to(&mut bytes).unwrap();
+    plan.write_to(&mut bytes).expect("valid test value");
     let after = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap();
+        .expect("valid test value");
     assert_eq!(
         after.ir().model.curves.len(),
         decoded.ir().model.curves.len()
@@ -977,7 +1016,7 @@ fn compound_curve_uses_edited_components_instead_of_its_solved_cache() {
     let bytes = crate::test_support::test_curves_and_surfaces::composite_curve_file();
     let decoded = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap();
+        .expect("valid test value");
     let mut ir = decoded.ir().clone();
     let ProceduralCurveDefinition::Compound(compound) = ir.model.procedural_curves[0].definition()
     else {
@@ -1004,17 +1043,17 @@ fn compound_curve_uses_edited_components_instead_of_its_solved_cache() {
             .curves
             .iter_mut()
             .find(|curve| &curve.id == id)
-            .unwrap()
+            .expect("valid test value")
             .geometry = CurveGeometry::Solved(SolvedCurveGeometry::Line(
-            LineCurve::try_new(origin, direction).unwrap(),
+            LineCurve::try_new(origin, direction).expect("valid test value"),
         ));
     }
-    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).expect("valid test value");
     let mut bytes = Vec::new();
-    plan.write_to(&mut bytes).unwrap();
+    plan.write_to(&mut bytes).expect("valid test value");
     let after = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap();
+        .expect("valid test value");
     let ProceduralCurveDefinition::Compound(compound) =
         after.ir().model.procedural_curves[0].definition()
     else {
@@ -1026,7 +1065,7 @@ fn compound_curve_uses_edited_components_instead_of_its_solved_cache() {
         .curves
         .iter()
         .find(|curve| curve.id == compound.components()[0].component)
-        .unwrap();
+        .expect("valid test value");
     let Some(SolvedCurveGeometry::Line(line)) = first.geometry.solved() else {
         panic!("line")
     };
@@ -1052,7 +1091,7 @@ fn finite_straight_pcurve_with_unspecified_flag_keeps_its_boundary() {
         .coedges
         .iter_mut()
         .find(|edge| !edge.pcurves.is_empty())
-        .unwrap();
+        .expect("valid test value");
     let coedge_id = coedge.id.clone();
     let pcurve_id = coedge.pcurves[0].pcurve.clone();
     coedge.pcurves[0].isoparametric = None;
@@ -1061,9 +1100,10 @@ fn finite_straight_pcurve_with_unspecified_flag_keeps_its_boundary() {
         .pcurves
         .iter_mut()
         .find(|curve| curve.id == pcurve_id)
-        .unwrap();
+        .expect("valid test value");
     pcurve.geometry = PcurveGeometry::Line(
-        LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(0.5, 0.0)).unwrap(),
+        LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(0.5, 0.0))
+            .expect("valid test value"),
     );
     let plan = plan_at(IgesVersion::V5_3, &ir, None).expect("line pcurve plans");
     assert!(plan
@@ -1080,7 +1120,7 @@ fn finite_straight_pcurve_with_unspecified_flag_keeps_its_boundary() {
         .any(|loss| loss.message.contains(pcurve_id.as_str())
             && loss.message.contains("line representation")));
     let mut bytes = Vec::new();
-    plan.write_to(&mut bytes).unwrap();
+    plan.write_to(&mut bytes).expect("valid test value");
     let output = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("written boundary decodes");
@@ -1108,7 +1148,7 @@ fn regenerated_annotation_records_keep_their_semantic_projection() {
     assert!(!decoded.ir().model.semantic_annotations.is_empty());
     let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).expect("annotations synthesize");
     let mut bytes = Vec::new();
-    plan.write_to(&mut bytes).unwrap();
+    plan.write_to(&mut bytes).expect("valid test value");
     let output = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("annotations re-decode");
@@ -1139,7 +1179,7 @@ fn edited_semantic_note_text_reaches_regenerated_parameters() {
     let expected = note.text.clone();
     let plan = plan_at(IgesVersion::V5_3, &ir, None).expect("edited note synthesizes");
     let mut bytes = Vec::new();
-    plan.write_to(&mut bytes).unwrap();
+    plan.write_to(&mut bytes).expect("valid test value");
     let output = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("edited note re-decodes");
@@ -1163,7 +1203,7 @@ fn regenerated_associativities_retain_required_back_pointers() {
         .expect("associativity fixture decodes");
     let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).expect("associativities synthesize");
     let mut bytes = Vec::new();
-    plan.write_to(&mut bytes).unwrap();
+    plan.write_to(&mut bytes).expect("valid test value");
     let output = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("associativities re-decode");
@@ -1205,7 +1245,7 @@ fn edited_boolean_operation_reaches_the_regenerated_tree() {
     feature.evaluation.set_definition(definition);
     let plan = plan_at(IgesVersion::V5_3, &ir, None).expect("edited Boolean synthesizes");
     let mut bytes = Vec::new();
-    plan.write_to(&mut bytes).unwrap();
+    plan.write_to(&mut bytes).expect("valid test value");
     let output = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("Boolean re-decodes");
@@ -1232,12 +1272,22 @@ fn reconstructed_default_display_record_is_declared_regenerated() {
         NativeDisposition::Regenerated
     );
     let mut bytes = Vec::new();
-    plan.write_to(&mut bytes).unwrap();
+    plan.write_to(&mut bytes).expect("valid test value");
     let output = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("output decodes");
-    let before = &decoded.ir().native.namespace("iges").unwrap().arenas()["display_attributes"][0];
-    let after = &output.ir().native.namespace("iges").unwrap().arenas()["display_attributes"][0];
+    let before = &decoded
+        .ir()
+        .native
+        .namespace("iges")
+        .expect("valid test value")
+        .arenas()["display_attributes"][0];
+    let after = &output
+        .ir()
+        .native
+        .namespace("iges")
+        .expect("valid test value")
+        .arenas()["display_attributes"][0];
     for field in [
         "color_number",
         "level_number",
@@ -1276,7 +1326,7 @@ fn empty_note_text_is_reported_without_invalid_hollerith() {
         .iter()
         .any(|loss| loss.message.contains(&note_id)));
     let mut bytes = Vec::new();
-    plan.write_to(&mut bytes).unwrap();
+    plan.write_to(&mut bytes).expect("valid test value");
     let output = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("output re-decodes");
@@ -1304,7 +1354,7 @@ fn implicit_nurbs_domain_retains_its_loopless_face() {
         .iter()
         .all(|loss| !loss.message.contains(face_id)));
     let mut bytes = Vec::new();
-    plan.write_to(&mut bytes).unwrap();
+    plan.write_to(&mut bytes).expect("valid test value");
     let output = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("natural-domain face re-decodes");
@@ -1323,13 +1373,18 @@ fn empty_model_emits_its_canonical_length_unit_definition() {
         .iter()
         .any(|loss| loss.code == IgesLossCode::NoExportableSolids.kind()));
     let mut bytes = Vec::new();
-    plan.write_to(&mut bytes).unwrap();
+    plan.write_to(&mut bytes).expect("valid test value");
     let output = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("units definition re-decodes");
     assert!(output.ir().model.bodies.is_empty());
     assert!(output.ir().model.faces.is_empty());
-    let units = &output.ir().native.namespace("iges").unwrap().arenas()["units_data"];
+    let units = &output
+        .ir()
+        .native
+        .namespace("iges")
+        .expect("valid test value")
+        .arenas()["units_data"];
     assert_eq!(units.len(), 1);
     assert!(output
         .report()
@@ -1343,13 +1398,18 @@ fn empty_v4_model_emits_the_identity_frame() {
     let ir = CadIr::empty();
     let plan = plan_at(IgesVersion::V4_0, &ir, None).expect("empty V4 document synthesizes");
     let mut bytes = Vec::new();
-    plan.write_to(&mut bytes).unwrap();
+    plan.write_to(&mut bytes).expect("valid test value");
     let output = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("identity frame re-decodes");
     assert!(output.ir().model.bodies.is_empty());
     assert!(output.ir().model.faces.is_empty());
-    let transforms = &output.ir().native.namespace("iges").unwrap().arenas()["transformations"];
+    let transforms = &output
+        .ir()
+        .native
+        .namespace("iges")
+        .expect("valid test value")
+        .arenas()["transformations"];
     assert_eq!(transforms.len(), 1);
     assert!(output
         .report()
@@ -1366,11 +1426,11 @@ fn face_custom_color_keeps_its_appearance_name() {
         .fixture_inputs()
         .into_iter()
         .find(|(name, _)| name == "colored_explicit_vertex_loop")
-        .unwrap();
+        .expect("valid test value");
     let decoded = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap();
-    let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).unwrap();
+        .expect("valid test value");
+    let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).expect("valid test value");
     for record in [
         "iges:appearance:color#D13",
         "iges:model:appearance-binding#face-D9",
@@ -1382,10 +1442,10 @@ fn face_custom_color_keeps_its_appearance_name() {
             .all(|loss| !loss.message.contains(record)));
     }
     let mut bytes = Vec::new();
-    plan.write_to(&mut bytes).unwrap();
+    plan.write_to(&mut bytes).expect("valid test value");
     let output = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap();
+        .expect("valid test value");
     let binding = output
         .ir()
         .model
@@ -1397,14 +1457,14 @@ fn face_custom_color_keeps_its_appearance_name() {
                 cadmpeg_ir::appearance::AppearanceTarget::Face(_)
             )
         })
-        .unwrap();
+        .expect("valid test value");
     let appearance = output
         .ir()
         .model
         .appearances
         .iter()
         .find(|appearance| appearance.id == binding.appearance)
-        .unwrap();
+        .expect("valid test value");
     assert_eq!(appearance.name.as_deref(), Some("custom"));
 }
 
@@ -1417,18 +1477,18 @@ fn constant_coordinate_nurbs_keeps_unspecified_isoparametric_use() {
             ),
             &DecodeOptions::default(),
         )
-        .unwrap();
+        .expect("valid test value");
     let mut ir = decoded.ir().clone();
     let coedge = ir
         .model
         .coedges
         .iter_mut()
         .find(|edge| !edge.pcurves.is_empty())
-        .unwrap();
+        .expect("valid test value");
     let coedge_id = coedge.id.clone();
     let id = coedge.pcurves[0].pcurve.clone();
     coedge.pcurves[0].isoparametric = None;
-    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).expect("valid test value");
     assert!(plan
         .report()
         .losses
@@ -1440,10 +1500,10 @@ fn constant_coordinate_nurbs_keeps_unspecified_isoparametric_use() {
         == IgesLossCode::WriterPcurvesOmitted.kind()
         && loss.message.contains(id.as_str())));
     let mut bytes = Vec::new();
-    plan.write_to(&mut bytes).unwrap();
+    plan.write_to(&mut bytes).expect("valid test value");
     let output = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap();
+        .expect("valid test value");
     assert_eq!(output.ir().model.pcurves.len(), ir.model.pcurves.len());
     assert!(output
         .ir()
@@ -1464,11 +1524,11 @@ fn open_solid_keeps_its_face_as_a_reported_sheet() {
             ),
             &DecodeOptions::default(),
         )
-        .unwrap();
+        .expect("valid test value");
     let mut ir = decoded.ir().clone();
     ir.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Solid;
     let id = ir.model.bodies[0].id.clone();
-    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).expect("valid test value");
     assert!(plan
         .report()
         .losses
@@ -1477,10 +1537,10 @@ fn open_solid_keeps_its_face_as_a_reported_sheet() {
             && loss.message.contains("open shell")
             && loss.message.contains("sheet")));
     let mut bytes = Vec::new();
-    plan.write_to(&mut bytes).unwrap();
+    plan.write_to(&mut bytes).expect("valid test value");
     let output = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap();
+        .expect("valid test value");
     assert_eq!(output.ir().model.faces.len(), ir.model.faces.len());
     assert!(output
         .ir()
@@ -1501,14 +1561,14 @@ fn directory_disposition_requires_exact_generated_record() {
             ),
             &DecodeOptions::default(),
         )
-        .unwrap();
+        .expect("valid test value");
     let mut ir = decoded.ir().clone();
-    let transform = ir.model.occurrences[0].transform.unwrap();
+    let transform = ir.model.occurrences[0].transform.expect("valid test value");
     let mut rows = transform.affine_rows();
     rows[0][3] += 1.0;
     ir.model.occurrences[0].transform =
-        Some(cadmpeg_ir::transform::Transform::affine(rows).unwrap());
-    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+        Some(cadmpeg_ir::transform::Transform::affine(rows).expect("valid test value"));
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).expect("valid test value");
     let dispositions = &plan.report().native_dispositions;
     assert_eq!(
         dispositions.record_disposition("iges", "cards", "iges:physical:card#1"),
@@ -1533,14 +1593,17 @@ fn nonorthogonal_occurrence_placement_is_reported_without_invalid_matrix() {
     let bytes = crate::test_support::test_drawing_and_trimming::connected_network_subfigure_file();
     let decoded = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap();
+        .expect("valid test value");
     let mut ir = decoded.ir().clone();
-    let mut rows = ir.model.occurrences[0].transform.unwrap().affine_rows();
+    let mut rows = ir.model.occurrences[0]
+        .transform
+        .expect("valid test value")
+        .affine_rows();
     rows[0][1] = 1.0;
     ir.model.occurrences[0].transform =
-        Some(cadmpeg_ir::transform::Transform::affine(rows).unwrap());
+        Some(cadmpeg_ir::transform::Transform::affine(rows).expect("valid test value"));
     let id = ir.model.occurrences[0].id.clone();
-    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).expect("valid test value");
     assert!(plan
         .report()
         .losses
@@ -1548,10 +1611,10 @@ fn nonorthogonal_occurrence_placement_is_reported_without_invalid_matrix() {
         .any(|loss| loss.message.contains(id.as_str())
             && loss.message.contains("not an orthonormal")));
     let mut bytes = Vec::new();
-    plan.write_to(&mut bytes).unwrap();
+    plan.write_to(&mut bytes).expect("valid test value");
     let output = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap();
+        .expect("valid test value");
     assert_eq!(output.ir().model.occurrences.len(), 1);
 }
 
@@ -1560,21 +1623,21 @@ fn reflected_occurrence_uses_left_handed_matrix() {
     let bytes = crate::test_support::test_drawing_and_trimming::connected_network_subfigure_file();
     let decoded = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap();
+        .expect("valid test value");
     let mut ir = decoded.ir().clone();
     let reflected = cadmpeg_ir::transform::Transform::affine([
         [-1.0, 0.0, 0.0, 10.0],
         [0.0, 1.0, 0.0, 20.0],
         [0.0, 0.0, 1.0, 30.0],
     ])
-    .unwrap();
+    .expect("valid test value");
     ir.model.occurrences[0].transform = Some(reflected);
-    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).expect("valid test value");
     let mut bytes = Vec::new();
-    plan.write_to(&mut bytes).unwrap();
+    plan.write_to(&mut bytes).expect("valid test value");
     let output = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap();
+        .expect("valid test value");
     assert_eq!(output.ir().model.occurrences[0].transform, Some(reflected));
 }
 
@@ -1583,27 +1646,166 @@ fn network_rotation_and_axis_scales_round_trip_together() {
     let bytes = crate::test_support::test_drawing_and_trimming::connected_network_subfigure_file();
     let decoded = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap();
+        .expect("valid test value");
     let mut ir = decoded.ir().clone();
     let transform = cadmpeg_ir::transform::Transform::affine([
         [0.0, -3.0, 0.0, 12.0],
         [2.0, 0.0, 0.0, 23.0],
         [0.0, 0.0, 4.0, 34.0],
     ])
-    .unwrap();
+    .expect("valid test value");
     ir.model.occurrences[0].transform = Some(transform);
     let id = ir.model.occurrences[0].id.clone();
-    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).expect("valid test value");
     assert!(!plan
         .report()
         .losses
         .iter()
         .any(|loss| loss.message.contains(id.as_str()) && loss.message.contains("not applied")));
     let mut bytes = Vec::new();
-    plan.write_to(&mut bytes).unwrap();
+    plan.write_to(&mut bytes).expect("valid test value");
     let output = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap();
+        .expect("valid test value");
     assert_eq!(output.ir().model.occurrences[0].transform, Some(transform));
     assert_eq!(output.ir().model.occurrences[0].id, id);
+}
+
+#[test]
+fn vertex_list_names_survive_an_unrelated_feature_edit() {
+    let decoded = IgesCodec.decode(
+        &mut Cursor::new(crate::test_support::test_solids_and_structure::explicit_tetrahedron_solid_with_boolean_file()),
+        &DecodeOptions::default(),
+    ).expect("valid test value");
+    let mut ir = decoded.ir().clone();
+    let feature = &mut ir.model.features[0];
+    let mut definition = feature.evaluation.definition().clone();
+    let cadmpeg_ir::features::FeatureDefinition::Operation(
+        cadmpeg_ir::features::FeatureOperation::Primitive { placement, .. },
+    ) = &mut definition
+    else {
+        panic!("primitive fixture")
+    };
+    let mut rows = placement.expect("valid test value").affine_rows();
+    rows[0][3] += 1.0;
+    *placement = Some(
+        cadmpeg_ir::features::FeatureRigidPlacement::new(
+            cadmpeg_ir::transform::Transform::affine(rows).expect("valid test value"),
+        )
+        .expect("valid test value"),
+    );
+    feature.evaluation.set_definition(definition);
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).expect("valid test value");
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("valid test value");
+    let output = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("valid test value");
+    let names = output
+        .ir()
+        .model
+        .attributes
+        .iter()
+        .filter(|attribute| {
+            attribute.name == "name"
+                && matches!(attribute.values.as_slice(),
+            [Some(cadmpeg_ir::attributes::AttributeValue::String(value))] if value == "VERTICES")
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(names.len(), 4);
+    let points = names
+        .iter()
+        .filter_map(|attribute| match &attribute.target {
+            cadmpeg_ir::attributes::AttributeTarget::Point(id) => Some(id),
+            _ => None,
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(points.len(), 4);
+}
+
+#[test]
+fn differing_vertex_names_are_reported_without_sharing_one_label() {
+    let decoded = IgesCodec.decode(
+        &mut Cursor::new(crate::test_support::test_solids_and_structure::explicit_tetrahedron_solid_with_boolean_file()),
+        &DecodeOptions::default(),
+    ).expect("valid test value");
+    let mut ir = decoded.ir().clone();
+    let changed = ir
+        .model
+        .attributes
+        .iter_mut()
+        .find(|attribute| attribute.native_ref.as_deref() == Some("iges:entity:directory#33"))
+        .expect("valid test value");
+    changed.values = vec![Some(cadmpeg_ir::attributes::AttributeValue::String(
+        "OTHER".into(),
+    ))];
+    let ids = ir
+        .model
+        .attributes
+        .iter()
+        .filter(|attribute| attribute.native_ref.as_deref() == Some("iges:entity:directory#33"))
+        .map(|attribute| attribute.id.clone())
+        .collect::<Vec<_>>();
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).expect("valid test value");
+    for id in ids {
+        assert!(
+            plan.report()
+                .losses
+                .iter()
+                .any(|loss| loss.message.contains(id.as_str())
+                    && loss.message.contains("vertex-list")),
+            "missing loss for {id}"
+        );
+    }
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("valid test value");
+    let output = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("valid test value");
+    assert!(!output.ir().model.attributes.iter().any(|attribute| attribute.name == "name" && matches!(attribute.values.as_slice(), [Some(cadmpeg_ir::attributes::AttributeValue::String(value))] if value == "OTHER" || value == "VERTICES")));
+}
+
+#[test]
+fn associativity_directory_use_flags_survive_synthesis() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(
+                crate::test_support::test_drawing_and_trimming::bounded_associativity_forms_file(),
+            ),
+            &DecodeOptions::default(),
+        )
+        .expect("valid test value");
+    let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).expect("valid test value");
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("valid test value");
+    let output = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("valid test value");
+    let before = decoded
+        .ir()
+        .native
+        .namespace("iges")
+        .expect("valid test value");
+    let after = output
+        .ir()
+        .native
+        .namespace("iges")
+        .expect("valid test value");
+    for record in &before.arenas()["associativities"] {
+        let source = record.field("source_entity").expect("valid test value");
+        let source = source.as_str().expect("valid test value");
+        let original = before.arenas()["entities"]
+            .iter()
+            .find(|entity| entity.id() == source)
+            .expect("valid test value");
+        let actual = after.arenas()["entities"]
+            .iter()
+            .find(|entity| entity.id() == source)
+            .expect("valid test value");
+        assert_eq!(
+            actual.field("use_flag"),
+            original.field("use_flag"),
+            "{source}"
+        );
+    }
 }
