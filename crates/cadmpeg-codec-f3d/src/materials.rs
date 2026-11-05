@@ -617,7 +617,7 @@ pub(crate) fn decode_with_body_bindings<'a>(
     output: &mut PartOutput,
 ) -> Result<DecodedMaterials, CodecError> {
     let mut out = Vec::new();
-    let mut notes = Vec::new();
+    let notes = Vec::new();
     let mut untyped_distance_properties = 0usize;
     for entry in scan
         .entries
@@ -629,10 +629,12 @@ pub(crate) fn decode_with_body_bindings<'a>(
         })?;
         let stream_name =
             StreamName::try_from(entry.name.clone()).map_err(CodecError::malformed)?;
-        let spec = PartSpec::new("f3d.protein_record").in_stream(stream_name);
+        let spec = PartSpec::new("f3d.protein_record")
+            .holding([cadmpeg_ir::document::ArenaClass::Model])
+            .in_stream(stream_name);
         // One damaged protein asset gives up only its own part; later
         // assets still decode.
-        let staged = ctx.decode_part(output, protein, spec, |_| {
+        let staged = ctx.decode_part(output, protein, spec, |stage| {
             let Some(instance) = instance_properties(ctx, protein)? else {
                 return Ok(None);
             };
@@ -640,16 +642,47 @@ pub(crate) fn decode_with_body_bindings<'a>(
             let catalog = definition_catalog(ctx, protein)?;
             let schema_catalog = cadmpeg_protein::SchemaCatalog::load(ctx, protein)?;
             let appearances = if let Some(mut schema_catalog) = schema_catalog {
-                let outcome =
-                    cadmpeg_protein::decode_frames(ctx, &mut schema_catalog, &record_frames)?;
-                for rejected in &outcome.rejected {
-                    let note = format!(
-                        "Protein {} record {} rejected: {}",
-                        entry.name, rejected.ordinal, rejected.detail
-                    );
-                    notes.push(note);
+                let mut records = Vec::new();
+                let mut accepted_frames = Vec::new();
+                let stream = StreamName::try_from(format!(
+                    "{}/AssetData/InstanceProperties.bin",
+                    entry.name
+                ))
+                .map_err(CodecError::malformed)?;
+                for (ordinal, frame) in record_frames.iter().enumerate() {
+                    let range = frame.source_range();
+                    let start = instance
+                        .start()
+                        .checked_add(range.start)
+                        .ok_or_else(|| CodecError::malformed("Protein record start overflows"))?;
+                    let end = instance
+                        .start()
+                        .checked_add(range.end)
+                        .ok_or_else(|| CodecError::malformed("Protein record end overflows"))?;
+                    let extent = instance.child(start, end).ok_or_else(|| {
+                        CodecError::malformed("Protein record exceeds its instance stream")
+                    })?;
+                    let spec = PartSpec::new("protein.record")
+                        .holding([cadmpeg_ir::document::ArenaClass::Model])
+                        .in_stream(stream.clone());
+                    let record = ctx.decode_part(stage, extent, spec, |_| {
+                        cadmpeg_protein::decode_frame(
+                            ctx,
+                            &mut schema_catalog,
+                            frame,
+                            u64_from_index(ordinal),
+                        )?
+                        .ok_or_else(|| {
+                            CodecError::malformed(format_args!(
+                                "Protein record {ordinal} has a malformed header"
+                            ))
+                        })
+                    })?;
+                    if let Some(record) = record {
+                        records.push(record);
+                        accepted_frames.push(frame);
+                    }
                 }
-                let records = outcome.records;
                 let (mut decoded, untyped_count) = appearances_from_schema_records(ctx, &records)?;
                 untyped_distance_properties = untyped_distance_properties
                     .checked_add(untyped_count)
@@ -660,7 +693,10 @@ pub(crate) fn decode_with_body_bindings<'a>(
                     .iter()
                     .map(|appearance| appearance.id.as_str())
                     .collect::<std::collections::HashSet<_>>();
-                let mut fixed = decode_fixed_logical_records(&record_frames)?;
+                let mut fixed = Vec::new();
+                for frame in accepted_frames {
+                    fixed.extend(decode_fixed_logical_records(std::slice::from_ref(frame))?);
+                }
                 fixed.retain(|appearance| !decoded_ids.contains(appearance.id.as_str()));
                 decoded.append(&mut fixed);
                 decoded
