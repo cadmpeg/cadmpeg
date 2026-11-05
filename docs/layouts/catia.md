@@ -974,6 +974,22 @@ Parsed by:
 | 46 | 8 | `y_bounds` | `f32[2]` | little | spec | \| `+46` \| `f32le[2]` \| owner Cartesian Y bounds \| |
 | 54 | 8 | `z_bounds` | `f32[2]` | little | spec | \| `+54` \| `f32le[2]` \| owner Cartesian Z bounds \| |
 
+## `counted_owner_numeric_body`
+
+Spec §6.4 · layout: byte offsets · size: 57 B
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/b2/counted_owner_tail.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 16 | `lower` | `f64[2]` | little | spec | \| `+0` \| `f64le[2]` \| counted owner lower U/V corner \| |
+| 16 | 16 | `upper` | `f64[2]` | little | spec | \| `+16` \| `f64le[2]` \| counted owner upper U/V corner \| |
+| 32 | 1 | `marker` | `u8` | little | spec | \| `+32` \| `u8` \| counted owner numeric marker `01` \| |
+| 33 | 8 | `x_bounds` | `f32[2]` | little | spec | \| `+33` \| `f32le[2]` \| counted owner Cartesian X bounds \| |
+| 41 | 8 | `y_bounds` | `f32[2]` | little | spec | \| `+41` \| `f32le[2]` \| counted owner Cartesian Y bounds \| |
+| 49 | 8 | `z_bounds` | `f32[2]` | little | spec | \| `+49` \| `f32le[2]` \| counted owner Cartesian Z bounds \| |
+
 ## `eight_reference_construction_tail`
 
 Spec §6.4 · layout: byte offsets · size: 14 B

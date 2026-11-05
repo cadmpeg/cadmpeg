@@ -84,7 +84,6 @@ impl CatiaConsolidatedEdgeDefinition {
     pub(crate) fn data(&self) -> Option<&ConsolidatedEdgeDefinitionData> {
         self.data.as_ref()
     }
-    #[cfg(test)]
     pub(crate) fn frame(&self) -> &ConsolidatedRawFrame<u64> {
         &self.frame
     }

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! End-to-end contracts over synthesized CATPart byte images.
+//! End-to-end CATPart decode contracts.
 
 #![allow(clippy::doc_markdown, clippy::unwrap_used)]
 
@@ -829,6 +829,8 @@ fn decode_reconstructs_inline_poles_from_nonphysical_extent_order() {
 }
 
 mod float_packed_fixtures;
+
+mod nist_ftc_07;
 
 mod selected_shell_plane;
 
