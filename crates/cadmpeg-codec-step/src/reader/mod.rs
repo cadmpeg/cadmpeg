@@ -1650,7 +1650,6 @@ fn collect_references(
 
 /// Every instance a live statement references.
 fn live_referenced(exchange: &Exchange) -> BTreeSet<u64> {
-    let mut referenced = BTreeSet::new();
     fn visit(value: &Value, referenced: &mut BTreeSet<u64>) {
         let mut stack = vec![value];
         while let Some(value) = stack.pop() {
@@ -1664,6 +1663,7 @@ fn live_referenced(exchange: &Exchange) -> BTreeSet<u64> {
             }
         }
     }
+    let mut referenced = BTreeSet::new();
     for record in exchange.records().values() {
         for partial in &record.partials {
             for value in &partial.parameters {
