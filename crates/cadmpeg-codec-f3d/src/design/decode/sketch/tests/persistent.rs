@@ -22,7 +22,12 @@ fn reference_bytes() -> (Vec<u8>, usize) {
 
 fn scan_references(bytes: &[u8]) -> Result<Vec<PersistentReference>, cadmpeg_core::CodecError> {
     let mut indexed = Vec::new();
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut parts =
+        cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
     decode_persistent_references_from_stream(
+        &ctx,
+        &mut parts,
         0,
         "BulkStream.dat",
         cadmpeg_core::decode::View::over_retained(bytes),
@@ -62,6 +67,56 @@ fn a_persistent_reference_name_without_its_property_leaves_no_capture() {
 }
 
 #[test]
+fn truncated_reference_keeps_a_sibling_record() {
+    let mut first = b"pt_tag".to_vec();
+    first.extend_from_slice(&23u32.to_le_bytes());
+    first.extend_from_slice(b"IntrinsicMetaTypeuint64");
+    first.extend_from_slice(&[1; 4]);
+    let second_start = first.len();
+    let (second, _) = reference_bytes();
+    first.extend_from_slice(&second);
+    let frames = [
+        crate::metastream::PrimaryRecordFrame {
+            entity_id: 1,
+            start: 0,
+            member_end: second_start,
+            end: second_start,
+        },
+        crate::metastream::PrimaryRecordFrame {
+            entity_id: 2,
+            start: second_start,
+            member_end: first.len(),
+            end: first.len(),
+        },
+    ];
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut parts =
+        cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
+    let mut captured = Vec::new();
+    decode_persistent_references_from_stream(
+        &ctx,
+        &mut parts,
+        0,
+        "BulkStream.dat",
+        cadmpeg_core::decode::View::over_retained(&first),
+        &frames,
+        &mut captured,
+    )
+    .unwrap();
+    let references = finish_persistent_references(captured);
+    assert_eq!(references.len(), 2);
+    assert_eq!(references[0].value, 71);
+    assert_eq!(references[1].value, 29);
+    let (_, native, fidelity, losses) = parts.into_parts();
+    assert_eq!(losses.len(), 1);
+    assert_eq!(fidelity.retained_records().len(), 1);
+    assert_eq!(
+        native.namespace("f3d").unwrap().arenas()["unknowns"].len(),
+        1
+    );
+}
+
+#[test]
 fn a_property_cannot_cross_primary_record_boundaries() {
     let mut bytes = b"pt_tag".to_vec();
     bytes.extend_from_slice(&23_u32.to_le_bytes());
@@ -82,7 +137,12 @@ fn a_property_cannot_cross_primary_record_boundaries() {
         },
     ];
     let mut references = Vec::new();
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut parts =
+        cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
     decode_persistent_references_from_stream(
+        &ctx,
+        &mut parts,
         0,
         "BulkStream.dat",
         cadmpeg_core::decode::View::over_retained(&bytes),
