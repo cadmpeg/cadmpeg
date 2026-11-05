@@ -439,9 +439,7 @@ pub(crate) struct Builder<'a> {
     written_unbound_appearances: BTreeSet<AppearanceId>,
     unbound_appearances_without_alpha: BTreeSet<AppearanceId>,
     conflicted_appearance_bindings: BTreeSet<AppearanceBindingId>,
-    /// Body-targeted bindings whose style rides a body-level carrier. No
-    /// STEP re-decode reads such a style back as a binding, so the binding
-    /// record keeps its own loss even though its color is carried.
+    /// Body-targeted bindings not yet written on their body carrier.
     body_level_bindings: BTreeSet<AppearanceBindingId>,
     appearance_binding_target_conflicts: BTreeMap<(String, String), BTreeSet<AppearanceBindingId>>,
     hidden_appearance_items: Vec<Ref>,
@@ -1189,9 +1187,6 @@ impl<'a> Builder<'a> {
                         .entry(id.as_str())
                         .or_default()
                         .push((spec, &binding.id));
-                    // A body-level style never re-decodes as a binding, so
-                    // the binding record keeps its own loss below even
-                    // though its color rides the body carrier.
                     body_level_bindings.insert(binding.id.clone());
                 }
                 AppearanceTarget::Face(id) => {
@@ -1383,9 +1378,6 @@ impl<'a> Builder<'a> {
                     );
                 }
             }
-            // A face inheriting a body color carries that color, but the
-            // body binding still re-decodes as no binding: it keeps the
-            // body-level loss below instead of counting as written.
             let name = spec
                 .appearance
                 .and_then(|appearance| appearance.name.as_deref())
@@ -1580,7 +1572,14 @@ impl<'a> Builder<'a> {
             let Some(spec) = body_colors.get(body_id) else {
                 continue;
             };
-            if styled_bodies.contains(body_id) {
+            let matching_bindings: Vec<_> = body_candidates
+                .get(body_id)
+                .into_iter()
+                .flatten()
+                .filter(|(candidate, _)| equivalent_style_spec(*spec, *candidate))
+                .map(|(_, id)| (*id).clone())
+                .collect();
+            if styled_bodies.contains(body_id) && matching_bindings.is_empty() {
                 continue;
             }
             let mut targets = self
@@ -1594,9 +1593,6 @@ impl<'a> Builder<'a> {
             if targets.is_empty() {
                 continue;
             }
-            // The style rides the body carrier, but no re-decode reads a
-            // body-level style back as a binding: the binding keeps the
-            // body-level loss below instead of counting as written.
             let name = spec
                 .appearance
                 .and_then(|appearance| appearance.name.as_deref())
@@ -1629,6 +1625,10 @@ impl<'a> Builder<'a> {
                     .into_iter()
                     .map(|target| self.emit_styled_item(style, target, spec.hidden)),
             );
+            for id in matching_bindings {
+                self.written_appearance_bindings.insert(id.clone());
+                self.body_level_bindings.remove(&id);
+            }
             styled_bodies.insert(body_id);
         }
         // A color is unrepresented when no emitted ADVANCED_FACE could carry it:
@@ -8637,7 +8637,7 @@ impl<'a> Builder<'a> {
             self.loss(
                 StepLossCode::AppearanceBindingBodyFallback,
                 format!(
-                    "{} appearance binding(s) target bodies whose style rides a body-level carrier, which re-decodes as no binding: {}",
+                    "{} appearance binding(s) could not be written on their body carriers: {}",
                     body_level.len(),
                     body_level.join(", ")
                 ),

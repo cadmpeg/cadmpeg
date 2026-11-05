@@ -445,7 +445,8 @@ fn charge_record(ctx: &DecodeContext<'_>, charge: bool) -> Result<(), CodecError
 }
 
 fn write_correspondence(out: &mut String, selector: &str, pairs: &[[u32; 2]], reverse: bool) {
-    out.push_str(&format!("105a {selector}"));
+    out.push_str("105a ");
+    out.push_str(selector);
     for [source, target] in pairs {
         if reverse && source == target {
             continue;
@@ -455,7 +456,10 @@ fn write_correspondence(out: &mut String, selector: &str, pairs: &[[u32; 2]], re
         } else {
             (source, target)
         };
-        out.push_str(&format!(" {source} {target}"));
+        out.push(' ');
+        out.push_str(&source.to_string());
+        out.push(' ');
+        out.push_str(&target.to_string());
     }
     out.push('\n');
 }
@@ -473,9 +477,13 @@ fn write_radial(
         SubdRadialMapSelector::Vf => "vf",
         SubdRadialMapSelector::Vr => "vr",
     };
-    out.push_str(&format!("105r {selector}"));
+    out.push_str("105r ");
+    out.push_str(selector);
     for [source, target] in pairs {
-        out.push_str(&format!(" {source} {target}"));
+        out.push(' ');
+        out.push_str(&source.to_string());
+        out.push(' ');
+        out.push_str(&target.to_string());
     }
     out.push('\n');
 }

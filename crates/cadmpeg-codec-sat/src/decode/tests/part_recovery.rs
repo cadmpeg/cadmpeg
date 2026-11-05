@@ -48,7 +48,7 @@ fn failed_stream_part_gives_up_with_scope_held_and_named_bytes() {
         })
         .expect("a part give-up is not a refusal");
     assert!(decoded.is_none());
-    let part = super::super::stream_part_given_up(output).expect("a give-up assembles");
+    let part = super::super::stream_part_given_up(output);
     let decoded = super::super::assemble_result(
         &ctx,
         CadIr::empty(),
