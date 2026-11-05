@@ -1345,6 +1345,37 @@ fn reduce_design(
     repair: bool,
 ) -> Result<(), super::write_error::WriteError> {
     for feature in &mut ir.model.features {
+        let mut omitted_positions = Vec::new();
+        let mut pattern_error = None;
+        feature.evaluation.edit(|definition, _| {
+            if let FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) =
+                definition
+            {
+                let mut transform = pattern.definition().clone();
+                if let cadmpeg_ir::features::patterns::PatternTransform::Linear {
+                    omitted_instances,
+                    ..
+                } = &mut transform
+                {
+                    omitted_positions = std::mem::take(omitted_instances);
+                    if !omitted_positions.is_empty() {
+                        match cadmpeg_ir::features::patterns::PatternKind::new(transform) {
+                            Ok(value) => *pattern = value,
+                            Err(error) => pattern_error = Some(error),
+                        }
+                    }
+                }
+            }
+        });
+        if let Some(error) = pattern_error {
+            return Err(CodecError::malformed(error).into());
+        }
+        for position in omitted_positions {
+            losses.push(SldprtLossCode::WriterFieldsOmitted.note(format!(
+                "feature {}: omitted pattern position [{}, {}] has no native encoding",
+                feature.id, position[0], position[1]
+            )));
+        }
         let mut omitted_weight = false;
         feature.evaluation.edit(|definition, _| {
             if let FeatureDefinition::Operation(FeatureOperation::FilledSurface {
