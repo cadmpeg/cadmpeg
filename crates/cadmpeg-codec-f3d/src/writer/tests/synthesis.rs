@@ -1177,3 +1177,65 @@ fn brep_index_framing_uses_caller_entity_limit() {
         Err(cadmpeg_ir::codec::write::EncodeError::ResourceLimit(_))
     ));
 }
+
+#[test]
+fn source_less_sketch_point_survives_synthesis() {
+    use cadmpeg_ir::math::{Point2, Point3, Vector3};
+    use cadmpeg_ir::sketches::{
+        Sketch, SketchEntity, SketchGeometry, SketchGeometryDefinition, SketchPlacement,
+        SketchProfiles,
+    };
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let sketch_id = "authored:model:sketch#1".try_into().unwrap();
+    let placement = SketchPlacement::try_resolved(
+        Point3::new(10.0, 20.0, 30.0),
+        Vector3::new(0.0, 0.0, 1.0),
+        Vector3::new(0.0, 1.0, 0.0),
+    )
+    .unwrap();
+    ir.model.sketches.push(Sketch {
+        id: sketch_id,
+        name: Some("Sketch_1".into()),
+        configuration: None,
+        visible: None,
+        placement,
+        profiles: SketchProfiles::default(),
+        native_ref: None,
+    });
+    ir.model.sketch_entities.push(SketchEntity::new(
+        "authored:model:sketch-entity#1".try_into().unwrap(),
+        ir.model.sketches[0].id.clone(),
+        SketchGeometry::try_from(SketchGeometryDefinition::Point {
+            position: Point2::new(12.0, -7.0),
+        })
+        .unwrap(),
+    ));
+    let mut bytes = Vec::new();
+    let plan = F3dCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("plan sketch");
+    assert!(!plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| { loss.code.local_code() == "writer.design-records-omitted" }));
+    plan.write_to(&mut bytes).expect("write sketch");
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode sketch");
+    assert_eq!(decoded.ir().model.sketches.len(), 1);
+    assert_eq!(
+        decoded.ir().model.sketches[0].name.as_deref(),
+        Some("Sketch_1")
+    );
+    assert_eq!(decoded.ir().model.sketches[0].placement, placement);
+    assert_eq!(decoded.ir().model.sketch_entities.len(), 1);
+    assert_eq!(
+        decoded.ir().model.sketch_entities[0].geometry,
+        ir.model.sketch_entities[0].geometry
+    );
+    assert_eq!(
+        decoded.ir().model.sketch_entities[0].sketch,
+        decoded.ir().model.sketches[0].id
+    );
+}
