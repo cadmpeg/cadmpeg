@@ -568,3 +568,27 @@ fn unsupported_solid_names_each_owned_topology_record() {
         );
     }
 }
+
+#[test]
+fn network_occurrence_survives_synthesis_with_its_placement() {
+    let bytes = crate::test_support::test_drawing_and_trimming::connected_network_subfigure_file();
+    let decoded = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(decoded.ir().model.occurrences.len(), 1);
+    let transform = decoded.ir().model.occurrences[0].transform;
+    let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let after = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(after.ir().model.occurrences.len(), 1);
+    assert_eq!(after.ir().model.occurrences[0].transform, transform);
+    assert!(!after
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("connect-point")
+            || loss.message.contains("network instance")));
+}

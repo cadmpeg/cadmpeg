@@ -58,6 +58,7 @@ const WRITER_ENDPOINT_RELATIVE_TOLERANCE: f64 = EPS_WRITE_POSITION;
 enum EntityStatus {
     Independent,
     Definition,
+    LogicalPositional,
     PhysicallyDependent,
     LogicallyDependent,
     BothDependent,
@@ -82,6 +83,7 @@ impl EntityStatus {
         match self {
             Self::Independent => "00000000",
             Self::Definition => "00000200",
+            Self::LogicalPositional => "00000400",
             Self::PhysicallyDependent => "00010000",
             Self::LogicallyDependent => "00020000",
             Self::BothDependent => "00030000",
