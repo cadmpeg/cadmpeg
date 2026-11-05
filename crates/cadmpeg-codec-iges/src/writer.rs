@@ -628,20 +628,30 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
         .losses
         .extend(unapplied_body_placement_losses(ir, &graph.entities));
     append_color_definitions(&mut graph.entities, &mut graph.presentations)?;
-    let native_export = native_records::append(ir, &mut graph.entities, version);
+    native_records::solids::append_primitive_features(ir, &mut graph.entities);
+    let mut native_export = native_records::append::append(ir, &mut graph.entities, version);
     graph.losses.extend(native_export.losses);
     levels::append_level_definitions(ir, &mut graph.entities);
     let mut attribute_export = attributes::append(ir, &mut graph.entities, version);
-    attribute_export
-        .regenerated
-        .extend(native_export.regenerated);
     graph.losses.extend(attribute_export.losses);
     native_records::drawings::link_drawing_properties(ir, &mut graph.entities);
     if let Some(remap) = ensure_version_support(&mut graph.entities, version, &mut graph.losses)? {
         remap_presentations(&mut graph.presentations, &remap);
     }
+    native_export.regenerated.retain(|id| {
+        graph
+            .entities
+            .iter()
+            .any(|entity| entity.source_targets.contains(id))
+    });
+    attribute_export
+        .regenerated
+        .extend(native_export.regenerated);
     append_name_properties(&mut graph.entities, &graph.presentations)?;
     resolve_entity_references(&mut graph.entities)?;
+    let (feature_coverage, feature_losses) =
+        native_records::primitive_feature_coverage(ir, &graph.entities);
+    graph.losses.extend(feature_losses);
     let (layer_coverage, layer_losses) = levels::presentation_layer_coverage(ir, &graph.entities);
     graph.losses.extend(layer_losses);
     if !graph.entities.iter().any(Entity::is_geometry) {
@@ -653,6 +663,7 @@ fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, Code
     let minimum_resolution = ir.tolerances.linear.get();
     let counts = entity_counts(&graph.entities);
     let mut coverage = SYNTHESIS_COVERAGE;
+    coverage.features = feature_coverage;
     coverage.presentation_layers = layer_coverage;
     coverage.attributes = if attribute_export.preserved.len() == ir.model.attributes.len() {
         ArenaDisposition::Written
@@ -5757,7 +5768,6 @@ fn unsupported_model_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
     let unsupported = [
         arena!("subds", subds),
         arena!("assets", assets),
-        arena!("features", features),
         arena!("feature_input_topologies", feature_input_topologies),
         arena!("feature_result_topologies", feature_result_topologies),
         arena!("configurations", configurations),
@@ -9187,6 +9197,13 @@ impl Entity {
                 | 142
                 | 143
                 | 144
+                | 150
+                | 152
+                | 154
+                | 156
+                | 158
+                | 160
+                | 168
                 | 186
                 | 190
                 | 192

@@ -159,10 +159,11 @@ fn invalid_linked_companion_gives_up_only_its_pair_and_keeps_the_independent_pee
     decode_stream(&ctx, root, "Design1/BulkStream.dat", &frames, &mut output)
         .expect("partial decode");
     let (_, native, fidelity, losses) = output.into_parts();
-    assert_eq!(losses.len(), 2);
+    assert_eq!(losses.len(), 1);
     assert!(losses
         .iter()
         .all(|loss| loss.code.local_code() == "record.unreadable"));
+    assert!(losses[0].message.contains("design-parameter-state#21"));
     let namespace = native.namespace("f3d").expect("native");
     let states = namespace
         .arena_as::<DesignParameterState>("design_parameter_states")
@@ -184,13 +185,13 @@ fn invalid_linked_companion_gives_up_only_its_pair_and_keeps_the_independent_pee
             .collect::<Vec<_>>(),
         [804]
     );
-    assert_eq!(fidelity.retained_records().len(), 2);
+    assert_eq!(fidelity.retained_records().len(), 1);
     // #215 rule 1: each given-up part keeps one unknowns home.
     let unknowns = namespace
         .arenas()
         .get("unknowns")
         .expect("one unknowns home");
-    assert_eq!(unknowns.len(), 2);
+    assert_eq!(unknowns.len(), 1);
     let mut stubbed: Vec<_> = unknowns
         .iter()
         .map(cadmpeg_ir::native::NativeRecord::id)
@@ -216,7 +217,10 @@ fn parameter_state_source_header_flip_is_part_local_and_foreign_source_is_refuse
     let mut output = PartOutput::new(CodecFormat::F3d, &ctx);
     decode_stream(&ctx, root, "Design1/BulkStream.dat", &frames, &mut output)
         .expect("partial decode");
-    assert_eq!(output.losses().len(), 2);
+    assert_eq!(output.losses().len(), 1);
+    assert!(output.losses()[0]
+        .message
+        .contains("design-parameter-state-companion#82"));
 }
 
 #[test]

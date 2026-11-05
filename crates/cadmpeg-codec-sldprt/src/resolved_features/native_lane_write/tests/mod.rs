@@ -100,3 +100,59 @@ fn unheld_native_scalar_is_authored_from_typed_fields_after_wire_parse() {
     assert_eq!(scalars[0].value.get(), 0.034);
     assert!(!target.feature_input_lanes[0].native_payload.is_empty());
 }
+
+#[test]
+fn typed_sketch_record_wins_over_stale_lane_bytes() {
+    let mut payload = Vec::new();
+    crate::resolved_features::write_generate::append_coordinate_marker(
+        &mut payload,
+        crate::records::SketchInputKind::Point,
+        [0.001, 0.002],
+        1,
+    );
+    let lane = crate::resolved_features::write_prepare::generated_native_lane(
+        &[],
+        "sldprt:feature-input#sketch",
+        None,
+        payload,
+    )
+    .unwrap();
+    let mut source = SldprtNative {
+        feature_input_lanes: vec![lane],
+        ..Default::default()
+    };
+    source.feature_input_lanes[0].sketch_entities[0] = source.feature_input_lanes[0].sketch_entities[0]
+        .with_test_identity(Some(0), Some(1));
+    source.feature_input_lanes[0].sketch_entities[0]
+        .reclassify(crate::records::SketchInputKind::LineOrCircle);
+    source.feature_input_lanes[0].sketch_entities[0].coordinates_m =
+        cadmpeg_ir::units::FiniteVector::new([0.001, 0.002]);
+    let mut target = source.clone();
+    target.feature_input_lanes.clear();
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.set_scope(cadmpeg_ir::ContentScope::container()).unwrap();
+    let mut losses = Vec::new();
+    let mut dispositions = NativeDispositions::for_namespace(
+        "sldprt",
+        crate::native::SLDPRT_ARENA_NAMES,
+        NativeDisposition::Dropped,
+    );
+    regenerate(
+        &ir,
+        &ir,
+        &source,
+        &mut target,
+        &mut losses,
+        &mut dispositions,
+    )
+    .unwrap();
+    assert!(
+        target
+            .feature_input_lanes
+            .iter()
+            .flat_map(|lane| &lane.sketch_entities)
+            .any(|entity| entity.kind() == crate::records::SketchInputKind::LineOrCircle),
+        "lanes {:#?}, losses {losses:#?}",
+        target.feature_input_lanes
+    );
+}
