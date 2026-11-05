@@ -25,10 +25,21 @@ pub(super) struct SketchStream {
     pub(super) meta: Vec<u8>,
     pub(super) sketches: Vec<SketchId>,
     pub(super) entities: Vec<SketchEntityId>,
+    pub(super) text_entities: Vec<SketchEntityId>,
+    pub(super) nurbs_entities: Vec<SketchEntityId>,
     pub(super) constraints: Vec<SketchConstraintId>,
 }
 
-pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError> {
+pub(super) fn encode(
+    target: &CadIr,
+    limits: cadmpeg_core::decode::ResourceLimits,
+) -> Result<Option<SketchStream>, CodecError> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy {
+        limits,
+        ..Default::default()
+    };
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy)?;
     let mut bulk = Vec::new();
     let mut primary = Vec::new();
     let mut secondary = Vec::new();
@@ -38,6 +49,10 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
     let mut companions = Vec::new();
     let mut lines = Vec::new();
     let mut circles = Vec::new();
+    let mut texts = Vec::new();
+    let mut text_entities = Vec::new();
+    let mut nurbs = Vec::new();
+    let mut nurbs_entities = Vec::new();
     let mut relation_ids = Vec::new();
     let mut constraints = Vec::new();
     let mut sketches = Vec::new();
@@ -222,7 +237,8 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
             &members,
             &member_indices,
             target.tolerances.linear.get(),
-        ) {
+            &ctx,
+        )? {
             continue;
         }
         mark(&mut primary, container, bulk.len())?;
@@ -262,6 +278,27 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
         containers.push(u64::from(container));
         heads.push(u64::from(head));
         for (member, &(point, companion)) in members.iter().zip(&member_indices) {
+            if let Some(text) = neutral_text(member, point, container) {
+                mark(&mut primary, point, bulk.len())?;
+                super::records::encode_sketch_text(&mut bulk, &text)?;
+                texts.push(u64::from(point));
+                text_entities.push(member.id().clone());
+                entities.push(member.id().clone());
+                continue;
+            }
+            if let Some(geometry) = neutral_nurbs(member) {
+                mark(&mut primary, point, bulk.len())?;
+                let mut record = Vec::new();
+                curve_header(&mut record, "265", point)?;
+                let subtype = "266".to_owned().try_into().map_err(CodecError::Malformed)?;
+                super::records::encode_sketch_nurbs(&mut record, None, &subtype, point, &geometry)?;
+                curve_tail(&mut record, container, false);
+                bulk.extend_from_slice(&record);
+                nurbs.push(u64::from(point));
+                nurbs_entities.push(member.id().clone());
+                entities.push(member.id().clone());
+                continue;
+            }
             let circular = match member.geometry.definition() {
                 SketchGeometryDefinition::Circle { center, radius } => {
                     Some((*center, *radius, 0.0, std::f64::consts::TAU))
@@ -458,6 +495,27 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
         ),
     ]
     .into_iter()
+    .chain((!texts.is_empty() || !nurbs.is_empty()).then_some((
+        "E0618268-3A06-450E-9E94-7CF4C2E66802",
+        "8E9D588C-28EF-43C4-B9A6-AA5430A68D4B",
+        0,
+        "Geometry",
+        texts,
+    )))
+    .chain((!nurbs.is_empty()).then_some((
+        "D82E012F-6DDD-4AED-BDE1-C0F7F9100B9B",
+        "EE518F9E-9CC3-4424-9CAB-2B92426E5312",
+        3,
+        "MSketch",
+        nurbs,
+    )))
+    .chain((!nurbs_entities.is_empty()).then_some((
+        "EE518F9E-9CC3-4424-9CAB-2B92426E5312",
+        "9FF71F46-205F-484B-A2B5-A245D0D8FE33",
+        4,
+        "Geometry",
+        vec![],
+    )))
     .map(|(guid, base, version, module, entity_ids)| {
         Ok(GeneratedDesignType {
             type_guid: guid.to_owned().try_into().map_err(CodecError::Malformed)?,
@@ -480,12 +538,120 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
         meta,
         sketches,
         entities,
+        text_entities,
+        nurbs_entities,
         constraints,
     }))
 }
 
 fn underflows(value: f64) -> bool {
     value != 0.0 && value / 10.0 == 0.0
+}
+
+pub(in crate::writer) fn neutral_nurbs(
+    row: &cadmpeg_ir::sketches::SketchEntity,
+) -> Option<crate::records::sketch_geometry::SketchNurbsGeometry> {
+    use crate::records::sketch_geometry::{SketchNurbsGeometry, SketchNurbsPoles};
+    let SketchGeometryDefinition::Nurbs { curve } = row.geometry.definition() else {
+        return None;
+    };
+    if row.construction
+        || curve.periodic()
+        || curve.knots().len() > 100_000
+        || curve.pole_rows().count() > 100_000
+    {
+        return None;
+    }
+    let points = curve
+        .control_points()
+        .into_iter()
+        .map(|point| {
+            let point = point.get();
+            (!underflows(point.u) && !underflows(point.v))
+                .then_some(cadmpeg_ir::math::Point3::new(point.u, point.v, 0.0))
+        })
+        .collect::<Option<Vec<_>>>()?;
+    let weights = curve.pole_rows().weights().unwrap_or_default();
+    let poles = SketchNurbsPoles::from_wire(points, weights).ok()?;
+    SketchNurbsGeometry::from_parts(
+        curve.degree(),
+        0.0,
+        8,
+        curve.knots().as_slice().to_vec(),
+        poles,
+    )
+    .ok()
+}
+
+pub(in crate::writer) fn neutral_text(
+    row: &cadmpeg_ir::sketches::SketchEntity,
+    record_index: u32,
+    owner_reference: u32,
+) -> Option<crate::records::sketch_geometry::SketchText> {
+    use crate::records::sketch_geometry::{SketchText, SketchTextAlignment, SketchTextLayout};
+    use cadmpeg_ir::sketches::{
+        SketchTextHorizontalAlignment as H, SketchTextVerticalAlignment as V,
+    };
+    if row.construction {
+        return None;
+    }
+    let SketchGeometryDefinition::Text {
+        text,
+        font_family,
+        font_weight,
+        height,
+        width_factor,
+        placement: Some(placement),
+        horizontal_alignment: Some(horizontal),
+        vertical_alignment: Some(vertical),
+    } = row.geometry.definition()
+    else {
+        return None;
+    };
+    let horizontal = match horizontal {
+        H::Left => 1,
+        H::Right => 2,
+        H::Center => 3,
+        H::Native(value) if !matches!(*value, 1..=3) => *value,
+        H::Native(_) => return None,
+    };
+    let vertical = match vertical {
+        V::Top => 1,
+        V::Bottom => 2,
+        V::Middle => 3,
+        V::Native(value) if !matches!(*value, 1..=3) => *value,
+        V::Native(_) => return None,
+    };
+    let text = SketchText {
+        id: format!("f3d:generated:sketch-text#{record_index}"),
+        record_index,
+        owner_reference,
+        class_tag: "264".to_owned().try_into().ok()?,
+        class_version: 0,
+        byte_offset: None,
+        entity_genesis: None,
+        persistent_id: Some(u64::from(record_index)),
+        base_id: None,
+        text: text.as_str().to_owned(),
+        font_family: font_family.as_str().to_owned(),
+        font_weight: i32::from(*font_weight),
+        height: *height,
+        color: cadmpeg_ir::topology::Color::new(0.0, 0.0, 0.0, 0.0)?,
+        layout: SketchTextLayout::TextexTag {
+            width_factor: cadmpeg_ir::scalar::NonNegativeReal::new(
+                width_factor.map_or(0.0, |value| value.get()),
+            )?,
+            alignment: Some(SketchTextAlignment {
+                horizontal,
+                vertical,
+            }),
+            first_reference: None,
+            second_reference: None,
+            placement: Some(*placement),
+        },
+        raw_bytes: Vec::new().into(),
+    };
+    super::records::sketch_text_supported(&text).then_some(text)
 }
 
 fn unsupported_member(row: &cadmpeg_ir::sketches::SketchEntity) -> bool {
@@ -542,6 +708,8 @@ fn unsupported_member(row: &cadmpeg_ir::sketches::SketchEntity) -> bool {
                                 || !(center.v + radius.get() * angle.sin()).is_finite()
                         })
             }
+            SketchGeometryDefinition::Text { .. } => neutral_text(row, 1, 1).is_none(),
+            SketchGeometryDefinition::Nurbs { .. } => neutral_nurbs(row).is_none(),
             _ => true,
         }
 }
@@ -610,7 +778,8 @@ fn profiles_match(
     members: &[&cadmpeg_ir::sketches::SketchEntity],
     indices: &[(u32, u32)],
     tolerance: f64,
-) -> bool {
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+) -> Result<bool, CodecError> {
     use cadmpeg_ir::sketches::SketchEntityUse;
     let mut endpoints = Vec::new();
     let mut edges = Vec::new();
@@ -647,6 +816,12 @@ fn profiles_match(
                 ));
                 None
             }
+            SketchGeometryDefinition::Nurbs { curve } => {
+                let Some(pair) = nurbs_endpoints(curve, ctx)? else {
+                    return Ok(false);
+                };
+                Some(pair)
+            }
             _ => None,
         };
         if let Some(pair) = pair {
@@ -659,11 +834,11 @@ fn profiles_match(
     for (i, point) in endpoints.iter().copied().enumerate() {
         let Some(u) = cadmpeg_core::convert::truncate_f64_to_i64((point.u / tolerance).floor())
         else {
-            return sketch.profiles.is_empty();
+            return Ok(sketch.profiles.is_empty());
         };
         let Some(v) = cadmpeg_core::convert::truncate_f64_to_i64((point.v / tolerance).floor())
         else {
-            return sketch.profiles.is_empty();
+            return Ok(sketch.profiles.is_empty());
         };
         for du in -1..=1 {
             for dv in -1..=1 {
@@ -689,13 +864,13 @@ fn profiles_match(
     let mut pairs = std::collections::BTreeSet::new();
     for (edge, [a, b]) in nodes.iter().copied().enumerate() {
         if !pairs.insert((a.min(b), a.max(b))) {
-            return false;
+            return Ok(false);
         }
         adjacency.entry(a).or_default().push(edge);
         adjacency.entry(b).or_default().push(edge);
     }
     if adjacency.values().any(|incident| incident.len() > 2) {
-        return false;
+        return Ok(false);
     }
     let mut visited = (0..edges.len()).map(|_| false).collect::<Vec<_>>();
     let mut order = (0..edges.len()).collect::<Vec<_>>();
@@ -736,7 +911,7 @@ fn profiles_match(
                 .copied()
                 .find(|edge| !used.contains(edge))
             else {
-                return false;
+                return Ok(false);
             };
             let reversed = nodes[next][1] == current;
             current = if reversed {
@@ -751,16 +926,48 @@ fn profiles_match(
             });
         }
         if used.len() != component.len() {
-            return false;
+            return Ok(false);
         }
         profiles.push((edges[first].0.clone(), profile));
     }
     profiles.sort_by(|a, b| a.0.cmp(&b.0));
-    sketch.profiles.as_slice()
+    Ok(sketch.profiles.as_slice()
         == profiles
             .into_iter()
             .map(|(_, profile)| profile)
-            .collect::<Vec<_>>()
+            .collect::<Vec<_>>())
+}
+
+fn nurbs_endpoints(
+    curve: &cadmpeg_ir::geometry::pcurve::PcurveNurbs,
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+) -> Result<Option<[cadmpeg_ir::math::Point2; 2]>, CodecError> {
+    use cadmpeg_ir::geometry::pcurve::evaluator::PcurveEvaluatorLanes;
+    let lanes = PcurveEvaluatorLanes::new(curve.pole_rows());
+    let Ok(degree) = usize::try_from(curve.degree()) else {
+        return Ok(None);
+    };
+    let knots = curve.knots().as_slice();
+    let (Some(&start), Some(&end)) = (knots.get(degree), knots.get(lanes.points().len())) else {
+        return Ok(None);
+    };
+    let eval = |t| {
+        cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::nurbs_pcurve_uv(
+            ctx,
+            curve.degree(),
+            knots,
+            lanes.points(),
+            lanes.weights(),
+            t,
+        ))
+    };
+    let Some(start) = eval(start)? else {
+        return Ok(None);
+    };
+    let Some(end) = eval(end)? else {
+        return Ok(None);
+    };
+    Ok(Some([start.get(), end.get()]))
 }
 
 fn root(parents: &[usize], mut index: usize) -> usize {

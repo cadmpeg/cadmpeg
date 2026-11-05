@@ -692,7 +692,7 @@ pub(super) fn plan(
     coverage.features = ArenaDisposition::Reported;
     coverage.parameters = ArenaDisposition::Reported;
     coverage.sketch_constraints = ArenaDisposition::Reported;
-    coverage.spatial_sketch_constraints = ArenaDisposition::Dropped;
+    coverage.spatial_sketch_constraints = ArenaDisposition::Reported;
     if supported.len() != input.ir.model.bodies.len() {
         coverage.bodies = ArenaDisposition::Reported;
         coverage.regions = ArenaDisposition::Reported;
@@ -1174,6 +1174,18 @@ fn reduce_fields(
     losses: &mut Vec<LossNote>,
     native: Option<&SldprtNative>,
 ) -> Result<(), CodecError> {
+    for vertex in &mut ir.model.vertices {
+        if vertex
+            .tolerance
+            .is_some_and(|tolerance| tolerance.get() * 0.001 == 0.0)
+        {
+            vertex.tolerance = None;
+            losses.push(SldprtLossCode::WriterFieldsOmitted.note(format!(
+                "vertex {}: tolerance omitted because conversion to metres underflows",
+                vertex.id
+            )));
+        }
+    }
     let mut bounded = std::collections::HashSet::new();
     for edge in &ir.model.edges {
         if super::bounded_curve::derived_sphere_seam(ir, edge)
@@ -1300,6 +1312,9 @@ fn reduce_fields(
         entity.endpoint_refs.clear();
     }
     for constraint in &mut ir.model.sketch_constraints {
+        constraint.native_ref = None;
+    }
+    for constraint in &mut ir.model.spatial_sketch_constraints {
         constraint.native_ref = None;
     }
     for coedge in &mut ir.model.coedges {
