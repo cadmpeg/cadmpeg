@@ -120,6 +120,7 @@ pub(super) fn encode_design_bulkstream(
     native: &F3dNative,
     registry: &GeneratedDesignRegistry,
     parameter_bytes: Vec<u8>,
+    brep_name: &str,
 ) -> Result<Option<EncodedDesignBulkStream>, CodecError> {
     let decode_arena = cadmpeg_core::decode::DecodeArena::new();
     let (decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
@@ -235,7 +236,7 @@ pub(super) fn encode_design_bulkstream(
         }
         out.extend_from_slice(&0u64.to_le_bytes());
         out.extend_from_slice(&0u32.to_le_bytes());
-        native_lp_utf16(&mut out, "BREP.generated.smbh")?;
+        native_lp_utf16(&mut out, brep_name)?;
     }
     encode_browser_nodes(&mut out, &mut primary_records, registry)?;
     for recipe in &native.construction_recipes {

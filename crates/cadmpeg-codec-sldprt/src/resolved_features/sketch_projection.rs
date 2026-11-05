@@ -816,6 +816,7 @@ mod projected_brep_output_tests {
             construction,
             ProceduralCurveDefinition::Exact { cache: None },
         ));
+        brep.qualify_ids("nested-0-0").unwrap();
         let mut carriers = crate::native::NestedSketchCarriers::default();
         let mut entities = Vec::new();
         project_brep(

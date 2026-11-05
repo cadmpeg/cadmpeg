@@ -1098,13 +1098,15 @@ fn reduce_design(
     ir: &mut CadIr,
     losses: &mut Vec<LossNote>,
     repair: bool,
-) -> Result<(), CodecError> {
+) -> Result<(), super::write_error::WriteError> {
     let native = ir
         .native
         .namespace("sldprt")
         .map(SldprtNative::load)
         .transpose()?;
-    let prepare = |candidate: &mut CadIr, losses: &mut Vec<LossNote>| {
+    let prepare = |candidate: &mut CadIr,
+                   losses: &mut Vec<LossNote>|
+     -> Result<(), super::write_error::WriteError> {
         let mut native = native.clone();
         let orphaned = crate::history::write::parameters::orphaned_scalar_parameters(
             candidate,
@@ -1124,7 +1126,7 @@ fn reduce_design(
     };
     match prepare(&mut *ir, &mut *losses) {
         Ok(_) => return Ok(()),
-        Err(CodecError::UnsupportedContent(_)) => {}
+        Err(super::write_error::WriteError::Decline(_)) => {}
         Err(error) => return Err(error),
     }
     let original = ir.model.features.clone();
@@ -1136,7 +1138,7 @@ fn reduce_design(
         ir.model.features[index] = feature;
         match prepare(&mut *ir, &mut *losses) {
             Ok(_) => {}
-            Err(CodecError::UnsupportedContent(reason)) => {
+            Err(super::write_error::WriteError::Decline(reason)) => {
                 losses.push(SldprtLossCode::WriterDesignReduced.note(format!(
                     "feature {} retains its solved result instead of its operation: {reason}",
                     ir.model.features[index].id

@@ -196,6 +196,16 @@ fn targets(ir: &CadIr, sequences: &SourceSequences) -> BTreeMap<String, Vec<Attr
             add(sequence, AttributeTarget::Point(point.id.clone()));
         }
     }
+    for assigned in targets.values_mut() {
+        if assigned.iter().any(|target| {
+            matches!(
+                target,
+                AttributeTarget::Curve(_) | AttributeTarget::Surface(_)
+            )
+        }) {
+            assigned.retain(|target| !matches!(target, AttributeTarget::Point(_)));
+        }
+    }
     let namespace = ir.native.namespace("iges");
     let native_sources: BTreeMap<_, _> = namespace
         .into_iter()
