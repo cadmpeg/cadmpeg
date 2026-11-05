@@ -1415,21 +1415,37 @@ fn malformed_paramesh_reports_its_entry_and_parser_failure() {
 }
 
 #[test]
-fn oversized_zip_entry_declaration_is_rejected_before_allocation() {
+fn oversized_zip_entry_is_given_up_before_allocation() {
     let mut archive = f3d_with_deflated_smbh(&synthetic_geometry_smbh());
     let target = b"FusionAssetName[Active]/Breps.BlobParts/Body1.smbh";
     set_zip_entry_uncompressed_size(&mut archive, target, u32::MAX - 1);
 
-    let error = F3dCodec
+    let decoded = F3dCodec
         .decode(&mut Cursor::new(archive), &DecodeOptions::default())
-        .expect_err("oversized inflated entry must be rejected");
-    assert!(
-        matches!(
-            error,
-            cadmpeg_ir::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(_))
-        ),
-        "{error:?}"
-    );
+        .expect("the oversized entry is an independently recoverable part");
+    assert!(decoded.ir().model.bodies.is_empty());
+    assert_eq!(decoded.ir().native_unknowns("f3d").unwrap().len(), 1);
+    let losses: Vec<_> = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.code
+                == cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable
+                    .note("")
+                    .code
+        })
+        .collect();
+    let [loss] = losses.as_slice() else {
+        panic!("expected one unreadable ZIP entry");
+    };
+    assert!(loss.message.contains("Body1.smbh"));
+    assert!(loss.message.contains("DecompressedBytes"));
+    assert!(loss.message.contains("scope Part"));
+    assert!(decoded
+        .source_fidelity()
+        .unrepresented()
+        .contains(&cadmpeg_ir::document::ArenaClass::Model,));
 }
 
 #[test]

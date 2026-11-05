@@ -32,15 +32,18 @@ pub(crate) fn decoded(
     // class: admitted declarations with no design kind prove design
     // absent. Design additionally requires located design carriers: a cut
     // decode may not gain a class it never located (#224 ruling 1). With
-    // no located document part, no class is held. A populated neutral
-    // arena always holds its class.
+    // A populated arena or a retained failed part also holds its class,
+    // even when the document member could not be opened.
     let required = ctx.depth().required_scope();
     let model = required.model
         && (ir
             .model
             .populated_arena(cadmpeg_ir::ArenaClass::Model)
             .is_some()
-            || document_found);
+            || document_found
+            || fidelity
+                .unrepresented()
+                .contains(&cadmpeg_ir::ArenaClass::Model));
     let design_settled = found_design.is_some();
     let found_design = found_design.unwrap_or(false);
     let design = required.design
@@ -49,7 +52,10 @@ pub(crate) fn decoded(
             .populated_arena(cadmpeg_ir::ArenaClass::Design)
             .is_some()
             || found_design
-            || (document_found && !design_settled));
+            || (document_found && !design_settled)
+            || fidelity
+                .unrepresented()
+                .contains(&cadmpeg_ir::ArenaClass::Design));
     ir.set_scope(cadmpeg_ir::ContentScope { model, design })
         .map_err(CodecError::malformed)?;
     losses.extend(summary.losses);

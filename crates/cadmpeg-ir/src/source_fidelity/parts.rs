@@ -34,6 +34,7 @@ pub struct PartSpec {
     record: Option<Identity>,
     /// The innermost containing native record, when one exists.
     containing: Option<Identity>,
+    absent_fields: Vec<&'static str>,
 }
 
 impl PartSpec {
@@ -45,6 +46,7 @@ impl PartSpec {
             classes: None,
             record: None,
             containing: None,
+            absent_fields: Vec::new(),
         }
     }
 
@@ -76,6 +78,13 @@ impl PartSpec {
     #[must_use]
     pub fn record_id(mut self, record: Identity) -> Self {
         self.record = Some(record);
+        self
+    }
+
+    /// Name a containing-record field whose bytes lie in the part.
+    #[must_use]
+    pub fn absent_field(mut self, field: &'static str) -> Self {
+        self.absent_fields.push(field);
         self
     }
 
@@ -255,6 +264,11 @@ impl DecodeParts for DecodeContext<'_> {
         spec: PartSpec,
         decode: impl FnOnce(&mut PartOutput) -> Result<T, CodecError>,
     ) -> Result<Option<T>, CodecError> {
+        if !spec.absent_fields.is_empty() && spec.containing.is_none() {
+            return Err(CodecError::malformed(
+                "absent fields require a containing native record",
+            ));
+        }
         if extent.location().space != SpaceId::ROOT && spec.stream.is_none() {
             return Err(CodecError::malformed(format_args!(
                 "part {} outside the root stream does not name its stream",
@@ -355,6 +369,19 @@ fn give_up(
         .note(message)
         .with_provenance(provenance);
     loss.dropped = dropped;
+    if !spec.absent_fields.is_empty() {
+        let owner = spec.containing.as_ref().ok_or_else(|| {
+            CodecError::malformed("absent fields require a containing native record")
+        })?;
+        loss.dropped_fields = spec
+            .absent_fields
+            .iter()
+            .map(|field| crate::report::loss::DroppedField {
+                record: owner.as_str().to_owned(),
+                field: (*field).to_owned(),
+            })
+            .collect();
+    }
     output.push_loss(ctx, loss)
 }
 

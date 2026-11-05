@@ -1261,7 +1261,8 @@ where
     F: FnMut(&str) -> Result<(String, cadmpeg_ir::assets::AssetId), CodecError>,
 {
     let stream = crate::ids::native_scope(source_entry_name);
-    let records = IndexedRecordOffsets::build(bytes);
+    let frames = super::meta::design_primary_frames(bytes, meta)?;
+    let records = IndexedRecordOffsets::from_primary_frames(&frames);
     let Ok(collection_frames) =
         typed_primary_frames(bytes, meta, MESH_COLLECTION_TYPE_GUID, "mesh-collection")
     else {
@@ -1738,10 +1739,13 @@ pub(crate) fn decode_mesh_bodies(
         let name = &entry.name;
         let base = name.rsplit('/').next().unwrap_or(name);
         let Some(decoded) = ctx.decode_part(&mut parts, source, spec, |_| {
-            let container = decode_mesh_container(ctx, source.window()).map_err(|error| match error {
-                CodecError::Malformed(message) => CodecError::malformed(format_args!("entry {}: {message}", entry.name)),
-                other => other,
-            })?;
+            let container =
+                decode_mesh_container(ctx, source.window()).map_err(|error| match error {
+                    CodecError::Malformed(message) => {
+                        CodecError::malformed(format_args!("entry {}: {message}", entry.name))
+                    }
+                    other => other,
+                })?;
             let Some((design_ordinal, feature_ordinal, body_ordinal)) =
                 resolve_mesh_body(&design_records, base, &container.fusion_uuid)
             else {
