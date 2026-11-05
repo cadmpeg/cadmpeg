@@ -14,6 +14,36 @@ use serde_json::Value;
 use super::cross_closure::{apply_storage, quantum, ReducedProbe};
 use super::writer_closure::Redecode;
 
+/// Apply STEP's positive-semi-angle chart to a cone carrier.
+#[must_use]
+pub fn step_cone_chart(value: &Value) -> Value {
+    let mut geometry = value.clone();
+    let Some(object) = geometry.as_object_mut() else {
+        return geometry;
+    };
+    if object.get("kind").and_then(Value::as_str) != Some("cone") {
+        return geometry;
+    }
+    let Some(angle) = object.get("half_angle").and_then(Value::as_f64) else {
+        return geometry;
+    };
+    if angle >= 0.0 {
+        return geometry;
+    }
+    let Some(axis) = object.get_mut("axis").and_then(Value::as_object_mut) else {
+        return geometry;
+    };
+    let coordinates = ["x", "y", "z"].map(|key| axis.get(key).and_then(Value::as_f64));
+    let [Some(x), Some(y), Some(z)] = coordinates else {
+        return geometry;
+    };
+    axis.insert("x".into(), Value::from(-x));
+    axis.insert("y".into(), Value::from(-y));
+    axis.insert("z".into(), Value::from(-z));
+    object.insert("half_angle".into(), Value::from(-angle));
+    geometry
+}
+
 /// Standard unrepresentable probe for a quantum storage. `Normalized` rows
 /// need a writer-supplied probe: only the writer knows its normalization.
 #[must_use]
