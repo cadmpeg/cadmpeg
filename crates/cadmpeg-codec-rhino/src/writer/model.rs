@@ -697,7 +697,7 @@ impl<'a> WritableObjectCurve<'a> {
             }
             ObjectCurveGeometry::NurbsOwned(nurbs) => (
                 super::NURBS_CURVE_CLASS,
-                super::nurbs_curve_payload(&nurbs)?,
+                super::nurbs_curve_payload(nurbs)?,
             ),
         })
     }
