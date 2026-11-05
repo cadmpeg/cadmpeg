@@ -1538,3 +1538,62 @@ fn circular_explicit_angles_keep_their_iges_mask() {
         .iter()
         .any(|feature| feature.name.as_deref() == Some("PARTIAL")));
 }
+
+#[test]
+fn mixed_feature_kinds_follow_current_ordinals() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use std::io::Cursor;
+    let harness =
+        cadmpeg_test_support::golden::Harness::new(env!("CARGO_MANIFEST_DIR"), "igs", "unused");
+    let (_, bytes) = harness
+        .fixture_inputs()
+        .into_iter()
+        .find(|(name, _)| name == "procedural_and_boolean_solids")
+        .unwrap();
+    let decoded = crate::IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let expected = ir
+        .model
+        .features
+        .iter()
+        .map(|feature| (feature.name.clone(), feature.ordinal))
+        .collect::<BTreeMap<_, _>>();
+    let output = super::super::synthesize(&ir, crate::IgesVersion::V5_3).unwrap();
+    let after = crate::IgesCodec
+        .decode(&mut Cursor::new(output.bytes), &DecodeOptions::default())
+        .unwrap();
+    for feature in &after.ir().model.features {
+        assert_eq!(
+            Some(&feature.ordinal),
+            expected.get(&feature.name),
+            "{:?}",
+            feature.name
+        );
+    }
+    assert_eq!(after.ir().model.features.len(), ir.model.features.len());
+    let count = ir.model.features.len() as u64;
+    for feature in &mut ir.model.features {
+        feature.ordinal = count - feature.ordinal - 1;
+    }
+    let expected = ir
+        .model
+        .features
+        .iter()
+        .map(|feature| (feature.name.clone(), feature.ordinal))
+        .collect::<BTreeMap<_, _>>();
+    let output = super::super::synthesize(&ir, crate::IgesVersion::V5_3).unwrap();
+    let after = crate::IgesCodec
+        .decode(&mut Cursor::new(output.bytes), &DecodeOptions::default())
+        .unwrap();
+    for feature in &after.ir().model.features {
+        assert_eq!(
+            Some(&feature.ordinal),
+            expected.get(&feature.name),
+            "{:?}",
+            feature.name
+        );
+    }
+    assert_eq!(after.ir().model.features.len(), ir.model.features.len());
+}

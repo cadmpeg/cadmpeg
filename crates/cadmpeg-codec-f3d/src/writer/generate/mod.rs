@@ -232,12 +232,12 @@ pub(super) fn write_with_limits(
             CodecError::malformed(format_args!("cannot create F3D BREP entry: {error}"))
         })?;
     archive.write_all(&smbh)?;
-    let subd_arena = cadmpeg_core::decode::DecodeArena::new();
-    let subd_policy = cadmpeg_core::decode::DecodePolicy {
+    let output_arena = cadmpeg_core::decode::DecodeArena::new();
+    let output_policy = cadmpeg_core::decode::DecodePolicy {
         limits,
         ..Default::default()
     };
-    let subd_ctx = cadmpeg_core::decode::DecodeContext::for_encode(&subd_arena, &subd_policy);
+    let output_ctx = cadmpeg_core::decode::DecodeContext::for_encode(&output_arena, &output_policy);
     let mut subd_names = BTreeSet::new();
     for (ordinal, surface) in target.model.subds.iter().enumerate() {
         let fallback = format!("{DESIGN_FOLDER}/TSplines.BlobParts/TSpline.{ordinal}.tsm");
@@ -262,7 +262,7 @@ pub(super) fn write_with_limits(
                 CodecError::UnsupportedContent("F3D cage name space exhausted".into())
             })?;
         }
-        let Some(program) = subd::encode(&subd_ctx, surface, true)? else {
+        let Some(program) = subd::encode(&output_ctx, surface, true)? else {
             return Err(CodecError::UnsupportedContent(format!(
                 "F3D cage {} has unsupported topology or controls",
                 surface.id
@@ -412,7 +412,7 @@ pub(super) fn write_with_limits(
             archive.write_all(&data)?;
         }
     }
-    let written_sketches = sketches::encode(target, limits)?;
+    let written_sketches = sketches::encode(target, &output_ctx)?;
     if let Some(sketches) = &written_sketches {
         for (name, data) in [
             ("BulkStream.dat", &sketches.bulk),

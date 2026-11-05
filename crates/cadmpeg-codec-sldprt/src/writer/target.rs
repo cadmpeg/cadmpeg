@@ -67,6 +67,16 @@ pub(crate) fn plan(
     let attempt = write(input, true);
     let (written, bytes) = match attempt {
         Ok(written) => written,
+        Err(
+            error @ (super::write_error::WriteError::Io(_)
+            | super::write_error::WriteError::Capacity { .. }
+            | super::write_error::WriteError::Fatal(
+                cadmpeg_core::CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit {
+                    scope: cadmpeg_core::decode::LimitScope::Session,
+                    ..
+                }),
+            )),
+        ) => return Err(error),
         Err(error) => {
             return super::synthesis::plan(
                 input,
