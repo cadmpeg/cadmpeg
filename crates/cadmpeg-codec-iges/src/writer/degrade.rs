@@ -108,6 +108,34 @@ fn admit(
                 IgesLossCode::WriterEntityOmitted
                     .note(format!("IGES entity {identity} is omitted: {reason}")),
             );
+            for procedural in &ir.model.procedural_surfaces {
+                if ir
+                    .model
+                    .procedural_surface_owner(&procedural.id)
+                    .is_some_and(|owner| owner.as_str() == identity)
+                {
+                    result
+                        .losses
+                        .push(IgesLossCode::WriterEntityOmitted.note(format!(
+                        "IGES procedural surface {} is omitted with carrier {identity}: {reason}",
+                        procedural.id
+                    )));
+                }
+            }
+            for procedural in &ir.model.procedural_curves {
+                if ir
+                    .model
+                    .procedural_curve_owner(&procedural.id)
+                    .is_some_and(|owner| owner.as_str() == identity)
+                {
+                    result
+                        .losses
+                        .push(IgesLossCode::WriterEntityOmitted.note(format!(
+                            "IGES procedural curve {} is omitted with carrier {identity}: {reason}",
+                            procedural.id
+                        )));
+                }
+            }
             Ok(())
         }
         Err(error) => Err(error),
