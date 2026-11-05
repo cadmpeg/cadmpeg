@@ -265,45 +265,51 @@ fn rhino_written_product_structure_passes_the_shared_plan_gate() {
     );
 }
 
-struct NotImplementedEncoder;
+struct MissingDefaultEncoder;
 
-impl cadmpeg_ir::codec::write::EncoderBackend for NotImplementedEncoder {
+static MISSING_DEFAULT_TARGETS: &[cadmpeg_core::target::TargetDescriptor] =
+    &[cadmpeg_core::target::TargetDescriptor {
+        id: cadmpeg_core::dialect_id!("test:one"),
+        aliases: &[],
+    }];
+
+impl cadmpeg_ir::codec::write::EncoderBackend for MissingDefaultEncoder {
     const REUSES_SOURCE: bool = false;
-    const FORMAT: cadmpeg_ir::codec::FormatId =
-        cadmpeg_ir::codec::FormatId::new("not-implemented-test");
+    const FORMAT: cadmpeg_ir::codec::FormatId = cadmpeg_ir::codec::FormatId::new("test");
     const REQUEST: cadmpeg_core::decode::DecodeDepth = cadmpeg_core::decode::DecodeDepth::Full;
-    type Target = cadmpeg_ir::codec::write::target::DialectFree;
-    const TARGET: Self::Target = cadmpeg_ir::codec::write::target::DialectFree;
+    type Target = cadmpeg_ir::codec::write::target::Catalog;
+    const TARGET: Self::Target =
+        cadmpeg_ir::codec::write::target::Catalog::new(MISSING_DEFAULT_TARGETS, None);
 
     fn plan_resolved(
         &self,
-        _input: EncodeInput<'_>,
-        _target: (),
+        input: EncodeInput<'_>,
+        _target: cadmpeg_ir::codec::write::target::ResolvedWrite<'_>,
     ) -> Result<cadmpeg_ir::codec::write::ExportBody, cadmpeg_ir::codec::write::EncodeError> {
-        Err(cadmpeg_ir::codec::write::transitional_from_codec(
-            cadmpeg_core::CodecError::NotImplemented("writer path is not implemented".into()),
+        Ok(cadmpeg_ir::codec::write::ExportBody::synthesized(
+            Vec::new(),
+            input.ir,
+            cadmpeg_ir::codec::write::ArenaCoverage::Complete,
         ))
     }
 }
 
-/// A writer implementation failure is not evidence of an export loss,
-/// even when the application would reject real plan losses.
+/// Target resolution does not become an export-loss refusal.
 #[test]
-fn not_implemented_plan_failure_is_not_reclassified_as_export_loss() {
+fn missing_default_is_not_reclassified_as_export_loss() {
     let conversion = prepared(
         CadIr::empty(),
         Format::Cadir,
-        Box::new(NotImplementedEncoder),
+        Box::new(MissingDefaultEncoder),
         LossPolicy::RejectExport,
     );
     let Err(error) = conversion.plan() else {
-        panic!("the synthetic writer is not implemented");
+        panic!("the synthetic catalog has no default");
     };
-    assert_eq!(
-        error.to_string(),
-        "not implemented yet: writer path is not implemented"
-    );
-    assert!(error.refusal().is_none());
+    assert!(matches!(
+        error.refusal(),
+        Some(crate::application::refusal::ConversionRefusal::UnsupportedTarget { .. })
+    ));
 }
 
 /// Flag absence is always `Inherit`; the encoder decides what that means.
