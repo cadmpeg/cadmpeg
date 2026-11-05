@@ -478,7 +478,9 @@ pub(super) fn curve_payload(
         }
         Some(SolvedCurveGeometry::Circle(circle)) => {
             check_frame(curve.id.as_str(), *circle.frame(), "circle")?;
-            if hi.partial_cmp(&lo) != Some(std::cmp::Ordering::Greater) || hi - lo > std::f64::consts::TAU + super::MAX_ARC_SPAN_EXCESS {
+            if hi.partial_cmp(&lo) != Some(std::cmp::Ordering::Greater)
+                || hi - lo > std::f64::consts::TAU + super::MAX_ARC_SPAN_EXCESS
+            {
                 return Err(WriteError::Omit(
                     "a wire circle spanning more than one turn requires an independent trimmed-curve encoding".into(),
                 ));
@@ -510,18 +512,8 @@ pub(super) fn curve_payload(
                 if [
                     nurbs.knots()[degree],
                     nurbs.knots()[nurbs.control_points().len()],
-                ] != range
+                ] == range
                 {
-                    let range = normalized_range(lo, hi).ok_or_else(|| {
-                        WriteError::Omit(format!("wire edge {} has no increasing range", edge.id))
-                    })?;
-                    let converted = super::conics::clamp_curve(curve.id.as_str(), nurbs, range)?;
-                    conversion = Some(RhinoLossCode::WriterCarrierResolved.note(format!(
-                        "wire edge {} carrier {} was restricted to the exact edge span; its unused curve domain is omitted",
-                        edge.id, curve.id
-                    )));
-                    WritableEdgeCurve::NurbsOwned(converted)
-                } else {
                     match check_nurbs_curve(curve.id.as_str(), nurbs) {
                         Ok(()) => WritableEdgeCurve::Nurbs(nurbs),
                         Err(WriteError::Omit(_)) => {
@@ -541,6 +533,16 @@ pub(super) fn curve_payload(
                         }
                         Err(error) => return Err(error),
                     }
+                } else {
+                    let range = normalized_range(lo, hi).ok_or_else(|| {
+                        WriteError::Omit(format!("wire edge {} has no increasing range", edge.id))
+                    })?;
+                    let converted = super::conics::clamp_curve(curve.id.as_str(), nurbs, range)?;
+                    conversion = Some(RhinoLossCode::WriterCarrierResolved.note(format!(
+                        "wire edge {} carrier {} was restricted to the exact edge span; its unused curve domain is omitted",
+                        edge.id, curve.id
+                    )));
+                    WritableEdgeCurve::NurbsOwned(converted)
                 }
             }
         }
