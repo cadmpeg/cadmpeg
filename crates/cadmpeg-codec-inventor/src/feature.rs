@@ -902,22 +902,20 @@ pub(crate) fn inventory(
                     }
                 }
                 SURFACE_TYPE => {
-                    if let Some(surface) =
+                    if let Some(Some(surface)) =
                         admit_record_part(ctx, parts, record.payload, token, || {
                             parse_surface(record.payload, version)
                         })?
                     {
-                        if let Some(surface) = surface {
-                            push_record(
-                                ctx,
-                                &mut inventory.properties,
-                                surface,
-                                record.type_id,
-                                segment.pair.token.key(),
-                                record.ordinal,
-                                "admit Inventor PmDc surface record",
-                            )?;
-                        }
+                        push_record(
+                            ctx,
+                            &mut inventory.properties,
+                            surface,
+                            record.type_id,
+                            segment.pair.token.key(),
+                            record.ordinal,
+                            "admit Inventor PmDc surface record",
+                        )?;
                     }
                 }
                 type_id => {
@@ -3935,13 +3933,11 @@ fn project_fillet(
         let PmDcFeaturePropertyKind::FilletEdgeSet { radius, .. } = &operand.set.kind else {
             return None;
         };
-        let Some(radius) = reference_binding(
+        let radius = reference_binding(
             source.identity.segment_token.as_str(),
             radius.index(),
             index,
-        ) else {
-            return None;
-        };
+        )?;
         groups.push(FilletGroup {
             edges: if operand.direct {
                 edge_selection::resolve(operand.collection, index)

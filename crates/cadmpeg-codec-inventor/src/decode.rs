@@ -982,20 +982,15 @@ fn decode_container<'a>(
                     losses.push(InventorLossCode::ProteinCatalogUndecodable.note(format!(
                         "The Protein asset catalog could not be decoded: {detail}"
                     )));
-                } else {
-                    if ir.model.appearances.is_empty() {
-                        losses.push(
-                            InventorLossCode::ProteinAppearanceAbsent.note(
-                                "The Protein package contains no decoded appearance assets."
-                                    .to_string(),
-                            ),
-                        );
-                    } else if presentation_projection.unresolved_defaults != 0 {
-                        losses.push(InventorLossCode::AppearanceDefaultUnresolved.note(format!(
-                            "Could not resolve {} PmApp document-default appearance assignment(s).",
-                            presentation_projection.unresolved_defaults
-                        )));
-                    }
+                } else if ir.model.appearances.is_empty() {
+                    losses.push(InventorLossCode::ProteinAppearanceAbsent.note(
+                        "The Protein package contains no decoded appearance assets.".to_string(),
+                    ));
+                } else if presentation_projection.unresolved_defaults != 0 {
+                    losses.push(InventorLossCode::AppearanceDefaultUnresolved.note(format!(
+                        "Could not resolve {} PmApp document-default appearance assignment(s).",
+                        presentation_projection.unresolved_defaults
+                    )));
                 }
                 if !material_catalog.duplicate_guids.is_empty() {
                     losses.push(InventorLossCode::ProteinGuidAmbiguous.note(format!(

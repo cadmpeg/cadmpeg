@@ -378,8 +378,10 @@ pub(super) fn try_decode_freeform_surfaces(
             &crate::families::b5::parameter_map::SampledParameterMapIndex::from_native(
                 &sampled_parameter_maps,
             ),
-            true,
-            Some(&selection_budget),
+            crate::families::b5::graph::B5ParseOptions {
+                require_topology: true,
+                budget: Some(&selection_budget),
+            },
             refusal,
         ) {
             Ok(graph) => graph,
@@ -3536,8 +3538,10 @@ mod tests {
                 &crate::families::b5::parameter_map::SampledParameterMapIndex::from_object_stream(
                     &[]
                 ),
-                false,
-                None,
+                crate::families::b5::graph::B5ParseOptions {
+                    require_topology: false,
+                    budget: None
+                },
                 &mut crate::nurbs::LaneRefusals::new()
             ))
             .expect("parse from records")
@@ -3552,8 +3556,10 @@ mod tests {
                 &crate::families::b5::parameter_map::SampledParameterMapIndex::from_object_stream(
                     &[]
                 ),
-                false,
-                None,
+                crate::families::b5::graph::B5ParseOptions {
+                    require_topology: false,
+                    budget: None
+                },
                 &mut crate::nurbs::LaneRefusals::new()
             ))
             .expect("parse from records")

@@ -42,7 +42,7 @@ pub(super) fn project(
         let token = segment.pair.token.as_str();
         // Cross-stream identity findings charge one diagnostic loss each;
         // findings that follow from a given-up part never reach this stage.
-        for detail in segment.identity_issues.iter() {
+        for detail in &segment.identity_issues {
             projection
                 .identity_losses
                 .push(InventorLossCode::RseSegmentIdentityConflict.note(detail.clone()));
