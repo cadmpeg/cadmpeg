@@ -390,10 +390,10 @@ fn an_unreadable_unreferenced_member_is_retained_without_refusing_the_root() {
         .report()
         .losses
         .iter()
-        .find(|loss| loss.code == F3dLossCode::XrefMemberUndecoded.kind())
+        .find(|loss| loss.code == cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable.note("").code)
         .expect("the unreadable retained member is reported");
-    assert!(loss.message.starts_with("xref broken.f3d:"));
-    assert!(loss.message.contains("source bytes remain retained"));
+    assert!(loss.message.contains("zip.entry"));
+    assert!(loss.provenance.is_some());
 }
 
 #[test]

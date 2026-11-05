@@ -723,7 +723,11 @@ pub(super) fn prune(target: &mut CadIr) -> Result<(), CodecError> {
     })
 }
 
-pub(super) fn coverage(original: &CadIr, written: &CadIr) -> NativeDispositions {
+pub(super) fn coverage(
+    original: &CadIr,
+    written: &CadIr,
+    invalidated_timestamps: &std::collections::BTreeSet<String>,
+) -> NativeDispositions {
     let mut result = NativeDispositions::for_namespace(
         "f3d",
         crate::native::F3D_ARENA_NAMES,
@@ -755,6 +759,12 @@ pub(super) fn coverage(original: &CadIr, written: &CadIr) -> NativeDispositions 
                 continue;
             }
             for record in before {
+                if arena.as_str() == "creation_timestamps"
+                    && invalidated_timestamps.contains(record.id())
+                {
+                    result.set_record("f3d", arena, record.id(), NativeDisposition::Dropped);
+                    continue;
+                }
                 if let Some(candidate) = after.and_then(|records| {
                     records
                         .iter()

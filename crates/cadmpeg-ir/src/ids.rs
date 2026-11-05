@@ -1132,6 +1132,10 @@ id_type!(
     FeatureInputTopologyId, compose
 );
 id_type!(
+    /// Identifies one persistent feature input operand.
+    FeatureInputOperandId, compose
+);
+id_type!(
     /// Identifies one feature-result topology state.
     FeatureResultTopologyId, compose
 );

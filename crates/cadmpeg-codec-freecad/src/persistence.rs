@@ -195,11 +195,25 @@ fn parse_document_impl(
         .as_ref()
         .map(|stages| stages.damage.as_slice())
         .unwrap_or_default();
-    let section_damaged = |tag: &str| damage.iter().any(|(name, _, _)| name == tag.as_bytes());
+    let section_damaged = |tag: &str| damage.iter().any(|(name, _, _, _)| name == tag.as_bytes());
     let data_section_damaged = section_damaged(data_tag);
+    let damaged_declarations: HashMap<&str, &str> = damage
+        .iter()
+        .filter_map(|(name, ancestors, identity, id)| {
+            if name == record_tag.as_bytes()
+                && ancestors
+                    .first()
+                    .is_some_and(|parent| parent == declarations_tag.as_bytes())
+            {
+                identity.as_deref().map(|identity| (identity, id.as_str()))
+            } else {
+                None
+            }
+        })
+        .collect();
     let damaged_data: HashSet<&str> = damage
         .iter()
-        .filter_map(|(name, ancestors, identity)| {
+        .filter_map(|(name, ancestors, identity, _)| {
             (name == record_tag.as_bytes()
                 && ancestors
                     .first()
@@ -350,15 +364,11 @@ fn parse_document_impl(
             "ObjectDeps names do not match object declarations".into(),
         ));
     }
-    if data_by_name
-        .keys()
-        .any(|name| !object_names.contains(name.as_str()))
-        || object_names.iter().any(|name| {
-            !data_by_name.contains_key(*name)
-                && !data_section_damaged
-                && !damaged_data.contains(*name)
-        })
-    {
+    if data_by_name.keys().any(|name| {
+        !object_names.contains(name.as_str()) && !damaged_declarations.contains_key(name.as_str())
+    }) || object_names.iter().any(|name| {
+        !data_by_name.contains_key(*name) && !data_section_damaged && !damaged_data.contains(*name)
+    }) {
         return Err(CodecError::malformed(format_args!(
             "object declarations and {data_tag} identities disagree"
         )));
@@ -371,7 +381,10 @@ fn parse_document_impl(
                     "object {object_name} depends on missing object {dependency}"
                 )));
             }
-            *dependency = crate::native::native_id("object", dependency.as_str());
+            *dependency = damaged_declarations.get(dependency.as_str()).map_or_else(
+                || crate::native::native_id("object", dependency.as_str()),
+                |id| (*id).to_owned(),
+            );
         }
     }
 
@@ -426,16 +439,32 @@ fn parse_document_impl(
             ));
         }
     }
+    let mut owners = Vec::new();
     for object in &objects {
-        let Some(data) = data_by_name.get(object.name()) else {
-            if data_section_damaged || damaged_data.contains(object.name().as_str()) {
-                continue;
-            }
+        if let Some(data) = data_by_name.get(object.name()) {
+            owners.push((object.id().as_str(), *data, true));
+        } else if !data_section_damaged && !damaged_data.contains(object.name().as_str()) {
             return Err(CodecError::malformed(format_args!(
                 "missing ObjectData for {}",
                 object.name()
             )));
-        };
+        }
+    }
+    let mut orphaned: Vec<_> = data_by_name
+        .iter()
+        .filter_map(|(name, data)| {
+            if object_names.contains(name.as_str()) {
+                None
+            } else {
+                damaged_declarations
+                    .get(name.as_str())
+                    .map(|owner| (*owner, *data, false))
+            }
+        })
+        .collect();
+    orphaned.sort_by_key(|(_, data, _)| data.range().start);
+    owners.extend(orphaned);
+    for (owner, data, declared) in owners {
         let child_nodes = data
             .children()
             .filter(roxmltree::Node::is_element)
@@ -448,7 +477,7 @@ fn parse_document_impl(
         if extension_containers.next().is_some() {
             return Err(CodecError::malformed(format_args!(
                 "object {} has multiple direct Extensions containers",
-                object.id()
+                owner
             )));
         }
         let mut property_containers = child_nodes
@@ -459,14 +488,14 @@ fn parse_document_impl(
         if property_containers.next().is_some() {
             return Err(CodecError::malformed(format_args!(
                 "object {} has multiple direct Properties containers",
-                object.id()
+                owner
             )));
         }
         if let (Some(extensions), Some(properties)) = (extension_container, property_container) {
             if extensions.range().start > properties.range().start {
                 return Err(CodecError::malformed(format_args!(
                     "object {} writes Properties before Extensions",
-                    object.id()
+                    owner
                 )));
             }
         }
@@ -485,22 +514,22 @@ fn parse_document_impl(
                 if extension_names.contains(&name) {
                     return Err(CodecError::malformed(format_args!(
                         "duplicate extension name {name} for {}",
-                        object.id()
+                        owner
                     )));
                 }
                 extension_names.insert(name.clone());
                 if extension_types.contains(&type_name) {
                     return Err(CodecError::malformed(format_args!(
                         "duplicate extension type {type_name} for {}",
-                        object.id()
+                        owner
                     )));
                 }
                 extension_types.insert(type_name.clone());
-                let id = extension_id(object.id(), &name, order);
+                let id = extension_id(owner, &name, order);
                 extension_ids_by_start.insert(node.range().start, id.clone());
                 extensions.push(ExtensionRecord {
                     id,
-                    owner: object.id().to_owned(),
+                    owner: owner.to_owned(),
                     name,
                     type_name,
                     order,
@@ -508,8 +537,8 @@ fn parse_document_impl(
             }
         }
         if let Some(container) = property_container {
-            if let Some(prepared) = declarations {
-                let selected = prepared.properties.get(object.id()).ok_or_else(|| {
+            if let Some(prepared) = declarations.filter(|_| declared) {
+                let selected = prepared.properties.get(owner).ok_or_else(|| {
                     CodecError::malformed("staged object has no property container result")
                 })?;
                 check_property_counts(
@@ -534,7 +563,7 @@ fn parse_document_impl(
             } else {
                 parse_properties(
                     container,
-                    object.id(),
+                    owner,
                     &mut properties,
                     &mut property_sources,
                     &mut losses,
@@ -554,7 +583,7 @@ fn parse_document_impl(
                     .ok_or_else(|| {
                         CodecError::malformed(format_args!(
                             "extension under {} has no native identity",
-                            object.id()
+                            owner
                         ))
                     })?;
                 for container in extension
@@ -585,11 +614,13 @@ fn parse_document_impl(
                     continue;
                 };
                 if data_by_name.contains_key(target) {
+                    let identity = damaged_declarations
+                        .get(target)
+                        .copied()
+                        .map(str::to_owned)
+                        .unwrap_or_else(|| crate::native::native_id("object", target));
                     link.set_object(
-                        cadmpeg_core::text::NonBlankString::new(crate::native::native_id(
-                            "object", target,
-                        ))
-                        .ok_or_else(|| {
+                        cadmpeg_core::text::NonBlankString::new(identity).ok_or_else(|| {
                             CodecError::malformed("link object identity must not be empty")
                         })?,
                     );
@@ -861,8 +892,8 @@ fn parse_persisted_property(
         None => crate::fidelity::relative_xml_extent(stages.view, node.range())?,
     };
     let mut spec = document_part("freecad.property_value");
-    if let Some(class) = crate::fidelity::property_value_class(objects, owner, &type_name) {
-        spec = spec.holding([class]);
+    if let Some(classes) = crate::fidelity::property_value_classes(objects, owner, &type_name) {
+        spec = spec.holding(classes);
     }
     property.body = stages.ctx.decode_part(stages.stage, extent, spec, |_| {
         Ok(property_body(node, owner, &name, &type_name)?)

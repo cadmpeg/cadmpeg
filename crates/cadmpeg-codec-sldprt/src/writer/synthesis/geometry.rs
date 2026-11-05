@@ -420,11 +420,11 @@ fn split_sheet_regions(
     Ok(())
 }
 
-/// A composite curve of one same-sense segment is its segment: point edges at
-/// the leaf carrier so the lump writer encodes the exact surviving geometry
-/// instead of refusing the composite. A composite becomes its segments (§5.2);
-/// a multi-segment or reversed composite keeps its refusal below.
-pub(super) fn flatten_composite_curves(ir: &mut CadIr, losses: &mut Vec<LossNote>) {
+/// Reduce composites to their segments when their carriers permit it.
+pub(super) fn flatten_composite_curves(
+    ir: &mut CadIr,
+    losses: &mut Vec<LossNote>,
+) -> Result<(), CodecError> {
     use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
     use cadmpeg_ir::ids::CurveId;
     use cadmpeg_ir::topology::EdgeCarrier;
@@ -455,6 +455,43 @@ pub(super) fn flatten_composite_curves(ir: &mut CadIr, losses: &mut Vec<LossNote
         }
     }
 
+    fn has_segments<'a>(
+        geometries: &std::collections::BTreeMap<&'a str, &'a CurveGeometry>,
+        id: &'a str,
+    ) -> bool {
+        let mut active = std::collections::BTreeSet::new();
+        let mut completed = std::collections::BTreeSet::new();
+        let mut pending = vec![(id, false)];
+        while let Some((current, done)) = pending.pop() {
+            if done {
+                active.remove(current);
+                completed.insert(current);
+                continue;
+            }
+            if completed.contains(current) {
+                continue;
+            }
+            if !active.insert(current) {
+                return false;
+            }
+            pending.push((current, true));
+            match geometries.get(current) {
+                Some(CurveGeometry::Solved(SolvedCurveGeometry::Composite {
+                    segments, ..
+                })) => {
+                    pending.extend(
+                        segments
+                            .iter()
+                            .map(|segment| (segment.curve.as_str(), false)),
+                    );
+                }
+                Some(_) => {}
+                None => return false,
+            }
+        }
+        true
+    }
+
     let geometries: std::collections::BTreeMap<&str, &CurveGeometry> = ir
         .model
         .curves
@@ -471,8 +508,60 @@ pub(super) fn flatten_composite_curves(ir: &mut CadIr, losses: &mut Vec<LossNote
             }
         }
     }
-    if flattened.is_empty() {
-        return;
+    let composites = ir
+        .model
+        .curves
+        .iter()
+        .filter(|curve| {
+            matches!(
+                curve.geometry,
+                CurveGeometry::Solved(SolvedCurveGeometry::Composite { .. })
+            )
+        })
+        .map(|curve| curve.id.as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+    if composites.is_empty() {
+        return Ok(());
+    }
+    let rewritten_edges = ir
+        .model
+        .edges
+        .iter()
+        .filter_map(|edge| match &edge.carrier {
+            EdgeCarrier::Curve(id) if flattened.contains_key(id.as_str()) => {
+                Some((edge.id.as_str(), id.as_str()))
+            }
+            _ => None,
+        })
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        &[],
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::desktop(),
+    )?;
+    let mut retained = std::collections::BTreeSet::<String>::new();
+    ir.visit_neutral_references(&ctx, &mut |owner, target| {
+        if composites.contains(target)
+            && !composites.contains(owner)
+            && rewritten_edges.get(owner).copied() != Some(target)
+        {
+            retained.insert(target.to_owned());
+        }
+        Ok(())
+    })?;
+    let mut pending = retained.iter().cloned().collect::<Vec<_>>();
+    while let Some(id) = pending.pop() {
+        if let Some(CurveGeometry::Solved(SolvedCurveGeometry::Composite { segments, .. })) =
+            geometries.get(id.as_str())
+        {
+            for segment in segments {
+                let id = segment.curve.as_str();
+                if retained.insert(id.to_owned()) {
+                    pending.push(id.to_owned());
+                }
+            }
+        }
     }
     let mut dropped = Vec::new();
     for curve in &ir.model.curves {
@@ -483,23 +572,7 @@ pub(super) fn flatten_composite_curves(ir: &mut CadIr, losses: &mut Vec<LossNote
         if !composite {
             continue;
         }
-        // After the rewrite below, an edge still names this composite only
-        // through a bounded carrier over it or an unflattened unbounded one:
-        // a flattened unbounded carrier points at the leaf instead. A coedge
-        // use-curve names its carrier directly and is never rewritten.
-        let retained = ir.model.edges.iter().any(|edge| match &edge.carrier {
-            EdgeCarrier::Bounded(id, _) => id.as_str() == curve.id.as_str(),
-            EdgeCarrier::Curve(id) => {
-                id.as_str() == curve.id.as_str() && !flattened.contains_key(id.as_str())
-            }
-            EdgeCarrier::Free | EdgeCarrier::Endpoints(_) => false,
-        }) || ir.model.coedges.iter().any(|coedge| {
-            coedge
-                .use_curve
-                .as_ref()
-                .is_some_and(|use_curve| use_curve.curve.as_str() == curve.id.as_str())
-        });
-        if !retained {
+        if !retained.contains(curve.id.as_str()) && has_segments(&geometries, curve.id.as_str()) {
             let message = match leaf_of(&geometries, curve.id.as_str()) {
                 Some(leaf) => format!(
                     "composite curve {} written as its segment {}",
@@ -507,7 +580,7 @@ pub(super) fn flatten_composite_curves(ir: &mut CadIr, losses: &mut Vec<LossNote
                     leaf
                 ),
                 None => format!(
-                    "composite curve {} dropped; it has no single-segment form",
+                    "composite curve {} reduced to its segments",
                     curve.id.as_str()
                 ),
             };
@@ -558,6 +631,7 @@ pub(super) fn flatten_composite_curves(ir: &mut CadIr, losses: &mut Vec<LossNote
         }
         losses.push(SldprtLossCode::WriterEntityOmitted.note(message));
     }
+    Ok(())
 }
 
 /// References removed by export reduction cannot invalidate unrelated design.
