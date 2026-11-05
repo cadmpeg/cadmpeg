@@ -7,8 +7,11 @@ use crate::history_records::{
     AsmHistoricalPoint, AsmHistoricalRelation, AsmHistoricalTopology,
 };
 use cadmpeg_ir::features::{
-    DistinctMembers, Feature, FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation,
+    BodySelection, BooleanKind, CombineOperands, DistinctMembers, FaceSelection, Feature,
+    FeatureDatumPlaneFrame, FeatureDefinition, FeatureEvaluation, FeatureId, FeatureOperation,
+    SplitBodyTool,
 };
+use cadmpeg_ir::ids::{BodyId, FaceId};
 use cadmpeg_ir::math::{Point3, Vector3};
 
 fn split_body_test_feature(scope_id: &str) -> Feature {
@@ -24,15 +27,67 @@ fn split_body_test_feature(scope_id: &str) -> Feature {
         source_content: Default::default(),
         evaluation: FeatureEvaluation::new(
             FeatureDefinition::Operation(FeatureOperation::SplitBody {
-                targets: cadmpeg_ir::features::BodySelection::Unresolved,
-                tool: cadmpeg_ir::features::SplitBodyTool::Faces(
-                    cadmpeg_ir::features::FaceSelection::Faces(vec![]),
-                ),
+                targets: BodySelection::Unresolved,
+                tool: SplitBodyTool::Faces(FaceSelection::Faces(vec![])),
             }),
             DistinctMembers::try_from(vec![]).unwrap(),
         ),
         native_ref: Some(scope_id.into()),
         product_definition: None,
+    }
+}
+
+fn split_body_with_face_tool(scope_id: &str, face_slots: &[i64]) -> Feature {
+    let faces = face_slots
+        .iter()
+        .map(|slot| FaceId::mint(format!("f3d:brep:face#{slot}")).unwrap())
+        .collect();
+    let mut feature = split_body_test_feature(scope_id);
+    feature
+        .evaluation
+        .set_definition(FeatureDefinition::Operation(FeatureOperation::SplitBody {
+            targets: BodySelection::Unresolved,
+            tool: SplitBodyTool::Faces(FaceSelection::Faces(faces)),
+        }));
+    feature
+}
+
+fn attach_shell_face(
+    topo: &mut AsmHistoricalTopology,
+    shell_id: i64,
+    loop_id: i64,
+    face_id: i64,
+    plane: AsmHistoricalPlane,
+) {
+    topo.faces.push(face_id);
+    topo.faces.sort_unstable();
+    topo.faces.dedup();
+    if let Some(rel) = topo
+        .shell_faces
+        .iter_mut()
+        .find(|r| r.owner_ref == shell_id)
+    {
+        if !rel.member_refs.contains(&face_id) {
+            rel.member_refs.push(face_id);
+        }
+    }
+    topo.face_loops.push(AsmHistoricalRelation {
+        owner_ref: face_id,
+        member_refs: vec![loop_id],
+    });
+    topo.face_loops.sort_by_key(|r| r.owner_ref);
+    topo.face_surfaces.push(AsmHistoricalCarrierBinding {
+        entity: face_id,
+        carrier: plane.surface,
+    });
+    topo.face_surfaces.sort_by_key(|b| b.entity);
+    if !topo
+        .surface_planes
+        .iter()
+        .any(|p| p.surface == plane.surface)
+    {
+        topo.surface_planes.push(plane);
+        topo.surface_planes.sort_by_key(|p| p.surface);
     }
 }
 
@@ -45,40 +100,7 @@ fn two_solid_boxes_with_planes(
     max2: Point3,
     planes: Vec<AsmHistoricalPlane>,
 ) -> AsmHistoricalTopology {
-    let mut faces = vec![4, 104];
-    let mut face_surfaces = vec![
-        AsmHistoricalCarrierBinding {
-            entity: 4,
-            carrier: 14,
-        },
-        AsmHistoricalCarrierBinding {
-            entity: 104,
-            carrier: 114,
-        },
-    ];
-    let mut surface_planes = vec![
-        AsmHistoricalPlane {
-            surface: 14,
-            origin: Point3::new(0.0, 0.0, -10.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-        },
-        AsmHistoricalPlane {
-            surface: 114,
-            origin: Point3::new(0.0, 0.0, 10.0),
-            normal: Vector3::new(0.0, 0.0, 1.0),
-        },
-    ];
-    for (i, p) in planes.into_iter().enumerate() {
-        let fid = 200 + i64::try_from(i).unwrap();
-        faces.push(fid);
-        face_surfaces.push(AsmHistoricalCarrierBinding {
-            entity: fid,
-            carrier: p.surface,
-        });
-        surface_planes.push(p);
-    }
-    surface_planes.sort_by_key(|p| p.surface);
-    AsmHistoricalTopology {
+    let mut topo = AsmHistoricalTopology {
         bodies: vec![b1, b2],
         body_regions: vec![
             AsmHistoricalRelation {
@@ -212,11 +234,127 @@ fn two_solid_boxes_with_planes(
                 position: max2,
             },
         ],
-        faces,
-        face_surfaces,
-        surface_planes,
+        faces: vec![4, 104],
+        face_surfaces: vec![
+            AsmHistoricalCarrierBinding {
+                entity: 4,
+                carrier: 14,
+            },
+            AsmHistoricalCarrierBinding {
+                entity: 104,
+                carrier: 114,
+            },
+        ],
+        surface_planes: vec![
+            AsmHistoricalPlane {
+                surface: 14,
+                origin: Point3::new(0.0, 0.0, -10.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+            },
+            AsmHistoricalPlane {
+                surface: 114,
+                origin: Point3::new(0.0, 0.0, 10.0),
+                normal: Vector3::new(0.0, 0.0, 1.0),
+            },
+        ],
         ..AsmHistoricalTopology::default()
+    };
+    for (i, p) in planes.into_iter().enumerate() {
+        let offset = i64::try_from(i).unwrap() * 2;
+        attach_shell_face(&mut topo, 3, 5, 200 + offset, p.clone());
+        attach_shell_face(&mut topo, 103, 105, 201 + offset, p);
     }
+    topo
+}
+
+fn add_third_solid_box(topo: &mut AsmHistoricalTopology, b3: i64, min3: Point3, max3: Point3) {
+    topo.bodies.push(b3);
+    topo.bodies.sort_unstable();
+    topo.body_regions.push(AsmHistoricalRelation {
+        owner_ref: b3,
+        member_refs: vec![302],
+    });
+    topo.body_regions.sort_by_key(|r| r.owner_ref);
+    topo.region_shells.push(AsmHistoricalRelation {
+        owner_ref: 302,
+        member_refs: vec![303],
+    });
+    topo.region_shells.sort_by_key(|r| r.owner_ref);
+    topo.shell_faces.push(AsmHistoricalRelation {
+        owner_ref: 303,
+        member_refs: vec![304],
+    });
+    topo.shell_faces.sort_by_key(|r| r.owner_ref);
+    topo.face_loops.push(AsmHistoricalRelation {
+        owner_ref: 304,
+        member_refs: vec![305],
+    });
+    topo.face_loops.sort_by_key(|r| r.owner_ref);
+    topo.loop_coedges.push(AsmHistoricalRelation {
+        owner_ref: 305,
+        member_refs: vec![306, 307],
+    });
+    topo.loop_coedges.sort_by_key(|r| r.owner_ref);
+    topo.coedge_topology.extend([
+        AsmHistoricalCoedge {
+            coedge: 306,
+            owner_loop: 305,
+            edge: 308,
+            next: 307,
+            previous: 307,
+            radial_next: 307,
+        },
+        AsmHistoricalCoedge {
+            coedge: 307,
+            owner_loop: 305,
+            edge: 308,
+            next: 306,
+            previous: 306,
+            radial_next: 306,
+        },
+    ]);
+    topo.coedge_topology.sort_by_key(|c| c.coedge);
+    topo.edge_vertices.push(AsmHistoricalEdge {
+        edge: 308,
+        start_vertex: 310,
+        end_vertex: 311,
+    });
+    topo.edge_vertices.sort_by_key(|e| e.edge);
+    topo.vertex_points.extend([
+        AsmHistoricalCarrierBinding {
+            entity: 310,
+            carrier: 320,
+        },
+        AsmHistoricalCarrierBinding {
+            entity: 311,
+            carrier: 321,
+        },
+    ]);
+    topo.vertex_points.sort_by_key(|v| v.entity);
+    topo.point_positions.extend([
+        AsmHistoricalPoint {
+            point: 320,
+            position: min3,
+        },
+        AsmHistoricalPoint {
+            point: 321,
+            position: max3,
+        },
+    ]);
+    topo.point_positions.sort_by_key(|p| p.point);
+    topo.faces.push(304);
+    topo.faces.sort_unstable();
+    topo.face_surfaces.push(AsmHistoricalCarrierBinding {
+        entity: 304,
+        carrier: 314,
+    });
+    topo.face_surfaces.sort_by_key(|f| f.entity);
+    topo.surface_planes.push(AsmHistoricalPlane {
+        surface: 314,
+        origin: min3,
+        normal: Vector3::new(0.0, 0.0, 1.0),
+    });
+    topo.surface_planes.sort_by_key(|p| p.surface);
 }
 
 #[test]
@@ -248,8 +386,26 @@ fn split_plane_only_emitted_for_split_body() {
         ],
     );
 
-    let mut feature_split = split_body_test_feature(&scope.id);
+    // Without split result bodies or a resolved tool, split_plane remains unresolved.
+    let mut feature_unresolved = split_body_test_feature(&scope.id);
+    bind_feature_outputs(
+        std::slice::from_mut(&mut feature_unresolved),
+        std::slice::from_ref(&scope),
+        &mut [history.clone()],
+        &[],
+        &Default::default(),
+        None,
+    )
+    .unwrap();
+    assert_eq!(
+        feature_unresolved
+            .source_properties
+            .get(&cadmpeg_core::nonblank_literal!("split_plane")),
+        None
+    );
 
+    // With a resolved face tool, split_plane is emitted for SplitBody.
+    let mut feature_split = split_body_with_face_tool(&scope.id, &[10]);
     bind_feature_outputs(
         std::slice::from_mut(&mut feature_split),
         std::slice::from_ref(&scope),
@@ -259,7 +415,6 @@ fn split_plane_only_emitted_for_split_body() {
         None,
     )
     .unwrap();
-
     assert_eq!(
         feature_split
             .source_properties
@@ -267,6 +422,58 @@ fn split_plane_only_emitted_for_split_body() {
         Some(&"1,2,3;0,0,1".to_string())
     );
 
+    // With a resolved DatumPlane feature tool, split_plane is emitted for SplitBody.
+    let datum_id = FeatureId::mint("test:model:feature#datum").unwrap();
+    let datum_feature = Feature {
+        id: datum_id.clone(),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: Default::default(),
+        source_properties: Default::default(),
+        source_tag: Some("WorkPlane".into()),
+        source_text: None,
+        source_content: Default::default(),
+        evaluation: FeatureEvaluation::new(
+            FeatureDefinition::Operation(FeatureOperation::DatumPlane {
+                frame: FeatureDatumPlaneFrame::new(
+                    Point3::new(4.0, 5.0, 6.0),
+                    Vector3::new(0.0, 1.0, 0.0),
+                    Vector3::new(1.0, 0.0, 0.0),
+                )
+                .unwrap(),
+            }),
+            DistinctMembers::try_from(vec![]).unwrap(),
+        ),
+        native_ref: None,
+        product_definition: None,
+    };
+    let mut feature_datum_split = split_body_test_feature(&scope.id);
+    feature_datum_split.ordinal = 1;
+    feature_datum_split
+        .evaluation
+        .set_definition(FeatureDefinition::Operation(FeatureOperation::SplitBody {
+            targets: BodySelection::Unresolved,
+            tool: SplitBodyTool::Plane { plane: datum_id },
+        }));
+    let mut features = [datum_feature, feature_datum_split];
+    bind_feature_outputs(
+        &mut features,
+        std::slice::from_ref(&scope),
+        &mut [history.clone()],
+        &[],
+        &Default::default(),
+        None,
+    )
+    .unwrap();
+    assert_eq!(
+        features[1]
+            .source_properties
+            .get(&cadmpeg_core::nonblank_literal!("split_plane")),
+        Some(&"4,5,6;0,1,0".to_string())
+    );
+
+    // Non-SplitBody operations do not emit split_plane.
     let mut feature_extrude = Feature {
         id: FeatureId::mint("test:model:feature#extrude").unwrap(),
         ordinal: 0,
@@ -325,22 +532,17 @@ fn split_plane_only_emitted_for_split_body() {
 fn split_plane_unresolved_when_multiple_inserted_planes_ambiguous() {
     let scope = scope_between(1, 0);
 
-    let state1_topo = AsmHistoricalTopology {
-        faces: vec![10, 11],
-        face_surfaces: vec![
-            AsmHistoricalCarrierBinding {
-                entity: 10,
-                carrier: 20,
-            },
-            AsmHistoricalCarrierBinding {
-                entity: 11,
-                carrier: 21,
-            },
-        ],
-        surface_planes: vec![
+    let state1_topo = two_solid_boxes_with_planes(
+        1,
+        Point3::new(-1.0, 0.0, 1.0),
+        Point3::new(-1.0, 0.0, 1.0),
+        2,
+        Point3::new(1.0, 0.0, 2.0),
+        Point3::new(1.0, 0.0, 2.0),
+        vec![
             AsmHistoricalPlane {
                 surface: 20,
-                origin: Point3::new(0.0, 0.0, 0.0),
+                origin: Point3::new(0.0, 0.0, 1.5),
                 normal: Vector3::new(0.0, 0.0, 1.0),
             },
             AsmHistoricalPlane {
@@ -349,8 +551,7 @@ fn split_plane_unresolved_when_multiple_inserted_planes_ambiguous() {
                 normal: Vector3::new(1.0, 0.0, 0.0),
             },
         ],
-        ..AsmHistoricalTopology::default()
-    };
+    );
 
     let history = crate::test_support::history::history(
         "f3d:asm-history#1".into(),
@@ -387,32 +588,26 @@ fn split_plane_unresolved_when_multiple_inserted_planes_ambiguous() {
 fn split_plane_emitted_when_multiple_inserted_planes_are_equivalent() {
     let scope = scope_between(1, 0);
 
-    let state1_topo = AsmHistoricalTopology {
-        faces: vec![10, 11],
-        face_surfaces: vec![
-            AsmHistoricalCarrierBinding {
-                entity: 10,
-                carrier: 20,
-            },
-            AsmHistoricalCarrierBinding {
-                entity: 11,
-                carrier: 21,
-            },
-        ],
-        surface_planes: vec![
+    let state1_topo = two_solid_boxes_with_planes(
+        1,
+        Point3::new(0.0, 0.0, 1.0),
+        Point3::new(0.0, 0.0, 1.0),
+        2,
+        Point3::new(0.0, 0.0, 2.0),
+        Point3::new(0.0, 0.0, 2.0),
+        vec![
             AsmHistoricalPlane {
                 surface: 20,
-                origin: Point3::new(0.0, 0.0, 0.0),
+                origin: Point3::new(0.0, 0.0, 1.5),
                 normal: Vector3::new(0.0, 0.0, 1.0),
             },
             AsmHistoricalPlane {
                 surface: 21,
-                origin: Point3::new(1.0, 1.0, 0.0),
+                origin: Point3::new(1.0, 1.0, 1.5),
                 normal: Vector3::new(0.0, 0.0, -1.0),
             },
         ],
-        ..AsmHistoricalTopology::default()
-    };
+    );
 
     let history = crate::test_support::history::history(
         "f3d:asm-history#1".into(),
@@ -441,7 +636,7 @@ fn split_plane_emitted_when_multiple_inserted_planes_are_equivalent() {
         feature_split
             .source_properties
             .get(&cadmpeg_core::nonblank_literal!("split_plane")),
-        Some(&"0,0,0;0,0,1".to_string())
+        Some(&"0,0,1.5;0,0,1".to_string())
     );
 }
 
@@ -531,6 +726,152 @@ fn split_plane_separates_body_centers_when_bodies_exist() {
 }
 
 #[test]
+fn split_plane_ignores_side_face_separating_unrelated_body() {
+    let scope = scope_between(1, 0);
+
+    // State 0 has body 1 (to be split) and unrelated body 3 at x = 10..11.
+    let mut state0_topo = AsmHistoricalTopology::default();
+    add_third_solid_box(
+        &mut state0_topo,
+        3,
+        Point3::new(10.0, 0.0, 0.0),
+        Point3::new(11.0, 1.0, 1.0),
+    );
+    // Add body 1 in state 0 as well.
+    let state0_b1 = two_solid_boxes_with_planes(
+        1,
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(1.0, 1.0, 3.0),
+        3,
+        Point3::new(10.0, 0.0, 0.0),
+        Point3::new(11.0, 1.0, 1.0),
+        vec![],
+    );
+
+    // Case 1: State 1 splits body 1 into bodies 1 and 2 along z = 1.5, and also inserts a
+    // side face on body 1 at x = 5.0 (which separates body 1 from unrelated body 3).
+    // Only the plane z = 1.5 is tied to the split result pair (1, 2).
+    let mut state1_with_valid_split = two_solid_boxes_with_planes(
+        1,
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(1.0, 1.0, 1.0),
+        2,
+        Point3::new(0.0, 0.0, 2.0),
+        Point3::new(1.0, 1.0, 3.0),
+        vec![AsmHistoricalPlane {
+            surface: 20,
+            origin: Point3::new(0.0, 0.0, 1.5),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+        }],
+    );
+    add_third_solid_box(
+        &mut state1_with_valid_split,
+        3,
+        Point3::new(10.0, 0.0, 0.0),
+        Point3::new(11.0, 1.0, 1.0),
+    );
+    attach_shell_face(
+        &mut state1_with_valid_split,
+        3,
+        5,
+        250,
+        AsmHistoricalPlane {
+            surface: 50,
+            origin: Point3::new(5.0, 0.0, 0.0),
+            normal: Vector3::new(1.0, 0.0, 0.0),
+        },
+    );
+
+    let history_valid = crate::test_support::history::history(
+        "f3d:asm-history#side-face-1".into(),
+        0,
+        None,
+        false,
+        vec![
+            state(1, 1, Some(0), state1_with_valid_split),
+            state(0, 0, None, state0_b1.clone()),
+        ],
+    );
+    let mut feat_valid = split_body_test_feature(&scope.id);
+    bind_feature_outputs(
+        std::slice::from_mut(&mut feat_valid),
+        std::slice::from_ref(&scope),
+        &mut [history_valid],
+        &[],
+        &Default::default(),
+        None,
+    )
+    .unwrap();
+    assert_eq!(
+        feat_valid
+            .source_properties
+            .get(&cadmpeg_core::nonblank_literal!("split_plane")),
+        Some(&"0,0,1.5;0,0,1".to_string())
+    );
+
+    // Case 2: The shared face on (1, 2) does not separate their centers (z = -5.0), while the
+    // inserted side face on body 1 at x = 5.0 separates body 1 from unrelated body 3.
+    // Must leave split_plane unresolved rather than emitting the side face.
+    let mut state1_only_unrelated_sep = two_solid_boxes_with_planes(
+        1,
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(1.0, 1.0, 1.0),
+        2,
+        Point3::new(0.0, 0.0, 2.0),
+        Point3::new(1.0, 1.0, 3.0),
+        vec![AsmHistoricalPlane {
+            surface: 20,
+            origin: Point3::new(0.0, 0.0, -5.0),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+        }],
+    );
+    add_third_solid_box(
+        &mut state1_only_unrelated_sep,
+        3,
+        Point3::new(10.0, 0.0, 0.0),
+        Point3::new(11.0, 1.0, 1.0),
+    );
+    attach_shell_face(
+        &mut state1_only_unrelated_sep,
+        3,
+        5,
+        250,
+        AsmHistoricalPlane {
+            surface: 50,
+            origin: Point3::new(5.0, 0.0, 0.0),
+            normal: Vector3::new(1.0, 0.0, 0.0),
+        },
+    );
+
+    let history_unrelated = crate::test_support::history::history(
+        "f3d:asm-history#side-face-2".into(),
+        0,
+        None,
+        false,
+        vec![
+            state(1, 1, Some(0), state1_only_unrelated_sep),
+            state(0, 0, None, state0_b1),
+        ],
+    );
+    let mut feat_unrelated = split_body_test_feature(&scope.id);
+    bind_feature_outputs(
+        std::slice::from_mut(&mut feat_unrelated),
+        std::slice::from_ref(&scope),
+        &mut [history_unrelated],
+        &[],
+        &Default::default(),
+        None,
+    )
+    .unwrap();
+    assert_eq!(
+        feat_unrelated
+            .source_properties
+            .get(&cadmpeg_core::nonblank_literal!("split_plane")),
+        None
+    );
+}
+
+#[test]
 fn split_plane_unresolved_when_inserted_face_is_unclassifiable() {
     let scope = scope_between(1, 0);
 
@@ -547,13 +888,13 @@ fn split_plane_unresolved_when_inserted_face_is_unclassifiable() {
             normal: Vector3::new(0.0, 0.0, 1.0),
         }],
     );
-    topo_missing_surface.faces.push(201);
+    topo_missing_surface.faces.push(210);
 
     let mut topo_missing_plane = topo_missing_surface.clone();
     topo_missing_plane
         .face_surfaces
         .push(AsmHistoricalCarrierBinding {
-            entity: 201,
+            entity: 210,
             carrier: 99,
         });
 
@@ -691,8 +1032,46 @@ fn split_plane_unresolved_when_output_body_has_incomplete_topology_or_vertices()
     }
 }
 
+fn combine_join_test_feature(scope_id: &str, target: Option<i64>, tool: Option<i64>) -> Feature {
+    let target_sel = match target {
+        Some(t) => BodySelection::Bodies(
+            DistinctMembers::try_from(vec![BodyId::mint(format!("f3d:brep:entity#{t}")).unwrap()])
+                .unwrap(),
+        ),
+        None => BodySelection::Unresolved,
+    };
+    let tool_sel = match tool {
+        Some(t) => BodySelection::Bodies(
+            DistinctMembers::try_from(vec![BodyId::mint(format!("f3d:brep:entity#{t}")).unwrap()])
+                .unwrap(),
+        ),
+        None => BodySelection::Unresolved,
+    };
+    Feature {
+        id: FeatureId::mint("test:model:feature#combine").unwrap(),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: Default::default(),
+        source_properties: Default::default(),
+        source_tag: Some("Combine".into()),
+        source_text: None,
+        source_content: Default::default(),
+        evaluation: FeatureEvaluation::new(
+            FeatureDefinition::Operation(FeatureOperation::Combine {
+                operands: CombineOperands::new(target_sel, tool_sel).unwrap(),
+                op: BooleanKind::Join,
+                keep_tools: false,
+            }),
+            DistinctMembers::try_from(vec![]).unwrap(),
+        ),
+        native_ref: Some(scope_id.into()),
+        product_definition: None,
+    }
+}
+
 #[test]
-fn body_absorption_requires_vertex_evidence_and_excludes_active_bodies() {
+fn body_absorption_requires_supported_op_and_affirmative_evidence() {
     let scope = scope_between(1, 0);
 
     let state0_base = two_solid_boxes_with_planes(
@@ -714,138 +1093,259 @@ fn body_absorption_requires_vertex_evidence_and_excludes_active_bodies() {
         vec![],
     );
 
-    let mut state1_absorbed_verts = state1_unabsorbed_verts.clone();
-    state1_absorbed_verts
+    // Host grows to meet only half of b2's unique vertices (1 of 2): not absorbed even with Combine Join.
+    let mut state1_half_verts = state1_unabsorbed_verts.clone();
+    state1_half_verts
         .loop_coedges
         .iter_mut()
         .find(|r| r.owner_ref == 5)
         .unwrap()
         .member_refs
         .extend([30, 31]);
-    state1_absorbed_verts
-        .coedge_topology
-        .push(AsmHistoricalCoedge {
+    state1_half_verts.coedge_topology.extend([
+        AsmHistoricalCoedge {
             coedge: 30,
             owner_loop: 5,
             edge: 32,
             next: 31,
             previous: 31,
             radial_next: 31,
-        });
-    state1_absorbed_verts
-        .coedge_topology
-        .push(AsmHistoricalCoedge {
+        },
+        AsmHistoricalCoedge {
             coedge: 31,
             owner_loop: 5,
             edge: 32,
             next: 30,
             previous: 30,
             radial_next: 30,
-        });
-    state1_absorbed_verts
-        .coedge_topology
-        .sort_by_key(|c| c.coedge);
-    state1_absorbed_verts.edge_vertices.push(AsmHistoricalEdge {
+        },
+    ]);
+    state1_half_verts.coedge_topology.sort_by_key(|c| c.coedge);
+    state1_half_verts.edge_vertices.push(AsmHistoricalEdge {
         edge: 32,
         start_vertex: 33,
         end_vertex: 34,
     });
-    state1_absorbed_verts.edge_vertices.sort_by_key(|e| e.edge);
-    state1_absorbed_verts
-        .vertex_points
-        .push(AsmHistoricalCarrierBinding {
+    state1_half_verts.edge_vertices.sort_by_key(|e| e.edge);
+    state1_half_verts.vertex_points.extend([
+        AsmHistoricalCarrierBinding {
             entity: 33,
-            carrier: 35,
-        });
-    state1_absorbed_verts
-        .vertex_points
-        .push(AsmHistoricalCarrierBinding {
+            carrier: 120,
+        },
+        AsmHistoricalCarrierBinding {
             entity: 34,
             carrier: 36,
-        });
-    state1_absorbed_verts
-        .vertex_points
-        .sort_by_key(|v| v.entity);
-    state1_absorbed_verts
-        .point_positions
-        .push(AsmHistoricalPoint {
-            point: 35,
-            position: Point3::new(12.0, 0.0, 0.0),
-        });
-    state1_absorbed_verts
-        .point_positions
-        .push(AsmHistoricalPoint {
-            point: 36,
-            position: Point3::new(15.0, 5.0, 5.0),
-        });
-    state1_absorbed_verts
-        .point_positions
-        .sort_by_key(|p| p.point);
+        },
+    ]);
+    state1_half_verts.vertex_points.sort_by_key(|v| v.entity);
+    state1_half_verts.point_positions.push(AsmHistoricalPoint {
+        point: 36,
+        position: Point3::new(19.0, 9.0, 9.0),
+    });
+    state1_half_verts.point_positions.sort_by_key(|p| p.point);
 
-    // 1. Growing host covers b2's bounds, but b1 lacks b2's unique vertices -> not absorbed.
-    let history_unabsorbed = crate::test_support::history::history(
-        "f3d:asm-history#abs-1".into(),
+    let history_half = crate::test_support::history::history(
+        "f3d:asm-history#abs-half".into(),
         0,
         None,
         false,
         vec![
-            state(1, 1, Some(0), state1_unabsorbed_verts),
+            state(1, 1, Some(0), state1_half_verts),
             state(0, 0, None, state0_base.clone()),
         ],
     );
-    let mut feat_unabsorbed = split_body_test_feature(&scope.id);
+    let mut feat_half = combine_join_test_feature(&scope.id, Some(1), Some(2));
     bind_feature_outputs(
-        std::slice::from_mut(&mut feat_unabsorbed),
+        std::slice::from_mut(&mut feat_half),
         std::slice::from_ref(&scope),
-        &mut [history_unabsorbed],
+        &mut [history_half],
         &[],
         &Default::default(),
         None,
     )
     .unwrap();
     assert_eq!(
-        feat_unabsorbed
+        feat_half
             .source_properties
             .get(&cadmpeg_core::nonblank_literal!("deleted_bodies")),
         None
     );
 
-    // 2. Growing host covers b2's bounds and absorbs b2's vertices, and b2 is not active -> absorbed.
-    let history_absorbed = crate::test_support::history::history(
-        "f3d:asm-history#abs-2".into(),
+    // State where b1 has all of b2's vertex positions, using distinct carriers (35, 36).
+    let mut state1_distinct_carriers = state1_unabsorbed_verts.clone();
+    state1_distinct_carriers
+        .loop_coedges
+        .iter_mut()
+        .find(|r| r.owner_ref == 5)
+        .unwrap()
+        .member_refs
+        .extend([30, 31]);
+    state1_distinct_carriers.coedge_topology.extend([
+        AsmHistoricalCoedge {
+            coedge: 30,
+            owner_loop: 5,
+            edge: 32,
+            next: 31,
+            previous: 31,
+            radial_next: 31,
+        },
+        AsmHistoricalCoedge {
+            coedge: 31,
+            owner_loop: 5,
+            edge: 32,
+            next: 30,
+            previous: 30,
+            radial_next: 30,
+        },
+    ]);
+    state1_distinct_carriers
+        .coedge_topology
+        .sort_by_key(|c| c.coedge);
+    state1_distinct_carriers
+        .edge_vertices
+        .push(AsmHistoricalEdge {
+            edge: 32,
+            start_vertex: 33,
+            end_vertex: 34,
+        });
+    state1_distinct_carriers
+        .edge_vertices
+        .sort_by_key(|e| e.edge);
+    state1_distinct_carriers.vertex_points.extend([
+        AsmHistoricalCarrierBinding {
+            entity: 33,
+            carrier: 35,
+        },
+        AsmHistoricalCarrierBinding {
+            entity: 34,
+            carrier: 36,
+        },
+    ]);
+    state1_distinct_carriers
+        .vertex_points
+        .sort_by_key(|v| v.entity);
+    state1_distinct_carriers.point_positions.extend([
+        AsmHistoricalPoint {
+            point: 35,
+            position: Point3::new(12.0, 0.0, 0.0),
+        },
+        AsmHistoricalPoint {
+            point: 36,
+            position: Point3::new(15.0, 5.0, 5.0),
+        },
+    ]);
+    state1_distinct_carriers
+        .point_positions
+        .sort_by_key(|p| p.point);
+
+    // 1. Without operand identity or carrier transfer, distinct carriers leave absorption unresolved.
+    let history_distinct = crate::test_support::history::history(
+        "f3d:asm-history#abs-distinct".into(),
         0,
         None,
         false,
         vec![
-            state(1, 1, Some(0), state1_absorbed_verts.clone()),
-            state(0, 0, None, state0_base),
+            state(1, 1, Some(0), state1_distinct_carriers.clone()),
+            state(0, 0, None, state0_base.clone()),
         ],
     );
-    let mut feat_absorbed = split_body_test_feature(&scope.id);
+    let mut feat_unresolved_combine = combine_join_test_feature(&scope.id, None, None);
     bind_feature_outputs(
-        std::slice::from_mut(&mut feat_absorbed),
+        std::slice::from_mut(&mut feat_unresolved_combine),
         std::slice::from_ref(&scope),
-        &mut [history_absorbed.clone()],
+        &mut [history_distinct.clone()],
         &[],
         &Default::default(),
         None,
     )
     .unwrap();
     assert_eq!(
-        feat_absorbed
+        feat_unresolved_combine
+            .source_properties
+            .get(&cadmpeg_core::nonblank_literal!("deleted_bodies")),
+        None
+    );
+
+    // 2. Unsupported operation (SplitBody) never marks absorption even when carriers and positions match.
+    let mut state1_shared_carriers = state1_distinct_carriers.clone();
+    for vp in &mut state1_shared_carriers.vertex_points {
+        if vp.entity == 33 {
+            vp.carrier = 120;
+        } else if vp.entity == 34 {
+            vp.carrier = 121;
+        }
+    }
+    let history_shared_carriers = crate::test_support::history::history(
+        "f3d:asm-history#abs-shared".into(),
+        0,
+        None,
+        false,
+        vec![
+            state(1, 1, Some(0), state1_shared_carriers),
+            state(0, 0, None, state0_base),
+        ],
+    );
+    let mut feat_split = split_body_test_feature(&scope.id);
+    bind_feature_outputs(
+        std::slice::from_mut(&mut feat_split),
+        std::slice::from_ref(&scope),
+        &mut [history_shared_carriers.clone()],
+        &[],
+        &Default::default(),
+        None,
+    )
+    .unwrap();
+    assert_eq!(
+        feat_split
+            .source_properties
+            .get(&cadmpeg_core::nonblank_literal!("deleted_bodies")),
+        None
+    );
+
+    // 3. Supported Combine Join with explicit operand identity marks b2 absorbed when not active.
+    let mut feat_identity = combine_join_test_feature(&scope.id, Some(1), Some(2));
+    bind_feature_outputs(
+        std::slice::from_mut(&mut feat_identity),
+        std::slice::from_ref(&scope),
+        &mut [history_distinct],
+        &[],
+        &Default::default(),
+        None,
+    )
+    .unwrap();
+    assert_eq!(
+        feat_identity
             .source_properties
             .get(&cadmpeg_core::nonblank_literal!("deleted_bodies")),
         Some(&"2".to_string())
     );
 
-    // 3. Same as (2), but b2 is in active_bodies -> excluded from absorption.
+    // 4. Supported Combine Join with carrier-transfer evidence marks b2 absorbed when not active.
+    let mut feat_carrier_transfer = combine_join_test_feature(&scope.id, None, None);
+    bind_feature_outputs(
+        std::slice::from_mut(&mut feat_carrier_transfer),
+        std::slice::from_ref(&scope),
+        &mut [history_shared_carriers.clone()],
+        &[],
+        &Default::default(),
+        None,
+    )
+    .unwrap();
+    assert_eq!(
+        feat_carrier_transfer
+            .source_properties
+            .get(&cadmpeg_core::nonblank_literal!("deleted_bodies")),
+        Some(&"2".to_string())
+    );
+
+    // 5. Same as (4), but b2 is in active_bodies -> excluded from absorption.
     let mut active_b2 = super::active_body();
-    active_b2.id = cadmpeg_ir::ids::BodyId::mint("f3d:brep:entity#2").unwrap();
-    let mut feat_active = split_body_test_feature(&scope.id);
+    active_b2.id = BodyId::mint("f3d:brep:entity#2").unwrap();
+    let mut feat_active = combine_join_test_feature(&scope.id, Some(1), Some(2));
     bind_feature_outputs(
         std::slice::from_mut(&mut feat_active),
         std::slice::from_ref(&scope),
-        &mut [history_absorbed],
+        &mut [history_shared_carriers],
         &[active_b2],
         &Default::default(),
         None,
