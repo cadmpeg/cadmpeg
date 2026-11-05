@@ -853,7 +853,7 @@ member as a neutral suppression or visibility state.
 
 **Known.** `siemens_nx.md` §2.3 "An assembly placement frame in `/Root/UG_PART/UG_PART` begins with" defines the complete matrix and text frame. `siemens_nx.md` §2.3 "An assembly placement frame at the start" joins a frame to its bounded object record. `siemens_nx.md` §2.3 "The native placement retains" excludes an ordinal join by source order. The decoder reports `assembly.occurrences-unresolved` when it retains assembly uses or placement frames without a neutral occurrence graph.
 
-**Need.** Identify the child occurrence and translation unit to apply the matrix to external child geometry. Bind the bounded unit selector and its value to the placement translations. Compare inch and metric models against independently matching geometry.
+**Need.** Identify the child occurrence and how the placement translations obtain their unit. Compare inch and metric models against independently matching geometry.
 
 **Conflict.** Repeated UUIDs identify groups of placement records. They do not select a distinct repeated child occurrence. In the NIST MTC assembly, 34 of 36 candidate FastLoad endpoint values resolve to placement owners. Pairing those endpoint rows with FastLoad occurrences by position matches 25 of 36 UUIDs; two endpoint values address other object records. The five-byte trailer has no established instance or unit role.
 
