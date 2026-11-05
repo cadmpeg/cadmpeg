@@ -105,25 +105,54 @@ fn encode(
                 serde_json::from_value::<cadmpeg_ir::transform::Transform>(value).ok()
             }) == Some(transform);
             if !same {
-                fields
-                    .values
-                    .insert("translation".into(), serde_json::json!([0.0, 0.0, 0.0]));
-                fields.values.insert(
-                    "scale".into(),
-                    if arena == "network_instances" {
-                        serde_json::json!([1.0, 1.0, 1.0])
-                    } else {
-                        serde_json::json!(1.0)
-                    },
-                );
-                let mut rows = [[cadmpeg_ir::scalar::FiniteReal::ONE; 4]; 3];
-                for (row, values) in rows.iter_mut().zip(transform.affine_rows()) {
-                    for (slot, value) in row.iter_mut().zip(values) {
-                        *slot = cadmpeg_ir::scalar::FiniteReal::new(value)
-                            .ok_or("occurrence placement is not finite")?;
+                let affine = transform.affine_rows();
+                let scale = [affine[0][0], affine[1][1], affine[2][2]];
+                let diagonal = (0..3)
+                    .all(|row| (0..3).all(|column| row == column || affine[row][column] == 0.0))
+                    && scale.iter().all(|value| *value > 0.0);
+                let has_source_transform = record
+                    .field("transformation")
+                    .is_some_and(|value| !value.is_null());
+                let direct = diagonal
+                    && !has_source_transform
+                    && (arena == "network_instances"
+                        || (arena == "subfigure_instances"
+                            && scale[0] == scale[1]
+                            && scale[1] == scale[2]));
+                if direct {
+                    fields.values.insert(
+                        "translation".into(),
+                        serde_json::json!([affine[0][3], affine[1][3], affine[2][3]]),
+                    );
+                    fields.values.insert(
+                        "scale".into(),
+                        if arena == "network_instances" {
+                            serde_json::json!(scale)
+                        } else {
+                            serde_json::json!(scale[0])
+                        },
+                    );
+                } else {
+                    fields
+                        .values
+                        .insert("translation".into(), serde_json::json!([0.0, 0.0, 0.0]));
+                    fields.values.insert(
+                        "scale".into(),
+                        if arena == "network_instances" {
+                            serde_json::json!([1.0, 1.0, 1.0])
+                        } else {
+                            serde_json::json!(1.0)
+                        },
+                    );
+                    let mut rows = [[cadmpeg_ir::scalar::FiniteReal::ONE; 4]; 3];
+                    for (row, values) in rows.iter_mut().zip(transform.affine_rows()) {
+                        for (slot, value) in row.iter_mut().zip(values) {
+                            *slot = cadmpeg_ir::scalar::FiniteReal::new(value)
+                                .ok_or("occurrence placement is not finite")?;
+                        }
                     }
+                    placement = Some(super::super::Placement { rows });
                 }
-                placement = Some(super::super::Placement { rows });
             }
         }
     }
