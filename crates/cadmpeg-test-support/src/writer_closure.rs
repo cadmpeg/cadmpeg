@@ -507,7 +507,7 @@ pub fn edit_findings(
                         "edit {at} (fidelity {with}) does not reach the output: write refused"
                     ));
                     continue;
-                };
+                }
                 let outcome = redecode(&bytes).and_then(|after| {
                     Allowances::export(&expected, &report_json)
                         .map_err(|error| error.to_string())
