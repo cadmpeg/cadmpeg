@@ -298,7 +298,7 @@ fn view_sources(
     losses: &mut Vec<LossNote>,
 ) {
     use cadmpeg_ir::references::ReferenceTarget;
-    if drawing.relationships.get("XSource").is_some() {
+    if drawing.relationships.contains_key("XSource") {
         view_xsources(drawing, object, "XSource", names, losses);
     } else {
         let empty = object
