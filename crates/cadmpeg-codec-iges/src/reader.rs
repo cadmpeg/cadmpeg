@@ -793,7 +793,6 @@ impl<'a> PhysicalParse<'a> {
                     .map(|position| before + position);
             }
         }
-        let mut scan = scan;
         let mut framing_recoveries = std::mem::take(&mut scan.recoveries);
         framing_recoveries.merge(parameter_recoveries)?;
         Ok(Self {
