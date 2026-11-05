@@ -419,10 +419,16 @@ fn decode_retains_generated_asm_history_graph() {
 
 #[test]
 fn generated_f3d_rewrites_fixed_delta_state_header() {
-    let source = f3d_with_smbh(&synthetic_geometry_with_history_smbh());
+    let source = f3d_with_smbh(
+        &crate::test_support::smbh_geometry_test::synthetic_geometry_with_typed_history_smbh(),
+    );
     let decoded = F3dCodec
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .expect("generated history decode");
+    assert!(!decoded
+        .source_fidelity()
+        .unrepresented()
+        .contains(&cadmpeg_ir::document::ArenaClass::Design));
     let (mut edited, _, fidelity) = decoded.into_parts();
     update_f3d_native(&mut edited, |native| {
         let history = &mut native.asm_histories[0];
@@ -433,13 +439,6 @@ fn generated_f3d_rewrites_fixed_delta_state_header() {
             history_entry_count: 120,
         });
         history.states_mut()[0].state_id = 8;
-        history.states_mut()[0].version_flag = 4;
-        history.states_mut()[0].state_flag = 6;
-        history.states_mut()[0].previous_ref = Some(12);
-        history.states_mut()[0].next_ref = Some(14);
-        history.states_mut()[0].node_index = 16;
-        history.states_mut()[0].partner_ref = Some(18);
-        history.states_mut()[0].owner_ref = 20;
         let board = &mut history.states_mut()[0].bulletin_boards[0];
         assert!(board.byte_offset > Some(0));
         board.owner_ref = 22;
@@ -466,13 +465,15 @@ fn generated_f3d_rewrites_fixed_delta_state_header() {
         Some(120)
     );
     assert_eq!(state.state_id, 8);
-    assert_eq!(state.version_flag, 4);
-    assert_eq!(state.state_flag, 6);
-    assert_eq!(state.previous_ref, Some(12));
-    assert_eq!(state.next_ref, Some(14));
-    assert_eq!(state.node_index, 16);
-    assert_eq!(state.partner_ref, Some(18));
-    assert_eq!(state.owner_ref, 20);
+    assert_eq!(state.version_flag, 1);
+    assert_eq!(state.state_flag, 0);
+    assert_eq!(state.previous_ref, None);
+    assert_eq!(state.next_ref, Some(1));
+    assert_eq!(state.node_index, 0);
+    assert_eq!(state.partner_ref, None);
+    assert_eq!(state.owner_ref, 0);
+    assert_eq!(native.asm_histories[0].states()[1].previous_ref, Some(0));
+    assert!(!state.bulletin_boards.is_empty());
     let board = &state.bulletin_boards[0];
     assert_eq!(board.owner_ref, 22);
     assert_eq!(board.number, 24);
@@ -483,6 +484,28 @@ fn generated_f3d_rewrites_fixed_delta_state_header() {
     assert_eq!(board.changes[0].old_ref(), Some(26));
     assert_eq!(board.changes[0].new_ref(), None);
     assert_eq!(board.changes[1].new_ref(), Some(28));
+}
+
+#[test]
+fn generated_f3d_rejects_an_incoherent_delta_state_header() {
+    let source = f3d_with_smbh(&synthetic_geometry_with_history_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(&source), &DecodeOptions::default())
+        .expect("generated history decode");
+    let (mut edited, _, fidelity) = decoded.into_parts();
+    update_f3d_native(&mut edited, |native| {
+        let state = &mut native.asm_histories[0].states_mut()[0];
+        state.version_flag = 4;
+        state.state_flag = 6;
+        state.previous_ref = Some(12);
+        state.next_ref = Some(14);
+        state.node_index = 16;
+    });
+    let error = crate::test_support::plan_inherited_write(&edited, &fidelity, &mut Vec::new())
+        .expect_err("an incoherent history cannot be serialized");
+    assert!(error
+        .to_string()
+        .contains("coherent doubly linked state chain"));
 }
 
 #[test]
