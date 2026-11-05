@@ -22,23 +22,6 @@ pub(crate) fn plan(
         crate::writer::REDUCED_FIELDS.is_empty(),
         "IGES stores no reduced fields"
     );
-    // Synthesis visits every input record, so the caller's entity ceiling
-    // applies to the input record count before any building (#217 §5.0).
-    {
-        use cadmpeg_core::decode::{
-            u64_from_index, DecodeArena, DecodeContext, DecodeDepth, DecodeMode, DecodePolicy,
-        };
-        let arena = DecodeArena::new();
-        let policy = DecodePolicy {
-            mode: DecodeMode::Salvage,
-            limits: input.limits,
-        };
-        let ctx = DecodeContext::new(&arena, &policy, DecodeDepth::Geometry);
-        ctx.charge_entities(
-            u64_from_index(input.ir.census().values().sum()),
-            "write IGES records",
-        )?;
-    }
     match resolved.target() {
         ResolvedTarget::Explicit { index, .. }
         | ResolvedTarget::Inherited { index, .. }
@@ -101,7 +84,29 @@ fn synthesized_body(
     let (consumption, loss) = cause.into_fidelity();
     let mut losses = loss.into_iter().collect::<Vec<_>>();
     let recovered = cadmpeg_ir::codec::write::edge_recovery::recover_edge_curves(input.ir)?;
-    let synthesis = super::synthesize(&recovered.document, version)?;
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy {
+        limits: input.limits,
+        ..cadmpeg_core::decode::DecodePolicy::default()
+    };
+    let ctx = cadmpeg_core::decode::DecodeContext::for_encode(&arena, &policy);
+    let session = cadmpeg_core::encode::EncodeSession::from_context(&ctx)?;
+    let synthesis = super::synthesize_with_admission(&recovered.document, version, |entities| {
+        session.charge_entities(
+            cadmpeg_core::decode::u64_from_index(entities.len()),
+            "write IGES entities",
+        )?;
+        session.charge_entities(
+            cadmpeg_core::decode::u64_from_index(
+                entities
+                    .iter()
+                    .filter(|entity| entity.transform.is_some())
+                    .count(),
+            ),
+            "write IGES transformation entities",
+        )?;
+        Ok(())
+    })?;
     losses.extend(synthesis.losses.clone());
     if !recovered.sampled_agreements.is_empty() {
         losses.push(IgesLossCode::EdgePcurveAgreementSampled.note(format!(
