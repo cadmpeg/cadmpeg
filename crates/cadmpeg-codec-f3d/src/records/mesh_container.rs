@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Decoded ParaMesh containers without a Design placement join.
+//! Decoded `ParaMesh` containers without a Design placement join.
 
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::tessellation::{TessellationChannel, TessellationTriangleGroup};
