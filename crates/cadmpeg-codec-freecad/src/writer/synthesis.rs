@@ -875,7 +875,7 @@ pub(super) fn write(
                 .join(", ");
             losses.push(
                 FreecadLossCode::BodyNameNotTransferred
-                    .note(format!("object {name} has no Label home for bodies {ids}",)),
+                    .note(format!("object {name} has no Label home for bodies {ids}")),
             );
         }
         // Independent body color and visibility live in the view provider
