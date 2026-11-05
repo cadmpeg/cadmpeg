@@ -552,8 +552,36 @@ impl<'a> WritableObjectCurve<'a> {
                 Some(ObjectCurveGeometry::Circle(circle))
             }
             Some(SolvedCurveGeometry::Nurbs(nurbs)) => {
-                check_nurbs_curve(curve.id.as_str(), nurbs)?;
-                Some(ObjectCurveGeometry::Nurbs(nurbs))
+                match check_nurbs_curve(curve.id.as_str(), nurbs) {
+                    Ok(()) => Some(ObjectCurveGeometry::Nurbs(nurbs)),
+                    Err(WriteError::Omit(_)) if nurbs.periodic() => {
+                        let range = curve
+                            .parameter_range
+                            .or_else(|| cadmpeg_ir::eval::nurbs_curve_parameter_domain(nurbs))
+                            .ok_or_else(|| {
+                                WriteError::Omit(format!(
+                                    "curve {} periodic carrier has no bounded domain",
+                                    curve.id
+                                ))
+                            })?;
+                        let range = [FiniteReal::new(range.lower()), FiniteReal::new(range.upper())];
+                        let [Some(lo), Some(hi)] = range else {
+                            return Err(WriteError::Omit(format!(
+                                "curve {} periodic domain is not finite",
+                                curve.id
+                            )));
+                        };
+                        let converted =
+                            super::conics::unperiod_curve(curve.id.as_str(), nurbs, [lo, hi])?;
+                        check_nurbs_curve(curve.id.as_str(), &converted)?;
+                        conversion = Some(RhinoLossCode::WriterCarrierResolved.note(format!(
+                            "curve {} periodic NURBS carrier was clamped to its exact bounded span",
+                            curve.id
+                        )));
+                        Some(ObjectCurveGeometry::NurbsOwned(converted))
+                    }
+                    Err(error) => return Err(error),
+                }
             }
             Some(SolvedCurveGeometry::Polyline(polyline)) => {
                 let range = curve.parameter_range.map(|range| range.endpoints());
@@ -1229,11 +1257,11 @@ impl<'a> WritableModel<'a> {
                     (geometry, expected_start.get(), expected_end.get())
                 }
                 SolvedCurveGeometry::Nurbs(nurbs) => {
-                    check_nurbs_curve(carrier.id.as_str(), &nurbs)?;
                     let count = nurbs.control_points().len();
                     if nurbs.periodic() {
                         let converted =
                             super::conics::unperiod_curve(edge.id.as_str(), &nurbs, domain)?;
+                        check_nurbs_curve(carrier.id.as_str(), &converted)?;
                         let geometry = WritableEdgeCurve::NurbsOwned(converted);
                         let (expected_start, expected_end) =
                             converted_endpoints(&geometry, domain, edge.id.as_str())?;
@@ -1246,6 +1274,7 @@ impl<'a> WritableModel<'a> {
                         ));
                         (geometry, expected_start, expected_end)
                     } else {
+                        check_nurbs_curve(carrier.id.as_str(), &nurbs)?;
                         if [
                             nurbs.knots()[usize::try_from(nurbs.degree()).map_err(|_| {
                                 CodecError::Malformed("Rhino count exceeds address space".into())

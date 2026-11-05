@@ -487,7 +487,6 @@ fn curve_payload(
             WritableEdgeCurve::Circle(*circle)
         }
         Some(SolvedCurveGeometry::Nurbs(nurbs)) => {
-            check_nurbs_curve(curve.id.as_str(), nurbs)?;
             let degree = usize::try_from(nurbs.degree()).map_err(|_| {
                 WriteError::Fail(CodecError::InvalidInput(
                     "NURBS degree exceeds address space".into(),
@@ -502,12 +501,14 @@ fn curve_payload(
                     )));
                 };
                 let converted = super::conics::unperiod_curve(curve.id.as_str(), nurbs, range)?;
+                check_nurbs_curve(curve.id.as_str(), &converted)?;
                 conversion = Some(RhinoLossCode::WriterCarrierResolved.note(format!(
                     "wire edge {} periodic NURBS carrier {} was clamped to an exact nonperiodic span",
                     edge.id, curve.id
                 )));
                 WritableEdgeCurve::NurbsOwned(converted)
             } else {
+                check_nurbs_curve(curve.id.as_str(), nurbs)?;
                 if [
                     nurbs.knots()[degree],
                     nurbs.knots()[nurbs.control_points().len()],

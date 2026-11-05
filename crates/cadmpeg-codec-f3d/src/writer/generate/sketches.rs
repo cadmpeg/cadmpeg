@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Author legacy sketch containers, isolated points and line members.
+//! Author legacy sketch containers, points and analytic curve members.
 
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
@@ -24,6 +24,7 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
     let mut points = Vec::new();
     let mut companions = Vec::new();
     let mut lines = Vec::new();
+    let mut circles = Vec::new();
     let mut sketches = Vec::new();
     let mut entities = Vec::new();
     let mut containers_used = std::collections::BTreeSet::new();
@@ -68,7 +69,6 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
             || sketch.native_ref.is_some()
             || sketch.configuration.is_some()
             || sketch.visible.is_some()
-            || !sketch.profiles.is_empty()
             || target
                 .model
                 .sketch_constraints
@@ -89,7 +89,8 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
                 || row.geometry_ref.is_some()
                 || !row.endpoint_refs.is_empty()
                 || match row.geometry.definition() {
-                    SketchGeometryDefinition::Point { .. } => false,
+                    SketchGeometryDefinition::Point { .. }
+                    | SketchGeometryDefinition::Circle { .. } => false,
                     SketchGeometryDefinition::Line { start, end } => {
                         let start = start.get();
                         let end = end.get();
@@ -119,6 +120,35 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
         }
         if member_indices.len() != members.len() {
             break;
+        }
+        let mut circle_profiles = members
+            .iter()
+            .zip(&member_indices)
+            .filter_map(|(member, (index, _))| {
+                matches!(
+                    member.geometry.definition(),
+                    SketchGeometryDefinition::Circle { .. }
+                )
+                .then(|| {
+                    (
+                        crate::ids::neutral_sketch_curve_id(&sketch.id, u64::from(*index), 0),
+                        member.id().clone(),
+                    )
+                })
+            })
+            .collect::<Vec<_>>();
+        circle_profiles.sort_by(|a, b| a.0.cmp(&b.0));
+        let expected_profiles = circle_profiles
+            .into_iter()
+            .map(|(_, entity)| {
+                vec![cadmpeg_ir::sketches::SketchEntityUse {
+                    entity,
+                    reversed: false,
+                }]
+            })
+            .collect::<Vec<_>>();
+        if sketch.profiles.as_slice() != expected_profiles {
+            continue;
         }
         mark(&mut primary, container, bulk.len())?;
         header(&mut bulk, "256", container)?;
@@ -175,6 +205,33 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
         containers.push(u64::from(container));
         heads.push(u64::from(head));
         for (member, (point, companion)) in members.iter().zip(member_indices) {
+            if let SketchGeometryDefinition::Circle { center, radius } =
+                member.geometry.definition()
+            {
+                let center = center.get();
+                mark(&mut primary, point, bulk.len())?;
+                curve_header(&mut bulk, "262", point)?;
+                for value in [
+                    center.u / 10.0,
+                    center.v / 10.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    1.0,
+                    1.0,
+                    0.0,
+                    0.0,
+                    radius.get() / 10.0,
+                    0.0,
+                    std::f64::consts::TAU,
+                ] {
+                    bulk.extend_from_slice(&value.to_le_bytes());
+                }
+                reference(&mut bulk, container);
+                circles.push(u64::from(point));
+                entities.push(member.id().clone());
+                continue;
+            }
             if let SketchGeometryDefinition::Line { start, end } = member.geometry.definition() {
                 let start = start.get();
                 let end = end.get();
@@ -182,18 +239,7 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
                 let dy = end.v - start.v;
                 let length = dx.hypot(dy);
                 mark(&mut primary, point, bulk.len())?;
-                header(&mut bulk, "261", point)?;
-                bulk.extend_from_slice(&[0; 9]);
-                bulk.push(1);
-                bulk.extend_from_slice(&2u32.to_le_bytes());
-                for (name, value) in [
-                    ("crv_primary_id", u64::from(point)),
-                    ("crv_secondary_id", 0),
-                ] {
-                    native_lp_ascii(&mut bulk, name)?;
-                    native_lp_ascii(&mut bulk, "IntrinsicMetaTypeuint64")?;
-                    bulk.extend_from_slice(&value.to_le_bytes());
-                }
+                curve_header(&mut bulk, "261", point)?;
                 for value in [
                     start.u / 10.0,
                     start.v / 10.0,
@@ -293,6 +339,13 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
             "Geometry",
             lines,
         ),
+        (
+            "F0130424-8B7E-4092-93C9-1CA807482534",
+            "9FF71F46-205F-484B-A2B5-A245D0D8FE33",
+            0,
+            "Geometry",
+            circles,
+        ),
     ]
     .into_iter()
     .map(|(guid, base, version, module, entity_ids)| {
@@ -341,6 +394,19 @@ fn reference(out: &mut Vec<u8>, id: u32) {
     out.push(1);
     out.extend_from_slice(&id.to_le_bytes());
     out.extend_from_slice(&[0; 6]);
+}
+
+fn curve_header(out: &mut Vec<u8>, tag: &str, id: u32) -> Result<(), CodecError> {
+    header(out, tag, id)?;
+    out.extend_from_slice(&[0; 9]);
+    out.push(1);
+    out.extend_from_slice(&2u32.to_le_bytes());
+    for (name, value) in [("crv_primary_id", u64::from(id)), ("crv_secondary_id", 0)] {
+        native_lp_ascii(out, name)?;
+        native_lp_ascii(out, "IntrinsicMetaTypeuint64")?;
+        out.extend_from_slice(&value.to_le_bytes());
+    }
+    Ok(())
 }
 
 fn allocate(occupied: &mut std::collections::BTreeSet<u32>, next: &mut u32) -> Option<u32> {
