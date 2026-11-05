@@ -1227,3 +1227,137 @@ fn boolean_feature_order_follows_current_ordinals() {
     };
     assert!(ordinal("SECOND") < ordinal("FIRST"));
 }
+
+#[test]
+fn edited_rectangular_pattern_grid_reaches_output() {
+    use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use cadmpeg_ir::features::patterns::{PatternKind, PatternTransform};
+    use cadmpeg_ir::features::{Dimension, FeatureDefinition, FeatureOperation};
+    use std::io::Cursor;
+    let entities = [
+        (116, "BASE", "116,0,0,0,0;"),
+        (412, "RECT", "412,1,1,0,0,0,2,1,4,2,0.0,0,0;"),
+    ]
+    .into_iter()
+    .map(|(entity_type, label, parameters)| OwnedTestEntity {
+        entity_type,
+        form: 0,
+        label: label.into(),
+        status: "00000000",
+        parameters: parameters.into(),
+    })
+    .collect::<Vec<_>>();
+    let decoded = crate::IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&entities)),
+            &DecodeOptions::default(),
+        )
+        .expect("rectangular array decodes");
+    let mut ir = decoded.ir().clone();
+    let feature = ir
+        .model
+        .features
+        .iter_mut()
+        .find(|feature| feature.name.as_deref() == Some("RECT"))
+        .expect("rectangular feature");
+    let mut definition = feature.evaluation.definition().clone();
+    let FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) = &mut definition
+    else {
+        panic!("pattern")
+    };
+    let mut transform = pattern.definition().clone();
+    let PatternTransform::Linear { count, .. } = &mut transform else {
+        panic!("linear pattern")
+    };
+    *count = Dimension::Literal(3);
+    *pattern = PatternKind::new(transform).expect("edited grid remains valid");
+    feature.evaluation.set_definition(definition);
+    let output =
+        super::super::synthesize(&ir, crate::IgesVersion::V5_3).expect("edited array synthesizes");
+    let export_losses = output.losses.clone();
+    let after = crate::IgesCodec
+        .decode(&mut Cursor::new(output.bytes), &DecodeOptions::default())
+        .expect("array re-decodes");
+    let feature = after
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("RECT"))
+        .unwrap_or_else(|| {
+            panic!(
+                "written array feature; export: {export_losses:?}; decode: {:?}; features: {:?}",
+                after.report().losses,
+                after.ir().model.features
+            )
+        });
+    let FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) =
+        feature.evaluation.definition()
+    else {
+        panic!("written pattern")
+    };
+    let PatternTransform::Linear { count, .. } = pattern.definition() else {
+        panic!("written linear pattern")
+    };
+    assert_eq!(*count, Dimension::Literal(3));
+}
+
+#[test]
+fn unsupported_rectangular_omission_mask_is_reported() {
+    use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use cadmpeg_ir::features::patterns::{PatternKind, PatternTransform};
+    use cadmpeg_ir::features::{Dimension, FeatureDefinition, FeatureOperation};
+    use std::io::Cursor;
+    let entities = [
+        (116, "BASE", "116,0,0,0,0;"),
+        (412, "RECT", "412,1,1,0,0,0,2,1,4,2,0.0,1,1,2;"),
+    ]
+    .into_iter()
+    .map(|(entity_type, label, parameters)| OwnedTestEntity {
+        entity_type,
+        form: 0,
+        label: label.into(),
+        status: "00000000",
+        parameters: parameters.into(),
+    })
+    .collect::<Vec<_>>();
+    let decoded = crate::IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&entities)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let feature = ir
+        .model
+        .features
+        .iter_mut()
+        .find(|feature| feature.name.as_deref() == Some("RECT"))
+        .unwrap();
+    let feature_id = feature.id.to_string();
+    let mut definition = feature.evaluation.definition().clone();
+    let FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) = &mut definition
+    else {
+        panic!("pattern")
+    };
+    let mut transform = pattern.definition().clone();
+    let PatternTransform::Linear { count, .. } = &mut transform else {
+        panic!("linear pattern")
+    };
+    *count = Dimension::Literal(3);
+    *pattern = PatternKind::new(transform).unwrap();
+    feature.evaluation.set_definition(definition);
+    let output = super::super::synthesize(&ir, crate::IgesVersion::V5_3).unwrap();
+    assert!(output
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(&feature_id)));
+    let after = crate::IgesCodec
+        .decode(&mut Cursor::new(output.bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(after.report().losses.iter().all(|loss| !loss
+        .message
+        .contains("array base, dimensions, selection mask")));
+}
