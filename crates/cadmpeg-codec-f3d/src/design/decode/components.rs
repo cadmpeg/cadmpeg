@@ -153,11 +153,12 @@ fn scan_stream_occurrences(
             .and_then(|end| exact_component_occurrence_frame(bytes, start, end, scope))
             .or_else(|| attributed_component_occurrence(bytes, start, scope))
         {
-            if let Some(loss) = unproven_identity_loss(&occurrence)
-                .or_else(|| unregistered_source_loss(&occurrence, source_entities))
-            {
+            if let Some(loss) = unproven_identity_loss(&occurrence) {
                 losses.push(loss);
             } else {
+                // A readable frame projects even when its source registration
+                // disagrees; the loss names that assumption.
+                losses.extend(unregistered_source_loss(&occurrence, source_entities));
                 stream_occurrences.push(occurrence);
             }
         }
@@ -259,7 +260,7 @@ fn unregistered_source_loss(
     let source = occurrence.source_record_index()?;
     (!registered.contains(&source)).then(|| {
         crate::loss::F3dLossCode::LocalOccurrenceSourceUnregistered.note(format!(
-            "local component occurrence {} names source record {source}, which its Design segment does not register to the occurrence source type",
+            "local component occurrence {} names source record {source}, which its Design segment does not register to the occurrence source type; the occurrence projects from its frame as if the source were registered",
             occurrence.id
         ))
     })
@@ -1551,7 +1552,7 @@ mod tests {
     }
 
     #[test]
-    fn attributed_occurrence_source_must_be_registered_to_the_source_type() {
+    fn attributed_occurrence_with_an_unregistered_source_projects_with_a_loss() {
         use crate::metastream::MetaStream;
         let bytes = attributed_with_source_record();
         let row = |guid: &str, entities: &[u64]| crate::records::entity_header::SegmentTypeData {
@@ -1592,14 +1593,16 @@ mod tests {
         assert_eq!(kept.len(), 1);
         assert!(losses.is_empty());
 
-        // Another type lists the target, or no row lists it: refused.
+        // Another type lists the target, or no row lists it: the readable
+        // occurrence still projects, with a loss naming the assumption.
         for meta in [
             meta_with(&[], &[90]),
             meta_with(&[91], &[90]),
             meta_with(&[], &[]),
         ] {
             let (kept, losses) = scan(&meta);
-            assert!(kept.is_empty());
+            assert_eq!(kept.len(), 1);
+            assert_eq!(kept[0].source_record_index(), Some(90));
             assert_eq!(losses.len(), 1);
             assert_eq!(
                 losses[0].code,

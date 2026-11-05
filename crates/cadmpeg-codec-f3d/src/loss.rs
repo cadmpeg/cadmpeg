@@ -100,7 +100,7 @@ pub(crate) enum F3dLossCode {
     /// An identity carrier has an unresolved later ordinal.
     LocalOccurrenceIdentityOrdinalUnresolved,
     /// An attributed occurrence whose source reference names no record of the occurrence source
-    /// type in its Design segment.
+    /// type in its Design segment; the occurrence projects from its frame.
     LocalOccurrenceSourceUnregistered,
     /// Saved free-edge bodies without a product-definition owner.
     SavedFreeEdgeBodyUnowned,
