@@ -32,11 +32,9 @@ use std::collections::{BTreeMap, BTreeSet};
 mod annotations;
 mod attributes;
 mod drawings;
-mod evidence;
 mod fem;
 mod patterns;
 mod products;
-pub(crate) use evidence::untyped_records;
 
 /// Arena names emitted by the typed IGES native store.
 pub(crate) const ARENAS: &[&str] = &[
