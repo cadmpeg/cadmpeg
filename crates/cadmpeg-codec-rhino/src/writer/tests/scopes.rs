@@ -225,6 +225,64 @@ fn wire_brep_retains_edge_and_endpoints_and_names_unrepresented_ownership() {
 }
 
 #[test]
+fn bounded_circular_wire_keeps_its_edge_and_exact_arc() {
+    const POSITION_TOLERANCE: f64 = 1e-10;
+    let mut ir = wire(BodyKind::Wire);
+    let edge = &mut ir.model.edges[0];
+    edge.set_param_range(Some([0.0, std::f64::consts::FRAC_PI_2].try_into().unwrap()));
+    let endpoints = [edge.start.clone(), edge.end.clone()];
+    let curve = &mut ir.model.curves[0];
+    curve.parameter_range = Some([0.0, std::f64::consts::FRAC_PI_2].try_into().unwrap());
+    curve.geometry = cadmpeg_ir::geometry::CurveGeometry::Solved(
+        cadmpeg_ir::geometry::SolvedCurveGeometry::Circle(
+            cadmpeg_ir::geometry::analytic::CircleCurve::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                4.0,
+            )
+            .unwrap(),
+        ),
+    );
+    for (vertex_id, position) in endpoints
+        .into_iter()
+        .zip([Point3::new(4.0, 0.0, 0.0), Point3::new(0.0, 4.0, 0.0)])
+    {
+        let vertex = ir
+            .model
+            .vertices
+            .iter()
+            .find(|vertex| vertex.id == vertex_id)
+            .unwrap();
+        let point = ir
+            .model
+            .points
+            .iter_mut()
+            .find(|point| point.id == vertex.point)
+            .unwrap();
+        point.set_position(FinitePoint3::new(position).unwrap());
+    }
+    let (decoded, losses) = roundtrip(&ir);
+    assert_eq!(decoded.model.edges.len(), 1);
+    assert_eq!(decoded.model.vertices.len(), 2);
+    assert_eq!(decoded.model.curves.len(), 1);
+    for parameter in [
+        0.0,
+        std::f64::consts::FRAC_PI_4,
+        std::f64::consts::FRAC_PI_2,
+    ] {
+        let expected = curve_position(&ir.model.curves[0], parameter);
+        let actual = curve_position(&decoded.model.curves[0], parameter);
+        assert!((expected.x - actual.x).abs() < POSITION_TOLERANCE);
+        assert!((expected.y - actual.y).abs() < POSITION_TOLERANCE);
+        assert!((expected.z - actual.z).abs() < POSITION_TOLERANCE);
+    }
+    assert!(losses
+        .iter()
+        .any(|loss| loss.message.contains(ir.model.curves[0].id.as_str())));
+}
+
+#[test]
 fn loose_edge_uses_its_appearance_before_the_body_color() {
     let source = RhinoCodec
         .decode(
@@ -569,8 +627,9 @@ fn full_domain_rational_nurbs_wire_preserves_poles_weights_and_placement() {
             Point3::new(14.0, 20.0, 30.0),
         ]
     );
-    assert!(decoded.model.bodies.is_empty());
-    assert!(decoded.model.edges.is_empty());
+    assert_eq!(decoded.model.bodies.len(), 1);
+    assert_eq!(decoded.model.edges.len(), 1);
+    assert_eq!(decoded.model.vertices.len(), 2);
     assert_curve_style(
         &decoded,
         &decoded.model.curves[0],
