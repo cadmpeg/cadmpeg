@@ -470,9 +470,7 @@ pub(crate) fn give_up(
     let start = range.start.min(data_len);
     let end = range.end.clamp(start, data_len);
     let classes = match label {
-        "rhino.table_record" => table
-            .map(table_record_classes)
-            .unwrap_or_else(model_classes),
+        "rhino.table_record" => table.map_or_else(model_classes, table_record_classes),
         "rhino.v1_record" => model_classes(),
         _ => match table.map(table_scope_band) {
             Some((true, _)) => model_classes(),
