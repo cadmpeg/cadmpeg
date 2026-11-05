@@ -10,6 +10,42 @@ use cadmpeg_ir::report::loss::LossNote;
 
 use crate::loss::F3dLossCode;
 
+pub(super) fn omit_unresolved_coedge_faces(
+    target: &mut CadIr,
+    losses: &mut Vec<LossNote>,
+) -> Result<(), CodecError> {
+    let edges: BTreeSet<_> = target.model.edges.iter().map(|edge| &edge.id).collect();
+    let loops: BTreeSet<_> = target.model.loops.iter().map(|boundary| &boundary.id).collect();
+    let coedges: BTreeSet<_> = target.model.coedges.iter().map(|coedge| &coedge.id).collect();
+    let mut broken = BTreeSet::new();
+    for coedge in &target.model.coedges {
+        if !edges.contains(&coedge.edge) || !loops.contains(&coedge.owner_loop)
+            || !coedges.contains(&coedge.radial_next)
+        {
+            losses.push(F3dLossCode::WriterGeometryOmitted.note(format!(
+                "coedge {} has an unresolved topology reference and is omitted", coedge.id
+            )));
+            broken.insert(coedge.id.clone());
+        }
+    }
+    if broken.is_empty() {
+        return Ok(());
+    }
+    let affected: BTreeSet<_> = target.model.loops.iter().filter(|boundary| {
+        boundary.coedges().iter().any(|id| broken.contains(id))
+    }).map(|boundary| boundary.face.clone()).collect();
+    let shells = target.model.shells.iter().map(|shell| shell.id.clone()).collect();
+    let faces = target.model.faces.iter().filter(|face| !affected.contains(&face.id))
+        .map(|face| face.id.clone()).collect();
+    for id in affected {
+        losses.push(F3dLossCode::WriterGeometryOmitted.note(format!(
+            "face {id} requires an omitted coedge and is omitted"
+        )));
+    }
+    *target = face_graph(target, &shells, &faces)?;
+    Ok(())
+}
+
 pub(super) fn admit_bodies(
     source: &CadIr,
     losses: &mut Vec<LossNote>,

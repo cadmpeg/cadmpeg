@@ -78,6 +78,53 @@ pub(super) fn encode_smbh(
     encode_face_topology_smbh(target, native, attributes, &topology, limits)
 }
 
+pub(super) fn charge_smbh_records(
+    target: &CadIr,
+    native: &F3dNative,
+    attributes: &AttributeIndex<'_>,
+    output: &cadmpeg_core::decode::DecodeContext<'_>,
+) -> Result<(), CodecError> {
+    let model = &target.model;
+    let first_attribute = if !model.faces.is_empty() {
+        NativeRecordPlan::for_model(model)?.attribute
+    } else if model.bodies.is_empty() {
+        1
+    } else {
+        let mut count = 1usize;
+        for amount in [
+            model.bodies.len(), model.regions.len(), model.shells.len(),
+            model.shells.iter().map(source_less_wire_count).sum(),
+            model.edges.len(), model.curves.len(), model.edges.len(),
+            model.vertices.len(), model.points.len(),
+            model.bodies.iter().filter(|body| body.transform.is_some()).count(),
+        ] {
+            count = count.checked_add(amount).ok_or_else(|| CodecError::InvalidInput(
+                "F3D BREP record count exceeds usize".into()
+            ))?;
+        }
+        i64::try_from(count).map_err(CodecError::malformed)?
+    };
+    let geometry = usize::try_from(first_attribute).map_err(CodecError::malformed)?;
+    let attributes = if model.faces.is_empty() && model.bodies.is_empty() {
+        0
+    } else {
+        super::attributes::source_less_attribute_count(target, attributes)
+    };
+    let histories = if native.asm_histories.is_empty() {
+        1
+    } else {
+        native.asm_histories.iter().map(|history| {
+            history.states().len() + usize::from(history.preamble.is_some())
+        }).sum()
+    };
+    let count = geometry.checked_add(attributes).and_then(|count| count.checked_add(histories))
+        .ok_or_else(|| CodecError::InvalidInput("F3D BREP record count exceeds usize".into()))?;
+    for _ in 0..count {
+        output.charge_entities(1, "F3D BREP record")?;
+    }
+    Ok(())
+}
+
 #[derive(Debug)]
 struct PlannedPcurve<'a> {
     geometry: &'a PcurveGeometry,

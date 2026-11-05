@@ -260,10 +260,12 @@ fn write_buffered<'budget>(
     let body_start = output.len() - brep_len;
     let rotated = output.rotate_tail_to_front(brep_len);
     debug_assert!(rotated, "the staged B-rep records precede the prefix");
-    for point in ir.model.points.iter().filter(|point| {
-        !plan.topology_points.contains(point.id.as_str())
-            && !is_support(point.source_object.as_ref())
-    }) {
+    for point in ir
+        .model
+        .points
+        .iter()
+        .filter(|point| !plan.topology_points.contains(point.id.as_str()))
+    {
         let position = point.position().get();
         let mut payload = vec![0x10];
         payload.extend(position.x.to_le_bytes());
@@ -287,6 +289,13 @@ fn write_buffered<'budget>(
             )?,
             "retain Rhino archive bytes",
         )?;
+        if is_support(point.source_object.as_ref()) {
+            plan.losses
+                .push(RhinoLossCode::WriterCarrierResolved.note(format!(
+                    "support point {} is written as an independent point object",
+                    point.id
+                )));
+        }
     }
     for (id, payload) in &plan.curves {
         let Some(curve) = ir
@@ -462,10 +471,7 @@ fn write_buffered<'budget>(
         .model
         .points
         .iter()
-        .filter(|point| {
-            !plan.topology_points.contains(point.id.as_str())
-                && !is_support(point.source_object.as_ref())
-        })
+        .filter(|point| !plan.topology_points.contains(point.id.as_str()))
         .count();
     Ok(WriteOutcome {
         geometry_objects: plan.brep_count
@@ -886,8 +892,10 @@ fn prepare_write<'a, 'budget>(
     let compound_children = compounds::children(ir);
     let unrooted_curves = compounds::unrooted_members(ir);
     let mut curves = Vec::new();
-    let mut written_curves = std::collections::BTreeSet::new();
-    let mut expanded_curves = std::collections::BTreeSet::new();
+    let mut written_curves = revolution_profiles
+        .iter()
+        .map(ToString::to_string)
+        .collect::<std::collections::BTreeSet<_>>();
     let mut pending = model
         .curves
         .iter()
@@ -895,8 +903,6 @@ fn prepare_write<'a, 'budget>(
             (!compound_children.contains(&curve.id) || unrooted_curves.contains(&curve.id))
                 && !revolution_profiles.contains(&curve.id)
                 && !topology_curves.contains(curve.id.as_str())
-                && (!is_support(curve.source_object.as_ref())
-                    || unrooted_curves.contains(&curve.id))
         })
         .collect::<std::collections::VecDeque<_>>();
     let mut covered = std::collections::BTreeSet::new();
@@ -909,11 +915,10 @@ fn prepare_write<'a, 'budget>(
             Ok((payload, reduction_notes)) => {
                 for child in compounds::unrepresented_children(ir, curve, &payload.represented) {
                     if !topology_curves.contains(child.id.as_str()) {
-                        expanded_curves.insert(child.id.clone());
                         pending.push_back(child);
                     }
                 }
-                if expanded_curves.contains(&curve.id) && is_support(curve.source_object.as_ref()) {
+                if is_support(curve.source_object.as_ref()) {
                     losses.push(RhinoLossCode::WriterCarrierResolved.note(format!(
                         "support curve {} is written as an independent curve object",
                         curve.id
@@ -1998,8 +2003,9 @@ fn generated_projected_brep_c2_curve(
             .map_err(|error| WriteError::Omit(error.to_string()))?;
         if sense == Sense::Reversed {
             let sum = projected.knots()[usize::try_from(projected.degree()).map_err(|_| {
-                WriteError::Fail(CodecError::Malformed(
-                    "Rhino count exceeds address space".into(),
+                WriteError::Omit(format!(
+                    "edge {} NURBS degree exceeds address space",
+                    edge.source.id
                 ))
             })?] + projected.knots()[projected.pole_count()];
             projected.reverse_parameterization();
@@ -2093,11 +2099,9 @@ fn canonicalize_native_curve_knots(
     curve: &mut cadmpeg_ir::geometry::nurbs::NurbsCurve,
     id: &str,
 ) -> Result<(), WriteError> {
-    let order = usize::try_from(curve.degree()).map_err(|_| {
-        WriteError::Fail(CodecError::Malformed(
-            "Rhino count exceeds address space".into(),
-        ))
-    })? + 1;
+    let order = usize::try_from(curve.degree())
+        .map_err(|_| WriteError::Omit(format!("curve {id} NURBS degree exceeds address space")))?
+        + 1;
     let count = curve.control_points().len();
     let stored = curve.knots()[1..curve.knots().len() - 1].to_vec();
     let reconstructed = crate::surfaces::reconstruct_knots(&stored, order, count)
@@ -2155,8 +2159,9 @@ fn admit_pcurve<'a>(
             if curve.periodic()
                 || [
                     curve.knots()[usize::try_from(curve.degree()).map_err(|_| {
-                        WriteError::Fail(CodecError::Malformed(
-                            "Rhino count exceeds address space".into(),
+                        WriteError::Omit(format!(
+                            "pcurve {} NURBS degree exceeds address space",
+                            pcurve.id
                         ))
                     })?],
                     curve.knots()[count],
@@ -2267,16 +2272,18 @@ fn check_nurbs_trim(
     let v_count = surface.v_count();
     let u_domain = [
         surface.u_knots()[usize::try_from(surface.u_degree()).map_err(|_| {
-            WriteError::Fail(CodecError::Malformed(
-                "Rhino count exceeds address space".into(),
+            WriteError::Omit(format!(
+                "pcurve {} uses a surface whose NURBS degree exceeds address space",
+                explicit.source.id
             ))
         })?],
         surface.u_knots()[u_count],
     ];
     let v_domain = [
         surface.v_knots()[usize::try_from(surface.v_degree()).map_err(|_| {
-            WriteError::Fail(CodecError::Malformed(
-                "Rhino count exceeds address space".into(),
+            WriteError::Omit(format!(
+                "pcurve {} uses a surface whose NURBS degree exceeds address space",
+                explicit.source.id
             ))
         })?],
         surface.v_knots()[v_count],
@@ -2723,14 +2730,10 @@ fn check_nurbs_surface(
     surface: &cadmpeg_ir::geometry::nurbs::NurbsSurface,
 ) -> Result<i32, WriteError> {
     let u_order = usize::try_from(surface.u_degree()).map_err(|_| {
-        WriteError::Fail(CodecError::Malformed(
-            "Rhino count exceeds address space".into(),
-        ))
+        WriteError::Omit(format!("surface {id} NURBS degree exceeds address space"))
     })? + 1;
     let v_order = usize::try_from(surface.v_degree()).map_err(|_| {
-        WriteError::Fail(CodecError::Malformed(
-            "Rhino count exceeds address space".into(),
-        ))
+        WriteError::Omit(format!("surface {id} NURBS degree exceeds address space"))
     })? + 1;
     let u_count = surface.u_count();
     let v_count = surface.v_count();
@@ -2766,11 +2769,9 @@ fn check_nurbs_curve(
     id: &str,
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
 ) -> Result<(), WriteError> {
-    let order = usize::try_from(curve.degree()).map_err(|_| {
-        WriteError::Fail(CodecError::Malformed(
-            "Rhino count exceeds address space".into(),
-        ))
-    })? + 1;
+    let order = usize::try_from(curve.degree())
+        .map_err(|_| WriteError::Omit(format!("curve {id} NURBS degree exceeds address space")))?
+        + 1;
     let count = curve.control_points().len();
     let count_error = || format!("curve {id} cannot be represented by Rhino NURBS counts");
     if order < 2 {

@@ -2477,7 +2477,8 @@ fn decode_sketch_points_with_parts(
             .map_err(CodecError::Malformed)
         };
         let point = if let Some((ctx, output, source)) = parts.as_mut() {
-            sketch_frame_part(ctx, output, *source, stream, frame.start..frame.end, parse)?.flatten()
+            sketch_frame_part(ctx, output, *source, stream, frame.start..frame.end, parse)?
+                .flatten()
         } else {
             parse()?
         };
@@ -2513,7 +2514,10 @@ pub(crate) fn decode_sketch_points(
             .entry_view(&entry.name)
             .ok_or_else(|| CodecError::malformed("F3D sketch stream has no source view"))?;
         out.extend(decode_sketch_points_with_parts(
-            bytes, &meta, &entry.name, Some((ctx, output, source)),
+            bytes,
+            &meta,
+            &entry.name,
+            Some((ctx, output, source)),
         )?);
     }
     Ok(out)
@@ -2626,10 +2630,24 @@ const SKETCH_TEXT_TYPE_GUIDS: [&str; 2] = [
 
 /// Decode sketch-text records carrying persistent identities, font metrics,
 /// UTF-16 content, and an owning-sketch reference.
+#[cfg(test)]
 fn decode_sketch_texts_from_stream(
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
     stream: &str,
+) -> Result<Vec<SketchText>, CodecError> {
+    decode_sketch_texts_with_parts(bytes, meta, stream, None)
+}
+
+fn decode_sketch_texts_with_parts(
+    bytes: &[u8],
+    meta: &crate::metastream::MetaStream,
+    stream: &str,
+    mut parts: Option<(
+        &cadmpeg_core::decode::DecodeContext<'_>,
+        &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
+        View<'_>,
+    )>,
 ) -> Result<Vec<SketchText>, CodecError> {
     let mut out = Vec::new();
     let Ok(frames) = design_primary_frames(bytes, meta) else {
@@ -2649,14 +2667,28 @@ fn decode_sketch_texts_from_stream(
             .map_err(|_| CodecError::Malformed("F3D sketch-text entity ID exceeds u32".into()))?;
         let class_tag = frame.class_tag;
         let payload = &bytes[frame.start..frame.end];
-        if let Some(text) = decode_sketch_text_record(
-            payload,
-            stream,
-            class_tag,
-            frame.design_type.version,
-            record_index,
-            frame.start,
-        )? {
+        let parse = || {
+            decode_sketch_text_record(
+                payload,
+                stream,
+                class_tag,
+                frame.design_type.version,
+                record_index,
+                frame.start,
+            )
+        };
+        let text = if let Some((ctx, output, source)) = parts.as_mut() {
+            sketch_frame_part(ctx, output, *source, stream, frame.start..frame.end, || {
+                parse()?.ok_or_else(|| {
+                    CodecError::malformed(format_args!(
+                        "F3D sketch text {record_index} has an invalid member sequence"
+                    ))
+                })
+            })?
+        } else {
+            parse()?
+        };
+        if let Some(text) = text {
             out.push(text);
         }
     }
@@ -2665,8 +2697,32 @@ fn decode_sketch_texts_from_stream(
 
 /// Decode sketch-text records carrying persistent identities, font metrics,
 /// UTF-16 content, and an owning-sketch reference.
-pub(crate) fn decode_sketch_texts(scan: &ContainerScan) -> Result<Vec<SketchText>, CodecError> {
-    decode_sketch_streams(scan, decode_sketch_texts_from_stream)
+pub(crate) fn decode_sketch_texts(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    output: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
+    scan: &ContainerScan,
+) -> Result<Vec<SketchText>, CodecError> {
+    let mut out = Vec::new();
+    for entry in scan
+        .entries
+        .iter()
+        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
+    {
+        let bytes = scan.entry_bytes(&entry.name)?;
+        let Some(meta) = metadata_for_bulk_stream(scan, &entry.name)? else {
+            continue;
+        };
+        let source = scan
+            .entry_view(&entry.name)
+            .ok_or_else(|| CodecError::malformed("F3D sketch stream has no source view"))?;
+        out.extend(decode_sketch_texts_with_parts(
+            bytes,
+            &meta,
+            &entry.name,
+            Some((ctx, output, source)),
+        )?);
+    }
+    Ok(out)
 }
 
 /// Whether a sketch-text record carries one of the two parameter-reference
@@ -3899,10 +3955,24 @@ impl SketchCurveClass {
 /// `crv_secondary_id`) from each design `BulkStream` entry in `scan`: the
 /// curve's persistent primary and secondary identities plus its NURBS, circular
 /// arc, line, or referenced analytic geometry.
+#[cfg(test)]
 fn decode_sketch_curve_identities_from_stream(
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
     stream: &str,
+) -> Result<Vec<SketchCurveIdentity>, CodecError> {
+    decode_sketch_curve_identities_with_parts(bytes, meta, stream, None)
+}
+
+fn decode_sketch_curve_identities_with_parts(
+    bytes: &[u8],
+    meta: &crate::metastream::MetaStream,
+    stream: &str,
+    mut parts: Option<(
+        &cadmpeg_core::decode::DecodeContext<'_>,
+        &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
+        View<'_>,
+    )>,
 ) -> Result<Vec<SketchCurveIdentity>, CodecError> {
     let mut out = Vec::new();
     let Ok(frames) = design_primary_frames(bytes, meta) else {
@@ -3910,60 +3980,77 @@ fn decode_sketch_curve_identities_from_stream(
     };
     for frame in frames {
         let payload = &bytes[frame.start..frame.end];
-        let Some((primary_id, secondary_id, geometry_shift, entity_genesis)) =
-            decode_sketch_curve_identity(payload)
-        else {
-            continue;
-        };
-        let Some(primary_id) = std::num::NonZeroU64::new(primary_id) else {
-            continue;
-        };
-        let record_index = u32::try_from(frame.entity_id)
-            .map_err(|_| CodecError::Malformed("F3D sketch-curve entity ID exceeds u32".into()))?;
+        let identity = decode_sketch_curve_identity(payload);
         let curve_class = SketchCurveClass::of(
             frame.design_type.type_guid.as_str(),
             frame.design_type.version,
             &frame.design_type.module,
         );
-        let parsed_geometry = if let Some(curve_class) = curve_class {
-            decode_sketch_curve_geometry(
-                payload,
-                geometry_shift,
+        if identity.is_none() && (curve_class.is_none() || parts.is_none()) {
+            continue;
+        }
+        let parse = || -> Result<Option<SketchCurveIdentity>, CodecError> {
+            let (primary_id, secondary_id, geometry_shift, entity_genesis) =
+                identity.ok_or_else(|| {
+                    CodecError::malformed(format_args!(
+                        "F3D sketch curve {} has an invalid identity",
+                        frame.entity_id
+                    ))
+                })?;
+            let Some(primary_id) = std::num::NonZeroU64::new(primary_id) else {
+                return Ok(None);
+            };
+            let record_index = u32::try_from(frame.entity_id).map_err(|_| {
+                CodecError::Malformed("F3D sketch-curve entity ID exceeds u32".into())
+            })?;
+            let parsed_geometry = if let Some(curve_class) = curve_class {
+                decode_sketch_curve_geometry(
+                    payload,
+                    geometry_shift,
+                    record_index,
+                    curve_class,
+                    frame.start,
+                )?
+            } else {
+                None
+            };
+            let (geometry, geometry_offset, planar_z_noise) = match parsed_geometry {
+                Some(parsed) => (
+                    Some(parsed.geometry),
+                    Some(u32::try_from(parsed.geometry_offset).map_err(|_| {
+                        CodecError::malformed("f3d sketch curve geometry offset exceeds u32")
+                    })?),
+                    parsed.planar_z_noise,
+                ),
+                None => (None, None, None),
+            };
+            Ok(Some(SketchCurveIdentity {
+                id: design_record_id(
+                    stream,
+                    ":sketch-curve-identity#",
+                    u64_from_index(frame.start),
+                ),
                 record_index,
-                curve_class,
-                frame.start,
-            )?
+                owner_reference: trailing_sketch_owner_reference(payload),
+                class_tag: frame.class_tag,
+                byte_offset: Some(u64_from_index(frame.start)),
+                geometry_offset,
+                entity_genesis,
+                primary_id,
+                secondary_id,
+                geometry,
+                planar_z_noise,
+            }))
+        };
+        let curve = if let Some((ctx, output, source)) = parts.as_mut() {
+            sketch_frame_part(ctx, output, *source, stream, frame.start..frame.end, parse)?
+                .flatten()
         } else {
-            None
+            parse()?
         };
-        let (geometry, geometry_offset, planar_z_noise) = match parsed_geometry {
-            Some(parsed) => (
-                Some(parsed.geometry),
-                Some(u32::try_from(parsed.geometry_offset).map_err(|_| {
-                    CodecError::malformed("f3d sketch curve geometry offset exceeds u32")
-                })?),
-                parsed.planar_z_noise,
-            ),
-            None => (None, None, None),
-        };
-
-        out.push(SketchCurveIdentity {
-            id: design_record_id(
-                stream,
-                ":sketch-curve-identity#",
-                u64_from_index(frame.start),
-            ),
-            record_index,
-            owner_reference: trailing_sketch_owner_reference(payload),
-            class_tag: frame.class_tag,
-            byte_offset: Some(u64_from_index(frame.start)),
-            geometry_offset,
-            entity_genesis,
-            primary_id,
-            secondary_id,
-            geometry,
-            planar_z_noise,
-        });
+        if let Some(curve) = curve {
+            out.push(curve);
+        }
     }
     Ok(out)
 }
@@ -3973,9 +4060,31 @@ fn decode_sketch_curve_identities_from_stream(
 /// curve's persistent primary and secondary identities plus its NURBS, circular
 /// arc, line, or referenced analytic geometry.
 pub(crate) fn decode_sketch_curve_identities(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    output: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
     scan: &ContainerScan,
 ) -> Result<Vec<SketchCurveIdentity>, CodecError> {
-    decode_sketch_streams(scan, decode_sketch_curve_identities_from_stream)
+    let mut out = Vec::new();
+    for entry in scan
+        .entries
+        .iter()
+        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
+    {
+        let bytes = scan.entry_bytes(&entry.name)?;
+        let Some(meta) = metadata_for_bulk_stream(scan, &entry.name)? else {
+            continue;
+        };
+        let source = scan
+            .entry_view(&entry.name)
+            .ok_or_else(|| CodecError::malformed("F3D sketch stream has no source view"))?;
+        out.extend(decode_sketch_curve_identities_with_parts(
+            bytes,
+            &meta,
+            &entry.name,
+            Some((ctx, output, source)),
+        )?);
+    }
+    Ok(out)
 }
 
 #[derive(Debug)]
@@ -5571,25 +5680,6 @@ fn decode_reference_list(bytes: &[u8], position: usize) -> Option<SketchReferenc
         references,
         end: view.position(),
     })
-}
-
-fn decode_sketch_streams<T>(
-    scan: &ContainerScan,
-    decode: impl Fn(&[u8], &crate::metastream::MetaStream, &str) -> Result<Vec<T>, CodecError>,
-) -> Result<Vec<T>, CodecError> {
-    let mut out = Vec::new();
-    for entry in scan
-        .entries
-        .iter()
-        .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
-    {
-        let bytes = scan.entry_bytes(&entry.name)?;
-        let Some(meta) = metadata_for_bulk_stream(scan, &entry.name)? else {
-            continue;
-        };
-        out.extend(decode(bytes, &meta, &entry.name)?);
-    }
-    Ok(out)
 }
 
 #[cfg(test)]
