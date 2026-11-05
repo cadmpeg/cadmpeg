@@ -214,6 +214,7 @@ pub(in crate::writer) fn derived_transform_hints(transform: Transform) -> [bool;
 pub(super) fn native_history_tail(
     bytes: &mut Vec<u8>,
     native: &F3dNative,
+    output: &cadmpeg_core::decode::DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     // Framing and reference signatures do not type the historical payload.
     // Copying it would make retained bytes a content source.
@@ -230,6 +231,7 @@ pub(super) fn native_history_tail(
     }
     let histories = native.asm_histories.as_slice();
     if histories.is_empty() {
+        output.charge_entities(1, "F3D BREP record")?;
         native_ident(bytes, "delta_state")?;
         return Ok(());
     }
@@ -251,6 +253,7 @@ pub(super) fn native_history_tail(
                 history.id
             )));
         }
+        output.charge_entities(1, "F3D BREP record")?;
         for name in ["Begin", "of", "ASM", "History"] {
             native_subident(bytes, name)?;
         }
@@ -266,6 +269,7 @@ pub(super) fn native_history_tail(
         bytes.push(0x11);
     }
     for state in history.states() {
+        output.charge_entities(1, "F3D BREP record")?;
         native_ident(bytes, "delta_state")?;
         native_i64(bytes, state.state_id);
         native_i64(bytes, state.version_flag);
