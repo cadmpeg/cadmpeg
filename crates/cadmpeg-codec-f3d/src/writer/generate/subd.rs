@@ -6,7 +6,9 @@ use std::fmt::Write as _;
 
 use cadmpeg_core::decode::{index_from_u32, DecodeContext};
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::subd::{SubdEdgeTag, SubdSurface, SubdUserKnot, SubdVertexTag};
+use cadmpeg_ir::subd::{
+    SubdEdgeTag, SubdRadialMapSelector, SubdSurface, SubdSymmetryKind, SubdUserKnot, SubdVertexTag,
+};
 
 #[derive(Clone, Copy)]
 struct HalfEdge {
@@ -28,7 +30,6 @@ pub(in crate::writer) fn encode(
     if vertices.is_empty()
         || edges.is_empty()
         || faces.is_empty()
-        || !cage.symmetries().is_empty()
         || vertices
             .iter()
             .any(|vertex| vertex.secondary_grips().is_some())
@@ -43,12 +44,30 @@ pub(in crate::writer) fn encode(
         .iter()
         .try_fold(0usize, |count, face| count.checked_add(face.edges().len()))
         .ok_or_else(|| CodecError::InvalidInput("T-spline face use count overflows".into()))?;
+    let symmetry_pairs = cage
+        .symmetries()
+        .iter()
+        .try_fold(0usize, |count, symmetry| {
+            let count = count
+                .checked_add(symmetry.face_pairs().len())?
+                .checked_add(symmetry.edge_pairs().len())?
+                .checked_add(symmetry.vertex_pairs().len())?;
+            match symmetry.kind() {
+                SubdSymmetryKind::Correspondence {} => Some(count),
+                SubdSymmetryKind::Radial(radial) => radial
+                    .radial_maps()
+                    .iter()
+                    .try_fold(count, |count, map| count.checked_add(map.pairs.len())),
+            }
+        })
+        .ok_or_else(|| CodecError::InvalidInput("T-spline symmetry count overflows".into()))?;
     let count = vertices
         .len()
         .checked_add(edges.len())
         .and_then(|count| count.checked_add(faces.len()))
         .and_then(|count| count.checked_add(half_count))
         .and_then(|count| count.checked_add(face_uses))
+        .and_then(|count| count.checked_add(symmetry_pairs))
         .ok_or_else(|| CodecError::InvalidInput("T-spline entity count overflows".into()))?;
     ctx.charge_entities(
         u64::try_from(count).map_err(CodecError::malformed)?,
@@ -276,5 +295,194 @@ pub(in crate::writer) fn encode(
         )
         .map_err(CodecError::malformed)?;
     }
+    for symmetry in cage.symmetries() {
+        let origin = symmetry.plane.origin().get();
+        if [origin.x, origin.y, origin.z]
+            .into_iter()
+            .any(|value| value / 10.0 * 10.0 != value)
+        {
+            return Ok(None);
+        }
+        let first = *symmetry.plane.first_axis().as_raw();
+        let second = *symmetry.plane.second_axis().as_raw();
+        let mode = match symmetry.kind() {
+            SubdSymmetryKind::Correspondence {} => 0,
+            SubdSymmetryKind::Radial(_) => 1,
+        };
+        writeln!(
+            output,
+            "105sym {mode}\n105plane {} {} {} 1 {} {} {} 0 {} {} {} 0",
+            origin.x / 10.0,
+            origin.y / 10.0,
+            origin.z / 10.0,
+            first.x,
+            first.y,
+            first.z,
+            second.x,
+            second.y,
+            second.z
+        )
+        .map_err(CodecError::malformed)?;
+        let pairs = [
+            (symmetry.face_pairs(), faces.len()),
+            (symmetry.edge_pairs(), edges.len()),
+            (symmetry.vertex_pairs(), vertices.len()),
+        ];
+        if pairs.iter().any(|(pairs, count)| {
+            pairs
+                .iter()
+                .flatten()
+                .any(|index| index_from_u32(*index) >= *count)
+                || matches!(symmetry.kind(), SubdSymmetryKind::Correspondence {})
+                    && pairs.windows(2).any(|rows| rows[0][0] >= rows[1][0])
+        }) {
+            return Ok(None);
+        }
+        match symmetry.kind() {
+            SubdSymmetryKind::Correspondence {} => {
+                for ((forward, _), (f, r)) in
+                    pairs.iter().zip([("fr", "f"), ("er", "e"), ("vr", "v")])
+                {
+                    write_correspondence(&mut output, f, forward, false)?;
+                    write_correspondence(&mut output, r, forward, true)?;
+                }
+            }
+            SubdSymmetryKind::Radial(radial) => {
+                writeln!(
+                    output,
+                    "105r segments {}\n105r sweep {}",
+                    radial.segments(),
+                    radial.sweep().get()
+                )
+                .map_err(CodecError::malformed)?;
+                let selectors = [
+                    (
+                        SubdRadialMapSelector::Ef,
+                        SubdRadialMapSelector::Er,
+                        symmetry.edge_pairs(),
+                        edges.len(),
+                    ),
+                    (
+                        SubdRadialMapSelector::Ff,
+                        SubdRadialMapSelector::Fr,
+                        symmetry.face_pairs(),
+                        faces.len(),
+                    ),
+                    (
+                        SubdRadialMapSelector::Vf,
+                        SubdRadialMapSelector::Vr,
+                        symmetry.vertex_pairs(),
+                        vertices.len(),
+                    ),
+                ];
+                if radial.radial_maps().is_empty() {
+                    for (forward, reverse, pairs, _) in selectors {
+                        write_radial(
+                            &mut output,
+                            forward,
+                            pairs
+                                .iter()
+                                .map(|pair| [u64::from(pair[0]), u64::from(pair[1])]),
+                        )?;
+                        write_radial(
+                            &mut output,
+                            reverse,
+                            pairs
+                                .iter()
+                                .map(|pair| [u64::from(pair[1]), u64::from(pair[0])]),
+                        )?;
+                    }
+                } else {
+                    if radial.radial_maps().len() != 6 {
+                        return Ok(None);
+                    }
+                    for (forward, reverse, expected, count) in selectors {
+                        let Some(f) = radial
+                            .radial_maps()
+                            .iter()
+                            .find(|map| map.selector == forward)
+                        else {
+                            return Ok(None);
+                        };
+                        let Some(r) = radial
+                            .radial_maps()
+                            .iter()
+                            .find(|map| map.selector == reverse)
+                        else {
+                            return Ok(None);
+                        };
+                        if f.pairs.iter().any(|pair| {
+                            pair.iter().any(|index| {
+                                usize::try_from(*index).map_or(true, |index| index >= count)
+                            })
+                        }) || f
+                            .pairs
+                            .iter()
+                            .map(|pair| [u32::try_from(pair[0]).ok(), u32::try_from(pair[1]).ok()])
+                            .ne(expected.iter().map(|pair| [Some(pair[0]), Some(pair[1])]))
+                        {
+                            return Ok(None);
+                        }
+                        let reverse_set = r
+                            .pairs
+                            .iter()
+                            .copied()
+                            .collect::<std::collections::BTreeSet<_>>();
+                        if reverse_set.len() != f.pairs.len()
+                            || f.pairs
+                                .iter()
+                                .any(|pair| !reverse_set.contains(&[pair[1], pair[0]]))
+                        {
+                            return Ok(None);
+                        }
+                    }
+                    for map in radial.radial_maps() {
+                        write_radial(&mut output, map.selector, map.pairs.iter().copied())?;
+                    }
+                }
+            }
+        }
+    }
     Ok(Some(output))
+}
+
+fn write_correspondence(
+    out: &mut String,
+    selector: &str,
+    pairs: &[[u32; 2]],
+    reverse: bool,
+) -> Result<(), CodecError> {
+    write!(out, "105a {selector}").map_err(CodecError::malformed)?;
+    for [source, target] in pairs {
+        if reverse && source == target {
+            continue;
+        }
+        let (source, target) = if reverse {
+            (target, source)
+        } else {
+            (source, target)
+        };
+        write!(out, " {source} {target}").map_err(CodecError::malformed)?;
+    }
+    writeln!(out).map_err(CodecError::malformed)
+}
+
+fn write_radial(
+    out: &mut String,
+    selector: SubdRadialMapSelector,
+    pairs: impl Iterator<Item = [u64; 2]>,
+) -> Result<(), CodecError> {
+    let selector = match selector {
+        SubdRadialMapSelector::Ef => "ef",
+        SubdRadialMapSelector::Er => "er",
+        SubdRadialMapSelector::Ff => "ff",
+        SubdRadialMapSelector::Fr => "fr",
+        SubdRadialMapSelector::Vf => "vf",
+        SubdRadialMapSelector::Vr => "vr",
+    };
+    write!(out, "105r {selector}").map_err(CodecError::malformed)?;
+    for [source, target] in pairs {
+        write!(out, " {source} {target}").map_err(CodecError::malformed)?;
+    }
+    writeln!(out).map_err(CodecError::malformed)
 }

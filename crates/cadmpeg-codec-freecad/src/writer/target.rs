@@ -106,10 +106,18 @@ pub(crate) fn plan(
     {
         if let Some(resolution) = retained_baseline(input.ir, fidelity, resolved.target_id()) {
             let patch = admit_unedited(&allocation_context, input.ir, resolution.fidelity())
-                .and_then(|()| finish(&allocation_context, &resolution));
+                .and_then(|()| {
+                    allocation_context.run_part(|| finish(&allocation_context, &resolution))?
+                });
             match patch {
                 Ok(body) => return Ok(body),
-                Err(error @ CodecError::UnsupportedContent(_)) => reason = Some(error.to_string()),
+                Err(error @ CodecError::UnsupportedContent(_))
+                | Err(
+                    error @ CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit {
+                        scope: cadmpeg_core::decode::LimitScope::Part,
+                        ..
+                    }),
+                ) => reason = Some(error.to_string()),
                 Err(error) => return Err(error),
             }
         } else {
