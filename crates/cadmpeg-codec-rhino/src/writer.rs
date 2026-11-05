@@ -1301,11 +1301,11 @@ fn prepare_write<'a, 'budget>(
             if let Some(colors) =
                 encoded_face_colors(&baked.model.faces.iter().collect::<Vec<_>>())?
             {
-                face_colors.extend(baked.model.faces.iter().zip(colors).filter_map(
-                    |(face, color)| {
-                        (face.color.is_some() && color != [u8::MAX; 4]).then(|| face.id.to_string())
-                    },
-                ));
+                face_colors.extend(
+                    baked.model.faces.iter().zip(colors)
+                        .filter(|(face, color)| face.color.is_some() && *color != [u8::MAX; 4])
+                        .map(|(face, _)| face.id.to_string()),
+                );
             }
         }
         carried.extend(reduce::body_closure(&baked));
