@@ -879,3 +879,98 @@ fn shared_source_less_definition_names_an_unrepresentable_child() {
         .unwrap();
     assert_eq!(after.ir().model.occurrences.len(), 2);
 }
+
+#[test]
+fn compound_curve_keeps_its_components_and_construction() {
+    let bytes = crate::test_support::test_curves_and_surfaces::composite_curve_file();
+    let decoded = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(decoded.ir().model.procedural_curves.len(), 1);
+    let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).unwrap();
+    let construction = decoded.ir().model.procedural_curves[0].id.to_string();
+    assert!(
+        !plan
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains(&construction)),
+        "{:#?}",
+        plan.report().losses
+    );
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let after = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        after.ir().model.curves.len(),
+        decoded.ir().model.curves.len()
+    );
+    assert_eq!(after.ir().model.procedural_curves.len(), 1);
+    assert_eq!(after.ir().model.edges.len(), decoded.ir().model.edges.len());
+}
+
+#[test]
+fn compound_curve_uses_edited_components_instead_of_its_solved_cache() {
+    use cadmpeg_ir::geometry::analytic::LineCurve;
+    use cadmpeg_ir::geometry::{CurveGeometry, ProceduralCurveDefinition, SolvedCurveGeometry};
+    use cadmpeg_ir::math::{Point3, Vector3};
+    let bytes = crate::test_support::test_curves_and_surfaces::composite_curve_file();
+    let decoded = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let ProceduralCurveDefinition::Compound(compound) = ir.model.procedural_curves[0].definition()
+    else {
+        panic!("compound")
+    };
+    let ids = compound
+        .components()
+        .iter()
+        .map(|component| component.component.clone())
+        .collect::<Vec<_>>();
+    for (id, origin, direction) in [
+        (
+            &ids[0],
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+        ),
+        (
+            &ids[1],
+            Point3::new(0.0, 1.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        ),
+    ] {
+        ir.model
+            .curves
+            .iter_mut()
+            .find(|curve| &curve.id == id)
+            .unwrap()
+            .geometry = CurveGeometry::Solved(SolvedCurveGeometry::Line(
+            LineCurve::try_new(origin, direction).unwrap(),
+        ));
+    }
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let after = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let ProceduralCurveDefinition::Compound(compound) =
+        after.ir().model.procedural_curves[0].definition()
+    else {
+        panic!("compound")
+    };
+    let first = after
+        .ir()
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id == compound.components()[0].component)
+        .unwrap();
+    let Some(SolvedCurveGeometry::Line(line)) = first.geometry.solved() else {
+        panic!("line")
+    };
+    assert_eq!(*line.direction().as_raw(), Vector3::new(0.0, 1.0, 0.0));
+}
