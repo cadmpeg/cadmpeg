@@ -857,8 +857,8 @@ impl<'a> PhysicalParse<'a> {
         losses
     }
 
-    fn record_losses(&self) -> Result<Vec<LossNote>, CodecError> {
-        Ok(self.framing_recoveries.notes())
+    fn record_losses(&self) -> Vec<LossNote> {
+        self.framing_recoveries.notes()
     }
 }
 
@@ -934,7 +934,7 @@ fn inspect_with_parsing(
     let primary = crate::dialect::classify(representation, &parse.global);
     let mut losses = parse.admission_losses();
     losses.append(&mut part_losses);
-    let record_losses = parse.record_losses()?;
+    let record_losses = parse.record_losses();
 
     losses.extend(record_losses);
     let mut summary = card::summarize(&parse.scan, primary)?;
@@ -1200,7 +1200,7 @@ fn decode_with_occurrence_limits(
     let graph_losses = graph::losses(&parse.references, &parse.scan, &parse.parameters);
 
     losses.extend(graph_losses);
-    let record_losses = parse.record_losses()?;
+    let record_losses = parse.record_losses();
 
     losses.extend(record_losses);
     if let Some(source_sequence) = product_occurrence_expansion.output_truncated_at {
