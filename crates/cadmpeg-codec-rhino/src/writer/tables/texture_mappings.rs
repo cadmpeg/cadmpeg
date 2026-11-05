@@ -112,7 +112,7 @@ pub(in crate::writer) fn mappings(
                     if version.value() >= 50 { 8 } else { 4 },
                 )));
             }
-            let minor = u8::from(
+            let minor = i32::from(
                 fields
                     .get("texture_space")
                     .and_then(Value::as_i64)
