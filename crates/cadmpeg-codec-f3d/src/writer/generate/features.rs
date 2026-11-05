@@ -13,7 +13,9 @@ use cadmpeg_ir::features::{
     BooleanOp, Dimension, FeatureDefinition, FeatureOperation, PrimitiveSolidKind, RadialDimension,
 };
 
-pub(super) fn encode(target: &CadIr) -> Result<Option<(Vec<u8>, Vec<u8>, usize, u32)>, CodecError> {
+pub(super) fn encode(
+    target: &CadIr,
+) -> Result<Option<(Vec<u8>, Vec<u8>, Vec<cadmpeg_ir::features::FeatureId>, u32)>, CodecError> {
     let mut primitives = Vec::new();
     for feature in &target.model.features {
         if feature.suppressed == Some(true)
@@ -96,7 +98,7 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<(Vec<u8>, Vec<u8>, usize, 
             BooleanOp::NewBody => 4,
             BooleanOp::Unresolved => continue,
         };
-        primitives.push((feature.ordinal, kind, values, operation));
+        primitives.push((feature.ordinal, kind, values, operation, feature.id.clone()));
     }
     if primitives.is_empty() {
         return Ok(None);
@@ -116,7 +118,7 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<(Vec<u8>, Vec<u8>, usize, 
     let mut scopes = Vec::new();
     let mut owners = Vec::new();
     let mut parameters = Vec::new();
-    for (ordinal, (source_ordinal, kind, values, operation)) in primitives.iter().enumerate() {
+    for (ordinal, (source_ordinal, kind, values, operation, _)) in primitives.iter().enumerate() {
         let ordinal = u32::try_from(ordinal)
             .map_err(|_| CodecError::InvalidInput("too many F3D feature records".into()))?;
         let base = ordinal
@@ -314,7 +316,8 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<(Vec<u8>, Vec<u8>, usize, 
     };
     let meta = encode_design_metastream(&registry, &primary, &secondary)?
         .ok_or_else(|| CodecError::Malformed("missing generated feature metadata".into()))?;
-    Ok(Some((out, meta, primitives.len(), collection_index)))
+    let written = primitives.into_iter().map(|(_, _, _, _, id)| id).collect();
+    Ok(Some((out, meta, written, collection_index)))
 }
 
 fn mark(
