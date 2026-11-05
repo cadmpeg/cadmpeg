@@ -69,6 +69,7 @@ fn injected_errors_succeed_and_name_the_record() {
 
 #[test]
 fn capacity_helpers_follow_their_rows() {
+    use cadmpeg_ir::codec::write::EncodeError;
     assert_eq!(super::super::capacity::CAPACITY_FIELDS.len(), 2);
     assert_eq!(
         super::super::capacity::CAPACITY_FIELDS[0].field,
@@ -80,7 +81,6 @@ fn capacity_helpers_follow_their_rows() {
         "card.sequence"
     );
     assert_eq!(super::super::capacity::CAPACITY_FIELDS[1].limit, 9_999_999);
-    use cadmpeg_ir::codec::write::EncodeError;
     let fields = super::super::capacity::CAPACITY_FIELDS;
     let payload = vec![b'A'; fields[0].limit as usize];
     let sequence = u32::try_from(fields[1].limit).expect("seven-digit limit fits u32");
