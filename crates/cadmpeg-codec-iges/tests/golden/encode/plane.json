@@ -83,7 +83,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 1 native record(s) from `iges.entities`: iges:entity:directory#1",
+        "message": "the iges write omits 3 native record(s) from `iges.cards`: iges:physical:card#4, iges:physical:card#6, iges:physical:card#7",
         "severity": "info"
       },
       {
@@ -120,7 +120,13 @@
               "disposition": "dropped"
             },
             "cards": {
-              "disposition": "regenerated"
+              "disposition": "dropped",
+              "records": {
+                "iges:physical:card#1": "written",
+                "iges:physical:card#2": "written",
+                "iges:physical:card#3": "written",
+                "iges:physical:card#5": "written"
+              }
             },
             "circular_arrays": {
               "disposition": "dropped"
@@ -150,7 +156,10 @@
               "disposition": "dropped"
             },
             "entities": {
-              "disposition": "dropped"
+              "disposition": "dropped",
+              "records": {
+                "iges:entity:directory#1": "written"
+              }
             },
             "external_references": {
               "disposition": "dropped"

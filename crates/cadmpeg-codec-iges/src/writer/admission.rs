@@ -494,7 +494,7 @@ pub(super) fn pole_edges(
     Ok((Cow::Owned(admitted), losses))
 }
 
-/// A solid with a single open shell can retain its faces as a sheet.
+/// A solid with a single non-closed or non-manifold shell can retain its faces as a sheet.
 pub(super) fn open_incomplete_solids(ir: &CadIr) -> (Cow<'_, CadIr>, Vec<LossNote>) {
     let mut open = BTreeSet::new();
     for body in &ir.model.bodies {
@@ -549,7 +549,7 @@ pub(super) fn open_incomplete_solids(ir: &CadIr) -> (Cow<'_, CadIr>, Vec<LossNot
         if open.contains(&body.id) {
             body.kind = BodyKind::Sheet;
             losses.push(IgesLossCode::WriterEntityOmitted.note(format!(
-                "IGES solid {} has an open shell and is written as a sheet",
+                "IGES solid {} has an open shell or non-manifold edge and is written as a sheet",
                 body.id
             )));
         }

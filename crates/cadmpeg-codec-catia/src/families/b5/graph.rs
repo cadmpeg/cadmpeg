@@ -875,7 +875,18 @@ fn parse_flat(
 ) -> Result<Option<B5Graph>, CodecError> {
     let frames = collect_object_stream_frames(bytes);
     let records = records_from_frames(bytes, &frames, None);
-    parse_from_records(ctx, bytes, &records, &frames, maps, true, None, refusal)
+    parse_from_records(
+        ctx,
+        bytes,
+        &records,
+        &frames,
+        maps,
+        B5ParseOptions {
+            require_topology: true,
+            budget: None,
+        },
+        refusal,
+    )
 }
 
 pub(in crate::families) fn parse_from_frames(
@@ -886,7 +897,24 @@ pub(in crate::families) fn parse_from_frames(
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<B5Graph>, CodecError> {
     let records = records_from_frames(bytes, frames, None);
-    parse_from_records(ctx, bytes, &records, frames, maps, true, None, refusal)
+    parse_from_records(
+        ctx,
+        bytes,
+        &records,
+        frames,
+        maps,
+        B5ParseOptions {
+            require_topology: true,
+            budget: None,
+        },
+        refusal,
+    )
+}
+
+#[derive(Clone, Copy)]
+pub(in crate::families) struct B5ParseOptions<'a> {
+    pub require_topology: bool,
+    pub budget: Option<&'a WorkBudget>,
 }
 
 pub(in crate::families) fn parse_from_records(
@@ -895,8 +923,7 @@ pub(in crate::families) fn parse_from_records(
     records: &[B5Record],
     frames: &[ObjectFrame],
     maps: &SampledParameterMapIndex,
-    require_topology: bool,
-    budget: Option<&WorkBudget>,
+    options: B5ParseOptions<'_>,
     refusal: &mut crate::nurbs::LaneRefusals,
 ) -> Result<Option<B5Graph>, CodecError> {
     let mut by_id = HashMap::new();
@@ -920,8 +947,7 @@ pub(in crate::families) fn parse_from_records(
         bytes,
         (records, frames),
         maps,
-        require_topology,
-        budget,
+        options,
         refusal,
         PreparedB5Graph {
             class21_candidates,
@@ -942,11 +968,14 @@ fn parse_from_records_with_class21(
     bytes: &[u8],
     (records, frames): (&[B5Record], &[ObjectFrame]),
     maps: &SampledParameterMapIndex,
-    require_topology: bool,
-    budget: Option<&WorkBudget>,
+    options: B5ParseOptions<'_>,
     refusal: &mut crate::nurbs::LaneRefusals,
     prepared: PreparedB5Graph<'_, '_>,
 ) -> Result<Option<B5Graph>, CodecError> {
+    let B5ParseOptions {
+        require_topology,
+        budget,
+    } = options;
     let PreparedB5Graph {
         class21_candidates,
         object_stream_pcurve_candidates: object_stream_candidates,
@@ -2016,7 +2045,18 @@ pub(in crate::families) fn targeted_geometry_graph_from_frames(
         records.push(record);
     }
     records.sort_by_key(|left| left.offset);
-    parse_from_records(ctx, bytes, &records, frames, maps, false, None, refusal)
+    parse_from_records(
+        ctx,
+        bytes,
+        &records,
+        frames,
+        maps,
+        B5ParseOptions {
+            require_topology: false,
+            budget: None,
+        },
+        refusal,
+    )
 }
 
 fn is_targeted_geometry_class(family: u8, class: u8) -> bool {
