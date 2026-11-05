@@ -16,7 +16,7 @@ use crate::writer::primitives::{
 };
 mod act;
 pub(super) mod attributes;
-mod features;
+pub(super) mod features;
 mod index;
 pub(in crate::writer) mod native_bytes;
 pub(crate) mod native_geometry;
