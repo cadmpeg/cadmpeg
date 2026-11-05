@@ -267,9 +267,9 @@ pub(crate) fn write_new(
             })?;
         archive.write_all(&meta_stream)?;
     }
-    let mut feature_count = 0;
-    if let Some((bulk, meta, count, collection_index)) = features::encode(target)? {
-        feature_count = count;
+    let mut written_features = Vec::new();
+    if let Some((bulk, meta, ids, collection_index)) = features::encode(target)? {
+        written_features = ids;
         residual_losses.push(collection_residual(
             "FusionDesignSegmentType3",
             collection_index,
@@ -302,8 +302,22 @@ pub(crate) fn write_new(
     staged.seek(SeekFrom::Start(0))?;
     std::io::copy(&mut staged, writer)?;
     let mut dispositions = coverage(has_native, target, &native);
-    if feature_count != 0 && feature_count == target.model.features.len() {
-        dispositions.features = ArenaDisposition::Written;
+    if !written_features.is_empty() {
+        dispositions.features = if written_features.len() == target.model.features.len() {
+            ArenaDisposition::Written
+        } else {
+            for feature in &target.model.features {
+                if !written_features.contains(&feature.id) {
+                    residual_losses.push(
+                        crate::loss::F3dLossCode::WriterDesignRecordsOmitted.note(format!(
+                            "feature {} has no supported F3D encoding",
+                            feature.id
+                        )),
+                    );
+                }
+            }
+            ArenaDisposition::Reported
+        };
     }
     Ok((dispositions, residual_losses))
 }
