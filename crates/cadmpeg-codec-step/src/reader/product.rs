@@ -182,6 +182,11 @@ fn join_product_references(ids: impl IntoIterator<Item = u64>) -> String {
         .join(", ")
 }
 
+enum ChildPrototype {
+    Local(ProductDefinitionId),
+    External(ExternalPrototype, UsedAsset),
+}
+
 pub(super) fn decode(
     exchange: &Exchange,
     geometry: &GeometryData,
@@ -563,10 +568,6 @@ pub(super) fn decode(
     // occurrence path length directly.
     let depth_limit = ctx.policy().limits.max_recursion_depth;
     let mut depth_truncated = None::<(u64, usize)>;
-    enum ChildPrototype {
-        Local(ProductDefinitionId),
-        External(ExternalPrototype, UsedAsset),
-    }
     'expansion: while let Some((parent_definition, parent, parent_link)) =
         pending_occurrences.pop_front()
     {
