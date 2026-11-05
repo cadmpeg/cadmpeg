@@ -1,5 +1,6 @@
 use crate::test_support::test_owned::explicit_void_solid_file;
 use crate::test_support::test_solids_and_structure::explicit_non_manifold_open_shell_file;
+use crate::test_support::test_surface_fixtures::bounded_plane_file;
 use crate::test_support::test_surface_fixtures::trimmed_plane_file;
 use crate::IgesCodec;
 use crate::IgesVersion;
@@ -393,6 +394,37 @@ fn synthesized_trimmed_sheet_accepts_model_curves_without_pcurves() {
     assert_eq!(round_trip.ir().model.faces.len(), ir.model.faces.len());
     assert_eq!(round_trip.ir().model.coedges.len(), ir.model.coedges.len());
     assert!(round_trip.ir().model.pcurves.is_empty());
+}
+
+#[test]
+fn classified_model_only_sheet_preserves_its_edge_uses() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(bounded_plane_file()),
+            &DecodeOptions::default(),
+        )
+        .expect("source sheet");
+    let mut ir = decoded.ir().clone();
+    let loop_id = ir.model.faces[0]
+        .loops
+        .iter()
+        .next()
+        .expect("boundary loop")
+        .clone();
+    ir.model.faces[0].loops = cadmpeg_ir::topology::FaceLoops::classified(loop_id, Vec::new());
+    let expected = ir.model.coedges.len();
+    assert!(expected > 1);
+    assert!(ir
+        .model
+        .coedges
+        .iter()
+        .all(|coedge| coedge.pcurves.is_empty()));
+    let generated = crate::writer::synthesize(&ir, IgesVersion::V5_3).expect("synthesis");
+    let round_trip = IgesCodec
+        .decode(&mut Cursor::new(generated.bytes), &DecodeOptions::default())
+        .expect("generated IGES decodes");
+    assert_eq!(round_trip.ir().model.faces.len(), 1);
+    assert_eq!(round_trip.ir().model.coedges.len(), expected);
 }
 
 #[test]
