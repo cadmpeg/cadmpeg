@@ -1243,8 +1243,8 @@ fn source_less_sketch_point_survives_synthesis() {
 fn source_less_sketch_line_survives_synthesis() {
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{
-        Sketch, SketchEntity, SketchGeometry, SketchGeometryDefinition, SketchPlacement,
-        SketchProfiles,
+        Sketch, SketchEntity, SketchEntityUse, SketchGeometry, SketchGeometryDefinition,
+        SketchPlacement, SketchProfiles,
     };
     let mut ir = cadmpeg_ir::CadIr::empty();
     let sketch_id = "authored:model:sketch#1".try_into().unwrap();
@@ -1324,6 +1324,48 @@ fn source_less_sketch_line_survives_synthesis() {
         .losses
         .iter()
         .any(|loss| loss.message.contains(ir.model.sketches[0].id.as_str())));
+    ir.model.sketch_entities[1].geometry =
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
+            start: Point2::new(40.0, 100.0),
+            end: Point2::new(40.0, 60.0),
+        })
+        .unwrap();
+    let uses = ir
+        .model
+        .sketch_entities
+        .iter()
+        .enumerate()
+        .map(|(index, entity)| SketchEntityUse {
+            entity: entity.id().clone(),
+            reversed: index == 1,
+        })
+        .collect::<Vec<_>>();
+    ir.model.sketches[0].profiles.try_push(uses).unwrap();
+    let mut bytes = Vec::new();
+    let plan = F3dCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("plan closed profile");
+    assert!(!plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "writer.design-records-omitted"));
+    plan.write_to(&mut bytes).expect("write closed profile");
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode closed profile");
+    assert_eq!(decoded.ir().model.sketch_entities.len(), 3);
+    assert_eq!(decoded.ir().model.sketches[0].profiles.len(), 1);
+    let profile = &decoded.ir().model.sketches[0].profiles[0];
+    assert_eq!(profile.len(), 3);
+    for (index, (use_, entity)) in profile
+        .iter()
+        .zip(&decoded.ir().model.sketch_entities)
+        .enumerate()
+    {
+        assert_eq!(&use_.entity, entity.id());
+        assert_eq!(use_.reversed, index == 1);
+    }
 }
 
 #[test]
