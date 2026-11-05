@@ -698,6 +698,44 @@ fn source_less_hole_retains_unevaluated_entry_form() {
 }
 
 #[test]
+fn source_less_reference_plane_retains_unresolved_construction() {
+    let mut source = sldprt_with_body(&triangle_body());
+    source.extend(make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><ReferencePlane Name="Partial" Type="ReferencePlane" id="151"/></Keywords>"#,
+    ));
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let expected = ir.model.features[0].evaluation.definition().clone();
+    assert!(matches!(
+        expected,
+        FeatureDefinition::Operation(FeatureOperation::Unresolved {
+            family: cadmpeg_ir::features::UnresolvedFamily::DatumPlane
+        })
+    ));
+    ir.source = None;
+    ir.native = cadmpeg_ir::Native::default();
+    ir.model.features[0].native_ref = None;
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(output
+        .ir()
+        .model
+        .features
+        .iter()
+        .any(|feature| feature.evaluation.definition() == &expected));
+}
+
+#[test]
 fn source_less_scale_retains_unresolved_construction() {
     let mut source = sldprt_with_body(&triangle_body());
     source.extend(make_block(
@@ -731,6 +769,107 @@ fn source_less_scale_retains_unresolved_construction() {
         .features
         .iter()
         .any(|feature| feature.evaluation.definition() == &expected));
+}
+
+#[test]
+fn source_less_dome_and_flex_retain_unresolved_construction() {
+    for kind in ["Dome", "Flex"] {
+        let mut source = sldprt_with_body(&triangle_body());
+        let keywords =
+            format!("<Keywords><{kind} Name=\"Partial\" Type=\"{kind}\" id=\"151\"/></Keywords>");
+        source.extend(make_block(0x42, "Contents/Keywords", keywords.as_bytes()));
+        let decoded = SldprtCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .unwrap();
+        let mut ir = decoded.ir().clone();
+        let expected = ir.model.features[0].evaluation.definition().clone();
+        assert!(matches!(
+            expected,
+            FeatureDefinition::Operation(
+                FeatureOperation::Dome { .. } | FeatureOperation::Flex { .. }
+            )
+        ));
+        ir.source = None;
+        ir.native = cadmpeg_ir::Native::default();
+        ir.model.features[0].native_ref = None;
+        let plan = SldprtCodec
+            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+            .unwrap();
+        let mut bytes = Vec::new();
+        plan.write_to(&mut bytes).unwrap();
+        let output = SldprtCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        assert!(
+            output
+                .ir()
+                .model
+                .features
+                .iter()
+                .any(|feature| feature.evaluation.definition() == &expected),
+            "{kind}"
+        );
+    }
+}
+
+#[test]
+fn source_less_flex_retains_unresolved_mode() {
+    for (mode, dimension) in [
+        ("Bending", ""),
+        ("Twisting", ""),
+        ("Tapering", ""),
+        ("Stretching", ""),
+        ("Tapering", "<Dimension Name=\"Factor\">0</Dimension>"),
+    ] {
+        let mut source = sldprt_with_body(&triangle_body());
+        let keywords = format!("<Keywords><Flex Name=\"Partial\" Type=\"Flex\" id=\"151\" Mode=\"{mode}\">{dimension}</Flex></Keywords>");
+        source.extend(make_block(0x42, "Contents/Keywords", keywords.as_bytes()));
+        let decoded = SldprtCodec
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
+            .unwrap();
+        let mut ir = decoded.ir().clone();
+        let expected = ir.model.features[0].evaluation.definition().clone();
+        assert!(matches!(
+            expected,
+            FeatureDefinition::Operation(FeatureOperation::Flex {
+                mode: cadmpeg_ir::features::FlexMode::Unresolved { form: Some(_) },
+                ..
+            })
+        ));
+        ir.source = None;
+        ir.native = cadmpeg_ir::Native::default();
+        ir.model.features[0].native_ref = None;
+        let plan = SldprtCodec
+            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+            .unwrap();
+        let mut bytes = Vec::new();
+        plan.write_to(&mut bytes).unwrap();
+        let output = SldprtCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        assert!(
+            output
+                .ir()
+                .model
+                .features
+                .iter()
+                .any(|feature| feature.evaluation.definition() == &expected),
+            "{mode}"
+        );
+        for parameter in &ir.model.parameters {
+            assert!(
+                output
+                    .ir()
+                    .model
+                    .parameters
+                    .iter()
+                    .any(|written| written.name == parameter.name
+                        && written.value == parameter.value),
+                "{}",
+                parameter.name
+            );
+        }
+    }
 }
 
 #[test]
