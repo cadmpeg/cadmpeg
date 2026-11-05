@@ -464,3 +464,29 @@ fn invalid_utf8_and_unclosed_constructs_are_malformed() {
     assert!(parse_layer(&ctx, bytes).is_err());
     ctx.finish_session().unwrap();
 }
+
+#[test]
+fn incomplete_text_reports_truncation_at_the_end() {
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::default();
+    for bytes in [
+        b"#usda 1.0\ndef \"A\" {\n float x = ".as_slice(),
+        b"#usda 1.0\ndef \"A".as_slice(),
+        b"#usda 1.0\n/* comment".as_slice(),
+        b"#usda 1.0\ndef \"\xc3".as_slice(),
+    ] {
+        let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+        assert!(matches!(
+            parse_layer(&ctx, bytes),
+            Err(cadmpeg_core::CodecError::Truncated { .. })
+        ));
+        ctx.finish_session().unwrap();
+    }
+    let bytes = b"#usda 1.0\ndef \"A\" {\n float x = ?\n}\n";
+    let (ctx, _) = DecodeContext::from_root_bytes(bytes, &arena, &policy).unwrap();
+    assert!(matches!(
+        parse_layer(&ctx, bytes),
+        Err(cadmpeg_core::CodecError::Malformed(_))
+    ));
+    ctx.finish_session().unwrap();
+}
