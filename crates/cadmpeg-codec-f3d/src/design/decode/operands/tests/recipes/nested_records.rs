@@ -124,7 +124,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
 
     let mut edge_operand = parse_edge_operand(
         &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &crate::design::test_support::test_primary_frames(&bytes),
         &scope,
         0,
         &record,
@@ -154,7 +154,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         .unwrap();
     let work_point_operand = parse_edge_operand(
         &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &crate::design::test_support::test_primary_frames(&bytes),
         &work_point_scope,
         0,
         &record,
@@ -176,7 +176,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
         .unwrap();
     let sweep_operand = parse_edge_operand(
         &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &crate::design::test_support::test_primary_frames(&bytes),
         &sweep_scope,
         0,
         &record,
@@ -191,7 +191,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     assert_eq!(
         parse_edge_operand(
             &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &crate::design::test_support::test_primary_frames(&bytes),
             &scope,
             0,
             &record,
@@ -203,7 +203,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     assert_eq!(
         parse_edge_operand(
             &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &crate::design::test_support::test_primary_frames(&bytes),
             &scope,
             0,
             &record,
@@ -214,7 +214,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     );
     let terminal_group_operand = parse_edge_operand(
         &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &crate::design::test_support::test_primary_frames(&bytes),
         &scope,
         0,
         &record,
@@ -257,7 +257,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     };
     let parsed_vertex = parse_vertex_recipe(
         &vertex_bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&vertex_bytes),
+        &crate::design::test_support::test_primary_frames(&vertex_bytes),
         crate::ids::native_stream(&scope.id).expect("scope stream"),
         &vertex_header,
         std::slice::from_ref(&vertex_recipe),
@@ -1329,7 +1329,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             });
     let mut operand = parse_face_operand(
         &face_bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&face_bytes),
+        &crate::design::test_support::test_primary_frames(&face_bytes),
         &face_scope,
         (0, None),
         None,
@@ -1355,7 +1355,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     face_bytes[face_program_at + 4..face_program_at + 8].copy_from_slice(&0i32.to_le_bytes());
     let zero_prelude = parse_face_operand(
         &face_bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&face_bytes),
+        &crate::design::test_support::test_primary_frames(&face_bytes),
         &face_scope,
         (0, None),
         None,
@@ -1405,7 +1405,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     );
     let prelude = parse_face_operand(
         &prelude_bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&prelude_bytes),
+        &crate::design::test_support::test_primary_frames(&prelude_bytes),
         &face_scope,
         (0, None),
         None,
@@ -1423,7 +1423,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     let enclosing_limit = header(&mut face_bytes, *b"306", 105);
     let bounded = parse_face_operand(
         &face_bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&face_bytes),
+        &crate::design::test_support::test_primary_frames(&face_bytes),
         &face_scope,
         (0, None),
         Some(enclosing_limit),
@@ -1458,7 +1458,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             });
     let compact = parse_face_operand(
         &compact_bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&compact_bytes),
+        &crate::design::test_support::test_primary_frames(&compact_bytes),
         &face_scope,
         (0, None),
         None,
@@ -1477,7 +1477,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
     header(&mut compact_bytes, *b"306", 104);
     let terminal = parse_face_operand(
         &compact_bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&compact_bytes),
+        &crate::design::test_support::test_primary_frames(&compact_bytes),
         &face_scope,
         (0, None),
         None,

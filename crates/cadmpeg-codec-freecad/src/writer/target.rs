@@ -18,7 +18,7 @@ use cadmpeg_ir::document::CadIr;
 
 pub(super) mod projection;
 
-use super::write;
+use super::write_seekable;
 use crate::native::DocumentFacts;
 
 /// What resolving a [`cadmpeg_ir::codec::write::target::TargetRequest`] against the source decided.
@@ -250,8 +250,9 @@ fn admit_unedited(
 /// [`admit_unedited`] admits only an unedited document; the fingerprint
 /// selects layout only.
 fn finish(resolution: &Resolution<'_>) -> Result<ExportBody, CodecError> {
-    let mut bytes = Vec::new();
-    let outcome = write(&mut bytes, resolution)?;
+    let mut output = std::io::Cursor::new(Vec::new());
+    let outcome = write_seekable(&mut output, resolution)?;
+    let bytes = output.into_inner();
     Ok(ExportBody {
         bytes,
         census: outcome.census,
