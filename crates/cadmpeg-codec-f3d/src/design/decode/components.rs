@@ -66,7 +66,7 @@ pub(crate) fn decode_component_occurrences(
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let scope = crate::ids::native_scope(&entry.name);
-        let (frames, typed_frames, poses, path_carriers) =
+        let (frames, typed_frames, poses, path_carriers, source_entities) =
             if let Some(meta) = super::meta::metadata_for_bulk_stream(scan, &entry.name)? {
                 let meta_name = format!(
                     "{}MetaStream.dat",
@@ -82,9 +82,16 @@ pub(crate) fn decode_component_occurrences(
                     occurrence_frames(bytes, &meta)?,
                     crate::xref::local_component_path_poses(bytes, &meta, Some(magic))?,
                     crate::xref::component_path_carriers(bytes, &meta, Some(magic))?,
+                    occurrence_source_entities(&meta),
                 )
             } else {
-                (Vec::new(), Vec::new(), Vec::new(), Vec::new())
+                (
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                    std::collections::BTreeSet::new(),
+                )
             };
         let typed_primary = typed_frames
             .iter()
@@ -108,28 +115,8 @@ pub(crate) fn decode_component_occurrences(
             .iter()
             .map(|frame| (frame.start, frame.member_end))
             .collect::<std::collections::BTreeMap<_, _>>();
-        let mut stream_occurrences = Vec::new();
-        let mut at = 0;
-        while let Some(start) = next_indexed_record_offset(bytes, at) {
-            let end = frame_ends
-                .get(&start)
-                .copied()
-                .or_else(|| next_indexed_record_offset(bytes, start.checked_add(1)?));
-            if let Some(occurrence) = end
-                .and_then(|end| exact_component_occurrence_frame(bytes, start, end, &scope))
-                .or_else(|| attributed_component_occurrence(bytes, start, &scope))
-            {
-                if let Some(loss) = unproven_identity_loss(&occurrence) {
-                    losses.push(loss);
-                } else {
-                    stream_occurrences.push(occurrence);
-                }
-            }
-            let Some(next_at) = start.checked_add(1) else {
-                break;
-            };
-            at = next_at;
-        }
+        let mut stream_occurrences =
+            scan_stream_occurrences(bytes, &scope, &frame_ends, &source_entities, &mut losses);
         superseded += admit_occurrence_envelopes(&mut stream_occurrences, &primary, &typed_primary);
         ambiguous_current_poses += bind_current_poses(&mut stream_occurrences, &poses);
         paths.extend(component_paths(&scope, &stream_occurrences, path_carriers));
@@ -144,6 +131,42 @@ pub(crate) fn decode_component_occurrences(
         ambiguous_current_poses,
         paths,
     })
+}
+
+/// Every occurrence frame of one Design bulk stream that is admitted to
+/// projection; a refused frame adds a loss.
+fn scan_stream_occurrences(
+    bytes: &[u8],
+    scope: &str,
+    frame_ends: &std::collections::BTreeMap<usize, usize>,
+    source_entities: &std::collections::BTreeSet<u64>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Vec<DesignComponentOccurrence> {
+    let mut stream_occurrences = Vec::new();
+    let mut at = 0;
+    while let Some(start) = next_indexed_record_offset(bytes, at) {
+        let end = frame_ends
+            .get(&start)
+            .copied()
+            .or_else(|| next_indexed_record_offset(bytes, start.checked_add(1)?));
+        if let Some(occurrence) = end
+            .and_then(|end| exact_component_occurrence_frame(bytes, start, end, scope))
+            .or_else(|| attributed_component_occurrence(bytes, start, scope))
+        {
+            if let Some(loss) = unproven_identity_loss(&occurrence)
+                .or_else(|| unregistered_source_loss(&occurrence, source_entities))
+            {
+                losses.push(loss);
+            } else {
+                stream_occurrences.push(occurrence);
+            }
+        }
+        let Some(next_at) = start.checked_add(1) else {
+            break;
+        };
+        at = next_at;
+    }
+    stream_occurrences
 }
 
 /// The native component paths of one Design stream. An element is an
@@ -209,6 +232,37 @@ fn unproven_identity_loss(
         .then(|| crate::loss::F3dLossCode::LocalOccurrenceIdentityOrdinalUnresolved.note(format!(
             "local component occurrence {} has identity flag 1 and ordinal {}; its placement remains unresolved (DR-146)", occurrence.id, occurrence.occurrence_ordinal()
         )))
+}
+
+/// The records that the Design segment's type table registers to the
+/// occurrence source type.
+fn occurrence_source_entities(
+    meta: &crate::metastream::MetaStream,
+) -> std::collections::BTreeSet<u64> {
+    meta.types
+        .iter()
+        .filter(|row| {
+            row.type_guid.as_str().eq_ignore_ascii_case(
+                crate::records::feature::assembly_features::OCCURRENCE_SOURCE_TYPE_GUID,
+            )
+        })
+        .flat_map(|row| row.entities.values().copied())
+        .collect()
+}
+
+/// A refusal of an occurrence whose source reference names a record that the
+/// Design segment does not register to the occurrence source type.
+fn unregistered_source_loss(
+    occurrence: &DesignComponentOccurrence,
+    registered: &std::collections::BTreeSet<u64>,
+) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    let source = occurrence.source_record_index()?;
+    (!registered.contains(&source)).then(|| {
+        crate::loss::F3dLossCode::LocalOccurrenceSourceUnregistered.note(format!(
+            "local component occurrence {} names source record {source}, which its Design segment does not register to the occurrence source type",
+            occurrence.id
+        ))
+    })
 }
 
 /// Give each occurrence the pose of the one component-path carrier in its
@@ -1473,6 +1527,86 @@ mod tests {
         let target = repeat;
         bytes[target..target + 8].fill(0);
         assert!(attributed_component_occurrence(&bytes, 0, "f3d:Design/BulkStream.dat").is_none());
+    }
+
+    /// An attributed frame whose source reference names record 90.
+    fn attributed_with_source_record() -> Vec<u8> {
+        let plain = attributed("34", 1, 2);
+        let marker = plain
+            .windows(9)
+            .position(|window| window[0] == 1 && window[1..] == 187_u64.to_le_bytes())
+            .expect("first component reference");
+        let repeat = plain[marker + 1..]
+            .windows(9)
+            .position(|window| window[0] == 1 && window[1..] == 187_u64.to_le_bytes())
+            .expect("repeated component reference")
+            + marker
+            + 1;
+        let mut bytes = plain[..repeat - 1].to_vec();
+        bytes.push(1);
+        bytes.extend_from_slice(&90_u64.to_le_bytes());
+        bytes.extend_from_slice(&[0; 2]);
+        bytes.extend_from_slice(&plain[repeat..]);
+        bytes
+    }
+
+    #[test]
+    fn attributed_occurrence_source_must_be_registered_to_the_source_type() {
+        use crate::metastream::MetaStream;
+        let bytes = attributed_with_source_record();
+        let row = |guid: &str, entities: &[u64]| crate::records::entity_header::SegmentTypeData {
+            byte_offset: 0,
+            type_guid: guid.to_owned().try_into().unwrap(),
+            type_guid_offset: 0,
+            base_type_guid: crate::records::entity_header::BaseTypeGuid::Absent,
+            version: 0,
+            version_offset: 0,
+            module: "Component".to_owned(),
+            entities: crate::records::identity::ReferenceRun::unlocated(entities.to_vec()),
+        };
+        let meta_with = |source: &[u64], other: &[u64]| MetaStream {
+            types: vec![
+                row(
+                    crate::records::feature::assembly_features::OCCURRENCE_SOURCE_TYPE_GUID,
+                    source,
+                ),
+                row("00112233-4455-4677-8899-AABBCCDDEEFF", other),
+            ],
+            records: Vec::new(),
+            secondary_records: Vec::new(),
+        };
+        let scan = |meta: &MetaStream| {
+            let mut losses = Vec::new();
+            let kept = super::scan_stream_occurrences(
+                &bytes,
+                "f3d:Design/BulkStream.dat",
+                &std::collections::BTreeMap::new(),
+                &super::occurrence_source_entities(meta),
+                &mut losses,
+            );
+            (kept, losses)
+        };
+
+        // The source type row lists the target: the occurrence projects.
+        let (kept, losses) = scan(&meta_with(&[90], &[]));
+        assert_eq!(kept.len(), 1);
+        assert!(losses.is_empty());
+
+        // Another type lists the target, or no row lists it: refused.
+        for meta in [
+            meta_with(&[], &[90]),
+            meta_with(&[91], &[90]),
+            meta_with(&[], &[]),
+        ] {
+            let (kept, losses) = scan(&meta);
+            assert!(kept.is_empty());
+            assert_eq!(losses.len(), 1);
+            assert_eq!(
+                losses[0].code,
+                crate::loss::F3dLossCode::LocalOccurrenceSourceUnregistered.kind()
+            );
+            assert!(losses[0].message.contains("source record 90"));
+        }
     }
 
     #[test]
