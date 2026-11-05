@@ -273,16 +273,12 @@ impl<'a> AttributeIndex<'a> {
         }
         let extra_owner_attributes = target.model.attributes.iter().filter(|attribute| {
             let owner_is_free = match &attribute.target {
-                AttributeTarget::Body(id) => bodies.get(id).is_some_and(|body| {
-                    body.name.is_none() && body.color.is_none()
-                        && !body_links.contains_key(id.as_str())
-                        && !body_timestamps.contains_key(id.as_str())
-                }),
-                AttributeTarget::Face(id) => faces.get(id).is_some_and(|face| {
-                    face.name.is_none() && face.color.is_none()
-                        && !face_tags.contains_key(id.as_str())
-                        && !face_timestamps.contains_key(id.as_str())
-                }),
+                AttributeTarget::Body(id) => bodies.contains_key(id)
+                    && !body_links.contains_key(id.as_str())
+                    && !body_timestamps.contains_key(id.as_str()),
+                AttributeTarget::Face(id) => faces.contains_key(id)
+                    && !face_tags.contains_key(id.as_str())
+                    && !face_timestamps.contains_key(id.as_str()),
                 AttributeTarget::Edge(id) => edges.contains(id)
                     && !edge_tags.contains_key(id.as_str()) && !edge_timestamps.contains_key(id.as_str()),
                 AttributeTarget::Vertex(id) => vertices.contains(id) && !vertex_timestamps.contains_key(id.as_str()),
@@ -1256,7 +1252,9 @@ pub(super) fn encode_source_less_attributes(
         {
             reference
         } else {
-            timestamp_attribute_ref(target, index, &owner_target, attribute_start)?.unwrap_or(-1)
+            timestamp_attribute_ref(target, index, &owner_target, attribute_start)?
+                .or(extra_attribute_ref(target, index, &owner_target, attribute_start)?)
+                .unwrap_or(-1)
         };
         native_color_attribute(
             records,
@@ -1287,7 +1285,9 @@ pub(super) fn encode_source_less_attributes(
         {
             reference
         } else {
-            timestamp_attribute_ref(target, index, &owner_target, attribute_start)?.unwrap_or(-1)
+            timestamp_attribute_ref(target, index, &owner_target, attribute_start)?
+                .or(extra_attribute_ref(target, index, &owner_target, attribute_start)?)
+                .unwrap_or(-1)
         };
         native_color_attribute(
             records,
@@ -1316,7 +1316,9 @@ pub(super) fn encode_source_less_attributes(
         {
             reference
         } else {
-            timestamp_attribute_ref(target, index, &owner_target, attribute_start)?.unwrap_or(-1)
+            timestamp_attribute_ref(target, index, &owner_target, attribute_start)?
+                .or(extra_attribute_ref(target, index, &owner_target, attribute_start)?)
+                .unwrap_or(-1)
         };
         let previous = if body.color.is_none() {
             -1
@@ -1348,7 +1350,9 @@ pub(super) fn encode_source_less_attributes(
         {
             reference
         } else {
-            timestamp_attribute_ref(target, index, &owner_target, attribute_start)?.unwrap_or(-1)
+            timestamp_attribute_ref(target, index, &owner_target, attribute_start)?
+                .or(extra_attribute_ref(target, index, &owner_target, attribute_start)?)
+                .unwrap_or(-1)
         };
         let previous = if face.color.is_none() {
             -1

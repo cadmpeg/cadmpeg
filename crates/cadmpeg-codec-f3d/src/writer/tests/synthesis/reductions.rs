@@ -177,3 +177,40 @@ fn source_body_without_asm_key_keeps_the_absent_key() {
     let output = F3dCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()).unwrap();
     assert_eq!(crate::test_support::native_test::f3d_native(output.ir()).body_native_keys, before);
 }
+
+#[test]
+fn compact_attributes_follow_body_and_face_display_attributes() {
+    use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
+    let source = crate::test_support::zip_test::f3d_with_smbh(
+        &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh());
+    let decoded = F3dCodec.decode(&mut Cursor::new(source), &DecodeOptions::default()).unwrap();
+    let mut ir = decoded.ir().clone();
+    ir.model.bodies[0].name = Some("Body A".into());
+    ir.model.bodies[0].color = cadmpeg_ir::topology::Color::new(0.2, 0.4, 0.6, 1.0);
+    ir.model.faces[0].name = Some("Face A".into());
+    ir.model.faces[0].color = cadmpeg_ir::topology::Color::new(0.1, 0.3, 0.5, 1.0);
+    let targets = [AttributeTarget::Body(ir.model.bodies[0].id.clone()),
+        AttributeTarget::Face(ir.model.faces[0].id.clone())];
+    for (ordinal, target) in targets.iter().enumerate() {
+        ir.model.attributes.push(SourceAttribute {
+            id: format!("authored:model:attribute#{ordinal}").try_into().unwrap(), native_ref: None,
+            target: target.clone(), name: "ATTRIB_CUSTOM-attrib".into(),
+            values: vec![Some(AttributeValue::Reference("f3d:brep:entity#-1".into())),
+                Some(AttributeValue::String(format!("value-{ordinal}")))],
+        });
+    }
+    let mut bytes = Vec::new();
+    let report = F3dCodec.plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap().write_to(&mut bytes).unwrap();
+    let output = F3dCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()).unwrap();
+    for (ordinal, target) in targets.iter().enumerate() {
+        let attribute = output.ir().model.attributes.iter().find(|attribute| &attribute.target == target
+            && attribute.name == "ATTRIB_CUSTOM-attrib").unwrap();
+        assert_eq!(attribute.values[1], Some(AttributeValue::String(format!("value-{ordinal}"))));
+        assert!(!report.losses.iter().any(|loss| loss.message.contains(&format!("authored:model:attribute#{ordinal}"))));
+    }
+    assert_eq!(output.ir().model.bodies[0].name, ir.model.bodies[0].name);
+    assert_eq!(output.ir().model.bodies[0].color, ir.model.bodies[0].color);
+    assert_eq!(output.ir().model.faces[0].name, ir.model.faces[0].name);
+    assert_eq!(output.ir().model.faces[0].color, ir.model.faces[0].color);
+}
