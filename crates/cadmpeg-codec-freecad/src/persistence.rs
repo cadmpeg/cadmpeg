@@ -139,6 +139,76 @@ pub(crate) fn resolve_side_entries(
     Ok(())
 }
 
+/// Give up an unreadable geometry value while retaining its property header.
+pub(crate) fn give_up_missing_geometry(
+    ctx: &DecodeContext<'_>,
+    stage: &mut PartOutput,
+    view: View<'_>,
+    graph: &mut Graph,
+    entries: &std::collections::BTreeMap<String, View<'_>>,
+) -> Result<(), CodecError> {
+    use cadmpeg_ir::source_fidelity::parts::DecodeParts;
+    for property in &mut graph.properties {
+        let Some(crate::native::PropertyBody::Persisted {
+            values,
+            side_entries,
+            ..
+        }) = &property.body
+        else {
+            continue;
+        };
+        if property.family != PropertyFamily::Geometry {
+            continue;
+        }
+        let missing = values.iter().find_map(|value| {
+            if matches!(
+                value.tag.as_str(),
+                "StringHasher" | "StringHasher2" | "ElementMap" | "ElementMap2"
+            ) {
+                return None;
+            }
+            value.attributes.iter().find_map(|(key, name)| {
+                (matches!(key.as_str(), "file" | "File")
+                    && !name.is_empty()
+                    && side_entries.contains(name)
+                    && !entries.contains_key(name))
+                .then_some(name.clone())
+            })
+        });
+        let Some(missing) = missing else {
+            continue;
+        };
+        let range = graph
+            .property_sources
+            .get(&property.id)
+            .and_then(crate::fidelity::ValueSourceRanges::value_range)
+            .ok_or_else(|| CodecError::malformed("missing geometry value source range"))?;
+        let extent = crate::fidelity::relative_xml_extent(view, range)?;
+        property.body = None;
+        stage.insert_native(ctx, "properties", property.clone())?;
+        let owner = cadmpeg_ir::ids::Identity::try_from(property.id.as_str())
+            .map_err(CodecError::malformed)?;
+        let mut spec = document_part("freecad.property_value")
+            .contained_in(owner)
+            .absent_field("values")
+            .absent_field("links")
+            .absent_field("side_entries");
+        if let Some(classes) = crate::fidelity::property_value_classes(
+            &graph.objects,
+            &property.owner,
+            &property.type_name,
+        ) {
+            spec = spec.holding(classes);
+        }
+        ctx.decode_part(stage, extent, spec, |_| {
+            Err::<(), _>(CodecError::malformed(format_args!(
+                "geometry references missing side entry {missing}"
+            )))
+        })?;
+    }
+    Ok(())
+}
+
 /// Recover the persistence graph from an already admitted document.
 /// A part inside the expanded `Document.xml` member.
 pub(crate) fn document_part(label: &'static str) -> PartSpec {
