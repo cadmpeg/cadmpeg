@@ -651,7 +651,8 @@ fn synthesize_with_admission(
             .solved()
             .is_none_or(|solved| flatten_curve(solved).is_err())
     })?;
-    let (admitted, admission_losses) = admission::edge_carriers(lowered.as_ref());
+    let (poles, pole_losses) = admission::pole_edges(lowered.as_ref())?;
+    let (admitted, admission_losses) = admission::edge_carriers(poles.as_ref());
     let (stripped, strip_losses) = admission::strip_unusable_face_topology(admitted.as_ref());
     let ir = stripped.as_ref().unwrap_or(admitted.as_ref());
     let mut graph = match synthesis_graph(ir, version) {
@@ -659,6 +660,7 @@ fn synthesize_with_admission(
         Err(CodecError::UnsupportedContent(reason)) => degrade::graph(ir, version, &reason)?,
         Err(error) => return Err(error.into()),
     };
+    graph.losses.extend(pole_losses);
     graph.losses.extend(admission_losses);
     graph.losses.extend(strip_losses);
     graph
