@@ -52,36 +52,6 @@
           ]
         },
         {
-          "id": "iges:application:attribute#D5:0:1",
-          "name": "name",
-          "native_ref": "iges:entity:directory#5",
-          "target": {
-            "id": "iges:model:point#D5:end",
-            "kind": "point"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "OFFSET"
-            }
-          ]
-        },
-        {
-          "id": "iges:application:attribute#D5:0:2",
-          "name": "name",
-          "native_ref": "iges:entity:directory#5",
-          "target": {
-            "id": "iges:model:point#D5:start",
-            "kind": "point"
-          },
-          "values": [
-            {
-              "kind": "string",
-              "value": "OFFSET"
-            }
-          ]
-        },
-        {
           "id": "iges:application:attribute#document:author",
           "name": "author",
           "target": {
