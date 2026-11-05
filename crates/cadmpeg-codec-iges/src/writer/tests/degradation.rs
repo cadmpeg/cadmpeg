@@ -1279,3 +1279,23 @@ fn empty_model_emits_its_canonical_length_unit_definition() {
         .iter()
         .all(|loss| !loss.message.contains("units")));
 }
+
+#[test]
+fn empty_v4_model_emits_the_identity_frame() {
+    let ir = CadIr::empty();
+    let plan = plan_at(IgesVersion::V4_0, &ir, None).expect("empty V4 document synthesizes");
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("identity frame re-decodes");
+    assert!(output.ir().model.bodies.is_empty());
+    assert!(output.ir().model.faces.is_empty());
+    let transforms = &output.ir().native.namespace("iges").unwrap().arenas()["transformations"];
+    assert_eq!(transforms.len(), 1);
+    assert!(output
+        .report()
+        .losses
+        .iter()
+        .all(|loss| !loss.message.contains("transformation")));
+}
