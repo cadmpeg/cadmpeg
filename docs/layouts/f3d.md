@@ -884,7 +884,7 @@ Offsets are relative to the legacy Scale scope's primary indexed header. The fra
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | legacy English `Scale` scope has a 307-byte frame |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | legacy `Scale` scope has a 297-byte payload |
 | 21 | 8 | `factor` | `f64` | little | spec | the positive finite f64 uniform factor at offset 21 |
 | 29 | 11 | `center_reference` | `bytes[11]` | little | spec | marked references at offsets 29, 40, and 64 naming the final |
 | 40 | 11 | `factor_reference` | `bytes[11]` | little | spec | marked references at offsets 29, 40, and 64 naming the final, first, and second ordered references |

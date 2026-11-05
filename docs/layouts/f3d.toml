@@ -2870,7 +2870,7 @@ name = "indexed_header"
 offset = 0
 type = "bytes[11]"
 source = "spec"
-anchor = "legacy English `Scale` scope has a 307-byte frame"
+anchor = "legacy `Scale` scope has a 297-byte payload"
 
 [[record.gap]]
 offset = 11
