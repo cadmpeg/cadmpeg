@@ -813,10 +813,7 @@ pub(super) fn project(
                 .map_err(|_| {
                     CodecError::malformed("IGES semantic annotation identity is invalid")
                 })?;
-        let entity_type = entries
-            .get(&sequence)
-            .map(|entry| entry.entity_type)
-            .unwrap_or(0);
+        let entity_type = entries.get(&sequence).map_or(0, |entry| entry.entity_type);
         let mut semantic = SemanticAnnotation::new(
             semantic_id,
             source_entity.clone(),
