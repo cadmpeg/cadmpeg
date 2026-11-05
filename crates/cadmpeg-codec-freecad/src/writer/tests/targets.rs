@@ -305,11 +305,30 @@ fn unknown_source_declaration_is_preserved_only_with_eligible_layout() {
         WritePath::Patched { .. }
     ));
     assert_eq!(entry_payloads(&bytes(output)), entry_payloads(&source));
-    let error = plan(decoded.ir(), None, TargetRequest::Inherit)
-        .expect_err("no synthesis vocabulary for residual declaration");
-    assert!(
-        matches!(error, EncodeError::UnsupportedTarget(_)),
-        "{error}"
+    let fallback = plan(decoded.ir(), None, TargetRequest::Inherit)
+        .expect("off-catalog inheritance synthesizes the catalog default");
+    assert_eq!(target(&fallback), "fcstd:schema-4");
+    assert!(matches!(
+        fallback.report().write_path(),
+        WritePath::Synthesized { .. }
+    ));
+    assert!(fallback.report().losses.iter().any(|loss| {
+        loss.code
+            == crate::loss::FreecadLossCode::SourceDialectDisplaced
+                .note("")
+                .code
+            && loss.message.contains("fcstd:unknown")
+            && loss.message.contains("fcstd:schema-4")
+    }));
+    assert_eq!(
+        decode(&bytes(fallback))
+            .report()
+            .dialects()
+            .unwrap()
+            .primary()
+            .dialect()
+            .as_str(),
+        "fcstd:schema-4"
     );
     let explicit = plan(
         decoded.ir(),

@@ -133,6 +133,7 @@ fn reduced_rows_hold_their_normalizations() {
         [
             "model.bodies[].name",
             "model.bodies[].color",
+            "model.bodies[].visible",
             "model.bodies[].color.r",
             "model.bodies[].color.g",
             "model.bodies[].color.b",
