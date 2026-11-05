@@ -25,7 +25,7 @@ use cadmpeg_ir::units::FinitePoint2;
 pub(crate) const SPATIAL_OPERAND_CAPACITY: cadmpeg_ir::codec::write::CapacityField =
     cadmpeg_ir::codec::write::CapacityField {
         field: "spatial.relation.operand_address",
-        limit: u16::MAX as u64,
+        limit: 0xffff_u64,
         source: "docs/formats/sldprt.md §2: scalar operand addresses are u16",
         helper: "field_u16",
     };

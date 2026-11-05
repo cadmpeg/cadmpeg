@@ -12,7 +12,7 @@ use crate::native::SldprtNative;
 pub(crate) const SCALAR_IDENTITY_CAPACITY: cadmpeg_ir::codec::write::CapacityField =
     cadmpeg_ir::codec::write::CapacityField {
         field: "feature_input.scalar_identity",
-        limit: u32::MAX as u64,
+        limit: 0xffff_ffff_u64,
         source: "docs/formats/sldprt.md §2: scalar object identifier u32 LE",
         helper: "ScalarIdentities::take",
     };

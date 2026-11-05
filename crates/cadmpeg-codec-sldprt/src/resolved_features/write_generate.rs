@@ -24,7 +24,7 @@ use std::collections::HashMap;
 pub(crate) const LOCAL_MARKER_CAPACITY: cadmpeg_ir::codec::write::CapacityField =
     cadmpeg_ir::codec::write::CapacityField {
         field: "sketch.marker.local_link_id",
-        limit: u16::MAX as u64,
+        limit: 0xffff_u64,
         source: "docs/formats/sldprt.md §2: feature-local link identifiers are u16",
         helper: "local_marker_id",
     };
