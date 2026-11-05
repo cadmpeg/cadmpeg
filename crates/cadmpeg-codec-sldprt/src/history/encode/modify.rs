@@ -72,8 +72,20 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                         && !parameters
                             .keys()
                             .any(|name| indexed_name(name.as_str(), "Radius"));
+                    let unresolved_variable = matches!(
+                        form,
+                        Some(cadmpeg_ir::features::edge_treatments::RadiusForm::Variable)
+                    ) && !parameters
+                        .keys()
+                        .any(|name| matches!(name.as_str(), "Radius" | "D1"))
+                        && parameters
+                            .keys()
+                            .filter(|name| indexed_name(name.as_str(), "Radius"))
+                            .count()
+                            == 1;
                     if existing.is_none()
                         && !unresolved_constant
+                        && !unresolved_variable
                         && (form.is_some() || !parameters.is_empty())
                     {
                         return Err(CodecError::UnsupportedContent(format!(

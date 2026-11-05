@@ -21,6 +21,7 @@ mod normalization;
 mod parameter_native_defaults;
 mod parameters_equation_aliases;
 mod parameters_extrude;
+mod partial_fillet;
 mod patterns_history;
 mod record_losses;
 mod reemitted_lanes;
