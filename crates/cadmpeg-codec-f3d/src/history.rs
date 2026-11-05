@@ -3159,6 +3159,7 @@ pub(crate) fn bind_feature_face_selections(
                         feature_id,
                         scope,
                         groups,
+                        operands,
                         &move_face::MoveFaceStates {
                             histories,
                             history,
@@ -5381,7 +5382,40 @@ struct FaceOperandCaches<'a> {
     face_recipes: SnapshotCache<'a, AsmHistoricalTopology, face_recipe::FaceRecipeIndex>,
 }
 
+/// Bind one face operand to the preceding state of its scope. A bounded-face
+/// operand of a `MoveFace` or `OffsetFaces` scope selects the face its recipe
+/// resolves.
 fn bind_historical_face_operand<'a>(
+    operand: &mut crate::records::topology::face::DesignFaceOperand,
+    transition: &FaceOperandTransition<'a>,
+    operand_groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
+    recipe_record_indices: &HashMap<&str, i32>,
+    caches: &mut FaceOperandCaches<'a>,
+) -> Result<(), cadmpeg_core::CodecError> {
+    bind_historical_face_operand_candidates(
+        operand,
+        transition,
+        operand_groups,
+        recipe_record_indices,
+        caches,
+    )?;
+    if matches!(
+        transition.scope.kind(),
+        crate::records::feature::scope::DesignFeatureKind::MoveFace
+            | crate::records::feature::scope::DesignFeatureKind::OffsetFaces
+    ) && operand.recipe_kind == crate::records::recipes::ConstructionRecipeKind::BoundedFace
+    {
+        operand.resolved_face_slots = caches
+            .face_recipes
+            .get(transition.topology, face_recipe::FaceRecipeIndex::new)
+            .resolve(operand)
+            .into_iter()
+            .collect();
+    }
+    Ok(())
+}
+
+fn bind_historical_face_operand_candidates<'a>(
     operand: &mut crate::records::topology::face::DesignFaceOperand,
     transition: &FaceOperandTransition<'a>,
     operand_groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
@@ -6067,17 +6101,15 @@ fn resolve_bounded_face_recipe_target<'a>(
     {
         return Ok(None);
     }
-    let Some(first) = operand.recipe_references.first() else {
+    let Some(ordinals) =
+        crate::records::topology::face::prefix_operand_ordinals(&operand.recipe_references)
+    else {
         return Ok(None);
     };
-    let first_clause_len = operand
-        .recipe_references
-        .iter()
-        .take_while(|reference| {
-            reference.selector_offset == first.selector_offset
-                && reference.token_offset == first.token_offset
-        })
-        .count();
+    let first_clause_len = ordinals.iter().take_while(|ordinal| **ordinal == 0).count();
+    if first_clause_len == 0 {
+        return Ok(None);
+    }
     let first_clause = &operand.recipe_references[..first_clause_len];
     let topology_faces = selection::FamilySlots::new(&preceding.faces);
     let mut target_candidates = BTreeSet::new();
