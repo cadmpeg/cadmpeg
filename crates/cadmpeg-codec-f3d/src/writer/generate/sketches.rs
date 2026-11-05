@@ -78,6 +78,9 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
         let origin = origin.get();
         let normal = normal.get();
         let axis = axis.get();
+        if [origin.x, origin.y, origin.z].into_iter().any(underflows) {
+            continue;
+        }
         let v_axis = normal.cross(axis);
         let frame = [
             [axis.x, v_axis.x, normal.x, origin.x / 10.0],
@@ -481,6 +484,10 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<SketchStream>, CodecError>
     }))
 }
 
+fn underflows(value: f64) -> bool {
+    value != 0.0 && value / 10.0 == 0.0
+}
+
 fn unsupported_member(row: &cadmpeg_ir::sketches::SketchEntity) -> bool {
     (row.construction
         && matches!(
@@ -490,14 +497,30 @@ fn unsupported_member(row: &cadmpeg_ir::sketches::SketchEntity) -> bool {
         || row.geometry_ref.is_some()
         || !row.endpoint_refs.is_empty()
         || match row.geometry.definition() {
-            SketchGeometryDefinition::Point { .. } | SketchGeometryDefinition::Circle { .. } => {
-                false
+            SketchGeometryDefinition::Point { position } => {
+                let position = position.get();
+                underflows(position.u) || underflows(position.v)
+            }
+            SketchGeometryDefinition::Circle { center, radius } => {
+                let center = center.get();
+                underflows(center.u) || underflows(center.v) || underflows(radius.get())
             }
             SketchGeometryDefinition::Line { start, end } => {
                 let start = start.get();
                 let end = end.get();
                 let length = (end.u - start.u).hypot(end.v - start.v);
-                !length.is_finite() || length <= f64::EPSILON
+                !length.is_finite()
+                    || length <= f64::EPSILON
+                    || [
+                        start.u,
+                        start.v,
+                        end.u,
+                        end.v,
+                        end.u - start.u,
+                        end.v - start.v,
+                    ]
+                    .into_iter()
+                    .any(underflows)
             }
             SketchGeometryDefinition::Arc {
                 center,
@@ -508,6 +531,9 @@ fn unsupported_member(row: &cadmpeg_ir::sketches::SketchEntity) -> bool {
                 let sweep = (end_angle.get() - start_angle.get()).abs();
                 let center = center.get();
                 !sweep.is_finite()
+                    || underflows(center.u)
+                    || underflows(center.v)
+                    || underflows(radius.get())
                     || sweep >= std::f64::consts::TAU - EPS_FULL_TURN_TO_CIRCLE
                     || [start_angle.get(), end_angle.get()]
                         .into_iter()

@@ -250,7 +250,7 @@ fn semantic_writer_accepts_matching_resolved_feature_edits() {
 }
 
 #[test]
-fn semantic_writer_omits_marker_framing_without_typed_operands() {
+fn semantic_writer_preserves_unlinked_relation_markers() {
     use crate::records::{FeatureInputClassRole, SketchInputKind};
 
     assert_eq!(
@@ -428,10 +428,42 @@ fn semantic_writer_omits_marker_framing_without_typed_operands() {
         .iter()
         .flat_map(|lane| &lane.classes)
         .any(|class| class.name == "sgPointHandle"));
-    assert!(native
-        .feature_input_lanes
-        .iter()
-        .all(|lane| lane.sketch_entities.is_empty()));
+    let markers = |native: &crate::native::SldprtNative| {
+        native
+            .feature_input_lanes
+            .iter()
+            .flat_map(|lane| &lane.sketch_entities)
+            .map(|marker| {
+                (
+                    marker.kind(),
+                    marker.local_id(),
+                    marker.state_value.map(cadmpeg_ir::scalar::FiniteReal::get),
+                    marker.links().len(),
+                )
+            })
+            .collect::<Vec<_>>()
+    };
+    let expected = vec![
+        (
+            SketchInputKind::Relation(crate::records::SketchRelationKind::Angle),
+            Some(3),
+            Some(3.0),
+            0,
+        ),
+        (
+            SketchInputKind::Relation(crate::records::SketchRelationKind::Radius),
+            Some(4),
+            Some(4.0),
+            0,
+        ),
+        (
+            SketchInputKind::Relation(crate::records::SketchRelationKind::Coincident),
+            Some(5),
+            Some(5.0),
+            0,
+        ),
+    ];
+    assert_eq!(markers(&native), expected);
     assert_eq!(
         regenerated.ir().model.features.len(),
         decoded.ir().model.features.len()
@@ -444,10 +476,7 @@ fn semantic_writer_omits_marker_framing_without_typed_operands() {
         .iter()
         .flat_map(|lane| &lane.classes)
         .any(|class| class.name == "sgPointHandle"));
-    assert!(native
-        .feature_input_lanes
-        .iter()
-        .all(|lane| lane.sketch_entities.is_empty()));
+    assert_eq!(markers(&native), expected);
 }
 
 #[test]
