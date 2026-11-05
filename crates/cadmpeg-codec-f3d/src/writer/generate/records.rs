@@ -314,6 +314,35 @@ pub(super) fn encode_design_bulkstream(
         out.push(0);
     }
     for header in &native.design_record_headers {
+        let typed_record = native.sketch_points.iter().any(|record| {
+            record.record_index == header.record_index
+                || record.paired_reference == header.record_index
+        }) || native
+            .sketch_curve_identities
+            .iter()
+            .any(|record| record.record_index == header.record_index)
+            || native
+                .sketch_texts
+                .iter()
+                .any(|record| record.record_index == header.record_index)
+            || native
+                .sketch_relations
+                .iter()
+                .any(|record| record.record_index == header.record_index);
+        if typed_record {
+            continue;
+        }
+        let registered = header
+            .class_tag
+            .as_str()
+            .parse::<usize>()
+            .ok()
+            .and_then(|tag| tag.checked_sub(256))
+            .and_then(|ordinal| registry.types.get(ordinal))
+            .is_some_and(|kind| kind.entity_ids.contains(&u64::from(header.record_index)));
+        if registered {
+            primary_records.push(primary_record(header.record_index, out.len())?);
+        }
         native_lp_ascii(&mut out, header.class_tag.as_str())?;
         out.extend_from_slice(&header.record_index.to_le_bytes());
     }
