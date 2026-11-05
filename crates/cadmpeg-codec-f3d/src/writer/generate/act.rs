@@ -12,9 +12,13 @@ pub(super) struct Segment {
     pub(super) folder: String,
     pub(super) bulk: Vec<u8>,
     pub(super) meta: Vec<u8>,
+    pub(super) record_count: usize,
 }
 
-pub(super) fn encode(native: &F3dNative) -> Result<Vec<Segment>, CodecError> {
+pub(super) fn encode(
+    native: &F3dNative,
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+) -> Result<Vec<Segment>, CodecError> {
     let mut segments = Vec::new();
     for table in &native.act_tables {
         let scope = crate::ids::native_stream(&table.id)
@@ -29,7 +33,11 @@ pub(super) fn encode(native: &F3dNative) -> Result<Vec<Segment>, CodecError> {
             .filter(|record| crate::ids::native_stream(record.id()) == Some(meta_scope.as_str()))
             .collect::<Vec<_>>();
         types.sort_by(|left, right| left.class_tag.as_str().cmp(right.class_tag.as_str()));
-        let mut bulk = Vec::new();
+        let prefix_length = table.id.rsplit_once('#')
+            .and_then(|(_, value)| value.parse::<usize>().ok())
+            .unwrap_or(0);
+        ctx.retain_bytes(u64::try_from(prefix_length).map_err(CodecError::malformed)?, "F3D ACT table prefix")?;
+        let mut bulk = ctx.alloc_filled(prefix_length, 0u8, "F3D ACT table prefix")?;
         let mut records = Vec::new();
         let mut registrations = BTreeMap::<u32, usize>::new();
         let type_for = |index: u32| -> Result<usize, CodecError> {
@@ -166,6 +174,7 @@ pub(super) fn encode(native: &F3dNative) -> Result<Vec<Segment>, CodecError> {
             ),
             bulk,
             meta,
+            record_count: records.len(),
         });
     }
     Ok(segments)

@@ -846,3 +846,31 @@ fn f3z_prefix_detects_as_f3d() {
         Confidence::High
     );
 }
+
+#[test]
+fn f3z_merges_unjoined_mesh_container_in_its_source_frame() {
+    use std::io::Write;
+    let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+    zip.start_file("FusionAssetName[Active]/ParaMeshGeometry.BlobParts/ParaMeshGeometry.11111111-2222-4333-8444-555555555555.paramesh", stored).unwrap();
+    zip.write_all(&crate::test_support::paramesh::triangle())
+        .unwrap();
+    let component = zip.finish().unwrap().into_inner();
+    let root = f3d_without_brep("assembly-design", "root.f3d", &[("comp.f3d", XREF_ROLE)]);
+    let archive = f3z_archive("root.f3d", &[("root.f3d", &root), ("comp.f3d", &component)]);
+    let decoded = crate::test_support::archive_session::decode(
+        &mut Cursor::new(archive),
+        &DecodeOptions::default(),
+    )
+    .unwrap();
+    let native = crate::test_support::native_test::f3d_native(decoded.ir());
+    let [mesh] = native.mesh_containers.as_slice() else {
+        panic!("one merged mesh container")
+    };
+    assert_eq!(mesh.container_vertices.len(), 3);
+    assert_eq!(mesh.triangles, [[0, 1, 2]]);
+    assert!(mesh
+        .id
+        .starts_with(&format!("f3d:xref/role-{XREF_ROLE}/reference-0/")));
+}

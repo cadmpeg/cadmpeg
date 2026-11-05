@@ -15,7 +15,9 @@ use crate::records::{
 use cadmpeg_asm::brep::records::EvaluatedToleranceSlot;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry};
+use cadmpeg_ir::geometry::{
+    CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
+};
 
 use super::attributes::source_less_body_key;
 /// Each face has one signed native key slot; keys are not globally unique.
@@ -782,17 +784,32 @@ pub(in crate::writer) fn validate_source_less_history_graph(
     Ok(())
 }
 
+pub(in crate::writer) fn mesh_sentinel_matches(
+    surface: &cadmpeg_ir::geometry::Surface,
+    sentinel: &cadmpeg_asm::brep::records::MeshSurfaceSentinel,
+) -> bool {
+    let Some(scope) = sentinel.source_namespace.as_str().strip_suffix("asm") else {
+        return false;
+    };
+    let Some(entity) = cadmpeg_asm::brep::records::native_entity_id(
+        &sentinel.source_namespace,
+        sentinel.record_index,
+    ) else {
+        return false;
+    };
+    surface.id.as_str() == entity
+        && matches!(
+            &surface.geometry,
+            SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: Some(record) })
+                if record.as_str() == format!("{scope}brep:mesh_surface#{}", sentinel.record_index)
+        )
+}
+
 pub(super) fn validate_source_less_design_links(
     target: &CadIr,
     native: &F3dNative,
     attributes: &super::attributes::AttributeIndex<'_>,
 ) -> Result<(), CodecError> {
-    if let Some(sentinel) = native.mesh_surface_sentinels.first() {
-        return Err(CodecError::UnsupportedContent(format!(
-            "source-less F3D cannot serialize mesh-surface sentinel {} without its retained ASM record",
-            sentinel.id()
-        )));
-    }
     let coedges = target
         .model
         .coedges

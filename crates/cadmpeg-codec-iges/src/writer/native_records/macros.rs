@@ -56,6 +56,12 @@ fn token_text(token: &Value) -> Result<String, String> {
                 wire.get("value")
                     .ok_or("macro string parameter has no value")?,
             )?;
+            if bytes.is_empty() {
+                return Err(
+                    "an explicit empty string has no Parameter Data Hollerith representation"
+                        .into(),
+                );
+            }
             let text = std::str::from_utf8(&bytes).map_err(|error| error.to_string())?;
             Ok(format!("{}H{text}", bytes.len()))
         }

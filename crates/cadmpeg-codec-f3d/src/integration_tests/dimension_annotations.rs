@@ -124,8 +124,8 @@ fn presentation_frame_classes_resolve_through_type_table_ordinals() {
         let [frame] = native.design_dimension_presentation_frames.as_slice() else {
             panic!("one presentation frame for {primary} and {paired}")
         };
-        assert_eq!(frame.class_tag.as_str(), "273");
-        assert_eq!(frame.paired_class_tag.as_str(), "274");
+        assert_eq!(frame.class_tag.as_str(), "281");
+        assert_eq!(frame.paired_class_tag.as_str(), "282");
         assert_eq!(frame.owner_reference, 277);
         assert_eq!(frame.governing_parameter_record_index, 1204);
         assert_eq!(frame.governing_companion_record_index, 1205);
