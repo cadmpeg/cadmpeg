@@ -1364,6 +1364,20 @@ fn disk_sheet_without_explicit_pcurve_classifies_trim_iso_zero() {
     ir.finalize();
     let model =
         super::super::model::WritableModel::try_new(&ir).expect("disk without pcurve admits");
+    let surface = model.surfaces[0].payload().expect("plane surface payload");
+    let mut view = cadmpeg_core::decode::View::over_retained(&surface.body);
+    assert_eq!(view.req_u8().unwrap(), 0x10);
+    for _ in 0..16 {
+        view.req_f64_le().unwrap();
+    }
+    assert_eq!(
+        [view.req_f64_le().unwrap(), view.req_f64_le().unwrap()],
+        [-2.0, 2.0]
+    );
+    assert_eq!(
+        [view.req_f64_le().unwrap(), view.req_f64_le().unwrap()],
+        [-2.0, 2.0]
+    );
     assert!(model.coedges[0].explicit_pcurve.is_none());
     assert_eq!(
         super::super::trim_iso::classify(&model, &model.coedges[0])
@@ -1385,7 +1399,11 @@ fn disk_sheet_without_explicit_pcurve_classifies_trim_iso_zero() {
         panic!("disk Brep topology must remain valid")
     };
     assert_eq!(
-        brep.raw().trims.iter().map(|trim| trim.iso).collect::<Vec<_>>(),
+        brep.raw()
+            .trims
+            .iter()
+            .map(|trim| trim.iso)
+            .collect::<Vec<_>>(),
         [RawTrimIso::None]
     );
     let mut bytes = Vec::new();
