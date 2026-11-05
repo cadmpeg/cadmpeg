@@ -239,6 +239,9 @@ impl<'a> AttributeIndex<'a> {
             .collect();
         let bodies = target.model.bodies.iter().map(|body| (&body.id, body)).collect::<HashMap<_, _>>();
         let faces = target.model.faces.iter().map(|face| (&face.id, face)).collect::<HashMap<_, _>>();
+        let edges = target.model.edges.iter().map(|edge| &edge.id).collect::<std::collections::HashSet<_>>();
+        let vertices = target.model.vertices.iter().map(|vertex| &vertex.id).collect::<std::collections::HashSet<_>>();
+        let coedges = target.model.coedges.iter().map(|coedge| &coedge.id).collect::<std::collections::HashSet<_>>();
         let mut attribute_counts = std::collections::BTreeMap::new();
         for attribute in &target.model.attributes {
             *attribute_counts.entry(&attribute.target).or_insert(0usize) += 1;
@@ -255,6 +258,11 @@ impl<'a> AttributeIndex<'a> {
                         && !face_tags.contains_key(id.as_str())
                         && !face_timestamps.contains_key(id.as_str())
                 }),
+                AttributeTarget::Edge(id) => edges.contains(id)
+                    && !edge_tags.contains_key(id.as_str()) && !edge_timestamps.contains_key(id.as_str()),
+                AttributeTarget::Vertex(id) => vertices.contains(id) && !vertex_timestamps.contains_key(id.as_str()),
+                AttributeTarget::Coedge(id) => coedges.contains(id)
+                    && !coedge_sketch_links.contains_key(id.as_str()) && !coedge_timestamps.contains_key(id.as_str()),
                 _ => false,
             };
             owner_is_free && attribute_counts.get(&attribute.target) == Some(&1)
@@ -554,11 +562,18 @@ pub(super) fn owner_attribute_ref(
     if let Some(reference) = timestamp_attribute_ref(target, index, &entity, attribute_start)? {
         return Ok(reference);
     }
-    if let Some(ordinal) = index.extra_owner_attributes.iter().position(|attribute| attribute.target == entity) {
-        return native_record_index(attribute_start, existing_source_less_attribute_count(target, index)
-            + index.creation_timestamps.len() + ordinal);
-    }
-    Ok(-1)
+    Ok(extra_attribute_ref(target, index, &entity, attribute_start)?.unwrap_or(-1))
+}
+
+pub(super) fn extra_attribute_ref(
+    target: &CadIr,
+    index: &AttributeIndex<'_>,
+    entity: &AttributeTarget,
+    attribute_start: i64,
+) -> Result<Option<i64>, CodecError> {
+    index.extra_owner_attributes.iter().position(|attribute| attribute.target == *entity)
+        .map(|ordinal| native_record_index(attribute_start, existing_source_less_attribute_count(target, index)
+            + index.creation_timestamps.len() + ordinal)).transpose()
 }
 
 fn face_persistent_attribute_ref(
@@ -697,13 +712,10 @@ pub(super) fn sketch_link_attribute_ref(
     if let Some(reference) = coedge_sketch_attribute_ref(target, index, coedge, attribute_start)? {
         return Ok(reference);
     }
-    Ok(timestamp_attribute_ref(
-        target,
-        index,
-        &AttributeTarget::Coedge(coedge.id.clone()),
-        attribute_start,
-    )?
-    .unwrap_or(-1))
+    let entity = AttributeTarget::Coedge(coedge.id.clone());
+    Ok(timestamp_attribute_ref(target, index, &entity, attribute_start)?
+        .or(extra_attribute_ref(target, index, &entity, attribute_start)?)
+        .unwrap_or(-1))
 }
 
 fn attribute_before_timestamp(
