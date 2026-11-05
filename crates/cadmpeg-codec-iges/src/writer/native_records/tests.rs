@@ -1301,6 +1301,13 @@ fn edited_rectangular_pattern_grid_reaches_output() {
         panic!("written linear pattern")
     };
     assert_eq!(*count, Dimension::Literal(3));
+    let native = &after.ir().native.namespace("iges").unwrap().arenas()["rectangular_arrays"][0];
+    assert_eq!(
+        native
+            .field("do_dont_flag")
+            .and_then(|value| value.as_i64()),
+        Some(0)
+    );
 }
 
 #[test]
@@ -1360,4 +1367,55 @@ fn unsupported_rectangular_omission_mask_is_reported() {
     assert!(after.report().losses.iter().all(|loss| !loss
         .message
         .contains("array base, dimensions, selection mask")));
+}
+
+#[test]
+fn rectangular_do_mask_keeps_its_current_grid_positions() {
+    use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use std::io::Cursor;
+    let entities = [
+        (116, "BASE", "116,0,0,0,0;"),
+        (412, "RECT", "412,1,1,0,0,0,4,1,4,2,0.0,2,0,1,3;"),
+    ]
+    .into_iter()
+    .map(|(entity_type, label, parameters)| OwnedTestEntity {
+        entity_type,
+        form: 0,
+        label: label.into(),
+        status: "00000000",
+        parameters: parameters.into(),
+    })
+    .collect::<Vec<_>>();
+    let decoded = crate::IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&entities)),
+            &DecodeOptions::default(),
+        )
+        .expect("DO mask decodes");
+    assert!(decoded
+        .ir()
+        .model
+        .features
+        .iter()
+        .any(|feature| feature.name.as_deref() == Some("RECT")));
+    let output =
+        super::super::synthesize(decoded.ir(), crate::IgesVersion::V5_3).expect("DO mask writes");
+    let after = crate::IgesCodec
+        .decode(&mut Cursor::new(output.bytes), &DecodeOptions::default())
+        .expect("DO mask re-decodes");
+    let native = &after.ir().native.namespace("iges").unwrap().arenas()["rectangular_arrays"][0];
+    assert_eq!(
+        native
+            .field("do_dont_flag")
+            .and_then(|value| value.as_i64()),
+        Some(0)
+    );
+    assert_eq!(native.field("positions"), Some(json!([1, 3])));
+    assert!(after
+        .ir()
+        .model
+        .features
+        .iter()
+        .any(|feature| feature.name.as_deref() == Some("RECT")));
 }

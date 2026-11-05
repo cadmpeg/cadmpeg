@@ -128,6 +128,17 @@ pub(super) fn write(
     };
     let native = super::primitives::f3d_native(&prepared)?.unwrap_or_default();
     let attributes = super::generate::attributes::represented_attributes(&prepared, &native);
+    for attribute in &prepared.model.attributes {
+        if attributes.contains(attribute.id.as_str())
+            && crate::brep::creation_timestamp_value(attribute).is_some()
+            && matches!(attribute.values.first(), Some(Some(cadmpeg_ir::attributes::AttributeValue::Reference(reference))) if !reference.ends_with(":entity#-1"))
+        {
+            losses.push(F3dLossCode::WriterAuxiliaryOmitted.note(format!(
+                "attribute {}: timestamp successor reference is not representable; wrote the terminal reference",
+                attribute.id
+            )));
+        }
+    }
     let invalidated_timestamps = native
         .creation_timestamps
         .iter()
