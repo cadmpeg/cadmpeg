@@ -975,11 +975,19 @@ fn scope(record_index: u32) -> DesignParameterScope {
 }
 
 fn group(scope_record_index: u32, members: &[u32]) -> DesignConstructionOperandGroup {
+    named_group(GROUP_ID, scope_record_index, members)
+}
+
+fn named_group(
+    id: &str,
+    scope_record_index: u32,
+    members: &[u32],
+) -> DesignConstructionOperandGroup {
     let member_offsets: Vec<u64> = (0..u64::try_from(members.len()).unwrap())
         .map(|ordinal| ordinal * 11)
         .collect();
     serde_json::from_value(serde_json::json!({
-        "id": GROUP_ID,
+        "id": id,
         "byte_offset": 0,
         "class_tag": "325",
         "record_index": 43,
@@ -1174,6 +1182,74 @@ fn an_incomplete_group_takes_its_blend_edges_whatever_its_member_count() {
         )),
         ["17", "18"]
     );
+}
+
+const OTHER_GROUP_ID: &str = "f3d:Design/BulkStream.dat:group#44";
+
+/// The selections of a 3 mm group and a 5 mm group after binding with blend
+/// face 20 at 3 mm, which replaces edge 17, and blend face 21 at 5 mm, which
+/// replaces edge 18.
+fn bound_pair(three: EdgeSelection, five: EdgeSelection) -> (EdgeSelection, EdgeSelection) {
+    let mut output = two_blends();
+    output.surface_cylinders[1].radius = 5.0;
+    output.surface_radii[1].radius = 5.0;
+    let five_mm = RadiusSpec::Constant {
+        radius: cadmpeg_ir::scalar::PositiveLength::new(5.0).unwrap(),
+    };
+    let mut definition = FeatureDefinition::Operation(FeatureOperation::Fillet {
+        groups: cadmpeg_ir::features::NonEmptyMembers::try_from(vec![
+            FilletGroup {
+                edges: three,
+                radius: three_mm(),
+                tangency_weight: None,
+            },
+            FilletGroup {
+                edges: five,
+                radius: five_mm,
+                tangency_weight: None,
+            },
+        ])
+        .unwrap(),
+    });
+    bind_fillet_groups(
+        &mut definition,
+        &FeatureId::mint("f3d:test:feature#42").expect("identity grammar"),
+        &scope(42),
+        &[group(42, &[7]), named_group(OTHER_GROUP_ID, 42, &[8])],
+        1,
+        (&transition(&[20, 21], &[17, 18, 19]), &input(z()), &output),
+    );
+    let FeatureDefinition::Operation(FeatureOperation::Fillet { groups }) = definition else {
+        panic!("expected a fillet");
+    };
+    let mut groups = groups.iter().map(|group| group.edges.clone());
+    (groups.next().unwrap(), groups.next().unwrap())
+}
+
+#[test]
+fn a_selection_that_disagrees_with_its_blend_edges_binds_no_group_of_the_transition() {
+    let other = || EdgeSelection::Native(OTHER_GROUP_ID.into());
+    for agreeing in [earlier(&[17]), EdgeSelection::Unresolved] {
+        let (three, five) = bound_pair(agreeing.clone(), other());
+        assert_eq!(three, agreeing);
+        assert_eq!(
+            slots(&five),
+            ["18"],
+            "{agreeing:?} agrees with blend edge 17"
+        );
+    }
+    for disagreeing in [
+        earlier(&[18]),
+        earlier(&[17, 18]),
+        partial(&[18]),
+        EdgeSelection::All,
+    ] {
+        assert_eq!(
+            bound_pair(disagreeing.clone(), other()),
+            (disagreeing, other()),
+            "the 3 mm selection states edges other than blend edge 17"
+        );
+    }
 }
 
 #[test]
