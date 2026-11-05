@@ -48,6 +48,57 @@ use records::{
     patch_tolerant_coedge_parameters, patch_transform_hints, patch_wire_topologies,
 };
 
+fn validate_recipe_class_headers<'a>(
+    ctx: &cadmpeg_core::decode::DecodeContext<'a>,
+    root: cadmpeg_core::decode::View<'a>,
+    edits: &BTreeMap<String, Vec<edits::ConstructionRecipeEdit>>,
+) -> Result<(), CodecError> {
+    if !edits
+        .values()
+        .flatten()
+        .any(|edit| edit.design_id.is_some())
+    {
+        return Ok(());
+    }
+    let archive = cadmpeg_container::ArchiveSnapshot::new(ctx, root)?;
+    for (stream, stream_edits) in edits {
+        if !stream_edits.iter().any(|edit| edit.design_id.is_some()) {
+            continue;
+        }
+        let prefix = stream.strip_suffix("BulkStream.dat").ok_or_else(|| {
+            CodecError::UnsupportedContent(format!(
+                "F3D recipe stream {stream} has no matching metadata"
+            ))
+        })?;
+        let name = format!("{prefix}MetaStream.dat");
+        let meta_bytes = archive.open(ctx, &name)?;
+        let meta = crate::metastream::parse(meta_bytes.window(), &name)?;
+        for edit in stream_edits
+            .iter()
+            .filter_map(|edit| edit.design_id.as_ref())
+        {
+            let length = u64::try_from(edit.value.len()).map_err(CodecError::malformed)?;
+            let end = edit.offset.checked_add(length).ok_or_else(|| {
+                CodecError::UnsupportedContent("F3D recipe identity extent overflows".into())
+            })?;
+            for row in meta.records.iter().chain(&meta.secondary_records) {
+                let tag_start = row.bulk_offset.checked_add(4).ok_or_else(|| {
+                    CodecError::UnsupportedContent("F3D record class offset overflows".into())
+                })?;
+                let tag_end = tag_start.checked_add(3).ok_or_else(|| {
+                    CodecError::UnsupportedContent("F3D record class extent overflows".into())
+                })?;
+                if edit.offset < tag_end && tag_start < end {
+                    return Err(CodecError::UnsupportedContent(format!(
+                        "F3D recipe identity edit in {stream} overlaps an indexed record class"
+                    )));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Apply supported semantic edits to a retained F3D archive.
 ///
 /// `source_image` must match the F3D source represented by `target`. The
@@ -191,10 +242,17 @@ pub(crate) fn write_semantic(
     let sketch_relation_edits = validate_sketch_relation_edits(natives)?;
     let persistent_reference_edits = validate_persistent_reference_edits(natives)?;
     let construction_recipe_edits = validate_construction_recipe_edits(natives)?;
+    validate_recipe_class_headers(&encode_ctx, source_root, &construction_recipe_edits)?;
     let body_member_edits = validate_body_member_edits(natives)?;
     let entity_header_edits = validate_entity_header_edits(natives)?;
     let design_type_edits = validate_design_type_edits(natives)?;
     let lost_edge_edits = validate_lost_edge_edits(natives)?;
+    if let Some(reference) = lost_edge_edits.values().flatten().next() {
+        return Err(CodecError::UnsupportedContent(format!(
+            "F3D lost-edge edit {} changes an indexed record identity",
+            reference.id
+        )));
+    }
     let material_assignment_edits = validate_material_assignment_edits(natives)?;
     let protein_appearance_edits =
         validate_material_assignment_appearances(natives, &baseline.ir, target)?;

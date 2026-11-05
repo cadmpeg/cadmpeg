@@ -816,17 +816,12 @@ fn synthesis_graph(ir: &CadIr, version: crate::IgesVersion) -> Result<SynthesisG
                     .flat_map(cadmpeg_ir::topology::Loop::vertices),
             )
             .collect::<BTreeSet<_>>();
-        let count = ir
-            .model
-            .vertices
-            .iter()
-            .filter(|vertex| {
-                ignored.vertices.contains(vertex.id.as_str()) && !owned.contains(&vertex.id)
-            })
-            .count();
-        if count != 0 {
+        for vertex in ir.model.vertices.iter().filter(|vertex| {
+            ignored.vertices.contains(vertex.id.as_str()) && !owned.contains(&vertex.id)
+        }) {
             losses.push(IgesLossCode::WriterFreeGeometryOmitted.note(format!(
-                "{count} free vertex record(s) were not written on the topology path"
+                "free vertex record {} was not written on the topology path",
+                vertex.id
             )));
         }
     }
@@ -1770,7 +1765,7 @@ fn procedural_reduction_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> 
             )));
         }
     }
-    let surface_count = ir
+    let surfaces = ir
         .model
         .procedural_surfaces
         .iter()
@@ -1796,14 +1791,20 @@ fn procedural_reduction_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> 
                 procedural.definition(),
             )
         })
-        .count();
-    let curve_count = ir.model.procedural_curves.len();
-    if surface_count == 0 && curve_count == 0 {
-        return Ok(Vec::new());
-    }
-    Ok(vec![IgesLossCode::ProceduralReduced.note(format!(
-        "{surface_count} procedural surface definition(s) and {curve_count} procedural curve definition(s) were reduced to writable solved carriers"
-    ))])
+        .map(|procedural| procedural.id.as_str());
+    let curves = ir
+        .model
+        .procedural_curves
+        .iter()
+        .map(|procedural| procedural.id.as_str());
+    Ok(surfaces
+        .chain(curves)
+        .map(|id| {
+            IgesLossCode::ProceduralReduced.note(format!(
+                "IGES procedural definition {id} was reduced to a solved carrier"
+            ))
+        })
+        .collect())
 }
 
 fn is_native_surface_construction(
@@ -2514,7 +2515,7 @@ fn brep_entities(
         &mut consumed_curve_ids,
         losses,
     )?;
-    ignored_carriers.report_omitted(ignored_curves, "B-rep", losses);
+    ignored_carriers.report_omitted(&ignored_curves, "B-rep", losses);
 
     let mut written_pcurves = BTreeMap::new();
     for loop_ in topology.loops.values().copied() {
@@ -3172,16 +3173,15 @@ struct IgnoredCarrierGeometry {
 impl IgnoredCarrierGeometry {
     /// Reports the ignored edges, which no topology path writes, and the
     /// `curves` ignored curves that the `path` writer skipped.
-    fn report_omitted(&self, curves: usize, path: &str, losses: &mut Vec<LossNote>) {
-        if !self.edges.is_empty() {
+    fn report_omitted(&self, curves: &[String], path: &str, losses: &mut Vec<LossNote>) {
+        for id in &self.edges {
             losses.push(IgesLossCode::WriterDuplicateCarrierOmitted.note(format!(
-                "{} free edge record(s) duplicating a written carrier were not written on the {path} path",
-                self.edges.len()
+                "free edge record {id} duplicates a written carrier on the {path} path"
             )));
         }
-        if curves != 0 {
+        for id in curves {
             losses.push(IgesLossCode::WriterDuplicateCarrierOmitted.note(format!(
-                "{curves} free curve record(s) duplicating a written parameter curve were not written on the {path} path"
+                "free curve record {id} duplicates a written parameter curve on the {path} path"
             )));
         }
     }
@@ -3540,7 +3540,7 @@ fn topology_entities(
         &mut consumed_curves,
         losses,
     )?;
-    ignored_carriers.report_omitted(ignored_curves, "trimmed-sheet", losses);
+    ignored_carriers.report_omitted(&ignored_curves, "trimmed-sheet", losses);
 
     let mut pcurve_indices = BTreeMap::new();
     for (pcurve_id, pcurve) in topology.pcurves {
@@ -5839,7 +5839,7 @@ fn unsupported_model_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
     let losses = unsupported
         .into_iter()
         .filter(|(_, present, _)| *present)
-        .map(|(arena, _, ids)| {
+        .flat_map(|(arena, _, ids)| {
             let code = if matches!(
                 arena,
                 "features"
@@ -5859,10 +5859,8 @@ fn unsupported_model_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
             } else {
                 IgesLossCode::WriterArenaOmitted
             };
-            code.note(format!(
-                "IGES omits unsupported model arena {arena}: {}",
-                ids.join(", ")
-            ))
+            ids.into_iter()
+                .map(move |id| code.note(format!("IGES omits unsupported {arena} record {id}")))
         })
         .collect();
     for vertex in &ir.model.vertices {
@@ -8030,7 +8028,7 @@ struct UnownedCurves<'a, 'ir> {
 }
 
 /// Writes each curve that no written entity has consumed, in identity order,
-/// and returns the number of `ignored` curves skipped. A physically dependent
+/// and returns the identities of `ignored` curves skipped. A physically dependent
 /// entity is valid only under a written parent, so a physically dependent
 /// curve that no written curve consumes is withheld with a loss.
 fn append_unowned_curves(
@@ -8038,7 +8036,7 @@ fn append_unowned_curves(
     entities: &mut Vec<Entity>,
     consumed: &mut BTreeSet<String>,
     losses: &mut Vec<LossNote>,
-) -> Result<usize, CodecError> {
+) -> Result<Vec<String>, CodecError> {
     let UnownedCurves {
         ir,
         version,
@@ -8048,14 +8046,14 @@ fn append_unowned_curves(
     } = request;
     let mut curves = ir.model.curves.iter().collect::<Vec<_>>();
     curves.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
-    let mut ignored_curves = 0_usize;
+    let mut ignored_curves = Vec::new();
     let mut dependent = Vec::new();
     for curve in curves {
         if consumed.contains(curve.id.as_str()) {
             continue;
         }
         if ignored.contains(curve.id.as_str()) {
-            ignored_curves += 1;
+            ignored_curves.push(curve.id.to_string());
             continue;
         }
         let status = ownership.status(curve.source_object.as_ref());
