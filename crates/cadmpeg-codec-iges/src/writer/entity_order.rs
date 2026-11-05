@@ -50,7 +50,7 @@ pub(super) fn source_order(
     let mut permutation = (0..entities.len()).collect::<Vec<_>>();
     permutation.sort_by_key(|index| {
         (
-            sequences.get(index).is_none(),
+            !sequences.contains_key(index),
             sequences.get(index).copied(),
             *index,
         )

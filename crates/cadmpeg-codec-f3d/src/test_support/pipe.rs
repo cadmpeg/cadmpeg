@@ -329,7 +329,7 @@ impl Fixture {
                 crate::design::decode::parameters::decode_parameter_owners(
                     ctx,
                     scan,
-                    &mut Vec::new(),
+                    &[],
                     &mut parameter_parts,
                 )?;
             native.design_parameter_scopes =

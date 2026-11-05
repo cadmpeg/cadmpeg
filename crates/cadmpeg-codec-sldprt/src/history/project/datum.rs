@@ -254,7 +254,7 @@ pub(super) fn project_native_axis_helix(feature: &Feature) -> Option<FeatureDefi
     let implied = pitch.get() * turns;
     let agrees = (height.get() - implied).abs()
         <= EPS_NATIVE_AXIS_HELIX_CONSISTENT_LAW_E9 * implied.abs().max(height.get().abs()).max(1.0);
-    if agrees || !(height.get() < turns) {
+    if agrees || height.get().partial_cmp(&turns) != Some(std::cmp::Ordering::Less) {
         return None;
     }
     let pitch = super::parameter_dimension(feature, &["D4"])?;

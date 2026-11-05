@@ -779,11 +779,11 @@ fn duplicate_configuration_partition_indices_are_reassigned_with_a_loss() {
             source_index: Some(0),
             name: Some(format!("Config {index}")),
             material: None,
-            properties: Default::default(),
+            properties: std::collections::BTreeMap::default(),
             bodies: Some(bodies.clone()),
-            parameter_values: Default::default(),
-            parameter_overrides: Default::default(),
-            feature_states: Default::default(),
+            parameter_values: std::collections::BTreeMap::default(),
+            parameter_overrides: std::collections::BTreeMap::default(),
+            feature_states: std::collections::BTreeMap::default(),
             native_ref: None,
         })
         .collect();

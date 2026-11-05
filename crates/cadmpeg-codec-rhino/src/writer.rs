@@ -602,6 +602,7 @@ struct BrepPayload {
 
 /// A native class identifier and the payload encoded for it.
 type ClassPayload = ([u8; 16], Vec<u8>);
+type SurfacePointAt = Box<dyn Fn(f64, f64) -> [f64; 3]>;
 
 #[derive(Clone)]
 struct SurfacePayload {
@@ -670,12 +671,7 @@ fn reduction_loss(carrier: &ReducedCarrier<'_>) -> LossNote {
     let coedges = (!carrier.coedges.is_empty()).then(|| {
         format!(
             "; affecting coedge(s): {}",
-            carrier
-                .coedges
-                .iter()
-                .copied()
-                .collect::<Vec<_>>()
-                .join(", ")
+            carrier.coedges.join(", ")
         )
     });
     match carrier.leaf {
@@ -995,7 +991,7 @@ fn prepare_write<'a, 'budget>(
                             "; procedural construction {construction} omitted"
                         ))
                         .unwrap_or_default()
-                )))
+                )));
             }
             Err(error) => return Err(error),
         }
@@ -1151,8 +1147,8 @@ fn prepare_write<'a, 'budget>(
                         curve.id
                     )));
                 }
-                if curve.parameter_range.map(|range| range.endpoints())
-                    != edge.param_range().map(|range| range.get())
+                if curve.parameter_range.map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints)
+                    != edge.param_range().map(cadmpeg_ir::units::FiniteVector::get)
                 {
                     losses.push(RhinoLossCode::WriterCarrierResolved.note(format!(
                         "curve {} is restricted to the exact span of wire edge {}",
@@ -1301,11 +1297,11 @@ fn prepare_write<'a, 'budget>(
             if let Some(colors) =
                 encoded_face_colors(&baked.model.faces.iter().collect::<Vec<_>>())?
             {
-                face_colors.extend(baked.model.faces.iter().zip(colors).filter_map(
-                    |(face, color)| {
-                        (face.color.is_some() && color != [u8::MAX; 4]).then(|| face.id.to_string())
-                    },
-                ));
+                face_colors.extend(
+                    baked.model.faces.iter().zip(colors)
+                        .filter(|(face, color)| face.color.is_some() && *color != [u8::MAX; 4])
+                        .map(|(face, _)| face.id.to_string()),
+                );
             }
         }
         carried.extend(reduce::body_closure(&baked));
@@ -1326,18 +1322,54 @@ fn prepare_write<'a, 'budget>(
         )?;
     }
     for (baked, reason) in failed_bodies {
+        let mut retained_body = false;
+        if reason.is_some() {
+            if let Some((payload, retained)) = wire::vertex_body(&baked, archive_version)? {
+                let body = &baked.model.bodies[0];
+                ctx.charge_entities(payload.record_count, "write Rhino Brep records")?;
+                brep_records.append(
+                    &brep_object_record(
+                        ir,
+                        &payload,
+                        body.id.as_str(),
+                        body.name.as_deref(),
+                        body.color,
+                        body.visible,
+                        &materials,
+                    )?,
+                    "retain Rhino Brep records",
+                )?;
+                carried.extend(retained);
+                carried.insert(body.id.to_string());
+                written_bodies.insert(body.id.to_string());
+                brep_count += 1;
+                retained_body = true;
+            }
+        }
         brep_count += salvage::write(
             ctx,
             ir,
             &baked,
             &mut brep_records,
             &materials,
-            &mut carried,
+            salvage::SalvageRecords { carried: &mut carried, curves: &mut written_curves },
             &mut losses,
-            &mut written_curves,
         )?;
         if let Some(reason) = reason {
-            losses.push(omitted_body(&baked, &reason, &carried));
+            if retained_body {
+                let members = reduce::body_closure(&baked)
+                    .difference(&carried)
+                    .cloned()
+                    .collect::<Vec<_>>();
+                losses.push(RhinoLossCode::WriterBodyReduced.note(format!(
+                    "body {} is reduced to a vertex Brep: {reason}; {} omitted member record(s): {}",
+                    baked.model.bodies[0].id,
+                    members.len(),
+                    members.join(", ")
+                )));
+            } else {
+                losses.push(omitted_body(&baked, &reason, &carried));
+            }
         }
     }
     Ok(WritePlan {
@@ -1687,7 +1719,7 @@ fn brep_payload(
     let surfaces = model
         .surfaces
         .iter()
-        .map(|surface| surface.payload())
+        .map(WritableFaceSurface::payload)
         .collect::<Result<Vec<_>, WriteError>>()?;
     for surface in &surfaces {
         count_records(surface.record_count)?;
@@ -2030,7 +2062,7 @@ fn brep_c3_curve(edge: &WritableEdge<'_>) -> Result<([u8; 16], Vec<u8>), WriteEr
             )
         }
         WritableEdgeCurve::Nurbs(nurbs) => (NURBS_CURVE_CLASS, nurbs_curve_payload(nurbs)?),
-        WritableEdgeCurve::NurbsOwned(nurbs) => (NURBS_CURVE_CLASS, nurbs_curve_payload(&nurbs)?),
+        WritableEdgeCurve::NurbsOwned(nurbs) => (NURBS_CURVE_CLASS, nurbs_curve_payload(nurbs)?),
     })
 }
 
@@ -2181,7 +2213,7 @@ fn admit_pcurve<'a>(
     }
     let trim_domain = pcurve
         .parameter_range()
-        .map_or(edge.domain, |range| range.finite_components());
+        .map_or(edge.domain, cadmpeg_ir::units::FiniteVector::finite_components);
     let domain = FiniteReal::raw_array(trim_domain);
     if domain[0] >= domain[1] {
         return Err(WriteError::Omit(format!(
@@ -2235,7 +2267,7 @@ fn admit_pcurve<'a>(
             // A partial circle pcurve decodes to NURBS; the 2D arc payload
             // still holds the exact arc over the trim range.
             let [lo, hi] = domain;
-            if !(hi > lo) || hi - lo > std::f64::consts::TAU + MAX_ARC_SPAN_EXCESS {
+            if hi.partial_cmp(&lo) != Some(std::cmp::Ordering::Greater) || hi - lo > std::f64::consts::TAU + MAX_ARC_SPAN_EXCESS {
                 return Err(WriteError::Omit(format!(
                     "pcurve {} is not a writable arc",
                     pcurve.id.as_str()
@@ -2684,7 +2716,7 @@ fn archive_body_len(value: u64) -> Result<i64, cadmpeg_ir::codec::write::EncodeE
             value,
         });
     }
-    Ok(value as i64)
+    Ok(value.cast_signed())
 }
 
 fn archive_final_size(position: u64) -> Result<u64, CodecError> {
@@ -3314,7 +3346,7 @@ fn analytic_usage(surface_id: &str, ir: &CadIr) -> Result<[[f64; 2]; 2], WriteEr
         .filter(|face| face.surface.as_str() == surface_id)
     {
         faces += 1;
-        for loop_id in face.loops.iter() {
+        for loop_id in &face.loops {
             let Some(loop_) = ir
                 .model
                 .loops
@@ -3478,7 +3510,7 @@ fn analytic_revolution(
     let id = surface.id.as_str();
     let usage = analytic_usage(id, ir)?;
     let [[u0, u1], [v0, v1]] = usage;
-    if !(u1 > u0) || !(v1 > v0) {
+    if u1.partial_cmp(&u0) != Some(std::cmp::Ordering::Greater) || v1.partial_cmp(&v0) != Some(std::cmp::Ordering::Greater) {
         return Err(WriteError::Omit(format!(
             "surface {id} analytic usage is degenerate",
         )));
@@ -3587,7 +3619,7 @@ fn analytic_revolution(
         cadmpeg_ir::math::Point3,
         cadmpeg_ir::math::Point3,
         ClassPayload,
-        Box<dyn Fn(f64, f64) -> [f64; 3]>,
+        SurfacePointAt,
     ) = match analytic {
         SolvedSurfaceGeometry::Cylinder(_) | SolvedSurfaceGeometry::Cone(_) => {
             let from = profile_point(v0);

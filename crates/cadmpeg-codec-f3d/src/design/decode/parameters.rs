@@ -1104,11 +1104,10 @@ pub(crate) fn is_legacy_parameter_owner_88_class(class_tag: &str) -> bool {
 pub(crate) fn decode_parameter_owners(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
-    parameters: &mut Vec<DesignParameter>,
+    parameters: &[DesignParameter],
     output: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
 ) -> Result<Vec<DesignParameterOwner>, CodecError> {
     use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartSpec};
-    let mut dropped = HashSet::new();
     let mut out = Vec::new();
     for entry in scan
         .entries
@@ -1237,20 +1236,12 @@ pub(crate) fn decode_parameter_owners(
                         .map_err(CodecError::malformed)?,
                 );
             }
-            let decoded = ctx.decode_part(output, extent, spec, |stage| {
+            let decoded = ctx.decode_part(output, extent, spec, |_| {
                 let decoded = parse()
                     .and_then(|parsed| parsed.into_record(&entry.name, u64_from_index(frame.start)))
-                    .filter(|owner| {
-                        owner.record_index() == index
-                            && dependent_parameters.iter().all(|parameter| {
-                                owner.parameter_record_index() == parameter.record_index
-                            })
-                    });
+                    .filter(|owner| owner.record_index() == index);
                 if let Some(owner) = decoded {
                     return Ok(owner);
-                }
-                for parameter in &dependent_parameters {
-                    stage.insert_native(ctx, "design_parameters", (*parameter).clone())?;
                 }
                 Err(CodecError::malformed(format_args!(
                     "parameter owner entity {} matches no grammar or binding",
@@ -1259,16 +1250,9 @@ pub(crate) fn decode_parameter_owners(
             })?;
             if let Some(owner) = decoded {
                 out.push(owner);
-            } else {
-                dropped.extend(
-                    dependent_parameters
-                        .iter()
-                        .map(|parameter| parameter.id.clone()),
-                );
             }
         }
     }
-    parameters.retain(|parameter| !dropped.contains(&parameter.id));
     out.sort_by(|a, b| a.id().cmp(b.id()));
     Ok(out)
 }
@@ -1636,14 +1620,11 @@ fn parse_admitted_legacy_parameter_owner_88(
 pub(crate) fn decode_parameter_companions(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     scan: &ContainerScan,
-    owners: &mut Vec<DesignParameterOwner>,
-    parameters: &mut Vec<DesignParameter>,
+    owners: &[DesignParameterOwner],
     output: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
 ) -> Result<Vec<DesignParameterCompanion>, CodecError> {
     use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartSpec};
     let mut out = Vec::new();
-    let mut dropped_owners = HashSet::new();
-    let mut dropped_parameters = HashSet::new();
     for entry in scan
         .entries
         .iter()
@@ -1691,16 +1672,7 @@ pub(crate) fn decode_parameter_companions(
                         .map_err(CodecError::malformed)?,
                 );
             }
-            let dependencies: Vec<_> = parameters
-                .iter()
-                .filter(|parameter| {
-                    related.iter().any(|owner| {
-                        native_stream(&parameter.id) == Some(stream.as_str())
-                            && parameter.owner_record_index() == Some(owner.record_index())
-                    })
-                })
-                .collect();
-            let decoded = ctx.decode_part(output, extent, spec, |stage| {
+            let decoded = ctx.decode_part(output, extent, spec, |_| {
                 let parsed = [companion_prefix::LEN, typed_companion::LEN]
                     .into_iter()
                     .find_map(|len| {
@@ -1723,12 +1695,6 @@ pub(crate) fn decode_parameter_companions(
                 if let Some(companion) = parsed {
                     return Ok(companion);
                 }
-                for owner in &related {
-                    stage.insert_native(ctx, "design_parameter_owners", (*owner).clone())?;
-                }
-                for parameter in &dependencies {
-                    stage.insert_native(ctx, "design_parameters", (*parameter).clone())?;
-                }
                 Err(CodecError::malformed(format_args!(
                     "parameter companion entity {} matches no grammar or binding",
                     frame.entity_id
@@ -1736,15 +1702,9 @@ pub(crate) fn decode_parameter_companions(
             })?;
             if let Some(companion) = decoded {
                 out.push(companion);
-            } else {
-                dropped_owners.extend(related.iter().map(|owner| owner.id().to_owned()));
-                dropped_parameters
-                    .extend(dependencies.iter().map(|parameter| parameter.id.clone()));
             }
         }
     }
-    owners.retain(|owner| !dropped_owners.contains(owner.id()));
-    parameters.retain(|parameter| !dropped_parameters.contains(&parameter.id));
     out.sort_by(|a, b| a.id().cmp(b.id()));
     Ok(out)
 }

@@ -631,10 +631,12 @@ pub(super) fn plan(
         &projected,
         &Annotations::default(),
         &[],
-        super::ClassLayouts::Authored,
-        declaration,
-        prepared_native,
-        source_trust,
+        super::SemanticOptions {
+            class_layouts: super::ClassLayouts::Authored,
+            sw_version: declaration,
+            prepared_native,
+            source_trust,
+        },
         &mut bytes,
     )?;
     debug_assert_eq!(
@@ -1383,7 +1385,7 @@ fn reduce_design(
                 ..
             }) = definition
             {
-                if let Some(condition) = continuity.resolved().and_then(|value| value.uniform()) {
+                if let Some(condition) = continuity.resolved().and_then(cadmpeg_ir::features::FilledSurfaceContinuity::uniform) {
                     if condition.weight().is_some() {
                         *continuity = cadmpeg_ir::features::FilledSurfaceContinuityState::uniform(
                             condition.continuity(),
@@ -1426,7 +1428,7 @@ fn reduce_design(
         Ok(())
     };
     match prepare(&mut *ir, &mut *losses) {
-        Ok(_) => return Ok(()),
+        Ok(()) => return Ok(()),
         Err(super::write_error::WriteError::Decline(_)) => {}
         Err(error) => return Err(error),
     }
@@ -1438,7 +1440,7 @@ fn reduce_design(
         let solved = ir.model.features[index].clone();
         ir.model.features[index] = feature;
         match prepare(&mut *ir, &mut *losses) {
-            Ok(_) => {}
+            Ok(()) => {}
             Err(super::write_error::WriteError::Decline(reason)) => {
                 losses.push(SldprtLossCode::WriterDesignReduced.note(format!(
                     "feature {} retains its solved result instead of its operation: {reason}",
