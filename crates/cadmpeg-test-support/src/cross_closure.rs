@@ -674,7 +674,7 @@ fn body_findings(
         needs.insert(id.clone(), targets);
     }
     let mut related: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-    for id in before_ids.iter() {
+    for id in &before_ids {
         let mut seen = BTreeSet::from([id.clone()]);
         let mut pending = vec![id.clone()];
         while let Some(next) = pending.pop() {
