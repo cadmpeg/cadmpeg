@@ -772,6 +772,10 @@ fn synthesis_graph(ir: &CadIr, version: crate::IgesVersion) -> Result<SynthesisG
     let mut body_presentations = BTreeMap::new();
 
     let preserve_model_only_edges = matches!(version, crate::IgesVersion::V5_3)
+        && ir.model.bodies.iter().all(|body| {
+            body.transform
+                .is_none_or(|transform| transform == cadmpeg_ir::transform::Transform::identity())
+        })
         && ir.model.faces.iter().any(|face| {
             face.loops.iter().any(|loop_id| {
                 ir.model
