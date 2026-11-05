@@ -136,3 +136,44 @@ fn deleting_cloud_points_does_not_replay_the_old_payload() {
         .unwrap();
     assert!(output.ir().model.points.is_empty());
 }
+
+#[test]
+fn point_cloud_keeps_source_order_past_single_digit_indices() {
+    let xml = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Points::Feature" name="Cloud"/></Objects><ObjectData Count="1"><Object name="Cloud"><Properties Count="1"><Property name="Points" type="Points::PropertyPointKernel"><Points file="Cloud.points"/></Property></Properties></Object></ObjectData></Document>"#;
+    let mut payload = 12_u32.to_le_bytes().to_vec();
+    for index in 0..12 {
+        for value in [index as f32, 0.0, 0.0] {
+            payload.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    let archive = crate::test_support::test_archive::archive_entries(&[
+        ("Document.xml", xml),
+        ("Cloud.points", &payload),
+    ]);
+    let input = FcstdCodec
+        .decode(&mut Cursor::new(archive), &DecodeOptions::default())
+        .unwrap();
+    let mut reordered = input.ir().clone();
+    reordered
+        .model
+        .points
+        .sort_by(|left, right| left.id.cmp(&right.id));
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&reordered, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    for point in &input.ir().model.points {
+        let restored = output
+            .ir()
+            .model
+            .points
+            .iter()
+            .find(|p| p.id == point.id)
+            .unwrap();
+        assert_eq!(restored.position(), point.position());
+    }
+}
