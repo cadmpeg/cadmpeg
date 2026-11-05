@@ -597,7 +597,7 @@ pub(super) fn write(
                     let value = document
                         .root_element()
                         .children()
-                        .find(|node| node.is_element())?;
+                        .find(roxmltree::Node::is_element)?;
                     Some([
                         value.attribute("valueX")?.parse::<f64>().ok()?,
                         value.attribute("valueY")?.parse::<f64>().ok()?,
@@ -697,7 +697,7 @@ pub(super) fn write(
                 .descendants()
                 .find(|node| node.has_tag_name("StringList"))?;
             list.children()
-                .filter(|node| node.is_element())
+                .filter(roxmltree::Node::is_element)
                 .map(|node| node.attribute("value").map(str::to_owned))
                 .collect::<Option<Vec<_>>>()
         });
@@ -1381,7 +1381,7 @@ pub(super) fn write(
                 records
                     .iter()
                     .find(|record| record.name() == name)
-                    .map(|record| record.order())
+                    .map(crate::native::EntryRecord::order)
             })
     };
     let mut entries = entries.into_iter().collect::<Vec<_>>();

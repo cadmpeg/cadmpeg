@@ -16,7 +16,7 @@ pub(super) fn scalar_value(object: &Object, name: &str) -> Option<f64> {
     document
         .root_element()
         .children()
-        .find(|node| node.is_element())?
+        .find(roxmltree::Node::is_element)?
         .attribute("value")?
         .parse::<f64>()
         .ok()
@@ -219,7 +219,7 @@ fn view_xsources(
         let root = document
             .root_element()
             .children()
-            .find(|node| node.is_element())?;
+            .find(roxmltree::Node::is_element)?;
         let mut nodes = Vec::new();
         if root.has_tag_name("XLink") {
             nodes.push(root);
@@ -306,7 +306,7 @@ fn view_sources(
                 let root = document
                     .root_element()
                     .children()
-                    .find(|node| node.is_element())?;
+                    .find(roxmltree::Node::is_element)?;
                 Some(
                     root.has_tag_name("XLinkSubList")
                         && root
@@ -354,7 +354,7 @@ fn view_sources(
                     let root = document
                         .root_element()
                         .children()
-                        .find(|node| node.is_element())?;
+                        .find(roxmltree::Node::is_element)?;
                     Some(
                         matches!(root.tag_name().name(), "LinkList" | "LinkSubList")
                             && root
@@ -396,7 +396,7 @@ fn view_sources(
             let root = document
                 .root_element()
                 .children()
-                .find(|node| node.is_element())?;
+                .find(roxmltree::Node::is_element)?;
             match root.tag_name().name() {
                 "Link" => Some(vec![(root.attribute("value")?.to_owned(), Vec::new())]),
                 "LinkList" => root
@@ -568,7 +568,7 @@ pub(super) fn write(
                 if root.attribute("type") != Some("App::PropertyVector") {
                     return None;
                 }
-                let value = root.children().find(|node| node.is_element())?;
+                let value = root.children().find(roxmltree::Node::is_element)?;
                 Some([
                     value.attribute("valueX")?.parse::<f64>().ok()?,
                     value.attribute("valueY")?.parse::<f64>().ok()?,

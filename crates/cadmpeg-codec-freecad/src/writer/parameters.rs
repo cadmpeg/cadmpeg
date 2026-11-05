@@ -315,7 +315,7 @@ pub(super) fn prepare(
                 continue;
             }
             let Some(address) =
-                cadmpeg_ir::CellAddress::new(count + 1, 1).map(|address| address.a1())
+                cadmpeg_ir::CellAddress::new(count + 1, 1).map(cadmpeg_ir::CellAddress::a1)
             else {
                 continue;
             };

@@ -1308,7 +1308,7 @@ fn serialize_geometry_inner(
                             .free_vertices()
                             .iter()
                             .filter(|id| indices.contains_key(id.as_str()))
-                            .map(|id| id.as_str()),
+                            .map(cadmpeg_ir::ids::VertexId::as_str),
                     );
                     for face in shell.faces().iter().filter_map(|id| {
                         indices
