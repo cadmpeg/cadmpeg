@@ -652,3 +652,34 @@ fn missing_network_placement_does_not_replay_the_old_placement() {
         Some(cadmpeg_ir::transform::Transform::identity())
     );
 }
+
+#[test]
+fn edited_network_definition_name_is_written_from_the_document() {
+    let bytes = crate::test_support::test_drawing_and_trimming::connected_network_subfigure_file();
+    let decoded = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    ir.model.product_definitions[0].label = Some("current network".into());
+    let id = ir.model.product_definitions[0].id.to_string();
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    assert!(
+        !plan
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains(&id)),
+        "{:#?}",
+        plan.report().losses
+    );
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let after = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        after.ir().model.product_definitions[0].label.as_deref(),
+        Some("current network")
+    );
+    assert_eq!(after.ir().model.occurrences.len(), 1);
+}

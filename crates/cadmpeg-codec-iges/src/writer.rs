@@ -698,6 +698,49 @@ fn synthesize_with_admission(
         .iter()
         .flat_map(|entity| entity.source_targets.iter())
         .collect::<BTreeSet<_>>();
+    let mut emitted_products = 0;
+    for product in &ir.model.product_definitions {
+        if !emitted.contains(&product.id.to_string()) {
+            continue;
+        }
+        emitted_products += 1;
+        let previous = format!(
+            "IGES omits unsupported product_definitions record {}",
+            product.id
+        );
+        graph.losses.retain(|loss| loss.message != previous);
+        let mut omitted = Vec::new();
+        if product.kind != cadmpeg_ir::products::ProductDefinitionKind::Part {
+            omitted.push("product kind");
+        }
+        if product.source_name.is_some() {
+            omitted.push("source name");
+        }
+        if product.description.is_some() {
+            omitted.push("description");
+        }
+        if product.part_number.is_some() {
+            omitted.push("part number");
+        }
+        if !product.bom_properties.is_empty() {
+            omitted.push("BOM properties");
+        }
+        if !product.bodies.is_empty() {
+            omitted.push("body associations");
+        }
+        if !product.sketches.is_empty() {
+            omitted.push("sketch associations");
+        }
+        if !omitted.is_empty() {
+            graph
+                .losses
+                .push(IgesLossCode::WriterArenaOmitted.note(format!(
+                    "IGES product definition {} does not preserve {}",
+                    product.id,
+                    omitted.join(", ")
+                )));
+        }
+    }
     let mut emitted_occurrences = 0;
     for occurrence in &ir.model.occurrences {
         if !emitted.contains(&occurrence.id.to_string()) {
@@ -791,6 +834,9 @@ fn synthesize_with_admission(
     let counts = entity_counts(&graph.entities);
     let mut coverage = SYNTHESIS_COVERAGE;
     coverage.features = feature_coverage;
+    if emitted_products > 0 {
+        coverage.product_definitions = ArenaDisposition::Reported;
+    }
     if emitted_occurrences > 0 {
         coverage.occurrences = ArenaDisposition::Reported;
     }

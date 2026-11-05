@@ -25,6 +25,33 @@ fn encode(
         lenient,
         missing: Vec::new(),
     };
+    let definition = if matches!(arena, "subfigure_definitions" | "network_definitions") {
+        let mut matches = ir
+            .model
+            .product_definitions
+            .iter()
+            .filter(|definition| definition.native_ref.as_deref() == Some(record.id()));
+        match (matches.next(), matches.next()) {
+            (Some(definition), None) => Some(definition),
+            _ => None,
+        }
+    } else {
+        None
+    };
+    if let Some(definition) = definition {
+        let name = definition
+            .label
+            .as_ref()
+            .filter(|label| !label.trim().is_empty())
+            .ok_or("current product definition has no IGES name")?;
+        fields.values.insert(
+            "name".into(),
+            serde_json::to_value(cadmpeg_ir::native::bytes::NativeBytes::from(
+                name.as_bytes().to_vec(),
+            ))
+            .map_err(|error| error.to_string())?,
+        );
+    }
     let occurrence = products::current_root_occurrence(ir, arena, record);
     let mut placement = None;
     if let Some(occurrence) = occurrence {
@@ -145,6 +172,9 @@ fn encode(
         }
         _ => return Err("record has no native writer".into()),
     };
+    if let Some(definition) = definition {
+        result.source_targets.push(definition.id.to_string());
+    }
     if let Some(placement) = placement {
         result.transform = Some(placement);
     }
