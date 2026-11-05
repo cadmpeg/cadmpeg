@@ -1825,6 +1825,20 @@ pub(crate) fn scan(body: &[u8]) -> Tables {
     scan_stream(body, false)
 }
 
+/// The body-relative coordinate offset of each POINT record, keyed by the
+/// record's body-relative offset. A stream whose node sequence frames reads
+/// its POINT records from the nodes; any other stream scans its body.
+pub(crate) fn point_value_offsets(payload: &[u8], body_offset: usize) -> HashMap<usize, usize> {
+    let tables = nodes::sequence(payload)
+        .and_then(|records| nodes::tables(&records, payload, body_offset))
+        .unwrap_or_else(|| scan(payload.get(body_offset..).unwrap_or_default()));
+    tables
+        .points()
+        .values()
+        .map(|point| (point.offset, point.xyz_offset))
+        .collect()
+}
+
 /// Scan the stream-local topology records of a plain stream (spec §3.3).
 pub(crate) fn scan_plain(body: &[u8]) -> Tables {
     scan_stream(body, true)
@@ -2392,6 +2406,8 @@ mod scope_tests;
 #[cfg(test)]
 mod tests {
     mod point_frames;
+
+    mod point_values;
 
     mod wide_scopes;
 
