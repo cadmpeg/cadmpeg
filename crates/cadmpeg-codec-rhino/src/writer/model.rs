@@ -432,7 +432,10 @@ impl WritableCoedge<'_> {
     pub(super) fn trim_domain(&self, edge: &WritableEdge<'_>) -> [FiniteReal; 2] {
         self.explicit_pcurve
             .and_then(Pcurve::parameter_range)
-            .map_or(edge.domain, |range| range.finite_components())
+            .map_or(
+                edge.domain,
+                cadmpeg_ir::units::FiniteVector::finite_components,
+            )
     }
 }
 
@@ -493,9 +496,10 @@ pub(super) struct WritablePcurve<'a> {
 
 impl WritablePcurve<'_> {
     pub(super) fn domain(&self, edge: &WritableEdge<'_>) -> [FiniteReal; 2] {
-        self.source
-            .parameter_range()
-            .map_or(edge.domain, |range| range.finite_components())
+        self.source.parameter_range().map_or(
+            edge.domain,
+            cadmpeg_ir::units::FiniteVector::finite_components,
+        )
     }
 }
 
@@ -553,7 +557,7 @@ impl<'a> WritableObjectCurve<'a> {
                 check_frame(curve.id.as_str(), *circle.frame(), "circle")?;
                 let domain = curve.parameter_range.map_or(
                     [0.0, std::f64::consts::TAU],
-                    |range| range.endpoints(),
+                    cadmpeg_ir::topology::IncreasingParameterInterval::endpoints,
                 );
                 if domain[0] >= domain[1]
                     || domain[1] - domain[0] > std::f64::consts::TAU + super::MAX_ARC_SPAN_EXCESS
@@ -603,7 +607,7 @@ impl<'a> WritableObjectCurve<'a> {
                 }
             }
             Some(SolvedCurveGeometry::Polyline(polyline)) => {
-                let range = curve.parameter_range.map(|range| range.endpoints());
+                let range = curve.parameter_range.map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints);
                 let converted = super::polyline::convert(curve.id.as_str(), polyline, range)?;
                 conversion = Some(RhinoLossCode::WriterCarrierResolved.note(format!(
                     "curve {} polyline was converted to an exact degree-one NURBS; its chordal deflection is omitted",
@@ -695,10 +699,9 @@ impl<'a> WritableObjectCurve<'a> {
             ObjectCurveGeometry::Nurbs(nurbs) => {
                 (super::NURBS_CURVE_CLASS, super::nurbs_curve_payload(nurbs)?)
             }
-            ObjectCurveGeometry::NurbsOwned(nurbs) => (
-                super::NURBS_CURVE_CLASS,
-                super::nurbs_curve_payload(&nurbs)?,
-            ),
+            ObjectCurveGeometry::NurbsOwned(nurbs) => {
+                (super::NURBS_CURVE_CLASS, super::nurbs_curve_payload(nurbs)?)
+            }
         })
     }
 }
@@ -712,7 +715,7 @@ fn free_curve_range(curve: &cadmpeg_ir::geometry::Curve) -> Option<[FiniteReal; 
         return Some([FiniteReal::new(lo)?, FiniteReal::new(hi)?]);
     }
     match curve.geometry.solved() {
-        Some(SolvedCurveGeometry::Circle(_)) | Some(SolvedCurveGeometry::Ellipse(_)) => Some([
+        Some(SolvedCurveGeometry::Circle(_) | SolvedCurveGeometry::Ellipse(_)) => Some([
             FiniteReal::new(0.0)?,
             FiniteReal::new(std::f64::consts::TAU)?,
         ]),
@@ -726,6 +729,7 @@ pub(super) enum WritableFaceSurface<'a> {
         origin: Point3,
         normal: Vector3,
         u_axis: Vector3,
+        domain: [[f64; 2]; 2],
     },
     Nurbs {
         surface: &'a NurbsSurface,
@@ -756,8 +760,12 @@ impl<'a> WritableFaceSurface<'a> {
                         origin,
                         normal: *normal,
                         u_axis: *u_axis,
+                        domain: [super::PLANE_PARAMETER_DOMAIN; 2],
                     },
-                    None,
+                    Some(RhinoLossCode::WriterPlaneDomainRestricted.note(format!(
+                        "plane surface {} is written with a finite 3DM parameter domain",
+                        surface.id
+                    ))),
                 ))
             }
             Some(SolvedSurfaceGeometry::Nurbs(nurbs)) => {
@@ -799,9 +807,10 @@ impl<'a> WritableFaceSurface<'a> {
                 origin,
                 normal,
                 u_axis,
+                domain,
             } => super::SurfacePayload {
                 class: super::PLANE_SURFACE_CLASS,
-                body: super::plane_surface_payload(*origin, *normal, *u_axis)?,
+                body: super::plane_surface_payload(*origin, *normal, *u_axis, *domain)?,
                 direct: None,
                 record_count: 1,
             },
@@ -1079,7 +1088,7 @@ impl<'a> WritableModel<'a> {
                     })?;
                 let domain = pcurve
                     .parameter_range()
-                    .map(|range| range.finite_components())
+                    .map(cadmpeg_ir::units::FiniteVector::finite_components)
                     .ok_or_else(|| {
                         WriteError::Omit(format!("singular edge {} has no trim domain", edge.id))
                     })?;
@@ -1238,7 +1247,9 @@ impl<'a> WritableModel<'a> {
                     // round-trip as a circle; the arc payload still holds the
                     // exact arc. Only a span the arc payload states is exact.
                     let [lo, hi] = FiniteReal::raw_array(domain);
-                    if !(hi > lo) || hi - lo > std::f64::consts::TAU + super::MAX_ARC_SPAN_EXCESS {
+                    if hi.partial_cmp(&lo) != Some(std::cmp::Ordering::Greater)
+                        || hi - lo > std::f64::consts::TAU + super::MAX_ARC_SPAN_EXCESS
+                    {
                         return Err(WriteError::Omit(format!(
                             "edge {} circle carrier is not a writable arc",
                             edge.id.as_str()
@@ -1560,6 +1571,7 @@ impl<'a> WritableModel<'a> {
                             origin,
                             normal,
                             u_axis,
+                            ..
                         } => match pcurve {
                             None => generated_projected_brep_c2_curve(
                                 &vertices,
@@ -1797,6 +1809,7 @@ impl<'a> WritableModel<'a> {
                     origin,
                     normal,
                     u_axis,
+                    ..
                 } => {
                     let tolerance =
                         stated_write_tolerance(face.source.tolerance, ir, face.source.id.as_str())?;
@@ -1893,6 +1906,18 @@ impl<'a> WritableModel<'a> {
                         }
                     }
                 }
+            }
+        }
+        for index in 0..result.surfaces.len() {
+            if matches!(result.surfaces[index], WritableFaceSurface::Plane { .. })
+                && result.faces.iter().any(|face| face.surface == index)
+            {
+                let domain = super::plane_domain::domain(&result, index)?;
+                let WritableFaceSurface::Plane { domain: target, .. } = &mut result.surfaces[index]
+                else {
+                    unreachable!("the surface was checked as a plane")
+                };
+                *target = domain;
             }
         }
         Ok(result)

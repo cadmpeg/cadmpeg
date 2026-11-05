@@ -58,7 +58,7 @@ fn admitted_native_counts_outside_i32_lanes_are_writer_limits() {
 
 #[test]
 fn admitted_archive_sizes_outside_native_lanes_are_writer_limits() {
-    let limit = i64::MAX as u64;
+    let limit = i64::MAX.cast_unsigned();
     let bytes = archive_body_len(limit)
         .expect("the maximum chunk length fits")
         .to_le_bytes();
