@@ -582,6 +582,17 @@ fn source_less_compact_custom_attributes_preserve_values() {
         .iter()
         .any(|loss| loss.message.contains(&native_id)));
 
+    let mut dangling = decoded.ir().clone();
+    dangling.model.attributes[1].values[0] = Some(
+        cadmpeg_ir::attributes::AttributeValue::Reference("f3d:brep:entity#-1x".into()),
+    );
+    let (output, report) = super::source_less_analytic::synthesize_document(&dangling, None);
+    assert_eq!(output.ir().model.attributes[0], dangling.model.attributes[0]);
+    assert!(report.losses.iter().any(|loss| {
+        loss.message.contains(dangling.model.attributes[1].id.as_str())
+            && loss.message.contains("successor reference")
+    }));
+
     let mut edited = decoded.ir().clone();
     let timestamp = &mut edited.model.attributes[1];
     let Some(cadmpeg_ir::attributes::AttributeValue::Float(value)) = &mut timestamp.values[3]

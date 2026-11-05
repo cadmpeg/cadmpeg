@@ -121,6 +121,28 @@ fn cut_first_global_card_gives_up_the_incomplete_field() {
 }
 
 #[test]
+fn a_missing_terminate_after_complete_data_is_given_up() {
+    let original = crate::test_support::compressed_parts::points(false, false);
+    let end = original.len() - 82;
+    assert_eq!(original[end + 72], b'T');
+    let baseline = crate::test_support::decode(original.clone());
+    let decoded = crate::test_support::decode(original[..end].to_vec());
+    assert_eq!(decoded.ir().model.points, baseline.ir().model.points);
+    assert_eq!(
+        crate::test_support::given_up_count(decoded.report(), "iges.terminate_section"),
+        1
+    );
+    let parts = crate::test_support::given_up_parts(decoded.source_fidelity());
+    assert_eq!(parts.len(), 1);
+    assert_eq!(parts[0].byte_len(), 0);
+    assert_eq!(parts[0].offset(), u64::try_from(end).unwrap());
+    assert_eq!(
+        decoded.ir().native.namespace("iges").unwrap().arenas()["unknowns"].len(),
+        1
+    );
+}
+
+#[test]
 fn cut_before_global_gives_up_its_empty_section() {
     let original = crate::test_support::compressed_parts::points(false, false);
     let global = b"1H,,1H;";
