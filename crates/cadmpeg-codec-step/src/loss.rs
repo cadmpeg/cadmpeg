@@ -280,6 +280,8 @@ pub(crate) enum StepLossCode {
     OccurrenceMetadataOmitted,
     /// PMI annotations were not written.
     PmiAnnotationNotWritten,
+    /// A PMI dimension's parameter reference was not represented.
+    PmiParameterReferenceOmitted,
     /// Source-object associations were not represented.
     SourceAssociationOmitted,
     /// Display colors had no emitted STEP item.
@@ -534,6 +536,7 @@ impl StepLossCode {
         Self::OccurrenceNoWritableProduct,
         Self::OccurrenceMetadataOmitted,
         Self::PmiAnnotationNotWritten,
+        Self::PmiParameterReferenceOmitted,
         Self::SourceAssociationOmitted,
         Self::DisplayColorUnstyled,
         Self::WireBodyTransparencyOmitted,
@@ -738,6 +741,7 @@ impl StepLossCode {
             Self::OccurrenceNoWritableProduct => "occurrence.no-writable-product",
             Self::OccurrenceMetadataOmitted => "occurrence.metadata-omitted",
             Self::PmiAnnotationNotWritten => "pmi.annotation-not-written",
+            Self::PmiParameterReferenceOmitted => "pmi.parameter-reference-omitted",
             Self::SourceAssociationOmitted => "source.association-omitted",
             Self::DisplayColorUnstyled => "appearance.display-color-unstyled",
             Self::WireBodyTransparencyOmitted => "appearance.wire-body-transparency-omitted",
@@ -1041,6 +1045,7 @@ impl StepLossCode {
             Self::ParametricDesignRecordsOmitted => LossTaxonomy::ParametricRecordOmitted,
             Self::SemanticAnnotationOmitted
             | Self::PmiAnnotationNotWritten
+            | Self::PmiParameterReferenceOmitted
             | Self::PmiDatumSystemInvalid
             | Self::DimensionalLimitsOmitted => LossTaxonomy::PmiOmitted,
             Self::DocumentAssetOmitted | Self::DocumentAssetMediaTypeOmitted => {
@@ -1213,6 +1218,7 @@ mod tests {
                 "occurrence.no-writable-product",
                 "occurrence.metadata-omitted",
                 "pmi.annotation-not-written",
+                "pmi.parameter-reference-omitted",
                 "source.association-omitted",
                 "appearance.display-color-unstyled",
                 "appearance.wire-body-transparency-omitted",

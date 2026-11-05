@@ -310,6 +310,7 @@ fn report_reductions(coverage: &mut ArenaDispositions, losses: &[LossNote]) {
     if has(&[
         StepLossCode::HiddenPmiVisibilityUnsupported,
         StepLossCode::PmiAnnotationNotWritten,
+        StepLossCode::PmiParameterReferenceOmitted,
     ]) {
         coverage.pmi = Reported;
     }

@@ -28,26 +28,198 @@ use cadmpeg_ir::features::{
 const DECAL_TARGET_ROLE: crate::records::topology::extrude_selection::DesignOperandRole =
     crate::records::topology::extrude_selection::DesignOperandRole::BODIES_A;
 
-/// Decode every structurally complete Decal image record.
+/// Decode indexed Decal scope, asset, and name records as independent parts.
 pub(crate) fn decode_decal_images(
+    ctx: &DecodeContext<'_>,
+    output: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
 ) -> Result<Vec<DesignDecalImage>, CodecError> {
-    super::image::decode_scoped_image_records(
-        scan,
-        scopes,
-        &crate::records::feature::scope::DesignFeatureKind::Decal,
-        |_, stream, scope| {
-            let start = usize::try_from(scope.byte_offset()?).ok()?;
-            Some(ids::native_design_decal_image_id(stream, start))
-        },
-        |bytes, stream, scope, read| {
-            let Some(meta) = super::meta::metadata_for_bulk_stream(scan, stream)? else {
-                return Ok(None);
+    let mut images = Vec::new();
+    for entry in scan.entries.iter().filter(|entry| {
+        scan.is_design_stream(entry, cadmpeg_core::container::ContainerRole::Bulkstream)
+    }) {
+        let Some(meta) = super::meta::metadata_for_bulk_stream(scan, &entry.name)? else {
+            continue;
+        };
+        let source = scan
+            .entry_view(&entry.name)
+            .ok_or_else(|| CodecError::malformed("Decal stream has no source view"))?;
+        let bytes = source.window();
+        let frames = super::meta::design_primary_frames(bytes, &meta)?;
+        let native_stream = ids::native_scope(&entry.name);
+        let mut assets = std::collections::HashMap::new();
+        for scope in scopes.iter().filter(|scope| {
+            scope.kind() == crate::records::feature::scope::DesignFeatureKind::Decal
+                && ids::native_stream(&scope.id) == Some(native_stream.as_str())
+        }) {
+            let Some(scope_at) = scope.byte_offset().and_then(|at| usize::try_from(at).ok()) else {
+                continue;
             };
-            parse_decal_image(bytes, stream, scope, read, &meta)
-        },
-    )
+            let Some(scope_frame) = frames.iter().find(|frame| {
+                frame.start == scope_at && frame.entity_id == u64::from(scope.record_index)
+            }) else {
+                continue;
+            };
+            let Some((asset_index, mapping, target)) =
+                decal_part(ctx, output, source, &entry.name, scope_frame, || {
+                    decal_scope_fields(
+                        bytes
+                            .get(scope_at..scope_frame.member_end)
+                            .unwrap_or_default(),
+                    )
+                    .ok_or_else(|| CodecError::malformed("invalid Decal scope members"))
+                })?
+            else {
+                continue;
+            };
+            if !assets.contains_key(&asset_index) {
+                let asset =
+                    decode_decal_asset(ctx, output, source, &entry.name, &frames, asset_index)?;
+                assets.insert(asset_index, asset);
+            }
+            let Some(asset) = assets.get(&asset_index).and_then(Option::as_ref).cloned() else {
+                continue;
+            };
+            let image = DesignDecalImage::new(
+                ids::native_design_decal_image_id(&entry.name, scope_at),
+                crate::records::identity::Located {
+                    value: scope.record_index,
+                    offset: u64::try_from(scope_at).map_err(CodecError::malformed)?,
+                },
+                crate::records::decal::DesignDecalMappingMode::from_code(mapping),
+                target,
+                asset,
+            )
+            .map_err(CodecError::malformed)?;
+            images.push(image);
+        }
+    }
+    images.sort_by(|left, right| left.id.cmp(&right.id));
+    Ok(images)
+}
+
+fn decal_part<T>(
+    ctx: &DecodeContext<'_>,
+    output: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
+    source: View<'_>,
+    stream: &str,
+    frame: &super::meta::DesignPrimaryFrame<'_>,
+    parse: impl FnOnce() -> Result<T, CodecError>,
+) -> Result<Option<T>, CodecError> {
+    use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartSpec};
+    let start = source
+        .start()
+        .checked_add(frame.start)
+        .ok_or_else(|| CodecError::malformed("Decal part start overflows"))?;
+    let end = source
+        .start()
+        .checked_add(frame.end)
+        .ok_or_else(|| CodecError::malformed("Decal part end overflows"))?;
+    let extent = source
+        .child(start, end)
+        .ok_or_else(|| CodecError::malformed("Decal part exceeds its stream"))?;
+    let spec = PartSpec::new("f3d.bulk_record").holding([
+        cadmpeg_ir::document::ArenaClass::Model,
+        cadmpeg_ir::document::ArenaClass::Design,
+    ]);
+    let spec = if extent.location().space == cadmpeg_core::decode::SpaceId::ROOT {
+        spec
+    } else {
+        spec.in_stream(
+            cadmpeg_ir::StreamName::try_from(stream.to_owned()).map_err(CodecError::malformed)?,
+        )
+    };
+    ctx.decode_part(output, extent, spec, |_| parse())
+}
+
+fn decal_scope_fields(prefix: &[u8]) -> Option<(u32, u8, u32)> {
+    if prefix.get(decal_scope::ZERO_RUN_10..decal_scope::ASSET_REFERENCE)? != [0; 10]
+        || prefix.get(decal_scope::ASSET_REFERENCE_ZERO_RUN..decal_scope::MAPPING_MODE)? != [0; 6]
+        || prefix.get(decal_scope::TARGET_REFERENCE_ZERO_RUN..decal_scope::LEN)? != [0; 6]
+    {
+        return None;
+    }
+    Some((
+        marked_reference(prefix, decal_scope::ASSET_REFERENCE)?,
+        *prefix.get(decal_scope::MAPPING_MODE)?,
+        marked_reference(prefix, decal_scope::TARGET_GROUP_REFERENCE)?,
+    ))
+}
+
+fn decode_decal_asset(
+    ctx: &DecodeContext<'_>,
+    output: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
+    source: View<'_>,
+    stream: &str,
+    frames: &[super::meta::DesignPrimaryFrame<'_>],
+    asset_index: u32,
+) -> Result<Option<DesignDecalAsset>, CodecError> {
+    let Some(asset_frame) = frames
+        .iter()
+        .find(|frame| frame.entity_id == u64::from(asset_index))
+    else {
+        return Ok(None);
+    };
+    let bytes = source.window();
+    let Some((asset_class, entity_suffix)) =
+        decal_part(ctx, output, source, stream, asset_frame, || {
+            let asset = bytes
+                .get(asset_frame.start..asset_frame.end)
+                .unwrap_or_default();
+            decal_asset_fields(asset, asset_index)
+                .ok_or_else(|| CodecError::malformed("invalid Decal asset members"))
+        })?
+    else {
+        return Ok(None);
+    };
+    let Some(name_frame) = frames.iter().find(|frame| frame.start == asset_frame.end) else {
+        return Ok(None);
+    };
+    decal_part(ctx, output, source, stream, name_frame, || {
+        let name = bytes
+            .get(name_frame.start..name_frame.member_end)
+            .unwrap_or_default();
+        let (name_class, name_index, asset_name) = decal_name_fields(name)
+            .ok_or_else(|| CodecError::malformed("invalid Decal name members"))?;
+        DesignDecalAsset::new(
+            [asset_class, name_class],
+            [asset_index, name_index],
+            u64::try_from(asset_frame.start).map_err(CodecError::malformed)?,
+            entity_suffix,
+            asset_name,
+        )
+        .map_err(CodecError::malformed)
+    })
+}
+
+fn decal_asset_fields(asset: &[u8], asset_index: u32) -> Option<(String, u32)> {
+    if asset.len() != decal_asset::LEN {
+        return None;
+    }
+    let (class_tag, after_tag) = lp_ascii_filtered_view(asset, 0, 0..=2000, u8::is_ascii_graphic)?;
+    if View::u32_le_at(asset, after_tag)? != asset_index
+        || asset.get(decal_asset::ZERO_RUN_8..decal_asset::DESIGN_ENTITY_SUFFIX_REFERENCE)?
+            != [0; 8]
+        || asset.get(decal_asset::ZERO_RUN_6..decal_asset::LEN)? != [0; 6]
+    {
+        return None;
+    }
+    Some((
+        class_tag.to_owned(),
+        marked_reference(asset, decal_asset::DESIGN_ENTITY_SUFFIX_REFERENCE)?,
+    ))
+}
+
+fn decal_name_fields(name: &[u8]) -> Option<(String, u32, String)> {
+    let (class_tag, after_tag) = lp_ascii_filtered_view(name, 0, 0..=2000, u8::is_ascii_graphic)?;
+    let index = View::u32_le_at(name, after_tag)?;
+    if name.get(decal_name::ZERO_RUN_10..decal_name::ASSET_NAME_CODE_UNIT_COUNT)? != [0; 10] {
+        return None;
+    }
+    let (asset_name, end) =
+        lp_utf16_bounded(name, decal_name::ASSET_NAME_CODE_UNIT_COUNT, 1..=1024)?;
+    (end == name.len()).then(|| (class_tag.to_owned(), index, asset_name))
 }
 
 /// Project exact Decal image and face bindings into neutral features.
@@ -127,25 +299,8 @@ pub(crate) fn project_decal_images(
     Ok(assets)
 }
 
-fn parse_decal_image(
-    bytes: &[u8],
-    stream: &str,
-    scope: &DesignParameterScope,
-    read: &super::image::ImageRead<'_, '_>,
-    meta: &crate::metastream::MetaStream,
-) -> Result<Option<DesignDecalImage>, CodecError> {
-    let Ok(scope_at) = usize::try_from(
-        scope
-            .byte_offset()
-            .ok_or_else(crate::records::feature::scope::unlocated_scope)?,
-    ) else {
-        return Ok(None);
-    };
-    let frames = super::meta::design_primary_frames(bytes, meta)?;
-    parse_decal_image_frame(stream, scope.record_index, scope_at, read, &frames)
-}
-
 /// Parse one Decal image from its indexed scope and asset records.
+#[cfg(test)]
 fn parse_decal_image_frame(
     stream: &str,
     scope_record_index: u32,
@@ -202,6 +357,7 @@ fn parse_decal_image_frame(
 }
 
 /// Parse the indexed asset and image-name records.
+#[cfg(test)]
 fn parse_decal_asset_record(
     asset_frame: &super::meta::DesignPrimaryFrame<'_>,
     name_frame: &super::meta::DesignPrimaryFrame<'_>,
@@ -356,6 +512,144 @@ mod tests {
         )
         .unwrap()
         .is_none());
+    }
+
+    #[test]
+    fn damaged_decal_members_give_up_the_indexed_record() {
+        use std::io::{Cursor, Write};
+
+        const ENTRY: &str = "FusionAssetName[Active]/Design1/BulkStream.dat";
+        let (bytes, scope_at, _) = fixture();
+        let meta =
+            crate::test_support::zip_test::indexed_fixture_metastream(&bytes, &[17, 18, 23], &[23]);
+        let scope =
+            crate::records::feature::test_support::located_scope_from_fixture(serde_json::json!({
+                "id": format!("{}:scope#23", crate::ids::native_scope(ENTRY)),
+                "byte_offset": scope_at,
+                "class_tag": "301",
+                "record_index": 23,
+                "frame_length": 129,
+                "kind": "Decal",
+                "kind_offset": scope_at + 32,
+                "feature_ordinal": 1,
+                "feature_ordinal_offset": 128,
+                "reference_count_offset": scope_at + 9,
+                "reference_members": [23],
+                "reference_member_offsets": [scope_at + 14],
+                "paired_class_tag": "302",
+                "paired_byte_offset": 200
+            }));
+        for (damaged_at, expected_start, expected_len) in
+            [(11, 0, 30), (41, 30, 41), (scope_at + 11, scope_at, 169)]
+        {
+            let mut damaged = bytes.clone();
+            damaged[damaged_at] = 2;
+            let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+            let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
+            crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+            zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
+                .unwrap();
+            zip.write_all(&meta).unwrap();
+            zip.start_file(ENTRY, stored).unwrap();
+            zip.write_all(&damaged).unwrap();
+            let archive = zip.finish().unwrap().into_inner();
+            crate::test_support::zip_test::with_scan(&archive, |scan| {
+                let ctx = cadmpeg_test_support::service_decode_context();
+                let mut output = cadmpeg_ir::source_fidelity::parts::PartOutput::new(
+                    cadmpeg_ir::CodecFormat::F3d,
+                    &ctx,
+                );
+                assert!(
+                    super::decode_decal_images(&ctx, &mut output, scan, &[scope.clone()])
+                        .unwrap()
+                        .is_empty()
+                );
+                let (_, native, fidelity, losses) = output.into_parts();
+                assert_eq!(losses.len(), 1);
+                assert_eq!(
+                    losses[0].code,
+                    cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable
+                        .note(String::new())
+                        .code
+                );
+                assert!(losses[0].message.contains("f3d.bulk_record"));
+                assert!(losses[0].message.contains("Design1/BulkStream.dat"));
+                assert!(fidelity
+                    .unrepresented()
+                    .contains(&cadmpeg_ir::document::ArenaClass::Model));
+                assert!(fidelity
+                    .unrepresented()
+                    .contains(&cadmpeg_ir::document::ArenaClass::Design));
+                let unknowns = &native.namespace("f3d").unwrap().arenas()["unknowns"];
+                assert_eq!(unknowns.len(), 1);
+                let retained = fidelity.retained_records().values().next().unwrap();
+                assert_eq!(retained.offset(), u64::try_from(expected_start).unwrap());
+                assert_eq!(retained.byte_len(), expected_len);
+            });
+        }
+    }
+
+    #[test]
+    fn damaged_decal_asset_keeps_an_independent_sibling() {
+        use std::io::{Cursor, Write};
+
+        const ENTRY: &str = "FusionAssetName[Active]/Design1/BulkStream.dat";
+        let (mut bytes, scope_at, _) = fixture();
+        let sibling_at = bytes.len();
+        bytes.extend_from_within(..);
+        header(&mut bytes, sibling_at, *b"258", 27);
+        header(&mut bytes, sibling_at + 30, *b"279", 28);
+        header(&mut bytes, sibling_at + scope_at, *b"301", 33);
+        header(&mut bytes, sibling_at + 200, *b"302", 33);
+        write_marked_reference(&mut bytes, sibling_at + scope_at + 21, 27);
+        let meta = crate::test_support::zip_test::indexed_fixture_metastream(
+            &bytes,
+            &[17, 18, 23, 27, 28, 33],
+            &[23, 33],
+        );
+        bytes[11] = 2;
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
+        crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+        zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
+            .unwrap();
+        zip.write_all(&meta).unwrap();
+        zip.start_file(ENTRY, stored).unwrap();
+        zip.write_all(&bytes).unwrap();
+        let archive = zip.finish().unwrap().into_inner();
+        let scope = |at: usize, index: u32| {
+            crate::records::feature::test_support::located_scope_from_fixture(serde_json::json!({
+                "id": format!("{}:scope#{index}", crate::ids::native_scope(ENTRY)),
+                "byte_offset": at,
+                "class_tag": "301",
+                "record_index": index,
+                "frame_length": 129,
+                "kind": "Decal",
+                "kind_offset": at + 32,
+                "feature_ordinal": 1,
+                "feature_ordinal_offset": at + 57,
+                "reference_count_offset": at + 9,
+                "reference_members": [index],
+                "reference_member_offsets": [at + 14],
+                "paired_class_tag": "302",
+                "paired_byte_offset": at + 129
+            }))
+        };
+        crate::test_support::zip_test::with_scan(&archive, |scan| {
+            let ctx = cadmpeg_test_support::service_decode_context();
+            let mut output = cadmpeg_ir::source_fidelity::parts::PartOutput::new(
+                cadmpeg_ir::CodecFormat::F3d,
+                &ctx,
+            );
+            let scopes = [scope(scope_at, 23), scope(sibling_at + scope_at, 33)];
+            let images = super::decode_decal_images(&ctx, &mut output, scan, &scopes).unwrap();
+            assert_eq!(images.len(), 1);
+            assert_eq!(images[0].scope_record_index(), 33);
+            assert_eq!(images[0].asset.record_index(), 27);
+            let (_, _, fidelity, losses) = output.into_parts();
+            assert_eq!(losses.len(), 1);
+            assert_eq!(fidelity.retained_records().len(), 1);
+        });
     }
 
     #[test]

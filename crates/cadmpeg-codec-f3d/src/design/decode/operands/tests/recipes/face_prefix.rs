@@ -44,7 +44,7 @@ fn face_recipe_prefix_type_entry_does_not_terminate_the_operand() {
     };
     let operand = super::parse_face_operand(
         &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &crate::design::test_support::test_primary_frames(&bytes),
         &scope,
         (0, None),
         None,
