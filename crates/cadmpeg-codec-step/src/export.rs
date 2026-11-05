@@ -1120,6 +1120,7 @@ impl<'a> Builder<'a> {
 
         self.emit_visibility();
         self.emit_tessellations(context);
+        self.emit_geometry_attributes(context);
         if !has_model_items && self.tessellation_step_refs.is_empty() {
             self.loss(
                 StepLossCode::NoExportableSolids,
@@ -2562,6 +2563,108 @@ impl<'a> Builder<'a> {
             .emit("PRODUCT_DEFINITION_SHAPE", &format!("'','',{product_def}"))
     }
 
+    fn emit_scalar_attribute(
+        &mut self,
+        attribute: &cadmpeg_ir::attributes::SourceAttribute,
+        owner: Ref,
+        context: Ref,
+    ) {
+        let scalar_items = !matches!(self.schema, StepSchema::Ap203Edition1 | StepSchema::Ap214);
+        let (kind, value) = match attribute.values.as_slice() {
+            [Some(AttributeValue::String(value))] => {
+                ("DESCRIPTIVE_REPRESENTATION_ITEM", string(value))
+            }
+            [Some(AttributeValue::Integer(value))] if scalar_items => {
+                ("INTEGER_REPRESENTATION_ITEM", value.to_string())
+            }
+            [Some(AttributeValue::Float(value))] if scalar_items => {
+                ("REAL_REPRESENTATION_ITEM", self.emitter.real(value.get()))
+            }
+            [Some(AttributeValue::Boolean(value))] if scalar_items => (
+                "BOOLEAN_REPRESENTATION_ITEM",
+                if *value { ".T." } else { ".F." }.to_owned(),
+            ),
+            _ => return,
+        };
+        let property = self.emitter.emit(
+            "PROPERTY_DEFINITION",
+            &format!("{},'',{owner}", string(&attribute.name)),
+        );
+        let item = self.emitter.emit(kind, &format!("'',{value}"));
+        let representation = self
+            .emitter
+            .emit("REPRESENTATION", &format!("'',({item}),{context}"));
+        self.emitter.emit(
+            "PROPERTY_DEFINITION_REPRESENTATION",
+            &format!("{property},{representation}"),
+        );
+        self.consumed_attribute_ids
+            .insert(attribute.id.as_str().to_owned());
+    }
+
+    fn emit_geometry_attributes(&mut self, context: Ref) {
+        if !matches!(
+            self.schema,
+            StepSchema::Ap242Edition1 | StepSchema::Ap242Edition2 | StepSchema::Ap242Edition3
+        ) {
+            return;
+        }
+        let ir = self.ir;
+        for attribute in &ir.model.attributes {
+            if self.attribute_is_written(attribute)
+                || !matches!(
+                    attribute.values.as_slice(),
+                    [Some(
+                        AttributeValue::String(_)
+                            | AttributeValue::Integer(_)
+                            | AttributeValue::Float(_)
+                            | AttributeValue::Boolean(_)
+                    )]
+                )
+            {
+                continue;
+            }
+            let item = match &attribute.target {
+                AttributeTarget::Face(id) => self.face_step_refs.get(id.as_str()).copied(),
+                AttributeTarget::Edge(id) if !self.split_edges.contains(id.as_str()) => {
+                    self.edge_refs.get(id.as_str()).copied()
+                }
+                AttributeTarget::Vertex(id) => self.vertex_refs.get(id.as_str()).copied(),
+                AttributeTarget::Surface(id) => self
+                    .surface_refs
+                    .get(id.as_str())
+                    .map(|surface| surface.reference),
+                AttributeTarget::Curve(id) => self.curve_refs.get(id.as_str()).copied(),
+                AttributeTarget::Point(id) => self.point_refs.get(id.as_str()).copied(),
+                AttributeTarget::Tessellation(id) => self.tessellation_step_refs.get(id).copied(),
+                AttributeTarget::Record { arena, id } => match arena.as_str() {
+                    "faces" => self.face_step_refs.get(id).copied(),
+                    "edges" if !self.split_edges.contains(id.as_str()) => {
+                        self.edge_refs.get(id).copied()
+                    }
+                    "vertices" => self.vertex_refs.get(id).copied(),
+                    "surfaces" => self.surface_refs.get(id).map(|surface| surface.reference),
+                    "curves" => self.curve_refs.get(id).copied(),
+                    "points" => self.point_refs.get(id).copied(),
+                    "tessellations" => self.tessellation_step_refs.get(id).copied(),
+                    _ => None,
+                },
+                _ => None,
+            };
+            let Some(item) = item else {
+                continue;
+            };
+            let representation = self
+                .emitter
+                .emit("REPRESENTATION", &format!("'',({item}),{context}"));
+            let owner = self.emitter.emit(
+                "CHARACTERIZED_ITEM_WITHIN_REPRESENTATION",
+                &format!("'','',{item},{representation}"),
+            );
+            self.emit_scalar_attribute(attribute, owner, context);
+        }
+    }
+
     fn emit_product_graph(&mut self, context: Ref) {
         let (application, _, _) = self.schema.application_protocol();
         let app_context = self
@@ -2776,38 +2879,7 @@ impl<'a> Builder<'a> {
                 .into_iter()
                 .flatten()
             {
-                let scalar_items =
-                    !matches!(self.schema, StepSchema::Ap203Edition1 | StepSchema::Ap214);
-                let (kind, value) = match attribute.values.as_slice() {
-                    [Some(AttributeValue::String(value))] => {
-                        ("DESCRIPTIVE_REPRESENTATION_ITEM", string(value))
-                    }
-                    [Some(AttributeValue::Integer(value))] if scalar_items => {
-                        ("INTEGER_REPRESENTATION_ITEM", value.to_string())
-                    }
-                    [Some(AttributeValue::Float(value))] if scalar_items => {
-                        ("REAL_REPRESENTATION_ITEM", self.emitter.real(value.get()))
-                    }
-                    [Some(AttributeValue::Boolean(value))] if scalar_items => (
-                        "BOOLEAN_REPRESENTATION_ITEM",
-                        if *value { ".T." } else { ".F." }.to_owned(),
-                    ),
-                    _ => continue,
-                };
-                let property = self.emitter.emit(
-                    "PROPERTY_DEFINITION",
-                    &format!("{},'',{definition}", string(&attribute.name)),
-                );
-                let item = self.emitter.emit(kind, &format!("'',{value}"));
-                let representation = self
-                    .emitter
-                    .emit("REPRESENTATION", &format!("'',({item}),{context}"));
-                self.emitter.emit(
-                    "PROPERTY_DEFINITION_REPRESENTATION",
-                    &format!("{property},{representation}"),
-                );
-                self.consumed_attribute_ids
-                    .insert(attribute.id.as_str().to_owned());
+                self.emit_scalar_attribute(attribute, definition, context);
             }
             let shape = self
                 .emitter
