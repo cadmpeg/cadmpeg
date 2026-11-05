@@ -13,8 +13,9 @@ use super::{indexed_header, lp_utf16};
 fn generated_act_with_component_links(links: &[(u32, usize)]) -> (Vec<u8>, Vec<(u64, u64)>) {
     assert!(!links.is_empty());
     let (original, records) = generated_act_bulkstream();
-    let mut bulk = original[..usize::try_from(records[2].1).unwrap()].to_vec();
-    let mut index = records[..2].to_vec();
+    let table_start = usize::try_from(records[1].1).unwrap();
+    let mut bulk = original[table_start..usize::try_from(records[2].1).unwrap()].to_vec();
+    let mut index = vec![(records[1].0, 0)];
     for (ordinal, &(tracked, padding)) in links.iter().enumerate() {
         let record = 9 + u32::try_from(ordinal).unwrap();
         index.push((u64::from(record), u64_from_index(bulk.len())));

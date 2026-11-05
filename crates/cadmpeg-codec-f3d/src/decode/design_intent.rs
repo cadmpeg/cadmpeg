@@ -473,7 +473,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     for history in &mut design.asm_histories {
         history.release_topologies();
     }
-    design.sketch_points = crate::design::decode::sketch::decode_sketch_points(scan)?;
+    design.sketch_points = crate::design::decode::sketch::decode_sketch_points(ctx, &mut design_parts, scan)?;
     design.sketch_texts = crate::design::decode::sketch::decode_sketch_texts(scan)?;
     design.sketch_curve_identities =
         crate::design::decode::sketch::decode_sketch_curve_identities(scan)?;
