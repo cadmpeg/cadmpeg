@@ -10,7 +10,7 @@ use serde_json::{Map, Value};
 use std::collections::BTreeSet;
 
 mod annotations;
-mod append;
+pub(super) mod append;
 mod copious;
 pub(super) mod drawings;
 mod fem;
@@ -18,8 +18,7 @@ mod fonts;
 mod levels;
 mod macros;
 mod products;
-mod solids;
-pub(super) use append::append;
+pub(super) mod solids;
 mod structure;
 
 /// Directory sequences model curves claim as their source carriers. A
@@ -107,7 +106,73 @@ pub(super) struct NativeExport {
     pub(super) losses: Vec<LossNote>,
 }
 
+pub(super) fn primitive_feature_coverage(
+    ir: &CadIr,
+    entities: &[Entity],
+) -> (cadmpeg_ir::codec::write::ArenaDisposition, Vec<LossNote>) {
+    use cadmpeg_ir::codec::write::ArenaDisposition;
+    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+
+    let mut missing = Vec::new();
+    for feature in &ir.model.features {
+        let name_fits = feature.name.as_ref().is_none_or(|name| {
+            !name.is_empty()
+                && name.len() <= 8
+                && name.trim() == name
+                && name
+                    .bytes()
+                    .all(|byte| byte.is_ascii_graphic() || byte == b' ')
+        });
+        let represented = matches!(
+            feature.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::Primitive { .. })
+        ) && entities.iter().any(|entity| {
+            matches!(entity.type_code, 150 | 152 | 154 | 156 | 158 | 160 | 168)
+                && entity
+                    .source_targets
+                    .iter()
+                    .any(|id| id == feature.id.as_str())
+        }) && feature.product_definition.is_none()
+            && feature.suppressed.is_none()
+            && !feature.needs_recompute
+            && feature.dependencies.is_empty()
+            && feature.evaluation.outputs().is_empty()
+            && name_fits;
+        if !represented {
+            missing.push(feature.id.to_string());
+        }
+    }
+    let coverage = if missing.is_empty() {
+        ArenaDisposition::Written
+    } else if missing.len() == ir.model.features.len() {
+        ArenaDisposition::Dropped
+    } else {
+        ArenaDisposition::Reported
+    };
+    let losses = if missing.is_empty() {
+        Vec::new()
+    } else {
+        vec![
+            super::IgesLossCode::DesignParametricRecordsOmitted.note(format!(
+                "IGES cannot fully encode features: {}",
+                missing.join(", ")
+            )),
+        ]
+    };
+    (coverage, losses)
+}
+
 type Targets = super::attributes::Targets;
+
+fn directory_label(name: &str) -> Option<String> {
+    (!name.is_empty()
+        && name.len() <= 8
+        && name.trim() == name
+        && name
+            .bytes()
+            .all(|byte| byte.is_ascii_graphic() || byte == b' '))
+    .then(|| name.to_owned())
+}
 
 struct Fields<'a> {
     values: Map<String, Value>,

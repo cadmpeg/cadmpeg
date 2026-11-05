@@ -248,8 +248,10 @@ pub(crate) mod manifest_test;
 pub(crate) mod protein_test;
 
 pub(crate) mod empty_attribute_occurrences;
+pub(crate) mod sketch_stream_test;
 pub(crate) mod streams_test;
 
+pub(crate) mod paramesh;
 pub(crate) mod zip_test;
 
 pub(crate) mod assembly_test;

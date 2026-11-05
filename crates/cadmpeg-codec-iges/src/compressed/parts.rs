@@ -60,9 +60,6 @@ pub(crate) fn normalize(
     {
         cursor += 1;
     }
-    if cursor == global_begin {
-        return Err(malformed("Global section is missing"));
-    }
     let global_end = cursor;
     let mut parts = PartOutput::new(cadmpeg_ir::CodecFormat::Iges, ctx);
     let mut global_cards = Vec::new();
@@ -83,7 +80,8 @@ pub(crate) fn normalize(
         && lines[cursor].extent.end() == lines[cursor].payload.end()
         && payloads[cursor].len() < CARD_WIDTH
         && payloads[cursor].first() != Some(&b'D')
-        && crate::global::parts::unfinished(ctx, source, &global_cards)?
+        && (global_cards.is_empty()
+            || crate::global::parts::unfinished(ctx, source, &global_cards)?)
     {
         append(
             ctx,
@@ -102,8 +100,23 @@ pub(crate) fn normalize(
         .skip(data_begin)
         .find_map(|(at, line)| (line.len() == CARD_WIDTH && line[72] == b'T').then_some(at));
     let data_end = terminate.unwrap_or(lines.len());
-    let (global, losses) =
-        crate::global::parts::parse_cards(ctx, source, &global_cards, &mut parts)?;
+    let (global, losses) = if global_cards.is_empty() {
+        let offset = lines
+            .get(cursor)
+            .map_or(source.end(), |line| line.extent.start());
+        let extent = source
+            .child(offset, offset)
+            .ok_or_else(|| malformed("Global section exceeds original source"))?;
+        ctx.decode_part(
+            &mut parts,
+            extent,
+            crate::reader::part("iges.global_section"),
+            |_| -> Result<(), CodecError> { Err(malformed("Global section is missing")) },
+        )?;
+        crate::global::given_up()
+    } else {
+        crate::global::parts::parse_cards(ctx, source, &global_cards, &mut parts)?
+    };
     let (parameter_delimiter, record_delimiter) =
         super::compressed_delimiters(global.parameter_delimiter, global.record_delimiter)?;
     let mut decoded = Vec::new();

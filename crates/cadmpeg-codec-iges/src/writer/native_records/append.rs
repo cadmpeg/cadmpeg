@@ -2,9 +2,10 @@
 //! Order native definitions by their current typed references.
 
 use super::{
-    annotations, attributes, coordinates, copious, count, drawings, entity, fem, fonts, levels,
-    macros, products, real, shape, solids, structure, text, BTreeSet, CadIr, DirectoryLineFont,
-    Entity, EntityStatus, Fields, NativeExport, NativeRecord, Targets, Value, ARENAS,
+    annotations, attributes, coordinates, copious, count, directory_label, drawings, entity, fem,
+    fonts, levels, macros, products, real, shape, solids, structure, text, BTreeSet, CadIr,
+    DirectoryLineFont, Entity, EntityStatus, Fields, NativeExport, NativeRecord, Targets, Value,
+    ARENAS,
 };
 use std::collections::BTreeMap;
 
@@ -208,23 +209,31 @@ fn directory_sequence(record: &NativeRecord) -> Option<u32> {
         .and_then(|sequence| sequence.parse::<u32>().ok())
 }
 
-/// A neutral name as an eight-column Directory label, when it fits.
-fn directory_label(name: &str) -> Option<String> {
-    (!name.is_empty()
-        && name.len() <= 8
-        && name.trim() == name
-        && name
-            .bytes()
-            .all(|byte| byte.is_ascii_graphic() || byte == b' '))
-    .then(|| name.to_owned())
-}
-
 pub(in crate::writer) fn append(
     ir: &CadIr,
     entities: &mut Vec<Entity>,
     version: crate::IgesVersion,
 ) -> NativeExport {
     let targets = attributes::targets(ir, entities);
+    let linked_primitives = ir
+        .native
+        .namespace("iges")
+        .and_then(|namespace| namespace.arenas().get("primitive_solids"))
+        .into_iter()
+        .flatten()
+        .filter(|record| {
+            ir.model
+                .features
+                .iter()
+                .any(|feature| feature.native_ref.as_deref() == Some(record.id()))
+        })
+        .map(|record| record.id().to_owned())
+        .collect::<BTreeSet<_>>();
+    let already_generated = linked_primitives
+        .iter()
+        .filter(|id| targets.contains_key(*id))
+        .cloned()
+        .collect();
     let mut emitter = Emitter {
         ir,
         version,
@@ -233,10 +242,11 @@ pub(in crate::writer) fn append(
         entities,
         targets,
         result: NativeExport {
-            regenerated: BTreeSet::new(),
+            regenerated: already_generated,
             losses: Vec::new(),
         },
     };
+    let linked_primitives = &linked_primitives;
     let mut pending = ir
         .native
         .namespace("iges")
@@ -247,7 +257,10 @@ pub(in crate::writer) fn append(
                 .iter()
                 .filter(|(arena, _)| ARENAS.contains(&arena.as_str()))
                 .flat_map(|(arena, records)| {
-                    records.iter().map(move |record| (arena.as_str(), record))
+                    records
+                        .iter()
+                        .filter(move |record| !linked_primitives.contains(record.id()))
+                        .map(move |record| (arena.as_str(), record))
                 })
         })
         .collect::<Vec<_>>();
@@ -362,13 +375,15 @@ impl Emitter<'_, '_> {
         if !self.version.admits(&entity) {
             return Push::Deferred;
         }
-        if let Some(id) = record
-            .field("transformation")
-            .and_then(|value| value.as_str().map(str::to_owned))
-        {
-            match self.targets.get(&id).map(Vec::as_slice) {
-                Some([index]) => entity.transform_link = Some(*index),
-                _ => return Push::Deferred,
+        if entity.transform.is_none() {
+            if let Some(id) = record
+                .field("transformation")
+                .and_then(|value| value.as_str().map(str::to_owned))
+            {
+                match self.targets.get(&id).map(Vec::as_slice) {
+                    Some([index]) => entity.transform_link = Some(*index),
+                    _ => return Push::Deferred,
+                }
             }
         }
         self.push_entity(arena, record, entity, owners);
@@ -427,12 +442,14 @@ impl Emitter<'_, '_> {
         if !self.version.admits(&entity) {
             return Class::Drop;
         }
-        if let Some(id) = record
-            .field("transformation")
-            .and_then(|value| value.as_str().map(str::to_owned))
-        {
-            if !matches!(self.targets.get(&id).map(Vec::as_slice), Some([_])) {
-                return Class::Wait;
+        if entity.transform.is_none() {
+            if let Some(id) = record
+                .field("transformation")
+                .and_then(|value| value.as_str().map(str::to_owned))
+            {
+                if !matches!(self.targets.get(&id).map(Vec::as_slice), Some([_])) {
+                    return Class::Wait;
+                }
             }
         }
         for id in &missing {
