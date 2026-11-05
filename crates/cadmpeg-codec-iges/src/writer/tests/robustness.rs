@@ -134,10 +134,63 @@ fn max_entities_counts_emitted_directory_records() {
         .plan(input, request())
         .expect("the exact record limit writes");
     input.limits.max_entities = records - 1;
-    assert!(matches!(
-        IgesCodec.plan(input, request()),
-        Err(cadmpeg_ir::codec::write::EncodeError::ResourceLimit(_))
-    ));
+    let error = IgesCodec
+        .plan(input, request())
+        .expect_err("one fewer record is refused");
+    let cadmpeg_ir::codec::write::EncodeError::ResourceLimit(limit) = error else {
+        panic!("entity admission must return a resource limit");
+    };
+    assert_eq!(
+        limit.dimension,
+        cadmpeg_core::decode::ResourceDimension::Entities
+    );
+    assert_eq!(
+        (limit.limit, limit.used, limit.additional),
+        (records - 1, records - 1, 1)
+    );
+}
+
+#[test]
+fn max_entities_counts_generated_transformations() {
+    let source = super::trimmed_plane_file();
+    let decoded = IgesCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode the source surface");
+    let mut ir = decoded.ir().clone();
+    ir.model.bodies[0].transform = Some(
+        cadmpeg_ir::transform::Transform::affine([
+            [1.0, 0.0, 0.0, 3.0],
+            [0.0, 1.0, 0.0, 4.0],
+            [0.0, 0.0, 1.0, 5.0],
+        ])
+        .expect("rigid placement"),
+    );
+    let mut bytes = Vec::new();
+    IgesCodec
+        .plan(EncodeInput::new(&ir, None), request())
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .expect("write the placed surface");
+    let reread = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode the placed surface");
+    let entities = &reread.ir().native.namespace("iges").unwrap().arenas()["entities"];
+    assert!(entities
+        .iter()
+        .any(|record| record.field("entity_type").and_then(|value| value.as_i64()) == Some(124)));
+    let records = output_record_count(&ir);
+    let mut input = EncodeInput::new(&ir, None);
+    input.limits.max_entities = records;
+    IgesCodec
+        .plan(input, request())
+        .expect("the exact record limit writes");
+    input.limits.max_entities = records - 1;
+    let error = IgesCodec
+        .plan(input, request())
+        .expect_err("one fewer record is refused");
+    assert!(
+        matches!(error, cadmpeg_ir::codec::write::EncodeError::ResourceLimit(limit)
+        if (limit.limit, limit.used, limit.additional) == (records - 1, records - 1, 1))
+    );
 }
 
 #[test]
