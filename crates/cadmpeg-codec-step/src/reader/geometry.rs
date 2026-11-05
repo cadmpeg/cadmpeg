@@ -168,7 +168,7 @@ pub(super) fn infer_edge_parameter_ranges(
         return Ok(());
     }
     let model_index = cadmpeg_ir::index::ModelIndex::build(ir);
-    let tolerance = model_index.ir().tolerances.linear.get();
+    let tolerance = model_index.ir().tolerances.linear_or_default().get();
     let mut inferred = Vec::new();
     for (edge_index, edge) in ir.model.edges.iter().enumerate() {
         if edge.param_range().is_some() {
@@ -610,7 +610,7 @@ pub(super) fn decode(
     let mut placements = BTreeMap::new();
     let mut placements2 = BTreeMap::new();
     match linear_uncertainty(exchange, ctx)? {
-        LinearUncertainty::Value(uncertainty) => ir.tolerances.linear = uncertainty,
+        LinearUncertainty::Value(uncertainty) => ir.tolerances.linear = Some(uncertainty),
         LinearUncertainty::Empty { unresolved } => {
             if exchange.truncated_envelope() {
                 // The uncertainty statements are past the cut: no surviving
@@ -652,7 +652,7 @@ pub(super) fn decode(
                     operation: "step_linear_uncertainty",
                 });
             }
-            let default_linear = ir.tolerances.linear.get();
+            let default_linear = ir.tolerances.linear_or_default().get();
             let listed = [first, second]
                 .iter()
                 .chain(&rest)
@@ -1343,7 +1343,7 @@ pub(super) fn decode(
                     angle_scale: record_angle_scale,
                     linear_parameter_scale: linear_parameter_scale.get(),
                     parameter_offset,
-                    tolerance: ir.tolerances.linear.get(),
+                    tolerance: ir.tolerances.linear_or_default().get(),
                     master_representation,
                     record_id: id,
                     losses: &mut losses,

@@ -374,6 +374,101 @@ fn source_less_spatial_mixed_point_roles_reach_output() {
 }
 
 #[test]
+fn source_less_native_spatial_relation_keeps_its_operands() {
+    check_native_spatial_relation(true, ["d6", "e1"], 10);
+}
+
+#[test]
+fn source_less_native_spatial_reference_relation_keeps_its_operands() {
+    check_native_spatial_relation(false, ["2a81", "2a81"], 10);
+}
+
+#[test]
+fn native_spatial_operand_address_has_a_checked_capacity() {
+    check_native_spatial_relation(true, ["d6", "e1"], 65536);
+}
+
+fn check_native_spatial_relation(driving: bool, tags: [&str; 2], address: u32) {
+    use cadmpeg_ir::codec::write::Encoder;
+    use cadmpeg_ir::features::{DesignParameter, ParameterId, ParameterValue};
+    use cadmpeg_ir::sketches::{
+        SketchConstraintId, SketchNativeOperand, SpatialSketchConstraint,
+        SpatialSketchConstraintDefinitionInput,
+    };
+
+    let mut ir = source_less_spatial_line(Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0));
+    let id = ParameterId::mint("synthetic:test:parameter#native-distance").unwrap();
+    ir.model.parameters.push(DesignParameter {
+        product_definition: None,
+        id: id.clone(),
+        owner: Some(ir.model.features[0].id.clone()),
+        ordinal: 0,
+        name: if driving { "D1" } else { "D1@reference" }.into(),
+        expression: "4mm".into(),
+        driving,
+        display: None,
+        value: Some(ParameterValue::Length(
+            cadmpeg_ir::scalar::Length::new(4.0).unwrap(),
+        )),
+        properties: BTreeMap::new(),
+        pmi: None,
+        native_ref: None,
+    });
+    let operand = |kind: &str, address| SketchNativeOperand {
+        native_kind: cadmpeg_core::text::NonBlankString::new(kind).unwrap(),
+        field: None,
+        object_index: Some(address),
+        native_ref: None,
+    };
+    let constraint_id = SketchConstraintId::mint("synthetic:test:constraint#native").unwrap();
+    ir.model
+        .spatial_sketch_constraints
+        .push(SpatialSketchConstraint {
+            id: constraint_id.clone(),
+            sketch: ir.model.spatial_sketches[0].id.clone(),
+            definition: SpatialSketchConstraintDefinitionInput::Native {
+                native_kind: cadmpeg_core::text::NonBlankString::new("sgPntLineDist").unwrap(),
+                native_state: None,
+                parameter: Some(id),
+                operands: vec![operand(tags[0], address), operand(tags[1], 20)],
+            }
+            .try_into()
+            .unwrap(),
+            native_ref: None,
+        });
+    let result = crate::SldprtCodec.plan(EncodeInput::new(&ir, None), TargetRequest::Inherit);
+    if address > u16::MAX as u32 {
+        assert!(
+            matches!(result, Err(cadmpeg_ir::codec::write::EncodeError::TargetCapacity {
+            field, limit: 65535, value: 65536
+        }) if field.field == "spatial.relation.operand_address")
+        );
+        return;
+    }
+    let plan = result.unwrap();
+    assert!(!plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(constraint_id.as_str())));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = crate::SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(output.ir().model.spatial_sketch_constraints.iter().any(|constraint| matches!(
+        constraint.definition.kind(),
+        SpatialSketchConstraintDefinitionInput::Native { native_kind, parameter: Some(parameter), operands, .. }
+            if native_kind.as_str() == "sgPntLineDist" && operands.len() == 2
+                && operands[0].native_kind.as_str() == tags[0] && operands[0].object_index == Some(10)
+                && operands[1].native_kind.as_str() == tags[1] && operands[1].object_index == Some(20)
+                && output.ir().model.parameters.iter().any(|record| &record.id == parameter && record.driving == driving
+                    && record.name == if driving { "D1" } else { "D1@reference" }
+                    && matches!(record.value, Some(ParameterValue::Length(value)) if value.get() == 4.0))
+    )), "constraints: {:#?}; parameters: {:#?}", output.ir().model.spatial_sketch_constraints, output.ir().model.parameters);
+}
+
+#[test]
 fn inactive_configuration_retains_its_spatial_sketch() {
     use cadmpeg_ir::codec::write::Encoder;
     use cadmpeg_ir::features::{
@@ -772,4 +867,225 @@ fn sheet_region_retains_multiple_shells() {
     assert_eq!(result.ir().model.regions.len(), 1);
     assert_eq!(result.ir().model.regions[0].shells.len(), 2);
     assert_eq!(result.ir().model.faces.len(), 12);
+}
+
+#[test]
+fn inactive_discrete_configuration_values_are_written_as_scalars() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    use cadmpeg_ir::features::ParameterValue;
+
+    let mut source = crate::test_support::container::sldprt_with_body(
+        &crate::test_support::parasolid::triangle_body(),
+    );
+    source.extend(crate::test_support::container::make_block(
+        0x42,
+        "Contents/Keywords",
+        br#"<Keywords><Configuration Name="Default"/><Configuration Name="Other"/><Feature Name="Settings" Type="EquationDriven" id="7"><Dimension Name="Count">2</Dimension><Dimension Name="Enabled">true</Dimension></Feature></Keywords>"#,
+    ));
+    let source = crate::test_support::container::native_envelope_fixture(&source);
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let count = ir
+        .model
+        .parameters
+        .iter()
+        .find(|p| p.name == "Count")
+        .unwrap()
+        .id
+        .clone();
+    let enabled = ir
+        .model
+        .parameters
+        .iter()
+        .find(|p| p.name == "Enabled")
+        .unwrap()
+        .id
+        .clone();
+    let configuration = ir
+        .model
+        .configurations
+        .iter_mut()
+        .find(|c| !c.active)
+        .unwrap();
+    let slot = crate::history::write::configurations::configuration_slot(
+        &configuration.properties,
+        configuration.ordinal,
+    )
+    .to_string();
+    configuration
+        .parameter_values
+        .insert(count.clone(), ParameterValue::Integer(7));
+    configuration
+        .parameter_values
+        .insert(enabled.clone(), ParameterValue::Boolean(false));
+    configuration
+        .parameter_overrides
+        .insert(count.clone(), cadmpeg_ir::features::Expression::text("7"));
+    configuration.parameter_overrides.insert(
+        enabled.clone(),
+        cadmpeg_ir::features::Expression::text("false"),
+    );
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(!plan.report().losses.iter().any(|loss| loss
+        .message
+        .contains("no native configuration scalar encoding")
+        && (loss.message.contains(count.as_str()) || loss.message.contains(enabled.as_str()))));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let native = crate::test_support::native::sldprt_native(output.ir());
+    let lane = native
+        .feature_input_lanes
+        .iter()
+        .find(|lane| lane.configuration.as_deref() == Some(slot.as_str()))
+        .unwrap();
+    for (name, value) in [("Count", 7.0), ("Enabled", 0.0)] {
+        assert!(
+            lane.scalars.iter().any(|scalar| scalar.value.get() == value
+                && lane
+                    .names
+                    .iter()
+                    .any(|item| item.id == scalar.name && item.value == name)),
+            "{name} scalar in configuration {slot}"
+        );
+    }
+    ir.model
+        .configurations
+        .iter_mut()
+        .find(|c| !c.active)
+        .unwrap()
+        .parameter_values
+        .insert(
+            count.clone(),
+            ParameterValue::Integer(9_007_199_254_740_993),
+        );
+    ir.model
+        .configurations
+        .iter_mut()
+        .find(|c| !c.active)
+        .unwrap()
+        .parameter_overrides
+        .insert(
+            count.clone(),
+            cadmpeg_ir::features::Expression::text("9007199254740993"),
+        );
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(count.as_str())
+            && loss
+                .message
+                .contains("no native configuration scalar encoding")));
+}
+
+#[test]
+fn spatial_profiles_and_visibility_are_reported_when_unwritable() {
+    use cadmpeg_ir::codec::write::Encoder;
+    use cadmpeg_ir::math::Vector3;
+    use cadmpeg_ir::sketches::{SpatialSketchEntityUse, SpatialSketchProfile};
+
+    let mut ir = source_less_spatial_line(Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0));
+    let sketch = ir.model.spatial_sketches[0].id.clone();
+    let mut boundary = vec![SpatialSketchEntityUse {
+        entity: ir.model.spatial_sketch_entities[0].id().clone(),
+        reversed: false,
+    }];
+    for (index, (start, end)) in [
+        (Point3::new(1.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)),
+        (Point3::new(0.0, 1.0, 0.0), Point3::new(0.0, 0.0, 0.0)),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let id = SpatialSketchEntityId::mint(format!(
+            "synthetic:test:spatial-sketch-entity#side-{index}"
+        ))
+        .unwrap();
+        ir.model
+            .spatial_sketch_entities
+            .push(SpatialSketchEntity::new(
+                id.clone(),
+                sketch.clone(),
+                SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Line {
+                    start,
+                    end,
+                })
+                .unwrap(),
+            ));
+        boundary.push(SpatialSketchEntityUse {
+            entity: id,
+            reversed: false,
+        });
+    }
+    ir.model.spatial_sketches[0].profiles.push(
+        SpatialSketchProfile::try_new(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            boundary,
+        )
+        .unwrap(),
+    );
+    ir.model.spatial_sketches[0].visible = Some(false);
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    for field in ["profile 0", "visibility"] {
+        assert!(
+            plan.report()
+                .losses
+                .iter()
+                .any(|loss| loss.message.contains(sketch.as_str()) && loss.message.contains(field)),
+            "missing {field} loss"
+        );
+    }
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        output
+            .ir()
+            .model
+            .spatial_sketch_entities
+            .iter()
+            .filter(|entity| matches!(
+                entity.geometry.definition(),
+                SpatialSketchGeometryDefinition::Line { .. }
+            ))
+            .count(),
+        3
+    );
+}
+
+#[test]
+fn independent_spatial_construction_state_is_reported() {
+    use cadmpeg_ir::codec::write::Encoder;
+
+    let mut ir = source_less_spatial_line(Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0));
+    let entity = ir.model.spatial_sketch_entities[0].id().clone();
+    ir.model.spatial_sketch_entities[0].construction = true;
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(plan.report().losses.iter().any(
+        |loss| loss.message.contains(entity.as_str()) && loss.message.contains("construction")
+    ));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(output.ir().model.spatial_sketch_entities.iter().any(|entity| matches!(entity.geometry.definition(), SpatialSketchGeometryDefinition::Line { start, end } if *start == Point3::new(0.0, 0.0, 0.0) && *end == Point3::new(10.0, 0.0, 0.0))));
 }

@@ -65,7 +65,7 @@ fn directory_pattern_number_is_written_from_typed_display() {
         &entities,
         &BTreeMap::new(),
         crate::IgesVersion::V5_3,
-        ir.tolerances.linear.get(),
+        Some(ir.tolerances.linear.expect("stated linear tolerance").get()),
     )
     .expect("typed directory pattern encodes");
     let directory = bytes
@@ -117,7 +117,7 @@ fn reemitted_font_definition_uses_current_directory_pointer() {
         &entities,
         &BTreeMap::new(),
         crate::IgesVersion::V5_3,
-        ir.tolerances.linear.get(),
+        Some(ir.tolerances.linear.expect("stated linear tolerance").get()),
     )
     .expect("current font definition encodes");
     let directory = bytes
@@ -456,7 +456,7 @@ fn reemitted_node_carries_its_subscript_into_the_directory() {
         &entities,
         &BTreeMap::new(),
         crate::IgesVersion::V5_3,
-        ir.tolerances.linear.get(),
+        Some(ir.tolerances.linear.expect("stated linear tolerance").get()),
     )
     .expect("finite-element node encodes");
     let cards: Vec<_> = bytes
@@ -1166,4 +1166,375 @@ fn reemitted_drawings_redecode_to_their_typed_records() {
     assert_fixture_round_trips("view_visibility_forms", &["view_visibility", "views"]);
     assert_fixture_round_trips("dimension_forms", &["annotations"]);
     assert_fixture_round_trips("leader_forms", &["annotations"]);
+}
+
+#[test]
+fn boolean_feature_order_follows_current_ordinals() {
+    use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use std::io::Cursor;
+    let entities = [
+        (158, 0, "SPHERE1", "158,1,0,0,0;"),
+        (158, 0, "SPHERE2", "158,1,3,0,0;"),
+        (180, 0, "FIRST", "180,3,-1,-3,1;"),
+        (180, 0, "SECOND", "180,3,-1,-3,1;"),
+    ]
+    .into_iter()
+    .map(|(entity_type, form, label, parameters)| OwnedTestEntity {
+        entity_type,
+        form,
+        label: label.into(),
+        status: "00000000",
+        parameters: parameters.into(),
+    })
+    .collect::<Vec<_>>();
+    let decoded = crate::IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&entities)),
+            &DecodeOptions::default(),
+        )
+        .expect("Boolean fixtures decode");
+    let mut ir = decoded.ir().clone();
+    let first = ir
+        .model
+        .features
+        .iter()
+        .position(|feature| feature.name.as_deref() == Some("FIRST"))
+        .expect("first Boolean");
+    let second = ir
+        .model
+        .features
+        .iter()
+        .position(|feature| feature.name.as_deref() == Some("SECOND"))
+        .expect("second Boolean");
+    let ordinal = ir.model.features[first].ordinal;
+    ir.model.features[first].ordinal = ir.model.features[second].ordinal;
+    ir.model.features[second].ordinal = ordinal;
+    let output = super::super::synthesize(&ir, crate::IgesVersion::V5_3)
+        .expect("Boolean features synthesize");
+    let after = crate::IgesCodec
+        .decode(&mut Cursor::new(output.bytes), &DecodeOptions::default())
+        .expect("Boolean features re-decode");
+    let ordinal = |name: &str| {
+        after
+            .ir()
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .expect("written Boolean feature")
+            .ordinal
+    };
+    assert!(ordinal("SECOND") < ordinal("FIRST"));
+}
+
+#[test]
+fn edited_rectangular_pattern_grid_reaches_output() {
+    use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use cadmpeg_ir::features::patterns::{PatternKind, PatternTransform};
+    use cadmpeg_ir::features::{Dimension, FeatureDefinition, FeatureOperation};
+    use std::io::Cursor;
+    let entities = [
+        (116, "BASE", "116,0,0,0,0;"),
+        (412, "RECT", "412,1,1,0,0,0,2,1,4,2,0.0,0,0;"),
+    ]
+    .into_iter()
+    .map(|(entity_type, label, parameters)| OwnedTestEntity {
+        entity_type,
+        form: 0,
+        label: label.into(),
+        status: "00000000",
+        parameters: parameters.into(),
+    })
+    .collect::<Vec<_>>();
+    let decoded = crate::IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&entities)),
+            &DecodeOptions::default(),
+        )
+        .expect("rectangular array decodes");
+    let mut ir = decoded.ir().clone();
+    let feature = ir
+        .model
+        .features
+        .iter_mut()
+        .find(|feature| feature.name.as_deref() == Some("RECT"))
+        .expect("rectangular feature");
+    let mut definition = feature.evaluation.definition().clone();
+    let FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) = &mut definition
+    else {
+        panic!("pattern")
+    };
+    let mut transform = pattern.definition().clone();
+    let PatternTransform::Linear { count, .. } = &mut transform else {
+        panic!("linear pattern")
+    };
+    *count = Dimension::Literal(3);
+    *pattern = PatternKind::new(transform).expect("edited grid remains valid");
+    feature.evaluation.set_definition(definition);
+    let output =
+        super::super::synthesize(&ir, crate::IgesVersion::V5_3).expect("edited array synthesizes");
+    let export_losses = output.losses.clone();
+    let after = crate::IgesCodec
+        .decode(&mut Cursor::new(output.bytes), &DecodeOptions::default())
+        .expect("array re-decodes");
+    let feature = after
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("RECT"))
+        .unwrap_or_else(|| {
+            panic!(
+                "written array feature; export: {export_losses:?}; decode: {:?}; features: {:?}",
+                after.report().losses,
+                after.ir().model.features
+            )
+        });
+    let FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) =
+        feature.evaluation.definition()
+    else {
+        panic!("written pattern")
+    };
+    let PatternTransform::Linear { count, .. } = pattern.definition() else {
+        panic!("written linear pattern")
+    };
+    assert_eq!(*count, Dimension::Literal(3));
+    let native = &after.ir().native.namespace("iges").unwrap().arenas()["rectangular_arrays"][0];
+    assert_eq!(
+        native
+            .field("do_dont_flag")
+            .and_then(|value| value.as_i64()),
+        Some(0)
+    );
+}
+
+#[test]
+fn unsupported_rectangular_omission_mask_is_reported() {
+    use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use cadmpeg_ir::features::patterns::{PatternKind, PatternTransform};
+    use cadmpeg_ir::features::{Dimension, FeatureDefinition, FeatureOperation};
+    use std::io::Cursor;
+    let entities = [
+        (116, "BASE", "116,0,0,0,0;"),
+        (412, "RECT", "412,1,1,0,0,0,2,1,4,2,0.0,1,1,2;"),
+    ]
+    .into_iter()
+    .map(|(entity_type, label, parameters)| OwnedTestEntity {
+        entity_type,
+        form: 0,
+        label: label.into(),
+        status: "00000000",
+        parameters: parameters.into(),
+    })
+    .collect::<Vec<_>>();
+    let decoded = crate::IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&entities)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let feature = ir
+        .model
+        .features
+        .iter_mut()
+        .find(|feature| feature.name.as_deref() == Some("RECT"))
+        .unwrap();
+    let feature_id = feature.id.to_string();
+    let mut definition = feature.evaluation.definition().clone();
+    let FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) = &mut definition
+    else {
+        panic!("pattern")
+    };
+    let mut transform = pattern.definition().clone();
+    let PatternTransform::Linear { count, .. } = &mut transform else {
+        panic!("linear pattern")
+    };
+    *count = Dimension::Literal(3);
+    *pattern = PatternKind::new(transform).unwrap();
+    feature.evaluation.set_definition(definition);
+    let output = super::super::synthesize(&ir, crate::IgesVersion::V5_3).unwrap();
+    assert!(output
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(&feature_id)));
+    let after = crate::IgesCodec
+        .decode(&mut Cursor::new(output.bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(after.report().losses.iter().all(|loss| !loss
+        .message
+        .contains("array base, dimensions, selection mask")));
+}
+
+#[test]
+fn rectangular_do_mask_keeps_its_current_grid_positions() {
+    use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use std::io::Cursor;
+    let entities = [
+        (116, "BASE", "116,0,0,0,0;"),
+        (412, "RECT", "412,1,1,0,0,0,4,1,4,2,0.0,2,0,1,3;"),
+    ]
+    .into_iter()
+    .map(|(entity_type, label, parameters)| OwnedTestEntity {
+        entity_type,
+        form: 0,
+        label: label.into(),
+        status: "00000000",
+        parameters: parameters.into(),
+    })
+    .collect::<Vec<_>>();
+    let decoded = crate::IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&entities)),
+            &DecodeOptions::default(),
+        )
+        .expect("DO mask decodes");
+    assert!(decoded
+        .ir()
+        .model
+        .features
+        .iter()
+        .any(|feature| feature.name.as_deref() == Some("RECT")));
+    let output =
+        super::super::synthesize(decoded.ir(), crate::IgesVersion::V5_3).expect("DO mask writes");
+    let after = crate::IgesCodec
+        .decode(&mut Cursor::new(output.bytes), &DecodeOptions::default())
+        .expect("DO mask re-decodes");
+    let native = &after.ir().native.namespace("iges").unwrap().arenas()["rectangular_arrays"][0];
+    assert_eq!(
+        native
+            .field("do_dont_flag")
+            .and_then(|value| value.as_i64()),
+        Some(0)
+    );
+    assert_eq!(native.field("positions"), Some(json!([1, 3])));
+    assert!(after
+        .ir()
+        .model
+        .features
+        .iter()
+        .any(|feature| feature.name.as_deref() == Some("RECT")));
+}
+
+#[test]
+fn edited_circular_pattern_count_reaches_output() {
+    use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use cadmpeg_ir::features::patterns::{PatternKind, PatternTransform};
+    use cadmpeg_ir::features::{Dimension, FeatureDefinition, FeatureOperation};
+    use std::io::Cursor;
+    let entities = [
+        (116, "BASE", "116,0,0,0,0;"),
+        (414, "CIRCLE", "414,1,4,0,0,0,5,0,1.0,0,0;"),
+    ]
+    .into_iter()
+    .map(|(entity_type, label, parameters)| OwnedTestEntity {
+        entity_type,
+        form: 0,
+        label: label.into(),
+        status: "00000000",
+        parameters: parameters.into(),
+    })
+    .collect::<Vec<_>>();
+    let decoded = crate::IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&entities)),
+            &DecodeOptions::default(),
+        )
+        .expect("circular array decodes");
+    let mut ir = decoded.ir().clone();
+    let feature = ir
+        .model
+        .features
+        .iter_mut()
+        .find(|feature| feature.name.as_deref() == Some("CIRCLE"))
+        .expect("circular feature");
+    let mut definition = feature.evaluation.definition().clone();
+    let FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) = &mut definition
+    else {
+        panic!("pattern")
+    };
+    let mut transform = pattern.definition().clone();
+    let PatternTransform::Circular { count, .. } = &mut transform else {
+        panic!("circular pattern")
+    };
+    *count = Dimension::Literal(5);
+    *pattern = PatternKind::new(transform).expect("edited pattern remains valid");
+    feature.evaluation.set_definition(definition);
+    let output =
+        super::super::synthesize(&ir, crate::IgesVersion::V5_3).expect("edited circle synthesizes");
+    let after = crate::IgesCodec
+        .decode(&mut Cursor::new(output.bytes), &DecodeOptions::default())
+        .expect("circle re-decodes");
+    let feature = after
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("CIRCLE"))
+        .expect("written circular feature");
+    let FeatureDefinition::Operation(FeatureOperation::Pattern { pattern, .. }) =
+        feature.evaluation.definition()
+    else {
+        panic!("written pattern")
+    };
+    let PatternTransform::Circular { count, .. } = pattern.definition() else {
+        panic!("written circular pattern")
+    };
+    assert_eq!(*count, Dimension::Literal(5));
+}
+
+#[test]
+fn circular_explicit_angles_keep_their_iges_mask() {
+    use crate::test_support::test_owned::{owned_test_file, OwnedTestEntity};
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use std::io::Cursor;
+    let entities = [
+        (116, "BASE", "116,0,0,0,0;"),
+        (414, "PARTIAL", "414,1,4,0,0,0,5,0,1.0,2,1,2,4;"),
+    ]
+    .into_iter()
+    .map(|(entity_type, label, parameters)| OwnedTestEntity {
+        entity_type,
+        form: 0,
+        label: label.into(),
+        status: "00000000",
+        parameters: parameters.into(),
+    })
+    .collect::<Vec<_>>();
+    let decoded = crate::IgesCodec
+        .decode(
+            &mut Cursor::new(owned_test_file(&entities)),
+            &DecodeOptions::default(),
+        )
+        .expect("partial circular array decodes");
+    assert!(decoded
+        .ir()
+        .model
+        .features
+        .iter()
+        .any(|feature| feature.name.as_deref() == Some("PARTIAL")));
+    let output = super::super::synthesize(decoded.ir(), crate::IgesVersion::V5_3)
+        .expect("partial circle synthesizes");
+    let after = crate::IgesCodec
+        .decode(&mut Cursor::new(output.bytes), &DecodeOptions::default())
+        .expect("partial circle re-decodes");
+    let native = &after.ir().native.namespace("iges").unwrap().arenas()["circular_arrays"][0];
+    assert_eq!(
+        native
+            .field("do_dont_flag")
+            .and_then(|value| value.as_i64()),
+        Some(1)
+    );
+    assert_eq!(native.field("positions"), Some(json!([2, 4])));
+    assert!(after
+        .ir()
+        .model
+        .features
+        .iter()
+        .any(|feature| feature.name.as_deref() == Some("PARTIAL")));
 }

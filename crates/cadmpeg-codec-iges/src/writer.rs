@@ -158,6 +158,7 @@ mod levels;
 mod native_records;
 mod pcurve_admission;
 pub(crate) mod target;
+mod units;
 
 fn body(
     bytes: Vec<u8>,
@@ -693,6 +694,7 @@ fn synthesize_with_admission(
     if let Some(remap) = ensure_version_support(&mut graph.entities, version, &mut graph.losses)? {
         remap_presentations(&mut graph.presentations, &remap);
     }
+    units::ensure_nonempty(&mut graph.entities, version);
     native_export.regenerated.retain(|id| {
         graph
             .entities
@@ -877,7 +879,6 @@ fn synthesize_with_admission(
                 .note("the document holds no geometry that IGES can encode"),
         );
     }
-    let minimum_resolution = ir.tolerances.linear.get();
     let counts = entity_counts(&graph.entities);
     let mut coverage = SYNTHESIS_COVERAGE;
     coverage.features = feature_coverage;
@@ -950,7 +951,7 @@ fn synthesize_with_admission(
             &graph.entities,
             &graph.presentations,
             version,
-            minimum_resolution,
+            ir.tolerances.linear.map(|value| value.get()),
         )?,
         counts,
         losses: graph.losses,
@@ -3480,9 +3481,10 @@ fn topology_entities(
                 ))
             })?;
         let loops = face_loop_order(ir, face)?;
-        let bounded = loops
-            .iter()
-            .all(|loop_| face.loop_role(&loop_.id) == LoopBoundaryRole::Unspecified);
+        let bounded = !loops.is_empty()
+            && loops
+                .iter()
+                .all(|loop_| face.loop_role(&loop_.id) == LoopBoundaryRole::Unspecified);
         for loop_ in loops {
             boundaries.push((
                 surface_index,
@@ -3632,9 +3634,10 @@ fn topology_entities(
     for face in &faces {
         let surface_index = surface_indices[face.surface.as_str()];
         let loops = face_loop_order(ir, face)?;
-        let bounded = loops
-            .iter()
-            .all(|loop_| face.loop_role(&loop_.id) == LoopBoundaryRole::Unspecified);
+        let bounded = !loops.is_empty()
+            && loops
+                .iter()
+                .all(|loop_| face.loop_role(&loop_.id) == LoopBoundaryRole::Unspecified);
         let mut parameters = if bounded {
             let representation = loops
                 .first()
@@ -3936,9 +3939,9 @@ fn validate_trimmed_sheet_topology<'a>(
             })?;
         surface_entities_for_ir(ctx, ir, surface, 0, version)?;
         let loops = face_loop_order(ir, face)?;
-        if loops.is_empty() {
+        if loops.is_empty() && !admission::natural_domain_face(ir, face) {
             return Err(CodecError::UnsupportedContent(format!(
-                "IGES semantic writer requires at least one boundary loop per face ({})",
+                "IGES semantic writer requires a boundary loop or finite NURBS domain ({})",
                 face.id
             )));
         }
@@ -5812,6 +5815,7 @@ fn entity_counts(entities: &[Entity]) -> BTreeMap<String, usize> {
             144 => "144_trimmed_surface",
             186 => "186_manifold_solid_brep",
             314 => "314_color_definition",
+            316 => "316_units_data",
             322 => "322_attribute_definition",
             406 if entity.form == 15 => "406_name_property",
             406 => "406_property",
@@ -9341,7 +9345,7 @@ fn encode_file(
     entities: &[Entity],
     body_presentations: &BTreeMap<usize, BodyPresentation>,
     version: crate::IgesVersion,
-    minimum_resolution: f64,
+    minimum_resolution: Option<f64>,
 ) -> Result<Vec<u8>, WriteError> {
     let metadata = DocumentMetadata::of(ir);
     let generation_timestamp = generation_timestamp_for(version, metadata.generation_date)?;
@@ -9350,9 +9354,7 @@ fn encode_file(
         version,
         &metadata,
         &generation_timestamp,
-        FiniteReal::new(minimum_resolution).ok_or_else(|| {
-            CodecError::malformed("IGES output graph has a non-finite Global minimum resolution")
-        })?,
+        minimum_resolution.and_then(FiniteReal::new),
         FiniteReal::new(maximum_coordinate).ok_or_else(|| {
             CodecError::malformed("IGES output graph has a non-finite Global maximum coordinate")
         })?,
@@ -9767,7 +9769,7 @@ fn generated_global(
     version: crate::IgesVersion,
     metadata: &DocumentMetadata<'_>,
     generation_timestamp: &str,
-    minimum_resolution: FiniteReal,
+    minimum_resolution: Option<FiniteReal>,
     maximum_coordinate: FiniteReal,
 ) -> Vec<u8> {
     let mut fields = vec![
@@ -9800,7 +9802,7 @@ fn generated_global(
         WRITER_MAXIMUM_LINE_WEIGHT_GRADATIONS.to_string(),
         WRITER_MAXIMUM_LINE_WIDTH.to_owned(),
         global_hollerith(generation_timestamp),
-        number(minimum_resolution),
+        minimum_resolution.map_or_else(String::new, number),
         number(maximum_coordinate),
         global_hollerith(metadata.author.unwrap_or(WRITER_AUTHOR_NAME)),
         global_hollerith(metadata.organization.unwrap_or(WRITER_AUTHOR_ORGANIZATION)),

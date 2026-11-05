@@ -296,7 +296,7 @@ impl<'a> BodyInput<'a, '_> {
             aabb.include(placement.point(*point));
         }
         let tau = model_tolerance(
-            self.owners.ir.tolerances.linear.get(),
+            self.owners.ir.tolerances.linear_or_default().get(),
             self.owners.body_vertex_tolerance(id),
         );
         Some(measured(

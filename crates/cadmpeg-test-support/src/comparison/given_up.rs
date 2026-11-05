@@ -366,6 +366,42 @@ mod tests {
     }
 
     #[test]
+    fn a_named_header_field_must_be_absent() {
+        let before =
+            json!({"model": {}, "native": {}, "tolerances": {"linear": 0.001, "angular": 0.1}});
+        let report = fielded_report(json!([{"record": "$document", "field": "tolerances.linear"}]));
+        let allowances = Allowances::given_up(&before, &report).expect("header field");
+        let mut after = before.clone();
+        after["tolerances"]["linear"] = serde_json::Value::Null;
+        assert!(super::super::agree(
+            &before,
+            &after,
+            &Allowances::default(),
+            super::super::Mode::Same,
+        )
+        .is_err());
+        assert!(
+            super::super::agree(&before, &after, &allowances, super::super::Mode::Same).is_ok()
+        );
+        after["tolerances"]
+            .as_object_mut()
+            .unwrap()
+            .remove("linear");
+        assert!(
+            super::super::agree(&before, &after, &allowances, super::super::Mode::Same).is_ok()
+        );
+        after["tolerances"]["linear"] = json!(0.000001);
+        assert!(
+            super::super::agree(&before, &after, &allowances, super::super::Mode::Same).is_err()
+        );
+        after["tolerances"]["linear"] = serde_json::Value::Null;
+        after["tolerances"]["angular"] = json!(0.2);
+        assert!(
+            super::super::agree(&before, &after, &allowances, super::super::Mode::Same).is_err()
+        );
+    }
+
+    #[test]
     fn an_unnamed_field_must_agree() {
         let report = fielded_report(json!([{"record": "p", "field": "value"}]));
         let allowances = Allowances::given_up(&fielded_before(), &report).expect("named field");

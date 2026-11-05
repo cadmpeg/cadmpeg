@@ -243,6 +243,7 @@ fn each_face_and_edge_bounds_the_volume_by_its_own_tolerance() {
     let linear = crate::test_support::builders::cuboid([0.0; 3], [10.0, 10.0, 1.0])
         .tolerances
         .linear
+        .expect("stated linear tolerance")
         .get();
     let model = cuboid_volume_model(None, None, 0.0);
     let base = 240.0 * linear + 168.0 / 3.0 * linear * reach;
