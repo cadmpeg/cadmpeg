@@ -91,7 +91,12 @@ fn payload(asset: &Asset) -> Result<Vec<u8>, super::write_error::WriteError> {
 }
 
 fn thumbnail_size(dib_length: usize) -> Result<u32, super::write_error::WriteError> {
-    let value = cadmpeg_core::decode::u64_from_index(dib_length).saturating_add(4);
+    let value = cadmpeg_core::decode::u64_from_index(dib_length)
+        .checked_add(4)
+        .ok_or(super::write_error::WriteError::Capacity {
+            field: &super::CAPACITY_FIELDS[5],
+            value: u64::MAX,
+        })?;
     u32::try_from(value).map_err(|_| super::write_error::WriteError::Capacity {
         field: &super::CAPACITY_FIELDS[5],
         value,
