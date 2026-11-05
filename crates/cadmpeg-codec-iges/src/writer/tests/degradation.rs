@@ -181,6 +181,22 @@ fn unsupported_uv_images_preserve_the_model_space_boundary() {
         .expect("multi-pcurve loop fixture decodes");
     let mut ir = decoded.ir().clone();
     assert!(!ir.model.pcurves.is_empty());
+    for curve in &mut ir.model.pcurves {
+        use cadmpeg_ir::geometry::pcurve::{PcurveGeometry, PcurveNurbs, PcurveNurbsPoles};
+        use cadmpeg_ir::math::Point2;
+        let [start, end] = curve.parameter_range().unwrap().get();
+        curve.geometry = PcurveGeometry::Nurbs {
+            nurbs: PcurveNurbs::new(
+                1,
+                vec![start, start, end, end],
+                PcurveNurbsPoles::Polynomial {
+                    points: vec![Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)],
+                },
+                false,
+            )
+            .unwrap(),
+        };
+    }
     for coedge in &mut ir.model.coedges {
         for pcurve in &mut coedge.pcurves {
             pcurve.isoparametric = None;
@@ -1390,4 +1406,166 @@ fn face_custom_color_keeps_its_appearance_name() {
         .find(|appearance| appearance.id == binding.appearance)
         .unwrap();
     assert_eq!(appearance.name.as_deref(), Some("custom"));
+}
+
+#[test]
+fn constant_coordinate_nurbs_keeps_unspecified_isoparametric_use() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(
+                crate::test_support::test_drawing_and_trimming::explicit_multi_pcurve_loop_file(),
+            ),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let coedge = ir
+        .model
+        .coedges
+        .iter_mut()
+        .find(|edge| !edge.pcurves.is_empty())
+        .unwrap();
+    let coedge_id = coedge.id.clone();
+    let id = coedge.pcurves[0].pcurve.clone();
+    coedge.pcurves[0].isoparametric = None;
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(coedge_id.as_str())
+            && loss.message.contains(id.as_str())
+            && loss.message.contains("isoparametric")));
+    assert!(!plan.report().losses.iter().any(|loss| loss.code
+        == IgesLossCode::WriterPcurvesOmitted.kind()
+        && loss.message.contains(id.as_str())));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(output.ir().model.pcurves.len(), ir.model.pcurves.len());
+    assert!(output
+        .ir()
+        .model
+        .coedges
+        .iter()
+        .flat_map(|edge| &edge.pcurves)
+        .any(|use_| use_.isoparametric == Some(true)));
+}
+
+#[test]
+fn open_solid_keeps_its_face_as_a_reported_sheet() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(
+                crate::test_support::test_drawing_and_trimming::trimmed_plane_with_inner_loop_file(
+                ),
+            ),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    ir.model.bodies[0].kind = cadmpeg_ir::topology::BodyKind::Solid;
+    let id = ir.model.bodies[0].id.clone();
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(id.as_str())
+            && loss.message.contains("open shell")
+            && loss.message.contains("sheet")));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(output.ir().model.faces.len(), ir.model.faces.len());
+    assert!(output
+        .ir()
+        .model
+        .bodies
+        .iter()
+        .any(|body| body.kind == cadmpeg_ir::topology::BodyKind::Sheet));
+}
+
+#[test]
+fn directory_disposition_requires_exact_generated_record() {
+    use cadmpeg_ir::codec::write::NativeDisposition;
+
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(
+                crate::test_support::test_drawing_and_trimming::connected_network_subfigure_file(),
+            ),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let transform = ir.model.occurrences[0].transform.unwrap();
+    let mut rows = transform.affine_rows();
+    rows[0][3] += 1.0;
+    ir.model.occurrences[0].transform =
+        Some(cadmpeg_ir::transform::Transform::affine(rows).unwrap());
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    let dispositions = &plan.report().native_dispositions;
+    assert_eq!(
+        dispositions.record_disposition("iges", "entities", "iges:entity:directory#5"),
+        NativeDisposition::Written
+    );
+    assert_eq!(
+        dispositions.record_disposition("iges", "entities", "iges:entity:directory#7"),
+        NativeDisposition::Dropped
+    );
+}
+
+#[test]
+fn nonorthogonal_occurrence_placement_is_reported_without_invalid_matrix() {
+    let bytes = crate::test_support::test_drawing_and_trimming::connected_network_subfigure_file();
+    let decoded = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let mut rows = ir.model.occurrences[0].transform.unwrap().affine_rows();
+    rows[0][1] = 1.0;
+    ir.model.occurrences[0].transform =
+        Some(cadmpeg_ir::transform::Transform::affine(rows).unwrap());
+    let id = ir.model.occurrences[0].id.clone();
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(id.as_str())
+            && loss.message.contains("not an orthonormal")));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(output.ir().model.occurrences.len(), 1);
+}
+
+#[test]
+fn reflected_occurrence_uses_left_handed_matrix() {
+    let bytes = crate::test_support::test_drawing_and_trimming::connected_network_subfigure_file();
+    let decoded = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let reflected = cadmpeg_ir::transform::Transform::affine([
+        [-1.0, 0.0, 0.0, 10.0],
+        [0.0, 1.0, 0.0, 20.0],
+        [0.0, 0.0, 1.0, 30.0],
+    ])
+    .unwrap();
+    ir.model.occurrences[0].transform = Some(reflected);
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(output.ir().model.occurrences[0].transform, Some(reflected));
 }

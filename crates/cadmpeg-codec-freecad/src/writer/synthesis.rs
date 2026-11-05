@@ -886,6 +886,17 @@ pub(super) fn write(
         // the same placement twice. Keep canonical construction placements and
         // typed native placements; body-only objects use their BRep root.
     }
+    super::mesh_kernel::write(
+        ctx,
+        ir,
+        &native_properties,
+        &names,
+        &entry_names,
+        &retained,
+        &mut objects,
+        &mut entries,
+        &mut losses,
+    )?;
     let covered_points = super::point_kernel::write(
         ctx,
         ir,

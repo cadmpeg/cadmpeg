@@ -115,6 +115,12 @@ fn synthesized_body(
             recovered.sampled_fits.len(), recovered.residual_limit
         )));
     }
+    let mut written_native = synthesis.written_native;
+    written_native.extend(exact_directory_records(
+        input.ir,
+        &synthesis.bytes,
+        input.limits,
+    ));
     let mut body = super::body(
         synthesis.bytes,
         WritePath::Synthesized { consumption },
@@ -127,10 +133,62 @@ fn synthesized_body(
         input.ir,
         &body.losses,
         &synthesis.regenerated_native,
-        &synthesis.written_native,
+        &written_native,
     );
     body.synthesis_cause = synthesis_cause;
     Ok(body)
+}
+
+/// Confirm which current Directory records are exactly present in the generated
+/// file. This compares the output to the document, not to a retained baseline.
+fn exact_directory_records(
+    ir: &CadIr,
+    bytes: &[u8],
+    limits: cadmpeg_core::decode::ResourceLimits,
+) -> std::collections::BTreeSet<String> {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+
+    let Some(before) = ir
+        .native
+        .namespace("iges")
+        .and_then(|ns| ns.arenas().get("entities"))
+    else {
+        return std::collections::BTreeSet::new();
+    };
+    if before.is_empty() {
+        return std::collections::BTreeSet::new();
+    }
+    let options = DecodeOptions {
+        policy: cadmpeg_core::decode::DecodePolicy {
+            limits,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let Ok(decoded) = crate::IgesCodec.decode(&mut std::io::Cursor::new(bytes), &options) else {
+        return std::collections::BTreeSet::new();
+    };
+    let Some(after) = decoded
+        .ir()
+        .native
+        .namespace("iges")
+        .and_then(|ns| ns.arenas().get("entities"))
+    else {
+        return std::collections::BTreeSet::new();
+    };
+    let by_id = after
+        .iter()
+        .map(|record| (record.id(), record))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    before
+        .iter()
+        .filter(|record| {
+            by_id
+                .get(record.id())
+                .is_some_and(|other| *other == *record)
+        })
+        .map(|record| record.id().to_owned())
+        .collect()
 }
 
 enum SynthesisCause {
