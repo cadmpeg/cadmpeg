@@ -875,6 +875,7 @@ fn compact_custom_shape(attribute: &cadmpeg_ir::attributes::SourceAttribute) -> 
             Some(AttributeValue::String(_) | AttributeValue::Integer(_)
                 | AttributeValue::Float(_) | AttributeValue::Boolean(_)) => true,
             Some(AttributeValue::Vector(values)) => matches!(values.len(), 2 | 3),
+            Some(AttributeValue::Reference(value)) => value == "f3d:brep:entity#-1",
             _ => false,
         })
 }
@@ -1055,6 +1056,7 @@ fn native_compact_custom(
             Some(AttributeValue::Integer(value)) => native_i64(records, *value),
             Some(AttributeValue::Float(value)) => native_f64(records, value.get()),
             Some(AttributeValue::Boolean(value)) => records.push(crate::writer::primitives::native_bool(*value)),
+            Some(AttributeValue::Reference(value)) if value == "f3d:brep:entity#-1" => native_ref(records, -1),
             Some(AttributeValue::Vector(values)) if matches!(values.len(), 2 | 3) => {
                 records.push(if values.len() == 2 { 0x16 } else { 0x14 });
                 for value in values {
