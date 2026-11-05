@@ -143,6 +143,7 @@ const WRITER_ENTITY_TYPES: &[u32] = &[
     146, 148, 186, 190, 192, 194, 196, 198, 314, 406, 418, 502, 504, 508, 510, 514,
 ];
 
+mod admission;
 mod appearance;
 mod attributes;
 mod degrade;
@@ -650,12 +651,16 @@ fn synthesize_with_admission(
             .solved()
             .is_none_or(|solved| flatten_curve(solved).is_err())
     })?;
-    let ir = lowered.as_ref();
+    let (admitted, admission_losses) = admission::edge_carriers(lowered.as_ref());
+    let (stripped, strip_losses) = admission::strip_unusable_face_topology(admitted.as_ref());
+    let ir = stripped.as_ref().unwrap_or(admitted.as_ref());
     let mut graph = match synthesis_graph(ir, version) {
         Ok(graph) => graph,
         Err(CodecError::UnsupportedContent(reason)) => degrade::graph(ir, version, &reason)?,
         Err(error) => return Err(error.into()),
     };
+    graph.losses.extend(admission_losses);
+    graph.losses.extend(strip_losses);
     graph
         .losses
         .extend(unapplied_body_placement_losses(ir, &graph.entities));
@@ -807,7 +812,7 @@ fn synthesis_graph(ir: &CadIr, version: crate::IgesVersion) -> Result<SynthesisG
     let ctx = &ctx;
     let arena_losses = unsupported_model_losses(ir)?;
     reject_owned_wire_topology(ir)?;
-    let (stripped, strip_losses) = strip_unusable_face_topology(ir);
+    let (stripped, strip_losses) = admission::strip_unusable_face_topology(ir);
     let ir = stripped.as_ref().unwrap_or(ir);
     let mut losses = procedural_reduction_losses(ir)?;
     losses.extend(strip_losses);
@@ -1236,151 +1241,6 @@ fn reject_owned_wire_topology(ir: &CadIr) -> Result<(), CodecError> {
         return Err(CodecError::UnsupportedContent(message));
     }
     Ok(())
-}
-
-/// Faces whose boundary no carrier reaches, with their topology stripped so
-/// the carrier surface still writes. A loop coedge whose edge names no model
-/// curve, or names one without solved geometry, can never supply a Type 141
-/// or Type 142 boundary; the face drops with a loss while its surface writes
-/// bare or domain-bounded. Faces the trimmed writer can encode are untouched.
-fn strip_unusable_face_topology(ir: &CadIr) -> (Option<CadIr>, Vec<LossNote>) {
-    if has_brep_topology(ir) || ir.model.faces.is_empty() {
-        return (None, Vec::new());
-    }
-    let loops = ir
-        .model
-        .loops
-        .iter()
-        .map(|loop_| (loop_.id.as_str(), loop_))
-        .collect::<BTreeMap<_, _>>();
-    let coedges = ir
-        .model
-        .coedges
-        .iter()
-        .map(|coedge| (coedge.id.as_str(), coedge))
-        .collect::<BTreeMap<_, _>>();
-    let edges = ir
-        .model
-        .edges
-        .iter()
-        .map(|edge| (edge.id.as_str(), edge))
-        .collect::<BTreeMap<_, _>>();
-    let solved = ir
-        .model
-        .curves
-        .iter()
-        .filter(|curve| curve.geometry.solved().is_some())
-        .map(|curve| curve.id.as_str())
-        .collect::<BTreeSet<_>>();
-    let mut bad = Vec::new();
-    for face in &ir.model.faces {
-        let mut missing = Vec::new();
-        let mut has_coedge = false;
-        for loop_id in face.loops.iter() {
-            let Some(loop_) = loops.get(loop_id.as_str()) else {
-                continue;
-            };
-            for coedge_id in loop_.coedges() {
-                has_coedge = true;
-                let carrier = coedges
-                    .get(coedge_id.as_str())
-                    .and_then(|coedge| edges.get(coedge.edge.as_str()))
-                    .and_then(|edge| edge.curve())
-                    .is_some_and(|curve_id| solved.contains(curve_id.as_str()));
-                if !carrier {
-                    missing.push(coedge_id.as_str().to_owned());
-                }
-            }
-        }
-        if !has_coedge || !missing.is_empty() {
-            bad.push((face.id.as_str().to_owned(), missing));
-        }
-    }
-    if bad.is_empty() {
-        return (None, Vec::new());
-    }
-    let bad_faces = bad
-        .iter()
-        .map(|(face, _)| face.as_str())
-        .collect::<BTreeSet<_>>();
-    let mut bad_loops = BTreeSet::new();
-    for face in &ir.model.faces {
-        if bad_faces.contains(face.id.as_str()) {
-            bad_loops.extend(face.loops.iter().map(|loop_| loop_.as_str()));
-        }
-    }
-    let mut bad_coedges = BTreeSet::new();
-    for loop_id in &bad_loops {
-        if let Some(loop_) = loops.get(loop_id) {
-            bad_coedges.extend(loop_.coedges().iter().map(|coedge| coedge.as_str()));
-        }
-    }
-    let mut document = ir.clone();
-    document
-        .model
-        .faces
-        .retain(|face| !bad_faces.contains(face.id.as_str()));
-    document
-        .model
-        .loops
-        .retain(|loop_| !bad_loops.contains(loop_.id.as_str()));
-    document
-        .model
-        .coedges
-        .retain(|coedge| !bad_coedges.contains(coedge.id.as_str()));
-    let mut live_shells = BTreeSet::new();
-    document.model.shells.retain_mut(|shell| {
-        let faces = shell
-            .faces()
-            .iter()
-            .filter(|face| !bad_faces.contains(face.as_str()))
-            .cloned()
-            .collect::<Vec<_>>();
-        if shell.replace_faces(faces).is_ok() {
-            live_shells.insert(shell.id.as_str().to_owned());
-            true
-        } else {
-            false
-        }
-    });
-    for region in &mut document.model.regions {
-        region
-            .shells
-            .retain(|shell| live_shells.contains(shell.as_str()));
-    }
-    document
-        .model
-        .regions
-        .retain(|region| !region.shells.is_empty());
-    let live_regions = document
-        .model
-        .regions
-        .iter()
-        .map(|region| region.id.as_str())
-        .collect::<BTreeSet<_>>();
-    for body in &mut document.model.bodies {
-        body.regions
-            .retain(|region| live_regions.contains(region.as_str()));
-    }
-    document
-        .model
-        .bodies
-        .retain(|body| !body.regions.is_empty());
-    let mut losses = bad
-        .into_iter()
-        .map(|(face, missing)| {
-            IgesLossCode::WriterEntityOmitted.note(format!(
-                "IGES face {face} has no usable boundary carrier and is omitted: {}",
-                missing.join(", ")
-            ))
-        })
-        .collect::<Vec<_>>();
-    for id in bad_loops.into_iter().chain(bad_coedges) {
-        losses.push(IgesLossCode::WriterEntityOmitted.note(format!(
-            "IGES boundary record {id} is omitted with its unsupported face"
-        )));
-    }
-    (Some(document), losses)
 }
 
 impl crate::IgesVersion {
