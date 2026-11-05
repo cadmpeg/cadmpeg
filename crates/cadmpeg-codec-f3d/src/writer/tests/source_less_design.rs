@@ -374,6 +374,33 @@ fn generated_source_less_writes_design_recipes_and_persistent_references() {
 
     let mut source_less = cadmpeg_ir::examples::unit_cube().expect("unit cube fixture is admitted");
     let mut native = f3d_native_mut(&mut source_less);
+    native.design_types = (0..=163_u32)
+        .map(|ordinal| {
+            crate::records::entity_header::SegmentType::try_new(
+                format!("f3d:generated/MetaStream.dat:design-type#{}", ordinal + 100),
+                crate::records::entity_header::SegmentTypeData {
+                    class_tag: (256 + ordinal).to_string().try_into().unwrap(),
+                    byte_offset: Some(u64::from(ordinal + 100)),
+                    module: "Geometry".into(),
+                    entities: crate::records::identity::ReferenceRun::unlocated(
+                        if ordinal == 163 {
+                            vec![4645, 4646]
+                        } else {
+                            Vec::new()
+                        },
+                    ),
+                    type_guid: format!("12345678-1234-1234-1234-{ordinal:012x}")
+                        .try_into()
+                        .unwrap(),
+                    type_guid_offset: Some(0),
+                    base_type_guid: crate::records::entity_header::BaseTypeGuid::Absent,
+                    version: 1,
+                    version_offset: Some(0),
+                },
+            )
+            .unwrap()
+        })
+        .collect();
     native.construction_recipes = [
         ConstructionRecipeKind::Body,
         ConstructionRecipeKind::Face,
@@ -435,6 +462,41 @@ fn generated_source_less_writes_design_recipes_and_persistent_references() {
     .expect("valid lost-edge record layout")];
 
     drop(native);
+    let mut reordered = source_less.clone();
+    {
+        let mut native = f3d_native_mut(&mut reordered);
+        let original = native.design_types.remove(163);
+        let mut data = (*original).clone();
+        data.byte_offset = Some(10);
+        native.design_types.push(
+            crate::records::entity_header::SegmentType::try_new(
+                "f3d:generated/MetaStream.dat:design-type#10".into(),
+                data,
+            )
+            .unwrap(),
+        );
+    }
+    let mut reordered_bytes = Vec::new();
+    F3dCodec
+        .plan(EncodeInput::new(&reordered, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut reordered_bytes))
+        .expect("reordered Design registry encode");
+    let reordered_output = F3dCodec
+        .decode(&mut Cursor::new(reordered_bytes), &DecodeOptions::default())
+        .expect("reordered Design registry decode");
+    let reordered_native = f3d_native(reordered_output.ir());
+    assert_eq!(reordered_native.lost_edge_references.len(), 1);
+    assert_eq!(
+        reordered_native.lost_edge_references[0].class_tag.as_str(),
+        "256"
+    );
+    assert_eq!(
+        reordered_native.lost_edge_references[0]
+            .next_class_tag
+            .as_str(),
+        "256"
+    );
+    assert_eq!(reordered_native.persistent_references.len(), 3);
     let mut encoded = Vec::new();
     F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
@@ -509,6 +571,13 @@ fn generated_source_less_writes_design_recipes_and_persistent_references() {
             b"IntrinsicMetaTypeuint64"
         );
     }
+    crate::test_support::zip_test::with_scan(&encoded, |scan| {
+        let meta = scan
+            .parsed_metastream("FusionAssetName[Active]/Design1/MetaStream.dat")
+            .unwrap();
+        assert!(meta.records.iter().any(|record| record.entity_id == 4645));
+        assert!(meta.records.iter().any(|record| record.entity_id == 4646));
+    });
     let round_trip = F3dCodec
         .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
         .expect("source-less Design BulkStream round trip");

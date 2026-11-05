@@ -324,10 +324,10 @@ pub(super) struct DesignOutputs {
     pub(super) history_part_fidelity: SourceFidelity,
     /// Native stubs of the given-up history record runs.
     pub(super) history_part_stubs: Vec<NativeUnknownRecord>,
-    /// Retained bytes of the given-up canvas records.
-    pub(super) image_part_fidelity: SourceFidelity,
-    /// Native stubs of the given-up canvas records.
-    pub(super) image_part_stubs: Vec<NativeUnknownRecord>,
+    /// Retained bytes of the given-up Design records.
+    pub(super) design_part_fidelity: SourceFidelity,
+    /// Native stubs of the given-up Design records.
+    pub(super) design_part_stubs: Vec<NativeUnknownRecord>,
 }
 
 /// Add design assets that neither the geometry nor earlier design assets hold.
@@ -420,7 +420,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     let mut remaining_binding_work = MAX_HISTORY_BINDING_WORK;
     let mut unbound_histories = 0_usize;
     let mut history_parts = PartOutput::new(CodecFormat::F3d, ctx);
-    let mut image_parts = PartOutput::new(CodecFormat::F3d, ctx);
+    let mut design_parts = PartOutput::new(CodecFormat::F3d, ctx);
     for history_brep in container::history_breps(scan) {
         let binding_work = WorkBudget::new(remaining_binding_work);
         let history = decode_asm_history(
@@ -460,7 +460,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         timelines,
         geometry,
         &mut design,
-        &mut image_parts,
+        &mut design_parts,
     )?;
     losses.extend(profile_losses);
     if untyped_tracking_paths != 0 {
@@ -1101,9 +1101,10 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         .map(|namespace| namespace.arena_as_for_decode(ctx, "unknowns"))
         .transpose()?
         .unwrap_or_default();
-    let (_, image_native, image_part_fidelity, image_part_losses) = image_parts.into_parts();
-    losses.extend(image_part_losses);
-    let image_part_stubs = image_native
+    let (_, design_part_native, design_part_fidelity, design_part_losses) =
+        design_parts.into_parts();
+    losses.extend(design_part_losses);
+    let design_part_stubs = design_part_native
         .namespace("f3d")
         .map(|namespace| namespace.arena_as_for_decode(ctx, "unknowns"))
         .transpose()?
@@ -1114,8 +1115,8 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         losses,
         history_part_fidelity,
         history_part_stubs,
-        image_part_fidelity,
-        image_part_stubs,
+        design_part_fidelity,
+        design_part_stubs,
     })
 }
 
@@ -1162,7 +1163,7 @@ fn extend_related_design_records(
     timelines: &[DesignFeatureTimeline],
     geometry: &DesignGeometry<'_>,
     design: &mut DesignNative,
-    image_parts: &mut PartOutput,
+    design_parts: &mut PartOutput,
 ) -> Result<(usize, Vec<LossNote>), CodecError> {
     let indices = collect_related_indices(design.sketch_relations.iter().flat_map(|relation| {
         let scope = crate::ids::native_stream(&relation.id).unwrap_or(crate::ids::DEFAULT_STREAM);
@@ -1193,13 +1194,13 @@ fn extend_related_design_records(
     )?;
     design.design_canvas_images = crate::design::decode::canvas::decode_canvas_images(
         ctx,
-        image_parts,
+        design_parts,
         scan,
         &design.design_parameter_scopes,
     )?;
     design.design_decal_images = crate::design::decode::decal::decode_decal_images(
         ctx,
-        image_parts,
+        design_parts,
         scan,
         &design.design_parameter_scopes,
     )?;
@@ -1670,6 +1671,8 @@ fn extend_related_design_records(
         &design.design_face_operands,
     );
     design.design_sketch_placements = crate::design::decode::sketch::decode_sketch_placements(
+        ctx,
+        design_parts,
         scan,
         &design.design_parameter_scopes,
         &prereqs.design_entity_headers,

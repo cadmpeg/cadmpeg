@@ -62,6 +62,7 @@ enum EntityStatus {
     PhysicallyDependent,
     LogicallyDependent,
     BothDependent,
+    Annotation,
     AnnotationDependent,
     PhysicallyDependentEdgeList,
     ParameterCurve,
@@ -87,6 +88,7 @@ impl EntityStatus {
             Self::PhysicallyDependent => "00010000",
             Self::LogicallyDependent => "00020000",
             Self::BothDependent => "00030000",
+            Self::Annotation => "00000100",
             Self::AnnotationDependent => "00010100",
             Self::PhysicallyDependentEdgeList => "00010001",
             Self::ParameterCurve => "00010500",
@@ -843,6 +845,9 @@ fn synthesize_with_admission(
             }
         }
     }
+    graph
+        .losses
+        .extend(compound::flattened_owner_losses(ir, &emitted));
     for id in flattened {
         graph.losses.push(IgesLossCode::WriterEntityOmitted.note(format!(
             "IGES composite constituent {id} is flattened because Type 102 cannot contain another Type 102"

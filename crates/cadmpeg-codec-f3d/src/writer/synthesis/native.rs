@@ -243,6 +243,26 @@ pub(super) fn reconcile(target: &mut CadIr, losses: &mut Vec<LossNote>) -> Resul
     remap_sketch_tags!(&mut native.sketch_curve_identities);
     remap_sketch_tags!(&mut native.sketch_relations);
     remap_sketch_tags!(&mut native.sketch_texts);
+    for reference in &mut native.lost_edge_references {
+        for (index, tag) in [
+            (reference.record_index, &mut reference.class_tag),
+            (reference.next_record_index, &mut reference.next_class_tag),
+        ] {
+            if let Some(code) = native
+                .design_types
+                .iter()
+                .position(|kind| {
+                    kind.entities
+                        .values()
+                        .any(|entity| *entity == u64::from(index))
+                })
+                .and_then(|ordinal| ordinal.checked_add(256))
+                .filter(|code| *code <= 999)
+            {
+                *tag = code.to_string().try_into().map_err(CodecError::Malformed)?;
+            }
+        }
+    }
     // Record headers annotate indexed slots in the generated registry.
     {
         let headers = std::mem::take(&mut native.design_record_headers);

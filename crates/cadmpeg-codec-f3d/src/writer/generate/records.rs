@@ -26,6 +26,7 @@ use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
 pub(in crate::writer::generate) struct EncodedDesignBulkStream {
     pub(super) bytes: Vec<u8>,
     pub(super) primary_records: Vec<crate::metastream::RecordIndexEntry>,
+    pub(super) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
 
 pub(super) fn tolerant_coedge_range(
@@ -438,16 +439,38 @@ pub(super) fn encode_design_bulkstream(
         primary_records.push(primary_record(relation.record_index, out.len())?);
         encode_sketch_relation(&mut out, relation)?;
     }
-    for reference in &native.persistent_references {
-        out.extend_from_slice(persistent_reference_name(reference.kind));
-        out.extend_from_slice(&2u32.to_le_bytes());
-        out.extend_from_slice(&14u32.to_le_bytes());
-        out.extend_from_slice(&[0; 14]);
-        out.extend_from_slice(&23u32.to_le_bytes());
-        out.extend_from_slice(b"IntrinsicMetaTypeuint64");
-        out.extend_from_slice(&reference.value.to_le_bytes());
+    let mut losses = Vec::new();
+    let mut used = primary_records
+        .iter()
+        .map(|record| record.entity_id)
+        .collect::<std::collections::BTreeSet<_>>();
+    let registered = |tag: &crate::records::references::DesignClassTag, index: u32| {
+        tag.as_str()
+            .parse::<usize>()
+            .ok()
+            .and_then(|tag| tag.checked_sub(256))
+            .and_then(|ordinal| registry.types.get(ordinal))
+            .is_some_and(|kind| kind.entity_ids.contains(&u64::from(index)))
+    };
+    let mut writable = true;
+    for reference in &native.lost_edge_references {
+        writable &= registered(&reference.class_tag, reference.record_index)
+            && registered(&reference.next_class_tag, reference.next_record_index)
+            && used.insert(u64::from(reference.record_index));
+    }
+    if let Some(last) = native.lost_edge_references.last() {
+        writable &= used.insert(u64::from(last.next_record_index));
     }
     for (ordinal, reference) in native.lost_edge_references.iter().enumerate() {
+        if !writable {
+            losses.push(
+                crate::loss::F3dLossCode::WriterNativeRecordsOmitted.note(format!(
+                    "lost-edge reference {} has no distinct registered primary records",
+                    reference.id
+                )),
+            );
+            continue;
+        }
         if let Some(previous) = ordinal
             .checked_sub(1)
             .and_then(|ordinal| native.lost_edge_references.get(ordinal))
@@ -461,18 +484,39 @@ pub(super) fn encode_design_bulkstream(
                 )));
             }
         } else {
+            primary_records.push(primary_record(reference.record_index, out.len())?);
             native_lp_ascii(&mut out, reference.class_tag.as_str())?;
             out.extend_from_slice(&reference.record_index.to_le_bytes());
         }
         out.extend_from_slice(&[0; 14]);
         out.extend_from_slice(&19u32.to_le_bytes());
         out.extend_from_slice(b"EDGE_REFERENCE_LOST");
+        primary_records.push(primary_record(reference.next_record_index, out.len())?);
         native_lp_ascii(&mut out, reference.next_class_tag.as_str())?;
         out.extend_from_slice(&reference.next_record_index.to_le_bytes());
+    }
+    for reference in &native.persistent_references {
+        if primary_records.is_empty() {
+            losses.push(
+                crate::loss::F3dLossCode::WriterNativeRecordsOmitted.note(format!(
+                    "persistent reference {} has no indexed Design frame",
+                    reference.id
+                )),
+            );
+            continue;
+        }
+        out.extend_from_slice(persistent_reference_name(reference.kind));
+        out.extend_from_slice(&2u32.to_le_bytes());
+        out.extend_from_slice(&14u32.to_le_bytes());
+        out.extend_from_slice(&[0; 14]);
+        out.extend_from_slice(&23u32.to_le_bytes());
+        out.extend_from_slice(b"IntrinsicMetaTypeuint64");
+        out.extend_from_slice(&reference.value.to_le_bytes());
     }
     Ok(Some(EncodedDesignBulkStream {
         bytes: out,
         primary_records,
+        losses,
     }))
 }
 
