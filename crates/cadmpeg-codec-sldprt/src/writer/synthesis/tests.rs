@@ -1804,9 +1804,9 @@ fn polyline_carrier_is_written_as_a_degree_one_nurbs() {
     let start = point(&edge.start);
     let end = point(&edge.end);
     let middle = Point3::new(
-        (start.x + end.x) / 2.0,
-        (start.y + end.y) / 2.0,
-        (start.z + end.z) / 2.0,
+        f64::midpoint(start.x, end.x),
+        f64::midpoint(start.y, end.y),
+        f64::midpoint(start.z, end.z),
     );
     let polyline = PolylineCurve::new(
         PolylineSamples::Unparameterized {
