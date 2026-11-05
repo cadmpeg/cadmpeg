@@ -86,6 +86,7 @@ fn face_recipe_boundary_accepts_omitted_n_plus_four() {
     assert_eq!(
         crate::design::decode::operands::face_recipe_next_boundary(
             &ordinary,
+            &crate::design::test_support::indexed_record_offsets_for_test(&ordinary),
             ordinary_position,
             100,
             None,
@@ -102,7 +103,13 @@ fn face_recipe_boundary_accepts_omitted_n_plus_four() {
     let next = omitted.len();
     indexed_header(&mut omitted, *b"317", 105);
     assert_eq!(
-        crate::design::decode::operands::face_recipe_next_boundary(&omitted, position, 100, None),
+        crate::design::decode::operands::face_recipe_next_boundary(
+            &omitted,
+            &crate::design::test_support::indexed_record_offsets_for_test(&omitted),
+            position,
+            100,
+            None
+        ),
         Some((next, 105))
     );
 
@@ -115,6 +122,7 @@ fn face_recipe_boundary_accepts_omitted_n_plus_four() {
     assert_eq!(
         crate::design::decode::operands::face_recipe_next_boundary(
             &arbitrary,
+            &crate::design::test_support::indexed_record_offsets_for_test(&arbitrary),
             arbitrary_position,
             100,
             None,

@@ -289,6 +289,7 @@ pub(crate) struct ResolvedGlobal {
     length_factor_mm: Option<PositiveReal>,
     line_weight_scale: Option<LineWeightScale>,
     declaration: VersionDeclaration,
+    unframed_from: Option<usize>,
 }
 
 #[derive(Debug)]
@@ -925,7 +926,7 @@ enum GlobalForm {
 /// Resolve a raw Global record that no part holds.
 fn resolve_unparted(raw: RawGlobal, form: GlobalForm) -> (ResolvedGlobal, Vec<LossNote>) {
     let suffix = unframed_loss(&raw);
-    let (global, mut losses) = resolve_form(raw, form);
+    let (global, mut losses) = resolve_form(raw, form, None);
     if let Some(loss) = suffix {
         losses.insert(0, loss);
     }
@@ -935,13 +936,17 @@ fn resolve_unparted(raw: RawGlobal, form: GlobalForm) -> (ResolvedGlobal, Vec<Lo
 /// The Global context of a given-up Global section: every field is absent,
 /// and the delimiters are the specified defaults.
 pub(crate) fn given_up() -> (ResolvedGlobal, Vec<LossNote>) {
-    resolve(RawGlobal {
-        parameter_delimiter: DEFAULT_PARAMETER_DELIMITER,
-        record_delimiter: DEFAULT_RECORD_DELIMITER,
-        values: vec![Value::Omitted; 26],
-        field_count: 2,
-        unframed: None,
-    })
+    resolve_form(
+        RawGlobal {
+            parameter_delimiter: DEFAULT_PARAMETER_DELIMITER,
+            record_delimiter: DEFAULT_RECORD_DELIMITER,
+            values: vec![Value::Omitted; 26],
+            field_count: 2,
+            unframed: None,
+        },
+        GlobalForm::Ascii,
+        Some(0),
+    )
 }
 
 /// Recover the Global field boundaries, then resolve every field once.
@@ -1084,6 +1089,7 @@ const fn enumerated_unit_name(flag: i64) -> Option<&'static str> {
 struct Resolution {
     values: Vec<Value>,
     losses: Vec<LossNote>,
+    unframed_from: Option<usize>,
 }
 
 fn numeric_text(bytes: &[u8]) -> Option<&str> {
@@ -1142,6 +1148,9 @@ impl Resolution {
     }
 
     fn charge(&mut self, code: IgesLossCode, index: usize, defect: Defect, consequence: &str) {
+        if self.unframed_from.is_some_and(|first| index >= first) {
+            return;
+        }
         let note = global_loss_note(code, index, defect, consequence);
 
         self.losses.push(note);
@@ -1514,6 +1523,12 @@ impl Resolution {
     }
 
     fn length_unit(&mut self, global_table: GlobalTable) -> (Option<String>, Option<PositiveReal>) {
+        if self
+            .unframed_from
+            .is_some_and(|first| first <= FIELD_UNITS_FLAG)
+        {
+            return (None, None);
+        }
         let (scale, scale_defect) = match self.supplied_real(FIELD_MODEL_SCALE) {
             SuppliedReal::Absent => (global_table.default_model_scale(), None),
             SuppliedReal::Value(value) => match PositiveReal::try_from(value) {
@@ -1535,6 +1550,12 @@ impl Resolution {
             Supplied::Value(_) | Supplied::Malformed => (None, Some(Defect::Malformed)),
         };
         let (units_name, unit_mm, name_defect) = if units_flag == Some(3) {
+            if self
+                .unframed_from
+                .is_some_and(|first| first <= FIELD_UNITS_NAME)
+            {
+                return (None, None);
+            }
             match self.supplied_string(FIELD_UNITS_NAME) {
                 Supplied::Absent => (None, None, Some(Defect::Absent)),
                 Supplied::Value(name) => match delegated_unit_factor_mm(&name) {
@@ -1608,20 +1629,25 @@ impl Resolution {
 }
 
 fn resolve(raw: RawGlobal) -> (ResolvedGlobal, Vec<LossNote>) {
-    resolve_form(raw, GlobalForm::Ascii)
+    resolve_form(raw, GlobalForm::Ascii, None)
 }
 
-fn resolve_form(raw: RawGlobal, form: GlobalForm) -> (ResolvedGlobal, Vec<LossNote>) {
+fn resolve_form(
+    raw: RawGlobal,
+    form: GlobalForm,
+    unavailable_from: Option<usize>,
+) -> (ResolvedGlobal, Vec<LossNote>) {
     let RawGlobal {
         parameter_delimiter,
         record_delimiter,
         values,
         field_count,
-        unframed: _,
+        unframed,
     } = raw;
     let mut resolution = Resolution {
         values,
         losses: Vec::new(),
+        unframed_from: unavailable_from.or_else(|| unframed.map(|field| field.field)),
     };
     if field_count < 2 {
         let message = "IGES Global record ends before the delimiter declarations; all fields \
@@ -1724,11 +1750,22 @@ fn resolve_form(raw: RawGlobal, form: GlobalForm) -> (ResolvedGlobal, Vec<LossNo
         length_factor_mm,
         line_weight_scale,
         declaration,
+        unframed_from: resolution.unframed_from,
     };
     (resolved, resolution.losses)
 }
 
 impl ResolvedGlobal {
+    pub(crate) fn version_field_available(&self) -> bool {
+        self.unframed_from
+            .is_none_or(|first| first > FIELD_VERSION_FLAG)
+    }
+
+    pub(crate) fn minimum_resolution_available(&self) -> bool {
+        self.unframed_from
+            .is_none_or(|first| first > FIELD_MINIMUM_RESOLUTION)
+    }
+
     /// The projection view, present only when the millimetre length factor resolved.
     pub(crate) fn length_context(&self) -> Option<ProjectedGlobal> {
         let length_factor_mm = self.length_factor_mm?;

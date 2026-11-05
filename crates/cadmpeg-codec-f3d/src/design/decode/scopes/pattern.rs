@@ -8,7 +8,6 @@ use super::shared_frames::exact_fixed_scalar;
 use super::shared_frames::marked_record_reference;
 use crate::bytes::lp_ascii_filtered_view;
 use crate::bytes::{f64s_at, finite_reals_at};
-use crate::design::decode::sketch::next_indexed_record_offset;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::decode::text::relaxed_guid_end;
 use crate::design::design_feature_family;
@@ -292,7 +291,7 @@ fn exact_rectangular_pattern_secondary_direction(
             {
                 continue;
             }
-            let end = next_indexed_record_offset(bytes, start + prefix::LEN)?;
+            let end = records.next_at_or_after(start + prefix::LEN)?;
             if end.checked_sub(start)? < prefix::LEN + suffix::LEN {
                 continue;
             }
@@ -911,7 +910,7 @@ fn exact_pattern_identity_wrapper(
     {
         return None;
     }
-    let nested_one_at = next_indexed_record_offset(bytes, after_context_id + 19)?;
+    let nested_one_at = records.next_at_or_after(after_context_id + 19)?;
     let (_, nested_one_tag) =
         lp_ascii_filtered_view(bytes, nested_one_at, 3..=3, u8::is_ascii_digit)?;
     if View::u32_le_at(bytes, nested_one_tag) != record_index.checked_add(1)
@@ -921,9 +920,9 @@ fn exact_pattern_identity_wrapper(
     {
         return None;
     }
-    let identity_at = next_indexed_record_offset(bytes, nested_one_at + 32)?;
+    let identity_at = records.next_at_or_after(nested_one_at + 32)?;
     let (_, identity_tag) = lp_ascii_filtered_view(bytes, identity_at, 3..=3, u8::is_ascii_digit)?;
-    let next_at = next_indexed_record_offset(bytes, identity_at + 29)?;
+    let next_at = records.next_at_or_after(identity_at + 29)?;
     let (_, next_tag) = lp_ascii_filtered_view(bytes, next_at, 3..=3, u8::is_ascii_digit)?;
     if View::u32_le_at(bytes, identity_tag) != record_index.checked_add(2)
         || bytes.get(identity_at + 11..identity_at + 21) != Some(&[0; 10])
