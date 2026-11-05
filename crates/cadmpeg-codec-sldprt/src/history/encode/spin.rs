@@ -93,12 +93,6 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 )));
             }
-            if existing.is_none() && (!construction.is_resolved() || op == BooleanOp::Unresolved) {
-                return Err(CodecError::UnsupportedContent(format!(
-                    "SLDPRT feature {} has unresolved revolution construction",
-                    feature.id
-                )));
-            }
             let mut parameters = self.base_parameters();
             let mut properties = self.base_properties();
             if let Some(extent) = construction.extent() {
@@ -284,18 +278,6 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 ),
                 None => None,
             };
-            if existing.is_none() && (profile_source.is_none() || path_source.is_none()) {
-                return Err(CodecError::UnsupportedContent(format!(
-                    "SLDPRT feature {} has unresolved sweep operands",
-                    feature.id
-                )));
-            }
-            if existing.is_none() && matches!(shape.mode(), SweepMode::Unresolved { .. }) {
-                return Err(CodecError::UnsupportedContent(format!(
-                    "SLDPRT feature {} has unresolved sweep result semantics",
-                    feature.id
-                )));
-            }
             let mut parameters = self.base_parameters();
             match twist {
                 Some(twist) => {
@@ -409,12 +391,6 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 )));
             }
-            if existing.is_none() && (sections.len() < 2 || *op == BooleanOp::Unresolved) {
-                return Err(CodecError::UnsupportedContent(format!(
-                    "SLDPRT feature {} has unresolved loft construction semantics",
-                    feature.id
-                )));
-            }
             if sections
                 .iter()
                 .any(|section| matches!(section, cadmpeg_ir::features::LoftSection::Point(_)))
@@ -451,7 +427,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     ))
                 })?;
             let mut properties = self.base_properties();
-            if !profile_sources.is_empty() || existing.is_none() {
+            if !profile_sources.is_empty() {
                 properties.insert(
                     cadmpeg_core::nonblank_literal!("Profiles"),
                     profile_sources.join(","),

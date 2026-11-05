@@ -154,6 +154,12 @@ fn extrusion_with_hole_retains_both_profiles_and_caps() {
                     .procedural_surfaces
                     .iter()
                     .any(|row| loss.message.contains(row.id.as_str()))));
+        for pcurve in &source.ir().model.pcurves {
+            assert!(plan.report().losses.iter().any(|loss| {
+                loss.code == crate::loss::RhinoLossCode::WriterPcurveReversalDefaulted.kind()
+                    && loss.message.contains(pcurve.id.as_str())
+            }));
+        }
         let mut written = Vec::new();
         plan.write_to(&mut written).unwrap();
         let output = RhinoCodec
