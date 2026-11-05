@@ -92,19 +92,12 @@ fn synthesized_body(
     let ctx = cadmpeg_core::decode::DecodeContext::for_encode(&arena, &policy);
     let session = cadmpeg_core::encode::EncodeSession::from_context(&ctx)?;
     let synthesis = super::synthesize_with_admission(&recovered.document, version, |entities| {
-        session.charge_entities(
-            cadmpeg_core::decode::u64_from_index(entities.len()),
-            "write IGES entities",
-        )?;
-        session.charge_entities(
-            cadmpeg_core::decode::u64_from_index(
-                entities
-                    .iter()
-                    .filter(|entity| entity.transform.is_some())
-                    .count(),
-            ),
-            "write IGES transformation entities",
-        )?;
+        for entity in entities {
+            if entity.transform.is_some() {
+                session.charge_entities(1, "write IGES transformation entity")?;
+            }
+            session.charge_entities(1, "write IGES entity")?;
+        }
         Ok(())
     })?;
     losses.extend(synthesis.losses.clone());
