@@ -7,7 +7,6 @@ use cadmpeg_core::decode::u64_from_index;
 use super::shared_frames::marked_record_reference;
 use super::shared_frames::rigid_transform_at;
 use crate::bytes::lp_ascii_filtered_view;
-use crate::design::decode::sketch::next_indexed_record_offset;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 
 use crate::design::decode::text::relaxed_guid_end;
@@ -87,7 +86,7 @@ pub(super) fn exact_derived_instance_construction(
             lp_ascii_filtered_view(bytes, relation_at, 3..=3, u8::is_ascii_graphic)?;
         if relation_at >= start
             || relation_kind != "310"
-            || next_indexed_record_offset(bytes, relation_at + 1)?
+            || records.next_at_or_after(relation_at + 1)?
                 != relation_at + derived_instance_relation_310::LEN
             || bytes.get(
                 relation_at + derived_instance_relation_310::INDEXED_HEADER + 11
@@ -285,7 +284,7 @@ pub(super) fn exact_component_insert_construction(
         let (carrier_record_index, placements) =
             if matches!(scope.frame_length(), Some(272 | 276 | 404)) {
                 if relation_at >= start
-                    || next_indexed_record_offset(bytes, relation_at + 1)? != relation_at + 58
+                    || records.next_at_or_after(relation_at + 1)? != relation_at + 58
                     || bytes.get(relation_at + 11..relation_at + 21)? != [0; 10]
                     || bytes.get(relation_at + 21) != Some(&1)
                     || bytes.get(relation_at + 26..relation_at + 32)? != [0; 6]
@@ -352,7 +351,7 @@ pub(super) fn exact_component_insert_construction(
                 )
             } else {
                 if relation_at >= start
-                    || next_indexed_record_offset(bytes, relation_at + 1)? != relation_at + 57
+                    || records.next_at_or_after(relation_at + 1)? != relation_at + 57
                     || bytes.get(relation_at + 11..relation_at + 21)? != [0; 10]
                     || bytes.get(relation_at + 21) != Some(&1)
                     || bytes.get(relation_at + 26..relation_at + 34)? != [0; 8]
@@ -523,7 +522,7 @@ fn exact_component_insert_class_426_relation<'a>(
         || relation_after_tag != relation_at + 7
         || View::u32_le_at(bytes, relation_after_tag)? != relation_record_index
         || relation_at >= scope_at
-        || next_indexed_record_offset(bytes, relation_at + 1)? != relation_end
+        || records.next_at_or_after(relation_at + 1)? != relation_end
         || bytes.get(
             relation_at + component_insert_relation_345::INDEXED_HEADER + 11
                 ..relation_at + component_insert_relation_345::FIRST_MARKER,
@@ -578,8 +577,8 @@ fn exact_component_insert_class_426_relation<'a>(
     if child_class != "393"
         || child_after_tag != child_at + 7
         || View::u32_le_at(bytes, child_after_tag)? != child_record_index
-        || next_indexed_record_offset(bytes, paired_at + 1)? != child_at
-        || next_indexed_record_offset(bytes, child_at + 1)? != child_end
+        || records.next_at_or_after(paired_at + 1)? != child_at
+        || records.next_at_or_after(child_at + 1)? != child_end
         || child_end != scope_at
         || bytes
             .get(child_at + 11..child_at + component_insert_relation_child_393::RELATION_MARKER)?
@@ -1055,7 +1054,7 @@ pub(super) fn exact_copy_paste_component_operation(
         let copied_transform = rigid_transform_at(bytes, copied_transform_offset)?;
         let relation_at = records.first_at_or_after(0, relation_record_index)?;
         if relation_at >= start
-            || next_indexed_record_offset(bytes, relation_at + 1)? != relation_at + 57
+            || records.next_at_or_after(relation_at + 1)? != relation_at + 57
             || bytes.get(relation_at + 11..relation_at + 21)? != [0; 10]
             || bytes.get(relation_at + 21) != Some(&1)
             || bytes.get(relation_at + 26..relation_at + 34)? != [0; 8]
