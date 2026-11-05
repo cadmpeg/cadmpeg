@@ -146,11 +146,14 @@ const WRITER_ENTITY_TYPES: &[u32] = &[
 ];
 
 mod admission;
+mod brep_order;
+use brep_order::{brep_sense, edge_use_positions, edge_use_sense, pole_use_order};
 mod appearance;
 mod attributes;
 mod degrade;
 mod levels;
 mod native_records;
+mod pcurve_admission;
 pub(crate) mod target;
 
 fn body(
@@ -658,7 +661,8 @@ fn synthesize_with_admission(
             .is_none_or(|solved| flatten_curve(solved).is_err())
     })?;
     let (poles, pole_losses) = admission::pole_edges(lowered.as_ref())?;
-    let (admitted, admission_losses) = admission::edge_carriers(poles.as_ref());
+    let (pcurves, pcurve_losses) = pcurve_admission::admit(poles.as_ref());
+    let (admitted, admission_losses) = admission::edge_carriers(pcurves.as_ref());
     let (stripped, strip_losses) = admission::strip_unusable_face_topology(admitted.as_ref());
     let ir = stripped.as_ref().unwrap_or(admitted.as_ref());
     let mut graph = match synthesis_graph(ctx, ir, version) {
@@ -666,7 +670,9 @@ fn synthesize_with_admission(
         Err(CodecError::UnsupportedContent(reason)) => degrade::graph(ctx, ir, version, &reason)?,
         Err(error) => return Err(error.into()),
     };
+    let pcurves_adapted = !pcurve_losses.is_empty();
     graph.losses.extend(pole_losses);
+    graph.losses.extend(pcurve_losses);
     graph.losses.extend(admission_losses);
     graph.losses.extend(strip_losses);
     graph
@@ -858,6 +864,10 @@ fn synthesize_with_admission(
     let counts = entity_counts(&graph.entities);
     let mut coverage = SYNTHESIS_COVERAGE;
     coverage.features = feature_coverage;
+    if pcurves_adapted {
+        coverage.coedges = ArenaDisposition::Reported;
+        coverage.pcurves = ArenaDisposition::Reported;
+    }
     if emitted_compounds > 0 {
         coverage.procedural_curves = ArenaDisposition::Reported;
     }
@@ -3156,42 +3166,6 @@ fn brep_entities(
         );
     }
     Ok(entities)
-}
-
-/// The Type 508 edge-use orientation of a coedge. A Type 508 loop keeps its
-/// face on the left about the support normal, and a reversed face keeps it on
-/// the left about the reversed normal, so a reversed face writes its loops
-/// backward.
-fn edge_use_sense(coedge: Sense, face: Sense) -> Sense {
-    if coedge == face {
-        Sense::Forward
-    } else {
-        Sense::Reversed
-    }
-}
-
-/// The pcurve uses of a pole-vertex use in Type 508 order. A reversed face
-/// writes its loops backward, so it writes the uses in reverse order.
-fn pole_use_order(uses: &[PcurveUse], face: Sense) -> Vec<&PcurveUse> {
-    match face {
-        Sense::Forward => uses.iter().collect(),
-        Sense::Reversed => uses.iter().rev().collect(),
-    }
-}
-
-/// The ring positions of a loop in Type 508 edge-use order.
-fn edge_use_positions(count: usize, face: Sense) -> Vec<usize> {
-    match face {
-        Sense::Forward => (0..count).collect(),
-        Sense::Reversed => (0..count).rev().collect(),
-    }
-}
-
-fn brep_sense(sense: Sense) -> i32 {
-    match sense {
-        Sense::Forward => 1,
-        Sense::Reversed => 0,
-    }
 }
 
 fn used_brep_pcurve_ids(ir: &CadIr) -> std::collections::BTreeSet<String> {

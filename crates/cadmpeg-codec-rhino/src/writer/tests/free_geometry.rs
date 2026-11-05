@@ -33,7 +33,7 @@ fn authored_extrusion_payload_decodes_its_cap_and_carrier() {
     let source = RhinoCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
-    let candidate = super::super::extrusion::payload(source.ir(), RhinoArchiveVersion::V8)
+    let candidate = super::super::extrusion::payload(source.ir(), RhinoArchiveVersion::V8, None)
         .unwrap()
         .expect("held extrusion admits a candidate");
     let class = [
@@ -138,6 +138,17 @@ fn extrusion_with_hole_retains_both_profiles_and_caps() {
                 TargetRequest::Explicit(version.descriptor().id.as_str()),
             )
             .unwrap();
+        assert!(plan
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains("sum-surface")
+                && source
+                    .ir()
+                    .model
+                    .procedural_surfaces
+                    .iter()
+                    .any(|row| loss.message.contains(row.id.as_str()))));
         let mut written = Vec::new();
         plan.write_to(&mut written).unwrap();
         let output = RhinoCodec
@@ -593,6 +604,44 @@ fn standalone_mesh_round_trips_across_archive_versions() {
         .decode(&mut Cursor::new(output), &DecodeOptions::default())
         .expect("mesh archive decodes");
     assert_eq!(written.ir().model.tessellations.len(), 1);
+}
+
+#[test]
+fn mesh_without_faces_is_named_and_independent_points_survive() {
+    let mut ir = CadIr::empty();
+    ir.model.points.push(Point::new(
+        PointId::mint("test:model:point#independent").unwrap(),
+        cadmpeg_ir::features::FinitePoint3::new(Point3::new(2.0, 3.0, 4.0)).unwrap(),
+        None,
+    ));
+    ir.model.tessellations.push(
+        Tessellation::new(
+            "test:model:tessellation#faceless".try_into().unwrap(),
+            cadmpeg_ir::tessellation::TessellationMesh::from_list_lanes(
+                vec![Point3::new(0.0, 0.0, 0.0)],
+                Vec::new(),
+                None,
+            )
+            .unwrap(),
+            Vec::new(),
+        )
+        .unwrap(),
+    );
+    let plan = RhinoCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("test:model:tessellation#faceless")));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(output.ir().model.points.len(), 1);
+    assert!(output.ir().model.tessellations.is_empty());
 }
 
 #[test]
