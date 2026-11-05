@@ -4,7 +4,8 @@
 use std::io::Cursor;
 
 use crate::decode::{
-    DecodeArena, DecodeContext, DecodePolicy, ExpandSpec, ResourceDimension, ResourceFailure,
+    DecodeArena, DecodeContext, DecodePolicy, ExpandSpec, LimitScope, ResourceDimension,
+    ResourceFailure,
 };
 use crate::encode::EncodeSession;
 use crate::CodecError;
@@ -129,6 +130,26 @@ fn independent_contexts_charge_actual_input_to_one_eight_byte_ceiling() {
     assert_eq!(first.resource_refusal(), Some(refusal));
     assert_eq!(second.resource_refusal(), Some(refusal));
     assert_eq!(session.finish(), Err(refusal));
+}
+
+#[test]
+fn encode_session_recovers_a_part_scoped_expansion_refusal() {
+    let arena = DecodeArena::new();
+    let mut policy = DecodePolicy::service();
+    policy.limits.max_decompressed_bytes_total = 8;
+    policy.limits.max_decompressed_bytes_per_expand = 1;
+    let ctx = DecodeContext::for_encode(&arena, &policy);
+    let session = EncodeSession::from_context(&ctx).unwrap();
+    let outcome = ctx.run_part(|| {
+        let mut expansion = ctx.begin_expand(ExpandSpec::Exact(2))?;
+        expansion.write(b"ab")?;
+        expansion.finalize_owned()
+    });
+    assert!(matches!(
+        outcome,
+        Ok(Err(CodecError::ResourceLimit(limit))) if limit.scope == LimitScope::Part
+    ));
+    assert_eq!(session.finish(), Ok(()));
 }
 
 #[test]

@@ -3754,7 +3754,7 @@ fn decode_graph(
                                     boundary: &boundary,
                                     vertices: &vertices,
                                     tolerance: cadmpeg_ir::units::Tolerances::default()
-                                        .linear
+                                        .linear_or_default()
                                         .get(),
                                 },
                             )?
