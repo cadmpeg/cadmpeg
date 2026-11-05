@@ -369,11 +369,10 @@ impl MergeSession<'_, '_> {
                     ClassifiedMember::Scanned { .. } => {}
                     ClassifiedMember::Unreadable(_) => continue,
                 }
-                let component = match self.session.take_member(
-                    self.ctx,
-                    reference.relative_path.as_str(),
-                    self.decoded,
-                ) {
+                let component = match ctx.run_part(|| {
+                    self.session
+                        .take_member(ctx, reference.relative_path.as_str(), self.decoded)
+                })? {
                     Ok((component, component_poses)) => {
                         for (key, pose) in &component_poses {
                             let key = rescope(key, &occurrence).ok_or_else(|| {
@@ -383,7 +382,6 @@ impl MergeSession<'_, '_> {
                         }
                         component
                     }
-                    Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
                     Err(error) => {
                         let mut part = cadmpeg_ir::source_fidelity::parts::PartOutput::new(
                             cadmpeg_ir::CodecFormat::F3d,

@@ -624,9 +624,9 @@ pub(crate) fn decode_with_body_bindings<'a>(
         .iter()
         .filter(|entry| scan.is_design_asset_entry(entry, ContainerRole::ProteinAssets))
     {
-        let protein = scan.entry_view(&entry.name).ok_or_else(|| {
-            CodecError::Malformed("protein archive entry missing from scan".into())
-        })?;
+        let Some(protein) = scan.entry_view(&entry.name) else {
+            continue;
+        };
         let stream_name =
             StreamName::try_from(entry.name.clone()).map_err(CodecError::malformed)?;
         let spec = PartSpec::new("f3d.protein_record")
