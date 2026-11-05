@@ -34,20 +34,29 @@ pub(super) fn write(target: &CadIr) -> Result<Synthesized, CodecError> {
     native::reconcile(&mut prepared, &mut losses)?;
     let mut bytes = Vec::new();
     let coverage = match super::generate::write_new(&prepared, &mut bytes) {
-        Ok(coverage) => coverage,
+        Ok((coverage, residual_losses)) => {
+            losses.extend(residual_losses);
+            coverage
+        }
         Err(error) if declines(&error) => {
             prepare::solved_carriers(&mut prepared, &mut losses)?;
             prepare::unreferenced_composite_curves(&mut prepared, &mut losses)?;
             prepare::pcurves(&mut prepared, &mut losses)?;
             bytes.clear();
             match super::generate::write_new(&prepared, &mut bytes) {
-                Ok(coverage) => coverage,
+                Ok((coverage, residual_losses)) => {
+                    losses.extend(residual_losses);
+                    coverage
+                }
                 Err(error) if declines(&error) => {
                     prepared = topology::admit_bodies(&prepared, &mut losses)?;
                     native::repair_keys(&mut prepared)?;
                     bytes.clear();
                     match super::generate::write_new(&prepared, &mut bytes) {
-                        Ok(coverage) => coverage,
+                        Ok((coverage, residual_losses)) => {
+                            losses.extend(residual_losses);
+                            coverage
+                        }
                         Err(error) if declines(&error) => {
                             // §5.0: a limitation the reductions cannot
                             // localize is still not a refusal. Shed the
@@ -56,7 +65,10 @@ pub(super) fn write(target: &CadIr) -> Result<Synthesized, CodecError> {
                             native::shed_design(&mut prepared)?;
                             bytes.clear();
                             match super::generate::write_new(&prepared, &mut bytes) {
-                                Ok(coverage) => coverage,
+                                Ok((coverage, residual_losses)) => {
+                                    losses.extend(residual_losses);
+                                    coverage
+                                }
                                 Err(error) if declines(&error) => {
                                     losses.push(F3dLossCode::WriterNoExportableSolids.note(format!(
                                         "unsupported writer content remains after shedding design: {error}; wrote an empty geometry carrier"
@@ -64,7 +76,10 @@ pub(super) fn write(target: &CadIr) -> Result<Synthesized, CodecError> {
                                     prepared = CadIr::empty();
                                     bytes.clear();
                                     match super::generate::write_new(&prepared, &mut bytes) {
-                                        Ok(coverage) => coverage,
+                                        Ok((coverage, residual_losses)) => {
+                                            losses.extend(residual_losses);
+                                            coverage
+                                        }
                                         // Terminal §5.0 reduction: even the empty
                                         // carrier is unwritable. Report it and
                                         // return the empty dispositions; only a
@@ -96,9 +111,33 @@ pub(super) fn write(target: &CadIr) -> Result<Synthesized, CodecError> {
         }
         Err(error) => return Err(error),
     };
-    let native_dispositions = native::coverage(target, &prepared);
     let native = super::primitives::f3d_native(&prepared)?.unwrap_or_default();
     let attributes = super::generate::attributes::represented_attributes(&prepared, &native);
+    let invalidated_timestamps = native
+        .creation_timestamps
+        .iter()
+        .filter(|timestamp| {
+            prepared.model.attributes.iter().any(|attribute| {
+                attributes.contains(attribute.id.as_str())
+                    && cadmpeg_asm::brep::attributes::attribute_key(attribute)
+                        == timestamp.record_index.to_string()
+                    && crate::brep::link_target_for(
+                        &prepared.model.bodies,
+                        &prepared.model.faces,
+                        &prepared.model.edges,
+                        &prepared.model.vertices,
+                        &prepared.model.coedges,
+                        &attribute.target,
+                    )
+                    .is_some_and(|(row, coedge)| {
+                        row == timestamp.target.as_str() && coedge == timestamp.target_coedge
+                    })
+                    && crate::brep::creation_timestamp_value(attribute).is_none()
+            })
+        })
+        .map(|timestamp| timestamp.id.clone())
+        .collect();
+    let native_dispositions = native::coverage(target, &prepared, &invalidated_timestamps);
     let coverage = prepare::dispositions(target, &prepared, coverage, &attributes, &mut losses);
     if prepared.model.bodies.is_empty() {
         losses.push(F3dLossCode::WriterNoExportableSolids.note(

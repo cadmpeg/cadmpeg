@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Agreement checks for explicit planar trim carriers.
 
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::Sense;
@@ -44,9 +43,11 @@ pub(super) fn validate_plane_trim(
     let reflected = sense == Sense::Reversed;
     match check_plane_trim(origin, u_axis, v_axis, tolerance, edge, reflected, explicit) {
         Ok(()) => Ok(()),
-        Err(first) if reflected => {
-            check_plane_trim(origin, u_axis, v_axis, tolerance, edge, false, explicit)
-                .map_err(|_| first)
+        Err(WriteError::Omit(first)) if reflected => {
+            match check_plane_trim(origin, u_axis, v_axis, tolerance, edge, false, explicit) {
+                Err(WriteError::Omit(_)) => Err(WriteError::Omit(first)),
+                result => result,
+            }
         }
         Err(error) => Err(error),
     }
@@ -77,7 +78,10 @@ fn check_plane_trim(
                 let knot = if reflect {
                     cadmpeg_ir::math::reflect_parameter(knot, edge_domain[0], edge_domain[1])
                         .ok_or_else(|| {
-                            CodecError::malformed("trim knot reflection is non-finite")
+                            WriteError::Omit(format!(
+                                "pcurve {} trim knot reflection is non-finite",
+                                explicit.source.id
+                            ))
                         })?
                 } else {
                     knot
@@ -117,9 +121,12 @@ fn check_plane_trim(
             sample.get(),
         ) {
             Ok(point) => point.get(),
-            Err(failure) => failure
-                .non_finite()?
-                .ok_or_else(|| CodecError::malformed("planar trim cannot be evaluated"))?,
+            Err(failure) => failure.non_finite()?.ok_or_else(|| {
+                WriteError::Omit(format!(
+                    "pcurve {} planar trim cannot be evaluated",
+                    explicit.source.id
+                ))
+            })?,
         };
         let mapped = Point3::new(
             origin.x + uv.u * u_axis.x + uv.v * v_axis.x,
@@ -129,15 +136,20 @@ fn check_plane_trim(
         let mapped_parameter = map_parameter(sample, domain, edge_domain)?;
         let parameter = if reflect {
             cadmpeg_ir::math::reflect_parameter(mapped_parameter, edge_domain[0], edge_domain[1])
-                .ok_or_else(|| CodecError::malformed("trim sample reflection is non-finite"))?
+                .ok_or_else(|| {
+                    WriteError::Omit(format!(
+                        "pcurve {} trim sample reflection is non-finite",
+                        explicit.source.id
+                    ))
+                })?
         } else {
             mapped_parameter
         };
         let actual = match edge.curve.point(parameter) {
             Ok(point) => point.get(),
-            Err(failure) => failure
-                .non_finite()?
-                .ok_or_else(|| CodecError::malformed("planar trim edge cannot be evaluated"))?,
+            Err(failure) => failure.non_finite()?.ok_or_else(|| {
+                WriteError::Omit(format!("edge curve {} cannot be evaluated", edge.curve_id))
+            })?,
         };
         if !close_point(mapped, actual, tolerance) {
             let reason = format!(
@@ -156,13 +168,13 @@ fn check_plane_trim(
 pub(super) fn samples(
     breaks: &[f64],
     domain: [FiniteReal; 2],
-) -> Result<Vec<FiniteReal>, CodecError> {
+) -> Result<Vec<FiniteReal>, WriteError> {
     let mut samples = domain.to_vec();
     for span in breaks.windows(2) {
         for step in 0..=16 {
             samples.push(
                 cadmpeg_ir::math::interpolate(span[0], span[1], f64::from(step) / 16.0)
-                    .ok_or_else(|| CodecError::malformed("trim sample is non-finite"))?,
+                    .ok_or_else(|| WriteError::Omit("trim sample is non-finite".into()))?,
             );
         }
     }
@@ -187,9 +199,11 @@ pub(super) fn validate_analytic_trim(
     let reflected = sense == Sense::Reversed;
     match check_analytic_trim(surface, usage, face_tolerance, edge, reflected, explicit) {
         Ok(()) => Ok(()),
-        Err(first) if reflected => {
-            check_analytic_trim(surface, usage, face_tolerance, edge, false, explicit)
-                .map_err(|_| first)
+        Err(WriteError::Omit(first)) if reflected => {
+            match check_analytic_trim(surface, usage, face_tolerance, edge, false, explicit) {
+                Err(WriteError::Omit(_)) => Err(WriteError::Omit(first)),
+                result => result,
+            }
         }
         Err(error) => Err(error),
     }
@@ -223,7 +237,10 @@ fn check_analytic_trim(
                 let knot = if reflect {
                     cadmpeg_ir::math::reflect_parameter(knot, edge_domain[0], edge_domain[1])
                         .ok_or_else(|| {
-                            CodecError::malformed("trim knot reflection is non-finite")
+                            WriteError::Omit(format!(
+                                "pcurve {} trim knot reflection is non-finite",
+                                explicit.source.id
+                            ))
                         })?
                 } else {
                     knot

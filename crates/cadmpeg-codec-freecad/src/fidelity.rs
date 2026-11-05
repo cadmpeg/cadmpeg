@@ -120,31 +120,29 @@ pub(crate) fn mark_untyped(
         .map_err(CodecError::malformed)
 }
 
-/// The class a property value part's bytes carry, when its owner is known:
-/// shape payloads are model; document-level and design-owned properties are
-/// design. Unknown owners (extension records) stay broad: the part helper
-/// then marks the requested scope. Narrowing keeps a failed design part from
-/// holding model in scope (#209 §1.1).
-pub(crate) fn property_value_class(
+/// The classes a failed property value can hold. A document or design
+/// property can project to model attributes as well as design records.
+pub(crate) fn property_value_classes(
     objects: &[crate::native::ObjectRecord],
     owner: &str,
     type_name: &str,
-) -> Option<cadmpeg_ir::ArenaClass> {
+) -> Option<ArenaClasses> {
     use cadmpeg_ir::ArenaClass;
     if type_name == "Part::PropertyPartShape" {
-        return Some(ArenaClass::Model);
+        return Some(ArenaClasses::from([ArenaClass::Model]));
     }
     if owner == crate::native::native_id("document", "0") {
-        return Some(ArenaClass::Design);
+        return Some(ArenaClasses::from([ArenaClass::Model, ArenaClass::Design]));
     }
     objects
         .iter()
         .find(|object| object.id().as_str() == owner)
         .map(|object| {
-            if crate::design::is_design_kind(&object.type_name) {
-                ArenaClass::Design
+            if crate::design::is_design_kind(&object.type_name) || object.type_name == "App::VarSet"
+            {
+                ArenaClasses::from([ArenaClass::Model, ArenaClass::Design])
             } else {
-                ArenaClass::Model
+                ArenaClasses::from([ArenaClass::Model])
             }
         })
 }

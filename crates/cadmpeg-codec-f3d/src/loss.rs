@@ -188,8 +188,6 @@ pub(crate) enum F3dLossCode {
     ParameterUnitUntyped,
     /// Material Distance properties retain unit tags without a length conversion.
     MaterialDistanceUnitUntyped,
-    /// An embedded Design image remains outside the typed asset arena.
-    ImageAssetUntransferred,
     /// A face material GUID names distinct visual tokens without a selection rule.
     FaceAppearanceAmbiguous,
     /// Parameter expression symbols name same-stream parameters without an edge.
@@ -611,7 +609,6 @@ impl F3dLossCode {
         Self::DesignIntentUndecoded,
         Self::ActRecordUntyped,
         Self::RecipePrefixUntyped,
-        Self::ImageAssetUntransferred,
         Self::WriterNativeRecordsOmitted,
         Self::WriterDesignRecordsOmitted,
         Self::WriterGeometryOmitted,
@@ -716,7 +713,6 @@ impl F3dLossCode {
             Self::ParameterOwnerUnrecognized => "parameter.owner-unrecognized",
             Self::ParameterUnitUntyped => "parameter.unit-untyped",
             Self::MaterialDistanceUnitUntyped => "material.distance-unit-untyped",
-            Self::ImageAssetUntransferred => "appearance.image-asset-untransferred",
             Self::FaceAppearanceAmbiguous => "material.face-appearance-ambiguous",
             Self::ParameterExpressionUnbound => "parameter.expression-unbound",
             Self::HistoryDependencyUnprojected => "history.dependency-unprojected",
@@ -849,7 +845,6 @@ impl F3dLossCode {
         match self {
             Self::ScopeOutputOwnerMismatch | Self::ScopeSketchOwnerMismatch => Severity::Warning,
             Self::WriterNativeRecordsOmitted => Severity::Warning,
-            Self::ImageAssetUntransferred => Severity::Warning,
             Self::WriterDesignRecordsOmitted => Severity::Error,
             Self::WriterGeometryOmitted => Severity::Error,
             Self::WriterAuxiliaryOmitted => Severity::Warning,
@@ -1171,7 +1166,6 @@ impl F3dLossCode {
             | Self::AssemblyRootPathIdentitiesNative
             | Self::HistoryOnlyBodyOmitted => LossTaxonomy::FeatureHistoryRetained,
             Self::MaterialDistanceUnitUntyped => LossTaxonomy::MaterialNotTransferred,
-            Self::ImageAssetUntransferred => LossTaxonomy::AssetNotTransferred,
             Self::FaceAppearanceAmbiguous => LossTaxonomy::AppearanceReduced,
             Self::XrefOwnerUnresolved
             | Self::ComponentBodyOwnerUnresolved
@@ -1455,7 +1449,6 @@ mod tests {
                 "design.intent-undecoded",
                 "act.record-untyped",
                 "dimension.recipe-prefix-untyped",
-                "appearance.image-asset-untransferred",
                 "writer.native-records-omitted",
                 "writer.design-records-omitted",
                 "writer.geometry-omitted",

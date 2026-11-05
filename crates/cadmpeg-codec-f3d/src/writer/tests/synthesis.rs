@@ -98,6 +98,36 @@ fn source_less_primitive_feature_survives_synthesis() {
         decoded.ir().dimension_value(angle).unwrap(),
         cadmpeg_ir::scalar::Angle::FULL_TURN
     );
+    let mut second = ir.model.features[0].clone();
+    second.id = FeatureId::mint("authored:model:feature#1").unwrap();
+    second.ordinal = 1;
+    ir.model.features.push(second);
+    let (output, _) = super::source_less_analytic::synthesize_document(&ir, None);
+    assert_eq!(output.ir().model.features.len(), 2);
+    assert!(output.ir().model.features.iter().all(|feature| matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Primitive { .. })
+    )));
+    ir.model.features[1].source_tag = Some("unsupported variant".into());
+    let (output, report) = super::source_less_analytic::synthesize_document(&ir, None);
+    assert_eq!(output.ir().model.features.len(), 1);
+    let omitted = ir.model.features[1].id.to_string();
+    let retained = ir.model.features[0].id.as_str();
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(&omitted)));
+    assert!(!report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(retained)));
+    ir.model.features[1].source_tag = None;
+    ir.model.features[1].needs_recompute = true;
+    let (output, report) = super::source_less_analytic::synthesize_document(&ir, None);
+    assert_eq!(output.ir().model.features.len(), 2);
+    assert!(report.losses.iter().any(|loss| {
+        loss.message.contains(&omitted) && loss.message.contains("recompute state")
+    }));
 }
 
 #[test]
@@ -198,11 +228,16 @@ fn a_document_parameter_is_authored_without_native_records_and_keeps_supported_s
             |loss| loss.code.local_code() == "writer.design-records-omitted"
                 && loss.severity == Severity::Error
         ));
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.code.local_code() == "record.residual-unavailable"
+            && loss.message.contains("parameter-collection#3")
+    }));
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).expect("write");
     let decoded = F3dCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode");
+    assert!(decoded.source_fidelity().unrepresented().is_empty());
     assert_eq!(decoded.ir().model.bodies.len(), 1);
     let parameters = &decoded.ir().model.parameters;
     assert_eq!(parameters.len(), 2);
@@ -410,6 +445,44 @@ fn source_less_compact_custom_attributes_preserve_values() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
     assert_eq!(output.ir().model.attributes, decoded.ir().model.attributes);
+
+    let mut renamed = decoded.ir().clone();
+    renamed.model.attributes[1].name = "ATTRIB_CUSTOM-attrib_edited".into();
+    let (output, _) = super::source_less_analytic::synthesize_document(&renamed, None);
+    assert_eq!(output.ir().model.attributes, renamed.model.attributes);
+
+    let mut invalidated = decoded.ir().clone();
+    let native_id = crate::test_support::native_test::f3d_native(&invalidated).creation_timestamps
+        [0]
+    .id
+    .clone();
+    invalidated.model.attributes[1].values[2] =
+        Some(cadmpeg_ir::attributes::AttributeValue::Integer(2));
+    let (output, report) = super::source_less_analytic::synthesize_document(&invalidated, None);
+    invalidated.model.attributes[1].native_ref = None;
+    assert_eq!(output.ir().model.attributes, invalidated.model.attributes);
+    assert!(crate::test_support::native_test::f3d_native(output.ir())
+        .creation_timestamps
+        .is_empty());
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(&native_id)));
+
+    let mut renamed_family = decoded.ir().clone();
+    renamed_family.model.attributes[1].values[1] = Some(
+        cadmpeg_ir::attributes::AttributeValue::String("Timestamp_attrib_defx".into()),
+    );
+    let (output, report) = super::source_less_analytic::synthesize_document(&renamed_family, None);
+    renamed_family.model.attributes[1].native_ref = None;
+    assert_eq!(
+        output.ir().model.attributes,
+        renamed_family.model.attributes
+    );
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(&native_id)));
 
     let mut edited = decoded.ir().clone();
     let timestamp = &mut edited.model.attributes[1];

@@ -196,6 +196,7 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "tolerant_edge_tails",
     "tolerant_vertex_tails",
     "transform_hints",
+    "unknowns",
     "vertex_ownerships",
     "wire_topologies",
     "xref_designs",
@@ -390,6 +391,14 @@ fn emit_asm_history_records(
 }
 
 const F3D_FAMILIES: &[F3dFamilyRow] = &[
+    F3dFamilyRow {
+        arena: "unknowns",
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        emit: |ctx, model, row, namespace| namespace.set_arena(ctx, row.arena, &model.unknowns),
+        len: |model| model.unknowns.len(),
+        counts_toward_emptiness: true,
+    },
     F3dFamilyRow {
         arena: "act_entities",
         exactness: (),
@@ -1293,6 +1302,9 @@ const F3D_CATALOGUE: Catalogue<'static, F3dNative, (), cadmpeg_ir::NativeNamespa
 /// Autodesk Fusion records retained outside the format-neutral model.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub(crate) struct F3dNative {
+    /// Retained source parts represented by shared unknown stubs.
+    #[serde(default)]
+    pub(crate) unknowns: Vec<cadmpeg_ir::NativeUnknownRecord>,
     /// Fusion ACT change-tracking table entities.
     #[serde(default)]
     pub(crate) act_entities: Vec<ActEntity>,
@@ -1622,6 +1634,7 @@ impl F3dNative {
         #[cfg(test)]
         LOAD_COUNT.set(LOAD_COUNT.get() + 1);
         let mut native = Self {
+            unknowns: read_arena!("unknowns"),
             act_entities: read_arena!("act_entities"),
             act_guids: read_arena!("act_guids"),
             act_registry_channels: read_arena!("act_registry_channels"),
