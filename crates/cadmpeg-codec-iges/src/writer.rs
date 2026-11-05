@@ -11,7 +11,7 @@ mod capacity;
 use crate::entities::curve_conversion::ANGULAR_TOLERANCE;
 use crate::entities::geometry::curve_is_line;
 use crate::loss::IgesLossCode;
-use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::codec::write::{
     ArenaCoverage, ArenaDisposition, ArenaDispositions, ExportBody, WritePath,
@@ -58,6 +58,7 @@ const WRITER_ENDPOINT_RELATIVE_TOLERANCE: f64 = EPS_WRITE_POSITION;
 enum EntityStatus {
     Independent,
     Definition,
+    LogicalPositional,
     PhysicallyDependent,
     LogicallyDependent,
     BothDependent,
@@ -82,6 +83,7 @@ impl EntityStatus {
         match self {
             Self::Independent => "00000000",
             Self::Definition => "00000200",
+            Self::LogicalPositional => "00000400",
             Self::PhysicallyDependent => "00010000",
             Self::LogicallyDependent => "00020000",
             Self::BothDependent => "00030000",
@@ -637,10 +639,14 @@ fn unapplied_body_placement_losses(ir: &CadIr, entities: &[Entity]) -> Vec<LossN
 
 #[cfg(test)]
 fn synthesize(ir: &CadIr, version: crate::IgesVersion) -> Result<Synthesis, WriteError> {
-    synthesize_with_admission(ir, version, |_| Ok(()))
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let ctx = DecodeContext::for_encode(&arena, &policy);
+    synthesize_with_admission(&ctx, ir, version, |_| Ok(()))
 }
 
 fn synthesize_with_admission(
+    ctx: &DecodeContext<'_>,
     ir: &CadIr,
     version: crate::IgesVersion,
     admit: impl FnOnce(&[Entity]) -> Result<(), WriteError>,
@@ -651,14 +657,16 @@ fn synthesize_with_admission(
             .solved()
             .is_none_or(|solved| flatten_curve(solved).is_err())
     })?;
-    let (admitted, admission_losses) = admission::edge_carriers(lowered.as_ref());
+    let (poles, pole_losses) = admission::pole_edges(lowered.as_ref())?;
+    let (admitted, admission_losses) = admission::edge_carriers(poles.as_ref());
     let (stripped, strip_losses) = admission::strip_unusable_face_topology(admitted.as_ref());
     let ir = stripped.as_ref().unwrap_or(admitted.as_ref());
-    let mut graph = match synthesis_graph(ir, version) {
+    let mut graph = match synthesis_graph(ctx, ir, version) {
         Ok(graph) => graph,
-        Err(CodecError::UnsupportedContent(reason)) => degrade::graph(ir, version, &reason)?,
+        Err(CodecError::UnsupportedContent(reason)) => degrade::graph(ctx, ir, version, &reason)?,
         Err(error) => return Err(error.into()),
     };
+    graph.losses.extend(pole_losses);
     graph.losses.extend(admission_losses);
     graph.losses.extend(strip_losses);
     graph
@@ -806,10 +814,11 @@ fn synthesize_with_admission(
     })
 }
 
-fn synthesis_graph(ir: &CadIr, version: crate::IgesVersion) -> Result<SynthesisGraph, CodecError> {
-    let arena = DecodeArena::new();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::default())?;
-    let ctx = &ctx;
+fn synthesis_graph(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    version: crate::IgesVersion,
+) -> Result<SynthesisGraph, CodecError> {
     let arena_losses = unsupported_model_losses(ir)?;
     reject_owned_wire_topology(ir)?;
     let (stripped, strip_losses) = admission::strip_unusable_face_topology(ir);
@@ -6194,6 +6203,7 @@ fn append_surface_entities(
     };
     let base_index = entities.len();
     let mut additions = surface_entities_for_ir(ctx, ir, surface, base_index, version)?;
+    support_records::retain(ir, surface, &mut additions);
     if let Some(entity) = additions.last_mut() {
         entity.status = status;
         entity.source_targets.push(surface.id.to_string());
@@ -9856,3 +9866,4 @@ fn finite(value: f64, field: &str) -> Result<FiniteReal, CodecError> {
 mod tests;
 
 mod ownership;
+mod support_records;

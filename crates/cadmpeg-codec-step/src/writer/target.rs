@@ -172,6 +172,7 @@ fn report_reductions(coverage: &mut ArenaDispositions, losses: &[LossNote]) {
         StepLossCode::BodyWithoutProductRepresentation,
         StepLossCode::SurfaceShellWireTopologyOmitted,
         StepLossCode::WireShellFreeVertices,
+        StepLossCode::WireShellNoWritableEdges,
         StepLossCode::TopologyUnreachableFromRegion,
         StepLossCode::CurvelessEdgeOmitted,
         StepLossCode::UnknownSurfaceFaceOmitted,

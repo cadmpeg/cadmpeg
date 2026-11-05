@@ -289,3 +289,22 @@ fn encode_reports_a_digest_mismatch_as_degraded_fidelity() {
     let reason = degraded_reason(&plan, "an edited model must degrade");
     assert!(reason.contains("digest"), "{reason}");
 }
+
+#[test]
+fn missing_image_declines_before_digesting_the_document() {
+    let decoded = IgesCodec
+        .decode(&mut Cursor::new(point_file()), &DecodeOptions::default())
+        .expect("point fixture decodes");
+    let mut fidelity = decoded.source_fidelity().clone();
+    assert!(fidelity
+        .remove_retained_record(crate::SOURCE_IMAGE_ID)
+        .is_some());
+    let mut input = EncodeInput::new(decoded.ir(), Some(&fidelity));
+    input.limits.max_recursion_depth = 0;
+    assert!(matches!(
+        super::super::replay_bytes(input),
+        Ok(super::super::Replay::Declined(
+            super::super::DeclineReason::SourceImageUnavailable
+        ))
+    ));
+}
