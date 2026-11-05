@@ -261,41 +261,23 @@ fn occurrence_frames(
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
 ) -> Result<Vec<crate::metastream::PrimaryRecordFrame>, CodecError> {
-    let mut placement_entities = std::collections::BTreeMap::new();
-    for (ordinal, design_type) in meta.types.iter().enumerate().filter(|(_, row)| {
-        row.module == "Component"
-            && row
-                .type_guid
-                .as_str()
-                .eq_ignore_ascii_case(OCCURRENCE_PLACEMENT_TYPE_GUID)
-    }) {
-        for &entity in design_type.entities.values() {
-            placement_entities.insert(entity, ordinal);
-        }
-    }
-    let mut frames = Vec::new();
-    for frame in crate::metastream::primary_record_frames(meta, bytes.len())? {
-        let Some(&ordinal) = placement_entities.get(&frame.entity_id) else {
-            continue;
-        };
-        let header = &bytes[frame.start..frame.member_end];
-        let parsed_header = lp_ascii_filtered_view(header, 0, 3..=3, u8::is_ascii_digit);
-        let class_matches = parsed_header
-            .and_then(|(tag, _)| tag.parse::<usize>().ok())
-            .and_then(|tag| tag.checked_sub(256))
-            == Some(ordinal);
-        let entity_matches = parsed_header
-            .and_then(|(_, after_tag)| View::u32_le_at(header, after_tag))
-            .map(u64::from)
-            == Some(frame.entity_id);
-        if !class_matches || !entity_matches {
-            return Err(CodecError::malformed(
-                "F3D local occurrence header disagrees with its registered primary index",
-            ));
-        }
-        frames.push(frame);
-    }
-    Ok(frames)
+    Ok(super::meta::design_primary_frames(bytes, meta)?
+        .into_iter()
+        .filter(|frame| {
+            frame.design_type.module == "Component"
+                && frame
+                    .design_type
+                    .type_guid
+                    .as_str()
+                    .eq_ignore_ascii_case(OCCURRENCE_PLACEMENT_TYPE_GUID)
+        })
+        .map(|frame| crate::metastream::PrimaryRecordFrame {
+            entity_id: frame.entity_id,
+            start: frame.start,
+            member_end: frame.member_end,
+            end: frame.end,
+        })
+        .collect())
 }
 
 fn admit_occurrence_envelopes(
@@ -1950,6 +1932,7 @@ mod tests {
         bytes[4..7].copy_from_slice(b"256");
         let occurrence =
             exact_component_occurrence(&bytes, 0, "f3d:Design/BulkStream.dat").unwrap();
+        bytes[352..355].copy_from_slice(b"256");
         bytes[355..359].copy_from_slice(&20_u32.to_le_bytes());
         let mut meta = MetaStream {
             types: vec![SegmentTypeData {
@@ -1985,8 +1968,10 @@ mod tests {
         assert!(super::occurrence_frames(&bytes, &meta).unwrap().is_empty());
         meta.types[0].entities = ReferenceRun::unlocated(vec![20]);
         meta.records[0].bulk_offset = 17;
-        assert!(super::occurrence_frames(&bytes, &meta).is_err());
-        bytes[352..355].copy_from_slice(b"256");
+        assert!(super::occurrence_frames(&bytes, &meta).unwrap().is_empty());
+        let (_, faults) =
+            crate::design::decode::meta::partition_primary_frames(&bytes, &meta).unwrap();
+        assert_eq!(faults.len(), 1);
         meta.records[0].bulk_offset = 348;
         meta.secondary_records.clear();
         let frames = super::occurrence_frames(&bytes, &meta).unwrap();

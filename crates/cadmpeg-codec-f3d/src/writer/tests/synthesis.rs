@@ -1643,7 +1643,7 @@ fn source_less_sketch_horizontal_constraint_survives_synthesis() {
         })
         .unwrap(),
     );
-    omitted_entity.construction = true;
+    omitted_entity.geometry_ref = Some("f3d:unwritable:curve#1".into());
     let mut dependent = ir.model.sketch_constraints[0].clone();
     dependent.id = "authored:model:sketch-constraint#dependent"
         .try_into()
@@ -1804,4 +1804,113 @@ fn source_less_sketch_horizontal_constraint_survives_synthesis() {
         SketchConstraintDefinitionInput::Perpendicular { first, second }
             if first == entities[0].id() && second == entities[2].id()
     )));
+    ir.model.sketch_entities[0].construction = true;
+    let mut construction_circle = SketchEntity::new(
+        "authored:model:sketch-entity#circle".try_into().unwrap(),
+        ir.model.sketches[0].id.clone(),
+        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+            center: Point2::new(5.0, 5.0),
+            radius: cadmpeg_ir::scalar::Length::new(5.0).unwrap(),
+        })
+        .unwrap(),
+    );
+    construction_circle.construction = true;
+    ir.model.sketch_entities.push(construction_circle);
+    let mut second_circle = SketchEntity::new(
+        "authored:model:sketch-entity#circle2".try_into().unwrap(),
+        ir.model.sketches[0].id.clone(),
+        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+            center: Point2::new(5.0, 5.0),
+            radius: cadmpeg_ir::scalar::Length::new(5.0).unwrap(),
+        })
+        .unwrap(),
+    );
+    second_circle.construction = true;
+    ir.model.sketch_entities.push(second_circle);
+    let line = ir.model.sketch_entities[0].id().clone();
+    let circle = ir.model.sketch_entities[3].id().clone();
+    let circle2 = ir.model.sketch_entities[4].id().clone();
+    for (ordinal, definition) in [
+        (
+            6,
+            SketchConstraintDefinitionInput::Tangent {
+                first: line,
+                second: circle.clone(),
+            },
+        ),
+        (
+            7,
+            SketchConstraintDefinitionInput::Concentric {
+                first: circle.clone(),
+                second: circle2.clone(),
+            },
+        ),
+        (
+            8,
+            SketchConstraintDefinitionInput::Equal {
+                first: circle.clone(),
+                second: circle2.clone(),
+            },
+        ),
+        (
+            9,
+            SketchConstraintDefinitionInput::Curvature {
+                first: circle,
+                second: circle2,
+            },
+        ),
+    ] {
+        let mut constraint = ir.model.sketch_constraints[0].clone();
+        constraint.id = format!("authored:model:sketch-constraint#{ordinal}")
+            .try_into()
+            .unwrap();
+        constraint.definition = definition.try_into().unwrap();
+        ir.model.sketch_constraints.push(constraint);
+    }
+    let mut bytes = Vec::new();
+    let plan = F3dCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(!plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("sketch entity")));
+    plan.write_to(&mut bytes).unwrap();
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let entities = &decoded.ir().model.sketch_entities;
+    assert_eq!(entities.len(), 5);
+    let line = entities
+        .iter()
+        .find(|entity| entity.geometry == ir.model.sketch_entities[0].geometry)
+        .unwrap();
+    assert!(line.construction);
+    assert_eq!(
+        entities.iter().filter(|entity| entity.construction).count(),
+        3
+    );
+    assert!(decoded.ir().model.sketches[0].profiles.is_empty());
+    let constraints = &decoded.ir().model.sketch_constraints;
+    assert_eq!(constraints.len(), 9);
+    let (first_circle, second_circle) = constraints
+        .iter()
+        .find_map(|constraint| match constraint.definition.kind() {
+            SketchConstraintDefinitionInput::Concentric { first, second } => Some((first, second)),
+            _ => None,
+        })
+        .unwrap();
+    assert_ne!(first_circle, second_circle);
+    for id in [first_circle, second_circle] {
+        let entity = entities.iter().find(|entity| entity.id() == id).unwrap();
+        assert!(entity.construction);
+        assert_eq!(entity.geometry, ir.model.sketch_entities[3].geometry);
+    }
+    assert!(constraints.iter().any(|constraint| matches!(constraint.definition.kind(),
+        SketchConstraintDefinitionInput::Tangent { first, second } if first == line.id() && second == first_circle)));
+    assert!(constraints.iter().any(|constraint| matches!(constraint.definition.kind(),
+        SketchConstraintDefinitionInput::Equal { first, second } if first == first_circle && second == second_circle)));
+    assert!(constraints.iter().any(|constraint| matches!(constraint.definition.kind(),
+        SketchConstraintDefinitionInput::Curvature { first, second } if first == first_circle && second == second_circle)));
 }
