@@ -171,8 +171,9 @@ fn amend_dropped_records(
                 if let Some(marker) = loss.message.rfind("; dropped=[") {
                     loss.message.truncate(marker);
                 }
-                loss.message
-                    .push_str(&format!("; dropped=[{}]", loss.dropped.join(", ")));
+                loss.message.push_str("; dropped=[");
+                loss.message.push_str(&loss.dropped.join(", "));
+                loss.message.push(']');
             }
         }
     }
@@ -256,8 +257,9 @@ fn name_cut_absent_fields(
         if let Some(marker) = loss.message.rfind("; dropped=[") {
             loss.message.truncate(marker);
         }
-        loss.message
-            .push_str(&format!("; dropped=[{}]", loss.dropped.join(", ")));
+        loss.message.push_str("; dropped=[");
+        loss.message.push_str(&loss.dropped.join(", "));
+        loss.message.push(']');
     }
     let present: BTreeSet<u32> = parameters
         .iter()
