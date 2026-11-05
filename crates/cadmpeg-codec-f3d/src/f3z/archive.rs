@@ -187,33 +187,35 @@ pub(super) fn classify_members<'a>(
     {
         let checkpoint = ctx.checkpoint();
         let arena = DecodeArena::new();
-        let root = if scan.has_entry(member_path) {
-            scan.member_view(&arena, member_path)
-        } else {
-            Err(CodecError::malformed(format_args!(
-                "f3z document member {member_path} is not readable"
-            )))
-        };
-        let classified = root.and_then(|view| {
-            ctx.with_arena(&arena, |local| {
-                let member_scan = crate::container::scan(local, view)?;
-                Ok(
-                    crate::dialect::classify_layers(&member_scan).map(|(layers, losses)| {
-                        let metadata = with_metadata
-                            .then(|| Box::new(member_metadata(&checkpoint, &arena, &member_scan)));
-                        (
-                            layers,
-                            losses,
-                            member_scan.declared_working_bytes(),
-                            metadata,
-                        )
-                    }),
-                )
+        let classified = ctx.run_part(|| {
+            let root = if scan.has_entry(member_path) {
+                scan.member_view(&arena, member_path)
+            } else {
+                Err(CodecError::malformed(format_args!(
+                    "f3z document member {member_path} is not readable"
+                )))
+            };
+            root.and_then(|view| {
+                ctx.with_arena(&arena, |local| {
+                    let member_scan = crate::container::scan(local, view)?;
+                    Ok(
+                        crate::dialect::classify_layers(&member_scan).map(|(layers, losses)| {
+                            let metadata = with_metadata.then(|| {
+                                Box::new(member_metadata(&checkpoint, &arena, &member_scan))
+                            });
+                            (
+                                layers,
+                                losses,
+                                member_scan.declared_working_bytes(),
+                                metadata,
+                            )
+                        }),
+                    )
+                })
             })
-        });
+        })?;
         let classified = match classified {
             Ok(classified) => classified,
-            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
             Err(error) => {
                 let message = format!("{error}");
                 if !with_metadata

@@ -1438,6 +1438,7 @@ fn encode_face_topology_smbh(
     super::reindex::preserve_indices(
         &mut records,
         model,
+        topology,
         limits,
         super::reindex::Starts {
             region: region_start,
@@ -1446,6 +1447,7 @@ fn encode_face_topology_smbh(
             loop_: loop_start,
             surface: surface_start,
             curve: curve_start,
+            pcurve: pcurve_start,
             coedge: coedge_start,
             edge: edge_start,
             vertex: vertex_start,

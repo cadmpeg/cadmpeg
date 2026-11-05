@@ -6,7 +6,6 @@ use crate::bytes::lp_utf16_bounded;
 use crate::container::ContainerScan;
 use crate::design::decode::image::embedded_image_asset;
 use crate::design::decode::scopes::shared_frames::marked_reference;
-use crate::design::decode::sketch::next_indexed_record_offset_with_index;
 
 use crate::ids;
 use crate::records::{
@@ -32,6 +31,25 @@ pub(crate) fn decode_canvas_images(
     scan: &ContainerScan,
     scopes: &[DesignParameterScope],
 ) -> Result<Vec<DesignCanvasImage>, CodecError> {
+    let mut stream_frames = std::collections::HashMap::new();
+    for entry in scan.entries.iter().filter(|entry| {
+        scan.is_design_stream(entry, cadmpeg_core::container::ContainerRole::Bulkstream)
+    }) {
+        let Some(meta) = super::meta::metadata_for_bulk_stream(scan, &entry.name)? else {
+            continue;
+        };
+        let bytes = scan.entry_bytes(&entry.name)?;
+        let frames = super::meta::design_primary_frames(bytes, &meta)?
+            .into_iter()
+            .map(|frame| crate::metastream::PrimaryRecordFrame {
+                entity_id: frame.entity_id,
+                start: frame.start,
+                member_end: frame.member_end,
+                end: frame.end,
+            })
+            .collect::<Vec<_>>();
+        stream_frames.insert(entry.name.as_str(), frames);
+    }
     super::image::decode_scoped_image_records_with_parts(
         ctx,
         output,
@@ -40,15 +58,42 @@ pub(crate) fn decode_canvas_images(
         scopes,
         &crate::records::feature::scope::DesignFeatureKind::Canvas,
         |bytes, stream, scope| {
-            let span = canvas_record_span(bytes, scope)?;
-            Some(ids::native_design_canvas_image_id(stream, span.geometry_at))
+            let frames = stream_frames.get(stream)?;
+            let (start, _) = canvas_owner_part(bytes, scope, frames)?;
+            Some(ids::native_design_canvas_image_id(stream, start))
         },
-        |bytes, _stream, scope| {
-            let span = canvas_record_span(bytes, scope)?;
-            Some((span.geometry_at, span.scope_at))
+        |bytes, stream, scope| {
+            let frames = stream_frames.get(stream)?;
+            canvas_owner_part(bytes, scope, frames)
         },
-        |bytes, stream, scope, read| parse_canvas_image(bytes, stream, scope, read).map(Some),
+        |bytes, stream, scope, read| {
+            let frames = stream_frames.get(stream).ok_or_else(|| {
+                CodecError::malformed("Canvas stream has no primary record index")
+            })?;
+            parse_canvas_image(bytes, stream, scope, read, frames).map(Some)
+        },
     )
+}
+
+fn canvas_owner_part(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    frames: &[crate::metastream::PrimaryRecordFrame],
+) -> Option<(usize, usize)> {
+    let scope_at = usize::try_from(scope.byte_offset()?).ok()?;
+    let scope_frame = frames.iter().find(|frame| {
+        frame.start == scope_at && frame.entity_id == u64::from(scope.record_index)
+    })?;
+    if let Some(span) = canvas_record_span(bytes, scope, frames) {
+        return Some((span.geometry_at, span.scope_at));
+    }
+    match canvas_geometry_reference(scope_at, &|range| bytes.get(range)) {
+        Some((_, index)) => frames
+            .iter()
+            .find(|frame| frame.entity_id == u64::from(index))
+            .map(|frame| (frame.start, frame.end)),
+        None => Some((scope_frame.start, scope_frame.end)),
+    }
 }
 
 /// Project uniquely bound Canvas images into neutral raster resources and
@@ -137,40 +182,55 @@ fn canvas_geometry_reference(
 /// records from the geometry record to the scope.
 struct CanvasRecordSpan {
     geometry_at: usize,
+    paired_at: usize,
+    asset_at: usize,
     scope_at: usize,
     geometry_reference_at: usize,
     geometry_record_index: u32,
 }
 
 /// Locate the geometry, paired and asset records of one Canvas scope: the
-/// indexed header carrying the record index the scope prefix references must
-/// precede the scope.
-fn canvas_record_span(bytes: &[u8], scope: &DesignParameterScope) -> Option<CanvasRecordSpan> {
+/// primary record carrying the index the scope prefix references must precede
+/// the scope.
+fn canvas_record_span(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    frames: &[crate::metastream::PrimaryRecordFrame],
+) -> Option<CanvasRecordSpan> {
     let scope_at = usize::try_from(scope.byte_offset()?).ok()?;
     let (geometry_reference_at, geometry_record_index) =
         canvas_geometry_reference(scope_at, &|range| bytes.get(range))?;
-    let geometry_at = next_indexed_record_offset_with_index(bytes, 0, geometry_record_index)?;
-    if geometry_at >= scope_at {
+    let geometry = frames
+        .iter()
+        .find(|frame| frame.entity_id == u64::from(geometry_record_index))?;
+    let scope_frame = frames.iter().find(|frame| {
+        frame.start == scope_at && frame.entity_id == u64::from(scope.record_index)
+    })?;
+    let asset = frames.iter().find(|frame| frame.start == geometry.end)?;
+    if geometry.start >= scope_at
+        || geometry.member_end == geometry.end
+        || asset.end != scope_at
+        || geometry_reference_at.checked_add(5)? > scope_frame.member_end
+    {
         return None;
     }
     Some(CanvasRecordSpan {
-        geometry_at,
+        geometry_at: geometry.start,
+        paired_at: geometry.member_end,
+        asset_at: asset.start,
         scope_at,
         geometry_reference_at,
         geometry_record_index,
     })
 }
 
-/// Parse one Canvas image. `bytes` is the stream, whose indexed-header-shaped
-/// runs locate the geometry and paired records; `read` returns the stream
-/// bytes of a range, and the grammar reads the scope prefix and the records
-/// from the geometry record to the scope through it. Every failure names the
-/// check that rejected the Canvas-claimed span.
+/// Parse one Canvas image from its primary and secondary indexed records.
 fn parse_canvas_image(
     bytes: &[u8],
     stream: &str,
     scope: &DesignParameterScope,
     read: &super::image::ImageRead<'_, '_>,
+    frames: &[crate::metastream::PrimaryRecordFrame],
 ) -> Result<DesignCanvasImage, CodecError> {
     let malformed = |detail: &str| {
         CodecError::malformed(format_args!(
@@ -178,7 +238,7 @@ fn parse_canvas_image(
             scope.record_index
         ))
     };
-    let Some(span) = canvas_record_span(bytes, scope) else {
+    let Some(span) = canvas_record_span(bytes, scope, frames) else {
         return Err(malformed(
             "its scope prefix names no geometry record before the scope",
         ));
@@ -194,6 +254,8 @@ fn parse_canvas_image(
         geometry_reference_at: span.geometry_reference_at,
         geometry_record_index: span.geometry_record_index,
         geometry_at: span.geometry_at,
+        paired_at: span.paired_at - span.geometry_at,
+        asset_at: span.asset_at - span.geometry_at,
         records: located,
     };
     let mut matches = DesignCanvasGeometryLayout::ALL
@@ -251,6 +313,8 @@ struct CanvasRecords<'a> {
     geometry_reference_at: usize,
     geometry_record_index: u32,
     geometry_at: usize,
+    paired_at: usize,
+    asset_at: usize,
     records: &'a [u8],
 }
 
@@ -271,7 +335,7 @@ fn parse_canvas_layout(
         return None;
     }
 
-    let paired_at = next_indexed_record_offset_with_index(records, 11, geometry_record_index)?;
+    let paired_at = located.paired_at;
     let (paired_geometry_class_tag, after_paired_tag) =
         lp_ascii_filtered_view(records, paired_at, 0..=2000, u8::is_ascii_graphic)?;
     let paired_component_at = paired_at + 19;
@@ -368,6 +432,9 @@ fn parse_canvas_layout(
         return None;
     }
     let asset_record_at = paired_at.checked_add(usize::try_from(layout.paired_len()).ok()?)?;
+    if asset_record_at != located.asset_at {
+        return None;
+    }
     let (asset_class_tag, after_asset_tag) =
         lp_ascii_filtered_view(records, asset_record_at, 0..=2000, u8::is_ascii_graphic)?;
     if View::u32_le_at(records, after_asset_tag)? != asset_record_index
@@ -411,7 +478,20 @@ fn parse_canvas_layout(
 
 #[cfg(test)]
 mod tests {
-    use super::parse_canvas_image;
+    use super::parse_canvas_image as parse_canvas_image_with_frames;
+
+    fn parse_canvas_image(
+        bytes: &[u8],
+        stream: &str,
+        scope: &crate::records::feature::scope::DesignParameterScope,
+        read: &super::super::image::ImageRead<'_, '_>,
+    ) -> Result<crate::records::canvas::DesignCanvasImage, cadmpeg_core::CodecError> {
+        let meta =
+            crate::test_support::zip_test::indexed_fixture_metastream(bytes, &[10, 20, 30], &[10]);
+        let meta = crate::metastream::parse(&meta, "MetaStream.dat")?;
+        let frames = crate::metastream::primary_record_frames(&meta, bytes.len())?;
+        parse_canvas_image_with_frames(bytes, stream, scope, read, &frames)
+    }
 
     fn header(bytes: &mut [u8], at: usize, tag: [u8; 3], index: u32) {
         bytes[at..at + 4].copy_from_slice(&3u32.to_le_bytes());
@@ -630,6 +710,14 @@ mod tests {
         let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
         let stored = crate::zip_write::file_options(CompressionMethod::Stored);
         crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+        zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
+            .unwrap();
+        zip.write_all(&crate::test_support::zip_test::indexed_fixture_metastream(
+            &bytes,
+            &[10, 20, 30],
+            &[10],
+        ))
+        .unwrap();
         zip.start_file(ENTRY, stored).unwrap();
         zip.write_all(&damaged).unwrap();
         let archive = zip.finish().unwrap().into_inner();
@@ -653,6 +741,12 @@ mod tests {
             );
             assert!(losses[0].message.contains("f3d.canvas_record"));
             assert!(losses[0].message.contains("Design1/BulkStream.dat"));
+            assert!(fidelity
+                .unrepresented()
+                .contains(&cadmpeg_ir::document::ArenaClass::Model));
+            assert!(fidelity
+                .unrepresented()
+                .contains(&cadmpeg_ir::document::ArenaClass::Design));
             let retained: Vec<_> = fidelity
                 .retained_records()
                 .keys()
@@ -670,6 +764,56 @@ mod tests {
             assert_eq!(
                 cadmpeg_ir::native::NativeRecord::id(&unknowns[0]),
                 retained[0]
+            );
+        });
+    }
+
+    #[test]
+    fn damaged_canvas_scope_reference_gives_up_the_scope() {
+        use std::io::{Cursor, Write};
+
+        const ENTRY: &str = "FusionAssetName[Active]/Design1/BulkStream.dat";
+        let (mut bytes, mut scope) = fixture();
+        scope
+            .try_edit(|draft| {
+                draft.id = format!("{}:scope#30", crate::ids::native_scope(ENTRY));
+            })
+            .unwrap();
+        let meta =
+            crate::test_support::zip_test::indexed_fixture_metastream(&bytes, &[10, 20, 30], &[10]);
+        bytes[305] = 2;
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
+        crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+        zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
+            .unwrap();
+        zip.write_all(&meta).unwrap();
+        zip.start_file(ENTRY, stored).unwrap();
+        zip.write_all(&bytes).unwrap();
+        let archive = zip.finish().unwrap().into_inner();
+        crate::test_support::zip_test::with_scan(&archive, |scan| {
+            let ctx = cadmpeg_test_support::service_decode_context();
+            let mut output = cadmpeg_ir::source_fidelity::parts::PartOutput::new(
+                cadmpeg_ir::CodecFormat::F3d,
+                &ctx,
+            );
+            assert!(
+                super::decode_canvas_images(&ctx, &mut output, scan, &[scope])
+                    .unwrap()
+                    .is_empty()
+            );
+            let (_, native, _, losses) = output.into_parts();
+            assert_eq!(losses.len(), 1);
+            assert_eq!(
+                losses[0].code,
+                cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable
+                    .note(String::new())
+                    .code
+            );
+            assert!(losses[0].message.contains("f3d.canvas_record"));
+            assert_eq!(
+                native.namespace("f3d").unwrap().arenas()["unknowns"].len(),
+                1
             );
         });
     }

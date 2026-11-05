@@ -292,7 +292,7 @@ fn explicit_cross_schema_output_synthesizes_and_reports_the_emitted_vocabulary()
     }
 }
 #[test]
-fn unknown_source_declaration_is_preserved_only_with_eligible_layout() {
+fn unknown_source_declaration_selects_the_catalog_default() {
     let source = rewrite_schema_version(CORE_DESIGN_PRODUCT, "04");
     let decoded = decode(&source);
     let primary = decoded.report().dialects().unwrap().primary();
@@ -320,8 +320,9 @@ fn unknown_source_declaration_is_preserved_only_with_eligible_layout() {
             && loss.message.contains("fcstd:unknown")
             && loss.message.contains("fcstd:schema-4")
     }));
+    let emitted = decode(&bytes(fallback));
     assert_eq!(
-        decode(&bytes(fallback))
+        emitted
             .report()
             .dialects()
             .unwrap()
@@ -330,6 +331,11 @@ fn unknown_source_declaration_is_preserved_only_with_eligible_layout() {
             .as_str(),
         "fcstd:schema-4"
     );
+    let mut expected_names: Vec<_> = decoded.ir().model.features.iter().map(|f| &f.name).collect();
+    let mut actual_names: Vec<_> = emitted.ir().model.features.iter().map(|f| &f.name).collect();
+    expected_names.sort();
+    actual_names.sort();
+    assert_eq!(actual_names, expected_names);
     let explicit = plan(
         decoded.ir(),
         None,
@@ -342,6 +348,7 @@ fn unknown_source_declaration_is_preserved_only_with_eligible_layout() {
         WritePath::Synthesized { .. }
     ));
 }
+
 #[test]
 fn a_source_without_a_recorded_dialect_remains_an_unresolvable_target() {
     let decoded = decode(CORE_DESIGN_PRODUCT);
