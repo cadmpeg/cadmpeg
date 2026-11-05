@@ -396,3 +396,38 @@ fn solid_region_retains_multiple_shells() {
     assert_eq!(result.ir().model.regions[0].shells.len(), 2);
     assert_eq!(result.ir().model.faces.len(), 12);
 }
+
+#[test]
+fn solid_region_retains_seven_shells() {
+    use cadmpeg_ir::codec::write::Encoder;
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let region = ir.model.regions[0].id.clone();
+    for index in 1..7 {
+        let source = serde_json::to_string(&cadmpeg_ir::examples::unit_cube().unwrap())
+            .unwrap()
+            .replace("synthetic:cube:", &format!("synthetic:cube{index}:"));
+        let mut other: cadmpeg_ir::CadIr = serde_json::from_str(&source).unwrap();
+        ir.model.regions[0]
+            .shells
+            .extend(other.model.regions[0].shells.clone());
+        for shell in &mut other.model.shells {
+            shell.region = region.clone();
+        }
+        macro_rules! append {
+            ($($arena:ident),* $(,)?) => {$(ir.model.$arena.extend(other.model.$arena);)*};
+        }
+        append!(shells, faces, loops, coedges, edges, vertices, points, surfaces, curves);
+    }
+    ir.model.finalize();
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let result = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(result.ir().model.regions.len(), 1);
+    assert_eq!(result.ir().model.regions[0].shells.len(), 7);
+    assert_eq!(result.ir().model.faces.len(), 42);
+}
