@@ -24,7 +24,7 @@
         "faces": "reported",
         "feature_input_topologies": "dropped",
         "feature_result_topologies": "dropped",
-        "features": "dropped",
+        "features": "written",
         "loops": "reported",
         "mass_properties": "omitted",
         "occurrences": "dropped",
@@ -81,29 +81,8 @@
           "namespace": "iges",
           "scope": "namespaced"
         },
-        "message": "1 procedural surface definition(s) and 0 procedural curve definition(s) were reduced to writable solved carriers",
+        "message": "IGES procedural definition iges:model:procedural-surface#D1 was reduced to a solved carrier",
         "severity": "info"
-      },
-      {
-        "code": {
-          "code": "writer.entity-omitted",
-          "kind": "geometry_not_transferred",
-          "namespace": "iges",
-          "scope": "namespaced",
-          "strict_floor": "warning"
-        },
-        "message": "IGES face iges:model:face#D3 has no usable boundary carrier and is omitted: ",
-        "severity": "error"
-      },
-      {
-        "code": {
-          "code": "writer.arena-omitted",
-          "kind": "passthrough_record_omitted",
-          "namespace": "iges",
-          "scope": "namespaced"
-        },
-        "message": "IGES omits unsupported model arena presentation_layers",
-        "severity": "warning"
       },
       {
         "code": {
@@ -118,12 +97,33 @@
       },
       {
         "code": {
+          "code": "writer.entity-omitted",
+          "kind": "geometry_not_transferred",
+          "namespace": "iges",
+          "scope": "namespaced",
+          "strict_floor": "warning"
+        },
+        "message": "IGES face iges:model:face#D3 has no usable boundary carrier and is omitted: ",
+        "severity": "error"
+      },
+      {
+        "code": {
           "code": "writer.attribute-omitted",
           "kind": "metadata_not_transferred",
           "namespace": "iges",
           "scope": "namespaced"
         },
         "message": "IGES attribute iges:application:attribute#D1:0:0 is omitted: its current owner has no emitted entity",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "writer.arena-omitted",
+          "kind": "passthrough_record_omitted",
+          "namespace": "iges",
+          "scope": "namespaced"
+        },
+        "message": "IGES cannot fully encode presentation layers: iges:presentation:level#0",
         "severity": "warning"
       },
       {
