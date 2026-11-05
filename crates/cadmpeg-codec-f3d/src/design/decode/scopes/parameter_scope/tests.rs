@@ -371,6 +371,23 @@ fn scope_class_type_selects_hole_and_preserves_the_display_name() {
     zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored)
         .unwrap();
     zip.write_all(&bytes).unwrap();
+    let metadata = crate::test_support::streams_test::design_metastream_with_records_and_secondary(
+        &[
+            (
+                "1C037A07-4A15-43F6-ABFC-BBF61B9038D4",
+                "",
+                1,
+                "Fusion",
+                &[1],
+            ),
+            ("00000000-0000-0000-0000-000000000001", "", 1, "Fusion", &[]),
+        ],
+        &[(1, 0)],
+        &[(1, u64::try_from(bytes.len() - 11).unwrap())],
+    );
+    zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
+        .unwrap();
+    zip.write_all(&metadata).unwrap();
     let archive = zip.finish().unwrap().into_inner();
     let row = crate::design::test_support::design_type(
         256,

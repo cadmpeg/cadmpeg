@@ -3,10 +3,40 @@ use cadmpeg_core::decode::u64_from_index;
 
 use crate::design::decode::operands::bind_lost_edge_groups;
 use crate::design::decode::operands::parse_construction_operand_identity;
-use crate::design::decode::operands::parse_entity_selection_operand;
+fn parse_entity_selection_operand(
+    bytes: &[u8],
+    group: &DesignConstructionOperandGroup,
+    ordinal: u32,
+    header: &DesignRecordHeader,
+) -> Option<crate::records::topology::entity_selection::DesignEntitySelectionOperand> {
+    let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
+    crate::design::decode::operands::parse_entity_selection_operand(
+        bytes, &records, group, ordinal, header,
+    )
+}
 
-use crate::design::decode::operands::parse_sketch_profile;
-use crate::design::decode::operands::parse_sketch_profile_region_selection;
+fn parse_sketch_profile(
+    bytes: &[u8],
+    stream: &str,
+    ordinal: u32,
+    header: &DesignRecordHeader,
+    entities: &[DesignEntityHeader],
+) -> Option<crate::records::topology::sketch_profile::DesignSketchProfileOperand> {
+    let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
+    crate::design::decode::operands::parse_sketch_profile(
+        bytes, &records, stream, ordinal, header, entities,
+    )
+}
+fn parse_sketch_profile_region_selection(
+    bytes: &[u8],
+    index: u32,
+    paired: usize,
+) -> Option<crate::records::topology::sketch_profile::DesignSketchProfileRegionSelection> {
+    let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
+    crate::design::decode::operands::parse_sketch_profile_region_selection(
+        bytes, &records, index, paired,
+    )
+}
 
 use crate::records::decal::DesignRecordHeader;
 use crate::records::entity_header::DesignEntityHeader;
