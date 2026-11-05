@@ -323,3 +323,48 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
         Some(1.8)
     );
 }
+
+#[test]
+fn recipe_identity_overlapping_indexed_class_declines_patch() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder, SynthesisCause};
+    use cadmpeg_ir::report::export::WritePath;
+
+    let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut edited = decoded.ir().clone();
+    crate::test_support::native_test::update_f3d_native(&mut edited, |native| {
+        native.construction_recipes[0]
+            .design
+            .as_mut()
+            .unwrap()
+            .id
+            .value = "333".into();
+    });
+    let plan = F3dCodec
+        .plan(
+            EncodeInput::new(&edited, Some(decoded.source_fidelity())),
+            TargetRequest::Inherit,
+        )
+        .unwrap();
+    assert!(matches!(
+        plan.report().write_path(),
+        WritePath::Synthesized { .. }
+    ));
+    assert!(matches!(plan.report().synthesis_cause(),
+        Some(SynthesisCause::PatchDeclined { reason }) if reason.contains("overlaps an indexed record class")));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(output.ir().model.bodies.len(), edited.model.bodies.len());
+    assert!(f3d_native(output.ir())
+        .construction_recipes
+        .iter()
+        .any(|recipe| recipe
+            .design
+            .as_ref()
+            .is_some_and(|design| design.id.value == "333")));
+}
