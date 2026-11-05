@@ -33,6 +33,7 @@ pub(super) fn write(
 ) -> Result<Synthesized, CodecError> {
     let mut prepared = target.clone();
     let mut losses = Vec::new();
+    topology::omit_unresolved_coedge_faces(&mut prepared, &mut losses)?;
     prepare::auxiliary(&mut prepared, &mut losses, limits)?;
     let original = super::primitives::f3d_native(&prepared)?.unwrap_or_default();
     appearance::prepare(&mut prepared, &original, &mut losses);
