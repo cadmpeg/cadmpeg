@@ -3452,7 +3452,12 @@ fn spine_contact_point_from_offset_side_with_index_and_budget(
 
     (|| -> Option<Result<Point3, cadmpeg_core::decode::ResourceLimit>> {
         (depth < 32).then_some(())?;
-        let tolerance = index.ir().tolerances.linear.get();
+        let tolerance = index
+            .ir()
+            .tolerances
+            .linear
+            .expect("stated linear tolerance")
+            .get();
         if !radius.is_finite() || radius <= 0.0 {
             return None;
         }
@@ -4168,7 +4173,7 @@ fn surface_contact_direction_with_index_and_budget(
     let Some(carrier) = index.surfaces(surface.as_str(), cadmpeg_ir::index::StandardIndex) else {
         return Ok(None);
     };
-    let tolerance = ir.tolerances.linear.get();
+    let tolerance = ir.tolerances.linear.expect("stated linear tolerance").get();
     if !radius.is_finite() || radius <= 0.0 {
         return Ok(None);
     }

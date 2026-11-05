@@ -385,7 +385,7 @@ fn endpoints(edge: &Edge, index: &ModelIndex<'_>, ir: &CadIr) -> Option<(Point3,
         .points(end.point.as_str(), StandardIndex)?
         .position()
         .get();
-    let mut tolerance = ir.tolerances.linear.get();
+    let mut tolerance = ir.tolerances.linear_or_default().get();
     for value in [edge.tolerance, start.tolerance, end.tolerance]
         .into_iter()
         .flatten()

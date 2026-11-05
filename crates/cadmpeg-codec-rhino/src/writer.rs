@@ -55,7 +55,12 @@ fn stated_write_tolerance(
     owner: &str,
 ) -> Result<f64, WriteError> {
     let (field, value) = stated.map_or_else(
-        || ("document linear tolerance", ir.tolerances.linear.get()),
+        || {
+            (
+                "document linear tolerance",
+                ir.tolerances.linear_or_default().get(),
+            )
+        },
         |tolerance| ("tolerance", tolerance.get()),
     );
     if value >= EPS_WRITE_DEGENERATE {
@@ -547,7 +552,7 @@ fn write_archive_prefix(
         )));
     }
     let mut settings = vec![units_record(
-        ir.tolerances.linear.get(),
+        ir.tolerances.linear_or_default().get(),
         angular.min(std::f64::consts::PI),
     )?];
     let exported = tables::document::settings(ir, materials, &mut setting_losses)?;

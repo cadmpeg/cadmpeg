@@ -170,7 +170,28 @@ pub fn agree(
 ) -> Result<(), String> {
     match mode {
         Mode::Same => {
-            cadmpeg_ir::compare::values_agree(&header(before)?, &header(after)?)?;
+            let mut original = header(before)?;
+            let mut recovered = header(after)?;
+            for (record, field) in &allowances.absent_fields {
+                if record == cadmpeg_ir::report::loss::DOCUMENT_HEADER {
+                    let path = field.split('.').collect::<Vec<_>>();
+                    let (key, parents) = path.split_last().ok_or("empty header field")?;
+                    let recovered_parent = header_parent(&mut recovered, parents)
+                        .and_then(Value::as_object_mut)
+                        .ok_or("given-up header field has no parent")?;
+                    if !matches!(recovered_parent.get(*key), None | Some(Value::Null)) {
+                        return Err(format!("header field {field} holds a value although a record.unreadable loss names it absent"));
+                    }
+                    let original_parent = header_parent(&mut original, parents)
+                        .and_then(Value::as_object_mut)
+                        .ok_or("given-up header field has no original parent")?;
+                    if original_parent.remove(*key).is_none() {
+                        return Err("given-up header field has no original value".into());
+                    }
+                    recovered_parent.remove(*key);
+                }
+            }
+            cadmpeg_ir::compare::values_agree(&original, &recovered)?;
             agree_pruned(before, after, allowances, false)
         }
         Mode::Cross(projection) => {
@@ -181,6 +202,11 @@ pub fn agree(
             agree_pruned(&before, &after, allowances, true)
         }
     }
+}
+
+fn header_parent<'a>(value: &'a mut Value, path: &[&str]) -> Option<&'a mut Value> {
+    path.iter()
+        .try_fold(value, |value, key| value.get_mut(*key))
 }
 
 /// One comparison, pruning only the allowances `after` does not hold.

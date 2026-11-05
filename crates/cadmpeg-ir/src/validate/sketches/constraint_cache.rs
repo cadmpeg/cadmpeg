@@ -15,7 +15,7 @@ use crate::CadIr;
 type Geometries<'a> = BorrowedIdentities<'a, &'a SketchGeometry>;
 
 fn close(ir: &CadIr, measured: f64, expected: f64) -> bool {
-    (measured - expected).abs() <= ir.tolerances.linear.get()
+    (measured - expected).abs() <= ir.tolerances.linear_or_default().get()
 }
 fn angle_close(ir: &CadIr, measured: f64, expected: f64) -> bool {
     let difference = (measured - expected).rem_euclid(std::f64::consts::TAU);
@@ -63,7 +63,7 @@ fn point_on(
             Some(
                 ((point.u - start.u) * (end.v - start.v) - (point.v - start.v) * (end.u - start.u))
                     .abs()
-                    <= ir.tolerances.linear.get() * length,
+                    <= ir.tolerances.linear_or_default().get() * length,
             )
         }
         Geometry::Circle { center, radius } | Geometry::Arc { center, radius, .. } => {

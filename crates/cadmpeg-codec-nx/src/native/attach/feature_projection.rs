@@ -650,7 +650,7 @@ pub(super) fn block_placement(
         })
     }
 
-    let linear_tolerance = tolerances.linear.get();
+    let linear_tolerance = tolerances.linear_or_default().get();
     let angular_tolerance = tolerances.angular.get();
     if dimensions
         .iter()
@@ -2312,7 +2312,7 @@ pub(super) fn cylindrical_face_witnesses(
     carriers: &CarrierIndex<'_>,
     body_faces: &[&Face],
 ) -> Option<Vec<CylindricalFaceWitness>> {
-    let linear_tolerance = ir.tolerances.linear.get();
+    let linear_tolerance = ir.tolerances.linear_or_default().get();
     let angular_tolerance = ir.tolerances.angular.get();
     let mut witnesses = Vec::new();
 
@@ -2397,7 +2397,7 @@ pub(super) fn plane_annulus_witness(
     let outer_radius = large.radius;
     let inner_loop = &small.loop_ids[small_station_ordinal];
     let outer_loop = &large.loop_ids[large_station_ordinal];
-    let linear_tolerance = ir.tolerances.linear.get();
+    let linear_tolerance = ir.tolerances.linear_or_default().get();
     let angular_tolerance = ir.tolerances.angular.get();
     let mut matches = 0;
 
@@ -2499,7 +2499,7 @@ pub(super) fn counterbore_cylinders(
     if cylinders.is_empty() || cylinders.len() % 2 != 0 {
         return Ok(None);
     }
-    let linear_tolerance = ir.tolerances.linear.get();
+    let linear_tolerance = ir.tolerances.linear_or_default().get();
     let angular_tolerance = ir.tolerances.angular.get();
     let mut candidates = ctx.alloc_filled(
         cylinders.len(),
@@ -2613,7 +2613,7 @@ pub(super) fn blind_bore_cylinders(
     let [cylinder] = cylinders.as_slice() else {
         return None;
     };
-    let linear_tolerance = ir.tolerances.linear.get();
+    let linear_tolerance = ir.tolerances.linear_or_default().get();
     let angular_tolerance = ir.tolerances.angular.get();
     let mut cap_station = None;
     let mut cap_count = 0usize;
@@ -2776,7 +2776,7 @@ pub(super) fn simple_hole_chamfers(
         return Ok(BTreeMap::new());
     };
 
-    let linear_tolerance = ir.tolerances.linear.get();
+    let linear_tolerance = ir.tolerances.linear_or_default().get();
     let angular_tolerance = ir.tolerances.angular.get();
     let mut treatments = BTreeMap::new();
     let solid_bodies = SolidBodyIndex::new(ir);
