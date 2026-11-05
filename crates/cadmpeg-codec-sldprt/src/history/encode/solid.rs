@@ -118,12 +118,6 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                     feature.id
                 )));
             }
-            if *op == BooleanOp::Unresolved && existing.is_none() {
-                return Err(CodecError::UnsupportedContent(format!(
-                    "SLDPRT feature {} requires retained extrusion operation data",
-                    feature.id
-                )));
-            }
             if existing.is_some_and(|record| !is_extrude(record)) {
                 return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} changes unsupported extrusion semantics",
@@ -185,12 +179,6 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 }))
                 && !parameters.contains_key("Depth");
             let mut properties = self.base_properties();
-            if extent_is_unresolved && existing.is_none() {
-                return Err(CodecError::UnsupportedContent(format!(
-                    "SLDPRT feature {} requires retained extrusion extent data",
-                    feature.id
-                )));
-            }
             if !extent_is_unresolved {
                 parameters.remove("Depth");
                 parameters.remove("Depth2");

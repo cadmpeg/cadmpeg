@@ -36,7 +36,9 @@ pub(super) fn reduce(
             attributes.push(attribute);
             continue;
         }
-        if !attribute.id.as_str().starts_with("sldprt:") {
+        if !attribute.id.as_str().starts_with("sldprt:")
+            && !super::super::supports_metadata_attribute(&attribute)
+        {
             continue;
         }
         let projected = if attribute.target == AttributeTarget::Document {
