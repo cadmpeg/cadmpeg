@@ -25,6 +25,11 @@ fn encode(
         lenient,
         missing: Vec::new(),
     };
+    let pattern_feature = if arena == "rectangular_arrays" {
+        solids::apply_rectangular_pattern(ir, record, &mut fields)?
+    } else {
+        None
+    };
     let boolean_feature = if arena == "boolean_trees" {
         solids::apply_combine(ir, record, &mut fields)?
     } else {
@@ -204,6 +209,9 @@ fn encode(
             };
             owners.push(*index);
         }
+    }
+    if let Some(feature) = pattern_feature {
+        result.source_targets.push(feature);
     }
     if let Some(feature) = boolean_feature {
         result.source_targets.push(feature);

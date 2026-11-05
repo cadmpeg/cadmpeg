@@ -291,6 +291,13 @@ pub(super) fn write_with_limits(
             "subd {} uses generated T-spline grip weights and declaration fields",
             surface.id
         )));
+        if surface.cage.symmetries().iter().any(|symmetry| matches!(
+            symmetry.kind(), cadmpeg_ir::subd::SubdSymmetryKind::Radial(radial) if radial.radial_maps().is_empty()
+        )) {
+            residual_losses.push(ExportLossCode::RecordResidualUnavailable.note(format!(
+                "subd {} receives generated radial map records", surface.id
+            )));
+        }
         archive.start_file(&name, options).map_err(|error| {
             CodecError::malformed(format_args!("cannot create T-spline cage: {error}"))
         })?;
