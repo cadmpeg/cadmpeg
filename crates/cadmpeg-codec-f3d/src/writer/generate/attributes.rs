@@ -28,6 +28,7 @@ struct IndexedTimestamp<'a> {
 
 pub(super) struct AttributeIndex<'a> {
     creation_timestamps: &'a [CreationTimestamp],
+    extra_owner_attributes: Vec<&'a cadmpeg_ir::attributes::SourceAttribute>,
     body_group_ordinals: HashMap<String, usize>,
     face_group_ordinals: HashMap<String, usize>,
     edge_group_ordinals: HashMap<String, usize>,
@@ -236,8 +237,37 @@ impl<'a> AttributeIndex<'a> {
             .enumerate()
             .map(|(ordinal, coedge)| (coedge.id.as_str().to_owned(), ordinal))
             .collect();
+        let bodies = target.model.bodies.iter().map(|body| (&body.id, body)).collect::<HashMap<_, _>>();
+        let faces = target.model.faces.iter().map(|face| (&face.id, face)).collect::<HashMap<_, _>>();
+        let mut attribute_counts = std::collections::BTreeMap::new();
+        for attribute in &target.model.attributes {
+            *attribute_counts.entry(&attribute.target).or_insert(0usize) += 1;
+        }
+        let extra_owner_attributes = target.model.attributes.iter().filter(|attribute| {
+            let owner_is_free = match &attribute.target {
+                AttributeTarget::Body(id) => bodies.get(id).is_some_and(|body| {
+                    body.name.is_none() && body.color.is_none()
+                        && !body_links.contains_key(id.as_str())
+                        && !body_timestamps.contains_key(id.as_str())
+                }),
+                AttributeTarget::Face(id) => faces.get(id).is_some_and(|face| {
+                    face.name.is_none() && face.color.is_none()
+                        && !face_tags.contains_key(id.as_str())
+                        && !face_timestamps.contains_key(id.as_str())
+                }),
+                _ => false,
+            };
+            owner_is_free && attribute_counts.get(&attribute.target) == Some(&1)
+                && compact_custom_shape(attribute)
+                && attribute.values.iter().all(|value| match value {
+                    Some(cadmpeg_ir::attributes::AttributeValue::String(text)) => u8::try_from(text.len()).is_ok(),
+                    _ => true,
+                })
+                && matches!(attribute.values.first(), Some(Some(cadmpeg_ir::attributes::AttributeValue::Reference(reference))) if reference == "f3d:brep:entity#-1")
+        }).collect();
         Self {
             creation_timestamps: &native.creation_timestamps,
+            extra_owner_attributes,
             body_group_ordinals,
             face_group_ordinals,
             edge_group_ordinals,
@@ -393,7 +423,7 @@ fn existing_source_less_attribute_count(target: &CadIr, index: &AttributeIndex<'
 }
 
 pub(super) fn source_less_attribute_count(target: &CadIr, index: &AttributeIndex<'_>) -> usize {
-    existing_source_less_attribute_count(target, index) + index.creation_timestamps.len()
+    existing_source_less_attribute_count(target, index) + index.creation_timestamps.len() + index.extra_owner_attributes.len()
 }
 
 pub(super) fn timestamp_attribute_ref(
@@ -521,7 +551,14 @@ pub(super) fn owner_attribute_ref(
         AttributeOwner::Body(body) => AttributeTarget::Body(body.id.clone()),
         AttributeOwner::Face(face) => AttributeTarget::Face(face.id.clone()),
     };
-    Ok(timestamp_attribute_ref(target, index, &entity, attribute_start)?.unwrap_or(-1))
+    if let Some(reference) = timestamp_attribute_ref(target, index, &entity, attribute_start)? {
+        return Ok(reference);
+    }
+    if let Some(ordinal) = index.extra_owner_attributes.iter().position(|attribute| attribute.target == entity) {
+        return native_record_index(attribute_start, existing_source_less_attribute_count(target, index)
+            + index.creation_timestamps.len() + ordinal);
+    }
+    Ok(-1)
 }
 
 fn face_persistent_attribute_ref(
@@ -874,6 +911,7 @@ pub(in crate::writer) fn represented_attributes(
         .iter()
         .filter_map(|attribute| {
             let schema = match &attribute.target {
+                _ if index.extra_owner_attributes.iter().any(|record| record.id == attribute.id) => true,
                 AttributeTarget::Body(id)
                     if target
                         .model
@@ -1425,6 +1463,10 @@ pub(super) fn encode_source_less_attributes(
             native_i64(records, 1);
             native_f64(records, timestamp.unix_microseconds.get());
         }
+        records.push(0x11);
+    }
+    for attribute in &index.extra_owner_attributes {
+        native_compact_custom(records, -1, attribute)?;
         records.push(0x11);
     }
     Ok(())
