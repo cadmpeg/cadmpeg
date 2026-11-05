@@ -3135,7 +3135,13 @@ impl<'a> Builder<'a> {
                             "UNCERTAINTY_MEASURE_WITH_UNIT",
                             &format!(
                                 "LENGTH_MEASURE({}),{len},{},{}",
-                                self.emitter.real(self.ir.tolerances.linear.get()),
+                                self.emitter.real(
+                                    self.ir
+                                        .tolerances
+                                        .linear
+                                        .expect("stated linear tolerance")
+                                        .get()
+                                ),
                                 string("distance_accuracy_value"),
                                 string("maximum model space distance")
                             ),
@@ -3193,7 +3199,13 @@ impl<'a> Builder<'a> {
             "UNCERTAINTY_MEASURE_WITH_UNIT",
             &format!(
                 "LENGTH_MEASURE({}),{len},{},{}",
-                self.emitter.real(self.ir.tolerances.linear.get()),
+                self.emitter.real(
+                    self.ir
+                        .tolerances
+                        .linear
+                        .expect("stated linear tolerance")
+                        .get()
+                ),
                 string("distance_accuracy_value"),
                 string("maximum model space distance")
             ),
@@ -4979,7 +4991,13 @@ impl<'a> Builder<'a> {
         let tolerance = edge
             .tolerance
             .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get)
-            .max(self.ir.tolerances.linear.get());
+            .max(
+                self.ir
+                    .tolerances
+                    .linear
+                    .expect("stated linear tolerance")
+                    .get(),
+            );
         if coedge.pcurves.is_empty() {
             return Ok(false);
         }
@@ -5713,7 +5731,10 @@ impl<'a> Builder<'a> {
                 if self.failed_helix_fits.contains_key(id) {
                     return None;
                 }
-                let fitted = match helix_surface_nurbs(helix, self.ir.tolerances.linear) {
+                let fitted = match helix_surface_nurbs(
+                    helix,
+                    self.ir.tolerances.linear.expect("stated linear tolerance"),
+                ) {
                     Ok(fitted) => fitted,
                     Err(error) => {
                         self.failed_helix_fits
@@ -6058,7 +6079,10 @@ impl<'a> Builder<'a> {
                 if self.failed_helix_fits.contains_key(id) {
                     return None;
                 }
-                let fitted = match helix_nurbs(helix, self.ir.tolerances.linear) {
+                let fitted = match helix_nurbs(
+                    helix,
+                    self.ir.tolerances.linear.expect("stated linear tolerance"),
+                ) {
                     Ok(fitted) => fitted,
                     Err(error) => {
                         self.failed_helix_fits
