@@ -473,7 +473,7 @@ fn face_display_color(
 /// no body fallback at emission; an unbound carrier keeps the default.
 fn carrier_display_color(
     ir: &CadIr,
-    target: cadmpeg_ir::appearance::AppearanceTarget,
+    target: &cadmpeg_ir::appearance::AppearanceTarget,
     owner: &str,
     losses: &mut Vec<LossNote>,
 ) -> BodyColor {
@@ -486,7 +486,7 @@ fn carrier_display_color(
                 .target
                 .typed_record_target(&ir.model)
                 .unwrap_or_else(|| binding.target.clone())
-                == target
+                == *target
         })
         .find_map(|binding| {
             ir.model
@@ -1133,7 +1133,7 @@ fn synthesis_graph(
             )?;
             let color = carrier_display_color(
                 ir,
-                cadmpeg_ir::appearance::AppearanceTarget::Curve(curve_id.clone()),
+                &cadmpeg_ir::appearance::AppearanceTarget::Curve(curve_id.clone()),
                 &format!("curve {curve_id}"),
                 &mut losses,
             );
@@ -6063,7 +6063,7 @@ fn append_free_point_entity(
     entities.push(entity);
     let color = carrier_display_color(
         ir,
-        cadmpeg_ir::appearance::AppearanceTarget::Point(point.id.clone()),
+        &cadmpeg_ir::appearance::AppearanceTarget::Point(point.id.clone()),
         &format!("point {}", point.id),
         losses,
     );
@@ -6216,7 +6216,7 @@ fn append_surface_entities(
     {
         let color = carrier_display_color(
             ir,
-            cadmpeg_ir::appearance::AppearanceTarget::Surface(surface.id.clone()),
+            &cadmpeg_ir::appearance::AppearanceTarget::Surface(surface.id.clone()),
             &format!("surface {}", surface.id),
             losses,
         );
@@ -8036,7 +8036,7 @@ fn append_unowned_curves(
         }
         let color = carrier_display_color(
             ir,
-            cadmpeg_ir::appearance::AppearanceTarget::Curve(curve.id.clone()),
+            &cadmpeg_ir::appearance::AppearanceTarget::Curve(curve.id.clone()),
             &format!("curve {}", curve.id),
             losses,
         );
