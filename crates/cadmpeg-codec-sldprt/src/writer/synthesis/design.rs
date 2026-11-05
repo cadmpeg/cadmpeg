@@ -167,7 +167,15 @@ pub(super) fn prepare(
             )));
         }
         configuration.parameter_values.retain(|parameter, value| {
-            if matches!(value, cadmpeg_ir::features::ParameterValue::Length(_) | cadmpeg_ir::features::ParameterValue::Angle(_) | cadmpeg_ir::features::ParameterValue::Real(_)) { return true; }
+            if match value {
+                cadmpeg_ir::features::ParameterValue::Length(_)
+                | cadmpeg_ir::features::ParameterValue::Angle(_)
+                | cadmpeg_ir::features::ParameterValue::Real(_)
+                | cadmpeg_ir::features::ParameterValue::Boolean(_) => true,
+                cadmpeg_ir::features::ParameterValue::Integer(value) =>
+                    cadmpeg_core::convert::f64_from_i64(*value).is_some(),
+                cadmpeg_ir::features::ParameterValue::String(_) => false,
+            } { return true; }
             losses.push(SldprtLossCode::WriterDesignReduced.note(format!(
                 "configuration {} parameter {parameter}: this value has no native configuration scalar encoding", configuration.id
             )));
