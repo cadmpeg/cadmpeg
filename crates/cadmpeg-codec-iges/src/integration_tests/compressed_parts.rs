@@ -79,23 +79,15 @@ fn recovered(inherited: bool, ordinal: u32, failures: usize) {
         .unwrap();
     assert_eq!(native.arenas()["entities"].len(), 1);
     assert_eq!(&native.arenas()["entities"][0], expected);
-    assert!(native
-        .arenas()
-        .get("quarantined_directory_records")
-        .is_none());
-
-    assert!(native
-        .arenas()
-        .get("quarantined_directory_records")
-        .is_none());
-    assert!(native
-        .arenas()
-        .get("quarantined_parameter_records")
-        .is_none());
-    assert!(native
-        .arenas()
-        .get("quarantined_parameter_records")
-        .is_none());
+    let unknowns = &native.arenas()["unknowns"];
+    assert_eq!(unknowns.len(), failures);
+    for unknown in unknowns {
+        assert!(decoded
+            .source_fidelity()
+            .retained_records()
+            .keys()
+            .any(|id| id.as_str() == unknown.id()));
+    }
     let parts = crate::test_support::given_up_parts(decoded.source_fidelity());
     assert_eq!(parts.len(), failures);
     assert_eq!(
@@ -182,23 +174,15 @@ fn missing_structure(inherited: bool, ordinal: u32, failures: usize) {
         .expect("same original Directory identity");
     assert_eq!(native.arenas()["entities"].len(), 1);
     assert_eq!(&native.arenas()["entities"][0], expected);
-    assert!(native
-        .arenas()
-        .get("quarantined_directory_records")
-        .is_none());
-
-    assert!(native
-        .arenas()
-        .get("quarantined_directory_records")
-        .is_none());
-    assert!(native
-        .arenas()
-        .get("quarantined_parameter_records")
-        .is_none());
-    assert!(native
-        .arenas()
-        .get("quarantined_parameter_records")
-        .is_none());
+    let unknowns = &native.arenas()["unknowns"];
+    assert_eq!(unknowns.len(), failures);
+    for unknown in unknowns {
+        assert!(decoded
+            .source_fidelity()
+            .retained_records()
+            .keys()
+            .any(|id| id.as_str() == unknown.id()));
+    }
     let parts = crate::test_support::given_up_parts(decoded.source_fidelity());
     assert_eq!(parts.len(), failures);
     assert_eq!(
