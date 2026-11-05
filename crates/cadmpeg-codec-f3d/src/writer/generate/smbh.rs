@@ -221,16 +221,21 @@ fn source_less_wire_record_for_shell(
     native_record_index(wire_start, wire_ordinal)
 }
 
+struct WireRecordStarts {
+    wire: i64,
+    coedge: i64,
+    shell: i64,
+    vertex: i64,
+}
+
 fn encode_source_less_wires(
     records: &mut Vec<u8>,
     target: &CadIr,
     topology: &NativeGenerationIndex<'_>,
-    wire_start: i64,
-    wire_coedge_start: i64,
-    shell_start: i64,
-    vertex_start: i64,
+    starts: WireRecordStarts,
     output: &cadmpeg_core::decode::DecodeContext<'_>,
 ) -> Result<BTreeMap<VertexId, i64>, CodecError> {
+    let WireRecordStarts { wire: wire_start, coedge: wire_coedge_start, shell: shell_start, vertex: vertex_start } = starts;
     let model = &target.model;
     let vertex_ordinals = model
         .vertices
@@ -491,10 +496,7 @@ fn encode_wire_body_smbh(
         &mut records,
         target,
         topology,
-        wire_start,
-        wire_coedge_start,
-        shell_start,
-        vertex_start,
+        WireRecordStarts { wire: wire_start, coedge: wire_coedge_start, shell: shell_start, vertex: vertex_start },
         output,
     )?;
     let mut edge_base = 0usize;
@@ -549,8 +551,7 @@ fn encode_wire_body_smbh(
             point: point_start,
             attribute: attribute_start,
         },
-        &wire_edge_owners,
-        &free_vertex_owners,
+        (&wire_edge_owners, &free_vertex_owners),
         output,
     )?;
     for body in &model.bodies {
@@ -969,10 +970,7 @@ fn encode_face_topology_smbh(
         &mut records,
         target,
         topology,
-        wire_start,
-        wire_coedge_start,
-        shell_start,
-        vertex_start,
+        WireRecordStarts { wire: wire_start, coedge: wire_coedge_start, shell: shell_start, vertex: vertex_start },
         output,
     )?;
 
@@ -1451,8 +1449,7 @@ fn encode_face_topology_smbh(
             point: point_start,
             attribute: attribute_start,
         },
-        &wire_edge_owners,
-        &free_vertex_owners,
+        (&wire_edge_owners, &free_vertex_owners),
         output,
     )?;
     for body in &model.bodies {
@@ -1597,10 +1594,10 @@ fn encode_source_less_edges_vertices_points(
     attributes: &AttributeIndex<'_>,
     topology: &NativeGenerationIndex<'_>,
     starts: SourceLessRecordStarts,
-    edge_owners: &BTreeMap<cadmpeg_ir::ids::EdgeId, i64>,
-    free_vertex_owners: &BTreeMap<VertexId, i64>,
+    owners: (&BTreeMap<cadmpeg_ir::ids::EdgeId, i64>, &BTreeMap<VertexId, i64>),
     output: &cadmpeg_core::decode::DecodeContext<'_>,
 ) -> Result<(), CodecError> {
+    let (edge_owners, free_vertex_owners) = owners;
     let SourceLessRecordStarts {
         curve: curve_start,
         edge: edge_start,
