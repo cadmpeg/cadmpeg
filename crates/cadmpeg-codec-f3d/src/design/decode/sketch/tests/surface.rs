@@ -63,15 +63,15 @@ fn damaged_indexed_sketch_surface_keeps_a_valid_sibling() {
     first[7..15].copy_from_slice(&10u64.to_le_bytes());
     let mut second = first.clone();
     second[7..15].copy_from_slice(&11u64.to_le_bytes());
-    first[127..131].copy_from_slice(&0u32.to_le_bytes());
+    first[81] = b'x';
     let second_at = first.len();
     first.extend_from_slice(&second);
     let ids = [10u64, 11u64];
     let meta = crate::test_support::streams_test::design_metastream_with_records(
         &[(
-            "11111111-2222-4333-8444-555555555555",
-            "",
-            1,
+            super::super::SKETCH_SURFACE_TYPE_GUID,
+            "EE7AE727-682A-41A9-8780-C407B6D722DC",
+            0,
             "Geometry",
             &ids,
         )],
