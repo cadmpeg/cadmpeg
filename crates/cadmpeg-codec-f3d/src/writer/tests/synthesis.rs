@@ -126,7 +126,7 @@ fn source_less_primitive_feature_survives_synthesis() {
     let (output, report) = super::source_less_analytic::synthesize_document(&ir, None);
     assert_eq!(output.ir().model.features.len(), 2);
     assert!(report.losses.iter().any(|loss| {
-        loss.message.contains(&omitted) && loss.message.contains("recompute state")
+        loss.message.contains(&omitted) && loss.code.local_code() == "evaluation.stale"
     }));
 }
 
@@ -464,6 +464,21 @@ fn source_less_compact_custom_attributes_preserve_values() {
     assert!(crate::test_support::native_test::f3d_native(output.ir())
         .creation_timestamps
         .is_empty());
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(&native_id)));
+
+    let mut renamed_family = decoded.ir().clone();
+    renamed_family.model.attributes[1].values[1] = Some(
+        cadmpeg_ir::attributes::AttributeValue::String("Timestamp_attrib_defx".into()),
+    );
+    let (output, report) = super::source_less_analytic::synthesize_document(&renamed_family, None);
+    renamed_family.model.attributes[1].native_ref = None;
+    assert_eq!(
+        output.ir().model.attributes,
+        renamed_family.model.attributes
+    );
     assert!(report
         .losses
         .iter()
@@ -1111,4 +1126,39 @@ fn native_arena_declarations_cover_the_synthesis_input() {
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .expect("typed empty history is supported");
     cadmpeg_test_support::contract::assert_declarations_cover_input("f3d", &ir, plan.report());
+}
+
+#[test]
+fn synthesis_preserves_brep_record_indices_when_curves_follow_topology() {
+    use crate::test_support::native_test::f3d_native;
+    use crate::test_support::smbh_geometry_test::synthetic_geometry_with_degenerate_curve_smbh;
+    use crate::test_support::zip_test::f3d_with_smbh;
+
+    let source = f3d_with_smbh(&synthetic_geometry_with_degenerate_curve_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode synthetic BREP");
+    let (output, _) = super::source_less_analytic::synthesize_document(decoded.ir(), None);
+    let original = f3d_native(decoded.ir());
+    let written = f3d_native(output.ir());
+    assert_eq!(original.edge_ownerships, written.edge_ownerships);
+    assert_eq!(original.edge_continuities, written.edge_continuities);
+    assert_eq!(original.vertex_ownerships, written.vertex_ownerships);
+}
+
+#[test]
+fn brep_index_framing_uses_caller_entity_limit() {
+    use crate::test_support::smbh_geometry_test::synthetic_geometry_with_degenerate_curve_smbh;
+    use crate::test_support::zip_test::f3d_with_smbh;
+
+    let source = f3d_with_smbh(&synthetic_geometry_with_degenerate_curve_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode synthetic BREP");
+    let mut input = EncodeInput::new(decoded.ir(), None);
+    input.limits.max_entities = 0;
+    assert!(matches!(
+        F3dCodec.plan(input, TargetRequest::Inherit),
+        Err(cadmpeg_ir::codec::write::EncodeError::ResourceLimit(_))
+    ));
 }

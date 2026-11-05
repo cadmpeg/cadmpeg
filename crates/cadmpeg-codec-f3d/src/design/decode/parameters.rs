@@ -154,6 +154,8 @@ pub(crate) fn parse_frame(
     Ok(Some((parameter, state_target)))
 }
 
+const PARAMETER_TYPE_GUID: &str = "7A6A3D31-BE74-4E19-9115-20642944C2E4";
+
 /// Decode parameters from the Design primary index.
 pub(crate) fn decode_parameters(
     ctx: &cadmpeg_core::decode::DecodeContext<'_>,
@@ -162,7 +164,6 @@ pub(crate) fn decode_parameters(
     state_targets: &mut BTreeMap<String, u64>,
 ) -> Result<Vec<DesignParameter>, CodecError> {
     use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartSpec};
-    const PARAMETER_TYPE_GUID: &str = "7A6A3D31-BE74-4E19-9115-20642944C2E4";
 
     let mut out = Vec::new();
     for entry in scan
@@ -182,7 +183,34 @@ pub(crate) fn decode_parameters(
             Err(_) => continue,
         };
         let tail_targets = parameter_tail_targets(scan, &entry.name)?;
-        for frame in frames {
+        let mut owners_by_parameter = HashMap::<u32, Vec<DesignParameterOwner>>::new();
+        for owner_frame in frames.iter().filter(|frame| {
+            frame
+                .design_type
+                .type_guid
+                .as_str()
+                .eq_ignore_ascii_case(PARAMETER_OWNER_TYPE_GUID)
+        }) {
+            let Some(owner_bytes) = source
+                .window()
+                .get(owner_frame.start..owner_frame.member_end)
+            else {
+                continue;
+            };
+            let owner_view = cadmpeg_core::decode::View::over_retained(owner_bytes);
+            let Some(owner) = parse_parameter_owner_frame(ParameterFrame::new(owner_view))
+                .and_then(|parsed| {
+                    parsed.into_record(&entry.name, u64_from_index(owner_frame.start))
+                })
+            else {
+                continue;
+            };
+            owners_by_parameter
+                .entry(owner.parameter_record_index())
+                .or_default()
+                .push(owner);
+        }
+        for frame in &frames {
             let start = source
                 .start()
                 .checked_add(frame.start)
@@ -227,34 +255,77 @@ pub(crate) fn decode_parameters(
                         .map_err(CodecError::malformed)?,
                 );
             }
-            let decoded = ctx.decode_part(output, extent, spec, |_| {
-                if tail_targets.refuses(members.window()) {
-                    return Err(CodecError::malformed(format_args!(
-                        "parameter entity {} names a non-parameter collection",
-                        frame.entity_id
-                    )));
-                }
-                let parsed = parse_design_parameter(members.window())?.ok_or_else(|| {
-                    CodecError::malformed(format_args!(
-                        "parameter entity {} matches no grammar",
-                        frame.entity_id
-                    ))
-                })?;
-                if u64::from(parsed.record_index) != frame.entity_id {
-                    return Err(CodecError::malformed(format_args!(
-                        "parameter entity {} has a different record index",
-                        frame.entity_id
-                    )));
-                }
-                let target = parsed.state_target();
-                let parameter = locate_design_parameter(parsed, &entry.name, frame.start)
-                    .ok_or_else(|| {
+            let decoded = ctx.decode_part(output, extent, spec, |stage| {
+                let result = (|| {
+                    if tail_targets.refuses(members.window()) {
+                        return Err(CodecError::malformed(format_args!(
+                            "parameter entity {} names a non-parameter collection",
+                            frame.entity_id
+                        )));
+                    }
+                    let parsed = parse_design_parameter(members.window())?.ok_or_else(|| {
                         CodecError::malformed(format_args!(
-                            "parameter entity {} has invalid fields",
+                            "parameter entity {} matches no grammar",
                             frame.entity_id
                         ))
                     })?;
-                Ok((parameter, target))
+                    if u64::from(parsed.record_index) != frame.entity_id {
+                        return Err(CodecError::malformed(format_args!(
+                            "parameter entity {} has a different record index",
+                            frame.entity_id
+                        )));
+                    }
+                    let target = parsed.state_target();
+                    let parameter = locate_design_parameter(parsed, &entry.name, frame.start)
+                        .ok_or_else(|| {
+                            CodecError::malformed(format_args!(
+                                "parameter entity {} has invalid fields",
+                                frame.entity_id
+                            ))
+                        })?;
+                    Ok((parameter, target))
+                })();
+                if result.is_err() {
+                    if let Ok(index) = u32::try_from(frame.entity_id) {
+                        for owner in owners_by_parameter.get(&index).into_iter().flatten() {
+                            stage.insert_native(ctx, "design_parameter_owners", owner.clone())?;
+                            if let Some(companion_frame) = frames.iter().find(|candidate| {
+                                candidate.entity_id == u64::from(owner.companion_record_index())
+                            }) {
+                                let companion = [companion_prefix::LEN, typed_companion::LEN]
+                                    .into_iter()
+                                    .find_map(|len| {
+                                        let start =
+                                            source.start().checked_add(companion_frame.start)?;
+                                        let end = start.checked_add(len)?;
+                                        if len > companion_frame.member_end - companion_frame.start
+                                        {
+                                            return None;
+                                        }
+                                        let view = source.child(start, end)?;
+                                        parse_parameter_companion_frame(ParameterFrame::new(view))
+                                            .filter(|parsed| {
+                                                parsed.owner_record_index == owner.record_index()
+                                            })
+                                            .and_then(|parsed| {
+                                                parsed.into_record(
+                                                    &entry.name,
+                                                    u64_from_index(companion_frame.start),
+                                                )
+                                            })
+                                    });
+                                if let Some(companion) = companion {
+                                    stage.insert_native(
+                                        ctx,
+                                        "design_parameter_companions",
+                                        companion,
+                                    )?;
+                                }
+                            }
+                        }
+                    }
+                }
+                result
             })?;
             if let Some((parameter, target)) = decoded {
                 if let Some(target) = target {
@@ -1062,6 +1133,16 @@ pub(crate) fn decode_parameter_owners(
             })
             .map(|frame| frame.entity_id)
             .collect();
+        let parameter_entities: HashSet<_> = meta
+            .types
+            .iter()
+            .filter(|ty| {
+                ty.type_guid
+                    .as_str()
+                    .eq_ignore_ascii_case(PARAMETER_TYPE_GUID)
+            })
+            .flat_map(|ty| ty.entities.values().copied())
+            .collect();
         let stream = crate::ids::native_scope(&entry.name);
         for frame in frames {
             let Some(index) = u32::try_from(frame.entity_id).ok() else {
@@ -1135,6 +1216,16 @@ pub(crate) fn decode_parameter_owners(
                             && pipe_scopes.contains(&u64::from(parsed.scope_record_index))
                     });
                 if !admitted_pipe {
+                    continue;
+                }
+            }
+            if let Some(owner) = parse() {
+                if parameter_entities.contains(&u64::from(owner.parameter_record_index))
+                    && !parameters.iter().any(|parameter| {
+                        native_stream(&parameter.id) == Some(stream.as_str())
+                            && parameter.record_index == owner.parameter_record_index
+                    })
+                {
                     continue;
                 }
             }
