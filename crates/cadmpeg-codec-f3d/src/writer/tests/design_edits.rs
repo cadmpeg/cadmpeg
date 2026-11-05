@@ -368,3 +368,35 @@ fn recipe_identity_overlapping_indexed_class_declines_patch() {
             .as_ref()
             .is_some_and(|design| design.id.value == "333")));
 }
+
+#[test]
+fn lost_edge_index_edit_declines_patch() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder, SynthesisCause};
+    use cadmpeg_ir::report::export::WritePath;
+    let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut edited = decoded.ir().clone();
+    crate::test_support::native_test::update_f3d_native(&mut edited, |native| {
+        native.lost_edge_references[0].record_index = 4700;
+    });
+    let plan = F3dCodec
+        .plan(
+            EncodeInput::new(&edited, Some(decoded.source_fidelity())),
+            TargetRequest::Inherit,
+        )
+        .unwrap();
+    assert!(matches!(
+        plan.report().write_path(),
+        WritePath::Synthesized { .. }
+    ));
+    assert!(matches!(plan.report().synthesis_cause(),
+        Some(SynthesisCause::PatchDeclined { reason }) if reason.contains("changes an indexed record identity")));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(output.ir().model.bodies.len(), edited.model.bodies.len());
+}
