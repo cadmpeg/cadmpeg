@@ -404,7 +404,8 @@ pub(super) fn write_semantic_at(
         }
         true
     };
-    let (objects, units) = metadata_payloads(ir, native.as_ref(), length_scale)?;
+    let (objects, units, metadata_residuals) =
+        metadata_payloads(ir, native.as_ref(), length_scale)?;
     if replay_swobjects {
         consumed_source_layout = true;
         generated_partition_sections
@@ -418,6 +419,7 @@ pub(super) fn write_semantic_at(
             )?;
         }
     } else {
+        normalization_losses.extend(metadata_residuals);
         if !materials.is_empty() {
             for appearance in &ir.model.appearances {
                 let in_swobjects = appearance.schema.as_deref() == Some("moVisualProperties_c")
@@ -2996,11 +2998,19 @@ fn metadata_payloads(
     ir: &CadIr,
     native: Option<&SldprtNative>,
     length_scale: f64,
-) -> Result<(Vec<u8>, Option<Vec<u8>>), write_error::WriteError> {
+) -> Result<
+    (
+        Vec<u8>,
+        Option<Vec<u8>>,
+        Vec<cadmpeg_ir::report::loss::LossNote>,
+    ),
+    write_error::WriteError,
+> {
     use cadmpeg_ir::attributes::AttributeTarget;
 
     let mut objects = Vec::new();
     let mut unit_code = None;
+    let mut residuals = Vec::new();
     let attributes = if ir.scope.model {
         metadata_attributes(ir)
     } else {
@@ -3056,6 +3066,14 @@ fn metadata_payloads(
                 states,
                 filetime,
             }) => {
+                residuals.push(
+                    cadmpeg_ir::codec::write::ExportLossCode::RecordResidualUnavailable.note(
+                        format!(
+                            "configuration manager {}: unspecified SWObjects record bytes",
+                            attribute.id
+                        ),
+                    ),
+                );
                 let mut record = [0u8; 125];
                 record[66..70].copy_from_slice(&minor.to_le_bytes());
                 record[107] = states;
@@ -3082,7 +3100,7 @@ fn metadata_payloads(
         format!("<Metadata><Property Name=\"SW_UnitsLinear\" Value=\"{code}\"/></Metadata>")
             .into_bytes()
     });
-    Ok((objects, units))
+    Ok((objects, units, residuals))
 }
 
 pub(crate) fn swobjects_local_sha256(
