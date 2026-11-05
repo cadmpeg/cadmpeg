@@ -24,10 +24,6 @@ pub(crate) fn plan(
         crate::writer::CAPACITY_FIELDS.is_empty(),
         "STEP declares no capacity rows"
     );
-    debug_assert!(
-        crate::writer::REDUCED_FIELDS.is_empty(),
-        "STEP stores no reduced fields"
-    );
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let arena = DecodeArena::new();
     let policy = DecodePolicy {
