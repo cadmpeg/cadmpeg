@@ -827,7 +827,7 @@ fn partially_unbound_stream_keeps_the_bound_component() {
                 "Component",
                 entities,
             )],
-            &[],
+            &[(17, 0)],
         );
         let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
         write_synthetic_manifests(&mut zip, stored);
@@ -840,7 +840,9 @@ fn partially_unbound_stream_keeps_the_bound_component() {
         zip.finish().unwrap().into_inner()
     }
 
-    let mut bulk = vec![0xaa, 0xbb, 1];
+    let mut bulk = Vec::new();
+    crate::test_support::indexed_header(&mut bulk, *b"256", 17);
+    bulk.extend_from_slice(&[0xaa, 0xbb, 1]);
     bulk.extend_from_slice(&17_u64.to_le_bytes());
     bulk.extend_from_slice(&[0, 0]);
     crate::test_support::lp_utf16(&mut bulk, CONTEXT_UUID);
