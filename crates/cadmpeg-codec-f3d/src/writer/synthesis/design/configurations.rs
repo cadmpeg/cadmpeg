@@ -17,6 +17,16 @@ pub(super) fn regenerate(
     parameters: &[DesignParameter],
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
+    let authored_features = if target
+        .model
+        .configurations
+        .iter()
+        .any(|configuration| configuration.suppressed_features().next().is_some())
+    {
+        super::super::super::generate::features::authored_feature_ids(target)
+    } else {
+        Default::default()
+    };
     let previous = std::mem::take(&mut native.design_configurations);
     let mut previous_tables = previous.iter().filter(|entry| {
         entry.kind() == DesignConfigurationKind::Table
@@ -121,19 +131,33 @@ pub(super) fn regenerate(
             }
         }
         for id in configuration.suppressed_features() {
-            if !target
+            let Some(feature) = target
                 .model
                 .features
                 .iter()
-                .any(|feature| &feature.id == id)
-            {
+                .find(|feature| &feature.id == id)
+            else {
                 return Err(CodecError::malformed(format_args!(
                     "configuration {} references missing feature {id}",
                     configuration.id,
                 )));
+            };
+            if !configuration.active && authored_features.contains(id) {
+                if let Some(name) = feature.name.as_ref().filter(|name| {
+                    target
+                        .model
+                        .features
+                        .iter()
+                        .filter(|candidate| candidate.name.as_ref() == Some(*name))
+                        .count()
+                        == 1
+                }) {
+                    if !suppressed.iter().any(|value| value.as_str() == Some(name)) {
+                        suppressed.push(Value::String(name.clone()));
+                    }
+                    continue;
+                }
             }
-            // The generator cannot emit a neutral feature tree. A suppression
-            // of one of those omitted records has no remaining native target.
             losses.push(F3dLossCode::WriterDesignRecordsOmitted.note(format!(
                 "configuration {} suppression of unsupported feature {id} is omitted",
                 configuration.id,
