@@ -5,6 +5,7 @@
 #![allow(clippy::default_trait_access)]
 
 mod extrusion;
+mod polyline;
 
 use std::io::Cursor;
 
