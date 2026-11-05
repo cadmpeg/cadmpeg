@@ -804,3 +804,427 @@ fn source_less_product_and_root_occurrence_write_as_subfigures() {
         ir.model.occurrences[0].transform
     );
 }
+
+#[test]
+fn source_less_nested_products_keep_occurrence_hierarchy_and_placement() {
+    use cadmpeg_ir::products::{Occurrence, ProductDefinition};
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    for (id, label) in [("parent", "Parent"), ("child", "Child")] {
+        ir.model.product_definitions.push(
+            serde_json::from_value::<ProductDefinition>(serde_json::json!({
+                "id": format!("test:model:product#{id}"), "kind":"part", "label":label
+            }))
+            .unwrap(),
+        );
+    }
+    ir.model.occurrences.push(serde_json::from_value::<Occurrence>(serde_json::json!({
+        "id":"test:model:occurrence#parent", "prototype":{"scope":"local","definition":"test:model:product#parent"},
+        "parent":{"kind":"root"}, "ordinal":0, "transform":[[1,0,0,0],[0,1,0,0],[0,0,1,0]]
+    })).unwrap());
+    ir.model.occurrences.push(serde_json::from_value::<Occurrence>(serde_json::json!({
+        "id":"test:model:occurrence#child", "prototype":{"scope":"local","definition":"test:model:product#child"},
+        "parent":{"kind":"occurrence","occurrence":"test:model:occurrence#parent"}, "ordinal":1,
+        "transform":[[1,0,0,4],[0,1,0,5],[0,0,1,6]]
+    })).unwrap());
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let after = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(after.ir().model.product_definitions.len(), 2);
+    assert_eq!(after.ir().model.occurrences.len(), 2);
+    assert_eq!(
+        after.ir().model.occurrences[1].transform,
+        ir.model.occurrences[1].transform
+    );
+    assert!(
+        matches!(&after.ir().model.occurrences[1].parent, cadmpeg_ir::products::OccurrenceParent::Occurrence { occurrence } if *occurrence == after.ir().model.occurrences[0].id)
+    );
+}
+
+#[test]
+fn shared_source_less_definition_names_an_unrepresentable_child() {
+    use cadmpeg_ir::products::{Occurrence, ProductDefinition};
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    for (id, label) in [("parent", "Parent"), ("child", "Child")] {
+        ir.model.product_definitions.push(
+            serde_json::from_value::<ProductDefinition>(serde_json::json!({
+                "id": format!("test:model:product#{id}"), "kind":"part", "label":label
+            }))
+            .unwrap(),
+        );
+    }
+    for (id, ordinal) in [("first", 0), ("second", 1)] {
+        ir.model.occurrences.push(serde_json::from_value::<Occurrence>(serde_json::json!({
+            "id":format!("test:model:occurrence#{id}"), "prototype":{"scope":"local","definition":"test:model:product#parent"},
+            "parent":{"kind":"root"}, "ordinal":ordinal, "transform":[[1,0,0,0],[0,1,0,0],[0,0,1,0]]
+        })).unwrap());
+    }
+    ir.model.occurrences.push(serde_json::from_value::<Occurrence>(serde_json::json!({
+        "id":"test:model:occurrence#child", "prototype":{"scope":"local","definition":"test:model:product#child"},
+        "parent":{"kind":"occurrence","occurrence":"test:model:occurrence#first"}, "ordinal":2,
+        "transform":[[1,0,0,4],[0,1,0,5],[0,0,1,6]]
+    })).unwrap());
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("test:model:occurrence#child")));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let after = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(after.ir().model.occurrences.len(), 2);
+}
+
+#[test]
+fn compound_curve_keeps_its_components_and_construction() {
+    let bytes = crate::test_support::test_curves_and_surfaces::composite_curve_file();
+    let decoded = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(decoded.ir().model.procedural_curves.len(), 1);
+    let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).unwrap();
+    let construction = decoded.ir().model.procedural_curves[0].id.to_string();
+    assert!(
+        !plan
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains(&construction)),
+        "{:#?}",
+        plan.report().losses
+    );
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let after = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        after.ir().model.curves.len(),
+        decoded.ir().model.curves.len()
+    );
+    assert_eq!(after.ir().model.procedural_curves.len(), 1);
+    assert_eq!(after.ir().model.edges.len(), decoded.ir().model.edges.len());
+}
+
+#[test]
+fn compound_curve_uses_edited_components_instead_of_its_solved_cache() {
+    use cadmpeg_ir::geometry::analytic::LineCurve;
+    use cadmpeg_ir::geometry::{CurveGeometry, ProceduralCurveDefinition, SolvedCurveGeometry};
+    use cadmpeg_ir::math::{Point3, Vector3};
+    let bytes = crate::test_support::test_curves_and_surfaces::composite_curve_file();
+    let decoded = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let ProceduralCurveDefinition::Compound(compound) = ir.model.procedural_curves[0].definition()
+    else {
+        panic!("compound")
+    };
+    let ids = compound
+        .components()
+        .iter()
+        .map(|component| component.component.clone())
+        .collect::<Vec<_>>();
+    for (id, origin, direction) in [
+        (
+            &ids[0],
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+        ),
+        (
+            &ids[1],
+            Point3::new(0.0, 1.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        ),
+    ] {
+        ir.model
+            .curves
+            .iter_mut()
+            .find(|curve| &curve.id == id)
+            .unwrap()
+            .geometry = CurveGeometry::Solved(SolvedCurveGeometry::Line(
+            LineCurve::try_new(origin, direction).unwrap(),
+        ));
+    }
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let after = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let ProceduralCurveDefinition::Compound(compound) =
+        after.ir().model.procedural_curves[0].definition()
+    else {
+        panic!("compound")
+    };
+    let first = after
+        .ir()
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id == compound.components()[0].component)
+        .unwrap();
+    let Some(SolvedCurveGeometry::Line(line)) = first.geometry.solved() else {
+        panic!("line")
+    };
+    assert_eq!(*line.direction().as_raw(), Vector3::new(0.0, 1.0, 0.0));
+}
+
+#[test]
+fn finite_straight_pcurve_with_unspecified_flag_keeps_its_boundary() {
+    use cadmpeg_ir::geometry::pcurve::{LinePcurve, PcurveGeometry};
+    use cadmpeg_ir::math::Point2;
+
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(
+                crate::test_support::test_drawing_and_trimming::explicit_multi_pcurve_loop_file(),
+            ),
+            &DecodeOptions::default(),
+        )
+        .expect("multi-pcurve loop decodes");
+    let mut ir = decoded.ir().clone();
+    let coedge = ir
+        .model
+        .coedges
+        .iter_mut()
+        .find(|edge| !edge.pcurves.is_empty())
+        .unwrap();
+    let coedge_id = coedge.id.clone();
+    let pcurve_id = coedge.pcurves[0].pcurve.clone();
+    coedge.pcurves[0].isoparametric = None;
+    let pcurve = ir
+        .model
+        .pcurves
+        .iter_mut()
+        .find(|curve| curve.id == pcurve_id)
+        .unwrap();
+    pcurve.geometry = PcurveGeometry::Line(
+        LinePcurve::try_new(Point2::new(0.0, 0.0), Point2::new(0.5, 0.0)).unwrap(),
+    );
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).expect("line pcurve plans");
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(coedge_id.as_str())
+            && loss.message.contains(pcurve_id.as_str())
+            && loss.message.contains("isoparametric")));
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(pcurve_id.as_str())
+            && loss.message.contains("line representation")));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("written boundary decodes");
+    assert_eq!(output.ir().model.faces.len(), ir.model.faces.len());
+    assert_eq!(output.ir().model.pcurves.len(), ir.model.pcurves.len());
+    assert!(output
+        .ir()
+        .model
+        .coedges
+        .iter()
+        .flat_map(|edge| &edge.pcurves)
+        .any(|item| item.isoparametric == Some(true)));
+}
+
+#[test]
+fn regenerated_annotation_records_keep_their_semantic_projection() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(
+                crate::test_support::test_drawing_and_trimming::bounded_associativity_forms_file(),
+            ),
+            &DecodeOptions::default(),
+        )
+        .expect("associativity fixture decodes");
+    assert!(!decoded.ir().model.semantic_annotations.is_empty());
+    let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).expect("annotations synthesize");
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("annotations re-decode");
+    assert_eq!(
+        output.ir().model.semantic_annotations.len(),
+        decoded.ir().model.semantic_annotations.len()
+    );
+}
+
+#[test]
+fn edited_semantic_note_text_reaches_regenerated_parameters() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(
+                crate::test_support::test_drawing_and_trimming::bounded_associativity_forms_file(),
+            ),
+            &DecodeOptions::default(),
+        )
+        .expect("associativity fixture decodes");
+    let mut ir = decoded.ir().clone();
+    let note = ir
+        .model
+        .semantic_annotations
+        .iter_mut()
+        .find(|item| !item.text.is_empty())
+        .expect("text note");
+    note.text[0].push('x');
+    let expected = note.text.clone();
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).expect("edited note synthesizes");
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("edited note re-decodes");
+    assert!(output
+        .ir()
+        .model
+        .semantic_annotations
+        .iter()
+        .any(|item| item.text == expected));
+}
+
+#[test]
+fn regenerated_associativities_retain_required_back_pointers() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(
+                crate::test_support::test_drawing_and_trimming::bounded_associativity_forms_file(),
+            ),
+            &DecodeOptions::default(),
+        )
+        .expect("associativity fixture decodes");
+    let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).expect("associativities synthesize");
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("associativities re-decode");
+    assert!(
+        output
+            .report()
+            .losses
+            .iter()
+            .all(|loss| !loss.message.contains("predefined associativity")),
+        "{:?}",
+        output.report().losses
+    );
+}
+
+#[test]
+fn edited_boolean_operation_reaches_the_regenerated_tree() {
+    use cadmpeg_ir::features::{BooleanKind, FeatureDefinition, FeatureOperation};
+    let decoded = IgesCodec.decode(
+        &mut Cursor::new(crate::test_support::test_solids_and_structure::explicit_tetrahedron_solid_with_boolean_file()),
+        &DecodeOptions::default(),
+    ).expect("Boolean fixture decodes");
+    let mut ir = decoded.ir().clone();
+    let feature = ir
+        .model
+        .features
+        .iter_mut()
+        .find(|feature| {
+            matches!(
+                feature.evaluation.definition(),
+                FeatureDefinition::Operation(FeatureOperation::Combine { .. })
+            )
+        })
+        .expect("Boolean feature");
+    let mut definition = feature.evaluation.definition().clone();
+    let FeatureDefinition::Operation(FeatureOperation::Combine { op, .. }) = &mut definition else {
+        unreachable!()
+    };
+    *op = BooleanKind::Cut;
+    feature.evaluation.set_definition(definition);
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).expect("edited Boolean synthesizes");
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("Boolean re-decodes");
+    assert!(output.ir().model.features.iter().any(|feature| matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Combine {
+            op: BooleanKind::Cut,
+            ..
+        })
+    )));
+}
+
+#[test]
+fn reconstructed_default_display_record_is_declared_regenerated() {
+    use cadmpeg_ir::codec::write::NativeDisposition;
+    let decoded = IgesCodec.decode(&mut Cursor::new(point_file_with_global(
+        b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;"
+    )), &DecodeOptions::default()).expect("point fixture decodes");
+    let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).expect("point synthesizes");
+    assert_eq!(
+        plan.report()
+            .native_dispositions
+            .disposition("iges", "display_attributes"),
+        NativeDisposition::Regenerated
+    );
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("output decodes");
+    let before = &decoded.ir().native.namespace("iges").unwrap().arenas()["display_attributes"][0];
+    let after = &output.ir().native.namespace("iges").unwrap().arenas()["display_attributes"][0];
+    for field in [
+        "color_number",
+        "level_number",
+        "line_font_number",
+        "line_weight_number",
+        "view",
+        "visible",
+    ] {
+        assert_eq!(before.field(field), after.field(field), "{field}");
+    }
+}
+
+#[test]
+fn empty_note_text_is_reported_without_invalid_hollerith() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(
+                crate::test_support::test_drawing_and_trimming::bounded_associativity_forms_file(),
+            ),
+            &DecodeOptions::default(),
+        )
+        .expect("associativity fixture decodes");
+    let mut ir = decoded.ir().clone();
+    let note = ir
+        .model
+        .semantic_annotations
+        .iter_mut()
+        .find(|item| !item.text.is_empty())
+        .expect("text note");
+    note.text[0].clear();
+    let note_id = note.id.to_string();
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).expect("empty note synthesizes");
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(&note_id)));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("output re-decodes");
+    assert!(output
+        .report()
+        .losses
+        .iter()
+        .all(|loss| !loss.message.contains("hollerith-count-zero")));
+}

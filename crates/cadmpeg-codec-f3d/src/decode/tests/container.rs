@@ -94,6 +94,12 @@ fn a_text_only_carrier_without_geometry_is_reported_as_empty_not_absent() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(archive), &DecodeOptions::default())
         .unwrap();
+    assert!(decoded.ir().scope.model);
+    assert!(decoded.report().scope().model);
+    assert!(decoded
+        .source_fidelity()
+        .unrepresented()
+        .contains(&cadmpeg_ir::document::ArenaClass::Model));
     let message = |code: LossKind| {
         let loss = decoded
             .report()

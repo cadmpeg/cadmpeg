@@ -69,7 +69,11 @@ fn source_less_spatial_line(start: Point3, end: Point3) -> cadmpeg_ir::CadIr {
     ir
 }
 
-fn check_spatial_point_line_distance_reaches_output(construction: bool, point_construction: bool) {
+fn check_spatial_point_line_distance_reaches_output(
+    construction: bool,
+    point_construction: bool,
+    second_point_construction: bool,
+) {
     use cadmpeg_ir::codec::write::Encoder;
     use cadmpeg_ir::features::{DesignParameter, Dimension, ParameterId, ParameterValue};
     use cadmpeg_ir::sketches::{
@@ -193,7 +197,7 @@ fn check_spatial_point_line_distance_reaches_output(construction: bool, point_co
         .spatial_sketch_entities
         .last_mut()
         .unwrap()
-        .construction = point_construction;
+        .construction = second_point_construction;
     ir.model.parameters.push(DesignParameter {
         product_definition: None,
         id: second_parameter.clone(),
@@ -280,6 +284,13 @@ fn check_spatial_point_line_distance_reaches_output(construction: bool, point_co
             .iter()
             .find(|name| name.id == scalar.name)
             .unwrap();
+        let point_ref = relation.operands[0].entity_ref.as_deref().unwrap();
+        let expected_y = if name.value == "D2" { 7.0 } else { 4.0 };
+        assert!(output.ir().model.spatial_sketch_entities.iter().any(|entity| {
+            entity.native_ref.as_deref() == Some(point_ref)
+                && matches!(entity.geometry.definition(), SpatialSketchGeometryDefinition::Point { position }
+                    if position.get() == Point3::new(3.0, expected_y, 0.0))
+        }), "{} point operand selects the authored point", name.value);
         line_refs.insert(name.value.as_str(), line_ref);
     }
     assert_eq!(line_refs["D1"], line_refs["D2"]);
@@ -306,7 +317,8 @@ fn check_spatial_point_line_distance_reaches_output(construction: bool, point_co
     ] {
         assert!(output.ir().model.spatial_sketch_constraints.iter().any(|constraint| {
             let SpatialSketchConstraintDefinitionInput::PointLineDistance { point, line, parameter } = constraint.definition.kind() else { return false };
-            let point_ok = output.ir().model.spatial_sketch_entities.iter().any(|entity| entity.id() == point && entity.construction == point_construction && matches!(entity.geometry.definition(), SpatialSketchGeometryDefinition::Point { position: actual } if actual.get() == position));
+            let expected_construction = if position.y == 7.0 { second_point_construction } else { point_construction };
+            let point_ok = output.ir().model.spatial_sketch_entities.iter().any(|entity| entity.id() == point && entity.construction == expected_construction && matches!(entity.geometry.definition(), SpatialSketchGeometryDefinition::Point { position: actual } if actual.get() == position));
             let line_ok = output.ir().model.spatial_sketch_entities.iter().any(|entity| entity.id() == line && entity.construction == construction && matches!(entity.geometry.definition(), SpatialSketchGeometryDefinition::Line { start, end } if start.get() == line_start && end.get() == line_end));
             let value_ok = parameter.parameter().and_then(|id| output.ir().model.parameters.iter().find(|candidate| &candidate.id == id)).and_then(|parameter| parameter.value.as_ref()).is_some_and(|value| matches!(value, ParameterValue::Length(value) if value.get() == distance));
             point_ok && line_ok && value_ok
@@ -342,17 +354,118 @@ fn check_spatial_point_line_distance_reaches_output(construction: bool, point_co
 
 #[test]
 fn source_less_spatial_point_line_distance_reaches_output() {
-    check_spatial_point_line_distance_reaches_output(false, false);
+    check_spatial_point_line_distance_reaches_output(false, false, false);
 }
 
 #[test]
 fn source_less_spatial_construction_line_distance_reaches_output() {
-    check_spatial_point_line_distance_reaches_output(true, false);
+    check_spatial_point_line_distance_reaches_output(true, false, false);
 }
 
 #[test]
 fn source_less_spatial_construction_point_distance_reaches_output() {
-    check_spatial_point_line_distance_reaches_output(true, true);
+    check_spatial_point_line_distance_reaches_output(true, true, true);
+}
+
+#[test]
+fn source_less_spatial_mixed_point_roles_reach_output() {
+    check_spatial_point_line_distance_reaches_output(true, true, false);
+    check_spatial_point_line_distance_reaches_output(true, false, true);
+}
+
+#[test]
+fn source_less_native_spatial_relation_keeps_its_operands() {
+    check_native_spatial_relation(true, ["d6", "e1"], 10);
+}
+
+#[test]
+fn source_less_native_spatial_reference_relation_keeps_its_operands() {
+    check_native_spatial_relation(false, ["2a81", "2a81"], 10);
+}
+
+#[test]
+fn native_spatial_operand_address_has_a_checked_capacity() {
+    check_native_spatial_relation(true, ["d6", "e1"], 65536);
+}
+
+fn check_native_spatial_relation(driving: bool, tags: [&str; 2], address: u32) {
+    use cadmpeg_ir::codec::write::Encoder;
+    use cadmpeg_ir::features::{DesignParameter, ParameterId, ParameterValue};
+    use cadmpeg_ir::sketches::{
+        SketchConstraintId, SketchNativeOperand, SpatialSketchConstraint,
+        SpatialSketchConstraintDefinitionInput,
+    };
+
+    let mut ir = source_less_spatial_line(Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0));
+    let id = ParameterId::mint("synthetic:test:parameter#native-distance").unwrap();
+    ir.model.parameters.push(DesignParameter {
+        product_definition: None,
+        id: id.clone(),
+        owner: Some(ir.model.features[0].id.clone()),
+        ordinal: 0,
+        name: if driving { "D1" } else { "D1@reference" }.into(),
+        expression: "4mm".into(),
+        driving,
+        display: None,
+        value: Some(ParameterValue::Length(
+            cadmpeg_ir::scalar::Length::new(4.0).unwrap(),
+        )),
+        properties: BTreeMap::new(),
+        pmi: None,
+        native_ref: None,
+    });
+    let operand = |kind: &str, address| SketchNativeOperand {
+        native_kind: cadmpeg_core::text::NonBlankString::new(kind).unwrap(),
+        field: None,
+        object_index: Some(address),
+        native_ref: None,
+    };
+    let constraint_id = SketchConstraintId::mint("synthetic:test:constraint#native").unwrap();
+    ir.model
+        .spatial_sketch_constraints
+        .push(SpatialSketchConstraint {
+            id: constraint_id.clone(),
+            sketch: ir.model.spatial_sketches[0].id.clone(),
+            definition: SpatialSketchConstraintDefinitionInput::Native {
+                native_kind: cadmpeg_core::text::NonBlankString::new("sgPntLineDist").unwrap(),
+                native_state: None,
+                parameter: Some(id),
+                operands: vec![operand(tags[0], address), operand(tags[1], 20)],
+            }
+            .try_into()
+            .unwrap(),
+            native_ref: None,
+        });
+    let result = crate::SldprtCodec.plan(EncodeInput::new(&ir, None), TargetRequest::Inherit);
+    if address > u16::MAX as u32 {
+        assert!(
+            matches!(result, Err(cadmpeg_ir::codec::write::EncodeError::TargetCapacity {
+            field, limit: 65535, value: 65536
+        }) if field.field == "spatial.relation.operand_address")
+        );
+        return;
+    }
+    let plan = result.unwrap();
+    assert!(!plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(constraint_id.as_str())));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = crate::SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(output.ir().model.spatial_sketch_constraints.iter().any(|constraint| matches!(
+        constraint.definition.kind(),
+        SpatialSketchConstraintDefinitionInput::Native { native_kind, parameter: Some(parameter), operands, .. }
+            if native_kind.as_str() == "sgPntLineDist" && operands.len() == 2
+                && operands[0].native_kind.as_str() == tags[0] && operands[0].object_index == Some(10)
+                && operands[1].native_kind.as_str() == tags[1] && operands[1].object_index == Some(20)
+                && output.ir().model.parameters.iter().any(|record| &record.id == parameter && record.driving == driving
+                    && record.name == if driving { "D1" } else { "D1@reference" }
+                    && matches!(record.value, Some(ParameterValue::Length(value)) if value.get() == 4.0))
+    )), "constraints: {:#?}; parameters: {:#?}", output.ir().model.spatial_sketch_constraints, output.ir().model.parameters);
 }
 
 #[test]

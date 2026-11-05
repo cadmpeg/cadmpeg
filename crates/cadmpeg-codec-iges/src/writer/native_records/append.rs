@@ -2,10 +2,10 @@
 //! Order native definitions by their current typed references.
 
 use super::{
-    annotations, attributes, coordinates, copious, count, directory_label, drawings, entity, fem,
-    fonts, levels, macros, products, real, shape, solids, structure, text, BTreeSet, CadIr,
-    DirectoryLineFont, Entity, EntityStatus, Fields, NativeExport, NativeRecord, Targets, Value,
-    ARENAS,
+    annotations, associations, attributes, coordinates, copious, count, directory_label, drawings,
+    entity, fem, fonts, levels, macros, products, real, shape, solids, structure, text, BTreeSet,
+    CadIr, DirectoryLineFont, Entity, EntityStatus, Fields, NativeExport, NativeRecord, Targets,
+    Value, ARENAS,
 };
 use std::collections::BTreeMap;
 
@@ -24,6 +24,16 @@ fn encode(
         references: BTreeSet::new(),
         lenient,
         missing: Vec::new(),
+    };
+    let boolean_feature = if arena == "boolean_trees" {
+        solids::apply_combine(ir, record, &mut fields)?
+    } else {
+        None
+    };
+    let annotation = if arena == "annotations" {
+        annotations::apply_text(ir, record, &mut fields)?
+    } else {
+        None
     };
     let definition = if matches!(arena, "subfigure_definitions" | "network_definitions") {
         let mut matches = ir
@@ -194,6 +204,12 @@ fn encode(
             };
             owners.push(*index);
         }
+    }
+    if let Some(feature) = boolean_feature {
+        result.source_targets.push(feature);
+    }
+    if let Some(annotation) = annotation {
+        result.source_targets.push(annotation);
     }
     result.source_targets.push(record.id().to_owned());
     if let Some(source) = fields.value("source_entity").and_then(Value::as_str) {
@@ -392,6 +408,34 @@ pub(in crate::writer) fn append(
             directory_sequence(record),
         )
     });
+    // Boolean trees that project to features follow their current feature
+    // ordinals, while the other native records keep their Directory order.
+    let feature_ordinals = ir
+        .model
+        .features
+        .iter()
+        .filter_map(|feature| {
+            feature
+                .native_ref
+                .as_deref()
+                .map(|native| (native, feature.ordinal))
+        })
+        .collect::<BTreeMap<_, _>>();
+    let mut booleans = pending
+        .iter()
+        .copied()
+        .filter(|(arena, _)| *arena == "boolean_trees")
+        .collect::<Vec<_>>();
+    booleans.sort_by_key(|(_, record)| {
+        let ordinal = feature_ordinals.get(record.id()).copied();
+        (ordinal.is_none(), ordinal, directory_sequence(record))
+    });
+    let mut ordered = booleans.into_iter();
+    for slot in &mut pending {
+        if slot.0 == "boolean_trees" {
+            *slot = ordered.next().expect("each Boolean slot was counted");
+        }
+    }
     // Records emitted before every reference they name resolves carry null
     // pointers until a re-encode fills them: each entry names the entity
     // index holding the optimistic encoding with its arena and record.
@@ -461,6 +505,7 @@ pub(in crate::writer) fn append(
         ..
     } = emitter;
     line_fonts(ir, entities, &targets);
+    associations::link(ir, entities, &targets);
     result
 }
 /// Emission state for one native re-emission pass: the read-only document
@@ -518,7 +563,13 @@ impl Emitter<'_, '_> {
     ) {
         // A re-emitted boundary carrier keeps its source dependence: an
         // independent copy mints standalone topology on re-decode.
-        if arena == "copious_data" {
+        if matches!(
+            arena,
+            "annotations" | "drawings" | "views" | "view_visibility"
+        ) {
+            entity.status =
+                super::source_status(self.ir, record).unwrap_or(EntityStatus::Annotation);
+        } else if arena == "copious_data" {
             if let Some(status) = super::source_status(self.ir, record) {
                 entity.status = status;
             }
