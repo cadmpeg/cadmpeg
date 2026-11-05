@@ -34,20 +34,29 @@ pub(super) fn write(target: &CadIr) -> Result<Synthesized, CodecError> {
     native::reconcile(&mut prepared, &mut losses)?;
     let mut bytes = Vec::new();
     let coverage = match super::generate::write_new(&prepared, &mut bytes) {
-        Ok(coverage) => coverage,
+        Ok((coverage, residual_losses)) => {
+            losses.extend(residual_losses);
+            coverage
+        }
         Err(error) if declines(&error) => {
             prepare::solved_carriers(&mut prepared, &mut losses)?;
             prepare::unreferenced_composite_curves(&mut prepared, &mut losses)?;
             prepare::pcurves(&mut prepared, &mut losses)?;
             bytes.clear();
             match super::generate::write_new(&prepared, &mut bytes) {
-                Ok(coverage) => coverage,
+                Ok((coverage, residual_losses)) => {
+                    losses.extend(residual_losses);
+                    coverage
+                }
                 Err(error) if declines(&error) => {
                     prepared = topology::admit_bodies(&prepared, &mut losses)?;
                     native::repair_keys(&mut prepared)?;
                     bytes.clear();
                     match super::generate::write_new(&prepared, &mut bytes) {
-                        Ok(coverage) => coverage,
+                        Ok((coverage, residual_losses)) => {
+                            losses.extend(residual_losses);
+                            coverage
+                        }
                         Err(error) if declines(&error) => {
                             // §5.0: a limitation the reductions cannot
                             // localize is still not a refusal. Shed the
@@ -56,7 +65,10 @@ pub(super) fn write(target: &CadIr) -> Result<Synthesized, CodecError> {
                             native::shed_design(&mut prepared)?;
                             bytes.clear();
                             match super::generate::write_new(&prepared, &mut bytes) {
-                                Ok(coverage) => coverage,
+                                Ok((coverage, residual_losses)) => {
+                                    losses.extend(residual_losses);
+                                    coverage
+                                }
                                 Err(error) if declines(&error) => {
                                     losses.push(F3dLossCode::WriterNoExportableSolids.note(format!(
                                         "unsupported writer content remains after shedding design: {error}; wrote an empty geometry carrier"
@@ -64,7 +76,10 @@ pub(super) fn write(target: &CadIr) -> Result<Synthesized, CodecError> {
                                     prepared = CadIr::empty();
                                     bytes.clear();
                                     match super::generate::write_new(&prepared, &mut bytes) {
-                                        Ok(coverage) => coverage,
+                                        Ok((coverage, residual_losses)) => {
+                                            losses.extend(residual_losses);
+                                            coverage
+                                        }
                                         // Terminal §5.0 reduction: even the empty
                                         // carrier is unwritable. Report it and
                                         // return the empty dispositions; only a
