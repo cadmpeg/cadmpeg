@@ -18,6 +18,7 @@ pub(super) struct Candidate {
 pub(super) fn payload(
     ir: &CadIr,
     version: crate::RhinoArchiveVersion,
+    only: Option<&cadmpeg_ir::ids::ProceduralSurfaceId>,
 ) -> Result<Option<Candidate>, WriteError> {
     let [body] = ir.model.bodies.as_slice() else {
         return Ok(None);
@@ -31,6 +32,9 @@ pub(super) fn payload(
     let mut profiles = Vec::new();
     let mut path = None;
     for procedure in &ir.model.procedural_surfaces {
+        if only.is_some_and(|id| id != &procedure.id) {
+            continue;
+        }
         let ProceduralSurfaceDefinition::Extrusion(extrusion) = procedure.definition() else {
             return Ok(None);
         };
@@ -73,6 +77,9 @@ pub(super) fn payload(
     let Some((direction, v0, v1)) = path else {
         return Ok(None);
     };
+    if profiles.len() > 1 {
+        return Ok(None);
+    }
     let Some(tangent) = direction.unit() else {
         return Ok(None);
     };
@@ -94,7 +101,7 @@ pub(super) fn payload(
             Sense::Reversed => 0,
             Sense::Forward => 1,
         };
-        if caps[cap] || face.loops.len() != profiles.len() {
+        if caps[cap] || (only.is_none() && face.loops.len() != profiles.len()) {
             return Ok(None);
         }
         caps[cap] = true;
@@ -120,6 +127,9 @@ pub(super) fn payload(
     let Some((start, xaxis)) = selected else {
         return Ok(None);
     };
+    if only.is_some() {
+        caps = [false, false];
+    }
     let up = tangent.cross(xaxis);
     let mut children = Vec::with_capacity(profiles.len());
     for (curve, source) in &profiles {
@@ -141,33 +151,7 @@ pub(super) fn payload(
         let body = super::nurbs_curve_payload_dimension(&profile, 2)?;
         children.push(super::class_wrapper(super::NURBS_CURVE_CLASS, &body)?);
     }
-    let profile_wrapper = if children.len() == 1 {
-        children.remove(0)
-    } else {
-        let count = i32::try_from(children.len()).map_err(|_| {
-            WriteError::Omit(format!(
-                "body {} extrusion profile count exceeds native range",
-                body.id
-            ))
-        })?;
-        let parameters = count.checked_add(1).ok_or_else(|| {
-            WriteError::Omit("extrusion profile parameter count exceeds native range".into())
-        })?;
-        let mut body = vec![0x10];
-        body.extend(count.to_le_bytes());
-        body.extend(0_i32.to_le_bytes());
-        body.extend(0_i32.to_le_bytes());
-        body.extend([0_u8; 48]);
-        body.extend(parameters.to_le_bytes());
-        for parameter in 0..parameters {
-            body.extend(f64::from(parameter).to_le_bytes());
-        }
-        let direct = body.clone();
-        for child in children {
-            body.extend(child);
-        }
-        super::class_wrapper_with_direct(crate::curves::POLYCURVE.to_wire(), &body, &direct)?
-    };
+    let profile_wrapper = children.remove(0);
     let mut direct = Vec::new();
     direct.extend(1_i32.to_le_bytes());
     let minor = if version == crate::RhinoArchiveVersion::V5 {
@@ -190,16 +174,7 @@ pub(super) fn payload(
         direct.extend(value.to_le_bytes());
     }
     direct.push(0);
-    direct.extend(
-        i32::try_from(profiles.len())
-            .map_err(|_| {
-                WriteError::Omit(format!(
-                    "body {} extrusion profile count exceeds native range",
-                    body.id
-                ))
-            })?
-            .to_le_bytes(),
-    );
+    direct.extend(1_i32.to_le_bytes());
     direct.extend([u8::from(caps[0]), u8::from(caps[1])]);
     let mut payload_body = direct[..8].to_vec();
     payload_body.extend(profile_wrapper);
@@ -214,7 +189,7 @@ pub(super) fn payload(
     Ok(Some(Candidate {
         payload,
         body_id: body.id.to_string(),
-        profile_count: profiles.len() + usize::from(profiles.len() > 1),
+        profile_count: 1,
     }))
 }
 
@@ -311,7 +286,6 @@ pub(super) fn admit(
     version: crate::RhinoArchiveVersion,
     materials: &super::MaterialPlan,
 ) -> Result<Option<(Candidate, Vec<u8>)>, WriteError> {
-    use cadmpeg_ir::codec::Codec;
     if !ir.model.appearance_bindings.is_empty()
         || !ir.model.presentation_layers.is_empty()
         || !ir.model.view_presentations.is_empty()
@@ -324,7 +298,7 @@ pub(super) fn admit(
     {
         return Ok(None);
     }
-    let candidate = match payload(ir, version) {
+    let candidate = match payload(ir, version, None) {
         Ok(Some(candidate)) => candidate,
         Ok(None) | Err(WriteError::Omit(_)) => return Ok(None),
         Err(error) => return Err(error),
@@ -341,7 +315,23 @@ pub(super) fn admit(
     let class = crate::extrusion::ON_EXTRUSION.to_wire();
     let record =
         super::framed_object_record(0x10, class, &candidate.payload, Some(&[]), Some(attributes))?;
-    let mut table = record.clone();
+    let Some(decoded) = decode_record(session, ir, version, &record)? else {
+        return Ok(None);
+    };
+    if !geometry_agrees(ir, decoded.ir()) {
+        return Ok(None);
+    }
+    Ok(Some((candidate, record)))
+}
+
+fn decode_record(
+    session: &cadmpeg_core::encode::EncodeSession,
+    ir: &CadIr,
+    version: crate::RhinoArchiveVersion,
+    record: &[u8],
+) -> Result<Option<cadmpeg_ir::codec::DecodeResult>, WriteError> {
+    use cadmpeg_ir::codec::Codec;
+    let mut table = record.to_vec();
     table.extend(super::short_chunk(super::TCODE_ENDOFTABLE, 0));
     let mut bytes = super::header(version);
     bytes.extend(super::long_chunk(1, b"cadmpeg")?);
@@ -358,15 +348,236 @@ pub(super) fn admit(
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, root) =
         cadmpeg_core::decode::DecodeContext::for_encode_session_root(&arena, session, &bytes)?;
-    let decoded = match crate::RhinoCodec.decode_with_context(&ctx, root) {
-        Ok(decoded) => decoded,
+    match crate::RhinoCodec.decode_with_context(&ctx, root) {
+        Ok(decoded) => Ok(Some(decoded)),
         Err(cadmpeg_ir::codec::DecodeFailure::Codec(cadmpeg_core::CodecError::ResourceLimit(
             limit,
-        ))) => return Err(WriteError::Encode(limit.into())),
-        Err(_) => return Ok(None),
+        ))) => Err(WriteError::Encode(limit.into())),
+        Err(_) => Ok(None),
+    }
+}
+
+pub(super) fn separate(
+    session: &cadmpeg_core::encode::EncodeSession,
+    ir: &CadIr,
+    surface: &cadmpeg_ir::geometry::Surface,
+    version: crate::RhinoArchiveVersion,
+) -> Result<Option<(cadmpeg_ir::ids::CurveId, super::SurfacePayload)>, WriteError> {
+    let Some(id) = surface.geometry.procedural_construction() else {
+        return Ok(None);
     };
-    if !geometry_agrees(ir, decoded.ir()) {
+    let Some(procedure) = ir
+        .model
+        .procedural_surfaces
+        .iter()
+        .find(|row| row.id == *id)
+    else {
+        return Ok(None);
+    };
+    let ProceduralSurfaceDefinition::Extrusion(definition) = procedure.definition() else {
+        return Ok(None);
+    };
+    let candidate = match payload(ir, version, Some(id)) {
+        Ok(Some(value)) => value,
+        Ok(None) | Err(WriteError::Omit(_)) => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    let record = super::framed_object_record(
+        0x10,
+        crate::extrusion::ON_EXTRUSION.to_wire(),
+        &candidate.payload,
+        Some(&[]),
+        None,
+    )?;
+    let Some(decoded) = decode_record(session, ir, version, &record)? else {
+        return Ok(None);
+    };
+    let output = decoded.ir();
+    let [out_surface] = output.model.surfaces.as_slice() else {
+        return Ok(None);
+    };
+    let [out_procedure] = output.model.procedural_surfaces.as_slice() else {
+        return Ok(None);
+    };
+    let ProceduralSurfaceDefinition::Extrusion(out_definition) = out_procedure.definition() else {
+        return Ok(None);
+    };
+    let Some(source_curve) = ir
+        .model
+        .curves
+        .iter()
+        .find(|row| row.id == *definition.directrix())
+    else {
+        return Ok(None);
+    };
+    let Some(out_curve) = output
+        .model
+        .curves
+        .iter()
+        .find(|row| row.id == *out_definition.directrix())
+    else {
+        return Ok(None);
+    };
+    let (Ok(mut left), Ok(right)) = (
+        serde_json::to_value(definition),
+        serde_json::to_value(out_definition),
+    ) else {
+        return Ok(None);
+    };
+    if let Some(object) = left.as_object_mut() {
+        object.insert(
+            "directrix".to_owned(),
+            serde_json::Value::String(out_definition.directrix().to_string()),
+        );
+    }
+    if left != right
+        || procedure.record_bounds() != out_procedure.record_bounds()
+        || surface.geometry.solved() != out_surface.geometry.solved()
+        || source_curve.parameter_range != out_curve.parameter_range
+        || source_curve.geometry.solved() != out_curve.geometry.solved()
+    {
         return Ok(None);
     }
-    Ok(Some((candidate, record)))
+    Ok(Some((
+        definition.directrix().clone(),
+        super::SurfacePayload {
+            class: crate::extrusion::ON_EXTRUSION.to_wire(),
+            body: candidate.payload,
+            direct: Some(Vec::new()),
+            record_count: 2,
+        },
+    )))
+}
+
+pub(super) fn sum(
+    session: &cadmpeg_core::encode::EncodeSession,
+    ir: &CadIr,
+    surface: &cadmpeg_ir::geometry::Surface,
+    version: crate::RhinoArchiveVersion,
+) -> Result<Option<(cadmpeg_ir::ids::CurveId, super::SurfacePayload)>, WriteError> {
+    let Some(id) = surface.geometry.procedural_construction() else {
+        return Ok(None);
+    };
+    let Some(procedure) = ir
+        .model
+        .procedural_surfaces
+        .iter()
+        .find(|row| row.id == *id)
+    else {
+        return Ok(None);
+    };
+    let ProceduralSurfaceDefinition::Extrusion(definition) = procedure.definition() else {
+        return Ok(None);
+    };
+    if definition.parameter_interval().is_some()
+        || definition.native_position().is_some()
+        || definition.revision_form().is_some()
+        || definition.legacy_cache().is_some()
+    {
+        return Ok(None);
+    }
+    let Some([Some(_u0), Some(v0), Some(_u1), Some(v1)]) =
+        procedure.record_bounds().map(|bounds| bounds.get())
+    else {
+        return Ok(None);
+    };
+    if v0 >= v1 {
+        return Ok(None);
+    }
+    let Some(source_curve) = ir
+        .model
+        .curves
+        .iter()
+        .find(|row| row.id == *definition.directrix())
+    else {
+        return Ok(None);
+    };
+    if source_curve.parameter_range.is_some()
+        || source_curve.geometry.procedural_construction().is_some()
+    {
+        return Ok(None);
+    }
+    let Some(SolvedCurveGeometry::Nurbs(curve)) = source_curve.geometry.solved() else {
+        return Ok(None);
+    };
+    let Some(SolvedSurfaceGeometry::Nurbs(solved)) = surface.geometry.solved() else {
+        return Ok(None);
+    };
+    if solved
+        .weights()
+        .is_some_and(|weights| weights.iter().flatten().any(|weight| weight.get() <= 0.0))
+    {
+        return Ok(None);
+    }
+    match super::check_nurbs_curve(source_curve.id.as_str(), curve) {
+        Ok(()) => {}
+        Err(WriteError::Omit(_)) => return Ok(None),
+        Err(error) => return Err(error),
+    }
+    let direction = *definition.direction().as_raw();
+    let from = direction.scale(v0);
+    let to = direction.scale(v1);
+    let first = super::nurbs_curve_payload_dimension(curve, 3)?;
+    let second =
+        super::bounded_line_payload([from.x, from.y, from.z], [to.x, to.y, to.z], [v0, v1], 3)?;
+    let mut direct = vec![0x10];
+    for _ in 0..3 {
+        direct.extend(0.0_f64.to_le_bytes());
+    }
+    let poles = solved.poles();
+    if poles.is_empty() {
+        return Ok(None);
+    }
+    let mut min = [f64::INFINITY; 3];
+    let mut max = [f64::NEG_INFINITY; 3];
+    for point in poles {
+        let point = point.get();
+        for (index, value) in [point.x, point.y, point.z].into_iter().enumerate() {
+            min[index] = min[index].min(value);
+            max[index] = max[index].max(value);
+        }
+    }
+    for value in min.into_iter().chain(max) {
+        direct.extend(value.to_le_bytes());
+    }
+    let mut body = direct.clone();
+    body.extend(super::class_wrapper(super::NURBS_CURVE_CLASS, &first)?);
+    body.extend(super::class_wrapper(super::LINE_CLASS, &second)?);
+    let class = crate::surfaces::SUM_SURFACE.to_wire();
+    let record = super::framed_object_record(8, class, &body, Some(&direct), None)?;
+    let Some(decoded) = decode_record(session, ir, version, &record)? else {
+        return Ok(None);
+    };
+    let output = decoded.ir();
+    let [out_surface] = output.model.surfaces.as_slice() else {
+        return Ok(None);
+    };
+    let [out_procedure] = output.model.procedural_surfaces.as_slice() else {
+        return Ok(None);
+    };
+    let ProceduralSurfaceDefinition::Sum(sum) = out_procedure.definition() else {
+        return Ok(None);
+    };
+    let Some(out_curve) = output
+        .model
+        .curves
+        .iter()
+        .find(|row| row.id == *sum.first())
+    else {
+        return Ok(None);
+    };
+    if surface.geometry.solved() != out_surface.geometry.solved()
+        || source_curve.geometry.solved() != out_curve.geometry.solved()
+    {
+        return Ok(None);
+    }
+    Ok(Some((
+        definition.directrix().clone(),
+        super::SurfacePayload {
+            class,
+            body,
+            direct: Some(direct),
+            record_count: 3,
+        },
+    )))
 }
