@@ -75,19 +75,39 @@ fn injected_errors_succeed_and_name_the_record() {
 
 #[test]
 fn capacity_helpers_follow_their_rows() {
-    assert_eq!(super::super::CAPACITY_FIELDS.len(), 2);
-    assert_eq!(super::super::CAPACITY_FIELDS[0].field, "card.payload");
-    assert_eq!(super::super::CAPACITY_FIELDS[0].limit, 72);
-    assert_eq!(super::super::CAPACITY_FIELDS[1].field, "card.sequence");
-    assert_eq!(super::super::CAPACITY_FIELDS[1].limit, 9_999_999);
-    let payload = vec![b' '; super::super::CAPACITY_FIELDS[0].limit as usize];
-    assert!(super::super::card_payload(&payload).is_ok());
-    let overlong = vec![b' '; super::super::CAPACITY_FIELDS[0].limit as usize + 1];
-    assert!(super::super::card_payload(&overlong).is_err());
-    let limit = super::super::CAPACITY_FIELDS[1].limit;
-    let sequence = u32::try_from(limit).expect("seven-digit limit fits u32");
-    assert!(super::super::card_sequence(sequence).is_ok());
-    assert!(super::super::card_sequence(sequence + 1).is_err());
+    assert_eq!(super::super::capacity::CAPACITY_FIELDS.len(), 2);
+    assert_eq!(
+        super::super::capacity::CAPACITY_FIELDS[0].field,
+        "card.payload"
+    );
+    assert_eq!(super::super::capacity::CAPACITY_FIELDS[0].limit, 72);
+    assert_eq!(
+        super::super::capacity::CAPACITY_FIELDS[1].field,
+        "card.sequence"
+    );
+    assert_eq!(super::super::capacity::CAPACITY_FIELDS[1].limit, 9_999_999);
+    use cadmpeg_ir::codec::write::EncodeError;
+    let fields = super::super::capacity::CAPACITY_FIELDS;
+    let payload = vec![b'A'; fields[0].limit as usize];
+    let sequence = u32::try_from(fields[1].limit).expect("seven-digit limit fits u32");
+    let bytes = super::super::card(&payload, b'S', sequence).expect("limits write");
+    let scan = crate::card::scan(&bytes).expect("written card scans");
+    assert!(
+        matches!(&scan.lines[0], crate::card::ScannedLine::Card { line, .. }
+        if line.payload[..payload.len()] == payload)
+    );
+    assert!(scan
+        .recoveries
+        .notes()
+        .iter()
+        .any(|note| note.message.contains("declared 9999999")));
+    let overlong = vec![b'A'; payload.len() + 1];
+    assert!(matches!(super::super::capacity::card_payload(&overlong),
+        Err(EncodeError::TargetCapacity { field, limit: 72, value: 73 }) if field == &fields[0]));
+    assert!(
+        matches!(super::super::capacity::card_sequence(sequence + 1),
+        Err(EncodeError::TargetCapacity { field, limit: 9_999_999, value: 10_000_000 }) if field == &fields[1])
+    );
 }
 
 #[test]
