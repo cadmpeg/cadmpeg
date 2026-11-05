@@ -693,6 +693,54 @@ fn unchanged_history_replays_full_source_xml_and_an_edited_history_regenerates()
 }
 
 #[test]
+fn unidentified_history_members_select_regeneration() {
+    let history = br#"<Keywords><Feature Name="Tree" Type="Origin" id="11"/></Keywords>"#;
+    let (decoded, _) = shared_member_with_sections(
+        resolved_features_payload(&[0]),
+        &[("Contents/Keywords", history)],
+    );
+    let source = decoded
+        .source_fidelity()
+        .retained_record(crate::SOURCE_IMAGE_ID)
+        .unwrap()
+        .data()
+        .unwrap();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, root) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
+        source,
+        &arena,
+        &cadmpeg_core::decode::DecodePolicy::desktop(),
+    )
+    .unwrap();
+    let mut baseline = crate::decode::decode(&ctx, root).unwrap();
+    let scan = crate::test_support::container::scan(source);
+    let retained = crate::writer::retained_history_sections(&baseline, &scan).unwrap();
+    assert_eq!(retained.len(), 1);
+    let id = retained[0].0.id.clone();
+    let mut missing = outer_header();
+    missing.extend(make_block(1, "Other", b"other"));
+    let missing_scan = crate::test_support::container::scan(&missing);
+    assert!(
+        crate::writer::retained_history_sections(&baseline, &missing_scan)
+            .unwrap()
+            .is_empty()
+    );
+    let mut duplicate = outer_header();
+    duplicate.extend(make_block(1, "Contents/Keywords", history));
+    duplicate.extend(make_block(2, "Contents/Keywords", history));
+    let duplicate_scan = crate::test_support::container::scan(&duplicate);
+    assert!(
+        crate::writer::retained_history_sections(&baseline, &duplicate_scan)
+            .unwrap()
+            .is_empty()
+    );
+    baseline.source_fidelity.annotations.provenance.remove(&id);
+    assert!(crate::writer::retained_history_sections(&baseline, &scan)
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
 fn metadata_edits_preserve_unedited_f64_bits_and_complete_display_member() {
     let raw_length = 9.0f64 / 10000.0;
     assert_ne!(
