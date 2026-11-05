@@ -499,9 +499,10 @@ pub(super) fn apply_text(
         }
         return Err("current note text does not match its formatted runs".into());
     }
+    let single_run = runs.len() == 1;
     for (run, text) in runs.iter_mut().zip(&annotation.text) {
         if text.is_empty()
-            || text == " "
+            || ((single_run || nested) && text == " ")
             || !text
                 .bytes()
                 .all(|byte| byte.is_ascii_graphic() || byte == b' ')
@@ -516,6 +517,21 @@ pub(super) fn apply_text(
         let run = run
             .and_then(Value::as_object_mut)
             .ok_or("current note has an invalid formatted run")?;
+        if run.get("font_code").and_then(Value::as_i64) == Some(2001) {
+            let bytes = text.as_bytes();
+            if !bytes.len().is_multiple_of(4)
+                || !bytes.chunks_exact(4).all(|character| {
+                    character.chunks_exact(2).all(|pair| {
+                        std::str::from_utf8(pair)
+                            .ok()
+                            .and_then(|pair| u8::from_str_radix(pair, 16).ok())
+                            .is_some_and(|value| (0x21..=0x7e).contains(&value))
+                    })
+                })
+            {
+                return Err("current note text violates the IGES font 2001 encoding".into());
+            }
+        }
         run.insert("declared_character_count".into(), Value::from(text.len()));
         run.insert(
             "text".into(),

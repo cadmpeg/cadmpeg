@@ -806,7 +806,6 @@ fn compact_timestamp_payload<'a>(
     let candidates = target.model.attributes.iter().filter(|attribute| {
         attribute.target == *entity
             && compact_custom_shape(attribute)
-            && matches!(attribute.values.first(), Some(Some(AttributeValue::Reference(reference))) if reference.ends_with(":entity#-1"))
     }).collect::<Vec<_>>();
     let indexed = candidates
         .iter()

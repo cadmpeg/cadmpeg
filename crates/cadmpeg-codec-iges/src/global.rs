@@ -1756,6 +1756,10 @@ fn resolve_form(
 }
 
 impl ResolvedGlobal {
+    pub(crate) fn has_unframed_fields(&self) -> bool {
+        self.unframed_from.is_some()
+    }
+
     pub(crate) fn version_field_available(&self) -> bool {
         self.unframed_from
             .is_none_or(|first| first > FIELD_VERSION_FLAG)

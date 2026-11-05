@@ -25,6 +25,11 @@ fn encode(
         lenient,
         missing: Vec::new(),
     };
+    let pattern_feature = if arena == "rectangular_arrays" {
+        solids::apply_rectangular_pattern(ir, record, &mut fields)?
+    } else {
+        None
+    };
     let boolean_feature = if arena == "boolean_trees" {
         solids::apply_combine(ir, record, &mut fields)?
     } else {
@@ -204,6 +209,9 @@ fn encode(
             };
             owners.push(*index);
         }
+    }
+    if let Some(feature) = pattern_feature {
+        result.source_targets.push(feature);
     }
     if let Some(feature) = boolean_feature {
         result.source_targets.push(feature);
@@ -408,6 +416,34 @@ pub(in crate::writer) fn append(
             directory_sequence(record),
         )
     });
+    // Boolean trees that project to features follow their current feature
+    // ordinals, while the other native records keep their Directory order.
+    let feature_ordinals = ir
+        .model
+        .features
+        .iter()
+        .filter_map(|feature| {
+            feature
+                .native_ref
+                .as_deref()
+                .map(|native| (native, feature.ordinal))
+        })
+        .collect::<BTreeMap<_, _>>();
+    let mut booleans = pending
+        .iter()
+        .copied()
+        .filter(|(arena, _)| *arena == "boolean_trees")
+        .collect::<Vec<_>>();
+    booleans.sort_by_key(|(_, record)| {
+        let ordinal = feature_ordinals.get(record.id()).copied();
+        (ordinal.is_none(), ordinal, directory_sequence(record))
+    });
+    let mut ordered = booleans.into_iter();
+    for slot in &mut pending {
+        if slot.0 == "boolean_trees" {
+            *slot = ordered.next().expect("each Boolean slot was counted");
+        }
+    }
     // Records emitted before every reference they name resolves carry null
     // pointers until a re-encode fills them: each entry names the entity
     // index holding the optimistic encoding with its arena and record.

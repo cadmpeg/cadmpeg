@@ -159,6 +159,29 @@ fn sync_neutral_parameters(
         .iter()
         .map(|feature| (&feature.id, feature))
         .collect::<HashMap<_, _>>();
+    let reference_parameters = ir
+        .model
+        .spatial_sketch_constraints
+        .iter()
+        .filter_map(|constraint| {
+            use cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput;
+            let definition = constraint.definition.kind();
+            if !crate::resolved_features::write_prepare::native_spatial_relation_supported(
+                definition, parameters,
+            ) {
+                return None;
+            }
+            match definition {
+                SpatialSketchConstraintDefinitionInput::Native {
+                    parameter: Some(id),
+                    ..
+                } => parameters
+                    .iter()
+                    .find(|parameter| &parameter.id == id && !parameter.driving),
+                _ => None,
+            }
+        })
+        .collect::<Vec<_>>();
     let mut desired = HashMap::<FeatureId, Vec<&DesignParameter>>::new();
     // Scalar-linked parameters mirror their lane scalars. When the two
     // disagree, the edit direction follows references: a parameter bound by a
@@ -166,7 +189,12 @@ fn sync_neutral_parameters(
     // the matching lane edit and stays out of the record (#237).
     let orphaned = orphaned_scalar_parameters(ir, native.as_ref())?;
     for parameter in parameters {
-        if orphaned.contains(&parameter.id) || is_pmi_parameter(parameter, native.as_ref()) {
+        if orphaned.contains(&parameter.id)
+            || is_pmi_parameter(parameter, native.as_ref())
+            || reference_parameters
+                .iter()
+                .any(|reference| reference.id == parameter.id)
+        {
             continue;
         }
         let Some(owner_id) = parameter.owner.as_ref() else {
@@ -223,6 +251,13 @@ fn sync_neutral_parameters(
                     "SLDPRT parameters for feature {feature_id} require a retained feature record"
                 ))
             })?;
+        for parameter in &reference_parameters {
+            if parameter.owner.as_ref() == Some(feature_id) {
+                record.parameters.remove(parameter.name.as_str());
+                record.dimension_properties.remove(parameter.name.as_str());
+                record.content.retain(|item| !matches!(item, FeatureContent::Dimension(name) if name == &parameter.name));
+            }
+        }
         let parameters = order_owner_parameters(desired.remove(feature_id).unwrap_or_default());
         let canonical = cadmpeg_core::text::named_entries(
             format_args!("the sldprt feature {feature_id} record"),
