@@ -237,8 +237,7 @@ pub(super) fn write_with_limits(
         limits,
         ..Default::default()
     };
-    let (subd_ctx, _) =
-        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &subd_arena, &subd_policy)?;
+    let subd_ctx = cadmpeg_core::decode::DecodeContext::for_encode(&subd_arena, &subd_policy);
     let mut subd_names = BTreeSet::new();
     for (ordinal, surface) in target.model.subds.iter().enumerate() {
         let fallback = format!("{DESIGN_FOLDER}/TSplines.BlobParts/TSpline.{ordinal}.tsm");
@@ -263,7 +262,7 @@ pub(super) fn write_with_limits(
                 CodecError::UnsupportedContent("F3D cage name space exhausted".into())
             })?;
         }
-        let Some(program) = subd::encode(&subd_ctx, surface)? else {
+        let Some(program) = subd::encode(&subd_ctx, surface, true)? else {
             return Err(CodecError::UnsupportedContent(format!(
                 "F3D cage {} has unsupported topology or controls",
                 surface.id
