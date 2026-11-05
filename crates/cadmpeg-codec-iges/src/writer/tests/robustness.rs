@@ -52,7 +52,7 @@ fn output_record_count(seed: &cadmpeg_ir::CadIr) -> u64 {
         .filter(|card| card.get(72) == Some(&b'D'))
         .count();
     assert_eq!(cards % 2, 0);
-    u64::try_from(cards / 2).unwrap()
+    u64::try_from(cards / 2).expect("valid test value")
 }
 
 #[test]
@@ -167,7 +167,12 @@ fn max_entities_counts_generated_transformations() {
     let reread = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode the placed surface");
-    let entities = &reread.ir().native.namespace("iges").unwrap().arenas()["entities"];
+    let entities = &reread
+        .ir()
+        .native
+        .namespace("iges")
+        .expect("valid test value")
+        .arenas()["entities"];
     assert!(entities
         .iter()
         .any(|record| record.field("entity_type").and_then(|value| value.as_i64()) == Some(124)));

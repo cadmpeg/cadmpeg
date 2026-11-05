@@ -438,7 +438,9 @@ pub(super) fn pole_edges(
             continue;
         }
         let mut uses = Vec::new();
-        let start = old.iter().position(|id| !poles.contains_key(id)).unwrap();
+        let Some(start) = old.iter().position(|id| !poles.contains_key(id)) else {
+            continue;
+        };
         let mut previous = old[start].clone();
         for offset in 0..old.len() {
             let id = &old[(start + offset) % old.len()];
