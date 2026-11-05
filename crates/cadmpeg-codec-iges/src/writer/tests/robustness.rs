@@ -82,7 +82,7 @@ fn capacity_helpers_follow_their_rows() {
     );
     assert_eq!(super::super::capacity::CAPACITY_FIELDS[1].limit, 9_999_999);
     let fields = super::super::capacity::CAPACITY_FIELDS;
-    let payload = vec![b'A'; fields[0].limit as usize];
+    let payload = vec![b'A'; usize::try_from(fields[0].limit).expect("payload limit fits usize")];
     let sequence = u32::try_from(fields[1].limit).expect("seven-digit limit fits u32");
     let bytes = super::super::card(&payload, b'S', sequence).expect("limits write");
     let scan = crate::card::scan(&bytes).expect("written card scans");
