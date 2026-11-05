@@ -71,17 +71,6 @@ pub(super) fn prepare(
         .iter()
         .any(|configuration| configuration.active);
     for (index, configuration) in ir.model.configurations.iter_mut().enumerate() {
-        if configuration
-            .name
-            .as_ref()
-            .is_none_or(|name| name.trim().is_empty())
-        {
-            configuration.name = Some(configuration.id.as_str().into());
-            losses.push(SldprtLossCode::WriterFieldsOmitted.note(format!(
-                "configuration {} uses its identity as the required native name",
-                configuration.id
-            )));
-        }
         if !has_active && index == 0 {
             configuration.active = true;
             losses.push(SldprtLossCode::WriterFieldsOmitted.note(format!(

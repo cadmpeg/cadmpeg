@@ -762,7 +762,7 @@ fn semantic_writer_repairs_duplicate_configuration_source_indices() {
 }
 
 #[test]
-fn semantic_writer_synthesizes_an_empty_configuration_name_and_rejects_a_duplicate() {
+fn semantic_writer_repairs_empty_and_duplicate_configuration_names() {
     let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body(&triangle_body())),
@@ -808,17 +808,31 @@ fn semantic_writer_synthesizes_an_empty_configuration_name_and_rejects_a_duplica
     duplicate.source_index = None;
     duplicate.native_ref = None;
     duplicate.active = false;
+    let duplicate_id = duplicate.id.clone();
     decoded.ir_mut().model.configurations.push(duplicate);
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(
-        error.to_string().contains("repeats configuration name"),
-        "{error}"
-    );
+    let plan = SldprtCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+            TargetRequest::Inherit,
+        )
+        .unwrap();
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.message.contains(duplicate_id.as_str()) && loss.message.contains("name")
+    }));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let names = output
+        .ir()
+        .model
+        .configurations
+        .iter()
+        .filter_map(|configuration| configuration.name.as_deref())
+        .collect::<std::collections::HashSet<_>>();
+    assert_eq!(names.len(), 2);
+    assert!(names.contains("Default"));
 }
 
 #[test]
