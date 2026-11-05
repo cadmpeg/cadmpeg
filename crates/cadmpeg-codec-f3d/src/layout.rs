@@ -3721,14 +3721,14 @@ pub(crate) mod coil_compact_placement_matrix_frame {
     pub(crate) const MATRIX: usize = 66;
 }
 
-/// Byte offsets for the `class_403_revolve_scope_frame` record.
+/// Byte offsets for the `direction_pair_revolve_scope_frame` record.
 ///
 /// Spec §3.1. Record length 387 B.
 ///
 /// ```text
 /// Offsets are relative to the primary indexed header. The frame has eight ordered references; its fixed operation prefix and angle-owner reference are typed, and the remaining marked references retain their source envelope.
 /// ```
-pub(crate) mod class_403_revolve_scope_frame {
+pub(crate) mod direction_pair_revolve_scope_frame {
     /// Offset of `operation` (`u32`, little-endian). Spec §3.1.
     pub(crate) const OPERATION: usize = 21;
     /// Offset of `extent_kind` (`u32`, little-endian). Spec §3.1.
@@ -3744,7 +3744,7 @@ pub(crate) mod class_403_revolve_scope_frame {
 /// Spec §3.1. Record length 38 B.
 ///
 /// ```text
-/// Offsets are relative to the Revolve primary indexed header. Every marker-one class pair uses the same fixed prologue.
+/// Offsets are relative to the Revolve primary indexed header. Every marker-one frame length uses the same fixed prologue.
 /// ```
 pub(crate) mod marker_one_revolve_prologue {
     /// Offset of `marker` (`u8`). Spec §3.1.

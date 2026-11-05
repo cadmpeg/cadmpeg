@@ -3640,7 +3640,7 @@ Unstated regions:
 - `0..55` (55 B): The fixed placement envelope precedes the explicit marker block.
 - `194..341` (147 B): The carrier tail is not assigned a semantic field.
 
-## `class_403_revolve_scope_frame`
+## `direction_pair_revolve_scope_frame`
 
 Spec §3.1 · layout: byte offsets · size: 387 B
 
@@ -3668,7 +3668,7 @@ Parsed by:
 
 Unstated regions:
 
-- `0..21` (21 B): The indexed header and the class-403/258 prefix before the operation are outside this field run.
+- `0..21` (21 B): The indexed header and the zero prefix before the operation are outside this field run.
 - `31..34` (3 B): Three zero bytes separate the fixed prefix from the angle-owner reference.
 - `39..107` (68 B): The auxiliary marked references and their separators occupy offsets 39 through 106.
 - `183..186` (3 B): Three zero bytes precede the ordered-reference count.
@@ -3680,7 +3680,7 @@ Unstated regions:
 
 Spec §3.1 · layout: byte offsets · size: 38 B
 
-Offsets are relative to the Revolve primary indexed header. Every marker-one class pair uses the same fixed prologue.
+Offsets are relative to the Revolve primary indexed header. Every marker-one frame length uses the same fixed prologue.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |

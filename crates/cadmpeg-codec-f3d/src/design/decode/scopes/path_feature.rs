@@ -11,8 +11,8 @@ use super::shared_frames::marked_record_reference;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::design_feature_family;
 use crate::design::DesignFeatureFamily;
-use crate::layout::class_403_revolve_scope_frame as class_403_revolve;
 use crate::layout::compact_loft_operation_prefix as compact_loft;
+use crate::layout::direction_pair_revolve_scope_frame as direction_pair_revolve;
 use crate::layout::marked_to_object_revolve_prologue as marked_to_object;
 use crate::layout::marker_one_revolve_prologue as revolve;
 use crate::layout::referenced_angle_revolve_prologue as referenced_revolve;
@@ -425,9 +425,7 @@ pub(super) fn exact_path_feature_construction(
             ))
         }
         DesignFeatureFamily::Revolve
-            if scope.class_tag.as_str() == "407"
-                && scope.paired_class_tag.as_str() == "258"
-                && parameter_scope_payload_length(scope) == Some(363)
+            if parameter_scope_payload_length(scope) == Some(363)
                 && scope.reference_members().len() == 8
                 && View::u32_le_at(bytes, start + 25) == Some(2)
                 && bytes.get(start + 29) == Some(&0)
@@ -458,22 +456,23 @@ pub(super) fn exact_path_feature_construction(
             ))
         }
         DesignFeatureFamily::Revolve
-            if scope.class_tag.as_str() == "403"
-                && scope.paired_class_tag.as_str() == "258"
-                && parameter_scope_payload_length(scope) == Some(373)
+            if parameter_scope_payload_length(scope) == Some(373)
                 && scope.reference_members().len() == 8
-                && View::u32_le_at(bytes, start + class_403_revolve::EXTENT_KIND) == Some(2)
-                && bytes.get(start + class_403_revolve::DIRECTION_KIND..start + 31)
+                && View::u32_le_at(bytes, start + direction_pair_revolve::EXTENT_KIND) == Some(2)
+                && bytes.get(start + direction_pair_revolve::DIRECTION_KIND..start + 31)
                     == Some(&[0, 1]) =>
         {
-            let angle_record_index =
-                marked_record_reference(bytes, start + class_403_revolve::ANGLE_REFERENCE_MARKER)?;
+            let angle_record_index = marked_record_reference(
+                bytes,
+                start + direction_pair_revolve::ANGLE_REFERENCE_MARKER,
+            )?;
             let angle =
                 unique_revolve_angle_owner(scope, parameter_owners, Some(angle_record_index), 0)?;
             Some(DesignPathFeatureConstruction::Revolve(
                 path_features::DesignRevolveConstruction {
-                    operation: operation(start + class_403_revolve::OPERATION)?,
-                    operation_offset: u64::try_from(start + class_403_revolve::OPERATION).ok()?,
+                    operation: operation(start + direction_pair_revolve::OPERATION)?,
+                    operation_offset: u64::try_from(start + direction_pair_revolve::OPERATION)
+                        .ok()?,
                     travel: path_features::DesignRevolveTravel::Angle(
                         cadmpeg_ir::scalar::PositiveAngle::new(angle.evaluated_value().get())?,
                     ),
