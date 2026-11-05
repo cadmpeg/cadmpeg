@@ -1193,9 +1193,6 @@ mod tests {
         assert!(findings[0].contains("body#1"), "{findings:?}");
     }
 
-    /// The product_assembly.FCStd record that exposed the occurrence
-    /// questions: the occurrence name is also a foreign native record id,
-    /// and the writer nests former roots under one added synthetic root.
     fn assembly_before() -> serde_json::Value {
         json!({
             "model": {
