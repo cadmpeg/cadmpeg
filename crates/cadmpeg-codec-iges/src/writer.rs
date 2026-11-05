@@ -250,6 +250,45 @@ const SYNTHESIS_COVERAGE: ArenaDispositions = {
     }
 };
 
+/// A shared source Directory record is recoverable when every point on the
+/// generated vertex list has a current label attribute naming that record.
+fn vertex_list_source(ir: &CadIr, points: &[String]) -> Option<String> {
+    use cadmpeg_ir::attributes::AttributeTarget;
+    if points.is_empty() {
+        return None;
+    }
+    let mut source: Option<String> = None;
+    for point in points {
+        let mut candidates = ir.model.attributes.iter().filter(|attribute| {
+            matches!(&attribute.target, AttributeTarget::Point(id) if id.as_str() == point)
+                && matches!(attribute.name.as_str(), "name" | "iges.directory_label")
+                && attribute.native_ref.is_some()
+        });
+        let current = candidates.next()?.native_ref.as_deref()?;
+        if candidates.any(|attribute| attribute.native_ref.as_deref() != Some(current)) {
+            return None;
+        }
+        if source
+            .as_deref()
+            .is_some_and(|previous| previous != current)
+        {
+            return None;
+        }
+        source = Some(current.to_owned());
+    }
+    let id = source?;
+    ir.native
+        .namespace("iges")?
+        .arenas()
+        .get("entities")?
+        .iter()
+        .find(|record| {
+            record.id() == id
+                && record.field("entity_type").and_then(|value| value.as_i64()) == Some(502)
+        })?;
+    Some(id)
+}
+
 fn counts_for_ir(ir: &CadIr) -> BTreeMap<String, usize> {
     let mut counts = BTreeMap::new();
     if let Some(namespace) = ir.native.namespace("iges") {
@@ -2604,13 +2643,26 @@ fn brep_entities(
             }
         }
         parameters.push(';');
+        let point_targets = vertex_ids
+            .iter()
+            .filter_map(|id| {
+                ir.model
+                    .vertices
+                    .iter()
+                    .find(|vertex| vertex.id.as_str() == id)
+                    .map(|vertex| vertex.point.to_string())
+            })
+            .collect::<Vec<_>>();
+        let source = vertex_list_source(ir, &point_targets);
+        let mut source_targets = point_targets;
+        source_targets.extend(source);
         let vertex_list_index = entities.len();
         entities.push(Entity {
             structure: None,
             property_links: Vec::new(),
             association_links: Vec::new(),
             line_font: None,
-            source_targets: Vec::new(),
+            source_targets,
             type_code: 502,
             form: 1,
             label: String::new(),
