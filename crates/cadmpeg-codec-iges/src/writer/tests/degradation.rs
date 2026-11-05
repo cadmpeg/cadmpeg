@@ -224,3 +224,48 @@ fn native_arena_declarations_cover_the_decoded_input() {
         plan.report(),
     );
 }
+
+#[test]
+fn face_with_missing_carrier_reports_each_removed_boundary_record() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(
+                crate::test_support::test_drawing_and_trimming::trimmed_plane_with_inner_loop_file(
+                ),
+            ),
+            &DecodeOptions::default(),
+        )
+        .expect("trimmed sheet decodes");
+    let mut ir = decoded.ir().clone();
+    ir.model.edges[0].carrier = cadmpeg_ir::topology::EdgeCarrier::new(None, None).unwrap();
+    let (stripped, losses) = super::super::strip_unusable_face_topology(&ir);
+    let stripped = stripped.expect("face with missing carrier is removed");
+    assert!(!ir.model.loops.is_empty() && !ir.model.coedges.is_empty());
+    assert!(stripped.model.loops.len() < ir.model.loops.len());
+    assert!(stripped.model.coedges.len() < ir.model.coedges.len());
+    for id in ir
+        .model
+        .loops
+        .iter()
+        .filter(|record| !stripped.model.loops.iter().any(|kept| kept.id == record.id))
+        .map(|record| record.id.as_str())
+        .chain(
+            ir.model
+                .coedges
+                .iter()
+                .filter(|record| {
+                    !stripped
+                        .model
+                        .coedges
+                        .iter()
+                        .any(|kept| kept.id == record.id)
+                })
+                .map(|record| record.id.as_str()),
+        )
+    {
+        assert!(
+            losses.iter().any(|loss| loss.message.contains(id)),
+            "missing loss for {id}"
+        );
+    }
+}
