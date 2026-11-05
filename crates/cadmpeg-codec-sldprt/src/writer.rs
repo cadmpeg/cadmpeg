@@ -3241,26 +3241,22 @@ fn retained_history_sections(
         .feature_histories
         .retain(|history| !history.id.starts_with("sldprt:generated:"));
     let annotations = &baseline.source_fidelity.annotations;
-    native
-        .feature_histories
-        .into_iter()
-        .map(|history| {
-            let provenance = annotations.provenance.get(&history.id).ok_or_else(|| {
-                CodecError::Malformed("reparsed SLDPRT history has no source owner".into())
-            })?;
-            let name = provenance.stream();
-            let mut sources = scan.sections().filter(|source| source.name() == Some(name));
-            let source = sources.next().ok_or_else(|| {
-                CodecError::NotImplemented("SLDPRT history requires a named retained member".into())
-            })?;
-            if sources.next().is_some() {
-                return Err(CodecError::NotImplemented(
-                    "SLDPRT history has ambiguous retained member identity".into(),
-                ));
-            }
-            Ok((history, name.to_owned(), source.payload().to_vec()))
-        })
-        .collect()
+    let mut retained = Vec::new();
+    for history in native.feature_histories {
+        let Some(provenance) = annotations.provenance.get(&history.id) else {
+            return Ok(Vec::new());
+        };
+        let name = provenance.stream();
+        let mut sources = scan.sections().filter(|source| source.name() == Some(name));
+        let Some(source) = sources.next() else {
+            return Ok(Vec::new());
+        };
+        if sources.next().is_some() {
+            return Ok(Vec::new());
+        }
+        retained.push((history, name.to_owned(), source.payload().to_vec()));
+    }
+    Ok(retained)
 }
 
 fn retained_history_payload(
