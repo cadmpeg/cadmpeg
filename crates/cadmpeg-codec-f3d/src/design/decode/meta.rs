@@ -528,15 +528,15 @@ pub(crate) fn metadata_for_bulk_stream(
 /// One live Design record selected by the primary index and resolved through
 /// its segment-local class tag.
 #[derive(Clone)]
-pub(in crate::design::decode) struct DesignPrimaryFrame<'a> {
-    pub(super) entity_id: u64,
-    pub(super) class_tag: crate::records::references::DesignClassTag,
-    pub(super) start: usize,
+pub(crate) struct DesignPrimaryFrame<'a> {
+    pub(crate) entity_id: u64,
+    pub(crate) class_tag: crate::records::references::DesignClassTag,
+    pub(crate) start: usize,
     /// End of the primary class-member sequence: the secondary nested header,
     /// or `end` when the record has none.
-    pub(super) member_end: usize,
-    pub(super) end: usize,
-    pub(super) design_type: &'a SegmentTypeData,
+    pub(crate) member_end: usize,
+    pub(crate) end: usize,
+    pub(crate) design_type: &'a SegmentTypeData,
 }
 
 pub(super) fn dynamic_type<'a>(
@@ -664,14 +664,11 @@ pub(in crate::design::decode) fn partition_primary_frames<'a>(
 /// registers that entity. A secondary entry supplies the exact end of the
 /// primary class-member sequence and must point to a nested header for the same
 /// entity.
-pub(super) fn design_primary_frames<'a>(
+pub(crate) fn design_primary_frames<'a>(
     bytes: &[u8],
     meta: &'a crate::metastream::MetaStream,
 ) -> Result<Vec<DesignPrimaryFrame<'a>>, CodecError> {
-    let (frames, faults) = partition_primary_frames(bytes, meta)?;
-    if let Some(fault) = faults.into_iter().next() {
-        return Err(CodecError::Malformed(fault.reason.into()));
-    }
+    let (frames, _) = partition_primary_frames(bytes, meta)?;
     Ok(frames)
 }
 
@@ -712,9 +709,11 @@ pub(super) fn typed_primary_frames<'a>(
         }
     }
 
-    let mut resolved_entities = HashSet::new();
+    let (primary_frames, faults) = partition_primary_frames(bytes, meta)?;
+    let mut resolved_entities: HashSet<_> =
+        faults.into_iter().map(|fault| fault.entity_id).collect();
     let mut frames = Vec::new();
-    for primary_frame in design_primary_frames(bytes, meta)? {
+    for primary_frame in primary_frames {
         if !primary_frame
             .design_type
             .type_guid
@@ -789,7 +788,10 @@ pub(crate) fn admit_damaged_bulk_records(
                     "F3D damaged bulk record exceeds its stream",
                 ));
             };
-            let spec = PartSpec::new("f3d.bulk_record");
+            let spec = PartSpec::new("f3d.bulk_record").holding([
+                cadmpeg_ir::document::ArenaClass::Model,
+                cadmpeg_ir::document::ArenaClass::Design,
+            ]);
             let spec = if extent.location().space == cadmpeg_core::decode::SpaceId::ROOT {
                 spec
             } else {
@@ -804,7 +806,16 @@ pub(crate) fn admit_damaged_bulk_records(
         let bytes = scan.entry_bytes(&entry.name)?;
         match partition_primary_frames(bytes, &meta) {
             Ok((_, faults)) => {
+                let state_entities: HashSet<_> =
+                    super::parameter_state::selected_frames(ctx, source, &meta)?
+                        .into_iter()
+                        .flatten()
+                        .map(|frame| frame.entity_id)
+                        .collect();
                 for fault in faults {
+                    if state_entities.contains(&fault.entity_id) {
+                        continue;
+                    }
                     give_up(
                         &mut output,
                         fault.start,
