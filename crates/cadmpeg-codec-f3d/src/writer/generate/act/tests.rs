@@ -56,7 +56,19 @@ fn current_typed_act_records_reemit_without_source_frames_or_locations() {
                 .unwrap(),
         )
         .unwrap();
-    let segments = encode(&native).unwrap();
+    let mut displaced = native.clone();
+    let (prefix, _) = displaced.act_tables[0].id.rsplit_once('#').unwrap();
+    displaced.act_tables[0].id = format!("{prefix}#1024");
+    let bounded_arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut bounded_policy = cadmpeg_core::decode::DecodePolicy::default();
+    bounded_policy.limits.max_retained_bytes = 1;
+    let bounded = cadmpeg_core::decode::DecodeContext::for_encode(&bounded_arena, &bounded_policy);
+    assert!(matches!(encode(&displaced, &bounded), Err(CodecError::ResourceLimit(limit))
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::RetainedBytes));
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let ctx = cadmpeg_core::decode::DecodeContext::for_encode(&arena, &policy);
+    let segments = encode(&native, &ctx).unwrap();
     let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
     let options = crate::zip_write::file_options(zip::CompressionMethod::Stored);
     crate::test_support::manifest_test::write_synthetic_manifests(&mut archive, options);
@@ -75,6 +87,9 @@ fn current_typed_act_records_reemit_without_source_frames_or_locations() {
         crate::test_support::zip_test::with_scan(&bytes, |scan| crate::act::decode(scan).unwrap());
     assert_eq!(output.untyped_records, 0);
     assert_eq!(output.entities.len(), native.act_entities.len());
+    assert_eq!(output.tables[0].id, native.act_tables[0].id);
+    assert_eq!(serde_json::to_value(&output.component_links[0]).unwrap()["byte_offset"],
+        serde_json::to_value(&native.act_component_links[0]).unwrap()["byte_offset"]);
     assert_eq!(
         output.component_links[0].layout().display_name(),
         "Current part label"
