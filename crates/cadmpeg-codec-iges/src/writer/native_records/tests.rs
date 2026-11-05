@@ -1119,6 +1119,33 @@ fn normalize_record(value: &mut serde_json::Value) {
 }
 
 #[test]
+fn solid_assembly_is_written_with_definition_use_flag() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use std::io::Cursor;
+    let decoded = crate::IgesCodec
+        .decode(
+            &mut Cursor::new(crate::test_support::test_solids_and_structure::solid_assembly_file()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let plan = crate::test_support::plan_at(crate::IgesVersion::V5_3, decoded.ir(), None).unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let directory = bytes
+        .split(|byte| *byte == b'\n')
+        .find(|line| line.get(72) == Some(&b'D') && line.get(..8) == Some(b"     184"))
+        .unwrap();
+    assert_eq!(&directory[64..72], b"00000200");
+    let output = crate::IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(
+        output.ir().native.namespace("iges").unwrap().arenas()["solid_assemblies"].len(),
+        1
+    );
+}
+
+#[test]
 fn reemitted_products_redecode_to_their_typed_records() {
     assert_fixture_round_trips(
         "solid_assembly",

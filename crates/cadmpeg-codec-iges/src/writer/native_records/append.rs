@@ -269,7 +269,7 @@ fn encode(
         result.line_font = Some(DirectoryLineFont::Number(number));
     }
     result.status = match type_code {
-        304 | 308 | 310 | 312 | 316 | 320 => EntityStatus::Definition,
+        184 | 304 | 308 | 310 | 312 | 316 | 320 => EntityStatus::Definition,
         132 => EntityStatus::LogicalPositional,
         _ => result.status,
     };
