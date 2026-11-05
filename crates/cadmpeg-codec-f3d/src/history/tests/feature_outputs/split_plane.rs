@@ -1492,3 +1492,213 @@ fn body_absorption_requires_supported_op_and_affirmative_evidence() {
         None
     );
 }
+
+#[test]
+fn split_and_body_properties_follow_bound_history_across_equal_state_numbers() {
+    use std::collections::HashMap;
+
+    let scope_h1_s1 = scope_between(1, 0);
+    let mut scope_h1_s2 = scope_between(2, 1);
+    scope_h1_s2.id = "f3d:Design/BulkStream.dat:design-parameter-scope#2".into();
+
+    let mut scope_h2_s1 = scope_between(1, 0);
+    scope_h2_s1.id = "f3d:Other/BulkStream.dat:design-parameter-scope#1".into();
+    let mut scope_h2_s2 = scope_between(2, 1);
+    scope_h2_s2.id = "f3d:Other/BulkStream.dat:design-parameter-scope#2".into();
+
+    let h1_state1 = two_solid_boxes_with_planes(
+        1,
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(2.0, 2.0, 1.0),
+        2,
+        Point3::new(0.0, 0.0, 2.0),
+        Point3::new(2.0, 2.0, 3.0),
+        vec![AsmHistoricalPlane {
+            surface: 20,
+            origin: Point3::new(0.0, 0.0, 1.5),
+            normal: Vector3::new(0.0, 0.0, 1.0),
+        }],
+    );
+    let mut h1_state2 = two_solid_boxes_with_planes(
+        1,
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(2.0, 2.0, 3.0),
+        2,
+        Point3::new(0.0, 0.0, 2.0),
+        Point3::new(2.0, 2.0, 3.0),
+        vec![],
+    );
+    h1_state2
+        .loop_coedges
+        .iter_mut()
+        .find(|r| r.owner_ref == 5)
+        .unwrap()
+        .member_refs
+        .extend([30, 31]);
+    h1_state2.coedge_topology.extend([
+        AsmHistoricalCoedge {
+            coedge: 30,
+            owner_loop: 5,
+            edge: 32,
+            next: 31,
+            previous: 31,
+            radial_next: 31,
+        },
+        AsmHistoricalCoedge {
+            coedge: 31,
+            owner_loop: 5,
+            edge: 32,
+            next: 30,
+            previous: 30,
+            radial_next: 30,
+        },
+    ]);
+    h1_state2.coedge_topology.sort_by_key(|c| c.coedge);
+    h1_state2.edge_vertices.push(AsmHistoricalEdge {
+        edge: 32,
+        start_vertex: 33,
+        end_vertex: 34,
+    });
+    h1_state2.edge_vertices.sort_by_key(|e| e.edge);
+    h1_state2.vertex_points.extend([
+        AsmHistoricalCarrierBinding {
+            entity: 33,
+            carrier: 120,
+        },
+        AsmHistoricalCarrierBinding {
+            entity: 34,
+            carrier: 121,
+        },
+    ]);
+    h1_state2.vertex_points.sort_by_key(|v| v.entity);
+
+    let mut h1_states = vec![
+        state(2, 2, Some(1), h1_state2),
+        state(1, 1, Some(0), h1_state1),
+        state(0, 0, None, AsmHistoricalTopology::default()),
+    ];
+    for (st, _, _) in &mut h1_states {
+        st.parent = "history:first".into();
+        st.id = format!("history:first:state#{}", st.state_id);
+    }
+    let history_first =
+        crate::test_support::history::history("history:first".into(), 0, None, false, h1_states);
+
+    let h2_state1 = two_solid_boxes_with_planes(
+        1,
+        Point3::new(0.0, 0.0, 0.0),
+        Point3::new(4.0, 2.0, 2.0),
+        2,
+        Point3::new(5.0, 0.0, 0.0),
+        Point3::new(9.0, 2.0, 2.0),
+        vec![AsmHistoricalPlane {
+            surface: 20,
+            origin: Point3::new(4.5, 0.0, 0.0),
+            normal: Vector3::new(1.0, 0.0, 0.0),
+        }],
+    );
+    let h2_state2 = h2_state1.clone();
+    let mut h2_states = vec![
+        state(2, 2, Some(1), h2_state2),
+        state(1, 1, Some(0), h2_state1),
+        state(0, 0, None, AsmHistoricalTopology::default()),
+    ];
+    for (st, _, _) in &mut h2_states {
+        st.parent = "history:second".into();
+        st.id = format!("history:second:state#{}", st.state_id);
+    }
+    let history_second =
+        crate::test_support::history::history("history:second".into(), 0, None, false, h2_states);
+
+    let owners = HashMap::from([
+        (scope_h1_s1.id.clone(), history_first.id.clone()),
+        (scope_h1_s2.id.clone(), history_first.id.clone()),
+        (scope_h2_s1.id.clone(), history_second.id.clone()),
+        (scope_h2_s2.id.clone(), history_second.id.clone()),
+    ]);
+    let scopes = [scope_h1_s1, scope_h1_s2, scope_h2_s1, scope_h2_s2];
+
+    for reversed in [false, true] {
+        let mut f_h1_split = split_body_test_feature(&scopes[0].id);
+        f_h1_split.id = FeatureId::mint("test:model:feature#h1-split").unwrap();
+        f_h1_split.ordinal = 0;
+
+        let mut f_h1_combine = combine_join_test_feature(&scopes[1].id, Some(1), Some(2));
+        f_h1_combine.id = FeatureId::mint("test:model:feature#h1-combine").unwrap();
+        f_h1_combine.ordinal = 1;
+
+        let mut f_h2_split = split_body_with_face_tool(&scopes[2].id, &[200]);
+        f_h2_split.id = FeatureId::mint("test:model:feature#h2-split").unwrap();
+        f_h2_split.ordinal = 2;
+
+        let mut f_h2_combine = combine_join_test_feature(&scopes[3].id, Some(1), Some(2));
+        f_h2_combine.id = FeatureId::mint("test:model:feature#h2-combine").unwrap();
+        f_h2_combine.ordinal = 3;
+
+        let mut features = [f_h1_split, f_h1_combine, f_h2_split, f_h2_combine];
+        let mut histories = if reversed {
+            vec![history_second.clone(), history_first.clone()]
+        } else {
+            vec![history_first.clone(), history_second.clone()]
+        };
+
+        bind_feature_outputs(&mut features, &scopes, &mut histories, &[], &owners, None).unwrap();
+
+        assert_eq!(
+            features[0]
+                .source_properties
+                .get(&cadmpeg_core::nonblank_literal!("split_plane"))
+                .map(String::as_str),
+            Some("0,0,1.5;0,0,1")
+        );
+        assert_eq!(
+            features[0]
+                .source_properties
+                .get(&cadmpeg_core::nonblank_literal!("body_centers"))
+                .map(String::as_str),
+            Some("1:1,1,0.5;2:1,1,2.5")
+        );
+        assert_eq!(
+            features[1]
+                .source_properties
+                .get(&cadmpeg_core::nonblank_literal!("deleted_bodies"))
+                .map(String::as_str),
+            Some("2")
+        );
+        assert_eq!(
+            features[1]
+                .source_properties
+                .get(&cadmpeg_core::nonblank_literal!("body_centers"))
+                .map(String::as_str),
+            Some("1:1,1,1.5")
+        );
+        assert_eq!(
+            features[2]
+                .source_properties
+                .get(&cadmpeg_core::nonblank_literal!("split_plane"))
+                .map(String::as_str),
+            Some("4.5,0,0;1,0,0")
+        );
+        assert_eq!(
+            features[2]
+                .source_properties
+                .get(&cadmpeg_core::nonblank_literal!("body_centers"))
+                .map(String::as_str),
+            Some("1:2,1,1;2:7,1,1")
+        );
+        assert_eq!(
+            features[3]
+                .source_properties
+                .get(&cadmpeg_core::nonblank_literal!("deleted_bodies"))
+                .map(String::as_str),
+            None
+        );
+        assert_eq!(
+            features[3]
+                .source_properties
+                .get(&cadmpeg_core::nonblank_literal!("body_centers"))
+                .map(String::as_str),
+            Some("1:2,1,1;2:7,1,1")
+        );
+    }
+}

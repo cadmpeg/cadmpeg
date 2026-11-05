@@ -199,19 +199,24 @@ fn resolved_body_selection_slots(selection: &BodySelection) -> Option<Vec<i64>> 
     }
 }
 
+pub(super) type StateFacePlanes = HashMap<(usize, i64), BTreeMap<i64, (Point3, Vector3)>>;
+
 pub(super) fn resolve_split_tool_plane(
     tool: &SplitBodyTool,
     datum_plane_frames: &HashMap<FeatureId, (Point3, Vector3)>,
-    state_face_planes: &HashMap<i64, BTreeMap<i64, (Point3, Vector3)>>,
+    state_face_planes: &StateFacePlanes,
+    history_index: Option<usize>,
     previous_state_id: i64,
     state_id: i64,
 ) -> Option<(Point3, Vector3)> {
     match tool {
         SplitBodyTool::Plane { plane } => datum_plane_frames.get(plane).copied(),
         SplitBodyTool::Faces(selection) => {
+            let history_index = history_index?;
             let slots = resolved_face_selection_slots(selection)?;
             for candidate_state in [previous_state_id, state_id] {
-                let Some(face_planes) = state_face_planes.get(&candidate_state) else {
+                let Some(face_planes) = state_face_planes.get(&(history_index, candidate_state))
+                else {
                     continue;
                 };
                 let mut planes = Vec::with_capacity(slots.len());
