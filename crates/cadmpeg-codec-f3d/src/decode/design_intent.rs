@@ -1239,10 +1239,10 @@ fn extend_related_design_records(
     design.design_record_headers.extend(scope_headers);
     let indices = scope_related_indices(&design.design_parameter_scopes);
     append_related_record_headers(scan, &mut design.design_record_headers, &indices)?;
-    crate::design::decode::deleted_sketch_members::mark_deleted_sketch_members(
+    crate::design::decode::deleted_members::mark_deleted_members(
         scan,
         &mut design.design_parameter_scopes,
-        &design.design_record_headers,
+        &mut design.design_record_headers,
     )?;
     let profile_losses = crate::design::decode::operands::bind_sketch_profiles(
         scan,
