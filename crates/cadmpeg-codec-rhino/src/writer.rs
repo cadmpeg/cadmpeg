@@ -670,12 +670,7 @@ fn reduction_loss(carrier: &ReducedCarrier<'_>) -> LossNote {
     let coedges = (!carrier.coedges.is_empty()).then(|| {
         format!(
             "; affecting coedge(s): {}",
-            carrier
-                .coedges
-                .iter()
-                .copied()
-                .collect::<Vec<_>>()
-                .join(", ")
+            carrier.coedges.join(", ")
         )
     });
     match carrier.leaf {
