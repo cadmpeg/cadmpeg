@@ -22,7 +22,7 @@ pub(super) fn project(
     ir: &mut CadIr,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
-    drop_degraded_features(scan, ir, losses)?;
+    drop_degraded_features(scan, ir, losses);
     let before = ir.model.entity_count();
     for section in &scan.framing.sections {
         if section.role() == SectionRole::Thumbnail {
@@ -192,13 +192,9 @@ pub(super) fn project(
 /// Drop features that lost rows to a given-up part and still fell back to
 /// stored geometry: they need the failed part, so the transfer excludes
 /// them and the part loss names them (#215 rule 2).
-fn drop_degraded_features(
-    scan: &ContainerScan<'_>,
-    ir: &mut CadIr,
-    losses: &mut Vec<LossNote>,
-) -> Result<(), CodecError> {
+fn drop_degraded_features(scan: &ContainerScan<'_>, ir: &mut CadIr, losses: &mut Vec<LossNote>) {
     if scan.framing.excluded_feature_owners.is_empty() {
-        return Ok(());
+        return;
     }
     let mut lost: std::collections::BTreeSet<u32> = std::collections::BTreeSet::new();
     for owners in scan.framing.excluded_feature_owners.values() {
@@ -230,7 +226,7 @@ fn drop_degraded_features(
         false
     });
     if dropped.is_empty() {
-        return Ok(());
+        return;
     }
     let mut by_section = std::collections::BTreeMap::<usize, Vec<String>>::new();
     for (number, id) in &dropped {
@@ -264,7 +260,6 @@ fn drop_degraded_features(
             .to_owned()
             + &format!("dropped=[{}]", ids.join(", "));
     }
-    Ok(())
 }
 
 #[cfg(test)]
