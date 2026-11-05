@@ -103,6 +103,19 @@ pub(super) fn bound_result_bodies(
     }
 }
 
+/// A Base Feature scope projected as a copying move, whose outputs are the
+/// copies its projection bound.
+pub(super) fn is_base_feature_copy(feature: &Feature, scopes: &[DesignParameterScope]) -> bool {
+    matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::MoveBody { .. })
+    ) && feature
+        .native_ref
+        .as_deref()
+        .and_then(|id| scopes.iter().find(|scope| scope.id == id))
+        .is_some_and(|scope| scope.kind() == DesignFeatureKind::BaseFeature)
+}
+
 pub(super) fn bind_history_outputs(
     feature: &mut Feature,
     scope: &DesignParameterScope,

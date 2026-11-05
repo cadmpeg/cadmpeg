@@ -8644,7 +8644,7 @@ anchor = "offset 25 stores u32 `N`"
 name = "timeline_owned_paste_source_pairs"
 kind = "byte"
 section = "3.1"
-anchor = "before the scope's same-index paired header, the two runs are followed by"
+anchor = "In the scope that a paste object owns, the two runs are followed by"
 size = 9
 note = "Offsets are relative to the byte after the two parallel 15-byte body runs. The GUID pairs start at the end of this prefix."
 

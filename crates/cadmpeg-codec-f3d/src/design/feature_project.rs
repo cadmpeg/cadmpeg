@@ -2827,8 +2827,8 @@ fn design_body_selection(
     BodySelection::Native(scope.id.clone())
 }
 
-/// A paste of copies whose every source and copy are current bodies of one
-/// component: a move with one copy and no transform.
+/// A paste of distinct copies whose every source and copy are current bodies
+/// of one component: a move with one copy and no transform.
 fn same_component_paste_copy(
     scope: &DesignParameterScope,
     construction: &crate::records::feature::base_feature::DesignBaseFeatureConstruction,
@@ -2858,10 +2858,13 @@ fn same_component_paste_copy(
     }
     let mut source_bodies = Vec::new();
     let mut copy_bodies = Vec::new();
+    let mut component = None;
     for (source, copy) in sources.zip(copies) {
         let (source_body, source_component) = current_body(source)?;
         let (copy_body, copy_component) = current_body(copy)?;
-        if source_component != copy_component {
+        if source_component != copy_component
+            || *component.get_or_insert(source_component) != source_component
+        {
             return None;
         }
         source_bodies.push(source_body.clone());

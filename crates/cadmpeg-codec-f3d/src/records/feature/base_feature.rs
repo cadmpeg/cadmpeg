@@ -163,8 +163,9 @@ pub(crate) enum DesignBaseFeatureConstruction {
         owner_record: u32,
         /// Byte offset of the object's reference to this scope.
         owner_reference_offset: u64,
-        /// Source body of each pasted copy, parallel to `bodies`; empty when
-        /// the object removes its sources or a source has no unique node.
+        /// Source body of each pasted copy, parallel to `bodies`, when the
+        /// owner is a paste object that keeps its sources and each source
+        /// GUID names one browser node; otherwise empty.
         copy_sources: Vec<DesignPasteSource>,
     },
 }
@@ -172,7 +173,7 @@ pub(crate) enum DesignBaseFeatureConstruction {
 /// Source body of one pasted copy, joined through its browser-node GUID.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct DesignPasteSource {
-    /// Design body entity suffix of the source body.
+    /// Design entity suffix that the source browser node names.
     pub(crate) entity_suffix: u64,
     /// Byte offset of the first code unit of the source browser-node GUID.
     pub(crate) node_guid_offset: u64,

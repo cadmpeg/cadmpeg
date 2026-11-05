@@ -10,8 +10,8 @@ use super::assembly_alignment::exact_assembly_alignment_with_types;
 use super::axial_assembly::bind_axial_assembly_operand_targets;
 use super::axial_assembly::bind_joint_origin_frames_from_assemblies;
 use super::base_feature::{
-    browser_node_suffixes, exact_base_feature_construction, exact_timeline_owned_base_feature,
-    timeline_body_owners, TimelineBodyOwner,
+    exact_base_feature_construction, exact_timeline_owned_base_feature, timeline_body_owners,
+    TimelineBodyOwner,
 };
 use super::coil::bind_coil_extent_from_parameters;
 use super::coil::exact_coil_discriminators;
@@ -131,9 +131,8 @@ pub(crate) fn decode_parameter_scopes(
         };
         let browser_nodes = metadata
             .and_then(|metadata| {
-                crate::design::decode::presentation::browser_node_records(bytes, &metadata).ok()
+                crate::design::decode::presentation::browser_node_suffixes(bytes, &metadata).ok()
             })
-            .map(|nodes| browser_node_suffixes(&nodes))
             .unwrap_or_default();
         let stream_scope_start = out.len();
         for header in parameter_scope_candidate_headers(bytes, &records)? {

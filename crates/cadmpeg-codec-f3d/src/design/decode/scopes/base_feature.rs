@@ -800,8 +800,10 @@ pub(super) struct TimelineBodyOwner {
     record: u32,
     body_count: usize,
     reference_offset: u64,
-    /// The object stores a null removal key: it pastes copies and keeps its
-    /// source bodies.
+    /// The object is a paste object: its scope stores a source pair per body.
+    pastes: bool,
+    /// The paste object stores a null removal key: it pastes copies and keeps
+    /// its source bodies.
     keeps_sources: bool,
 }
 
@@ -825,21 +827,6 @@ fn null_removal_key_at(envelope: &[u8], at: usize) -> bool {
     };
     crate::bytes::lp_utf16_bounded(envelope, at + key_at, GUID_CODE_UNITS..=GUID_CODE_UNITS)
         .is_some_and(|(key, _)| key == NULL_GUID)
-}
-
-/// Map each browser-node GUID to its Design body entity suffix. A GUID that
-/// two nodes store maps to no suffix.
-pub(super) fn browser_node_suffixes(
-    nodes: &[crate::design::decode::presentation::BrowserNodeRecord],
-) -> HashMap<String, Option<u64>> {
-    let mut suffixes = HashMap::new();
-    for node in nodes {
-        suffixes
-            .entry(node.guid.to_ascii_lowercase())
-            .and_modify(|suffix| *suffix = None)
-            .or_insert(Some(node.entity_suffix));
-    }
-    suffixes
 }
 
 /// Index each scope named by exactly one paste or body-to-component timeline
@@ -919,19 +906,15 @@ fn parse_timeline_body_owner(
             record,
             body_count,
             reference_offset,
+            pastes,
             keeps_sources: pastes && null_removal_key_at(bytes, cursor),
         },
     ))
 }
 
-/// Read the source browser-node GUID of each pasted body after the body runs.
-/// The first GUID of each pair names the source body's browser node.
-fn paste_sources(
-    bytes: &[u8],
-    at: usize,
-    body_count: usize,
-    nodes: &HashMap<String, Option<u64>>,
-) -> Option<Vec<DesignPasteSource>> {
+/// Read the counted GUID pair of each pasted body after the body runs: the
+/// first GUID of each pair and the offset of its code units.
+fn paste_source_pairs(bytes: &[u8], at: usize, body_count: usize) -> Option<Vec<(String, u64)>> {
     if bytes.get(at + paste_pairs::MARKER) != Some(&1)
         || bytes.get(at + paste_pairs::ZERO_RUN_4..at + paste_pairs::PAIR_COUNT)? != [0; 4]
         || usize::try_from(View::u32_le_at(bytes, at + paste_pairs::PAIR_COUNT)?).ok()?
@@ -940,23 +923,44 @@ fn paste_sources(
         return None;
     }
     let mut cursor = at + paste_pairs::LEN;
-    let mut sources = Vec::new();
-    for _ in 0..body_count {
-        let (source, after_source) =
-            crate::bytes::lp_utf16_bounded(bytes, cursor, GUID_CODE_UNITS..=GUID_CODE_UNITS)?;
-        let (_, after_pair) =
-            crate::bytes::lp_utf16_bounded(bytes, after_source, GUID_CODE_UNITS..=GUID_CODE_UNITS)?;
-        sources.push(DesignPasteSource {
-            entity_suffix: (*nodes.get(&source.to_ascii_lowercase())?)?,
-            node_guid_offset: u64::try_from(after_source - 2 * GUID_CODE_UNITS).ok()?,
-        });
-        cursor = after_pair;
-    }
-    Some(sources)
+    let mut guid = || {
+        let (guid, after) =
+            crate::bytes::lp_utf16_bounded(bytes, cursor, GUID_CODE_UNITS..=GUID_CODE_UNITS)
+                .filter(|(guid, _)| crate::bytes::is_guid_prefix(guid))?;
+        let code_units = u64::try_from(after - 2 * GUID_CODE_UNITS).ok()?;
+        cursor = after;
+        Some((guid, code_units))
+    };
+    (0..body_count)
+        .map(|_| {
+            let source = guid()?;
+            guid()?;
+            Some(source)
+        })
+        .collect()
 }
 
-/// Read the parallel parameter-body and body-entity runs of an owned scope,
-/// and the source of each copy when the owner keeps its sources.
+/// The entity suffix of the browser node that each source GUID names, when
+/// every source GUID names exactly one node.
+fn paste_sources(
+    pairs: Vec<(String, u64)>,
+    nodes: &HashMap<String, Option<u64>>,
+) -> Option<Vec<DesignPasteSource>> {
+    pairs
+        .into_iter()
+        .map(|(source, node_guid_offset)| {
+            Some(DesignPasteSource {
+                entity_suffix: (*nodes.get(&source.to_ascii_lowercase())?)?,
+                node_guid_offset,
+            })
+        })
+        .collect()
+}
+
+/// Read the parallel parameter-body and body-entity runs of an owned scope.
+/// A paste object's scope also stores a GUID pair per body before its
+/// reference table; the source of each copy is read when the paste keeps its
+/// sources.
 pub(super) fn exact_timeline_owned_base_feature(
     bytes: &[u8],
     scope: &DesignParameterScope,
@@ -987,10 +991,19 @@ pub(super) fn exact_timeline_owned_base_feature(
     };
     let parameter_bodies = run(owner.body_count)?;
     let bodies = run(owner.body_count)?;
-    let copy_sources = owner
-        .keeps_sources
-        .then(|| paste_sources(bytes, cursor, owner.body_count, nodes))
-        .flatten()
+    let pairs = if owner.pastes {
+        let references = usize::try_from(scope.reference_count_offset()).ok()?;
+        Some(paste_source_pairs(
+            bytes.get(..references)?,
+            cursor,
+            owner.body_count,
+        )?)
+    } else {
+        None
+    };
+    let copy_sources = pairs
+        .filter(|_| owner.keeps_sources)
+        .and_then(|pairs| paste_sources(pairs, nodes))
         .unwrap_or_default();
     Some(DesignBaseFeatureConstruction::TimelineOwnedBodies {
         parameter_bodies,

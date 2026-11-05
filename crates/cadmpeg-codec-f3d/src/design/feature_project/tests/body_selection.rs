@@ -187,7 +187,8 @@ fn component_body(suffix: u64, body: &str, component: u64) -> DesignBodyBinding 
     binding
 }
 
-/// A paste-owned Base Feature that places a copy of `source` as `copy`.
+/// A paste-owned Base Feature that places a copy of each of `sources` as the
+/// body at the same position in `copies`.
 fn paste_scope(sources: &[u64], copies: &[u64]) -> DesignParameterScope {
     use crate::records::feature::base_feature::{
         DesignBaseFeatureConstruction, DesignBaseFeatureEntry, DesignPasteSource,
@@ -304,4 +305,19 @@ fn a_paste_copy_needs_distinct_copies_that_are_not_its_sources() {
             "{sources:?} -> {copies:?}"
         );
     }
+}
+
+#[test]
+fn a_paste_copy_keeps_every_pair_in_one_component() {
+    let bindings = |second_component: u64| {
+        [
+            component_body(20, "f3d:model:body#1", 3),
+            component_body(30, "f3d:model:body#3", 3),
+            component_body(21, "f3d:model:body#2", second_component),
+            component_body(31, "f3d:model:body#4", second_component),
+        ]
+    };
+    let scope = paste_scope(&[20, 21], &[30, 31]);
+    assert!(paste_copy(&scope, &bindings(3)).is_some());
+    assert!(paste_copy(&scope, &bindings(282)).is_none());
 }
