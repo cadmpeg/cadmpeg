@@ -767,3 +767,36 @@ fn explicit_curve_bounded_surface_names_its_reduced_construction() {
         plan.report().losses
     );
 }
+
+#[test]
+fn source_less_product_and_root_occurrence_write_as_subfigures() {
+    use cadmpeg_ir::products::{Occurrence, ProductDefinition};
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model.product_definitions.push(
+        serde_json::from_value::<ProductDefinition>(serde_json::json!({
+            "id":"test:model:product#one", "kind":"part", "label":"Assembly part"
+        }))
+        .unwrap(),
+    );
+    ir.model.occurrences.push(serde_json::from_value::<Occurrence>(serde_json::json!({
+        "id":"test:model:occurrence#one", "prototype":{"scope":"local","definition":"test:model:product#one"},
+        "parent":{"kind":"root"}, "ordinal":0,
+        "transform":[[0.0,-1.0,0.0,4.0],[1.0,0.0,0.0,5.0],[0.0,0.0,1.0,6.0]]
+    })).unwrap());
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let after = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(after.ir().model.product_definitions.len(), 1);
+    assert_eq!(
+        after.ir().model.product_definitions[0].label.as_deref(),
+        Some("Assembly part")
+    );
+    assert_eq!(after.ir().model.occurrences.len(), 1);
+    assert_eq!(
+        after.ir().model.occurrences[0].transform,
+        ir.model.occurrences[0].transform
+    );
+}
