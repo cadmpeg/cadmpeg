@@ -672,4 +672,36 @@ mod tests {
         assert_ne!(id, ir.model.features[0].id);
         assert!(ir.model.features[0].ordinal < ir.model.features[1].ordinal);
     }
+
+    #[test]
+    fn native_history_writes_feature_ordinals_by_rank() {
+        let mut ir = cadmpeg_ir::CadIr::empty();
+        append_feature(&mut ir, "First", FeatureOperation::StoredGeometry {}).unwrap();
+        append_feature(&mut ir, "Second", FeatureOperation::StoredGeometry {}).unwrap();
+        ir.model.features[0].ordinal = u64::MAX - 1;
+        ir.model.features[1].ordinal = u64::MAX;
+        let mut native = None;
+        crate::history::write::features::synthesize_neutral_features(
+            &ir.model,
+            &ir.model.parameters,
+            &ir.model.bodies,
+            &mut native,
+            &std::collections::HashSet::new(),
+        )
+        .unwrap();
+        let native = native.unwrap();
+        let features = &native.feature_histories[0].features;
+        assert!(
+            features
+                .iter()
+                .find(|feature| feature.name == "First")
+                .unwrap()
+                .ordinal
+                < features
+                    .iter()
+                    .find(|feature| feature.name == "Second")
+                    .unwrap()
+                    .ordinal
+        );
+    }
 }
