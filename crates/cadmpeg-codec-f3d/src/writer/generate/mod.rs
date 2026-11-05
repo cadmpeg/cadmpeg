@@ -84,6 +84,7 @@ pub(crate) fn write_new(
         validate_source_less_design_links(target, &native, &attributes)?;
     }
     let design_registry = GeneratedDesignRegistry::new(target, design_bindings, &attributes)?;
+    let brep_name = source_brep_name(&native, design_registry.body_map.is_some());
     let smbh = encode_smbh(target, &native, &attributes)?;
     let mut staged = tempfile::tempfile()?;
     let mut archive = zip::ZipWriter::new(&mut staged);
@@ -108,7 +109,7 @@ pub(crate) fn write_new(
     archive.write_all(&manifest::generated_design_asset()?)?;
     archive
         .start_file(
-            format!("{DESIGN_FOLDER}/Breps.BlobParts/BREP.generated.smbh"),
+            format!("{DESIGN_FOLDER}/Breps.BlobParts/{brep_name}"),
             options,
         )
         .map_err(|error| {
@@ -159,7 +160,8 @@ pub(crate) fn write_new(
     }
     // The parameter segment owns its independent dynamic class tags. Browser
     // and geometry metadata use the main Design segment's generated registry.
-    let design_bulk = encode_design_bulkstream(target, &native, &design_registry, Vec::new())?;
+    let design_bulk =
+        encode_design_bulkstream(target, &native, &design_registry, Vec::new(), brep_name)?;
     if let Some(bulk_stream) = &design_bulk {
         archive
             .start_file(format!("{DESIGN_FOLDER}/Design1/BulkStream.dat"), options)
@@ -214,6 +216,27 @@ pub(crate) fn write_new(
         dispositions.features = ArenaDisposition::Written;
     }
     Ok(dispositions)
+}
+
+fn source_brep_name(native: &crate::native::F3dNative, requires_body_map: bool) -> &str {
+    let mut names = native
+        .body_native_keys
+        .iter()
+        .filter_map(|key| key.source_brep.as_deref());
+    let Some(first) = names.next() else {
+        return "BREP.generated.smbh";
+    };
+    if (!requires_body_map || first.starts_with("BREP."))
+        && first.ends_with(".smbh")
+        && !first.contains(['/', '\\'])
+        && first != "."
+        && first != ".."
+        && names.all(|name| name == first)
+    {
+        first
+    } else {
+        "BREP.generated.smbh"
+    }
 }
 
 /// What [`write_new`] does with each model arena.

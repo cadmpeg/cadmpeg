@@ -385,8 +385,12 @@ pub(super) fn dispositions(
                 }
             } else if before != after {
                 coverage.$field = if after == 0 { Dropped } else { Reported };
+                let live: std::collections::BTreeSet<_> = written.model.$field.iter().map(EntitySchema::identity).collect();
+                let mut omitted: Vec<_> = original.model.$field.iter().map(EntitySchema::identity)
+                    .filter(|id| !live.contains(id)).collect();
+                omitted.sort_unstable();
                 losses.push(F3dLossCode::$code.note(format!(
-                    "model.{}: {before} document record(s) produce {after} encoded record(s)", stringify!($field),
+                    "model.{}: {before} document record(s) produce {after} encoded record(s); omitted identities: {}", stringify!($field), omitted.join(", "),
                 )));
             }
         })*};

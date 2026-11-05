@@ -304,7 +304,7 @@ fn variant_forms(path: &[String], registry: &Registry) -> Vec<String> {
 
 /// The longest table key that is a suffix of `path`, preferring longer keys.
 fn table_lookup<'a: 'k, 'k>(
-    path: &[String],
+    path: &'k [String],
     keys: &'k [(String, Vec<String>)],
     table: &'a BTreeMap<String, BTreeSet<String>>,
 ) -> impl Iterator<Item = &'a BTreeSet<String>> + 'k {
@@ -315,7 +315,7 @@ fn table_lookup<'a: 'k, 'k>(
         }
     }
     keys.iter().filter_map(move |(name, parts)| {
-        (parts.len() == best && best >= 2)
+        (parts.len() == best && best >= 2 && suffix_match(path, parts))
             .then(|| table.get(name))
             .flatten()
     })
@@ -994,6 +994,37 @@ fn carried_artifacts_are_fresh() {
 mod tests {
     use super::super::encode_paths::source::fixture;
     use super::*;
+
+    #[test]
+    fn constructor_lookup_uses_the_matching_path_at_the_longest_length() {
+        let table = BTreeMap::from([
+            (
+                "model::Point::new".to_owned(),
+                BTreeSet::from(["PointKind::Point".to_owned()]),
+            ),
+            (
+                "model::Curve::new".to_owned(),
+                BTreeSet::from(["CurveKind::Curve".to_owned()]),
+            ),
+            (
+                "Point::new".to_owned(),
+                BTreeSet::from(["Short::Variant".to_owned()]),
+            ),
+        ]);
+        let keys = split_keys(&table);
+        let path = ["package", "model", "Point", "new"].map(str::to_owned);
+        let found: BTreeSet<_> = table_lookup(&path, &keys, &table)
+            .flatten()
+            .cloned()
+            .collect();
+        assert_eq!(found, BTreeSet::from(["PointKind::Point".to_owned()]));
+        let other = ["package", "model", "Curve", "new"].map(str::to_owned);
+        let found: BTreeSet<_> = table_lookup(&other, &keys, &table)
+            .flatten()
+            .cloned()
+            .collect();
+        assert_eq!(found, BTreeSet::from(["CurveKind::Curve".to_owned()]));
+    }
 
     fn test_registry() -> Registry {
         let mut registry = Registry::default();
