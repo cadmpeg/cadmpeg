@@ -1580,3 +1580,68 @@ fn unknown_surface_does_not_drop_the_other_placed_face() {
         .any(|point| point.position().get() == Point3::new(10.0, 20.0, 30.0)));
     assert!(losses.iter().any(|loss| loss.message.contains(&omitted)));
 }
+
+#[test]
+fn wire_periodic_curve_with_noncanonical_outer_knots_keeps_its_span() {
+    use cadmpeg_ir::geometry::nurbs::NurbsCurve;
+    use cadmpeg_ir::geometry::{CurveGeometry, SolvedCurveGeometry};
+    use cadmpeg_ir::topology::EdgeCarrier;
+
+    let mut ir = wire(BodyKind::Wire);
+    let curve = NurbsCurve::from_lanes(
+        2,
+        vec![-3.0, -1.0, 0.0, 1.0, 2.0, 3.0, 7.0],
+        vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 1.0, 0.0),
+            Point3::new(2.0, 1.0, 0.0),
+            Point3::new(3.0, 0.0, 0.0),
+        ],
+        None,
+        true,
+    )
+    .expect("valid held curve");
+    let expected = |parameter| {
+        cadmpeg_ir::eval::decode::nurbs_curve_point_at(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &curve,
+            parameter,
+        )
+        .expect("held curve is evaluable")
+        .get()
+    };
+    let parameters = [0.25, 1.0, 1.75];
+    let expected_points = parameters.map(expected);
+    let curve_id = ir.model.curves[0].id.clone();
+    ir.model.curves[0].parameter_range = None;
+    ir.model.curves[0].geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve));
+    let edge = &mut ir.model.edges[0];
+    edge.carrier = EdgeCarrier::new(Some(curve_id), Some([parameters[0], parameters[2]])).unwrap();
+    for (vertex_id, position) in [edge.start.clone(), edge.end.clone()]
+        .iter()
+        .zip([expected_points[0], expected_points[2]])
+    {
+        let point_id = &ir
+            .model
+            .vertices
+            .iter()
+            .find(|vertex| &vertex.id == vertex_id)
+            .unwrap()
+            .point;
+        ir.model
+            .points
+            .iter_mut()
+            .find(|point| &point.id == point_id)
+            .unwrap()
+            .set_position(FinitePoint3::new(position).unwrap());
+    }
+    let (decoded, losses) = roundtrip(&ir);
+    assert_eq!(decoded.model.curves.len(), 1, "losses: {losses:?}");
+    for (parameter, expected) in parameters.into_iter().zip(expected_points) {
+        let actual = curve_position(&decoded.model.curves[0], parameter);
+        assert!(
+            actual.distance(expected) < 1.0e-9,
+            "{parameter}: {actual:?} != {expected:?}"
+        );
+    }
+}

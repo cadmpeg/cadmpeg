@@ -20,24 +20,24 @@ use crate::test_support::protein_test::{
     generated_definition_catalog_for, generated_instance_properties_for,
     generated_schema_from_paged,
 };
+use crate::test_support::sketch_stream_test::generated_design_bulkstream;
 use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
 use crate::test_support::smbh_header_test::synthetic_smbh;
 use crate::test_support::smbh_revision_test::scrubbed_definition;
 use crate::test_support::streams_test::{
-    design_metastream_with_records_and_secondary,
-    generated_act_bulkstream, generated_act_metastream, generated_design_base_feature_bulkstream,
+    design_metastream_with_records_and_secondary, generated_act_bulkstream,
+    generated_act_metastream, generated_design_base_feature_bulkstream,
     generated_design_base_feature_metastream, generated_design_base_flange_bulkstream,
-    generated_design_base_flange_metastream, generated_design_bulkstream,
-    generated_design_canvas_bulkstream, generated_design_canvas_metastream,
-    generated_design_copy_paste_bodies_bulkstream, generated_design_copy_paste_bodies_metastream,
-    generated_design_copy_paste_bulkstream, generated_design_copy_paste_metastream,
-    generated_design_form_bulkstream, generated_design_form_metastream,
-    generated_design_metastream, generated_design_remove_body_bulkstream,
-    generated_design_remove_body_metastream, generated_design_sketch_dimension_bulkstream,
-    generated_design_sketch_dimension_metastream, generated_design_surface_stitch_bulkstream,
-    generated_design_surface_stitch_metastream, generated_design_types,
-    generated_flat_pattern_settings_bulkstream, generated_flat_pattern_settings_metastream,
-    GeneratedDesignMetastreamVariant,
+    generated_design_base_flange_metastream, generated_design_canvas_bulkstream,
+    generated_design_canvas_metastream, generated_design_copy_paste_bodies_bulkstream,
+    generated_design_copy_paste_bodies_metastream, generated_design_copy_paste_bulkstream,
+    generated_design_copy_paste_metastream, generated_design_form_bulkstream,
+    generated_design_form_metastream, generated_design_metastream,
+    generated_design_remove_body_bulkstream, generated_design_remove_body_metastream,
+    generated_design_sketch_dimension_bulkstream, generated_design_sketch_dimension_metastream,
+    generated_design_surface_stitch_bulkstream, generated_design_surface_stitch_metastream,
+    generated_design_types, generated_flat_pattern_settings_bulkstream,
+    generated_flat_pattern_settings_metastream, GeneratedDesignMetastreamVariant,
 };
 use crate::F3dCodec;
 
@@ -316,6 +316,118 @@ pub(crate) fn f3d_with_smbh_and_instance_properties(
     )
 }
 
+pub(crate) fn indexed_fixture_metastream(bulk: &[u8], primary: &[u32], paired: &[u32]) -> Vec<u8> {
+    let headers: Vec<_> = bulk
+        .windows(11)
+        .enumerate()
+        .filter_map(|(offset, bytes)| {
+            if bytes[..4] != 3_u32.to_le_bytes() || !bytes[4..7].iter().all(u8::is_ascii_digit) {
+                return None;
+            }
+            let tag = std::str::from_utf8(&bytes[4..7])
+                .ok()?
+                .parse::<usize>()
+                .ok()?;
+            let id = u32::from_le_bytes(bytes[7..11].try_into().ok()?);
+            primary.contains(&id).then_some((offset, tag, id))
+        })
+        .collect();
+    let mut records = Vec::new();
+    let mut secondary = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for &(offset, tag, id) in &headers {
+        if seen.insert(id) {
+            records.push((u64::from(id), u64::try_from(offset).unwrap(), tag));
+        } else if paired.contains(&id)
+            && !secondary.iter().any(|(entity, _)| *entity == u64::from(id))
+        {
+            secondary.push((u64::from(id), u64::try_from(offset).unwrap()));
+        }
+    }
+    assert_eq!(records.len(), primary.len());
+    assert_eq!(secondary.len(), paired.len());
+    let highest = headers.iter().map(|(_, tag, _)| *tag).max().unwrap();
+    let mut entities = vec![Vec::new(); highest - 255];
+    for &(id, _, tag) in &records {
+        entities[tag - 256].push(id);
+    }
+    let guids: Vec<_> = (256..=highest)
+        .map(|tag| format!("00000000-0000-4000-8000-{tag:012X}"))
+        .collect();
+    let types: Vec<_> = guids
+        .iter()
+        .zip(&entities)
+        .map(|(guid, ids)| (guid.as_str(), "", 1, "Fusion", ids.as_slice()))
+        .collect();
+    let records: Vec<_> = records
+        .into_iter()
+        .map(|(id, offset, _)| (id, offset))
+        .collect();
+    design_metastream_with_records_and_secondary(&types, &records, &secondary)
+}
+
+fn fixture_secondary_index(meta: Vec<u8>, bulk: &[u8], ids: &[u64]) -> Vec<u8> {
+    let parsed = crate::metastream::parse(&meta, "Design/MetaStream.dat").unwrap();
+    let mut secondary: Vec<_> = parsed
+        .secondary_records
+        .iter()
+        .map(|row| (row.entity_id, row.bulk_offset))
+        .collect();
+    for (ordinal, row) in parsed
+        .records
+        .iter()
+        .enumerate()
+        .filter(|(_, row)| ids.contains(&row.entity_id))
+    {
+        if secondary.iter().any(|(id, _)| *id == row.entity_id) {
+            continue;
+        }
+        let start = usize::try_from(row.bulk_offset).unwrap();
+        let end = parsed.records.get(ordinal + 1).map_or(bulk.len(), |next| {
+            usize::try_from(next.bulk_offset).unwrap()
+        });
+        let target = u32::try_from(row.entity_id).unwrap().to_le_bytes();
+        let mut matches = bulk[start + 11..end]
+            .windows(11)
+            .enumerate()
+            .filter(|(_, header)| {
+                header[..4] == 3_u32.to_le_bytes()
+                    && header[4..7].iter().all(u8::is_ascii_digit)
+                    && header[7..11] == target
+            })
+            .map(|(offset, _)| start + 11 + offset);
+        if let (Some(at), None) = (matches.next(), matches.next()) {
+            secondary.push((row.entity_id, u64::try_from(at).unwrap()));
+        }
+    }
+    secondary.sort_by_key(|(_, at)| *at);
+    let entities: Vec<Vec<_>> = parsed
+        .types
+        .iter()
+        .map(|ty| ty.entities.values().copied().collect())
+        .collect();
+    let types: Vec<_> = parsed
+        .types
+        .iter()
+        .zip(&entities)
+        .map(|(ty, ids)| {
+            (
+                ty.type_guid.as_str(),
+                ty.base_type_guid.value().map_or("", |base| base.as_str()),
+                ty.version,
+                ty.module.as_str(),
+                ids.as_slice(),
+            )
+        })
+        .collect();
+    let records: Vec<_> = parsed
+        .records
+        .iter()
+        .map(|row| (row.entity_id, row.bulk_offset))
+        .collect();
+    design_metastream_with_records_and_secondary(&types, &records, &secondary)
+}
+
 fn sketch_dimension_metastream(
     records: &[(u64, u64)],
     extra_types: &[(
@@ -347,6 +459,8 @@ pub(crate) fn f3d_with_smbh_and_protein_with_generated_sketch_dimension(smbh: &[
     )];
     let (design_bulk, design_records) = generated_design_sketch_dimension_bulkstream();
     let design_metastream = sketch_dimension_metastream(&design_records, &[]);
+    let design_metastream =
+        fixture_secondary_index(design_metastream, &design_bulk, &[584, 1100, 1400, 1600]);
     f3d_with_smbh_and_instance_properties_and_design_with_metastream(
         smbh,
         &properties,
@@ -361,6 +475,11 @@ pub(crate) fn f3d_with_smbh_and_protein_with_generated_canvas(smbh: &[u8]) -> Ve
     )];
     let (design_bulk, design_records) = generated_design_canvas_bulkstream();
     let design_metastream = generated_design_canvas_metastream(&design_records);
+    let design_metastream = fixture_secondary_index(
+        design_metastream,
+        &design_bulk,
+        &[10, 30, 584, 1100, 1400, 1500, 1600, 1700],
+    );
     f3d_with_smbh_and_instance_properties_and_design_with_metastream_and_entries(
         smbh,
         &properties,
@@ -402,6 +521,11 @@ pub(crate) fn f3d_with_smbh_and_protein_with_generated_base_feature(smbh: &[u8])
     )];
     let (design_bulk, design_records) = generated_design_base_feature_bulkstream();
     let design_metastream = generated_design_base_feature_metastream(&design_records);
+    let design_metastream = fixture_secondary_index(
+        design_metastream,
+        &design_bulk,
+        &[10, 30, 584, 1100, 1400, 1500, 1600, 1700],
+    );
     f3d_with_smbh_and_instance_properties_and_design_with_metastream(
         smbh,
         &properties,
@@ -416,6 +540,11 @@ pub(crate) fn f3d_with_smbh_and_protein_with_generated_base_flange(smbh: &[u8]) 
     )];
     let (design_bulk, design_records) = generated_design_base_flange_bulkstream();
     let design_metastream = generated_design_base_flange_metastream(&design_records);
+    let design_metastream = fixture_secondary_index(
+        design_metastream,
+        &design_bulk,
+        &[10, 30, 584, 1100, 1400, 1500, 1600, 1700],
+    );
     f3d_with_smbh_and_instance_properties_and_design_with_metastream(
         smbh,
         &properties,
@@ -430,6 +559,11 @@ pub(crate) fn f3d_with_smbh_and_protein_with_generated_remove_body(smbh: &[u8]) 
     )];
     let (design_bulk, design_records) = generated_design_remove_body_bulkstream();
     let design_metastream = generated_design_remove_body_metastream(&design_records);
+    let design_metastream = fixture_secondary_index(
+        design_metastream,
+        &design_bulk,
+        &[10, 30, 584, 1100, 1400, 1500, 1600, 1700],
+    );
     f3d_with_smbh_and_instance_properties_and_design_with_metastream(
         smbh,
         &properties,
@@ -446,6 +580,11 @@ pub(crate) fn f3d_with_smbh_and_remove_body_lost_edge_run(smbh: &[u8], run: u32)
     )];
     let (design_bulk, design_records) = remove_body_lost_edge_bulkstream(run);
     let design_metastream = generated_design_remove_body_metastream(&design_records);
+    let design_metastream = fixture_secondary_index(
+        design_metastream,
+        &design_bulk,
+        &[10, 30, 584, 1100, 1400, 1500, 1600, 1700],
+    );
     f3d_with_smbh_and_instance_properties_and_design_with_metastream(
         smbh,
         &properties,
@@ -460,6 +599,11 @@ pub(crate) fn f3d_with_smbh_and_protein_with_generated_surface_stitch(smbh: &[u8
     )];
     let (design_bulk, design_records) = generated_design_surface_stitch_bulkstream();
     let design_metastream = generated_design_surface_stitch_metastream(&design_records);
+    let design_metastream = fixture_secondary_index(
+        design_metastream,
+        &design_bulk,
+        &[10, 30, 584, 1100, 1400, 1500, 1600, 1700],
+    );
     f3d_with_smbh_and_instance_properties_and_design_with_metastream(
         smbh,
         &properties,
@@ -474,6 +618,11 @@ pub(crate) fn f3d_with_smbh_and_protein_with_generated_copy_paste(smbh: &[u8]) -
     )];
     let (design_bulk, design_records) = generated_design_copy_paste_bulkstream();
     let design_metastream = generated_design_copy_paste_metastream(&design_records);
+    let design_metastream = fixture_secondary_index(
+        design_metastream,
+        &design_bulk,
+        &[10, 30, 584, 1100, 1400, 1500, 1600, 1700],
+    );
     f3d_with_smbh_and_instance_properties_and_design_with_metastream(
         smbh,
         &properties,
@@ -485,6 +634,11 @@ pub(crate) fn f3d_with_smbh_and_protein_with_generated_copy_paste(smbh: &[u8]) -
 pub(crate) fn f3d_with_smbh_and_protein_with_generated_copy_paste_bodies(smbh: &[u8]) -> Vec<u8> {
     let (design_bulk, design_records) = generated_design_copy_paste_bodies_bulkstream();
     let design_metastream = generated_design_copy_paste_bodies_metastream(&design_records);
+    let design_metastream = fixture_secondary_index(
+        design_metastream,
+        &design_bulk,
+        &[10, 30, 584, 1100, 1400, 1500, 1600, 1700],
+    );
     f3d_with_smbh_and_instance_properties_and_design_with_metastream(
         smbh,
         &[],
@@ -499,6 +653,11 @@ pub(crate) fn f3d_with_smbh_and_protein_with_generated_form(smbh: &[u8]) -> Vec<
     )];
     let (design_bulk, design_records) = generated_design_form_bulkstream();
     let design_metastream = generated_design_form_metastream(&design_records);
+    let design_metastream = fixture_secondary_index(
+        design_metastream,
+        &design_bulk,
+        &[10, 30, 584, 1100, 1400, 1500, 1600, 1700],
+    );
     let tsm = generated_form_tsm();
     f3d_with_smbh_and_instance_properties_and_design_with_metastream_and_entries(
         smbh,
@@ -556,6 +715,8 @@ fn f3d_with_smbh_and_instance_properties_and_design(
     design_records: &[(u64, u64)],
 ) -> Vec<u8> {
     let design_metastream = generated_design_metastream(design_records);
+    let design_metastream =
+        fixture_secondary_index(design_metastream, design_bulk, &[584, 1100, 1400, 1600]);
     f3d_with_smbh_and_instance_properties_and_design_with_metastream(
         smbh,
         properties,
@@ -830,6 +991,7 @@ pub(crate) fn f3d_with_generated_sketch_annotation(case: SketchAnnotationCase) -
     frame.resize(paired + 59, 0);
     insert_frame_in_preceding_companion(&mut bulk, &mut records, &frame);
     let meta = sketch_dimension_metastream(&records, &[]);
+    let meta = fixture_secondary_index(meta, &bulk, &[584, 1100, 1400, 1600]);
     f3d_with_smbh_and_instance_properties_and_design_with_metastream(
         &synthetic_geometry_smbh(),
         &[],
@@ -877,9 +1039,8 @@ fn insert_frame_in_preceding_companion(
     }
 }
 
-/// An archive whose preceding companion holds a two-point presentation frame.
-/// The frame's class tags are the type-table ordinals of `primary` and `paired`,
-/// and neither type lists an entity.
+/// An archive with an indexed two-point presentation frame.
+/// Its class tags are the type-table ordinals of `primary` and `paired`.
 pub(crate) fn f3d_with_generated_sketch_presentation(
     primary: &'static str,
     paired: &'static str,
@@ -900,14 +1061,25 @@ pub(crate) fn f3d_with_generated_sketch_presentation(
     frame.extend_from_slice(&[0; 8]);
     crate::test_support::push_marked_reference(&mut frame, 277);
     frame.resize(pair + 59, 0);
-    insert_frame_in_preceding_companion(&mut bulk, &mut records, &frame);
+    let insertion = records.iter().find(|(id, _)| *id == 1203).unwrap().1;
+    let insertion_at = usize::try_from(insertion).unwrap();
+    let frame_len = u64::try_from(frame.len()).unwrap();
+    for (_, offset) in &mut records {
+        if *offset >= insertion {
+            *offset += frame_len;
+        }
+    }
+    bulk.splice(insertion_at..insertion_at, frame);
+    records.push((1304, insertion));
+    records.sort_by_key(|(_, offset)| *offset);
     let meta = sketch_dimension_metastream(
         &records,
         &[
-            (primary, "", 3, "Fusion", &[]),
+            (primary, "", 3, "Fusion", &[1304]),
             (paired, "", 1, "Dimension", &[]),
         ],
     );
+    let meta = fixture_secondary_index(meta, &bulk, &[584, 1100, 1304, 1400, 1600]);
     f3d_with_smbh_and_instance_properties_and_design_with_metastream(
         &synthetic_geometry_smbh(),
         &[],

@@ -226,35 +226,20 @@ fn admit_unedited(
                 &policy,
                 cadmpeg_core::decode::DecodeDepth::Full,
             )
-            .map_err(|_| {
-                CodecError::UnsupportedContent(
-                    "the retained FCStd source image refused to decode".into(),
-                )
-            })?;
+            .map_err(|_| ())?;
             let fresh =
                 cadmpeg_ir::Codec::decode_with_context(&crate::FcstdCodec, &fresh_ctx, fresh_root)
-                    .map_err(|failure| match failure {
-                        cadmpeg_ir::codec::DecodeFailure::Codec(error) => error,
-                        _ => CodecError::UnsupportedContent(
-                            "the retained FCStd source image refused to decode".into(),
-                        ),
-                    })?;
-            let hash_arena = cadmpeg_core::decode::DecodeArena::new();
-            let hash_policy = cadmpeg_core::decode::DecodePolicy::default();
-            let (hash_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-                &[],
-                &hash_arena,
-                &hash_policy,
-            )?;
+                    .map_err(|_| ())?;
             let fresh_hash = cadmpeg_ir::hash::document_local_sha256(
-                &hash_ctx,
+                &fresh_ctx,
                 fresh.ir(),
                 fresh.ir().source.as_ref(),
                 "fcstd",
                 crate::fidelity::SOURCE_IMAGE,
-            )?;
-            hash_ctx.finish_session()?;
-            Ok(fresh_hash)
+            )
+            .map_err(|_| ())?;
+            fresh_ctx.finish_session().map_err(|_| ())?;
+            Ok::<_, ()>(fresh_hash)
         },
     );
     if !replays {

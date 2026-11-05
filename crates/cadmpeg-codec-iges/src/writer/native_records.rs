@@ -18,7 +18,7 @@ mod fonts;
 mod levels;
 mod macros;
 mod products;
-mod solids;
+pub(super) mod solids;
 mod structure;
 
 /// Directory sequences model curves claim as their source carriers. A
@@ -126,11 +126,12 @@ pub(super) fn primitive_feature_coverage(
         let represented = matches!(
             feature.evaluation.definition(),
             FeatureDefinition::Operation(FeatureOperation::Primitive { .. })
-        ) && feature.native_ref.as_ref().is_some_and(|id| {
-            entities.iter().any(|entity| {
-                matches!(entity.type_code, 150 | 152 | 154 | 156 | 158 | 160 | 168)
-                    && entity.source_targets.contains(id)
-            })
+        ) && entities.iter().any(|entity| {
+            matches!(entity.type_code, 150 | 152 | 154 | 156 | 158 | 160 | 168)
+                && entity
+                    .source_targets
+                    .iter()
+                    .any(|id| id == feature.id.as_str())
         }) && feature.product_definition.is_none()
             && feature.suppressed.is_none()
             && !feature.needs_recompute
@@ -162,6 +163,16 @@ pub(super) fn primitive_feature_coverage(
 }
 
 type Targets = super::attributes::Targets;
+
+fn directory_label(name: &str) -> Option<String> {
+    (!name.is_empty()
+        && name.len() <= 8
+        && name.trim() == name
+        && name
+            .bytes()
+            .all(|byte| byte.is_ascii_graphic() || byte == b' '))
+    .then(|| name.to_owned())
+}
 
 struct Fields<'a> {
     values: Map<String, Value>,

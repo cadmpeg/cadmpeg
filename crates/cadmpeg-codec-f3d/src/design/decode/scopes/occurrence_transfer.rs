@@ -3,7 +3,7 @@
 
 use super::shared_frames::rigid_transform_at;
 use crate::bytes::lp_utf16_bounded;
-use crate::design::decode::sketch::{next_indexed_record_offset, IndexedRecordOffsets};
+use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::layout::paste_context_owner_tail as context_tail;
 use crate::records::feature::occurrence_transfer::{
     DesignOccurrenceTransfer, DesignOccurrenceTransferSource, DesignPasteOwner, COMPONENT_TYPE,
@@ -57,7 +57,7 @@ fn relation(
     zeros(&mut view, 1)?;
     let scope = reference(&mut view)?;
     let paired = view.position();
-    if next_indexed_record_offset(bytes, at + 1)? != paired {
+    if records.next_at_or_after(at + 1)? != paired {
         return None;
     }
     Some((at, occurrence, scope, owner(bytes, paired, index)?))

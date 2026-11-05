@@ -26,6 +26,7 @@ pub(in crate::writer) mod preconditions;
 mod presentation;
 mod records;
 mod reindex;
+mod sketches;
 mod smbh;
 use parameters::encode_document_parameters;
 use preconditions::{
@@ -39,6 +40,12 @@ use presentation::GeneratedDesignRegistry;
 use records::{encode_design_bulkstream, encode_design_metastream};
 use smbh::encode_smbh;
 
+pub(super) struct Generated {
+    pub(super) coverage: ArenaDispositions,
+    pub(super) losses: Vec<LossNote>,
+    pub(super) regenerated_parameters: BTreeSet<String>,
+}
+
 #[cfg(test)]
 pub(crate) fn write_new(
     target: &CadIr,
@@ -49,15 +56,16 @@ pub(crate) fn write_new(
         writer,
         cadmpeg_core::decode::ResourceLimits::desktop(),
     )
+    .map(|generated| (generated.coverage, generated.losses))
 }
 
 /// Write a canonical source-less F3D archive for the currently supported
 /// native construction profile, and state which model arenas it carries.
-pub(crate) fn write_with_limits(
+pub(super) fn write_with_limits(
     target: &CadIr,
     writer: &mut dyn Write,
     limits: cadmpeg_core::decode::ResourceLimits,
-) -> Result<(ArenaDispositions, Vec<LossNote>), CodecError> {
+) -> Result<Generated, CodecError> {
     // `subset_int_cur` states its interval and cache on the parameter of the
     // curve it trims.
     let lowered = cadmpeg_ir::codec::write::subset_lowering::lower_subset_curves(target, |_| true)?;
@@ -170,7 +178,32 @@ pub(crate) fn write_with_limits(
         validate_source_less_recipes(&native)?;
         validate_source_less_design_links(target, &native, &attributes)?;
     }
-    let design_registry = GeneratedDesignRegistry::new(target, design_bindings, &attributes)?;
+    let generated_features = features::encode(target)?;
+    let mut design_registry = GeneratedDesignRegistry::new(target, design_bindings, &attributes)?;
+    if !records::needs_design_bulk(target, &native) {
+        if let Some((_, meta, _, _, _)) = &generated_features {
+            let generated = crate::metastream::parse(meta, "generated feature MetaStream")?;
+            let mut ordinal = 0;
+            design_registry.types.retain(|_| {
+                let source = native.design_types.get(ordinal);
+                ordinal += 1;
+                !source.is_some_and(|source| {
+                    source
+                        .id()
+                        .contains("/FusionDesignSegmentType3/MetaStream.dat:")
+                        && generated.types.iter().any(|kind| {
+                            kind.class_tag == source.class_tag
+                                && kind.byte_offset == source.byte_offset
+                                && kind.type_guid == source.type_guid
+                                && kind.base_type_guid.value() == source.base_type_guid.value()
+                                && kind.version == source.version
+                                && kind.module == source.module
+                                && kind.entities.values().eq(source.entities.values())
+                        })
+                })
+            });
+        }
+    }
     let brep_name = source_brep_name(&native, design_registry.body_map.is_some());
     let smbh = encode_smbh(target, &native, &attributes, limits)?;
     let mut staged = tempfile::tempfile()?;
@@ -273,7 +306,13 @@ pub(crate) fn write_with_limits(
     let primary_records = design_bulk.as_ref().map_or(&[][..], |bulk_stream| {
         bulk_stream.primary_records.as_slice()
     });
-    if let Some(meta_stream) = encode_design_metastream(&design_registry, primary_records, &[])? {
+    let design_meta = encode_design_metastream(&design_registry, primary_records, &[])?;
+    if let Some(meta_stream) = design_meta {
+        if design_bulk.is_none() {
+            archive
+                .start_file(format!("{DESIGN_FOLDER}/Design1/BulkStream.dat"), options)
+                .map_err(|error| CodecError::malformed(error.to_string()))?;
+        }
         archive
             .start_file(format!("{DESIGN_FOLDER}/Design1/MetaStream.dat"), options)
             .map_err(|error| {
@@ -282,8 +321,10 @@ pub(crate) fn write_with_limits(
         archive.write_all(&meta_stream)?;
     }
     let mut written_features = Vec::new();
-    if let Some((bulk, meta, ids, collection_index)) = features::encode(target)? {
+    let mut written_owned_parameters = Vec::new();
+    if let Some((bulk, meta, ids, parameter_ids, collection_index)) = generated_features {
         written_features = ids;
+        written_owned_parameters = parameter_ids;
         residual_losses.push(collection_residual(
             "FusionDesignSegmentType3",
             collection_index,
@@ -296,6 +337,26 @@ pub(crate) fn write_with_limits(
                 )
                 .map_err(|error| CodecError::malformed(error.to_string()))?;
             archive.write_all(&data)?;
+        }
+    }
+    let written_sketches = sketches::encode(target)?;
+    if let Some(sketches) = &written_sketches {
+        for (name, data) in [
+            ("BulkStream.dat", &sketches.bulk),
+            ("MetaStream.dat", &sketches.meta),
+        ] {
+            archive
+                .start_file(
+                    format!("{DESIGN_FOLDER}/FusionDesignSegmentType4/{name}"),
+                    options,
+                )
+                .map_err(|error| CodecError::malformed(error.to_string()))?;
+            archive.write_all(data)?;
+        }
+        for id in &sketches.sketches {
+            residual_losses.push(ExportLossCode::RecordResidualUnavailable.note(format!(
+                "sketch {id}: generated member-run records have unspecified state fields"
+            )));
         }
     }
     for (ordinal, appearance) in target.model.appearances.iter().enumerate() {
@@ -316,6 +377,60 @@ pub(crate) fn write_with_limits(
     staged.seek(SeekFrom::Start(0))?;
     std::io::copy(&mut staged, writer)?;
     let mut dispositions = coverage(has_native, target, &native);
+    let mut omitted_owned_parameters = 0;
+    for parameter in target
+        .model
+        .parameters
+        .iter()
+        .filter(|parameter| parameter.owner.is_some())
+    {
+        if !written_owned_parameters.contains(&parameter.id) {
+            omitted_owned_parameters += 1;
+            residual_losses.push(crate::loss::F3dLossCode::WriterDesignRecordsOmitted.note(
+                format!(
+                    "feature-owned parameter {} has no supported F3D encoding",
+                    parameter.id
+                ),
+            ));
+        }
+    }
+    if omitted_owned_parameters != 0 {
+        dispositions.parameters = if omitted_owned_parameters == target.model.parameters.len() {
+            ArenaDisposition::Dropped
+        } else {
+            ArenaDisposition::Reported
+        };
+    }
+    if let Some(sketches) = &written_sketches {
+        for sketch in &target.model.sketches {
+            if !sketches.sketches.contains(&sketch.id) {
+                residual_losses.push(crate::loss::F3dLossCode::WriterDesignRecordsOmitted.note(
+                    format!("sketch {} has no supported F3D encoding", sketch.id),
+                ));
+            }
+        }
+        for entity in &target.model.sketch_entities {
+            if !sketches.entities.contains(entity.id()) {
+                residual_losses.push(crate::loss::F3dLossCode::WriterDesignRecordsOmitted.note(
+                    format!(
+                        "sketch entity {} has no supported F3D encoding",
+                        entity.id()
+                    ),
+                ));
+            }
+        }
+        dispositions.sketches = if sketches.sketches.len() == target.model.sketches.len() {
+            ArenaDisposition::Written
+        } else {
+            ArenaDisposition::Reported
+        };
+        dispositions.sketch_entities =
+            if sketches.entities.len() == target.model.sketch_entities.len() {
+                ArenaDisposition::Written
+            } else {
+                ArenaDisposition::Reported
+            };
+    }
     if !written_features.is_empty() {
         let mut partial = false;
         for feature in &target.model.features {
@@ -345,7 +460,21 @@ pub(crate) fn write_with_limits(
             ArenaDisposition::Written
         };
     }
-    Ok((dispositions, residual_losses))
+    let regenerated_parameters = target
+        .model
+        .parameters
+        .iter()
+        .filter_map(|parameter| {
+            (parameter.owner.is_some() && written_owned_parameters.contains(&parameter.id))
+                .then(|| parameter.native_ref.clone())
+                .flatten()
+        })
+        .collect();
+    Ok(Generated {
+        coverage: dispositions,
+        losses: residual_losses,
+        regenerated_parameters,
+    })
 }
 
 fn collection_residual(segment: &str, index: u32) -> LossNote {

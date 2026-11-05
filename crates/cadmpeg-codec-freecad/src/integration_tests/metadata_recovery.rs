@@ -182,7 +182,7 @@ fn empty_unreadable_payload_still_requires_its_physical_source_entry() {
 }
 
 #[test]
-fn unrelated_missing_attachments_recover_but_shape_sidecars_remain_required() {
+fn unrelated_missing_attachments_and_shape_values_recover_independently() {
     for (type_name, payload, required) in [
         ("App::PropertyFile", "<File name=\"notes.txt\"/>", false),
         (
@@ -199,7 +199,44 @@ fn unrelated_missing_attachments_recover_but_shape_sidecars_remain_required() {
             &DecodeOptions::default(),
         );
         if required {
-            assert!(result.is_err());
+            // #209 §4.5: an unreadable shape value costs that value, not the document.
+            let decoded = result.expect("missing shape value is given up");
+            let namespace = decoded.ir().native.namespace("fcstd").unwrap();
+            let properties = namespace
+                .arena_as::<crate::native::PropertyRecord>("properties")
+                .unwrap();
+            let [property] = properties.as_slice() else {
+                panic!("the property header survives")
+            };
+            assert!(property.body.is_none());
+            let parts = crate::test_support::source_fidelity::given_up(decoded.source_fidelity());
+            let [(id, retained)] = parts.as_slice() else {
+                panic!("one failed value")
+            };
+            assert_eq!(retained.data(), Some(payload.as_bytes()));
+            let unknowns = namespace
+                .arena_as::<cadmpeg_ir::NativeUnknownRecord>("unknowns")
+                .unwrap();
+            assert!(unknowns.iter().any(|stub| stub.id.as_str() == *id
+                && stub.links.iter().any(|link| link.as_str() == property.id)));
+            let loss = decoded
+                .report()
+                .losses
+                .iter()
+                .find(|loss| loss.code.local_code() == "record.unreadable")
+                .unwrap();
+            assert_eq!(
+                loss.dropped_fields
+                    .iter()
+                    .map(|field| (field.record.as_str(), field.field.as_str()))
+                    .collect::<Vec<_>>(),
+                vec![
+                    (property.id.as_str(), "values"),
+                    (property.id.as_str(), "links"),
+                    (property.id.as_str(), "side_entries")
+                ]
+            );
+            assert!(crate::test_support::validate_native(decoded.ir()).is_empty());
         } else {
             let decoded = result.expect("missing unrelated attachment");
             assert!(decoded.report().losses.iter().any(|loss| loss.code

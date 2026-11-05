@@ -263,19 +263,13 @@ fn compressed_ascii_derives_fixed_cards_and_inherits_directory_fields() {
     assert!(displacement.message.contains("iges:5.3-fixed-ascii"));
 }
 
-/// Preservation is not synthesis: a Compressed ASCII source replays its own
-/// bytes under an inherit request even though no input makes the semantic
-/// writer emit Compressed ASCII.
-///
-/// The retained image is the original bytes, so the resolved dialect is the
-/// source's by construction and the replay law admits the copy. This is the
-/// capability an explicit Fixed ASCII target cannot ask for.
+/// Inheritance of a compressed source selects the fixed-ASCII catalog default.
 #[test]
-fn compressed_ascii_replays_its_own_bytes_under_an_inherit_request() {
+fn compressed_ascii_inherit_synthesizes_the_default_and_preserves_points() {
     let source = compressed_points_file();
     let result = EditableDecodeResult::from(
         IgesCodec
-            .decode(&mut Cursor::new(source.clone()), &DecodeOptions::default())
+            .decode(&mut Cursor::new(source), &DecodeOptions::default())
             .unwrap(),
     );
     let plan = IgesCodec
@@ -284,10 +278,9 @@ fn compressed_ascii_replays_its_own_bytes_under_an_inherit_request() {
             TargetRequest::Inherit,
         )
         .unwrap();
-
     assert!(matches!(
         plan.report().write_path(),
-        WritePath::VerbatimReplay { .. }
+        WritePath::Synthesized { .. }
     ));
     assert_eq!(
         wire::field_or_default::<Option<cadmpeg_core::dialect::DialectId>>(
@@ -296,18 +289,35 @@ fn compressed_ascii_replays_its_own_bytes_under_an_inherit_request() {
         )
         .as_ref()
         .map(ToString::to_string),
-        Some("iges:5.3-compressed-ascii".to_owned())
+        Some("iges:5.3-fixed-ascii".to_owned())
     );
-    assert!(matches!(
-        &wire::field::<cadmpeg_ir::report::export::FidelityResolution>(
-            plan.report().write_path(),
-            "fidelity"
-        ),
-        FidelityResolution::Replayed {}
-    ));
+    assert_eq!(
+        wire::field::<FidelityResolution>(plan.report().write_path(), "fidelity"),
+        FidelityResolution::NotConsumed {},
+    );
+    let displacement = plan
+        .report()
+        .losses
+        .iter()
+        .find(|loss| loss.code == IgesLossCode::SourceDialectDisplaced.kind())
+        .expect("source dialect displacement");
+    assert!(displacement.message.contains("iges:5.3-compressed-ascii"));
+    assert!(displacement.message.contains("iges:5.3-fixed-ascii"));
     let mut written = Vec::new();
     plan.write_to(&mut written).unwrap();
-    assert_eq!(written, source);
+    let decoded = IgesCodec
+        .decode(&mut Cursor::new(written), &DecodeOptions::default())
+        .unwrap();
+    let positions: Vec<_> = decoded
+        .ir()
+        .model
+        .points
+        .iter()
+        .map(|point| point.position().get())
+        .collect();
+    assert_eq!(positions.len(), 2);
+    assert!(positions.contains(&cadmpeg_ir::math::Point3::new(1.0, 2.0, 3.0)));
+    assert!(positions.contains(&cadmpeg_ir::math::Point3::new(4.0, 5.0, 6.0)));
 }
 
 #[test]
