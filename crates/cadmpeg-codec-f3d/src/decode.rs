@@ -4680,11 +4680,13 @@ fn decode_result(
             .iter()
             .enumerate()
             .filter(|(_, part)| {
-                scan.belongs_to_design_asset(&part.name)
+                (scan.belongs_to_design_asset(&part.name)
                     && matches!(
                         crate::container::classify(&part.name),
                         ContainerRole::BrepSmbh | ContainerRole::BrepSmb | ContainerRole::BrepText
-                    )
+                    ))
+                    || (part.name == "ZIP local entry"
+                        && part.diagnostic == "truncated ZIP local entry header")
             });
         if let Some((ordinal, _)) = candidates.next().filter(|_| candidates.next().is_none()) {
             ir.tolerances.linear = None;
