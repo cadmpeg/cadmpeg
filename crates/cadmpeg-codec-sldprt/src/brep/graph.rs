@@ -522,6 +522,9 @@ pub(crate) struct Stats {
     pub(crate) withheld_fin_links: usize,
     /// Faces withheld with their surface because no loop of the face decodes.
     pub(crate) withheld_faces: usize,
+    /// Faces withheld with their surface because a vertex loop of the face
+    /// names no resolved vertex.
+    pub(crate) withheld_vertex_loop_faces: usize,
     /// Canonical faces that no explicit body record claims.
     pub(crate) unclaimed_faces: usize,
     /// Faces on a support surface this codec does not type; emitted with an
@@ -694,11 +697,23 @@ struct WalkedFace {
     sense: Sense,
     /// `(loop_attr, ordered_coedge_attrs)` in sibling order.
     loops: Vec<(u32, Vec<u32>)>,
+    /// `(loop_attr, vertex_use_attr)` of each vertex loop, in sibling order.
+    vertex_loops: Vec<(u32, u32)>,
     unresolved_loop: Option<u32>,
     unresolved_fins: Vec<u32>,
     withheld_forward_links: usize,
     /// Walked loops that are not forward linked.
     unlinked_loops: HashSet<u32>,
+}
+
+impl WalkedFace {
+    /// The attrs of the ring loops, then of the vertex loops.
+    fn loop_attrs(&self) -> impl Iterator<Item = u32> + '_ {
+        self.loops
+            .iter()
+            .map(|(attr, _)| *attr)
+            .chain(self.vertex_loops.iter().map(|(attr, _)| *attr))
+    }
 }
 
 /// Resolve a face whose `refs[4]` carrier is a swept/spun construction to a
@@ -1099,6 +1114,7 @@ fn covers_whole_sphere(face: &WalkedFace, t: &topology::Tables, carriers: &Carri
 fn walk_face(bridge: &topology::Bridge, t: &topology::Tables) -> WalkedFace {
     let surface_attr = bridge.refs[4];
     let mut loops = Vec::new();
+    let mut vertex_loops = Vec::new();
     let mut loop_ref = bridge.refs[2];
     let mut unresolved_loop = None;
     let mut unresolved_fins = Vec::new();
@@ -1120,6 +1136,15 @@ fn walk_face(bridge: &topology::Bridge, t: &topology::Tables) -> WalkedFace {
             break;
         }
         let first = lp.refs[1];
+        if let Some(fin) = t
+            .vertex_loop_fins()
+            .get(&first)
+            .filter(|fin| fin.loop_attr == loop_ref)
+        {
+            vertex_loops.push((loop_ref, fin.vertex));
+            loop_ref = lp.refs[3];
+            continue;
+        }
         let mut ring = Vec::new();
         let mut ce_ref = first;
         let mut ce_guard = HashSet::new();
@@ -1163,6 +1188,7 @@ fn walk_face(bridge: &topology::Bridge, t: &topology::Tables) -> WalkedFace {
         surface_attr,
         sense: bridge.sense,
         loops,
+        vertex_loops,
         unresolved_loop,
         unresolved_fins,
         withheld_forward_links,
@@ -2205,17 +2231,22 @@ fn insert_edge_ends(
 ) {
     edge_ends.insert(edge_attr, (start_vuse, end_vuse, curve_attr, fin_attr));
     for vuse in [start_vuse, end_vuse] {
-        if vuse == 0 {
-            continue;
-        }
-        if let Some(vu) = t.vertex_uses().get(&vuse) {
-            let point_attr = vu.refs[4];
-            if t.points().contains_key(&point_attr) {
-                kept.vertices.insert(vuse);
-                kept.points.insert(point_attr);
-            } else if t.point_is_ambiguous(point_attr) {
-                kept.unresolved_points.insert(point_attr);
-            }
+        keep_vertex_use(t, kept, vuse);
+    }
+}
+
+/// Keep a vertex use and its point when both resolve.
+fn keep_vertex_use(t: &topology::Tables, kept: &mut KeptTopology<'_>, vuse: u32) {
+    if vuse == 0 {
+        return;
+    }
+    if let Some(vu) = t.vertex_uses().get(&vuse) {
+        let point_attr = vu.refs[4];
+        if t.points().contains_key(&point_attr) {
+            kept.vertices.insert(vuse);
+            kept.points.insert(point_attr);
+        } else if t.point_is_ambiguous(point_attr) {
+            kept.unresolved_points.insert(point_attr);
         }
     }
 }
@@ -2894,6 +2925,11 @@ fn decode_graph(
     let mut unresolved_vertices = HashSet::new();
 
     for f in &faces {
+        for (_, vertex_use) in &f.vertex_loops {
+            if t.vertex_is_unresolved(*vertex_use) {
+                unresolved_vertices.insert(*vertex_use);
+            }
+        }
         for (loop_attr, ring) in &f.loops {
             let forward_linked = !f.unlinked_loops.contains(loop_attr);
             let k = ring.len();
@@ -3021,6 +3057,18 @@ fn decode_graph(
             [start_vuse, end_vuse],
             curve_attr,
             canonical,
+        );
+    }
+
+    for (_, vertex_use) in faces.iter().flat_map(|face| &face.vertex_loops) {
+        keep_vertex_use(
+            t,
+            &mut KeptTopology {
+                vertices: &mut kept_vertices,
+                points: &mut kept_points,
+                unresolved_points: &mut unresolved_points,
+            },
+            *vertex_use,
         );
     }
 
@@ -3594,6 +3642,28 @@ fn decode_graph(
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
             });
         }
+        for (loop_attr, vertex_use) in &f.vertex_loops {
+            if !kept_vertices.contains(vertex_use) {
+                continue;
+            }
+            let off = t.loops().get(loop_attr).map_or(0, |r| r.offset);
+            annotations.note(
+                id_loop(*loop_attr).as_str(),
+                &source_stream,
+                u64_from_index(off),
+                Some("00_0f"),
+            );
+            admit_brep_entity(ctx)?;
+            out.loops.push(Loop {
+                id: id_loop(*loop_attr),
+                face: id_face(f.bridge_attr),
+                boundary: cadmpeg_ir::topology::LoopBoundary::Vertex {
+                    vertex: id_vertex(*vertex_use),
+                    pcurves: Vec::new(),
+                },
+            });
+            kept_loops.insert(*loop_attr);
+        }
     }
     let loop_set = kept_loops;
 
@@ -3648,9 +3718,8 @@ fn decode_graph(
     let mut emitted_face_surface_by_carrier = HashMap::<u32, u32>::new();
     for face in &faces {
         if face
-            .loops
-            .iter()
-            .any(|(loop_attr, _)| loop_set.contains(loop_attr))
+            .loop_attrs()
+            .any(|loop_attr| loop_set.contains(&loop_attr))
         {
             emitted_face_surface_by_carrier
                 .entry(face.surface_attr)
@@ -3659,10 +3728,17 @@ fn decode_graph(
         }
     }
     for f in &faces {
+        if f.vertex_loops
+            .iter()
+            .any(|(loop_attr, _)| !loop_set.contains(loop_attr))
+        {
+            out.stats.withheld_vertex_loop_faces += 1;
+            continue;
+        }
         let mut loops = Vec::new();
-        for (loop_attr, _) in &f.loops {
-            if loop_set.contains(loop_attr) {
-                loops.push(id_loop(*loop_attr));
+        for loop_attr in f.loop_attrs() {
+            if loop_set.contains(&loop_attr) {
+                loops.push(id_loop(loop_attr));
             }
         }
         if loops.is_empty() && !covers_whole_sphere(f, t, carriers) {
@@ -4561,6 +4637,11 @@ fn prune_rejected_topology(out: &mut Brep) {
         .edges
         .iter()
         .flat_map(|edge| [&edge.start, &edge.end])
+        .chain(
+            out.loops
+                .iter()
+                .flat_map(cadmpeg_ir::topology::Loop::vertices),
+        )
         .map(cadmpeg_ir::ids::VertexId::as_str)
         .collect::<std::collections::HashSet<_>>();
     out.vertices
@@ -10585,3 +10666,6 @@ mod partition_framing_tests;
 mod periodic_seam_tests;
 #[cfg(test)]
 mod tolerant_edge_tests;
+
+#[cfg(test)]
+mod vertex_loop_tests;
