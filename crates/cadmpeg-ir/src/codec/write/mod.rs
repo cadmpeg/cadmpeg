@@ -157,6 +157,11 @@ impl<E: EncoderBackend> Encoder for E {
             "encoder input holds no populated arenas outside its scope"
         );
         let target = E::TARGET.resolve(input.ir, request, E::FORMAT)?;
+        let target = if E::REUSES_SOURCE && input.can_reuse_source() {
+            target.prefer_source()
+        } else {
+            target
+        };
         let identity = target.export_target().cloned();
         let synthesis_identity = target.synthesis_target().map(Option::<&_>::cloned);
         let unrepresented = input.source_unrepresented();
