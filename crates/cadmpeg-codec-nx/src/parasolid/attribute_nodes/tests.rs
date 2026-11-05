@@ -195,7 +195,10 @@ fn an_index_shared_with_an_invalid_node_is_suppressed() {
 /// A header whose node types declare their schema at first use.
 fn embedded_header() -> Vec<u8> {
     let mut bytes = b"PS".to_vec();
-    for field in [": TRANSMIT FILE (partition) attributes", "SCH_999_999_13006"] {
+    for field in [
+        ": TRANSMIT FILE (partition) attributes",
+        "SCH_999_999_13006",
+    ] {
         bytes.extend(u32::try_from(field.len()).unwrap().to_be_bytes());
         bytes.extend(field.as_bytes());
     }

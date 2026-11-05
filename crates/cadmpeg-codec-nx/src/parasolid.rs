@@ -476,6 +476,31 @@ fn entity_51_records_in(bytes: &[u8], primary: Option<&PrimaryRecords<'_>>) -> V
     records
 }
 
+/// The XMTs of type-81 records that the stream frames and the decoder omits.
+///
+/// In a terminated node sequence these are the `ATTRIBUTE` nodes without a
+/// decoded record. Elsewhere they are the type-81 headers whose references do
+/// not frame to a decoded record of that XMT.
+pub(crate) fn omitted_entity_51_xmts(bytes: &[u8]) -> BTreeSet<u32> {
+    let primary = terminated_nodes(bytes);
+    let decoded = entity_51_records_in(bytes, primary.as_ref())
+        .into_iter()
+        .map(|record| u32::from(record.xmt))
+        .collect::<BTreeSet<_>>();
+    let framed = match &primary {
+        Some(primary) => primary
+            .nodes()
+            .filter(|node| node.kind() == node_type::ATTRIBUTE)
+            .map(|node| node.index())
+            .collect::<BTreeSet<_>>(),
+        None => (0..bytes.len())
+            .filter_map(|offset| entity_51_header_at(bytes, offset))
+            .map(|header| u32::from(header.xmt))
+            .collect(),
+    };
+    framed.difference(&decoded).copied().collect()
+}
+
 #[derive(Clone, Copy)]
 struct Entity51Frame {
     offset: usize,
@@ -498,7 +523,16 @@ impl Entity51Frame {
     }
 }
 
-fn entity_51_frame_at(bytes: &[u8], offset: usize) -> Option<Entity51Frame> {
+/// The fields of a type-81 record before its references.
+struct Entity51Header {
+    xmt: NonNullXmt,
+    sequence: NonZeroU32,
+    definition_xmt: u32,
+    references_at: usize,
+    reference_count: usize,
+}
+
+fn entity_51_header_at(bytes: &[u8], offset: usize) -> Option<Entity51Header> {
     let mut at = offset.checked_add(2)?;
     (bytes.get(offset..at) == Some(&[0x00, 0x51])).then_some(())?;
     if bytes.get(at) == Some(&0xff) {
@@ -511,17 +545,27 @@ fn entity_51_frame_at(bytes: &[u8], offset: usize) -> Option<Entity51Frame> {
     at += 4;
     let definition_xmt = read_xmt(bytes, &mut at)?;
     (1..=0x20).contains(&flags).then_some(())?;
-    let reference_count = usize::try_from(flags).ok()?.checked_add(5)?;
-    let references_at = at;
-    let (end, shared_terminal) = entity_51_reference_end(bytes, &mut at, reference_count)?;
-    Some(Entity51Frame {
-        offset,
-        end,
+    Some(Entity51Header {
         xmt,
         sequence,
         definition_xmt,
-        references_at,
-        reference_count,
+        references_at: at,
+        reference_count: usize::try_from(flags).ok()?.checked_add(5)?,
+    })
+}
+
+fn entity_51_frame_at(bytes: &[u8], offset: usize) -> Option<Entity51Frame> {
+    let header = entity_51_header_at(bytes, offset)?;
+    let mut at = header.references_at;
+    let (end, shared_terminal) = entity_51_reference_end(bytes, &mut at, header.reference_count)?;
+    Some(Entity51Frame {
+        offset,
+        end,
+        xmt: header.xmt,
+        sequence: header.sequence,
+        definition_xmt: header.definition_xmt,
+        references_at: header.references_at,
+        reference_count: header.reference_count,
         shared_terminal,
     })
 }

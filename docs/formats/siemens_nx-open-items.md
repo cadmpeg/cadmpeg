@@ -222,7 +222,7 @@ or regenerated current-design selection.
 
 **Need.** We must know the form to frame type-81 records in a stream that the shared node reader does not frame to its terminator.
 
-**Conflict.** The decoder's type-81 scan accepts the prefixed form when the first reference byte is `01`. A consecutive reference whose index cell starts with `01` then fails to frame, and the scan drops that record.
+**Conflict.** The decoder's type-81 scan accepts the prefixed form when the first reference byte is `01`. A consecutive reference whose index cell starts with `01` then fails to frame. The decoder omits that record and reports a topology attribute list that reaches it with the loss `nx/attribute.list-unresolved`.
 
 ## 2. Object model and body composition
 

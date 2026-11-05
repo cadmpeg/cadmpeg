@@ -85,6 +85,8 @@ loss_codes! {
     SubBodyCompositionUnresolved => ("history.sub-body-composition-unresolved", Warning, FeatureHistoryRetained),
     /// A referenced Parasolid attribute value relation did not resolve.
     AttributeValueUnresolved => ("attribute.value-unresolved", Warning, AttributesNotTransferred),
+    /// A topology attribute list reaches an omitted type-81 record or an unresolved type-80 class.
+    AttributeListUnresolved => ("attribute.list-unresolved", Warning, AttributesNotTransferred),
     /// Feature-history suppression state remains unresolved.
     FeatureSuppressionUnresolved => ("feature.suppression-unresolved", Warning, FeatureHistoryRetained),
     /// Configuration activation, body membership, or evaluated state is incomplete.
@@ -203,6 +205,7 @@ mod tests {
                 "deltas.selection-unresolved",
                 "history.sub-body-composition-unresolved",
                 "attribute.value-unresolved",
+                "attribute.list-unresolved",
                 "feature.suppression-unresolved",
                 "configuration.state-unresolved",
                 "expression.parameter-incomplete",
