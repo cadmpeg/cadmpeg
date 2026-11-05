@@ -143,6 +143,7 @@ const WRITER_ENTITY_TYPES: &[u32] = &[
     146, 148, 186, 190, 192, 194, 196, 198, 314, 406, 418, 502, 504, 508, 510, 514,
 ];
 
+mod appearance;
 mod attributes;
 mod degrade;
 mod levels;
@@ -406,9 +407,6 @@ fn face_display_color(
             matches!(
                 &resolved,
                 cadmpeg_ir::appearance::AppearanceTarget::Face(id) if *id == face.id
-            ) || matches!(
-                &resolved,
-                cadmpeg_ir::appearance::AppearanceTarget::Surface(id) if *id == face.surface
             )
         })
         .find_map(|binding| {
@@ -753,6 +751,11 @@ fn synthesize_with_admission(
     };
     coverage.appearance_bindings =
         appearance_binding_coverage(ir, &graph.entities, &graph.presentations);
+    graph.losses.extend(appearance::losses(
+        ir,
+        &graph.entities,
+        &graph.presentations,
+    ));
     if graph
         .losses
         .iter()
@@ -5892,8 +5895,6 @@ fn unsupported_model_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
         arena!("presentation_documents", presentation_documents),
         arena!("view_presentations", view_presentations),
         arena!("tessellations", tessellations),
-        arena!("appearances", appearances),
-        arena!("appearance_bindings", appearance_bindings),
         arena!("pmi", pmi),
     ];
     let losses = unsupported
@@ -6349,7 +6350,7 @@ fn append_surface_entities(
     if wrapped.is_some() {
         entities[surface_index].status = EntityStatus::PhysicallyDependent;
     }
-    if !ir.model.faces.iter().any(|face| face.surface == surface.id) {
+    {
         let color = carrier_display_color(
             ir,
             cadmpeg_ir::appearance::AppearanceTarget::Surface(surface.id.clone()),
@@ -6358,7 +6359,7 @@ fn append_surface_entities(
         );
         if !matches!(color, BodyColor::Standard(0)) {
             presentations.insert(
-                wrapped.unwrap_or(surface_index),
+                surface_index,
                 BodyPresentation {
                     label: None,
                     name: None,

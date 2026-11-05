@@ -309,6 +309,20 @@ pub(crate) fn regenerate(
                 });
                 continue;
             }
+            if matches!(marker.kind(), SketchInputKind::Relation(_))
+                && marker.links().is_empty()
+                && lane
+                    .sketch_entities
+                    .iter()
+                    .any(|candidate| candidate.local_id() == Some(0))
+            {
+                omitted.push(Omission {
+                    arena: "sketch_input_entities",
+                    id: marker.id().into(),
+                    reason: "an unlinked marker has no unambiguous default reference".into(),
+                });
+                continue;
+            }
             match marker_bytes(marker) {
                 Some(bytes) => events.push(Event {
                     sequence: marker.sequence(),
@@ -616,15 +630,12 @@ fn marker_bytes(marker: &crate::records::SketchInputEntity) -> Option<Vec<u8>> {
         let SketchInputKind::Relation(kind) = marker.kind() else {
             return None;
         };
-        let [first, second] = marker.links() else {
-            return None;
+        let links = match marker.links() {
+            [] => [0, 0],
+            [first, second] => [first.local_id, second.local_id],
+            _ => return None,
         };
-        super::write_generate::append_reference_marker(
-            &mut bytes,
-            kind,
-            [first.local_id, second.local_id],
-            id,
-        );
+        super::write_generate::append_reference_marker(&mut bytes, kind, links, id);
         if let Some(links) = &marker.links {
             bytes[start + 68..start + 70].copy_from_slice(&links.selector().to_le_bytes());
         }

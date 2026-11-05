@@ -2119,10 +2119,15 @@ mod source_less_lane_tests {
             coordinate_marker_local_links(&payload, 0),
             Some((vec![2, 3], 0x8386))
         );
-        assert!(append_coordinate_marker_link(&mut payload, 1, 4)
-            .expect_err("expected error")
-            .to_string()
-            .contains("exceeds two reverse relations"));
+        let error: cadmpeg_ir::codec::write::EncodeError =
+            append_coordinate_marker_link(&mut payload, 1, 4)
+                .expect_err("expected error")
+                .into();
+        assert!(
+            matches!(error, cadmpeg_ir::codec::write::EncodeError::TargetCapacity {
+            field, limit: 2, value: 3
+        } if field.field == "sketch.coordinate_marker.local_links")
+        );
     }
 
     #[test]
