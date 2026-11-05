@@ -977,7 +977,7 @@ fn retain_unowned_carriers(
             if unowned_pcurves.contains(&id) {
                 return None;
             }
-            pcurve.support_surface().map(|surface| surface.as_str())
+            pcurve.support_surface().map(cadmpeg_ir::ids::SurfaceId::as_str)
         }))
         .chain(
             ir.model
