@@ -11,10 +11,12 @@ use cadmpeg_ir::codec::write::{NativeDisposition, NativeDispositions};
 use cadmpeg_ir::CadIr;
 use std::collections::BTreeMap;
 
+type EmittedOwner<'a> = (&'a str, &'a str, Vec<(&'a str, &'a EmittedTopologyUse)>);
+
 pub(crate) struct TopologyJoin<'a> {
     current: CurrentTopologyBindings,
     ir: &'a CadIr,
-    emitted: Vec<(&'a str, &'a str, Vec<(&'a str, &'a EmittedTopologyUse)>)>,
+    emitted: Vec<EmittedOwner<'a>>,
     valid: Vec<&'a str>,
 }
 
