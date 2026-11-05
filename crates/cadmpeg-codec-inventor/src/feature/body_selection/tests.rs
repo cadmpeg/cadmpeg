@@ -714,3 +714,157 @@ fn trim_body_selections_resolve_distinct_bodies_and_report_native_operands() {
     definition(&mut actual, &aliases, None);
     assert_eq!(actual, source);
 }
+
+fn wrapper_at(ordinal: u32) -> PmDcFeatureProperty {
+    let mut property = crate::feature::tests::test_property(
+        ordinal,
+        super::super::PmDcFeaturePropertyKind::SurfaceBody {
+            body: crate::pmdc::PmDcReference::from_packed(1),
+        },
+    );
+    property.identity.type_id =
+        crate::record_identity::RecordTypeId::from_bytes(super::super::SURFACE_BODY_TYPE);
+    property
+}
+
+fn model_with_bodies(names: &[(&str, Option<&str>)]) -> Model {
+    let mut model = Model::default();
+    for (id, name) in names {
+        model.bodies.push(cadmpeg_ir::topology::Body {
+            id: body(id),
+            kind: cadmpeg_ir::topology::BodyKind::default(),
+            regions: vec![],
+            transform: None,
+            name: name.map(str::to_owned),
+            color: None,
+            visible: None,
+        });
+    }
+    model
+}
+
+fn names(model: &Model) -> Vec<Option<&str>> {
+    model
+        .bodies
+        .iter()
+        .map(|body| body.name.as_deref())
+        .collect()
+}
+
+/// A label owned by the wrapper record `owner`; its stored name is
+/// `Feature {index}`.
+fn name_label(owner: u32, index: u32) -> crate::feature::PmDcFeatureLabel {
+    crate::feature::tests::test_label(owner, index, crate::feature::FILLET_CLASS_ID, &[])
+}
+
+fn named(
+    model: &mut Model,
+    wrappers: Vec<PmDcFeatureProperty>,
+    labels: Vec<crate::feature::PmDcFeatureLabel>,
+    joined: &[(&PmDcFeatureProperty, &str)],
+) {
+    let joins = joined
+        .iter()
+        .map(|(wrapper, id)| (wrapper.id(), body(id)))
+        .collect::<HashMap<_, _>>();
+    let inventory = FeatureInventory {
+        properties: wrappers,
+        labels,
+        ..FeatureInventory::default()
+    };
+    project(model, &joins, &inventory);
+}
+
+#[test]
+fn body_takes_the_stored_name_of_the_label_that_owns_its_wrapper() {
+    let (first, second) = (wrapper_at(7), wrapper_at(9));
+    let mut model = model_with_bodies(&[("body:a", None), ("body:b", None)]);
+    named(
+        &mut model,
+        vec![first.clone(), second.clone()],
+        vec![name_label(7, 3), name_label(9, 4)],
+        &[(&first, "body:a"), (&second, "body:b")],
+    );
+    assert_eq!(names(&model), [Some("Feature 3"), Some("Feature 4")]);
+}
+
+#[test]
+fn a_label_names_only_the_body_of_its_own_wrapper() {
+    let (first, second) = (wrapper_at(7), wrapper_at(9));
+    let mut model = model_with_bodies(&[("body:a", None), ("body:b", None)]);
+    named(
+        &mut model,
+        vec![first.clone(), second.clone()],
+        vec![name_label(7, 3)],
+        &[(&first, "body:a"), (&second, "body:b")],
+    );
+    assert_eq!(names(&model), [Some("Feature 3"), None]);
+}
+
+#[test]
+fn a_body_without_a_label_or_join_keeps_no_name() {
+    let wrapper = wrapper_at(7);
+    // No label owns the wrapper.
+    let mut model = model_with_bodies(&[("body:a", None)]);
+    named(
+        &mut model,
+        vec![wrapper.clone()],
+        vec![name_label(8, 3)],
+        &[(&wrapper, "body:a")],
+    );
+    assert_eq!(names(&model), [None]);
+    // The label owns the wrapper but the wrapper joins no body.
+    let mut model = model_with_bodies(&[("body:a", None)]);
+    named(&mut model, vec![wrapper], vec![name_label(7, 3)], &[]);
+    assert_eq!(names(&model), [None]);
+}
+
+#[test]
+fn ambiguous_label_or_wrapper_joins_leave_the_body_unnamed() {
+    let (first, second) = (wrapper_at(7), wrapper_at(9));
+    // Two labels own one wrapper.
+    let mut model = model_with_bodies(&[("body:a", None)]);
+    named(
+        &mut model,
+        vec![first.clone()],
+        vec![name_label(7, 3), name_label(7, 4)],
+        &[(&first, "body:a")],
+    );
+    assert_eq!(names(&model), [None]);
+    // Two wrappers join one body.
+    let mut model = model_with_bodies(&[("body:a", None)]);
+    named(
+        &mut model,
+        vec![first.clone(), second.clone()],
+        vec![name_label(7, 3), name_label(9, 4)],
+        &[(&first, "body:a"), (&second, "body:a")],
+    );
+    assert_eq!(names(&model), [None]);
+}
+
+#[test]
+fn only_a_surface_body_wrapper_supplies_a_body_name() {
+    let mut other = wrapper_at(7);
+    other.identity.type_id = crate::record_identity::RecordTypeId::from_bytes([1; 16]);
+    let mut model = model_with_bodies(&[("body:a", None)]);
+    named(
+        &mut model,
+        vec![other.clone()],
+        vec![name_label(7, 3)],
+        &[(&other, "body:a")],
+    );
+    assert_eq!(names(&model), [None]);
+}
+
+#[test]
+fn an_existing_body_name_is_not_replaced() {
+    let wrapper = wrapper_at(7);
+    let mut model = model_with_bodies(&[("body:a", Some("stored"))]);
+    named(
+        &mut model,
+        vec![wrapper.clone()],
+        vec![name_label(7, 3)],
+        &[(&wrapper, "body:a")],
+    );
+    assert_eq!(names(&model), [Some("stored")]);
+}

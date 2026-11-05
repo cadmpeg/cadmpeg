@@ -397,6 +397,61 @@ pub(crate) fn project(
             feature.evaluation.set_outputs(outputs);
         }
     }
+    name_bodies(model, bodies, inventory);
+}
+
+/// Names each current body from the feature label that the body's wrapper
+/// owns. A body keeps no name unless exactly one wrapper joins it, that
+/// wrapper is a surface-body record, exactly one label in the wrapper's
+/// segment names the wrapper as its owner, and the stored name is faithful and
+/// non-blank.
+fn name_bodies(model: &mut Model, bodies: &HashMap<String, BodyId>, inventory: &FeatureInventory) {
+    let mut wrappers_of: HashMap<&BodyId, Vec<&str>> = HashMap::new();
+    for (wrapper, body) in bodies {
+        wrappers_of.entry(body).or_default().push(wrapper.as_str());
+    }
+    let properties = cadmpeg_core::decode::unique_index(
+        inventory
+            .properties
+            .iter()
+            .map(|property| (property.id(), property)),
+    );
+    let mut labels: HashMap<(&str, u32), Vec<&super::PmDcFeatureLabel>> = HashMap::new();
+    for label in &inventory.labels {
+        if let Some(owner) = label.header.owner.record_ordinal() {
+            labels
+                .entry((label.identity.segment_token.as_str(), owner))
+                .or_default()
+                .push(label);
+        }
+    }
+    for body in &mut model.bodies {
+        if body.name.is_some() {
+            continue;
+        }
+        let Some([wrapper]) = wrappers_of.get(&body.id).map(Vec::as_slice) else {
+            continue;
+        };
+        let Some(Some(property)) = properties.get(*wrapper) else {
+            continue;
+        };
+        if property.identity.type_id.as_str()
+            != crate::pmdc::type_id_string(super::SURFACE_BODY_TYPE)
+        {
+            continue;
+        }
+        let key = (
+            property.identity.segment_token.as_str(),
+            property.identity.record_ordinal,
+        );
+        let Some([label]) = labels.get(&key).map(Vec::as_slice) else {
+            continue;
+        };
+        if label.name_replaced() {
+            continue;
+        }
+        body.name = label.name().map(str::to_owned);
+    }
 }
 
 pub(crate) fn native_losses(
