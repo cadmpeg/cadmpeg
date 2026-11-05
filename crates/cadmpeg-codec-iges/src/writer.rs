@@ -2311,7 +2311,7 @@ fn validate_brep_topology<'a>(
 fn brep_entities(
     ctx: &DecodeContext<'_>,
     topology: ValidatedTopology<'_>,
-    mut body_presentations: &mut BTreeMap<usize, BodyPresentation>,
+    body_presentations: &mut BTreeMap<usize, BodyPresentation>,
     losses: &mut Vec<LossNote>,
 ) -> Result<Vec<Entity>, CodecError> {
     let ir = topology.ir;
@@ -3305,7 +3305,7 @@ fn same_float(left: f64, right: f64) -> bool {
 fn topology_entities(
     ctx: &DecodeContext<'_>,
     topology: ValidatedTopology<'_>,
-    mut body_presentations: &mut BTreeMap<usize, BodyPresentation>,
+    body_presentations: &mut BTreeMap<usize, BodyPresentation>,
     losses: &mut Vec<LossNote>,
 ) -> Result<Vec<Entity>, CodecError> {
     let ir = topology.ir;
