@@ -1174,6 +1174,18 @@ fn reduce_fields(
     losses: &mut Vec<LossNote>,
     native: Option<&SldprtNative>,
 ) -> Result<(), CodecError> {
+    for vertex in &mut ir.model.vertices {
+        if vertex
+            .tolerance
+            .is_some_and(|tolerance| tolerance.get() * 0.001 == 0.0)
+        {
+            vertex.tolerance = None;
+            losses.push(SldprtLossCode::WriterFieldsOmitted.note(format!(
+                "vertex {}: tolerance omitted because conversion to metres underflows",
+                vertex.id
+            )));
+        }
+    }
     let mut bounded = std::collections::HashSet::new();
     for edge in &ir.model.edges {
         if super::bounded_curve::derived_sphere_seam(ir, edge)

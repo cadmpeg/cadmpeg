@@ -1279,6 +1279,9 @@ pub(crate) const CAPACITY_FIELDS: &[cadmpeg_ir::codec::write::CapacityField] = &
     crate::resolved_features::write_generate::LOCAL_MARKER_CAPACITY,
     crate::resolved_features::write_generate::COORDINATE_LINK_CAPACITY,
     crate::resolved_features::write_feature_parameters::SCALAR_IDENTITY_CAPACITY,
+    custom_properties::HISTORY_ORDINAL_CAPACITY,
+    CONFIGURATION_INDEX_CAPACITY,
+    TYPED_NODE_ID_CAPACITY,
 ];
 
 /// Reduced rows: neutral paths the lump stores in reduced form (#232 §5.2).
