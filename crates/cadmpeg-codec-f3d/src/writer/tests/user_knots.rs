@@ -9,6 +9,59 @@ use cadmpeg_ir::{
 use std::io::Cursor;
 
 #[test]
+fn source_less_t_spline_writes_user_knot_state() {
+    let source = crate::test_support::zip_test::f3d_with_smbh_and_protein_with_generated_form(
+        &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
+    );
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut neutral = cadmpeg_ir::CadIr::empty();
+    let mut cage = decoded.ir().model.subds[0].clone();
+    cage.native_ref = None;
+    cage.source_object = None;
+    neutral.model.subds.push(cage);
+    let mut limited = EncodeInput::new(&neutral, None);
+    limited.limits.max_entities = 1;
+    assert!(matches!(
+        F3dCodec.plan(limited, TargetRequest::Inherit),
+        Err(cadmpeg_ir::codec::write::EncodeError::ResourceLimit(_))
+    ));
+    let (written, report) = super::source_less_analytic::synthesize_document(&neutral, None);
+    assert_eq!(written.ir().model.subds.len(), 1);
+    assert_eq!(
+        written.ir().model.subds[0].cage,
+        neutral.model.subds[0].cage
+    );
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(neutral.model.subds[0].id.as_str())));
+    let mut ir = decoded.ir().clone();
+    ir.model.subds[0]
+        .cage
+        .edit_edges(|edges| {
+            edges[0].user_knot = Some(SubdUserKnot::Override(NonNegativeReal::new(0.0).unwrap()));
+            Ok(())
+        })
+        .unwrap();
+    let (written, _) = super::source_less_analytic::synthesize_document(&ir, None);
+    assert_eq!(written.ir().model.subds, ir.model.subds);
+    let mut removed = written.ir().clone();
+    removed.model.subds[0]
+        .cage
+        .edit_edges(|edges| {
+            for edge in edges {
+                edge.user_knot = None;
+            }
+            Ok(())
+        })
+        .unwrap();
+    let (written, _) = super::source_less_analytic::synthesize_document(&removed, None);
+    assert_eq!(written.ir().model.subds, removed.model.subds);
+}
+
+#[test]
 fn retained_f3d_round_trips_user_knot_edits_and_extension_removal() {
     let source = crate::test_support::zip_test::f3d_with_smbh_and_protein_with_generated_form(
         &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
