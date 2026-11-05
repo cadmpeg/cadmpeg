@@ -2717,7 +2717,7 @@ fn archive_body_len(value: u64) -> Result<i64, cadmpeg_ir::codec::write::EncodeE
             value,
         });
     }
-    Ok(value as i64)
+    Ok(value.cast_signed())
 }
 
 fn archive_final_size(position: u64) -> Result<u64, CodecError> {
