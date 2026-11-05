@@ -31,6 +31,7 @@ pub(crate) struct Config {
     pub(crate) values: [f64; 4],
     pub(crate) raw: [u8; 2],
     pub(crate) variant: bool,
+    pub(crate) group_flag_prefix: bool,
     pub(crate) point_version: Option<u32>,
     pub(crate) layout: Layout,
 }
@@ -45,6 +46,7 @@ impl Default for Config {
             values: [1.0, 0.0, 0.6, 0.15],
             raw: [1, 1],
             variant: false,
+            group_flag_prefix: false,
             point_version: None,
             layout: Layout::default(),
         }
@@ -167,6 +169,9 @@ impl Fixture {
             bulk.extend_from_slice(&0.0_f64.to_le_bytes());
             bulk.extend_from_slice(&1_u32.to_le_bytes());
             push_marked_reference(&mut bulk, id + 2);
+            if config.group_flag_prefix {
+                bulk.push(1);
+            }
             bulk.extend_from_slice(&[0, 0]);
             push_marked_reference(&mut bulk, id + 1);
             bulk.push(0);
