@@ -230,9 +230,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 )));
             }
             let selection = face_selection_value(removed_faces);
-            if selection.is_none()
-                && !(matches!(removed_faces, FaceSelection::Unresolved) && existing.is_some())
-            {
+            if selection.is_none() && !matches!(removed_faces, FaceSelection::Unresolved) {
                 return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} changes unsupported shell semantics",
                     feature.id
@@ -241,12 +239,6 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             if existing.is_some_and(|record| !feature_family(record, "Shell")) {
                 return Err(CodecError::UnsupportedContent(format!(
                     "SLDPRT feature {} changes unsupported shell semantics",
-                    feature.id
-                )));
-            }
-            if existing.is_none() && (thickness.is_none() || outward.is_none()) {
-                return Err(CodecError::UnsupportedContent(format!(
-                    "SLDPRT feature {} has unresolved shell construction",
                     feature.id
                 )));
             }
