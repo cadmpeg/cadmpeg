@@ -522,8 +522,25 @@ fn curve_payload(
                     )));
                     WritableEdgeCurve::NurbsOwned(converted)
                 } else {
-                    check_nurbs_curve(curve.id.as_str(), nurbs)?;
-                    WritableEdgeCurve::Nurbs(nurbs)
+                    match check_nurbs_curve(curve.id.as_str(), nurbs) {
+                        Ok(()) => WritableEdgeCurve::Nurbs(nurbs),
+                        Err(WriteError::Omit(_)) => {
+                            let range = normalized_range(lo, hi).ok_or_else(|| {
+                                WriteError::Omit(format!(
+                                    "wire edge {} has no increasing range",
+                                    edge.id
+                                ))
+                            })?;
+                            let converted =
+                                super::conics::clamp_curve(curve.id.as_str(), nurbs, range)?;
+                            conversion = Some(RhinoLossCode::WriterCarrierResolved.note(format!(
+                                "wire edge {} carrier {} was clamped to its exact span",
+                                edge.id, curve.id
+                            )));
+                            WritableEdgeCurve::NurbsOwned(converted)
+                        }
+                        Err(error) => return Err(error),
+                    }
                 }
             }
         }
