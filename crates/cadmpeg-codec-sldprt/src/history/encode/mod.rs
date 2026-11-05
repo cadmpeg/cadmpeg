@@ -70,7 +70,7 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         existing
             .properties
             .iter()
-            .filter(|(key, _)| !consumed.contains(&key.as_str()) && key.as_str() != "Scope")
+            .filter(|(key, _)| !consumed.contains(&key.as_str()))
             .map(|(key, value)| (key.clone(), value.clone()))
             .collect()
     }

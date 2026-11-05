@@ -129,6 +129,7 @@ impl ProductPrereqs {
         native.design_material_assignments = design_material_assignments;
         native.design_types = design_types;
         native.design_parameters = design_parameters;
+        native.unknowns.extend(parameter_state_parts.stubs);
         native.design_parameter_states = parameter_state_parts.states;
         native.design_parameter_state_companions = parameter_state_parts.companions;
         native.design_parameter_document_headers = parameter_state_parts.headers;
