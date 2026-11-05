@@ -212,6 +212,28 @@ fn geometry_agrees(input: &CadIr, output: &CadIr) -> bool {
         "procedural_curves",
         "procedural_surfaces",
     ];
+    fn normalize(value: &mut Value, ids: &BTreeMap<String, String>, literal: bool) {
+        match value {
+            Value::Object(fields) => {
+                fields.remove("native_ref");
+                fields.remove("source_object");
+                for (key, value) in fields.iter_mut() {
+                    normalize(value, ids, matches!(key.as_str(), "name" | "description"));
+                }
+            }
+            Value::Array(values) => {
+                for value in values {
+                    normalize(value, ids, literal);
+                }
+            }
+            Value::String(value) if !literal => {
+                if let Some(replacement) = ids.get(value) {
+                    *value = replacement.clone();
+                }
+            }
+            _ => {}
+        }
+    }
     let (Ok(mut left), Ok(mut right)) = (
         serde_json::to_value(&input.model),
         serde_json::to_value(&output.model),
@@ -240,28 +262,6 @@ fn geometry_agrees(input: &CadIr, output: &CadIr) -> bool {
             if ids.insert(a.to_owned(), b.to_owned()).is_some() || !targets.insert(b.to_owned()) {
                 return false;
             }
-        }
-    }
-    fn normalize(value: &mut Value, ids: &BTreeMap<String, String>, literal: bool) {
-        match value {
-            Value::Object(fields) => {
-                fields.remove("native_ref");
-                fields.remove("source_object");
-                for (key, value) in fields.iter_mut() {
-                    normalize(value, ids, matches!(key.as_str(), "name" | "description"));
-                }
-            }
-            Value::Array(values) => {
-                for value in values {
-                    normalize(value, ids, literal);
-                }
-            }
-            Value::String(value) if !literal => {
-                if let Some(replacement) = ids.get(value) {
-                    *value = replacement.clone();
-                }
-            }
-            _ => {}
         }
     }
     for arena in ARENAS {
