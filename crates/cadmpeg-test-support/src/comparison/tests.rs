@@ -321,6 +321,21 @@ fn nested_metadata_records_pair_when_their_identities_change() {
 }
 
 #[test]
+fn nested_sketch_carriers_pair_by_content_and_preserve_references() {
+    let before = json!({"model": {"sketch_entities": [{"id": "entity", "geometry_ref": "curve", "endpoint_refs": ["point"]}]}, "native": {"sldprt": {"feature_input_lanes": [{"id": "lane", "nested_sketch_carriers": [{"parent": "lane", "points": [{"id": "point", "position": 1.0}], "curves": [{"id": "curve", "radius": 2.0}]}]}]}}});
+    let after = json!({"model": {"sketch_entities": [{"id": "entity2", "geometry_ref": "curve2", "endpoint_refs": ["point2"]}]}, "native": {"sldprt": {"feature_input_lanes": [{"id": "lane2", "nested_sketch_carriers": [{"parent": "lane2", "points": [{"id": "point2", "position": 1.0}], "curves": [{"id": "curve2", "radius": 2.0}]}]}]}}});
+    assert!(accepts(&before, &after));
+    let mut changed = after.clone();
+    changed["native"]["sldprt"]["feature_input_lanes"][0]["nested_sketch_carriers"][0]["curves"]
+        [0]["radius"] = json!(3.0);
+    assert!(!accepts(&before, &changed));
+    let mut missing = after;
+    missing["native"]["sldprt"]["feature_input_lanes"][0]["nested_sketch_carriers"][0]["points"] =
+        json!([]);
+    assert!(!accepts(&before, &missing));
+}
+
+#[test]
 fn removing_metadata_parent_removes_its_embedded_records() {
     let before = json!({"model": {}, "native": {"sldprt": {"document_metadata": [{
         "id": "document", "attributes": [{"id": "attribute", "name": "Part"}],

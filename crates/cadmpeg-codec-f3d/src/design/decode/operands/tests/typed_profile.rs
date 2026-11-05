@@ -126,7 +126,7 @@ fn chain(inner_loop: bool) -> Vec<u8> {
 fn parse(
     bytes: &[u8],
 ) -> Option<crate::records::topology::entity_selection::DesignProfileCurveSelection> {
-    let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
+    let records = crate::design::test_support::test_primary_frames(bytes);
     let header = DesignRecordHeader {
         id: "f3d:Design/BulkStream.dat:design-record-header#0".into(),
         record_index: 100,

@@ -5,7 +5,7 @@
 use crate::bytes::f64s_at;
 use crate::bytes::lp_ascii_filtered_view;
 use crate::bytes::take_reference;
-use crate::design::decode::sketch::IndexedRecordOffsets;
+use crate::metastream::PrimaryFrames;
 use crate::records::feature::extrude::DesignExtrudeOperation;
 use cadmpeg_core::decode::View;
 use cadmpeg_ir::scalar::FiniteReal;
@@ -50,7 +50,7 @@ pub(super) struct FixedScalarFrame<T = FiniteReal> {
 
 pub(super) fn exact_fixed_scalar(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     record_index: u32,
 ) -> Option<FixedScalarFrame> {
     let mut candidates = records.frames(record_index).filter_map(|(start, end)| {

@@ -457,7 +457,7 @@ fn pipe_point_input_count_rejects_an_unbounded_run() {
     )
     .unwrap();
     fixture.bulk[paired - 15..paired - 11].copy_from_slice(&u32::MAX.to_le_bytes());
-    let records = crate::design::decode::sketch::IndexedRecordOffsets::build(&fixture.bulk);
+    let records = crate::design::test_support::test_primary_frames(&fixture.bulk);
     let types = std::collections::HashMap::from([(500_u64, (super::pipe::POINT_GUID, 3_u32))]);
     assert!(super::exact_point_data_construction(
         &fixture.bulk,
