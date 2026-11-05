@@ -252,11 +252,19 @@ fn owned_frames_with_prefix(
     scope_count: u32,
     prefix: &[u8],
 ) -> (Vec<u8>, DesignParameterScope) {
-    owned_frames_with(bodies, scope_count, prefix, &[], &[])
+    owned_frames_with(bodies, scope_count, prefix, &owner_paired_header(), &[])
+}
+
+/// The paired header that closes the envelope of timeline object 50.
+fn owner_paired_header() -> Vec<u8> {
+    let mut header = Vec::new();
+    crate::test_support::indexed_header(&mut header, *b"259", 50);
+    header
 }
 
 /// `owned_frames_with_prefix`, with `after_reference` after the object's
-/// reference to the scope and `trailer` after the scope's body runs.
+/// reference to the scope and `trailer` after the scope's body runs; the
+/// scope's paired header follows the trailer.
 fn owned_frames_with(
     bodies: &[(u32, u32)],
     scope_count: u32,
@@ -287,6 +295,7 @@ fn owned_frames_with(
         bytes.extend_from_slice(&[0; 4]);
     }
     bytes.extend_from_slice(trailer);
+    let content_end = u64_from_index(bytes.len());
     bytes.resize(bytes.len() + 64, 0);
     let mut scope = DesignParameterScope::empty(
         "f3d:Design1/BulkStream.dat:scope#owned",
@@ -299,7 +308,10 @@ fn owned_frames_with(
             draft.reference_count_offset = draft.byte_offset + 9;
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.layout_fixture_references();
-            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.paired_byte_offset = draft
+                .paired_byte_offset
+                .max(draft.kind_offset + 96)
+                .max(content_end);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
             draft.layout_fixture_tail();
         })
@@ -436,20 +448,21 @@ fn copy_sources(
     nodes: &HashMap<String, Option<u64>>,
 ) -> Vec<u64> {
     let mut owner_tail = after_reference.to_vec();
-    crate::test_support::indexed_header(&mut owner_tail, *b"259", 50);
-    owner_tail_copy_sources(&owner_tail, trailer, nodes)
+    owner_tail.extend(owner_paired_header());
+    owner_tail_copy_sources(PASTE_OBJECT, &owner_tail, trailer, nodes)
 }
 
-/// The copy sources a two-body paste object names when `owner_tail` follows
-/// its reference to the owned scope.
+/// The copy sources a two-body timeline object of type `owner_type` names
+/// when `owner_tail` follows its reference to the owned scope.
 fn owner_tail_copy_sources(
+    owner_type: &str,
     owner_tail: &[u8],
     trailer: &[u8],
     nodes: &HashMap<String, Option<u64>>,
 ) -> Vec<u64> {
     let (bytes, scope) = owned_frames_with(&[(71, 61), (72, 62)], 4, &[0; 10], owner_tail, trailer);
     let records = crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes);
-    let types = owner_types(PASTE_OBJECT);
+    let types = owner_types(owner_type);
     let owners = timeline_body_owners(&bytes, &records, types.iter());
     let construction = exact_timeline_owned_base_feature(&bytes, &scope, owners[&51], nodes)
         .expect("owned two-body scope");
@@ -505,14 +518,76 @@ fn a_paste_that_stores_a_removal_key_names_no_copy_source() {
 #[test]
 fn a_removal_key_outside_the_owner_envelope_is_refused() {
     let mut beyond_paired_header = vec![0; 29];
-    crate::test_support::indexed_header(&mut beyond_paired_header, *b"259", 50);
+    beyond_paired_header.extend(owner_paired_header());
     beyond_paired_header.extend(removal_key(0, NULL_KEY));
-    for owner_tail in [beyond_paired_header, removal_key(29, NULL_KEY)] {
-        assert!(
-            owner_tail_copy_sources(&owner_tail, &two_source_pairs(), &source_nodes()).is_empty(),
-            "{owner_tail:?}"
-        );
-    }
+    beyond_paired_header.extend(owner_paired_header());
+    assert!(owner_tail_copy_sources(
+        PASTE_OBJECT,
+        &beyond_paired_header,
+        &two_source_pairs(),
+        &source_nodes()
+    )
+    .is_empty());
+}
+
+#[test]
+fn a_timeline_object_without_its_paired_header_owns_no_scope() {
+    let (bytes, _) = owned_frames_with(
+        &[(71, 61), (72, 62)],
+        4,
+        &[0; 10],
+        &removal_key(29, NULL_KEY),
+        &two_source_pairs(),
+    );
+    let records = crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes);
+    let types = owner_types(PASTE_OBJECT);
+    assert!(timeline_body_owners(&bytes, &records, types.iter()).is_empty());
+}
+
+#[test]
+fn a_body_to_component_object_with_a_null_key_names_no_copy_source() {
+    let mut owner_tail = removal_key(29, NULL_KEY);
+    owner_tail.extend(owner_paired_header());
+    assert!(owner_tail_copy_sources(
+        BODY_TO_COMPONENT_OBJECT,
+        &owner_tail,
+        &two_source_pairs(),
+        &source_nodes()
+    )
+    .is_empty());
+}
+
+#[test]
+fn a_source_pair_cut_by_the_scope_paired_header_names_no_copy_source() {
+    let mut owner_tail = removal_key(29, NULL_KEY);
+    owner_tail.extend(owner_paired_header());
+    let (bytes, mut scope) = owned_frames_with(
+        &[(71, 61), (72, 62)],
+        4,
+        &[0; 10],
+        &owner_tail,
+        &two_source_pairs(),
+    );
+    let records = crate::design::decode::sketch::IndexedRecordOffsets::build(&bytes);
+    let types = owner_types(PASTE_OBJECT);
+    let owners = timeline_body_owners(&bytes, &records, types.iter());
+    let sources = |scope: &DesignParameterScope| {
+        exact_timeline_owned_base_feature(&bytes, scope, owners[&51], &source_nodes())
+            .expect("owned two-body scope")
+            .copy_source_suffixes()
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(sources(&scope), [41, 42]);
+    // The first pair's second GUID runs past this paired header.
+    let cut_inside_first_pair = 24 + 60 + 9 + 76 + 40;
+    scope
+        .try_edit(|draft| {
+            draft.paired_byte_offset = draft.byte_offset + cut_inside_first_pair;
+            draft.frame_length = cut_inside_first_pair;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    assert!(sources(&scope).is_empty());
 }
 
 #[test]

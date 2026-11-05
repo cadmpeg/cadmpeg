@@ -814,12 +814,9 @@ impl TimelineBodyOwner {
 const NULL_GUID: &str = "00000000-0000-0000-0000-000000000000";
 const GUID_CODE_UNITS: usize = 36;
 
-/// Whether the owner envelope, which ends at `end`, is zero from `at` up to
-/// an LP-UTF16 null-GUID key that also ends inside it.
-fn null_removal_key_at(bytes: &[u8], at: usize, end: usize) -> bool {
-    let Some(envelope) = bytes.get(..end) else {
-        return false;
-    };
+/// Whether `envelope` is zero from `at` up to an LP-UTF16 null-GUID key that
+/// ends inside it.
+fn null_removal_key_at(envelope: &[u8], at: usize) -> bool {
     let Some(key_at) = envelope
         .get(at..)
         .and_then(|rest| rest.iter().position(|byte| *byte != 0))
@@ -857,10 +854,11 @@ pub(super) fn timeline_body_owners<'a>(
             .iter()
             .any(|guid| guid.eq_ignore_ascii_case(design_type.type_guid.as_str()))
     }) {
+        let pastes = PASTE_BODIES_TYPE_GUID.eq_ignore_ascii_case(design_type.type_guid.as_str());
         for &entity in design_type.entities.values() {
             let Some((scope, owner)) = u32::try_from(entity)
                 .ok()
-                .and_then(|record| parse_timeline_body_owner(bytes, records, record))
+                .and_then(|record| parse_timeline_body_owner(bytes, records, record, pastes))
             else {
                 continue;
             };
@@ -874,8 +872,13 @@ fn parse_timeline_body_owner(
     bytes: &[u8],
     records: &crate::design::decode::sketch::IndexedRecordOffsets,
     record: u32,
+    pastes: bool,
 ) -> Option<(u32, TimelineBodyOwner)> {
-    let start = *records.offsets(record).first()?;
+    let offsets = records.offsets(record);
+    let start = *offsets.first()?;
+    // The object's frame ends at its next same-index header.
+    let end = *offsets.iter().find(|offset| **offset > start)?;
+    let bytes = bytes.get(..end)?;
     let count_at = if bytes
         .get(start + owner_prefix::ZERO_RUN_10..start + owner_prefix::BODY_COUNT)?
         == [0; 10]
@@ -909,11 +912,7 @@ fn parse_timeline_body_owner(
             record,
             body_count,
             reference_offset,
-            keeps_sources: records
-                .offsets(record)
-                .iter()
-                .find(|offset| **offset > start)
-                .is_some_and(|end| null_removal_key_at(bytes, cursor, *end)),
+            keeps_sources: pastes && null_removal_key_at(bytes, cursor),
         },
     ))
 }
@@ -961,6 +960,7 @@ pub(super) fn exact_timeline_owned_base_feature(
         return None;
     }
     let start = usize::try_from(scope.byte_offset()).ok()?;
+    let bytes = bytes.get(..usize::try_from(scope.paired_byte_offset()).ok()?)?;
     if bytes.get(start + result_body::ZERO_RUN_8..start + result_body::BODY_COUNT_MARKER)? != [0; 8]
         || bytes.get(start + result_body::BODY_COUNT_MARKER) != Some(&1)
         || usize::try_from(View::u32_le_at(
