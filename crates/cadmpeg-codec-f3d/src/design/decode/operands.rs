@@ -3888,6 +3888,27 @@ pub(crate) fn decode_extrude_selection_members(
     Ok(out)
 }
 
+/// The wrapper, carrier, and following records of every decoded tracking
+/// path. A tracking path can follow identity wrappers whose record indices are
+/// unrelated to its own, so its headers are named by the path itself.
+pub(crate) fn tracking_path_record_indices(
+    identities: &[DesignConstructionOperandIdentity],
+) -> impl Iterator<Item = (&str, u32)> {
+    identities.iter().flat_map(|identity| {
+        native_stream(&identity.id)
+            .zip(identity.tracking_path())
+            .into_iter()
+            .flat_map(|(stream, path)| {
+                [
+                    path.wrapper_record_index(),
+                    path.carrier_record_index(),
+                    path.following_record_index(),
+                ]
+                .map(move |record_index| (stream, record_index))
+            })
+    })
+}
+
 /// Decode nested persistent-entity frames named by construction groups.
 pub(crate) fn decode_entity_selection_operands(
     scan: &ContainerScan,
