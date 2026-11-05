@@ -651,7 +651,12 @@ pub(super) fn apply_rectangular_pattern(
     {
         return Err("rectangular directions have no exact IGES rotation".into());
     }
-    let mut positions = Vec::with_capacity(omitted_instances.len());
+    let flag = fields
+        .value("do_dont_flag")
+        .and_then(Value::as_i64)
+        .filter(|flag| matches!(flag, 0 | 1))
+        .ok_or("rectangular array has no admitted selection flag")?;
+    let mut omitted = std::collections::BTreeSet::new();
     for [column, row] in omitted_instances {
         if *column >= columns || *row >= rows {
             return Err("rectangular omitted instance is outside the grid".into());
@@ -660,16 +665,41 @@ pub(super) fn apply_rectangular_pattern(
             .checked_mul(u64::from(rows))
             .and_then(|value| value.checked_add(u64::from(*row)))
             .and_then(|value| value.checked_add(1))
-            .and_then(|value| i64::try_from(value).ok())
-            .ok_or("rectangular position overflows the IGES integer field")?;
-        positions.push(Value::from(position));
+            .ok_or("rectangular position overflows")?;
+        omitted.insert(position);
     }
     let total = u64::from(columns) * u64::from(rows);
-    if !positions.is_empty()
-        && u64::try_from(positions.len()).map_err(|_| "rectangular mask count overflows")?
-            < total.div_ceil(2)
-    {
-        return Err("rectangular omission mask has no admitted IGES representation".into());
+    let omitted_count =
+        u64::try_from(omitted.len()).map_err(|_| "rectangular mask count overflows")?;
+    let mut positions = Vec::new();
+    if !omitted.is_empty() {
+        let count = if flag == 0 {
+            total - omitted_count
+        } else {
+            omitted_count
+        };
+        if (flag == 0 && count > total / 2) || (flag == 1 && count < total.div_ceil(2)) {
+            return Err("rectangular omission mask has no admitted IGES representation".into());
+        }
+        let capacity = usize::try_from(count).map_err(|_| "rectangular mask count overflows")?;
+        positions
+            .try_reserve_exact(capacity)
+            .map_err(|_| "rectangular mask allocation failed")?;
+        if flag == 0 {
+            for position in 1..=total {
+                if !omitted.contains(&position) {
+                    positions.push(Value::from(i64::try_from(position).map_err(|_| {
+                        "rectangular position overflows the IGES integer field"
+                    })?));
+                }
+            }
+        } else {
+            for position in omitted {
+                positions.push(Value::from(i64::try_from(position).map_err(|_| {
+                    "rectangular position overflows the IGES integer field"
+                })?));
+            }
+        }
     }
     fields.values.insert("columns".into(), Value::from(columns));
     fields.values.insert("rows".into(), Value::from(rows));
@@ -682,7 +712,9 @@ pub(super) fn apply_rectangular_pattern(
     fields
         .values
         .insert("rotation".into(), serde_json::json!(rotation));
-    fields.values.insert("do_dont_flag".into(), Value::from(1));
+    fields
+        .values
+        .insert("do_dont_flag".into(), Value::from(flag));
     fields
         .values
         .insert("positions".into(), Value::Array(positions));
