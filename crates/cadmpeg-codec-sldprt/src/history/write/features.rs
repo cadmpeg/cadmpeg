@@ -517,6 +517,18 @@ fn synchronize_features(
         .iter()
         .map(|body| (body.id.clone(), body.id.as_str().to_owned()))
         .collect::<HashMap<_, _>>();
+    let mut ordered_features = features.iter().enumerate().collect::<Vec<_>>();
+    ordered_features.sort_by_key(|(index, feature)| (feature.ordinal, *index));
+    let feature_ranks = ordered_features
+        .into_iter()
+        .enumerate()
+        .map(|(rank, (_, feature))| {
+            let rank = u32::try_from(rank).map_err(|_| {
+                CodecError::malformed("SLDPRT native history cannot index this many features")
+            })?;
+            Ok((&feature.id, rank))
+        })
+        .collect::<Result<HashMap<_, _>, CodecError>>()?;
     let mut scope_ids = HashMap::new();
     for body in bodies {
         scope_ids.insert(body.id.as_str(), Some(&body.id));
@@ -605,9 +617,7 @@ fn synchronize_features(
                 })?;
             properties.insert(cadmpeg_core::nonblank_literal!("Scope"), scope.join(","));
         }
-        let ordinal = u32::try_from(feature.ordinal)
-            // (O-capacity): the target field cannot encode a value outside its width.
-            .map_err(|_| CodecError::NotImplemented("feature ordinal exceeds u32".into()))?;
+        let ordinal = feature_ranks[&feature.id];
         let tree_parent = model.feature_parent(&feature.id).and_then(|parent| {
             let source_id = structural_parent_sources.get(parent).copied().flatten();
             match record_ids.get(parent) {
