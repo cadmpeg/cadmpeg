@@ -2,6 +2,7 @@
 #![allow(clippy::unwrap_used)]
 //! Integration contracts over synthesized `FCStd` archives and application graphs.
 
+mod authored_constraints;
 mod authored_history;
 mod authored_operations;
 mod measured_geometry;
