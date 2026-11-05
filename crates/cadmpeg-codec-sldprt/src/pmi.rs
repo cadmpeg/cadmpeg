@@ -860,10 +860,8 @@ fn collect_dimensions(
                 let mut part_losses = give_up_pmi_record(
                     ctx,
                     cell_extent(&image, payload),
-                    stream,
-                    parent,
-                    &normalized,
-                    &message,
+                    (stream, parent),
+                    (&normalized, &message),
                     output.stubs,
                     &mut output.untyped_sections,
                     annotations,
@@ -944,14 +942,14 @@ fn dropped_pmi_record_ids(guid: &str) -> [String; 7] {
 fn give_up_pmi_record(
     ctx: &DecodeContext<'_>,
     extent: View<'_>,
-    stream: &cadmpeg_ir::StreamName,
-    parent: &str,
-    guid: &str,
-    message: &str,
+    location: (&cadmpeg_ir::StreamName, &str),
+    failure: (&str, &str),
     stubs: &mut Vec<UnknownRecord>,
     untyped: &mut Option<&mut std::collections::BTreeSet<String>>,
     annotations: &mut Annotations,
 ) -> Result<Vec<LossNote>, CodecError> {
+    let (stream, parent) = location;
+    let (guid, message) = failure;
     let mut part = PartOutput::new(CodecFormat::Sldprt, ctx);
     let spec = PartSpec::new("pmi_record")
         .in_stream(stream.clone())
@@ -1092,10 +1090,8 @@ fn collect_dimension_maps(
                 let mut part_losses = give_up_pmi_record(
                     ctx,
                     extent,
-                    stream,
-                    parent,
-                    &normalized,
-                    &message,
+                    (stream, parent),
+                    (&normalized, &message),
                     stubs,
                     &mut untyped_sections,
                     annotations,

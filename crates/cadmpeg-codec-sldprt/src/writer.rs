@@ -119,14 +119,16 @@ pub(crate) fn write_semantic_with_records(
         ir,
         annotations,
         retained_records,
-        if source_fidelity.is_some() {
-            ClassLayouts::Source
-        } else {
-            ClassLayouts::Unavailable
+        SemanticOptions {
+            class_layouts: if source_fidelity.is_some() {
+                ClassLayouts::Source
+            } else {
+                ClassLayouts::Unavailable
+            },
+            sw_version: None,
+            prepared_native: None,
+            source_trust: trust,
         },
-        None,
-        None,
-        trust,
         writer,
     )
 }
@@ -185,17 +187,28 @@ fn can_write_curve(geometry: &CurveGeometry) -> bool {
     })
 }
 
+/// Options for writing a semantic envelope.
+pub(super) struct SemanticOptions<'a> {
+    class_layouts: ClassLayouts,
+    sw_version: Option<&'a str>,
+    prepared_native: Option<SldprtNative>,
+    source_trust: SourceTrust,
+}
+
 /// Author the selected version envelope without consuming retained bytes.
 pub(super) fn write_semantic_at(
     ir: &CadIr,
     annotations: &Annotations,
     retained_records: &[SourceRecord<'_>],
-    class_layouts: ClassLayouts,
-    sw_version: Option<&str>,
-    prepared_native: Option<SldprtNative>,
-    source_trust: SourceTrust,
+    options: SemanticOptions<'_>,
     writer: &mut dyn Write,
 ) -> Result<SemanticOutput, write_error::WriteError> {
+    let SemanticOptions {
+        class_layouts,
+        sw_version,
+        prepared_native,
+        source_trust,
+    } = options;
     let prepared_design = matches!(class_layouts, ClassLayouts::Authored);
     let digest_arena = DecodeArena::new();
     let (digest_ctx, _) =
@@ -592,8 +605,7 @@ pub(super) fn write_semantic_at(
         ir,
         retained_records,
         annotations,
-        &generated_partition_sections,
-        &emitted_sections,
+        (&generated_partition_sections, &emitted_sections),
         retain_native_brep,
         patch_active_configuration,
         &mut normalization_losses,
@@ -1925,12 +1937,12 @@ fn opaque_blocks(
     ir: &CadIr,
     records: &[SourceRecord<'_>],
     annotations: &Annotations,
-    generated_partitions: &HashSet<String>,
-    emitted_sections: &HashSet<String>,
+    sections: (&HashSet<String>, &HashSet<String>),
     retain_native_brep: bool,
     patch_active_configuration: bool,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Vec<(String, Vec<u8>)>, CodecError> {
+    let (generated_partitions, emitted_sections) = sections;
     let native = ir
         .native
         .namespace("sldprt")
