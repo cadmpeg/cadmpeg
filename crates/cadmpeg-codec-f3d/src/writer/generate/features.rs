@@ -104,6 +104,7 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<(Vec<u8>, Vec<u8>, usize)>
     primitives.sort_by_key(|primitive| primitive.0);
     let mut out = Vec::new();
     let mut primary = Vec::new();
+    let mut secondary = Vec::new();
     let mut scopes = Vec::new();
     let mut owners = Vec::new();
     let mut parameters = Vec::new();
@@ -160,6 +161,7 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<(Vec<u8>, Vec<u8>, usize)>
         out.extend_from_slice(&[0, 1, 0, 0, 1, 13]);
         out.extend_from_slice(&1u64.to_le_bytes());
         out.extend_from_slice(&[0; 3]);
+        mark(&mut secondary, base, out.len())?;
         header(&mut out, "256", base)?;
         for (local, (kind, value)) in values.iter().enumerate() {
             let local = u32::try_from(local)
@@ -184,6 +186,11 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<(Vec<u8>, Vec<u8>, usize)>
             .map_err(CodecError::Malformed)?;
             mark(&mut primary, owner_index, out.len())?;
             super::parameter_links::encode(&mut out, &[owner], &[])?;
+            mark(
+                &mut secondary,
+                owner_index,
+                out.len() - crate::layout::indexed_design_record_header::LEN,
+            )?;
             let parameter = DesignParameter::authored(DesignParameterContent {
                 id: format!("f3d:generated:parameter#{parameter_index}"),
                 class_tag: "259".to_owned().try_into().map_err(CodecError::Malformed)?,
@@ -285,7 +292,7 @@ pub(super) fn encode(target: &CadIr) -> Result<Option<(Vec<u8>, Vec<u8>, usize)>
         body_map: None,
         browser_nodes: None,
     };
-    let meta = encode_design_metastream(&registry, &primary)?
+    let meta = encode_design_metastream(&registry, &primary, &secondary)?
         .ok_or_else(|| CodecError::Malformed("missing generated feature metadata".into()))?;
     Ok(Some((out, meta, primitives.len())))
 }
