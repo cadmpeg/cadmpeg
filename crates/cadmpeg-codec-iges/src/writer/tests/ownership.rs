@@ -200,15 +200,15 @@ fn surface_binding_writes_a_314_definition() {
         Some(&1),
         "bound custom color writes one Type 314"
     );
-    let round_trip = round_trip(&ir);
-    assert_eq!(round_trip.ir().model.faces.len(), 1);
-    assert_eq!(round_trip.ir().model.appearance_bindings.len(), 1);
+    let round_tripped = round_trip(&ir);
+    assert_eq!(round_tripped.ir().model.faces.len(), 1);
+    assert_eq!(round_tripped.ir().model.appearance_bindings.len(), 1);
     assert!(matches!(
-        round_trip.ir().model.appearance_bindings[0].target,
+        round_tripped.ir().model.appearance_bindings[0].target,
         AppearanceTarget::Surface(_)
     ));
     assert_eq!(
-        round_trip.ir().model.appearances[0].base_color,
+        round_tripped.ir().model.appearances[0].base_color,
         ir.model.appearances[0].base_color
     );
     assert!(
@@ -225,7 +225,12 @@ fn surface_binding_writes_a_314_definition() {
     assert!(reduced
         .losses
         .iter()
-        .any(|loss| loss.message.contains("test:application:appearance#red")));
+        .all(|loss| !loss.message.contains("test:application:appearance#red")));
+    let named = round_trip(&ir);
+    assert_eq!(
+        named.ir().model.appearances[0].name.as_deref(),
+        Some("named material")
+    );
 }
 
 #[test]

@@ -233,6 +233,7 @@ pub(super) fn encode(
         Vec<cadmpeg_ir::features::FeatureId>,
         Vec<ParameterId>,
         u32,
+        usize,
     )>,
     CodecError,
 > {
@@ -470,6 +471,7 @@ pub(super) fn encode(
         written,
         written_parameters,
         collection_index,
+        primary.len(),
     )))
 }
 

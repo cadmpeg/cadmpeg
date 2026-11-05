@@ -177,7 +177,7 @@ pub(super) fn write_with_limits(
     let generated_features = features::encode(target)?;
     let mut design_registry = GeneratedDesignRegistry::new(target, design_bindings, &attributes)?;
     if !records::needs_design_bulk(target, &native) {
-        if let Some((_, meta, _, _, _)) = &generated_features {
+        if let Some((_, meta, _, _, _, _)) = &generated_features {
             let generated = crate::metastream::parse(meta, "generated feature MetaStream")?;
             let mut ordinal = 0;
             design_registry.types.retain(|_| {
@@ -201,7 +201,14 @@ pub(super) fn write_with_limits(
         }
     }
     let brep_name = source_brep_name(&native, design_registry.body_map.is_some());
+    let output_arena = cadmpeg_core::decode::DecodeArena::new();
+    let output_policy = cadmpeg_core::decode::DecodePolicy {
+        limits,
+        ..Default::default()
+    };
+    let output_ctx = cadmpeg_core::decode::DecodeContext::for_encode(&output_arena, &output_policy);
     let smbh = encode_smbh(target, &native, &attributes, limits)?;
+    smbh::charge_smbh_records(target, &native, &attributes, &output_ctx)?;
     let mut staged = tempfile::tempfile()?;
     let mut archive = zip::ZipWriter::new(&mut staged);
     let options = crate::zip_write::file_options(zip::CompressionMethod::Stored);
@@ -232,12 +239,6 @@ pub(super) fn write_with_limits(
             CodecError::malformed(format_args!("cannot create F3D BREP entry: {error}"))
         })?;
     archive.write_all(&smbh)?;
-    let subd_arena = cadmpeg_core::decode::DecodeArena::new();
-    let subd_policy = cadmpeg_core::decode::DecodePolicy {
-        limits,
-        ..Default::default()
-    };
-    let subd_ctx = cadmpeg_core::decode::DecodeContext::for_encode(&subd_arena, &subd_policy);
     let mut subd_names = BTreeSet::new();
     for (ordinal, surface) in target.model.subds.iter().enumerate() {
         let fallback = format!("{DESIGN_FOLDER}/TSplines.BlobParts/TSpline.{ordinal}.tsm");
@@ -262,7 +263,7 @@ pub(super) fn write_with_limits(
                 CodecError::UnsupportedContent("F3D cage name space exhausted".into())
             })?;
         }
-        let Some(program) = subd::encode(&subd_ctx, surface, true)? else {
+        let Some(program) = subd::encode(&output_ctx, surface, true)? else {
             return Err(CodecError::UnsupportedContent(format!(
                 "F3D cage {} has unsupported topology or controls",
                 surface.id
@@ -324,6 +325,9 @@ pub(super) fn write_with_limits(
         }
     }
     if !parameter_bytes.is_empty() {
+        for _ in 0..=native.design_parameters.len() {
+            output_ctx.charge_entities(1, "F3D parameter record")?;
+        }
         archive
             .start_file(
                 format!("{DESIGN_FOLDER}/FusionDesignSegmentType2/BulkStream.dat"),
@@ -348,6 +352,9 @@ pub(super) fn write_with_limits(
         }
     }
     for segment in act_segments {
+        for _ in 0..segment.record_count {
+            output_ctx.charge_entities(1, "F3D ACT record")?;
+        }
         archive
             .start_file(format!("{}/BulkStream.dat", segment.folder), options)
             .map_err(|error| CodecError::malformed(error.to_string()))?;
@@ -362,6 +369,9 @@ pub(super) fn write_with_limits(
     let design_bulk =
         encode_design_bulkstream(target, &native, &design_registry, Vec::new(), brep_name)?;
     if let Some(bulk_stream) = &design_bulk {
+        for _ in &bulk_stream.primary_records {
+            output_ctx.charge_entities(1, "F3D Design record")?;
+        }
         residual_losses.extend(bulk_stream.losses.iter().cloned());
         archive
             .start_file(format!("{DESIGN_FOLDER}/Design1/BulkStream.dat"), options)
@@ -395,7 +405,10 @@ pub(super) fn write_with_limits(
         )));
     }
     let mut written_owned_parameters = Vec::new();
-    if let Some((bulk, meta, ids, parameter_ids, collection_index)) = generated_features {
+    if let Some((bulk, meta, ids, parameter_ids, collection_index, record_count)) = generated_features {
+        for _ in 0..record_count {
+            output_ctx.charge_entities(1, "F3D feature record")?;
+        }
         written_features = ids;
         written_owned_parameters = parameter_ids;
         residual_losses.push(collection_residual(
@@ -412,7 +425,7 @@ pub(super) fn write_with_limits(
             archive.write_all(&data)?;
         }
     }
-    let written_sketches = sketches::encode(target, limits)?;
+    let written_sketches = sketches::encode(target, &output_ctx)?;
     if let Some(sketches) = &written_sketches {
         for (name, data) in [
             ("BulkStream.dat", &sketches.bulk),

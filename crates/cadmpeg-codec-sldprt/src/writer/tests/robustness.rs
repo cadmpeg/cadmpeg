@@ -100,19 +100,36 @@ fn vertex_tolerance_underflow_preserves_the_vertex_with_a_named_loss() {
 #[test]
 fn injected_errors_succeed_and_name_the_record() {
     let seed = seed_golden();
-    // The recompute-flag injection flips `needs_recompute` to true, which is
-    // legal stored state (#209 §2.5), so it never invalidates the seed and is
-    // inapplicable here; the remaining standard injections run.
-    let injections: Vec<_> = standard_injections()
-        .into_iter()
-        .filter(|injection| injection.name != "recompute-flag")
-        .collect();
+    let injections = standard_injections();
     let findings = injected_error_findings(&seed, &SldprtCodec, request(), &injections);
     assert!(
         findings.is_empty(),
         "injected-error findings:\n{}",
         findings.join("\n")
     );
+}
+
+#[test]
+fn recompute_state_survives_synthesis() {
+    for stale in [false, true] {
+        let mut ir = super::extrusion_authoring::source_less_extrusion();
+        ir.model.features[0].needs_recompute = stale;
+        let plan = SldprtCodec
+            .plan(EncodeInput::new(&ir, None), request())
+            .unwrap();
+        let mut bytes = Vec::new();
+        plan.write_to(&mut bytes).unwrap();
+        let decoded = SldprtCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        assert!(!decoded.ir().model.features.is_empty());
+        assert!(decoded
+            .ir()
+            .model
+            .features
+            .iter()
+            .all(|feature| feature.needs_recompute == stale));
+    }
 }
 
 #[test]

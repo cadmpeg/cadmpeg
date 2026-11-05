@@ -671,8 +671,8 @@ fn synchronize_features(
             })
             .collect();
         if let Some(existing) = existing.as_mut() {
-            if let Some(tag) = &feature.source_tag {
-                existing.xml_tag.clone_from(tag);
+            if feature.source_tag.is_some() {
+                existing.xml_tag = feature_xml_tag(feature);
             }
             existing.ordinal = ordinal;
             existing.name = feature.name.clone().unwrap_or_default();
