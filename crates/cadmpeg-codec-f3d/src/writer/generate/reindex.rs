@@ -18,6 +18,7 @@ pub(super) struct Starts {
     pub(super) loop_: i64,
     pub(super) surface: i64,
     pub(super) curve: i64,
+    pub(super) pcurve: i64,
     pub(super) coedge: i64,
     pub(super) edge: i64,
     pub(super) vertex: i64,
@@ -27,17 +28,20 @@ pub(super) struct Starts {
 pub(super) fn preserve_indices(
     records: &mut Vec<u8>,
     model: &Model,
+    topology: &super::index::NativeGenerationIndex<'_>,
     limits: cadmpeg_core::decode::ResourceLimits,
     starts: Starts,
 ) -> Result<(), CodecError> {
-    if !model
-        .edges
-        .iter()
-        .any(|edge| edge.id.as_str().starts_with("f3d:brep:entity#"))
+    if topology.edge_ownerships.is_empty()
+        && topology.face_native_keys.is_empty()
+        && !model
+            .edges
+            .iter()
+            .any(|edge| entity_index(edge.id.as_str()).is_some())
         && !model
             .faces
             .iter()
-            .any(|face| face.id.as_str().starts_with("f3d:brep:entity#"))
+            .any(|face| entity_index(face.id.as_str()).is_some())
     {
         return Ok(());
     }
@@ -64,14 +68,9 @@ pub(super) fn preserve_indices(
         occupied[index] = true;
     }
     macro_rules! reserve {
-        ($items:expr, $start:expr) => {
+        ($items:expr, $start:expr, $index:expr) => {
             for (ordinal, item) in $items.iter().enumerate() {
-                let Some(desired) = item
-                    .id
-                    .as_str()
-                    .strip_prefix("f3d:brep:entity#")
-                    .and_then(|v| v.parse::<usize>().ok())
-                else {
+                let Some(desired) = ($index)(item) else {
                     continue;
                 };
                 let Some(source) = usize::try_from($start)
@@ -92,17 +91,80 @@ pub(super) fn preserve_indices(
             }
         };
     }
-    // Bodies occupy the saved-entity prefix and already keep their generated indices.
-    reserve!(model.regions, starts.region);
-    reserve!(model.shells, starts.shell);
-    reserve!(model.faces, starts.face);
-    reserve!(model.loops, starts.loop_);
-    reserve!(model.surfaces, starts.surface);
-    reserve!(model.curves, starts.curve);
-    reserve!(model.coedges, starts.coedge);
-    reserve!(model.edges, starts.edge);
-    reserve!(model.vertices, starts.vertex);
-    reserve!(model.points, starts.point);
+    reserve!(
+        model.regions,
+        starts.region,
+        |v: &cadmpeg_ir::topology::Region| entity_index(v.id.as_str())
+    );
+    reserve!(
+        model.shells,
+        starts.shell,
+        |v: &cadmpeg_ir::topology::Shell| entity_index(v.id.as_str())
+    );
+    reserve!(
+        model.faces,
+        starts.face,
+        |v: &cadmpeg_ir::topology::Face| {
+            topology
+                .face_native_keys
+                .get(v.id.as_str())
+                .and_then(|row| usize::try_from(row.record_index).ok())
+                .or_else(|| entity_index(v.id.as_str()))
+        }
+    );
+    reserve!(
+        model.loops,
+        starts.loop_,
+        |v: &cadmpeg_ir::topology::Loop| entity_index(v.id.as_str())
+    );
+    reserve!(
+        model.surfaces,
+        starts.surface,
+        |v: &cadmpeg_ir::geometry::Surface| entity_index(v.id.as_str())
+    );
+    reserve!(
+        model.curves,
+        starts.curve,
+        |v: &cadmpeg_ir::geometry::Curve| entity_index(v.id.as_str())
+    );
+    reserve!(
+        model.pcurves,
+        starts.pcurve,
+        |v: &cadmpeg_ir::geometry::pcurve::Pcurve| entity_index(v.id.as_str())
+    );
+    reserve!(
+        model.coedges,
+        starts.coedge,
+        |v: &cadmpeg_ir::topology::Coedge| entity_index(v.id.as_str())
+    );
+    reserve!(
+        model.edges,
+        starts.edge,
+        |v: &cadmpeg_ir::topology::Edge| {
+            topology
+                .edge_ownerships
+                .iter()
+                .find(|row| v.native_ref.as_deref() == Some(row.id().as_str()))
+                .and_then(|row| usize::try_from(row.record_index).ok())
+                .or_else(|| entity_index(v.id.as_str()))
+        }
+    );
+    reserve!(
+        model.vertices,
+        starts.vertex,
+        |v: &cadmpeg_ir::topology::Vertex| {
+            topology
+                .vertex_ownerships
+                .get(v.id.as_str())
+                .and_then(|row| usize::try_from(row.record_index).ok())
+                .or_else(|| entity_index(v.id.as_str()))
+        }
+    );
+    reserve!(
+        model.points,
+        starts.point,
+        |v: &cadmpeg_ir::topology::Point| entity_index(v.id.as_str())
+    );
     let mut available = occupied
         .iter()
         .enumerate()
@@ -133,6 +195,14 @@ pub(super) fn preserve_indices(
     }
     *records = rewritten;
     Ok(())
+}
+
+fn native_index(id: Option<&str>, prefix: &str) -> Option<usize> {
+    id?.strip_prefix(prefix)?.parse().ok()
+}
+
+fn entity_index(id: &str) -> Option<usize> {
+    native_index(Some(id), "f3d:brep:entity#")
 }
 
 fn encode_record(out: &mut Vec<u8>, record: &Record, mapping: &[usize]) -> Result<(), CodecError> {
