@@ -668,13 +668,11 @@ pub(super) fn write(
             }
             let current = object.properties.get("Views").and_then(|xml| {
                 let document = roxmltree::Document::parse(xml).ok()?;
-                Some(
-                    document
-                        .descendants()
-                        .filter(|node| node.has_tag_name("Link"))
-                        .map(|node| node.attribute("value").map(str::to_owned))
-                        .collect::<Option<Vec<_>>>()?,
-                )
+                document
+                    .descendants()
+                    .filter(|node| node.has_tag_name("Link"))
+                    .map(|node| node.attribute("value").map(str::to_owned))
+                    .collect::<Option<Vec<_>>>()
             });
             if current
                 .as_ref()
