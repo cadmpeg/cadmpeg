@@ -5360,9 +5360,10 @@ impl<'a> Builder<'a> {
                 .find(|(_, (other, _))| other.surface == use_.surface)
                 .map(|(second, _)| (first, second))
         });
-        let selected = seam_pair
-            .map(|(first, second)| vec![first, second])
-            .unwrap_or_else(|| (0..emitted.len().min(2)).collect());
+        let selected = seam_pair.map_or_else(
+            || (0..emitted.len().min(2)).collect(),
+            |(first, second)| vec![first, second],
+        );
         let seam = seam_pair.is_some();
         let mut pcurve_refs = Vec::new();
         for (index, (use_, pcurve)) in emitted.into_iter().enumerate() {
