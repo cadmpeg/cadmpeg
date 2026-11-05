@@ -17,7 +17,7 @@ pub(crate) fn plan(
     target: &ResolvedWrite<'_>,
 ) -> Result<ExportBody, CodecError> {
     if target.preserves_source() {
-        return match preserve(input)? {
+        let mut body = match preserve(input)? {
             Preservation::Written {
                 bytes,
                 write_path,
@@ -29,7 +29,14 @@ pub(crate) fn plan(
             Preservation::PatchDeclined { reason } => {
                 synthesized_body(input, SynthesisCause::PatchDeclined { reason })
             }
-        };
+        }?;
+        if matches!(body.write_path, WritePath::Synthesized { .. }) {
+            if let Some(message) = target.synthesis_displacement_message() {
+                body.losses
+                    .push(F3dLossCode::SourceDialectDisplaced.note(message));
+            }
+        }
+        return Ok(body);
     }
     let cause = if let Some(message) = target.displacement_message() {
         SynthesisCause::Displaced(message)

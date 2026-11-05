@@ -58,6 +58,12 @@ pub(crate) const REDUCED_FIELDS: &[cadmpeg_ir::codec::write::ReducedField] = &[
         },
     },
     cadmpeg_ir::codec::write::ReducedField {
+        path: "model.bodies[].visible",
+        storage: cadmpeg_ir::codec::write::ReducedStorage::Normalized {
+            loss: "fcstd/appearance.body-style-not-transferred",
+        },
+    },
+    cadmpeg_ir::codec::write::ReducedField {
         path: "model.bodies[].color.r",
         storage: cadmpeg_ir::codec::write::ReducedStorage::U8Channel,
     },

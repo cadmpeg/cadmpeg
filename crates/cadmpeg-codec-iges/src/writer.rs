@@ -9493,24 +9493,38 @@ fn generated_line_font(version: crate::IgesVersion, entity_type: u32, form: i64)
     }
 }
 
-/// Generation timestamp: the held document date when the target version
-/// accepts its lexical form, else the current time in the target form. The
-/// four-digit year form the later versions admit is not a V4.0 or V5.0 field
-/// 18 value, so a held four-digit date is truncated to its two-digit form
-/// for those targets.
+/// Use a held IGES date only when the selected Global table admits it.
 fn generation_timestamp_for(
     version: crate::IgesVersion,
     held: Option<&str>,
 ) -> Result<String, CodecError> {
-    if let Some(held) = held {
-        let truncated = held.len() == 15
-            && matches!(version, crate::IgesVersion::V4_0 | crate::IgesVersion::V5_0);
-        if !truncated {
-            return Ok(held.to_owned());
-        }
-        return Ok(held[2..].to_owned());
+    if let Some(held) = held.filter(|value| valid_global_date(value, version)) {
+        return Ok(held.to_owned());
     }
     generation_timestamp(SystemTime::now(), version)
+}
+
+fn valid_global_date(value: &str, version: crate::IgesVersion) -> bool {
+    let bytes = value.as_bytes();
+    let dot = match bytes.len() {
+        13 => 6,
+        15 if !matches!(version, crate::IgesVersion::V4_0 | crate::IgesVersion::V5_0) => 8,
+        _ => return false,
+    };
+    if bytes[dot] != b'.'
+        || bytes
+            .iter()
+            .enumerate()
+            .any(|(i, b)| i != dot && !b.is_ascii_digit())
+    {
+        return false;
+    }
+    let number = |offset: usize| (bytes[offset] - b'0') * 10 + (bytes[offset + 1] - b'0');
+    (1..=12).contains(&number(dot - 4))
+        && (1..=31).contains(&number(dot - 2))
+        && number(dot + 1) < 24
+        && number(dot + 3) < 60
+        && number(dot + 5) < 60
 }
 
 /// Renders one IGES global Hollerith field.
@@ -9574,6 +9588,7 @@ fn document_metadata<'a>(ir: &'a CadIr, name: &str) -> Option<&'a str> {
 pub(super) fn global_projected_attribute(
     ir: &CadIr,
     attribute: &cadmpeg_ir::attributes::SourceAttribute,
+    version: crate::IgesVersion,
 ) -> bool {
     if !matches!(
         attribute.target,
@@ -9598,6 +9613,13 @@ pub(super) fn global_projected_attribute(
         return false;
     };
     if document_metadata(ir, &attribute.name) != Some(value.as_str()) {
+        return false;
+    }
+    if attribute.name == "generation_date" || attribute.name == "model_date" {
+        return valid_global_date(value, version)
+            && (attribute.name != "model_date" || version != crate::IgesVersion::V4_0);
+    }
+    if attribute.name == "system_id" && value.is_empty() {
         return false;
     }
     if attribute.name == "start" {
@@ -9641,7 +9663,12 @@ fn generated_global(
         "1H;".to_owned(),
         global_hollerith(WRITER_SENDER_PRODUCT),
         global_hollerith(WRITER_NATIVE_FILE_NAME),
-        global_hollerith(metadata.system_id.unwrap_or(WRITER_NATIVE_SYSTEM_ID)),
+        global_hollerith(
+            metadata
+                .system_id
+                .filter(|value| !value.is_empty())
+                .unwrap_or(WRITER_NATIVE_SYSTEM_ID),
+        ),
         global_hollerith(WRITER_PREPROCESSOR_VERSION),
         WRITER_INTEGER_REPRESENTATION_BITS.to_string(),
         WRITER_SINGLE_PRECISION_MAGNITUDE.to_string(),
@@ -9671,10 +9698,20 @@ fn generated_global(
     match version {
         crate::IgesVersion::V4_0 => {}
         crate::IgesVersion::V5_0 => {
-            fields.push(global_hollerith(metadata.model_date.unwrap_or("")));
+            fields.push(global_hollerith(
+                metadata
+                    .model_date
+                    .filter(|value| valid_global_date(value, version))
+                    .unwrap_or(""),
+            ));
         }
         crate::IgesVersion::V5_1 | crate::IgesVersion::V5_2 | crate::IgesVersion::V5_3 => {
-            fields.push(global_hollerith(metadata.model_date.unwrap_or("")));
+            fields.push(global_hollerith(
+                metadata
+                    .model_date
+                    .filter(|value| valid_global_date(value, version))
+                    .unwrap_or(""),
+            ));
             fields.push(global_hollerith(""));
         }
     }

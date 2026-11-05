@@ -148,7 +148,10 @@ pub(crate) fn plan(
         writer.package = Some(Vec::new());
     }
     let text = writer.layer();
-    let losses = writer.losses();
+    let mut losses = writer.losses();
+    if let Some(message) = target.displacement_message() {
+        losses.push(UsdLossCode::SourceDialectDisplaced.note(message));
+    }
     let members = writer.package.take().unwrap_or_default();
     let body = ExportBody {
         bytes: text.into_bytes(),
