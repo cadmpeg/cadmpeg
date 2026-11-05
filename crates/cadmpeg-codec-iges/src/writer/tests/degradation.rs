@@ -1159,3 +1159,35 @@ fn edited_boolean_operation_reaches_the_regenerated_tree() {
         })
     )));
 }
+
+#[test]
+fn reconstructed_default_display_record_is_declared_regenerated() {
+    use cadmpeg_ir::codec::write::NativeDisposition;
+    let decoded = IgesCodec.decode(&mut Cursor::new(point_file_with_global(
+        b"1H,,1H;,7Hproduct,8Hpart.igs,7Hcadmpeg,3H0.1,32,38,6,308,15,0H,1.0,2,2HMM,1,1.0,15H20260714.000000,0.001,1000.0,6Hauthor,3Horg,11,0,0H,0H;"
+    )), &DecodeOptions::default()).expect("point fixture decodes");
+    let plan = plan_at(IgesVersion::V5_3, decoded.ir(), None).expect("point synthesizes");
+    assert_eq!(
+        plan.report()
+            .native_dispositions
+            .disposition("iges", "display_attributes"),
+        NativeDisposition::Regenerated
+    );
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("output decodes");
+    let before = &decoded.ir().native.namespace("iges").unwrap().arenas()["display_attributes"][0];
+    let after = &output.ir().native.namespace("iges").unwrap().arenas()["display_attributes"][0];
+    for field in [
+        "color_number",
+        "level_number",
+        "line_font_number",
+        "line_weight_number",
+        "view",
+        "visible",
+    ] {
+        assert_eq!(before.field(field), after.field(field), "{field}");
+    }
+}
