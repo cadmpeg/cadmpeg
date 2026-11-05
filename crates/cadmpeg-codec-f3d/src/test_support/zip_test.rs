@@ -428,6 +428,113 @@ fn fixture_secondary_index(meta: Vec<u8>, bulk: &[u8], ids: &[u64]) -> Vec<u8> {
     design_metastream_with_records_and_secondary(&types, &records, &secondary)
 }
 
+pub(crate) fn original_design_fixture(bytes: Vec<u8>, remove_body: bool) -> Vec<u8> {
+    use crate::test_support::streams_test::design_metastream_with_records;
+    let mut archive = zip::ZipArchive::new(Cursor::new(&bytes)).unwrap();
+    let mut entries = Vec::new();
+    for index in 0..archive.len() {
+        let mut entry = archive.by_index(index).unwrap();
+        let name = entry.name().unwrap().into_owned();
+        let mut content = Vec::new();
+        std::io::Read::read_to_end(&mut entry, &mut content).unwrap();
+        entries.push((name, content));
+    }
+    let meta_index = entries
+        .iter()
+        .position(|(name, _)| name == "FusionAssetName[Active]/Design1/MetaStream.dat")
+        .unwrap();
+    let bulk_index = entries
+        .iter()
+        .position(|(name, _)| name == "FusionAssetName[Active]/Design1/BulkStream.dat")
+        .unwrap();
+    let (meta, header_offset, indexed_offsets) = {
+        let parsed =
+            crate::metastream::parse(&entries[meta_index].1, &entries[meta_index].0).unwrap();
+        let offset = |id| {
+            parsed
+                .records
+                .iter()
+                .find(|row| row.entity_id == id)
+                .unwrap()
+                .bulk_offset
+        };
+        let header_offset = offset(9000);
+        let indexed_offsets = [offset(123), offset(4645), offset(4646)];
+        let entities: Vec<Vec<u64>> = parsed
+            .types
+            .iter()
+            .map(|ty| {
+                ty.entities
+                    .values()
+                    .copied()
+                    .filter(|id| match ty.type_guid.as_str() {
+                        "F0130424-8B7E-4092-93C9-1CA807482534" => {
+                            !matches!(*id, 123 | 1701 | 1702 | 1703 | 4645 | 4646)
+                                && !(remove_body && *id == 1700)
+                        }
+                        "33333333-4444-5555-6666-777777777777" => *id != 9000,
+                        _ => true,
+                    })
+                    .collect()
+            })
+            .collect();
+        let types: Vec<_> = parsed
+            .types
+            .iter()
+            .zip(&entities)
+            .map(|(ty, ids)| {
+                (
+                    ty.type_guid.as_str(),
+                    ty.base_type_guid.value().map_or("", |base| base.as_str()),
+                    ty.version,
+                    ty.module.as_str(),
+                    ids.as_slice(),
+                )
+            })
+            .collect();
+        let records: Vec<_> = parsed
+            .records
+            .iter()
+            .filter(|row| !matches!(row.entity_id, 9000 | 123 | 4645 | 4646))
+            .map(|row| {
+                (
+                    row.entity_id,
+                    if row.bulk_offset > header_offset {
+                        row.bulk_offset - 11
+                    } else {
+                        row.bulk_offset
+                    },
+                )
+            })
+            .collect();
+        (
+            design_metastream_with_records(&types, &records),
+            header_offset,
+            indexed_offsets,
+        )
+    };
+    let bulk = &mut entries[bulk_index].1;
+    for (ordinal, offset) in indexed_offsets.into_iter().enumerate() {
+        let at = usize::try_from(offset).unwrap();
+        assert_eq!(&bulk[at + 4..at + 7], b"264");
+        bulk[at + 4..at + 7].copy_from_slice(if ordinal == 0 { b"322" } else { b"419" });
+        if ordinal == 0 {
+            bulk[at + 7..at + 11].fill(0);
+        }
+    }
+    let at = usize::try_from(header_offset).unwrap();
+    assert_eq!(&bulk[at + 4..at + 7], b"258");
+    drop(bulk.drain(at..at + 11));
+    entries[meta_index].1 = meta;
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    for (name, content) in entries {
+        zip.start_file(name, stored).unwrap();
+        zip.write_all(&content).unwrap();
+    }
+    zip.finish().unwrap().into_inner()
+}
+
 fn sketch_dimension_metastream(
     records: &[(u64, u64)],
     extra_types: &[(
