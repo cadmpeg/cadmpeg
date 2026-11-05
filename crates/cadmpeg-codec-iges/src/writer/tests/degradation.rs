@@ -238,7 +238,7 @@ fn face_with_missing_carrier_reports_each_removed_boundary_record() {
         .expect("trimmed sheet decodes");
     let mut ir = decoded.ir().clone();
     ir.model.edges[0].carrier = cadmpeg_ir::topology::EdgeCarrier::new(None, None).unwrap();
-    let (stripped, losses) = super::super::strip_unusable_face_topology(&ir);
+    let (stripped, losses) = super::super::admission::strip_unusable_face_topology(&ir);
     let stripped = stripped.expect("face with missing carrier is removed");
     assert!(!ir.model.loops.is_empty() && !ir.model.coedges.is_empty());
     assert!(stripped.model.loops.len() < ir.model.loops.len());
@@ -298,4 +298,42 @@ fn unsupported_solid_reports_its_omitted_topology() {
             graph.losses
         );
     }
+}
+
+#[test]
+fn dangling_coedge_keeps_other_faces_and_reports_opened_solid() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_tetrahedron_solid_file()),
+            &DecodeOptions::default(),
+        )
+        .expect("solid fixture decodes");
+    let mut ir = decoded.ir().clone();
+    let coedge_id = ir.model.coedges[0].id.to_string();
+    let body_id = ir.model.bodies[0].id.to_string();
+    ir.model.coedges[0].edge = "test:model:edge#missing".try_into().unwrap();
+    let plan = plan_at(IgesVersion::V5_3, &ir, None).expect("invalid face degrades");
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(&coedge_id)));
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(&body_id)));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("remaining faces write");
+    let after = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("remaining faces decode");
+    assert!(!after.ir().model.faces.is_empty());
+    assert!(after.ir().model.faces.len() < ir.model.faces.len());
+    assert!(after
+        .ir()
+        .model
+        .bodies
+        .iter()
+        .all(|body| body.kind != cadmpeg_ir::topology::BodyKind::Solid));
 }
