@@ -58,7 +58,7 @@ use group_record::GroupOrigin;
 
 use super::substrate::{ParsedStreams, StreamView};
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// One complete Parasolid GROUP record with its primary or Deltas source scope.
 #[derive(Debug, PartialEq, Eq, Deserialize)]
@@ -2419,6 +2419,27 @@ pub(super) fn parasolid_topology_attribute_list_references(
     Ok(references)
 }
 
+/// The `(stream ordinal, XMT)` of every type-81 record that a stream frames
+/// and the decoder omits.
+pub(super) fn parasolid_omitted_entity_51_xmts(
+    streams: &[Stream],
+) -> Result<BTreeSet<(u32, u32)>, CodecError> {
+    let mut omitted = BTreeSet::new();
+    for (stream_ordinal, stream) in streams.iter().enumerate() {
+        if !stream.kind().is_parasolid() || stream.kind() == StreamKind::Deltas {
+            continue;
+        }
+        let ordinal = u32::try_from(stream_ordinal)
+            .map_err(|_| CodecError::malformed("NX stream ordinal exceeds u32"))?;
+        omitted.extend(
+            crate::parasolid::omitted_entity_51_xmts(&stream.inflated)
+                .into_iter()
+                .map(|xmt| (ordinal, xmt)),
+        );
+    }
+    Ok(omitted)
+}
+
 /// Decode every framed type-81 entity/attribute-list record.
 pub(super) fn parasolid_entity_51_records(
     streams: &[Stream],
@@ -2473,11 +2494,7 @@ pub(super) fn parasolid_entity_value_records(
         if !matches!(stream.kind(), StreamKind::Partition | StreamKind::Plain) {
             continue;
         }
-        let owned_offsets = crate::parasolid::referenced_value_record_offsets(&stream.inflated);
-        let values = crate::parasolid::value_records::entity_value_records_at(
-            &stream.inflated,
-            owned_offsets,
-        )?;
+        let values = crate::parasolid::referenced_value_records(&stream.inflated)?;
         for record in values.integers {
             let id = parasolid_offset_record_id(
                 stream_ordinal,
@@ -3204,6 +3221,63 @@ pub(super) fn parasolid_topology_attribute_fields_have_untransferred_values(
                 )
             })
     })
+}
+
+/// Count the topology attribute-list references whose attributes did not
+/// transfer: the `next` chain from the list head reaches an omitted or
+/// duplicated type-81 record, or a type-81 record that the topology owns has
+/// no unique type-80 class.
+pub(super) fn parasolid_unresolved_topology_attribute_lists(
+    references: &[ParasolidTopologyAttributeListReference],
+    entities: &[ParasolidEntity51Record],
+    class_uses: &[ParasolidAttributeClassUse],
+    omitted: &BTreeSet<(u32, u32)>,
+) -> usize {
+    let mut entities_by_identity = BTreeMap::<(u32, u32), Option<&ParasolidEntity51Record>>::new();
+    let mut entities_by_owner = BTreeMap::<(u32, u32), Vec<&ParasolidEntity51Record>>::new();
+    for entity in entities {
+        insert_unique_value(
+            &mut entities_by_identity,
+            (entity.stream_ordinal, u32::from(entity.xmt)),
+            entity,
+        );
+        entities_by_owner
+            .entry((entity.stream_ordinal, entity.leading_references[0]))
+            .or_default()
+            .push(entity);
+    }
+    let mut class_use_counts = BTreeMap::<&str, usize>::new();
+    for class_use in class_uses {
+        *class_use_counts
+            .entry(class_use.entity_51_record.as_str())
+            .or_default() += 1;
+    }
+    let classified =
+        |entity: &ParasolidEntity51Record| class_use_counts.get(entity.id.as_str()) == Some(&1);
+    references
+        .iter()
+        .filter(|reference| {
+            let stream = reference.stream_ordinal;
+            let owned_unclassified = entities_by_owner
+                .get(&(stream, reference.topology_xmt))
+                .is_some_and(|owned| owned.iter().any(|entity| !classified(entity)));
+            if owned_unclassified {
+                return true;
+            }
+            let mut visited = BTreeSet::new();
+            let mut xmt = reference.attribute_list_xmt;
+            while xmt > 1 && visited.insert(xmt) {
+                match entities_by_identity.get(&(stream, xmt)) {
+                    Some(Some(entity)) if classified(entity) => {
+                        xmt = entity.leading_references[1];
+                    }
+                    Some(_) => return true,
+                    None => return omitted.contains(&(stream, xmt)),
+                }
+            }
+            false
+        })
+        .count()
 }
 
 #[cfg(test)]

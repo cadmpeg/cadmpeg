@@ -436,7 +436,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
                 .try_into()
                 .unwrap(),
                 unclosed_construction_operand_groups: Vec::new(),
-                deleted_sketch_members: Vec::new(),
+                deleted_members: None,
                 paired_class_tag: crate::records::references::DesignClassTag::try_from(
                     "001".to_owned(),
                 )
@@ -627,7 +627,7 @@ fn design_projection_gaps_require_unique_scope_state_dependencies() {
                 .try_into()
                 .unwrap(),
                 unclosed_construction_operand_groups: Vec::new(),
-                deleted_sketch_members: Vec::new(),
+                deleted_members: None,
                 paired_class_tag: crate::records::references::DesignClassTag::try_from(
                     "001".to_owned(),
                 )
