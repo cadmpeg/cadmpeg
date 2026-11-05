@@ -200,18 +200,17 @@ pub(super) fn decode(
         &design_record_headers,
         &parameter_owner_indices(&design_parameters),
     )?;
-    let mut design_parameter_owners = crate::design::decode::parameters::decode_parameter_owners(
+    let design_parameter_owners = crate::design::decode::parameters::decode_parameter_owners(
         ctx,
         scan,
-        &mut design_parameters,
+        &design_parameters,
         &mut record_parts,
     )?;
     let design_parameter_companions =
         crate::design::decode::parameters::decode_parameter_companions(
             ctx,
             scan,
-            &mut design_parameter_owners,
-            &mut design_parameters,
+            &design_parameter_owners,
             &mut record_parts,
         )?;
     let crate::design::decode::components::DecodedComponentOccurrences {

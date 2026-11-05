@@ -611,7 +611,7 @@ pub(crate) fn operation_states(payload: &[u8]) -> Vec<FeatureOperationState> {
         // and bare creation-style names never carry a prefix.
         if offset >= 6
             && payload[offset - 6] == 0xe2
-            && plausible_modif_time(&payload[offset - 5..offset + 1])
+            && plausible_modif_time(&payload[offset - 5..=offset])
         {
             offset += 1;
             state_offset = offset;

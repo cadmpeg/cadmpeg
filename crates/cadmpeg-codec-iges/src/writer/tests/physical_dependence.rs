@@ -422,7 +422,7 @@ fn pointers(entity: &WrittenEntity) -> Vec<u32> {
         .into_iter()
         .map(|index| u32::try_from(token(index)).expect("Directory pointer"))
         .collect::<Vec<_>>();
-    pointers.extend(absolute.into_iter().filter_map(|index| reference(index)));
+    pointers.extend(absolute.into_iter().filter_map(reference));
     if entity.transform != 0 {
         pointers.push(entity.transform);
     }

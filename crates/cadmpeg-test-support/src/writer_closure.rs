@@ -507,14 +507,11 @@ pub fn edit_findings(
                         "edit {at} (fidelity {with}) does not reach the output: write refused"
                     ));
                     continue;
-                };
+                }
                 let outcome = redecode(&bytes).and_then(|after| {
-                    Allowances::export(&expected, &report_json)
-                        .map_err(|error| error.to_string())
-                        .and_then(|allowances| {
-                            crate::comparison::agree(&expected, &after.ir, &allowances, Mode::Same)
-                                .map_err(|error| error.to_string())
-                        })
+                    Allowances::export(&expected, &report_json).and_then(|allowances| {
+                        crate::comparison::agree(&expected, &after.ir, &allowances, Mode::Same)
+                    })
                 });
                 if let Err(error) = outcome {
                     findings.push(format!(

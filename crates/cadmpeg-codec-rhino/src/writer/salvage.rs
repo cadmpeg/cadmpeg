@@ -13,16 +13,21 @@ use super::{
     WriteError, POINT_CLASS,
 };
 
+pub(super) struct SalvageRecords<'a> {
+    pub(super) carried: &'a mut BTreeSet<String>,
+    pub(super) curves: &'a mut BTreeSet<String>,
+}
+
 pub(super) fn write(
     ctx: &DecodeContext<'_>,
     ir: &CadIr,
     body: &CadIr,
     output: &mut EncodeBuffer<'_>,
     materials: &MaterialPlan,
-    carried: &mut BTreeSet<String>,
+    records: SalvageRecords<'_>,
     losses: &mut Vec<LossNote>,
-    written_curves: &mut BTreeSet<String>,
 ) -> Result<usize, WriteError> {
+    let SalvageRecords { carried, curves: written_curves } = records;
     let mut count = 0;
     for point in &body.model.points {
         if carried.contains(point.id.as_str()) {
@@ -51,6 +56,14 @@ pub(super) fn write(
             )?,
             "retain Rhino archive bytes",
         )?;
+        if super::is_support(point.source_object.as_ref()) {
+            losses.push(
+                crate::loss::RhinoLossCode::WriterCarrierResolved.note(format!(
+                    "support point {} is written as an independent point object",
+                    point.id
+                )),
+            );
+        }
         carried.insert(point.id.to_string());
         count += 1;
     }

@@ -4,7 +4,7 @@
 //! A neutral feature with source tag `HistoryRecord` carries the record
 //! header (command UUID, version, type, copy flag, antecedent and descendant
 //! object UUIDs) and every value the decoder admits in structured form.
-//! Object references, poly-edges and SubD edge chains round-trip exactly
+//! Object references, poly-edges and `SubD` edge chains round-trip exactly
 //! from those properties. Scalar values survive neutrally only as display
 //! text with no type tag, and embedded geometries and opaque values retain
 //! source byte ranges the synthesis-only writer cannot frame, so a record
@@ -239,7 +239,7 @@ struct ParsedInstance {
 
 fn parse_instance(
     props: &Props<'_>,
-    prefix: String,
+    prefix: &str,
     record: &str,
 ) -> Result<ParsedInstance, WriteError> {
     let key = |name: &str| format!("{prefix}.{name}");
@@ -323,7 +323,7 @@ fn parse_reference(
         {
             break;
         }
-        instances.push(parse_instance(props, candidate, record)?);
+        instances.push(parse_instance(props, &candidate, record)?);
         index += 1;
     }
     if let Some(count) = props.get(key("instance_count").as_str()) {
@@ -444,12 +444,15 @@ fn indexed(props: &Props<'_>, group: &str) -> Vec<usize> {
         }
     }
     let contiguous: Vec<usize> = indices.into_iter().collect();
-    contiguous
+    if contiguous
         .iter()
         .enumerate()
         .all(|(position, index)| position == *index)
-        .then_some(contiguous)
-        .unwrap_or_default()
+    {
+        contiguous
+    } else {
+        Vec::new()
+    }
 }
 
 fn check_count(
@@ -799,13 +802,7 @@ fn history_record(ir: &CadIr, feature: &Feature) -> Result<Vec<u8>, WriteError> 
         }
     };
     let copy = flag(&properties, record, "copy_on_replace")?;
-    let minor = if copy {
-        2
-    } else if record_type == 1 {
-        1
-    } else {
-        0
-    };
+    let minor = if copy { 2 } else { i32::from(record_type == 1) };
     let mut body = Vec::new();
     body.extend(record_uuid(ir, feature));
     body.extend(version.to_le_bytes());

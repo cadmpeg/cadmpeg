@@ -61,7 +61,9 @@ fn authored_extrusion_payload_decodes_its_cap_and_carrier() {
     archive
         .extend(super::super::long_chunk(super::super::TCODE_SETTINGS_TABLE, &settings).unwrap());
     archive.extend(super::super::long_chunk(super::super::TCODE_OBJECT_TABLE, &table).unwrap());
-    let final_size = super::super::archive_final_size(archive.len() as u64).unwrap();
+    let final_size =
+        super::super::archive_final_size(cadmpeg_core::decode::u64_from_index(archive.len()))
+            .unwrap();
     archive.extend(
         super::super::long_chunk(crate::chunks::TCODE_ENDOFFILE, &final_size.to_le_bytes())
             .unwrap(),

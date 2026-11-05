@@ -8170,8 +8170,7 @@ fn synthesize_sphere_seams(
         });
         let bounds = out.edges[edge_index]
             .param_range()
-            .map(cadmpeg_ir::units::FiniteVector::get)
-            .unwrap_or([0.0, std::f64::consts::TAU]);
+            .map_or([0.0, std::f64::consts::TAU], cadmpeg_ir::units::FiniteVector::get);
         out.edges[edge_index].carrier =
             cadmpeg_ir::topology::EdgeCarrier::new(Some(curve_id), Some(bounds))
                 .map_err(cadmpeg_core::CodecError::malformed)?;

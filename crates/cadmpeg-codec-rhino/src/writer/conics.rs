@@ -133,16 +133,27 @@ pub(super) fn ellipse_over_range(
 ) -> Result<NurbsCurve, WriteError> {
     let [lo, hi] = FiniteReal::raw_array(range);
     let span = hi - lo;
-    if !(span > 0.0) || !span.is_finite() || span > std::f64::consts::TAU + MAX_ARC_SPAN_EXCESS {
+    if span.partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater) || !span.is_finite() || span > std::f64::consts::TAU + MAX_ARC_SPAN_EXCESS {
         return Err(omit(format!(
             "edge {id} ellipse carrier is not a writable arc"
         )));
     }
     let frame = ellipse_frame(ellipse);
     let (major_radius, minor_radius) = (ellipse.major_radius().get(), ellipse.minor_radius().get());
-    let parts = (span / std::f64::consts::FRAC_PI_2).ceil() as usize;
+    let parts =
+        cadmpeg_core::convert::truncate_f64_to_usize((span / std::f64::consts::FRAC_PI_2).ceil())
+            .ok_or_else(|| {
+            omit(format!(
+                "edge {id} ellipse piece count is outside address space"
+            ))
+        })?;
     let parts = parts.max(1);
-    let width = span / parts as f64;
+    let width = span
+        / cadmpeg_core::convert::f64_from_index(parts).ok_or_else(|| {
+            omit(format!(
+                "edge {id} piece count is not exactly representable"
+            ))
+        })?;
     let half = width / 2.0;
     let shoulder = finite_weight(half.cos(), &format!("edge {id} ellipse shoulder weight"))?;
     let point_at = |parameter: f64| {
@@ -153,7 +164,12 @@ pub(super) fn ellipse_over_range(
     let mut poles = Vec::with_capacity(2 * parts + 1);
     knots.extend([lo, lo, lo]);
     for part in 0..parts {
-        let start = lo + width * part as f64;
+        let index = cadmpeg_core::convert::f64_from_index(part).ok_or_else(|| {
+            omit(format!(
+                "edge {id} piece index is not exactly representable"
+            ))
+        })?;
+        let start = lo + width * index;
         let end = start + width;
         let middle = start + half;
         let (sine, cosine) = middle.sin_cos();
@@ -193,7 +209,7 @@ pub(super) fn parabola_over_range(
 ) -> Result<NurbsCurve, WriteError> {
     let [lo, hi] = FiniteReal::raw_array(range);
     let span = hi - lo;
-    if !(span > 0.0) || !span.is_finite() {
+    if span.partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater) || !span.is_finite() {
         return Err(omit(format!(
             "edge {id} parabola carrier is not a writable span"
         )));
@@ -235,7 +251,7 @@ pub(super) fn hyperbola_over_range(
 ) -> Result<NurbsCurve, WriteError> {
     let [lo, hi] = FiniteReal::raw_array(range);
     let span = hi - lo;
-    if !(span > 0.0) || !span.is_finite() {
+    if span.partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater) || !span.is_finite() {
         return Err(omit(format!(
             "edge {id} hyperbola carrier is not a writable span"
         )));
@@ -253,19 +269,34 @@ pub(super) fn hyperbola_over_range(
         hyperbola.major_radius().get(),
         hyperbola.minor_radius().get(),
     );
-    let parts = (span / HYPERBOLA_SPLIT_SPAN).ceil() as usize;
+    let parts = cadmpeg_core::convert::truncate_f64_to_usize((span / HYPERBOLA_SPLIT_SPAN).ceil())
+        .ok_or_else(|| {
+            omit(format!(
+                "edge {id} hyperbola span exceeds the piecewise conversion bound"
+            ))
+        })?;
     let parts = parts.max(1);
     if parts > HYPERBOLA_MAX_PIECES {
         return Err(omit(format!(
             "edge {id} hyperbola span exceeds the piecewise conversion bound"
         )));
     }
-    let width = span / parts as f64;
+    let width = span
+        / cadmpeg_core::convert::f64_from_index(parts).ok_or_else(|| {
+            omit(format!(
+                "edge {id} piece count is not exactly representable"
+            ))
+        })?;
     let mut knots = Vec::with_capacity(3 * (parts + 1));
     let mut poles: Vec<WeightedPole3<FinitePoint3>> = Vec::with_capacity(2 * parts + 1);
     knots.extend([lo, lo, lo]);
     for part in 0..parts {
-        let start = lo + width * part as f64;
+        let index = cadmpeg_core::convert::f64_from_index(part).ok_or_else(|| {
+            omit(format!(
+                "edge {id} piece index is not exactly representable"
+            ))
+        })?;
+        let start = lo + width * index;
         let end = start + width;
         let middle = start + width / 2.0;
         let piece = hyperbola_piece(id, &frame, major_radius, minor_radius, [start, middle, end])?;
@@ -307,7 +338,7 @@ pub(super) fn clamp_curve(
         .checked_add(1)
         .ok_or_else(|| fail("degree overflows its end multiplicity"))?;
     let [lo, hi] = FiniteReal::raw_array(range);
-    if !(hi > lo) || !lo.is_finite() || !hi.is_finite() {
+    if hi.partial_cmp(&lo) != Some(std::cmp::Ordering::Greater) || !lo.is_finite() || !hi.is_finite() {
         return Err(fail("used interval is not a finite increasing range"));
     }
     let knots = curve.knots().as_slice().to_vec();
@@ -325,10 +356,10 @@ pub(super) fn clamp_curve(
     // Homogeneous control points; polynomial poles carry unit weights,
     // one per pole already held, so the repeat cannot outgrow the input.
     let points = curve.control_points();
-    let weights: Vec<f64> = curve
-        .weights()
-        .map(|lane| lane.iter().map(|weight| weight.get()).collect())
-        .unwrap_or_else(|| vec![1.0; points.len()]);
+    let weights: Vec<f64> = curve.weights().map_or_else(
+        || vec![1.0; points.len()],
+        |lane| lane.iter().map(|weight| weight.get()).collect(),
+    );
     if weights.len() != count {
         return Err(fail("weight and pole counts disagree"));
     }
@@ -390,7 +421,7 @@ pub(super) fn clamp_curve(
     }
     segment_knots
         .extend_from_slice(&knots[first + start_multiplicity..last + 1 - end_multiplicity]);
-    segment_knots.extend(std::iter::repeat(hi).take(end_mult));
+    segment_knots.extend(std::iter::repeat_n(hi, end_mult));
     let segment_points = homogeneous[start..=end].to_vec();
     if segment_knots.len() != segment_points.len() + degree + 1 {
         return Err(fail("clamped span counts disagree"));
@@ -452,7 +483,7 @@ pub(super) fn clamp_curve(
                 value,
                 parameter,
             )
-            .map(|point| point.get())
+            .map(cadmpeg_ir::features::FinitePoint3::get)
             .map_err(|error| match error {
                 cadmpeg_ir::eval::EvaluationFailure::ResourceLimit(limit) => {
                     WriteError::Encode(limit.into())
@@ -582,11 +613,7 @@ fn hyperbola_piece(
     // shoulder separation, then prove the solved weight on the other one.
     let numerators = [p0u + p2u - 2.0 * mid[0], p0w + p2w - 2.0 * mid[1]];
     let denominators = [mid[0] - shoulder[0], mid[1] - shoulder[1]];
-    let coordinate = if denominators[0].abs() >= denominators[1].abs() {
-        0
-    } else {
-        1
-    };
+    let coordinate = usize::from(denominators[0].abs() < denominators[1].abs());
     if denominators[coordinate] == 0.0 || !denominators[coordinate].is_finite() {
         return Err(fail("span midpoint meets its shoulder"));
     }

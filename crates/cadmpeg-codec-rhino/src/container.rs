@@ -470,9 +470,7 @@ pub(crate) fn give_up(
     let start = range.start.min(data_len);
     let end = range.end.clamp(start, data_len);
     let classes = match label {
-        "rhino.table_record" => table
-            .map(table_record_classes)
-            .unwrap_or_else(model_classes),
+        "rhino.table_record" => table.map_or_else(model_classes, table_record_classes),
         "rhino.v1_record" => model_classes(),
         _ => match table.map(table_scope_band) {
             Some((true, _)) => model_classes(),
@@ -648,7 +646,7 @@ pub(crate) fn materialize_give_ups(
                 part.dropped.join(", ")
             ))
             .with_provenance(provenance);
-        loss.dropped = part.dropped.clone();
+        loss.dropped.clone_from(&part.dropped);
         losses.push(loss);
         marks.push(GiveUpMark {
             id,
@@ -1539,23 +1537,20 @@ fn scan_with_record_limit<'a>(
             saw_end_of_file = true;
             break;
         }
-        let rank = match table_rank(chunk.typecode) {
-            Some(rank) => rank,
-            None => {
-                // An unknown top-level chunk typecode is one
-                // `rhino.table_chunk` part, given up (#223 item 8).
-                give_up(
-                    &mut give_ups,
-                    "rhino.table_chunk",
-                    offset..chunk.next_offset(),
-                    data.len(),
-                    None,
-                    Vec::new(),
-                    format_args!("expected table or EOF at offset {offset}"),
-                );
-                offset = chunk.next_offset().min(data.len());
-                continue;
-            }
+        let Some(rank) = table_rank(chunk.typecode) else {
+            // An unknown top-level chunk typecode is one
+            // `rhino.table_chunk` part, given up (#223 item 8).
+            give_up(
+                &mut give_ups,
+                "rhino.table_chunk",
+                offset..chunk.next_offset(),
+                data.len(),
+                None,
+                Vec::new(),
+                format_args!("expected table or EOF at offset {offset}"),
+            );
+            offset = chunk.next_offset().min(data.len());
+            continue;
         };
         let duplicate_metadata_table = match table_base(chunk.typecode) {
             TCODE_PROPERTIES => saw_properties,
@@ -1828,31 +1823,28 @@ fn scan_with_record_limit<'a>(
 
             opaque_records.extend(parsed.opaque_records);
         }
-        let table = match Table::new(
+        let Some(table) = Table::new(
             chunk.typecode,
             offset..chunk.next_offset(),
             chunk.body(),
             records,
             table_record_count,
             object_typecodes,
-        ) {
-            Some(table) => table,
-            None => {
-                // The failure stages no records, so the span names none
-                // (rule 3).
-                let dropped: Vec<String> = Vec::new();
-                give_up(
-                    &mut give_ups,
-                    "rhino.table_chunk",
-                    offset..chunk.next_offset(),
-                    data.len(),
-                    Some(table_base(chunk.typecode)),
-                    dropped,
-                    "table chunk declares a body that does not fit its framing",
-                );
-                offset = chunk.next_offset().min(data.len());
-                continue;
-            }
+        ) else {
+            // The failure stages no records, so the span names none
+            // (rule 3).
+            let dropped: Vec<String> = Vec::new();
+            give_up(
+                &mut give_ups,
+                "rhino.table_chunk",
+                offset..chunk.next_offset(),
+                data.len(),
+                Some(table_base(chunk.typecode)),
+                dropped,
+                "table chunk declares a body that does not fit its framing",
+            );
+            offset = chunk.next_offset().min(data.len());
+            continue;
         };
         tables.push(table);
         offset = chunk.next_offset().min(data.len());

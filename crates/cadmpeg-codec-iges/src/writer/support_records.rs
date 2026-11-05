@@ -248,12 +248,12 @@ mod tests {
     }
 
     pub(super) fn written(ir: &cadmpeg_ir::CadIr) -> cadmpeg_ir::CadIr {
-        let plan = plan_at(IgesVersion::V5_3, ir, None).unwrap();
+        let plan = plan_at(IgesVersion::V5_3, ir, None).expect("valid test value");
         let mut bytes = Vec::new();
-        plan.write_to(&mut bytes).unwrap();
+        plan.write_to(&mut bytes).expect("valid test value");
         IgesCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-            .unwrap()
+            .expect("valid test value")
             .ir()
             .clone()
     }
@@ -262,11 +262,20 @@ mod tests {
     fn analytic_support_keeps_native_labels_and_numeric_tokens_but_writes_edited_geometry() {
         let decoded = IgesCodec
             .decode(&mut Cursor::new(fixture()), &DecodeOptions::default())
-            .unwrap();
+            .expect("valid test value");
         let mut ir = decoded.ir().clone();
         let after = written(&ir);
-        let entities = &after.native.namespace("iges").unwrap().arenas()["entities"];
-        let source = ir.native.namespace("iges").unwrap().arenas()["entities"].clone();
+        let entities = &after
+            .native
+            .namespace("iges")
+            .expect("valid test value")
+            .arenas()["entities"];
+        let source = ir
+            .native
+            .namespace("iges")
+            .expect("valid test value")
+            .arenas()["entities"]
+            .clone();
         for (before, after) in source.iter().take(3).zip(entities.iter()) {
             assert_eq!(before.field("label"), after.field("label"));
             assert_eq!(before.field("parameters"), after.field("parameters"));
@@ -277,7 +286,7 @@ mod tests {
                 Vector3::new(0.0, 0.0, 1.0),
                 Vector3::new(1.0, 0.0, 0.0),
             )
-            .unwrap(),
+            .expect("valid test value"),
         ));
         let edited = written(&ir);
         let Some(SolvedSurfaceGeometry::Plane(plane)) = edited.model.surfaces[0].geometry.solved()
@@ -285,7 +294,11 @@ mod tests {
             panic!("plane")
         };
         assert_eq!(plane.origin().get(), Point3::new(9.0, 2.0, 3.0));
-        let entities = &edited.native.namespace("iges").unwrap().arenas()["entities"];
+        let entities = &edited
+            .native
+            .namespace("iges")
+            .expect("valid test value")
+            .arenas()["entities"];
         assert_eq!(source[0].field("label"), entities[0].field("label"));
     }
 }
@@ -303,14 +316,23 @@ mod cone_tests {
     fn cone_numbers_keep_current_native_values_and_follow_neutral_edits() {
         let decoded = crate::IgesCodec
             .decode(&mut Cursor::new(fixture_cone()), &DecodeOptions::default())
-            .unwrap();
+            .expect("valid test value");
         let mut ir = decoded.ir().clone();
-        let before =
-            ir.native.namespace("iges").unwrap().arenas()["entities"][3].field("parameters");
+        let before = ir
+            .native
+            .namespace("iges")
+            .expect("valid test value")
+            .arenas()["entities"][3]
+            .field("parameters");
         let unchanged = written(&ir);
         assert_eq!(
             before,
-            unchanged.native.namespace("iges").unwrap().arenas()["entities"][3].field("parameters")
+            unchanged
+                .native
+                .namespace("iges")
+                .expect("valid test value")
+                .arenas()["entities"][3]
+                .field("parameters")
         );
         ir.model.surfaces[0].geometry = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cone(
             ConeSurface::try_new(
@@ -321,7 +343,7 @@ mod cone_tests {
                 1.0,
                 45.0_f64.to_radians(),
             )
-            .unwrap(),
+            .expect("valid test value"),
         ));
         let edited = written(&ir);
         let Some(SolvedSurfaceGeometry::Cone(cone)) = edited.model.surfaces[0].geometry.solved()

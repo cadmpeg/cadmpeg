@@ -30,7 +30,7 @@ pub(super) fn preserve_indices(
     model: &Model,
     topology: &super::index::NativeGenerationIndex<'_>,
     limits: cadmpeg_core::decode::ResourceLimits,
-    starts: Starts,
+    starts: &Starts,
 ) -> Result<(), CodecError> {
     if topology.edge_ownerships.is_empty()
         && topology.face_native_keys.is_empty()
