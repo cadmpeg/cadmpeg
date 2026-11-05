@@ -58,13 +58,7 @@ fn output_record_count(seed: &cadmpeg_ir::CadIr) -> u64 {
 #[test]
 fn injected_errors_succeed_and_name_the_record() {
     let seed = seed_golden();
-    // The recompute-flag injection flips `needs_recompute` to true, which is
-    // legal stored state (#209 §2.5), so it never invalidates the seed and is
-    // inapplicable here; the remaining standard injections run.
-    let injections: Vec<_> = standard_injections()
-        .into_iter()
-        .filter(|injection| injection.name != "recompute-flag")
-        .collect();
+    let injections = standard_injections();
     let findings = injected_error_findings(&seed, &IgesCodec, request(), &injections);
     assert!(
         findings.is_empty(),

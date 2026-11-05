@@ -21,6 +21,7 @@ use crate::xref::XrefTable;
 /// Design records that geometry and product projection read.
 #[derive(Debug)]
 pub(super) struct ProductPrereqs {
+    pub(super) modeling_length_unit: Option<String>,
     pub(super) construction_recipes: Vec<ConstructionRecipe>,
     pub(super) design_material_assignments: Vec<DesignMaterialAssignment>,
     pub(super) design_types: Vec<SegmentType>,
@@ -94,6 +95,7 @@ impl ProductPrereqs {
     /// reference outcome.
     pub(super) fn store(self, native: &mut F3dNative) -> Result<Option<XrefTable>, CodecError> {
         let Self {
+            modeling_length_unit: _,
             construction_recipes,
             design_material_assignments,
             design_types,
@@ -173,6 +175,8 @@ pub(super) fn decode(
     let design_types = crate::design::decode::meta::decode_types(scan)?;
     let mut record_parts =
         cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, ctx);
+    let modeling_length_unit =
+        crate::design::decode::units::decode_document_length_unit(ctx, &mut record_parts, scan)?;
     let mut parameter_state_targets = std::collections::BTreeMap::new();
     let mut design_parameters = crate::design::decode::parameters::decode_parameters(
         ctx,
@@ -272,6 +276,7 @@ pub(super) fn decode(
         other => other,
     };
     Ok(ProductPrereqs {
+        modeling_length_unit,
         construction_recipes,
         design_material_assignments,
         design_types,
