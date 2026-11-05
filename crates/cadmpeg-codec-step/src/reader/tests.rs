@@ -27,7 +27,9 @@ fn damaged_face_keeps_stranded_pcurve_surface_association() {
         .find(|pcurve| pcurve.id.as_str() == "step:data:pcurve#56")
         .expect("stranded pcurve");
     assert_eq!(
-        pcurve.support_surface().map(cadmpeg_ir::ids::SurfaceId::as_str),
+        pcurve
+            .support_surface()
+            .map(cadmpeg_ir::ids::SurfaceId::as_str),
         Some("step:data:surface#28")
     );
 }
