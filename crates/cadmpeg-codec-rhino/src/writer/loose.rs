@@ -443,7 +443,7 @@ fn normalized_range(lo: f64, hi: f64) -> Option<[cadmpeg_ir::scalar::FiniteReal;
     Some([FiniteReal::new(lo)?, FiniteReal::new(hi)?])
 }
 
-fn curve_payload(
+pub(super) fn curve_payload(
     ir: &CadIr,
     edge: &Edge,
 ) -> Result<(super::ClassPayload, Option<LossNote>), WriteError> {
