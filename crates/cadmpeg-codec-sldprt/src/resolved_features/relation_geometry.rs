@@ -1,7 +1,10 @@
 //! Relation point and solved geometry projection.
 
 use super::curves::slot_curve_and_center_indices;
-use super::endpoints::{inferred_point_coordinates_by_index, legacy_undetailed_profile_line};
+use super::endpoints::{
+    current_direct_92_profile_line_endpoint_indices, inferred_point_coordinates_by_index,
+    legacy_undetailed_profile_line,
+};
 use super::grid::{quantize, GridPoint};
 use super::markers::{
     marker_is_geometry_locus, marker_native_code, spatial_relation_marker_coordinates,
@@ -207,6 +210,23 @@ fn spatial_relation_point_line_entities(
         return None;
     };
 
+    let line_marker = relation
+        .operands
+        .get(1)?
+        .entity_ref
+        .as_deref()
+        .and_then(|id| lane.sketch_entities.iter().find(|marker| marker.id() == id));
+    let direct = line_marker.and_then(|marker| {
+        let offset = usize::try_from(marker.offset()).ok()?;
+        current_direct_92_profile_line_endpoint_indices(&lane.native_payload, offset)
+    });
+    if let Some([first, second]) = direct {
+        let endpoints = [start_marker.object_index()?, end_marker.object_index()?];
+        if endpoints != [first, second] && endpoints != [second, first] {
+            return None;
+        }
+    }
+    let construction = direct.is_none();
     let start_id = ensure_spatial_relation_point(entities, sketch, start_marker, start)?;
     let end_id = ensure_spatial_relation_point(entities, sketch, end_marker, end)?;
     let point_id = ensure_spatial_relation_point(entities, sketch, point_marker, point)?;
@@ -240,7 +260,7 @@ fn spatial_relation_point_line_entities(
                 .ok()?;
         entities.push(
             SpatialSketchEntity::new(entity_id, sketch_id, geometry)
-                .with_construction(true)
+                .with_construction(construction)
                 .with_geometry_ref(Some(geometry_ref))
                 .with_endpoint_refs(vec![start_ref, end_ref]),
         );

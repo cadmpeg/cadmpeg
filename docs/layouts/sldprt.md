@@ -3511,6 +3511,39 @@ Unstated regions:
 
 - `0..64` (64 B): The sketch-marker head precedes the coordinate tag.
 
+## `current_direct_92_profile_line`
+
+Spec §2 · layout: byte offsets · size: 92 B
+
+The endpoint fields are nonzero point-object identifiers.
+
+Parsed by:
+- `crates/cadmpeg-codec-sldprt/src/resolved_features/endpoints.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 5 | `marker` | `bytes[5]` | little | spec | sketch entities begin with · value `[255, 255, 31, 0, 3]` |
+| 5 | 12 | `header` | `bytes[12]` | little | spec | A coordinate-bearing marker has the 12-byte prefix · value `[255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 128, 191]` |
+| 17 | 4 | `native_kind` | `u32` | little | spec | A current-prefix 92-byte direct profile line has value u32 `2` · value `2` |
+| 23 | 4 | `profile_locus` | `bytes[4]` | little | spec | profile locus `04 00 02 00` · value `[4, 0, 2, 0]` |
+| 27 | 2 | `role` | `u16` | little | spec | role and state u16 values `1` at marker +27 and +29 · value `1` |
+| 29 | 2 | `state` | `u16` | little | spec | role and state u16 values `1` at marker +27 and +29 · value `1` |
+| 31 | 8 | `selector` | `bytes[8]` | little | spec | `00 00 80 bf 00 00 04 00` at marker +31 · value `[0, 0, 128, 191, 0, 0, 4, 0]` |
+| 48 | 8 | `state_scalar` | `f64` | little | spec | f64 `1` at marker +48 · value `1.0` |
+| 56 | 8 | `zero_endpoint_prefix` | `bytes[8]` | little | spec | eight zero bytes at marker +56 · value `[0, 0, 0, 0, 0, 0, 0, 0]` |
+| 64 | 2 | `endpoint_first` | `u16` | little | spec | Marker +64 and marker +66 store distinct nonzero point-object identifiers |
+| 66 | 2 | `endpoint_second` | `u16` | little | spec | Marker +64 and marker +66 store distinct nonzero point-object identifiers |
+| 68 | 4 | `endpoint_selector` | `u32` | little | spec | marker +68 stores u32 `1` · value `1` |
+| 72 | 8 | `signed_selector` | `f64` | little | spec | marker +72 stores f64 `-1` · value `-1.0` |
+| 80 | 4 | `zero_tail` | `u32` | little | spec | marker +80 is zero u32 · value `0` |
+| 84 | 4 | `identity_selector` | `u32` | little | spec | marker +84 stores u32 `1` · value `1` |
+| 88 | 4 | `identity` | `u32` | little | spec | marker +88 stores a nonzero, non-null identity |
+
+Unstated regions:
+
+- `21..23` (2 B): The profile locus begins at marker +23.
+- `39..48` (9 B): The state scalar begins at marker +48.
+
 ## Not tabulated
 
 | Area | Spec | Reason |
