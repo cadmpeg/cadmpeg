@@ -130,7 +130,7 @@ pub(super) fn exact_direct_face_operation(
                         (
                             View::u32_le_at(bytes, start + 29)?,
                             true,
-                            bytes[start + 20] == 1 || bytes[start + 21] != 0,
+                            bytes[start + 21] != 0,
                             start + 21,
                         )
                     }

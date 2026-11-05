@@ -30,6 +30,7 @@ mod hole_support;
 mod loop_index;
 mod move_face;
 mod output_chain;
+mod output_properties;
 pub(crate) mod pipe_section;
 mod recipe_index;
 mod reference_edge;
@@ -45,6 +46,14 @@ use body_candidates::BodyCandidates;
 use body_index::CompleteBodyIndex;
 use cache::SnapshotCache;
 use loop_index::LoopIndex;
+use output_properties::{
+    classify_face_plane, classify_inserted_face, collect_edge_midpoint_slots,
+    feature_consumes_tool_body, feature_supports_body_absorption, resolve_split_result_plane,
+    resolve_split_tool_plane, EdgeMidpointRequest, InsertedFaceClassification,
+    SplitResultPlaneContext, StateSplitCandidates, EPS_HISTORY_BODY_BBOX_CONTAINMENT_E2,
+    EPS_HISTORY_BODY_BBOX_GROWTH_E3, EPS_HISTORY_BODY_BBOX_UNCHANGED_E4,
+    EPS_HISTORY_VERTEX_ABSORBED_DIST_SQ_E4,
+};
 use recipe_index::RecipeTopologyCache;
 use topology_cache::{TopologyQueryCache, VertexBoundaryIndex};
 use treatment_index::TreatmentCache;
@@ -75,13 +84,6 @@ const EPS_HISTORY_BIND_MIRROR_SELECTION_PLANES_E9: f64 = 1.0e-9;
 const EPS_HISTORY_MIRROR_PLANES_COINCIDENT_E9: f64 = 1.0e-9;
 const EPS_HISTORY_MIRROR_PLANES_COINCIDENT_E8: f64 = 1.0e-8;
 const EPS_HISTORY_HISTORICAL_LOOP_PLANE_E9: f64 = 1.0e-9;
-const EPS_HISTORY_BODY_BBOX_GROWTH_E3: f64 = 1.0e-3;
-const EPS_HISTORY_BODY_BBOX_UNCHANGED_E4: f64 = 1.0e-4;
-const EPS_HISTORY_BODY_BBOX_CONTAINMENT_E2: f64 = 1.0e-2;
-const EPS_HISTORY_SPLIT_PLANE_SEPARATES_E4: f64 = 1.0e-4;
-const EPS_HISTORY_SPLIT_PLANE_CROSS_SQ_E5: f64 = 1.0e-5;
-const EPS_HISTORY_SPLIT_PLANE_DIST_E4: f64 = 1.0e-4;
-const EPS_HISTORY_VERTEX_ABSORBED_DIST_SQ_E4: f64 = 1.0e-4;
 
 const DELTA: &[u8] = b"\x11\x0d\x0bdelta_state";
 const PREAMBLE: &[u8] = b"\x0d\x0ehistory_stream";
@@ -1060,21 +1062,6 @@ impl<'a> HistoricalBodyIndex<'a> {
         Some(positions)
     }
 
-    fn edge_vertex_carriers(&self, edges: &[i64]) -> Option<BTreeSet<i64>> {
-        if edges.is_empty() {
-            return None;
-        }
-        let mut carriers = BTreeSet::new();
-        for &edge in edges {
-            let edge = self.edges.get(edge)?;
-            for vertex in [edge.start_vertex, edge.end_vertex] {
-                let binding = self.vertex_points.get(vertex)?;
-                carriers.insert(binding.carrier);
-            }
-        }
-        (!carriers.is_empty()).then_some(carriers)
-    }
-
     fn body_faces(&self, body: i64) -> Option<BTreeSet<i64>> {
         let regions = self.body_regions.members(body)?;
         let mut faces = BTreeSet::new();
@@ -1113,442 +1100,6 @@ impl<'a> HistoricalBodyIndex<'a> {
             cadmpeg_ir::math::Point3::new(max_x, max_y, max_z),
         ))
     }
-}
-
-fn planes_are_equivalent(
-    o1: cadmpeg_ir::math::Point3,
-    n1: cadmpeg_ir::math::Vector3,
-    o2: cadmpeg_ir::math::Point3,
-    n2: cadmpeg_ir::math::Vector3,
-) -> bool {
-    let Some(u1) = n1.unit() else {
-        return false;
-    };
-    let Some(u2) = n2.unit() else {
-        return false;
-    };
-    let cross = u1.cross(u2);
-    let cross_len_sq = cross.x * cross.x + cross.y * cross.y + cross.z * cross.z;
-    if cross_len_sq > EPS_HISTORY_SPLIT_PLANE_CROSS_SQ_E5 {
-        return false;
-    }
-    let dist = o1.vector_from(o2).dot(u2).abs();
-    dist < EPS_HISTORY_SPLIT_PLANE_DIST_E4
-}
-
-enum InsertedFaceClassification {
-    Plane(cadmpeg_ir::math::Point3, cadmpeg_ir::math::Vector3),
-    NonPlanar,
-    Unclassifiable,
-}
-
-fn classify_face_plane(
-    topology: &AsmHistoricalTopology,
-    face_id: i64,
-) -> Option<(cadmpeg_ir::math::Point3, cadmpeg_ir::math::Vector3)> {
-    let mut bindings = topology
-        .face_surfaces
-        .iter()
-        .filter(|f| f.entity == face_id);
-    let fs = bindings.next()?;
-    if bindings.next().is_some() {
-        return None;
-    }
-    let carrier = fs.carrier;
-    let mut planes = topology
-        .surface_planes
-        .iter()
-        .filter(|s| s.surface == carrier);
-    let has_cylinder = topology
-        .surface_cylinders
-        .iter()
-        .any(|s| s.surface == carrier && s.axis.unit().is_some() && s.radius > 0.0);
-    let has_axis = topology
-        .surface_axes
-        .iter()
-        .any(|s| s.surface == carrier && s.direction.unit().is_some());
-    let has_radius = topology
-        .surface_radii
-        .iter()
-        .any(|s| s.surface == carrier && s.radius > 0.0 && s.radius.is_finite());
-    let sp = planes.next()?;
-    if planes.next().is_some()
-        || has_cylinder
-        || has_axis
-        || has_radius
-        || sp.normal.unit().is_none()
-    {
-        return None;
-    }
-    Some((sp.origin, sp.normal))
-}
-
-fn classify_inserted_face(
-    topology: &AsmHistoricalTopology,
-    transition: &crate::history_records::AsmHistoricalTransition,
-    face_id: i64,
-) -> InsertedFaceClassification {
-    if let Some((origin, normal)) = classify_face_plane(topology, face_id) {
-        return InsertedFaceClassification::Plane(origin, normal);
-    }
-    let mut bindings = topology
-        .face_surfaces
-        .iter()
-        .filter(|f| f.entity == face_id);
-    let Some(fs) = bindings.next() else {
-        return InsertedFaceClassification::Unclassifiable;
-    };
-    if bindings.next().is_some() {
-        return InsertedFaceClassification::Unclassifiable;
-    }
-    let carrier = fs.carrier;
-    let has_plane = topology.surface_planes.iter().any(|s| s.surface == carrier);
-    let has_cylinder = topology
-        .surface_cylinders
-        .iter()
-        .any(|s| s.surface == carrier && s.axis.unit().is_some() && s.radius > 0.0);
-    let has_axis = topology
-        .surface_axes
-        .iter()
-        .any(|s| s.surface == carrier && s.direction.unit().is_some());
-    let has_radius = topology
-        .surface_radii
-        .iter()
-        .any(|s| s.surface == carrier && s.radius > 0.0 && s.radius.is_finite());
-    let is_non_planar = has_cylinder || has_axis || has_radius;
-    if !has_plane && is_non_planar && !transition.topology.surfaces.inserted.contains(&carrier) {
-        InsertedFaceClassification::NonPlanar
-    } else {
-        InsertedFaceClassification::Unclassifiable
-    }
-}
-
-struct StateSplitCandidates {
-    all_classified: bool,
-    inserted_planar_faces: Vec<(i64, cadmpeg_ir::math::Point3, cadmpeg_ir::math::Vector3)>,
-    body_faces: BTreeMap<i64, BTreeSet<i64>>,
-}
-
-struct SplitResultPlaneContext<'a> {
-    candidates: &'a StateSplitCandidates,
-    centers: &'a [(i64, cadmpeg_ir::math::Point3)],
-    vertices: &'a BTreeMap<i64, Vec<cadmpeg_ir::math::Point3>>,
-    solid_outputs: Option<&'a [i64]>,
-    before_solid: Option<&'a BTreeSet<i64>>,
-    after_solid: &'a BTreeSet<i64>,
-    targets: &'a cadmpeg_ir::features::BodySelection,
-}
-
-fn collect_selection_slots<'a>(ids: impl Iterator<Item = &'a str>) -> Option<Vec<i64>> {
-    let mut slots = Vec::new();
-    for id in ids {
-        let slot = stable_ref(id)?;
-        if !slots.contains(&slot) {
-            slots.push(slot);
-        }
-    }
-    (!slots.is_empty()).then_some(slots)
-}
-
-fn resolved_face_selection_slots(
-    selection: &cadmpeg_ir::features::FaceSelection,
-) -> Option<Vec<i64>> {
-    use cadmpeg_ir::features::FaceSelection;
-    match selection {
-        FaceSelection::Faces(faces) | FaceSelection::Resolved { faces, .. } => {
-            collect_selection_slots(faces.iter().map(cadmpeg_ir::ids::FaceId::as_str))
-        }
-        FaceSelection::Historical { faces, .. } => collect_selection_slots(
-            faces
-                .as_slice()
-                .iter()
-                .map(cadmpeg_ir::ids::HistoricalFaceId::as_str),
-        ),
-        FaceSelection::HistoricalPartial { .. }
-        | FaceSelection::Native(_)
-        | FaceSelection::Unresolved
-        | FaceSelection::Generated { .. } => None,
-    }
-}
-
-fn resolved_body_selection_slots(
-    selection: &cadmpeg_ir::features::BodySelection,
-) -> Option<Vec<i64>> {
-    use cadmpeg_ir::features::BodySelection;
-    match selection {
-        BodySelection::Bodies(bodies) | BodySelection::Resolved { bodies, .. } => {
-            collect_selection_slots(
-                bodies
-                    .as_slice()
-                    .iter()
-                    .map(cadmpeg_ir::ids::BodyId::as_str),
-            )
-        }
-        BodySelection::Historical { bodies, .. } => collect_selection_slots(
-            bodies
-                .as_slice()
-                .iter()
-                .map(cadmpeg_ir::ids::HistoricalBodyId::as_str),
-        ),
-        BodySelection::ResolvedSet { members } => {
-            collect_selection_slots(members.bodies().map(cadmpeg_ir::ids::BodyId::as_str))
-        }
-        BodySelection::HistoricalSet { members, .. } => collect_selection_slots(
-            members
-                .bodies()
-                .map(cadmpeg_ir::ids::HistoricalBodyId::as_str),
-        ),
-        BodySelection::Native(_)
-        | BodySelection::NativeSet(_)
-        | BodySelection::Unresolved
-        | BodySelection::Generated { .. }
-        | BodySelection::Local { .. } => None,
-    }
-}
-
-fn resolve_split_tool_plane(
-    tool: &cadmpeg_ir::features::SplitBodyTool,
-    datum_plane_frames: &HashMap<
-        cadmpeg_ir::features::FeatureId,
-        (cadmpeg_ir::math::Point3, cadmpeg_ir::math::Vector3),
-    >,
-    state_face_planes: &HashMap<
-        i64,
-        BTreeMap<i64, (cadmpeg_ir::math::Point3, cadmpeg_ir::math::Vector3)>,
-    >,
-    previous_state_id: i64,
-    state_id: i64,
-) -> Option<(cadmpeg_ir::math::Point3, cadmpeg_ir::math::Vector3)> {
-    match tool {
-        cadmpeg_ir::features::SplitBodyTool::Plane { plane } => {
-            datum_plane_frames.get(plane).copied()
-        }
-        cadmpeg_ir::features::SplitBodyTool::Faces(selection) => {
-            let slots = resolved_face_selection_slots(selection)?;
-            for candidate_state in [previous_state_id, state_id] {
-                let Some(face_planes) = state_face_planes.get(&candidate_state) else {
-                    continue;
-                };
-                let mut planes = Vec::with_capacity(slots.len());
-                if slots.iter().all(|slot| {
-                    face_planes.get(slot).is_some_and(|&plane| {
-                        planes.push(plane);
-                        true
-                    })
-                }) {
-                    if let Some(&(first_o, first_n)) = planes.first() {
-                        if planes
-                            .iter()
-                            .all(|&(o, n)| planes_are_equivalent(first_o, first_n, o, n))
-                        {
-                            return Some((first_o, first_n));
-                        }
-                    }
-                }
-            }
-            None
-        }
-    }
-}
-
-fn resolve_split_result_plane(
-    ctx: &SplitResultPlaneContext<'_>,
-) -> Option<(cadmpeg_ir::math::Point3, cadmpeg_ir::math::Vector3)> {
-    if !ctx.candidates.all_classified
-        || ctx.candidates.inserted_planar_faces.is_empty()
-        || ctx.centers.len() < 2
-    {
-        return None;
-    }
-    let target_slots = resolved_body_selection_slots(ctx.targets);
-    let non_empty_before = ctx.before_solid.filter(|before| !before.is_empty());
-    let new_bodies: BTreeSet<i64> = match non_empty_before {
-        Some(before) => ctx.after_solid.difference(before).copied().collect(),
-        None => ctx.after_solid.iter().copied().collect(),
-    };
-    if new_bodies.is_empty() {
-        return None;
-    }
-    let mut valid_planes = Vec::new();
-    for &(_, origin, normal) in &ctx.candidates.inserted_planar_faces {
-        let unit = normal.unit()?;
-        let body_owns_equivalent_inserted_face = |body: i64| -> bool {
-            let Some(faces) = ctx.candidates.body_faces.get(&body) else {
-                return false;
-            };
-            ctx.candidates
-                .inserted_planar_faces
-                .iter()
-                .any(|&(fid, fo, fn_)| {
-                    faces.contains(&fid) && planes_are_equivalent(origin, normal, fo, fn_)
-                })
-        };
-        let mut matched_new_bodies = BTreeSet::new();
-        let mut any_pair = false;
-        for (i, &(b1, c1)) in ctx.centers.iter().enumerate() {
-            for &(b2, c2) in &ctx.centers[i + 1..] {
-                if let Some(solid_outputs) = ctx.solid_outputs {
-                    if !solid_outputs.contains(&b1) || !solid_outputs.contains(&b2) {
-                        continue;
-                    }
-                }
-                if let Some(before) = non_empty_before {
-                    let b1_was_before = before.contains(&b1);
-                    let b2_was_before = before.contains(&b2);
-                    let b1_is_new = new_bodies.contains(&b1);
-                    let b2_is_new = new_bodies.contains(&b2);
-                    if !((b1_was_before && b2_is_new) || (b2_was_before && b1_is_new)) {
-                        continue;
-                    }
-                }
-                if let Some(ref targets) = target_slots {
-                    if !targets.contains(&b1) && !targets.contains(&b2) {
-                        continue;
-                    }
-                }
-                if !body_owns_equivalent_inserted_face(b1)
-                    || !body_owns_equivalent_inserted_face(b2)
-                {
-                    continue;
-                }
-                let d1 = c1.vector_from(origin).dot(unit);
-                let d2 = c2.vector_from(origin).dot(unit);
-                if d1 * d2 >= -EPS_HISTORY_SPLIT_PLANE_SEPARATES_E4 {
-                    continue;
-                }
-                let (Some(v1_list), Some(v2_list)) = (ctx.vertices.get(&b1), ctx.vertices.get(&b2))
-                else {
-                    continue;
-                };
-                let vertices_partitioned = if d1 < 0.0 {
-                    v1_list
-                        .iter()
-                        .all(|v| v.vector_from(origin).dot(unit) <= EPS_HISTORY_SPLIT_PLANE_DIST_E4)
-                        && v2_list.iter().all(|v| {
-                            v.vector_from(origin).dot(unit) >= -EPS_HISTORY_SPLIT_PLANE_DIST_E4
-                        })
-                } else {
-                    v1_list.iter().all(|v| {
-                        v.vector_from(origin).dot(unit) >= -EPS_HISTORY_SPLIT_PLANE_DIST_E4
-                    }) && v2_list
-                        .iter()
-                        .all(|v| v.vector_from(origin).dot(unit) <= EPS_HISTORY_SPLIT_PLANE_DIST_E4)
-                };
-                if vertices_partitioned {
-                    any_pair = true;
-                    if new_bodies.contains(&b1) {
-                        matched_new_bodies.insert(b1);
-                    }
-                    if new_bodies.contains(&b2) {
-                        matched_new_bodies.insert(b2);
-                    }
-                }
-            }
-        }
-        if any_pair && matched_new_bodies.len() == new_bodies.len() {
-            valid_planes.push((origin, normal));
-        }
-    }
-    let &(first_o, first_n) = valid_planes.first()?;
-    valid_planes
-        .iter()
-        .all(|&(o, n)| planes_are_equivalent(first_o, first_n, o, n))
-        .then_some((first_o, first_n))
-}
-
-fn feature_supports_body_absorption(op_ref: &cadmpeg_ir::features::FeatureOperation) -> bool {
-    use cadmpeg_ir::features::{
-        BooleanKind, BooleanOp, FeatureOperation, SolidSweepOperation, SweepShape,
-    };
-    matches!(
-        op_ref,
-        FeatureOperation::Combine {
-            op: BooleanKind::Join,
-            keep_tools: false,
-            ..
-        } | FeatureOperation::Extrude {
-            op: BooleanOp::Join,
-            ..
-        } | FeatureOperation::Revolve {
-            op: BooleanOp::Join,
-            ..
-        } | FeatureOperation::Sweep {
-            shape: SweepShape::Solid {
-                op: SolidSweepOperation::Join,
-                ..
-            },
-            ..
-        } | FeatureOperation::Loft {
-            op: BooleanOp::Join,
-            ..
-        }
-    )
-}
-
-fn combine_identifies_target_and_tool(
-    op_ref: &cadmpeg_ir::features::FeatureOperation,
-    scope: Option<&crate::records::feature::scope::DesignParameterScope>,
-    host: i64,
-    tool_body: i64,
-) -> bool {
-    if let cadmpeg_ir::features::FeatureOperation::Combine {
-        operands,
-        op: cadmpeg_ir::features::BooleanKind::Join,
-        keep_tools: false,
-    } = op_ref
-    {
-        if resolved_body_selection_slots(operands.target()).as_deref() == Some(&[host])
-            && resolved_body_selection_slots(operands.tools())
-                .is_some_and(|tools| tools.contains(&tool_body))
-        {
-            return true;
-        }
-    }
-    if let Some(operation) = scope.and_then(|s| s.combine_operation()) {
-        if operation.operation == cadmpeg_ir::features::BooleanKind::Join && !operation.keep_tools {
-            let target_matches = operation
-                .target_body_node
-                .is_some_and(|node| i64::from(node.body_entity_suffix) == host);
-            let tool_matches = operation.tools.iter().any(|tool| {
-                tool.body_node
-                    .is_some_and(|node| i64::from(node.body_entity_suffix) == tool_body)
-            });
-            if target_matches && tool_matches {
-                return true;
-            }
-        }
-    }
-    false
-}
-
-fn transition_absorbs_carriers(
-    before_carriers: Option<&BTreeMap<i64, BTreeSet<i64>>>,
-    after_carriers: Option<&BTreeMap<i64, BTreeSet<i64>>>,
-    host: i64,
-    tool_body: i64,
-) -> bool {
-    let (Some(b1_prev), Some(b1_cur), Some(b2_prev)) = (
-        before_carriers.and_then(|m| m.get(&host)),
-        after_carriers.and_then(|m| m.get(&host)),
-        before_carriers.and_then(|m| m.get(&tool_body)),
-    ) else {
-        return false;
-    };
-    let mut has_unique = false;
-    for &carrier in b2_prev {
-        if !b1_prev.contains(&carrier) {
-            has_unique = true;
-            if !b1_cur.contains(&carrier) {
-                return false;
-            }
-        }
-    }
-    has_unique
-}
-
-struct EdgeMidpointRequest {
-    feature_index: usize,
-    slots: Vec<i64>,
 }
 
 pub(crate) fn bind_feature_outputs(
@@ -1631,59 +1182,8 @@ pub(crate) fn bind_feature_outputs(
             FeatureOperation::Chamfer { groups, .. } => groups.iter().map(|g| &g.edges).collect(),
             _ => continue,
         };
-        let mut slots = Vec::new();
-        let mut has_unresolved = false;
-        for sel in selections {
-            let mut extract_slots = |edge_ids: &[cadmpeg_ir::ids::HistoricalEdgeId]| {
-                if edge_ids.is_empty() {
-                    has_unresolved = true;
-                }
-                for edge_id in edge_ids {
-                    if let Some(slot) =
-                        crate::ids::feature_input_edge_slot(&feature.id, previous_state_id, edge_id)
-                    {
-                        if !slots.contains(&slot) {
-                            slots.push(slot);
-                        }
-                    } else {
-                        has_unresolved = true;
-                    }
-                }
-            };
-            match sel {
-                EdgeSelection::Historical { edges, .. } => {
-                    extract_slots(edges.as_slice());
-                }
-                EdgeSelection::HistoricalPartial {
-                    edges, unresolved, ..
-                } => {
-                    extract_slots(edges.as_slice());
-                    if !unresolved.is_empty() {
-                        has_unresolved = true;
-                    }
-                }
-                EdgeSelection::Resolved { edges, .. } | EdgeSelection::Edges(edges) => {
-                    if edges.is_empty() {
-                        has_unresolved = true;
-                    }
-                    for edge_id in edges {
-                        if let Some(slot) = stable_ref(edge_id.as_str()) {
-                            if !slots.contains(&slot) {
-                                slots.push(slot);
-                            }
-                        } else {
-                            has_unresolved = true;
-                        }
-                    }
-                }
-                EdgeSelection::Native(_)
-                | EdgeSelection::Unresolved
-                | EdgeSelection::All
-                | EdgeSelection::Generated { .. } => {
-                    has_unresolved = true;
-                }
-            }
-        }
+        let (slots, has_unresolved) =
+            collect_edge_midpoint_slots(&feature.id, previous_state_id, &selections);
         if has_unresolved || slots.is_empty() {
             losses.push(
                 crate::loss::F3dLossCode::HistoricalEdgeMidpointsUnresolved.note(format!(
@@ -1733,7 +1233,6 @@ pub(crate) fn bind_feature_outputs(
         HashMap::<i64, Vec<(i64, (cadmpeg_ir::math::Point3, cadmpeg_ir::math::Point3))>>::new();
     let mut state_body_vertices =
         HashMap::<i64, BTreeMap<i64, Vec<cadmpeg_ir::math::Point3>>>::new();
-    let mut state_body_carriers = HashMap::<i64, BTreeMap<i64, BTreeSet<i64>>>::new();
     let mut state_face_planes =
         HashMap::<i64, BTreeMap<i64, (cadmpeg_ir::math::Point3, cadmpeg_ir::math::Vector3)>>::new();
     let mut state_split_candidates = HashMap::<i64, StateSplitCandidates>::new();
@@ -1847,23 +1346,20 @@ pub(crate) fn bind_feature_outputs(
                     .collect();
                 let mut bounds_list = Vec::new();
                 let mut vertices_map = BTreeMap::new();
-                let mut carriers_map = BTreeMap::new();
                 let mut body_faces_map = BTreeMap::new();
                 for (&b, edges) in &solid_edges {
-                    if let Some((vpos, bds, carriers, faces)) = body_index
+                    if let Some((vpos, bds, faces)) = body_index
                         .has_complete_solid_topology(b)
                         .then(|| {
                             let vpos = body_index.edge_vertex_positions(edges)?;
                             let bds = HistoricalBodyIndex::positions_bounds(&vpos)?;
-                            let carriers = body_index.edge_vertex_carriers(edges)?;
                             let faces = body_index.body_faces(b)?;
-                            Some((vpos, bds, carriers, faces))
+                            Some((vpos, bds, faces))
                         })
                         .flatten()
                     {
                         vertices_map.insert(b, vpos);
                         bounds_list.push((b, bds));
-                        carriers_map.insert(b, carriers);
                         body_faces_map.insert(b, faces);
                     } else {
                         losses.push(
@@ -1877,9 +1373,6 @@ pub(crate) fn bind_feature_outputs(
                 }
                 if !vertices_map.is_empty() {
                     state_body_vertices.insert(cur_state_id, vertices_map);
-                }
-                if !carriers_map.is_empty() {
-                    state_body_carriers.insert(cur_state_id, carriers_map);
                 }
                 if output_states.contains(&cur_state_id) {
                     let centers: Vec<(i64, cadmpeg_ir::math::Point3)> = bounds_list
@@ -2047,8 +1540,6 @@ pub(crate) fn bind_feature_outputs(
         let before_bds = state_body_bounds.get(&previous_state_id);
         let before_verts = state_body_vertices.get(&previous_state_id);
         let after_verts = state_body_vertices.get(&state_id);
-        let before_carriers = state_body_carriers.get(&previous_state_id);
-        let after_carriers = state_body_carriers.get(&state_id);
         if feature_supports_body_absorption(op_ref) {
             let solid_outputs = state_solid_outputs.get(&state_id);
             if let (Some(prev_bds), Some(cur_bds)) = (before_bds, state_body_bounds.get(&state_id))
@@ -2126,19 +1617,17 @@ pub(crate) fn bind_feature_outputs(
                                 }
                                 _ => false,
                             };
-                            let has_identity_or_transition_evidence =
-                                combine_identifies_target_and_tool(op_ref, feature_scope, *b1, *b2)
-                                    || transition_absorbs_carriers(
-                                        before_carriers,
-                                        after_carriers,
-                                        *b1,
-                                        *b2,
-                                    );
                             if b2_unchanged
                                 && !prev_covered
                                 && cur_covers
                                 && vertices_absorbed
-                                && has_identity_or_transition_evidence
+                                && feature_consumes_tool_body(
+                                    op_ref,
+                                    feature_scope,
+                                    state_deleted_bodies.get(&state_id),
+                                    *b1,
+                                    *b2,
+                                )
                             {
                                 newly_absorbed.insert(*b2);
                             }

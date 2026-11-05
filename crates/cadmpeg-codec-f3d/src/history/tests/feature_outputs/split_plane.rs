@@ -1074,7 +1074,7 @@ fn combine_join_test_feature(scope_id: &str, target: Option<i64>, tool: Option<i
 fn body_absorption_requires_supported_op_and_affirmative_evidence() {
     let scope = scope_between(1, 0);
 
-    let state0_base = two_solid_boxes_with_planes(
+    let mut state0_base = two_solid_boxes_with_planes(
         1,
         Point3::new(0.0, 0.0, 0.0),
         Point3::new(10.0, 10.0, 10.0),
@@ -1281,8 +1281,8 @@ fn body_absorption_requires_supported_op_and_affirmative_evidence() {
         None,
         false,
         vec![
-            state(1, 1, Some(0), state1_shared_carriers),
-            state(0, 0, None, state0_base),
+            state(1, 1, Some(0), state1_shared_carriers.clone()),
+            state(0, 0, None, state0_base.clone()),
         ],
     );
     let mut feat_split = split_body_test_feature(&scope.id);
@@ -1320,25 +1320,159 @@ fn body_absorption_requires_supported_op_and_affirmative_evidence() {
         Some(&"2".to_string())
     );
 
-    // 4. Supported Combine Join with carrier-transfer evidence marks b2 absorbed when not active.
-    let mut feat_carrier_transfer = combine_join_test_feature(&scope.id, None, None);
+    // 4. Shared point carriers without target/tool identity or transition deletion evidence
+    // do not prove consumption: a separate unchanged body that shares carriers with the grown
+    // host remains unabsorbed and is preserved in later affected_bodies.
+    let scope2 = scope_between(2, 1);
+    let mut state2_touch_b2 = state1_shared_carriers.clone();
+    state2_touch_b2.point_positions.push(AsmHistoricalPoint {
+        point: 220,
+        position: Point3::new(14.0, 2.0, 2.0),
+    });
+    state2_touch_b2.point_positions.sort_by_key(|p| p.point);
+    state2_touch_b2
+        .vertex_points
+        .push(AsmHistoricalCarrierBinding {
+            entity: 210,
+            carrier: 220,
+        });
+    state2_touch_b2.vertex_points.sort_by_key(|v| v.entity);
+    state2_touch_b2.edge_vertices.push(AsmHistoricalEdge {
+        edge: 208,
+        start_vertex: 110,
+        end_vertex: 210,
+    });
+    state2_touch_b2.edge_vertices.sort_by_key(|e| e.edge);
+    state2_touch_b2.coedge_topology.extend([
+        AsmHistoricalCoedge {
+            coedge: 206,
+            owner_loop: 105,
+            edge: 208,
+            next: 207,
+            previous: 207,
+            radial_next: 207,
+        },
+        AsmHistoricalCoedge {
+            coedge: 207,
+            owner_loop: 105,
+            edge: 208,
+            next: 206,
+            previous: 206,
+            radial_next: 206,
+        },
+    ]);
+    state2_touch_b2.coedge_topology.sort_by_key(|c| c.coedge);
+    state2_touch_b2
+        .loop_coedges
+        .iter_mut()
+        .find(|r| r.owner_ref == 105)
+        .unwrap()
+        .member_refs
+        .extend([206, 207]);
+    for topo in [
+        &mut state0_base,
+        &mut state1_shared_carriers,
+        &mut state2_touch_b2,
+    ] {
+        topo.shell_wire_edges = vec![
+            AsmHistoricalRelation {
+                owner_ref: 3,
+                member_refs: vec![],
+            },
+            AsmHistoricalRelation {
+                owner_ref: 103,
+                member_refs: vec![],
+            },
+        ];
+        topo.shell_free_vertices = vec![
+            AsmHistoricalRelation {
+                owner_ref: 3,
+                member_refs: vec![],
+            },
+            AsmHistoricalRelation {
+                owner_ref: 103,
+                member_refs: vec![],
+            },
+        ];
+        topo.edges = topo.edge_vertices.iter().map(|e| e.edge).collect();
+        topo.edges.sort_unstable();
+    }
+    let history_separate_body = crate::test_support::history::history(
+        "f3d:asm-history#abs-separate-body".into(),
+        0,
+        None,
+        false,
+        vec![
+            state(2, 2, Some(1), state2_touch_b2),
+            state(1, 1, Some(0), state1_shared_carriers.clone()),
+            state(0, 0, None, state0_base.clone()),
+        ],
+    );
+    let feat1_shared = combine_join_test_feature(&scope.id, None, None);
+    let mut feat2_later = combine_join_test_feature(&scope2.id, None, None);
+    feat2_later.id = FeatureId::mint("test:model:feature#later").unwrap();
+    feat2_later.ordinal = 1;
+    let mut seq_features = [feat1_shared, feat2_later];
     bind_feature_outputs(
-        std::slice::from_mut(&mut feat_carrier_transfer),
-        std::slice::from_ref(&scope),
-        &mut [history_shared_carriers.clone()],
+        &mut seq_features,
+        &[scope.clone(), scope2],
+        &mut [history_separate_body],
         &[],
         &Default::default(),
         None,
     )
     .unwrap();
     assert_eq!(
-        feat_carrier_transfer
+        seq_features[0]
+            .source_properties
+            .get(&cadmpeg_core::nonblank_literal!("deleted_bodies")),
+        None
+    );
+    assert_eq!(
+        seq_features[1]
+            .source_properties
+            .get(&cadmpeg_core::nonblank_literal!("affected_bodies")),
+        Some(&"2".to_string())
+    );
+
+    // 5. Supported Combine Join with transition deletion evidence marks b2 absorbed when not active.
+    let mut history_transition_deleted = crate::test_support::history::history(
+        "f3d:asm-history#abs-transition-deleted".into(),
+        0,
+        None,
+        false,
+        vec![
+            state(1, 1, Some(0), state1_shared_carriers.clone()),
+            state(0, 0, None, state0_base),
+        ],
+    );
+    history_transition_deleted.states_mut()[0]
+        .transition
+        .as_mut()
+        .unwrap()
+        .topology
+        .bodies
+        .deleted
+        .push(2);
+    let mut feat_transition_deleted = combine_join_test_feature(&scope.id, None, None);
+    bind_feature_outputs(
+        std::slice::from_mut(&mut feat_transition_deleted),
+        std::slice::from_ref(&scope),
+        &mut [history_transition_deleted],
+        &[],
+        &Default::default(),
+        None,
+    )
+    .unwrap();
+    assert_eq!(
+        feat_transition_deleted
             .source_properties
             .get(&cadmpeg_core::nonblank_literal!("deleted_bodies")),
         Some(&"2".to_string())
     );
 
-    // 5. Same as (4), but b2 is in active_bodies -> excluded from absorption.
+    // 6. Supported Combine Join with explicit operand identity marks b2 absorbed when not active,
+    // and excludes b2 when b2 is present in active_bodies.
     let mut active_b2 = super::active_body();
     active_b2.id = BodyId::mint("f3d:brep:entity#2").unwrap();
     let mut feat_active = combine_join_test_feature(&scope.id, Some(1), Some(2));
