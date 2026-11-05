@@ -771,7 +771,27 @@ fn synthesis_graph(ir: &CadIr, version: crate::IgesVersion) -> Result<SynthesisG
     }
     let mut body_presentations = BTreeMap::new();
 
-    let mut entities = if has_brep_topology(ir) {
+    let preserve_model_only_edges = matches!(version, crate::IgesVersion::V5_3)
+        && ir.model.faces.iter().any(|face| {
+            face.loops.iter().any(|loop_id| {
+                ir.model
+                    .loops
+                    .iter()
+                    .find(|loop_| loop_.id == *loop_id)
+                    .is_some_and(|loop_| {
+                        face.loop_role(&loop_.id) != LoopBoundaryRole::Unspecified
+                            && loop_.coedges().len() > 1
+                            && loop_.coedges().iter().all(|id| {
+                                ir.model
+                                    .coedges
+                                    .iter()
+                                    .find(|coedge| coedge.id == *id)
+                                    .is_some_and(|coedge| coedge.pcurves.is_empty())
+                            })
+                    })
+            })
+        });
+    let mut entities = if has_brep_topology(ir) || preserve_model_only_edges {
         brep_entities(
             ctx,
             validate_brep_topology(ctx, ir, version)?,
