@@ -485,9 +485,8 @@ pub(crate) fn bspline_partition_stream() -> Vec<u8> {
     put_ref(&mut surface, 21, 21);
     s.extend(surface);
 
-    let mut descriptor = record(126, 48);
+    let mut descriptor = record(126, 49);
     put_ref(&mut descriptor, 2, 20);
-    put_ref(&mut descriptor, 34, 22);
     put_ref(&mut descriptor, 6, 1);
     put_ref(&mut descriptor, 8, 1);
     put_ref(&mut descriptor, 12, 2);
@@ -496,12 +495,10 @@ pub(crate) fn bspline_partition_stream() -> Vec<u8> {
     descriptor[19] = 5;
     descriptor[20..24].copy_from_slice(&2u32.to_be_bytes());
     descriptor[24..28].copy_from_slice(&2u32.to_be_bytes());
-    put_ref(&mut descriptor, 36, 30);
-    put_ref(&mut descriptor, 38, 31);
-    put_ref(&mut descriptor, 40, 32);
-    put_ref(&mut descriptor, 42, 33);
-    put_ref(&mut descriptor, 44, 125);
-    put_ref(&mut descriptor, 46, 21);
+    put_ref(&mut descriptor, 32, 3);
+    for (index, reference) in [22, 30, 31, 32, 33].into_iter().enumerate() {
+        put_ref(&mut descriptor, 34 + index * 3, reference);
+    }
     s.extend(descriptor);
 
     let mut data = record(125, 97 + 12 * 8);
@@ -545,16 +542,16 @@ pub(crate) fn bspline_partition_stream() -> Vec<u8> {
     put_ref(&mut curve, 19, 40);
     put_ref(&mut curve, 21, 41);
     s.extend(curve);
-    let mut curve_descriptor = record(136, 27);
+    let mut curve_descriptor = record(136, 30);
     put_ref(&mut curve_descriptor, 2, 40);
     put_ref(&mut curve_descriptor, 4, 1);
     put_ref(&mut curve_descriptor, 8, 2);
     put_ref(&mut curve_descriptor, 10, 3);
     put_ref(&mut curve_descriptor, 14, 2);
     curve_descriptor[16] = 5;
-    put_ref(&mut curve_descriptor, 21, 44);
-    put_ref(&mut curve_descriptor, 23, 42);
-    put_ref(&mut curve_descriptor, 25, 43);
+    for (index, reference) in [44, 42, 43].into_iter().enumerate() {
+        put_ref(&mut curve_descriptor, 21 + index * 3, reference);
+    }
     s.extend(curve_descriptor);
     let mut curve_data = record(135, 15 + 6 * 8);
     put_ref(&mut curve_data, 2, 41);
@@ -673,9 +670,8 @@ pub(crate) fn extended_bspline_surface_stream() -> Vec<u8> {
 
 pub(crate) fn bspline_surface_replacement_partition_stream() -> Vec<u8> {
     let mut stream = bspline_partition_stream();
-    let mut descriptor = record(126, 48);
+    let mut descriptor = record(126, 49);
     put_ref(&mut descriptor, 2, 60);
-    put_ref(&mut descriptor, 34, 62);
     put_ref(&mut descriptor, 6, 1);
     put_ref(&mut descriptor, 8, 1);
     put_ref(&mut descriptor, 12, 2);
@@ -684,12 +680,10 @@ pub(crate) fn bspline_surface_replacement_partition_stream() -> Vec<u8> {
     descriptor[19] = 5;
     descriptor[20..24].copy_from_slice(&2u32.to_be_bytes());
     descriptor[24..28].copy_from_slice(&2u32.to_be_bytes());
-    put_ref(&mut descriptor, 36, 30);
-    put_ref(&mut descriptor, 38, 31);
-    put_ref(&mut descriptor, 40, 32);
-    put_ref(&mut descriptor, 42, 33);
-    put_ref(&mut descriptor, 44, 125);
-    put_ref(&mut descriptor, 46, 61);
+    put_ref(&mut descriptor, 32, 3);
+    for (index, reference) in [62, 30, 31, 32, 33].into_iter().enumerate() {
+        put_ref(&mut descriptor, 34 + index * 3, reference);
+    }
     stream.extend(descriptor);
 
     let mut data = record(125, 97 + 12 * 8);
@@ -725,16 +719,16 @@ pub(crate) fn deltas_bspline_surface_wrapper_stream() -> Vec<u8> {
 
 pub(crate) fn bspline_curve_replacement_partition_stream() -> Vec<u8> {
     let mut stream = bspline_partition_stream();
-    let mut descriptor = record(136, 27);
+    let mut descriptor = record(136, 30);
     put_ref(&mut descriptor, 2, 70);
     put_ref(&mut descriptor, 4, 1);
     put_ref(&mut descriptor, 8, 2);
     put_ref(&mut descriptor, 10, 3);
     put_ref(&mut descriptor, 14, 2);
     descriptor[16] = 5;
-    put_ref(&mut descriptor, 21, 72);
-    put_ref(&mut descriptor, 23, 42);
-    put_ref(&mut descriptor, 25, 43);
+    for (index, reference) in [72, 42, 43].into_iter().enumerate() {
+        put_ref(&mut descriptor, 21 + index * 3, reference);
+    }
     stream.extend(descriptor);
 
     let mut data = record(135, 15 + 6 * 8);

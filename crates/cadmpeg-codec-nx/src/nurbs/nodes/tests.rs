@@ -225,3 +225,94 @@ fn shared_surface_data_with_unresolved_controls_resolves_neither_carrier() {
             .all(|carrier| carrier.family == "B_SURFACE"));
     });
 }
+
+/// An embedded-schema header whose node types declare their field lists at
+/// first use.
+fn embedded_header() -> Vec<u8> {
+    let mut bytes = b"PS".to_vec();
+    for field in [": TRANSMIT FILE (partition) nurbs", "SCH_999_999_13006"] {
+        bytes.extend(u32::try_from(field.len()).unwrap().to_be_bytes());
+        bytes.extend(field.as_bytes());
+    }
+    bytes.extend(200u16.to_be_bytes());
+    bytes.extend(0u32.to_be_bytes());
+    bytes
+}
+
+/// Insert a first-use declaration after the node type.
+fn declared(node: &[u8], declaration: &[u8]) -> Vec<u8> {
+    let mut bytes = node[..2].to_vec();
+    bytes.extend_from_slice(declaration);
+    bytes.extend_from_slice(&node[2..]);
+    bytes
+}
+
+/// An edit program that replaces the single base field with a transmitted
+/// variable field `name` of the one-character type code `data_type`.
+fn retyped(name: &str, data_type: u8) -> Vec<u8> {
+    let mut program = vec![1, b'D', b'A', u8::try_from(name.len()).unwrap()];
+    program.extend(name.as_bytes());
+    program.extend(0u16.to_be_bytes());
+    program.extend(encoded_xmt(2));
+    program.extend([1, data_type, 1, b'Z']);
+    program
+}
+
+/// The linear `B_CURVE` stream with first-use declarations. The node of type
+/// `edited` declares `declaration` and holds the bytes `values`, counted one
+/// per byte; every other node declares its base field list.
+fn embedded_curve_stream(edited: u16, declaration: &[u8], values: &[u8]) -> Vec<u8> {
+    let base = [0xff];
+    let mut data = vec![0];
+    data.extend(pointers(&[1]));
+    let mut bytes = embedded_header();
+    bytes.extend(declared(&carrier(134, 10, 11, 12), &base));
+    bytes.extend(declared(&curve_descriptor(11, 13), &base));
+    bytes.extend(declared(&fixed(135, 12, &data), &base));
+    for (kind, count, index, base_values) in [
+        (127, 2, 14, vec![0, 2, 0, 2]),
+        (128, 2, 15, reals(&[0.0, 1.0])),
+        (45, 6, 13, reals(&[0.0, 0.0, 0.0, 0.001, 0.002, 0.003])),
+    ] {
+        let node = if kind == edited {
+            declared(
+                &counted(kind, u32::try_from(values.len()).unwrap(), index, values),
+                declaration,
+            )
+        } else {
+            declared(&counted(kind, count, index, &base_values), &base)
+        };
+        bytes.extend(node);
+    }
+    bytes.extend(END);
+    bytes
+}
+
+fn embedded_curve_count(bytes: &[u8]) -> usize {
+    with_decode_context(|_ctx| {
+        let graph = Graph::parse_source(bytes).unwrap();
+        super::super::parse_with_graph(bytes, &graph).curves.len()
+    })
+}
+
+#[test]
+fn lanes_require_the_declared_field_type() {
+    assert_eq!(embedded_curve_count(&embedded_curve_stream(0, &[], &[])), 1);
+    let mut decoded = Vec::new();
+    for (kind, name, data_type, values) in [
+        (
+            45,
+            "vertices",
+            b'c',
+            reals(&[0.0, 0.0, 0.0, 0.001, 0.002, 0.003]),
+        ),
+        (127, "mult", b'u', vec![0, 2, 0, 2]),
+        (128, "knots", b'c', reals(&[0.0, 1.0])),
+    ] {
+        let bytes = embedded_curve_stream(kind, &retyped(name, data_type), &values);
+        if embedded_curve_count(&bytes) != 0 {
+            decoded.push(name);
+        }
+    }
+    assert!(decoded.is_empty(), "{decoded:?}");
+}

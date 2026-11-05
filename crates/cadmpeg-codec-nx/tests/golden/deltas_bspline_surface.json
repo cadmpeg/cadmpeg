@@ -160,10 +160,10 @@
           "deltas.0.stop_reason": "UnsupportedBase",
           "deltas_streams": "1",
           "directory_entries": "1",
-          "file_size": "480",
+          "file_size": "492",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
-          "footer_offset": "466",
+          "footer_offset": "478",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "partition_streams": "1",
@@ -185,11 +185,11 @@
               {
                 "admission": "residual",
                 "declared": {
-                  "carrier": "stream@364",
+                  "carrier": "stream@376",
                   "schema": "SCH_TEST_1_9999"
                 },
                 "dialect": "parasolid:unknown",
-                "instance": "stream@364"
+                "instance": "stream@376"
               }
             ],
             "primary": {
@@ -227,11 +227,11 @@
             {
               "admission": "residual",
               "declared": {
-                "carrier": "stream@364",
+                "carrier": "stream@376",
                 "schema": "SCH_TEST_1_9999"
               },
               "dialect": "parasolid:unknown",
-              "instance": "stream@364"
+              "instance": "stream@376"
             }
           ],
           "primary": {
@@ -294,12 +294,12 @@
             "scope": "namespaced",
             "strict_floor": "warning"
           },
-          "message": "The Parasolid stream at stream@364 declares schema \"SCH_TEST_1_9999\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",
+          "message": "The Parasolid stream at stream@376 declares schema \"SCH_TEST_1_9999\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",
           "severity": "warning"
         }
       ],
       "notes": [
-        "SPLMSSTR container: file tag 0, footer offset 466, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+        "SPLMSSTR container: file tag 0, footer offset 478, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
         "embedded streams: 1 partition, 1 deltas, 0 plain (cached body), 0 preview/non-Parasolid"
       ],
       "transfer": {
@@ -341,12 +341,12 @@
             "tag": "partition"
           },
           "nx:container:parasolid#1": {
-            "offset": 364,
+            "offset": 376,
             "stream": "nx:container",
             "tag": "deltas"
           },
           "nx:s0:nurbs-crv#0": {
-            "offset": 389,
+            "offset": 390,
             "stream": "nx:parasolid#0:partition",
             "tag": "B_SPLINE_CURVE"
           },
@@ -360,7 +360,7 @@
       "retained_records": {
         "nx:container:parasolid#0": {
           "bytes": {
-            "data": "UFMAAAAbOiBUUkFOU01JVCBGSUxFIChwYXJ0aXRpb24pAAAAD1NDSF9URVNUXzFfOTk5OQAAfAAKAAAAAAAAAAAAAAAAAAArABQAFQB+ABQAAAABAAEAAAACAAAAAgUFAAAAAgAAAAIAAAAAAAAAFgAeAB8AIAAhAH0AFQB9ABUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACsAAAAMABYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD+UeuFHrhR7AAAAAAAAAAA/hHrhR64UewAAAAAAAAAAAAAAAAAAAAA/hHrhR64Uez+UeuFHrhR7AAAAAAAAAAAAfwAAAAIAHgACAAIAfwAAAAIAHwACAAIAgAAAAAIAIAAAAAAAAAAAP/AAAAAAAAAAgAAAAAIAIQAAAAAAAAAAP/AAAAAAAAAAhgAyAAAAAAAAAAAAAAAAAAArACgAKQCIACgAAQAAAAIAAwAAAAIFAAAAAAAsACoAKwCHACkAAAAAAAAAAAYALAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD+UeuFHrhR7AAAAAAAAAAAAAAAAAAAAAAB/AAAAAgAqAAIAAgCAAAAAAgArAAAAAAAAAAA/8AAAAAAAAAB+ADwAAAABAAEAAAACAAAAAgUFAAAAAgAAAAIAAAAAAAAAPgAeAB8AIAAhAH0APQB9AD0AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACsAAAAMAD4AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD+euFHrhR64AAAAAAAAAAA/jrhR64UeuAAAAAAAAAAAAAAAAAAAAAA/jrhR64UeuD+euFHrhR64AAAAAAAAAAA=",
+            "data": "UFMAAAAbOiBUUkFOU01JVCBGSUxFIChwYXJ0aXRpb24pAAAAD1NDSF9URVNUXzFfOTk5OQAAfAAKAAAAAAAAAAAAAAAAAAArABQAFQB+ABQAAAABAAEAAAACAAAAAgUFAAAAAgAAAAIAAAAAAAMAFgAAHgAAHwAAIAAAIQAAfQAVAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAArAAAADAAWAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/lHrhR64UewAAAAAAAAAAP4R64UeuFHsAAAAAAAAAAAAAAAAAAAAAP4R64UeuFHs/lHrhR64UewAAAAAAAAAAAH8AAAACAB4AAgACAH8AAAACAB8AAgACAIAAAAACACAAAAAAAAAAAD/wAAAAAAAAAIAAAAACACEAAAAAAAAAAD/wAAAAAAAAAIYAMgAAAAAAAAAAAAAAAAAAKwAoACkAiAAoAAEAAAACAAMAAAACBQAAAAAALAAAKgAAKwAAhwApAAAAAAAAAAAGACwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/lHrhR64UewAAAAAAAAAAAAAAAAAAAAAAfwAAAAIAKgACAAIAgAAAAAIAKwAAAAAAAAAAP/AAAAAAAAAAfgA8AAAAAQABAAAAAgAAAAIFBQAAAAIAAAACAAAAAAADAD4AAB4AAB8AACAAACEAAH0APQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAKwAAAAwAPgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAP564UeuFHrgAAAAAAAAAAD+OuFHrhR64AAAAAAAAAAAAAAAAAAAAAD+OuFHrhR64P564UeuFHrgAAAAAAAAAAA==",
             "retention": "inline"
           },
           "offset": 76,
@@ -371,7 +371,7 @@
             "data": "UFMAAAAsOiBUUkFOU01JVCBGSUxFIChkZWx0YXMpIGNyZWF0ZWQgYnkgbW9kZWxsZXIAAAAPU0NIX1RFU1RfMV85OTk5AAB8AAoAAAOSAAEBAAEBAAEBAAEBAAEBKwA8AQA9AQ==",
             "retention": "inline"
           },
-          "offset": 364,
+          "offset": 376,
           "stream": "nx:container"
         }
       }
@@ -390,18 +390,18 @@
         "role": "part-payload",
         "size": {
           "form": "exact",
-          "size": 390
+          "size": 402
         }
       },
       {
         "attributes": {
           "file_offset": "76",
           "kind": "partition",
-          "records.body": "2",
+          "records.body": "0",
           "records.edge": "0",
           "records.face": "0",
           "records.fin": "0",
-          "records.live.body": "2",
+          "records.live.body": "0",
           "records.live.edge": "0",
           "records.live.face": "0",
           "records.live.fin": "0",
@@ -416,13 +416,13 @@
           "schema": "SCH_TEST_1_9999"
         },
         "compression": "zlib",
-        "expanded": 779,
+        "expanded": 784,
         "name": "parasolid#0",
         "role": "parasolid-stream"
       },
       {
         "attributes": {
-          "file_offset": "364",
+          "file_offset": "376",
           "kind": "deltas",
           "records.delta.bytes_decoded": "0",
           "records.delta.instances": "0",
@@ -452,11 +452,11 @@
           {
             "admission": "residual",
             "declared": {
-              "carrier": "stream@364",
+              "carrier": "stream@376",
               "schema": "SCH_TEST_1_9999"
             },
             "dialect": "parasolid:unknown",
-            "instance": "stream@364"
+            "instance": "stream@376"
           }
         ],
         "primary": {
@@ -488,12 +488,12 @@
           "scope": "namespaced",
           "strict_floor": "warning"
         },
-        "message": "The Parasolid stream at stream@364 declares schema \"SCH_TEST_1_9999\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",
+        "message": "The Parasolid stream at stream@376 declares schema \"SCH_TEST_1_9999\", which has no declared grammar. It was admitted as the `parasolid:unknown` residual layer without substituting another schema grammar; bounded structural recovery retains the source stream.",
         "severity": "warning"
       }
     ],
     "notes": [
-      "SPLMSSTR container: file tag 0, footer offset 466, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+      "SPLMSSTR container: file tag 0, footer offset 478, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
       "embedded streams: 1 partition, 1 deltas, 0 plain (cached body), 0 preview/non-Parasolid"
     ]
   }

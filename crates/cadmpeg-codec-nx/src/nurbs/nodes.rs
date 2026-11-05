@@ -25,12 +25,22 @@ pub(super) fn lanes<'a>(bytes: &'a [u8], primary: &PrimaryRecords<'_>) -> Lanes<
             .or_insert(Some(node));
     }
     let node = |kind: u16, index: u32| by_index.get(&(kind, index)).copied().flatten();
-    let field = |node: &Node<'_>, name: &str| bytes.get(node.field_range(name)?);
+    // The typed accessors admit a field only when its effective schema
+    // declares a transmitted variable field of the lane's type.
+    let reals = |node: &Node<'_>, name: &str| {
+        node.reals(name)?;
+        let raw = bytes.get(node.field_range(name)?)?;
+        finite_f64_bytes(raw)?;
+        Some(raw)
+    };
+    let shorts = |node: &Node<'_>, name: &str| {
+        node.shorts(name)?;
+        bytes.get(node.field_range(name)?)
+    };
     let vertices = |nurbs_kind: u16, nurbs: u32| {
         let definition = node(nurbs_kind, nurbs)?;
         let reference = definition.pointer("bspline_vertices")?;
-        let raw = field(&node(BSPLINE_VERTICES, reference)?, "vertices")?;
-        finite_f64_bytes(raw)?;
+        let raw = reals(&node(BSPLINE_VERTICES, reference)?, "vertices")?;
         Some(Payload {
             raw,
             vertices: reference,
@@ -54,13 +64,8 @@ pub(super) fn lanes<'a>(bytes: &'a [u8], primary: &PrimaryRecords<'_>) -> Lanes<
     let mut f64s = RecordIndex::new();
     for node in primary.nodes() {
         let (index, values) = match node.kind() {
-            KNOT_MULT => (&mut u16s, field(&node, "mult").map(ArrayValues::U16)),
-            KNOT_SET => (
-                &mut f64s,
-                field(&node, "knots")
-                    .filter(|raw| finite_f64_bytes(raw).is_some())
-                    .map(ArrayValues::F64),
-            ),
+            KNOT_MULT => (&mut u16s, shorts(&node, "mult").map(ArrayValues::U16)),
+            KNOT_SET => (&mut f64s, reals(&node, "knots").map(ArrayValues::F64)),
             _ => continue,
         };
         index
@@ -162,7 +167,7 @@ fn surface_descriptor(node: &Node<'_>) -> Option<SurfaceDescriptor> {
         v_mult: node.pointer("v_knot_mult")?,
         u_knots: node.pointer("u_knots")?,
         v_knots: node.pointer("v_knots")?,
-        vertices: node.pointer("bspline_vertices")?,
+        vertices: Some(node.pointer("bspline_vertices")?),
         payload: None,
         vertex_layout: Some((node.short("vertex_dim")?, node.logical("rational")?)),
     })
@@ -183,7 +188,7 @@ fn curve_descriptor(node: &Node<'_>) -> Option<CurveDescriptor> {
             knot_type,
             periodic: node.logical("periodic")?,
         },
-        vertices: node.pointer("bspline_vertices")?,
+        vertices: Some(node.pointer("bspline_vertices")?),
         references: CurveDescriptorReferences::Status([
             reference("bspline_vertices")?,
             reference("knot_mult")?,

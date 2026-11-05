@@ -141,10 +141,10 @@
         "attributes": {
           "deltas_streams": "0",
           "directory_entries": "1",
-          "file_size": "348",
+          "file_size": "354",
           "footer_entry_count": "0",
           "footer_fingerprint": "00000000",
-          "footer_offset": "334",
+          "footer_offset": "340",
           "header_entry_count": "1",
           "jpeg_preview_count": "0",
           "partition_streams": "1",
@@ -239,7 +239,7 @@
         }
       ],
       "notes": [
-        "SPLMSSTR container: file tag 0, footer offset 334, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+        "SPLMSSTR container: file tag 0, footer offset 340, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
         "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid"
       ],
       "transfer": {
@@ -277,7 +277,7 @@
             "tag": "partition"
           },
           "nx:s0:nurbs-crv#0": {
-            "offset": 389,
+            "offset": 390,
             "stream": "nx:parasolid#0:partition",
             "tag": "B_SPLINE_CURVE"
           },
@@ -291,7 +291,7 @@
       "retained_records": {
         "nx:container:parasolid#0": {
           "bytes": {
-            "data": "UFMAAAAbOiBUUkFOU01JVCBGSUxFIChwYXJ0aXRpb24pAAAAD1NDSF9URVNUXzFfOTk5OQAAfAAKAAAAAAAAAAAAAAAAAAArABQAFQB+ABQAAAABAAEAAAACAAAAAgUFAAAAAgAAAAIAAAAAAAAAFgAeAB8AIAAhAH0AFQB9ABUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACsAAAAMABYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD+UeuFHrhR7AAAAAAAAAAA/hHrhR64UewAAAAAAAAAAAAAAAAAAAAA/hHrhR64Uez+UeuFHrhR7AAAAAAAAAAAAfwAAAAIAHgACAAIAfwAAAAIAHwACAAIAgAAAAAIAIAAAAAAAAAAAP/AAAAAAAAAAgAAAAAIAIQAAAAAAAAAAP/AAAAAAAAAAhgAyAAAAAAAAAAAAAAAAAAArACgAKQCIACgAAQAAAAIAAwAAAAIFAAAAAAAsACoAKwCHACkAAAAAAAAAAAYALAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD+UeuFHrhR7AAAAAAAAAAAAAAAAAAAAAAB/AAAAAgAqAAIAAgCAAAAAAgArAAAAAAAAAAA/8AAAAAAAAACIAEYAAQAAAAIAAwAAAAIFAAAAAABIACoAKwCHAEcAAAAAAAAAAAYASAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD+UeuFHrhR7P4R64UeuFHsAAAAAAAAAAA==",
+            "data": "UFMAAAAbOiBUUkFOU01JVCBGSUxFIChwYXJ0aXRpb24pAAAAD1NDSF9URVNUXzFfOTk5OQAAfAAKAAAAAAAAAAAAAAAAAAArABQAFQB+ABQAAAABAAEAAAACAAAAAgUFAAAAAgAAAAIAAAAAAAMAFgAAHgAAHwAAIAAAIQAAfQAVAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAArAAAADAAWAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/lHrhR64UewAAAAAAAAAAP4R64UeuFHsAAAAAAAAAAAAAAAAAAAAAP4R64UeuFHs/lHrhR64UewAAAAAAAAAAAH8AAAACAB4AAgACAH8AAAACAB8AAgACAIAAAAACACAAAAAAAAAAAD/wAAAAAAAAAIAAAAACACEAAAAAAAAAAD/wAAAAAAAAAIYAMgAAAAAAAAAAAAAAAAAAKwAoACkAiAAoAAEAAAACAAMAAAACBQAAAAAALAAAKgAAKwAAhwApAAAAAAAAAAAGACwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/lHrhR64UewAAAAAAAAAAAAAAAAAAAAAAfwAAAAIAKgACAAIAgAAAAAIAKwAAAAAAAAAAP/AAAAAAAAAAiABGAAEAAAACAAMAAAACBQAAAAAASAAAKgAAKwAAhwBHAAAAAAAAAAAGAEgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/lHrhR64Uez+EeuFHrhR7AAAAAAAAAAA=",
             "retention": "inline"
           },
           "offset": 76,
@@ -313,18 +313,18 @@
         "role": "part-payload",
         "size": {
           "form": "exact",
-          "size": 258
+          "size": 264
         }
       },
       {
         "attributes": {
           "file_offset": "76",
           "kind": "partition",
-          "records.body": "1",
+          "records.body": "0",
           "records.edge": "0",
           "records.face": "0",
           "records.fin": "0",
-          "records.live.body": "1",
+          "records.live.body": "0",
           "records.live.edge": "0",
           "records.live.face": "0",
           "records.live.fin": "0",
@@ -339,7 +339,7 @@
           "schema": "SCH_TEST_1_9999"
         },
         "compression": "zlib",
-        "expanded": 628,
+        "expanded": 635,
         "name": "parasolid#0",
         "role": "parasolid-stream"
       }
@@ -380,7 +380,7 @@
       }
     ],
     "notes": [
-      "SPLMSSTR container: file tag 0, footer offset 334, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
+      "SPLMSSTR container: file tag 0, footer offset 340, 1 HEADER and 0 FOOTER directory entry/ies, fingerprint 00000000",
       "embedded streams: 1 partition, 0 deltas, 0 plain (cached body), 0 preview/non-Parasolid"
     ]
   }

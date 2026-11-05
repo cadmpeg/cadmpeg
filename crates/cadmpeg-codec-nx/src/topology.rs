@@ -1052,6 +1052,9 @@ impl Graph {
                 {
                     admit(pos, None);
                 }
+                // Counted lane values can spell a BODY or REGION type and identity.
+                let inside = within_any(crate::nurbs::counted_lane_extents(stream));
+                ownership_candidates.retain(|candidate| !inside(candidate.pos()));
             }
         }
 
@@ -1803,6 +1806,27 @@ fn candidate_has_valid_family_framing(
         _ => {}
     }
     Some(())
+}
+
+/// Whether an offset lies inside one of `extents`.
+fn within_any(mut extents: Vec<std::ops::Range<usize>>) -> impl Fn(usize) -> bool {
+    extents.sort_unstable_by_key(|extent| extent.start);
+    // `reaches[i]` is the furthest end of the first `i + 1` extents by start.
+    let mut reach = 0;
+    let reaches = extents
+        .iter()
+        .map(|extent| {
+            reach = reach.max(extent.end);
+            reach
+        })
+        .collect::<Vec<_>>();
+    move |offset| {
+        extents
+            .partition_point(|extent| extent.start <= offset)
+            .checked_sub(1)
+            .and_then(|last| reaches.get(last))
+            .is_some_and(|&reach| offset < reach)
+    }
 }
 
 #[cfg(test)]
