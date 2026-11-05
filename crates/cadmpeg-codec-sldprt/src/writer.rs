@@ -99,7 +99,7 @@ pub(crate) struct SemanticOutput {
     pub(crate) consumed_source_layout: bool,
     pub(crate) omitted_envelope_bytes: usize,
     /// Losses from writing the canonical side of a validation Error instead
-    /// of refusing (#217 InvalidInput rule, #237).
+    /// of refusing (#217 `InvalidInput` rule, #237).
     pub(crate) normalization_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
 
@@ -1325,7 +1325,7 @@ pub(crate) const REDUCED_FIELDS: &[cadmpeg_ir::codec::write::ReducedField] = &[
     },
 ];
 
-/// The u8 UTF-16 code-unit count of one SWObjects material name.
+/// The u8 UTF-16 code-unit count of one `SWObjects` material name.
 pub(crate) fn material_name_len(name: &str) -> Result<u8, write_error::WriteError> {
     let units = name.encode_utf16().count();
     let value = cadmpeg_core::decode::u64_from_index(units);

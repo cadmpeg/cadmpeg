@@ -15,7 +15,7 @@ use super::features::synchronize_history_content_order;
 /// Write the canonical side of an active configuration that carries state.
 ///
 /// An active configuration is the base state, so its overrides, values and
-/// feature states cannot be written as differences (#217 InvalidInput rule).
+/// feature states cannot be written as differences (#217 `InvalidInput` rule).
 /// The writer clears them and charges each cleared entry, instead of refusing
 /// on the validation Error (#237). Inactive configurations keep their
 /// differences for their own write path.
@@ -51,7 +51,7 @@ pub(crate) fn normalize_active_configuration_state(
 /// Author the required native default configuration for a document that
 /// carries geometry but no configuration.
 ///
-/// Every SolidWorks file selects exactly one active configuration, so the
+/// Every `SolidWorks` file selects exactly one active configuration, so the
 /// decoder invents partition configurations without native definitions for
 /// one and charges `config.inferred-without-native`. A document that holds
 /// no configuration still lands in such a file, so synthesis authors the
