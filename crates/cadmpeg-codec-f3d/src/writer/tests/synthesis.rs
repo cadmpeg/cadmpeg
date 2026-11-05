@@ -439,6 +439,28 @@ fn source_less_compact_custom_attributes_preserve_values() {
 }
 
 #[test]
+fn source_less_direct_color_keeps_unchanged_attribute_values() {
+    use crate::test_support::smbh_geometry_test::synthetic_geometry_with_body_color_smbh;
+    use crate::test_support::zip_test::f3d_with_smbh;
+    let source = f3d_with_smbh(&synthetic_geometry_with_body_color_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let (output, report) = super::source_less_analytic::synthesize_document(decoded.ir(), None);
+    assert_eq!(output.ir().model.attributes, decoded.ir().model.attributes);
+    assert!(!report.losses.iter().any(|loss| loss
+        .message
+        .contains(decoded.ir().model.attributes[0].id.as_str())));
+    let mut edited = decoded.ir().clone();
+    edited.model.bodies[0].color = cadmpeg_ir::topology::Color::new(0.7, 0.4, 0.2, 1.0);
+    let (output, _) = super::source_less_analytic::synthesize_document(&edited, None);
+    assert_eq!(
+        output.ir().model.bodies[0].color,
+        edited.model.bodies[0].color
+    );
+}
+
+#[test]
 fn direct_opacity_reduces_color_without_dropping_geometry() {
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("cube");
     ir.model.bodies[0].color = Some(cadmpeg_ir::topology::Color::from_rgba8(10, 20, 30, 100));
