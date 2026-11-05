@@ -109,7 +109,7 @@ fn ellipse_full_arc_converts_to_closed_rational_nurbs() {
         ellipse_over_range("test", &ellipse, range(0.0, std::f64::consts::TAU)).expect("full arc");
     assert_eq!(converted.control_points().len(), 9);
     let contains = |point: Point3| {
-        let (s, r) = ((point.x - 1.0) / 4.0, (point.y + 2.0) / 2.0);
+        let (s, r) = ((point.x - 1.0) / 4.0, point.y.midpoint(2.0));
         (s * s + r * r - 1.0).abs().max((point.z - 3.0).abs())
     };
     assert_locus(&converted, contains, 0.0, std::f64::consts::TAU, 64);
