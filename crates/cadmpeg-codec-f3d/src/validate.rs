@@ -3792,7 +3792,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                         },
                     )
             }
-                _ => true,
+                records::feature::extrude::DesignExtrudePrologue::LegacyDistance { .. } => true,
             }) && match &scope.payload() {
             records::feature::scope::DesignScopePayload::SurfaceStitch(operation) => {
                 operation.gap_tolerance_offset > scope.paired_byte_offset()
