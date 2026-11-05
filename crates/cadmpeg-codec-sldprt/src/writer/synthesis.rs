@@ -245,6 +245,7 @@ pub(super) fn plan(
     let resolved = synthesis_target.resolution();
     let mut projected = input.ir.clone();
     let mut losses = Vec::new();
+    repair_multiple_active_configurations(&mut projected.model.configurations, &mut losses);
     // Write the canonical side of an active configuration that carries state
     // instead of refusing on its validation Error (#217, #237).
     crate::history::write::configurations::normalize_active_configuration_state(
@@ -837,8 +838,28 @@ fn prepare_native(
     Ok(())
 }
 
-/// Default blank feature names to their identity, as configurations do.
-///
+fn repair_multiple_active_configurations(
+    configurations: &mut [cadmpeg_ir::features::DesignConfiguration],
+    losses: &mut Vec<LossNote>,
+) {
+    let mut order = (0..configurations.len()).collect::<Vec<_>>();
+    order.sort_by_key(|index| configurations[*index].ordinal);
+    let mut active_seen = false;
+    for position in order {
+        let configuration = &mut configurations[position];
+        if configuration.active {
+            if active_seen {
+                configuration.active = false;
+                losses.push(SldprtLossCode::WriterFieldsOmitted.note(format!(
+                    "configuration {}: an additional active state was cleared",
+                    configuration.id
+                )));
+            }
+            active_seen = true;
+        }
+    }
+}
+
 fn repair_duplicate_configuration_indices(
     configurations: &mut [cadmpeg_ir::features::DesignConfiguration],
     losses: &mut Vec<LossNote>,

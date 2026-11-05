@@ -704,7 +704,7 @@ fn semantic_writer_allocates_partition_index_without_remapping_resolved_features
 }
 
 #[test]
-fn semantic_writer_rejects_duplicate_configuration_source_indices() {
+fn semantic_writer_repairs_duplicate_configuration_source_indices() {
     let decoded = SldprtCodec
         .decode(
             &mut Cursor::new(sldprt_with_body(&triangle_body())),
@@ -723,19 +723,41 @@ fn semantic_writer_rejects_duplicate_configuration_source_indices() {
         .expect("resolved configuration name")
         .push_str(" Duplicate");
     duplicate.native_ref = None;
+    let duplicate_id = duplicate.id.clone();
     decoded.ir_mut().model.configurations.push(duplicate);
 
-    let error = crate::test_support::plan_inherited_write(
-        decoded.ir(),
-        decoded.source_fidelity(),
-        &mut Vec::new(),
-    )
-    .unwrap_err();
-    assert!(
-        error
-            .to_string()
-            .contains("repeats configuration source index"),
-        "{error}"
+    let plan = SldprtCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), Some(decoded.source_fidelity())),
+            TargetRequest::Inherit,
+        )
+        .unwrap();
+    for field in ["source index", "active state"] {
+        assert!(plan.report().losses.iter().any(|loss| {
+            loss.message.contains(duplicate_id.as_str()) && loss.message.contains(field)
+        }));
+    }
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let configurations = &output.ir().model.configurations;
+    assert_eq!(configurations.len(), 2);
+    assert_eq!(
+        configurations
+            .iter()
+            .filter(|configuration| configuration.active)
+            .count(),
+        1
+    );
+    assert_eq!(
+        configurations
+            .iter()
+            .filter_map(|configuration| configuration.source_index)
+            .collect::<std::collections::HashSet<_>>()
+            .len(),
+        2
     );
 }
 
