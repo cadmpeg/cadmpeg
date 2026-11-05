@@ -42,54 +42,25 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         block: Option<&FeatureId>,
         placement: Option<&cadmpeg_ir::transform::Transform>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
-        let feature = self.feature;
-        let existing = self.existing;
-        let feature_sources = self.feature_sources;
-        Ok({
-            let block_source = block.and_then(|block| feature_sources.get(block).copied());
-            if block.is_some() && block_source.is_none() {
-                return Err(CodecError::UnsupportedContent(format!(
-                    "SLDPRT feature {} references a missing sketch-block definition",
-                    feature.id
-                )));
-            }
-            let record = existing
-                .filter(|record| feature_input_class(record, NativeClassKind::SketchBlockInstance));
-            let mut properties = self.base_properties();
-            properties.remove("BlockDefinition");
-            properties.remove("BlockOrigin");
-            if let Some(source) = block_source {
-                properties.insert(
-                    cadmpeg_core::nonblank_literal!("BlockDefinition"),
-                    source.into(),
-                );
-            }
-            if let Some(placement) = placement {
-                let rows = placement.affine_rows();
-                if [
-                    [rows[0][0], rows[0][1], rows[0][2]],
-                    [rows[1][0], rows[1][1], rows[1][2]],
-                    [rows[2][0], rows[2][1], rows[2][2]],
-                ] != [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
-                {
-                    return Err(CodecError::UnsupportedContent(format!(
-                        "SLDPRT feature {} has a non-translational sketch-block placement",
-                        feature.id
-                    )));
-                }
-                properties.insert(
-                    cadmpeg_core::nonblank_literal!("BlockOrigin"),
-                    format!("{}mm,{}mm,{}mm", rows[0][3], rows[1][3], rows[2][3]),
-                );
-            }
-            NeutralFeatureEncoding {
-                kind: record.map_or_else(
-                    || "SketchBlockInstance".into(),
-                    |record| record.kind.clone(),
-                ),
-                parameters: self.base_parameters(),
-                properties,
-            }
+        if block.is_some() || placement.is_some() {
+            return Err(CodecError::UnsupportedContent(format!(
+                "SLDPRT feature {} requires a native sketch-block instance record",
+                self.feature.id
+            )));
+        }
+        let record = self
+            .existing
+            .filter(|record| feature_input_class(record, NativeClassKind::SketchBlockInstance));
+        let mut properties = self.base_properties();
+        properties.remove("BlockDefinition");
+        properties.remove("BlockOrigin");
+        Ok(NeutralFeatureEncoding {
+            kind: record.map_or_else(
+                || "SketchBlockInstance".into(),
+                |record| record.kind.clone(),
+            ),
+            parameters: self.base_parameters(),
+            properties,
         })
     }
 
