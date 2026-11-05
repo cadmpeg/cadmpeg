@@ -97,7 +97,7 @@ impl Fixture {
 
     fn decode(&self) -> Option<DesignShellOperation> {
         let bytes = self.bytes();
-        let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+        let records = crate::design::test_support::test_primary_frames(&bytes);
         let class_tag =
             DesignClassTag::try_from(String::from_utf8(self.class_tag.to_vec()).unwrap()).unwrap();
         let scope = parse_parameter_scope_with_type_guid(

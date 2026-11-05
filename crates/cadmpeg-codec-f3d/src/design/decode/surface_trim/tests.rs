@@ -109,7 +109,7 @@ fn surface_trim_decodes_selection_chain_and_cell_table() {
     let (bytes, scope) = surface_trim_selection_and_cell_table();
     let operation = exact_surface_trim_operation(
         &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &crate::design::test_support::test_primary_frames(&bytes),
         &scope,
     )
     .expect("exact SurfaceTrim cell carrier");
@@ -163,7 +163,7 @@ fn surface_trim_rejects_cell_ordinal_outside_partition() {
     bytes[ordinal..ordinal + 8].copy_from_slice(&6u64.to_le_bytes());
     assert!(exact_surface_trim_operation(
         &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &crate::design::test_support::test_primary_frames(&bytes),
         &scope
     )
     .is_none());
@@ -180,7 +180,7 @@ fn surface_trim_rejects_nonzero_cell_table_tail() {
     bytes[tail_zero] = 1;
     assert!(exact_surface_trim_operation(
         &bytes,
-        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &crate::design::test_support::test_primary_frames(&bytes),
         &scope
     )
     .is_none());

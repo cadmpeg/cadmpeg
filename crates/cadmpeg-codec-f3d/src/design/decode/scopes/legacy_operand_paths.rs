@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Exact legacy class 383, 388 and 412 assembly operand paths.
 
+use crate::metastream::PrimaryFrames;
 use cadmpeg_core::decode::{index_from_u32, u64_from_index};
 
 use super::assembly_path_layout::{
@@ -10,7 +11,6 @@ use super::shared_frames::exact_indexed_header_at;
 use super::shared_frames::exact_same_segment_record_reference;
 use super::shared_frames::marked_record_reference;
 use super::shared_frames::rigid_transform_at;
-use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::decode::text::{fixed_guid_end, fixed_relaxed_guid_text, fixed_utf16_ascii_eq};
 use crate::layout::assembly_class_383_258_frame_359_identity as class_383_identity;
 use crate::layout::assembly_class_383_258_frame_378_carrier as class_383_carrier;
@@ -191,7 +191,7 @@ const CLASS_383_OPERAND_SPECS: [LegacyClass383OperandSpec; 2] = [
 
 pub(super) fn exact_legacy_class_383_operand_paths<'a>(
     source: View<'a>,
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
     frames: &[DesignAssemblyOperandFrame; 2],
 ) -> Result<Option<[ParsedOperandPath<'a>; 2]>, CodecError> {
@@ -223,7 +223,7 @@ pub(super) fn exact_legacy_class_383_operand_paths<'a>(
 
 fn exact_legacy_class_383_operand_path<'a>(
     source: View<'a>,
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
     frame: &DesignAssemblyOperandFrame,
     spec: LegacyClass383OperandSpec,
@@ -491,7 +491,7 @@ fn exact_legacy_class_383_operand_path<'a>(
 
 fn exact_legacy_class_383_record_frame(
     bytes: &[u8],
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     record_index: u32,
     class_tag: &str,
     frame_length: usize,
@@ -557,7 +557,7 @@ struct LegacyClass412Path<'a> {
 
 pub(super) fn exact_legacy_class_388_operand_paths<'a>(
     source: View<'a>,
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
 ) -> Result<Option<[ParsedOperandPath<'a>; 2]>, CodecError> {
     let bytes = source.window();
@@ -591,8 +591,7 @@ pub(super) fn exact_legacy_class_388_operand_paths<'a>(
             let mut candidate = None;
             for locator_at in records
                 .offsets(locator_record_index)
-                .iter()
-                .copied()
+                .into_iter()
                 .filter(|locator_at| *locator_at >= search_start)
             {
                 let path = match exact_legacy_class_388_operand_path_envelope(
@@ -639,7 +638,7 @@ pub(super) fn exact_legacy_class_388_operand_paths<'a>(
 
 fn exact_legacy_class_388_operand_path_envelope<'a>(
     source: View<'a>,
-    records: &IndexedRecordOffsets,
+    records: &[crate::metastream::PrimaryRecordFrame],
     scope: &DesignParameterScope,
     locator_record_index: u32,
     locator_at: usize,
@@ -688,8 +687,7 @@ fn exact_legacy_class_388_operand_path_envelope<'a>(
         let locator_end = locator_at.checked_add(path_locator::LEN)?;
         let mut wrapper_candidates = records
             .offsets(wrapper_record_index)
-            .iter()
-            .copied()
+            .into_iter()
             .filter(|wrapper_at| *wrapper_at >= locator_end)
             .filter(|wrapper_at| {
                 exact_indexed_header_at(bytes, *wrapper_at, wrapper_record_index).as_deref()
