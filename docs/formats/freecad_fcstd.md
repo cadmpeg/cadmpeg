@@ -1340,6 +1340,11 @@ bounded, point indices must resolve, coordinates and bounds must be finite, and 
 truncated bytes are invalid. Neighbour indices and the complete entry bytes remain native even
 when only the indexed triangle mesh is projected neutrally.
 
+The information field contains arbitrary bytes. Facet neighbour slot `i` identifies the facet
+across the edge from point `i` to point `(i + 1) mod 3`; `ffffffff` marks an open edge. The
+bounding-box limits are ordered as minimum and maximum X, minimum and maximum Y, then minimum and
+maximum Z.
+
 Binary mesh coordinates are local to the owning object. Its `Placement` maps those coordinates
 to the immediate geometric container. Parent `App::Part` and link-group placements compose from
 outermost to innermost, followed by the mesh placement. An ordinary document group does not add
