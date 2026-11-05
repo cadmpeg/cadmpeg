@@ -31,16 +31,32 @@ fn scale_length(value: f64, factor: f64) -> Option<cadmpeg_ir::scalar::Length> {
     cadmpeg_ir::scalar::Length::new(value * factor)
 }
 
+#[derive(Clone, Copy)]
+pub(super) struct Sources<'a> {
+    pub(super) entries: &'a BTreeMap<u32, &'a DirectoryEntry>,
+    pub(super) records: &'a BTreeMap<u32, &'a ParameterRecord>,
+    pub(super) length_factor: Option<f64>,
+    pub(super) precision: RealPrecision,
+}
+
+pub(super) struct Arrays<'a> {
+    pub(super) rectangular: &'a [NativeRectangularArray],
+    pub(super) circular: &'a [NativeCircularArray],
+}
+
 fn entry_rotation(
-    entries: &BTreeMap<u32, &DirectoryEntry>,
-    records: &BTreeMap<u32, &ParameterRecord>,
-    length_factor: Option<f64>,
-    precision: RealPrecision,
+    sources: Sources<'_>,
     sequence: u32,
     native_id: &str,
     losses: &mut Vec<LossNote>,
     ctx: &DecodeContext<'_>,
 ) -> Option<Transform> {
+    let Sources {
+        entries,
+        records,
+        length_factor,
+        precision,
+    } = sources;
     let Some(entry) = entries.get(&sequence) else {
         return None;
     };
@@ -145,15 +161,18 @@ fn rectangular_positions(
 fn project_rectangular(
     ir: &mut CadIr,
     record: &NativeRectangularArray,
-    entries: &BTreeMap<u32, &DirectoryEntry>,
-    records: &BTreeMap<u32, &ParameterRecord>,
-    length_factor: Option<f64>,
-    precision: RealPrecision,
+    sources: Sources<'_>,
     ordinal: &mut u64,
     losses: &mut Vec<LossNote>,
     ctx: &DecodeContext<'_>,
     admitted: &BTreeSet<u32>,
 ) -> Result<(), CodecError> {
+    let Sources {
+        entries,
+        records,
+        length_factor,
+        precision,
+    } = sources;
     use cadmpeg_ir::features::patterns::{
         LinearPatternDirection, PatternDistance, PatternKind, PatternSeed, PatternTransform,
     };
@@ -202,10 +221,12 @@ fn project_rectangular(
         return Ok(());
     }
     let placement = entry_rotation(
-        entries,
-        records,
-        Some(length_factor),
-        precision,
+        Sources {
+            entries,
+            records,
+            length_factor: Some(length_factor),
+            precision,
+        },
         sequence,
         &record.id,
         losses,
@@ -274,15 +295,18 @@ fn project_rectangular(
 fn project_circular(
     ir: &mut CadIr,
     record: &NativeCircularArray,
-    entries: &BTreeMap<u32, &DirectoryEntry>,
-    records: &BTreeMap<u32, &ParameterRecord>,
-    length_factor: Option<f64>,
-    precision: RealPrecision,
+    sources: Sources<'_>,
     ordinal: &mut u64,
     losses: &mut Vec<LossNote>,
     ctx: &DecodeContext<'_>,
     admitted: &BTreeSet<u32>,
 ) -> Result<(), CodecError> {
+    let Sources {
+        entries,
+        records,
+        length_factor,
+        precision,
+    } = sources;
     use cadmpeg_ir::features::patterns::{
         CircularPatternDistribution, PatternAngle, PatternKind, PatternSeed, PatternTransform,
     };
@@ -336,10 +360,12 @@ fn project_circular(
     // discarded-value: the circular start angle stays in the native array record only.
     let _ = start;
     let placement = entry_rotation(
-        entries,
-        records,
-        Some(length_factor),
-        precision,
+        Sources {
+            entries,
+            records,
+            length_factor: Some(length_factor),
+            precision,
+        },
         sequence,
         &record.id,
         losses,
@@ -453,44 +479,22 @@ fn project_circular(
 
 pub(super) fn project(
     ir: &mut CadIr,
-    rectangular: &[NativeRectangularArray],
-    circular: &[NativeCircularArray],
-    entries: &BTreeMap<u32, &DirectoryEntry>,
-    records: &BTreeMap<u32, &ParameterRecord>,
-    length_factor: Option<f64>,
-    precision: RealPrecision,
+    arrays: Arrays<'_>,
+    sources: Sources<'_>,
     ordinal: &mut u64,
     losses: &mut Vec<LossNote>,
     ctx: &DecodeContext<'_>,
     admitted: &BTreeSet<u32>,
 ) -> Result<(), CodecError> {
+    let Arrays {
+        rectangular,
+        circular,
+    } = arrays;
     for record in rectangular {
-        project_rectangular(
-            ir,
-            record,
-            entries,
-            records,
-            length_factor,
-            precision,
-            ordinal,
-            losses,
-            ctx,
-            admitted,
-        )?;
+        project_rectangular(ir, record, sources, ordinal, losses, ctx, admitted)?;
     }
     for record in circular {
-        project_circular(
-            ir,
-            record,
-            entries,
-            records,
-            length_factor,
-            precision,
-            ordinal,
-            losses,
-            ctx,
-            admitted,
-        )?;
+        project_circular(ir, record, sources, ordinal, losses, ctx, admitted)?;
     }
     Ok(())
 }

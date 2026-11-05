@@ -86,22 +86,41 @@ fn solid_chain_cut(
     }
 }
 
+pub(super) struct ProductSources<'a> {
+    pub(super) occurrences: &'a [NativeProductOccurrence],
+    pub(super) subfigures: &'a [NativeSubfigureDefinition],
+    pub(super) networks: &'a [NativeNetworkDefinition],
+    pub(super) assemblies: &'a [NativeSolidAssembly],
+    pub(super) instances: &'a [NativeSolidInstance],
+    pub(super) externals: &'a [NativeExternalReference],
+    pub(super) selected: &'a [NativeSelectedComponent],
+}
+
+#[derive(Clone, Copy)]
+pub(super) struct SourceMaps<'a> {
+    pub(super) entries: &'a BTreeMap<u32, &'a DirectoryEntry>,
+    pub(super) records: &'a BTreeMap<u32, &'a ParameterRecord>,
+}
+
 pub(super) fn project(
     ir: &mut CadIr,
-    occurrences: &[NativeProductOccurrence],
-    subfigures: &[NativeSubfigureDefinition],
-    networks: &[NativeNetworkDefinition],
-    assemblies: &[NativeSolidAssembly],
-    instances: &[NativeSolidInstance],
-    externals: &[NativeExternalReference],
-    selected: &[NativeSelectedComponent],
-    entries: &BTreeMap<u32, &DirectoryEntry>,
-    records: &BTreeMap<u32, &ParameterRecord>,
+    sources: ProductSources<'_>,
+    maps: SourceMaps<'_>,
     length_factor: Option<f64>,
     precision: RealPrecision,
     sequences: &SourceSequences,
     ctx: &DecodeContext<'_>,
 ) -> Result<(Vec<LossNote>, Vec<String>), CodecError> {
+    let ProductSources {
+        occurrences,
+        subfigures,
+        networks,
+        assemblies,
+        instances,
+        externals,
+        selected,
+    } = sources;
+    let SourceMaps { entries, records } = maps;
     let mut losses = Vec::new();
     let mut dropped_occurrences = Vec::new();
     let mut definitions = BTreeMap::new();
@@ -318,8 +337,7 @@ pub(super) fn project(
             None => vec![instance.source_entity.clone()],
         };
         let transform = entry_placement(
-            entries,
-            records,
+            maps,
             length_factor,
             precision,
             *sequence,
@@ -389,8 +407,7 @@ pub(super) fn project(
                 _ => continue,
             };
             let transform = item_placement(
-                entries,
-                records,
+                maps,
                 length_factor,
                 precision,
                 item.transformation.as_deref(),
@@ -471,8 +488,7 @@ pub(super) fn project(
             None => vec![component.source_entity.clone()],
         };
         let transform = entry_placement(
-            entries,
-            records,
+            maps,
             length_factor,
             precision,
             sequence,
@@ -688,8 +704,7 @@ fn native_transformation_sequence(value: &str) -> Option<u32> {
 }
 
 fn entry_placement(
-    entries: &BTreeMap<u32, &DirectoryEntry>,
-    records: &BTreeMap<u32, &ParameterRecord>,
+    maps: SourceMaps<'_>,
     length_factor: Option<f64>,
     precision: RealPrecision,
     sequence: u32,
@@ -697,6 +712,7 @@ fn entry_placement(
     losses: &mut Vec<LossNote>,
     ctx: &DecodeContext<'_>,
 ) -> Option<Transform> {
+    let SourceMaps { entries, records } = maps;
     let Some(entry) = entries.get(&sequence) else {
         return None;
     };
@@ -726,8 +742,7 @@ fn entry_placement(
 }
 
 fn item_placement(
-    entries: &BTreeMap<u32, &DirectoryEntry>,
-    records: &BTreeMap<u32, &ParameterRecord>,
+    maps: SourceMaps<'_>,
     length_factor: Option<f64>,
     precision: RealPrecision,
     transformation: Option<&str>,
@@ -735,6 +750,7 @@ fn item_placement(
     losses: &mut Vec<LossNote>,
     ctx: &DecodeContext<'_>,
 ) -> Option<Transform> {
+    let SourceMaps { entries, records } = maps;
     let Some(sequence) = transformation.and_then(native_transformation_sequence) else {
         return None;
     };
