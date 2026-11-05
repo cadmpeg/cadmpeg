@@ -236,3 +236,214 @@ pub(super) fn strip_unusable_face_topology(ir: &CadIr) -> (Option<CadIr>, Vec<Lo
     }
     (Some(document), losses)
 }
+
+/// A horizontal line at spherical latitude ±π/2 maps exactly to one pole.
+fn spherical_pole(
+    ir: &CadIr,
+    edge: &cadmpeg_ir::topology::Edge,
+    coedge: &cadmpeg_ir::topology::Coedge,
+) -> bool {
+    use cadmpeg_ir::geometry::{pcurve::PcurveGeometry, SolvedSurfaceGeometry};
+    let Some(boundary) = ir
+        .model
+        .loops
+        .iter()
+        .find(|boundary| boundary.id == coedge.owner_loop)
+    else {
+        return false;
+    };
+    let Some(face) = ir.model.faces.iter().find(|face| face.id == boundary.face) else {
+        return false;
+    };
+    let Some(SolvedSurfaceGeometry::Sphere(sphere)) = ir
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.id == face.surface)
+        .and_then(|surface| surface.geometry.solved())
+    else {
+        return false;
+    };
+    if coedge.pcurves.is_empty() {
+        return false;
+    }
+    let mut sign = None;
+    for use_ in &coedge.pcurves {
+        let Some(curve) = ir
+            .model
+            .pcurves
+            .iter()
+            .find(|curve| curve.id == use_.pcurve)
+        else {
+            return false;
+        };
+        if curve
+            .support_surface()
+            .is_some_and(|surface| *surface != face.surface)
+        {
+            return false;
+        }
+        let PcurveGeometry::Line(line) = &curve.geometry else {
+            return false;
+        };
+        let origin = line.origin().get();
+        let direction = line.direction().as_raw();
+        let current = if origin.v == std::f64::consts::FRAC_PI_2 {
+            1.0
+        } else if origin.v == -std::f64::consts::FRAC_PI_2 {
+            -1.0
+        } else {
+            return false;
+        };
+        if direction.v != 0.0 || sign.is_some_and(|previous| previous != current) {
+            return false;
+        }
+        sign = Some(current);
+    }
+    let Some(vertex) = ir
+        .model
+        .vertices
+        .iter()
+        .find(|vertex| vertex.id == edge.start)
+    else {
+        return false;
+    };
+    let Some(point) = ir
+        .model
+        .points
+        .iter()
+        .find(|point| point.id == vertex.point)
+    else {
+        return false;
+    };
+    let actual = point.position().get();
+    let center = sphere.center().get();
+    let axis = sphere.frame().axis().as_raw();
+    let scale = sphere.radius().get() * sign.unwrap_or(0.0);
+    let distance = (actual.x - (center.x + scale * axis.x))
+        .hypot(actual.y - (center.y + scale * axis.y))
+        .hypot(actual.z - (center.z + scale * axis.z));
+    distance <= vertex.tolerance.map_or(0.0, |tolerance| tolerance.get())
+}
+
+/// Lower a carrierless closed edge use to the IGES vertex-use form.
+pub(super) fn pole_edges(
+    ir: &CadIr,
+) -> Result<(Cow<'_, CadIr>, Vec<LossNote>), cadmpeg_core::CodecError> {
+    use cadmpeg_ir::topology::{AnchoredVertexUse, LoopBoundary, LoopRing};
+    let wire_edges = ir
+        .model
+        .shells
+        .iter()
+        .flat_map(|shell| shell.wire_edges())
+        .collect::<BTreeSet<_>>();
+    let mut poles = BTreeMap::new();
+    for edge in &ir.model.edges {
+        if edge.curve().is_some() || edge.start != edge.end || wire_edges.contains(&edge.id) {
+            continue;
+        }
+        let uses = ir
+            .model
+            .coedges
+            .iter()
+            .filter(|coedge| coedge.edge == edge.id)
+            .collect::<Vec<_>>();
+        let [coedge] = uses.as_slice() else {
+            continue;
+        };
+        if coedge.use_curve.is_some() || !spherical_pole(ir, edge, coedge) {
+            continue;
+        }
+        let Some(boundary) = ir
+            .model
+            .loops
+            .iter()
+            .find(|boundary| boundary.id == coedge.owner_loop)
+        else {
+            continue;
+        };
+        let LoopBoundary::Ring(ring) = &boundary.boundary else {
+            continue;
+        };
+        if ring.coedges().len() < 2 || !ring.coedges().contains(&coedge.id) {
+            continue;
+        }
+        poles.insert(
+            coedge.id.clone(),
+            (edge.id.clone(), edge.start.clone(), coedge.pcurves.clone()),
+        );
+    }
+    if poles.is_empty() {
+        return Ok((Cow::Borrowed(ir), Vec::new()));
+    }
+    let mut admitted = ir.clone();
+    let mut removed = BTreeSet::new();
+    for boundary in &mut admitted.model.loops {
+        let LoopBoundary::Ring(ring) = &boundary.boundary else {
+            continue;
+        };
+        let old = ring.coedges();
+        let kept = old
+            .iter()
+            .filter(|id| !poles.contains_key(*id))
+            .cloned()
+            .collect::<Vec<_>>();
+        if kept.is_empty() {
+            continue;
+        }
+        let mut uses = Vec::new();
+        let start = old.iter().position(|id| !poles.contains_key(id)).unwrap();
+        let mut previous = old[start].clone();
+        for offset in 0..old.len() {
+            let id = &old[(start + offset) % old.len()];
+            if let Some((edge, vertex, pcurves)) = poles.get(id) {
+                uses.push(AnchoredVertexUse {
+                    vertex: vertex.clone(),
+                    after: previous.clone(),
+                    pcurves: pcurves.clone(),
+                });
+                removed.insert((id.clone(), edge.clone()));
+            } else {
+                previous = id.clone();
+            }
+            uses.extend(
+                ring.vertex_uses()
+                    .iter()
+                    .filter(|use_| use_.after == *id)
+                    .map(|use_| {
+                        let mut use_ = use_.clone();
+                        use_.after = previous.clone();
+                        use_
+                    }),
+            );
+        }
+        boundary.boundary = LoopBoundary::Ring(
+            LoopRing::new(kept, uses).map_err(cadmpeg_core::CodecError::malformed)?,
+        );
+    }
+    let removed_coedges = removed
+        .iter()
+        .map(|(coedge, _)| coedge.clone())
+        .collect::<BTreeSet<_>>();
+    let removed_edges = removed
+        .iter()
+        .map(|(_, edge)| edge.clone())
+        .collect::<BTreeSet<_>>();
+    admitted
+        .model
+        .coedges
+        .retain(|coedge| !removed_coedges.contains(&coedge.id));
+    admitted
+        .model
+        .edges
+        .retain(|edge| !removed_edges.contains(&edge.id));
+    let mut losses = Vec::new();
+    for (coedge, edge) in removed {
+        for id in [coedge.to_string(), edge.to_string()] {
+            losses.push(IgesLossCode::WriterEntityOmitted.note(format!(
+                "IGES record {id} is reduced to a singular vertex use"
+            )));
+        }
+    }
+    Ok((Cow::Owned(admitted), losses))
+}

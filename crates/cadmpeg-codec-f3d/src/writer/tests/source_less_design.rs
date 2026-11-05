@@ -22,6 +22,131 @@ use crate::test_support::native_test::{f3d_native, f3d_native_mut};
 use crate::F3dCodec;
 
 #[test]
+fn source_less_typed_sketch_text_survives_synthesis() {
+    use crate::records::entity_header::{DesignEntityHeader, SegmentType, SegmentTypeData};
+    use crate::records::identity::ReferenceRun;
+
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let mut native = f3d_native_mut(&mut ir);
+    native.design_types = [
+        ("44A64366-4BD3-4B24-881A-F94C206E8F2D", "MSketch", 16, 42),
+        ("E0618268-3A06-450E-9E94-7CF4C2E66802", "Geometry", 0, 20),
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(ordinal, (guid, module, version, entity))| {
+        SegmentType::try_new(
+            format!("f3d:generated/MetaStream.dat:design-type#{ordinal}"),
+            SegmentTypeData {
+                class_tag: (256 + ordinal).to_string().try_into().unwrap(),
+                byte_offset: Some(u64::try_from(ordinal).unwrap()),
+                module: module.into(),
+                entities: ReferenceRun::unlocated(vec![entity]),
+                type_guid: guid.to_owned().try_into().unwrap(),
+                type_guid_offset: Some(0),
+                base_type_guid: crate::records::entity_header::BaseTypeGuid::Absent,
+                version,
+                version_offset: Some(0),
+            },
+        )
+        .unwrap()
+    })
+    .collect();
+    native.design_entity_headers = vec![DesignEntityHeader {
+        id: "f3d:generated/BulkStream.dat:design-entity-header#0".into(),
+        byte_offset: Some(0),
+        entity_id: "0_42".to_owned().try_into().unwrap(),
+        class_tag: "256".to_owned().try_into().unwrap(),
+        optional_slot_present: Some(true),
+        registration: crate::records::entity_header::DesignEntityRegistration::new(
+            Some("MSketch".into()),
+            Some(crate::records::entity_header::SketchHeaderReferences {
+                record_reference: None,
+                record_reference_offset: None,
+                references: vec![crate::records::identity::Located {
+                    value: 20,
+                    offset: Some(0),
+                }],
+            }),
+            ReferenceRun::unlocated(Vec::new()),
+        )
+        .unwrap(),
+    }];
+    let mut text = crate::test_support::sketch_text::neutral_text_record();
+    text.id = "f3d:generated/BulkStream.dat:sketch-text#0".into();
+    text.class_tag = "257".to_owned().try_into().unwrap();
+    native.sketch_texts.push(text.clone());
+    drop(native);
+    let mut bytes = Vec::new();
+    let plan = F3dCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.message.contains(&text.id) && loss.code.local_code() == "record.residual-unavailable"
+    }));
+    plan.write_to(&mut bytes).unwrap();
+    let output = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let written = f3d_native(output.ir());
+    assert_eq!(written.sketch_texts.len(), 1);
+    assert_eq!(written.sketch_texts[0].text, text.text);
+    assert_eq!(written.sketch_texts[0].layout, text.layout);
+    assert_eq!(
+        written.sketch_texts[0].owner_reference,
+        text.owner_reference
+    );
+
+    let mut native = f3d_native_mut(&mut ir);
+    native.design_types[1].set_entities(ReferenceRun::unlocated(vec![20, 21]));
+    native.design_entity_headers[0].registration =
+        crate::records::entity_header::DesignEntityRegistration::new(
+            Some("MSketch".into()),
+            Some(crate::records::entity_header::SketchHeaderReferences {
+                record_reference: None,
+                record_reference_offset: None,
+                references: [20, 21]
+                    .into_iter()
+                    .map(|value| crate::records::identity::Located {
+                        value,
+                        offset: Some(0),
+                    })
+                    .collect(),
+            }),
+            ReferenceRun::unlocated(Vec::new()),
+        )
+        .unwrap();
+    let mut unsupported = text;
+    unsupported.id = "f3d:generated/BulkStream.dat:sketch-text#unsupported".into();
+    unsupported.record_index = 21;
+    let crate::records::sketch_geometry::SketchTextLayout::TextexTag {
+        placement: Some(placement),
+        ..
+    } = &mut unsupported.layout
+    else {
+        panic!("expected frame text");
+    };
+    placement.rotation = cadmpeg_ir::scalar::Angle::new(0.25).unwrap();
+    let omitted = unsupported.id.clone();
+    native.sketch_texts.push(unsupported);
+    drop(native);
+    let plan = F3dCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(&omitted)));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(f3d_native(output.ir()).sketch_texts.len(), 1);
+}
+
+#[test]
 fn generated_source_less_writes_design_type_metastream() {
     use crate::records::entity_header::SegmentType;
 

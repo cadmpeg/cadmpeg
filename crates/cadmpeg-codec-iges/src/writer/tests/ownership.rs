@@ -781,3 +781,18 @@ fn unowned_parameter_curve_is_withheld_on_the_free_geometry_path() {
     assert!(result.ir().model.curves.is_empty());
     assert_eq!(result.ir().model.points.len(), 1);
 }
+
+#[test]
+fn synthesis_shares_the_callers_resource_refusal() {
+    let ir = rectangle();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+    policy.limits.max_retained_bytes = 0;
+    let ctx = cadmpeg_core::decode::DecodeContext::for_encode(&arena, &policy);
+    ctx.retain_bytes(1, "test retained-byte limit")
+        .expect_err("the caller has no retained allowance");
+    let result = super::super::synthesize_with_admission(&ctx, &ir, IgesVersion::V5_3, |_| Ok(()));
+    assert!(matches!(result,
+        Err(super::super::WriteError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit)))
+            if limit.operation == "test retained-byte limit"));
+}

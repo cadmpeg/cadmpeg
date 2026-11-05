@@ -24,7 +24,7 @@ pub(crate) mod parameter_links;
 mod parameters;
 pub(in crate::writer) mod preconditions;
 mod presentation;
-mod records;
+pub(super) mod records;
 mod reindex;
 mod sketches;
 mod smbh;
@@ -321,6 +321,12 @@ pub(super) fn write_with_limits(
         archive.write_all(&meta_stream)?;
     }
     let mut written_features = Vec::new();
+    for text in &native.sketch_texts {
+        residual_losses.push(ExportLossCode::RecordResidualUnavailable.note(format!(
+            "sketch text {}: generated formatting state uses unspecified defaults",
+            text.id
+        )));
+    }
     let mut written_owned_parameters = Vec::new();
     if let Some((bulk, meta, ids, parameter_ids, collection_index)) = generated_features {
         written_features = ids;

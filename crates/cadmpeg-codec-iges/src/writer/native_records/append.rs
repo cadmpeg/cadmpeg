@@ -110,9 +110,11 @@ fn encode(
         }
         result.line_font = Some(DirectoryLineFont::Number(number));
     }
-    if matches!(type_code, 304 | 310 | 312) {
-        result.status = EntityStatus::Definition;
-    }
+    result.status = match type_code {
+        304 | 308 | 310 | 312 | 320 => EntityStatus::Definition,
+        132 => EntityStatus::LogicalPositional,
+        _ => result.status,
+    };
     Ok((result, owners, fields.missing))
 }
 
