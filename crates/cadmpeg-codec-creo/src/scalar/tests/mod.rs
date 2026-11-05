@@ -129,6 +129,14 @@ fn compact_inline_origin_repeats_the_carried_slot_and_signs_eight_byte_coordinat
         decode(&signed, 0.0),
         vec![([-9.0, 6.5, -10.25], signed.len())]
     );
+
+    let tiny = [0x1b, 0xc0, 0x00, 0x48, 0x22, 0x00, 0x34, 0xa0, 0x00];
+    let small = f64::from_bits(0x3cc0_0000_0000_0000);
+    let negative_small = -f64::from_bits(0x3ca0_0000_0000_0000);
+    assert_eq!(
+        decode(&tiny, 0.0),
+        vec![([small, -9.0, negative_small], tiny.len())]
+    );
 }
 
 #[test]
@@ -512,14 +520,28 @@ fn inline_non_plane_compact_images_name_the_axis_coordinate() {
             0,
             [0.0, 0.0, 1.0, 0.0, 1.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
         ),
+        (
+            vec![0x18, 0x10, 0x18, 0xe5, 0x10, 0x0f, 0x18, 0xe4],
+            1,
+            [0.0, 0.0, 1.0, -1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0, 0.0],
+        ),
+        (
+            vec![0x18, 0x10, 0x18, 0xe5, 0x0f, 0x10, 0x18, 0xe4],
+            1,
+            [0.0, 0.0, -1.0, -1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0],
+        ),
     ];
     let cache = ScalarCache::default();
-    let left_handed = [0x18, 0xe4, 0x0f, 0x18, 0x0f, 0x18, 0x0f, 0x18, 0xe4];
-    assert!(crate::decode::with_service_context(|ctx| {
-        decode_inline_non_plane_local_system_prefix(ctx, &left_handed, &cache)
-    })
-    .expect("decode the inline non-plane local system prefix")
-    .all(|prefix| !matches!(prefix, InlineNonPlaneLocalSystemPrefix::Compact(_))));
+    for left_handed in [
+        &[0x18, 0xe4, 0x0f, 0x18, 0x0f, 0x18, 0x0f, 0x18, 0xe4][..],
+        &[0x18, 0x10, 0x18, 0xe5, 0x0f, 0x0f, 0x18, 0xe4][..],
+    ] {
+        assert!(crate::decode::with_service_context(|ctx| {
+            decode_inline_non_plane_local_system_prefix(ctx, left_handed, &cache)
+        })
+        .expect("decode the inline non-plane local system prefix")
+        .all(|prefix| !matches!(prefix, InlineNonPlaneLocalSystemPrefix::Compact(_))));
+    }
     for (body, axis, expected) in cases {
         let frame = crate::decode::with_service_context(|ctx| {
             decode_inline_non_plane_local_system_prefix(ctx, &body, &cache)

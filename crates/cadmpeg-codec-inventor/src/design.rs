@@ -75,6 +75,11 @@ const UNITLESS_TYPE: [u8; 16] = [
     0x22, 0x00, 0x9d, 0x5f, 0xd2, 0x11, 0x8e, 0x09, 0xc0, 0x00, 0x5a, 0x9a, 0x23, 0x78, 0xd0, 0x4f,
 ];
 
+/// Base-unit type whose dimension and display scale are not defined.
+const UNDEFINED_BASE_UNIT_TYPE: [u8; 16] = [
+    0x70, 0x5e, 0xfe, 0x5d, 0x42, 0x4e, 0x6e, 0x12, 0x69, 0x2a, 0x3e, 0xb4, 0x19, 0xb8, 0x8a, 0x89,
+];
+
 #[derive(Debug)]
 pub(crate) struct DesignInventory {
     pub(crate) parameters: Vec<PmDcParameter>,
@@ -84,6 +89,10 @@ pub(crate) struct DesignInventory {
     pub(crate) model_roots: Vec<scope::PmDcModelRoot>,
     pub(crate) brep_segments: Vec<BrepSegmentName>,
     pub(crate) issues: Vec<RecordIssue>,
+    /// Records of an unrecognised type whose payload has the base-unit field
+    /// layout with magnitude 1 and factor 1, keyed by segment token and
+    /// ordinal.
+    pub(crate) opaque_base_units: HashSet<(String, u32)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -345,6 +354,7 @@ pub(crate) fn inventory(
         model_roots: Vec::new(),
         brep_segments: Vec::new(),
         issues: Vec::new(),
+        opaque_base_units: std::collections::HashSet::default(),
     };
     for segment in &document.segments {
         let role = match segment.kind {
@@ -500,6 +510,13 @@ pub(crate) fn inventory(
                     },
                 )
             } else {
+                if record.type_id == UNDEFINED_BASE_UNIT_TYPE
+                    && has_unscaled_base_unit_layout(record.payload)
+                {
+                    inventory
+                        .opaque_base_units
+                        .insert((segment.pair.token.key().to_string(), record.ordinal));
+                }
                 continue;
             };
             if let Err(error) = result {
@@ -530,6 +547,9 @@ pub(crate) struct ParameterProjection {
     pub(crate) bounded: usize,
     /// Records whose parameter table has no established owner.
     pub(crate) unresolved_scopes: usize,
+    /// Projected records whose root literal has an unrecognised unit type;
+    /// they carry their value and no expression text.
+    pub(crate) value_only: usize,
 }
 
 /// The loss for parameter records whose expression renders past
@@ -589,6 +609,7 @@ pub(crate) fn project_parameters(
     let mut unresolved = 0usize;
     let mut bounded = 0usize;
     let mut unresolved_scopes = 0usize;
+    let mut value_only = 0usize;
     for parameter in &inventory.parameters {
         let token = parameter.identity.segment_token.as_str();
         if parameters
@@ -616,8 +637,16 @@ pub(crate) fn project_parameters(
             unresolved += 1;
             continue;
         };
+        let opaque_literal = opaque_literal_formula(
+            token,
+            parameter.formula.index(),
+            &expressions,
+            &units,
+            &inventory.opaque_base_units,
+        );
         let expression_length = match renderer.shape(token, parameter.formula.index())? {
             ExpressionShape::Text(length) => length,
+            ExpressionShape::Open if opaque_literal => 0,
             ExpressionShape::Open => {
                 unresolved += 1;
                 continue;
@@ -646,8 +675,16 @@ pub(crate) fn project_parameters(
             "project Inventor parameter",
         )?;
         let id = parameter_id(parameter)?;
-        let (expression, dependencies) =
-            renderer.emit(token, parameter.formula.index(), expression_length)?;
+        let (expression, dependencies) = if opaque_literal
+            && matches!(
+                renderer.shape(token, parameter.formula.index())?,
+                ExpressionShape::Open
+            ) {
+            value_only += 1;
+            (String::new(), Vec::new())
+        } else {
+            renderer.emit(token, parameter.formula.index(), expression_length)?
+        };
         let mut dependency_members = cadmpeg_ir::features::DistinctMembers::default();
         dependency_members.extend(dependencies);
         projected.push(DesignParameter {
@@ -672,7 +709,72 @@ pub(crate) fn project_parameters(
         unresolved: unresolved + graph_rejections,
         bounded,
         unresolved_scopes,
+        value_only,
     })
+}
+
+/// Whether a parameter formula is one value literal whose unit definition has
+/// one numerator naming a record of the base-unit layout and an unrecognised
+/// type. Such a literal has an exact internal value and no known display
+/// symbol.
+fn opaque_literal_formula(
+    token: &str,
+    formula: u32,
+    expressions: &HashMap<(&str, u32), Option<&PmDcExpression>>,
+    units: &HashMap<(&str, u32), Option<&PmDcUnit>>,
+    opaque: &HashSet<(String, u32)>,
+) -> bool {
+    let Some(ordinal) = formula.checked_sub(1) else {
+        return false;
+    };
+    let Some(expression) = expressions.get(&(token, ordinal)).copied().flatten() else {
+        return false;
+    };
+    if !matches!(expression.kind, PmDcExpressionKind::Value { .. }) {
+        return false;
+    }
+    let Some(unit_ordinal) = expression.unit.index().checked_sub(1) else {
+        return false;
+    };
+    let Some(definition) = units.get(&(token, unit_ordinal)).copied().flatten() else {
+        return false;
+    };
+    let PmDcUnitKind::Definition {
+        numerators,
+        denominators,
+        derived,
+        ..
+    } = &definition.kind
+    else {
+        return false;
+    };
+    let [base] = numerators.references() else {
+        return false;
+    };
+    if !denominators.references().is_empty() || derived.index() != 0 {
+        return false;
+    }
+    base.index()
+        .checked_sub(1)
+        .is_some_and(|base_ordinal| opaque.contains(&(token.to_owned(), base_ordinal)))
+}
+
+/// Whether a payload has the 22-byte base-unit layout with magnitude 1 and
+/// factor 1.
+fn has_unscaled_base_unit_layout(source: View<'_>) -> bool {
+    let mut cursor = Cursor::new(source);
+    let parsed = (|| {
+        cursor.u32("base-unit header value")?;
+        cursor.u16("base-unit header id")?;
+        let magnitude = cursor.f64("base-unit magnitude")?;
+        let factor = cursor.f64("base-unit factor")?;
+        cursor.finish("base unit")?;
+        Ok::<_, CodecError>(
+            magnitude.get().to_bits() == 1.0_f64.to_bits()
+                && factor.get().to_bits() == 1.0_f64.to_bits(),
+        )
+    })();
+    parsed.unwrap_or(false)
 }
 
 fn close_parameter_graph(
@@ -2067,6 +2169,7 @@ mod tests {
             model_roots: Vec::new(),
             brep_segments: Vec::new(),
             issues: Vec::new(),
+            opaque_base_units: std::collections::HashSet::default(),
         };
         let scopes = document_scopes(&[("width", 3), ("height", 5)]);
         let arena = DecodeArena::new();
@@ -2188,7 +2291,128 @@ mod tests {
             model_roots: Vec::new(),
             brep_segments: Vec::new(),
             issues: Vec::new(),
+            opaque_base_units: std::collections::HashSet::default(),
         }
+    }
+
+    /// The single-parameter fixture with a length parameter unit and a root
+    /// literal whose unit definition names a record that no admitted unit
+    /// record covers. `opaque` lists that record among the unit-layout records
+    /// of unrecognised type.
+    fn opaque_literal_inventory(opaque: bool, numerators: usize) -> DesignInventory {
+        let mut inventory = single_parameter_inventory();
+        inventory.units[0].edit(|unit| {
+            if let PmDcUnitKind::Base { dimension, .. } = &mut unit.kind {
+                *dimension = PmDcUnitDimension::Length;
+            }
+        });
+        inventory.parameters[0].edit(|parameter| parameter.model_value = real(2.0));
+        let mut definition = inventory.units[1].clone();
+        definition.identity.record_ordinal = 4;
+        definition.edit(|unit| {
+            if let PmDcUnitKind::Definition {
+                numerators: list, ..
+            } = &mut unit.kind
+            {
+                *list = PmDcPairedReferenceList::new(
+                    Some([0, 0]),
+                    (0..numerators).map(|_| reference(6, false)).collect(),
+                )
+                .expect("valid test fixture");
+            }
+        });
+        inventory.units.push(definition);
+        inventory.expressions[0].edit(|expression| expression.unit = reference(5, false));
+        if opaque {
+            inventory
+                .opaque_base_units
+                .insert(("segment".to_owned(), 5));
+        }
+        inventory
+    }
+
+    fn project_inventory(inventory: &DesignInventory) -> super::ParameterProjection {
+        let arena = DecodeArena::new();
+        let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::service())
+            .expect("empty fixture view");
+        let mut admitted_entities = 0;
+        project_parameters(
+            &ctx,
+            inventory,
+            &document_scopes(&[("ratio", 3)]),
+            &mut admitted_entities,
+        )
+        .expect("fixture projects")
+    }
+
+    #[test]
+    fn literal_with_unrecognised_unit_type_keeps_value_without_expression() {
+        let projection = project_inventory(&opaque_literal_inventory(true, 1));
+        assert_eq!(
+            (
+                projection.unresolved,
+                projection.bounded,
+                projection.value_only
+            ),
+            (0, 0, 1)
+        );
+        let [parameter] = projection.parameters.as_slice() else {
+            panic!("one parameter");
+        };
+        assert_eq!(parameter.expression, "");
+        assert!(parameter.dependencies.as_slice().is_empty());
+        assert_eq!(
+            parameter.value,
+            Some(ParameterValue::Length(
+                Length::new(20.0).expect("finite length fixture")
+            ))
+        );
+    }
+
+    /// A 22-byte base-unit payload with magnitude 1 and factor 1.
+    fn unscaled_base_unit_payload() -> Vec<u8> {
+        let mut payload = Vec::new();
+        payload.extend_from_slice(&0_u32.to_le_bytes());
+        payload.extend_from_slice(&0_u16.to_le_bytes());
+        payload.extend_from_slice(&1.0_f64.to_le_bytes());
+        payload.extend_from_slice(&1.0_f64.to_le_bytes());
+        payload
+    }
+
+    #[test]
+    fn only_the_undefined_base_unit_type_is_held_as_an_opaque_base_unit() {
+        let payload = unscaled_base_unit_payload();
+        let admitted = inventory_with_record(
+            super::UNDEFINED_BASE_UNIT_TYPE,
+            &payload,
+            DecodePolicy::service(),
+        )
+        .expect("undefined base unit is held");
+        assert_eq!(admitted.opaque_base_units.len(), 1);
+        let admitted = inventory_with_record([1; 16], &payload, DecodePolicy::service())
+            .expect("unknown record is skipped");
+        assert!(admitted.opaque_base_units.is_empty());
+    }
+
+    #[test]
+    fn literal_unit_naming_an_unclassified_record_stays_unresolved() {
+        let projection = project_inventory(&opaque_literal_inventory(false, 1));
+        assert!(projection.parameters.is_empty());
+        assert_eq!((projection.unresolved, projection.value_only), (1, 0));
+    }
+
+    #[test]
+    fn literal_unit_with_two_numerators_stays_unresolved() {
+        let projection = project_inventory(&opaque_literal_inventory(true, 2));
+        assert!(projection.parameters.is_empty());
+        assert_eq!((projection.unresolved, projection.value_only), (1, 0));
+    }
+
+    #[test]
+    fn literal_with_recognised_unit_still_renders_its_text() {
+        let projection = project_inventory(&single_parameter_inventory());
+        assert_eq!(projection.value_only, 0);
+        assert_eq!(projection.parameters[0].expression, "1");
     }
 
     /// The one-based reference of the fixture document parameter table.
@@ -2758,6 +2982,7 @@ mod tests {
             model_roots: Vec::new(),
             brep_segments: Vec::new(),
             issues: Vec::new(),
+            opaque_base_units: std::collections::HashSet::default(),
         }
     }
 

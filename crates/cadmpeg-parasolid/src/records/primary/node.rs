@@ -1,19 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Field access by schema name over one framed node.
 
-use super::{PrimaryEnd, PrimaryRecord, PrimaryRecords};
+use super::{has_base_layout, PrimaryEnd, PrimaryRecord, PrimaryRecords};
+use crate::records::BaseVersion;
 use crate::records::DataType;
 use cadmpeg_core::decode::View;
 use std::ops::Range;
 
-/// The bytes of the null real, which marks an unset real field.
-const NULL_REAL: [u8; 8] = [0xc2, 0xbc, 0x92, 0x8f, 0x99, 0x6e, 0x00, 0x00];
+use crate::records::fields::NULL_REAL;
 
 /// One framed node of a node sequence, with its fields addressed by name.
 #[derive(Debug, Clone, Copy)]
 pub struct Node<'r> {
     source: &'r [u8],
     record: &'r PrimaryRecord,
+    version: BaseVersion,
 }
 
 impl PrimaryRecords<'_> {
@@ -22,6 +23,7 @@ impl PrimaryRecords<'_> {
         self.records.iter().map(|record| Node {
             source: self.source,
             record,
+            version: self.version,
         })
     }
 
@@ -49,6 +51,19 @@ impl<'r> Node<'r> {
     #[must_use]
     pub fn range(&self) -> Range<usize> {
         self.record.range.clone()
+    }
+
+    /// Whether each base field of the node's type has its base name,
+    /// encoding, and position at the start of the node's fields.
+    #[must_use]
+    pub fn has_base_layout(&self) -> bool {
+        has_base_layout(self.version, self.record)
+    }
+
+    /// Where the node's first field starts, after its header.
+    #[must_use]
+    pub fn fields_start(&self) -> Option<usize> {
+        self.record.fields.first().map(|field| field.start)
     }
 
     /// The byte range of the named field in the stream.
@@ -111,15 +126,22 @@ impl<'r> Node<'r> {
     /// A view over the named variable field when it holds `data_type`, and
     /// its element count.
     fn variable(&self, name: &str, data_type: DataType) -> Option<(View<'r>, usize)> {
+        let count = usize::try_from(self.record.variable_length?).ok()?;
+        let range = self.variable_range(name, data_type)?;
+        Some((View::over_retained(self.source.get(range)?), count))
+    }
+
+    /// The byte range of the named field when it is a transmitted variable
+    /// field of `data_type`.
+    #[must_use]
+    pub fn variable_range(&self, name: &str, data_type: DataType) -> Option<Range<usize>> {
         let fields = &self.record.definition.fields;
         let index = fields
             .iter()
             .position(|field| field.name.as_str() == name)?;
         let field = fields.get(index)?;
         (field.data_type == data_type && field.n_elements == 1 && field.transmit).then_some(())?;
-        let count = usize::try_from(self.record.variable_length?).ok()?;
-        let range = self.record.fields.get(index)?.clone();
-        Some((View::over_retained(self.source.get(range)?), count))
+        self.record.fields.get(index).cloned()
     }
 
     /// A view over the named field when it is a fixed array of `N` elements

@@ -64,6 +64,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                     .try_into()
                     .unwrap(),
                 unclosed_construction_operand_groups: Vec::new(),
+                deleted_members: None,
                 paired_class_tag: crate::records::references::DesignClassTag::try_from(
                     "261".to_owned(),
                 )
@@ -380,9 +381,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
         );
         assert_eq!(member.operand_identity_ids, [identity.id]);
         let mut owning_scope = scope;
-        if let crate::records::feature::scope::DesignScopePayloadMut::Extrude(slot)
-        | crate::records::feature::scope::DesignScopePayloadMut::Extrusion(slot)
-        | crate::records::feature::scope::DesignScopePayloadMut::Extrusao(slot) =
+        if let crate::records::feature::scope::DesignScopePayloadMut::Extrude(slot) =
             owning_scope.payload_mut()
         {
             slot.get_or_insert_with(Default::default).extrude_profile = Some(
