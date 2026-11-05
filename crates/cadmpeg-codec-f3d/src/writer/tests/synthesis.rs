@@ -1238,6 +1238,25 @@ fn source_less_sketch_point_survives_synthesis() {
         decoded.ir().model.sketch_entities[0].sketch,
         decoded.ir().model.sketches[0].id
     );
+    let mut edited = decoded.ir().clone();
+    let changed = SketchGeometry::try_from(SketchGeometryDefinition::Point {
+        position: Point2::new(25.0, 35.0),
+    })
+    .unwrap();
+    edited.model.sketch_entities[0].geometry = changed.clone();
+    let mut bytes = Vec::new();
+    F3dCodec
+        .plan(EncodeInput::new(&edited, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .expect("write edited sketch");
+    let edited_output = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode edited sketch");
+    assert_eq!(edited_output.ir().model.sketch_entities.len(), 1);
+    assert_eq!(
+        edited_output.ir().model.sketch_entities[0].geometry,
+        changed
+    );
 }
 #[test]
 fn source_less_sketch_line_survives_synthesis() {
