@@ -12,6 +12,8 @@ use cadmpeg_test_support::solids::closed_edge;
 
 use super::super::closed_edge_traversal;
 
+const EPS_CLOSED_PARAMETER: f64 = 1e-12;
+
 fn solved(geometry: SolvedCurveGeometry) -> CurveGeometry {
     CurveGeometry::Solved(geometry)
 }
@@ -62,7 +64,7 @@ fn assert_refused(edge: &Edge, carrier: &CurveGeometry, vertex: Point3) {
     assert!(
         matches!(
             closed_edge_traversal(edge, carrier, vertex, 0.0),
-            Err(CodecError::NotImplemented(_))
+            Err(CodecError::UnsupportedContent(_))
         ),
         "an edge with no closed traversal is refused"
     );
@@ -122,21 +124,24 @@ fn closed_edge_on_an_open_nurbs_is_refused() {
 }
 
 #[test]
-fn closed_edge_off_the_domain_start_is_refused() {
+fn closed_edge_uses_the_circle_vertex_away_from_domain_start() {
     let edge = closed_edge("loop", "loop", "v0");
     assert_refused(&edge, &square_loop(false), Point3::new(1.0, 1.0, 0.0));
-    assert_refused(&edge, &circle(), Point3::new(-10.0, 0.0, 0.0));
+    let range = traversal(&edge, &circle(), Point3::new(-10.0, 0.0, 0.0)).expect("closed circle");
+    assert!((range[0] - std::f64::consts::PI).abs() < EPS_CLOSED_PARAMETER);
+    assert!((range[1] - 3.0 * std::f64::consts::PI).abs() < EPS_CLOSED_PARAMETER);
 }
 
 #[test]
 fn edge_tolerance_admits_a_vertex_near_the_domain_start() {
     let edge = closed_edge("circle", "circle", "v0");
-    let vertex = Point3::new(10.0, 0.001, 0.0);
+    let vertex = Point3::new(10.0, 0.1, 0.0);
     assert_refused(&edge, &circle(), vertex);
-    assert_eq!(
-        closed_edge_traversal(&edge, &circle(), vertex, 0.01).expect("the circle evaluates"),
-        [0.0, TAU]
-    );
+    let range =
+        closed_edge_traversal(&edge, &circle(), vertex, 0.01).expect("the circle evaluates");
+    let start = 0.1_f64.atan2(10.0);
+    assert!((range[0] - start).abs() < EPS_CLOSED_PARAMETER);
+    assert!((range[1] - (start + TAU)).abs() < EPS_CLOSED_PARAMETER);
 }
 
 #[test]

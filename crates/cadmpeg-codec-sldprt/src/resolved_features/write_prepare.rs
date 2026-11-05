@@ -1484,8 +1484,7 @@ pub(crate) fn generated_native_lane(
 /// to, compared in ordinal order. Both sides derive kinds and states from the
 /// same bytes through the same admission, so a mismatch proves the typed
 /// records were edited past what the bytes state. The patch path declines
-/// such a lane against trustworthy source bytes; synthesis drops it; authored
-/// bytes are rewritten from the typed records instead.
+/// such a lane against trustworthy source bytes; synthesis writes typed records.
 pub(crate) fn sketch_entities_match(
     entities: &[crate::records::SketchInputEntity],
     expected: &[crate::records::SketchInputEntity],

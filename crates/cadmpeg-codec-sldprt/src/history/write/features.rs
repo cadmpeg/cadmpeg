@@ -108,7 +108,7 @@ pub(crate) fn generated_feature_record_id(feature: &FeatureId) -> String {
 fn generated_feature_source_ids(
     features: &[cadmpeg_ir::features::Feature],
     native: &crate::native::SldprtNative,
-) -> Result<HashMap<FeatureId, FeatureSource>, CodecError> {
+) -> Result<HashMap<FeatureId, FeatureSource>, crate::writer::write_error::WriteError> {
     let mut used = native
         .feature_histories
         .iter()
@@ -153,11 +153,11 @@ fn generated_feature_source_ids(
 fn allocate_feature_source_id(
     used: &mut HashSet<u32>,
     next: &mut Option<u32>,
-) -> Result<u32, CodecError> {
+) -> Result<u32, crate::writer::write_error::WriteError> {
     loop {
-        let candidate = next.ok_or_else(|| {
-            // (O-capacity): the target field cannot encode a value outside its width.
-            CodecError::NotImplemented("SLDPRT feature source-id space is exhausted".into())
+        let candidate = next.ok_or(crate::writer::write_error::WriteError::Capacity {
+            field: &crate::writer::CAPACITY_FIELDS[32],
+            value: u64::from(u32::MAX) + 1,
         })?;
         *next = candidate.checked_add(1);
         if used.insert(candidate) {
@@ -309,6 +309,28 @@ fn synchronize_features(
             features: Vec::new(),
         });
     }
+
+    let classless_unchanged = if patch_input_names {
+        HashSet::new()
+    } else {
+        let projected = project_features_with_native_inputs(native, &model.sketches)?;
+        features
+            .iter()
+            .filter_map(|feature| {
+                let record = native
+                    .feature_histories
+                    .iter()
+                    .flat_map(|history| &history.features)
+                    .find(|record| feature.native_ref.as_deref() == Some(record.id.as_str()))?;
+                (record.input_class.is_none()
+                    && projected.iter().any(|original| {
+                        original.native_ref.as_deref() == Some(record.id.as_str())
+                            && original.definition() == feature.definition()
+                    }))
+                .then_some(feature.id.clone())
+            })
+            .collect::<HashSet<_>>()
+    };
 
     let renames = if patch_input_names {
         synchronize_feature_input_names(features, native)?
@@ -495,6 +517,32 @@ fn synchronize_features(
         .iter()
         .map(|body| (body.id.clone(), body.id.as_str().to_owned()))
         .collect::<HashMap<_, _>>();
+    let mut ordered_features = features.iter().enumerate().collect::<Vec<_>>();
+    ordered_features.sort_by_key(|(index, feature)| (feature.ordinal, *index));
+    let feature_ranks = ordered_features
+        .into_iter()
+        .enumerate()
+        .map(|(rank, (_, feature))| {
+            let rank = u32::try_from(rank).map_err(|_| {
+                CodecError::malformed("SLDPRT native history cannot index this many features")
+            })?;
+            Ok((&feature.id, rank))
+        })
+        .collect::<Result<HashMap<_, _>, CodecError>>()?;
+    let mut scope_ids = HashMap::new();
+    for body in bodies {
+        scope_ids.insert(body.id.as_str(), Some(&body.id));
+        if let Some(name) = body.name.as_deref().filter(|name| !name.is_empty()) {
+            match scope_ids.entry(name) {
+                std::collections::hash_map::Entry::Vacant(entry) => {
+                    entry.insert(Some(&body.id));
+                }
+                std::collections::hash_map::Entry::Occupied(mut entry) => {
+                    entry.insert(None);
+                }
+            }
+        }
+    }
     for feature in features {
         if feature
             .source_tag
@@ -539,7 +587,19 @@ fn synchronize_features(
         }
         .encode()?;
         if feature.evaluation.outputs().is_empty() {
-            if existing.is_none() {
+            let resolved_scope = existing
+                .as_deref()
+                .and_then(|record| record.properties.get("Scope"))
+                .is_some_and(|scope| {
+                    let mut tokens = scope
+                        .split(',')
+                        .map(str::trim)
+                        .filter(|token| !token.is_empty())
+                        .peekable();
+                    tokens.peek().is_some()
+                        && tokens.all(|token| matches!(scope_ids.get(token), Some(Some(_))))
+                });
+            if existing.is_none() || resolved_scope {
                 properties.remove("Scope");
             }
         } else {
@@ -557,9 +617,7 @@ fn synchronize_features(
                 })?;
             properties.insert(cadmpeg_core::nonblank_literal!("Scope"), scope.join(","));
         }
-        let ordinal = u32::try_from(feature.ordinal)
-            // (O-capacity): the target field cannot encode a value outside its width.
-            .map_err(|_| CodecError::NotImplemented("feature ordinal exceeds u32".into()))?;
+        let ordinal = feature_ranks[&feature.id];
         let tree_parent = model.feature_parent(&feature.id).and_then(|parent| {
             let source_id = structural_parent_sources.get(parent).copied().flatten();
             match record_ids.get(parent) {
@@ -632,6 +690,9 @@ fn synchronize_features(
     }
     if !patch_input_names {
         for feature in features {
+            if classless_unchanged.contains(&feature.id) {
+                continue;
+            }
             if let Some(class) = super::input_classes::class(feature.definition().operation()) {
                 if let Some(record) = native
                     .feature_histories
@@ -670,18 +731,7 @@ fn synchronize_features(
             .dimension_properties
             .entry(parameter.name.clone())
             .or_default();
-        properties.remove("Value");
-        properties.remove("Driven");
-        if let Some(value) = &parameter.value {
-            properties.insert(
-                cadmpeg_core::nonblank_literal!("Value"),
-                crate::history::literals::format_parameter_cache_value(value),
-            );
-        }
-        properties.insert(
-            cadmpeg_core::nonblank_literal!("Driven"),
-            (!parameter.driving).to_string(),
-        );
+        super::parameters::synchronize_dimension_properties(parameter, properties);
     }
     for feature in features {
         let Some(record_id) = record_ids.get(&feature.id) else {
@@ -715,17 +765,11 @@ fn synchronize_features(
                 .dimension_properties
                 .entry(name.to_string())
                 .or_default();
-            if let Some(value) = &parameter.value {
-                properties.insert(
-                    cadmpeg_core::nonblank_literal!("Value"),
-                    crate::history::literals::format_parameter_cache_value(value),
-                );
-            }
-            properties.insert(
-                cadmpeg_core::nonblank_literal!("Driven"),
-                (!parameter.driving).to_string(),
-            );
+            super::parameters::synchronize_dimension_properties(parameter, properties);
         }
+        record
+            .dimension_properties
+            .retain(|_, properties| !properties.is_empty());
     }
     synchronize_neutral_feature_content(features, parameters, &record_ids, native)?;
     for lane in &mut native.feature_input_lanes {
@@ -932,7 +976,6 @@ mod tests {
     use crate::test_support::parasolid::triangle_body;
     use crate::test_support::plan_inherited_write;
     use crate::SldprtCodec;
-    use cadmpeg_core::CodecError;
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
     use cadmpeg_ir::features::FeatureId;
     use std::collections::HashSet;
@@ -1152,7 +1195,7 @@ mod tests {
         let error = super::allocate_feature_source_id(&mut used, &mut next)
             .expect_err("exhausted id space");
         assert!(
-            matches!(&error, CodecError::NotImplemented(message) if message.contains("exhausted")),
+            matches!(&error, crate::writer::write_error::WriteError::Capacity { field, value } if field.field == "feature.source_id" && *value == u64::from(u32::MAX) + 1),
             "{error:?}"
         );
     }
