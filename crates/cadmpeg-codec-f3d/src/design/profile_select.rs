@@ -840,13 +840,19 @@ pub(crate) fn unprofiled_curve_losses(
             }
         }
     }
+    if selected.is_empty() {
+        return unprofiled.into_iter().map(|(_, note)| note).collect();
+    }
+    let sketch_of: HashMap<_, _> = entities
+        .iter()
+        .map(|entity| (entity.id(), &entity.sketch))
+        .collect();
     unprofiled
         .into_iter()
         .map(|(id, note)| {
-            let in_selection = entities
-                .iter()
-                .find(|entity| *entity.id() == id)
-                .is_some_and(|entity| selected.contains(&(&entity.sketch, &id)));
+            let in_selection = sketch_of
+                .get(&id)
+                .is_some_and(|sketch| selected.contains(&(*sketch, &id)));
             if in_selection {
                 crate::loss::F3dLossCode::SketchCurveUnprofiledSelected.note(format!(
                     "sketch entity {id}: curve is not part of any closed profile loop; it bounds a region that an Extrude selects"
