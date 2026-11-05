@@ -11,6 +11,7 @@ use std::collections::BTreeSet;
 
 mod annotations;
 pub(super) mod append;
+mod associations;
 mod copious;
 pub(super) mod drawings;
 mod fem;

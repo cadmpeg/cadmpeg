@@ -30,6 +30,44 @@ use crate::test_support::zip_test::{
 use crate::F3dCodec;
 
 #[test]
+fn source_less_synthesis_writes_body_material_assignment() {
+    let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    ir.model.appearances[0].physical_token = Some("PrismMaterial-019".into());
+    let (written, _) = super::source_less_analytic::synthesize_document(&ir, None);
+    assert_eq!(written.ir().model.appearance_bindings.len(), 1);
+    assert_eq!(
+        written.ir().model.appearance_bindings[0].target,
+        ir.model.appearance_bindings[0].target
+    );
+    assert_eq!(
+        written.ir().model.appearance_bindings[0].appearance,
+        ir.model.appearance_bindings[0].appearance
+    );
+    assert_eq!(
+        written.ir().model.appearance_bindings[0].channels,
+        ir.model.appearance_bindings[0].channels
+    );
+    assert_eq!(
+        written.ir().model.appearances[0].physical_token.as_deref(),
+        Some("PrismMaterial-019")
+    );
+    assert_eq!(
+        f3d_native(written.ir()).design_material_assignments.len(),
+        1
+    );
+    assert_eq!(
+        f3d_native(written.ir()).design_material_assignments[0]
+            .entity_id
+            .as_str(),
+        "0_985"
+    );
+}
+
+#[test]
 fn generated_source_less_writes_unassigned_protein_appearance() {
     use std::collections::BTreeMap;
 
@@ -206,9 +244,16 @@ fn generated_f3d_neutral_appearance_wins_over_assignment_divergence() {
     let (output, report) =
         super::source_less_analytic::synthesize_document(&edited, Some(&fidelity));
     super::source_less_analytic::assert_native_omission(&report);
-    assert!(crate::test_support::native_test::f3d_native(output.ir())
-        .design_material_assignments
-        .is_empty());
+    let native = f3d_native(output.ir());
+    assert_eq!(native.design_material_assignments.len(), 1);
+    assert_eq!(
+        native.design_material_assignments[0]
+            .physical_token
+            .as_ref()
+            .map(|token| token.value.as_str()),
+        edited.model.appearances[0].physical_token.as_deref()
+    );
+    assert_eq!(output.ir().model.appearance_bindings.len(), 1);
     assert_eq!(output.ir().model.bodies.len(), edited.model.bodies.len());
     assert_eq!(
         output.ir().model.appearances[0].base_color,
@@ -322,8 +367,8 @@ fn generated_f3d_routes_appearance_edits_across_multiple_protein_assets() {
     assert_eq!(round_trip.ir().model.appearances, edited.model.appearances);
     let (_, report) = super::source_less_analytic::synthesize_document(&edited, None);
     assert!(report.losses.iter().any(|loss| {
-        loss.code == crate::loss::F3dLossCode::WriterAppearancePropertiesOmitted.kind()
-            && loss.message.contains("physical")
+        loss.code.local_code() == "record.residual-unavailable"
+            && loss.message.contains("physical asset identity")
     }));
 }
 
