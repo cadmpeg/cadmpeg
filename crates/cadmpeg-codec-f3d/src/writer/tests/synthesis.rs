@@ -13,6 +13,8 @@ use crate::F3dCodec;
 mod box_placement;
 mod configuration_features;
 mod cylinder_radius;
+mod neutral_text;
+mod sketch_nurbs;
 mod write_errors;
 
 fn parameter(name: &str, ordinal: u32, value: ParameterValue) -> DesignParameter {
