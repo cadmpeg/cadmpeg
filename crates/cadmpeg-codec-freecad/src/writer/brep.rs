@@ -827,7 +827,7 @@ fn serialize_geometry_inner(
     let mut indices = HashMap::new();
     // OCCT carries a numeric tolerance. Zero preserves the absence of an
     // entity-specific positive tolerance instead of inventing document defaults.
-    let tolerance = ir.tolerances.linear.get();
+    let tolerance = ir.tolerances.linear_or_default().get();
     for vertex in ir
         .model
         .vertices

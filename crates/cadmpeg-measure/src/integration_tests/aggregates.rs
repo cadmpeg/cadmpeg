@@ -198,7 +198,7 @@ fn body_and_document_totals_rest_on_an_unconfirmed_cap() {
 #[test]
 fn the_area_centroid_states_its_model_uncertainty() {
     let ir = plate_with_hole(true);
-    let tau = ir.tolerances.linear.get();
+    let tau = ir.tolerances.linear.expect("stated linear tolerance").get();
     let report = measure(&ir, &Selection::default());
     let centroid = only_body(&report)
         .area_centroid()

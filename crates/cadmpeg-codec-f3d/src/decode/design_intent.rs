@@ -798,7 +798,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             &design.sketch_texts,
         )
         .with_scan(inputs.scan),
-        geometry.tolerances.linear.get(),
+        geometry.tolerances.linear_or_default().get(),
     )?;
     model.sketches = planar.sketches;
     model.sketch_entities = planar.entities;
@@ -810,7 +810,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &design.sketch_curve_identities,
         &design.sketch_surfaces,
         &design.sketch_relations,
-        geometry.tolerances.linear.get(),
+        geometry.tolerances.linear_or_default().get(),
     )?;
     model.spatial_sketches = spatial.sketches;
     model.spatial_sketch_entities = spatial.entities;
@@ -880,7 +880,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             sketch_entities: &model.sketch_entities,
             spatial_sketches: &model.spatial_sketches,
             spatial_sketch_entities: &model.spatial_sketch_entities,
-            linear_tolerance: geometry.tolerances.linear.get(),
+            linear_tolerance: geometry.tolerances.linear_or_default().get(),
             angular_tolerance: geometry.tolerances.angular.get(),
         },
         &mut model.features,
@@ -890,7 +890,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &model.sketches,
         &model.sketch_entities,
         (
-            geometry.tolerances.linear.get(),
+            geometry.tolerances.linear_or_default().get(),
             geometry.tolerances.angular.get(),
         ),
     );
@@ -934,7 +934,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             spatial_entities: &model.spatial_sketch_entities,
             histories: &design.asm_histories,
             scope_histories: &scope_histories,
-            linear_tolerance: geometry.tolerances.linear.get(),
+            linear_tolerance: geometry.tolerances.linear_or_default().get(),
             angular_tolerance: geometry.tolerances.angular.get(),
             profile_work: &profile_work,
             ctx,
@@ -949,7 +949,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         surfaces: geometry.surfaces,
         groups: &design.design_construction_operand_groups,
         operands: &mut design.design_face_operands,
-        linear_tolerance: geometry.tolerances.linear.get(),
+        linear_tolerance: geometry.tolerances.linear_or_default().get(),
         angular_tolerance: geometry.tolerances.angular.get(),
     };
     crate::design::face_resolve::bind_extrude_start_planes(
@@ -997,14 +997,14 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         crate::design::dimensions::project_dimension_constraints(
             &constraint_inputs,
             &model.spatial_sketches,
-            geometry.tolerances.linear.get(),
+            geometry.tolerances.linear_or_default().get(),
         )
     } else {
         crate::design::dimensions::project_dimension_constraints_with_presentations(
             &constraint_inputs,
             &design.design_dimension_presentation_frames,
             &model.spatial_sketches,
-            geometry.tolerances.linear.get(),
+            geometry.tolerances.linear_or_default().get(),
         )
     };
     model.sketch_constraints.extend(dimension_constraints);
@@ -1013,7 +1013,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             &constraint_inputs,
             &model.spatial_sketches,
             &model.spatial_sketch_entities,
-            geometry.tolerances.linear.get(),
+            geometry.tolerances.linear_or_default().get(),
         );
     model
         .spatial_sketch_constraints

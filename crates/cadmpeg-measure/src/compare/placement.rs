@@ -29,7 +29,7 @@ fn trivial(ir: &CadIr) -> bool {
     if model.occurrences.is_empty() {
         return true;
     }
-    let linear = ir.tolerances.linear.get();
+    let linear = ir.tolerances.linear_or_default().get();
     for occurrence in &model.occurrences {
         if !matches!(occurrence.prototype, PrototypeReference::Local { .. }) {
             return false;

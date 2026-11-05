@@ -1094,9 +1094,9 @@ impl super::Builder<'_, '_, '_, '_> {
             return Ok(Err(error.to_string()));
         }
         let tolerance = records.tolerance * self.scale;
-        if tolerance > self.ir.tolerances.linear.get() {
+        if tolerance > self.ir.tolerances.linear_or_default().get() {
             if let Some(tolerance) = cadmpeg_ir::scalar::PositiveLength::new(tolerance) {
-                self.ir.tolerances.linear = tolerance;
+                self.ir.tolerances.linear = Some(tolerance);
             }
         }
         let body = crate::ids::body(key);

@@ -55,7 +55,10 @@ fn kernel_tolerance_floor_uses_millimetres() {
         Some(HEADER_NORMAL_TOLERANCE_RADIANS),
     )
     .expect("the centimetre value is above the millimetre floor");
-    assert_eq!(admitted.linear.get(), ABOVE_FLOOR_RESABS_MM);
+    assert_eq!(
+        admitted.linear.expect("stated linear tolerance").get(),
+        ABOVE_FLOOR_RESABS_MM
+    );
     assert!(super::super::admit_kernel_tolerances(
         Some(BELOW_FLOOR_RESABS_CM),
         Some(HEADER_NORMAL_TOLERANCE_RADIANS),
@@ -684,7 +687,14 @@ fn decode_yields_metadata_and_honest_report() {
     );
     // resabs/resnor were carried into tolerances.
     assert!(
-        (result.ir().tolerances.linear.get() - EXPECTED_HEADER_LINEAR_TOLERANCE).abs()
+        (result
+            .ir()
+            .tolerances
+            .linear
+            .expect("stated linear tolerance")
+            .get()
+            - EXPECTED_HEADER_LINEAR_TOLERANCE)
+            .abs()
             <= f64::EPSILON * EXPECTED_HEADER_LINEAR_TOLERANCE
     );
     assert!(result
@@ -863,7 +873,14 @@ fn primary_brep_metadata_skips_invalid_and_empty_candidates() {
             .unwrap();
         assert!(!result.ir().model.faces.is_empty());
         assert!(
-            (result.ir().tolerances.linear.get() - EXPECTED_HEADER_LINEAR_TOLERANCE).abs()
+            (result
+                .ir()
+                .tolerances
+                .linear
+                .expect("stated linear tolerance")
+                .get()
+                - EXPECTED_HEADER_LINEAR_TOLERANCE)
+                .abs()
                 <= EPS_HEADER_LINEAR_TOLERANCE
         );
     }
@@ -893,7 +910,10 @@ fn kernel_tolerance_invalid_values_keep_defaults_and_the_other_field() {
         let recovered =
             super::super::admit_kernel_tolerances(Some(ABOVE_FLOOR_RESABS_CM), Some(value))
                 .unwrap();
-        assert_eq!(recovered.linear.get(), ABOVE_FLOOR_RESABS_MM);
+        assert_eq!(
+            recovered.linear.expect("stated linear tolerance").get(),
+            ABOVE_FLOOR_RESABS_MM
+        );
         assert_eq!(recovered.angular, default.angular);
     }
     assert_eq!(

@@ -345,8 +345,10 @@ pub(super) fn admit(
     table.extend(super::short_chunk(super::TCODE_ENDOFTABLE, 0));
     let mut bytes = super::header(version);
     bytes.extend(super::long_chunk(1, b"cadmpeg")?);
-    let mut settings =
-        super::units_record(ir.tolerances.linear.get(), ir.tolerances.angular.get())?;
+    let mut settings = super::units_record(
+        ir.tolerances.linear_or_default().get(),
+        ir.tolerances.angular.get(),
+    )?;
     settings.extend(super::short_chunk(super::TCODE_ENDOFTABLE, 0));
     bytes.extend(super::long_chunk(super::TCODE_SETTINGS_TABLE, &settings)?);
     bytes.extend(super::long_chunk(super::TCODE_OBJECT_TABLE, &table)?);

@@ -541,7 +541,7 @@ fn build_result(
     if let Some(value) = header.linear {
         let linear_mm = value * 10.0;
         match cadmpeg_ir::scalar::PositiveLength::new(linear_mm) {
-            Some(linear) => ir.tolerances.linear = linear,
+            Some(linear) => ir.tolerances.linear = Some(linear),
             None => unresolved_tolerance("linear", value),
         }
     }

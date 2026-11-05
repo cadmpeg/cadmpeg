@@ -16,7 +16,7 @@ fn delta(first: Point3, second: Point3) -> Vector3 {
 }
 
 fn close(ir: &CadIr, first: Point3, second: Point3) -> bool {
-    delta(first, second).norm() <= ir.tolerances.linear.get()
+    delta(first, second).norm() <= ir.tolerances.linear_or_default().get()
 }
 
 fn point(id: &SpatialSketchEntityId, geometry: &Geometries<'_>) -> Option<Point3> {
@@ -58,8 +58,9 @@ fn circle(id: &SpatialSketchEntityId, geometry: &Geometries<'_>) -> Option<(Poin
 fn line_circle(ir: &CadIr, line: (Point3, Vector3), circle: (Point3, Vector3, f64)) -> bool {
     let displacement = delta(line.0, circle.0);
     line.1.dot(circle.1).abs() <= ir.tolerances.angular.get()
-        && displacement.dot(circle.1).abs() <= ir.tolerances.linear.get()
-        && (displacement.cross(line.1).norm() - circle.2).abs() <= ir.tolerances.linear.get()
+        && displacement.dot(circle.1).abs() <= ir.tolerances.linear_or_default().get()
+        && (displacement.cross(line.1).norm() - circle.2).abs()
+            <= ir.tolerances.linear_or_default().get()
 }
 
 fn tangent(
@@ -72,7 +73,8 @@ fn tangent(
         (Some(first), Some(second)) => {
             return Some(
                 first.1.cross(second.1).norm() <= ir.tolerances.angular.get()
-                    && delta(first.0, second.0).cross(first.1).norm() <= ir.tolerances.linear.get(),
+                    && delta(first.0, second.0).cross(first.1).norm()
+                        <= ir.tolerances.linear_or_default().get(),
             )
         }
         (Some(first), None) => {
@@ -92,9 +94,10 @@ fn tangent(
     let displacement = delta(first.0, second.0);
     let distance = displacement.norm();
     Some(
-        displacement.dot(first.1).abs() <= ir.tolerances.linear.get()
-            && ((distance - first.2 - second.2).abs() <= ir.tolerances.linear.get()
-                || (distance - (first.2 - second.2).abs()).abs() <= ir.tolerances.linear.get()),
+        displacement.dot(first.1).abs() <= ir.tolerances.linear_or_default().get()
+            && ((distance - first.2 - second.2).abs() <= ir.tolerances.linear_or_default().get()
+                || (distance - (first.2 - second.2).abs()).abs()
+                    <= ir.tolerances.linear_or_default().get()),
     )
 }
 
@@ -159,8 +162,9 @@ pub(super) fn offset(
     let normal = *normal.as_raw();
     let agrees = source.1.cross(result.1).norm() <= ir.tolerances.angular.get()
         && source.1.dot(normal).abs() <= ir.tolerances.angular.get()
-        && displacement.dot(normal).abs() <= ir.tolerances.linear.get()
-        && (displacement.cross(source.1).norm() - expected).abs() <= ir.tolerances.linear.get();
+        && displacement.dot(normal).abs() <= ir.tolerances.linear_or_default().get()
+        && (displacement.cross(source.1).norm() - expected).abs()
+            <= ir.tolerances.linear_or_default().get();
     (!agrees).then_some("spatial offset geometry disagrees with its canonical distance")
 }
 
