@@ -1005,8 +1005,28 @@ fn synthesis_graph(ir: &CadIr, version: crate::IgesVersion) -> Result<SynthesisG
         }
         entities
     };
+    let emitted_loops = entities
+        .iter()
+        .flat_map(|entity| entity.source_targets.iter())
+        .cloned()
+        .collect::<BTreeSet<_>>();
     if let Some(remap) = ensure_version_support(&mut entities, version, &mut losses)? {
         remap_presentations(&mut body_presentations, &remap);
+        let retained = entities
+            .iter()
+            .flat_map(|entity| entity.source_targets.iter())
+            .collect::<BTreeSet<_>>();
+        for boundary in &ir.model.loops {
+            let id = boundary.id.to_string();
+            if emitted_loops.contains(&id) && !retained.contains(&id) {
+                for coedge in boundary.coedges() {
+                    losses.push(IgesLossCode::WriterEntityOmitted.note(format!(
+                        "IGES coedge {coedge} is omitted with loop {id} for {}",
+                        version.name()
+                    )));
+                }
+            }
+        }
     }
     Ok(SynthesisGraph {
         entities,
