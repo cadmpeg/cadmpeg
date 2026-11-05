@@ -497,10 +497,8 @@ fn synchronize_features(
     let feature_sources = features
         .iter()
         .filter_map(|feature| {
-            Some((
-                &feature.id,
-                record_sources.get(feature.native_ref.as_ref()?)?.as_str(),
-            ))
+            structural_parent_sources.get(&feature.id)?.as_ref()?;
+            Some((&feature.id, parent_sources.get(&feature.id)?.as_str()))
         })
         .collect::<HashMap<_, _>>();
     let sketch_sources = features
