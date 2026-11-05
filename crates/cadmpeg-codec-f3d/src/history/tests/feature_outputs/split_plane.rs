@@ -1416,7 +1416,7 @@ fn body_absorption_requires_supported_op_and_affirmative_evidence() {
     bind_feature_outputs(
         &mut seq_features,
         &[scope.clone(), scope2],
-        &mut [history_separate_body],
+        &mut [history_separate_body.clone()],
         &[],
         &Default::default(),
         None,
@@ -1491,6 +1491,99 @@ fn body_absorption_requires_supported_op_and_affirmative_evidence() {
             .get(&cadmpeg_core::nonblank_literal!("deleted_bodies")),
         None
     );
+
+    let mut history_first_brep = history_separate_body;
+    let first_brep_id = "f3d:asset/Breps.BlobParts/BREP.first.smbh:asm-history#1".to_string();
+    history_first_brep.id.clone_from(&first_brep_id);
+    for st in history_first_brep.states_mut() {
+        st.parent.clone_from(&first_brep_id);
+        st.id = format!(
+            "f3d:asset/Breps.BlobParts/BREP.first.smbh:asm-delta-state#{}",
+            st.state_id
+        );
+    }
+    let scope2_brep = scope_between(2, 1);
+
+    let mut active_other_brep = super::active_body();
+    active_other_brep.id = BodyId::mint("f3d:brep/second.smbh/brep:entity#2").unwrap();
+    let feat1_other_brep = combine_join_test_feature(&scope.id, Some(1), Some(2));
+    let mut feat2_other_brep = combine_join_test_feature(&scope2_brep.id, None, None);
+    feat2_other_brep.id = FeatureId::mint("test:model:feature#later-other-brep").unwrap();
+    feat2_other_brep.ordinal = 1;
+    let mut seq_other_brep = [feat1_other_brep, feat2_other_brep];
+    bind_feature_outputs(
+        &mut seq_other_brep,
+        &[scope.clone(), scope2_brep.clone()],
+        &mut [history_first_brep.clone()],
+        &[active_other_brep],
+        &Default::default(),
+        None,
+    )
+    .unwrap();
+    assert_eq!(
+        seq_other_brep[0]
+            .source_properties
+            .get(&cadmpeg_core::nonblank_literal!("deleted_bodies"))
+            .map(String::as_str),
+        Some("2")
+    );
+    assert_eq!(
+        seq_other_brep[0]
+            .source_properties
+            .get(&cadmpeg_core::nonblank_literal!("body_centers"))
+            .map(String::as_str),
+        Some("1:10,5,5")
+    );
+    assert_eq!(
+        seq_other_brep[1]
+            .source_properties
+            .get(&cadmpeg_core::nonblank_literal!("affected_bodies")),
+        None
+    );
+
+    let mut active_same_brep = super::active_body();
+    active_same_brep.id = BodyId::mint("f3d:brep/first.smbh/brep:entity#2").unwrap();
+    let mut active_ambig_edge = super::active_body();
+    active_ambig_edge.id = BodyId::mint("f3d:brep/first.smbh/brep:saved-edge-body#2").unwrap();
+    for active_set in [
+        vec![active_same_brep.clone()],
+        vec![active_same_brep, active_ambig_edge],
+    ] {
+        let feat1_same = combine_join_test_feature(&scope.id, Some(1), Some(2));
+        let mut feat2_same = combine_join_test_feature(&scope2_brep.id, None, None);
+        feat2_same.id = FeatureId::mint("test:model:feature#later-same-brep").unwrap();
+        feat2_same.ordinal = 1;
+        let mut seq_same = [feat1_same, feat2_same];
+        bind_feature_outputs(
+            &mut seq_same,
+            &[scope.clone(), scope2_brep.clone()],
+            &mut [history_first_brep.clone()],
+            &active_set,
+            &Default::default(),
+            None,
+        )
+        .unwrap();
+        assert_eq!(
+            seq_same[0]
+                .source_properties
+                .get(&cadmpeg_core::nonblank_literal!("deleted_bodies")),
+            None
+        );
+        assert_eq!(
+            seq_same[0]
+                .source_properties
+                .get(&cadmpeg_core::nonblank_literal!("body_centers"))
+                .map(String::as_str),
+            Some("1:10,5,5;2:13.5,2.5,2.5")
+        );
+        assert_eq!(
+            seq_same[1]
+                .source_properties
+                .get(&cadmpeg_core::nonblank_literal!("affected_bodies"))
+                .map(String::as_str),
+            Some("2")
+        );
+    }
 }
 
 #[test]

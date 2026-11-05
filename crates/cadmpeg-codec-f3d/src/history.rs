@@ -1541,15 +1541,7 @@ pub(crate) fn bind_feature_outputs(
             );
         }
     }
-    let mut active = HashMap::new();
     let stored_active = stored_bodies::ActiveBodies::new(active_bodies, primary_brep);
-    for body in active_bodies {
-        let Some(slot) = stable_ref(body.id.as_str()) else {
-            continue;
-        };
-        let id = body.id.clone();
-        active.insert(slot, id);
-    }
     let mut ordered_indices: Vec<usize> = (0..features.len()).collect();
     ordered_indices.sort_by_key(|&i| features[i].ordinal);
     let mut prev_feature_solid = HashMap::<usize, &BTreeSet<i64>>::new();
@@ -1560,6 +1552,7 @@ pub(crate) fn bind_feature_outputs(
             continue;
         };
         let bound_history = feature_sources[idx];
+        let history_source = bound_history.and_then(|h| historical_brep_source(&histories[h].id));
         let cur_key = bound_history.map(|h| (h, state_id));
         let prev_key = bound_history.map(|h| (h, previous_state_id));
         let prev_feat_solid = bound_history.and_then(|h| prev_feature_solid.get(&h).copied());
@@ -1597,7 +1590,7 @@ pub(crate) fn bind_feature_outputs(
                     if b1_grew {
                         for (b2, (b2_min, b2_max)) in prev_bds {
                             if b2 == b1
-                                || active.contains_key(b2)
+                                || stored_active.contains_in_source(*b2, history_source)
                                 || history_absorbed.is_some_and(|ab| ab.contains(b2))
                             {
                                 continue;
