@@ -977,7 +977,9 @@ fn retain_unowned_carriers(
             if unowned_pcurves.contains(&id) {
                 return None;
             }
-            pcurve.support_surface().map(|surface| surface.as_str())
+            pcurve
+                .support_surface()
+                .map(cadmpeg_ir::ids::SurfaceId::as_str)
         }))
         .chain(
             ir.model
@@ -1650,7 +1652,6 @@ fn collect_references(
 
 /// Every instance a live statement references.
 fn live_referenced(exchange: &Exchange) -> BTreeSet<u64> {
-    let mut referenced = BTreeSet::new();
     fn visit(value: &Value, referenced: &mut BTreeSet<u64>) {
         let mut stack = vec![value];
         while let Some(value) = stack.pop() {
@@ -1664,6 +1665,7 @@ fn live_referenced(exchange: &Exchange) -> BTreeSet<u64> {
             }
         }
     }
+    let mut referenced = BTreeSet::new();
     for record in exchange.records().values() {
         for partial in &record.partials {
             for value in &partial.parameters {

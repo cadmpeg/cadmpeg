@@ -312,7 +312,7 @@ fn unbound_appearances_do_not_acquire_surface_bindings() {
         physical_token: None,
         schema: None,
         category: None,
-        properties: Default::default(),
+        properties: std::collections::BTreeMap::default(),
         textures: Vec::new(),
     });
     let mut other = ir.model.appearances[0].clone();
