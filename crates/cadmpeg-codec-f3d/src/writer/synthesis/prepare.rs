@@ -367,6 +367,7 @@ pub(super) fn dispositions(
     original: &CadIr,
     written: &CadIr,
     mut coverage: ArenaDispositions,
+    represented_attributes: &std::collections::BTreeSet<String>,
     losses: &mut Vec<LossNote>,
 ) -> ArenaDispositions {
     use ArenaDisposition::{Dropped, Omitted, Reported};
@@ -412,40 +413,25 @@ pub(super) fn dispositions(
     report!(WriterAuxiliaryOmitted; drawings,
         semantic_annotations, presentation_documents, view_presentations,
         presentation_layers);
-    if original.model.attributes.iter().any(|attribute| {
-        attribute.values.iter().any(|value| {
-            use cadmpeg_ir::attributes::AttributeValue;
-            match value {
-                None
-                | Some(
-                    AttributeValue::Map(_)
-                    | AttributeValue::Expression(_)
-                    | AttributeValue::SubReference { .. }
-                    | AttributeValue::ExternalReference { .. }
-                    | AttributeValue::EmptyReference
-                    | AttributeValue::Json(_),
-                ) => true,
-                Some(
-                    AttributeValue::Integer(_)
-                    | AttributeValue::Float(_)
-                    | AttributeValue::String(_)
-                    | AttributeValue::Boolean(_)
-                    | AttributeValue::Reference(_)
-                    | AttributeValue::Vector(_),
-                ) => false,
-            }
-        })
-    }) {
-        coverage.attributes = Dropped;
-        for attribute in &original.model.attributes {
-            losses.push(F3dLossCode::WriterAuxiliaryOmitted.note(format!(
-                "model.attributes: 1 record(s) are not encoded: {}{}",
-                attribute.id,
-                MissingAttributePositions(&attribute.values)
-            )));
-        }
+    let omitted_attributes = original
+        .model
+        .attributes
+        .iter()
+        .filter(|attribute| !represented_attributes.contains(attribute.id.as_str()))
+        .collect::<Vec<_>>();
+    coverage.attributes = if omitted_attributes.is_empty() {
+        ArenaDisposition::Written
+    } else if omitted_attributes.len() == original.model.attributes.len() {
+        Dropped
     } else {
-        report!(WriterAuxiliaryOmitted; attributes);
+        Reported
+    };
+    for attribute in omitted_attributes {
+        losses.push(F3dLossCode::WriterAuxiliaryOmitted.note(format!(
+            "model.attributes: 1 record(s) are not encoded: {}{}",
+            attribute.id,
+            MissingAttributePositions(&attribute.values)
+        )));
     }
     // A field reduction is still partial handling when the record count is
     // unchanged. Identity reminting also takes this conservative disposition.
