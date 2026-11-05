@@ -512,7 +512,7 @@ fn face_closure(ir: &CadIr, face_id: &str) -> BTreeSet<String> {
         let Some(loop_) = ir.model.loops.iter().find(|row| row.id == *loop_id) else {
             continue;
         };
-        vertices.extend(loop_.vertices().map(|id| id.as_str()));
+        vertices.extend(loop_.vertices().map(cadmpeg_ir::ids::VertexId::as_str));
         for coedge_id in loop_.coedges() {
             ids.insert(coedge_id.as_str().to_owned());
             let Some(coedge) = ir.model.coedges.iter().find(|row| row.id == *coedge_id) else {
