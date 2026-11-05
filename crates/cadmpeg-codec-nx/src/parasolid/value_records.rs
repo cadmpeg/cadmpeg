@@ -7,7 +7,11 @@ use cadmpeg_core::decode::View;
 use cadmpeg_core::printable::PrintableString;
 use cadmpeg_core::CodecError;
 use cadmpeg_parasolid::pointer::read_at as read_xmt;
-use cadmpeg_parasolid::records::PrimaryRecords;
+use cadmpeg_parasolid::records::node_type::{
+    AXIS_VALUES, CHAR_VALUES, DIRECTION_VALUES, INT_VALUES, POINT_VALUES, REAL_VALUES, TAG_VALUES,
+    UNICODE_VALUES, VECTOR_VALUES,
+};
+use cadmpeg_parasolid::records::{DataType, PrimaryRecords};
 use cadmpeg_parasolid::xmt::NonNullXmt;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -207,7 +211,8 @@ pub(crate) fn entity_value_records_of_nodes<'a>(
         }
         let frame = (|| {
             let tag = u8::try_from(node.kind()).ok()?;
-            let payload = value_payload(tag, bytes.get(node.field_range("values")?)?)?;
+            let values = node.variable_range("values", value_data_type(node.kind())?)?;
+            let payload = value_payload(tag, bytes.get(values)?)?;
             Some(ValueRecordFrame {
                 offset: range.start,
                 end: range.end,
@@ -220,6 +225,19 @@ pub(crate) fn entity_value_records_of_nodes<'a>(
         }
     }
     Ok(records)
+}
+
+/// The data type of the `values` field of a value node type.
+fn value_data_type(kind: u16) -> Option<DataType> {
+    match kind {
+        INT_VALUES => Some(DataType::Integer),
+        REAL_VALUES => Some(DataType::Real),
+        CHAR_VALUES => Some(DataType::Char),
+        POINT_VALUES | VECTOR_VALUES | AXIS_VALUES | DIRECTION_VALUES => Some(DataType::Vector),
+        TAG_VALUES => Some(DataType::Unestablished(b't')),
+        UNICODE_VALUES => Some(DataType::Word),
+        _ => None,
+    }
 }
 
 /// Materialize one value-record frame into its family's list.

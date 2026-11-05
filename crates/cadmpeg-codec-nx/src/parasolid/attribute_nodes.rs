@@ -8,16 +8,15 @@ use super::{
 use cadmpeg_core::printable::PrintableString;
 use cadmpeg_parasolid::records::node_type::{ATTRIBUTE, ATTRIB_DEF, FIELD_NAMES, KEY};
 use cadmpeg_parasolid::records::primary::Node;
-use cadmpeg_parasolid::records::PrimaryRecords;
+use cadmpeg_parasolid::records::{DataType, PrimaryRecords};
 use cadmpeg_parasolid::xmt::{NonNullXmt, XmtTarget};
 use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 
-/// Every `FIELD_NAMES` node with a complete non-null name list.
+/// Every `FIELD_NAMES` node with a unique index and a complete non-null name
+/// list.
 pub(super) fn field_names(primary: &PrimaryRecords<'_>) -> Vec<FieldNamesRecord> {
-    primary
-        .nodes()
-        .filter(|node| node.kind() == FIELD_NAMES)
+    unique_nodes(primary, FIELD_NAMES)
         .filter_map(|node| {
             let names = node
                 .pointer_list("names")?
@@ -34,11 +33,9 @@ pub(super) fn field_names(primary: &PrimaryRecords<'_>) -> Vec<FieldNamesRecord>
         .collect()
 }
 
-/// Every `ATTRIBUTE` node.
+/// Every `ATTRIBUTE` node with a unique index.
 pub(super) fn attributes(primary: &PrimaryRecords<'_>) -> Vec<Entity51Record> {
-    primary
-        .nodes()
-        .filter(|node| node.kind() == ATTRIBUTE)
+    unique_nodes(primary, ATTRIBUTE)
         .filter_map(|node| {
             Some(Entity51Record {
                 offset: node.range().start,
@@ -59,8 +56,8 @@ pub(super) fn attributes(primary: &PrimaryRecords<'_>) -> Vec<Entity51Record> {
         .collect()
 }
 
-/// Every `ATTRIB_DEF` node joined to the `KEY` node it names; an index that two
-/// `KEY` nodes share names no key.
+/// Every `ATTRIB_DEF` node with a unique index joined to the `KEY` node it
+/// names; an index that two `KEY` nodes share names no key.
 pub(super) fn definitions<'a>(
     bytes: &'a [u8],
     primary: &PrimaryRecords<'_>,
@@ -68,7 +65,7 @@ pub(super) fn definitions<'a>(
     let mut identifiers = BTreeMap::<u32, Option<(usize, PrintableString<&'a str>)>>::new();
     for node in primary.nodes().filter(|node| node.kind() == KEY) {
         let identifier = node
-            .field_range("string")
+            .variable_range("string", DataType::Char)
             .and_then(|range| bytes.get(range))
             .and_then(|name| PrintableString::from_bytes(name).ok())
             .map(|name| (node.range().start, name));
@@ -77,9 +74,7 @@ pub(super) fn definitions<'a>(
             .and_modify(|entry| *entry = None)
             .or_insert(identifier);
     }
-    primary
-        .nodes()
-        .filter(|node| node.kind() == ATTRIB_DEF)
+    unique_nodes(primary, ATTRIB_DEF)
         .filter_map(|node| {
             let identifier_xmt = node.pointer("identifier")?;
             let (identifier_offset, name) = identifiers.get(&identifier_xmt)?.as_ref()?;
@@ -103,11 +98,13 @@ pub(super) fn definitions<'a>(
                     Some(_) => XmtTarget::from_wire(node.pointer("field_names")?),
                     None => None,
                 },
-                legal_owner_flags: LegalOwnerFlags::try_from(field_bytes(
-                    bytes,
-                    &node,
-                    "legal_owners",
-                )?)
+                legal_owner_flags: LegalOwnerFlags::try_from(
+                    node.logicals("legal_owners")?
+                        .into_iter()
+                        .map(u8::from)
+                        .collect::<Vec<_>>()
+                        .as_slice(),
+                )
                 .ok()?,
                 field_codes: node
                     .bytes("fields")?
@@ -120,8 +117,16 @@ pub(super) fn definitions<'a>(
         .collect()
 }
 
-fn field_bytes<'a>(bytes: &'a [u8], node: &Node<'_>, name: &str) -> Option<&'a [u8]> {
-    bytes.get(node.field_range(name)?)
+/// The nodes of `kind` whose index no other node of `kind` shares, counted
+/// before any field is read.
+fn unique_nodes<'p>(primary: &'p PrimaryRecords<'_>, kind: u16) -> impl Iterator<Item = Node<'p>> {
+    let mut counts = BTreeMap::<u32, usize>::new();
+    for node in primary.nodes().filter(|node| node.kind() == kind) {
+        *counts.entry(node.index()).or_default() += 1;
+    }
+    primary
+        .nodes()
+        .filter(move |node| node.kind() == kind && counts.get(&node.index()) == Some(&1))
 }
 
 #[cfg(test)]

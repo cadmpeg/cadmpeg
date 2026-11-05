@@ -3127,10 +3127,14 @@ xmt, sequence:u32 BE, definition, references`. XMT fields use the
 compact or extended XMT encoding. `xmt` is non-null, `sequence` is nonzero, and
 `flags` is in `1..=0x20`. The reference count is seven for `flags = 02`, nine
 for `flags = 04`, and in general five plus `flags`. The definition reference does not
-affect framing. References are consecutive XMT values; the first byte of a
-reference is the first byte of its XMT encoding, so an index cell can start
-with `01`. A
-topology attribute-list identity resolves only when exactly one type-81 record
+affect framing.
+
+In a terminated node sequence, type-81 references are consecutive XMT values.
+The first byte of a reference is the first byte of its XMT encoding, so an index
+cell can start with `01`. Open item PS-41 records the reference form in a stream
+without a terminated node sequence.
+
+A topology attribute-list identity resolves only when exactly one type-81 record
 in the same stream has that xmt. The head record must have the topology XMT in
 its first leading reference. Once the head is valid, every type-81 record in
 the same stream whose first leading reference is that topology XMT is owned by

@@ -218,7 +218,7 @@ or regenerated current-design selection.
 
 **Question.** Does a partition or plain stream without a terminated node sequence carry type-81 references as binary-status-prefixed XMT values followed by a binary terminal?
 
-**Known.** `siemens_nx.md` §9.4 "References are consecutive XMT values" gives the consecutive form. A terminated node sequence frames every type-81 node with consecutive references.
+**Known.** `siemens_nx.md` §9.4 "In a terminated node sequence, type-81 references" gives the consecutive form in a terminated node sequence.
 
 **Need.** We must know the form to frame type-81 records in a stream that the shared node reader does not frame to its terminator.
 
