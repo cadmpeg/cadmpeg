@@ -590,6 +590,69 @@ mod tests {
     }
 
     #[test]
+    fn damaged_decal_asset_keeps_an_independent_sibling() {
+        use std::io::{Cursor, Write};
+
+        const ENTRY: &str = "FusionAssetName[Active]/Design1/BulkStream.dat";
+        let (mut bytes, scope_at, _) = fixture();
+        let sibling_at = bytes.len();
+        bytes.extend_from_within(..);
+        header(&mut bytes, sibling_at, *b"258", 27);
+        header(&mut bytes, sibling_at + 30, *b"279", 28);
+        header(&mut bytes, sibling_at + scope_at, *b"301", 33);
+        header(&mut bytes, sibling_at + 200, *b"302", 33);
+        write_marked_reference(&mut bytes, sibling_at + scope_at + 21, 27);
+        let meta = crate::test_support::zip_test::indexed_fixture_metastream(
+            &bytes,
+            &[17, 18, 23, 27, 28, 33],
+            &[23, 33],
+        );
+        bytes[11] = 2;
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
+        crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+        zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
+            .unwrap();
+        zip.write_all(&meta).unwrap();
+        zip.start_file(ENTRY, stored).unwrap();
+        zip.write_all(&bytes).unwrap();
+        let archive = zip.finish().unwrap().into_inner();
+        let scope = |at: usize, index: u32| {
+            crate::records::feature::test_support::located_scope_from_fixture(serde_json::json!({
+                "id": format!("{}:scope#{index}", crate::ids::native_scope(ENTRY)),
+                "byte_offset": at,
+                "class_tag": "301",
+                "record_index": index,
+                "frame_length": 129,
+                "kind": "Decal",
+                "kind_offset": at + 32,
+                "feature_ordinal": 1,
+                "feature_ordinal_offset": at + 57,
+                "reference_count_offset": at + 9,
+                "reference_members": [index],
+                "reference_member_offsets": [at + 14],
+                "paired_class_tag": "302",
+                "paired_byte_offset": at + 129
+            }))
+        };
+        crate::test_support::zip_test::with_scan(&archive, |scan| {
+            let ctx = cadmpeg_test_support::service_decode_context();
+            let mut output = cadmpeg_ir::source_fidelity::parts::PartOutput::new(
+                cadmpeg_ir::CodecFormat::F3d,
+                &ctx,
+            );
+            let scopes = [scope(scope_at, 23), scope(sibling_at + scope_at, 33)];
+            let images = super::decode_decal_images(&ctx, &mut output, scan, &scopes).unwrap();
+            assert_eq!(images.len(), 1);
+            assert_eq!(images[0].scope_record_index(), 33);
+            assert_eq!(images[0].asset.record_index(), 27);
+            let (_, _, fidelity, losses) = output.into_parts();
+            assert_eq!(losses.len(), 1);
+            assert_eq!(fidelity.retained_records().len(), 1);
+        });
+    }
+
+    #[test]
     fn decal_projection_emits_one_asset() {
         use cadmpeg_ir::features::{
             Feature, FeatureDefinition, FeatureEvaluation, FeatureOperation, SketchFeatureBinding,

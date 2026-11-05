@@ -6504,6 +6504,16 @@ impl<'a> Builder<'a> {
                 PmiDefinition::Dimension(relation) => {
                     let dimension = relation.kind();
                     let nominal = relation.resolved_nominal(self.ir);
+                    if let Some(parameter) = relation.nominal().and_then(|value| value.parameter())
+                    {
+                        self.loss(
+                            StepLossCode::PmiParameterReferenceOmitted,
+                            format!(
+                                "PMI '{}' parameter reference '{}' was omitted from its STEP dimension",
+                                annotation.id, parameter
+                            ),
+                        );
+                    }
                     let tolerance = relation.tolerance();
                     let aspect = target_ref(annotation).unwrap_or_else(|| {
                         *fallback_aspect.get_or_insert_with(|| {
