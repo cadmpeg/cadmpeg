@@ -192,7 +192,7 @@ pub(super) fn project(
 /// Drop features that lost rows to a given-up part and still fell back to
 /// stored geometry: they need the failed part, so the transfer excludes
 /// them and the part loss names them (#215 rule 2).
-fn drop_degraded_features(scan: &ContainerScan<'_>, ir: &mut CadIr, losses: &mut Vec<LossNote>) {
+fn drop_degraded_features(scan: &ContainerScan<'_>, ir: &mut CadIr, losses: &mut [LossNote]) {
     if scan.framing.excluded_feature_owners.is_empty() {
         return;
     }
@@ -252,7 +252,7 @@ fn drop_degraded_features(scan: &ContainerScan<'_>, ir: &mut CadIr, losses: &mut
         let mut ids = ids.clone();
         ids.sort();
         ids.dedup();
-        loss.dropped = ids.clone();
+        loss.dropped.clone_from(&ids);
         loss.message = loss
             .message
             .strip_suffix("dropped=[]")
