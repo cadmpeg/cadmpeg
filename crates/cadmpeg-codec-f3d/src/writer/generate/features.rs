@@ -89,7 +89,8 @@ pub(super) fn encode(
 > {
     let mut primitives = Vec::new();
     for feature in &target.model.features {
-        if feature.suppressed == Some(true)
+        if feature.ordinal >= u64::from(u32::MAX)
+            || feature.suppressed == Some(true)
             || !feature.dependencies.is_empty()
             || !feature.source_properties.is_empty()
             || feature.source_text.is_some()

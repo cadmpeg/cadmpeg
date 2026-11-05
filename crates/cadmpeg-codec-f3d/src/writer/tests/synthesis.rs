@@ -184,6 +184,19 @@ fn source_less_primitive_feature_survives_synthesis() {
     assert!(report.losses.iter().any(|loss| {
         loss.message.contains(&omitted) && loss.code.local_code() == "evaluation.stale"
     }));
+    ir.model.features[1].needs_recompute = false;
+    ir.model.features[1].ordinal = u64::from(u32::MAX);
+    let retained = ir.model.features[0].id.as_str();
+    let (output, report) = super::source_less_analytic::synthesize_document(&ir, None);
+    assert_eq!(output.ir().model.features.len(), 1);
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(&omitted)));
+    assert!(!report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(retained)));
 }
 
 #[test]
