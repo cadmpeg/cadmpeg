@@ -699,12 +699,7 @@ fn constructor_table(
     table
 }
 
-/// Functions reachable from an `EncoderBackend` method through static
-/// function paths, macros, and proven receiver methods (§5.2 scan exclusion).
-///
-/// The shared call graph resolves method calls by name across the workspace.
-/// Static paths and proven receivers keep shared helpers out of the scan.
-/// Unresolved method dispatch can contribute scan evidence.
+/// Find encoder-reachable functions for the §5.2 scan exclusion.
 fn narrow_reachable(graph: &Graph) -> BTreeSet<usize> {
     let mut symbols: BTreeMap<Vec<String>, Vec<usize>> = BTreeMap::new();
     let mut macros: BTreeMap<&str, Vec<usize>> = BTreeMap::new();
