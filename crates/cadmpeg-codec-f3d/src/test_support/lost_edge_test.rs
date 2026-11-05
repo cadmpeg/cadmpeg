@@ -10,7 +10,7 @@
 //! group's operand list.
 #![allow(clippy::unwrap_used)]
 
-use super::streams_test::generated_design_bulkstream;
+use super::sketch_stream_test::generated_design_bulkstream;
 use crate::test_support::{lp_ascii, lp_utf16, push_reference_u64};
 
 const SCOPE: u32 = 1_400;

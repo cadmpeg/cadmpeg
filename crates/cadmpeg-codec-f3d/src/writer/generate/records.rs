@@ -275,6 +275,31 @@ pub(super) fn encode_design_bulkstream(
         }
     }
     if !native.design_body_members.is_empty() {
+        let (ordinal, kind) = registry
+            .types
+            .iter()
+            .enumerate()
+            .find(|(_, kind)| {
+                kind.type_guid
+                    .as_str()
+                    .eq_ignore_ascii_case(super::presentation::BODY_ROOT_TYPE_GUID)
+            })
+            .ok_or_else(|| CodecError::Malformed("missing generated BodiesRoot type".into()))?;
+        let record_index = *kind
+            .entity_ids
+            .first()
+            .ok_or_else(|| CodecError::Malformed("missing generated BodiesRoot identity".into()))?;
+        primary_records.push(primary_record_u64(record_index, out.len())?);
+        native_lp_ascii(
+            &mut out,
+            super::presentation::dynamic_class_tag(ordinal)?.as_str(),
+        )?;
+        out.extend_from_slice(
+            &u32::try_from(record_index)
+                .map_err(|_| CodecError::InvalidInput("BodiesRoot index exceeds u32".into()))?
+                .to_le_bytes(),
+        );
+        out.extend_from_slice(&[0; 4]);
         native_lp_ascii(&mut out, "BodiesRoot")?;
         out.extend_from_slice(&0u16.to_le_bytes());
         native_lp_ascii(&mut out, "BodiesRoot")?;
