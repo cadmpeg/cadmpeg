@@ -63,16 +63,10 @@ pub(crate) fn normalize(
     if cursor == global_begin {
         return Err(malformed("Global section is missing"));
     }
-    let data_begin = cursor;
-    let terminate = payloads
-        .iter()
-        .enumerate()
-        .skip(data_begin)
-        .find_map(|(at, line)| (line.len() == CARD_WIDTH && line[72] == b'T').then_some(at));
-    let data_end = terminate.unwrap_or(lines.len());
+    let global_end = cursor;
     let mut parts = PartOutput::new(cadmpeg_ir::CodecFormat::Iges, ctx);
     let mut global_cards = Vec::new();
-    for line in &lines[global_begin..data_begin] {
+    for line in &lines[global_begin..global_end] {
         if line.payload.window().len() != CARD_WIDTH {
             return Err(malformed("Global records must be 80 columns"));
         }
@@ -85,6 +79,29 @@ pub(crate) fn normalize(
             },
         )?;
     }
+    if cursor + 1 == lines.len()
+        && lines[cursor].extent.end() == lines[cursor].payload.end()
+        && payloads[cursor].len() < CARD_WIDTH
+        && payloads[cursor].first() != Some(&b'D')
+        && crate::global::parts::unfinished(ctx, source, &global_cards)?
+    {
+        append(
+            ctx,
+            &mut global_cards,
+            crate::global::parts::GlobalCard {
+                start: lines[cursor].extent.start(),
+                end: lines[cursor].extent.end(),
+            },
+        )?;
+        cursor += 1;
+    }
+    let data_begin = cursor;
+    let terminate = payloads
+        .iter()
+        .enumerate()
+        .skip(data_begin)
+        .find_map(|(at, line)| (line.len() == CARD_WIDTH && line[72] == b'T').then_some(at));
+    let data_end = terminate.unwrap_or(lines.len());
     let (global, losses) =
         crate::global::parts::parse_cards(ctx, source, &global_cards, &mut parts)?;
     let (parameter_delimiter, record_delimiter) =
@@ -244,7 +261,7 @@ pub(crate) fn normalize(
             decoded = records;
         }
     }
-    let mut card_count = data_begin
+    let mut card_count = global_end
         .checked_sub(start)
         .and_then(|count| count.checked_add(1))
         .ok_or_else(|| malformed("Output header count overflows"))?;
@@ -269,7 +286,7 @@ pub(crate) fn normalize(
     for line in &payloads[start..global_begin] {
         super::append_source_card(&mut bytes, line, b'S')?;
     }
-    for line in &payloads[global_begin..data_begin] {
+    for line in &payloads[global_begin..global_end] {
         super::append_source_card(&mut bytes, line, b'G')?;
     }
     let mut directory = Vec::new();
@@ -308,7 +325,7 @@ pub(crate) fn normalize(
     super::append_terminate(
         &mut bytes,
         global_begin - start,
-        data_begin - global_begin,
+        global_end - global_begin,
         directory_count,
         usize::try_from(parameter_sequence - 1)
             .map_err(|_| malformed("Parameter count exceeds usize"))?,

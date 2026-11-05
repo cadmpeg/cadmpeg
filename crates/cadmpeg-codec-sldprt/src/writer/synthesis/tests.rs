@@ -806,7 +806,7 @@ fn single_segment_composite_edges_point_at_their_leaf_carrier() {
     assert!(matches!(ir.model.edges[0].carrier, EdgeCarrier::Curve(_)));
 
     let mut losses = Vec::new();
-    super::geometry::flatten_composite_curves(&mut ir, &mut losses);
+    super::geometry::flatten_composite_curves(&mut ir, &mut losses).unwrap();
     assert_eq!(ir.model.edges[0].curve(), Some(&leaf.id));
     assert!(ir.model.curves.iter().all(|curve| !matches!(
         curve.geometry,
@@ -822,6 +822,123 @@ fn single_segment_composite_edges_point_at_their_leaf_carrier() {
     assert!(losses
         .iter()
         .any(|loss| loss.message.contains("sldprt:brep:curve#composite-outer")));
+}
+
+#[test]
+fn unused_composite_is_written_as_its_segments() {
+    use cadmpeg_ir::geometry::{
+        CompositeCurveSegment, CompositeCurveTransition, CurveGeometry, SolvedCurveGeometry,
+    };
+    use cadmpeg_ir::ids::CurveId;
+
+    let mut ir = crate::test_support::ir::source_less_cube();
+    let first = ir.model.curves[0].clone();
+    let second = ir.model.curves[1].clone();
+    let id = CurveId::mint("sldprt:brep:curve#composite-unused").unwrap();
+    let mut composite = first.clone();
+    composite.id = id.clone();
+    composite.geometry = CurveGeometry::Solved(SolvedCurveGeometry::Composite {
+        segments: [first.id.clone(), second.id.clone()]
+            .into_iter()
+            .map(|curve| CompositeCurveSegment {
+                curve,
+                same_sense: true,
+                transition: CompositeCurveTransition::Continuous,
+            })
+            .collect::<Vec<_>>()
+            .try_into()
+            .unwrap(),
+        self_intersect: Some(false),
+    });
+    ir.model.curves.push(composite);
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(id.as_str())));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let decoded = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    for segment in [first, second] {
+        assert!(decoded
+            .ir()
+            .model
+            .curves
+            .iter()
+            .any(|curve| curve.geometry == segment.geometry));
+    }
+}
+
+#[test]
+fn cyclic_composites_are_not_reported_as_written_segments() {
+    use cadmpeg_ir::geometry::{
+        CompositeCurveSegment, CompositeCurveTransition, CurveGeometry, SolvedCurveGeometry,
+    };
+    use cadmpeg_ir::ids::CurveId;
+
+    let mut ir = crate::test_support::ir::source_less_cube();
+    let mut curve = ir.model.curves[0].clone();
+    curve.id = CurveId::mint("sldprt:brep:curve#composite-cycle").unwrap();
+    curve.geometry = CurveGeometry::Solved(SolvedCurveGeometry::Composite {
+        segments: vec![CompositeCurveSegment {
+            curve: curve.id.clone(),
+            same_sense: true,
+            transition: CompositeCurveTransition::Continuous,
+        }]
+        .try_into()
+        .unwrap(),
+        self_intersect: Some(false),
+    });
+    let id = curve.id.clone();
+    ir.model.curves.push(curve);
+    let mut losses = Vec::new();
+    super::geometry::flatten_composite_curves(&mut ir, &mut losses).unwrap();
+    assert!(ir.model.curves.iter().any(|curve| curve.id == id));
+    assert!(losses.is_empty());
+}
+
+#[test]
+fn nested_composites_used_by_an_edge_keep_their_dependencies() {
+    use cadmpeg_ir::geometry::{
+        CompositeCurveSegment, CompositeCurveTransition, CurveGeometry, SolvedCurveGeometry,
+    };
+    use cadmpeg_ir::ids::CurveId;
+
+    let mut ir = crate::test_support::ir::source_less_cube();
+    let leaf = ir.model.curves[0].clone();
+    let segment = |curve| CompositeCurveSegment {
+        curve,
+        same_sense: true,
+        transition: CompositeCurveTransition::Continuous,
+    };
+    let inner_id = CurveId::mint("sldprt:brep:curve#composite-nested").unwrap();
+    let outer_id = CurveId::mint("sldprt:brep:curve#composite-carrier").unwrap();
+    let mut inner = leaf.clone();
+    inner.id = inner_id.clone();
+    inner.geometry = CurveGeometry::Solved(SolvedCurveGeometry::Composite {
+        segments: vec![segment(leaf.id.clone())].try_into().unwrap(),
+        self_intersect: Some(false),
+    });
+    let mut outer = leaf.clone();
+    outer.id = outer_id.clone();
+    outer.geometry = CurveGeometry::Solved(SolvedCurveGeometry::Composite {
+        segments: vec![segment(inner_id.clone()), segment(leaf.id)]
+            .try_into()
+            .unwrap(),
+        self_intersect: Some(false),
+    });
+    ir.model.curves.extend([inner, outer]);
+    ir.model.edges[0].map_curve(|_| outer_id.clone());
+    let mut losses = Vec::new();
+    super::geometry::flatten_composite_curves(&mut ir, &mut losses).unwrap();
+    assert!(ir.model.curves.iter().any(|curve| curve.id == outer_id));
+    assert!(ir.model.curves.iter().any(|curve| curve.id == inner_id));
+    assert!(losses.is_empty());
 }
 
 #[test]
@@ -856,7 +973,7 @@ fn multi_segment_composites_keep_their_refusal() {
     assert!(matches!(ir.model.edges[0].carrier, EdgeCarrier::Curve(_)));
 
     let mut losses = Vec::new();
-    super::geometry::flatten_composite_curves(&mut ir, &mut losses);
+    super::geometry::flatten_composite_curves(&mut ir, &mut losses).unwrap();
     assert!(ir.model.curves.iter().any(|curve| matches!(
         curve.geometry,
         CurveGeometry::Solved(SolvedCurveGeometry::Composite { .. })

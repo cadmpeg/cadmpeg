@@ -341,7 +341,7 @@ pub(super) fn plan(
     geometry::resolve_placements(&mut projected, &mut losses);
     projected.model.procedural_surfaces.clear();
     projected.model.procedural_curves.clear();
-    geometry::flatten_composite_curves(&mut projected, &mut losses);
+    geometry::flatten_composite_curves(&mut projected, &mut losses)?;
     let mut supported = Vec::new();
     for body in projected.model.bodies.clone() {
         if body.kind == cadmpeg_ir::topology::BodyKind::Wire {
