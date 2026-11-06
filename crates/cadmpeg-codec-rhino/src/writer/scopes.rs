@@ -1031,19 +1031,31 @@ fn prune_pass(
         }
     }
     scoped.model.coedges.retain(|coedge| {
-        let missing = (!edges.contains(coedge.edge.as_str()))
-            .then(|| format!("edge {} is missing", coedge.edge))
-            .or_else(|| {
-                (!loops.contains(coedge.owner_loop.as_str()))
-                    .then(|| format!("loop {} is missing", coedge.owner_loop))
-            });
+        let missing =
+            (!edges.contains(coedge.edge.as_str()))
+                .then(|| format!("edge {} is missing", coedge.edge))
+                .or_else(|| {
+                    (!loops.contains(coedge.owner_loop.as_str()))
+                        .then(|| format!("loop {} is missing", coedge.owner_loop))
+                })
+                .or_else(|| {
+                    (!scoped.model.loops.iter().any(|row| {
+                        row.id == coedge.owner_loop && row.coedges().contains(&coedge.id)
+                    }))
+                    .then(|| format!("loop {} does not own this coedge", coedge.owner_loop))
+                });
         if let Some(missing) = missing {
             pruned("coedge", coedge.id.as_str(), missing);
             return false;
         }
         true
     });
-    let coedges = existing!(coedges);
+    let coedge_owners = scoped
+        .model
+        .coedges
+        .iter()
+        .map(|coedge| (coedge.id.clone(), coedge.owner_loop.clone()))
+        .collect::<std::collections::BTreeMap<_, _>>();
     prune_orphaned_edges(scoped, pruned);
     let faces = existing!(faces);
     scoped.model.loops.retain_mut(|row| {
@@ -1052,6 +1064,19 @@ fn prune_pass(
                 "loop",
                 row.id.as_str(),
                 format!("face {} is missing", row.face),
+            );
+            return false;
+        }
+        if !scoped
+            .model
+            .faces
+            .iter()
+            .any(|face| face.id == row.face && face.loops.iter().any(|id| id == &row.id))
+        {
+            pruned(
+                "loop",
+                row.id.as_str(),
+                format!("face {} does not own this loop", row.face),
             );
             return false;
         }
@@ -1085,12 +1110,16 @@ fn prune_pass(
                 let kept = row
                     .coedges()
                     .iter()
-                    .filter(|id| coedges.contains(id.as_str()))
+                    .filter(|id| coedge_owners.get(*id) == Some(&row.id))
                     .cloned()
                     .collect::<Vec<_>>();
                 for id in row.coedges() {
-                    if !coedges.contains(id.as_str()) {
-                        pruned("loop", row.id.as_str(), format!("coedge {id} is missing"));
+                    if coedge_owners.get(id) != Some(&row.id) {
+                        pruned(
+                            "loop",
+                            row.id.as_str(),
+                            format!("coedge {id} is missing or belongs to another loop"),
+                        );
                     }
                 }
                 let mut kept_uses = Vec::new();
@@ -1133,8 +1162,26 @@ fn prune_pass(
             }
         }
     });
-    let loops = existing!(loops);
+    let loop_owners = scoped
+        .model
+        .loops
+        .iter()
+        .map(|row| (row.id.clone(), row.face.clone()))
+        .collect::<std::collections::BTreeMap<_, _>>();
     scoped.model.faces.retain_mut(|row| {
+        if !scoped
+            .model
+            .shells
+            .iter()
+            .any(|shell| shell.id == row.shell && shell.faces().contains(&row.id))
+        {
+            pruned(
+                "face",
+                row.id.as_str(),
+                format!("shell {} does not own this face", row.shell),
+            );
+            return false;
+        }
         if !surfaces.contains(row.surface.as_str()) {
             pruned(
                 "face",
@@ -1147,11 +1194,15 @@ fn prune_pass(
             .loops
             .to_vec()
             .into_iter()
-            .filter(|id| loops.contains(id.as_str()));
+            .filter(|id| loop_owners.get(id) == Some(&row.id));
         let kept = kept.collect::<Vec<_>>();
         for id in &row.loops {
-            if !loops.contains(id.as_str()) {
-                pruned("face", row.id.as_str(), format!("loop {id} is missing"));
+            if loop_owners.get(id) != Some(&row.id) {
+                pruned(
+                    "face",
+                    row.id.as_str(),
+                    format!("loop {id} is missing or belongs to another face"),
+                );
             }
         }
         if kept.is_empty() {
@@ -1169,11 +1220,30 @@ fn prune_pass(
         };
         true
     });
+    let face_owners = scoped
+        .model
+        .faces
+        .iter()
+        .map(|row| (row.id.clone(), row.shell.clone()))
+        .collect::<std::collections::BTreeMap<_, _>>();
     scoped.model.shells.retain_mut(|row| {
+        if !scoped
+            .model
+            .regions
+            .iter()
+            .any(|region| region.id == row.region && region.shells.contains(&row.id))
+        {
+            pruned(
+                "shell",
+                row.id.as_str(),
+                format!("region {} does not own this shell", row.region),
+            );
+            return false;
+        }
         let faces = row
             .faces()
             .iter()
-            .filter(|id| existing!(faces).contains(id.as_str()))
+            .filter(|id| face_owners.get(*id) == Some(&row.id))
             .cloned()
             .collect::<Vec<_>>();
         let wires = row
@@ -1189,8 +1259,12 @@ fn prune_pass(
             .cloned()
             .collect::<Vec<_>>();
         for id in row.faces() {
-            if !existing!(faces).contains(id.as_str()) {
-                pruned("shell", row.id.as_str(), format!("face {id} is missing"));
+            if face_owners.get(id) != Some(&row.id) {
+                pruned(
+                    "shell",
+                    row.id.as_str(),
+                    format!("face {id} is missing or belongs to another shell"),
+                );
             }
         }
         for id in row.wire_edges() {
@@ -1229,14 +1303,24 @@ fn prune_pass(
             }
         }
     });
-    let shells = existing!(shells);
+    let shell_owners = scoped
+        .model
+        .shells
+        .iter()
+        .map(|row| (row.id.clone(), row.region.clone()))
+        .collect::<std::collections::BTreeMap<_, _>>();
     scoped.model.regions.retain_mut(|row| {
         for id in row.shells.clone() {
-            if !shells.contains(id.as_str()) {
-                pruned("region", row.id.as_str(), format!("shell {id} is missing"));
+            if shell_owners.get(&id) != Some(&row.id) {
+                pruned(
+                    "region",
+                    row.id.as_str(),
+                    format!("shell {id} is missing or belongs to another region"),
+                );
             }
         }
-        row.shells.retain(|id| shells.contains(id.as_str()));
+        row.shells
+            .retain(|id| shell_owners.get(id) == Some(&row.id));
         if row.shells.is_empty() {
             pruned("region", row.id.as_str(), "no shells remain".to_owned());
             return false;

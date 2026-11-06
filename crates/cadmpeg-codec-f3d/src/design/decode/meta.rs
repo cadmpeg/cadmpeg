@@ -732,8 +732,11 @@ pub(crate) fn design_primary_frames<'a>(
     bytes: &[u8],
     meta: &'a crate::metastream::MetaStream,
 ) -> Result<Vec<DesignPrimaryFrame<'a>>, CodecError> {
-    let (frames, _) = partition_primary_frames(bytes, meta)?;
-    Ok(frames)
+    match partition_primary_frames(bytes, meta) {
+        Ok((frames, _)) => Ok(frames),
+        Err(error @ (CodecError::ResourceLimit(_) | CodecError::Io(_))) => Err(error),
+        Err(_) => Ok(Vec::new()),
+    }
 }
 
 /// One primary `BulkStream` frame selected through a registered Design type.
@@ -1175,7 +1178,11 @@ pub(crate) fn decode_feature_timeline_parts(
             .entry_view(bulk_name)
             .ok_or_else(|| CodecError::malformed("Design timeline source View is missing"))?;
         let bytes = source.window();
-        let (frames, _) = partition_primary_frames(bytes, &meta)?;
+        let (frames, _) = match partition_primary_frames(bytes, &meta) {
+            Ok(frames) => frames,
+            Err(error @ (CodecError::ResourceLimit(_) | CodecError::Io(_))) => return Err(error),
+            Err(_) => continue,
+        };
         for frame in frames.into_iter().filter(|frame| {
             frame
                 .design_type

@@ -267,12 +267,14 @@ pub(super) fn complete(ir: &CadIr, losses: &mut Vec<LossNote>) -> ArenaDispositi
             cadmpeg_ir::drawings::DrawingKind::Page
                 | cadmpeg_ir::drawings::DrawingKind::View
                 | cadmpeg_ir::drawings::DrawingKind::Annotation
+                | cadmpeg_ir::drawings::DrawingKind::Dimension
                 | cadmpeg_ir::drawings::DrawingKind::Balloon
                 | cadmpeg_ir::drawings::DrawingKind::Symbol
         ) || drawing.visible.is_some()
             || (matches!(
                 drawing.kind,
                 cadmpeg_ir::drawings::DrawingKind::Annotation
+                    | cadmpeg_ir::drawings::DrawingKind::Dimension
                     | cadmpeg_ir::drawings::DrawingKind::Balloon
                     | cadmpeg_ir::drawings::DrawingKind::Symbol
             ) && (drawing.position.is_some()
@@ -283,13 +285,19 @@ pub(super) fn complete(ir: &CadIr, losses: &mut Vec<LossNote>) -> ArenaDispositi
             || drawing.sheet.is_some()
             || !drawing.curves.is_empty()
             || drawing.template_geometry.is_some()
-            || drawing.x_direction.is_some()
+            || (drawing.x_direction.is_some()
+                && drawing.kind != cadmpeg_ir::drawings::DrawingKind::View)
             || !drawing.parameters.is_empty()
             || !drawing.assets.is_empty()
-            || drawing
-                .relationships
-                .keys()
-                .any(|name| !matches!(name.as_str(), "Views" | "Template"))
+            || drawing.relationships.keys().any(|name| match drawing.kind {
+                cadmpeg_ir::drawings::DrawingKind::Page => {
+                    !matches!(name.as_str(), "Views" | "Template")
+                }
+                cadmpeg_ir::drawings::DrawingKind::View => {
+                    !matches!(name.as_str(), "Source" | "Sources" | "XSource")
+                }
+                _ => true,
+            })
         {
             losses.push(FreecadLossCode::ExportArenaNotTransferred.note(format!(
                 "drawing {} contains fields the FCStd writer cannot regenerate",
@@ -298,9 +306,12 @@ pub(super) fn complete(ir: &CadIr, losses: &mut Vec<LossNote>) -> ArenaDispositi
         }
     }
     for annotation in &ir.model.semantic_annotations {
+        let dimension =
+            annotation.kind == cadmpeg_ir::semantic_annotations::SemanticAnnotationKind::Dimension;
         if !matches!(
             annotation.kind,
             cadmpeg_ir::semantic_annotations::SemanticAnnotationKind::Text
+                | cadmpeg_ir::semantic_annotations::SemanticAnnotationKind::Dimension
                 | cadmpeg_ir::semantic_annotations::SemanticAnnotationKind::Balloon
                 | cadmpeg_ir::semantic_annotations::SemanticAnnotationKind::Symbol
         ) || (annotation.runtime_type.starts_with("TechDraw::")
@@ -311,20 +322,27 @@ pub(super) fn complete(ir: &CadIr, losses: &mut Vec<LossNote>) -> ArenaDispositi
                     | "TechDraw::DrawRichAnno"
                     | "TechDraw::DrawRichAnnoPython"
                     | "TechDraw::DrawViewBalloon"
+                    | "TechDraw::DrawViewDimension"
+                    | "TechDraw::DrawViewDimExtent"
+                    | "TechDraw::LandmarkDimension"
                     | "TechDraw::DrawViewSymbol"
                     | "TechDraw::DrawViewSymbolPython"
                     | "TechDraw::DrawWeldSymbol"
                     | "TechDraw::DrawWeldSymbolPython"
             ))
-            || !annotation.references.is_empty()
+            || annotation.references.keys().any(|role| {
+                !dimension || !matches!(role.as_str(), "References2D" | "References3D" | "Source3d")
+            })
             || annotation.value.is_some()
             || !annotation.reference_anchors.is_empty()
-            || !annotation.text_style.is_empty()
-            || annotation.format.is_some()
-            || annotation.dimension_kind.is_some()
-            || annotation.text_override.is_some()
-            || annotation.upper_tolerance.is_some()
-            || annotation.lower_tolerance.is_some()
+            || (!annotation.text_style.is_empty()
+                && !annotation.runtime_type.starts_with("TechDraw::"))
+            || (!dimension
+                && (annotation.format.is_some()
+                    || annotation.dimension_kind.is_some()
+                    || annotation.text_override.is_some()
+                    || annotation.upper_tolerance.is_some()
+                    || annotation.lower_tolerance.is_some()))
             || !annotation.parameters.is_empty()
             || !annotation.assets.is_empty()
         {

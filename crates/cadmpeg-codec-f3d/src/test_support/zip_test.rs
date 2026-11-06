@@ -223,7 +223,7 @@ pub(crate) fn f3d_with_smbh_and_protein(smbh: &[u8]) -> Vec<u8> {
 
 /// An archive whose first protein asset keeps one flipped byte under a
 /// valid container, so that asset framing fails and the entry is given
-/// up as a `f3d.protein_record` part while later assets still decode.
+/// up as a `zip.entry` part while later assets still decode.
 pub(crate) fn f3d_with_damaged_protein_asset(smbh: &[u8]) -> Vec<u8> {
     let bytes = f3d_with_smbh_and_protein_guids(
         smbh,
@@ -439,6 +439,14 @@ pub(crate) fn original_design_fixture(bytes: Vec<u8>, remove_body: bool) -> Vec<
         std::io::Read::read_to_end(&mut entry, &mut content).unwrap();
         entries.push((name, content));
     }
+    let (act_bulk, act_records) = generated_act_bulkstream();
+    for (name, content) in &mut entries {
+        if name == "FusionAssetName[Active]/FusionACTSegmentType1/BulkStream.dat" {
+            *content = act_bulk.clone();
+        } else if name == "FusionAssetName[Active]/FusionACTSegmentType1/MetaStream.dat" {
+            *content = generated_act_metastream(&act_records);
+        }
+    }
     let meta_index = entries
         .iter()
         .position(|(name, _)| name == "FusionAssetName[Active]/Design1/MetaStream.dat")
@@ -593,17 +601,34 @@ fn sketch_dimension_metastream(
     design_metastream_with_records_and_secondary(&types, records, &secondary)
 }
 
+pub(crate) fn f3d_with_smbh_and_protein_with_original_sketch_dimension(smbh: &[u8]) -> Vec<u8> {
+    let properties = vec![generated_instance_properties_for(
+        "11111111-2222-3333-4444-555555555555",
+    )];
+    let (design_bulk, design_records) = generated_design_sketch_dimension_bulkstream();
+    let design_metastream = sketch_dimension_metastream(&design_records, &[]);
+    let design_metastream =
+        fixture_secondary_index(design_metastream, &design_bulk, &[584, 1100, 1400, 1600]);
+    f3d_with_smbh_and_instance_properties_and_design_with_metastream(
+        smbh,
+        &properties,
+        &design_bulk,
+        &design_metastream,
+    )
+}
+
 pub(crate) fn f3d_with_smbh_and_protein_with_generated_sketch_dimension(smbh: &[u8]) -> Vec<u8> {
     let properties = vec![generated_instance_properties_for(
         "11111111-2222-3333-4444-555555555555",
     )];
-    let (design_bulk, mut design_records) = generated_design_sketch_dimension_bulkstream();
+    let (mut design_bulk, mut design_records) = generated_design_sketch_dimension_bulkstream();
     let mut recipe_header = Vec::new();
     crate::test_support::indexed_header(&mut recipe_header, *b"275", 1305);
     let recipe_offset = design_bulk
         .windows(recipe_header.len())
         .position(|window| window == recipe_header)
         .expect("synthetic recipe header");
+    design_bulk[recipe_offset + 4..recipe_offset + 7].copy_from_slice(b"283");
     design_records.push((
         1305,
         u64::try_from(recipe_offset).expect("synthetic recipe offset"),
@@ -637,11 +662,14 @@ pub(crate) fn f3d_with_smbh_and_protein_with_generated_sketch_dimension(smbh: &[
     );
     let design_metastream =
         fixture_secondary_index(design_metastream, &design_bulk, &[584, 1100, 1400, 1600]);
-    f3d_with_smbh_and_instance_properties_and_design_with_metastream(
+    let act = crate::test_support::act_stream_test::generated_complete_act_bulkstream();
+    f3d_with_smbh_and_instance_properties_and_design_with_act(
         smbh,
         &properties,
         &design_bulk,
         &design_metastream,
+        &[],
+        &act,
     )
 }
 
@@ -923,6 +951,20 @@ fn f3d_with_smbh_and_instance_properties_and_design_with_metastream_and_entries(
     design_metastream: &[u8],
     extra_entries: &[(&str, &[u8])],
 ) -> Vec<u8> {
+    let act = crate::test_support::act_stream_test::generated_single_entity_act_bulkstream();
+    f3d_with_smbh_and_instance_properties_and_design_with_act(
+        smbh, properties, design_bulk, design_metastream, extra_entries, &act,
+    )
+}
+
+fn f3d_with_smbh_and_instance_properties_and_design_with_act(
+    smbh: &[u8],
+    properties: &[Vec<u8>],
+    design_bulk: &[u8],
+    design_metastream: &[u8],
+    extra_entries: &[(&str, &[u8])],
+    act: &(Vec<u8>, Vec<(u64, u64)>),
+) -> Vec<u8> {
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
     let proteins = properties
         .iter()
@@ -968,19 +1010,19 @@ fn f3d_with_smbh_and_instance_properties_and_design_with_metastream_and_entries(
     zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
         .unwrap();
     zip.write_all(design_metastream).unwrap();
-    let (act_bulk, act_records) = generated_act_bulkstream();
+    let (act_bulk, act_records) = act;
     zip.start_file(
         "FusionAssetName[Active]/FusionACTSegmentType1/BulkStream.dat",
         stored,
     )
     .unwrap();
-    zip.write_all(&act_bulk).unwrap();
+    zip.write_all(act_bulk).unwrap();
     zip.start_file(
         "FusionAssetName[Active]/FusionACTSegmentType1/MetaStream.dat",
         stored,
     )
     .unwrap();
-    zip.write_all(&generated_act_metastream(&act_records))
+    zip.write_all(&generated_act_metastream(act_records))
         .unwrap();
     for (name, payload) in extra_entries {
         zip.start_file(*name, stored).unwrap();

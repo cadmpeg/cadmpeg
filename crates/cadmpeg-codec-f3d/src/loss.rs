@@ -58,8 +58,6 @@ pub(crate) enum F3dLossCode {
     ConfigurationFeatureSuppressionUnbound,
     /// ACT component links have no resolved neutral product role.
     ActComponentLinkUnresolved,
-    /// ACT records whose semantic payload could not be decoded.
-    ActRecordUntyped,
     /// Local component occurrences whose container or definition the source does not settle.
     LocalOccurrenceUnplaced,
     /// A local occurrence owner joins no unique component definition.
@@ -192,10 +190,6 @@ pub(crate) enum F3dLossCode {
     FaceAppearanceAmbiguous,
     /// Parameter expression symbols name same-stream parameters without an edge.
     ParameterExpressionUnbound,
-    /// Feature history-state dependency links were not projected.
-    HistoryDependencyUnprojected,
-    /// Feature history-state dependency links have multiple source scopes.
-    HistoryDependencyAmbiguous,
     /// A historical face selection cannot bind uniquely to emitted input topology members.
     HistoricalFaceSelectionUnbound,
     /// Historical edge midpoint geometry could not be resolved from feature selections.
@@ -509,8 +503,6 @@ impl F3dLossCode {
         Self::MaterialDistanceUnitUntyped,
         Self::FaceAppearanceAmbiguous,
         Self::ParameterExpressionUnbound,
-        Self::HistoryDependencyUnprojected,
-        Self::HistoryDependencyAmbiguous,
         Self::HistoricalFaceSelectionUnbound,
         Self::HistoricalEdgeMidpointsUnresolved,
         Self::HistoricalBodyBoundsUnresolved,
@@ -603,7 +595,6 @@ impl F3dLossCode {
         Self::KernelHeaderMetadataUnresolved,
         Self::ManifestMetadataUnresolved,
         Self::DesignIntentUndecoded,
-        Self::ActRecordUntyped,
         Self::RecipePrefixUntyped,
         Self::WriterNativeRecordsOmitted,
         Self::WriterDesignRecordsOmitted,
@@ -645,7 +636,6 @@ impl F3dLossCode {
                 "configuration.feature-suppression-unbound"
             }
             Self::ActComponentLinkUnresolved => "assembly.act-component-link-unresolved",
-            Self::ActRecordUntyped => "act.record-untyped",
             Self::LocalOccurrenceUnplaced => "assembly.local-occurrence-unplaced",
             Self::LocalOccurrenceOwnerUnbound => "assembly.local-occurrence-owner-unbound",
             Self::ComponentBodyOwnerFallback => "assembly.component-body-owner-fallback",
@@ -711,11 +701,9 @@ impl F3dLossCode {
             Self::MaterialDistanceUnitUntyped => "material.distance-unit-untyped",
             Self::FaceAppearanceAmbiguous => "material.face-appearance-ambiguous",
             Self::ParameterExpressionUnbound => "parameter.expression-unbound",
-            Self::HistoryDependencyUnprojected => "history.dependency-unprojected",
             Self::HistoricalFaceSelectionUnbound => "history.face-selection-unbound",
             Self::HistoricalEdgeMidpointsUnresolved => "history.edge-midpoints-unresolved",
             Self::HistoricalBodyBoundsUnresolved => "history.body-bounds-unresolved",
-            Self::HistoryDependencyAmbiguous => "history.dependency-ambiguous",
             Self::SketchDimensionNativeRetained => "sketch.dimension-native",
             Self::SketchPlacementUnprojected => "sketch.placement-unprojected",
             Self::SketchSurfaceUnprojected => "sketch.surface-unprojected",
@@ -898,7 +886,6 @@ impl F3dLossCode {
             | Self::ConfigurationParameterOverrideUnbound
             | Self::ConfigurationFeatureSuppressionUnbound
             | Self::ActComponentLinkUnresolved
-            | Self::ActRecordUntyped
             | Self::ComponentBodyOwnerUnresolved
             | Self::ComponentBodyOwnerFallback
             | Self::LocalOccurrenceOwnerUnbound
@@ -955,8 +942,6 @@ impl F3dLossCode {
             | Self::MaterialDistanceUnitUntyped
             | Self::FaceAppearanceAmbiguous
             | Self::ParameterExpressionUnbound
-            | Self::HistoryDependencyUnprojected
-            | Self::HistoryDependencyAmbiguous
             | Self::HistoricalFaceSelectionUnbound
             | Self::HistoricalEdgeMidpointsUnresolved
             | Self::HistoricalBodyBoundsUnresolved
@@ -1079,8 +1064,7 @@ impl F3dLossCode {
             | Self::XrefOwnedPose
             | Self::XrefOwnedPoseDisagrees
             | Self::XrefOwnedPoseNative
-            | Self::XrefTableUndecoded
-            | Self::ActRecordUntyped => LossTaxonomy::MetadataNotTransferred,
+            | Self::XrefTableUndecoded => LossTaxonomy::MetadataNotTransferred,
             Self::ActComponentLinkUnresolved
             | Self::AssemblyComponentsExternal
             | Self::XrefCycle
@@ -1122,8 +1106,6 @@ impl F3dLossCode {
             | Self::ParameterOwnerUnrecognized
             | Self::ParameterUnitUntyped
             | Self::ParameterExpressionUnbound
-            | Self::HistoryDependencyUnprojected
-            | Self::HistoryDependencyAmbiguous
             | Self::HistoricalFaceSelectionUnbound
             | Self::HistoricalEdgeMidpointsUnresolved
             | Self::HistoricalBodyBoundsUnresolved
@@ -1345,8 +1327,6 @@ mod tests {
                 "material.distance-unit-untyped",
                 "material.face-appearance-ambiguous",
                 "parameter.expression-unbound",
-                "history.dependency-unprojected",
-                "history.dependency-ambiguous",
                 "history.face-selection-unbound",
                 "history.edge-midpoints-unresolved",
                 "history.body-bounds-unresolved",
@@ -1439,7 +1419,6 @@ mod tests {
                 "brep.header-metadata-unresolved",
                 "source.manifest-metadata-unresolved",
                 "design.intent-undecoded",
-                "act.record-untyped",
                 "dimension.recipe-prefix-untyped",
                 "writer.native-records-omitted",
                 "writer.design-records-omitted",

@@ -298,6 +298,10 @@ mod tests {
             ],
             "casts_shadows":false, "receives_shadows":false, "advanced_texture_preview":true
         });
+        attributed["attributes"]["rendering_mappings"] = json!([{"plugin_uuid":"11111111-2222-3333-4444-555555555555", "channels":[
+            {"mapping_channel_id":3,"mapping_uuid":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"},
+            {"mapping_channel_id":4,"mapping_uuid":"99999999-8888-7777-6666-555555555555", "object_transform":[[1.0,0.0,0.0,2.0],[0.0,1.0,0.0,3.0],[0.0,0.0,1.0,4.0],[0.0,0.0,0.0,1.0]]}
+        ]}]);
         let expected_attributes = attributed["attributes"].clone();
         let mut reindexed = attributed.clone();
         reindexed["source_uuid"] = json!("99999999-9999-9999-9999-999999999999");
