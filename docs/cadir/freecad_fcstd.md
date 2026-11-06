@@ -1,5 +1,11 @@
 # FreeCAD FCStd: CADIR projection and writing
 
+Objects project to features, sketches, parameters, products, and presentation.
+Unconsumed properties project to attributes. Feature `source_properties` and
+`ViewPresentation.properties` are empty; GUI properties have typed native
+homes. Spreadsheet cell `alignment`, `style`, `foregroundColor`,
+`backgroundColor`, and `displayUnit` stay with the cell's native data.
+
 The synthesized application graph includes primitive solids, boolean operations,
 extrusions and revolutions, sweeps and lofts, holes and thread controls, patterns,
 dress-up operations, datum/construction objects, binders, body groups and tips.
