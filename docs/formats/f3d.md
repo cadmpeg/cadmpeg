@@ -1971,7 +1971,7 @@ reference selects a version-3 or version-4 record of type GUID
 `7F5A0426-1D2A-4DC4-9F06-58631F69D2F5`, including a joint shared by several
 scopes. A length-prefixed UTF-16 GUID with 36 code units and three zero bytes
 precede the counted scope-reference table. The table contains `R` nonnull
-references. The four alignment-owner targets occur in this table. The current history word, length-prefixed UTF-16 `Assemble`, and
+references. The four alignment-owner targets occur in this table. The current history word, the length-prefixed UTF-16 stored feature-family name, and
 feature ordinal follow the table. The tail contains fifteen zero bytes, a
 nonnull reference, an optional zero separator of length `S` (`0` or `1`), the
 previous history word, a u32 word, a finite f64, an independent u32 word, a
@@ -2002,6 +2002,16 @@ select angle, Z, X, and Y lanes. The zero run after the four owner references
 is six bytes. This form stores four alignment owners. The version-five
 expanded two-matrix layout with `R = 16` spans 945 bytes; its complete field
 table is in [the layout table](../layouts/f3d.md#assembly_version_five_scope).
+
+Version 4 uses the version-5 extensions with these differences. Its joint
+reference selects type version 5. [Eight zero bytes](../layouts/f3d.md#assembly_version_four_prologue)
+follow the facing byte's two zero bytes. No zero bytes follow the angle-owner
+reference. The tail stores u8 `1` before its two boolean bytes, and no zero
+byte follows them. Its span is `374 + (R + 12) * 11 + 128 * M + 4 * E`.
+
+The span formulas count the eight code units of the stored family name
+`Assemble`. A stored family name of `L` UTF-16 code units adds `2 * (L - 8)`
+bytes to the span.
 
 The scope matrices are operand-local connector frames. Let `C0` and `C1` be
 these frames after composition with their operand poses. The mate equation
@@ -2038,7 +2048,7 @@ and 567 in the 850-byte scope, after the count 2.
 
 A frame-sense byte uses the facing term of the version-3 mate equation. An operand frame that names an occurrence path is in the space of the path's innermost occurrence. The frame sense is the projected joint's `operands.frame_sense`.
 
-A wide version-five locator has prefix word 2 or 3. A null construction reference occupies one zero byte at 56. With flag 0 at 57, the rigid matrix starts at 58, the separator is at 186, the scope backlink at 187, the wrapper reference at 198, the discriminator at 209, and the two-byte zero tail at 213. This null-construction matrix locator spans 215 bytes. For version-three and version-five Assemble scopes, the scope connector supplies the operand frame; the locator path supplies its occurrence qualifier.
+A wide version-five locator has prefix word 2 or 3. A null construction reference occupies one zero byte at 56. With flag 0 at 57, the rigid matrix starts at 58, the separator is at 186, the scope backlink at 187, the wrapper reference at 198, the discriminator at 209, and the two-byte zero tail at 213. This null-construction matrix locator spans 215 bytes. For version-three, version-four and version-five Assemble scopes, the scope connector supplies the operand frame; the locator path supplies its occurrence qualifier.
 
 The null-construction identity variants span 77 bytes with a null wrapper and 87 bytes with a present wrapper. Their flag is 1 at 57, separator at 58, backlink at 59 and wrapper at 70. The discriminator and zero tail start at 71 and 75 for the 77-byte form, and 81 and 85 for the 87-byte form. A qualified operand requires a present wrapper.
 
