@@ -412,7 +412,14 @@ fn standalone_subset_curve(cache: Option<cadmpeg_ir::geometry::LegacyCache>) -> 
             ),
         )),
     });
-    let solved = ir.model.curves[0].geometry.solved().unwrap().clone();
+    let solved = cache.map(|_| {
+        let ProceduralCurveDefinition::Subset(subset) = construction.definition() else {
+            unreachable!("the fixture constructs a subset")
+        };
+        subset
+            .local_cache(ir.model.curves[0].geometry.solved().unwrap())
+            .unwrap()
+    });
     ir.model.curves.push(Curve {
         native_ref: None,
         id: "test:model:curve#subset".try_into().unwrap(),
@@ -420,7 +427,7 @@ fn standalone_subset_curve(cache: Option<cadmpeg_ir::geometry::LegacyCache>) -> 
         source_object: None,
         geometry: CurveGeometry::Procedural {
             construction: construction.id.clone(),
-            cache: cache.map(|_| solved),
+            cache: solved,
         },
     });
     ir.model.procedural_curves.push(construction);
