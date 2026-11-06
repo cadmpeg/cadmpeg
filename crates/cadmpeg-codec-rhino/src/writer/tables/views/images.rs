@@ -4,7 +4,7 @@
 use super::super::super::WriteError;
 use super::{
     anonymous, anonymous_with_children, crc_chunk_with_direct, flag, object, scalar, text, utf16,
-    vector, CodecError, Map, Value,
+    vector, Map, Value,
 };
 
 fn reference(fields: &Map<String, Value>) -> Result<Vec<u8>, WriteError> {
@@ -65,7 +65,7 @@ fn with_reference(
         children.push(start..body.len());
     }
     let ranges = crate::chunks::direct_checksum_ranges(&(0..body.len()), &children)
-        .map_err(|error| WriteError::Fail(CodecError::malformed(error)))?;
+        .map_err(|error| WriteError::Omit(error.to_string()))?;
     let direct = ranges
         .into_iter()
         .flat_map(|range| body[range].to_vec())
