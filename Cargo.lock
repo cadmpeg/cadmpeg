@@ -580,6 +580,7 @@ dependencies = [
  "cadmpeg-core",
  "cadmpeg-ir",
  "flate2",
+ "roxmltree",
  "serde",
  "serde_json",
  "thiserror",

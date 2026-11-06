@@ -126,66 +126,86 @@ impl DecodeContext<'_> {
         text: &'input str,
         operation: &'static str,
     ) -> Result<roxmltree::Document<'input>, CodecError> {
-        let shape = xml_shape(text);
-        if shape.tag_attributes > MAX_XML_TAG_ATTRIBUTES {
-            return Err(self.refuse_part_limit(
-                ResourceDimension::Entities,
-                MAX_XML_TAG_ATTRIBUTES,
-                0,
-                shape.tag_attributes,
-                operation,
-            ));
-        }
-        let prefixes = u64_from_index(shape.prefixes.len());
-        if prefixes > MAX_XML_NAMESPACE_PREFIXES {
-            return Err(self.refuse_part_limit(
-                ResourceDimension::Entities,
-                MAX_XML_NAMESPACE_PREFIXES,
-                0,
-                prefixes,
-                operation,
-            ));
-        }
-        let allowance = self.per_expand_allowance();
-        let storage = xml_storage_bytes(&shape, prefixes).ok_or_else(|| {
-            self.refuse_part_limit(
-                ResourceDimension::RetainedBytes,
-                allowance,
-                0,
-                u64::MAX,
-                operation,
-            )
-        })?;
-        let nodes_limit = allowance
-            .checked_sub(storage)
-            .and_then(|rest| xml_nodes_limit(rest, shape.less_than))
-            .ok_or_else(|| {
+        self.parse_xml_located(text, operation)
+            .map_err(|(error, _)| error)
+    }
+
+    /// Parses XML with the same limits as `parse_xml`, retaining a syntax
+    /// error's position so a recovering scanner can isolate its element.
+    pub fn parse_xml_located<'input>(
+        &self,
+        text: &'input str,
+        operation: &'static str,
+    ) -> Result<roxmltree::Document<'input>, (CodecError, Option<roxmltree::TextPos>)> {
+        let mut position = None;
+        let result = (|| {
+            let shape = xml_shape(text);
+            if shape.tag_attributes > MAX_XML_TAG_ATTRIBUTES {
+                return Err(self.refuse_part_limit(
+                    ResourceDimension::Entities,
+                    MAX_XML_TAG_ATTRIBUTES,
+                    0,
+                    shape.tag_attributes,
+                    operation,
+                ));
+            }
+            let prefixes = u64_from_index(shape.prefixes.len());
+            if prefixes > MAX_XML_NAMESPACE_PREFIXES {
+                return Err(self.refuse_part_limit(
+                    ResourceDimension::Entities,
+                    MAX_XML_NAMESPACE_PREFIXES,
+                    0,
+                    prefixes,
+                    operation,
+                ));
+            }
+            let allowance = self.per_expand_allowance();
+            let storage = xml_storage_bytes(&shape, prefixes).ok_or_else(|| {
                 self.refuse_part_limit(
                     ResourceDimension::RetainedBytes,
                     allowance,
                     0,
-                    storage,
+                    u64::MAX,
                     operation,
                 )
             })?;
-        // roxmltree node ids are `u32`; a larger limit leaves the parser's own.
-        let mut options = roxmltree::ParsingOptions::default();
-        if let Ok(limit) = u32::try_from(nodes_limit) {
-            options.nodes_limit = limit;
-        }
-        // roxmltree recurses once per element level.
-        self.at_depth(shape.depth, operation, || {
-            roxmltree::Document::parse_with_options(text, options).map_err(|error| match error {
-                roxmltree::Error::NodesLimitReached => self.refuse_part_limit(
-                    ResourceDimension::Entities,
-                    nodes_limit,
-                    nodes_limit,
-                    1,
-                    operation,
-                ),
-                error => Self::tree_malformed(error),
+            let nodes_limit = allowance
+                .checked_sub(storage)
+                .and_then(|rest| xml_nodes_limit(rest, shape.less_than))
+                .ok_or_else(|| {
+                    self.refuse_part_limit(
+                        ResourceDimension::RetainedBytes,
+                        allowance,
+                        0,
+                        storage,
+                        operation,
+                    )
+                })?;
+            // roxmltree node ids are `u32`; a larger limit leaves the parser's own.
+            let mut options = roxmltree::ParsingOptions::default();
+            if let Ok(limit) = u32::try_from(nodes_limit) {
+                options.nodes_limit = limit;
+            }
+            // roxmltree recurses once per element level.
+            self.at_depth(shape.depth, operation, || {
+                roxmltree::Document::parse_with_options(text, options).map_err(
+                    |error| match error {
+                        roxmltree::Error::NodesLimitReached => self.refuse_part_limit(
+                            ResourceDimension::Entities,
+                            nodes_limit,
+                            nodes_limit,
+                            1,
+                            operation,
+                        ),
+                        error => {
+                            position = Some(error.pos());
+                            Self::tree_malformed(error)
+                        }
+                    },
+                )
             })
-        })
+        })();
+        result.map_err(|error| (error, position))
     }
 
     /// Parses a JSON value tree after charging its nesting depth.
@@ -782,6 +802,24 @@ mod tests {
                 ctx.parse_xml("<r>", "XML"),
                 Err(CodecError::Malformed(_))
             ));
+        });
+    }
+
+    #[test]
+    fn located_xml_errors_preserve_the_syntax_position_and_limits() {
+        with_depth(256, |ctx| {
+            let error = ctx
+                .parse_xml_located("<root>\n<child bad=>\n</child></root>", "XML")
+                .expect_err("malformed attribute");
+            assert!(matches!(error.0, CodecError::Malformed(_)));
+            assert_eq!(error.1.expect("syntax position").row, 2);
+        });
+        with_depth(1, |ctx| {
+            let error = ctx
+                .parse_xml_located("<root><child/></root>", "XML")
+                .expect_err("depth limit");
+            assert!(matches!(error.0, CodecError::ResourceLimit(_)));
+            assert!(error.1.is_none());
         });
     }
 

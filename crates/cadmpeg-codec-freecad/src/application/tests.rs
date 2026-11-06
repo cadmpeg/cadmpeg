@@ -100,7 +100,7 @@ fn censuses_application_domains_and_keeps_python_payloads_inert() {
     );
     assert_eq!(
         by_domain["Fem"]["side_entries"],
-        serde_json::json!(["analysis.dat"])
+        serde_json::json!(["fcstd:native:entry#analysis.dat"])
     );
     assert_eq!(by_domain["Path"]["inert_payload"], true);
     assert_eq!(by_domain["Mesh"]["inert_payload"], false);

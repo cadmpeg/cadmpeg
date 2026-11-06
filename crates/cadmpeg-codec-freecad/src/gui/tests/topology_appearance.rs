@@ -117,7 +117,7 @@ fn accepted_primitive_color_arrays_replace_defaults_and_keep_primitive_sizes() {
                     presentation.point_size
                 };
                 assert_eq!(
-                    size.map(|size| size.get()),
+                    size.map(cadmpeg_ir::scalar::NonNegativeReal::get),
                     Some(expected_size),
                     "{entry}, count {count}"
                 );

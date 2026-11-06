@@ -103,7 +103,8 @@ fn wire_records<'a>(
         let property_ids = owned.iter().map(|property| property.id.as_str()).collect();
         let side_entries = owned
             .iter()
-            .flat_map(|property| property.side_entries().iter().map(String::as_str))
+            .flat_map(|property| property.side_entries())
+            .filter_map(|name| entry_index.get(name.as_str()).map(|entry| entry.id()))
             .collect();
         let mut property_records = Vec::new();
         for property in owned {

@@ -45,7 +45,7 @@
         "articulations": 0,
         "assembly_joints": 0,
         "assets": 0,
-        "attributes": 33,
+        "attributes": 35,
         "bodies": 0,
         "coedges": 0,
         "colliders": 0,
@@ -108,7 +108,7 @@
         "articulations": "omitted",
         "assembly_joints": "written",
         "assets": "dropped",
-        "attributes": "written",
+        "attributes": "reported",
         "bodies": "written",
         "coedges": "written",
         "colliders": "omitted",
@@ -160,6 +160,26 @@
       "target": "fcstd:schema-4"
     },
     "losses": [
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#TemperatureConstraint:Normals:property (Normals) has no FreeCAD property encoding",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "attribute.not-transferred",
+          "kind": "metadata_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "attribute fcstd:model:attribute#TemperatureConstraint:Points:property (Points) has no FreeCAD property encoding",
+        "severity": "warning"
+      },
       {
         "code": {
           "code": "native.records-omitted",
@@ -264,6 +284,9 @@
                 "fcstd:native:object#Toolpath": "regenerated"
               }
             },
+            "orphan_object_data": {
+              "disposition": "dropped"
+            },
             "polygons3d": {
               "disposition": "dropped"
             },
@@ -342,8 +365,8 @@
                 "fcstd:native:property#TemperatureConstraint:Label": "regenerated",
                 "fcstd:native:property#TemperatureConstraint:Label2": "regenerated",
                 "fcstd:native:property#TemperatureConstraint:NormalDirection": "regenerated",
-                "fcstd:native:property#TemperatureConstraint:Normals": "written",
-                "fcstd:native:property#TemperatureConstraint:Points": "written",
+                "fcstd:native:property#TemperatureConstraint:Normals": "regenerated",
+                "fcstd:native:property#TemperatureConstraint:Points": "regenerated",
                 "fcstd:native:property#TemperatureConstraint:References": "regenerated",
                 "fcstd:native:property#TemperatureConstraint:Scale": "regenerated",
                 "fcstd:native:property#TemperatureConstraint:Suppressed": "regenerated",
