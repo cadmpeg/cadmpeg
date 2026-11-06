@@ -102,9 +102,9 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ### GC-10. Normal sense of non-compact surface carriers
 
-**Question.** Which field orients the surface normal against the natural normal of the neutral surface for a `00 7c` B-spline surface-use wrapper, a `00 43` or `00 44` swept or spun surface, a rolling-ball blend, and an offset surface?
+**Question.** Which field orients the surface normal against the natural normal of the neutral surface for a `00 43` or `00 44` swept or spun surface, a rolling-ball blend, and an offset surface?
 
-**Known.** `sldprt.md` §7.1 gives the orientation marker of a compact analytic surface record (`00 32` through `00 36`) and composes it with the bridge marker of §4. The `00 43`, `00 44`, blend, and offset records carry a `0x2b` or `0x2d` byte in the same compact-header position. `sldprt.md` does not give its meaning for these families.
+**Known.** `sldprt.md` §7.1 gives the orientation marker of a compact analytic surface record (`00 32` through `00 36`) and composes it with the bridge marker of §4. §7.2 gives the sense byte of a `00 7c` B-spline surface-use wrapper. The `00 43`, `00 44`, blend, and offset records carry a `0x2b` or `0x2d` byte in the same compact-header position. `sldprt.md` does not give its meaning for these families.
 
 **Need.** We must know the surface normal sense to give a face on one of these carriers its outward normal.
 

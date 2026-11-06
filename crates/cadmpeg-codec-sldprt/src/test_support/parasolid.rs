@@ -585,7 +585,7 @@ fn rational_nurbs_curve_carrier(wrapper_attr: u16, descriptor_attr: u16) -> Vec<
     be16(&mut bytes, 4);
     be32(&mut bytes, 2);
     bytes.push(0);
-    be32(&mut bytes, 0);
+    be32(&mut bytes, 0x0000_0100);
     be16(&mut bytes, control_attr);
     be16(&mut bytes, mult_attr);
     be16(&mut bytes, knot_attr);
@@ -649,6 +649,7 @@ pub(crate) fn rational_linear_nurbs_curve_carrier(
         .position(|window| window == [0x00, 0x88])
         .unwrap();
     bytes[descriptor + 10..descriptor + 12].copy_from_slice(&4u16.to_be_bytes());
+    bytes[descriptor + 19] = 1;
     let control = bytes
         .windows(3)
         .position(|window| window == [0x00, 0x2d, 0x2b])
