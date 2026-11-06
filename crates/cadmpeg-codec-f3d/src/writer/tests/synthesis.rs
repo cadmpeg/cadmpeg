@@ -107,6 +107,11 @@ fn source_less_primitive_feature_survives_synthesis() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode source-less feature");
+    let mut named = ir.clone();
+    named.model.features[0].name = Some("Mounting boss".into());
+    let (named_output, named_report) = super::source_less_analytic::synthesize_document(&named, None);
+    assert_eq!(named_output.ir().model.features.len(), 1);
+    assert!(named_report.losses.iter().any(|loss| loss.message.contains(named.model.features[0].id.as_str()) && loss.message.contains("name")));
     assert_eq!(decoded.ir().model.features.len(), 1);
     let FeatureDefinition::Operation(FeatureOperation::Primitive {
         solid,
