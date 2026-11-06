@@ -66,6 +66,7 @@ fn scope_face_findings(
         operand_length,
         recipe_byte_offset,
         None,
+        None,
         0,
     )
 }
@@ -123,14 +124,17 @@ fn face_operand_group(
 }
 
 /// With `group_role`, the operand is the sole member of a group of that role at
-/// scope reference `group_ordinal`, zero or one. Without it, the operand is
-/// direct scope reference two.
+/// scope reference zero. Without it, the operand is direct scope reference two.
+/// With `next_reference_at`, the operand is scope reference one and the header
+/// of scope reference two, record 2, starts at that offset. With
+/// `group_ordinal` one, the group is scope reference one.
 fn operand_findings(
     scope_kind: crate::records::feature::scope::DesignFeatureKind,
     kind: crate::records::recipes::ConstructionRecipeKind,
     operand_length: u64,
     recipe_byte_offset: u64,
     group_role: Option<crate::records::topology::extrude_selection::DesignOperandRole>,
+    next_reference_at: Option<u64>,
     group_ordinal: u32,
 ) -> Vec<cadmpeg_ir::report::check::Finding> {
     use crate::records::{
@@ -156,7 +160,9 @@ fn operand_findings(
     scope
         .try_edit(|draft| {
             draft.reference_members =
-                crate::records::identity::ReferenceRun::unlocated(if group_ordinal == 1 {
+                crate::records::identity::ReferenceRun::unlocated(if next_reference_at.is_some() {
+                    vec![1, 100, 2]
+                } else if group_ordinal == 1 {
                     vec![2, 1, 100]
                 } else {
                     vec![1, 2, 100]
@@ -214,9 +220,17 @@ fn operand_findings(
         native.design_record_headers = vec![DesignRecordHeader {
             id: format!("{stream}:design-record-header#100"),
             record_index: 100,
-            class_tag,
+            class_tag: class_tag.clone(),
             byte_offset: recipe_byte_offset - 47,
         }];
+        native
+            .design_record_headers
+            .extend(next_reference_at.map(|byte_offset| DesignRecordHeader {
+                id: format!("{stream}:design-record-header#2"),
+                record_index: 2,
+                class_tag,
+                byte_offset,
+            }));
         native.construction_recipes = vec![ConstructionRecipe {
             id: recipe_id.clone(),
             byte_offset: recipe_byte_offset,
@@ -291,6 +305,7 @@ fn move_face_operand_requires_a_bounded_face_member_of_its_face_group() {
             operand_length,
             1_047,
             group_role,
+            None,
             0,
         )
     };
@@ -333,6 +348,33 @@ fn face_operand_rejects_overflowed_program_extent() {
     assert_eq!(findings.len(), 1);
 }
 
+/// The header of the scope reference after a group's final face member bounds
+/// that member's frame.
+#[test]
+fn a_final_group_member_frame_ends_at_the_next_scope_reference() {
+    use crate::records::feature::scope::DesignFeatureKind;
+    use crate::records::recipes::ConstructionRecipeKind;
+    use crate::records::topology::extrude_selection::DesignOperandRole;
+
+    let findings = |next_reference_at| {
+        operand_findings(
+            DesignFeatureKind::SplitFace,
+            ConstructionRecipeKind::BoundedFace,
+            24,
+            1_047,
+            Some(DesignOperandRole::ROLE_0X10),
+            Some(next_reference_at),
+            0,
+        )
+    };
+    let frame_end = 1_047 + 24 + 8;
+    let closed = findings(frame_end);
+    assert!(closed.is_empty(), "{closed:#?}");
+    assert_eq!(findings(frame_end - 1).len(), 1);
+    let earlier = findings(900);
+    assert!(earlier.is_empty(), "{earlier:#?}");
+}
+
 /// A rectangular, circular, or Mirror pattern face seed group at scope
 /// reference one holds bounded-face operands.
 #[test]
@@ -353,6 +395,7 @@ fn a_pattern_face_seed_group_holds_bounded_face_operands() {
                 operand_length,
                 1_047,
                 Some(DesignOperandRole::ROLE_0X10),
+                None,
                 ordinal,
             )
         };
