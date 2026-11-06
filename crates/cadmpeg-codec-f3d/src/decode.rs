@@ -4799,7 +4799,7 @@ fn decode_result(
             for body in native
                 .design_mesh_features
                 .iter()
-                .flat_map(|feature| feature.bodies())
+                .flat_map(crate::records::mesh::DesignMeshFeature::bodies)
             {
                 if body.entry.name() == name && body.container_mesh_uuid.is_none() {
                     let id = format!(
