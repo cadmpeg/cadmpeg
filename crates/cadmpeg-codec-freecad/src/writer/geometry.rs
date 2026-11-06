@@ -5,6 +5,7 @@ use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
 use cadmpeg_ir::units::OrthonormalFrame3;
+use std::fmt::Write as _;
 
 pub(super) mod nurbs;
 
@@ -93,10 +94,12 @@ fn polyline(value: &cadmpeg_ir::geometry::sampled::PolylineCurve) -> Option<Stri
         } else {
             1
         };
-        output.push_str(&format!(
+        write!(
+            output,
             " {} {multiplicity}",
             value.parameter_at(index)?.get()
-        ));
+        )
+        .expect("write to string");
     }
     Some(output)
 }

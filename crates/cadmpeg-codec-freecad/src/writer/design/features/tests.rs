@@ -88,6 +88,33 @@ fn decode_operation(mut objects: Vec<Object>, output: super::FeatureOutput) -> V
 }
 
 #[test]
+fn malformed_native_selection_omits_its_feature_with_a_loss() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let operation = feature(json!({
+        "definition": "face_from_shapes",
+        "sources": {"kind": "native", "value": "source:links:bad..2"},
+        "face_maker_class": "Part::FaceMakerSimple"
+    }));
+    let id = operation.id.clone();
+    ir.model.features.push(operation);
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .expect("unsupported feature does not refuse the document");
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(id.as_str())));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+}
+
+#[test]
 fn a_neutral_pad_writes_profile_length_and_direction_through_the_reader() {
     let feature = feature(
         json!({"definition":"extrude","profile":{"kind":"sketch","value":"test:sketch:profile#0"},"direction":{"kind":"explicit","vector":{"x":0.0,"y":0.0,"z":1.0}},"start":{"kind":"profile_plane"},"extent":{"kind":"one_sided","side":{"termination":{"kind":"blind","length":{"kind":"literal","value":23.0}}}},"op":"join","solid":true}),

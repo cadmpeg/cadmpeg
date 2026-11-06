@@ -313,7 +313,7 @@ fn mutation_rejects_link_carrier_edits_without_changing_the_graph() {
 }
 
 #[test]
-fn writer_rejects_direct_link_carrier_graph_drift() {
+fn writer_omits_direct_link_carrier_graph_drift() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
 <Objects Count="2"><Object type="Part::Feature" name="Owner"/><Object type="Part::Feature" name="Target"/></Objects>
 <ObjectData Count="2"><Object name="Owner"><Properties Count="1"><Property name="Support" type="App::PropertyLink"><Link value="Target"/></Property></Properties></Object><Object name="Target"><Properties Count="0"/></Object></ObjectData></Document>"#;
@@ -343,11 +343,35 @@ fn writer_rejects_direct_link_carrier_graph_drift() {
         )
         .expect("replace properties");
 
-    let error = FcstdCodec
+    let plan = FcstdCodec
         .plan(EncodeInput::new(&edited, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("writer must check the written semantic graph");
-    assert!(error.to_string().contains("value or link graph"));
+        .expect("an inconsistent property does not refuse the document");
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("value or link graph")));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let properties = output
+        .ir()
+        .native
+        .namespace("fcstd")
+        .unwrap()
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .unwrap();
+    assert!(!properties.iter().any(|property| property.name == "Support"));
+    let objects = output
+        .ir()
+        .native
+        .namespace("fcstd")
+        .unwrap()
+        .arena_as::<crate::native::ObjectRecord>("objects")
+        .unwrap();
+    assert_eq!(objects.len(), 2);
 }
 
 #[test]
@@ -403,7 +427,7 @@ fn seekable_encoder_matches_the_write_only_fallback() {
     };
     assert!(matches!(
         error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
+        crate::writer::PatchError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::InputBytes
     ));
 }

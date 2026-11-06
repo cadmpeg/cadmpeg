@@ -377,7 +377,7 @@ impl Parser<'_, '_, '_> {
         }
         self.budget
             .decode_part(parts, extent, spec, |_| {
-                Err::<(), CodecError>(CodecError::malformed(reason))
+                Err::<(), CodecError>(CodecError::malformed(reason.to_owned()))
             })
             .map_err(ParseError::from)?;
         // The helper owns the part bytes and sole unreadable loss. This span

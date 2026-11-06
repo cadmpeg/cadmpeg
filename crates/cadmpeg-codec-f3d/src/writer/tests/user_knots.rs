@@ -31,7 +31,7 @@ fn source_less_t_spline_writes_symmetry_maps() {
     .unwrap();
     let correspondence = SubdSymmetry::new(
         SubdSymmetryKind::Correspondence {},
-        plane.clone(),
+        plane,
         vec![],
         vec![[0, 2]],
         vec![[0, 2]],
@@ -89,7 +89,7 @@ fn source_less_t_spline_writes_symmetry_maps() {
             1.0,
             vec![SubdRadialSymmetryMap { selector: Selector::Ef, pairs: vec![[0, 1]] }],
         ).unwrap(),
-        cage.symmetries()[1].plane.clone(),
+        cage.symmetries()[1].plane,
         vec![], vec![[0, 1]], vec![[0, 1]],
     ).unwrap();
     let retained_symmetry = cage.symmetries()[0].clone();
@@ -105,7 +105,7 @@ fn source_less_t_spline_writes_symmetry_maps() {
             && loss.message.contains("symmetry 1")
     }));
     let cage = &ir.model.subds[0].cage;
-    let plane = cage.symmetries()[1].plane.clone();
+    let plane = cage.symmetries()[1].plane;
     let radial = SubdSymmetry::new(
         SubdSymmetryKind::radial(std::num::NonZeroU32::new(4).unwrap(), 1.0, Vec::new()).unwrap(),
         plane,

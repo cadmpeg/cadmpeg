@@ -60,7 +60,7 @@ fn source_less_formula_without_marker_keeps_its_parameter_binding() {
         display: None,
         value: Some(ParameterValue::Real(FiniteReal::new(value).unwrap())),
         driving: true,
-        properties: Default::default(),
+        properties: std::collections::BTreeMap::default(),
         pmi: None,
         native_ref: None,
     };
@@ -114,13 +114,142 @@ fn source_less_formula_without_marker_keeps_its_parameter_binding() {
         .find(|parameter| parameter.name == "Height")
         .unwrap();
     assert_eq!(
-        height
-            .expression
-            .dependencies()
-            .cloned()
-            .collect::<Vec<_>>(),
-        [width.id.clone()]
+        height.expression.dependencies().collect::<Vec<_>>(),
+        [&width.id]
     );
+}
+
+#[test]
+fn unresolved_property_expression_keeps_the_parameter_value() {
+    use cadmpeg_ir::features::{Expression, ExpressionToken, ParameterId};
+
+    let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="PartDesign::Feature" name="Owner" id="1"/></Objects><ObjectData Count="1"><Object name="Owner"><Properties Count="1"><Property name="Width" group="Parameters" type="App::PropertyFloat"><Float value="7"/></Property></Properties></Object></ObjectData></Document>"#;
+    let source = crate::test_support::test_archive::archive(xml);
+    let decoded = FcstdCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let parameter = ir
+        .model
+        .parameters
+        .iter_mut()
+        .find(|parameter| parameter.name == "Width")
+        .unwrap();
+    let id = parameter.id.clone();
+    let value = parameter.value.clone();
+    parameter.expression = Expression {
+        tokens: vec![ExpressionToken::Parameter(
+            ParameterId::mint("cadir:model:parameter#missing").unwrap(),
+        )],
+    };
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(id.as_str()) && loss.message.contains("expression")));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let width = output
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "Width")
+        .unwrap();
+    assert_eq!(width.value, value);
+}
+
+#[test]
+fn parameter_with_missing_owner_keeps_independent_parameters() {
+    use cadmpeg_ir::features::{DesignParameter, Expression, FeatureId, ParameterId};
+    use cadmpeg_ir::scalar::FiniteReal;
+
+    let parameter = |name: &str, owner| DesignParameter {
+        product_definition: None,
+        id: ParameterId::mint(format!("cadir:model:parameter#{name}")).unwrap(),
+        owner,
+        ordinal: 0,
+        name: name.into(),
+        expression: Expression::text("2"),
+        display: None,
+        value: Some(ParameterValue::Real(FiniteReal::new(2.0).unwrap())),
+        driving: true,
+        properties: std::collections::BTreeMap::default(),
+        pmi: None,
+        native_ref: None,
+    };
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model.parameters.push(parameter(
+        "missing",
+        Some(FeatureId::mint("cadir:model:feature#missing").unwrap()),
+    ));
+    ir.model.parameters.push(parameter("retained", None));
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("cadir:model:parameter#missing")));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(output
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .any(|parameter| parameter.name == "retained"));
+}
+
+#[test]
+fn missing_cell_parameter_keeps_other_cells() {
+    let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Spreadsheet::Sheet" name="Sheet" id="1"/></Objects><ObjectData Count="1"><Object name="Sheet"><Properties Count="1"><Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="2"><Cell address="A1" content="5" alias="missing"/><Cell address="A2" content="7" alias="retained"/></Cells></Property></Properties></Object></ObjectData></Document>"#;
+    let source = crate::test_support::test_archive::archive(xml);
+    let decoded = FcstdCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let missing = ir
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "missing")
+        .unwrap()
+        .id
+        .clone();
+    ir.model
+        .parameters
+        .retain(|parameter| parameter.id != missing);
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(missing.as_str())));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(output.ir().model.spreadsheets[0].cells().len(), 1);
+    assert!(output
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .any(|parameter| parameter.name == "retained"));
 }
 
 #[test]

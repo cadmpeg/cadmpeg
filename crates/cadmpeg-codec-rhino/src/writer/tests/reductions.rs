@@ -51,6 +51,17 @@ fn sheet_reduction_omits_only_the_unsupported_face() {
     assert_eq!(losses[0].code, RhinoLossCode::WriterEntityOmitted.kind());
     assert_eq!(losses[0].severity, Severity::Error);
     assert!(losses[0].message.contains(omitted.as_str()));
+    let removed: Vec<_> = ir
+        .model
+        .vertices
+        .iter()
+        .filter(|vertex| !written.model.vertices.iter().any(|row| row.id == vertex.id))
+        .collect();
+    assert!(!removed.is_empty());
+    for vertex in removed {
+        assert!(losses[0].message.contains(vertex.id.as_str()));
+        assert!(losses[0].message.contains(vertex.point.as_str()));
+    }
 }
 
 #[test]

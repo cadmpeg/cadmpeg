@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! STEP target resolution and export reporting.
 
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::codec::write::{
     target::ResolvedWrite, transitional_from_codec, ArenaCoverage, ArenaDisposition,
     ArenaDispositions, Consumption, EncodeError, EncodeInput, ExportBody, NativeDisposition,
@@ -20,13 +21,10 @@ pub(crate) fn plan(
     input: EncodeInput<'_>,
     resolved: &ResolvedWrite<'_>,
 ) -> Result<ExportBody, EncodeError> {
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     debug_assert!(
         crate::writer::CAPACITY_FIELDS.is_empty(),
         "STEP declares no capacity rows"
     );
-    // Synthesis visits every input record, so the caller's entity ceiling
-    // applies to the input record count before any building (#217 §5.0).
     let arena = DecodeArena::new();
     let policy = DecodePolicy {
         mode: cadmpeg_core::decode::DecodeMode::Salvage,

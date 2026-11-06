@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-//! TechDraw page and view objects authored from neutral drawings.
+//! `TechDraw` page and view objects authored from neutral drawings.
 
 use std::collections::HashMap;
+use std::fmt::Write as _;
 
 use cadmpeg_ir::drawings::DrawingKind;
 use cadmpeg_ir::report::loss::LossNote;
@@ -16,7 +17,7 @@ pub(super) fn scalar_value(object: &Object, name: &str) -> Option<f64> {
     document
         .root_element()
         .children()
-        .find(|node| node.is_element())?
+        .find(roxmltree::Node::is_element)?
         .attribute("value")?
         .parse::<f64>()
         .ok()
@@ -150,8 +151,15 @@ pub(super) fn dimension_references(
         }
         let current = object.properties.get(role).and_then(|xml| {
             let document = roxmltree::Document::parse(xml).ok()?;
-            document
-                .descendants()
+            let root = document.root_element();
+            if root.attribute("type") != Some("App::PropertyLinkSubList") {
+                return None;
+            }
+            let list = root
+                .children()
+                .find(|node| node.has_tag_name("LinkSubList"))?;
+            let found = list
+                .children()
                 .filter(|node| node.has_tag_name("Link"))
                 .map(|node| {
                     Some((
@@ -159,7 +167,8 @@ pub(super) fn dimension_references(
                         node.attribute("sub")?.to_owned(),
                     ))
                 })
-                .collect::<Option<Vec<_>>>()
+                .collect::<Option<Vec<_>>>()?;
+            (list.attribute("count")?.parse::<usize>().ok()? == found.len()).then_some(found)
         });
         if current.as_ref() == Some(&links) {
             continue;
@@ -219,7 +228,7 @@ fn view_xsources(
         let root = document
             .root_element()
             .children()
-            .find(|node| node.is_element())?;
+            .find(roxmltree::Node::is_element)?;
         let mut nodes = Vec::new();
         if root.has_tag_name("XLink") {
             nodes.push(root);
@@ -267,12 +276,14 @@ fn view_xsources(
                 .iter()
                 .map(|sub| xml::element("Sub", &[("value", sub.clone())]))
                 .collect::<String>();
-            output.push_str(&format!(
+            write!(
+                output,
                 "<XLink file=\"{}\" name=\"{}\" count=\"{}\">{children}</XLink>",
                 xml::escaped(file),
                 xml::escaped(target),
                 subs.len()
-            ));
+            )
+            .expect("write to string");
         }
     }
     object.set(
@@ -295,7 +306,7 @@ fn view_sources(
     losses: &mut Vec<LossNote>,
 ) {
     use cadmpeg_ir::references::ReferenceTarget;
-    if drawing.relationships.get("XSource").is_some() {
+    if drawing.relationships.contains_key("XSource") {
         view_xsources(drawing, object, "XSource", names, losses);
     } else {
         let empty = object
@@ -306,7 +317,7 @@ fn view_sources(
                 let root = document
                     .root_element()
                     .children()
-                    .find(|node| node.is_element())?;
+                    .find(roxmltree::Node::is_element)?;
                 Some(
                     root.has_tag_name("XLinkSubList")
                         && root
@@ -354,7 +365,7 @@ fn view_sources(
                     let root = document
                         .root_element()
                         .children()
-                        .find(|node| node.is_element())?;
+                        .find(roxmltree::Node::is_element)?;
                     Some(
                         matches!(root.tag_name().name(), "LinkList" | "LinkSubList")
                             && root
@@ -396,7 +407,7 @@ fn view_sources(
             let root = document
                 .root_element()
                 .children()
-                .find(|node| node.is_element())?;
+                .find(roxmltree::Node::is_element)?;
             match root.tag_name().name() {
                 "Link" => Some(vec![(root.attribute("value")?.to_owned(), Vec::new())]),
                 "LinkList" => root
@@ -568,7 +579,7 @@ pub(super) fn write(
                 if root.attribute("type") != Some("App::PropertyVector") {
                     return None;
                 }
-                let value = root.children().find(|node| node.is_element())?;
+                let value = root.children().find(roxmltree::Node::is_element)?;
                 Some([
                     value.attribute("valueX")?.parse::<f64>().ok()?,
                     value.attribute("valueY")?.parse::<f64>().ok()?,
@@ -665,13 +676,11 @@ pub(super) fn write(
             }
             let current = object.properties.get("Views").and_then(|xml| {
                 let document = roxmltree::Document::parse(xml).ok()?;
-                Some(
-                    document
-                        .descendants()
-                        .filter(|node| node.has_tag_name("Link"))
-                        .map(|node| node.attribute("value").map(str::to_owned))
-                        .collect::<Option<Vec<_>>>()?,
-                )
+                document
+                    .descendants()
+                    .filter(|node| node.has_tag_name("Link"))
+                    .map(|node| node.attribute("value").map(str::to_owned))
+                    .collect::<Option<Vec<_>>>()
             });
             if current
                 .as_ref()
@@ -762,6 +771,60 @@ mod tests {
         assert_eq!(link.attribute("obj"), Some("View"));
         assert_eq!(link.attribute("sub"), Some("Edge2"));
         assert!(losses.is_empty());
+    }
+
+    #[test]
+    fn dimension_reference_replaces_incompatible_native_property() {
+        let mut annotation = SemanticAnnotation::new(
+            SemanticAnnotationId::mint("cadir:model:annotation#dimension").unwrap(),
+            "dimension".into(),
+            SemanticAnnotationKind::Dimension,
+            "TechDraw::DrawViewDimension".into(),
+            0,
+            "native".into(),
+        );
+        annotation.references.insert(
+            cadmpeg_core::text::NonBlankString::new("References2D").unwrap(),
+            vec![ReferenceSelection::new(
+                ReferenceTarget::Local("view-id".into()),
+                vec!["Edge2".into()],
+            )],
+        );
+        let mut object = Object::new(
+            "Dimension".into(),
+            "TechDraw::DrawViewDimension",
+            "Dimension",
+        );
+        object.set(
+            "References2D",
+            xml::property(
+                "References2D",
+                "App::PropertyString",
+                "<Link obj=\"View\" sub=\"Edge2\"/>",
+            ),
+        );
+        dimension_references(
+            &annotation,
+            &mut object,
+            &HashMap::from([("view-id".into(), "View".into())]),
+            &mut Vec::new(),
+        );
+        let document = roxmltree::Document::parse(&object.properties["References2D"]).unwrap();
+        assert_eq!(
+            document.root_element().attribute("type"),
+            Some("App::PropertyLinkSubList")
+        );
+        let list = document
+            .descendants()
+            .find(|node| node.has_tag_name("LinkSubList"))
+            .unwrap();
+        assert_eq!(list.attribute("count"), Some("1"));
+        let link = list
+            .children()
+            .find(|node| node.has_tag_name("Link"))
+            .unwrap();
+        assert_eq!(link.attribute("obj"), Some("View"));
+        assert_eq!(link.attribute("sub"), Some("Edge2"));
     }
 
     #[test]
