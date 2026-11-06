@@ -1,9 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed group and associativity parameter grammars.
 
-use super::{
-    boolean, coordinates, count, entity, integer, real, text, Entity, Fields, NativeRecord, Value,
-};
+use super::{coordinates, count, entity, integer, real, text, Entity, Fields, NativeRecord, Value};
+
+fn class_flag(value: Option<&Value>) -> Result<String, String> {
+    match value.filter(|value| !value.is_null()) {
+        None => Ok(String::new()),
+        Some(value) => value
+            .as_bool()
+            .map(|value| if value { "1" } else { "2" }.to_owned())
+            .ok_or("class flag is not a boolean".into()),
+    }
+}
 
 pub(super) fn shape(record: &NativeRecord) -> Result<(u32, i64), String> {
     Ok(
@@ -82,8 +90,8 @@ pub(super) fn encode(fields: &mut Fields<'_>, type_code: u32, form: i64) -> Resu
                 let class = class
                     .as_object()
                     .ok_or("associativity class has no typed fields")?;
-                values.push(boolean(class.get("back_pointers_required"))?);
-                values.push(boolean(class.get("ordered"))?);
+                values.push(class_flag(class.get("back_pointers_required"))?);
+                values.push(class_flag(class.get("ordered"))?);
                 let items = class
                     .get("item_types")
                     .and_then(Value::as_array)

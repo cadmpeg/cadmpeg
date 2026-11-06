@@ -4,13 +4,12 @@
 use super::{CadIr, Entity, Targets, Value};
 
 pub(super) fn link(ir: &CadIr, entities: &mut [Entity], targets: &Targets) {
-    let Some(records) = ir
+    let records = ir
         .native
         .namespace("iges")
         .and_then(|namespace| namespace.arenas().get("associativities"))
-    else {
-        return;
-    };
+        .into_iter()
+        .flatten();
     for record in records {
         let Some([association]) = targets.get(record.id()).map(Vec::as_slice) else {
             continue;
@@ -54,6 +53,41 @@ pub(super) fn link(ir: &CadIr, entities: &mut [Entity], targets: &Targets) {
             };
             if !entities[*index].association_links.contains(association) {
                 entities[*index].association_links.push(*association);
+            }
+        }
+    }
+    for record in ir
+        .native
+        .namespace("iges")
+        .and_then(|ns| ns.arenas().get("groups"))
+        .into_iter()
+        .flatten()
+    {
+        let Ok(fields) = record.fields() else {
+            continue;
+        };
+        if fields
+            .get("back_pointers_required")
+            .and_then(Value::as_bool)
+            != Some(true)
+        {
+            continue;
+        }
+        let Some([group]) = targets.get(record.id()).map(Vec::as_slice) else {
+            continue;
+        };
+        for member in fields
+            .get("members")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+        {
+            let Some([index]) = targets.get(member).map(Vec::as_slice) else {
+                continue;
+            };
+            if !entities[*index].association_links.contains(group) {
+                entities[*index].association_links.push(*group);
             }
         }
     }

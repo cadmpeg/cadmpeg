@@ -231,6 +231,12 @@ fn report_reductions(coverage: &mut ArenaDispositions, losses: &[LossNote]) {
         coverage.procedural_curves = Reported;
         coverage.procedural_surfaces = Reported;
     }
+    if has(&[StepLossCode::ProceduralCurveCacheToleranceOmitted]) {
+        coverage.procedural_curves = Reported;
+    }
+    if has(&[StepLossCode::ProceduralSurfaceCacheToleranceOmitted]) {
+        coverage.procedural_surfaces = Reported;
+    }
     if has(&[
         StepLossCode::PcurveCarrierUnwritable,
         StepLossCode::PcurveAssociationLimit,
