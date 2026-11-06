@@ -165,10 +165,10 @@ fn attachment_failure_without_geometry_keeps_the_container_decode() {
 #[test]
 fn failed_feature_lane_keeps_design_in_scope() {
     let complete = decode(composed_feature_history_prt());
-    assert_eq!(complete.ir().scope.design, true);
+    assert!(complete.ir().scope.design);
     let failed = decode_failing_at(composed_feature_history_prt(), Point::FeatureOperations);
     assert!(failed.ir().model.features.is_empty());
-    assert_eq!(failed.ir().scope.design, true);
+    assert!(failed.ir().scope.design);
     assert_eq!(failed.report().scope(), failed.ir().scope);
     assert!(
         !failed
