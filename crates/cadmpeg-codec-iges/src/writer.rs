@@ -717,6 +717,7 @@ fn synthesize_with_admission(
         .iter()
         .flat_map(|entity| entity.source_targets.iter())
         .collect::<BTreeSet<_>>();
+    copious_curve::clear_written_parameter_losses(ir, &graph.entities, &mut graph.losses);
     let mut emitted_procedurals = 0;
     for procedural in &ir.model.procedural_curves {
         let Some(owner) = ir.model.procedural_curve_owner(&procedural.id) else {
@@ -4566,19 +4567,27 @@ fn curve_on_surface_entity(
             EntityStatus::ParameterCurve,
         )?)
     };
+    let (source_targets, label, preference) = copious_curve::boundary_properties(
+        ir,
+        boundary,
+        pcurve_indices,
+        entities,
+        model_curve,
+        &parameter_curve,
+    );
     Ok(Entity {
         structure: None,
         property_links: Vec::new(),
         association_links: Vec::new(),
         line_font: None,
-        source_targets: Vec::new(),
+        source_targets,
         type_code: 142,
         form: 0,
-        label: String::new(),
+        label,
         status: EntityStatus::PhysicallyDependent,
         subscript: 0,
         parameter_body: format!(
-            "{CURVE_ON_SURFACE_CREATION_UNSPECIFIED},{},{},{},{CURVE_ON_SURFACE_PREFERENCE_MODEL_CURVE};",
+            "{CURVE_ON_SURFACE_CREATION_UNSPECIFIED},{},{},{},{preference};",
             reference_marker(surface_index),
             parameter_curve,
             reference_marker(model_curve)
@@ -5175,6 +5184,9 @@ fn pcurve_entity(ir: &CadIr, pcurve: &Pcurve) -> Result<Entity, CodecError> {
     let curve = nurbs
         .lift(|point| Point3::new(point.u, point.v, 0.0))
         .map_err(|error| CodecError::malformed(format_args!("pcurve {}: {error}", pcurve.id)))?;
+    if let Some(entity) = copious_curve::parameter_curve(ir, &pcurve, &curve, range) {
+        return Ok(entity);
+    }
     encode_nurbs(&curve, range, "PCURVE")
 }
 
@@ -6114,6 +6126,7 @@ fn append_free_point_entity(
             status
         },
     );
+    support_records::retain_point_parameters(ir, point, &mut entity);
     entity.source_targets.push(point.id.to_string());
     let index = entities.len();
     entities.push(entity);
