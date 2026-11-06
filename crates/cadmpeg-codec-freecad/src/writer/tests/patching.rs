@@ -68,6 +68,24 @@ fn duplicate_archive_entry_keeps_first_record_and_reports_the_other() {
     .unwrap();
     duplicate.retain_payload(b"second".to_vec());
     entries.push(duplicate);
+    let first_missing = EntryRecord::new(
+        "authored:native:entry#first-missing".into(),
+        "Missing.bin".into(),
+        cadmpeg_core::container::ContainerRole::Auxiliary,
+        Vec::new(),
+        usize::MAX - 1,
+    )
+    .unwrap();
+    let mut duplicate_missing = EntryRecord::new(
+        "authored:native:entry#duplicate-missing".into(),
+        "Missing.bin".into(),
+        cadmpeg_core::container::ContainerRole::Auxiliary,
+        Vec::new(),
+        usize::MAX,
+    )
+    .unwrap();
+    duplicate_missing.retain_payload(b"later".to_vec());
+    entries.extend([first_missing, duplicate_missing]);
     namespace
         .set_arena(
             &cadmpeg_test_support::service_decode_context(),
@@ -75,6 +93,10 @@ fn duplicate_archive_entry_keeps_first_record_and_reports_the_other() {
             &entries,
         )
         .unwrap();
+    assert!(
+        !crate::writer::xml::retained_entry_names(ir.native.namespace("fcstd").unwrap())
+            .contains("Missing.bin")
+    );
     let plan = FcstdCodec
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .unwrap();
@@ -93,6 +115,7 @@ fn duplicate_archive_entry_keeps_first_record_and_reports_the_other() {
         .read_to_end(&mut bytes)
         .unwrap();
     assert_eq!(bytes, b"first");
+    assert!(archive.by_name("Missing.bin").is_err());
 }
 
 #[test]
