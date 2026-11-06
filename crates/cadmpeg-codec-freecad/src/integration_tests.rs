@@ -13,6 +13,7 @@ mod named_bindings;
 mod object_declaration_parts;
 mod primitive_placement;
 mod product_native_order;
+mod projected_property_values;
 mod revolve_direction;
 mod ring_traversal;
 mod shape_placement;

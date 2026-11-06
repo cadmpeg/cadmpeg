@@ -165,7 +165,7 @@ pub(crate) fn retain_untyped(
             });
         let class = if owner == crate::native::native_id("document", "0")
             || objects.iter().any(|object| {
-                object.id().as_str() == owner && crate::design::is_design_kind(&object.type_name)
+                object.id().as_str() == owner && crate::design::is_design_object(&object.type_name)
             }) {
             ArenaClass::Design
         } else {
@@ -200,7 +200,7 @@ pub(crate) fn retain_untyped(
             } else if owner == crate::native::native_id("document", "0")
                 || objects.iter().any(|object| {
                     object.id().as_str() == owner
-                        && crate::design::is_design_kind(&object.type_name)
+                        && crate::design::is_design_object(&object.type_name)
                 })
             {
                 ArenaClass::Design
