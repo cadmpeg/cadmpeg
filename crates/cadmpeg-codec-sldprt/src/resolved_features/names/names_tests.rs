@@ -5,6 +5,26 @@ use super::object_names;
 use crate::records::operand_tag::NativeOperandTag;
 
 #[test]
+fn empty_object_name_requires_a_typed_identifier() {
+    let mut payload = Vec::new();
+    payload.extend_from_slice(CLASS_MARKER);
+    payload.extend_from_slice(&18_u16.to_le_bytes());
+    payload.extend_from_slice(b"moFavoriteFolder_c");
+    payload.extend_from_slice(&[0x87, 0x80, 0xff, 0xfe, 0xff, 0]);
+    payload.extend_from_slice(&[0; 8]);
+    payload.extend_from_slice(&7_u32.to_le_bytes());
+    payload.extend_from_slice(&[0x87, 0x80, 0xff, 0xfe, 0xff, 0]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
+    let names = object_names(&ctx, &payload, "lane").unwrap();
+    assert_eq!(names.len(), 1);
+    assert_eq!(names[0].value, "");
+    assert_eq!(names[0].object_id.and_then(crate::records::ObjectId::value), Some(7));
+}
+
+#[test]
 fn object_names_follow_the_lane_name_class_token() {
     let mut payload = vec![0x42, 0, 0, 0, 0x13, 0];
     payload.extend_from_slice(CLASS_MARKER);

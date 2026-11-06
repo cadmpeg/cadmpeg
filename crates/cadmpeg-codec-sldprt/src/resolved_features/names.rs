@@ -84,6 +84,9 @@ fn payload_name_candidates(
                 .checked_add(8)
                 .and_then(|position| View::u32_le_at(payload, position))
                 .and_then(|value| ObjectId::try_from(value).ok());
+            if units.is_empty() && object_id.is_none() {
+                return None;
+            }
             Some((offset, object_id, units))
         })
 }
@@ -100,9 +103,6 @@ pub(crate) fn name_span(payload: &[u8], offset: usize) -> Option<(usize, usize)>
     } else {
         (usize::from(first), length_at.checked_add(1)?)
     };
-    if length == 0 {
-        return None;
-    }
     let end = start.checked_add(length.checked_mul(2)?)?;
     payload.get(start..end)?;
     Some((start, end))
@@ -213,7 +213,11 @@ fn name_class_token(payload: &[u8]) -> Option<u16> {
                 return None;
             }
             let units = usize::from(*payload.get(token_offset + 5)?);
-            (units != 0).then_some(token)
+            if units == 0 {
+                let object = View::u32_le_at(payload, token_offset + 6 + 8)?;
+                ObjectId::try_from(object).ok()?;
+            }
+            Some(token)
         })
 }
 
