@@ -34,7 +34,10 @@ use super::fixed_parameters::exact_fixed_chamfer_parameters;
 use super::fixed_parameters::exact_fixed_extrude_parameters;
 use super::fixed_parameters::exact_fixed_fillet_parameters;
 use super::hole::exact_hole_construction;
-use super::path_feature::{exact_path_feature_construction, marker_one_revolve_assumed_length};
+use super::path_feature::{
+    exact_path_feature_construction, loft_reference_loss, marker_one_revolve_assumed_length,
+    three_flag_loft_settings_loss,
+};
 use super::pattern::exact_circular_pattern_construction_with_owners;
 use super::pattern::exact_rectangular_pattern_construction;
 use super::point_data::exact_work_point_construction;
@@ -395,7 +398,8 @@ pub(crate) fn decode_parameter_scopes(
                 }
             }
             {
-                let construction = exact_surface_offset_operation(bytes, &records, &scope)?;
+                let construction =
+                    exact_surface_offset_operation(bytes, &records, &scope, recipes)?;
                 if let scope::DesignScopePayloadMut::SurfaceOffset(slot) = scope.payload_mut() {
                     *slot = construction;
                 }
@@ -437,6 +441,13 @@ pub(crate) fn decode_parameter_scopes(
             if let Some(construction) =
                 exact_path_feature_construction(bytes, &records, &scope, parameter_owners)
             {
+                if let crate::records::feature::path_features::DesignPathFeatureConstruction::Loft(
+                    value,
+                ) = &construction
+                {
+                    losses.extend(loft_reference_loss(&scope, value));
+                    losses.extend(three_flag_loft_settings_loss(bytes, &scope, value));
+                }
                 match (scope.payload_mut(), construction) {
                     (
                         scope::DesignScopePayloadMut::Revolve(slot),
