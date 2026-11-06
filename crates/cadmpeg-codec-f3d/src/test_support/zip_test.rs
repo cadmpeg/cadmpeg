@@ -472,8 +472,8 @@ pub(crate) fn original_design_fixture(bytes: Vec<u8>, remove_body: bool) -> Vec<
                 ids.into_iter()
                     .filter(|id| match ty.type_guid.as_str() {
                         "00000000-0000-4000-8000-000000000264" => {
-                            !matches!(*id, 123 | 1701 | 1702 | 1703 | 4645 | 4646)
-                                && !(remove_body && *id == 1700)
+                            !(matches!(*id, 123 | 1701 | 1702 | 1703 | 4645 | 4646)
+                                || remove_body && *id == 1700)
                         }
                         "33333333-4444-5555-6666-777777777777" => *id != 9000,
                         _ => true,
