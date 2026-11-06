@@ -177,6 +177,10 @@ fn failed_face_retains_its_surface_without_a_shape_root() {
         loss.code == StepLossCode::SourceAssociationOmitted.kind()
             && loss.message.contains(surface_id.as_str())
     }));
+    assert!(!report
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::NoExportableSolids.kind()));
     let text = std::str::from_utf8(&bytes).unwrap();
     assert!(text
         .lines()

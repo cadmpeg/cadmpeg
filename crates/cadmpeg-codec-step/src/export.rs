@@ -1104,6 +1104,7 @@ impl<'a> Builder<'a> {
             })
             .map(str::to_owned)
             .collect();
+        let mut recovered_surface = false;
         for surface in lost_surfaces {
             if let Some(reference) = self
                 .emit_surface(&surface)
@@ -1111,6 +1112,7 @@ impl<'a> Builder<'a> {
             {
                 self.emitter
                     .emit("REPRESENTATION", &format!("'',({reference}),{context}"));
+                recovered_surface = true;
             }
         }
         let bodies_written = !self.body_step_refs.is_empty();
@@ -1166,7 +1168,7 @@ impl<'a> Builder<'a> {
                 );
             }
         }
-        let has_model_items = !emitted_items.is_empty();
+        let has_model_items = recovered_surface || !emitted_items.is_empty();
 
         self.emit_visibility();
         self.emit_tessellations(context);
