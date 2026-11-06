@@ -426,6 +426,8 @@ fn compact_coil_placement_accepts_identity_and_matrix_frames() {
                     .to_owned()
                     .try_into()
                     .expect("GUID"),
+                serialization_form:
+                    crate::records::topology::entity_selection::SelectionSerializationForm::Zero,
                 identity_record_index: 103,
                 primary_identity: 1331,
                 secondary: Some(crate::records::identity::DesignSecondaryIdentity {
@@ -764,6 +766,8 @@ fn compact_coil_placement_accepts_face_recipe_selection() {
                 .to_owned()
                 .try_into()
                 .expect("GUID"),
+            serialization_form:
+                crate::records::topology::entity_selection::SelectionSerializationForm::Zero,
             recipe_record_index: 103,
             recipe_record_byte_offset: recipes[0].byte_offset - 15,
             recipe_id: recipes[0].id.clone(),

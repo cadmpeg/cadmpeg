@@ -248,6 +248,7 @@ pub(super) fn exact_coil_placement(
             Some(DesignCoilSelection::Persistent {
                 asset_id: selection.asset_id.try_into().ok()?,
                 context_id: selection.context_id.try_into().ok()?,
+                serialization_form: selection.serialization_form,
                 identity_record_index: selection.identity_record_index,
                 primary_identity: selection.primary_identity,
                 secondary: selection.secondary.map(|identity| {
@@ -487,6 +488,7 @@ fn exact_coil_face_selection(
         Some(Ok(DesignCoilSelection::FaceRecipe {
             asset_id: prefix.asset_id.try_into().ok()?,
             context_id: prefix.context_id.try_into().ok()?,
+            serialization_form: prefix.serialization_form,
             recipe_record_index: face.recipe_record_index(),
             recipe_record_byte_offset: face.recipe_record_byte_offset(),
             recipe_id,

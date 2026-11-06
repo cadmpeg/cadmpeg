@@ -485,7 +485,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             )
             .unwrap();
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
-            draft.reference_count_offset = *draft.reference_members.offsets().next().unwrap() - 5;
+            draft.reference_count_offset = draft.byte_offset + 172;
             draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
@@ -544,7 +544,9 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     compact_split_scope
         .try_edit(|draft| {
             draft.frame_length = 330;
+            draft.reference_count_offset = draft.byte_offset + 168;
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.layout_fixture_references();
             draft.layout_fixture_tail();
         })
         .unwrap();
@@ -626,6 +628,8 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
                 )
                 .unwrap(),
                 context_id_offset: 0,
+                serialization_form:
+                    crate::records::topology::entity_selection::SelectionSerializationForm::Zero,
                 identity_record_index: record_index + 3,
                 identity_record_offset: 0,
                 primary_identity,
@@ -696,7 +700,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     compact_split_scope.class_tag =
         crate::records::references::DesignClassTag::try_from("375".to_owned()).unwrap();
     let crate::design::feature_project::ProjectedParameterDesign {
-        features: mismatched_features,
+        features: retagged_features,
         ..
     } = crate::test_support::with_decode_context(|ctx| {
         let scopes = std::slice::from_ref(&compact_split_scope);
@@ -713,8 +717,8 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         .expect("test projection has a synthetic exact timeline")
     });
     assert!(matches!(
-        mismatched_features[0].evaluation.definition(),
-        FeatureDefinition::Operation(FeatureOperation::Native { .. })
+        retagged_features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::SplitFace { .. })
     ));
 
     let mut split_body_scope = scope.clone();
@@ -837,6 +841,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             FaceId::mint(crate::ids::brep_entity_id(7)).expect("identity grammar")
         ],
         alternate_selector_edges: Vec::new(),
+        operand_offset: None,
     }];
     assert!(matches!(
         project_split(&historical_split_scope, &[], &split_groups, &[], std::slice::from_ref(&historical_split_tool)).unwrap(),
@@ -1164,7 +1169,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
                 .try_into()
                 .unwrap();
             draft.frame_length = 250 + reference_bytes;
-            draft.kind_offset = draft.byte_offset + 140 + reference_bytes;
+            draft.kind_offset = draft.byte_offset + 139 + reference_bytes;
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.reference_count_offset =
                 draft.kind_offset - 12 - 11 * u64_from_index(draft.reference_members.len());
@@ -1285,10 +1290,10 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
     ));
 
     for (class_tag, paired_class_tag, base_frame, base_kind) in [
-        ("287", "270", 245_u64, 135_u64),
-        ("287", "270", 256, 146),
+        ("287", "270", 246_u64, 135_u64),
+        ("287", "270", 257, 146),
         ("327", "257", 250, 139),
-        ("414", "263", 250, 140),
+        ("414", "263", 250, 139),
         ("497", "259", 257, 146),
         ("545", "257", 246, 135),
         ("545", "257", 250, 139),
@@ -1363,10 +1368,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
         });
     assert!(matches!(
         features[0].evaluation.definition(),
-        FeatureDefinition::Operation(FeatureOperation::Native {
-            kind: cadmpeg_ir::features::NativeFeatureKind::SurfaceDeleteFace,
-            ..
-        })
+        FeatureDefinition::Operation(FeatureOperation::DeleteFace { heal: false, .. })
     ));
 
     for (class_tag, paired_class_tag) in [("264", "262"), ("383", "263")] {

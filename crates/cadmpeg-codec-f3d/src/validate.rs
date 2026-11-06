@@ -3045,9 +3045,9 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                     }
                     (frame_length, paired, Some(matrix)) => {
                         let scope_delta = match (frame_length, paired) {
-                            (399, "259") => Some(50),
-                            (381, "261") => Some(49),
-                            (395, "258") => Some(46),
+                            (399, _) => Some(50),
+                            (381, _) => Some(49),
+                            (395, _) => Some(46),
                             (389, "264") if scope.class_tag.as_str() == "414" => Some(50),
                             _ => None,
                         };
@@ -4739,18 +4739,7 @@ fn validate_component_occurrences(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>
         let key = format!("{}", LowerAscii(occurrence.occurrence_guid.as_str()));
         let unique_identity = identities.insert((stream, key));
         let unique_record = record_indices.insert((stream, occurrence.record_index));
-        // A class-256 carrier stores a placed frame only after its first
-        // occurrence; every other carrier class can place ordinal one.
-        let placement_admitted = match occurrence.placement() {
-            records::feature::assembly_features::DesignComponentOccurrencePlacement::Base
-            | records::feature::assembly_features::DesignComponentOccurrencePlacement::Identity {
-                ..
-            } => true,
-            records::feature::assembly_features::DesignComponentOccurrencePlacement::Explicit {
-                ordinal,
-                ..
-            } => occurrence.class_tag.as_str() != "256" || ordinal.get() > 1,
-        };
+        let placement_admitted = !occurrence.is_class_256_first_matrix();
         // The duplicated references must agree within one carrier, which
         // the decoder checks. The component-record reference names the
         // definition; carriers of one definition can store different
@@ -5133,6 +5122,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                                 | DesignOperandRole::PROFILE
                                 | DesignOperandRole::ROLE_0X43
                                 | DesignOperandRole::ROLE_0X7
+                                | DesignOperandRole::ROLE_0X21
                         ))
                         && group.extrude_role().is_none()
                 }
@@ -5411,6 +5401,7 @@ pub(crate) fn loft_operand_roles_are_valid(
     const FACE_SECTION: DesignOperandRole = DesignOperandRole::ROLE_0X43;
     const GUIDE: DesignOperandRole = DesignOperandRole::ROLE_0X5;
     const CENTERLINE: DesignOperandRole = DesignOperandRole::ROLE_0X7;
+    const POINT: DesignOperandRole = DesignOperandRole::ROLE_0X21;
     let is_body = |role: DesignOperandRole| {
         matches!(
             role,
@@ -5442,6 +5433,12 @@ pub(crate) fn loft_operand_roles_are_valid(
 
     if operation != records::feature::extrude::DesignExtrudeOperation::NewBody {
         return false;
+    }
+
+    if operands().any(|(role, _)| *role == POINT) {
+        return operands().count() == 2
+            && operands().filter(|(role, _)| *role == SECTION).count() == 1
+            && operands().any(|(role, member_count)| *role == POINT && *member_count == 1);
     }
 
     if section_count == 1 && operands().all(|(role, _)| matches!(*role, FACE_SECTION | GUIDE)) {
@@ -7227,11 +7224,18 @@ fn validate_entity_selection_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     == Some(&operand.record_index())
         }) && header.is_some_and(|header| {
             header.byte_offset == operand.byte_offset() && header.class_tag == *operand.class_tag()
-        }) && entity_selection_slots.insert((
-            native_stream,
-            operand.group_record_index,
-            operand.group_member_ordinal,
-        ));
+        }) && (operand.sketch_point().is_none()
+            || group.is_some_and(|group| {
+                crate::design::decode::operands::is_loft_point_group(
+                    group,
+                    &native.design_parameter_scopes,
+                )
+            }))
+            && entity_selection_slots.insert((
+                native_stream,
+                operand.group_record_index,
+                operand.group_member_ordinal,
+            ));
         if !valid {
             push_constant_finding(
                 findings,

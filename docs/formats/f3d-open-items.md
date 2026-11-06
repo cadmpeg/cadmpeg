@@ -102,6 +102,30 @@ The class-290 primary paired with class-261 uses the same six-byte fields on its
 
 **Need.** We must know what the per-element u32 selects to write a Base Feature from a neutral model. It is `1` on one scope and `0` on every other, and it does not track the body count, so we cannot say what selects it.
 
+
+### DR-259. Owner of a scope that several timeline objects name
+
+**Question.** Which object owns a `Base Feature` scope that two or more paste or body-to-component objects name?
+
+**Known.** `f3d.md` §3.1 "A paste or body-to-component timeline object owns" gives the owner fields; each object stores its reference to the owned scope after its counted body references. The owned scope takes its owner's timeline position. The decoder gives the scope to the object with the lowest record index whose owned runs read and reads no copy sources for it.
+
+**Need.** A save in which two objects name one scope, with the timeline position and the body set that Fusion shows for that scope.
+
+**Conflict.** None.
+
+**Note.** The decoder reports `feature.timeline-owner-competing`.
+
+### DR-260. Placement of a pasted copy
+
+**Question.** Where does a pasted copy sit relative to its source body?
+
+**Known.** `f3d.md` §3.1 "In the scope that a paste object owns" gives the copy form. The object and scope frames store the copy bodies, their parameter-body records and the source GUID pairs. In the copy saves whose sources survive, each copy has its source's bounding box and volume. The decoder projects the copy as `MoveBody` with zero translation and no rotation.
+
+**Need.** A paste that places a copy at an offset or a rotation from its source, and the bytes that hold that placement.
+
+**Conflict.** None.
+
+**Note.** The decoder reports `feature.paste-copy-placement-assumed`.
 ### DR-26. Sketch-text fields
 
 **Question.** What do the residual `txt_tag` style bits and four-byte style payload, its second post-height Boolean, and the `textex_tag` orientation and auxiliary flags select?
@@ -435,6 +459,22 @@ travel.
 **Conflict.** None.
 
 **Note.** The decoder retains each profile operand in the native scope and emits `feature.extrude-profile-group-native` for each scope with multiple Sketch-profile operands.
+
+### DR-257. Entity-selection serialization form
+
+**Question.** What does the u32 serialization form after `u32 2` in a nested entity-selection member encode?
+
+**Known.** `f3d.md` §3.1 "A nested entity-selection member has primary indexed record `N`." states that the field is `0` or `1`. The field layout after it is the same for both values. Every member in one Design stream stores the same value. Value `1` occurs in documents whose product version is an ASM 231 or 232 Windows build; documents from the same builds also store value `0`. Members of both values resolve their identities to Sketch curves that close Extrude profile regions and to Revolve axis lines.
+
+**Need.** A pair of documents that differ only in the form value, and the Fusion setting or document generation that produces each value.
+
+### DR-258. Second marked reference of the 87-byte scope tail
+
+**Question.** What record does the marked reference at tail byte 30 of an 87-byte parameter-scope tail name, and does it change the operation of its scope?
+
+**Known.** `f3d.md` §3.1 "A parameter scope is one logical indexed record" states that tail byte 30 of the 87-byte tail is `0x01` when it begins a second marked reference, and that the preceding history-state identity is then at tail offset 41. In `SplitFace` scopes the reference names record index 42 or 56, and no indexed header in the stream carries that index. These `SplitFace` scopes have the same splitting-tool and target groups as the 77- and 78-byte forms, and the projection does not read the reference.
+
+**Need.** Controlled saves of one `SplitFace` before and after an edit that creates the reference, with the record that carries the referenced index.
 
 ## 2. External references
 
@@ -879,11 +919,11 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** A path selection retains its native selection and loss. The selected region can be the union of several atomic arrangement faces, which no single face proves.
 
-### DR-146. Later ordinal in a fixed identity occurrence
+### DR-146. Later ordinal in a fixed or leading-flag identity occurrence
 
-**Question.** What placement does a fixed untyped occurrence with identity flag `1` and ordinal greater than one select?
+**Question.** What placement does a fixed untyped or leading-flag occurrence with identity flag `1` and ordinal greater than one select?
 
-**Known.** Two standard 229-byte frames store ordinal `2` and identity flag `1`. Attributed identity frames retain later ordinals.
+**Known.** Two standard 229-byte frames store ordinal `2` and identity flag `1`. Attributed identity frames retain later ordinals. The leading-flag frame stores the same identity flag and one-based ordinal.
 
 **Need.** Independent files that vary the occurrence ordinal and placement separately.
 
@@ -1204,7 +1244,7 @@ when the operation transition carries no candidate for the group members?
 
 **Question.** Which saved assembly state selects the occurrence poses for an Assemble joint relation, and what activation state do the two scope-tail booleans encode?
 
-**Known.** The version-three connector equation uses scope frames, four referenced angle and XYZ lanes, and facing. Ordered occurrence keys select the innermost child within one insertion, including inserted documents. The corrected output has 383 new V1.8 joint instances: 5 have a consumer-pose residual above 0.1 mm, and 6 exceed that threshold under current carriers. RailCore v1 has 3 new instances and 0 consumer residuals above 0.1 mm. The 46 incomplete V1.8 bindings included 45 open relations and one closing relation. RailCore v1 records 3068 and 3232 and V1.8 record 4176 store `01 01` in the two tail booleans and retain native alignment. Record 4176 closes. The earlier version-three control has terminal bytes `00 00`; the six version-four controls have an extra preceding `01` marker followed by `00 00`. The neutral constructor supplies `suppressed = false` independently of these bytes.
+**Known.** The version-three connector equation uses scope frames, four referenced angle and XYZ lanes, and facing. Ordered occurrence keys select the innermost child within one insertion, including inserted documents. The corrected output has 383 new V1.8 joint instances: 5 have a consumer-pose residual above 0.1 mm, and 6 exceed that threshold under current carriers. RailCore v1 has 3 new instances and 0 consumer residuals above 0.1 mm. The 46 incomplete V1.8 bindings included 45 open relations and one closing relation. RailCore v1 records 3068 and 3232 and V1.8 record 4176 store `01 01` in the two tail booleans and retain native alignment. Record 4176 closes. The earlier version-three control has terminal bytes `00 00`; the six version-four controls have an extra preceding `01` marker followed by `00 00`. Projection assumes every projected Assemble joint is active, supplies `suppressed = false` independently of these bytes, and charges `assembly.joint-activation-assumed`.
 
 **Need.** A byte-level saved-state selector with links from joints to occurrence-pose carriers. Public states that change each tail boolean independently and establish the joint's activation state across independent designs.
 
@@ -1285,26 +1325,50 @@ when the operation transition carries no candidate for the group members?
 
 **Note.** None.
 
-### DR-260. Sketch folder tail zero run
+### DR-256. Ordinal prefix of a leading-flag local component occurrence
 
-Question: What does the length of the zero run between the parent collection reference and the folder-list reference of a sketch folder encode?
+**Question.** What does the u16 ordinal prefix at offset 44 of a leading-flag local component occurrence state?
 
-Known: The run is four bytes in a folder with an empty name and eight bytes in named folders. The decoder reads the run as zero bytes of any length that ends at the closing reference.
+**Known.** The prefix is `1` for the first new component of a Design and for a pasted second instance of that component, and `0` for a later new component. Its value is independent of the occurrence's grounded, light-bulb, visibility, active, and isolated states. The attributed frame stores two bytes after its attribute run, before its ordinal.
 
-Need: Folders that differ only in this run length.
+**Need.** A Fusion control that changes the prefix of one occurrence with all other carrier fields equal.
 
-### DR-261. Sketch folder flag byte
+**Conflict.** None.
 
-Question: What does the flag byte at sketch folder record offset 26 select?
+**Note.** The decoder keeps the prefix in the native occurrence frame.
 
-Known: The byte is `0` or `1`. Folders with either value carry sketch runs and a parent collection reference of the same form.
+### DR-265. Sketch folder tail zero run
 
-Need: Two saves of one folder that differ only in a folder property.
+**Question.** What does the length of the zero run between the parent collection reference and the folder-list reference of a sketch folder encode?
 
-### DR-262. Sketches omitted from their collection run
+**Known.** The run is four bytes in a folder with an empty name and eight bytes in named folders. The decoder reads the run as zero bytes of any length that ends at the closing reference.
 
-Question: Which stored value selects the sketches whose Geometry member names an ordinal collection that does not list them?
+**Need.** Folders that differ only in this run length.
 
-Known: Such sketches carry unique ordinals in the collection namespace, a Sketch feature scope, and a Sketch browser node. Their Sketch features follow every Sketch feature of a listed sketch in the timeline. The 960-byte timeline record does not distinguish them.
+**Conflict.** None.
 
-Need: The record that stores the timeline end position.
+**Note.** None.
+
+### DR-266. Sketch folder flag byte
+
+**Question.** What does the flag byte at sketch folder record offset 26 select?
+
+**Known.** The byte is `0` or `1`. Folders with either value carry sketch runs and a parent collection reference of the same form.
+
+**Need.** Two saves of one folder that differ only in a folder property.
+
+**Conflict.** None.
+
+**Note.** None.
+
+### DR-267. Sketches omitted from their collection run
+
+**Question.** Which stored value selects the sketches whose Geometry member names an ordinal collection that does not list them?
+
+**Known.** Such sketches carry unique ordinals in the collection namespace, a Sketch feature scope, and a Sketch browser node. Their Sketch features follow every Sketch feature of a listed sketch in the timeline. The 960-byte timeline record does not distinguish them.
+
+**Need.** The record that stores the timeline end position.
+
+**Conflict.** None.
+
+**Note.** None.

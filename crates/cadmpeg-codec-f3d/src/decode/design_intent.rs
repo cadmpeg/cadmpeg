@@ -810,6 +810,16 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &design.design_parameter_scopes,
         &model.sketch_entities,
     );
+    crate::design::feature_project::bind_loft_sketch_point_sections(
+        &mut model.features,
+        &crate::design::feature_project::LoftPointSources {
+            groups: &design.design_construction_operand_groups,
+            entity_operands: &design.design_entity_selection_operands,
+            sketch_points: &design.sketch_points,
+            sketches: &model.sketches,
+            sketch_entities: &model.sketch_entities,
+        },
+    );
     let profile_work = crate::design::geometry::ProfileGeometryWork::new();
     crate::design::profile_select::bind_sweep_sketch_selections(
         &mut model.features,
@@ -1474,6 +1484,7 @@ fn extend_related_design_records(
     design.design_entity_selection_operands =
         crate::design::decode::operands::decode_entity_selection_operands(
             scan,
+            &design.design_parameter_scopes,
             &design.design_construction_operand_groups,
             &design.design_record_headers,
         )?;

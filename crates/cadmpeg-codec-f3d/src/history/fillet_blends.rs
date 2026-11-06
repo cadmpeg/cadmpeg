@@ -1,14 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Edges that a `Fillet` feature rounds, from the blend faces of its transition.
 
-use super::blend_spine::{blend_spines, edge_geometry};
+use super::blend_spine::{
+    blend_spines, cylinder_axes, edge_geometry, edge_points, plane_rows, BlendSpine, CylinderAxis,
+    EdgeGeometry,
+};
 use crate::history_records::{AsmHistoricalTopology, AsmHistoricalTransition, AsmHistory};
 use cadmpeg_ir::features::edge_treatments::RadiusSpec;
 use cadmpeg_ir::features::{EdgeSelection, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::math::{Point3, Vector3};
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 /// Millimetres between a blend radius and the radius of its group.
 const FILLET_BLEND_RADIUS_TOLERANCE: f64 = 1.0e-6;
+/// Millimetres by which an edge may pass the axial extent of a blend's
+/// boundary and still lie within it.
+const FILLET_BLEND_EXTENT_TOLERANCE: f64 = 1.0e-6;
 
 /// One new blend face: its radius and the deleted edge along its spine.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -17,15 +24,150 @@ struct Blend {
     edge: i64,
 }
 
+/// The boundary edges of each face whose boundary rebuilds.
+type Boundaries = HashMap<i64, HashSet<i64>>;
+
+/// Rows of both states that locate the edge a blend replaces.
+struct BlendRows<'a> {
+    edges: HashMap<i64, EdgeGeometry>,
+    deleted: HashSet<i64>,
+    input_boundaries: &'a Boundaries,
+    output_boundaries: &'a Boundaries,
+    input_carriers: &'a HashMap<i64, Option<i64>>,
+    input_points: HashMap<i64, Option<Point3>>,
+    output_points: HashMap<i64, Option<Point3>>,
+    planes: HashMap<i64, Option<(Point3, Vector3)>>,
+    owners: HashMap<i64, Vec<i64>>,
+    output_faces: HashSet<i64>,
+}
+
+impl<'a> BlendRows<'a> {
+    fn new(
+        transition: &AsmHistoricalTransition,
+        (input, output): (&AsmHistoricalTopology, &AsmHistoricalTopology),
+        (input_boundaries, output_boundaries): (&'a Boundaries, &'a Boundaries),
+        input_carriers: &'a HashMap<i64, Option<i64>>,
+    ) -> Self {
+        let mut owners = HashMap::<i64, Vec<i64>>::new();
+        for (face, boundary) in input_boundaries {
+            for edge in boundary {
+                owners.entry(*edge).or_default().push(*face);
+            }
+        }
+        Self {
+            edges: edge_geometry(input),
+            deleted: transition.topology.edges.deleted.iter().copied().collect(),
+            input_boundaries,
+            output_boundaries,
+            input_carriers,
+            input_points: edge_points(input),
+            output_points: edge_points(output),
+            planes: plane_rows(input),
+            owners,
+            output_faces: output.faces.iter().copied().collect(),
+        }
+    }
+
+    /// The preceding edge that a cylinder blend replaces when its supports
+    /// share no edge along its axis: the one edge on the preceding boundary of
+    /// a support that runs along the axis, lies farther than the radius from
+    /// the axis line and within the axial extent of the blend's boundary, and
+    /// has two owner faces: a support whose plane touches the cylinder, and a
+    /// face that the transition removes and that shares a preceding edge with
+    /// another support. Kept and deleted edges qualify alike. `None` when no
+    /// edge or more than one qualifies, or when a row that decides an edge is
+    /// missing or unusable.
+    fn rounded_edge(
+        &self,
+        blend: i64,
+        spine: BlendSpine,
+        axis: CylinderAxis,
+        radius: f64,
+        supports: &[i64],
+    ) -> Option<i64> {
+        let mut extent = None::<(f64, f64)>;
+        for edge in self.output_boundaries.get(&blend)? {
+            let position = axis.position(self.output_points.get(edge).copied().flatten()?);
+            let (low, high) = extent.unwrap_or((position, position));
+            extent = Some((low.min(position), high.max(position)));
+        }
+        let (low, high) = extent?;
+        let mut pool = BTreeSet::new();
+        for support in supports {
+            pool.extend(self.input_boundaries.get(support)?);
+        }
+        let mut found = None;
+        for edge in pool {
+            let geometry = self.edges.get(edge).copied().unwrap_or_default();
+            if spine.rules_out(geometry) {
+                continue;
+            }
+            if !geometry.is_classified() {
+                return None;
+            }
+            if !spine.admits(geometry) {
+                continue;
+            }
+            let point = self.input_points.get(edge).copied().flatten()?;
+            let position = axis.position(point);
+            if !axis.clears(radius, point)
+                || position < low - FILLET_BLEND_EXTENT_TOLERANCE
+                || position > high + FILLET_BLEND_EXTENT_TOLERANCE
+            {
+                continue;
+            }
+            let Some([first, second]) = self.owners.get(edge).map(Vec::as_slice) else {
+                continue;
+            };
+            let (mut touching, mut unknown) = (false, false);
+            for (near, far) in [(first, second), (second, first)] {
+                if !supports.contains(near) || !self.beside_support(*far, *near, supports) {
+                    continue;
+                }
+                let carrier = self.input_carriers.get(near).copied().flatten()?;
+                match self.planes.get(&carrier) {
+                    Some(plane) => touching |= axis.touches(radius, (*plane)?)?,
+                    None => unknown = true,
+                }
+            }
+            if touching {
+                if found.replace(*edge).is_some() {
+                    return None;
+                }
+            } else if unknown {
+                return None;
+            }
+        }
+        found
+    }
+
+    /// Whether the transition removes `face` and `face` shares a preceding
+    /// edge with a support other than `support`.
+    fn beside_support(&self, face: i64, support: i64, supports: &[i64]) -> bool {
+        let Some(boundary) = self.input_boundaries.get(&face) else {
+            return false;
+        };
+        !self.output_faces.contains(&face)
+            && supports.iter().any(|other| {
+                *other != support
+                    && self
+                        .input_boundaries
+                        .get(other)
+                        .is_some_and(|edges| !edges.is_disjoint(boundary))
+            })
+    }
+}
+
 /// The blend faces that a transition inserts on new carriers, each with the
 /// one deleted edge that it replaces, or `None` when a face of either state
 /// has no rebuilt boundary or no single carrier, a result face on a new
 /// carrier persists or is not listed as inserted, a new carrier has no spine
 /// or finite positive radius row, an adjacent face of a blend maps to no single input
 /// face or has no rebuilt boundary, a support has no input boundary, an edge
-/// that two supports share has no axis row or tangent, a
-/// blend's supports share no edge along its spine or more than one, the
-/// transition keeps that edge, or two blends replace one edge.
+/// that two supports share has no axis row or tangent, a blend's supports
+/// share more than one edge along its spine, or none and the blend is not a
+/// cylinder whose edge `BlendRows::rounded_edge` locates, the transition
+/// keeps that edge, or two blends replace one edge.
 fn transition_blends(
     transition: &AsmHistoricalTransition,
     input: &AsmHistoricalTopology,
@@ -86,17 +228,16 @@ fn transition_blends(
             .and_modify(|radius| *radius = None)
             .or_insert(Some(row.radius));
     }
-    let edges = edge_geometry(input);
-    let deleted = transition
-        .topology
-        .edges
-        .deleted
-        .iter()
-        .copied()
-        .collect::<HashSet<_>>();
+    let rows = BlendRows::new(
+        transition,
+        (input, output),
+        (&input_boundaries, &output_boundaries),
+        &input_carriers,
+    );
+    let axes = cylinder_axes(output);
     let mut blends = Vec::new();
     let mut replaced = HashSet::new();
-    for (_, carrier, supports, complete) in supports {
+    for (blend, carrier, supports, complete) in supports {
         if !complete {
             return None;
         }
@@ -112,7 +253,7 @@ fn transition_blends(
             for right in &supports[ordinal + 1..] {
                 let right_edges = input_boundaries.get(right)?;
                 for edge in left_edges.intersection(right_edges) {
-                    let geometry = edges.get(edge).copied().unwrap_or_default();
+                    let geometry = rows.edges.get(edge).copied().unwrap_or_default();
                     if !geometry.is_classified() {
                         return None;
                     }
@@ -122,11 +263,17 @@ fn transition_blends(
                 }
             }
         }
-        let mut candidates = candidates.into_iter();
-        let (Some(edge), None) = (candidates.next(), candidates.next()) else {
-            return None;
+        let edge = if candidates.is_empty() {
+            let axis = axes.get(&carrier).copied()?;
+            rows.rounded_edge(blend, *spine, axis, radius, &supports)?
+        } else {
+            let mut candidates = candidates.into_iter();
+            let (Some(edge), None) = (candidates.next(), candidates.next()) else {
+                return None;
+            };
+            edge
         };
-        if !deleted.contains(&edge) || !replaced.insert(edge) {
+        if !rows.deleted.contains(&edge) || !replaced.insert(edge) {
             return None;
         }
         blends.push(Blend { radius, edge });
