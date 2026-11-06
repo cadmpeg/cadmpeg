@@ -356,7 +356,7 @@ mod tests {
                 schema: None,
                 category: None,
                 base_color: None,
-                properties: Default::default(),
+                properties: std::collections::BTreeMap::new(),
                 textures: Vec::new(),
             });
         ir.model
