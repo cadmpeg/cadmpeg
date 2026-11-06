@@ -254,7 +254,7 @@ travel.
 
 **Need.** An ownerless feature input has no owner binding in the current parameter model, and the meaning of the set trailer bytes is unknown. A rule must bind the document trailer to a localized `User Parameter` source kind before such a frame forms a document parameter.
 
-### DR-85. Flagged empty mesh-collection word
+### DR-85. Flagged mesh-collection words
 
 **Question.** What does the u32 at offset 25 of a flagged mesh collection store, and what does the u32 of each flagged body entry store?
 
