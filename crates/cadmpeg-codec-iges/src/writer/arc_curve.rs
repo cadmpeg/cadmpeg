@@ -12,11 +12,78 @@ pub(super) fn retain(
 ) {
     let Some(body) = planar_arc(ir, id, geometry, span)
         .or_else(|| planar_ellipse(ir, id, geometry, span, entity.form))
+        .or_else(|| planar_parabola(ir, id, geometry, span, entity.form))
     else {
         return;
     };
     entity.parameter_body = body.into_bytes();
     entity.transform = None;
+}
+
+fn planar_parabola(
+    ir: &CadIr,
+    id: &CurveId,
+    geometry: &CurveGeometry,
+    span: Option<&CurveSpan>,
+    form: i64,
+) -> Option<String> {
+    let CurveGeometry::Solved(SolvedCurveGeometry::Parabola(parabola)) = geometry else {
+        return None;
+    };
+    let span = span?;
+    let (values, tokens) = source_parameters(ir, id, 104, form, 12)?;
+    let [coeff_a, coeff_b, coeff_c, coeff_d, coeff_e, coeff_f, plane_z, start_x, start_y, end_x, end_y] =
+        values.as_slice()
+    else {
+        return None;
+    };
+    if *coeff_a == 0.0
+        || *coeff_e == 0.0
+        || *coeff_b != 0.0
+        || *coeff_c != 0.0
+        || *coeff_d != 0.0
+        || *coeff_f != 0.0
+    {
+        return None;
+    }
+    let focal =
+        cadmpeg_ir::math::product_quotient([*coeff_e, 1.0, 1.0, 1.0], [4.0, *coeff_a, 1.0])?.abs();
+    let direction = if -coeff_a / coeff_e < 0.0 { -1.0 } else { 1.0 };
+    let parameter = |x: f64| {
+        cadmpeg_ir::math::multiply_divide(
+            cadmpeg_ir::scalar::FiniteReal::new(-direction * x)?,
+            cadmpeg_ir::scalar::FiniteReal::HALF,
+            focal,
+        )
+        .map(cadmpeg_ir::scalar::FiniteReal::get)
+    };
+    let mut start = parameter(*start_x)?;
+    let mut end = parameter(*end_x)?;
+    let axis = if end < start {
+        start = -start;
+        end = -end;
+        Vector3::new(0.0, 0.0, -1.0)
+    } else {
+        Vector3::new(0.0, 0.0, 1.0)
+    };
+    let vertex = parabola.vertex().get();
+    if vertex.x != 0.0
+        || vertex.y != 0.0
+        || vertex.z != *plane_z
+        || parabola.focal_distance().get() != focal.get()
+        || *parabola.frame().axis().as_raw() != axis
+        || *parabola.frame().reference().as_raw() != Vector3::new(0.0, direction, 0.0)
+        || span.start.x != *start_x
+        || span.start.y != *start_y
+        || span.start.z != *plane_z
+        || span.end.x != *end_x
+        || span.end.y != *end_y
+        || span.end.z != *plane_z
+        || span.range.get() != [start, end]
+    {
+        return None;
+    }
+    Some(format!("{};", tokens.join(",")))
 }
 
 fn planar_ellipse(
@@ -216,7 +283,10 @@ mod tests {
     use std::io::Cursor;
 
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
-    use cadmpeg_ir::geometry::{analytic::EllipseCurve, CurveGeometry, SolvedCurveGeometry};
+    use cadmpeg_ir::geometry::{
+        analytic::{EllipseCurve, ParabolaCurve},
+        CurveGeometry, SolvedCurveGeometry,
+    };
     use cadmpeg_ir::scalar::PositiveLength;
 
     use crate::test_support::test_curves_and_surfaces::conic_arc_file;
@@ -247,5 +317,30 @@ mod tests {
         .expect("ordered radii");
         let edited = CurveGeometry::Solved(SolvedCurveGeometry::Ellipse(edited));
         assert!(super::planar_ellipse(ir, &curve.id, &edited, Some(&span), 0).is_none());
+    }
+
+    #[test]
+    fn changed_parabola_does_not_reuse_source_parameters() {
+        let decoded = IgesCodec
+            .decode(
+                &mut Cursor::new(conic_arc_file(3, b"104,1,0,0,0,-4,0,0,2,1,-2,1;")),
+                &DecodeOptions::default(),
+            )
+            .expect("parabola decodes");
+        let ir = decoded.ir();
+        let curve = &ir.model.curves[0];
+        let span = super::super::curve_reference_span(ir, &curve.id, &curve.geometry)
+            .expect("parabola has a span");
+        assert!(super::planar_parabola(ir, &curve.id, &curve.geometry, Some(&span), 3).is_some());
+        let Some(SolvedCurveGeometry::Parabola(parabola)) = curve.geometry.solved() else {
+            panic!("fixture holds a parabola");
+        };
+        let edited = ParabolaCurve::new(
+            parabola.vertex(),
+            *parabola.frame(),
+            PositiveLength::new(2.0).expect("positive focal distance"),
+        );
+        let edited = CurveGeometry::Solved(SolvedCurveGeometry::Parabola(edited));
+        assert!(super::planar_parabola(ir, &curve.id, &edited, Some(&span), 3).is_none());
     }
 }

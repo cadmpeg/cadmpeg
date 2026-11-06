@@ -283,8 +283,10 @@ overriding `Expression`, plus per-feature `ConfigurationFeatureState` values
 base stays complete on its own.
 
 Consumers read colour through `CadIr::effective_display_color`: an explicit
-display colour first, then the bound appearance colour, then the single-body
-prototype body colour for an occurrence. Consumers read visibility through
+display colour first, then the bound appearance colour. A face, edge, free
+vertex, or body-linked tessellation falls back to its body's effective colour.
+An occurrence falls back to its single-body prototype's effective colour.
+Consumers read visibility through
 `CadIr::effective_visibility`: the applicable explicit gates combine with
 logical AND. A display-colour field holds only a source colour that builds no
 Appearance. Computed world placement comes from `effective_transform`, which
