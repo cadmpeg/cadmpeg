@@ -956,10 +956,13 @@ fn operand_list_keeps_its_operation_when_a_browser_node_is_not_exact() {
 
 #[test]
 fn byte_twenty_of_the_operand_list_prologue_is_the_property_block_presence() {
-    let mut empty_block = OperandListFixture::new(1, 0);
+    let mut empty_block = OperandListFixture::new(2, 0);
     empty_block.property_block = true;
     let operation = empty_block.decode().expect("operand-list Combine");
-    assert_eq!(operation.operation, cadmpeg_ir::features::BooleanKind::Cut);
+    assert_eq!(
+        operation.operation,
+        cadmpeg_ir::features::BooleanKind::Intersect
+    );
     assert_eq!(operation.operation_offset, 25);
     assert_eq!(operation.keep_tools_offset, 33);
 
@@ -1078,10 +1081,10 @@ fn a_byte_twenty_frame_reports_the_prologue_it_assumes() {
     let mut fixture = OperandListFixture::new(1, 0);
     fixture.property_block = true;
     let (operation, losses) = fixture.decode_with_losses();
-    assert_eq!(
-        operation.map(|operation| operation.form),
-        Some(DesignCombineForm::OperandLists)
-    );
+    let operation = operation.expect("standard reading");
+    assert_eq!(operation.form, DesignCombineForm::Standard);
+    assert_eq!(operation.operation, cadmpeg_ir::features::BooleanKind::Join);
+    assert!(operation.keep_tools);
     assert_eq!(
         codes(losses),
         [F3dLossCode::FeatureCombinePrologueAssumed.kind()]

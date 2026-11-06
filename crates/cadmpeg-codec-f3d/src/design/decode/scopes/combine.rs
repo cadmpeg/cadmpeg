@@ -63,16 +63,17 @@ pub(super) fn exact_combine_operation(
         let operand_lists = prologue.lists.is_some();
         match combine_operation_with(bytes, records, scope, stream_types, prologue)? {
             PrologueReading::Operation(operation) => {
+                if operation.form == DesignCombineForm::OperandLists
+                    && standard_fields_read(bytes, start)
+                {
+                    operand_list_refusal = Some(
+                        "its lists name its operands, and the standard prologue also reads it",
+                    );
+                    continue;
+                }
                 if let Some(reason) = operand_list_refusal {
                     losses.push(F3dLossCode::FeatureCombinePrologueAssumed.note(format!(
                         "{}: the Combine frame matches the fixed operand-list fields and {reason}; it is read in the standard prologue",
-                        scope.id
-                    )));
-                } else if operation.form == DesignCombineForm::OperandLists
-                    && standard_fields_read(bytes, start)
-                {
-                    losses.push(F3dLossCode::FeatureCombinePrologueAssumed.note(format!(
-                        "{}: the standard prologue also reads the fixed fields of the Combine frame; its lists name its operands, so it is read in the operand-list prologue",
                         scope.id
                     )));
                 }
@@ -525,13 +526,13 @@ fn operand_list_fields_hold(
         {
             return Err("a companion is not registered as a RemoveBody scope");
         }
-        let stores_guid = match records.offsets(*record_index) {
-            [at, end] => bytes
-                .get(*at..*end)
-                .is_some_and(|record| guid_precedes_reference_table(record, stored.guid)),
-            _ => false,
+        let [at, end] = records.offsets(*record_index) else {
+            return Err("a companion record is not one primary and one paired header");
         };
-        if !stores_guid {
+        if !bytes
+            .get(*at..*end)
+            .is_some_and(|record| guid_precedes_reference_table(record, stored.guid))
+        {
             return Err(
                 "a companion record does not store the Combine's counted GUID and three zero bytes before a reference table",
             );
