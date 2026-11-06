@@ -155,6 +155,7 @@ mod feature_order;
 mod levels;
 mod native_plane;
 mod native_records;
+mod offset_curve;
 mod pcurve_admission;
 mod placement_entities;
 pub(crate) mod target;
@@ -709,22 +710,21 @@ fn synthesize_with_admission(
         .iter()
         .flat_map(|entity| entity.source_targets.iter())
         .collect::<BTreeSet<_>>();
-    let mut emitted_compounds = 0;
+    let mut emitted_procedurals = 0;
     for procedural in &ir.model.procedural_curves {
         let Some(owner) = ir.model.procedural_curve_owner(&procedural.id) else {
             continue;
         };
-        if compound::geometry(ir, owner).is_some()
-            && graph.entities.iter().any(|entity| {
-                entity.type_code == 102
-                    && matches!(entity.status, EntityStatus::Independent)
-                    && entity
-                        .source_targets
-                        .iter()
-                        .any(|target| target == owner.as_str())
-            })
-        {
-            emitted_compounds += 1;
+        let compound = compound::geometry(ir, owner).is_some();
+        if graph.entities.iter().any(|entity| {
+            ((compound && entity.type_code == 102) || entity.type_code == 130)
+                && matches!(entity.status, EntityStatus::Independent)
+                && entity
+                    .source_targets
+                    .iter()
+                    .any(|target| target == owner.as_str())
+        }) {
+            emitted_procedurals += 1;
             let previous = format!(
                 "IGES procedural definition {} was reduced to a solved carrier",
                 procedural.id
@@ -882,7 +882,7 @@ fn synthesize_with_admission(
         coverage.coedges = ArenaDisposition::Reported;
         coverage.pcurves = ArenaDisposition::Reported;
     }
-    if emitted_compounds > 0 {
+    if emitted_procedurals > 0 {
         coverage.procedural_curves = ArenaDisposition::Reported;
     }
     if emitted_products > 0 {
@@ -7432,6 +7432,17 @@ impl CurveEntityEmitter<'_> {
                 "IGES composite curve graph contains a cycle at {curve_id}"
             )));
         }
+        if sense == Sense::Forward {
+            if let Some(index) =
+                self.append_uniform_circle_offset(curve_id, geometry, span, status)?
+            {
+                self.active.remove(curve_id);
+                self.entities[index]
+                    .source_targets
+                    .push(curve_id.to_string());
+                return Ok(index);
+            }
+        }
         let result = match geometry {
             CurveGeometry::Solved(SolvedCurveGeometry::Composite { segments, .. }) => {
                 let children = self.append_composite_constituents(segments, sense)?;
@@ -8081,6 +8092,25 @@ fn append_unowned_curves(
             );
         }
         mark_curve_descendants(ir, &curve.id, consumed, &mut BTreeSet::new())?;
+    }
+    for procedural in &ir.model.procedural_curves {
+        let cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset(offset) =
+            procedural.definition()
+        else {
+            continue;
+        };
+        let Some(owner) = ir.model.procedural_curve_owner(&procedural.id) else {
+            continue;
+        };
+        if entities.iter().any(|entity| {
+            entity.type_code == 130
+                && entity
+                    .source_targets
+                    .iter()
+                    .any(|target| target == owner.as_str())
+        }) {
+            consumed.insert(offset.source().to_string());
+        }
     }
     for (curve, status) in dependent {
         if consumed.contains(curve.id.as_str()) {
