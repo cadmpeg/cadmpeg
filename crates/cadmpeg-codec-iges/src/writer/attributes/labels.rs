@@ -92,50 +92,10 @@ fn apply_sheet_boundary_labels(
     targets: &Targets,
     result: &mut AttributeExport,
 ) {
-    'entity: for entity in entities.iter_mut().filter(|entity| entity.type_code == 143) {
-        let Some(face) = ir.model.faces.iter().find(|face| {
-            entity
-                .source_targets
-                .iter()
-                .any(|id| id == face.id.as_str())
-        }) else {
+    for entity in entities.iter_mut().filter(|entity| entity.type_code == 143) {
+        let Some(points) = sheet_boundary_points(ir, entity) else {
             continue;
         };
-        let mut points = BTreeSet::new();
-        for loop_id in &face.loops {
-            let Some(boundary) = ir
-                .model
-                .loops
-                .iter()
-                .find(|boundary| boundary.id == *loop_id)
-            else {
-                continue 'entity;
-            };
-            for vertex in boundary.vertices() {
-                let Some(vertex) = ir.model.vertices.iter().find(|row| row.id == *vertex) else {
-                    continue 'entity;
-                };
-                points.insert(vertex.point.as_str());
-            }
-            for coedge_id in boundary.coedges() {
-                let Some(edge) = ir
-                    .model
-                    .coedges
-                    .iter()
-                    .find(|coedge| coedge.id == *coedge_id)
-                    .and_then(|coedge| ir.model.edges.iter().find(|edge| edge.id == coedge.edge))
-                else {
-                    continue 'entity;
-                };
-                for vertex in [&edge.start, &edge.end] {
-                    let Some(vertex) = ir.model.vertices.iter().find(|row| row.id == *vertex)
-                    else {
-                        continue 'entity;
-                    };
-                    points.insert(vertex.point.as_str());
-                }
-            }
-        }
         if points.is_empty() || points.iter().any(|point| targets.contains_key(*point)) {
             continue;
         }
@@ -157,6 +117,7 @@ fn apply_sheet_boundary_labels(
             if attrs.next().is_some()
                 || attribute.name != "name"
                 || !short_label(value)
+                || value.trim() != value
                 || label.is_some_and(|label| label != value)
             {
                 selected.clear();
@@ -183,4 +144,56 @@ fn apply_sheet_boundary_labels(
         entity.label = label.to_owned();
         result.preserved.extend(selected);
     }
+}
+
+pub(in crate::writer) fn sheet_boundary_points<'a>(
+    ir: &'a CadIr,
+    entity: &Entity,
+) -> Option<BTreeSet<&'a str>> {
+    if entity.type_code != 143 {
+        return None;
+    }
+    let face = ir.model.faces.iter().find(|face| {
+        entity
+            .source_targets
+            .iter()
+            .any(|id| id == face.id.as_str())
+    })?;
+    let mut points = BTreeSet::new();
+    for loop_id in &face.loops {
+        let boundary = ir
+            .model
+            .loops
+            .iter()
+            .find(|boundary| boundary.id == *loop_id)?;
+        for vertex in boundary.vertices() {
+            points.insert(
+                ir.model
+                    .vertices
+                    .iter()
+                    .find(|row| row.id == *vertex)?
+                    .point
+                    .as_str(),
+            );
+        }
+        for coedge_id in boundary.coedges() {
+            let coedge = ir
+                .model
+                .coedges
+                .iter()
+                .find(|coedge| coedge.id == *coedge_id)?;
+            let edge = ir.model.edges.iter().find(|edge| edge.id == coedge.edge)?;
+            for vertex in [&edge.start, &edge.end] {
+                points.insert(
+                    ir.model
+                        .vertices
+                        .iter()
+                        .find(|row| row.id == *vertex)?
+                        .point
+                        .as_str(),
+                );
+            }
+        }
+    }
+    Some(points)
 }
