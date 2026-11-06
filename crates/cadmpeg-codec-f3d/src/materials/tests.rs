@@ -1133,6 +1133,7 @@ fn duplicate_face_assignments_reject_conflicting_colors() {
     assert!(error.to_string().contains("conflicting neutral colors"));
 }
 
+mod definition_recovery;
 mod generated_appearance;
 
 #[test]
@@ -1162,7 +1163,10 @@ fn decode_gives_up_invalid_instance_property_page_framing() {
         })
         .collect::<Vec<_>>();
     assert_eq!(unreadable.len(), 1);
-    assert!(unreadable[0].message.contains("f3d.protein_record"));
+    assert!(unreadable[0].message.contains("zip.entry"));
+    assert!(unreadable[0]
+        .message
+        .contains("AssetData/InstanceProperties.bin"));
     assert!(decoded
         .source_fidelity()
         .retained_records()

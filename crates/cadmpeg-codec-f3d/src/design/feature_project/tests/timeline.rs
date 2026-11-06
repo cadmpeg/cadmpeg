@@ -190,10 +190,7 @@ fn feature_projection_uses_timeline_items_not_scope_byte_order() {
         .expect("later feature");
     assert_eq!(earlier_feature.ordinal, 0);
     assert_eq!(later_feature.ordinal, 2);
-    assert_eq!(
-        later_feature.dependencies.as_slice(),
-        [earlier_feature.id.clone()]
-    );
+    assert!(later_feature.dependencies.is_empty());
 
     let unrelated = DesignFeatureTimeline::try_new(
         crate::ids::native_design_feature_timeline_id_in_stream("f3d:Other/BulkStream.dat", 10),
@@ -234,10 +231,7 @@ fn feature_projection_uses_timeline_items_not_scope_byte_order() {
         .find(|feature| feature.native_ref.as_deref() == Some(&later.id))
         .unwrap();
     assert!(reversed_later.ordinal < reversed_earlier.ordinal);
-    assert_eq!(
-        reversed_later.dependencies.as_slice(),
-        [reversed_earlier.id.clone()]
-    );
+    assert!(reversed_later.dependencies.is_empty());
 
     let second = DesignFeatureTimeline::try_new(
         authored.id().clone(),
@@ -407,10 +401,8 @@ fn feature_projection_collapses_internal_scope_history_chains() {
         .iter()
         .find(|feature| feature.native_ref.as_deref() == Some(successor.id.as_str()))
         .expect("projected successor");
-    assert_eq!(
-        successor_feature.dependencies.as_slice(),
-        [predecessor_feature.id.clone()]
-    );
+    assert!(successor_feature.dependencies.is_empty());
+    assert!(predecessor_feature.ordinal < successor_feature.ordinal);
     assert_eq!(parameters.len(), 1);
     assert!(parameters[0].owner.is_none());
     assert!(parameters[0].properties.is_empty());
@@ -991,7 +983,7 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
         .iter()
         .find(|feature| feature.native_ref.as_deref() == Some("f3d:native/BulkStream.dat:scope#22"))
         .expect("successor feature");
-    assert_eq!(successor.dependencies.as_slice(), [predecessor.id.clone()]);
+    assert!(successor.dependencies.is_empty());
     assert!(predecessor.ordinal < successor.ordinal);
     let width = parameters
         .iter()

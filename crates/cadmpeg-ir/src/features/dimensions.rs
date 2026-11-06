@@ -323,9 +323,7 @@ impl std::fmt::Display for DimensionResolutionError {
                 "dimensional parameter {parameter} does not supply {expected}"
             ),
             Self::InvalidDefinition { reason } => formatter.write_str(reason),
-            Self::ResourceLimit(limit) => {
-                std::fmt::Display::fmt(&CodecError::ResourceLimit(*limit), formatter)
-            }
+            Self::ResourceLimit(limit) => std::fmt::Display::fmt(limit, formatter),
         }
     }
 }

@@ -631,6 +631,29 @@ fn product_scalar_attributes_are_step_properties_of_their_owner() {
         &StepWriteOptions::default(),
     )
     .unwrap();
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(&output), &DecodeOptions::default())
+        .expect("decode product properties");
+    for (name, expected) in [
+        ("Finish", AttributeValue::String("brushed".into())),
+        ("Material", AttributeValue::String("steel".into())),
+        ("Count", AttributeValue::Integer(7)),
+        ("Enabled", AttributeValue::Boolean(true)),
+    ] {
+        assert!(
+            decoded.ir().model.attributes.iter().any(|attribute| {
+                attribute.name == name
+                    && matches!(attribute.target, AttributeTarget::ProductDefinition(_))
+                    && attribute.values == [Some(expected.clone())]
+            }),
+            "missing product property {name}"
+        );
+    }
+    assert!(decoded.ir().model.attributes.iter().any(|attribute| {
+        attribute.name == "Ratio"
+            && matches!(attribute.target, AttributeTarget::ProductDefinition(_))
+            && matches!(attribute.values.as_slice(), [Some(AttributeValue::Float(value))] if (value.get() - 1.25).abs() < 1.0e-12)
+    }));
     let text = String::from_utf8(output).unwrap();
     for (name, item_text, product) in [
         (

@@ -113,7 +113,7 @@ impl fmt::Display for SubdError {
             }
             Self::Malformed { offset, message } => write!(formatter, "{message} at byte {offset}"),
             Self::Unpositioned { message } => formatter.write_str(message),
-            Self::Resource(limit) => cadmpeg_core::CodecError::ResourceLimit(*limit).fmt(formatter),
+            Self::Resource(limit) => limit.fmt(formatter),
         }
     }
 }

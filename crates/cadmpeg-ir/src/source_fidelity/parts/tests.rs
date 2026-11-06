@@ -154,6 +154,24 @@ fn a_failed_part_names_its_dropped_records_in_order() {
 }
 
 #[test]
+fn failed_part_names_unformed_dependents_with_staged_records() {
+    let arena = DecodeArena::new();
+    let (ctx, root) =
+        DecodeContext::from_root_bytes(b"ABCD", &arena, &DecodePolicy::service()).unwrap();
+    let mut output = PartOutput::new(CodecFormat::Step, &ctx);
+    let spec = PartSpec::new("step.entity")
+        .dropping("step:model:point#zeta".try_into().unwrap())
+        .dropping("step:model:point#alpha".try_into().unwrap());
+    ctx.decode_part(&mut output, root, spec, |stage| {
+        stage.insert_model(&ctx, point("step:model:point#zeta"))?;
+        Err::<(), _>(CodecError::malformed("damaged entity"))
+    }).unwrap();
+    let (_, _, _, losses) = output.into_parts();
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].dropped, ["step:model:point#alpha", "step:model:point#zeta"]);
+}
+
+#[test]
 fn a_part_loss_names_its_record_and_container_link() {
     let arena = DecodeArena::new();
     let (ctx, root) =
