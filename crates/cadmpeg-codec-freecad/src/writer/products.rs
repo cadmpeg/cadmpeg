@@ -53,15 +53,18 @@ pub(super) fn xlink(name: &str, file: &str, subelements: &[String]) -> String {
 
 fn prototype(
     reference: &PrototypeReference,
+    occurrence: &str,
     names: &HashMap<String, String>,
     losses: &mut Vec<LossNote>,
-) -> Result<(String, String), CodecError> {
-    Ok(match reference {
+) -> (String, String) {
+    match reference {
         PrototypeReference::Local { definition } => (
-            names
-                .get(definition.as_str())
-                .cloned()
-                .ok_or_else(|| CodecError::malformed("occurrence references absent prototype"))?,
+            names.get(definition.as_str()).cloned().unwrap_or_else(|| {
+                losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
+                    "occurrence {occurrence} references absent prototype {definition}"
+                )));
+                String::new()
+            }),
             String::new(),
         ),
         PrototypeReference::External { document, object } => (
@@ -69,7 +72,7 @@ fn prototype(
             external(document, losses),
         ),
         PrototypeReference::Unresolved {} => (String::new(), String::new()),
-    })
+    }
 }
 
 fn external(document: &ExternalDocument, losses: &mut Vec<LossNote>) -> String {
@@ -483,7 +486,7 @@ fn link_state(
             ),
         ] {
             if let Some(reference) = value {
-                let (name, file) = prototype(reference, names, losses)?;
+                let (name, file) = prototype(reference, &object.name, names, losses);
                 let content = if kind == "App::PropertyLink" && file.is_empty() {
                     xml::element("Link", &[("value", name)])
                 } else if kind == "App::PropertyLink" {
@@ -613,12 +616,17 @@ pub(super) fn write(
             name
         };
         names.insert(occurrence.id.as_str().to_owned(), name.clone());
+        let missing_prototype = matches!(
+            &occurrence.prototype,
+            PrototypeReference::Local { definition } if !names.contains_key(definition.as_str())
+        );
         let object = objects
             .iter_mut()
             .find(|object| object.name == name)
             .ok_or_else(|| CodecError::malformed("instance output is absent"))?;
         if object.kind == "App::Link" {
-            let (prototype, file) = prototype(&occurrence.prototype, names, losses)?;
+            let (prototype, file) =
+                prototype(&occurrence.prototype, occurrence.id.as_str(), names, losses);
             let subelements = occurrence
                 .link
                 .as_ref()
@@ -642,10 +650,10 @@ pub(super) fn write(
             replay_list_properties(ir, occurrence, object, names, losses)?;
             // Links without a linked prototype placement never transform
             // their prototype; linked uses resolve their policy below.
-            if occurrence.linked_prototype.is_none() {
+            if occurrence.linked_prototype.is_none() || missing_prototype {
                 bool_property(object, "LinkTransform", false);
             }
-            if let Some(linked) = occurrence.linked_prototype {
+            if let Some(linked) = occurrence.linked_prototype.filter(|_| !missing_prototype) {
                 linked_uses.push((prototype, name.clone(), occurrence.id.to_string(), linked));
             }
         }
@@ -653,9 +661,20 @@ pub(super) fn write(
         // object carries the occurrence's own transform, never the composed
         // effective transform. An occurrence with no placement omits
         // Placement (#238 §5.5, #213).
-        let deferred = occurrence.linked_prototype.is_some() && object.kind == "App::Link";
+        let deferred = occurrence.linked_prototype.is_some()
+            && object.kind == "App::Link"
+            && !missing_prototype;
         if !deferred {
-            if let Some(transform) = occurrence.transform {
+            let transform = if missing_prototype && occurrence.linked_prototype.is_some() {
+                losses.push(FreecadLossCode::ProductLinkedPlacementFolded.note(format!(
+                    "occurrence {} has no prototype object for its linked placement",
+                    occurrence.id
+                )));
+                occurrence.effective_transform().ok().flatten()
+            } else {
+                occurrence.transform
+            };
+            if let Some(transform) = transform {
                 let (rigid, scale) = split_scale(transform).unwrap_or((transform, [1.0; 3]));
                 object.set(
                     "Placement",
@@ -686,13 +705,17 @@ pub(super) fn write(
     children.sort_by_key(|occurrence| occurrence.ordinal);
     for occurrence in children {
         if let OccurrenceParent::Occurrence { occurrence: parent } = &occurrence.parent {
-            let parent = names
-                .get(parent.as_str())
-                .ok_or_else(|| CodecError::malformed("instance references absent parent"))?;
+            let Some(parent_name) = names.get(parent.as_str()) else {
+                losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
+                    "occurrence {} references absent parent {parent} and is written at the root",
+                    occurrence.id
+                )));
+                continue;
+            };
             let child = names
                 .get(occurrence.id.as_str())
                 .ok_or_else(|| CodecError::malformed("instance child has no output identity"))?;
-            let members = groups.entry(parent.clone()).or_default();
+            let members = groups.entry(parent_name.clone()).or_default();
             if !members.contains(child) {
                 members.push(child.clone());
             }
