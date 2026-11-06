@@ -174,6 +174,52 @@ fn scan_history(records: &[Vec<u8>]) -> Vec<crate::history::HistoryRecord> {
 }
 
 #[test]
+fn invalid_history_intervals_name_each_feature_and_keep_a_valid_sibling() {
+    let mut ir = document();
+    let cases: &[(&str, &[&str])] = &[
+        ("partial", &["value_1.0.evaluation.interval_0"]),
+        (
+            "third",
+            &[
+                "value_1.0.evaluation.interval_0",
+                "value_1.0.evaluation.interval_1",
+            ],
+        ),
+        (
+            "osnap",
+            &[
+                "value_2.0.evaluation.interval_0",
+                "value_2.0.evaluation.interval_1",
+                "value_2.0.evaluation.interval_2",
+            ],
+        ),
+    ];
+    for (ordinal, (name, removed)) in cases.iter().enumerate() {
+        let mut feature = history_feature();
+        feature.id = format!("rhino:history:feature#invalid-{name}")
+            .try_into()
+            .unwrap();
+        feature.native_ref = None;
+        feature.ordinal = u64::try_from(ordinal + 1).unwrap();
+        for key in *removed {
+            feature.source_properties.remove(*key);
+        }
+        ir.model.features.push(feature);
+    }
+    let exported = records(&ir).unwrap();
+    assert_eq!(exported.records.len(), 1);
+    for (name, _) in cases {
+        let id = format!("rhino:history:feature#invalid-{name}");
+        assert!(exported
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains(&id)));
+        assert!(!exported.written_features.contains(&id));
+    }
+    assert_eq!(scan_history(&exported.records).len(), 1);
+}
+
+#[test]
 fn history_feature_with_object_references_round_trips() {
     let source = document();
     let exported = records(&source).expect("typed history");
