@@ -102,6 +102,30 @@ The class-290 primary paired with class-261 uses the same six-byte fields on its
 
 **Need.** We must know what the per-element u32 selects to write a Base Feature from a neutral model. It is `1` on one scope and `0` on every other, and it does not track the body count, so we cannot say what selects it.
 
+
+### DR-259. Owner of a scope that several timeline objects name
+
+**Question.** Which object owns a `Base Feature` scope that two or more paste or body-to-component objects name?
+
+**Known.** `f3d.md` §3.1 "A paste or body-to-component timeline object owns" gives the owner fields; each object stores its reference to the owned scope after its counted body references. The owned scope takes its owner's timeline position. The decoder gives the scope to the object with the lowest record index whose owned runs read and reads no copy sources for it.
+
+**Need.** A save in which two objects name one scope, with the timeline position and the body set that Fusion shows for that scope.
+
+**Conflict.** None.
+
+**Note.** The decoder reports `feature.timeline-owner-competing`.
+
+### DR-260. Placement of a pasted copy
+
+**Question.** Where does a pasted copy sit relative to its source body?
+
+**Known.** `f3d.md` §3.1 "In the scope that a paste object owns" gives the copy form. The object and scope frames store the copy bodies, their parameter-body records and the source GUID pairs. In the copy saves whose sources survive, each copy has its source's bounding box and volume. The decoder projects the copy as `MoveBody` with zero translation and no rotation.
+
+**Need.** A paste that places a copy at an offset or a rotation from its source, and the bytes that hold that placement.
+
+**Conflict.** None.
+
+**Note.** The decoder reports `feature.paste-copy-placement-assumed`.
 ### DR-26. Sketch-text fields
 
 **Question.** What do the residual `txt_tag` style bits and four-byte style payload, its second post-height Boolean, and the `textex_tag` orientation and auxiliary flags select?
