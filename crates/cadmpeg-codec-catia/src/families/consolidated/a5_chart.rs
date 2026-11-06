@@ -7,10 +7,12 @@ use crate::wire::records::{
     records_are_contiguous, ConsolidatedFamily, ConsolidatedRecord, WidthCodedToken,
 };
 use cadmpeg_ir::scalar::FiniteReal;
+use serde::{Deserialize, Serialize};
 
 const AXIS_DIRECTION_TOLERANCE: f64 = 1.0e-12;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub(crate) enum ChartAxis {
     U,
     V,
@@ -19,16 +21,28 @@ pub(crate) enum ChartAxis {
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct ChartSide {
     pub(crate) pos: usize,
+    pub(crate) source_offset: usize,
+    pub(crate) operand: CompactUnsigned,
     pub(crate) axis: ChartAxis,
     pub(crate) fixed: f64,
     pub(crate) interval: [f64; 2],
     pub(crate) reverse_interval: Option<[f64; 2]>,
+    pub(crate) line: ChartLine,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct ChartLine {
+    pub(crate) parameter_range: [f64; 2],
+    pub(crate) origin: [f64; 2],
+    pub(crate) direction: [f64; 2],
+    pub(crate) sign_ambiguous: bool,
 }
 
 #[derive(Debug, Clone)]
 pub(crate) struct A5ChartBoundary {
     pub(crate) carrier_pos: usize,
     pub(crate) source_index: usize,
+    pub(crate) source_offset: usize,
     pub(crate) bounds: [[f64; 2]; 2],
     pub(crate) sides: [ChartSide; 4],
 }
@@ -71,6 +85,7 @@ pub(crate) fn a5_chart_boundaries(
             Some(A5ChartBoundary {
                 carrier_pos: carrier.byte_offset(),
                 source_index: carrier.source_index(),
+                source_offset: carrier.source_range().start,
                 bounds,
                 sides,
             })
@@ -79,9 +94,16 @@ pub(crate) fn a5_chart_boundaries(
 }
 
 fn chart_side(data: &[u8], record: &ConsolidatedRecord, expected: u32) -> Option<ChartSide> {
-    let bytes = data.get(record.payload()?)?;
+    let mut side =
+        chart_side_payload(data.get(record.payload()?)?, record.byte_offset(), expected)?;
+    side.source_offset = record.source_range().start;
+    Some(side)
+}
+
+pub(crate) fn chart_side_payload(bytes: &[u8], pos: usize, expected: u32) -> Option<ChartSide> {
     let mut at = 0;
-    if CompactUnsigned::read(bytes, &mut at)?.value() != expected {
+    let operand = CompactUnsigned::read(bytes, &mut at)?;
+    if operand.value() != expected {
         return None;
     }
     let control = *bytes.get(at)?;
@@ -90,7 +112,7 @@ fn chart_side(data: &[u8], record: &ConsolidatedRecord, expected: u32) -> Option
     if at.checked_add(scalar_count.checked_mul(8)?)? != bytes.len() {
         return None;
     }
-    let (axis, fixed, interval, reverse_interval) =
+    let (axis, fixed, interval, reverse_interval, line) =
         if control < 0x20 && matches!(control & 3, 1 | 2) {
             let mut tuple = [0.0; 3];
             for (index, bit) in [0x10, 0x04, 0x08].into_iter().enumerate() {
@@ -102,15 +124,26 @@ fn chart_side(data: &[u8], record: &ConsolidatedRecord, expected: u32) -> Option
             if at != bytes.len() {
                 return None;
             }
+            let axis = if control & 3 == 1 {
+                ChartAxis::U
+            } else {
+                ChartAxis::V
+            };
+            let (origin, direction) = match axis {
+                ChartAxis::U => ([tuple[0], 0.0], [0.0, 1.0]),
+                ChartAxis::V => ([0.0, tuple[0]], [1.0, 0.0]),
+            };
             (
-                if control & 3 == 1 {
-                    ChartAxis::U
-                } else {
-                    ChartAxis::V
-                },
+                axis,
                 tuple[0],
                 [tuple[1], tuple[2]],
                 None,
+                ChartLine {
+                    parameter_range: [tuple[1], tuple[2]],
+                    origin,
+                    direction,
+                    sign_ambiguous: false,
+                },
             )
         } else {
             let (range, origin, direction) = match (control, scalar_count) {
@@ -175,6 +208,12 @@ fn chart_side(data: &[u8], record: &ConsolidatedRecord, expected: u32) -> Option
                 fixed,
                 [ends[0].min(ends[1]), ends[0].max(ends[1])],
                 reverse,
+                ChartLine {
+                    parameter_range: range,
+                    origin,
+                    direction,
+                    sign_ambiguous: matches!(control, 0x40 | 0x48 | 0x80 | 0x88),
+                },
             )
         };
     (interval[0].is_finite()
@@ -182,15 +221,18 @@ fn chart_side(data: &[u8], record: &ConsolidatedRecord, expected: u32) -> Option
         && interval[0] < interval[1]
         && reverse_interval.is_none_or(|r| r[0].is_finite() && r[1].is_finite()))
     .then_some(ChartSide {
-        pos: record.byte_offset(),
+        pos,
+        source_offset: 0,
+        operand,
         axis,
         fixed,
         interval,
         reverse_interval,
+        line,
     })
 }
 
-fn chart_bounds(sides: &[ChartSide; 4]) -> Option<[[f64; 2]; 2]> {
+pub(crate) fn chart_bounds(sides: &[ChartSide; 4]) -> Option<[[f64; 2]; 2]> {
     let mut fixed = [Vec::new(), Vec::new()];
     for side in sides {
         fixed[usize::from(side.axis == ChartAxis::V)].push(side.fixed);

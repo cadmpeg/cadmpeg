@@ -38,6 +38,11 @@ fn nist_ftc_07_transfers_every_solid_face_carrier() {
         }
     }
     assert_eq!(nurbs, 20);
+    let native = decoded.ir().native.namespace("catia").expect("native data");
+    let charts: Vec<crate::native::a5_chart::CatiaConsolidatedA5Chart> = native
+        .arena_as("consolidated_a5_charts")
+        .expect("reload native chart records");
+    assert_eq!(charts.len(), 20);
 }
 
 #[test]
