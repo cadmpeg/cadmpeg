@@ -9835,12 +9835,10 @@ fn parameter_card(
             CodecError::Malformed("IGES Parameter Data payload exceeds 64 bytes".into()).into(),
         );
     }
+    let directory_sequence = capacity::card_sequence(directory_sequence)?;
     let mut payload = vec![b' '; 72];
     payload[..data.len()].copy_from_slice(data);
     let pointer = format!("{directory_sequence:>8}");
-    if pointer.len() > 8 {
-        return Err(CodecError::InvalidInput("IGES directory sequence overflows".into()).into());
-    }
     payload[64..].copy_from_slice(pointer.as_bytes());
     Ok(card(&payload, b'P', sequence)?)
 }
