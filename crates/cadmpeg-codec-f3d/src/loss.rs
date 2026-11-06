@@ -86,7 +86,6 @@ pub(crate) enum F3dLossCode {
     SketchOwnerUnresolved,
     SketchMembershipConflict,
     SketchFolderClosingReference,
-    /// A sketch folder grouping is not projected.
     SketchFolderUnprojected,
     /// Sketch geometry backlinks name a sketch geometry group whose member run omits the record.
     SketchGeometryGroupMemberUnlisted,
