@@ -132,7 +132,7 @@ impl ProfileGeometryWork {
         let crossing_assumed = self.crossing_loop_assumed_selections.get();
         if crossing_assumed != 0 {
             losses.push(F3dLossCode::FeatureProfileCrossingLoopAssumed.note(format!(
-                "{crossing_assumed} extrude profile selection(s) split a self-crossing stored loop into atomic regions by curve-use counts; the stored curve order of the loop was not checked."
+                "{crossing_assumed} extrude profile selection(s) split a self-crossing stored loop into atomic regions by curve-use counts; the stored curve order of the loop was not checked, and atomic faces that enclose an island were assumed not to be selected."
             )));
         }
         losses

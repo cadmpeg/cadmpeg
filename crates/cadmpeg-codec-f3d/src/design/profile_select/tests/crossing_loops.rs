@@ -150,6 +150,9 @@ fn a_split_self_crossing_loop_reports_the_assumed_interpretation() {
     );
     assert!(loss.message.starts_with("1 extrude profile selection(s)"));
     assert!(loss.message.contains("curve-use counts"));
+    assert!(loss
+        .message
+        .contains("enclose an island were assumed not to be selected"));
 }
 
 #[test]
