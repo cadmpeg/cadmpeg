@@ -628,7 +628,7 @@ pub(crate) fn f3d_with_smbh_and_protein_with_generated_canvas(smbh: &[u8]) -> Ve
     )
 }
 
-/// A BREP archive with one unreferenced FlatPattern sheet-metal settings
+/// A BREP archive with one unreferenced `FlatPattern` sheet-metal settings
 /// frame.
 pub(crate) fn f3d_with_smbh_and_flat_pattern_settings(smbh: &[u8]) -> Vec<u8> {
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
