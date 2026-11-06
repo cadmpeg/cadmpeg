@@ -20,6 +20,7 @@ use crate::layout::combine_external_selector_prefix as combine_external;
 use crate::layout::combine_external_selector_tail as combine_tail;
 use crate::layout::combine_operand_list_operation_prefix as combine_lists;
 use crate::layout::combine_standard_operation_prefix as combine_standard;
+use crate::loss::F3dLossCode;
 use crate::records::feature::combine;
 use crate::records::feature::combine::DesignCombineBodyNode;
 use crate::records::feature::combine::DesignCombineBodySelection;
@@ -30,6 +31,7 @@ use crate::records::feature::combine::DesignCombineOperation;
 use crate::records::feature::scope::DesignParameterScope;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::report::loss::LossNote;
 use std::collections::HashMap;
 
 const MARKED_REFERENCE_LEN: usize = 11;
@@ -42,6 +44,7 @@ pub(super) fn exact_combine_operation(
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     stream_types: &HashMap<u64, (&str, u32)>,
+    losses: &mut Vec<LossNote>,
 ) -> Result<Option<DesignCombineOperation>, CodecError> {
     if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::Combine)
         || scope.reference_members().len() < 4
@@ -52,10 +55,19 @@ pub(super) fn exact_combine_operation(
     let Ok(start) = usize::try_from(scope.byte_offset()) else {
         return Ok(None);
     };
+    let mut operand_lists_refused = false;
     for prologue in combine_prologues(bytes, start, scope, stream_types) {
+        let operand_lists = prologue.lists.is_some();
         if let Some(operation) = combine_operation_with(bytes, records, scope, prologue)? {
+            if operand_lists_refused {
+                losses.push(F3dLossCode::FeatureCombineStandardFormAssumed.note(format!(
+                    "{}: the Combine frame matches the fixed operand-list fields and its lists do not name its operands; it is read in the standard prologue",
+                    scope.id
+                )));
+            }
             return Ok(Some(operation));
         }
+        operand_lists_refused |= operand_lists;
     }
     Ok(None)
 }

@@ -7,6 +7,7 @@ use crate::design::decode::scopes::parameter_scope::{
     parse_parameter_scope, parse_parameter_scope_with_type_guid,
 };
 use crate::design::feature_project::project_combine;
+use crate::loss::F3dLossCode;
 use crate::records::decal::DesignRecordHeader;
 use crate::records::feature::combine::{
     DesignCombineBodyNode, DesignCombineBodySelection, DesignCombineForm, DesignCombineOperation,
@@ -15,6 +16,7 @@ use crate::records::feature::scope::DesignParameterScope;
 use crate::test_support::indexed_header;
 use crate::test_support::lp_utf16;
 use crate::test_support::push_reference_u64;
+use cadmpeg_ir::report::loss::LossNote;
 use std::collections::HashMap;
 
 #[test]
@@ -120,9 +122,10 @@ fn combine_tools_keep_first_and_additional_records() {
     )
     .unwrap()
     .expect("Combine scope");
-    let operation = exact_combine_operation(&bytes, &records, &scope, &HashMap::new())
-        .unwrap()
-        .expect("two admitted Combine tools");
+    let operation =
+        exact_combine_operation(&bytes, &records, &scope, &HashMap::new(), &mut Vec::new())
+            .unwrap()
+            .expect("two admitted Combine tools");
     assert_eq!(operation.tools.first.record_index, 92);
     assert_eq!(operation.tools.additional[0].record_index, 94);
 }
@@ -221,6 +224,7 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
         &HashMap::new(),
+        &mut Vec::new(),
     )
     .unwrap()
     .expect("Combine construction");
@@ -306,6 +310,7 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
         &crate::design::test_support::indexed_record_offsets_for_test(&compact_bytes),
         &compact_scope,
         &HashMap::new(),
+        &mut Vec::new(),
     )
     .unwrap()
     .expect("compact Combine construction");
@@ -329,7 +334,8 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
         &malformed_compact_tail,
         &crate::design::test_support::indexed_record_offsets_for_test(&malformed_compact_tail),
         &compact_scope,
-        &HashMap::new()
+        &HashMap::new(),
+        &mut Vec::new()
     )
     .unwrap()
     .is_none());
@@ -453,9 +459,10 @@ fn combine_extended_reference_scope_retains_external_tool_identity() {
         })
         .unwrap();
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
-    let operation = exact_combine_operation(&bytes, &records, &scope, &HashMap::new())
-        .unwrap()
-        .expect("extended-reference Combine construction");
+    let operation =
+        exact_combine_operation(&bytes, &records, &scope, &HashMap::new(), &mut Vec::new())
+            .unwrap()
+            .expect("extended-reference Combine construction");
     assert_eq!(operation.form, DesignCombineForm::ExtendedReference);
     assert_eq!(operation.operation, cadmpeg_ir::features::BooleanKind::Cut);
     assert_eq!(operation.operation_offset, 31);
@@ -498,9 +505,10 @@ fn combine_extended_reference_scope_retains_external_tool_identity() {
         let mut changed = bytes.clone();
         changed[epoch_at..epoch_at + 4].copy_from_slice(&epoch.to_le_bytes());
         changed[scalar_at..scalar_at + 8].copy_from_slice(&scalar.to_le_bytes());
-        let operation = exact_combine_operation(&changed, &records, &scope, &HashMap::new())
-            .unwrap()
-            .expect("complete external selector");
+        let operation =
+            exact_combine_operation(&changed, &records, &scope, &HashMap::new(), &mut Vec::new())
+                .unwrap()
+                .expect("complete external selector");
         let identity = operation.tools.first.external_identity.as_ref().unwrap();
         assert_eq!(identity.tail_values(), [11, scalar.to_bits()]);
         assert_eq!(
@@ -514,9 +522,10 @@ fn combine_extended_reference_scope_retains_external_tool_identity() {
     for scalar in [-0.375_f64, f64::INFINITY, f64::NAN] {
         let mut changed = bytes.clone();
         changed[scalar_at..scalar_at + 8].copy_from_slice(&scalar.to_le_bytes());
-        let operation = exact_combine_operation(&changed, &records, &scope, &HashMap::new())
-            .unwrap()
-            .expect("operation retains its native selector");
+        let operation =
+            exact_combine_operation(&changed, &records, &scope, &HashMap::new(), &mut Vec::new())
+                .unwrap()
+                .expect("operation retains its native selector");
         assert!(operation.tools.first.external_identity.is_none());
     }
 
@@ -528,18 +537,23 @@ fn combine_extended_reference_scope_retains_external_tool_identity() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    assert!(
-        exact_combine_operation(&bytes, &records, &malformed_scope, &HashMap::new())
-            .unwrap()
-            .is_none()
-    );
+    assert!(exact_combine_operation(
+        &bytes,
+        &records,
+        &malformed_scope,
+        &HashMap::new(),
+        &mut Vec::new()
+    )
+    .unwrap()
+    .is_none());
     let mut malformed_reference = bytes.clone();
     malformed_reference[35] = 0;
     assert!(exact_combine_operation(
         &malformed_reference,
         &crate::design::test_support::indexed_record_offsets_for_test(&malformed_reference),
         &scope,
-        &HashMap::new()
+        &HashMap::new(),
+        &mut Vec::new()
     )
     .unwrap()
     .is_none());
@@ -551,6 +565,7 @@ fn combine_extended_reference_scope_retains_external_tool_identity() {
         &crate::design::test_support::indexed_record_offsets_for_test(&malformed_external_asset),
         &scope,
         &HashMap::new(),
+        &mut Vec::new(),
     )
     .unwrap()
     .expect("operation remains exact when only the optional external identity is malformed");
@@ -574,6 +589,7 @@ struct OperandListFixture {
     node_entries: usize,
     node_trailing_bytes: usize,
     property_block: bool,
+    middle_lists: [Vec<u32>; 2],
     companions: Vec<u32>,
     companion_type: &'static str,
     new_component: u8,
@@ -597,6 +613,7 @@ impl OperandListFixture {
             node_entries: 1,
             node_trailing_bytes: 0,
             property_block: false,
+            middle_lists: [Vec::new(), Vec::new()],
             companions: Vec::new(),
             companion_type: crate::design::decode::body_consumers::REMOVE_BODY_TYPE_GUID,
             new_component: 0,
@@ -661,7 +678,9 @@ impl OperandListFixture {
             &mut bytes,
             self.listed_tools.as_deref().unwrap_or(&tool_operations),
         );
-        bytes.extend_from_slice(&[0; 8]);
+        for list in &self.middle_lists {
+            marked_list(&mut bytes, list);
+        }
         if !self.omit_consumed {
             marked_list(&mut bytes, &consumed);
         }
@@ -735,6 +754,10 @@ impl OperandListFixture {
     }
 
     fn decode(&self) -> Option<DesignCombineOperation> {
+        self.decode_with_losses().0
+    }
+
+    fn decode_with_losses(&self) -> (Option<DesignCombineOperation>, Vec<LossNote>) {
         let types = self
             .companions
             .iter()
@@ -745,13 +768,13 @@ impl OperandListFixture {
 }
 
 fn decode_combine_frame(bytes: &[u8]) -> Option<DesignCombineOperation> {
-    decode_combine_frame_with(bytes, &HashMap::new())
+    decode_combine_frame_with(bytes, &HashMap::new()).0
 }
 
 fn decode_combine_frame_with(
     bytes: &[u8],
     stream_types: &HashMap<u64, (&str, u32)>,
-) -> Option<DesignCombineOperation> {
+) -> (Option<DesignCombineOperation>, Vec<LossNote>) {
     let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
     let class_tag = crate::records::references::DesignClassTag::try_from("412".to_owned()).unwrap();
     let scope = parse_parameter_scope_with_type_guid(
@@ -764,7 +787,10 @@ fn decode_combine_frame_with(
     )
     .unwrap()
     .expect("Combine scope");
-    exact_combine_operation(bytes, &records, &scope, stream_types).unwrap()
+    let mut losses = Vec::new();
+    let operation =
+        exact_combine_operation(bytes, &records, &scope, stream_types, &mut losses).unwrap();
+    (operation, losses)
 }
 
 #[test]
@@ -849,8 +875,6 @@ fn operand_list_prologue_rejects_nonzero_fixed_fields() {
     for (offset, value) in [
         (11, 1),
         (19, 1),
-        (25, 1),
-        (28, 1),
         (30, 1),
         (31, 2),
         (35, 0),
@@ -920,9 +944,9 @@ fn byte_twenty_of_the_operand_list_prologue_is_the_property_block_presence() {
     assert_eq!(operation.operation_offset, 25);
     assert_eq!(operation.keep_tools_offset, 33);
 
-    let mut presence_without_block = OperandListFixture::new(0, 0).bytes();
-    presence_without_block[20] = 1;
-    assert_eq!(decode_combine_frame(&presence_without_block), None);
+    let mut fields_not_shifted = OperandListFixture::new(0, 0).bytes();
+    fields_not_shifted[20] = 1;
+    assert_eq!(decode_combine_frame(&fields_not_shifted), None);
     let mut nonempty_block = empty_block.bytes();
     nonempty_block[21] = 1;
     assert_eq!(decode_combine_frame(&nonempty_block), None);
@@ -992,4 +1016,50 @@ fn operand_list_companions_remove_the_tools_of_a_consuming_combine() {
         assert_eq!(fixture.decode(), None);
     }
     assert_eq!(decode_combine_frame(&unregistered), None);
+    for (offset, value) in [(25, 1), (28, 1)] {
+        let mut count_without_references = OperandListFixture::new(1, 0).bytes();
+        count_without_references[offset] = value;
+        assert_eq!(
+            decode_combine_frame(&count_without_references),
+            None,
+            "offset {offset}"
+        );
+    }
+}
+
+#[test]
+fn operand_list_middle_lists_are_empty() {
+    for omit_consumed in [false, true] {
+        for list in 0..2 {
+            let mut fixture = OperandListFixture::new(0, 0);
+            fixture.companions = vec![500];
+            fixture.omit_consumed = omit_consumed;
+            assert!(fixture.decode().is_some(), "{omit_consumed}");
+            fixture.middle_lists[list] = vec![91];
+            assert_eq!(fixture.decode(), None, "{omit_consumed} {list}");
+        }
+    }
+}
+
+#[test]
+fn a_frame_with_operand_list_fields_and_other_lists_is_read_in_the_standard_prologue() {
+    let mut fixture = OperandListFixture::new(1, 0);
+    fixture.property_block = true;
+    let (operation, losses) = fixture.decode_with_losses();
+    assert_eq!(
+        operation.map(|operation| operation.form),
+        Some(DesignCombineForm::OperandLists)
+    );
+    assert!(losses.is_empty());
+
+    fixture.listed_target = Some(999);
+    let (operation, losses) = fixture.decode_with_losses();
+    let operation = operation.expect("standard reading");
+    assert_eq!(operation.form, DesignCombineForm::Standard);
+    assert_eq!(operation.operation, cadmpeg_ir::features::BooleanKind::Join);
+    assert!(operation.keep_tools);
+    assert_eq!(
+        losses.into_iter().map(|loss| loss.code).collect::<Vec<_>>(),
+        [F3dLossCode::FeatureCombineStandardFormAssumed.kind()]
+    );
 }

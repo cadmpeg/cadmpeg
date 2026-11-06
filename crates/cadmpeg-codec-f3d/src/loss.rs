@@ -292,6 +292,9 @@ pub(crate) enum F3dLossCode {
     FeatureBodySelectionNative,
     /// Combine body refinement violates operand arity or disjoint membership.
     FeatureCombineSelectionNative,
+    /// A Combine frame that matches the fixed operand-list fields is read in the
+    /// standard prologue; its lists do not name its operands.
+    FeatureCombineStandardFormAssumed,
     /// Fixed Fillet scalar lanes have no complete group assignment.
     FeatureFixedFilletAssignmentNative,
     /// Extrude scope retains an unassigned extent payload.
@@ -600,6 +603,7 @@ impl F3dLossCode {
         Self::FeatureFaceSelectionActiveSubstituted,
         Self::FeatureBodySelectionNative,
         Self::FeatureCombineSelectionNative,
+        Self::FeatureCombineStandardFormAssumed,
         Self::FeatureFixedFilletAssignmentNative,
         Self::FeatureExtrudeExtentNative,
         Self::FeatureFaceOperandUnresolved,
@@ -826,6 +830,7 @@ impl F3dLossCode {
             }
             Self::FeatureBodySelectionNative => "feature.body-selection-native",
             Self::FeatureCombineSelectionNative => "feature.combine-selection-native",
+            Self::FeatureCombineStandardFormAssumed => "feature.combine-standard-form-assumed",
             Self::FeatureFixedFilletAssignmentNative => "feature.fixed-fillet-assignment-native",
             Self::FeatureExtrudeExtentNative => "feature.extrude-extent-native",
             Self::FeatureFaceOperandUnresolved => "feature.face-operand-unresolved",
@@ -1071,6 +1076,7 @@ impl F3dLossCode {
             | Self::FeatureFaceSelectionActiveSubstituted
             | Self::FeatureBodySelectionNative
             | Self::FeatureCombineSelectionNative
+            | Self::FeatureCombineStandardFormAssumed
             | Self::FeatureFixedFilletAssignmentNative
             | Self::FeatureExtrudeExtentNative
             | Self::FeatureFaceOperandUnresolved
@@ -1250,6 +1256,7 @@ impl F3dLossCode {
             | Self::FeatureFaceSelectionActiveSubstituted
             | Self::FeatureBodySelectionNative
             | Self::FeatureCombineSelectionNative
+            | Self::FeatureCombineStandardFormAssumed
             | Self::FeatureFixedFilletAssignmentNative
             | Self::FeatureExtrudeExtentNative
             | Self::FeatureFaceOperandUnresolved
@@ -1513,6 +1520,7 @@ mod tests {
                 "feature.face-selection-active-substituted",
                 "feature.body-selection-native",
                 "feature.combine-selection-native",
+                "feature.combine-standard-form-assumed",
                 "feature.fixed-fillet-assignment-native",
                 "feature.extrude-extent-native",
                 "feature.face-operand-unresolved",
