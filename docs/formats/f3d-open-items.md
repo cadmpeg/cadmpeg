@@ -1100,13 +1100,13 @@ The first closing reference run identifies a direct contained child by its local
 
 **Question.** Which faces does an `Extrude` bounded-face operand select when its recipe nodes have no unique topology binding?
 
-**Known.** The decoder then selects faces with the candidate and support rules of `f3d.md` §3.1 that follow the alternate-selector proof, and tests the selection when the grouped Design-reference intersection keeps it. The face-recipe nodes name faces around the boundary of the selected face. For the test, each prefix operand of the face-recipe ordinal namespace supplies the preceding-topology faces that its references with a nonnegative Design reference name through their candidate faces, or through their alternate-selector faces when the candidate faces are empty. The selection fails when every selected face has a rebuilt boundary and the selection shares no boundary vertex with one prefix operand that supplies faces, all with rebuilt boundaries. A failing selection is withdrawn, and the operand stays unresolved.
+**Known.** The nodes of a bounded-face recipe name, by prefix-operand ordinal, faces around the boundary of the recipe's face. Without a unique binding, the decoder selects faces with the candidate and support rules of `f3d.md` §3.1 that follow the alternate-selector proof, and tests the selection unless the grouped Design-reference intersection selects the face. The test takes every prefix operand of the face-recipe ordinal namespace as naming faces around the selected face's boundary. An operand supplies the preceding-topology faces that its references with a positive Design reference name; it contradicts nothing when such a reference names no face, when a named face lies outside the preceding topology, or when a named face has no rebuilt boundary. The selection fails when every selected face has a rebuilt boundary and the selection shares no boundary vertex with the faces of one operand. A failing selection is withdrawn. The profile-group carrier rule then skips a face set that holds a withdrawn face; a start or termination rule of the same scope can still select a face for the operand.
 
 **Need.** The node grammar and the empty-lane binding of DR-170, so that each recipe binds its own face.
 
-**Conflict.** None.
+**Conflict.** `f3d.md` §3.1 resolves such an operand to the sole preceding candidate, or to the sole candidate that the transition chain changes. In a cut of two split top faces, that candidate is a side face that shares no boundary vertex with the faces of the recipe's prefix operands.
 
-**Note.** A withdrawn selection reports `feature.face-operand-fallback-contradicted`.
+**Note.** A withdrawn selection reports `feature.face-operand-fallback-contradicted` with the faces of the operand that it does not touch.
 
 ### DR-171. Sketch support identity
 

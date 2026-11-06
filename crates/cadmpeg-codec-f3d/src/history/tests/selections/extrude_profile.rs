@@ -253,6 +253,7 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
     let histories = vec![history, unrelated_history];
     let scope_histories = HashMap::from([(scope.id.clone(), bound_history_id)]);
 
+    let unbound = operands.clone();
     crate::test_support::with_decode_context(|decode_ctx| {
         bind_profile_face_group_cardinality(
             decode_ctx,
@@ -261,6 +262,7 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
             &groups,
             &histories,
             &scope_histories,
+            &crate::history::fallback_face::Withdrawals::default(),
         )
     })
     .unwrap();
@@ -289,4 +291,24 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
             ]
             && native.as_slice() == [groups[0].id.clone()]
     ));
+
+    // A face that the fallback check withdrew from a member keeps the group
+    // from taking it back.
+    let mut withdrawn = unbound;
+    let mut withdrawals = crate::history::fallback_face::Withdrawals::default();
+    withdrawals.faces.insert(withdrawn[0].id.clone(), vec![10]);
+    crate::test_support::with_decode_context(|decode_ctx| {
+        bind_profile_face_group_cardinality(
+            decode_ctx,
+            &mut withdrawn,
+            std::slice::from_ref(&scope),
+            &groups,
+            &histories,
+            &scope_histories,
+            &withdrawals,
+        )
+    })
+    .unwrap();
+    assert!(withdrawn[0].resolved_face_slots.is_empty());
+    assert!(withdrawn[1].resolved_face_slots.is_empty());
 }

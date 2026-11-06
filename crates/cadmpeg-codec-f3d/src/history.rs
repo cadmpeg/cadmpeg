@@ -5311,7 +5311,7 @@ pub(crate) fn bind_face_operand_history_candidates(
         ));
     }
     let mut first_error = None;
-    let mut losses = Vec::new();
+    let mut withdrawals = fallback_face::Withdrawals::default();
     visit_state_groups_oldest_first(
         histories.reborrow(),
         jobs,
@@ -5348,7 +5348,7 @@ pub(crate) fn bind_face_operand_history_candidates(
                     operand_groups,
                     &recipe_record_indices,
                     &mut caches,
-                    &mut losses,
+                    &mut withdrawals,
                 ) {
                     keep_first_error(&mut first_error, position, error);
                 }
@@ -5365,8 +5365,9 @@ pub(crate) fn bind_face_operand_history_candidates(
         operand_groups,
         histories.get(),
         scope_histories,
+        &withdrawals,
     )?;
-    Ok(losses)
+    Ok(withdrawals.losses)
 }
 
 /// One face operand's scope and state pair with the previous-state topology.
@@ -5396,7 +5397,7 @@ fn bind_historical_face_operand<'a>(
     operand_groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
     recipe_record_indices: &HashMap<&str, i32>,
     caches: &mut FaceOperandCaches<'a>,
-    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    withdrawals: &mut fallback_face::Withdrawals,
 ) -> Result<(), cadmpeg_core::CodecError> {
     bind_historical_face_operand_candidates(
         operand,
@@ -5404,7 +5405,7 @@ fn bind_historical_face_operand<'a>(
         operand_groups,
         recipe_record_indices,
         caches,
-        losses,
+        withdrawals,
     )?;
     if matches!(
         transition.scope.kind(),
@@ -5428,7 +5429,7 @@ fn bind_historical_face_operand_candidates<'a>(
     operand_groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
     recipe_record_indices: &HashMap<&str, i32>,
     caches: &mut FaceOperandCaches<'a>,
-    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    withdrawals: &mut fallback_face::Withdrawals,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let &FaceOperandTransition {
         scope,
@@ -5754,13 +5755,10 @@ fn bind_historical_face_operand_candidates<'a>(
         operand.resolved_face_slots = vec![face];
     } else if feature_family == Some(crate::design::DesignFeatureFamily::Extrude)
         && operand.recipe_kind == crate::records::recipes::ConstructionRecipeKind::BoundedFace
+        && grouped_reference_face_candidates.is_none()
         && operand.resolved_face_slots == fallback_slots
     {
-        losses.extend(fallback_face::check_fallback_faces(
-            operand,
-            topology,
-            topology_queries,
-        ));
+        fallback_face::check_fallback_faces(operand, topology, topology_queries, withdrawals);
     }
     Ok(())
 }
@@ -6724,6 +6722,7 @@ fn bind_profile_face_group_cardinality(
     operand_groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
     histories: &[AsmHistory],
     scope_histories: &HashMap<String, String>,
+    withdrawals: &fallback_face::Withdrawals,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut state_indexes = SnapshotCache::default();
     for scope in scopes {
@@ -6831,6 +6830,12 @@ fn bind_profile_face_group_cardinality(
             let Some(faces) = faces else {
                 continue;
             };
+            if withdrawals.holds(
+                &faces,
+                indices.iter().map(|index| operands[*index].id.as_str()),
+            ) {
+                continue;
+            }
             for (index, face) in indices.into_iter().zip(faces) {
                 let face_id = historical_face_id(face)?;
                 let preceding_id = face_id.clone();

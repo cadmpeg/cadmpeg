@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use cadmpeg_ir::ids::FaceId;
 use cadmpeg_ir::report::loss::LossKind;
 
-use super::{check_fallback_faces, LaneFit, OperandLanes};
+use super::{check_fallback_faces, LaneFit, OperandLanes, Withdrawals};
 use crate::history::topology_cache::TopologyQueryCache;
 use crate::loss::F3dLossCode;
 use crate::records::topology::face::DesignFaceOperand;
@@ -38,8 +37,12 @@ fn check(slots: &[i64], lanes: &[&[i64]]) -> (Vec<i64>, Option<LossKind>) {
     let mut queries = TopologyQueryCache::default();
     let mut operand = operand(lanes);
     operand.resolved_face_slots = slots.to_vec();
-    let loss = check_fallback_faces(&mut operand, &topology, &mut queries);
-    (operand.resolved_face_slots, loss.map(|loss| loss.code))
+    let mut withdrawals = Withdrawals::default();
+    check_fallback_faces(&mut operand, &topology, &mut queries, &mut withdrawals);
+    (
+        operand.resolved_face_slots,
+        withdrawals.losses.first().map(|loss| loss.code.clone()),
+    )
 }
 
 #[test]
@@ -80,14 +83,8 @@ fn negative_design_references_take_no_part() {
     let mut operand = operand(&[&[10], &[20]]);
     operand.recipe_references[0].design_reference = -1;
     assert_eq!(fit_of(&operand, &[40]), LaneFit::Touches);
-}
-
-#[test]
-fn an_empty_candidate_lane_uses_its_alternate_selector_faces() {
-    let mut operand = operand(&[&[], &[20]]);
-    operand.recipe_references[0].alternate_selector_faces =
-        vec![FaceId::mint("f3d:brep:entity#10").unwrap()];
-    assert_eq!(fit_of(&operand, &[40]), LaneFit::Apart(0));
+    operand.recipe_references[0].design_reference = 0;
+    assert_eq!(fit_of(&operand, &[40]), LaneFit::Touches);
 }
 
 #[test]
@@ -99,8 +96,19 @@ fn lanes_outside_the_topology_and_unreadable_lane_faces_contradict_nothing() {
 }
 
 #[test]
-fn a_lane_keeps_its_faces_in_the_topology() {
-    assert_eq!(fit(&[10], &[&[40, 99]]), LaneFit::Apart(0));
+fn a_lane_with_a_name_outside_the_topology_contradicts_nothing() {
+    assert_eq!(fit(&[10], &[&[40]]), LaneFit::Apart(0));
+    assert_eq!(fit(&[10], &[&[40, 99]]), LaneFit::Touches);
+}
+
+#[test]
+fn a_reference_without_faces_voids_its_lane() {
+    let mut operand = operand(&[&[10], &[20]]);
+    assert_eq!(fit_of(&operand, &[40]), LaneFit::Apart(0));
+    operand
+        .recipe_references
+        .push(recipe_operand_reference(0, "1", 300, &[]));
+    assert_eq!(fit_of(&operand, &[40]), LaneFit::Touches);
 }
 
 #[test]
@@ -136,4 +144,18 @@ fn a_failing_face_or_face_set_is_withdrawn() {
     let contradicted = Some(F3dLossCode::FeatureFaceOperandFallbackContradicted.kind());
     assert_eq!(check(&[60], &[&[40]]), (vec![], contradicted.clone()));
     assert_eq!(check(&[10, 60], &[&[40]]), (vec![], contradicted));
+}
+
+#[test]
+fn a_withdrawal_keeps_its_faces_by_operand() {
+    let topology = box_topology();
+    let mut queries = TopologyQueryCache::default();
+    let mut operand = operand(&[&[40]]);
+    operand.resolved_face_slots = vec![60];
+    let mut withdrawals = Withdrawals::default();
+    check_fallback_faces(&mut operand, &topology, &mut queries, &mut withdrawals);
+    let id = operand.id.as_str();
+    assert!(withdrawals.holds(&[60, 10], std::iter::once(id)));
+    assert!(!withdrawals.holds(&[10], std::iter::once(id)));
+    assert!(!withdrawals.holds(&[60], std::iter::once("another operand")));
 }
