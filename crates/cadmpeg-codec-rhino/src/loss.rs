@@ -243,6 +243,16 @@ pub(crate) enum RhinoLossCode {
     WriterMaterialOmitted,
     /// Attribute records have no writer encoding.
     WriterAttributesOmitted,
+    /// A native light has incomplete or unrepresentable fields.
+    WriterLightOmitted,
+    /// A light's stored archive index changes to its emitted table position.
+    WriterLightIndexReassigned,
+    /// A light attribute reference uses a reassigned table index.
+    WriterLightAttributeIndexReassigned,
+    /// A hatch pattern has incomplete or unrepresentable fields.
+    WriterHatchPatternOmitted,
+    /// Hatch pattern fields cannot be retained by the selected table layout.
+    WriterHatchPatternFieldsReduced,
     /// Layer membership cannot be assigned to an individual non-object record.
     WriterLayerMembershipOmitted,
     /// An unspecified layer visibility is written as the native default.
@@ -283,6 +293,8 @@ pub(crate) enum RhinoLossCode {
     WriterBodyOmitted,
     /// A body placement cannot be represented in the native carrier.
     WriterBodyTransformNotApplied,
+    /// A finite body placement cannot be applied to its geometry.
+    WriterBodyPlacementOmitted,
     /// No geometry can be written to the target.
     NoExportableSolids,
     /// Different coedge pcurves were compared at discrete parameters.
@@ -376,6 +388,11 @@ impl RhinoLossCode {
         Self::WriterCarrierResolved,
         Self::WriterMaterialOmitted,
         Self::WriterAttributesOmitted,
+        Self::WriterLightOmitted,
+        Self::WriterLightIndexReassigned,
+        Self::WriterLightAttributeIndexReassigned,
+        Self::WriterHatchPatternOmitted,
+        Self::WriterHatchPatternFieldsReduced,
         Self::WriterLayerMembershipOmitted,
         Self::WriterLayerVisibilityDefaulted,
         Self::WriterLayerDescriptionNormalized,
@@ -396,6 +413,7 @@ impl RhinoLossCode {
         Self::WriterBodyReduced,
         Self::WriterBodyOmitted,
         Self::WriterBodyTransformNotApplied,
+        Self::WriterBodyPlacementOmitted,
         Self::NoExportableSolids,
         Self::EdgePcurveAgreementSampled,
         Self::EdgePcurveSampledToBspline,
@@ -462,6 +480,11 @@ impl RhinoLossCode {
             Self::WriterCarrierResolved => "writer.carrier-resolved",
             Self::WriterMaterialOmitted => "writer.materials-omitted",
             Self::WriterAttributesOmitted => "writer.attributes-omitted",
+            Self::WriterLightOmitted => "writer.light-omitted",
+            Self::WriterLightIndexReassigned => "writer.light-index-reassigned",
+            Self::WriterLightAttributeIndexReassigned => "writer.light-attribute-index-reassigned",
+            Self::WriterHatchPatternOmitted => "writer.hatch-pattern-omitted",
+            Self::WriterHatchPatternFieldsReduced => "writer.hatch-pattern-fields-reduced",
             Self::WriterLayerMembershipOmitted => "writer.layer-membership-omitted",
             Self::WriterLayerVisibilityDefaulted => "writer.layer-visibility-defaulted",
             Self::WriterLayerDescriptionNormalized => "writer.layer-description-normalized",
@@ -482,6 +505,7 @@ impl RhinoLossCode {
             Self::WriterBodyReduced => "writer.body-reduced",
             Self::WriterBodyOmitted => "writer.body-omitted",
             Self::WriterBodyTransformNotApplied => "body.non-rigid-transform",
+            Self::WriterBodyPlacementOmitted => "body.placement-omitted",
             Self::NoExportableSolids => "export.no-exportable-solids",
             Self::EdgePcurveAgreementSampled => "geometry.edge-pcurve-agreement-sampled",
             Self::EdgePcurveSampledToBspline => "geometry.edge-pcurve-sampled-to-bspline",
@@ -503,7 +527,9 @@ impl RhinoLossCode {
             | Self::WriterEntityOmitted
             | Self::WriterBodyReduced
             | Self::WriterBodyOmitted => Severity::Error,
-            Self::WriterAnnotationOmitted => Severity::Error,
+            Self::WriterAnnotationOmitted
+            | Self::WriterLightOmitted
+            | Self::WriterHatchPatternOmitted => Severity::Error,
             _ => Severity::Warning,
         }
     }
@@ -574,7 +600,9 @@ impl RhinoLossCode {
             | Self::WriterPcurveExpanded
             | Self::WriterPcurveDirectionReversed
             | Self::WriterPcurveDomainRestricted => LossTaxonomy::TopologyNotTransferred,
-            Self::WriterBodyTransformNotApplied => LossTaxonomy::BodyTransformNotApplied,
+            Self::WriterBodyTransformNotApplied | Self::WriterBodyPlacementOmitted => {
+                LossTaxonomy::BodyTransformNotApplied
+            }
             Self::WriterScopeExpanded => LossTaxonomy::MetadataNotTransferred,
             Self::WriterDesignOmitted => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterSubdOmitted => LossTaxonomy::SubdOmitted,
@@ -592,7 +620,12 @@ impl RhinoLossCode {
             | Self::WriterPointCloudAppearanceReduced => LossTaxonomy::AppearanceReduced,
             Self::WriterBodyColorReduced => LossTaxonomy::AppearanceReduced,
             Self::WriterAngularToleranceReduced => LossTaxonomy::MetadataNotTransferred,
-            Self::WriterAttributesOmitted => LossTaxonomy::AttributesNotTransferred,
+            Self::WriterAttributesOmitted
+            | Self::WriterLightOmitted
+            | Self::WriterLightIndexReassigned
+            | Self::WriterLightAttributeIndexReassigned
+            | Self::WriterHatchPatternOmitted
+            | Self::WriterHatchPatternFieldsReduced => LossTaxonomy::AttributesNotTransferred,
             Self::WriterColorPrecisionReduced => LossTaxonomy::AppearanceReduced,
             Self::NoExportableSolids => LossTaxonomy::NoExportableSolids,
             Self::EdgePcurveAgreementSampled | Self::EdgePcurveSampledToBspline => {
@@ -708,6 +741,11 @@ mod tests {
                 "writer.carrier-resolved",
                 "writer.materials-omitted",
                 "writer.attributes-omitted",
+                "writer.light-omitted",
+                "writer.light-index-reassigned",
+                "writer.light-attribute-index-reassigned",
+                "writer.hatch-pattern-omitted",
+                "writer.hatch-pattern-fields-reduced",
                 "writer.layer-membership-omitted",
                 "writer.layer-visibility-defaulted",
                 "writer.layer-description-normalized",
@@ -717,8 +755,10 @@ mod tests {
                 "writer.subobject-appearance-reduced",
                 "writer.point-cloud-appearance-reduced",
                 "writer.free-vertex-metadata-reduced",
+                "writer.point-cloud-identity-reduced",
                 "writer.body-color-reduced",
                 "writer.pcurve-expanded",
+                "writer.pcurve-direction-reversed",
                 "writer.pcurve-domain-restricted",
                 "writer.plane-domain-restricted",
                 "appearance.color-precision-reduced",
@@ -726,6 +766,7 @@ mod tests {
                 "writer.body-reduced",
                 "writer.body-omitted",
                 "body.non-rigid-transform",
+                "body.placement-omitted",
                 "export.no-exportable-solids",
                 "geometry.edge-pcurve-agreement-sampled",
                 "geometry.edge-pcurve-sampled-to-bspline",

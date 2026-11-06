@@ -5,6 +5,7 @@ use super::{
     anonymous, anonymous_with_children, framed_object_record, integer, object_attributes_payload,
     utf16, wire_index, CadIr, CodecError, LossNote, Map, RhinoLossCode, Value,
 };
+use crate::writer::WriteError;
 use cadmpeg_ir::semantic_annotations::{SemanticAnnotation, SemanticAnnotationKind};
 
 const TEXT_CLASS: [u8; 16] = [
@@ -80,7 +81,7 @@ fn text(
     position: [f64; 3],
     fields: Option<&Map<String, Value>>,
     leader: bool,
-) -> Result<Vec<u8>, CodecError> {
+) -> Result<Vec<u8>, WriteError> {
     let plane = plane(position, fields);
     let mut content = utf16(&annotation.text.join("\n"))?;
     content.extend(&plane);
@@ -116,32 +117,38 @@ fn text(
         anonymous_with_children(1, 4, &base, &[0..text_end, override_start..override_end])?;
     let base_end = outer.len();
     if leader {
-        let points = fields
-            .and_then(|fields| fields.get("leader_points"))
-            .and_then(Value::as_array)
-            .map_or(&[][..], Vec::as_slice);
+        let points = match fields.and_then(|fields| fields.get("leader_points")) {
+            Some(value) => value
+                .as_array()
+                .map(Vec::as_slice)
+                .ok_or_else(|| WriteError::Omit("Rhino leader points must be a list".into()))?,
+            None => &[],
+        };
         outer.extend(wire_index(points.len())?.to_le_bytes());
         for point in points {
             let pair = point
                 .as_array()
                 .filter(|pair| pair.len() == 2)
-                .ok_or_else(|| CodecError::malformed("Rhino leader point needs two coordinates"))?;
+                .ok_or_else(|| {
+                    WriteError::Omit("Rhino leader point needs two coordinates".into())
+                })?;
             for value in pair {
                 outer.extend(
                     value
                         .as_f64()
-                        .ok_or_else(|| CodecError::malformed("Rhino leader point is nonnumeric"))?
+                        .filter(|value| value.is_finite())
+                        .ok_or_else(|| WriteError::Omit("Rhino leader point is nonnumeric".into()))?
                         .to_le_bytes(),
                 );
             }
         }
     }
-    anonymous_with_children(
+    Ok(anonymous_with_children(
         1,
         i32::from(leader),
         &outer,
         std::slice::from_ref(&(0..base_end)),
-    )
+    )?)
 }
 
 fn dot(
@@ -408,7 +415,7 @@ pub(in crate::writer) struct AnnotationExport {
 pub(in crate::writer) fn records(
     ir: &CadIr,
     materials: &super::materials::MaterialPlan,
-) -> Result<AnnotationExport, CodecError> {
+) -> Result<AnnotationExport, WriteError> {
     let mut output = Vec::new();
     let mut losses = Vec::new();
     let mut written = std::collections::BTreeSet::new();
@@ -545,10 +552,19 @@ pub(in crate::writer) fn records(
                 }
                 (ARROW_CLASS, payload)
             }
-            SemanticAnnotationKind::Leader => (
-                LEADER_CLASS,
-                text(annotation, position.get(), fields, true)?,
-            ),
+            SemanticAnnotationKind::Leader => {
+                match text(annotation, position.get(), fields, true) {
+                    Ok(payload) => (LEADER_CLASS, payload),
+                    Err(WriteError::Omit(reason)) => {
+                        losses.push(RhinoLossCode::WriterAnnotationOmitted.note(format!(
+                            "{}: native annotation {} omitted: {reason}",
+                            annotation.id, annotation.native_ref
+                        )));
+                        continue;
+                    }
+                    Err(error) => return Err(error),
+                }
+            }
             _ => {
                 losses.push(RhinoLossCode::WriterAnnotationOmitted.note(format!(
                     "{}: annotation kind {:?} has no supported Rhino object encoding",

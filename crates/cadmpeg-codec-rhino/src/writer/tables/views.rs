@@ -4,7 +4,7 @@
 use super::super::WriteError;
 use super::{
     anonymous, anonymous_with_children, crc_chunk_with_direct, integer, records, short_chunk,
-    utf16, wire_index, CadIr, CodecError, Map, Value, TCODE_ENDOFTABLE,
+    utf16, wire_index, CadIr, Map, Value, TCODE_ENDOFTABLE,
 };
 use cadmpeg_ir::presentation::{PresentationDocument, ViewPresentation};
 use cadmpeg_ir::report::loss::LossNote;
@@ -379,7 +379,13 @@ pub(in crate::writer) fn settings(ir: &CadIr) -> Result<ViewExport, WriteError> 
                     Some("active") => active.push(encoded),
                     Some("named") => named.push(encoded),
                     _ => {
-                        return Err(WriteError::Omit("Rhino view has no valid list kind".into()));
+                        result.losses.push(
+                            crate::loss::RhinoLossCode::WriterAttributesOmitted.note(format!(
+                                "{}: Rhino view has no valid list kind",
+                                record.id()
+                            )),
+                        );
+                        continue;
                     }
                 }
                 if view.is_none() && camera.is_none() {
@@ -431,11 +437,22 @@ pub(in crate::writer) fn settings(ir: &CadIr) -> Result<ViewExport, WriteError> 
     let mut cplanes = Vec::new();
     for record in records(ir, "construction_planes") {
         let fields = record.fields()?;
-        let plane = object(&fields, "value").ok_or_else(|| {
-            CodecError::malformed("Rhino named construction plane has no typed value")
-        })?;
-        cplanes.push(cplane(plane)?);
-        result.regenerated.insert(record.id().to_owned());
+        let encoded = object(&fields, "value")
+            .ok_or_else(|| {
+                WriteError::Omit("Rhino named construction plane has no typed value".into())
+            })
+            .and_then(cplane);
+        match encoded {
+            Ok(plane) => {
+                cplanes.push(plane);
+                result.regenerated.insert(record.id().to_owned());
+            }
+            Err(WriteError::Omit(reason)) => result.losses.push(
+                crate::loss::RhinoLossCode::WriterAttributesOmitted
+                    .note(format!("{}: {reason}", record.id())),
+            ),
+            Err(error) => return Err(error),
+        }
     }
     if !cplanes.is_empty() {
         result.settings.push(list(0x2000_8035, &cplanes)?);

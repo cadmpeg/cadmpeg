@@ -8,6 +8,59 @@ use std::collections::BTreeMap;
 use std::io::Cursor;
 
 #[test]
+fn malformed_leader_names_annotation_and_keeps_valid_sibling() {
+    let mut ir = CadIr::empty();
+    let mut native = Vec::new();
+    for (name, points) in [
+        ("bad", serde_json::json!([[1.0]])),
+        ("bad-list", serde_json::json!("not a list")),
+        ("good", serde_json::json!([[1.0, 2.0], [3.0, 4.0]])),
+    ] {
+        let native_id = format!("rhino:document:annotation#{name}");
+        native.push(
+            cadmpeg_ir::NativeRecord::new(
+                native_id.as_str().try_into().unwrap(),
+                serde_json::from_value(serde_json::json!({"leader_points": points})).unwrap(),
+            )
+            .unwrap(),
+        );
+        let mut annotation = SemanticAnnotation::new(
+            format!("test:model:annotation#{name}").try_into().unwrap(),
+            native_id.clone(),
+            SemanticAnnotationKind::Leader,
+            "leader".into(),
+            0,
+            native_id,
+        );
+        annotation.position = Some(FiniteVector::new([0.0, 0.0, 0.0]).unwrap());
+        ir.model.semantic_annotations.push(annotation);
+    }
+    ir.native
+        .namespace_mut("rhino")
+        .arenas_mut()
+        .insert("annotations".into(), native);
+    let export = records(
+        &ir,
+        &super::super::materials::MaterialPlan::new(&ir).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(export.records.len(), 1);
+    assert!(export.written.contains("test:model:annotation#good"));
+    assert!(!export.written.contains("test:model:annotation#bad"));
+    assert!(!export.written.contains("test:model:annotation#bad-list"));
+    assert!(export.losses.iter().any(|loss| {
+        loss.code == RhinoLossCode::WriterAnnotationOmitted.kind()
+            && loss.message.contains("test:model:annotation#bad")
+            && loss.message.contains("rhino:document:annotation#bad")
+    }));
+    assert!(export.losses.iter().any(|loss| {
+        loss.code == RhinoLossCode::WriterAnnotationOmitted.kind()
+            && loss.message.contains("test:model:annotation#bad-list")
+            && loss.message.contains("rhino:document:annotation#bad-list")
+    }));
+}
+
+#[test]
 fn edited_neutral_text_and_position_regenerate_the_annotation_object() {
     let mut ir = CadIr::empty();
     let native_id = "rhino:document:annotation#source";
