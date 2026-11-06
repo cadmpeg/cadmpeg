@@ -224,6 +224,36 @@ fn two_chart_pcurves_collect_both_rows() {
 }
 
 #[test]
+fn duplicate_two_chart_rows_are_recorded_as_ambiguous() {
+    use std::collections::BTreeSet;
+
+    let mut payload = b"topol_ref_data\0".to_vec();
+    let row = [
+        7, 0, 4, 1, 0xf6, 0xfc, 3, 0x0f, 0xe4, 0x0d, 0x18, 0xe4, 0x0f, 0x18, 0x0d, 0x0d, 0x18,
+        0xe4, 0x0f, 10, 11, 8, 9, 0, 0, 0xe3, 0xe1, 0xe3,
+    ];
+    payload.extend_from_slice(&row);
+    let end = payload.len();
+    payload.extend_from_within(..);
+    let sections = [
+        super::Section::scan("body".to_string(), 0, end, None, &payload).expect("first section"),
+        super::Section::scan("body".to_string(), end, payload.len(), None, &payload)
+            .expect("second section"),
+    ];
+    let scan = crate::decode::with_service_context(|ctx| {
+        super::two_chart_pcurves_with_modes(
+            ctx,
+            &sections,
+            &BTreeSet::from([10, 11]),
+            &mut Vec::new(),
+        )
+    })
+    .expect("scan rows");
+    assert!(scan.samples.is_empty());
+    assert_eq!(scan.ambiguous_ids, BTreeSet::from([7]));
+}
+
+#[test]
 fn feature_reference_names_collect_one_reference() {
     let payload = b"\xf7\x71\x01\x05\x02N\xff\0\x01\x01";
     let section = super::Section::scan("MdlRefInfo".to_string(), 0, payload.len(), None, payload)
