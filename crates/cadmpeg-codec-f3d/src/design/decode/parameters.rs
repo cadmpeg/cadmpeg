@@ -143,7 +143,28 @@ pub(crate) fn decode_recipes(
         let source = scan
             .entry_view(&entry.name)
             .ok_or_else(|| CodecError::malformed("recipe stream has no source view"))?;
-        let (frames, _) = super::meta::partition_primary_frames(source.window(), &meta)?;
+        let (frames, _) = match super::meta::partition_primary_frames(source.window(), &meta) {
+            Ok(frames) => frames,
+            Err(error @ (CodecError::ResourceLimit(_) | CodecError::Io(_))) => return Err(error),
+            Err(_) => continue,
+        };
+        let frames: Vec<_> = frames
+            .into_iter()
+            .filter(|frame| {
+                ![companion_prefix::LEN, typed_companion::LEN]
+                    .into_iter()
+                    .filter_map(|length| {
+                        let end = frame.start.checked_add(length)?;
+                        if end > frame.member_end {
+                            return None;
+                        }
+                        let start = source.start().checked_add(frame.start)?;
+                        let end = source.start().checked_add(end)?;
+                        parse_parameter_companion_frame(ParameterFrame::new(source.child(start, end)?))
+                    })
+                    .any(|companion| u64::from(companion.record_index) == frame.entity_id)
+            })
+            .collect();
         let frames = super::meta::primary_frame_extents(&frames);
         decode_stream(ctx, output, source, &entry.name, &frames, &mut out)?;
     }
@@ -1198,7 +1219,7 @@ pub(crate) fn decode_parameter_owners(
                     offset: parameter.evaluated_value_offset()?,
                 })
             });
-            let parse = || {
+            let parse_members = |members| {
                 let view = ParameterFrame::new(members);
                 parse_parameter_owner_frame(view).or_else(|| {
                     evaluated.and_then(|value| {
@@ -1217,6 +1238,26 @@ pub(crate) fn decode_parameter_owners(
                             )
                         })
                     })
+                })
+            };
+            let parse = || {
+                parse_members(members).or_else(|| {
+                    if frame.member_end != frame.end {
+                        return None;
+                    }
+                    let paired_at = frame.end.checked_sub(indexed_header::LEN)?;
+                    if paired_at <= frame.start {
+                        return None;
+                    }
+                    let class = super::meta::record_header_class_tag(
+                        source.window(),
+                        paired_at,
+                        frame.end,
+                        frame.entity_id,
+                    )?;
+                    super::meta::dynamic_type(&meta, &class)?;
+                    let paired_start = base.checked_add(paired_at)?;
+                    parse_members(source.child(start, paired_start)?)
                 })
             };
             if parameter.is_none() && !typed {

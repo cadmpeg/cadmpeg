@@ -39,15 +39,8 @@ pub(crate) fn decode_canvas_images(
             continue;
         };
         let bytes = scan.entry_bytes(&entry.name)?;
-        let frames = super::meta::design_primary_frames(bytes, &meta)?
-            .into_iter()
-            .map(|frame| crate::metastream::PrimaryRecordFrame {
-                entity_id: frame.entity_id,
-                start: frame.start,
-                member_end: frame.member_end,
-                end: frame.end,
-            })
-            .collect::<Vec<_>>();
+        let primary = super::meta::design_primary_frames(bytes, &meta)?;
+        let frames = super::meta::primary_frame_extents_with_unindexed_pairs(&primary, bytes, &meta);
         stream_frames.insert(entry.name.as_str(), frames);
     }
     super::image::decode_scoped_image_records_with_parts(

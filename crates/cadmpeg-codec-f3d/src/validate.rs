@@ -1304,20 +1304,6 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
     let mut texture_table_records = HashSet::new();
     let mut filename_records = HashMap::new();
     let mut projected_tessellations = HashSet::new();
-    let asset_ids = ctx
-        .ir
-        .model
-        .assets
-        .iter()
-        .map(|asset| &asset.id)
-        .collect::<std::collections::HashSet<_>>();
-    let tessellation_ids = ctx
-        .ir
-        .model
-        .tessellations
-        .iter()
-        .map(|tessellation| tessellation.id.as_str())
-        .collect::<std::collections::HashSet<_>>();
     for feature in &ctx.native.design_mesh_features {
         let stream = design_stream(&feature.id);
         let scope = ctx
@@ -1351,7 +1337,20 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
             filename_records
                 .entry(filename_key)
                 .or_insert(resource.file.record());
-            resources_valid = filename_record_consistent && asset_ids.contains(&resource.asset);
+            let asset_id = crate::ids::neutral_asset_id(resource.file.archive_entry_name());
+            let suffix = asset_id
+                .as_str()
+                .strip_prefix(crate::ids::SCHEME_PREFIX)
+                .unwrap_or(asset_id.as_str());
+            resources_valid = filename_record_consistent
+                && ctx.ir.model.assets.iter().any(|asset| {
+                    asset
+                        .id
+                        .as_str()
+                        .strip_suffix(suffix)
+                        .is_some_and(|prefix| feature.id.starts_with(prefix))
+                        && crate::ids::same_native_occurrence(&feature.id, asset.id.as_str())
+                });
             if !resources_valid {
                 break;
             }
@@ -1376,30 +1375,34 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
                 && auxiliary_records.insert((stream, body.scene_auxiliary_record.record_index()))
                 && owner_consistent
                 && body.scene_node.frame_length() == 133;
-            let projection_valid = if body_valid {
-                match body.tessellation_id.as_deref() {
-                    Some(id) => tessellation_ids.contains(id) && projected_tessellations.insert(id),
-                    None => true,
-                }
-            } else {
-                false
-            };
-            valid &= body_valid && projection_valid;
+            valid &= body_valid;
         }
-        let projected = || {
-            feature
+        let projected = ctx
+            .ir
+            .model
+            .tessellations
+            .iter()
+            .filter(|mesh| mesh.native_ref.as_deref() == Some(feature.id.as_str()))
+            .map(|mesh| mesh.id.as_str())
+            .collect::<HashSet<_>>();
+        valid &= projected
+            .iter()
+            .all(|id| projected_tessellations.insert(*id));
+        valid &= projected.len()
+            == feature
                 .bodies()
                 .iter()
-                .filter_map(|body| body.tessellation_id.as_deref())
-        };
-        if ctx.holds_design_intent() && projected().next().is_some() {
+                .filter(|body| body.container_mesh_uuid.is_some())
+                .count();
+        if ctx.holds_design_intent() && !projected.is_empty() {
             valid &= scope.is_some_and(|scope| {
                 ctx.ir.model.features.iter().any(|neutral| {
                     neutral.native_ref.as_deref() == Some(scope.id.as_str())
                         && matches!(
                             neutral.evaluation.definition(),
                             cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::MeshImport { tessellations })
-                                if tessellations.iter().map(String::as_str).eq(projected())
+                                if tessellations.len() == projected.len()
+                                    && tessellations.iter().all(|id| projected.contains(id.as_str()))
                         )
                 })
             });
@@ -8367,7 +8370,8 @@ fn validate_parameter_companions(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>)
         let owner = owners_by_index.get(&(native_stream, companion.owner_record_index()));
         let valid = source_payload_valid
             && recipe_links_valid
-            && records_by_index.contains_key(&(native_stream, companion.record_index()))
+            && (!ctx.holds_design_intent()
+                || records_by_index.contains_key(&(native_stream, companion.record_index())))
             && owner
                 .is_some_and(|owner| owner.companion_record_index() == companion.record_index())
             && unique_index

@@ -14,13 +14,26 @@ use serde_json::Value;
 use super::cross_closure::{apply_storage, quantum, ReducedProbe};
 use super::writer_closure::Redecode;
 
-/// Apply STEP's positive-semi-angle chart to a cone carrier.
+/// Apply STEP's positive-radius and positive-semi-angle surface charts.
 #[must_use]
-pub fn step_cone_chart(value: &Value) -> Value {
+pub fn step_surface_chart(value: &Value) -> Value {
     let mut geometry = value.clone();
     let Some(object) = geometry.as_object_mut() else {
         return geometry;
     };
+    let radius_field = match object.get("kind").and_then(Value::as_str) {
+        Some("sphere") => Some("radius"),
+        Some("torus") => Some("minor_radius"),
+        _ => None,
+    };
+    if let Some(field) = radius_field {
+        if let Some(radius) = object.get(field).and_then(Value::as_f64) {
+            if radius < 0.0 {
+                object.insert(field.to_owned(), Value::from(-radius));
+            }
+        }
+        return geometry;
+    }
     if object.get("kind").and_then(Value::as_str) != Some("cone") {
         return geometry;
     }
@@ -42,6 +55,110 @@ pub fn step_cone_chart(value: &Value) -> Value {
     axis.insert("z".into(), Value::from(-z));
     object.insert("half_angle".into(), Value::from(-angle));
     geometry
+}
+
+/// Apply STEP's exact derived cache to a trimmed-curve construction.
+#[must_use]
+pub fn step_trimmed_curve_cache(value: &Value) -> Value {
+    let mut definition = value.clone();
+    if definition.get("kind").and_then(Value::as_str) != Some("subset") {
+        return definition;
+    }
+    let Some(cache) = definition.get_mut("cache").and_then(Value::as_object_mut) else {
+        return definition;
+    };
+    if cache
+        .get("fit_tolerance")
+        .and_then(Value::as_f64)
+        .is_some_and(|tolerance| tolerance > 0.0)
+    {
+        cache.insert("fit_tolerance".to_owned(), Value::from(0.0));
+    }
+    definition
+}
+
+/// Apply STEP's extended timestamp syntax to a document date attribute.
+#[must_use]
+pub fn step_timestamp_attribute(value: &Value) -> Value {
+    let mut attribute = value.clone();
+    let Some(record) = attribute.as_object_mut() else {
+        return attribute;
+    };
+    if record
+        .get("target")
+        .and_then(|target| target.get("kind"))
+        .and_then(Value::as_str)
+        != Some("document")
+        || !matches!(
+            record.get("name").and_then(Value::as_str),
+            Some("generation_date" | "model_date" | "CreationDate" | "LastModifiedDate")
+        )
+    {
+        return attribute;
+    }
+    let Some([entry]) = record
+        .get_mut("values")
+        .and_then(Value::as_array_mut)
+        .map(Vec::as_mut_slice)
+    else {
+        return attribute;
+    };
+    if entry.get("kind").and_then(Value::as_str) != Some("string") {
+        return attribute;
+    }
+    let Some(text) = entry.get("value").and_then(Value::as_str) else {
+        return attribute;
+    };
+    let Some((date, time)) = text.split_once('.') else {
+        return attribute;
+    };
+    if date.len() != 8
+        || time.len() != 6
+        || !date.bytes().chain(time.bytes()).all(|b| b.is_ascii_digit())
+    {
+        return attribute;
+    }
+    let parsed = [
+        &date[0..4],
+        &date[4..6],
+        &date[6..8],
+        &time[0..2],
+        &time[2..4],
+        &time[4..6],
+    ]
+    .map(str::parse::<u32>);
+    let [Ok(year), Ok(month), Ok(day), Ok(hour), Ok(minute), Ok(second)] = parsed else {
+        return attribute;
+    };
+    let days = match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if year.is_multiple_of(400) || (year.is_multiple_of(4) && !year.is_multiple_of(100)) => {
+            29
+        }
+        2 => 28,
+        _ => return attribute,
+    };
+    if day == 0
+        || day > days
+        || hour > 24
+        || minute > 59
+        || second > 60
+        || (hour == 24 && (minute != 0 || second != 0))
+    {
+        return attribute;
+    }
+    let timestamp = format!(
+        "{}-{}-{}T{}:{}:{}",
+        &date[0..4],
+        &date[4..6],
+        &date[6..8],
+        &time[0..2],
+        &time[2..4],
+        &time[4..6]
+    );
+    entry["value"] = Value::String(timestamp);
+    attribute
 }
 
 /// Standard unrepresentable probe for a quantum storage. `Normalized` rows
@@ -227,4 +344,22 @@ fn probe_target(document: &Value, path: &str) -> Option<(String, usize, String)>
                 })
         })
         .next()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::step_trimmed_curve_cache;
+    use serde_json::json;
+
+    #[test]
+    fn step_cache_normalization_changes_only_positive_subset_fit() {
+        let source = json!({"kind":"subset", "source":"curve#1", "cache":{"fit_tolerance":0.01}});
+        let expected = json!({"kind":"subset", "source":"curve#1", "cache":{"fit_tolerance":0.0}});
+        assert_eq!(step_trimmed_curve_cache(&source), expected);
+        assert_eq!(step_trimmed_curve_cache(&expected), expected);
+        let other = json!({"kind":"offset", "cache":{"fit_tolerance":0.01}});
+        assert_eq!(step_trimmed_curve_cache(&other), other);
+        let no_cache = json!({"kind":"subset", "source":"curve#1"});
+        assert_eq!(step_trimmed_curve_cache(&no_cache), no_cache);
+    }
 }

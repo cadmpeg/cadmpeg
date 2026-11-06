@@ -15,6 +15,7 @@ pub(super) fn regenerate(
     target: &mut CadIr,
     native: &mut F3dNative,
     losses: &mut Vec<LossNote>,
+    limits: cadmpeg_core::decode::ResourceLimits,
 ) -> Result<(), CodecError> {
     // Configurations first: binding and canonicalizing the neutral model
     // folds the active overrides into their parameters. Parameters author
@@ -22,7 +23,7 @@ pub(super) fn regenerate(
     // authored native agrees with the neutral model it checks.
     let source_parameters = target.model.parameters.clone();
     configurations::regenerate(target, native, &source_parameters, losses)?;
-    let remapped = parameters::regenerate(target, native, losses)?;
+    let remapped = parameters::regenerate(target, native, losses, limits)?;
     // The parameter rewrite above re-identifies every authored parameter
     // from its native record. Retained configuration selections still name
     // the pre-rewrite identities, so point them at the live parameters. A
@@ -166,10 +167,16 @@ pub(super) fn reconcile_body_tags(target: &CadIr, native: &mut F3dNative) {
 }
 
 pub(super) fn with_context<T>(
+    limits: cadmpeg_core::decode::ResourceLimits,
     run: impl FnOnce(&DecodeContext<'_>) -> Result<T, CodecError>,
 ) -> Result<T, CodecError> {
     let arena = DecodeArena::new();
-    let policy = DecodePolicy::default();
-    let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &policy)?;
-    run(&ctx)
+    let policy = DecodePolicy {
+        limits,
+        ..Default::default()
+    };
+    let ctx = DecodeContext::for_encode(&arena, &policy);
+    let result = run(&ctx);
+    ctx.finish_session()?;
+    result
 }

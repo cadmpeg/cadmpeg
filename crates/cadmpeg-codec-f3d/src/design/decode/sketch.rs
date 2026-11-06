@@ -82,7 +82,9 @@ pub(crate) fn decode_sketch_placements(
         let frames = design_primary_frames(bytes, &meta)?;
         record_offsets.insert(
             scope,
-            crate::design::decode::meta::primary_frame_extents(&frames),
+            crate::design::decode::meta::primary_frame_extents_with_unindexed_pairs(
+                &frames, bytes, &meta,
+            ),
         );
     }
     let mut visibilities = HashMap::new();

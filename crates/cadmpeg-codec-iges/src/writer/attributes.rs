@@ -433,7 +433,7 @@ pub(super) fn append(
                             continue;
                         };
                         let encoded =
-                            properties::encode(record, &fields, &targets).and_then(|entity| {
+                            properties::encode(record, &fields, &targets).and_then(|mut entity| {
                                 unchanged &= native_encoding_matches(
                                     record,
                                     fields::Family::Property,
@@ -443,6 +443,13 @@ pub(super) fn append(
                                         self::owners(ir, native, &targets).as_ref() == Some(&owners)
                                     },
                                 );
+                                if entity.form == 15 {
+                                    tables::directory_metadata(namespace, record, &mut entity);
+                                }
+                                entity.source_targets.push(record.id().to_owned());
+                                if let Some(source) = string_field(record, "source_entity") {
+                                    entity.source_targets.push(source);
+                                }
                                 append_owned(entities, entity, &owners, version)
                             });
                         match encoded {

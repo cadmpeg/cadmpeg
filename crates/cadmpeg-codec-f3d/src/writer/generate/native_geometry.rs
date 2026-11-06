@@ -17,9 +17,8 @@ use cadmpeg_ir::topology::IncreasingParameterInterval;
 use std::borrow::Cow;
 
 use super::native_bytes::{
-    native_curve_base, native_enum, native_f64, native_i64, native_ident,
-    native_length_prefixed_string, native_point, native_ref, native_string, native_subident,
-    native_surface_base, native_u16_string, native_vector,
+    native_curve_base, native_enum, native_f64, native_i64, native_ident, native_point, native_ref,
+    native_string, native_subident, native_surface_base, native_u16_string, native_vector,
 };
 use crate::writer::primitives::{native_bool, unique_knot_count};
 use cadmpeg_asm::nurbs::reader::LEN_TO_MM;
@@ -40,9 +39,9 @@ pub(super) fn native_smbh_header(target: &CadIr) -> Result<Vec<u8>, CodecError> 
         .ok_or_else(|| CodecError::InvalidInput("F3D top-level entity index exceeds u64".into()))?;
     bytes.extend_from_slice(&first_owned.to_le_bytes());
     bytes.extend_from_slice(&3u64.to_le_bytes());
-    native_string(&mut bytes, "Autodesk Neutron")?;
-    native_string(&mut bytes, "ASM 231.6.3.65535 OSX")?;
-    native_string(&mut bytes, "Thu Jan  1 00:00:00 1970")?;
+    native_string(&mut bytes, "Autodesk Neutron");
+    native_string(&mut bytes, "ASM 231.6.3.65535 OSX");
+    native_string(&mut bytes, "Thu Jan  1 00:00:00 1970");
     native_f64(&mut bytes, 60.0);
     // Binary ASM stores length tolerances in centimetres.
     native_f64(
@@ -472,11 +471,11 @@ fn native_procedural_surface_definition(
             bytes.push(0x0f);
             let inline = construction.subtransform().inline();
             native_ident(bytes, "t_spl_subtrans_object")?;
-            native_u16_string(bytes, inline.program.as_str())?;
+            native_u16_string(bytes, inline.program.as_str());
             if let Some(separator) = inline.separator {
                 bytes.push(native_bool(separator));
             }
-            native_u16_string(bytes, inline.values.as_str())?;
+            native_u16_string(bytes, inline.values.as_str());
             bytes.push(0x10);
             native_i64(bytes, construction.trailing_value());
             bytes.push(0x10);
@@ -1318,20 +1317,16 @@ fn native_procedural_surface_definition(
     Ok(true)
 }
 
-fn native_bridge_token(
-    bytes: &mut Vec<u8>,
-    token: &cadmpeg_ir::geometry::LoftBridgeToken,
-) -> Result<(), CodecError> {
+fn native_bridge_token(bytes: &mut Vec<u8>, token: &cadmpeg_ir::geometry::LoftBridgeToken) {
     match token {
         cadmpeg_ir::geometry::LoftBridgeToken::Boolean(value) => {
             bytes.push(native_bool(*value));
         }
         cadmpeg_ir::geometry::LoftBridgeToken::Integer(value) => native_i64(bytes, *value),
         cadmpeg_ir::geometry::LoftBridgeToken::Double(value) => native_f64(bytes, *value),
-        cadmpeg_ir::geometry::LoftBridgeToken::Text(value) => native_string(bytes, value)?,
+        cadmpeg_ir::geometry::LoftBridgeToken::Text(value) => native_string(bytes, value),
         cadmpeg_ir::geometry::LoftBridgeToken::Enum(value) => native_enum(bytes, *value),
     }
-    Ok(())
 }
 
 fn native_g2_side(
@@ -1339,7 +1334,7 @@ fn native_g2_side(
     target: &CadIr,
     side: &cadmpeg_ir::geometry::G2BlendSide,
 ) -> Result<(), CodecError> {
-    native_string(bytes, &side.label)?;
+    native_string(bytes, &side.label);
     let surface = target
         .model
         .surfaces
@@ -1422,7 +1417,7 @@ fn encode_native_g2_blend(
             }
             native_f64(bytes, tolerance.get() / LEN_TO_MM);
             if let Some(extension) = extension {
-                native_bridge_token(bytes, extension)?;
+                native_bridge_token(bytes, extension);
             }
             native_optional_pcurve(bytes, pcurve.as_ref())?;
         }
@@ -2300,7 +2295,7 @@ fn native_law_expression(
         ));
     }
     match expression {
-        LawExpression::Null {} => native_string(bytes, NULL_LAW_TOKEN)?,
+        LawExpression::Null {} => native_string(bytes, NULL_LAW_TOKEN),
         LawExpression::Text { value } => {
             return Err(CodecError::UnsupportedContent(format!(
                 "law expression text {value:?} has no recursive native law spelling"
@@ -2322,7 +2317,7 @@ fn native_law_expression(
             native_vector(bytes, [value.x, value.y, value.z]);
         }
         LawExpression::Transform { scalars, enums } => {
-            native_string(bytes, "TRANS")?;
+            native_string(bytes, "TRANS");
             for scalar in scalars {
                 native_f64(bytes, *scalar);
             }
@@ -2335,7 +2330,7 @@ fn native_law_expression(
             scale,
             flags,
         } => {
-            native_string(bytes, "TRANS")?;
+            native_string(bytes, "TRANS");
             for vector in vectors {
                 native_vector(bytes, [vector.x, vector.y, vector.z]);
             }
@@ -2345,7 +2340,7 @@ fn native_law_expression(
             }
         }
         LawExpression::Edge { curve, parameters } => {
-            native_string(bytes, "EDGE")?;
+            native_string(bytes, "EDGE");
             let carrier = target
                 .model
                 .curves
@@ -2378,7 +2373,7 @@ fn native_law_expression(
             controls,
             point,
         } => {
-            native_string(bytes, "SPLINE_LAW")?;
+            native_string(bytes, "SPLINE_LAW");
             native_i64(bytes, *native_id);
             native_compound_loft_float_array(bytes, knots)?;
             native_compound_loft_float_array(bytes, controls)?;
@@ -2417,7 +2412,7 @@ fn native_law_expression(
                     operands.len()
                 )));
             }
-            native_string(bytes, operator)?;
+            native_string(bytes, operator);
             for operand in operands {
                 native_law_expression(bytes, target, operand, depth + 1)?;
             }
@@ -2445,7 +2440,7 @@ fn native_sweep_law(
     // The first slot also selects the layout: legacy excludes integers,
     // while the revision form requires a string.
     match (slot, expression) {
-        (_, LawExpression::Text { value }) => native_string(bytes, value.as_str())?,
+        (_, LawExpression::Text { value }) => native_string(bytes, value.as_str()),
         (Second, LawExpression::Integer { value }) => native_i64(bytes, *value),
         (LegacyFirst | Second, LawExpression::Double { value }) => native_f64(bytes, *value),
         (LegacyFirst | Second, LawExpression::Point { value }) => native_point(
@@ -2483,7 +2478,7 @@ fn native_law_formula(
     // variant is a compile error here, not a silently written token.
     let (name, variables) = match formula {
         cadmpeg_ir::geometry::LawFormula::Null {} => {
-            native_length_prefixed_string(bytes, NULL_LAW_TOKEN)?;
+            native_string(bytes, NULL_LAW_TOKEN);
             return Ok(());
         }
         cadmpeg_ir::geometry::LawFormula::Named { name, variables } => (name, variables),
@@ -2494,7 +2489,7 @@ fn native_law_formula(
              the null law is stated by the variant, not by a name"
         )));
     }
-    native_length_prefixed_string(bytes, name.as_str())?;
+    native_string(bytes, name.as_str());
     native_i64(
         bytes,
         i64::try_from(variables.len())
@@ -3346,7 +3341,7 @@ fn encode_native_loft(
             }
             cadmpeg_ir::geometry::LoftBridgeToken::Integer(value) => native_i64(bytes, *value),
             cadmpeg_ir::geometry::LoftBridgeToken::Double(value) => native_f64(bytes, *value),
-            cadmpeg_ir::geometry::LoftBridgeToken::Text(value) => native_string(bytes, value)?,
+            cadmpeg_ir::geometry::LoftBridgeToken::Text(value) => native_string(bytes, value),
             cadmpeg_ir::geometry::LoftBridgeToken::Enum(value) => native_enum(bytes, *value),
         }
     }
@@ -3524,7 +3519,7 @@ fn native_variable_blend_value(
             "variable blend-value recursion exceeds 32 levels".into(),
         ));
     }
-    native_string(bytes, value.payload.native_name())?;
+    native_string(bytes, value.payload.native_name());
     if value.payload.discriminator() != 1 {
         native_i64(bytes, value.payload.discriminator());
     }
@@ -3570,7 +3565,7 @@ fn native_variable_blend_value(
             native_radius_function_pcurve_block(bytes, function)?;
             match terminal {
                 VariableBlendTerminal::Double(value) => native_f64(bytes, *value),
-                VariableBlendTerminal::Text(value) => native_string(bytes, value)?,
+                VariableBlendTerminal::Text(value) => native_string(bytes, value),
             }
         }
         VariableBlendValuePayload::Constant {
@@ -3649,7 +3644,7 @@ fn native_vertex_blend_boundary(
     if revision {
         native_ident(bytes, kind)?;
     } else {
-        native_string(bytes, kind)?;
+        native_string(bytes, kind);
     }
     bytes.push(native_bool(boundary.boundary_type));
     // The magic item is a unit direction or the zero vector, not a
@@ -4176,7 +4171,7 @@ fn native_rolling_ball_side(
             VariableBlendSupportKind::Surface => "blend_support_surface",
             VariableBlendSupportKind::ZeroCurve => "blend_support_zero_curve",
         },
-    )?;
+    );
     let support_geometry = if let Some(support) = &side.surface {
         let id = &support.surface;
         let surface = target
@@ -4268,7 +4263,7 @@ fn native_rolling_ball_third_side(
     target: &CadIr,
     side: &cadmpeg_ir::geometry::RollingBallThirdSide,
 ) -> Result<(), CodecError> {
-    native_string(bytes, &side.label)?;
+    native_string(bytes, &side.label);
     let surface = target
         .model
         .surfaces
@@ -4442,7 +4437,7 @@ fn encode_native_rolling_ball(
                     procedural.id, support.surface
                 ))
             })?;
-        native_string(bytes, "blend_support_surface")?;
+        native_string(bytes, "blend_support_surface");
         native_subident(bytes, if side == 0 { "plane" } else { "sphere" })?;
         native_embedded_surface(bytes, &carrier.geometry)?;
     }
@@ -5314,7 +5309,7 @@ pub(crate) fn native_procedural_curve(
                 for value in parameter_range {
                     native_f64(bytes, value.get());
                 }
-                native_string(bytes, role.as_str())?;
+                native_string(bytes, role.as_str());
                 native_nurbs_curve(bytes, solved_cache)?;
                 write_cache_fit_tolerance(bytes);
                 bytes.push(0x10);
@@ -5770,9 +5765,9 @@ pub(crate) fn native_procedural_curve(
                 offset.z / LEN_TO_MM,
             ],
         );
-        native_string(bytes, "source")?;
+        native_string(bytes, "source");
         native_i64(bytes, roles.source);
-        native_string(bytes, "offset")?;
+        native_string(bytes, "offset");
         native_i64(bytes, roles.offset);
         native_nurbs_curve(bytes, solved_cache)?;
         write_cache_fit_tolerance(bytes);
@@ -6085,8 +6080,9 @@ fn native_support_pcurve_with_offset(
     support: &SurfaceGeometry,
     geometry: &PcurveGeometry,
     offset: [f64; 2],
+    range: [f64; 2],
 ) -> Result<PcurveNurbs, CodecError> {
-    let mut native = native_support_pcurve(support, geometry)?;
+    let mut native = native_support_pcurve_for_range(support, geometry, range)?;
     native.try_map_control_points(|_, point| {
         let point = point.get();
         cadmpeg_ir::units::FinitePoint2::new(Point2::new(point.u - offset[0], point.v - offset[1]))
@@ -6986,6 +6982,7 @@ pub(super) fn native_pcurve(
     geometry: &PcurveGeometry,
     form: &NativePcurveForm<'_>,
     support: &SurfaceGeometry,
+    range: [f64; 2],
 ) -> Result<(), CodecError> {
     let inline = match form {
         NativePcurveForm::Reference {
@@ -7005,7 +7002,8 @@ pub(super) fn native_pcurve(
         NativePcurveForm::Inline(inline) => inline,
     };
     let uv_offset = inline.uv_offset();
-    let native_geometry = native_support_pcurve_with_offset(support, geometry, uv_offset.get())?;
+    let native_geometry =
+        native_support_pcurve_with_offset(support, geometry, uv_offset.get(), range)?;
     native_ident(bytes, "pcurve")?;
     native_ref(bytes, -1);
     native_i64(bytes, -1);
@@ -7030,8 +7028,9 @@ pub(super) fn native_ref_pcurve_companion(
     geometry: &PcurveGeometry,
     uv_offset: [f64; 2],
     support: &SurfaceGeometry,
+    range: [f64; 2],
 ) -> Result<(), CodecError> {
-    let native_geometry = native_support_pcurve_with_offset(support, geometry, uv_offset)?;
+    let native_geometry = native_support_pcurve_with_offset(support, geometry, uv_offset, range)?;
     let lifted = native_geometry
         .lift(|point| Point3::new(point.u * 10.0, point.v * 10.0, 0.0))
         .map_err(|error| CodecError::UnsupportedContent(error.to_string()))?;

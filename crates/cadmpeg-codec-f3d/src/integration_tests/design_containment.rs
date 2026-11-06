@@ -299,6 +299,36 @@ fn native_validation_skips_design_intent_links_after_a_contained_failure() {
 }
 
 #[test]
+fn companion_payload_header_does_not_select_an_unindexed_recipe() {
+    use crate::test_support::zip_test::{
+        f3d_with_smbh_and_protein_with_generated_sketch_dimension,
+        f3d_with_smbh_and_protein_with_original_sketch_dimension, original_design_fixture,
+    };
+
+    let smbh = synthetic_geometry_smbh();
+    let unindexed = original_design_fixture(
+        f3d_with_smbh_and_protein_with_original_sketch_dimension(&smbh),
+        false,
+    );
+    let indexed = f3d_with_smbh_and_protein_with_generated_sketch_dimension(&smbh);
+    let unindexed = decode(unindexed);
+    let indexed = decode(indexed);
+    let unindexed = f3d_native(unindexed.ir());
+    let indexed = f3d_native(indexed.ir());
+    assert!(unindexed
+        .design_parameter_companions
+        .iter()
+        .filter_map(|companion| companion.payload())
+        .all(|payload| payload.owned_recipe_ids().is_empty()));
+    assert_eq!(indexed.design_dimension_recipe_records.len(), 1);
+    assert!(indexed
+        .design_parameter_companions
+        .iter()
+        .filter_map(|companion| companion.payload())
+        .any(|payload| payload.owned_recipe_ids().len() == 1));
+}
+
+#[test]
 fn a_resource_refusal_in_design_intent_still_refuses_the_document() {
     inject_failure(recursion_refusal);
 
@@ -420,7 +450,7 @@ fn one_damaged_protein_asset_gives_up_only_its_part() {
         })
         .collect::<Vec<_>>();
     assert_eq!(unreadable.len(), 1);
-    assert!(unreadable[0].message.contains("f3d.protein_record"));
+    assert!(unreadable[0].message.contains("zip.entry"));
     assert!(result
         .source_fidelity()
         .retained_records()
@@ -488,4 +518,99 @@ fn one_damaged_primary_index_gives_up_only_its_stream() {
         stub_ids[0].as_str()
     );
     assert_valid(&damaged);
+}
+
+#[test]
+fn geometry_depth_accounts_for_damaged_design_index() {
+    let source = f3d_with_damaged_design_bulkstream(&synthetic_geometry_with_history_smbh());
+    let result = F3dCodec
+        .decode(
+            &mut Cursor::new(source),
+            &DecodeOptions {
+                depth: cadmpeg_core::decode::DecodeDepth::Geometry,
+                ..DecodeOptions::default()
+            },
+        )
+        .unwrap();
+    assert!(result.ir().scope.model);
+    assert!(!result.ir().scope.design);
+    assert_eq!(result.ir().native_unknowns("f3d").unwrap().len(), 1);
+    assert_eq!(
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code.local_code() == "record.unreadable")
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn unreadable_index_is_given_up_before_recipe_and_timeline_selection() {
+    use std::io::Write;
+
+    use zip::CompressionMethod;
+
+    use crate::design::decode::{decal, meta, parameter_state, parameters};
+    use crate::test_support::manifest_test::write_synthetic_manifests;
+    use crate::test_support::streams_test::design_metastream_with_records;
+    use crate::test_support::zip_test::with_scan;
+
+    let bulk = b"unreadable Design records";
+    let meta = design_metastream_with_records(
+        &[(
+            meta::FEATURE_TIMELINE_TYPE_GUID,
+            meta::FEATURE_TIMELINE_BASE_TYPE_GUID,
+            2,
+            "Fusion",
+            &[35],
+        ), (
+            "B0556F58-EE09-46A7-B18F-E296F48E5B13",
+            "",
+            4,
+            "CommonData",
+            &[36],
+        )],
+        &[(35, u64::try_from(bulk.len()).unwrap() + 1)],
+    );
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    write_synthetic_manifests(&mut zip, stored);
+    zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored)
+        .unwrap();
+    zip.write_all(bulk).unwrap();
+    zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
+        .unwrap();
+    zip.write_all(&meta).unwrap();
+    let archive = zip.finish().unwrap().into_inner();
+    with_scan(&archive, |scan| {
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let give_ups = meta::admit_damaged_bulk_records(&ctx, scan).unwrap();
+        assert_eq!(give_ups.stubs.len(), 1);
+        assert_eq!(give_ups.losses.len(), 1);
+        assert_eq!(give_ups.losses[0].code.local_code(), "record.unreadable");
+        let metadata = scan
+            .parsed_metastream("FusionAssetName[Active]/Design1/MetaStream.dat")
+            .unwrap();
+        assert!(meta::design_primary_frames(bulk, &metadata).unwrap().is_empty());
+        let mut parts = cadmpeg_ir::source_fidelity::parts::PartOutput::new(
+            cadmpeg_ir::CodecFormat::F3d,
+            &ctx,
+        );
+        assert!(meta::decode_feature_timeline_parts(&ctx, &mut parts, scan)
+            .unwrap()
+            .is_empty());
+        assert!(parameters::decode_recipes(&ctx, &mut parts, scan)
+            .unwrap()
+            .is_empty());
+        assert!(decal::decode_decal_images(&ctx, &mut parts, scan, &[])
+            .unwrap()
+            .is_empty());
+        let states = parameter_state::decode(&ctx, scan).unwrap();
+        assert!(states.states.is_empty());
+        assert!(states.stubs.is_empty());
+        assert!(states.losses.is_empty());
+        assert!(parts.into_parts().3.is_empty());
+    });
 }

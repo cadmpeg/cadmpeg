@@ -209,8 +209,14 @@ fn apply(ir: &mut CadIr, lowering: Lowering) -> Result<(), CodecError> {
         .model
         .curves
         .iter_mut()
-        .find(|carrier| carrier.id == curve)
-        .ok_or_else(|| CodecError::malformed(format_args!("subset curve {curve} is missing")))?;
+        .find(|carrier| carrier.id == curve);
+    debug_assert!(
+        carrier.is_some(),
+        "lowered curves remain in the cloned document"
+    );
+    let Some(carrier) = carrier else {
+        return Ok(());
+    };
     if let CurveGeometry::Procedural { cache, .. } = &mut carrier.geometry {
         *cache = Some(geometry);
     }
