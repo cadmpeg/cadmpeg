@@ -15,6 +15,7 @@ use cadmpeg_ir::CadIr;
 
 use crate::SldprtCodec;
 
+mod ftc06;
 mod ftc08;
 
 const MM_PER_INCH: f64 = 25.4;

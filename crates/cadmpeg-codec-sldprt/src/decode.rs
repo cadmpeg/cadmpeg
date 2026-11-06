@@ -3537,13 +3537,11 @@ fn build_geometry_ir(
     crate::history::configuration::inherit_configuration_reference_plane_states(ctx, &mut ir)?;
     sync_active_configuration_resolutions(&mut ir)?;
     crate::history::bind::order_model_features_for_regeneration(ctx, &mut ir)?;
-    let pattern_hole_nominals = crate::swift::pattern_hole_nominal_context(&ir.model.features);
     ir.model.pmi = crate::swift::annotations(
         ctx,
         scan,
         &mut annotations,
         Some(&topology_index),
-        Some(&pattern_hole_nominals),
         &mut pmi_losses,
     )?;
     stamp_feature_baseline(ctx, &mut ir)?;
@@ -4340,8 +4338,7 @@ fn build_metadata_ir(
         &mut supplemental_config_lanes,
     )?;
     let pmi_dimensions = crate::pmi::dimensions(ctx, scan, &mut annotations, &mut pmi_losses)?;
-    ir.model.pmi =
-        crate::swift::annotations(ctx, scan, &mut annotations, None, None, &mut pmi_losses)?;
+    ir.model.pmi = crate::swift::annotations(ctx, scan, &mut annotations, None, &mut pmi_losses)?;
     let crate::resolved_features::sketch_projection::ProjectedSketches {
         sketches,
         entities: sketch_entities,

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! End-to-end contracts over synthesized SLDPRT compound-document images.
 
+mod swift_nominal;
+
 use cadmpeg_test_support::{wire, EditableDecodeResult};
 
 use cadmpeg_core::container::ContainerRole;
