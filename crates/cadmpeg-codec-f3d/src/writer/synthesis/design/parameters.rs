@@ -96,7 +96,7 @@ pub(super) fn regenerate(
             id: format!("f3d:design:design-parameter#{record_index}"),
             class_tag: "256".to_owned().try_into().map_err(CodecError::Malformed)?,
             record_index,
-            source_ordinal: index,
+            source_ordinal: parameter.ordinal,
             source: DesignParameterSource::authored(
                 "User Parameter".into(),
                 None,
@@ -111,6 +111,12 @@ pub(super) fn regenerate(
         .map_err(CodecError::Malformed)?;
         native.design_parameters.push(generated);
         authored.push((parameter.id.clone(), native.design_parameters.len() - 1));
+        if !parameter.driving {
+            losses.push(F3dLossCode::WriterDesignRecordsOmitted.note(format!(
+                "parameter {} retains its value and expression; its non-driving state is not encoded",
+                parameter.id,
+            )));
+        }
         if parameter.display.is_some()
             || parameter.pmi.is_some()
             || parameter.properties.keys().any(|key| {
