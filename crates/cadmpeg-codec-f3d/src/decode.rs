@@ -2783,7 +2783,7 @@ impl<'a> F3dDecodeSession<'a> {
         let scan = self.scan;
         let act = match crate::act::decode(scan) {
             Ok(act) => act,
-            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+            Err(error @ (CodecError::ResourceLimit(_) | CodecError::Io(_))) => return Err(error),
             Err(error) => {
                 self.report.losses.push(
                     F3dLossCode::ActRecordUntyped
