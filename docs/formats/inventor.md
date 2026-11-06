@@ -964,7 +964,7 @@ One flange control form has the following values and reference relations. Direct
 | Attachment first mode, second mode | Enumeration `(9, 1)` |
 | Attachment states | `[1, 1, 1]` |
 | Attachment first direction | Parallel or antiparallel to the consumed sketch U axis; its sign does not change thickness side |
-| Attachment second direction | Parallel to the consumed sketch V axis, `normal × U` |
+| Attachment second direction | Parallel to the consumed sketch V axis, `normal × U`; antiparallel to V when the first direction is antiparallel to U. Neither sign changes the thickness side |
 | Attachment thickness | Same reference as plate slot 3 |
 | Attachment extension | Absent, or state 10 with repeated thickness, radius, attachment, relief width, minimum remnant, and option references |
 | Relief control | Boolean true |
