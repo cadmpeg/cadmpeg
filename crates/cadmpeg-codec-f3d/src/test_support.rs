@@ -284,3 +284,10 @@ pub(crate) mod component_body_test;
 pub(crate) mod scan_counts;
 
 pub(crate) mod multiple_profiles;
+
+/// The loss codes of `losses`, in order.
+pub(crate) fn loss_codes(
+    losses: &[cadmpeg_ir::report::loss::LossNote],
+) -> Vec<cadmpeg_ir::report::loss::LossKind> {
+    losses.iter().map(|loss| loss.code.clone()).collect()
+}

@@ -64,6 +64,7 @@ fn sketch_point_selection() -> DesignEntitySelectionOperand {
         record_index: 200,
         byte_offset: 1_000,
         class_tag: DesignClassTag::try_from("369".to_owned()).unwrap(),
+        serialization_form: Default::default(),
         asset_id: "11111111-2222-4333-8444-555555555555"
             .to_owned()
             .try_into()
