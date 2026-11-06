@@ -1106,11 +1106,17 @@ fn prepare_write<'a, 'budget>(
             )));
             body.transform = None;
         }
+        let local = baked.clone();
         match placement::bake(&mut baked) {
             Ok(()) => {}
             Err(WriteError::Omit(reason)) => {
-                losses.push(omitted_body(&baked, &reason, &carried));
-                continue;
+                baked = local;
+                let body = &mut baked.model.bodies[0];
+                losses.push(RhinoLossCode::WriterBodyPlacementOmitted.note(format!(
+                    "body {} placement omitted: {reason}; geometry is written in its local frame",
+                    body.id
+                )));
+                body.transform = None;
             }
             Err(error) => return Err(error),
         }

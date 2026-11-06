@@ -291,6 +291,8 @@ pub(crate) enum RhinoLossCode {
     WriterBodyOmitted,
     /// A body placement cannot be represented in the native carrier.
     WriterBodyTransformNotApplied,
+    /// A finite body placement cannot be applied to its geometry.
+    WriterBodyPlacementOmitted,
     /// No geometry can be written to the target.
     NoExportableSolids,
     /// Different coedge pcurves were compared at discrete parameters.
@@ -408,6 +410,7 @@ impl RhinoLossCode {
         Self::WriterBodyReduced,
         Self::WriterBodyOmitted,
         Self::WriterBodyTransformNotApplied,
+        Self::WriterBodyPlacementOmitted,
         Self::NoExportableSolids,
         Self::EdgePcurveAgreementSampled,
         Self::EdgePcurveSampledToBspline,
@@ -498,6 +501,7 @@ impl RhinoLossCode {
             Self::WriterBodyReduced => "writer.body-reduced",
             Self::WriterBodyOmitted => "writer.body-omitted",
             Self::WriterBodyTransformNotApplied => "body.non-rigid-transform",
+            Self::WriterBodyPlacementOmitted => "body.placement-omitted",
             Self::NoExportableSolids => "export.no-exportable-solids",
             Self::EdgePcurveAgreementSampled => "geometry.edge-pcurve-agreement-sampled",
             Self::EdgePcurveSampledToBspline => "geometry.edge-pcurve-sampled-to-bspline",
@@ -592,7 +596,9 @@ impl RhinoLossCode {
             | Self::WriterPcurveExpanded
             | Self::WriterPcurveDirectionReversed
             | Self::WriterPcurveDomainRestricted => LossTaxonomy::TopologyNotTransferred,
-            Self::WriterBodyTransformNotApplied => LossTaxonomy::BodyTransformNotApplied,
+            Self::WriterBodyTransformNotApplied | Self::WriterBodyPlacementOmitted => {
+                LossTaxonomy::BodyTransformNotApplied
+            }
             Self::WriterScopeExpanded => LossTaxonomy::MetadataNotTransferred,
             Self::WriterDesignOmitted => LossTaxonomy::ParametricRecordOmitted,
             Self::WriterSubdOmitted => LossTaxonomy::SubdOmitted,
@@ -754,6 +760,7 @@ mod tests {
                 "writer.body-reduced",
                 "writer.body-omitted",
                 "body.non-rigid-transform",
+                "body.placement-omitted",
                 "export.no-exportable-solids",
                 "geometry.edge-pcurve-agreement-sampled",
                 "geometry.edge-pcurve-sampled-to-bspline",
