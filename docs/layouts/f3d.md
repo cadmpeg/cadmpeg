@@ -2305,7 +2305,64 @@ Offsets are relative to the primary indexed header. The variable scope body foll
 | 30 | 4 | `all_ones` | `bytes[4]` | little | spec | offsets 30 through 33 are `ff ff ff ff` |
 | 34 | 11 | `zero_run_11` | `bytes[11]` | little | spec | offsets 34 through 44 are zero |
 
-## `legacy_loft_body_carrier_class_322`
+## `three_flag_compact_loft_operation_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 44 B
+
+Offsets are relative to the primary indexed header.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | ten zero bytes after its indexed header |
+| 21 | 3 | `flags` | `bytes[3]` | little | spec | bytes `01 01` and a byte `0` or `1` at offsets 21 through 23 |
+| 24 | 4 | `operation` | `u32` | little | spec | the result-operation u32 at offset 24 |
+| 28 | 1 | `zero_flag` | `u8` | little | spec | a zero byte at offset 28 |
+| 29 | 4 | `all_ones` | `bytes[4]` | little | spec | `ff ff ff ff` at offsets 29 through 32 |
+| 33 | 11 | `zero_run_11` | `bytes[11]` | little | spec | zero bytes at offsets 33 through 43 |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed Design record header (indexed_design_record_header).
+
+## `standard_loft_operation_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 34 B
+
+Offsets are relative to the primary indexed header.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | nine zero bytes at offsets 11 through 19 |
+| 20 | 1 | `presence` | `u8` | little | spec | byte `01` at offset 20 |
+| 21 | 4 | `zero_run_4` | `bytes[4]` | little | spec | four zero bytes at offsets 21 through 24 |
+| 25 | 4 | `flags` | `bytes[4]` | little | spec | four flag bytes at offsets 25 through 28 |
+| 29 | 4 | `operation` | `u32` | little | spec | the result-operation u32 at offset 29 |
+| 33 | 1 | `marked_reference` | `u8` | little | spec | Byte 33 opens a same-segment marked reference |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed Design record header (indexed_design_record_header).
+
+## `three_flag_standard_loft_operation_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 33 B
+
+Offsets are relative to the primary indexed header.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | nine zero bytes at offsets 11 through 19 |
+| 20 | 1 | `presence` | `u8` | little | spec | byte `01` at offset 20 |
+| 21 | 4 | `zero_run_4` | `bytes[4]` | little | spec | four zero bytes at offsets 21 through 24 |
+| 25 | 3 | `flags` | `bytes[3]` | little | spec | three flag bytes at offsets 25 through 27 |
+| 28 | 4 | `operation` | `u32` | little | spec | the result-operation u32 at offset 28 |
+| 32 | 1 | `null_reference` | `u8` | little | spec | a null marked reference `00` at offset 32 |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed Design record header (indexed_design_record_header).
+
+## `legacy_loft_body_carrier`
 
 Spec §3.1 · layout: byte offsets · size: 87 B
 
@@ -2327,7 +2384,7 @@ Offsets are relative to the primary indexed header. The same-index paired header
 | 74 | 2 | `flags` | `bytes[2]` | little | spec | flags `[00 00]` are at offset 74 |
 | 76 | 11 | `next_reference` | `bytes[11]` | little | spec | a marked reference to record `N+1` starts at offset 76 |
 
-## `legacy_loft_body_carrier_class_322_tail`
+## `legacy_loft_body_carrier_owner_tail`
 
 Spec §3.1 · layout: byte offsets · size: 99 B
 
@@ -2335,21 +2392,23 @@ Offsets are relative to the primary indexed header. The same-index paired header
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 87 | `common_prefix` | `bytes[87]` | little | spec | uses the class-`322`/`262` carrier prefix through offset 86 |
+| 0 | 87 | `common_prefix` | `bytes[87]` | little | spec | uses the 87-byte carrier fields through offset 86 |
 | 87 | 1 | `tail_zero` | `u8` | little | spec | stores a zero byte at offset 87 |
 | 88 | 11 | `trailing_scope_reference` | `bytes[11]` | little | spec | a marked reference to the owning scope at offset 88 |
 
-## `legacy_loft_body_carrier_class_411`
+## `legacy_loft_body_carrier_three_flag`
 
-Spec §3.1 · layout: byte offsets · size: 99 B
+Spec §3.1 · layout: byte offsets · size: 100 B
 
-Offsets are relative to the primary indexed header. The class-specific owner tail occupies offsets 87 through 98.
+Offsets are relative to the primary indexed header.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 87 | `common_prefix` | `bytes[87]` | little | spec | The class-`322`/`262` legacy Boolean-Loft body carrier is 87 bytes |
-| 87 | 1 | `tail_zero` | `u8` | little | spec | stores a zero byte at offset 87 |
-| 88 | 11 | `trailing_scope_reference` | `bytes[11]` | little | spec | a marked reference to the owning scope at offset 88 |
+| 0 | 74 | `common_prefix` | `bytes[74]` | little | spec | uses the 87-byte carrier fields through offset 73 |
+| 74 | 3 | `flags` | `bytes[3]` | little | spec | flags `[01 00 00]` at offset 74 |
+| 77 | 11 | `next_reference` | `bytes[11]` | little | spec | a marked reference to record `N+1` at offset 77 |
+| 88 | 1 | `tail_zero` | `u8` | little | spec | a zero byte at offset 88 |
+| 89 | 11 | `trailing_scope_reference` | `bytes[11]` | little | spec | a marked reference to the owning scope at offset 89 |
 
 ## `fixed_pipe_operation_prefix`
 

@@ -624,6 +624,7 @@ fn a_loft_construction_group_admits_the_point_role() {
                         operation:
                             crate::records::feature::extrude::DesignExtrudeOperation::NewBody,
                         operation_offset: draft.byte_offset + 29,
+                        reference_target: None,
                     },
                 ));
             })
