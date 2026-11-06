@@ -613,13 +613,14 @@ pub(crate) fn f3d_with_smbh_and_protein_with_generated_sketch_dimension(smbh: &[
     let properties = vec![generated_instance_properties_for(
         "11111111-2222-3333-4444-555555555555",
     )];
-    let (design_bulk, mut design_records) = generated_design_sketch_dimension_bulkstream();
+    let (mut design_bulk, mut design_records) = generated_design_sketch_dimension_bulkstream();
     let mut recipe_header = Vec::new();
     crate::test_support::indexed_header(&mut recipe_header, *b"275", 1305);
     let recipe_offset = design_bulk
         .windows(recipe_header.len())
         .position(|window| window == recipe_header)
         .expect("synthetic recipe header");
+    design_bulk[recipe_offset + 4..recipe_offset + 7].copy_from_slice(b"283");
     design_records.push((
         1305,
         u64::try_from(recipe_offset).expect("synthetic recipe offset"),
