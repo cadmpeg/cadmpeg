@@ -1346,6 +1346,12 @@ A `GdtPattern` owns its ordered members through the `SubFeatures`
 the pattern applies to these member feature identities in collection order.
 Nested patterns apply the same rule recursively.
 
+A `GdtPosition` that references a `GdtCompoundHole` selects the non-empty
+`CadIdentifier` values owned by its applied `GdtCylinder` children in
+`SubFeatures`. The compound's `CadReferences` collection aggregates child
+identifiers. Each child feature's class determines its role. Repeated paths to
+one child identify the same feature.
+
 GDT-analysis double fields use millimetres for lengths and radians for angles.
 `Tolerance` is the geometric-tolerance magnitude. `Nominal`, `LowerLimit`,
 `UpperLimit`, `MinusTolerance`, and `PlusTolerance` are dimension values. A

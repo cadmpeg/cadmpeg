@@ -111,6 +111,71 @@ fn named_tolerance<'a>(
     annotation
 }
 
+fn assert_single_cylinder_target(
+    ir: &CadIr,
+    annotation: &PmiAnnotation,
+    radius_mm: f64,
+    axis_point_mm: [f64; 3],
+    axis_direction: [f64; 3],
+) {
+    let [PmiTarget::Face { face }] = annotation.targets.as_slice() else {
+        panic!(
+            "{} has one face target",
+            annotation.name.as_deref().unwrap_or("PMI")
+        );
+    };
+    let face = ir
+        .model
+        .faces
+        .iter()
+        .find(|candidate| &candidate.id == face)
+        .expect("position target face");
+    let surface = ir
+        .model
+        .surfaces
+        .iter()
+        .find(|candidate| candidate.id == face.surface)
+        .expect("position target surface");
+    let Some(SolvedSurfaceGeometry::Cylinder(cylinder)) = surface.geometry.solved() else {
+        panic!("position target is a cylinder");
+    };
+    assert!(
+        (cylinder.radius().get() - radius_mm).abs() < VALUE_TOLERANCE,
+        "{} cylinder radius",
+        annotation.name.as_deref().unwrap_or("PMI")
+    );
+    let origin = cylinder.origin().get();
+    let actual_axis_point_mm = [origin.x, origin.y, origin.z];
+    let delta = [
+        actual_axis_point_mm[0] - axis_point_mm[0],
+        actual_axis_point_mm[1] - axis_point_mm[1],
+        actual_axis_point_mm[2] - axis_point_mm[2],
+    ];
+    let axis_length = axis_direction
+        .iter()
+        .map(|value| value * value)
+        .sum::<f64>()
+        .sqrt();
+    let cross = [
+        delta[1] * axis_direction[2] - delta[2] * axis_direction[1],
+        delta[2] * axis_direction[0] - delta[0] * axis_direction[2],
+        delta[0] * axis_direction[1] - delta[1] * axis_direction[0],
+    ];
+    let line_distance = cross.iter().map(|value| value * value).sum::<f64>().sqrt() / axis_length;
+    assert!(
+        line_distance < VALUE_TOLERANCE,
+        "{} cylinder axis line",
+        annotation.name.as_deref().unwrap_or("PMI")
+    );
+    let axis = cylinder.frame().axis().as_raw();
+    let dot = axis.x * axis_direction[0] + axis.y * axis_direction[1] + axis.z * axis_direction[2];
+    assert!(
+        (dot.abs() - 1.0).abs() < VALUE_TOLERANCE,
+        "{} cylinder axis direction",
+        annotation.name.as_deref().unwrap_or("PMI")
+    );
+}
+
 #[test]
 fn ftc_08_row_66_and_92_preserve_the_native_parallelism_modifier_subset() {
     let result = specimen("nist_ftc_08_asme1_rc_sw1802.SLDPRT");
@@ -239,13 +304,39 @@ fn ftc_08_row_99_emits_four_candidate_position_pairs_and_shared_targets() {
     let result = specimen("nist_ftc_08_asme1_rc_sw1802.SLDPRT");
     let ir = result.ir();
     let candidate_pairs = [
-        (("Position8", 0.050), ("Position9", 0.020)),
-        (("Position10", 0.050), ("Position11", 0.020)),
-        (("Position12", 0.050), ("Position13", 0.020)),
-        (("Position14", 0.050), ("Position15", 0.020)),
+        (
+            (("Position8", 0.050), ("Position9", 0.020)),
+            3.0734,
+            [69.85, -25.4, 48.26],
+            [0.0, 0.0, 1.0],
+        ),
+        (
+            (("Position10", 0.050), ("Position11", 0.020)),
+            2.8956,
+            [69.85, -67.31, 48.26],
+            [0.0, 0.0, 1.0],
+        ),
+        (
+            (("Position12", 0.050), ("Position13", 0.020)),
+            2.8956,
+            [69.85, 25.4, 48.26],
+            [0.0, 0.0, 1.0],
+        ),
+        (
+            (("Position14", 0.050), ("Position15", 0.020)),
+            3.0734,
+            [69.85, 67.31, 48.26],
+            [0.0, 0.0, 1.0],
+        ),
     ];
     let mut pair_targets = Vec::with_capacity(candidate_pairs.len());
-    for ((first_name, first_magnitude), (second_name, second_magnitude)) in candidate_pairs {
+    for (
+        ((first_name, first_magnitude), (second_name, second_magnitude)),
+        radius_mm,
+        axis_point_mm,
+        axis_direction,
+    ) in candidate_pairs
+    {
         let first = named_tolerance(
             ir,
             first_name,
@@ -262,17 +353,15 @@ fn ftc_08_row_99_emits_four_candidate_position_pairs_and_shared_targets() {
         );
         assert_eq!(
             first.targets, second.targets,
-            "{first_name}/{second_name} targets"
+            "{first_name}/{second_name} pair target equality"
         );
         assert_eq!(
             first.targets.len(),
-            2,
-            "{first_name}/{second_name} face pair"
+            1,
+            "{first_name}/{second_name} cylinder target"
         );
-        assert!(first
-            .targets
-            .iter()
-            .all(|target| matches!(target, PmiTarget::Face { .. })));
+        assert_single_cylinder_target(ir, first, radius_mm, axis_point_mm, axis_direction);
+        assert_single_cylinder_target(ir, second, radius_mm, axis_point_mm, axis_direction);
         pair_targets.push(first.targets.clone());
     }
 
@@ -285,5 +374,5 @@ fn ftc_08_row_99_emits_four_candidate_position_pairs_and_shared_targets() {
         .iter()
         .filter(|target| pair_targets[1..].iter().all(|pair| pair.contains(*target)))
         .count();
-    assert_eq!(shared_targets, 1);
+    assert_eq!(shared_targets, 0);
 }
