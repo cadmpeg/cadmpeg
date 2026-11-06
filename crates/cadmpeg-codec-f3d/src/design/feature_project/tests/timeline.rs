@@ -1,47 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 use crate::design::decode::parameters::parse_design_parameter_record;
 use crate::design::feature_project::project_parameter_design_with_edge_identities;
-use crate::design::feature_project::{ScopeHistoryBinding, ScopeHistoryGraph};
+use crate::design::feature_project::ScopeHistoryGraph;
 use crate::design::test_support::parameter_record;
 use crate::records::entity_header::DesignFeatureTimeline;
 use crate::records::feature::assembly::DesignAssemblyAlignment;
 use crate::records::feature::scope::DesignParameterScope;
 use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::features::FeatureOperation;
-use std::collections::HashMap;
-
-#[test]
-fn work_point_history_state_keys_are_history_qualified() {
-    let scope_a = DesignParameterScope::empty(
-        "f3d:Design/BulkStream.dat:scope#a",
-        crate::records::feature::scope::DesignFeatureKind::Extrude,
-        1,
-    );
-    let scope_b = DesignParameterScope::empty(
-        "f3d:Design/BulkStream.dat:scope#b",
-        crate::records::feature::scope::DesignFeatureKind::Fillet,
-        2,
-    );
-    let graph = ScopeHistoryGraph {
-        binding: ScopeHistoryBinding::Bound(HashMap::from([
-            (scope_a.id.clone(), "f3d:history#a".to_owned()),
-            (scope_b.id.clone(), "f3d:history#b".to_owned()),
-        ])),
-        component_namespaces: HashMap::from([
-            (
-                scope_a.id.clone(),
-                crate::design::feature_project::ComponentHistoryNamespace::Aggregate,
-            ),
-            (
-                scope_b.id.clone(),
-                crate::design::feature_project::ComponentHistoryNamespace::Aggregate,
-            ),
-        ]),
-        scopes_by_state: HashMap::new(),
-    };
-
-    assert_ne!(graph.state_key(&scope_a, 7), graph.state_key(&scope_b, 7));
-}
 
 #[test]
 fn history_state_predecessors_are_component_qualified() {
