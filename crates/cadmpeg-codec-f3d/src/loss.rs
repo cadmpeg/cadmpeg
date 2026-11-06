@@ -1419,7 +1419,6 @@ mod tests {
                 "brep.header-metadata-unresolved",
                 "source.manifest-metadata-unresolved",
                 "design.intent-undecoded",
-                "act.record-untyped",
                 "dimension.recipe-prefix-untyped",
                 "writer.native-records-omitted",
                 "writer.design-records-omitted",
