@@ -378,19 +378,23 @@ fn a_duplicated_or_non_finite_row_states_no_point_or_plane() {
 }
 
 #[test]
-fn a_plane_carrier_with_a_cylinder_or_axis_row_states_no_plane() {
+fn a_plane_carrier_with_a_cylinder_axis_or_radius_row_states_no_plane() {
     let plane = |surface| AsmHistoricalPlane {
         surface,
         origin: point(0.0, 0.0, 0.0),
         normal: vector(0.0, 0.0, 1.0),
     };
     let topology = AsmHistoricalTopology {
-        surface_planes: vec![plane(10), plane(11), plane(12)],
+        surface_planes: vec![plane(10), plane(11), plane(12), plane(13)],
         surface_cylinders: vec![cylinder(11)],
         surface_axes: vec![AsmHistoricalSurfaceAxis {
             surface: 12,
             origin: point(0.0, 0.0, 0.0),
             direction: vector(0.0, 0.0, 1.0),
+        }],
+        surface_radii: vec![AsmHistoricalSurfaceRadius {
+            surface: 13,
+            radius: 2.0,
         }],
         ..AsmHistoricalTopology::default()
     };
@@ -398,4 +402,5 @@ fn a_plane_carrier_with_a_cylinder_or_axis_row_states_no_plane() {
     assert!(planes[&10].is_some());
     assert_eq!(planes[&11], None);
     assert_eq!(planes[&12], None);
+    assert_eq!(planes[&13], None);
 }

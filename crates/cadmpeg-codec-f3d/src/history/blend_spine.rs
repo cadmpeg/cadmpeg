@@ -72,16 +72,16 @@ impl CylinderAxis {
         point.vector_from(self.origin).dot(self.direction)
     }
 
-    /// Whether a plane touches the cylinder of `radius` about the axis: its
-    /// normal is perpendicular to the axis and its distance from the axis
-    /// line equals the radius. `None` when the plane has a non-finite origin
-    /// or a zero or non-finite normal.
     /// Whether the cylinder row's radius is within
     /// `CYLINDER_ROW_RADIUS_TOLERANCE` of `radius`.
     pub(super) fn has_radius(self, radius: f64) -> bool {
         (self.radius - radius).abs() <= CYLINDER_ROW_RADIUS_TOLERANCE
     }
 
+    /// Whether a plane touches the cylinder of `radius` about the axis: its
+    /// normal is perpendicular to the axis and its distance from the axis
+    /// line equals the radius. `None` when the plane has a non-finite origin
+    /// or a zero or non-finite normal.
     pub(super) fn touches(self, radius: f64, (origin, normal): (Point3, Vector3)) -> Option<bool> {
         let normal = normal.unit().filter(|_| finite(origin))?;
         Some(
@@ -124,7 +124,7 @@ pub(super) fn edge_points(topology: &AsmHistoricalTopology) -> HashMap<i64, Opti
 }
 
 /// The origin and normal of each plane carrier, or `None` for a carrier with
-/// two plane rows or with a cylinder or axis row.
+/// two plane rows or with a cylinder, axis, or radius row.
 pub(super) fn plane_rows(
     topology: &AsmHistoricalTopology,
 ) -> HashMap<i64, Option<(Point3, Vector3)>> {
@@ -133,6 +133,7 @@ pub(super) fn plane_rows(
         .iter()
         .map(|row| row.surface)
         .chain(topology.surface_axes.iter().map(|row| row.surface))
+        .chain(topology.surface_radii.iter().map(|row| row.surface))
         .collect::<HashSet<_>>();
     let mut planes = unique_rows(&topology.surface_planes, |row| {
         (row.surface, (row.origin, row.normal))
