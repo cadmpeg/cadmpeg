@@ -126,3 +126,26 @@ fn digest_restores_appearance_order() {
     assert_eq!(ir.model.appearances, appearances);
     assert_eq!(ir.model.appearance_bindings, bindings);
 }
+
+#[test]
+fn truncated_container_has_no_complete_layout_baseline() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use std::io::Cursor;
+
+    let bytes = std::fs::read(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/golden/fixtures/document_envelope.sldprt"
+    ))
+    .unwrap();
+    let codec = crate::SldprtCodec;
+    let full = codec.decode(&mut Cursor::new(&bytes), &DecodeOptions::default()).unwrap();
+    let cut = codec.decode(&mut Cursor::new(&bytes[..bytes.len() / 2]), &DecodeOptions::default()).unwrap();
+    let baselines = |result: &cadmpeg_ir::codec::DecodeResult| {
+        crate::native::SldprtNative::load(result.ir().native.namespace("sldprt").unwrap())
+            .unwrap()
+            .decode_baselines
+    };
+    assert_eq!(baselines(&full).len(), 1);
+    assert!(baselines(&cut).is_empty());
+    assert!(cut.report().losses.iter().any(|loss| loss.code.local_code() == "record.unreadable"));
+}
