@@ -473,3 +473,42 @@ fn damaged_declaration_keeps_readable_data_owned_by_its_stub() {
     );
     assert!(crate::test_support::validate_native(decoded.ir()).is_empty());
 }
+
+#[test]
+fn damaged_declaration_section_keeps_distinct_readable_data_owners() {
+    let xml = "<Document SchemaVersion='4'><Objects Count='2' bad=><Object name='A' type='Vendor::Feature'/><Object name='B' type='Vendor::Feature'/></Objects><ObjectData Count='2'><Object name='A'><Properties Count='1'><Property name='Label' type='App::PropertyString'><String value='first'/></Property></Properties></Object><Object name='B'><Properties Count='1'><Property name='Label' type='App::PropertyString'><String value='second'/></Property></Properties></Object></ObjectData></Document>";
+    let bytes = zip_fixture::archive(&[RawEntry::stored("Document.xml", xml.as_bytes())]);
+    let decoded = crate::FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("readable object data survives its damaged declarations");
+    let namespace = decoded.ir().native.namespace("fcstd").unwrap();
+    let properties = namespace
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .unwrap();
+    let labels: Vec<_> = properties
+        .iter()
+        .filter(|property| property.name == "Label")
+        .collect();
+    assert_eq!(labels.len(), 2);
+    assert_ne!(labels[0].owner, labels[1].owner);
+    let values: Vec<_> = labels
+        .iter()
+        .map(|property| property.values()[0].attributes["value"].as_str())
+        .collect();
+    assert_eq!(values, ["first", "second"]);
+    let parts = crate::test_support::source_fidelity::given_up(decoded.source_fidelity());
+    let [(stub, retained)] = parts.as_slice() else {
+        panic!("one damaged declaration section")
+    };
+    assert_eq!(retained.data(), Some("<Objects Count='2' bad=><Object name='A' type='Vendor::Feature'/><Object name='B' type='Vendor::Feature'/></Objects>".as_bytes()));
+    let owners = namespace
+        .arena_as::<crate::native::OrphanObjectData>("orphan_object_data")
+        .unwrap();
+    assert_eq!(owners.len(), 2);
+    for (label, name) in labels.iter().zip(["A", "B"]) {
+        assert!(owners
+            .iter()
+            .any(|owner| owner.id == label.owner && owner.name == name && owner.owner == *stub));
+    }
+    assert!(crate::test_support::validate_native(decoded.ir()).is_empty());
+}

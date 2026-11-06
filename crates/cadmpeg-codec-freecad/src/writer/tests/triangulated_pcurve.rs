@@ -33,4 +33,22 @@ fn face_triangulation_keeps_its_edge_parameter_curve() {
         output.ir().model.pcurves[0].geometry,
         input.ir().model.pcurves[0].geometry
     );
+    let mut edited = input.ir().clone();
+    let pcurve = edited.model.coedges[0].pcurves[0].pcurve.clone();
+    edited.model.coedges[0].owner_loop =
+        cadmpeg_ir::ids::LoopId::mint("cadir:model:loop#missing").unwrap();
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&edited, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(pcurve.as_str())));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(!output.ir().model.bodies.is_empty());
 }

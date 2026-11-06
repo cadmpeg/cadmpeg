@@ -79,6 +79,85 @@ pub(super) fn retain_numeric_tokens(entity: &mut Entity, record: &NativeRecord) 
     entity.parameter_body = format!("{};", output.join(",")).into_bytes();
 }
 
+pub(super) fn retain_point_parameters(
+    ir: &CadIr,
+    point: &cadmpeg_ir::topology::Point,
+    entity: &mut Entity,
+) {
+    let Some(source) = point
+        .source_object
+        .as_ref()
+        .filter(|source| source.format == CodecFormat::Iges)
+    else {
+        return;
+    };
+    let Some(sequence) = source.object_id.as_str().strip_prefix('D') else {
+        return;
+    };
+    let id = format!("iges:entity:directory#{sequence}");
+    let Some(record) = ir
+        .native
+        .namespace("iges")
+        .and_then(|namespace| namespace.arenas().get("entities"))
+        .and_then(|records| records.iter().find(|record| record.id() == id))
+    else {
+        return;
+    };
+    if record.field("entity_type").and_then(|value| value.as_i64()) != Some(116) {
+        return;
+    }
+    let Some(parameters) = record.field("parameters") else {
+        return;
+    };
+    let Some(parameters) = parameters.as_array() else {
+        return;
+    };
+    let symbol = if parameters.len() == 4 {
+        false
+    } else if parameters.len() >= 5
+        && parameters[4]["value"]["kind"].as_str() == Some("integer")
+        && parameters[4]["value"]["value"].as_i64() == Some(0)
+    {
+        true
+    } else {
+        return;
+    };
+    let coordinates = point.position().coordinates();
+    let mut values = Vec::new();
+    for (index, coordinate) in coordinates.into_iter().enumerate() {
+        let Some(value) = number_at(parameters, index + 1) else {
+            return;
+        };
+        if value != coordinate.get() {
+            return;
+        }
+        let token = &parameters[index + 1]["value"];
+        match token.get("kind").and_then(Value::as_str) {
+            Some("integer") => {
+                let Some(integer) = token.get("value").and_then(Value::as_i64) else {
+                    return;
+                };
+                values.push(integer.to_string());
+            }
+            Some("real") => {
+                let mut text = value.to_string();
+                if text.len() > 24 {
+                    text = format!("{value:e}");
+                }
+                if !text.contains(['.', 'e', 'E']) {
+                    text.push_str(".0");
+                }
+                values.push(text);
+            }
+            _ => return,
+        }
+    }
+    if symbol {
+        values.push("0".into());
+    }
+    entity.parameter_body = format!("{};", values.join(",")).into_bytes();
+}
+
 fn retain_surface_numbers(entity: &mut Entity, surface: &Surface, parameters: &[Value]) {
     let Ok(body) = std::str::from_utf8(&entity.parameter_body) else {
         return;

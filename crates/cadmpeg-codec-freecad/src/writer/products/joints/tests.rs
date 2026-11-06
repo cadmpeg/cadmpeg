@@ -57,7 +57,7 @@ fn paired_joint_emits_current_family_limits_and_connector_references() {
 }
 
 #[test]
-fn local_joint_reference_absent_from_current_document_is_a_precondition() {
+fn missing_grounded_joint_target_is_reported() {
     let mut ir = CadIr::empty();
     let connector = JointConnector {
         operand: JointOperand::root("deleted", Vec::new()),
@@ -69,9 +69,42 @@ fn local_joint_reference_absent_from_current_document_is_a_precondition() {
         connector,
         None,
     ));
-    let error = write(&ir, &mut Vec::new(), &mut HashMap::new(), &mut Vec::new())
-        .expect_err("absent operand");
-    assert!(matches!(error, CodecError::Malformed(_)));
+    let mut objects = Vec::new();
+    let mut losses = Vec::new();
+    write(&ir, &mut objects, &mut HashMap::new(), &mut losses).unwrap();
+    assert!(losses
+        .iter()
+        .any(|loss| loss.message.contains("authored:model:joint#Ground")));
+    assert!(!objects[0].properties.contains_key("ObjectToGround"));
+}
+
+#[test]
+fn missing_joint_operand_keeps_the_other_reference() {
+    let mut ir = CadIr::empty();
+    let connector = |name: &str| JointConnector {
+        operand: JointOperand::root(name, Vec::new()),
+        frame: Transform::identity(),
+        detached: false,
+    };
+    ir.model.assembly_joints.push(AssemblyJoint::paired(
+        JointId::mint("authored:model:joint#Pair").unwrap(),
+        PairedJointKind::Revolute {
+            angle: None,
+            angular_limits: None,
+        },
+        [connector("missing"), connector("present")],
+        None,
+    ));
+    let mut objects = vec![Object::new("Present".into(), "Part::Feature", "Present")];
+    let mut names = HashMap::from([("present".into(), "Present".into())]);
+    let mut losses = Vec::new();
+    write(&ir, &mut objects, &mut names, &mut losses).unwrap();
+    let joint = objects.last().unwrap();
+    assert!(!joint.properties.contains_key("Reference1"));
+    assert!(joint.properties["Reference2"].contains("Present"));
+    assert!(losses
+        .iter()
+        .any(|loss| loss.message.contains("authored:model:joint#Pair")));
 }
 
 #[test]

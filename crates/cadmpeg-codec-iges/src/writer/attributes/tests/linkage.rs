@@ -137,6 +137,47 @@ fn source_entity(
 }
 
 #[test]
+fn carrier_name_with_leading_space_survives_synthesis() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    use cadmpeg_ir::{Codec, DecodeOptions};
+
+    let bytes =
+        crate::test_support::test_owned::owned_test_file(&[source_entity(116, 0, "116,1,2,3,0;")]);
+    let decoded = crate::IgesCodec
+        .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+        .expect("point decodes");
+    let mut ir = decoded.ir().clone();
+    let attribute = ir
+        .model
+        .attributes
+        .iter_mut()
+        .find(|attribute| {
+            attribute.name == "name" && matches!(attribute.target, AttributeTarget::Point(_))
+        })
+        .expect("point name");
+    attribute.values = vec![Some(AttributeValue::String(" leading".into()))];
+    let plan = crate::IgesCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(crate::IgesVersion::V5_3.descriptor().id.as_str()),
+        )
+        .expect("point synthesizes");
+    let mut written = Vec::new();
+    plan.write_to(&mut written).expect("point writes");
+    let output = crate::IgesCodec
+        .decode(
+            &mut std::io::Cursor::new(written),
+            &DecodeOptions::default(),
+        )
+        .expect("written point decodes");
+    assert!(output.ir().model.attributes.iter().any(|attribute| {
+        attribute.name == "name"
+            && matches!(attribute.target, AttributeTarget::Point(_))
+            && attribute.values == [Some(AttributeValue::String(" leading".into()))]
+    }));
+}
+
+#[test]
 fn structured_numeric_property_uses_linked_current_values_without_overwriting_source_fields() {
     use cadmpeg_ir::{Codec, DecodeOptions};
     let bytes = crate::test_support::test_owned::owned_test_file(&[

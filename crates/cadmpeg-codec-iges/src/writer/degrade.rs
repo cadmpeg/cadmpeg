@@ -7,6 +7,14 @@ use super::{
 };
 use cadmpeg_ir::schema::rewrite::typed::RewriteIdentities;
 
+pub(super) fn has_dangling_body_region(ir: &CadIr) -> bool {
+    ir.model.bodies.iter().any(|body| {
+        body.regions
+            .iter()
+            .any(|id| !ir.model.regions.iter().any(|region| region.id == *id))
+    })
+}
+
 /// Preserve independent bodies and free carriers when one cannot be encoded.
 pub(super) fn graph(
     ctx: &DecodeContext<'_>,
@@ -19,6 +27,7 @@ pub(super) fn graph(
         presentations: BTreeMap::new(),
         losses: unsupported_model_losses(ir)?,
     };
+    report_detached_topology(ir, &mut result.losses);
     let mut owned = BTreeSet::new();
     for body in &ir.model.bodies {
         let (part, identities) = scoped(ir, ctx, body.id.as_str())?;
@@ -51,6 +60,61 @@ pub(super) fn graph(
     Ok(result)
 }
 
+fn report_detached_topology(ir: &CadIr, losses: &mut Vec<super::LossNote>) {
+    let invalid_bodies = ir
+        .model
+        .bodies
+        .iter()
+        .filter(|body| {
+            body.regions
+                .iter()
+                .any(|id| !ir.model.regions.iter().any(|region| region.id == *id))
+        })
+        .map(|body| &body.id)
+        .collect::<BTreeSet<_>>();
+    let regions = ir
+        .model
+        .regions
+        .iter()
+        .filter(|region| invalid_bodies.contains(&region.body))
+        .collect::<Vec<_>>();
+    let shells = ir
+        .model
+        .shells
+        .iter()
+        .filter(|shell| regions.iter().any(|region| region.id == shell.region))
+        .collect::<Vec<_>>();
+    let faces = ir
+        .model
+        .faces
+        .iter()
+        .filter(|face| shells.iter().any(|shell| shell.id == face.shell))
+        .collect::<Vec<_>>();
+    let loops = ir
+        .model
+        .loops
+        .iter()
+        .filter(|boundary| faces.iter().any(|face| face.id == boundary.face))
+        .collect::<Vec<_>>();
+    let coedges = ir.model.coedges.iter().filter(|coedge| {
+        loops
+            .iter()
+            .any(|boundary| boundary.id == coedge.owner_loop)
+    });
+    for id in regions
+        .iter()
+        .map(|row| row.id.as_str())
+        .chain(shells.iter().map(|row| row.id.as_str()))
+        .chain(faces.iter().map(|row| row.id.as_str()))
+        .chain(loops.iter().map(|row| row.id.as_str()))
+        .chain(coedges.map(|row| row.id.as_str()))
+    {
+        losses.push(IgesLossCode::WriterEntityOmitted.note(format!(
+            "IGES topology record {id} is omitted because its body references a missing region"
+        )));
+    }
+}
+
 fn admit(
     ctx: &DecodeContext<'_>,
     result: &mut SynthesisGraph,
@@ -58,6 +122,23 @@ fn admit(
     version: crate::IgesVersion,
     identity: &str,
 ) -> Result<(), CodecError> {
+    if has_dangling_body_region(ir) {
+        for body in &ir.model.bodies {
+            if body
+                .regions
+                .iter()
+                .any(|id| !ir.model.regions.iter().any(|region| region.id == *id))
+            {
+                result
+                    .losses
+                    .push(IgesLossCode::WriterEntityOmitted.note(format!(
+                        "IGES body {} is omitted because it references a missing region",
+                        body.id
+                    )));
+            }
+        }
+        return Ok(());
+    }
     match synthesis_graph(ctx, ir, version) {
         Ok(graph) => append(result, graph),
         Err(CodecError::UnsupportedContent(reason)) => {

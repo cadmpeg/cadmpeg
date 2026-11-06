@@ -16,6 +16,57 @@ const TYPED_EXTENSION: &str = r#"<Document SchemaVersion="4" FileVersion="1">
 <ObjectData Count="1"><Object name="Extension"><Properties Count="1"><Property name="ProxyState" type="App::PropertyString"><String value="typed vendor state"/></Property></Properties></Object></ObjectData>
 </Document>"#;
 
+#[test]
+fn vendor_workbench_objects_without_neutral_owners_project_as_native_features() {
+    let document = r#"<Document SchemaVersion="4"><Objects Count="5"><Object name="Image" type="Image::ImagePlane"/><Object name="Drawing" type="Drawing::FeatureView"/><Object name="UnknownView" type="TechDraw::CustomView"/><Object name="EmptyMesh" type="Mesh::Feature"/><Object name="Page" type="TechDraw::DrawPage"/></Objects><ObjectData Count="5"><Object name="Image"><Properties Count="0"/></Object><Object name="Drawing"><Properties Count="0"/></Object><Object name="UnknownView"><Properties Count="0"/></Object><Object name="EmptyMesh"><Properties Count="0"/></Object><Object name="Page"><Properties Count="0"/></Object></ObjectData></Document>"#;
+    let decoded = decode(document, DecodeDepth::Full);
+    for (name, kind) in [
+        ("Image", "Image::ImagePlane"),
+        ("Drawing", "Drawing::FeatureView"),
+        ("UnknownView", "TechDraw::CustomView"),
+        ("EmptyMesh", "Mesh::Feature"),
+    ] {
+        let feature = decoded
+            .ir()
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .expect("native feature");
+        assert!(
+            matches!(feature.definition().operation(), FeatureOperation::Native { kind: actual, .. } if actual.as_str() == kind)
+        );
+    }
+    assert!(decoded
+        .ir()
+        .model
+        .features
+        .iter()
+        .all(|feature| feature.name.as_deref() != Some("Page")));
+    assert!(decoded
+        .ir()
+        .model
+        .drawings
+        .iter()
+        .any(|drawing| drawing.runtime_type == "TechDraw::DrawPage"));
+}
+
+#[test]
+fn product_type_with_an_unreadable_group_keeps_a_native_feature() {
+    let document = r#"<Document SchemaVersion="4"><Objects Count="1"><Object name="Assembly" type="Assembly::AssemblyObject"/></Objects><ObjectData Count="1"><Object name="Assembly"><Properties Count="1"><Property name="Group" type="App::PropertyLinkList"><LinkList count="invalid"/></Property></Properties></Object></ObjectData></Document>"#;
+    let decoded = decode(document, DecodeDepth::Full);
+    let feature = decoded
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Assembly"))
+        .expect("unowned product projects as a feature");
+    assert!(
+        matches!(feature.definition().operation(), FeatureOperation::Native { kind, .. } if kind.as_str() == "Assembly::AssemblyObject")
+    );
+}
+
 fn decode(document: &str, depth: DecodeDepth) -> cadmpeg_ir::codec::DecodeResult {
     FcstdCodec
         .decode(

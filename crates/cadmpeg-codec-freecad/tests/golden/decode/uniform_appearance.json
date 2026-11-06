@@ -173,6 +173,9 @@
         },
         {
           "appearance": "fcstd:appearance:shape-material#Box:1",
+          "channels": {
+            "precedence": "shape_over_object"
+          },
           "id": "fcstd:appearance:binding#shape-material:Box:0",
           "native_ref": "fcstd:native:gui-property#Box:ShapeAppearance",
           "object_type": "ViewProvider ShapeAppearance",
@@ -2636,6 +2639,8 @@
           "gui_view_providers": 1,
           "joints": 0,
           "objects": 1,
+          "polygons3d": 0,
+          "polygons_on_triangulations": 0,
           "product_nodes": 0,
           "properties": 27,
           "shape_payloads": 1,
@@ -2646,19 +2651,21 @@
       "__arena_sha256": {
         "fcstd": {
           "annotations": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-          "applications": "9cfb2f206df3b7fd24f47fc52f459e2970cde231c311dbfc92643a66ea96a3dd",
+          "applications": "43ad2323e95b71dc1785bbdd36680680b819b607ab675a6a9cbd8e77d5528a52",
           "carrier_census": "7d06a4bde9c8713ac37f69996b4d2a2c142332c4c992b6e3560336e3c18383f4",
           "design_census": "1961a5c15d2724ec1030af411ad60a63238714bf4591a16d796ad6763560af89",
           "document": "689be6223f2071bd468491f31da684c0167e1edc74d88f753f58f0bcb216051d",
           "drawings": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "element_maps": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-          "entries": "09012e41d2fdb6054d7d8051c34ade2d31268daea4d110069551b64c04a9f069",
+          "entries": "7f630f7b0349caf917a30f145a7432bb6725942ce28e84fa6ba20241935851b2",
           "extensions": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "gui_documents": "b69ee163d06991f1379cd3fb929da2f98cbc1fb7b8564b4a9e64574a319ac88a",
           "gui_properties": "1af69ad01d0f8eeec7923b8fbb8654f1f0a5026dd638ed59caef996ba32f10d9",
           "gui_view_providers": "d2ed2fdcd5a480410dae45d5950a3906aca1a252e1e3617b93d095800c891986",
           "joints": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "objects": "d08cb30606a581fb09354fe7f90bdc7926fe34fc8508ceeaa3a25e10d2a8f422",
+          "polygons3d": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "polygons_on_triangulations": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "product_nodes": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "properties": "56d06969a968069d09f36326009fbafde00ff55807d217e1c469262764222696",
           "shape_payloads": "9835838cf9c0541e8df7a36d6b45388e3ed20946c21a9abad2d9ba1b6fa06a71",

@@ -419,7 +419,7 @@ fn generated_source_less_writes_design_recipes_and_persistent_references() {
                 value: format!("{}", 320 + ordinal),
                 offset: None,
             },
-            selector: None,
+            selector: Some(crate::records::recipes::ConstructionRecipeSelector { value: 0, byte_offset: None }),
         }),
         recipe_index: 0,
         record_index: Some(crate::records::identity::RecordedValue {
@@ -502,14 +502,23 @@ fn generated_source_less_writes_design_recipes_and_persistent_references() {
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut encoded))
         .expect("source-less Design BulkStream encode");
+    let mut absent_selector = source_less.clone();
+    f3d_native_mut(&mut absent_selector).construction_recipes[0].design.as_mut().unwrap().selector = None;
+    let selector_plan = F3dCodec.plan(EncodeInput::new(&absent_selector, None), TargetRequest::Inherit).unwrap();
+    let selector_id = &f3d_native(&absent_selector).construction_recipes[0].id;
+    assert_eq!(selector_plan.report().native_dispositions.record_disposition("f3d", "construction_recipes", selector_id), cadmpeg_ir::codec::write::NativeDisposition::Dropped);
+    assert!(selector_plan.report().losses.iter().any(|loss| loss.message.contains(selector_id)));
     f3d_native_mut(&mut source_less).construction_recipes[0].recipe_index = 1;
-    let error = F3dCodec
+    let plan = F3dCodec
         .plan(EncodeInput::new(&source_less, None), TargetRequest::Inherit)
-        .and_then(|plan| plan.write_to(&mut Vec::new()))
-        .expect_err("recipe group indices must not be renumbered");
-    assert!(error
-        .to_string()
-        .contains("has noncontiguous group index 1"));
+        .expect("an unrepresentable recipe is dropped");
+    let dropped = &f3d_native(&source_less).construction_recipes[0].id;
+    assert_eq!(plan.report().native_dispositions.record_disposition("f3d", "construction_recipes", dropped), cadmpeg_ir::codec::write::NativeDisposition::Dropped);
+    assert!(plan.report().losses.iter().any(|loss| loss.message.contains(dropped)));
+    let mut reduced = Vec::new();
+    plan.write_to(&mut reduced).unwrap();
+    let reduced = F3dCodec.decode(&mut Cursor::new(reduced), &DecodeOptions::default()).unwrap();
+    assert_eq!(f3d_native(reduced.ir()).construction_recipes.len(), 4);
     let mut archive = zip::ZipArchive::new(Cursor::new(&encoded)).expect("generated F3D ZIP");
     let mut bulkstream = Vec::new();
     archive

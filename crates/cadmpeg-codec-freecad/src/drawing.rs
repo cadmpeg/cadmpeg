@@ -255,7 +255,7 @@ pub(crate) fn transfer_neutral(
     Ok(())
 }
 
-fn is_registered_drawing_type(runtime_type: &str) -> bool {
+pub(crate) fn is_registered_drawing_type(runtime_type: &str) -> bool {
     registered_drawing_kind(runtime_type).is_some()
 }
 
