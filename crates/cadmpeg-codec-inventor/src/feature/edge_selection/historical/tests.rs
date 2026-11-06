@@ -725,6 +725,16 @@ fn identical_geometry_owners_resolve_to_the_lowest_record_index() {
         second_owner(&mut identical, schema, 0.0, "straight");
         let edges = selected(&ctx, &identical, &[selector()], schema).expect("no refusal");
         assert_eq!((edges[&9].owner, edges[&9].owners), (1, 2));
+        // A second owner inside the point tolerance, matched in either record
+        // order, selects the lowest-index owner and its geometry.
+        let mut near = records(schema, &[31, 37]);
+        second_owner(&mut near, schema, 4.0e-7, "straight");
+        let forward = selected(&ctx, &near, &[selector()], schema).expect("no refusal");
+        near.reverse();
+        let reversed = selected(&ctx, &near, &[selector()], schema).expect("no refusal");
+        assert_eq!(forward[&9].owner, 1);
+        assert_eq!(forward[&9].geometry, reversed[&9].geometry);
+        assert_eq!(forward[&9].geometry, edges[&9].geometry);
         // Owners of different geometry, and an owner with none, stay native.
         for (shift, carrier) in [(1.0, "straight"), (0.0, "unknown-curve")] {
             let mut other = records(schema, &[31, 37]);

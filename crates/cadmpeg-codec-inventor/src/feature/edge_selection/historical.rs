@@ -170,9 +170,13 @@ pub(super) fn selected(
         let Some(owner) = owners.iter().min().copied() else {
             continue;
         };
+        // The lowest-index owner supplies the baseline and the emitted
+        // geometry, whatever the order in which the owners were matched.
+        let mut ordered = owners.iter().copied().collect::<Vec<_>>();
+        ordered.sort_unstable();
         let mut geometry = None::<super::geometry::EdgeGeometry>;
         let mut agree = true;
-        for candidate in owners {
+        for candidate in &ordered {
             let Some(edge) = by_index.get(candidate) else {
                 agree = false;
                 break;
@@ -556,7 +560,7 @@ pub(super) fn ambiguous_owner_losses(
     if count == 0 {
         Vec::new()
     } else {
-        vec![crate::loss::InventorLossCode::FeatureEdgeOwnerIdenticalGeometry.note(format!("{count} edge-treatment feature(s) select an input edge with several matched owner edges of identical geometry; the stored body state of the edge is not proven and the owner with the lowest record index is used."))]
+        vec![crate::loss::InventorLossCode::FeatureEdgeOwnerIdenticalGeometry.note(format!("{count} edge-treatment feature(s) select an input edge with several matched owner edges that agree at the start, end, interval midpoint, and midpoint tangent; agreement at these samples is taken as the same edge, the stored body state of the edge is not proven, and the owner with the lowest record index is used."))]
     }
 }
 
