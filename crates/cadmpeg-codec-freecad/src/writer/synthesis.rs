@@ -597,7 +597,7 @@ pub(super) fn write(
                     let value = document
                         .root_element()
                         .children()
-                        .find(|node| node.is_element())?;
+                        .find(roxmltree::Node::is_element)?;
                     Some([
                         value.attribute("valueX")?.parse::<f64>().ok()?,
                         value.attribute("valueY")?.parse::<f64>().ok()?,
@@ -697,7 +697,7 @@ pub(super) fn write(
                 .descendants()
                 .find(|node| node.has_tag_name("StringList"))?;
             list.children()
-                .filter(|node| node.is_element())
+                .filter(roxmltree::Node::is_element)
                 .map(|node| node.attribute("value").map(str::to_owned))
                 .collect::<Option<Vec<_>>>()
         });
@@ -875,7 +875,7 @@ pub(super) fn write(
                 .join(", ");
             losses.push(
                 FreecadLossCode::BodyNameNotTransferred
-                    .note(format!("object {name} has no Label home for bodies {ids}",)),
+                    .note(format!("object {name} has no Label home for bodies {ids}")),
             );
         }
         // Independent body color and visibility live in the view provider
@@ -891,10 +891,8 @@ pub(super) fn write(
         ir,
         &native_properties,
         &names,
-        &entry_names,
-        &retained,
-        &mut objects,
-        &mut entries,
+        (&entry_names, &retained),
+        (&mut objects, &mut entries),
         &mut losses,
     )?;
     let covered_points = super::point_kernel::write(
@@ -902,9 +900,7 @@ pub(super) fn write(
         ir,
         &native_properties,
         &names,
-        &entry_names,
-        &mut objects,
-        &mut entries,
+        (&entry_names, &mut objects, &mut entries),
         &mut losses,
     )?;
     // Independent records whose source object replays with every side
@@ -1271,8 +1267,10 @@ pub(super) fn write(
     let file_version = facts
         .as_ref()
         .and_then(|documents| documents.first())
-        .map(|document| document.file_version.as_str().to_owned())
-        .unwrap_or_else(|| "1".to_owned());
+        .map_or_else(
+            || "1".to_owned(),
+            |document| document.file_version.as_str().to_owned(),
+        );
     let document = xml::document(
         &objects,
         &document_properties,
@@ -1329,7 +1327,7 @@ pub(super) fn write(
                 let name = record.name();
                 if entries.contains_key(name) || !retained.contains_key(name) {
                     continue;
-                };
+                }
                 let referred = entry_referenced(name, &objects, &document_properties, &gui);
                 let orphan = record.referenced_by().is_empty() && !consumed.contains(name);
                 if referred || orphan {
@@ -1381,7 +1379,7 @@ pub(super) fn write(
                 records
                     .iter()
                     .find(|record| record.name() == name)
-                    .map(|record| record.order())
+                    .map(crate::native::EntryRecord::order)
             })
     };
     let mut entries = entries.into_iter().collect::<Vec<_>>();

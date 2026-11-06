@@ -1560,7 +1560,7 @@ fn source_less_lanes(
             let first = marker_id(points.len() + index * 2)?;
             let second = marker_id(points.len() + index * 2 + 1)?;
             let line = marker_id(points.len() + lines.len() * 2 + index)?;
-            append_spatial_line_handle(&mut payload, first, second, line);
+            append_spatial_line_handle(&mut payload, first, second, line, entity.construction);
             append_spatial_relation_marker(&mut payload, start.get(), 0, u32::from(first), false)?;
             append_spatial_relation_marker(&mut payload, end.get(), 0, u32::from(second), false)?;
             endpoint_points.push((*start, entity.endpoint_refs.first().map(String::as_str)));
@@ -2283,8 +2283,19 @@ fn append_spatial_relation_marker(
     Ok(())
 }
 
-fn append_spatial_line_handle(payload: &mut Vec<u8>, first: u16, second: u16, local_id: u16) {
+fn append_spatial_line_handle(
+    payload: &mut Vec<u8>,
+    first: u16,
+    second: u16,
+    local_id: u16,
+    construction: bool,
+) {
     use crate::layout::extended_geometry_locus_96_construction_line as layout;
+
+    if !construction {
+        append_spatial_profile_line(payload, first, second, local_id);
+        return;
+    }
     payload.extend_from_slice(&u32::from(local_id).to_le_bytes());
     let start = payload.len();
     payload.resize(start + layout::IDENTITY_SECOND, 0);
@@ -2308,6 +2319,38 @@ fn append_spatial_line_handle(payload: &mut Vec<u8>, first: u16, second: u16, lo
         .copy_from_slice(&[0x00, 0x00, 0x04, 0x00]);
     payload[start + layout::IDENTITY_FIRST..start + layout::IDENTITY_SECOND]
         .copy_from_slice(&u32::from(local_id).to_le_bytes());
+}
+
+fn append_spatial_profile_line(payload: &mut Vec<u8>, first: u16, second: u16, local_id: u16) {
+    use crate::layout::current_direct_92_profile_line as layout;
+    payload.extend_from_slice(&u32::from(local_id).to_le_bytes());
+    let start = payload.len();
+    payload.resize(start + layout::LEN - size_of::<u32>(), 0);
+    payload[start + layout::MARKER..start + layout::HEADER].copy_from_slice(&layout::MARKER_VALUE);
+    payload[start + layout::HEADER..start + layout::NATIVE_KIND]
+        .copy_from_slice(&layout::HEADER_VALUE);
+    payload[start + layout::NATIVE_KIND..start + layout::NATIVE_KIND + 4]
+        .copy_from_slice(&layout::NATIVE_KIND_VALUE.to_le_bytes());
+    payload[start + layout::PROFILE_LOCUS..start + layout::ROLE]
+        .copy_from_slice(&layout::PROFILE_LOCUS_VALUE);
+    payload[start + layout::ROLE..start + layout::STATE]
+        .copy_from_slice(&layout::ROLE_VALUE.to_le_bytes());
+    payload[start + layout::STATE..start + layout::SELECTOR]
+        .copy_from_slice(&layout::STATE_VALUE.to_le_bytes());
+    payload[start + layout::SELECTOR..start + layout::SELECTOR + layout::SELECTOR_VALUE.len()]
+        .copy_from_slice(&layout::SELECTOR_VALUE);
+    payload[start + layout::STATE_SCALAR..start + layout::STATE_SCALAR + 8]
+        .copy_from_slice(&layout::STATE_SCALAR_VALUE.to_le_bytes());
+    payload[start + layout::ENDPOINT_FIRST..start + layout::ENDPOINT_SECOND]
+        .copy_from_slice(&first.to_le_bytes());
+    payload[start + layout::ENDPOINT_SECOND..start + layout::ENDPOINT_SELECTOR]
+        .copy_from_slice(&second.to_le_bytes());
+    payload[start + layout::ENDPOINT_SELECTOR..start + layout::SIGNED_SELECTOR]
+        .copy_from_slice(&layout::ENDPOINT_SELECTOR_VALUE.to_le_bytes());
+    payload[start + layout::SIGNED_SELECTOR..start + layout::ZERO_TAIL]
+        .copy_from_slice(&layout::SIGNED_SELECTOR_VALUE.to_le_bytes());
+    payload[start + layout::IDENTITY_SELECTOR..start + layout::IDENTITY]
+        .copy_from_slice(&layout::IDENTITY_SELECTOR_VALUE.to_le_bytes());
 }
 
 fn spatial_point_native_coordinates(point: Point3) -> Result<[f64; 3], cadmpeg_core::CodecError> {

@@ -18,6 +18,25 @@ use crate::test_support::manifest_test::write_synthetic_manifests;
 use crate::test_support::streams_test::design_metastream_with_records;
 use crate::test_support::zip_test::with_scan;
 
+fn timeline_parts(
+    scan: &crate::container::ContainerScan<'_>,
+) -> (
+    Vec<crate::records::entity_header::DesignFeatureTimeline>,
+    Vec<cadmpeg_ir::report::loss::LossNote>,
+) {
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let mut output =
+        cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
+    let records = super::decode_feature_timeline_parts(&ctx, &mut output, scan).unwrap();
+    let (_, native, _, losses) = output.into_parts();
+    let unknowns = native
+        .namespace("f3d")
+        .and_then(|ns| ns.arenas().get("unknowns"))
+        .map_or(0, Vec::len);
+    assert_eq!(unknowns, losses.len());
+    (records, losses)
+}
+
 #[test]
 fn flat_pattern_settings_retain_the_complete_type_table_and_related_headers() {
     use crate::records::sheet_metal_settings::{PAIRED_GUID, SETTINGS_GUID};
@@ -64,7 +83,8 @@ fn flat_pattern_settings_retain_the_complete_type_table_and_related_headers() {
             let _ctx = cadmpeg_test_support::service_decode_context();
             let types = super::decode_types(scan).unwrap();
             assert_eq!(types.len(), expected_types);
-            let timelines = super::decode_feature_timelines(scan).unwrap();
+            let (timelines, losses) = timeline_parts(scan);
+            assert!(losses.is_empty());
             if version == 2 {
                 assert_eq!(timelines.len(), 1);
                 assert_eq!(timelines[0].record_index.get(), 35);
@@ -456,7 +476,8 @@ fn feature_timelines_decode_one_timeline_record() {
         .unwrap();
     zip.write_all(&meta).unwrap();
     let archive = zip.finish().unwrap().into_inner();
-    let admitted = with_scan(&archive, super::decode_feature_timelines).unwrap();
+    let (admitted, losses) = with_scan(&archive, timeline_parts);
+    assert!(losses.is_empty());
     assert_eq!(admitted.len(), 1);
     assert_eq!(admitted[0].record_index.get(), 35);
 }
@@ -904,10 +925,8 @@ fn design_feature_timeline_versions_share_variable_width_local_references() {
             ],
             &[(35, 0)],
         );
-        let decoded = with_scan(&archive(&meta, &bulk), |scan| {
-            crate::design::decode::meta::decode_feature_timelines(scan)
-        })
-        .expect("exact feature timeline");
+        let (decoded, losses) = with_scan(&archive(&meta, &bulk), timeline_parts);
+        assert!(losses.is_empty());
         let [timeline] = decoded.as_slice() else {
             panic!("expected one timeline record");
         };
@@ -945,11 +964,10 @@ fn design_feature_timeline_versions_share_variable_width_local_references() {
         let second_offset = usize::try_from(timeline.frame().items()[1].offset.unwrap())
             .expect("fixture offset fits address space");
         duplicate[second_offset..second_offset + 8].copy_from_slice(&101_u64.to_le_bytes());
-        let error = with_scan(&archive(&meta, &duplicate), |scan| {
-            crate::design::decode::meta::decode_feature_timelines(scan)
-        })
-        .expect_err("duplicate timeline items must be rejected");
-        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+        let (records, losses) = with_scan(&archive(&meta, &duplicate), timeline_parts);
+        assert!(records.is_empty());
+        assert_eq!(losses.len(), 1);
+        assert_eq!(losses[0].code.local_code(), "record.unreadable");
 
         let mut mismatched_inline_type = bulk.clone();
         let inline_type_at = mismatched_inline_type
@@ -957,11 +975,10 @@ fn design_feature_timeline_versions_share_variable_width_local_references() {
             .position(|window| window == INLINE_TYPE_GUID.as_bytes())
             .expect("inline type GUID");
         mismatched_inline_type[inline_type_at] = b'2';
-        let error = with_scan(&archive(&meta, &mismatched_inline_type), |scan| {
-            crate::design::decode::meta::decode_feature_timelines(scan)
-        })
-        .expect_err("an inline type GUID must match the target registration");
-        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+        let (records, losses) = with_scan(&archive(&meta, &mismatched_inline_type), timeline_parts);
+        assert!(records.is_empty());
+        assert_eq!(losses.len(), 1);
+        assert_eq!(losses[0].code.local_code(), "record.unreadable");
     }
 
     let unsupported_meta = design_metastream_with_records(
@@ -974,11 +991,10 @@ fn design_feature_timeline_versions_share_variable_width_local_references() {
         )],
         &[(35, 0)],
     );
-    let error = with_scan(&archive(&unsupported_meta, &bulk), |scan| {
-        crate::design::decode::meta::decode_feature_timelines(scan)
-    })
-    .expect_err("an unsupported timeline version must not use a known frame speculatively");
-    assert!(matches!(error, cadmpeg_core::CodecError::NotImplemented(_)));
+    let (records, losses) = with_scan(&archive(&unsupported_meta, &bulk), timeline_parts);
+    assert!(records.is_empty());
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].code.local_code(), "record.unreadable");
 
     for (base_type_guid, module) in [
         ("22222222-3333-4444-5555-666666666666", "Fusion"),
@@ -997,11 +1013,10 @@ fn design_feature_timeline_versions_share_variable_width_local_references() {
             )],
             &[(35, 0)],
         );
-        let error = with_scan(&archive(&incompatible_meta, &bulk), |scan| {
-            crate::design::decode::meta::decode_feature_timelines(scan)
-        })
-        .expect_err("incompatible timeline registration metadata must be rejected");
-        assert!(matches!(error, cadmpeg_core::CodecError::Malformed(_)));
+        let (records, losses) = with_scan(&archive(&incompatible_meta, &bulk), timeline_parts);
+        assert!(records.is_empty());
+        assert_eq!(losses.len(), 1);
+        assert_eq!(losses[0].code.local_code(), "record.unreadable");
     }
 }
 
@@ -1041,4 +1056,75 @@ fn header_shaped_payload_remains_in_the_indexed_record() {
             assert!(losses.is_empty());
         });
     }
+}
+
+#[test]
+fn damaged_timeline_keeps_a_readable_sibling() {
+    fn timeline(out: &mut Vec<u8>, entity: u64, valid: bool) {
+        lp_ascii(out, "256");
+        out.extend_from_slice(&entity.to_le_bytes());
+        lp_ascii(out, "Timeline");
+        out.extend_from_slice(&[0, 0, 1]);
+        out.extend_from_slice(&17_u64.to_le_bytes());
+        out.extend_from_slice(&[0, 0]);
+        out.extend_from_slice(&1_u32.to_le_bytes());
+        out.push(if valid { 1 } else { 7 });
+        out.extend_from_slice(&101_u64.to_le_bytes());
+        out.extend_from_slice(&[0, 0]);
+    }
+    let mut bulk = Vec::new();
+    timeline(&mut bulk, 35, true);
+    let broken_at = bulk.len();
+    timeline(&mut bulk, 36, false);
+    let meta = design_metastream_with_records(
+        &[
+            (
+                super::FEATURE_TIMELINE_TYPE_GUID,
+                super::FEATURE_TIMELINE_BASE_TYPE_GUID,
+                2,
+                "Fusion",
+                &[35, 36],
+            ),
+            (
+                "11111111-2222-3333-4444-555555555555",
+                "",
+                0,
+                "Fusion",
+                &[17, 101],
+            ),
+        ],
+        &[(35, 0), (36, u64::try_from(broken_at).unwrap())],
+    );
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    write_synthetic_manifests(&mut zip, stored);
+    let stream = "FusionAssetName[Active]/Design1/BulkStream.dat";
+    zip.start_file(stream, stored).unwrap();
+    zip.write_all(&bulk).unwrap();
+    zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
+        .unwrap();
+    zip.write_all(&meta).unwrap();
+    let archive = zip.finish().unwrap().into_inner();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, root) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&archive, &arena, &policy).unwrap();
+    let scan = crate::container::scan(&ctx, root).unwrap();
+    let mut parts =
+        cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
+    let timelines = super::decode_feature_timeline_parts(&ctx, &mut parts, &scan).unwrap();
+    assert_eq!(timelines.len(), 1);
+    assert_eq!(timelines[0].record_index.get(), 35);
+    let (_, native, _, losses) = parts.into_parts();
+    assert_eq!(
+        native.namespace("f3d").unwrap().arenas()["unknowns"].len(),
+        1
+    );
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].code.local_code(), "record.unreadable");
+    assert!(losses[0].message.contains("36"));
+    assert_eq!(
+        losses[0].provenance.as_ref().unwrap().offset,
+        u64::try_from(broken_at).unwrap()
+    );
 }
