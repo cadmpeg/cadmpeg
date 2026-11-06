@@ -51,7 +51,7 @@ fn read(search: &CapSearch<'_>) -> Reading {
     match cap_profile_faces(search) {
         CapReading::Selected(faces, _) => Reading::Selected(faces),
         CapReading::Disputed(_) => Reading::Disputed,
-        CapReading::Absent => Reading::Absent,
+        CapReading::Absent(_) => Reading::Absent,
         CapReading::Capped => Reading::Capped,
     }
 }
@@ -1745,6 +1745,17 @@ fn the_deleted_faces_name_the_coplanar_faces_they_pass_over() {
             kept: vec![3],
         })
     );
+    // Face 3's surface has no geometry row; its vertices keep it on the plane.
+    let mut unknown = preceding;
+    let surface = unknown.face_surfaces[2].carrier;
+    unknown
+        .surface_planes
+        .retain(|plane| plane.surface != surface);
+    assert_eq!(
+        deleted_profile_faces(&unknown, (&[2, 1], &[]), 2, &[1], TOLERANCE)
+            .map(|deleted| deleted.kept),
+        Some(vec![3])
+    );
 }
 
 #[test]
@@ -1769,4 +1780,93 @@ fn an_unreadable_face_with_a_caps_concave_outline_reaches_it() {
     let rings = |face| face_vertex_rings(&frame, &topology, face).unwrap();
     assert!(reaches_a_cap(&rings(11), &caps, TOLERANCE));
     assert!(!reaches_a_cap(&rings(12), &caps, TOLERANCE));
+}
+
+fn without_geometry_rows(
+    mut topology: AsmHistoricalTopology,
+    index: usize,
+) -> AsmHistoricalTopology {
+    let surface = topology.face_surfaces[index].carrier;
+    topology
+        .surface_planes
+        .retain(|plane| plane.surface != surface);
+    topology
+}
+
+#[test]
+fn a_face_on_a_surface_without_geometry_rows_is_read_by_its_vertices() {
+    let changed: HashSet<i64> = [1, 2].into_iter().collect();
+    let search = |preceding: &AsmHistoricalTopology, topology: &AsmHistoricalTopology| {
+        cap_profile_faces(&CapSearch {
+            preceding,
+            topology,
+            inserted: &[10],
+            length: 2.0,
+            members: 2,
+            resolved: &[],
+            changed: &changed,
+            new_body: false,
+            tolerance: TOLERANCE,
+            limits: LIMITS,
+        })
+    };
+    // Face 3 lies beside the cap on the profile plane.
+    assert_eq!(
+        search(&without_geometry_rows(preceding(), 2), &capped(2.0)),
+        CapReading::Selected(
+            vec![1, 2],
+            PassedOver {
+                outside: Vec::new(),
+                clear: vec![3],
+                skipped: 0,
+            }
+        )
+    );
+    assert!(matches!(
+        search(&without_geometry_rows(preceding(), 1), &capped(2.0)),
+        CapReading::Disputed(_)
+    ));
+    assert!(matches!(
+        search(&preceding(), &without_geometry_rows(capped(2.0), 0)),
+        CapReading::Disputed(_)
+    ));
+}
+
+#[test]
+fn a_profile_whose_resolved_members_repeat_a_face_stays_native() {
+    let mut features = [extrude(blind())];
+    let losses = bind_with(
+        &scope(),
+        &[group_at(100, 0, &[110, 111, 112])],
+        &cut_history(),
+        &mut features,
+        &[
+            operand(110, 0, vec![1]),
+            operand(111, 1, vec![1]),
+            operand(112, 2, vec![]),
+        ],
+    );
+    assert_eq!(profile_faces(&features[0]), None);
+    assert!(losses.is_empty());
+}
+
+#[test]
+fn a_face_with_a_point_that_is_not_finite_reaches_a_cap() {
+    let topology = capped(2.0);
+    let frame =
+        PlaneFrame::of_plane(Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0)).unwrap();
+    let caps = [face_cap(&frame, &topology, 10, TOLERANCE).unwrap()];
+    let far = cadmpeg_ir::math::Point2::new(9.0, 9.0);
+    let rings = vec![vec![
+        far,
+        cadmpeg_ir::math::Point2::new(10.0, 9.0),
+        cadmpeg_ir::math::Point2::new(f64::NAN, 10.0),
+    ]];
+    assert!(reaches_a_cap(&rings, &caps, TOLERANCE));
+    let rings = vec![vec![
+        far,
+        cadmpeg_ir::math::Point2::new(10.0, 9.0),
+        cadmpeg_ir::math::Point2::new(10.0, 10.0),
+    ]];
+    assert!(!reaches_a_cap(&rings, &caps, TOLERANCE));
 }

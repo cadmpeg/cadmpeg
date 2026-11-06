@@ -179,6 +179,15 @@ fn an_edge_with_two_rows_of_one_kind_proves_no_cap() {
     let curve = topology.edge_curves[2].clone();
     topology.edge_curves.push(curve);
     assert!(face_cap(&xy_frame(), &topology, CAP, TOLERANCE).is_none());
+
+    let mut topology = loop_topology(&corners, &edges);
+    straight_carriers(&mut topology);
+    let point = topology.vertex_points[1].clone();
+    topology.vertex_points.push(AsmHistoricalCarrierBinding {
+        carrier: point.carrier + 5000,
+        ..point
+    });
+    assert!(face_cap(&xy_frame(), &topology, CAP, TOLERANCE).is_none());
 }
 
 #[test]
@@ -232,6 +241,12 @@ fn a_closed_edge_is_a_circle_only_on_a_cylinder_about_the_cap_normal() {
         TOLERANCE,
     )
     .is_none());
+    // A neighbour face without a surface binding leaves the circle unproven.
+    let mut unbound = circle_topology(Vector3::new(0.0, 0.0, 1.0));
+    unbound
+        .face_surfaces
+        .retain(|binding| binding.entity != 101);
+    assert!(face_cap(&xy_frame(), &unbound, CAP, TOLERANCE).is_none());
 }
 
 /// One region of area 1 sampled at the unit square's centre.

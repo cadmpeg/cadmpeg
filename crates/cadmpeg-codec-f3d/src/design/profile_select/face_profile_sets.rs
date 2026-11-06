@@ -14,8 +14,11 @@
 //! selects such a face, the faces that the transition deletes are the profile
 //! when they are as many as the group's members, lie on the plane of the
 //! resolved members and include the resolved faces. When both rules give a
-//! set, the two sets agree or the profile stays native. A face without one
-//! plane carrier keeps the profile native.
+//! set, the two sets agree or the profile stays native. A face with several
+//! surface bindings, no surface binding or several plane rows, and an
+//! inserted face on a surface without geometry rows, keep the profile native.
+//! A preceding face on a surface without geometry rows counts on every plane
+//! that holds all its vertices, as a face that cannot be read.
 //!
 //! Resolved members keep their faces at their member positions. The other
 //! faces fill the remaining positions in face-slot order.
@@ -102,27 +105,29 @@ struct CapSearch<'a> {
 enum CapReading {
     /// One face set, sorted by slot, and the candidates it passes over.
     Selected(Vec<i64>, PassedOver),
-    /// Why no face set holds: a face has no single plane carrier, an
-    /// inserted planar face has no unit normal, a selection that could be
-    /// the profile fails its checks, two such sets differ, or a cap over such
-    /// faces or such a face that reaches into a cap is unreadable.
+    /// Why no face set holds: a face carrier cannot be read, an inserted
+    /// planar face has no unit normal, a selection that could be the profile
+    /// fails its checks, two such sets differ, or a cap over such faces or
+    /// such a face that reaches into a cap is unreadable.
     Disputed(&'static str),
-    /// No cap selects a preceding face set that could be the profile.
-    Absent,
+    /// No cap selects a preceding face set that could be the profile, and
+    /// the candidates the search passes over.
+    Absent(PassedOver),
     /// The search passed a local work cap.
     Capped,
 }
 
-/// The candidates that a cap selection passes over.
+/// The candidates that a cap search passes over.
 #[derive(Debug, Default, PartialEq)]
 struct PassedOver {
-    /// Readable faces on the selection's plane whose interior lies outside
-    /// the caps.
+    /// Readable faces at the blind length from a cap plane whose interior
+    /// lies outside the caps.
     outside: Vec<i64>,
-    /// Faces on the selection's plane that cannot be read and stay clear of
-    /// the caps.
+    /// Faces at the blind length from a cap plane that cannot be read and
+    /// stay clear of the caps.
     clear: Vec<i64>,
-    /// Cap planes and sides whose faces or selection cannot be the profile.
+    /// Planes and sides at the blind length whose faces or selection no
+    /// member resolves and the transition neither deletes nor updates.
     skipped: usize,
 }
 
@@ -140,6 +145,15 @@ struct DeletedFaces {
 enum SetRule {
     EndCaps,
     DeletedFaces,
+}
+
+impl PassedOver {
+    fn describe(&self) -> String {
+        format!(
+            "The end-cap search passes over faces {:?} outside the caps, unreadable faces {:?} clear of the caps, and {} planes or sides whose faces no member resolves and the transition neither deletes nor updates.",
+            self.outside, self.clear, self.skipped,
+        )
+    }
 }
 
 impl SetRule {
@@ -249,6 +263,9 @@ fn bind_one(
         return Ok(Vec::new());
     }
     let resolved: Vec<i64> = members.iter().flatten().copied().collect();
+    if (1..resolved.len()).any(|k| resolved[..k].contains(&resolved[k])) {
+        return Ok(Vec::new());
+    }
     let (Some(state_id), Some(previous_state_id)) =
         (scope.history_state_id(), scope.previous_history_state_id())
     else {
@@ -312,18 +329,18 @@ fn bind_one(
                 )]);
             }
             let note = F3dLossCode::FeatureExtrudeProfileCapFacesInferred.note(format!(
-                "Extrude profile group {group} takes faces {faces:?}: the transition's end caps at the blind length cover these preceding faces. It passes over faces {:?} on the cap plane outside the caps, unreadable faces {:?} clear of the caps, and {} cap planes or sides whose faces cannot be the profile.",
-                passed.outside, passed.clear, passed.skipped,
+                "Extrude profile group {group} takes faces {faces:?}: the transition's end caps at the blind length cover these preceding faces. {}",
+                passed.describe(),
             ));
             (SetRule::EndCaps, faces, note)
         }
-        CapReading::Absent => {
+        CapReading::Absent(passed) => {
             let Some(deleted) = deleted else {
                 return Ok(Vec::new());
             };
             let note = F3dLossCode::FeatureExtrudeProfileDeletedFacesInferred.note(format!(
-                "Extrude profile group {group} takes faces {:?}: no end cap selects a face set that can be the profile, and the transition deletes these faces, one per member, on the plane of the resolved faces {resolved:?}. It passes over the coplanar faces {:?} that the transition updates and {:?} that it keeps.",
-                deleted.faces, deleted.updated, deleted.kept,
+                "Extrude profile group {group} takes faces {:?}: no end cap selects a face set that a member resolves or the transition deletes or updates, and the transition deletes these faces, one per member, on the plane of the resolved faces {resolved:?}. It passes over the coplanar faces {:?} that the transition updates and {:?} that it keeps. {}",
+                deleted.faces, deleted.updated, deleted.kept, passed.describe(),
             ));
             (SetRule::DeletedFaces, deleted.faces, note)
         }
@@ -338,7 +355,10 @@ fn bind_one(
         }
     };
     let Some(ordered) = member_order(&members, &faces) else {
-        return Ok(Vec::new());
+        return Ok(vec![disputed(
+            &group,
+            &format!("its inferred faces {faces:?} do not fill its members"),
+        )]);
     };
     let Some(FaceSelection::Historical {
         state,
@@ -346,7 +366,10 @@ fn bind_one(
         native: selection_native,
     }) = historical_face_selection_with_native(scope, previous_state_id, ordered, root.id.clone())
     else {
-        return Ok(Vec::new());
+        return Ok(vec![disputed(
+            &group,
+            "its inferred faces form no historical face selection",
+        )]);
     };
     let Ok(native_ids) = vec![selection_native.as_str().to_owned()].try_into() else {
         return Ok(Vec::new());
@@ -385,13 +408,24 @@ fn member_order(members: &[Option<i64>], faces: &[i64]) -> Option<Vec<i64>> {
     rest.next().is_none().then_some(ordered)
 }
 
-/// The plane carrier of each face of one topology that has exactly one
-/// surface binding to a surface with exactly one plane row, and the faces
-/// whose plane carrier cannot be read: several surface bindings, a surface
-/// with several plane rows, or no surface binding.
+/// What one face's surface binding states about its plane.
+enum Carrier<'a> {
+    /// One binding to a surface with one plane row.
+    Plane(&'a AsmHistoricalPlane),
+    /// One binding to a surface with a cylinder, axis or radius row and no
+    /// plane row.
+    Curved,
+    /// One binding to a surface without any geometry row.
+    Unknown,
+    /// Several bindings, no binding, or several plane rows.
+    Unreadable,
+}
+
+/// The surface carrier of each face of one topology.
 struct FacePlanes<'a> {
-    planes: HashMap<i64, &'a AsmHistoricalPlane>,
-    unreadable: HashSet<i64>,
+    surfaces: HashMap<i64, Option<i64>>,
+    planes: HashMap<i64, Option<&'a AsmHistoricalPlane>>,
+    curved: HashSet<i64>,
 }
 
 impl<'a> FacePlanes<'a> {
@@ -410,36 +444,62 @@ impl<'a> FacePlanes<'a> {
                 .and_modify(|surface| *surface = None)
                 .or_insert(Some(binding.carrier));
         }
-        let mut unreadable: HashSet<i64> = topology
-            .faces
+        let curved = topology
+            .surface_cylinders
             .iter()
-            .copied()
-            .filter(|face| !surfaces.contains_key(face))
+            .map(|row| row.surface)
+            .chain(topology.surface_axes.iter().map(|row| row.surface))
+            .chain(topology.surface_radii.iter().map(|row| row.surface))
             .collect();
-        let mut face_planes = HashMap::new();
-        for (face, surface) in surfaces {
-            match surface.map(|surface| planes.get(&surface)) {
-                Some(None) => {}
-                Some(Some(Some(plane))) => {
-                    face_planes.insert(face, *plane);
-                }
-                None | Some(Some(None)) => {
-                    unreadable.insert(face);
-                }
-            }
-        }
         Self {
-            planes: face_planes,
-            unreadable,
+            surfaces,
+            planes,
+            curved,
+        }
+    }
+
+    fn carrier(&self, face: i64) -> Carrier<'a> {
+        let Some(Some(surface)) = self.surfaces.get(&face) else {
+            return Carrier::Unreadable;
+        };
+        match self.planes.get(surface) {
+            Some(Some(plane)) => Carrier::Plane(plane),
+            Some(None) => Carrier::Unreadable,
+            None if self.curved.contains(surface) => Carrier::Curved,
+            None => Carrier::Unknown,
         }
     }
 
     fn get(&self, face: i64) -> Option<&'a AsmHistoricalPlane> {
-        self.planes.get(&face).copied()
+        match self.carrier(face) {
+            Carrier::Plane(plane) => Some(plane),
+            Carrier::Curved | Carrier::Unknown | Carrier::Unreadable => None,
+        }
     }
 
-    fn unreadable(&self, face: i64) -> bool {
-        self.unreadable.contains(&face)
+    /// Whether `face` lies at `height` from `frame`: its plane row does, or
+    /// its surface has no geometry row and every vertex it has does.
+    fn at_height(
+        &self,
+        topology: &AsmHistoricalTopology,
+        face: i64,
+        frame: &PlaneFrame,
+        height: f64,
+        tolerance: f64,
+    ) -> bool {
+        match self.carrier(face) {
+            Carrier::Plane(plane) => {
+                parallel(plane.normal, frame)
+                    && (frame.height(plane.origin) - height).abs() <= tolerance
+            }
+            Carrier::Unknown => oriented_loops(topology, face).is_none_or(|loops| {
+                loops
+                    .iter()
+                    .flatten()
+                    .all(|(_, from, _)| (frame.height(*from) - height).abs() <= tolerance)
+            }),
+            Carrier::Curved | Carrier::Unreadable => false,
+        }
     }
 }
 
@@ -475,14 +535,18 @@ fn cap_profile_faces(search: &CapSearch<'_>) -> CapReading {
     };
     let preceding_planes = FacePlanes::of(preceding);
     let current_planes = FacePlanes::of(topology);
-    if inserted.iter().any(|face| current_planes.unreadable(*face))
-        || preceding
-            .faces
-            .iter()
-            .any(|face| preceding_planes.unreadable(*face))
+    if inserted.iter().any(|face| {
+        matches!(
+            current_planes.carrier(*face),
+            Carrier::Unknown | Carrier::Unreadable
+        )
+    }) || preceding
+        .faces
+        .iter()
+        .any(|face| matches!(preceding_planes.carrier(*face), Carrier::Unreadable))
     {
         return CapReading::Disputed(
-            "a face has several surface bindings, a surface with several plane rows, or no surface binding",
+            "a face has several surface bindings, no surface binding or several plane rows, or an inserted face has a surface without geometry rows",
         );
     }
     let planar: Vec<(i64, &AsmHistoricalPlane)> = inserted
@@ -490,8 +554,8 @@ fn cap_profile_faces(search: &CapSearch<'_>) -> CapReading {
         .filter_map(|face| current_planes.get(*face).map(|plane| (*face, plane)))
         .collect();
     let mut grouped = vec![false; planar.len()];
-    let mut selections: Vec<(Vec<i64>, Vec<i64>, Vec<i64>)> = Vec::new();
-    let mut skipped = 0;
+    let mut selections: Vec<Vec<i64>> = Vec::new();
+    let mut passed = PassedOver::default();
     for first in 0..planar.len() {
         if grouped[first] {
             continue;
@@ -516,17 +580,14 @@ fn cap_profile_faces(search: &CapSearch<'_>) -> CapReading {
                 .iter()
                 .copied()
                 .filter(|face| {
-                    preceding_planes.get(*face).is_some_and(|plane| {
-                        parallel(plane.normal, &frame)
-                            && (frame.height(plane.origin) - height).abs() <= tolerance
-                    })
+                    preceding_planes.at_height(preceding, *face, &frame, height, tolerance)
                 })
                 .collect();
             if pool.is_empty() {
                 continue;
             }
             if !could_be_profile(&pool) {
-                skipped += 1;
+                passed.skipped += 1;
                 continue;
             }
             if pool.len() > limits.pool_faces
@@ -545,8 +606,6 @@ fn cap_profile_faces(search: &CapSearch<'_>) -> CapReading {
                 );
             };
             let mut selected = Vec::new();
-            let mut outside = Vec::new();
-            let mut clear = Vec::new();
             let mut outlines = Vec::new();
             let mut unread_in_cap = false;
             let mut unread_oversized = false;
@@ -558,7 +617,9 @@ fn cap_profile_faces(search: &CapSearch<'_>) -> CapReading {
                     unread_oversized = true;
                     continue;
                 }
-                let outline = face_cap(&frame, preceding, face, tolerance);
+                let outline = preceding_planes
+                    .get(face)
+                    .and_then(|_| face_cap(&frame, preceding, face, tolerance));
                 match outline
                     .as_ref()
                     .and_then(|outline| interior_point(outline, tolerance))
@@ -568,7 +629,7 @@ fn cap_profile_faces(search: &CapSearch<'_>) -> CapReading {
                             selected.push(face);
                             outlines.extend(outline);
                         } else {
-                            outside.push(face);
+                            passed.outside.push(face);
                         }
                     }
                     None => {
@@ -584,7 +645,7 @@ fn cap_profile_faces(search: &CapSearch<'_>) -> CapReading {
                             }
                             unread_in_cap = true;
                         } else {
-                            clear.push(face);
+                            passed.clear.push(face);
                         }
                     }
                 }
@@ -593,7 +654,7 @@ fn cap_profile_faces(search: &CapSearch<'_>) -> CapReading {
                 continue;
             }
             if !could_be_profile(&selected) {
-                skipped += 1;
+                passed.skipped += 1;
                 continue;
             }
             if unread_oversized {
@@ -624,24 +685,19 @@ fn cap_profile_faces(search: &CapSearch<'_>) -> CapReading {
                 );
             }
             selected.sort_unstable();
-            if !selections.iter().any(|(faces, ..)| *faces == selected) {
-                outside.sort_unstable();
-                clear.sort_unstable();
-                selections.push((selected, outside, clear));
+            if !selections.contains(&selected) {
+                selections.push(selected);
             }
         }
     }
+    passed.outside.sort_unstable();
+    passed.outside.dedup();
+    passed.clear.sort_unstable();
+    passed.clear.dedup();
     let mut selections = selections.into_iter();
     match (selections.next(), selections.next()) {
-        (Some((faces, outside, clear)), None) => CapReading::Selected(
-            faces,
-            PassedOver {
-                outside,
-                clear,
-                skipped,
-            },
-        ),
-        (None, _) => CapReading::Absent,
+        (Some(faces), None) => CapReading::Selected(faces, passed),
+        (None, _) => CapReading::Absent(passed),
         (Some(_), Some(_)) => CapReading::Disputed("two selections that can be the profile differ"),
     }
 }
@@ -670,19 +726,18 @@ fn deleted_profile_faces(
     let planes = FacePlanes::of(preceding);
     let plane = planes.get(*resolved.first()?)?;
     let frame = PlaneFrame::of_plane(plane.origin, plane.normal)?;
-    let on_plane = |face: i64| {
-        planes.get(face).is_some_and(|plane| {
-            parallel(plane.normal, &frame) && frame.height(plane.origin).abs() <= tolerance
-        })
-    };
-    if !faces.iter().all(|face| on_plane(*face)) {
+    if !faces.iter().all(|face| {
+        planes.get(*face).is_some() && planes.at_height(preceding, *face, &frame, 0.0, tolerance)
+    }) {
         return None;
     }
     let (mut changed, mut kept): (Vec<i64>, Vec<i64>) = preceding
         .faces
         .iter()
         .copied()
-        .filter(|face| !faces.contains(face) && on_plane(*face))
+        .filter(|face| {
+            !faces.contains(face) && planes.at_height(preceding, *face, &frame, 0.0, tolerance)
+        })
         .partition(|face| updated.contains(face));
     changed.sort_unstable();
     kept.sort_unstable();
@@ -721,12 +776,19 @@ fn edge_count(topology: &AsmHistoricalTopology, face: i64) -> Option<usize> {
         })
 }
 
-/// Whether a face drawn by its rings reaches into a cap: no ring has three
-/// points, a ring point lies inside a cap away from its boundary, a cap
+/// Whether a face drawn by its rings reaches into a cap: a ring point is not
+/// finite, no ring has three points, a ring point lies inside a cap away from its boundary, a cap
 /// vertex lies inside the rings away from them, or the mean of the largest
 /// ring's points or a point of a grid over the rings' bounds lies inside
 /// both, away from their boundaries.
 fn reaches_a_cap(rings: &[Vec<Point2>], caps: &[Cap], tolerance: f64) -> bool {
+    if rings
+        .iter()
+        .flatten()
+        .any(|point| !point.u.is_finite() || !point.v.is_finite())
+    {
+        return true;
+    }
     let inside_a_cap = |point: Point2| {
         caps.iter()
             .any(|cap| cap.contains(point) && cap.boundary_distance(point) > tolerance)

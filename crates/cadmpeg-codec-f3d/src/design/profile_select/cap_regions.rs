@@ -380,7 +380,8 @@ fn unique_state(
 }
 
 /// The inserted planar faces parallel to the frame at the offset farthest
-/// from its plane, each with every loop resolved.
+/// from its plane, each with every loop resolved. `None` when an inserted
+/// face has no surface binding or several, or its surface several plane rows.
 fn far_caps(
     frame: &PlaneFrame,
     topology: &AsmHistoricalTopology,
@@ -475,17 +476,23 @@ pub(super) fn oriented_loops(
     face: i64,
 ) -> Option<Vec<Vec<(i64, Point3, Point3)>>> {
     let position = |vertex: i64| -> Option<Point3> {
-        let point = topology
-            .vertex_points
-            .iter()
-            .find(|binding| binding.entity == vertex)?
-            .carrier;
-        Some(
+        let point = sole(
             topology
-                .point_positions
+                .vertex_points
                 .iter()
-                .find(|row| row.point == point)?
-                .position,
+                .filter(|binding| binding.entity == vertex),
+        )
+        .ok()??
+        .carrier;
+        Some(
+            sole(
+                topology
+                    .point_positions
+                    .iter()
+                    .filter(|row| row.point == point),
+            )
+            .ok()??
+            .position,
         )
     };
     let mut loops = Vec::new();
@@ -498,12 +505,15 @@ pub(super) fn oriented_loops(
         }
         let mut ends = Vec::new();
         for coedge in coedges {
-            let edge = topology
-                .coedge_topology
-                .iter()
-                .find(|row| row.coedge == *coedge)?
-                .edge;
-            ends.push(topology.edge_vertices.iter().find(|row| row.edge == edge)?);
+            let edge = sole(
+                topology
+                    .coedge_topology
+                    .iter()
+                    .filter(|row| row.coedge == *coedge),
+            )
+            .ok()??
+            .edge;
+            ends.push(sole(topology.edge_vertices.iter().filter(|row| row.edge == edge)).ok()??);
         }
         // Orient every edge, the first one by the edge after it, before
         // drawing any of them.
@@ -597,29 +607,25 @@ fn edge_piece(
         .iter()
         .filter(|row| row.edge == edge)
     {
-        let Some(owner) = sole(
+        let owner = sole(
             topology
                 .face_loops
                 .iter()
                 .filter(|relation| relation.member_refs.contains(&row.owner_loop)),
         )
-        .ok()?
-        .map(|relation| relation.owner_ref) else {
-            continue;
-        };
+        .ok()??
+        .owner_ref;
         if owner == face {
             continue;
         }
-        if let Some(binding) = sole(
+        let binding = sole(
             topology
                 .face_surfaces
                 .iter()
                 .filter(|binding| binding.entity == owner),
         )
-        .ok()?
-        {
-            surfaces.push(binding.carrier);
-        }
+        .ok()??;
+        surfaces.push(binding.carrier);
     }
     let mut cylinders = topology.surface_cylinders.iter().filter(|cylinder| {
         surfaces.contains(&cylinder.surface)
