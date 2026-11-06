@@ -120,6 +120,47 @@ fn source_less_formula_without_marker_keeps_its_parameter_binding() {
 }
 
 #[test]
+fn missing_cell_parameter_keeps_other_cells() {
+    let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Spreadsheet::Sheet" name="Sheet" id="1"/></Objects><ObjectData Count="1"><Object name="Sheet"><Properties Count="1"><Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="2"><Cell address="A1" content="5" alias="missing"/><Cell address="A2" content="7" alias="retained"/></Cells></Property></Properties></Object></ObjectData></Document>"#;
+    let source = crate::test_support::test_archive::archive(xml);
+    let decoded = FcstdCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let missing = ir
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "missing")
+        .unwrap()
+        .id
+        .clone();
+    ir.model
+        .parameters
+        .retain(|parameter| parameter.id != missing);
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(missing.as_str())));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(output.ir().model.spreadsheets[0].cells().len(), 1);
+    assert!(output
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .any(|parameter| parameter.name == "retained"));
+}
+
+#[test]
 fn ownerless_cell_keeps_its_sheet_and_expression_references() {
     let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Spreadsheet::Sheet" name="Sheet" id="1"/></Objects><ObjectData Count="1"><Object name="Sheet"><Properties Count="1"><Property name="cells" type="Spreadsheet::PropertySheet"><Cells Count="2"><Cell address="A1" content="5" alias="width"/><Cell address="A2" content="=width * 3" alias="height"/></Cells></Property></Properties></Object></ObjectData></Document>"#;
     let source = crate::test_support::test_archive::archive(xml);

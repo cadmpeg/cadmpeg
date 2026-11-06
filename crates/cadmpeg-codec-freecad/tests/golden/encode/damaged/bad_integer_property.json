@@ -80,7 +80,7 @@
         "configurations": "dropped",
         "curves": "written",
         "declared_measures": "omitted",
-        "drawings": "dropped",
+        "drawings": "reported",
         "edges": "written",
         "faces": "written",
         "feature_input_topologies": "dropped",
@@ -102,7 +102,7 @@
         "product_definitions": "written",
         "regions": "written",
         "rigid_bodies": "omitted",
-        "semantic_annotations": "dropped",
+        "semantic_annotations": "reported",
         "shells": "written",
         "sketch_constraints": "written",
         "sketch_entities": "written",
@@ -114,7 +114,7 @@
         "spreadsheets": "written",
         "subds": "dropped",
         "surfaces": "written",
-        "tessellations": "dropped",
+        "tessellations": "reported",
         "vertices": "written",
         "view_presentations": "written"
       },
@@ -212,6 +212,12 @@
             "objects": {
               "disposition": "dropped"
             },
+            "polygons3d": {
+              "disposition": "dropped"
+            },
+            "polygons_on_triangulations": {
+              "disposition": "dropped"
+            },
             "product_nodes": {
               "disposition": "dropped"
             },
@@ -241,6 +247,7 @@
     "synthesis_cause": {
       "cause": "source_unrepresented",
       "classes": [
+        "model",
         "design"
       ]
     },

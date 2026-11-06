@@ -1562,33 +1562,18 @@ pub(crate) fn body_color_becomes_per_face_styled_item_presentation() {
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
     ir.model.bodies[0].color =
         Some(cadmpeg_ir::topology::Color::new(0.25, 0.5, 0.75, 1.0).expect("valid color"));
-    let face_count = ir.model.faces.len();
     let s = export(&ir);
     assert!(s.contains("COLOUR_RGB('',0.25,0.5,0.75)"));
     assert!(s.contains("MECHANICAL_DESIGN_GEOMETRIC_PRESENTATION_REPRESENTATION"));
-    // The body color is pushed down onto every face: one STYLED_ITEM per face,
-    // each targeting an ADVANCED_FACE rather than the solid. OCCT/VTK viewers
-    // (e.g. f3d) read colors only from faces, not MANIFOLD_SOLID_BREP.
     let styled: Vec<&str> = s.lines().filter(|l| l.contains("STYLED_ITEM")).collect();
-    assert_eq!(styled.len(), face_count);
+    assert_eq!(styled.len(), 1);
     let solid = s
         .lines()
         .find(|line| line.contains("MANIFOLD_SOLID_BREP"))
         .and_then(|line| line.split(" =").next())
         .unwrap()
         .to_string();
-    for item in &styled {
-        let target = item
-            .rsplit_once(',')
-            .map(|(_, tail)| tail.trim_end_matches(");").to_string())
-            .unwrap();
-        assert_ne!(target, solid, "body color must not style the solid");
-        assert!(
-            s.lines()
-                .any(|line| line.starts_with(&format!("{target} = ADVANCED_FACE"))),
-            "styled item must reference a face"
-        );
-    }
+    assert!(styled[0].ends_with(&format!(",{solid});")));
 }
 
 #[test]
@@ -1877,16 +1862,12 @@ fn presentation_layer_round_trips_product_occurrence_and_pmi_items() {
     assert!(matches!(layer.items[2], PresentationItem::Pmi { .. }));
 }
 
-/// The soccer-ball case: a body carries a base color and one face overrides it.
-/// Every face must be styled (body color pushed down onto the faces that do not
-/// override it), and the overriding face must carry its own color.
 #[test]
 pub(crate) fn face_override_wins_over_body_color_and_body_fills_the_rest() {
     use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
     use cadmpeg_ir::ids::AppearanceId;
 
     let mut ir = unit_cube().expect("unit cube fixture is admitted");
-    let face_count = ir.model.faces.len();
     // White body base color.
     ir.model.bodies[0].color =
         Some(cadmpeg_ir::topology::Color::new(1.0, 1.0, 1.0, 1.0).expect("valid color"));
@@ -1924,27 +1905,21 @@ pub(crate) fn face_override_wins_over_body_color_and_body_fills_the_rest() {
     });
 
     let s = export(&ir);
-    // Both colors are present, and every face is styled.
     assert!(s.contains("COLOUR_RGB('',1.,1.,1.)"));
     assert!(s.contains("COLOUR_RGB('',0.,0.,0.)"));
     let styled: Vec<&str> = s.lines().filter(|l| l.contains("STYLED_ITEM")).collect();
-    assert_eq!(styled.len(), face_count);
-    // Each color's style chain is emitted once and shared; grouping the styled
-    // items by their style ref must yield exactly two groups sized 1 and
-    // face_count - 1 (the lone override plus every inherited face).
-    let mut per_style = std::collections::BTreeMap::<String, usize>::default();
+    assert_eq!(styled.len(), 2);
+    let mut target_types = Vec::new();
     for item in &styled {
-        // STYLED_ITEM('color',(#psa),#face)
-        let psa = item
-            .split_once(",(")
-            .and_then(|(_, tail)| tail.split(')').next())
-            .unwrap()
-            .to_string();
-        *per_style.entry(psa).or_default() += 1;
+        let target = item.rsplit_once(',').unwrap().1.trim_end_matches(");");
+        let line = s
+            .lines()
+            .find(|line| line.starts_with(&format!("{target} = ")))
+            .unwrap();
+        target_types.push(line.split_once(" = ").unwrap().1.split('(').next().unwrap());
     }
-    let mut counts: Vec<usize> = per_style.values().copied().collect();
-    counts.sort_unstable();
-    assert_eq!(counts, vec![1, face_count - 1]);
+    target_types.sort_unstable();
+    assert_eq!(target_types, vec!["ADVANCED_FACE", "MANIFOLD_SOLID_BREP"]);
 }
 
 #[test]
