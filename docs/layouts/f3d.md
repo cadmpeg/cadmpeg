@@ -2850,21 +2850,6 @@ Offsets are relative to `T = A + 133`, after the third GUID. The LP-UTF16 kind p
 | 18 | 4 | `history_state_id` | `u32` | little | spec | the current history-state identity at `T + 18` |
 | 22 | 4 | `kind_code_unit_count` | `u32` | little | spec | the LP-UTF16 scope kind at `T + 22` |
 
-## `split_face_compact_prefix`
-
-Spec §3.1 · layout: byte offsets · size: 32 B
-
-Offsets are relative to the primary SplitFace indexed header. The first marked construction reference follows this prefix at offset 32.
-
-| Offset | Size | Field | Type | Endian | Src | Meaning |
-| -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | An indexed Design record header is `u32 class_tag_length` |
-| 11 | 11 | `zero_run_11` | `bytes[11]` | little | spec | eleven zero bytes at offsets 11 through 21 |
-| 22 | 1 | `first_marker` | `u8` | little | spec | byte `01` at offset 22 |
-| 23 | 4 | `zero_run_4` | `bytes[4]` | little | spec | four zero bytes at offsets 23 through 26 |
-| 27 | 2 | `marker_pair` | `bytes[2]` | little | spec | bytes `01 01` at offsets 27 and 28 |
-| 29 | 3 | `zero_run_3` | `bytes[3]` | little | spec | three zero bytes at offsets 29 through 31 |
-
 ## `form_result_owner`
 
 Spec §3.1 · layout: byte offsets · size: 81 B
