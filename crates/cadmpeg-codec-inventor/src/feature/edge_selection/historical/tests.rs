@@ -276,7 +276,8 @@ fn each_generator_form_joins_one_stored_edge_with_signed_geometry() {
                 .expect("framed")
                 .expect("selector");
             let mut records = records(schema, generators);
-            let edges = selected(&records, &[selector], schema);
+            let edges = selected(&crate::native::test_ctx(), &records, &[selector], schema)
+                .expect("no resource refusal");
             assert_eq!(edges[&9].owner, 1);
             assert_eq!(
                 edges[&9].geometry.interior.as_raw(),
@@ -289,7 +290,8 @@ fn each_generator_form_joins_one_stored_edge_with_signed_geometry() {
             let selector = parse(View::over_retained(&bytes), 29)
                 .expect("framed")
                 .expect("selector");
-            let edges = selected(&records, &[selector], schema);
+            let edges = selected(&crate::native::test_ctx(), &records, &[selector], schema)
+                .expect("no resource refusal");
             assert_eq!(
                 edges[&9].geometry.tangent.as_raw(),
                 &cadmpeg_ir::math::Vector3::new(-1.0, 0.0, 0.0)
@@ -350,7 +352,8 @@ fn a_matched_circle_arc_revision_supplies_its_historical_geometry() {
         let selector = parse(View::over_retained(&bytes), 29)
             .expect("framed")
             .expect("selector");
-        let edges = selected(&records, &[selector], schema);
+        let edges = selected(&crate::native::test_ctx(), &records, &[selector], schema)
+            .expect("no resource refusal");
         let edge = &edges[&9];
         assert_eq!(edge.owner, 1);
         let radius = 30.0 * std::f64::consts::FRAC_1_SQRT_2;
@@ -365,7 +368,11 @@ fn a_matched_circle_arc_revision_supplies_its_historical_geometry() {
         let selector = parse(View::over_retained(&bytes), 29)
             .expect("framed")
             .expect("selector");
-        assert!(selected(&records, &[selector], schema).is_empty());
+        assert!(
+            selected(&crate::native::test_ctx(), &records, &[selector], schema)
+                .expect("no resource refusal")
+                .is_empty()
+        );
     }
     drop(ctx);
 }
@@ -410,7 +417,9 @@ fn mismatched_keys_owners_schemas_and_non_line_revisions_stay_native() {
             .expect("framed")
             .expect("selector");
         assert!(
-            selected(&records, &[selector], 38).is_empty(),
+            selected(&crate::native::test_ctx(), &records, &[selector], 38)
+                .expect("no resource refusal")
+                .is_empty(),
             "control {change}"
         );
     }
@@ -635,7 +644,14 @@ fn historical_matching_uses_exact_revisions_with_opaque_generated_names() {
         .expect("framed")
         .expect("direct");
     second.key = 8;
-    assert!(selected(&records(38, &[31, 37]), &[first, second], 38).is_empty());
+    assert!(selected(
+        &crate::native::test_ctx(),
+        &records(38, &[31, 37]),
+        &[first, second],
+        38
+    )
+    .expect("no resource refusal")
+    .is_empty());
     let first = parse(View::over_retained(&bytes), 29)
         .expect("framed")
         .expect("direct");
@@ -647,7 +663,12 @@ fn historical_matching_uses_exact_revisions_with_opaque_generated_names() {
         "unknown-NMx_Brep_Name_tag",
         &[1, 31, -1, 0],
     ));
-    assert_eq!(selected(&records, &[first], 38)[&9].owner, 1);
+    assert_eq!(
+        selected(&crate::native::test_ctx(), &records, &[first], 38).expect("no resource refusal")
+            [&9]
+            .owner,
+        1
+    );
 }
 
 #[test]

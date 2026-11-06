@@ -528,7 +528,7 @@ pub(super) fn inventory(
         return Ok(EdgeInventory::default());
     };
     let historical = if archive_complete {
-        historical::selected(&records, &stored_selectors, carrier.schema)
+        historical::selected(ctx, &records, &stored_selectors, carrier.schema)?
             .into_iter()
             .map(|(source, edge)| ((token.clone(), source), edge))
             .collect()

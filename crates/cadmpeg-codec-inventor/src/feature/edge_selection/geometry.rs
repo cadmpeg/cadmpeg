@@ -3,9 +3,22 @@
 
 use std::collections::HashMap;
 
-use cadmpeg_asm::sab::{Record, Token};
+use cadmpeg_asm::{
+    brep::geometry::record_reversed,
+    nurbs::{
+        proc_curve::{procedural_curve_resolving_refs, ProceduralCurveConstruction},
+        toks::SubtypeTable,
+    },
+    sab::{Record, Token},
+};
+use cadmpeg_core::{decode::DecodeContext, CodecError};
 use cadmpeg_ir::{
+    eval::{
+        decode::{curve_tangent, nurbs_curve_point_at},
+        finite_or_refusal, nurbs_curve_parameter_domain,
+    },
     features::FinitePoint3,
+    geometry::{CurveGeometry, SolvedCurveGeometry},
     math::{Point3, Vector3},
     units::UnitVector3,
 };
@@ -75,12 +88,22 @@ fn vertex_tolerance(edge: &Record, records: &HashMap<i64, &Record>, slot: usize)
     })
 }
 
-/// Geometry of a stored edge revision on a straight or elliptical carrier.
-pub(super) fn revision(edge: &Record, records: &HashMap<i64, &Record>) -> Option<EdgeGeometry> {
-    match records.get(&edge.ref_at(8)?)?.head() {
-        "straight" => line(edge, records),
-        "ellipse" => ellipse(edge, records),
-        _ => None,
+/// Geometry of a stored edge revision on a straight, elliptical, or spline
+/// carrier. Only a decode-session resource refusal is an error.
+pub(super) fn revision(
+    ctx: &DecodeContext<'_>,
+    edge: &Record,
+    records: &HashMap<i64, &Record>,
+    subtypes: &SubtypeTable,
+) -> Result<Option<EdgeGeometry>, CodecError> {
+    let Some(carrier) = edge.ref_at(8).and_then(|index| records.get(&index)) else {
+        return Ok(None);
+    };
+    match carrier.head() {
+        "straight" => Ok(line(edge, records)),
+        "ellipse" => Ok(ellipse(edge, records)),
+        "intcurve" => spline(ctx, edge, records, subtypes),
+        _ => Ok(None),
     }
 }
 
@@ -114,6 +137,101 @@ fn ellipse_range(curve: &Record) -> Option<(Option<f64>, Option<f64>)> {
         return None;
     }
     Some((ends[0], ends[1]))
+}
+
+/// Geometry of an edge revision on an `intcurve` carrier whose stored
+/// B-spline is exact. The carrier point at edge parameter `t` is the stored
+/// B-spline (polynomial or rational) at `s * t`, where `s` is -1 when exactly
+/// one of the carrier sense and the edge sense is reversed and +1 otherwise.
+/// The scaled first and last parameters must lie in the knot domain, and each
+/// carrier point must equal its stored vertex. A carrier with a procedural
+/// construction other than the exact cache, a nonzero fit tolerance, a
+/// periodic spline, and an edge whose vertices coincide are refused: the
+/// vertices of a closed edge do not fix the sense of its parameters.
+fn spline(
+    ctx: &DecodeContext<'_>,
+    edge: &Record,
+    records: &HashMap<i64, &Record>,
+    subtypes: &SubtypeTable,
+) -> Result<Option<EdgeGeometry>, CodecError> {
+    let Some(((start, end), carrier)) =
+        endpoints(edge, records).zip(edge.ref_at(8).and_then(|index| records.get(&index)))
+    else {
+        return Ok(None);
+    };
+    let near = |a: FinitePoint3, b: FinitePoint3, tolerance: f64| {
+        a.as_raw().distance(*b.as_raw()) <= tolerance
+    };
+    if near(start, end, EPS_EDGE_REVISION_POINT_MM) || carrier.head() != "intcurve" {
+        return Ok(None);
+    }
+    let decoded = match procedural_curve_resolving_refs(ctx, &carrier.tokens, subtypes) {
+        Some(Ok(decoded)) => decoded,
+        Some(Err(error @ CodecError::ResourceLimit(_))) => return Err(error),
+        Some(Err(_)) | None => return Ok(None),
+    };
+    if !matches!(decoded.construction, ProceduralCurveConstruction::Exact)
+        || decoded.cache_fit_tolerance.is_some_and(|fit| fit != 0.0)
+        || decoded.curve.periodic()
+    {
+        return Ok(None);
+    }
+    let edge_reversed = match edge.chunk(9) {
+        Some(Token::False) => false,
+        Some(Token::True) => true,
+        _ => return Ok(None),
+    };
+    let sign = if record_reversed(carrier) == edge_reversed {
+        1.0
+    } else {
+        -1.0
+    };
+    let (Some(Token::Double(first)), Some(Token::Double(last))) = (edge.chunk(4), edge.chunk(6))
+    else {
+        return Ok(None);
+    };
+    if !(first.is_finite() && last.is_finite() && first < last) {
+        return Ok(None);
+    }
+    let Some([low, high]) = nurbs_curve_parameter_domain(&decoded.curve)
+        .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints)
+    else {
+        return Ok(None);
+    };
+    let within = |u: f64| (low..=high).contains(&u);
+    let (u_first, u_last) = (sign * first, sign * last);
+    if !(within(u_first) && within(u_last)) {
+        return Ok(None);
+    }
+    let at = |u: f64| finite_or_refusal(nurbs_curve_point_at(ctx, &decoded.curve, u));
+    let (Some(first_point), Some(last_point)) = (at(u_first)?, at(u_last)?) else {
+        return Ok(None);
+    };
+    if !near(start, first_point, vertex_tolerance(edge, records, 3))
+        || !near(end, last_point, vertex_tolerance(edge, records, 5))
+    {
+        return Ok(None);
+    }
+    let u_middle = sign * first.midpoint(*last);
+    let carrier_geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(decoded.curve.clone()));
+    let (Some(interior), Some(tangent)) = (
+        at(u_middle)?,
+        finite_or_refusal(curve_tangent(ctx, &carrier_geometry, u_middle))?,
+    ) else {
+        return Ok(None);
+    };
+    let direction = tangent.as_raw();
+    Ok(UnitVector3::normalized(Vector3::new(
+        sign * direction.x,
+        sign * direction.y,
+        sign * direction.z,
+    ))
+    .map(|tangent| EdgeGeometry {
+        start,
+        end,
+        interior,
+        tangent,
+    }))
 }
 
 /// Geometry of an edge revision on an ellipse carrier. The carrier point at

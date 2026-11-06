@@ -298,7 +298,13 @@ fn revision_of(records: &[Record]) -> Option<EdgeGeometry> {
         .iter()
         .map(|r| (i64::try_from(r.index).expect("index"), r))
         .collect();
-    revision(&records[0], &by_index)
+    revision(
+        &crate::native::test_ctx(),
+        &records[0],
+        &by_index,
+        &SubtypeTable::from_records(records),
+    )
+    .expect("no resource refusal")
 }
 
 #[test]
@@ -556,4 +562,249 @@ fn tolerant_vertex_tolerance_widens_the_endpoint_proof() {
     assert!(revision_of(&tolerant_start(0.0, None)).is_some());
     // The tolerance does not admit a vertex that is farther away.
     assert!(revision_of(&tolerant_start(1.0e-3, Some([-1.0, 3.0e-5, 3.0e-5]))).is_none());
+}
+
+/// A stored `intcurve` carrier: the cache poles in centimetres with optional
+/// weights, the unique knots with their stored multiplicities, and the record
+/// sense.
+struct SplineSpec {
+    degree: i64,
+    knots: Vec<(f64, i64)>,
+    poles: Vec<[f64; 3]>,
+    weights: Option<Vec<f64>>,
+    carrier_reversed: bool,
+    construction: &'static str,
+    fit: f64,
+    closure: i64,
+    edge_reversed: bool,
+    range: [f64; 2],
+    start: [f64; 3],
+    end: [f64; 3],
+}
+
+fn spline_records(spec: &SplineSpec) -> Vec<Record> {
+    let mut records = ellipse_records(&circle(
+        spec.range,
+        spec.edge_reversed,
+        spec.start,
+        spec.end,
+    ));
+    let mut tokens = vec![
+        Token::Ref(-1),
+        Token::Long(-1),
+        Token::Ref(-1),
+        if spec.carrier_reversed {
+            Token::True
+        } else {
+            Token::False
+        },
+        Token::SubtypeOpen,
+        Token::Ident(spec.construction.into()),
+        Token::Long(23_100),
+        Token::Enum(0),
+        Token::Ident(
+            if spec.weights.is_some() {
+                "nurbs"
+            } else {
+                "nubs"
+            }
+            .into(),
+        ),
+        Token::Long(spec.degree),
+        Token::Enum(spec.closure),
+        Token::Long(i64::try_from(spec.knots.len()).expect("knot count")),
+    ];
+    for (knot, multiplicity) in &spec.knots {
+        tokens.push(Token::Double(*knot));
+        tokens.push(Token::Long(*multiplicity));
+    }
+    for (index, pole) in spec.poles.iter().enumerate() {
+        tokens.extend(pole.iter().map(|value| Token::Double(*value)));
+        if let Some(weights) = &spec.weights {
+            tokens.push(Token::Double(weights[index]));
+        }
+    }
+    tokens.push(Token::Double(spec.fit));
+    tokens.push(Token::SubtypeClose);
+    records[5] = record(6, "intcurve", tokens);
+    records
+}
+
+/// Quadratic polynomial curve over knots [0, 2]: the Bernstein form in
+/// `s = t / 2` with these poles.
+const QUADRATIC_POLES: [[f64; 3]; 3] = [[0.0, 0.0, 0.0], [1.0, 2.0, 0.5], [3.0, 0.0, 1.0]];
+
+fn quadratic_point(t: f64) -> [f64; 3] {
+    let s = t / 2.0;
+    let basis = [(1.0 - s) * (1.0 - s), 2.0 * s * (1.0 - s), s * s];
+    [0, 1, 2].map(|axis| (0..3).map(|k| basis[k] * QUADRATIC_POLES[k][axis]).sum())
+}
+
+fn quadratic_derivative(t: f64) -> [f64; 3] {
+    let s = t / 2.0;
+    [0, 1, 2].map(|axis| {
+        let d0 = QUADRATIC_POLES[1][axis] - QUADRATIC_POLES[0][axis];
+        let d1 = QUADRATIC_POLES[2][axis] - QUADRATIC_POLES[1][axis];
+        (1.0 - s) * d0 + s * d1
+    })
+}
+
+fn quadratic(range: [f64; 2]) -> SplineSpec {
+    SplineSpec {
+        degree: 2,
+        knots: vec![(0.0, 2), (2.0, 2)],
+        poles: QUADRATIC_POLES.to_vec(),
+        weights: None,
+        carrier_reversed: false,
+        construction: "exact_int_cur",
+        fit: 0.0,
+        closure: 0,
+        edge_reversed: false,
+        range,
+        start: quadratic_point(range[0]),
+        end: quadratic_point(range[1]),
+    }
+}
+
+fn assert_spline_geometry(
+    value: &EdgeGeometry,
+    start: [f64; 3],
+    end: [f64; 3],
+    middle: [f64; 3],
+    direction: [f64; 3],
+) {
+    let millimetres = |p: [f64; 3]| p.map(|v| v * CM_TO_MM);
+    let [x, y, z] = millimetres(start);
+    assert!(same_point(value.start.as_raw(), x, y, z));
+    let [x, y, z] = millimetres(end);
+    assert!(same_point(value.end.as_raw(), x, y, z));
+    let [x, y, z] = millimetres(middle);
+    assert!(same_point(value.interior.as_raw(), x, y, z));
+    let [x, y, z] = direction;
+    assert!(same_direction(value.tangent.as_raw(), x, y, z));
+}
+
+#[test]
+fn polynomial_spline_revision_evaluates_the_stored_bspline() {
+    let spec = quadratic([0.5, 1.5]);
+    let value = revision_of(&spline_records(&spec)).expect("spline revision");
+    assert_spline_geometry(
+        &value,
+        quadratic_point(0.5),
+        quadratic_point(1.5),
+        quadratic_point(1.0),
+        quadratic_derivative(1.0),
+    );
+}
+
+#[test]
+fn spline_sense_negates_the_parameters_once_per_reversal() {
+    // Edge sense and carrier sense each negate the parameter. The knot domain
+    // is [0, 2], so a reversed edge reads the stored cache at -t and needs a
+    // negative stored range to stay inside it.
+    for (carrier_reversed, edge_reversed) in [(false, true), (true, false)] {
+        let mut spec = quadratic([-1.5, -0.5]);
+        spec.carrier_reversed = carrier_reversed;
+        spec.edge_reversed = edge_reversed;
+        spec.start = quadratic_point(1.5);
+        spec.end = quadratic_point(0.5);
+        let value = revision_of(&spline_records(&spec)).expect("one reversal");
+        let tangent = quadratic_derivative(1.0).map(|v| -v);
+        assert_spline_geometry(
+            &value,
+            quadratic_point(1.5),
+            quadratic_point(0.5),
+            quadratic_point(1.0),
+            tangent,
+        );
+    }
+    // Two reversals cancel.
+    let mut spec = quadratic([0.5, 1.5]);
+    spec.carrier_reversed = true;
+    spec.edge_reversed = true;
+    let value = revision_of(&spline_records(&spec)).expect("two reversals");
+    assert_spline_geometry(
+        &value,
+        quadratic_point(0.5),
+        quadratic_point(1.5),
+        quadratic_point(1.0),
+        quadratic_derivative(1.0),
+    );
+}
+
+#[test]
+fn rational_spline_revision_evaluates_the_weighted_bspline() {
+    // A rational quadratic quarter circle of radius 3 about (1, 1, 0) over
+    // knots [0, 1] with middle weight sqrt(1/2).
+    let w = FRAC_1_SQRT_2;
+    let poles = [[4.0, 1.0, 0.0], [4.0, 4.0, 0.0], [1.0, 4.0, 0.0]];
+    let point = |s: f64| {
+        let basis = [(1.0 - s) * (1.0 - s), 2.0 * s * (1.0 - s) * w, s * s];
+        let sum = (1.0 - s) * (1.0 - s) + 2.0 * s * (1.0 - s) * w + s * s;
+        [0, 1, 2].map(|axis| (0..3).map(|k| basis[k] * poles[k][axis]).sum::<f64>() / sum)
+    };
+    let spec = SplineSpec {
+        degree: 2,
+        knots: vec![(0.0, 2), (1.0, 2)],
+        poles: poles.to_vec(),
+        weights: Some(vec![1.0, w, 1.0]),
+        carrier_reversed: false,
+        construction: "exact_int_cur",
+        fit: 0.0,
+        closure: 0,
+        edge_reversed: false,
+        range: [0.25, 0.75],
+        start: point(0.25),
+        end: point(0.75),
+    };
+    let value = revision_of(&spline_records(&spec)).expect("rational revision");
+    // At s = 1/2 the arc point is at 45 degrees and the tangent is
+    // perpendicular to the radius.
+    let middle = [1.0 + 3.0 * FRAC_1_SQRT_2, 1.0 + 3.0 * FRAC_1_SQRT_2, 0.0];
+    assert_spline_geometry(
+        &value,
+        point(0.25),
+        point(0.75),
+        middle,
+        [-FRAC_1_SQRT_2, FRAC_1_SQRT_2, 0.0],
+    );
+}
+
+#[test]
+fn spline_revision_refuses_unproven_carriers() {
+    let refuses = |change: &dyn Fn(&mut SplineSpec)| {
+        let mut spec = quadratic([0.5, 1.5]);
+        change(&mut spec);
+        assert!(revision_of(&spline_records(&spec)).is_none());
+    };
+    // Control: the unmodified form resolves.
+    assert!(revision_of(&spline_records(&quadratic([0.5, 1.5]))).is_some());
+    // A vertex off the carrier.
+    refuses(&|spec| spec.end = [3.0, 0.0, 1.0]);
+    refuses(&|spec| spec.start[0] += 1.0e-3);
+    // A parameter outside the knot domain, and an empty or backward range.
+    refuses(&|spec| {
+        spec.range = [0.5, 2.5];
+        spec.end = quadratic_point(2.5);
+    });
+    refuses(&|spec| {
+        spec.range = [-0.5, 1.5];
+        spec.start = quadratic_point(-0.5);
+    });
+    refuses(&|spec| spec.range = [1.5, 0.5]);
+    refuses(&|spec| spec.range = [1.0, 1.0]);
+    // A reversed edge whose negated range leaves the domain.
+    refuses(&|spec| spec.edge_reversed = true);
+    // A procedural construction or an approximate cache.
+    refuses(&|spec| spec.construction = "off_int_cur");
+    refuses(&|spec| spec.fit = 1.0e-4);
+    // A periodic spline, and a closed edge.
+    refuses(&|spec| spec.closure = 2);
+    refuses(&|spec| {
+        spec.end = spec.start;
+    });
+    // A cache whose poles do not match its knots.
+    refuses(&|spec| {
+        spec.poles.pop();
+    });
 }

@@ -3,7 +3,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use cadmpeg_asm::sab::Record;
+use cadmpeg_asm::{nurbs::toks::SubtypeTable, sab::Record};
 use cadmpeg_core::{
     decode::{unique_index, DecodeContext, View},
     CodecError,
@@ -131,12 +131,13 @@ pub(crate) const fn supported_schema(schema: u32) -> bool {
 }
 
 pub(super) fn selected(
+    ctx: &DecodeContext<'_>,
     records: &[Record],
     selectors: &[StoredSelector],
     schema: u32,
-) -> HashMap<u32, SelectedEdge> {
+) -> Result<HashMap<u32, SelectedEdge>, CodecError> {
     if !supported_schema(schema) {
-        return HashMap::new();
+        return Ok(HashMap::new());
     }
     let by_index = unique_index(
         records
@@ -147,6 +148,7 @@ pub(super) fn selected(
         .into_iter()
         .filter_map(|(index, record)| Some((index, record?)))
         .collect::<HashMap<_, _>>();
+    let subtypes = SubtypeTable::from_records(records);
     let mut matches = HashMap::<(u32, u32), HashSet<i64>>::new();
     for record in records {
         if let Some((source, key, owner)) = super::matched(record, schema) {
@@ -154,26 +156,42 @@ pub(super) fn selected(
         }
     }
     let selectors = unique_index(selectors.iter().map(|selector| (selector.source, selector)));
-    unique_index(selectors.values().filter_map(|selector| {
-        let selector = selector.as_ref()?;
-        let owners = matches.get(&(selector.source, selector.key))?;
+    let mut edges = Vec::new();
+    for selector in selectors.values() {
+        let Some(selector) = selector.as_ref() else {
+            continue;
+        };
+        let Some(owners) = matches.get(&(selector.source, selector.key)) else {
+            continue;
+        };
         if owners.len() != 1 {
-            return None;
+            continue;
         }
-        let owner = *owners.iter().next()?;
-        let geometry = super::geometry::revision(by_index.get(&owner)?, &by_index)?;
-        Some((
+        let Some(owner) = owners.iter().next().copied() else {
+            continue;
+        };
+        let Some(edge) = by_index.get(&owner) else {
+            continue;
+        };
+        let Some(geometry) = super::geometry::revision(ctx, edge, &by_index, &subtypes)? else {
+            continue;
+        };
+        let Some(item) = selector.item.record_ordinal() else {
+            continue;
+        };
+        edges.push((
             selector.source,
             SelectedEdge {
                 owner,
-                item: selector.item.record_ordinal()?,
+                item,
                 geometry,
             },
-        ))
-    }))
-    .into_iter()
-    .filter_map(|(source, edge)| Some((source, edge?)))
-    .collect()
+        ));
+    }
+    Ok(unique_index(edges)
+        .into_iter()
+        .filter_map(|(source, edge)| Some((source, edge?)))
+        .collect())
 }
 
 fn controls<'a>(
