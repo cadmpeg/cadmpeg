@@ -1060,10 +1060,10 @@ fn native_compact_custom(
             Some(AttributeValue::Integer(value)) => native_i64(records, *value),
             Some(AttributeValue::Float(value)) => native_f64(records, value.get()),
             Some(AttributeValue::Boolean(value)) => {
-                records.push(crate::writer::primitives::native_bool(*value))
+                records.push(crate::writer::primitives::native_bool(*value));
             }
             Some(AttributeValue::Reference(value)) if value == "f3d:brep:entity#-1" => {
-                native_ref(records, -1)
+                native_ref(records, -1);
             }
             Some(AttributeValue::Vector(values)) if matches!(values.len(), 2 | 3) => {
                 records.push(if values.len() == 2 { 0x16 } else { 0x14 });

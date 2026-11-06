@@ -1317,10 +1317,7 @@ fn native_procedural_surface_definition(
     Ok(true)
 }
 
-fn native_bridge_token(
-    bytes: &mut Vec<u8>,
-    token: &cadmpeg_ir::geometry::LoftBridgeToken,
-) -> Result<(), CodecError> {
+fn native_bridge_token(bytes: &mut Vec<u8>, token: &cadmpeg_ir::geometry::LoftBridgeToken) {
     match token {
         cadmpeg_ir::geometry::LoftBridgeToken::Boolean(value) => {
             bytes.push(native_bool(*value));
@@ -1330,7 +1327,6 @@ fn native_bridge_token(
         cadmpeg_ir::geometry::LoftBridgeToken::Text(value) => native_string(bytes, value),
         cadmpeg_ir::geometry::LoftBridgeToken::Enum(value) => native_enum(bytes, *value),
     }
-    Ok(())
 }
 
 fn native_g2_side(
@@ -1421,7 +1417,7 @@ fn encode_native_g2_blend(
             }
             native_f64(bytes, tolerance.get() / LEN_TO_MM);
             if let Some(extension) = extension {
-                native_bridge_token(bytes, extension)?;
+                native_bridge_token(bytes, extension);
             }
             native_optional_pcurve(bytes, pcurve.as_ref())?;
         }
