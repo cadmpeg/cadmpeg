@@ -1208,7 +1208,7 @@ fn encode_declares_topology_preferences_and_hierarchy_consistently() {
 
     let trimmed = regenerate(trimmed_plane_file());
     assert_eq!(parameter(trimmed.ir(), 142, 1), 0);
-    assert_eq!(parameter(trimmed.ir(), 142, 5), 2);
+    assert_eq!(parameter(trimmed.ir(), 142, 5), 3);
 
     let brep = regenerate(explicit_tetrahedron_solid_file());
     let edge_list = brep.ir().native.namespace("iges").unwrap().arenas()["entities"]

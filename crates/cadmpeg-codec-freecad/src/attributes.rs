@@ -384,6 +384,25 @@ pub(crate) fn values(property: &PropertyRecord) -> Option<Vec<Option<AttributeVa
             .collect();
     }
     if let [value] = values.as_slice() {
+        if value.parent.is_none() {
+            let keys: Vec<String> = match (property.type_name.as_str(), value.tag.as_str()) {
+                ("App::PropertyRotation", "PropertyRotation") => ["A", "Ox", "Oy", "Oz"]
+                    .into_iter()
+                    .map(str::to_owned)
+                    .collect(),
+                ("App::PropertyMatrix", "PropertyMatrix") => (1..=4)
+                    .flat_map(|row| (1..=4).map(move |column| format!("a{row}{column}")))
+                    .collect(),
+                _ => Vec::new(),
+            };
+            if !keys.is_empty() {
+                let components = keys
+                    .iter()
+                    .map(|key| value.attributes.get(key)?.parse::<f64>().ok())
+                    .collect::<Option<Vec<_>>>()?;
+                return Some(vec![Some(AttributeValue::vector(components)?)]);
+            }
+        }
         if property.type_name == "App::PropertyBoolList"
             && value.tag == "BoolList"
             && value.parent.is_none()
@@ -438,7 +457,9 @@ pub(crate) fn values(property: &PropertyRecord) -> Option<Vec<Option<AttributeVa
         }
         let scalar = attributes.get("value").or_else(|| attributes.get("Value"));
         let item = match value.tag.as_str() {
-            "String" | "Unicode" | "Uuid" => {
+            "String" | "Unicode" | "Uuid" | "Path"
+                if value.tag != "Path" || property.type_name == "App::PropertyPath" =>
+            {
                 scalar.map(|value| AttributeValue::String(value.clone()))
             }
             "PropertyColor" => scalar
@@ -514,6 +535,46 @@ fn binary_vector_values(
     property: &PropertyRecord,
     sources: Option<&std::collections::BTreeMap<String, cadmpeg_core::decode::View<'_>>>,
 ) -> Result<Option<Vec<Option<AttributeValue>>>, CodecError> {
+    if property.type_name == "App::PropertyFloatList" {
+        let [root] = property.values() else {
+            return Ok(None);
+        };
+        if root.tag != "FloatList" || root.parent.is_some() {
+            return Ok(None);
+        }
+        if root.attributes.get("file").is_some_and(String::is_empty)
+            && property.side_entries().is_empty()
+        {
+            return Ok(Some(Vec::new()));
+        }
+        let [source_name] = property.side_entries() else {
+            return Ok(None);
+        };
+        let Some(mut view) = sources
+            .and_then(|sources| sources.get(source_name))
+            .copied()
+        else {
+            return Ok(None);
+        };
+        let Some(count) = view.u32_le().and_then(|n| usize::try_from(n).ok()) else {
+            return Ok(None);
+        };
+        if view
+            .counted(cadmpeg_core::decode::u64_from_index(count), 8)
+            .is_none()
+        {
+            return Ok(None);
+        }
+        let mut result = Vec::new();
+        ctx.reserve_working(&mut result, count, "FreeCAD float-list attributes")?;
+        for _ in 0..count {
+            let Some(value) = view.f64_le().and_then(AttributeValue::float) else {
+                return Ok(None);
+            };
+            result.push(Some(value));
+        }
+        return Ok(view.is_empty().then_some(result));
+    }
     if property.type_name != "App::PropertyVectorList" {
         return Ok(None);
     }
