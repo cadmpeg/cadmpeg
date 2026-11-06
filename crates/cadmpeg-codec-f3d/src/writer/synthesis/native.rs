@@ -623,6 +623,11 @@ pub(super) fn reconcile(
             return false;
         };
         assignment.asm_body_key = key;
+        assignment.visual_preset = target.model.appearances.iter()
+            .find(|appearance| appearance.id == binding.appearance)
+            .and_then(|appearance| appearance.name.as_ref())
+            .filter(|name| name.starts_with("Prism-"))
+            .map(|name| crate::records::identity::RecordedValue { value: name.clone(), offset: None });
         true
     });
     native.body_native_keys.retain(|record| {
