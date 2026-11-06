@@ -10,6 +10,7 @@ use crate::bytes::take_reference;
 use crate::design::decode::operands::parse_construction_operand_group;
 use crate::design::decode::operands::ConstructionOperandGroupParse;
 use crate::design::decode::operands::RecordFrame;
+use crate::design::decode::sketch::next_indexed_record_offset;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::decode::text::fixed_relaxed_guid_text;
 use crate::design::design_feature_family;
@@ -162,7 +163,7 @@ fn exact_surface_offset_face_groups(
                         .skip(1)
                         .any(|value| value == member)
                     || covered_references.contains(member)
-                    || !bounded_face_member(records, recipes, stream, *member)
+                    || !bounded_face_member(bytes, records, recipes, stream, *member)
                 {
                     return None;
                 }
@@ -189,27 +190,33 @@ fn exact_surface_offset_face_groups(
 }
 
 fn bounded_face_member(
+    bytes: &[u8],
     records: &IndexedRecordOffsets,
     recipes: &[ConstructionRecipe],
     stream: &str,
     member: u32,
 ) -> bool {
-    let recipe_record_offset = (0..4).try_fold(0, |position, delta| {
+    let Some(recipe_start) = (0..4).try_fold(0, |position, delta| {
         records
             .first_at_or_after(position, member.checked_add(delta)?)
             .and_then(|offset| offset.checked_add(11))
-    });
-    let Some(recipe_record_offset) = recipe_record_offset.and_then(|end| u64::try_from(end).ok())
+    }) else {
+        return false;
+    };
+    let recipe_end = next_indexed_record_offset(bytes, recipe_start).unwrap_or(bytes.len());
+    let (Ok(recipe_start), Ok(recipe_end)) =
+        (u64::try_from(recipe_start), u64::try_from(recipe_end))
     else {
         return false;
     };
-    recipes
-        .iter()
-        .filter(|recipe| {
-            native_stream(&recipe.id) == Some(stream) && recipe.byte_offset >= recipe_record_offset
-        })
-        .min_by_key(|recipe| recipe.byte_offset)
+    let mut member_recipes = recipes.iter().filter(|recipe| {
+        native_stream(&recipe.id) == Some(stream)
+            && (recipe_start..recipe_end).contains(&recipe.byte_offset)
+    });
+    member_recipes
+        .next()
         .is_some_and(|recipe| recipe.kind == ConstructionRecipeKind::BoundedFace)
+        && member_recipes.next().is_none()
 }
 
 fn exact_construction_operand_group(

@@ -127,9 +127,7 @@ fn historical_surface_offset_faces(
         else {
             return None;
         };
-        if state.get_or_insert_with(|| group_state.clone()) != &group_state {
-            return None;
-        }
+        state = Some(group_state);
         for face in group_faces {
             if !faces.contains(&face) {
                 faces.push(face);
