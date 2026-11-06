@@ -4,7 +4,6 @@
 use std::collections::HashMap;
 
 use super::WriteError;
-use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::{
     nurbs::NurbsError, sampled::GeometryLayoutError, CurveGeometry, SolvedCurveGeometry,
@@ -243,9 +242,7 @@ pub(super) fn bake(ir: &mut CadIr) -> Result<(), WriteError> {
             .map_err(|error| match error {
                 TessellationError::EditRefused(message) => WriteError::Omit(message),
                 error @ TessellationError::Admission { .. } => {
-                    WriteError::Fail(CodecError::malformed(format_args!(
-                        "invalid transformed tessellation: {error}"
-                    )))
+                    WriteError::Omit(format!("invalid transformed tessellation: {error}"))
                 }
             })?;
             if !mesh.vertex_normals().is_empty() || !mesh.per_corner_normals().is_empty() {
@@ -261,9 +258,7 @@ pub(super) fn bake(ir: &mut CadIr) -> Result<(), WriteError> {
                 .map_err(|error| match error {
                     TessellationError::EditRefused(message) => WriteError::Omit(message),
                     error @ TessellationError::Admission { .. } => {
-                        WriteError::Fail(CodecError::malformed(format_args!(
-                            "invalid transformed tessellation: {error}"
-                        )))
+                        WriteError::Omit(format!("invalid transformed tessellation: {error}"))
                     }
                 })?;
             }
@@ -307,7 +302,7 @@ fn sampled_edit_error(error: GeometryLayoutError) -> WriteError {
     if let GeometryLayoutError::EditRefused(message) = error {
         WriteError::Omit(message)
     } else {
-        WriteError::Fail(CodecError::Malformed(error.to_string()))
+        WriteError::Omit(error.to_string())
     }
 }
 
@@ -423,9 +418,7 @@ pub(super) fn transform_surface(
                 })
                 .map_err(|error| match error {
                     NurbsError::EditRefused(message) => WriteError::Omit(message),
-                    error => WriteError::Fail(CodecError::malformed(format_args!(
-                        "invalid transformed NURBS: {error}"
-                    ))),
+                    error => WriteError::Omit(format!("invalid transformed NURBS: {error}")),
                 })?;
         }
         SurfaceGeometry::Solved(SolvedSurfaceGeometry::Polygonal(surface)) => {
@@ -466,9 +459,7 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
             let direction =
                 UnitVector3::new(placed_vector(transform, *line_curve.direction().as_raw())?)
                     .ok_or_else(|| {
-                        WriteError::Fail(CodecError::malformed(
-                            "LineCurve.direction must have unit length",
-                        ))
+                        WriteError::Omit("LineCurve.direction must have unit length".into())
                     })?;
             *line_curve = cadmpeg_ir::geometry::analytic::LineCurve::new(origin, direction);
         }
@@ -498,7 +489,7 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
                 ellipse_curve.major_radius(),
                 ellipse_curve.minor_radius(),
             )
-            .map_err(|error| WriteError::Fail(CodecError::malformed(error)))?;
+            .map_err(|error| WriteError::Omit(error.to_string()))?;
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) => {
             nurbs
@@ -509,9 +500,7 @@ fn transform_curve(geometry: &mut CurveGeometry, transform: Transform) -> Result
                 })
                 .map_err(|error| match error {
                     NurbsError::EditRefused(message) => WriteError::Omit(message),
-                    error => WriteError::Fail(CodecError::malformed(format_args!(
-                        "invalid transformed NURBS: {error}"
-                    ))),
+                    error => WriteError::Omit(format!("invalid transformed NURBS: {error}")),
                 })?;
         }
         CurveGeometry::Solved(SolvedCurveGeometry::Polyline(polyline)) => {

@@ -73,6 +73,84 @@ fn an_owned_native_record_holds_a_moved_entry() {
 }
 
 #[test]
+fn freecad_native_property_requires_the_matching_owner_and_value() {
+    let base = json!({"model": {"features": [
+        {"id": "f", "source_properties": {"Visibility": "true"}},
+    ]}});
+    let mut head = json!({
+        "model": {"features": [{"id": "f", "native_ref": "object"}]},
+        "native": {"fcstd": {"properties": [{
+            "id": "p", "owner": "object", "name": "Visibility",
+            "values": [{"parent": null, "attributes": {"value": "true"}}]
+        }]}},
+    });
+    assert!(base_property_loss_findings("fcstd", &base, &head).is_empty());
+    head["native"]["fcstd"]["properties"][0]["owner"] = json!("other");
+    assert_eq!(base_property_loss_findings("fcstd", &base, &head).len(), 1);
+    head["native"]["fcstd"]["properties"][0]["owner"] = json!("object");
+    head["native"]["fcstd"]["properties"][0]["values"][0]["attributes"]["value"] = json!("false");
+    assert_eq!(base_property_loss_findings("fcstd", &base, &head).len(), 1);
+}
+
+#[test]
+fn freecad_cell_properties_must_match_the_parameter_cell() {
+    let base = json!({"model": {"parameters": [
+        {"id": "parameter#Sheet:cell:B1", "properties": {"address": "B1", "alias": "width"}},
+    ]}});
+    let mut head = json!({
+        "model": {"parameters": [{"id": "parameter#Sheet:cell:B1", "name": "width", "native_ref": "cells"}]},
+        "native": {"fcstd": {"properties": [{"id": "cells", "name": "cells", "values": [
+            {"tag": "Cell", "attributes": {"address": "B1", "alias": "width"}}
+        ]}]}},
+    });
+    assert!(base_property_loss_findings("fcstd", &base, &head).is_empty());
+    head["native"]["fcstd"]["properties"][0]["values"][0]["attributes"]["address"] = json!("B2");
+    assert_eq!(base_property_loss_findings("fcstd", &base, &head).len(), 2);
+}
+
+#[test]
+fn folded_freecad_constraint_keeps_its_exact_native_control() {
+    let base = json!({"model": {"parameters": [{
+        "id": "fcstd:design:parameter#Sketch:constraint:1", "native_ref": "constraints",
+        "expression": "Sheet.width", "properties": {
+            "is_driving": "1", "source_name": "width", "expression_native_ref": "engine"
+        }
+    }]}});
+    let mut head = json!({
+        "model": {"sketch_constraints": [{
+            "id": "fcstd:design:sketch-constraint#Sketch:1", "native_ref": "constraints"
+        }]},
+        "native": {"fcstd": {"properties": [
+            {"id": "constraints", "owner": "sketch", "name": "Constraints", "values": [
+                {"tag": "Constrain", "attributes": {"Name": "width", "IsDriving": "1"}}
+            ]},
+            {"id": "engine", "owner": "sketch", "name": "ExpressionEngine", "values": [
+                {"tag": "Expression", "attributes": {"path": ".Constraints.width", "expression": "Sheet.width"}}
+            ]}
+        ]}}
+    });
+    assert!(base_property_loss_findings("fcstd", &base, &head).is_empty());
+    head["native"]["fcstd"]["properties"][1]["values"][0]["attributes"]["path"] =
+        json!(".Constraints.height");
+    assert_eq!(base_property_loss_findings("fcstd", &base, &head).len(), 1);
+}
+
+#[test]
+fn freecad_empty_link_xml_requires_the_same_empty_native_list() {
+    let base = json!({"model": {"features": [{"id": "f", "source_properties": {
+        "Support": "<Property name='Support' type='App::PropertyLinkSubList'><LinkSubList count='0'/></Property>"
+    }}]}});
+    let mut head = json!({"model": {"features": [{"id": "f", "native_ref": "object"}]},
+        "native": {"fcstd": {"properties": [{"id": "p", "owner": "object", "name": "Support", "type_name": "App::PropertyLinkSubList", "links": [],
+            "values": [{"tag": "LinkSubList", "parent": null, "attributes": {"count": "0"}}]
+        }]}}
+    });
+    assert!(base_property_loss_findings("fcstd", &base, &head).is_empty());
+    head["native"]["fcstd"]["properties"][0]["values"][0]["attributes"]["count"] = json!("1");
+    assert_eq!(base_property_loss_findings("fcstd", &base, &head).len(), 1);
+}
+
+#[test]
 fn a_section_8_deletion_is_not_a_loss() {
     let base = json!({"model": {"features": [
         {"id": "f", "source_properties": {"view_bytes": "AA==", "kept": "1"}},
@@ -228,4 +306,17 @@ fn features_absent_at_either_side_carry_no_order() {
     assert!(base_ordinal_findings(&base, &head).is_empty());
     let no_ordinals = json!({"model": {"features": [{"id": "a"}, {"id": "b"}]}});
     assert!(base_ordinal_findings(&no_ordinals, &no_ordinals).is_empty());
+}
+
+#[test]
+fn freecad_support_link_keeps_the_base_object_even_with_subelements() {
+    let base =
+        json!({"model": {"features": [{"id": "f", "source_properties": {"Support": "target"}}]}});
+    let mut head = json!({"model": {"features": [{"id": "f", "native_ref": "owner"}]}, "native": {"fcstd": {"properties": [{"id": "p", "owner": "owner", "name": "Support", "links": [{"document": null, "object": "target", "subelements": ["Vertex1"]}]}]}}});
+    assert!(base_property_loss_findings("fcstd", &base, &head).is_empty());
+    head["native"]["fcstd"]["properties"][0]["links"][0]["object"] = json!("other");
+    assert_eq!(base_property_loss_findings("fcstd", &base, &head).len(), 1);
+    head["native"]["fcstd"]["properties"][0]["links"][0]["object"] = json!("target");
+    head["native"]["fcstd"]["properties"][0]["links"][0]["document"] = json!("external");
+    assert_eq!(base_property_loss_findings("fcstd", &base, &head).len(), 1);
 }

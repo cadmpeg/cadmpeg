@@ -1,5 +1,5 @@
 {
-  "output": "original fixture                                                        S      1\n1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,32,38,6,308,17,7HprodG      1\nuct,1.0,2,2HMM,1,1.0,15HYYYYMMDD.HHMMSS,1.0000000000000000D-3,0,6HauthorG      2\n,3Horg,11,0,0H,0H;                                                      G      3\n     116       1       0       0       0       0       0       000000000D      1\n     116       0       0       2       0                 ORDERED       0D      2\n     402       3       0       0       0       0       0       000000000D      3\n     402       0       0       1      14                  GROUP1       0D      4\n     116       4       0       0       0       0       0       000000000D      5\n     116       0       0       2       0                 UNORDER       0D      6\n     402       6       0       0       0       0       0       000000000D      7\n     402       0       0       1       7                  GROUP2       0D      8\n116,1.0000000000000000D0,2.0000000000000000D0,                         1P      1\n3.0000000000000000D0,0;                                                1P      2\n402,1,1;                                                               3P      3\n116,4.0000000000000000D0,5.0000000000000000D0,                         5P      4\n6.0000000000000000D0,0;                                                5P      5\n402,1,5;                                                               7P      6\nS0000001G0000003D0000008P0000006                                        T      1\n",
+  "output": "original fixture                                                        S      1\n1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,32,38,6,308,17,7HprodG      1\nuct,1.0,2,2HMM,1,1.0,15HYYYYMMDD.HHMMSS,1.0000000000000000D-3,0,6HauthorG      2\n,3Horg,11,0,0H,0H;                                                      G      3\n     116       1       0       0       0       0       0       000000000D      1\n     116       0       0       1       0                 ORDERED       0D      2\n     402       2       0       0       0       0       0       000000000D      3\n     402       0       0       1      14                  GROUP1       0D      4\n     116       3       0       0       0       0       0       000000000D      5\n     116       0       0       1       0                 UNORDER       0D      6\n     402       4       0       0       0       0       0       000000000D      7\n     402       0       0       1       7                  GROUP2       0D      8\n116,1,2,3,0;                                                           1P      1\n402,1,1;                                                               3P      2\n116,4,5,6,0;                                                           5P      3\n402,1,5;                                                               7P      4\nS0000001G0000003D0000008P0000004                                        T      1\n",
   "report": {
     "census": {
       "basis": "target_records",
@@ -94,7 +94,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 2 native record(s) from `iges.entities`: iges:entity:directory#1, iges:entity:directory#5",
+        "message": "the iges write omits 1 native record(s) from `iges.entities`: iges:entity:directory#1",
         "severity": "info"
       },
       {
@@ -182,6 +182,7 @@
               "disposition": "dropped",
               "records": {
                 "iges:entity:directory#3": "written",
+                "iges:entity:directory#5": "written",
                 "iges:entity:directory#7": "written"
               }
             },
