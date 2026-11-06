@@ -134,6 +134,137 @@ fn failed_face_does_not_promote_its_surface_to_a_geometric_set() {
     assert!(!report.losses.is_empty());
 }
 
+fn face_with_unbounded_support() -> CadIr {
+    use cadmpeg_ir::topology::FaceLoops;
+    let mut ir = edgeless_doc();
+    ir.model.faces[0].loops = FaceLoops::unspecified(Vec::new());
+    ir.model.loops.clear();
+    ir.model.coedges.clear();
+    ir.model.edges.clear();
+    ir.model.vertices.clear();
+    ir.model.points.clear();
+    ir.model.surfaces[0].source_object = Some(cadmpeg_ir::SourceObjectAssociation {
+        format: cadmpeg_ir::CodecFormat::Iges,
+        geometry_role: Some(cadmpeg_ir::SourceGeometryRole::Support),
+        object_id: cadmpeg_core::nonblank_literal!("support-surface"),
+        instance_path: Vec::new(),
+    });
+    ir
+}
+
+#[test]
+fn failed_face_retains_its_surface_without_a_shape_root() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use std::io::Cursor;
+
+    let ir = face_with_unbounded_support();
+    let expected = ir.model.surfaces[0].geometry.clone();
+    let surface_id = ir.model.surfaces[0].id.clone();
+    let face_id = ir.model.faces[0].id.clone();
+    let mut bytes = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut bytes,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .unwrap();
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == StepLossCode::FaceNoWritableBounds.kind()
+            && loss.message.contains(face_id.as_str())
+    }));
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == StepLossCode::SourceAssociationOmitted.kind()
+            && loss.message.contains(surface_id.as_str())
+    }));
+    let text = std::str::from_utf8(&bytes).unwrap();
+    assert!(text
+        .lines()
+        .any(|line| line.contains(" = REPRESENTATION('',(#")));
+    assert!(!text.contains("GEOMETRIC_SET("));
+    let decoded = crate::StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let surface = decoded
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.geometry == expected)
+        .expect("surface retained");
+    assert_ne!(
+        surface
+            .source_object
+            .as_ref()
+            .and_then(|source| source.geometry_role),
+        Some(cadmpeg_ir::SourceGeometryRole::Independent)
+    );
+    assert!(decoded.ir().model.faces.is_empty());
+}
+
+#[test]
+fn failed_face_does_not_promote_a_written_construction_support() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use cadmpeg_ir::geometry::{
+        surface_payloads::SubsetSurfaceConstruction, ProceduralSurface,
+        ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+    };
+    use std::io::Cursor;
+
+    let mut ir = face_with_unbounded_support();
+    let support = ir.model.surfaces[0].id.clone();
+    let expected = ir.model.surfaces[0].geometry.clone();
+    let construction = ProceduralSurface::new(
+        "test:model:procedural_surface#subset".try_into().unwrap(),
+        ProceduralSurfaceDefinition::Subset(
+            SubsetSurfaceConstruction::try_new(
+                support,
+                [[0.0, 1.0], [0.0, 1.0]],
+                Some(true),
+                Some(true),
+                None,
+            )
+            .unwrap(),
+        ),
+        None,
+    );
+    ir.model.surfaces.push(Surface {
+        native_ref: None,
+        id: "test:model:surface#subset".try_into().unwrap(),
+        geometry: SurfaceGeometry::Procedural {
+            construction: construction.id.clone(),
+            cache: None,
+        },
+        source_object: None,
+    });
+    ir.model.procedural_surfaces.push(construction);
+    let mut bytes = Vec::new();
+    write_step(
+        &ir,
+        &mut bytes,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .unwrap();
+    let decoded = crate::StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let surface = decoded
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.geometry == expected)
+        .unwrap();
+    assert_eq!(
+        surface
+            .source_object
+            .as_ref()
+            .and_then(|source| source.geometry_role),
+        Some(cadmpeg_ir::SourceGeometryRole::Support)
+    );
+}
+
 #[test]
 fn an_unwritten_vertex_does_not_promote_its_support_point() {
     let mut fixture = edgeless_doc();
