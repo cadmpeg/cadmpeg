@@ -388,6 +388,7 @@
           }
         ],
         "lost_edge_references": [],
+        "mesh_containers": [],
         "mesh_surface_sentinels": [],
         "persistent_design_links": [],
         "persistent_references": [],
@@ -404,7 +405,7 @@
         "transform_hints": [],
         "unknowns": [
           {
-            "id": "f3d:source:part#c4a21a29821e293397bb52bb23d9d09ca5a78ac1a2440275111e02ad561f0793"
+            "id": "f3d:source:part#46673b27e5c0925671cb7814cdb7a39b32fc8a618bb5933e280857ccf3c4fea7"
           }
         ],
         "vertex_ownerships": [
@@ -485,10 +486,9 @@
           "strict_floor": "error"
         },
         "severity": "error",
-        "message": "part zip.entry stream=\"FusionAssetName[Active]/Previews/thumbnail.png\" offset=3034 length=21: FusionAssetName[Active]/Previews/thumbnail.png cannot be opened: malformed container: CRC mismatch for FusionAssetName[Active]/Previews/thumbnail.png; stored payload retained; dropped=[]",
+        "message": "part zip.entry stream=\"\" offset=3034 length=21: malformed container: entry FusionAssetName[Active]/Previews/thumbnail.png: FusionAssetName[Active]/Previews/thumbnail.png cannot be opened: malformed container: CRC mismatch for FusionAssetName[Active]/Previews/thumbnail.png; stored payload retained; dropped=[]",
         "provenance": {
           "format": "f3d",
-          "stream": "FusionAssetName[Active]/Previews/thumbnail.png",
           "offset": 3034,
           "byte_len": 21
         }
@@ -618,7 +618,7 @@
         },
         "untyped": []
       },
-      "f3d:source:part#c4a21a29821e293397bb52bb23d9d09ca5a78ac1a2440275111e02ad561f0793": {
+      "f3d:source:part#46673b27e5c0925671cb7814cdb7a39b32fc8a618bb5933e280857ccf3c4fea7": {
         "stream": "",
         "offset": 3034,
         "bytes": {
