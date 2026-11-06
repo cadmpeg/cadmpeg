@@ -47,6 +47,19 @@ fn native_spatial_operand_kind(kind: &str) -> Option<crate::records::FeatureInpu
     }
 }
 
+fn native_spatial_value(kind: &str, value: &cadmpeg_ir::features::ParameterValue) -> Option<f64> {
+    use cadmpeg_ir::features::ParameterValue;
+    match (kind, value) {
+        ("sgAnglDim", ParameterValue::Angle(value)) => Some(value.get()),
+        (
+            "sgLLDist" | "sgPntPntDist" | "sgPntLineDist" | "sgPntPntHorDist" | "sgPntPntVertDist"
+            | "sgCircleDim",
+            ParameterValue::Length(value),
+        ) => Some(value.get() * 0.001),
+        _ => None,
+    }
+}
+
 pub(crate) fn native_spatial_relation_supported<U, L>(
     definition: &cadmpeg_ir::sketches::SpatialSketchConstraintDefinitionInput<U, L>,
     parameters: &[cadmpeg_ir::features::DesignParameter],
@@ -60,7 +73,12 @@ pub(crate) fn native_spatial_relation_supported<U, L>(
     else {
         return false;
     };
-    native_kind.as_str() == "sgPntLineDist"
+    let operand_count = if native_kind.as_str() == "sgCircleDim" {
+        1
+    } else {
+        2
+    };
+    operands.len() == operand_count
         && parameters.iter().any(|parameter| {
             &parameter.id == id
                 && (parameter.driving
@@ -68,20 +86,18 @@ pub(crate) fn native_spatial_relation_supported<U, L>(
                         .name
                         .strip_suffix("@reference")
                         .is_some_and(|name| !name.is_empty()))
-                && matches!(
-                    parameter.value,
-                    Some(cadmpeg_ir::features::ParameterValue::Length(_))
-                )
+                && parameter
+                    .value
+                    .as_ref()
+                    .and_then(|value| native_spatial_value(native_kind.as_str(), value))
+                    .is_some()
         })
-        && matches!(operands.as_slice(), [point, line]
-            if native_spatial_operand_kind(point.native_kind.as_str()).is_some()
-                && native_spatial_operand_kind(line.native_kind.as_str()).is_some()
-                && point.object_index.is_some()
-                && line.object_index.is_some()
-                && point.field.is_none()
-                && line.field.is_none()
-                && point.native_ref.is_none()
-                && line.native_ref.is_none())
+        && operands.iter().all(|operand| {
+            native_spatial_operand_kind(operand.native_kind.as_str()).is_some()
+                && operand.object_index.is_some()
+                && operand.field.is_none()
+                && operand.native_ref.is_none()
+        })
 }
 
 /// Author input lanes from canonical sketch content.
@@ -1179,18 +1195,16 @@ pub(crate) fn feature_owns_planar_sketch(
     feature: &cadmpeg_ir::features::Feature,
     sketch: &SketchId,
 ) -> bool {
-    let owns = |definition: &FeatureDefinition| {
-        match definition {
-            FeatureDefinition::Operation(
-                FeatureOperation::Sketch {
-                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(candidate)),
-                }
-                | FeatureOperation::SketchBlockDefinition {
-                    sketch: Some(candidate),
-                },
-            ) => candidate == sketch,
-            _ => false,
-        }
+    let owns = |definition: &FeatureDefinition| match definition {
+        FeatureDefinition::Operation(
+            FeatureOperation::Sketch {
+                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(candidate)),
+            }
+            | FeatureOperation::SketchBlockDefinition {
+                sketch: Some(candidate),
+            },
+        ) => candidate == sketch,
+        _ => false,
     };
     owns(feature.evaluation.definition())
         || ir
@@ -1381,11 +1395,7 @@ fn source_less_lanes(
         if let Some(owner) = owner {
             let owner_record = generated_sketch_owner_record(native, owner, sketch.id.as_str())?;
             let object_id = generated_sketch_owner_id(owner_record, sketch.id.as_str())?;
-            append_generated_object_name(
-                &mut payload,
-                owner_record.name.as_str(),
-                object_id,
-            )?;
+            append_generated_object_name(&mut payload, owner_record.name.as_str(), object_id)?;
         }
         append_generated_sketch_markers(ir, sketch, &mut payload)?;
         let sketch_ir = sketch_brep(ir, sketch)?;
@@ -1426,11 +1436,7 @@ fn source_less_lanes(
         let owner_record = generated_sketch_owner_record(native, owner, sketch.id.as_str())?;
         let object_id = generated_sketch_owner_id(owner_record, sketch.id.as_str())?;
         let mut payload = Vec::new();
-        append_generated_object_name(
-            &mut payload,
-            owner_record.name.as_str(),
-            object_id,
-        )?;
+        append_generated_object_name(&mut payload, owner_record.name.as_str(), object_id)?;
         let entities = ir
             .model
             .spatial_sketch_entities
@@ -1605,14 +1611,13 @@ fn source_less_lanes(
                     .ok_or_else(|| {
                         cadmpeg_core::CodecError::malformed("spatial relation parameter is missing")
                     })?;
-                let Some(cadmpeg_ir::features::ParameterValue::Length(value)) =
-                    parameter.value.as_ref()
-                else {
-                    return Err(cadmpeg_core::CodecError::malformed(
-                        "spatial relation length is missing",
-                    )
-                    .into());
-                };
+                let value = parameter
+                    .value
+                    .as_ref()
+                    .and_then(|value| native_spatial_value(native_kind.as_str(), value))
+                    .ok_or_else(|| {
+                        cadmpeg_core::CodecError::malformed("spatial relation value is missing")
+                    })?;
                 let operands = operands
                     .iter()
                     .map(|operand| {
@@ -1647,7 +1652,7 @@ fn source_less_lanes(
                     &mut payload,
                     native_kind.as_str(),
                     name,
-                    value.get() * 0.001,
+                    value,
                     scalar_ids.take()?,
                     &operands,
                     parameter.driving,
