@@ -495,6 +495,10 @@ fn decode_sketch_visibilities_in_stream(
             "Sketch folder {} (number {}, {} members) grouping is dropped; its sketches remain in the parent collection.",
             if folder.name.is_empty() { "unnamed" } else { &folder.name }, folder.number, folder.members.len()
         )));
+        losses.push(F3dLossCode::SketchFolderClosingReference.note(format!(
+            "Sketch folder {} closing reference to record {} has an unresolved role and is not decoded.",
+            frame.entity_id, folder.closing
+        )));
         folders.insert(frame.entity_id, folder);
     }
     let mut listed = std::collections::HashSet::new();
@@ -544,16 +548,18 @@ fn decode_sketch_visibilities_in_stream(
         let bad_container = invalid
             .get(entity)
             .copied()
-            .or_else(|| direct.and_then(|id| invalid.get(&id).copied()))
-            .or_else(|| direct.filter(|_| root.is_none()));
+            .or_else(|| direct.and_then(|id| invalid.get(&id).copied()));
         if let Some(container) = bad_container {
-            visibility.ordinal_collection = None;
-            losses.push(F3dLossCode::SketchOwnerUnresolved.note(format!(
-                "Sketch {entity} has an invalid membership in container {container}; its collection binding is dropped."
+            losses.push(F3dLossCode::SketchMembershipConflict.note(format!(
+                "Sketch {entity} has a repeated or conflicting member-run entry in container {container}; its Geometry-member reference selects its container."
             )));
-        } else {
-            visibility.ordinal_collection = root.and_then(std::num::NonZeroU64::new);
         }
+        if let Some(id) = direct.filter(|_| root.is_none()) {
+            losses.push(F3dLossCode::SketchOwnerUnresolved.note(format!(
+                "Sketch {entity} names container {id}, which does not resolve to a collection; its collection binding is dropped."
+            )));
+        }
+        visibility.ordinal_collection = root.and_then(std::num::NonZeroU64::new);
     }
     for (target, container) in invalid {
         if !visibilities.contains_key(&target) && !folders.contains_key(&target) {
@@ -570,6 +576,7 @@ struct SketchFolder {
     number: u32,
     members: Vec<u64>,
     parent: u64,
+    closing: u64,
 }
 
 fn parse_sketch_folder(bytes: &[u8]) -> Option<SketchFolder> {
@@ -614,8 +621,8 @@ fn parse_sketch_folder(bytes: &[u8]) -> Option<SketchFolder> {
     while bytes.get(cursor) == Some(&0) {
         cursor += 1;
     }
-    let reference = take_reference(bytes, &mut cursor)?;
-    if matches!(reference, Reference::Null) || cursor != bytes.len() {
+    let closing = take_reference(bytes, &mut cursor)?.target()?;
+    if cursor != bytes.len() {
         return None;
     }
     Some(SketchFolder {
@@ -623,6 +630,7 @@ fn parse_sketch_folder(bytes: &[u8]) -> Option<SketchFolder> {
         number,
         members,
         parent,
+        closing,
     })
 }
 

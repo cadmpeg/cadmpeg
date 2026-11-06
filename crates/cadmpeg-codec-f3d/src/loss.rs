@@ -82,6 +82,8 @@ pub(crate) enum F3dLossCode {
     FeatureOccurrencePathUnresolved,
     /// A sketch collection owner does not bind one component definition.
     SketchOwnerUnresolved,
+    SketchMembershipConflict,
+    SketchFolderClosingReference,
     /// A sketch folder grouping is not projected.
     SketchFolderUnprojected,
     /// Unresolved `Component Insert` occurrences whose placement has no finite millimetre transform.
@@ -511,6 +513,8 @@ impl F3dLossCode {
         Self::LocalOccurrenceExpansionLimit,
         Self::FeatureOccurrencePathUnresolved,
         Self::SketchOwnerUnresolved,
+        Self::SketchMembershipConflict,
+        Self::SketchFolderClosingReference,
         Self::SketchFolderUnprojected,
         Self::ComponentInsertUnplaced,
         Self::ComponentInsertOrderUnknown,
@@ -729,6 +733,8 @@ impl F3dLossCode {
             Self::LocalOccurrenceExpansionLimit => "assembly.local-occurrence-expansion-limit",
             Self::FeatureOccurrencePathUnresolved => "feature.occurrence-path-unresolved",
             Self::SketchOwnerUnresolved => "sketch.component-owner-unresolved",
+            Self::SketchMembershipConflict => "sketch.membership-conflict",
+            Self::SketchFolderClosingReference => "sketch.folder-closing-reference",
             Self::SketchFolderUnprojected => "sketch.folder-unprojected",
             Self::ComponentInsertUnplaced => "assembly.component-insert-unplaced",
             Self::ComponentInsertOrderUnknown => "assembly.component-insert-order-unknown",
@@ -997,6 +1003,8 @@ impl F3dLossCode {
             | Self::FeatureOccurrencePathUnresolved
             | Self::LocalOccurrenceUnplaced
             | Self::SketchOwnerUnresolved
+            | Self::SketchMembershipConflict
+            | Self::SketchFolderClosingReference
             | Self::SketchFolderUnprojected
             | Self::ComponentInsertUnplaced
             | Self::ComponentInsertOrderUnknown
@@ -1315,6 +1323,8 @@ impl F3dLossCode {
             | Self::ComponentDefinitionRevised
             | Self::ComponentNamingSpaceUnbound => LossTaxonomy::AssemblyPlacementsNotTransferred,
             Self::SketchOwnerUnresolved
+            | Self::SketchMembershipConflict
+            | Self::SketchFolderClosingReference
             | Self::SketchFolderUnprojected
             | Self::DesignBodyBindingUnresolved
             | Self::FaceSurfaceReferenceDangling
@@ -1440,6 +1450,8 @@ mod tests {
                 "assembly.local-occurrence-expansion-limit",
                 "feature.occurrence-path-unresolved",
                 "sketch.component-owner-unresolved",
+                "sketch.membership-conflict",
+                "sketch.folder-closing-reference",
                 "sketch.folder-unprojected",
                 "assembly.component-insert-unplaced",
                 "assembly.component-insert-order-unknown",

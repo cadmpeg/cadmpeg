@@ -240,9 +240,7 @@ pub(crate) fn attach(
         {
             let id = crate::ids::neutral_sketch_id(placement);
             let owner = placement_owner(
-                placement
-                    .visibility
-                    .and_then(|visibility| visibility.ordinal_collection),
+                placement.visibility,
                 placement.entity_id.suffix(),
                 &collection_owners,
                 &entities,
@@ -267,13 +265,15 @@ pub(crate) fn attach(
 }
 
 fn placement_owner<'a>(
-    collection: Option<std::num::NonZeroU64>,
+    visibility: Option<crate::records::sketch_placement::DesignSketchVisibility>,
     entity: u64,
     collection_owners: &'a BTreeMap<u64, Option<ProductDefinitionId>>,
     entities: &'a BTreeMap<u64, Option<ProductDefinitionId>>,
 ) -> Option<&'a Option<ProductDefinitionId>> {
-    match collection {
-        Some(collection) => collection_owners.get(&collection.get()),
+    match visibility {
+        Some(visibility) => visibility
+            .ordinal_collection
+            .and_then(|collection| collection_owners.get(&collection.get())),
         None => entities.get(&entity),
     }
 }

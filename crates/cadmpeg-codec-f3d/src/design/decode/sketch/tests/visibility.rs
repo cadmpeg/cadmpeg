@@ -245,7 +245,7 @@ fn sketch_visibility_retains_its_explicit_ordinal_collection() {
 }
 
 #[test]
-fn repeated_or_conflicting_members_clear_the_sketch_binding() {
+fn repeated_or_conflicting_members_keep_the_direct_binding() {
     for collections in [
         vec![(300, vec![ENTITY_SUFFIX, ENTITY_SUFFIX])],
         vec![(300, vec![ENTITY_SUFFIX]), (400, vec![ENTITY_SUFFIX])],
@@ -256,18 +256,31 @@ fn repeated_or_conflicting_members_clear_the_sketch_binding() {
             .collect();
         let (bytes, metadata) = collection_stream(300, &borrowed);
         let (visibilities, losses) = decode_with_losses(&bytes, &metadata);
-        assert_eq!(visibilities[0].1.ordinal_collection, None);
+        assert_eq!(visibilities[0].1.ordinal_collection.unwrap().get(), 300);
         assert_eq!(losses.len(), 1);
         assert_eq!(
             losses[0].code,
-            crate::loss::F3dLossCode::SketchOwnerUnresolved.kind()
+            crate::loss::F3dLossCode::SketchMembershipConflict.kind()
         );
     }
 }
 
 #[test]
-fn collection_member_that_names_another_collection_loses_its_binding() {
+fn collection_member_that_names_another_collection_keeps_its_binding() {
     let (bytes, metadata) = collection_stream(400, &[(300, &[ENTITY_SUFFIX]), (400, &[])]);
+    let (visibilities, losses) = decode_with_losses(&bytes, &metadata);
+    assert_eq!(visibilities[0].1.ordinal_collection.unwrap().get(), 400);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::F3dLossCode::SketchMembershipConflict.kind()
+    );
+    assert!(losses[0].message.contains("container 300"));
+}
+
+#[test]
+fn unresolved_direct_container_drops_the_binding_and_reports_loss() {
+    let (bytes, metadata) = collection_stream(400, &[(300, &[])]);
     let (visibilities, losses) = decode_with_losses(&bytes, &metadata);
     assert_eq!(visibilities[0].1.ordinal_collection, None);
     assert_eq!(losses.len(), 1);
@@ -275,6 +288,7 @@ fn collection_member_that_names_another_collection_loses_its_binding() {
         losses[0].code,
         crate::loss::F3dLossCode::SketchOwnerUnresolved.kind()
     );
+    assert!(losses[0].message.contains("container 400"));
 }
 
 #[test]
@@ -361,6 +375,7 @@ fn folder_example_frames_decode() {
         assert_eq!(folder.number, 1);
         assert_eq!(folder.members.len(), count);
         assert_eq!(folder.parent, 9);
+        assert_eq!(folder.closing, 21);
         for end in 0..bytes.len() {
             assert!(super::super::parse_sketch_folder(&bytes[..end]).is_none());
         }
@@ -374,11 +389,16 @@ fn folder_sketch_uses_parent_collection() {
         append_folder(&mut bytes, &mut metadata, name, flag, zero_count);
         let (visibilities, losses) = decode_with_losses(&bytes, &metadata);
         assert_eq!(visibilities[0].1.ordinal_collection.unwrap().get(), 300);
-        assert_eq!(losses.len(), 1);
+        assert_eq!(losses.len(), 2);
         assert_eq!(
             losses[0].code,
             crate::loss::F3dLossCode::SketchFolderUnprojected.kind()
         );
+        assert_eq!(
+            losses[1].code,
+            crate::loss::F3dLossCode::SketchFolderClosingReference.kind()
+        );
+        assert!(losses[1].message.contains("record 21"));
     }
 }
 

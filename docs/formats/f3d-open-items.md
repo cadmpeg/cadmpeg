@@ -1339,7 +1339,7 @@ when the operation transition carries no candidate for the group members?
 
 ### DR-265. Sketch folder tail zero run
 
-**Question.** What does the length of the zero run between the parent collection reference and the folder-list reference of a sketch folder encode?
+**Question.** What does the length of the zero run between the parent collection reference and the closing reference of a sketch folder encode?
 
 **Known.** The run is four bytes in a folder with an empty name and eight bytes in named folders. The decoder reads the run as zero bytes of any length that ends at the closing reference.
 
@@ -1380,5 +1380,17 @@ when the operation transition carries no candidate for the group members?
 **Known.** `f3d.md` §3.1 gives the marker-one form a 345-, 355-, or 367-byte token-independent frame, and the referenced-angle form, which shares the marker-one prologue through offset 33, a 351- or 373-byte frame. The decoder reads a frame of another length with the marker-one field offsets and records `feature.revolve-layout-assumed`.
 
 **Need.** A Design stream with a marker-one `Revolve` scope of another token-independent length and the feature's parameters as the application shows them.
+
+**Note.** None.
+
+### DR-286. Sketch folder closing reference
+
+**Question.** Which record does the closing reference of a sketch folder name, and what is its role?
+
+**Known.** The reference is a non-null marked reference that ends the folder frame. It follows the zero run after the parent collection reference. The decoder reads its target and reports the target in a loss note.
+
+**Need.** The record type of the reference target, and saves of one design that change the component or the folder set of a sketch folder.
+
+**Conflict.** None.
 
 **Note.** None.
