@@ -4967,7 +4967,7 @@ Offsets are relative to the transform record's primary indexed header. The class
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | transform records are 253 bytes to their same-index paired headers |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | It is 253, 254, 273, or 274 bytes from its primary indexed header to its same-index paired header |
 | 43 | 4 | `form` | `u32` | little | spec | offset 43 stores u32 form `1` or `5` |
 | 47 | 1 | `reserved_zero` | `u8` | little | spec | offset 47 is zero |
 | 48 | 128 | `transform` | `f64[16]` | little | spec | sixteen row-major f64 values begin at offset 48 |
@@ -4985,7 +4985,7 @@ Offsets are relative to the transform record's primary indexed header.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | class `368` transform records are 254 bytes |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | It is 253, 254, 273, or 274 bytes from its primary indexed header to its same-index paired header |
 | 43 | 4 | `form` | `u32` | little | spec | offset 43 stores u32 form `1` or `5` |
 | 47 | 1 | `reserved_zero` | `u8` | little | spec | offset 47 is zero |
 | 48 | 128 | `transform` | `f64[16]` | little | spec | sixteen row-major f64 values begin at offset 48 |
@@ -5003,8 +5003,8 @@ Offsets are relative to the transform record's primary indexed header.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | transform records are 273 bytes |
-| 43 | 4 | `form` | `u32` | little | spec | The 273-byte frames use form word `1` · value `1` |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | It is 253, 254, 273, or 274 bytes from its primary indexed header to its same-index paired header |
+| 43 | 4 | `form` | `u32` | little | spec | It is 253, 254, 273, or 274 bytes from its primary indexed header to its same-index paired header · value `1` |
 | 47 | 1 | `reserved_zero` | `u8` | little | spec | offset 47 is zero |
 | 48 | 128 | `transform` | `f64[16]` | little | spec | sixteen row-major f64 values begin at offset 48 |
 
@@ -5021,7 +5021,7 @@ Offsets are relative to the transform record's primary indexed header.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Class `349` transform records are 254 or 274 bytes |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | It is 253, 254, 273, or 274 bytes from its primary indexed header to its same-index paired header |
 | 43 | 4 | `form` | `u32` | little | spec | offset 43 stores u32 form `1` or `5` |
 | 47 | 1 | `reserved_zero` | `u8` | little | spec | offset 47 is zero |
 | 48 | 128 | `transform` | `f64[16]` | little | spec | sixteen row-major f64 values begin at offset 48 |

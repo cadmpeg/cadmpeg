@@ -16421,7 +16421,7 @@ anchor = "a marked reference to its first ordered reference at offset 36"
 name = "move_transform_frame_253"
 kind = "byte"
 section = "3.1"
-anchor = "Class `296`, `362`, `433`, `447`, `293`, `393`, `442`, `451`, `456`, and `452` transform records are 253 bytes"
+anchor = "A rigid-transform record has type GUID `84E6245F-1CDC-4FB8-8048-163A85FAD3F0`"
 size = 253
 note = "Offsets are relative to the transform record's primary indexed header. The class tags are the admission discriminator; the class-447 form uses paired class 263, the class-456 form uses paired class 258, and the class-452 form uses paired class 262 and form word 5; the same-index paired header follows at offset 253."
 
@@ -16430,7 +16430,7 @@ name = "indexed_header"
 offset = 0
 type = "bytes[11]"
 source = "spec"
-anchor = "transform records are 253 bytes to their same-index paired headers"
+anchor = "It is 253, 254, 273, or 274 bytes from its primary indexed header to its same-index paired header"
 
 [[record.gap]]
 offset = 11
@@ -16467,7 +16467,7 @@ note = "The transform record's native tail precedes the same-index paired header
 name = "move_transform_frame_254"
 kind = "byte"
 section = "3.1"
-anchor = "class `368` transform records are 254 bytes"
+anchor = "A rigid-transform record has type GUID `84E6245F-1CDC-4FB8-8048-163A85FAD3F0`"
 size = 254
 note = "Offsets are relative to the transform record's primary indexed header."
 
@@ -16476,7 +16476,7 @@ name = "indexed_header"
 offset = 0
 type = "bytes[11]"
 source = "spec"
-anchor = "class `368` transform records are 254 bytes"
+anchor = "It is 253, 254, 273, or 274 bytes from its primary indexed header to its same-index paired header"
 
 [[record.gap]]
 offset = 11
@@ -16513,7 +16513,7 @@ note = "The transform record's tail precedes the same-index paired header at off
 name = "move_transform_frame_273"
 kind = "byte"
 section = "3.1"
-anchor = "transform records are 273 bytes"
+anchor = "A rigid-transform record has type GUID `84E6245F-1CDC-4FB8-8048-163A85FAD3F0`"
 size = 273
 note = "Offsets are relative to the transform record's primary indexed header."
 
@@ -16522,7 +16522,7 @@ name = "indexed_header"
 offset = 0
 type = "bytes[11]"
 source = "spec"
-anchor = "transform records are 273 bytes"
+anchor = "It is 253, 254, 273, or 274 bytes from its primary indexed header to its same-index paired header"
 
 [[record.gap]]
 offset = 11
@@ -16535,7 +16535,7 @@ offset = 43
 type = "u32"
 value = 1
 source = "spec"
-anchor = "The 273-byte frames use form word `1`"
+anchor = "It is 253, 254, 273, or 274 bytes from its primary indexed header to its same-index paired header"
 
 [[record.field]]
 name = "reserved_zero"
@@ -16560,7 +16560,7 @@ note = "The transform record's tail precedes the same-index paired header at off
 name = "move_transform_frame_274"
 kind = "byte"
 section = "3.1"
-anchor = "Class `349` transform records are 254 or 274 bytes"
+anchor = "A rigid-transform record has type GUID `84E6245F-1CDC-4FB8-8048-163A85FAD3F0`"
 size = 274
 note = "Offsets are relative to the transform record's primary indexed header."
 
@@ -16569,7 +16569,7 @@ name = "indexed_header"
 offset = 0
 type = "bytes[11]"
 source = "spec"
-anchor = "Class `349` transform records are 254 or 274 bytes"
+anchor = "It is 253, 254, 273, or 274 bytes from its primary indexed header to its same-index paired header"
 
 [[record.gap]]
 offset = 11
