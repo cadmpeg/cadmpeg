@@ -2153,6 +2153,48 @@ impl<'a> Builder<'a> {
                 }
             }
         }
+        if drawing.kind == cadmpeg_ir::drawings::DrawingKind::View {
+            let mut items = Vec::new();
+            let mut omitted = Vec::new();
+            for selection in drawing.relationships.get("items").into_iter().flatten() {
+                let reference = selection.local_target().and_then(|id| {
+                    self.point_refs
+                        .get(id)
+                        .copied()
+                        .or_else(|| self.curve_refs.get(id).copied())
+                        .or_else(|| self.surface_refs.get(id).map(|surface| surface.reference))
+                });
+                let reference = reference.or_else(|| self.resolve_drawing_item(selection));
+                if let Some(reference) = reference {
+                    items.push(reference);
+                } else {
+                    omitted.push(selection.local_target().unwrap_or("external target"));
+                }
+            }
+            if !items.is_empty() {
+                if !omitted.is_empty() {
+                    self.loss(
+                        StepLossCode::DrawingPresentationRecordsOmitted,
+                        format!(
+                            "drawing {} has unwritten items: {}",
+                            drawing.id,
+                            omitted.join(", ")
+                        ),
+                    );
+                }
+                self.note_drawing_omissions(
+                    drawing,
+                    &["source_type", "name"],
+                    &["items", "presentation_context"],
+                );
+                self.mark_drawing_context(drawing);
+                let name = drawing.parameters.get("name").map_or("", String::as_str);
+                return Some(self.emitter.emit(
+                    "PRESENTATION_VIEW",
+                    &format!("{},{},{context}", string(name), refs(&items)),
+                ));
+            }
+        }
         let supported = drawing
             .parameters
             .get("source_type")
