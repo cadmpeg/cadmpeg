@@ -924,6 +924,7 @@ pub(crate) fn decode_face_operands(
         let is_mirror_plane = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::Mirror)
             && group.role() == DesignOperandRole::ROLE_0X5;
+        let is_pattern_face_seed = crate::design::is_pattern_face_seed_group(&scope.kind(), group);
         let is_split_face_operand =
             scope.kind() == crate::records::feature::scope::DesignFeatureKind::SplitFace;
         let is_delete_face_operand = matches!(
@@ -964,6 +965,7 @@ pub(crate) fn decode_face_operands(
             && !is_circular_pattern_seed
             && !is_mirror_seed
             && !is_mirror_plane
+            && !is_pattern_face_seed
             && !is_split_face_operand
             && !is_delete_face_operand
             && !is_emboss_face
@@ -1008,7 +1010,11 @@ pub(crate) fn decode_face_operands(
                 .copied()
                 .map(|header| header.byte_offset)
                 .or_else(|| {
-                    if !is_offset_faces_operand && !is_shell_operand && !is_extrude_operand {
+                    if !is_offset_faces_operand
+                        && !is_shell_operand
+                        && !is_extrude_operand
+                        && !is_pattern_face_seed
+                    {
                         return None;
                     }
                     scope
@@ -1018,7 +1024,10 @@ pub(crate) fn decode_face_operands(
                         .and_then(|ordinal| scope.reference_members().values().nth(ordinal + 1))
                         .and_then(|record_index| header_index.get(&(stream, *record_index)))
                         .map(|next| next.byte_offset)
-                        .filter(|next| !is_extrude_operand || *next > header.byte_offset)
+                        .filter(|next| {
+                            !(is_extrude_operand || is_pattern_face_seed)
+                                || *next > header.byte_offset
+                        })
                 });
             if let Some(operand) = parse_face_operand(
                 ctx,

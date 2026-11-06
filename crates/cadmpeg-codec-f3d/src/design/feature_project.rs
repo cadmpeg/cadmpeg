@@ -945,7 +945,13 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 )
                 .unwrap_or_else(|| {
                     FeatureDefinition::Operation(FeatureOperation::Pattern {
-                        seeds: Vec::new(),
+                        seeds: unprojected_pattern_seeds(
+                            scope,
+                            construction_groups,
+                            face_operands,
+                            entity_selection_operands,
+                            scopes,
+                        ),
                         pattern: PatternKind::UNRESOLVED_CIRCULAR,
                     })
                 }),
@@ -959,7 +965,13 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     )
                     .unwrap_or_else(|| {
                         FeatureDefinition::Operation(FeatureOperation::Pattern {
-                            seeds: Vec::new(),
+                            seeds: unprojected_pattern_seeds(
+                                scope,
+                                construction_groups,
+                                face_operands,
+                                entity_selection_operands,
+                                scopes,
+                            ),
                             pattern: PatternKind::UNRESOLVED_LINEAR,
                         })
                     })
@@ -968,7 +980,13 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     project_mirror(scope, construction_groups, face_operands, scopes)
                         .unwrap_or_else(|| {
                             FeatureDefinition::Operation(FeatureOperation::Pattern {
-                                seeds: Vec::new(),
+                                seeds: unprojected_pattern_seeds(
+                                    scope,
+                                    construction_groups,
+                                    face_operands,
+                                    entity_selection_operands,
+                                    scopes,
+                                ),
                                 pattern: PatternKind::UNRESOLVED_MIRROR,
                             })
                         })
@@ -7012,16 +7030,7 @@ fn project_circular_pattern(
     };
     let construction = scope.circular_pattern_construction()?;
     let (axis_origin, axis_dir) = circular_pattern_axis(&construction.axis)?;
-    let stream = native_stream(&scope.id)?;
-    let group = unique_feature_match(groups.iter().filter(|group| {
-        native_stream(&group.id) == Some(stream)
-            && group.scope_record_index == scope.record_index
-            && matches!(
-                group.role(),
-                DesignOperandRole::BODIES_A | DesignOperandRole::BODIES_B
-            )
-            && !group.members().is_empty()
-    }))?;
+    let group = pattern_seed_group(scope, groups)?;
     let seeds = pattern_group_seeds(
         scope,
         group,
@@ -7044,6 +7053,59 @@ fn project_circular_pattern(
     }))
 }
 
+/// The seed group of a rectangular, circular, or Mirror pattern scope: its
+/// unique non-empty body- or face-role group, or, when it has none, its unique
+/// face seed group.
+fn pattern_seed_group<'a>(
+    scope: &DesignParameterScope,
+    groups: &'a [DesignConstructionOperandGroup],
+) -> Option<&'a DesignConstructionOperandGroup> {
+    let stream = native_stream(&scope.id)?;
+    let scope_groups = || {
+        groups.iter().filter(move |group| {
+            native_stream(&group.id) == Some(stream)
+                && group.scope_record_index == scope.record_index
+                && !group.members().is_empty()
+        })
+    };
+    let mut role_groups = scope_groups()
+        .filter(|group| {
+            matches!(
+                group.role(),
+                DesignOperandRole::BODIES_A | DesignOperandRole::BODIES_B
+            )
+        })
+        .peekable();
+    if role_groups.peek().is_some() {
+        return unique_feature_match(role_groups);
+    }
+    unique_feature_match(
+        scope_groups()
+            .filter(|group| crate::design::is_pattern_face_seed_group(&scope.kind(), group)),
+    )
+}
+
+/// Seeds of a pattern scope whose transform does not project.
+fn unprojected_pattern_seeds(
+    scope: &DesignParameterScope,
+    groups: &[DesignConstructionOperandGroup],
+    face_operands: &[DesignFaceOperand],
+    entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
+    scopes: &[DesignParameterScope],
+) -> Vec<cadmpeg_ir::features::patterns::PatternSeed> {
+    pattern_seed_group(scope, groups)
+        .map(|group| {
+            pattern_group_seeds(
+                scope,
+                group,
+                face_operands,
+                entity_selection_operands,
+                scopes,
+            )
+        })
+        .unwrap_or_default()
+}
+
 /// Seeds of a pattern's seed group. A body-role group selects its bodies. A
 /// face-role group selects its historical faces in the scope's preceding
 /// state; otherwise, when every member is a compact entity selection that
@@ -7057,6 +7119,17 @@ fn pattern_group_seeds(
 ) -> Vec<cadmpeg_ir::features::patterns::PatternSeed> {
     use cadmpeg_ir::features::patterns::PatternSeed;
 
+    if group.role() == DesignOperandRole::ROLE_0X10 {
+        return vec![PatternSeed::Faces(
+            resolved_historical_face_group(
+                scope,
+                scope.previous_history_state_id(),
+                group,
+                face_operands,
+            )
+            .unwrap_or_else(|| cadmpeg_ir::features::FaceSelection::Native(group.id.clone())),
+        )];
+    }
     if group.role() != DesignOperandRole::BODIES_A {
         return vec![PatternSeed::Bodies(
             cadmpeg_ir::features::BodySelection::Native(group.id.clone()),
@@ -7244,31 +7317,15 @@ fn project_rectangular_pattern_scalars(
                 .ok()?,
             )),
         });
-    let group_seed = if let Some(stream) = native_stream(&scope.id) {
-        let mut matching_groups = groups.iter().filter(|group| {
-            native_stream(&group.id) == Some(stream)
-                && group.scope_record_index == scope.record_index
-                && matches!(
-                    group.role(),
-                    DesignOperandRole::BODIES_A | DesignOperandRole::BODIES_B
-                )
-                && !group.members().is_empty()
-        });
-        let first = matching_groups.next();
-        let second = matching_groups.next();
-        match (first, second) {
-            (Some(group), None) => Some(pattern_group_seeds(
-                scope,
-                group,
-                face_operands,
-                entity_selection_operands,
-                scopes,
-            )),
-            _ => None,
-        }
-    } else {
-        None
-    };
+    let group_seed = pattern_seed_group(scope, groups).map(|group| {
+        pattern_group_seeds(
+            scope,
+            group,
+            face_operands,
+            entity_selection_operands,
+            scopes,
+        )
+    });
     let seeds = component_seed
         .map(|seed| vec![seed])
         .or(group_seed)

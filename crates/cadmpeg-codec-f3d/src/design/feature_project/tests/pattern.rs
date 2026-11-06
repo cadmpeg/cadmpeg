@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::design::feature_project::{
-    project_circular_pattern, project_rectangular_pattern_scalars,
+    project_circular_pattern, project_rectangular_pattern_scalars, unprojected_pattern_seeds,
 };
 use crate::records::{
     feature::{patterns::DesignRectangularPatternConstruction, scope::DesignParameterScope},
@@ -596,5 +596,87 @@ fn spacing_pattern_payload_projects_both_axes_and_feature_seed() {
         )
         .unwrap(),
         *record
+    );
+}
+
+#[test]
+fn a_face_seed_group_supplies_face_seeds_without_a_body_or_face_role_group() {
+    let faces = PatternSeed::Faces(FaceSelection::Native(
+        "f3d:Design/BulkStream.dat:design-construction-operand-group#30".into(),
+    ));
+    let rectangular = project_rectangular_pattern_scalars(
+        &rectangular_scope(),
+        &[group(10, 30, DesignOperandRole::ROLE_0X10)],
+        &[],
+        &[],
+        &[],
+    )
+    .expect("rectangular pattern");
+    assert_linear_seed(rectangular, faces.clone());
+    let circular = project_circular_pattern(
+        &circular_scope(),
+        &[group(10, 30, DesignOperandRole::ROLE_0X10)],
+        &[],
+        &[],
+        &[],
+    )
+    .expect("circular pattern");
+    let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) = circular else {
+        panic!("circular pattern definition");
+    };
+    assert_eq!(seeds, vec![faces]);
+
+    let bodies = PatternSeed::Bodies(BodySelection::Native(
+        "f3d:Design/BulkStream.dat:design-construction-operand-group#20".into(),
+    ));
+    let preferred = project_rectangular_pattern_scalars(
+        &rectangular_scope(),
+        &[
+            group(10, 20, DesignOperandRole::BODIES_B),
+            group(10, 30, DesignOperandRole::ROLE_0X10),
+        ],
+        &[],
+        &[],
+        &[],
+    )
+    .expect("rectangular pattern");
+    assert_linear_seed(preferred, bodies);
+
+    let mut later = group(10, 30, DesignOperandRole::ROLE_0X10);
+    later.scope_reference_ordinal = 2;
+    assert!(unprojected_pattern_seeds(&rectangular_scope(), &[later], &[], &[], &[]).is_empty());
+}
+
+#[test]
+fn an_unprojected_pattern_keeps_its_seeds() {
+    let mirror = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:parameter-scope#10",
+        crate::records::feature::scope::DesignFeatureKind::Mirror,
+        10,
+    );
+    let feature = seed_scope(5, Some(2));
+    assert_eq!(
+        unprojected_pattern_seeds(
+            &mirror,
+            &[group(10, 30, DesignOperandRole::BODIES_A)],
+            &[],
+            &[compact_entity_selection(30, 31, 5)],
+            &[mirror.clone(), feature.clone()],
+        ),
+        vec![PatternSeed::Feature(crate::ids::neutral_feature_id(
+            &feature
+        ))]
+    );
+    assert_eq!(
+        unprojected_pattern_seeds(
+            &mirror,
+            &[group(10, 30, DesignOperandRole::ROLE_0X10)],
+            &[],
+            &[],
+            &[],
+        ),
+        vec![PatternSeed::Faces(FaceSelection::Native(
+            "f3d:Design/BulkStream.dat:design-construction-operand-group#30".into(),
+        ))]
     );
 }
