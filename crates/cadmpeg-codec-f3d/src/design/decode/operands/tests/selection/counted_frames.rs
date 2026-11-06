@@ -49,6 +49,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                 kind_offset: 1100,
                 feature_ordinal: std::num::NonZeroU32::MIN,
                 feature_ordinal_offset: 0,
+                label: None,
                 history_state_id: None,
 
                 previous_history_state_id: None,
