@@ -118,3 +118,47 @@ fn inconsistent_offset_cache_is_not_written_as_a_construction() {
             if (circle.radius().get() - 1.25).abs() < 1.0e-12)
     }));
 }
+
+#[test]
+fn plane_offset_preserves_support_and_construction() {
+    for sign in [1.0, -1.0] {
+        let bytes = crate::test_support::test_surface_fixtures::offset_plane_file(sign, 2.0);
+        let input = IgesCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("offset plane decodes");
+        let plan = IgesCodec
+            .plan(
+                EncodeInput::new(input.ir(), None),
+                TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+            )
+            .expect("offset plane synthesizes");
+        assert!(
+            plan.report()
+                .losses
+                .iter()
+                .all(|loss| loss.code != crate::loss::IgesLossCode::ProceduralReduced.kind()),
+            "losses: {:?}",
+            plan.report().losses
+        );
+        let mut bytes = Vec::new();
+        let report = plan.write_to(&mut bytes).expect("offset plane writes");
+        assert_eq!(report.census.counts.get("140_offset_surface"), Some(&1));
+        let output = IgesCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("offset plane re-decodes");
+        assert_eq!(output.ir().model.surfaces.len(), 2);
+        assert_eq!(output.ir().model.procedural_surfaces.len(), 1);
+        let cadmpeg_ir::geometry::ProceduralSurfaceDefinition::Offset(offset) =
+            output.ir().model.procedural_surfaces[0].definition()
+        else {
+            panic!("offset construction survives")
+        };
+        assert_eq!(offset.distance().get(), sign * 2.0);
+        assert!(output
+            .ir()
+            .model
+            .surfaces
+            .iter()
+            .any(|surface| surface.id == *offset.support()));
+    }
+}
