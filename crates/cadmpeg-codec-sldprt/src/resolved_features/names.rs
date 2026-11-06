@@ -75,12 +75,7 @@ fn payload_name_candidates(
         .enumerate()
         .filter_map(move |(offset, marker)| (marker == name_marker).then_some(offset))
         .filter_map(move |offset| {
-            let length = usize::from(*payload.get(offset + NAME_MARKER.len())?);
-            if length == 0 {
-                return None;
-            }
-            let start = offset + NAME_MARKER.len() + 1;
-            let end = start.checked_add(length.checked_mul(2)?)?;
+            let (start, end) = name_span(payload, offset)?;
             let units = payload.get(start..end)?;
             let object_id = end
                 .checked_add(8)
@@ -88,6 +83,53 @@ fn payload_name_candidates(
                 .and_then(|value| ObjectId::try_from(value).ok());
             Some((offset, object_id, units))
         })
+}
+
+pub(crate) fn name_span(payload: &[u8], offset: usize) -> Option<(usize, usize)> {
+    let length_at = offset.checked_add(NAME_MARKER.len())?;
+    let first = *payload.get(length_at)?;
+    let (length, start) = if first == u8::MAX {
+        (
+            usize::from(View::u16_le_at(payload, length_at.checked_add(1)?)?),
+            length_at.checked_add(3)?,
+        )
+    } else {
+        (usize::from(first), length_at.checked_add(1)?)
+    };
+    if length == 0 {
+        return None;
+    }
+    let end = start.checked_add(length.checked_mul(2)?)?;
+    payload.get(start..end)?;
+    Some((start, end))
+}
+
+pub(crate) fn record_name_end(payload: &[u8], name: &FeatureInputName) -> Option<usize> {
+    let offset = usize::try_from(name.offset).ok()?;
+    if let Some((start, end)) = name_span(payload, offset) {
+        let units = name.value.encode_utf16();
+        if units
+            .flat_map(u16::to_le_bytes)
+            .eq(payload[start..end].iter().copied())
+        {
+            return Some(end);
+        }
+    }
+    let units = name.value.encode_utf16().count();
+    offset
+        .checked_add(name_prefix_len(units))?
+        .checked_add(units.checked_mul(2)?)
+}
+
+pub(crate) fn append_name_length(payload: &mut Vec<u8>, length: u8) {
+    payload.push(length);
+    if length == u8::MAX {
+        payload.extend_from_slice(&u16::from(length).to_le_bytes());
+    }
+}
+
+pub(crate) fn name_prefix_len(units: usize) -> usize {
+    NAME_MARKER.len() + 1 + usize::from(units >= usize::from(u8::MAX)) * 2
 }
 
 pub(super) fn payload_classes(payload: &[u8]) -> impl Iterator<Item = (usize, &str)> {

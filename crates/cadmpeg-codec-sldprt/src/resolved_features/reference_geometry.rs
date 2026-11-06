@@ -9,7 +9,7 @@ use super::scalars::FeatureObjectNames;
 use super::selections::{
     compact_component_path_end_at, component_face_reference_in_record, COMPACT_EDGE_VECTOR_MARKER,
 };
-use super::{is_class_token, CLASS_MARKER, NAME_MARKER};
+use super::{is_class_token, CLASS_MARKER};
 use crate::classification::{
     classify, native_object_class, principal_plane_with_siblings, FeatureClass, NativeClassKind,
 };
@@ -578,10 +578,7 @@ fn resolved_reference_point(
     const NATIVE_TO_IR: f64 = 1000.0;
 
     let object_id = name.object_id.and_then(ObjectId::value)?;
-    let name_start = usize::try_from(name.offset).ok()?;
-    let name_end = name_start
-        .checked_add(NAME_MARKER.len() + 1)?
-        .checked_add(name.value.encode_utf16().count().checked_mul(2)?)?;
+    let name_end = super::names::record_name_end(payload, name)?;
     let header = payload.get(name_end..name_end.checked_add(16)?)?;
     if header[..HEADER_PREFIX.len()] != HEADER_PREFIX
         || header[pt_short::OBJECT_ID..pt_short::ZERO_AFTER_ID] != object_id.to_le_bytes()
@@ -1660,9 +1657,7 @@ fn sketch_block_compact_local_id(
     record_end: usize,
 ) -> Option<u16> {
     let name_start = usize::try_from(name.offset).ok()?;
-    let name_end = name_start
-        .checked_add(NAME_MARKER.len() + 1)?
-        .checked_add(name.value.encode_utf16().count().checked_mul(2)?)?;
+    let name_end = super::names::record_name_end(payload, name)?;
     let header_start = name_end.checked_add(28)?;
     let header = View::u16_le_at(payload, header_start)?;
     (sketch_block_record_local_id(payload, name_start, record_end)? == header).then_some(header)
