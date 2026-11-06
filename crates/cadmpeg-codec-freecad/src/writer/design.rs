@@ -233,7 +233,7 @@ mod tests {
             display: None,
             value,
             driving: true,
-            properties: Default::default(),
+            properties: std::collections::BTreeMap::default(),
             pmi: None,
             native_ref: None,
         }

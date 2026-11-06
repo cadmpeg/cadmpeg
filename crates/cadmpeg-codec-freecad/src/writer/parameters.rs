@@ -458,16 +458,14 @@ pub(super) fn write(
         if let Some((sketch, path)) = constraints.get(parameter.id.as_str()) {
             if is_literal_binding(parameter) {
                 report_literal_normalization(parameter, losses);
-            } else {
-                if let Some(name) = names.get(*sketch) {
-                    expressions
-                        .entry(name.clone())
-                        .or_default()
-                        .push(xml::element(
-                            "Expression",
-                            &[("path", path.clone()), ("expression", expression.clone())],
-                        ));
-                }
+            } else if let Some(name) = names.get(*sketch) {
+                expressions
+                    .entry(name.clone())
+                    .or_default()
+                    .push(xml::element(
+                        "Expression",
+                        &[("path", path.clone()), ("expression", expression.clone())],
+                    ));
             }
             continue;
         }
