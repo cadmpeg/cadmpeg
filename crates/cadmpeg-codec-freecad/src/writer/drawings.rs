@@ -751,6 +751,43 @@ mod tests {
     }
 
     #[test]
+    fn mapped_view_source_and_x_direction_are_not_reported_as_omitted() {
+        use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+        use cadmpeg_ir::{Codec, DecodeOptions};
+
+        let mut ir = CadIr::empty();
+        let mut drawing = cadmpeg_ir::drawings::Drawing::new(
+            cadmpeg_ir::drawings::DrawingId::mint("cadir:model:drawing#view").unwrap(),
+            "cadir:model:feature#view".into(),
+            DrawingKind::View,
+            "TechDraw::DrawViewPart".into(),
+            0,
+            None,
+        );
+        drawing.x_direction = cadmpeg_ir::units::NonzeroVector::new([1.0, 0.0, 0.0]);
+        drawing.relationships.insert(
+            cadmpeg_core::text::NonBlankString::new("Source").unwrap(),
+            vec![ReferenceSelection::new(ReferenceTarget::Null, Vec::new())],
+        );
+        let id = drawing.id.clone();
+        ir.model.drawings.push(drawing);
+        let plan = crate::FcstdCodec
+            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+            .unwrap();
+        assert!(!plan.report().losses.iter().any(|loss| loss.code
+            == FreecadLossCode::ExportArenaNotTransferred.note("").code
+            && loss.message.contains(id.as_str())));
+        let mut bytes = Vec::new();
+        plan.write_to(&mut bytes).unwrap();
+        let output = crate::FcstdCodec
+            .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        let view = &output.ir().model.drawings[0];
+        assert_eq!(view.x_direction.unwrap().get(), [1.0, 0.0, 0.0]);
+        assert!(view.relationships.contains_key("Source"));
+    }
+
+    #[test]
     fn unresolvable_view_source_is_named_in_a_specific_loss() {
         let mut drawing = cadmpeg_ir::drawings::Drawing::new(
             cadmpeg_ir::drawings::DrawingId::mint("cadir:model:drawing#view").unwrap(),
