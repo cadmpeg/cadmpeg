@@ -47,6 +47,78 @@ fn unsafe_entry_names_refuse_construction_and_duplicates_remain_writer_limits() 
 }
 
 #[test]
+fn duplicate_archive_entry_keeps_first_record_and_reports_the_other() {
+    use std::io::Read;
+
+    let document = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="0"/><ObjectData Count="0"/></Document>"#;
+    let source = archive_entries(&[("Document.xml", document), ("Extra.bin", b"first")]);
+    let decoded = FcstdCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let namespace = ir.native.namespace_mut("fcstd");
+    let mut entries = namespace.arena_as::<EntryRecord>("entries").unwrap();
+    let mut duplicate = EntryRecord::new(
+        "authored:native:entry#duplicate".into(),
+        "Extra.bin".into(),
+        cadmpeg_core::container::ContainerRole::Auxiliary,
+        Vec::new(),
+        usize::MAX,
+    )
+    .unwrap();
+    duplicate.retain_payload(b"second".to_vec());
+    entries.push(duplicate);
+    let first_missing = EntryRecord::new(
+        "authored:native:entry#first-missing".into(),
+        "Missing.bin".into(),
+        cadmpeg_core::container::ContainerRole::Auxiliary,
+        Vec::new(),
+        usize::MAX - 1,
+    )
+    .unwrap();
+    let mut duplicate_missing = EntryRecord::new(
+        "authored:native:entry#duplicate-missing".into(),
+        "Missing.bin".into(),
+        cadmpeg_core::container::ContainerRole::Auxiliary,
+        Vec::new(),
+        usize::MAX,
+    )
+    .unwrap();
+    duplicate_missing.retain_payload(b"later".to_vec());
+    entries.extend([first_missing, duplicate_missing]);
+    namespace
+        .set_arena(
+            &cadmpeg_test_support::service_decode_context(),
+            "entries",
+            &entries,
+        )
+        .unwrap();
+    assert!(
+        !crate::writer::xml::retained_entry_names(ir.native.namespace("fcstd").unwrap())
+            .contains("Missing.bin")
+    );
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("authored:native:entry#duplicate")));
+    let mut output = Vec::new();
+    plan.write_to(&mut output).unwrap();
+    let mut archive = zip::ZipArchive::new(Cursor::new(output)).unwrap();
+    let mut bytes = Vec::new();
+    archive
+        .by_name("Extra.bin")
+        .unwrap()
+        .read_to_end(&mut bytes)
+        .unwrap();
+    assert_eq!(bytes, b"first");
+    assert!(archive.by_name("Missing.bin").is_err());
+}
+
+#[test]
 fn x65_backslash_entry_is_refused_by_constructor_reader_and_native_record() {
     let error = crate::test_support::source_fidelity::EntryFixture::try_new(
         "test:native:entry#backslash".into(),
@@ -315,7 +387,7 @@ fn mutation_rejects_link_carrier_edits_without_changing_the_graph() {
 #[test]
 fn writer_omits_direct_link_carrier_graph_drift() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="2"><Object type="Part::Feature" name="Owner"/><Object type="Part::Feature" name="Target"/></Objects>
+<Objects Count="2"><Object type="App::Part" name="Owner"/><Object type="Part::Feature" name="Target"/></Objects>
 <ObjectData Count="2"><Object name="Owner"><Properties Count="1"><Property name="Support" type="App::PropertyLink"><Link value="Target"/></Property></Properties></Object><Object name="Target"><Properties Count="0"/></Object></ObjectData></Document>"#;
     let decoded = FcstdCodec
         .decode(

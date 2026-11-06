@@ -56,12 +56,16 @@ struct AppearancePlan {
 struct BodyUpdate {
     id: cadmpeg_ir::ids::BodyId,
     visible: Option<bool>,
+    color: Option<Color>,
 }
 
 impl AppearancePlan {
     fn apply(self, ir: &mut CadIr) {
         for update in self.body_updates {
             if let Some(body) = ir.model.bodies.iter_mut().find(|body| body.id == update.id) {
+                if let Some(color) = update.color {
+                    body.color = Some(color);
+                }
                 if let Some(visible) = update.visible {
                     body.visible = Some(visible);
                 }
@@ -531,6 +535,7 @@ fn transfer_schema_one(
             plan.body_updates.push(BodyUpdate {
                 id: body_id.clone(),
                 visible: visibility,
+                color,
             });
         }
         if let Some(file) = values
@@ -709,9 +714,6 @@ fn transfer_schema_one(
                     .retain(|binding| binding.appearance != appearance);
             }
         }
-        // The object colour feeds the neutral appearance and its binding,
-        // with the ShapeMaterial values when present. It is not also a
-        // body display field.
         let appearance_source = if values.get("ShapeMaterial").is_some() {
             Some(origins.property(
                 projection_property(
@@ -810,7 +812,7 @@ fn transfer_schema_one(
             physical_token: None,
             schema: Some("FCStd ViewProvider ShapeMaterial".into()),
             category: None,
-            base_color: color.or(material_color),
+            base_color: material_color.or(color),
             textures: Vec::new(),
             properties: material_properties,
         });

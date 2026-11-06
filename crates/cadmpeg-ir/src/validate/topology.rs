@@ -3011,14 +3011,14 @@ fn check_feature_references(
             FeatureOperation::MeshImport { tessellations } => {
                 for tessellation in tessellations {
                     if ids
-                        .tessellations(tessellation, crate::index::StandardIndex)
+                        .tessellations(tessellation.as_str(), crate::index::StandardIndex)
                         .is_none()
                     {
                         ref_error(
                             findings,
                             feature.id.as_str(),
                             "mesh import tessellation",
-                            tessellation,
+                            tessellation.as_str(),
                         );
                     }
                 }

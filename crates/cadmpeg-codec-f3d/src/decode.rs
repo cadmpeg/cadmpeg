@@ -327,8 +327,6 @@ struct DesignProjectionGaps {
     unresolved_parameter_owners: usize,
     untyped_parameter_units: usize,
     unresolved_expression_dependencies: usize,
-    unprojected_history_dependencies: usize,
-    ambiguous_history_dependencies: usize,
     native_dimensions: usize,
     unprojected_sketch_placements: usize,
     unprojected_sketch_surfaces: usize,
@@ -1168,48 +1166,6 @@ fn design_projection_gaps(
         .iter()
         .filter_map(|parameter| parameter.native_ref.as_deref())
         .collect::<std::collections::HashSet<_>>();
-    let projected_features = ir
-        .model
-        .features
-        .iter()
-        .filter_map(|feature| Some((feature.native_ref.as_deref()?, feature)))
-        .collect::<std::collections::HashMap<_, _>>();
-    let mut unprojected_history_dependencies = 0;
-    let mut ambiguous_history_dependencies = 0;
-    let scope_history = crate::design::feature_project::ScopeHistoryGraph::new(
-        &native.design_parameter_scopes,
-        &native.design_body_bindings,
-        &native.design_body_recipe_operands,
-        &native.design_component_naming_spaces,
-        &native.asm_histories,
-    );
-    for scope in &native.design_parameter_scopes {
-        let Some(feature) = projected_features.get(scope.id.as_str()) else {
-            continue;
-        };
-        let predecessor_scope = match scope_history.predecessor(scope, |candidate| {
-            projected_features.contains_key(candidate.id.as_str())
-        }) {
-            Ok(crate::design::feature_project::ScopeHistoryPredecessor::Scope(predecessor)) => {
-                predecessor
-            }
-            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-            Ok(crate::design::feature_project::ScopeHistoryPredecessor::Ambiguous) | Err(_) => {
-                ambiguous_history_dependencies += 1;
-                continue;
-            }
-            Ok(crate::design::feature_project::ScopeHistoryPredecessor::None) => {
-                continue;
-            }
-        };
-        let Some(predecessor) = projected_features.get(predecessor_scope.id.as_str()) else {
-            unprojected_history_dependencies += 1;
-            continue;
-        };
-        if predecessor.id != feature.id && !feature.dependencies.contains(&predecessor.id) {
-            unprojected_history_dependencies += 1;
-        }
-    }
     let projected_dimension_parameters = ir
         .model
         .sketch_constraints
@@ -1279,8 +1235,6 @@ fn design_projection_gaps(
             .iter()
             .filter(|binding| binding.history_only)
             .count(),
-        unprojected_history_dependencies,
-        ambiguous_history_dependencies,
         unprojected_feature_scopes: projection_records::missing_feature_scopes(ir, native)?.len(),
         unprojected_parameters: native
             .design_parameters
@@ -2023,22 +1977,6 @@ fn report_design_projection_gaps(
         push(F3dLossCode::ParameterExpressionUnbound, count,
             format_args!("parameter {parameter}: {count} unresolved expression identifier(s) remain literal text"))?;
     }
-    push(
-        F3dLossCode::HistoryDependencyUnprojected,
-        gaps.unprojected_history_dependencies,
-        format_args!(
-            "{} feature history-state dependency link(s) were not projected into neutral construction history.",
-            gaps.unprojected_history_dependencies
-        ),
-    )?;
-    push(
-        F3dLossCode::HistoryDependencyAmbiguous,
-        gaps.ambiguous_history_dependencies,
-        format_args!(
-            "{} feature history-state dependency link(s) have multiple source scopes for the preceding state identity.",
-            gaps.ambiguous_history_dependencies
-        ),
-    )?;
     push(
         F3dLossCode::SketchDimensionNativeRetained,
         gaps.native_dimensions,
@@ -2842,34 +2780,110 @@ impl<'a> F3dDecodeSession<'a> {
         path: SessionPath,
         prereqs: &prereqs::ProductPrereqs,
     ) -> Result<FinalizePath, CodecError> {
+        use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput, PartSpec};
+
         let scan = self.scan;
-        let act = match crate::act::decode(scan) {
-            Ok(act) => act,
-            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-            Err(error) => {
-                self.report.losses.push(
-                    F3dLossCode::ActRecordUntyped
-                        .note(format!("ACT records could not be decoded: {error}")),
-                );
-                self.untyped.extend([
+
+        let mut parts = PartOutput::new(cadmpeg_ir::CodecFormat::F3d, self.ctx);
+        let mut act = crate::act::DecodedAct::default();
+        for entry in scan
+            .entries
+            .iter()
+            .filter(|entry| scan.is_act_stream(entry))
+        {
+            let source = scan
+                .entry_view(&entry.name)
+                .ok_or_else(|| CodecError::malformed("ACT stream has no source view"))?;
+            let meta_name = entry.name.replace("BulkStream.dat", "MetaStream.dat");
+            let meta_ok = if let Some(meta_source) = scan.entry_view(&meta_name) {
+                let spec = PartSpec::new("zip.entry")
+                    .holding([
+                        cadmpeg_ir::document::ArenaClass::Model,
+                        cadmpeg_ir::document::ArenaClass::Design,
+                    ])
+                    .in_stream(
+                        cadmpeg_ir::StreamName::try_from(meta_name.clone())
+                            .map_err(CodecError::malformed)?,
+                    );
+                self.ctx
+                    .decode_part(&mut parts, meta_source, spec, |_| {
+                        scan.parsed_metastream(&meta_name)
+                    })?
+                    .is_some()
+            } else {
+                false
+            };
+            let spec = PartSpec::new("zip.entry")
+                .holding([
                     cadmpeg_ir::document::ArenaClass::Model,
                     cadmpeg_ir::document::ArenaClass::Design,
-                ]);
-                crate::act::DecodedAct::default()
+                ])
+                .in_stream(
+                    cadmpeg_ir::StreamName::try_from(entry.name.clone())
+                        .map_err(CodecError::malformed)?,
+                );
+            let decoded = self.ctx.decode_part(&mut parts, source, spec, |_| {
+                if meta_ok {
+                    crate::act::decode_stream(scan, &entry.name)
+                } else {
+                    Err(CodecError::malformed(
+                        "ACT BulkStream has no readable sibling MetaStream",
+                    ))
+                }
+            })?;
+            if let Some(decoded) = decoded {
+                act.append(decoded);
             }
-        };
-        if act.untyped_records != 0 {
-            self.untyped.extend([
-                cadmpeg_ir::document::ArenaClass::Model,
-                cadmpeg_ir::document::ArenaClass::Design,
-            ]);
-            self.report
-                .losses
-                .push(F3dLossCode::ActRecordUntyped.note(format!(
-                    "{} ACT source records have no typed semantic payload",
-                    act.untyped_records
-                )));
         }
+        for frame in act.untyped_spans {
+            let source = scan
+                .entry_view(&frame.stream)
+                .ok_or_else(|| CodecError::malformed("ACT record stream has no source view"))?;
+            let start = source
+                .start()
+                .checked_add(frame.extent.start)
+                .ok_or_else(|| CodecError::malformed("ACT record start overflows"))?;
+            let end = source
+                .start()
+                .checked_add(frame.extent.end)
+                .ok_or_else(|| CodecError::malformed("ACT record end overflows"))?;
+            let extent = source
+                .child(start, end)
+                .ok_or_else(|| CodecError::malformed("ACT record extent exceeds its stream"))?;
+            let mut spec = PartSpec::new("f3d.bulk_record")
+                .holding([
+                    cadmpeg_ir::document::ArenaClass::Model,
+                    cadmpeg_ir::document::ArenaClass::Design,
+                ])
+                .in_stream(
+                    cadmpeg_ir::StreamName::try_from(frame.stream.clone())
+                        .map_err(CodecError::malformed)?,
+                );
+            for id in &frame.dropped {
+                spec = spec.dropping(
+                    cadmpeg_ir::ids::Identity::try_from(id.as_str())
+                        .map_err(CodecError::malformed)?,
+                );
+            }
+            let error = match frame.error {
+                CodecError::Malformed(message) => CodecError::malformed(format_args!(
+                    "ACT record {}: {message}",
+                    frame.record_index
+                )),
+                error => error,
+            };
+            self.ctx
+                .decode_part(&mut parts, extent, spec, |_| Err::<(), _>(error))?;
+        }
+        let (_, native, fidelity, losses) = parts.into_parts();
+        let stubs = native
+            .namespace("f3d")
+            .map(|namespace| namespace.arena_as_for_decode(self.ctx, "unknowns"))
+            .transpose()?
+            .unwrap_or_default();
+        self.design_part_fidelity.append(fidelity)?;
+        self.design_part_stubs.extend(stubs);
+        self.report.losses.extend(losses);
         let unresolved_links = act
             .component_links
             .iter()
@@ -3059,9 +3073,6 @@ impl<'a> F3dDecodeSession<'a> {
             .model
             .occurrences
             .extend(unresolved_component_inserts);
-        if component_inserts.has_untyped_occurrences() {
-            self.untyped.insert(cadmpeg_ir::document::ArenaClass::Model);
-        }
         self.report.losses.extend(component_inserts.losses());
         let joints = crate::design::assembly::project_assembly_joints_with_paths(
             &prereqs.design_parameter_scopes,
@@ -3076,9 +3087,6 @@ impl<'a> F3dDecodeSession<'a> {
                 &self.ir.model.occurrences,
             ),
         );
-        if joints.untyped {
-            self.untyped.insert(cadmpeg_ir::document::ArenaClass::Model);
-        }
         self.ir.model.assembly_joints = joints.joints;
         self.report.losses.extend(joints.losses);
         projections::standalone_product(&mut self.ir, &self.native);
@@ -3883,11 +3891,7 @@ fn mesh_texture_asset(
             data: cadmpeg_ir::assets::AssetData::new(bytes.to_vec())
                 .ok_or_else(|| CodecError::Malformed("asset data must not be empty".into()))?,
         },
-        Some(crate::ids::native_scoped_id(
-            file.archive_entry_name(),
-            "mesh-texture",
-            0,
-        )),
+        None,
     )
     .map_err(CodecError::Malformed)
 }
@@ -3938,21 +3942,17 @@ fn project_mesh_bodies(
         .iter()
         .flat_map(|feature| feature.texture_table.resources())
     {
+        let texture_id = crate::ids::neutral_asset_id(texture.file.archive_entry_name());
         if ir
             .model
             .assets
             .iter()
             .chain(&texture_assets)
-            .any(|asset: &cadmpeg_ir::assets::Asset| asset.id == texture.asset)
+            .any(|asset: &cadmpeg_ir::assets::Asset| asset.id == texture_id)
         {
             continue;
         }
-        texture_assets.push(mesh_texture_asset(
-            ctx,
-            scan,
-            &texture.file,
-            &texture.asset,
-        )?);
+        texture_assets.push(mesh_texture_asset(ctx, scan, &texture.file, &texture_id)?);
     }
     extend_unique_assets(&mut ir.model.assets, texture_assets)?;
     let mut texture_tables = std::collections::HashMap::new();
@@ -3960,11 +3960,15 @@ fn project_mesh_bodies(
         let mut texture_table = Vec::new();
         for texture in feature.texture_table.resources_in_flags_order() {
             let source_id = texture.resource_guid.as_str().to_owned();
-            let asset = texture.asset.clone();
+            let asset = crate::ids::neutral_asset_id(texture.file.archive_entry_name());
             texture_table.push((source_id, asset));
         }
         for body in feature.bodies() {
-            if let Some(tessellation_id) = &body.tessellation_id {
+            if let Some((_, _, tessellation_id)) =
+                decoded.joins.iter().find(|(feature_id, index, _)| {
+                    feature_id == &feature.id && *index == body.placement.record().record_index()
+                })
+            {
                 insert_mesh_texture_table(&mut texture_tables, tessellation_id, &texture_table)?;
             }
         }
@@ -3996,6 +4000,12 @@ fn project_mesh_bodies(
         tessellations_by_scope: std::collections::HashMap::new(),
     };
     for mut body in bodies {
+        let feature_id = decoded
+            .joins
+            .iter()
+            .find(|(_, _, id)| id == &body.id)
+            .map(|(feature_id, _, _)| feature_id.clone())
+            .ok_or_else(|| CodecError::malformed("F3D joined mesh has no Design feature"))?;
         let texture_table = texture_tables.remove(&body.id).ok_or_else(|| {
             CodecError::Malformed("F3D joined mesh body has no owning texture table".into())
         })?;
@@ -4048,7 +4058,8 @@ fn project_mesh_bodies(
         .with_feature_edges(body.feature_edges)
         .and_then(|mesh| mesh.with_triangle_groups(triangle_groups))
         .and_then(|mesh| mesh.with_texture_assignments(texture_assignments))
-        .map_err(|err| CodecError::Malformed(err.to_string()))?;
+        .map_err(|err| CodecError::Malformed(err.to_string()))?
+        .with_native_ref(Some(feature_id));
         ir.model.tessellations.push(tessellation);
     }
     if !texture_tables.is_empty() {
@@ -4062,10 +4073,16 @@ fn project_mesh_bodies(
             &mut projection.tessellations_by_scope,
             stream,
             feature.scope().record().record_index(),
-            feature
-                .bodies()
-                .iter()
-                .filter_map(|body| body.tessellation_id.as_deref()),
+            feature.bodies().iter().filter_map(|body| {
+                decoded
+                    .joins
+                    .iter()
+                    .find(|(feature_id, index, _)| {
+                        feature_id == &feature.id
+                            && *index == body.placement.record().record_index()
+                    })
+                    .map(|(_, _, id)| id.as_str())
+            }),
         )?;
     }
     projection.untyped |= !unresolved.is_empty();
@@ -4256,7 +4273,8 @@ fn bind_mesh_feature_definitions(
         }
         let mut copies = Vec::new();
         for tessellation in tessellations {
-            let copy = tessellation.to_owned();
+            let copy = cadmpeg_ir::tessellation::TessellationId::mint(tessellation.to_owned())
+                .map_err(cadmpeg_core::CodecError::malformed)?;
             copies.push(copy);
         }
         feature
@@ -4758,6 +4776,71 @@ fn decode_result(
     }
     let entry_parts = give_up_unreadable_entries(ctx, scan)?;
     let (_, mut entry_native, entry_fidelity, mut entry_losses) = entry_parts.into_parts();
+    if let Some(native) = &retained.native_layout {
+        for (part, loss) in scan.unreadable_entries.iter().zip(&mut entry_losses) {
+            if crate::container::classify(&part.name) != ContainerRole::Paramesh
+                || !scan.belongs_to_design_asset(&part.name)
+            {
+                continue;
+            }
+            let name = part.name.rsplit('/').next().unwrap_or(&part.name);
+            if scan
+                .entries
+                .iter()
+                .filter(|entry| {
+                    scan.is_design_asset_entry(entry, ContainerRole::Paramesh)
+                        && entry.name.rsplit('/').next() == Some(name)
+                })
+                .count()
+                != 1
+            {
+                continue;
+            }
+            for mesh_feature in &native.design_mesh_features {
+                let mut affected = false;
+                for body in mesh_feature.bodies() {
+                    if body.entry.name() == name && body.container_mesh_uuid.is_none() {
+                        let id = format!(
+                            "{}:mesh-body#{}",
+                            crate::ids::native_scope(&part.name),
+                            body.placement.record().byte_offset()
+                        );
+                        loss.dropped.push(id);
+                        affected = true;
+                    }
+                }
+                if affected
+                    && mesh_feature
+                        .bodies()
+                        .iter()
+                        .all(|body| body.container_mesh_uuid.is_none())
+                {
+                    let stream = crate::ids::native_stream(&mesh_feature.id)
+                        .unwrap_or(crate::ids::DEFAULT_STREAM);
+                    let scope = format!(
+                        "{stream}:design-parameter-scope#{}",
+                        mesh_feature.scope().record().byte_offset()
+                    );
+                    if let Some(feature) = ir
+                        .model
+                        .features
+                        .iter()
+                        .find(|feature| feature.native_ref.as_deref() == Some(&scope))
+                    {
+                        loss.dropped.push(feature.id.as_str().to_owned());
+                    }
+                }
+            }
+            loss.dropped.sort();
+            loss.dropped.dedup();
+            if !loss.dropped.is_empty() {
+                loss.message = loss.message.replace(
+                    "dropped=[]",
+                    &format!("dropped=[{}]", loss.dropped.join(", ")),
+                );
+            }
+        }
+    }
     if container::design_breps(scan).next().is_none()
         && container::text_brep_names(scan).next().is_none()
         && scan
