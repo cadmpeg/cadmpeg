@@ -1057,6 +1057,20 @@ pub(crate) mod paramesh_collection_owner_backlink_prefix {
     pub(crate) const COLLECTION_BACKLINK: usize = 262;
 }
 
+/// Byte offsets for the `paramesh_collection_owner_v21` record.
+///
+/// Spec §3.1. Record length 29 B.
+///
+/// ```text
+/// Offsets are relative to the collection-owner indexed header. The name code units follow the count, and the later fields start at the version-22 offsets plus the name length.
+/// ```
+pub(crate) mod paramesh_collection_owner_v21 {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 29;
+    /// Offset of `name_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const NAME_COUNT: usize = 25;
+}
+
 /// Byte offsets for the `paramesh_collection_owner_v17` record.
 ///
 /// Spec §3.1. Record length 252 B.

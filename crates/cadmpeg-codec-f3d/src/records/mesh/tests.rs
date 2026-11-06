@@ -701,24 +701,50 @@ fn mesh_collection_owner_derives_fixed_and_terminal_backlinks() {
         (200, 189),
         (400, 389),
     ] {
-        let owner =
-            crate::records::mesh::DesignMeshCollectionOwner::new(identity(length), 100 + relative)
-                .unwrap();
+        let owner = crate::records::mesh::DesignMeshCollectionOwner::new(
+            identity(length),
+            100 + relative,
+            None,
+        )
+        .unwrap();
         assert_eq!(owner.backlink_offset(), 100 + relative);
         assert_eq!(owner.record(), &identity(length));
+        assert_eq!(owner.name_count(), None);
         assert_eq!(
             crate::records::mesh::DesignMeshCollectionOwner::new(
                 owner.record().clone(),
-                owner.backlink_offset()
+                owner.backlink_offset(),
+                owner.name_count(),
             )
             .unwrap(),
             owner
         );
     }
     for (length, offset) in [(250, 341), (272, 362), (400, 99), (400, 488)] {
-        assert!(
-            crate::records::mesh::DesignMeshCollectionOwner::new(identity(length), offset).is_err()
-        );
+        assert!(crate::records::mesh::DesignMeshCollectionOwner::new(
+            identity(length),
+            offset,
+            None
+        )
+        .is_err());
+    }
+    for (count, relative) in [(0, 266), (3, 272)] {
+        let owner = crate::records::mesh::DesignMeshCollectionOwner::new(
+            identity(400),
+            100 + relative,
+            Some(count),
+        )
+        .unwrap();
+        assert_eq!(owner.backlink_offset(), 100 + relative);
+        assert_eq!(owner.name_count(), Some(count));
+    }
+    for (length, count, offset) in [(400, 3, 362), (400, 3, 370), (282, 3, 372)] {
+        assert!(crate::records::mesh::DesignMeshCollectionOwner::new(
+            identity(length),
+            offset,
+            Some(count)
+        )
+        .is_err());
     }
 }
 

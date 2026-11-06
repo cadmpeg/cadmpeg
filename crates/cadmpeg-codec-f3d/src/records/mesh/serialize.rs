@@ -248,6 +248,8 @@ impl Serialize for DesignMeshFeature {
             collection_owner_record: RecordRef<'a>,
             collection_owner_reference_offset: u64,
             collection_owner_backlink_offset: u64,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            collection_owner_name_count: Option<u32>,
             scope_owner_record_index: u32,
             scope_owner_reference_offset: u64,
             texture_flags_count_offset: u64,
@@ -285,6 +287,7 @@ impl Serialize for DesignMeshFeature {
             collection_owner_record: RecordRef::from_identity(&self.collection_owner.record),
             collection_owner_reference_offset: self.collection.owner_reference_offset(),
             collection_owner_backlink_offset: self.collection_owner.backlink_offset(),
+            collection_owner_name_count: self.collection_owner.name_count(),
             scope_owner_record_index: self.scope.owner_record_index(),
             scope_owner_reference_offset: self.scope.owner_reference_offset(),
             texture_flags_count_offset: self.texture_table.flags_count_offset(),
