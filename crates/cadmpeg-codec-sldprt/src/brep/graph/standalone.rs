@@ -121,13 +121,11 @@ pub(super) fn decode_prefix(
         let Some(carrier) = record(body, offset, &arrays) else {
             return Ok(None);
         };
-        if body.get(offset..offset + 2) == Some(&[0, 0x85]) {
-            if let Some((_, source, _)) = super::super::record_starts(body, offset, 0x85)
-                .filter_map(|start| subset::header(body, start))
-                .find(|(wrapper, _, _)| emitted_curves.contains(&super::id_curve(*wrapper)))
-            {
-                sources.push(super::id_curve(source));
-            }
+        if let Some((_, source, _)) = super::super::record_starts(body, offset, 0x85)
+            .filter_map(|start| subset::header(body, start))
+            .find(|(wrapper, _, _)| emitted_curves.contains(&super::id_curve(*wrapper)))
+        {
+            sources.push(super::id_curve(source));
         }
         offset = carrier.end();
     }
