@@ -882,6 +882,41 @@ fn fixtures_synthesize_without_source_bytes() {
     }
 }
 
+#[test]
+fn source_less_dimension_keeps_its_non_driving_state() {
+    let input = read_fixture("design_sketch_constraints").expect("dimension fixture");
+    let decoded = decode_result(&input).expect("decode dimension fixture");
+    let dimension = decoded
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| !parameter.driving)
+        .expect("fixture has a non-driving dimension");
+    let mut bytes = Vec::new();
+    F3dCodec
+        .encode(decoded.ir(), &mut bytes)
+        .expect("synthesize dimension");
+    let output = decode_result(&bytes).expect("decode synthesized dimension");
+    let written = output
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == dimension.name)
+        .expect("dimension is written");
+    assert!(!written.driving);
+    let (
+        Some(cadmpeg_ir::features::ParameterValue::Length(expected)),
+        Some(cadmpeg_ir::features::ParameterValue::Length(actual)),
+    ) = (&dimension.value, &written.value)
+    else {
+        panic!("dimension retains its length value");
+    };
+    const EPS_DIMENSION_ROUNDTRIP: f64 = 1.0e-12;
+    assert!((actual.get() - expected.get()).abs() < EPS_DIMENSION_ROUNDTRIP);
+}
+
 /// How far the mutation lane moves a point, in millimetres.
 const MUTATION_MM: f64 = 1.0;
 
