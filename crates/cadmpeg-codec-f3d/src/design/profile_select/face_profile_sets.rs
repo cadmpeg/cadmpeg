@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Prove an Extrude's face profile from its own transition when face recipes
+//! Infer an Extrude's face profile from its own transition when face recipes
 //! leave members unresolved.
 //!
 //! A blind Extrude from planar faces inserts, at its length from their plane,
@@ -65,7 +65,7 @@ const SEARCH_LIMITS: SearchLimits = SearchLimits {
     face_edges: CAP_EDGES,
 };
 
-/// The arenas that prove Extrude face profiles.
+/// The arenas that infer Extrude face profiles.
 pub(crate) struct FaceProfileSetResolution<'a> {
     pub(crate) scopes: &'a [DesignParameterScope],
     pub(crate) groups: &'a [DesignConstructionOperandGroup],
@@ -96,7 +96,7 @@ struct CapSearch<'a> {
 #[derive(Debug, PartialEq)]
 enum CapReading {
     /// One face set, sorted by slot.
-    Proved(Vec<i64>),
+    Selected(Vec<i64>),
     /// A selection that could be the profile fails its checks, two such
     /// sets differ, or a cap over such faces or such a face that reaches
     /// into a cap is unreadable.
@@ -107,7 +107,7 @@ enum CapReading {
     Capped,
 }
 
-/// The rule that proved a face set.
+/// The rule that infers a face set.
 #[derive(Clone, Copy)]
 enum SetRule {
     EndCaps,
@@ -121,10 +121,22 @@ impl SetRule {
             Self::DeletedFaces => "deleted faces",
         }
     }
+
+    /// The loss that names this rule's inference of `faces` for `group`.
+    fn inference(self, group: &str, faces: &[i64], resolved: &[i64]) -> LossNote {
+        match self {
+            Self::EndCaps => F3dLossCode::FeatureExtrudeProfileCapFacesInferred.note(format!(
+                "Extrude profile group {group} takes faces {faces:?}: the transition's end caps at the blind length cover these preceding faces, and no other plane or side holds a selection that can be the profile.",
+            )),
+            Self::DeletedFaces => F3dLossCode::FeatureExtrudeProfileDeletedFacesInferred.note(format!(
+                "Extrude profile group {group} takes faces {faces:?}: the transition deletes these faces, one per member, on the plane of the resolved faces {resolved:?}, and no end cap reaches a face that can be the profile.",
+            )),
+        }
+    }
 }
 
 /// Replace each native single-group Extrude face profile whose set its own
-/// transition proves with the proven historical faces.
+/// transition infers with the inferred historical faces.
 pub(crate) fn bind_extrude_face_profile_sets(
     features: &mut [cadmpeg_ir::features::Feature],
     resolution: &FaceProfileSetResolution<'_>,
@@ -138,13 +150,11 @@ pub(crate) fn bind_extrude_face_profile_sets(
         else {
             continue;
         };
-        let mut outcome = Ok(None);
+        let mut outcome = Ok(Vec::new());
         feature.evaluation.edit(|definition, _| {
             outcome = bind_one(definition, scope, resolution, SEARCH_LIMITS);
         });
-        if let Some(loss) = outcome? {
-            losses.push(loss);
-        }
+        losses.extend(outcome?);
     }
     Ok(losses)
 }
@@ -154,7 +164,7 @@ fn bind_one(
     scope: &DesignParameterScope,
     resolution: &FaceProfileSetResolution<'_>,
     limits: SearchLimits,
-) -> Result<Option<LossNote>, CodecError> {
+) -> Result<Vec<LossNote>, CodecError> {
     use cadmpeg_ir::features::{
         BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeSide, ExtrudeStart, FaceSelection,
         FeatureDefinition, FeatureOperation, LinearTermination, PlanarProfileRef, ProfileRef,
@@ -176,33 +186,33 @@ fn bind_one(
         ..
     }) = definition
     else {
-        return Ok(None);
+        return Ok(Vec::new());
     };
     let ProfileRef::Planar(PlanarProfileRef::Native(native)) = profile else {
-        return Ok(None);
+        return Ok(Vec::new());
     };
     let ctx = resolution.ctx;
     let Some(roots) = extrude_profile_group_roots(ctx, scope, resolution.groups)? else {
-        return Ok(None);
+        return Ok(Vec::new());
     };
     let [root] = roots.as_slice() else {
-        return Ok(None);
+        return Ok(Vec::new());
     };
     if root.id != *native
         || native_stream(&root.id) != native_stream(&scope.id)
         || root.extrude_role() != Some(DesignExtrudeOperandRole::Profile)
     {
-        return Ok(None);
+        return Ok(Vec::new());
     }
     let Some(indices) =
         extrude_profile_group_operand_indices(ctx, root, resolution.groups, resolution.operands)?
     else {
-        return Ok(None);
+        return Ok(Vec::new());
     };
     let mut members = Vec::new();
     for index in indices {
         let Some(operand) = resolution.operands.get(index) else {
-            return Ok(None);
+            return Ok(Vec::new());
         };
         match (
             operand.resolved_face_slots.as_slice(),
@@ -210,36 +220,36 @@ fn bind_one(
         ) {
             ([], None) => members.push(None),
             ([slot], None) => members.push(Some(*slot)),
-            _ => return Ok(None),
+            _ => return Ok(Vec::new()),
         }
     }
     if members.iter().all(Option::is_some) {
-        return Ok(None);
+        return Ok(Vec::new());
     }
     let resolved: Vec<i64> = members.iter().flatten().copied().collect();
     let (Some(state_id), Some(previous_state_id)) =
         (scope.history_state_id(), scope.previous_history_state_id())
     else {
-        return Ok(None);
+        return Ok(Vec::new());
     };
     let histories =
         super::histories_for_scope(&scope.id, resolution.scope_histories, resolution.histories);
     let Some((history, state, previous_state)) =
         crate::history::unique_history_state_pair(histories, state_id, previous_state_id)
     else {
-        return Ok(None);
+        return Ok(Vec::new());
     };
     let Some(transition) = state
         .transition
         .as_ref()
         .filter(|transition| transition.previous_state_id == Some(previous_state_id))
     else {
-        return Ok(None);
+        return Ok(Vec::new());
     };
     let (Some(topology), Some(preceding)) =
         (history.topology(state), history.topology(previous_state))
     else {
-        return Ok(None);
+        return Ok(Vec::new());
     };
     let tolerance = resolution.linear_tolerance;
     let faces = &transition.topology.faces;
@@ -250,7 +260,7 @@ fn bind_one(
         .copied()
         .collect();
     let group = root.id.clone();
-    let proof = match cap_profile_faces(&CapSearch {
+    let inferred = match cap_profile_faces(&CapSearch {
         preceding,
         topology,
         inserted: &faces.inserted,
@@ -262,7 +272,7 @@ fn bind_one(
         tolerance,
         limits,
     }) {
-        CapReading::Proved(faces) => (SetRule::EndCaps, faces),
+        CapReading::Selected(faces) => (SetRule::EndCaps, faces),
         CapReading::Absent => {
             let Some(faces) = deleted_profile_faces(
                 preceding,
@@ -271,34 +281,35 @@ fn bind_one(
                 &resolved,
                 tolerance,
             ) else {
-                return Ok(None);
+                return Ok(Vec::new());
             };
             (SetRule::DeletedFaces, faces)
         }
-        CapReading::Disputed => return Ok(None),
+        CapReading::Disputed => return Ok(Vec::new()),
         CapReading::Capped => {
-            return Ok(Some(F3dLossCode::FeatureExtrudeProfileFaceSearchCapped.note(
+            return Ok(vec![F3dLossCode::FeatureExtrudeProfileFaceSearchCapped.note(
                 format!(
                     "Extrude profile group {group} stays native: its end-cap search passed a local cap of {} faces on one plane, {} outline points, or {} edges on one face.",
                     limits.pool_faces, limits.outline_points, limits.face_edges,
                 ),
-            )));
+            )]);
         }
     };
-    let (rule, faces) = proof;
+    let (rule, faces) = inferred;
     let Some(ordered) = member_order(&members, &faces) else {
-        return Ok(None);
+        return Ok(Vec::new());
     };
+    let inference = rule.inference(&group, &ordered, &resolved);
     let Some(FaceSelection::Historical {
         state,
         faces,
         native: selection_native,
     }) = historical_face_selection_with_native(scope, previous_state_id, ordered, root.id.clone())
     else {
-        return Ok(None);
+        return Ok(Vec::new());
     };
     let Ok(native_ids) = vec![selection_native.as_str().to_owned()].try_into() else {
-        return Ok(None);
+        return Ok(Vec::new());
     };
     let unresolved = members.iter().filter(|member| member.is_none()).count();
     *profile = ProfileRef::Planar(PlanarProfileRef::HistoricalFaces {
@@ -306,13 +317,15 @@ fn bind_one(
         faces,
         native: native_ids,
     });
-    Ok((unresolved > 1).then(|| {
-        F3dLossCode::FeatureExtrudeProfileFaceOrderAssumed.note(format!(
-            "Extrude profile group {group}: the transition's {} prove its {} faces; its {unresolved} unresolved members take the faces left after the resolved members in face-slot order.",
+    let mut losses = vec![inference];
+    if unresolved > 1 {
+        losses.push(F3dLossCode::FeatureExtrudeProfileFaceOrderAssumed.note(format!(
+            "Extrude profile group {group}: the transition's {} give its {} faces; its {unresolved} unresolved members take the faces left after the resolved members in face-slot order.",
             rule.name(),
             members.len(),
-        ))
-    }))
+        )));
+    }
+    Ok(losses)
 }
 
 /// Resolved members' faces at their positions, then the other `faces` in
@@ -371,7 +384,7 @@ fn parallel(normal: Vector3, frame: &PlaneFrame) -> bool {
         .is_some_and(|normal| (normal.dot(frame.normal()).abs() - 1.0).abs() <= PARALLEL_CAP)
 }
 
-/// What the inserted caps at the search length from a plane prove about a
+/// What the inserted caps at the search length from a plane state about a
 /// set of preceding faces, one per member, that holds every resolved face.
 fn cap_profile_faces(search: &CapSearch<'_>) -> CapReading {
     let &CapSearch {
@@ -402,7 +415,7 @@ fn cap_profile_faces(search: &CapSearch<'_>) -> CapReading {
         .filter_map(|face| current_planes.get(*face).map(|plane| (*face, plane)))
         .collect();
     let mut grouped = vec![false; planar.len()];
-    let mut proofs: Vec<Vec<i64>> = Vec::new();
+    let mut selections: Vec<Vec<i64>> = Vec::new();
     for first in 0..planar.len() {
         if grouped[first] {
             continue;
@@ -512,14 +525,14 @@ fn cap_profile_faces(search: &CapSearch<'_>) -> CapReading {
                 return CapReading::Disputed;
             }
             selected.sort_unstable();
-            if !proofs.contains(&selected) {
-                proofs.push(selected);
+            if !selections.contains(&selected) {
+                selections.push(selected);
             }
         }
     }
-    match <[Vec<i64>; 1]>::try_from(proofs) {
-        Ok([proof]) => CapReading::Proved(proof),
-        Err(proofs) if proofs.is_empty() => CapReading::Absent,
+    match <[Vec<i64>; 1]>::try_from(selections) {
+        Ok([selection]) => CapReading::Selected(selection),
+        Err(selections) if selections.is_empty() => CapReading::Absent,
         Err(_) => CapReading::Disputed,
     }
 }
@@ -667,8 +680,7 @@ fn interior_point(face: &Cap, tolerance: f64) -> Option<Point2> {
 /// and every cap vertex lies on that outline.
 ///
 /// A face boundary segment is on the outline when the union holds one of its
-/// sides and not the other; both its ends must then lie on a proven cap
-/// piece.
+/// sides and not the other; both its ends must then lie on a cap piece.
 fn outlines_agree(caps: &[Cap], faces: &[Cap], tolerance: f64) -> bool {
     let in_union = |point: Point2| faces.iter().any(|face| face.contains(point));
     let on_caps = |point: Point2| {

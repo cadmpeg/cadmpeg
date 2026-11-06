@@ -253,11 +253,11 @@ fn a_cap_proves_the_coplanar_faces_it_repeats() {
     let cap = capped(2.0);
     assert_eq!(
         caps(&preceding, &cap, &[10], 2.0, 2, &[]),
-        CapReading::Proved(vec![1, 2])
+        CapReading::Selected(vec![1, 2])
     );
     assert_eq!(
         caps(&preceding, &cap, &[10], 2.0, 2, &[2]),
-        CapReading::Proved(vec![1, 2])
+        CapReading::Selected(vec![1, 2])
     );
 }
 
@@ -308,7 +308,7 @@ fn a_cap_that_two_planes_repeat_proves_only_the_plane_of_a_resolved_or_changed_f
     let given = |changed: &HashSet<i64>, new_body| {
         caps_given(&preceding, &cap, (&[10], 2.0, 1), changed, new_body, LIMITS)
     };
-    assert_eq!(given(&one, false), CapReading::Proved(vec![1]));
+    assert_eq!(given(&one, false), CapReading::Selected(vec![1]));
     assert_eq!(given(&one, true), CapReading::Disputed);
     assert_eq!(given(&HashSet::new(), false), CapReading::Absent);
 }
@@ -387,14 +387,14 @@ fn one_unreadable_cap_voids_the_caps_beside_it() {
         .topology;
     assert_eq!(
         caps(&preceding, &cap_faces, &[10, 11], 2.0, 3, &[]),
-        CapReading::Proved(vec![1, 2, 3])
+        CapReading::Selected(vec![1, 2, 3])
     );
     cap_faces
         .edge_curves
         .retain(|row| row.entity <= last_readable);
     assert_eq!(
         caps(&preceding, &cap_faces, &[10], 2.0, 2, &[]),
-        CapReading::Proved(vec![1, 2])
+        CapReading::Selected(vec![1, 2])
     );
     assert_eq!(
         caps(&preceding, &cap_faces, &[10, 11], 2.0, 2, &[]),
@@ -411,7 +411,7 @@ fn caps_at_another_height_belong_to_another_plane() {
         .topology;
     assert_eq!(
         caps(&preceding, &cap_faces, &[10, 11], 2.0, 2, &[]),
-        CapReading::Proved(vec![1, 2])
+        CapReading::Selected(vec![1, 2])
     );
 }
 
@@ -512,7 +512,7 @@ fn an_unreadable_face_that_reaches_into_a_cap_voids_the_cap_proof() {
     );
     assert_eq!(
         caps(&with_unreadable(1.5), &cap, &[10], 2.0, 1, &[]),
-        CapReading::Proved(vec![1])
+        CapReading::Selected(vec![1])
     );
 }
 
@@ -553,7 +553,7 @@ fn a_failing_selection_disputes_only_when_it_could_be_the_profile() {
     };
     assert_eq!(
         given(&HashSet::from([1, 2]), false),
-        CapReading::Proved(vec![1, 2])
+        CapReading::Selected(vec![1, 2])
     );
     assert_eq!(
         given(&HashSet::from([1, 2, 4]), false),
@@ -574,7 +574,7 @@ fn an_unreadable_face_in_a_cap_disputes_a_selection_that_can_be_the_profile() {
     assert_eq!(given(&inside, &HashSet::new()), CapReading::Absent);
     assert_eq!(
         given(&with_unreadable(1.5), &HashSet::from([1])),
-        CapReading::Proved(vec![1])
+        CapReading::Selected(vec![1])
     );
 }
 
@@ -677,7 +677,7 @@ fn a_short_hole_leaves_the_reach_to_the_outer_loop() {
             false,
             LIMITS
         ),
-        CapReading::Proved(vec![1])
+        CapReading::Selected(vec![1])
     );
 }
 
@@ -693,7 +693,7 @@ fn a_new_body_profile_proves_from_its_caps() {
             true,
             LIMITS
         ),
-        CapReading::Proved(vec![1, 2])
+        CapReading::Selected(vec![1, 2])
     );
 }
 
@@ -727,7 +727,7 @@ fn an_unreadable_face_around_a_cap_in_its_hole_does_not_reach_it() {
             false,
             LIMITS
         ),
-        CapReading::Proved(vec![1])
+        CapReading::Selected(vec![1])
     );
 }
 
@@ -757,7 +757,7 @@ fn a_resolved_face_alone_lets_a_selection_be_the_profile() {
             &[1],
             &HashSet::new()
         ),
-        CapReading::Proved(vec![1, 2])
+        CapReading::Selected(vec![1, 2])
     );
 }
 
@@ -794,7 +794,7 @@ fn an_oversized_cap_caps_the_search() {
     );
     assert_eq!(
         caps_within(&preceding, &cap, &[10], 2.0, 2, &[], LIMITS),
-        CapReading::Proved(vec![1, 2])
+        CapReading::Selected(vec![1, 2])
     );
 }
 
@@ -914,7 +914,7 @@ fn a_new_body_skips_planes_and_selections_without_faces_in_its_caps() {
             true,
             LIMITS
         ),
-        CapReading::Proved(vec![1, 2])
+        CapReading::Selected(vec![1, 2])
     );
 }
 
@@ -941,7 +941,7 @@ fn a_selection_that_cannot_be_the_profile_beside_a_changed_face_disputes_nothing
             false,
             LIMITS
         ),
-        CapReading::Proved(vec![1, 2])
+        CapReading::Selected(vec![1, 2])
     );
 }
 
@@ -987,7 +987,7 @@ fn an_unreadable_neighbour_that_shares_a_cap_edge_does_not_reach_it() {
             false,
             LIMITS
         ),
-        CapReading::Proved(vec![1])
+        CapReading::Selected(vec![1])
     );
 }
 
@@ -1028,7 +1028,7 @@ fn a_search_past_its_local_caps_states_capped() {
     };
     assert_eq!(within(2, 4096), CapReading::Capped);
     assert_eq!(within(3, 7), CapReading::Capped);
-    assert_eq!(within(3, 8), CapReading::Proved(vec![1, 2]));
+    assert_eq!(within(3, 8), CapReading::Selected(vec![1, 2]));
 }
 
 #[test]
@@ -1315,6 +1315,10 @@ fn bind_with(
     .unwrap()
 }
 
+fn loss_codes(losses: &[LossNote]) -> Vec<cadmpeg_ir::report::loss::LossKind> {
+    losses.iter().map(|loss| loss.code.clone()).collect()
+}
+
 fn profile_faces(feature: &Feature) -> Option<Vec<String>> {
     profile_faces_after(feature, 1)
 }
@@ -1351,30 +1355,35 @@ fn input_faces(slots: &[i64]) -> Vec<String> {
 }
 
 #[test]
-fn a_blind_cut_profile_takes_the_faces_its_cap_proves_with_an_order_loss() {
+fn a_blind_cut_profile_takes_the_faces_its_cap_covers_with_inference_and_order_losses() {
     let mut features = [extrude(blind())];
     let losses = bind(
         &mut features,
         &[operand(110, 0, vec![]), operand(111, 1, vec![])],
     );
     assert_eq!(profile_faces(&features[0]), Some(input_faces(&[1, 2])));
-    assert_eq!(losses.len(), 1);
     assert_eq!(
-        losses[0].code,
-        F3dLossCode::FeatureExtrudeProfileFaceOrderAssumed.kind()
+        loss_codes(&losses),
+        [
+            F3dLossCode::FeatureExtrudeProfileCapFacesInferred.kind(),
+            F3dLossCode::FeatureExtrudeProfileFaceOrderAssumed.kind()
+        ]
     );
-    assert!(losses[0].message.contains(GROUP));
+    assert!(losses.iter().all(|loss| loss.message.contains(GROUP)));
 }
 
 #[test]
-fn a_resolved_member_keeps_its_face_and_one_unresolved_member_states_no_loss() {
+fn a_resolved_member_keeps_its_face_and_one_unresolved_member_states_only_the_inference() {
     let mut features = [extrude(blind())];
     let losses = bind(
         &mut features,
         &[operand(110, 0, vec![2]), operand(111, 1, vec![])],
     );
     assert_eq!(profile_faces(&features[0]), Some(input_faces(&[2, 1])));
-    assert!(losses.is_empty());
+    assert_eq!(
+        loss_codes(&losses),
+        [F3dLossCode::FeatureExtrudeProfileCapFacesInferred.kind()]
+    );
 }
 
 #[test]
@@ -1421,7 +1430,7 @@ fn a_member_with_several_faces_or_a_repeated_face_stays_native() {
 }
 
 #[test]
-fn without_a_cap_the_deleted_faces_on_the_resolved_plane_are_the_profile() {
+fn without_a_cap_the_deleted_faces_on_the_resolved_plane_are_the_inferred_profile() {
     let history = through_history();
     let mut features = [extrude(blind())];
     let losses = bind_in(
@@ -1430,7 +1439,11 @@ fn without_a_cap_the_deleted_faces_on_the_resolved_plane_are_the_profile() {
         &[operand(110, 0, vec![]), operand(111, 1, vec![1])],
     );
     assert_eq!(profile_faces(&features[0]), Some(input_faces(&[2, 1])));
-    assert!(losses.is_empty());
+    assert_eq!(
+        loss_codes(&losses),
+        [F3dLossCode::FeatureExtrudeProfileDeletedFacesInferred.kind()]
+    );
+    assert!(losses[0].message.contains(GROUP));
     let mut features = [extrude(blind())];
     let losses = bind_in(
         &history,
@@ -1526,7 +1539,7 @@ fn only_the_transition_from_the_previous_state_proves_a_profile() {
 }
 
 #[test]
-fn a_proving_cap_takes_precedence_over_the_deleted_faces() {
+fn a_selecting_cap_takes_precedence_over_the_deleted_faces() {
     // The cap repeats faces 1 and 2; the transition deletes faces 1 and 3.
     let mut current = capped(2.0);
     current.faces.extend([2, 4]);
@@ -1538,7 +1551,10 @@ fn a_proving_cap_takes_precedence_over_the_deleted_faces() {
         &[operand(110, 0, vec![]), operand(111, 1, vec![1])],
     );
     assert_eq!(profile_faces(&features[0]), Some(input_faces(&[2, 1])));
-    assert!(losses.is_empty());
+    assert_eq!(
+        loss_codes(&losses),
+        [F3dLossCode::FeatureExtrudeProfileCapFacesInferred.kind()]
+    );
 }
 
 #[test]
@@ -1589,12 +1605,12 @@ fn a_capped_search_keeps_the_profile_native_with_a_loss() {
         })
         .unwrap();
     });
-    let loss = outcome.expect("capped loss");
+    let losses = outcome.expect("capped loss");
     assert_eq!(
-        loss.code,
-        F3dLossCode::FeatureExtrudeProfileFaceSearchCapped.kind()
+        loss_codes(&losses),
+        [F3dLossCode::FeatureExtrudeProfileFaceSearchCapped.kind()]
     );
-    assert!(loss.message.contains(GROUP));
+    assert!(losses[0].message.contains(GROUP));
     assert_eq!(profile_faces(&feature), None);
 }
 

@@ -1027,17 +1027,17 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** Such a group retains its native identity and reports `feature.face-selection-native`.
 
-### DR-262. Member order of transition-proven Extrude face profiles
+### DR-262. Faces of transition-inferred Extrude face profiles
 
-**Question.** Which proven face does each unresolved member of an Extrude face profile select?
+**Question.** Which preceding faces does an Extrude face profile with unresolved members select, and which of them does each unresolved member select?
 
-**Known.** `f3d.md` §3.1 "A one-root profile with a leaf that has neither historical face slots nor an active face" proves the root's face set from the end caps or the deleted faces of the scope's transition, and maps the unresolved members to the remaining faces in face-slot order. The unresolved members have recipe nodes outside the two-clause structure, or positive prefix references whose face lane is empty in the preceding topology (DR-170).
+**Known.** The unresolved members have recipe nodes outside the two-clause structure, or positive prefix references whose face lane is empty in the preceding topology (DR-170). The decoder infers the faces of a one-root profile with such a member from the scope's direct transition when the Extrude is one-sided and blind along the profile normal or its reverse, starts on the profile plane, and has no draft, and every other member has no face or names one distinct historical face. The inserted planar faces parallel to a plane at the blind distance from it are taken as end caps that repeat the swept profile. A preceding face can be the profile when it is a resolved face, when the transition deletes or updates it, or when the Extrude makes a new body. On each such plane and side, the preceding planar faces whose interior points lie inside the caps are the root's faces when they hold a face that can be the profile, number one per root member, include every resolved face, cover the caps' area, and have a union outline that lies on the cap boundaries and passes through every cap vertex. Each cap and selected face edge is a line on a straight carrier or a circle where the face meets a cylinder about an axis parallel to the plane normal. The root stays native when an inserted planar face has no unit normal, when a selection that holds a face that can be the profile fails these conditions, when two such selections differ, when a cap over a plane with such a face cannot be read, or when a face whose edges or sample point cannot be read reaches into a cap and either that face or the selection on its plane can be the profile. Such a face reaches into a cap when its loops cannot be read, when one of its vertices lies inside the cap, when a cap vertex lies inside the face, when the mean of its largest loop's vertices lies inside both the face and the cap, or when none of its loops has three vertices. This reading reports `feature.extrude-profile-cap-faces-inferred`. When no cap reaches a face that can be the profile and at least one member is resolved, the transition's deleted faces are the root's faces when they are one unique preceding face per root member, include every resolved face, and lie on the plane of the resolved faces. A Cut can also delete coplanar faces outside the selection; this reading reports `feature.extrude-profile-deleted-faces-inferred`. Each resolved member keeps its face at its member position, and the remaining faces take the unresolved positions in increasing stable face-slot order; a profile with two or more unresolved members reports `feature.extrude-profile-face-order-assumed`.
 
 **Need.** The node grammar and the empty-lane binding of DR-170, so that each member's recipe selects its face.
 
 **Conflict.** None.
 
-**Note.** A profile with two or more unresolved members reports `feature.extrude-profile-face-order-assumed`.
+**Note.** A search past a local cap of 256 faces on one plane, 4096 outline points, or 4096 edges on one face keeps the profile native and reports `feature.extrude-profile-face-search-capped`.
 
 ### DR-171. Sketch support identity
 
