@@ -698,10 +698,28 @@ fn parse_mesh_collection_record(
         ) == Some(&[0; 9]))
         .then_some(())?;
         let (body_records, owner_at) = counted_bodies?;
-        (first_count == body_records.len()).then_some(())?;
-        (!flagged || body_records.is_empty()).then_some(())?;
+        (first_count == if flagged { 0 } else { body_records.len() }).then_some(())?;
+        let owner_at = if flagged && !body_records.is_empty() {
+            let entry_count = usize::try_from(View::u32_le_at(record, owner_at)?).ok()?;
+            (entry_count == 0 || entry_count == body_records.len()).then_some(())?;
+            let mut at = owner_at.checked_add(4)?;
+            let mut remaining_bodies: HashSet<_> = body_records.iter().copied().collect();
+            for _ in 0..entry_count {
+                let body = exact_local_record_index(record, at)?;
+                remaining_bodies.remove(&body).then_some(())?;
+                at = at.checked_add(SAME_SEGMENT_REFERENCE_BYTES)?;
+                (View::u32_le_at(record, at)? == 1).then_some(())?;
+                at = at.checked_add(4)?;
+            }
+            at
+        } else {
+            owner_at
+        };
         // An empty collection can store a zero u32 before its owner reference.
-        let owner_at = if body_records.is_empty() && View::u32_le_at(record, owner_at) == Some(0) {
+        let owner_at = if !flagged
+            && body_records.is_empty()
+            && View::u32_le_at(record, owner_at) == Some(0)
+        {
             owner_at.checked_add(4)?
         } else {
             owner_at
@@ -712,7 +730,12 @@ fn parse_mesh_collection_record(
             return Some(None);
         }
         Some(Some(MeshCollectionRecord {
-            collection: DesignMeshCollection::new(identity, base_record).ok()?,
+            collection: DesignMeshCollection::new(
+                identity,
+                base_record,
+                u32::try_from(body_records.len()).ok()?,
+            )
+            .ok()?,
             texture_table_record_index,
             body_records,
             owner_record_index,
@@ -2626,6 +2649,87 @@ mod tests {
             &mut no_asset,
         )
         .is_err());
+    }
+
+    fn flagged_collection_with_entries(entries: &[u32]) -> (SyntheticMeshGraph, Vec<u8>) {
+        let graph = synthetic_mesh_graph_with_collection(false, 2, CollectionForm::Flagged(4));
+        let frame = sole_typed_frame(&graph, MESH_COLLECTION_TYPE_GUID);
+        let mut record = graph.bytes[frame.start..frame.end].to_vec();
+        record[21..25].copy_from_slice(&0_u32.to_le_bytes());
+        put_reference(&mut record, 66, 189);
+        put_reference(&mut record, 77, 325);
+        let mut table = Vec::new();
+        table.extend_from_slice(&u32::try_from(entries.len()).unwrap().to_le_bytes());
+        for entry in entries {
+            push_reference(&mut table, *entry);
+            table.extend_from_slice(&1_u32.to_le_bytes());
+        }
+        record.splice(88..88, table);
+        (graph, record)
+    }
+
+    #[test]
+    fn flagged_collection_body_entries_preserve_body_order() {
+        for entries in [&[325, 189][..], &[][..]] {
+            let (graph, record) = flagged_collection_with_entries(entries);
+            let mut frame = sole_typed_frame(&graph, MESH_COLLECTION_TYPE_GUID);
+            frame.end = record.len();
+            let collection = super::parse_mesh_collection_record(&record, &graph.meta, frame)
+                .expect("valid collection")
+                .expect("nonempty collection");
+            assert_eq!(collection.body_records, [189, 325]);
+        }
+    }
+
+    #[test]
+    fn flagged_collection_rejects_invalid_entries_and_first_count() {
+        for entries in [&[325, 400][..], &[325][..], &[325, 325][..]] {
+            let (graph, record) = flagged_collection_with_entries(entries);
+            let mut frame = sole_typed_frame(&graph, MESH_COLLECTION_TYPE_GUID);
+            frame.end = record.len();
+            assert!(super::parse_mesh_collection_record(&record, &graph.meta, frame).is_err());
+        }
+        let (graph, mut record) = flagged_collection_with_entries(&[325, 189]);
+        let mut frame = sole_typed_frame(&graph, MESH_COLLECTION_TYPE_GUID);
+        frame.end = record.len();
+        record[21..25].copy_from_slice(&1_u32.to_le_bytes());
+        assert!(super::parse_mesh_collection_record(&record, &graph.meta, frame).is_err());
+        record[21..25].copy_from_slice(&0_u32.to_le_bytes());
+        record[103..107].copy_from_slice(&2_u32.to_le_bytes());
+        assert!(super::parse_mesh_collection_record(&record, &graph.meta, frame).is_err());
+    }
+
+    #[test]
+    fn flagged_collection_joins_and_serializes_its_mesh_graph() {
+        let mut graph = synthetic_mesh_graph_with_collection(false, 1, CollectionForm::Flagged(4));
+        graph.bytes[21..25].copy_from_slice(&0_u32.to_le_bytes());
+        graph.bytes.splice(77..77, [0; 4]);
+        for record in graph.meta.records.iter_mut().skip(1) {
+            record.bulk_offset += 4;
+        }
+        let features = parse_mesh_design_records(
+            &graph.bytes,
+            &graph.meta,
+            "Synthetic/BulkStream.dat",
+            &mut no_texture_asset,
+        )
+        .expect("flagged mesh graph");
+        let [feature] = features.as_slice() else {
+            panic!("one mesh feature");
+        };
+        assert_eq!(feature.bodies()[0].placement.record().record_index(), 104);
+        let wire = serde_json::to_value(feature).unwrap();
+        assert_eq!(
+            wire["collection_body_reference_offsets"],
+            serde_json::json!([66])
+        );
+        assert_eq!(wire["texture_table_reference_offset"], 31);
+        assert_eq!(wire["collection_base_record"]["byte_offset"], 42);
+        assert_eq!(wire["body_count_offsets"][1], 21);
+        assert_eq!(wire["body_count_offsets"][2], 62);
+        let decoded: crate::records::mesh::DesignMeshFeature =
+            serde_json::from_value(wire).unwrap();
+        assert_eq!(decoded, *feature);
     }
 
     #[test]

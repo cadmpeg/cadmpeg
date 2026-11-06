@@ -197,8 +197,13 @@ fn discover(
         .iter()
         .map(|frame| (frame.start, frame.member_end))
         .collect();
-    let (mut occurrences, losses) =
-        super::super::discover_occurrences(bytes, STREAM, &frame_ends, &typed_primary);
+    let (mut occurrences, losses) = super::super::discover_occurrences(
+        bytes,
+        STREAM,
+        &frame_ends,
+        &typed_primary,
+        &super::super::occurrence_source_entities(meta),
+    );
     let superseded =
         super::super::admit_occurrence_envelopes(&mut occurrences, &primary, &typed_primary);
     (occurrences, losses, superseded)

@@ -1318,27 +1318,41 @@ impl DesignMeshScope {
 pub(crate) struct DesignMeshCollection {
     record: DesignMeshRecordIdentity,
     base_class_tag: DesignClassTag,
+    body_count: u32,
+    flagged: bool,
 }
 
 impl DesignMeshCollection {
     pub(crate) fn new(
         record: DesignMeshRecordIdentity,
         base_record: DesignMeshRecordIdentity,
+        body_count: u32,
     ) -> Result<Self, String> {
-        let prefix = u64_from_index(crate::layout::paramesh_mesh_collection_prefix::LEN);
+        let plain_prefix = u64_from_index(crate::layout::paramesh_mesh_collection_prefix::LEN);
+        let flagged_prefix =
+            u64_from_index(crate::layout::paramesh_flagged_mesh_collection_prefix::LEN);
+        let prefix = base_record
+            .byte_offset()
+            .checked_sub(record.byte_offset())
+            .ok_or("collection base precedes collection")?;
+        let flagged = prefix == flagged_prefix;
+        if prefix != plain_prefix && !flagged {
+            return Err("collection base offset must match its layout".into());
+        }
         let fixed_length =
             prefix + u64_from_index(crate::layout::paramesh_mesh_collection_base_prefix::LEN) + 11;
-        let body_bytes = record.frame_length().checked_sub(fixed_length).ok_or(
-            "collection_record.frame_length must contain both prefixes and the owner reference",
-        )?;
-        if body_bytes % 11 != 0 || u32::try_from(body_bytes / 11).is_err() {
-            return Err(
-                "collection_record.frame_length must contain a u32-counted body-reference run"
-                    .into(),
-            );
+        let body_bytes = u64::from(body_count) * 11;
+        let length = fixed_length + body_bytes;
+        let valid_length = if flagged && body_count != 0 {
+            record.frame_length() == length + 4
+                || record.frame_length() == length + 4 + u64::from(body_count) * 15
+        } else {
+            record.frame_length() == length
+        };
+        if !valid_length {
+            return Err("bodies count must match collection record length and entries".into());
         }
         if base_record.record_index() != record.record_index()
-            || base_record.byte_offset() != record.byte_offset() + prefix
             || base_record.frame_length() != record.frame_length() - prefix
         {
             return Err(
@@ -1349,14 +1363,23 @@ impl DesignMeshCollection {
         Ok(Self {
             record,
             base_class_tag: base_record.class_tag,
+            body_count,
+            flagged,
         })
+    }
+    fn prefix_len(&self) -> u64 {
+        if self.flagged {
+            u64_from_index(crate::layout::paramesh_flagged_mesh_collection_prefix::LEN)
+        } else {
+            u64_from_index(crate::layout::paramesh_mesh_collection_prefix::LEN)
+        }
     }
     pub(crate) fn record(&self) -> &DesignMeshRecordIdentity {
         &self.record
     }
     #[cfg(test)]
     fn base_record(&self) -> DesignMeshRecordIdentity {
-        let prefix = u64_from_index(crate::layout::paramesh_mesh_collection_prefix::LEN);
+        let prefix = self.prefix_len();
         DesignMeshRecordIdentity {
             class_tag: self.base_class_tag.clone(),
             record_index: self.record.record_index,
@@ -1365,17 +1388,10 @@ impl DesignMeshCollection {
         }
     }
     fn body_count(&self) -> u64 {
-        (self.record.frame_length()
-            - u64_from_index(crate::layout::paramesh_mesh_collection_prefix::LEN)
-            - u64_from_index(crate::layout::paramesh_mesh_collection_base_prefix::LEN)
-            - 11)
-            / 11
+        u64::from(self.body_count)
     }
     fn texture_table_reference_offset(&self) -> u64 {
-        self.record.byte_offset()
-            + u64_from_index(
-                crate::layout::paramesh_mesh_collection_prefix::TEXTURE_TABLE_REFERENCE,
-            )
+        self.record.byte_offset() + self.prefix_len() - 11
     }
     fn owner_reference_offset(&self) -> u64 {
         self.record.byte_offset() + self.record.frame_length() - 11
@@ -1468,7 +1484,7 @@ impl DesignMeshFeature {
             self.collection.record().byte_offset()
                 + u64_from_index(crate::layout::paramesh_mesh_collection_prefix::BODY_COUNT),
             self.collection.record().byte_offset()
-                + u64_from_index(crate::layout::paramesh_mesh_collection_prefix::LEN)
+                + self.collection.prefix_len()
                 + u64_from_index(crate::layout::paramesh_mesh_collection_base_prefix::BODY_COUNT),
         ]
     }
@@ -1479,7 +1495,7 @@ impl DesignMeshFeature {
     }
     fn collection_body_reference_offsets(&self) -> impl Iterator<Item = u64> + '_ {
         let start = self.collection.record().byte_offset()
-            + u64_from_index(crate::layout::paramesh_mesh_collection_prefix::LEN)
+            + self.collection.prefix_len()
             + u64_from_index(crate::layout::paramesh_mesh_collection_base_prefix::LEN);
         (0..self.collection.body_count()).map(move |ordinal| start + 11 * ordinal)
     }
@@ -1500,7 +1516,6 @@ struct DesignMeshFeatureWire {
     collection_base_record: DesignMeshRecordIdentity,
     /// Typed `ParaMesh` texture-table record owned by the collection.
     texture_table_record: DesignMeshRecordIdentity,
-    /// Three equal body counts: scope, collection prefix, collection base.
     body_count_offsets: [u64; 3],
     /// Ordered mesh-body record identities owned by the feature.
     body_record_indices: Vec<u32>,
@@ -1568,8 +1583,11 @@ impl TryFrom<DesignMeshFeatureWire> for DesignMeshFeature {
                 "scope_owner_reference_offset must locate the closing base owner reference".into(),
             );
         }
-        let collection =
-            DesignMeshCollection::new(wire.collection_record, wire.collection_base_record)?;
+        let collection = DesignMeshCollection::new(
+            wire.collection_record,
+            wire.collection_base_record,
+            u32::try_from(bodies.len()).map_err(|_| "bodies count must fit u32")?,
+        )?;
         if collection.texture_table_reference_offset() != wire.texture_table_reference_offset {
             return Err(
                 "texture_table_reference_offset must locate the collection texture-table reference"
