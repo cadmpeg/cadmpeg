@@ -74,15 +74,6 @@ pub(super) fn domain(
     model: &WritableModel<'_>,
     surface_index: usize,
 ) -> Result<[[f64; 2]; 2], WriteError> {
-    let WritableFaceSurface::Plane {
-        origin,
-        normal,
-        u_axis,
-        ..
-    } = &model.surfaces[surface_index]
-    else {
-        unreachable!("plane domains are computed for planes")
-    };
     let source = model
         .faces
         .iter()
@@ -93,6 +84,17 @@ pub(super) fn domain(
             ))
         })?;
     let surface_id = source.source.surface.as_str();
+    let WritableFaceSurface::Plane {
+        origin,
+        normal,
+        u_axis,
+        ..
+    } = &model.surfaces[surface_index]
+    else {
+        return Err(WriteError::Omit(format!(
+            "surface {surface_id} is not a plane"
+        )));
+    };
     let mut bounds = Bounds {
         lower: [f64::INFINITY; 2],
         upper: [f64::NEG_INFINITY; 2],

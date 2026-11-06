@@ -149,8 +149,8 @@ pub(super) fn decode_scoped_image_records_with_parts<'s, T>(
         &ImageRead<'s, '_>,
     ) -> Result<Option<T>, CodecError>,
 ) -> Result<Vec<T>, CodecError> {
-    let (ctx, output, part_label) = part;
     use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartSpec};
+    let (ctx, output, part_label) = part;
 
     let mut images = Vec::new();
     for entry in scan
