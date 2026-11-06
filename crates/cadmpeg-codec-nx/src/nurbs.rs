@@ -10,10 +10,12 @@
 
 use crate::framing::node_kind::NodeKind;
 use std::collections::BTreeMap;
+use std::ops::Range;
 
 use crate::framing::read_xmt_width as read_xmt;
 use cadmpeg_parasolid::xmt::NonNullXmt;
 pub(crate) mod curve_references;
+mod nodes;
 use crate::layout::nurbs_curve_descriptor_prefix as curve_desc;
 use crate::layout::nurbs_surface_descriptor_prefix as surf_desc;
 use crate::topology::Graph;
@@ -62,12 +64,16 @@ pub(crate) struct Pcurve {
 /// knots, dimensions, control points, and weights are skipped.
 #[cfg(test)]
 pub(crate) fn surfaces(bytes: &[u8]) -> (Vec<Surface>, Vec<CarrierRefusal>) {
-    let arrays = arrays(bytes);
-    let payloads = surface_payloads(bytes);
-    let descriptors = surface_descriptors(bytes);
     let graph = Graph::parse(bytes);
+    let lanes = scanned_lanes(bytes, &graph);
     let mut refusals = Vec::new();
-    let surfaces = decode_surfaces(&graph, &arrays, &payloads, &descriptors, &mut refusals);
+    let surfaces = decode_surfaces(
+        &graph,
+        &lanes.arrays,
+        &lanes.surface_payloads,
+        &lanes.surface_descriptors,
+        &mut refusals,
+    );
     (surfaces, refusals)
 }
 
@@ -223,12 +229,16 @@ fn decode_surfaces(
 /// Decode dimension-2 `B_CURVE` families as surface parameter-space curves.
 #[cfg(test)]
 pub(crate) fn pcurves(bytes: &[u8]) -> (Vec<Pcurve>, Vec<CarrierRefusal>) {
-    let arrays = arrays(bytes);
-    let controls = curve_payloads(bytes);
-    let descriptors = curve_descriptors(bytes);
     let graph = Graph::parse(bytes);
+    let lanes = scanned_lanes(bytes, &graph);
     let mut refusals = Vec::new();
-    let pcurves = decode_pcurves(&graph, &arrays, &controls, &descriptors, &mut refusals);
+    let pcurves = decode_pcurves(
+        &graph,
+        &lanes.arrays,
+        &lanes.curve_payloads,
+        &lanes.curve_descriptors,
+        &mut refusals,
+    );
     (pcurves, refusals)
 }
 
@@ -344,12 +354,16 @@ fn decode_pcurves(
 /// knots, dimensions, control points, and weights are skipped.
 #[cfg(test)]
 pub(crate) fn curves(bytes: &[u8]) -> (Vec<Curve>, Vec<CarrierRefusal>) {
-    let arrays = arrays(bytes);
-    let controls = curve_payloads(bytes);
-    let descriptors = curve_descriptors(bytes);
     let graph = Graph::parse(bytes);
+    let lanes = scanned_lanes(bytes, &graph);
     let mut refusals = Vec::new();
-    let curves = decode_curves(&graph, &arrays, &controls, &descriptors, &mut refusals);
+    let curves = decode_curves(
+        &graph,
+        &lanes.arrays,
+        &lanes.curve_payloads,
+        &lanes.curve_descriptors,
+        &mut refusals,
+    );
     (curves, refusals)
 }
 
@@ -471,6 +485,17 @@ pub(crate) struct Parsed {
     pub(crate) pcurves: Vec<Pcurve>,
     /// Records of the right family whose lanes the IR carrier refused.
     pub(crate) refusals: Vec<CarrierRefusal>,
+    /// Carriers whose control values do not resolve by reference.
+    pub(crate) unresolved_controls: Vec<UnresolvedControls>,
+}
+
+/// A `B_SURFACE` or `B_CURVE` whose control values do not resolve by reference.
+#[derive(Debug, Clone)]
+pub(crate) struct UnresolvedControls {
+    /// Byte offset of the carrier record within the stream.
+    pub(crate) pos: usize,
+    /// Carrier family the record states.
+    pub(crate) family: &'static str,
 }
 
 /// A carrier record of the right family whose lanes the IR carrier refused.
@@ -485,36 +510,131 @@ pub(crate) struct CarrierRefusal {
 }
 
 pub(crate) fn parse_with_graph(bytes: &[u8], graph: &Graph) -> Parsed {
-    let arrays = arrays(bytes);
-    let surface_payloads = surface_payloads(bytes);
-    let curve_payloads = curve_payloads(bytes);
-    let surface_descriptors = surface_descriptors(bytes);
-    let curve_descriptors = curve_descriptors(bytes);
+    let lanes = cadmpeg_parasolid::records::PrimaryRecords::read(bytes)
+        .ok()
+        .flatten()
+        .filter(|primary| primary.is_terminated() && nodes::has_lane_fields(primary))
+        .map_or_else(
+            || scanned_lanes(bytes, graph),
+            |primary| nodes::lanes(bytes, &primary),
+        );
     let mut refusals = Vec::new();
     Parsed {
         surfaces: decode_surfaces(
             graph,
-            &arrays,
-            &surface_payloads,
-            &surface_descriptors,
+            &lanes.arrays,
+            &lanes.surface_payloads,
+            &lanes.surface_descriptors,
             &mut refusals,
         ),
         curves: decode_curves(
             graph,
-            &arrays,
-            &curve_payloads,
-            &curve_descriptors,
+            &lanes.arrays,
+            &lanes.curve_payloads,
+            &lanes.curve_descriptors,
             &mut refusals,
         ),
         pcurves: decode_pcurves(
             graph,
-            &arrays,
-            &curve_payloads,
-            &curve_descriptors,
+            &lanes.arrays,
+            &lanes.curve_payloads,
+            &lanes.curve_descriptors,
             &mut refusals,
         ),
         refusals,
+        unresolved_controls: unresolved_controls(graph, &lanes),
     }
+}
+
+fn unresolved_controls(graph: &Graph, lanes: &Lanes<'_>) -> Vec<UnresolvedControls> {
+    [
+        (NodeKind::BSurface, "B_SURFACE", &lanes.surface_payloads),
+        (NodeKind::BCurve, "B_CURVE", &lanes.curve_payloads),
+    ]
+    .into_iter()
+    .flat_map(|(kind, family, payloads)| {
+        graph.of_kind(kind).filter_map(move |node| {
+            let [_, data] = node.compact_tail_references::<2>()?;
+            matches!(payloads.get(&data), Some(None)).then(|| UnresolvedControls {
+                pos: node.pos(),
+                family,
+            })
+        })
+    })
+    .collect()
+}
+
+/// The record lanes the NURBS decoders join.
+struct Lanes<'a> {
+    arrays: Arrays<'a>,
+    surface_payloads: RecordIndex<Payload<'a>>,
+    curve_payloads: RecordIndex<Payload<'a>>,
+    surface_descriptors: RecordIndex<SurfaceDescriptor>,
+    curve_descriptors: RecordIndex<CurveDescriptor>,
+}
+
+fn scanned_lanes<'a>(bytes: &'a [u8], graph: &Graph) -> Lanes<'a> {
+    let surface_descriptors = surface_descriptors(bytes);
+    let curve_descriptors = curve_descriptors(bytes);
+    Lanes {
+        arrays: arrays(bytes),
+        surface_payloads: referenced_payloads(
+            graph,
+            NodeKind::BSurface,
+            &surface_payloads(bytes),
+            |nurbs| surface_descriptors.get(&nurbs)?.as_ref()?.vertices,
+        ),
+        curve_payloads: referenced_payloads(
+            graph,
+            NodeKind::BCurve,
+            &curve_payloads(bytes),
+            |nurbs| curve_descriptors.get(&nurbs)?.as_ref()?.vertices,
+        ),
+        surface_descriptors,
+        curve_descriptors,
+    }
+}
+
+/// Keep a scanned payload for each carrier whose descriptor names the
+/// payload's control-value node.
+fn referenced_payloads<'a>(
+    graph: &Graph,
+    kind: NodeKind,
+    scanned: &RecordIndex<Payload<'a>>,
+    vertices: impl Fn(u32) -> Option<u32>,
+) -> RecordIndex<Payload<'a>> {
+    carrier_payloads(graph.of_kind(kind).filter_map(|node| {
+        let [nurbs, data] = node.compact_tail_references::<2>()?;
+        let payload = vertices(nurbs).and_then(|vertices| {
+            NonNullXmt::try_from(vertices).ok()?;
+            scanned
+                .get(&data)?
+                .filter(|payload| payload.vertices == vertices)
+        });
+        Some((data, payload))
+    }))
+}
+
+/// Index control values by carrier `data` identity. An identity is ambiguous
+/// when one of its carriers resolves no payload or a different payload.
+fn carrier_payloads<'a>(
+    carriers: impl IntoIterator<Item = (u32, Option<Payload<'a>>)>,
+) -> RecordIndex<Payload<'a>> {
+    let mut index = RecordIndex::new();
+    for (data, payload) in carriers {
+        index
+            .entry(data)
+            .and_modify(|entry: &mut Option<Payload<'a>>| {
+                if entry
+                    .zip(payload)
+                    .is_none_or(|(current, payload)| current.raw != payload.raw)
+                {
+                    *entry = None;
+                }
+            })
+            .or_insert(payload);
+    }
+    index
 }
 
 /// The Euclidean pole of a homogeneous pole in millimetres, absent when a
@@ -558,6 +678,8 @@ enum ArrayValues<'a> {
 struct ArrayRecord<'a> {
     reference: u32,
     values: ArrayValues<'a>,
+    /// The record from its type to its last value.
+    extent: Range<usize>,
 }
 
 impl ArrayValues<'_> {
@@ -633,13 +755,19 @@ fn array_record_at(bytes: &[u8], pos: usize) -> Option<ArrayRecord<'_>> {
             finite_f64_bytes(raw)?;
             ArrayValues::F64(raw)
         };
-        Some(ArrayRecord { reference, values })
+        Some(ArrayRecord {
+            reference,
+            values,
+            extent: pos..end,
+        })
     }
 }
 
 #[derive(Clone, Copy)]
 struct Payload<'a> {
     raw: &'a [u8],
+    /// The identity of the type-45 node that holds the values.
+    vertices: u32,
 }
 
 impl Payload<'_> {
@@ -652,6 +780,20 @@ impl Payload<'_> {
     }
 }
 
+/// The extents of the counted lanes the unframed scan reads: each type-127
+/// and type-128 array from its type, and each type-45 lane after a type-125
+/// or type-135 node from its count.
+pub(crate) fn counted_lane_extents(bytes: &[u8]) -> Vec<Range<usize>> {
+    (0..bytes.len())
+        .filter_map(|pos| {
+            array_record_at(bytes, pos)
+                .map(|record| record.extent)
+                .or_else(|| surface_payload_at(bytes, pos).map(|(_, _, lanes)| lanes))
+                .or_else(|| curve_payload_at(bytes, pos).map(|(_, _, lanes)| lanes))
+        })
+        .collect()
+}
+
 fn surface_payloads(bytes: &[u8]) -> RecordIndex<Payload<'_>> {
     let records = bytes
         .len()
@@ -662,7 +804,7 @@ fn surface_payloads(bytes: &[u8]) -> RecordIndex<Payload<'_>> {
     unique_records(records)
 }
 
-fn surface_payload_at(bytes: &[u8], pos: usize) -> Option<(u32, Payload<'_>, usize)> {
+fn surface_payload_at(bytes: &[u8], pos: usize) -> Option<(u32, Payload<'_>, Range<usize>)> {
     {
         (bytes.get(pos..pos + 2) == Some(&[0, 125])).then_some(())?;
         let escape = usize::from(bytes.get(pos + 2) == Some(&0xff));
@@ -682,12 +824,12 @@ fn surface_payload_at(bytes: &[u8], pos: usize) -> Option<(u32, Payload<'_>, usi
         (!nested_same_record).then_some(())?;
         let count = usize::try_from(View::u32_be_at(bytes, count_at)?).ok()?;
         (count > 0).then_some(())?;
-        let (_, first_len) = read_xmt(bytes, count_at + 4)?;
+        let (vertices, first_len) = read_xmt(bytes, count_at + 4)?;
         let data = count_at + 4 + first_len;
         let end = data.checked_add(count.checked_mul(8)?)?;
         let raw = bytes.get(data..end)?;
         finite_f64_bytes(raw)?;
-        Some((xmt, Payload { raw }, end))
+        Some((xmt, Payload { raw, vertices }, count_at..end))
     }
 }
 
@@ -701,7 +843,7 @@ fn curve_payloads(bytes: &[u8]) -> RecordIndex<Payload<'_>> {
     unique_records(records)
 }
 
-fn curve_payload_at(bytes: &[u8], pos: usize) -> Option<(u32, Payload<'_>, usize)> {
+fn curve_payload_at(bytes: &[u8], pos: usize) -> Option<(u32, Payload<'_>, Range<usize>)> {
     {
         (bytes.get(pos..pos + 2) == Some(&[0, 135])).then_some(())?;
         let escape = usize::from(bytes.get(pos + 2) == Some(&0xff));
@@ -712,12 +854,12 @@ fn curve_payload_at(bytes: &[u8], pos: usize) -> Option<(u32, Payload<'_>, usize
         let count_at = pos + 9 + shift + count_escape;
         let count = usize::try_from(View::u32_be_at(bytes, count_at)?).ok()?;
         (count > 0).then_some(())?;
-        let (_, control_ref_len) = read_xmt(bytes, count_at + 4)?;
+        let (vertices, control_ref_len) = read_xmt(bytes, count_at + 4)?;
         let data = count_at + 4 + control_ref_len;
         let end = data.checked_add(count.checked_mul(8)?)?;
         let raw = bytes.get(data..end)?;
         finite_f64_bytes(raw)?;
-        Some((xmt, Payload { raw }, end))
+        Some((xmt, Payload { raw, vertices }, count_at..end))
     }
 }
 
@@ -749,6 +891,9 @@ struct SurfaceDescriptor {
     v_mult: u32,
     u_knots: u32,
     v_knots: u32,
+    /// The identity of the type-45 control-value node; absent in the short
+    /// layout, whose `bspline_vertices` encoding is unestablished.
+    vertices: Option<u32>,
     payload: Option<u32>,
     vertex_layout: Option<(u16, bool)>,
 }
@@ -838,11 +983,12 @@ fn surface_descriptor_at(bytes: &[u8], pos: usize) -> Option<(u32, SurfaceDescri
         .then_some(())?;
     let mut vertex_layout = None;
     let short = View::u16_be_at(bytes, pos + 44 + shift) == Some(125);
-    let (u_mult, v_mult, u_knots, v_knots, payload, end) = if short {
+    let (vertices, u_mult, v_mult, u_knots, v_knots, payload, end) = if short {
         let payload_at = pos + 46 + shift;
         let (payload, payload_len) = read_enveloped_xmt(bytes, payload_at)?;
         (payload > 1).then_some(())?;
         (
+            None,
             u32::from(View::u16_be_at(bytes, pos + 36 + shift)?),
             u32::from(View::u16_be_at(bytes, pos + 38 + shift)?),
             u32::from(View::u16_be_at(bytes, pos + 40 + shift)?),
@@ -863,6 +1009,7 @@ fn surface_descriptor_at(bytes: &[u8], pos: usize) -> Option<(u32, SurfaceDescri
             let (payload, payload_len) = read_enveloped_xmt(bytes, payload_at)?;
             (payload > 1).then_some(())?;
             (
+                Some(refs[0]),
                 refs[1],
                 refs[2],
                 refs[3],
@@ -884,7 +1031,7 @@ fn surface_descriptor_at(bytes: &[u8], pos: usize) -> Option<(u32, SurfaceDescri
                 View::u16_be_at(bytes, pos + surf_desc::DIMENSION + shift)?,
                 logical_at(bytes, pos + surf_desc::RATIONAL + shift)?,
             ));
-            (refs[1], refs[2], refs[3], refs[4], None, at)
+            (Some(refs[0]), refs[1], refs[2], refs[3], refs[4], None, at)
         }
     };
     Some((
@@ -904,6 +1051,7 @@ fn surface_descriptor_at(bytes: &[u8], pos: usize) -> Option<(u32, SurfaceDescri
             v_mult,
             u_knots,
             v_knots,
+            vertices,
             payload,
             vertex_layout,
         },
@@ -914,6 +1062,9 @@ fn surface_descriptor_at(bytes: &[u8], pos: usize) -> Option<(u32, SurfaceDescri
 #[derive(Clone, PartialEq, Eq)]
 struct CurveDescriptor {
     basis: CurveBasis,
+    /// The identity of the type-45 control-value node; absent in the compact
+    /// layout, whose `bspline_vertices` encoding is unestablished.
+    vertices: Option<u32>,
     references: CurveDescriptorReferences,
 }
 
@@ -948,6 +1099,7 @@ fn curve_descriptors(bytes: &[u8]) -> RecordIndex<CurveDescriptor> {
             *state = if current == descriptor {
                 None
             } else if current.basis == descriptor.basis
+                && current.vertices == descriptor.vertices
                 && current.references.multiplicities() == descriptor.references.multiplicities()
                 && current.references.knots() == descriptor.references.knots()
             {
@@ -1018,6 +1170,7 @@ fn curve_descriptor_at(
                         knot_type,
                         periodic,
                     },
+                    vertices: Some(references[0].into()),
                     references: CurveDescriptorReferences::Status(references),
                 },
                 at,
@@ -1041,6 +1194,7 @@ fn curve_descriptor_at(
                 knot_type,
                 periodic,
             },
+            vertices: None,
             references: CurveDescriptorReferences::Compact([mult, knots]),
         },
         pos + 23 + shift + mult_len + knots_len,

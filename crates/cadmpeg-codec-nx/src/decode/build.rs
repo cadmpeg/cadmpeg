@@ -277,7 +277,14 @@ pub(super) fn try_decode_geometry(
             curves: nurbs_curves,
             pcurves: nurbs_pcurves,
             refusals: nurbs_refusals,
+            unresolved_controls,
         } = parsed.parse_nurbs(si);
+        for carrier in unresolved_controls {
+            carrier_refusals.push(NxLossCode::CarrierControlsUnresolved.note(format!(
+                "parasolid#{si} {} at byte {} names no control values that resolve to it",
+                carrier.family, carrier.pos
+            )));
+        }
         for refusal in nurbs_refusals {
             carrier_refusals.push(NxLossCode::CarrierLanesUnpaired.note(format!(
                 "parasolid#{si} {} at byte {} states no carrier: {}",
