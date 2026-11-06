@@ -2405,58 +2405,62 @@ pub(super) fn decode(
             continue;
         };
         if standalone_pcurves.contains(&id) && !carrier_index.curves.contains_key(&id) {
-            if let (Some(surface_step), PcurveGeometry::Nurbs { nurbs }) = (surface_step, &geometry)
-            {
-                if let Some(range) = pcurve_nurbs_parameter_domain(
+            let range = match &geometry {
+                PcurveGeometry::Nurbs { nurbs } => pcurve_nurbs_parameter_domain(
                     nurbs.degree(),
                     nurbs.knots(),
                     nurbs.pole_rows().count(),
+                ),
+                PcurveGeometry::Circle(_) | PcurveGeometry::Ellipse(_) => {
+                    Some([0.0, std::f64::consts::TAU])
+                }
+                _ => None,
+            };
+            if let (Some(surface_step), Some(range)) = (surface_step, range) {
+                let surface = ir.model.surfaces[carrier_index.surfaces[&surface_step].0]
+                    .id
+                    .clone();
+                let sides = [
+                    cadmpeg_ir::geometry::IntcurveSupportSide {
+                        surface: Some(surface),
+                        pcurve: Some(geometry.clone().into()),
+                    },
+                    cadmpeg_ir::geometry::IntcurveSupportSide {
+                        surface: None,
+                        pcurve: None,
+                    },
+                ];
+                if let Ok(context) = cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
+                    sides,
+                    range,
+                    Default::default(),
                 ) {
-                    let surface = ir.model.surfaces[carrier_index.surfaces[&surface_step].0]
-                        .id
-                        .clone();
-                    let sides = [
-                        cadmpeg_ir::geometry::IntcurveSupportSide {
-                            surface: Some(surface),
-                            pcurve: Some(geometry.clone().into()),
+                    let curve = CurveId::from(ids::data(kind!("curve"), id));
+                    let construction =
+                        ProceduralCurveId::from(ids::construction(kind!("pcurve"), id));
+                    let index = CurveIndex(ir.model.curves.len());
+                    ir.model.curves.push(Curve {
+                        native_ref: None,
+                        id: curve.clone(),
+                        parameter_range: None,
+                        geometry: CurveGeometry::Procedural {
+                            construction: construction.clone(),
+                            cache: None,
                         },
-                        cadmpeg_ir::geometry::IntcurveSupportSide {
-                            surface: None,
-                            pcurve: None,
+                        source_object: Some(super::step_source_association(id)),
+                    });
+                    let procedural = ProceduralCurve::new(
+                        construction,
+                        ProceduralCurveDefinition::SurfaceCurve {
+                            family: cadmpeg_ir::geometry::SurfaceCurveFamily::Parametric {
+                                context,
+                                tail: None,
+                            },
                         },
-                    ];
-                    if let Ok(context) = cadmpeg_ir::geometry::IntcurveSupportContext::try_new(
-                        sides,
-                        range,
-                        Default::default(),
-                    ) {
-                        let curve = CurveId::from(ids::data(kind!("curve"), id));
-                        let construction =
-                            ProceduralCurveId::from(ids::construction(kind!("pcurve"), id));
-                        let index = CurveIndex(ir.model.curves.len());
-                        ir.model.curves.push(Curve {
-                            native_ref: None,
-                            id: curve.clone(),
-                            parameter_range: None,
-                            geometry: CurveGeometry::Procedural {
-                                construction: construction.clone(),
-                                cache: None,
-                            },
-                            source_object: Some(super::step_source_association(id)),
-                        });
-                        let procedural = ProceduralCurve::new(
-                            construction,
-                            ProceduralCurveDefinition::SurfaceCurve {
-                                family: cadmpeg_ir::geometry::SurfaceCurveFamily::Parametric {
-                                    context,
-                                    tail: None,
-                                },
-                            },
-                        );
-                        let _attached =
-                            procedural_admission.add_curve(&mut ir.model, &curve, procedural)?;
-                        carrier_index.curves.insert(id, index);
-                    }
+                    );
+                    let _attached =
+                        procedural_admission.add_curve(&mut ir.model, &curve, procedural)?;
+                    carrier_index.curves.insert(id, index);
                 }
             }
         }

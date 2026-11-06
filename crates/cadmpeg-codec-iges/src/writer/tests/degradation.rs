@@ -46,7 +46,7 @@ fn unsupported_arena_is_dropped_while_neutral_geometry_is_written() {
 }
 
 #[test]
-fn unrepresented_source_never_reaches_replay() {
+fn unrepresented_classes_never_reaches_replay() {
     let bytes = explicit_tetrahedron_solid_file();
     let decoded = IgesCodec
         .decode(&mut Cursor::new(bytes.clone()), &DecodeOptions::default())
