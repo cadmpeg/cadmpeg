@@ -1227,6 +1227,19 @@ fn prune_pass(
         .map(|row| (row.id.clone(), row.shell.clone()))
         .collect::<std::collections::BTreeMap<_, _>>();
     scoped.model.shells.retain_mut(|row| {
+        if !scoped
+            .model
+            .regions
+            .iter()
+            .any(|region| region.id == row.region && region.shells.contains(&row.id))
+        {
+            pruned(
+                "shell",
+                row.id.as_str(),
+                format!("region {} does not own this shell", row.region),
+            );
+            return false;
+        }
         let faces = row
             .faces()
             .iter()
@@ -1290,14 +1303,24 @@ fn prune_pass(
             }
         }
     });
-    let shells = existing!(shells);
+    let shell_owners = scoped
+        .model
+        .shells
+        .iter()
+        .map(|row| (row.id.clone(), row.region.clone()))
+        .collect::<std::collections::BTreeMap<_, _>>();
     scoped.model.regions.retain_mut(|row| {
         for id in row.shells.clone() {
-            if !shells.contains(id.as_str()) {
-                pruned("region", row.id.as_str(), format!("shell {id} is missing"));
+            if shell_owners.get(&id) != Some(&row.id) {
+                pruned(
+                    "region",
+                    row.id.as_str(),
+                    format!("shell {id} is missing or belongs to another region"),
+                );
             }
         }
-        row.shells.retain(|id| shells.contains(id.as_str()));
+        row.shells
+            .retain(|id| shell_owners.get(id) == Some(&row.id));
         if row.shells.is_empty() {
             pruned("region", row.id.as_str(), "no shells remain".to_owned());
             return false;
