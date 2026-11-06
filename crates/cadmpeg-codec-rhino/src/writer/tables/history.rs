@@ -834,7 +834,7 @@ fn history_record(ir: &CadIr, feature: &Feature) -> Result<Vec<u8>, WriteError> 
             let expected = references.join(",");
             let value = parameter
                 .literal()
-                .and_then(|expression| expression.literal_text());
+                .and_then(cadmpeg_ir::features::Expression::literal_text);
             if value.as_deref() != Some(expected.as_str()) {
                 return Err(WriteError::Omit(format!(
                     "history {record} parameter {name} conflicts with its structured object references"
