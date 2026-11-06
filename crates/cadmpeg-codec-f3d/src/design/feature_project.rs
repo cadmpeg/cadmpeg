@@ -108,7 +108,6 @@ pub(crate) struct ProjectInputs<'a> {
     pub(crate) body_bindings: &'a [DesignBodyBinding],
     /// Neutral body per body key row id, linking map pairs to solved bodies.
     pub(crate) body_key_bodies: Option<&'a std::collections::BTreeMap<String, BodyId>>,
-    pub(crate) component_naming_spaces: &'a [crate::records::recipes::DesignComponentNamingSpace],
     pub(crate) histories: &'a [crate::history_records::AsmHistory],
     pub(crate) face_boundaries:
         &'a [crate::records::topology::historical_context::AsmFaceBoundary],
@@ -467,26 +466,6 @@ impl<'a> ScopeHistoryGraph<'a> {
         }
     }
 
-    fn state_key(
-        &self,
-        scope: &DesignParameterScope,
-        state_id: i64,
-    ) -> Option<(String, ComponentHistoryNamespace, String, i64)> {
-        let (Some(stream), Some(namespace), Some(history_id)) = (
-            native_stream(&scope.id),
-            self.component_namespaces.get(&scope.id),
-            self.history_id(scope),
-        ) else {
-            return None;
-        };
-        Some((
-            stream.to_owned(),
-            *namespace,
-            history_id.to_owned(),
-            state_id,
-        ))
-    }
-
     /// Follow `scope.previous_history_state_id()` until a scope accepted by
     /// `projected` is reached. Internal scopes preserve state continuity but
     /// are not themselves authored top-level features.
@@ -638,7 +617,6 @@ pub(crate) fn project_parameter_design_with_edge_identities(
         placements,
         body_bindings,
         body_key_bodies,
-        component_naming_spaces,
         histories,
         face_boundaries,
         sheet_metal_settings,
@@ -1389,13 +1367,6 @@ pub(crate) fn project_parameter_design_with_edge_identities(
             Ok::<_, CodecError>(features)
         })?;
     push_unreferenced_sheet_metal_settings(scopes, sheet_metal_settings, &mut features)?;
-    let scope_history = ScopeHistoryGraph::new(
-        scopes,
-        body_bindings,
-        body_recipe_operands,
-        component_naming_spaces,
-        histories,
-    );
     for feature in &mut features {
         let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) =
             feature.evaluation.definition()
@@ -1468,57 +1439,6 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 }
             }
             _ => {}
-        }
-    }
-    let mut history_state_features = HashMap::<
-        (String, ComponentHistoryNamespace, String, i64),
-        Option<cadmpeg_ir::features::FeatureId>,
-    >::new();
-    {
-        for scope in scopes {
-            let Some(state_id) = scope.history_state_id() else {
-                continue;
-            };
-            let Some(key) = scope_history.state_key(scope, state_id) else {
-                continue;
-            };
-            let stream = native_stream(&scope.id).unwrap_or(ids::DEFAULT_STREAM);
-            let Some(feature_id) = scope_ids.get(&(stream, scope.record_index)) else {
-                continue;
-            };
-            if let Some(candidate) = history_state_features.get_mut(&key) {
-                *candidate = None;
-            } else {
-                let id = feature_id.clone();
-                // discarded-value: the vacant-key check admits this state.
-                let _ = history_state_features.insert(key, Some(id));
-            }
-        }
-    }
-    for feature in &mut features {
-        let Some(scope) = feature
-            .native_ref
-            .as_deref()
-            .and_then(|native_ref| scopes.iter().find(|scope| scope.id == native_ref))
-        else {
-            continue;
-        };
-        let Some(construction) = scope.work_point_construction() else {
-            continue;
-        };
-        for state_id in construction
-            .rule
-            .inputs()
-            .iter()
-            .filter_map(|input| work_point_input_history_state_id(scope, input, edge_operands))
-        {
-            let Some(key) = scope_history.state_key(scope, state_id) else {
-                continue;
-            };
-            let Some(Some(dependency)) = history_state_features.get(&key) else {
-                continue;
-            };
-            feature.dependencies.insert(dependency.clone());
         }
     }
     features.sort_by(|a, b| a.id.cmp(&b.id));

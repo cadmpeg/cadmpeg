@@ -16,6 +16,75 @@ use cadmpeg_ir::Codec;
 use std::io::Cursor;
 
 #[test]
+fn unchanged_planar_ellipse_retains_its_parameter_tokens() {
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(conic_arc_file(0, b"104,0.25,0,1,0,0,-1,0,2,0,0,1;")),
+            &DecodeOptions::default(),
+        )
+        .expect("ellipse decodes");
+    let plan = IgesCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), None),
+            TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+        )
+        .expect("ellipse synthesizes");
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("ellipse writes");
+    let output = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("ellipse output decodes");
+    let conic = |ir: &cadmpeg_ir::CadIr| {
+        ir.native.namespace("iges").unwrap().arenas()["entities"]
+            .iter()
+            .find(|record| record.field("entity_type") == Some(104.into()))
+            .unwrap()
+            .clone()
+    };
+    let source = conic(decoded.ir());
+    let written = conic(output.ir());
+    assert_eq!(written.field("parameters"), source.field("parameters"));
+    assert_eq!(written.field("transform"), Some(0.into()));
+    assert_eq!(written, source);
+}
+
+#[test]
+fn ellipse_fixture_synthesis_preserves_its_records() {
+    use cadmpeg_test_support::writer_closure::{without_fidelity, Redecoded};
+
+    let harness = cadmpeg_test_support::golden::Harness::new(
+        env!("CARGO_MANIFEST_DIR"),
+        "igs",
+        "UPDATE_GOLDEN=1 cargo test-fast golden",
+    );
+    let (_, bytes) = harness
+        .fixture_inputs()
+        .into_iter()
+        .find(|(name, _)| name == "conic_ellipse")
+        .expect("ellipse fixture");
+    let input = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("ellipse fixture decodes");
+    let redecode = |bytes: &[u8]| -> Result<Redecoded, String> {
+        let result = IgesCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .map_err(|error| error.to_string())?;
+        Ok(Redecoded {
+            ir: serde_json::to_value(result.ir()).map_err(|error| error.to_string())?,
+            loss_codes: result
+                .report()
+                .losses
+                .iter()
+                .map(|loss| loss.code.to_string())
+                .collect(),
+            members: Vec::new(),
+        })
+    };
+    let findings = without_fidelity(&input, &IgesCodec, &redecode);
+    assert!(findings.is_empty(), "{findings:#?}");
+}
+
+#[test]
 fn encode_emits_the_typed_ellipse_form_for_v5_0() {
     let decoded = IgesCodec
         .decode(
