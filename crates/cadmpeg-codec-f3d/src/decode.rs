@@ -2781,63 +2781,108 @@ impl<'a> F3dDecodeSession<'a> {
         prereqs: &prereqs::ProductPrereqs,
     ) -> Result<FinalizePath, CodecError> {
         let scan = self.scan;
-        let act = match crate::act::decode(scan) {
-            Ok(act) => act,
-            Err(error @ (CodecError::ResourceLimit(_) | CodecError::Io(_))) => return Err(error),
-            Err(error) => {
-                self.report.losses.push(
-                    F3dLossCode::ActRecordUntyped
-                        .note(format!("ACT records could not be decoded: {error}")),
-                );
-                self.untyped.extend([
-                    cadmpeg_ir::document::ArenaClass::Model,
-                    cadmpeg_ir::document::ArenaClass::Design,
-                ]);
-                crate::act::DecodedAct::default()
-            }
-        };
-        if !act.untyped_spans.is_empty() {
-            use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput, PartSpec};
+        use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput, PartSpec};
 
-            let mut parts = PartOutput::new(cadmpeg_ir::CodecFormat::F3d, self.ctx);
-            for frame in act.untyped_spans {
-                let source = scan.entry_view(&frame.stream).ok_or_else(|| {
-                    CodecError::malformed("ACT record stream has no source view")
-                })?;
-                let start = source.start().checked_add(frame.extent.start)
-                    .ok_or_else(|| CodecError::malformed("ACT record start overflows"))?;
-                let end = source.start().checked_add(frame.extent.end)
-                    .ok_or_else(|| CodecError::malformed("ACT record end overflows"))?;
-                let extent = source.child(start, end)
-                    .ok_or_else(|| CodecError::malformed("ACT record extent exceeds its stream"))?;
-                let mut spec = PartSpec::new("f3d.bulk_record")
+        let mut parts = PartOutput::new(cadmpeg_ir::CodecFormat::F3d, self.ctx);
+        let mut act = crate::act::DecodedAct::default();
+        for entry in scan
+            .entries
+            .iter()
+            .filter(|entry| scan.is_act_stream(entry))
+        {
+            let source = scan
+                .entry_view(&entry.name)
+                .ok_or_else(|| CodecError::malformed("ACT stream has no source view"))?;
+            let meta_name = entry.name.replace("BulkStream.dat", "MetaStream.dat");
+            let meta_ok = if let Some(meta_source) = scan.entry_view(&meta_name) {
+                let spec = PartSpec::new("zip.entry")
                     .holding([
                         cadmpeg_ir::document::ArenaClass::Model,
                         cadmpeg_ir::document::ArenaClass::Design,
                     ])
-                    .in_stream(cadmpeg_ir::StreamName::try_from(frame.stream.clone())
-                        .map_err(CodecError::malformed)?);
-                for id in &frame.dropped {
-                    spec = spec.dropping(cadmpeg_ir::ids::Identity::try_from(id.as_str())
-                        .map_err(CodecError::malformed)?);
+                    .in_stream(
+                        cadmpeg_ir::StreamName::try_from(meta_name.clone())
+                            .map_err(CodecError::malformed)?,
+                    );
+                self.ctx
+                    .decode_part(&mut parts, meta_source, spec, |_| {
+                        scan.parsed_metastream(&meta_name)
+                    })?
+                    .is_some()
+            } else {
+                false
+            };
+            let spec = PartSpec::new("zip.entry")
+                .holding([
+                    cadmpeg_ir::document::ArenaClass::Model,
+                    cadmpeg_ir::document::ArenaClass::Design,
+                ])
+                .in_stream(
+                    cadmpeg_ir::StreamName::try_from(entry.name.clone())
+                        .map_err(CodecError::malformed)?,
+                );
+            let decoded = self.ctx.decode_part(&mut parts, source, spec, |_| {
+                if meta_ok {
+                    crate::act::decode_stream(scan, &entry.name)
+                } else {
+                    Err(CodecError::malformed(
+                        "ACT BulkStream has no readable sibling MetaStream",
+                    ))
                 }
-                let error = match frame.error {
-                    CodecError::Malformed(message) => CodecError::malformed(format_args!(
-                        "ACT record {}: {message}", frame.record_index
-                    )),
-                    error => error,
-                };
-                self.ctx.decode_part(&mut parts, extent, spec, |_| Err::<(), _>(error))?;
+            })?;
+            if let Some(decoded) = decoded {
+                act.append(decoded);
             }
-            let (_, native, fidelity, losses) = parts.into_parts();
-            let stubs = native.namespace("f3d")
-                .map(|namespace| namespace.arena_as_for_decode(self.ctx, "unknowns"))
-                .transpose()?
-                .unwrap_or_default();
-            self.design_part_fidelity.append(fidelity)?;
-            self.design_part_stubs.extend(stubs);
-            self.report.losses.extend(losses);
         }
+        for frame in act.untyped_spans {
+            let source = scan
+                .entry_view(&frame.stream)
+                .ok_or_else(|| CodecError::malformed("ACT record stream has no source view"))?;
+            let start = source
+                .start()
+                .checked_add(frame.extent.start)
+                .ok_or_else(|| CodecError::malformed("ACT record start overflows"))?;
+            let end = source
+                .start()
+                .checked_add(frame.extent.end)
+                .ok_or_else(|| CodecError::malformed("ACT record end overflows"))?;
+            let extent = source
+                .child(start, end)
+                .ok_or_else(|| CodecError::malformed("ACT record extent exceeds its stream"))?;
+            let mut spec = PartSpec::new("f3d.bulk_record")
+                .holding([
+                    cadmpeg_ir::document::ArenaClass::Model,
+                    cadmpeg_ir::document::ArenaClass::Design,
+                ])
+                .in_stream(
+                    cadmpeg_ir::StreamName::try_from(frame.stream.clone())
+                        .map_err(CodecError::malformed)?,
+                );
+            for id in &frame.dropped {
+                spec = spec.dropping(
+                    cadmpeg_ir::ids::Identity::try_from(id.as_str())
+                        .map_err(CodecError::malformed)?,
+                );
+            }
+            let error = match frame.error {
+                CodecError::Malformed(message) => CodecError::malformed(format_args!(
+                    "ACT record {}: {message}",
+                    frame.record_index
+                )),
+                error => error,
+            };
+            self.ctx
+                .decode_part(&mut parts, extent, spec, |_| Err::<(), _>(error))?;
+        }
+        let (_, native, fidelity, losses) = parts.into_parts();
+        let stubs = native
+            .namespace("f3d")
+            .map(|namespace| namespace.arena_as_for_decode(self.ctx, "unknowns"))
+            .transpose()?
+            .unwrap_or_default();
+        self.design_part_fidelity.append(fidelity)?;
+        self.design_part_stubs.extend(stubs);
+        self.report.losses.extend(losses);
         let unresolved_links = act
             .component_links
             .iter()
