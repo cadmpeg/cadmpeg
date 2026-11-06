@@ -12,10 +12,10 @@ fn carrier(target: &AttributeTarget) -> bool {
     )
 }
 
-fn short_label(value: &str) -> bool {
+pub(in crate::writer) fn short_label(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 8
-        && value.trim_end_matches(' ') == value
+        && value.trim() == value
         && value
             .bytes()
             .all(|byte| byte.is_ascii_graphic() || byte == b' ')
@@ -27,6 +27,7 @@ pub(super) fn apply(
     targets: &Targets,
     result: &mut AttributeExport,
 ) {
+    apply_sheet_boundary_labels(ir, entities, targets, result);
     let explicit_labels: BTreeSet<_> = ir
         .model
         .attributes
@@ -83,4 +84,116 @@ pub(super) fn apply(
         entity.label.clone_from(value);
         result.preserved.insert(attribute.id.to_string());
     }
+}
+
+fn apply_sheet_boundary_labels(
+    ir: &CadIr,
+    entities: &mut [Entity],
+    targets: &Targets,
+    result: &mut AttributeExport,
+) {
+    for entity in entities.iter_mut().filter(|entity| entity.type_code == 143) {
+        let Some(points) = sheet_boundary_points(ir, entity) else {
+            continue;
+        };
+        if points.is_empty() || points.iter().any(|point| targets.contains_key(*point)) {
+            continue;
+        }
+        let mut selected = Vec::new();
+        let mut label: Option<&str> = None;
+        for point in points {
+            let mut attrs = ir.model.attributes.iter().filter(|attribute| {
+                matches!(&attribute.target, AttributeTarget::Point(id) if id.as_str() == point)
+                    && matches!(attribute.name.as_str(), "name" | "iges.directory_label")
+            });
+            let Some(attribute) = attrs.next() else {
+                selected.clear();
+                break;
+            };
+            let [Some(AttributeValue::String(value))] = attribute.values.as_slice() else {
+                selected.clear();
+                break;
+            };
+            if attrs.next().is_some()
+                || attribute.name != "name"
+                || !short_label(value)
+                || value.trim() != value
+                || label.is_some_and(|label| label != value)
+            {
+                selected.clear();
+                break;
+            }
+            label = Some(value);
+            selected.push(attribute.id.to_string());
+        }
+        let Some(label) = label.filter(|_| !selected.is_empty()) else {
+            continue;
+        };
+        if ir.model.bodies.iter().any(|body| {
+            entity
+                .source_targets
+                .iter()
+                .any(|id| id == body.id.as_str())
+                && body
+                    .name
+                    .as_deref()
+                    .is_some_and(|name| !name.is_empty() && name != label)
+        }) {
+            continue;
+        }
+        entity.label = label.to_owned();
+        result.preserved.extend(selected);
+    }
+}
+
+pub(in crate::writer) fn sheet_boundary_points<'a>(
+    ir: &'a CadIr,
+    entity: &Entity,
+) -> Option<BTreeSet<&'a str>> {
+    if entity.type_code != 143 {
+        return None;
+    }
+    let face = ir.model.faces.iter().find(|face| {
+        entity
+            .source_targets
+            .iter()
+            .any(|id| id == face.id.as_str())
+    })?;
+    let mut points = BTreeSet::new();
+    for loop_id in &face.loops {
+        let boundary = ir
+            .model
+            .loops
+            .iter()
+            .find(|boundary| boundary.id == *loop_id)?;
+        for vertex in boundary.vertices() {
+            points.insert(
+                ir.model
+                    .vertices
+                    .iter()
+                    .find(|row| row.id == *vertex)?
+                    .point
+                    .as_str(),
+            );
+        }
+        for coedge_id in boundary.coedges() {
+            let coedge = ir
+                .model
+                .coedges
+                .iter()
+                .find(|coedge| coedge.id == *coedge_id)?;
+            let edge = ir.model.edges.iter().find(|edge| edge.id == coedge.edge)?;
+            for vertex in [&edge.start, &edge.end] {
+                points.insert(
+                    ir.model
+                        .vertices
+                        .iter()
+                        .find(|row| row.id == *vertex)?
+                        .point
+                        .as_str(),
+                );
+            }
+        }
+    }
+    Some(points)
 }

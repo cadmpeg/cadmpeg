@@ -12,8 +12,10 @@ pub(super) fn secondary<'a>(
     ir: &'a CadIr,
     primary: &Curve,
     original: &PolygonOnTriangulationRecord,
-    source_vertices: &[cadmpeg_ir::features::FinitePoint3],
-    vertices: &[cadmpeg_ir::features::FinitePoint3],
+    (source_vertices, vertices): (
+        &[cadmpeg_ir::features::FinitePoint3],
+        &[cadmpeg_ir::features::FinitePoint3],
+    ),
     rows: &mut Vec<String>,
     source_row: Option<usize>,
 ) -> Result<Option<(usize, &'a str)>, CodecError> {

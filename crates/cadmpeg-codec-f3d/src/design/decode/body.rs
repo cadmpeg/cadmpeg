@@ -303,12 +303,13 @@ fn body_bound_candidates(
         })
 }
 
-pub(super) fn decode_stream(
-    bytes: &[u8],
+fn decode_recipe_frame<'a>(
+    bytes: &'a [u8],
+    base: usize,
     stream: &str,
+    counters: &mut HashMap<(ConstructionRecipeKind, Option<&'a str>), u32>,
     out: &mut Vec<ConstructionRecipe>,
 ) -> Result<(), CodecError> {
-    let mut counters: HashMap<(ConstructionRecipeKind, Option<&str>), u32> = HashMap::new();
     for &(name, kind) in RECIPES {
         let mut cursor = 0;
         while let Some(offset) = find_from(bytes, name, cursor) {
@@ -335,13 +336,15 @@ pub(super) fn decode_stream(
                         .and_then(|selector_at| {
                             Some(ConstructionRecipeSelector {
                                 value: View::u32_le_at(bytes, selector_at)?,
-                                byte_offset: Some(u64::try_from(selector_at).ok()?),
+                                byte_offset: Some(
+                                    u64::try_from(base.checked_add(selector_at)?).ok()?,
+                                ),
                             })
                         });
                     Ok(crate::records::recipes::ConstructionRecipeDesign {
                         id: crate::records::identity::RecordedValue {
                             value: value.to_owned(),
-                            offset: Some(u64_from_index(design_id_at)),
+                            offset: Some(u64_from_index(base + design_id_at)),
                         },
                         selector,
                     })
@@ -350,20 +353,22 @@ pub(super) fn decode_stream(
             let key = (kind, parsed_design_id.map(|(value, _)| value));
             let counter = counters.entry(key).or_default();
             let recipe_index = *counter;
-            *counter += 1;
-            // The record index word precedes the family marker by sixteen
-            // bytes. A marker within the first sixteen bytes of the stream has
-            // no such word, so the stream states no record index for it; the
-            // word itself always lies inside `bytes` when the marker does.
+            *counter = counter
+                .checked_add(1)
+                .ok_or_else(|| CodecError::malformed("recipe ordinal overflows"))?;
             let record_index = offset.checked_sub(16).and_then(|at| {
                 Some(crate::records::identity::RecordedValue {
                     value: View::i32_le_at(bytes, at)?,
-                    offset: Some(u64_from_index(at)),
+                    offset: Some(u64_from_index(base + at)),
                 })
             });
             let recipe = ConstructionRecipe {
-                id: design_record_id(stream, ":construction-recipe#", u64_from_index(offset)),
-                byte_offset: Some(u64_from_index(offset)),
+                id: design_record_id(
+                    stream,
+                    ":construction-recipe#",
+                    u64_from_index(base + offset),
+                ),
+                byte_offset: Some(u64_from_index(base + offset)),
                 kind,
                 design,
                 recipe_index,
@@ -373,21 +378,61 @@ pub(super) fn decode_stream(
             out.push(recipe);
         }
     }
-    out.sort_by(|left, right| {
-        let left_key = {
-            let recipe = left;
-            {
-                recipe.record_index.map(|index| index.value)
-            }
+    Ok(())
+}
+
+pub(super) fn decode_stream(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    output: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
+    source: View<'_>,
+    stream: &str,
+    frames: &[crate::metastream::PrimaryRecordFrame],
+    out: &mut Vec<ConstructionRecipe>,
+) -> Result<(), CodecError> {
+    use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartSpec};
+    let bytes = source.window();
+    let mut counters = HashMap::new();
+    for frame in frames {
+        let record = bytes
+            .get(frame.start..frame.end)
+            .ok_or_else(|| CodecError::malformed("recipe frame exceeds its stream"))?;
+        if !RECIPES
+            .iter()
+            .any(|(name, _)| find_from(record, name, 0).is_some())
+        {
+            continue;
+        }
+        let start = source
+            .start()
+            .checked_add(frame.start)
+            .ok_or_else(|| CodecError::malformed("recipe frame start overflows"))?;
+        let end = source
+            .start()
+            .checked_add(frame.end)
+            .ok_or_else(|| CodecError::malformed("recipe frame end overflows"))?;
+        let extent = source
+            .child(start, end)
+            .ok_or_else(|| CodecError::malformed("recipe frame exceeds its source view"))?;
+        let spec =
+            PartSpec::new("f3d.bulk_record").holding([cadmpeg_ir::document::ArenaClass::Design]);
+        let spec = if extent.location().space == cadmpeg_core::decode::SpaceId::ROOT {
+            spec
+        } else {
+            spec.in_stream(
+                cadmpeg_ir::StreamName::try_from(stream.to_owned())
+                    .map_err(CodecError::malformed)?,
+            )
         };
-        let right_key = {
-            let recipe = right;
-            {
-                recipe.record_index.map(|index| index.value)
-            }
-        };
-        left_key.cmp(&right_key)
-    });
+        let decoded = ctx.decode_part(output, extent, spec, |_| {
+            let mut recipes = Vec::new();
+            decode_recipe_frame(record, frame.start, stream, &mut counters, &mut recipes)?;
+            Ok(recipes)
+        })?;
+        if let Some(recipes) = decoded {
+            out.extend(recipes);
+        }
+    }
+    out.sort_by_key(|recipe| recipe.record_index.map(|index| index.value));
     Ok(())
 }
 
@@ -2838,6 +2883,55 @@ mod tests {
         });
     }
 
+    fn decode_recipe_fixture(
+        bytes: &[u8],
+        out: &mut Vec<crate::records::recipes::ConstructionRecipe>,
+    ) -> Result<(), cadmpeg_core::CodecError> {
+        super::decode_recipe_frame(
+            bytes,
+            0,
+            "Design/BulkStream.dat",
+            &mut std::collections::HashMap::new(),
+            out,
+        )
+    }
+
+    #[test]
+    fn recipe_finder_reads_only_indexed_record_extents() {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&16_u32.to_le_bytes());
+        bytes.extend_from_slice(b"body_recipe_data");
+        let record_start = bytes.len();
+        indexed_header(&mut bytes, *b"256", 71);
+        bytes.extend_from_slice(&[0; 16]);
+        bytes.extend_from_slice(&16_u32.to_le_bytes());
+        let marker = bytes.len();
+        bytes.extend_from_slice(b"body_recipe_data");
+        let frames = [crate::metastream::PrimaryRecordFrame {
+            entity_id: 71,
+            start: record_start,
+            member_end: bytes.len(),
+            end: bytes.len(),
+        }];
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let mut parts =
+            cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
+        let mut recipes = Vec::new();
+        super::decode_stream(
+            &ctx,
+            &mut parts,
+            cadmpeg_core::decode::View::over_retained(&bytes),
+            "Design/BulkStream.dat",
+            &frames,
+            &mut recipes,
+        )
+        .unwrap();
+        assert_eq!(recipes.len(), 1);
+        assert_eq!(recipes[0].byte_offset, Some(u64_from_index(marker)));
+        let (_, _, _, losses) = parts.into_parts();
+        assert!(losses.is_empty());
+    }
+
     #[test]
     fn a_recipe_marker_before_the_record_index_word_states_no_record_index() {
         // The family marker opens at offset four, so the stream holds no index
@@ -2846,8 +2940,7 @@ mod tests {
         bytes.extend_from_slice(&16u32.to_le_bytes());
         bytes.extend_from_slice(b"body_recipe_data");
         let mut recipes = Vec::new();
-        crate::design::decode::body::decode_stream(&bytes, "Design/BulkStream.dat", &mut recipes)
-            .unwrap();
+        decode_recipe_fixture(&bytes, &mut recipes).unwrap();
         assert_eq!(recipes.len(), 1);
         assert_eq!(recipes[0].record_index, None);
         let wire = serde_json::to_value(&recipes[0]).expect("recipe wire");
@@ -2867,8 +2960,7 @@ mod tests {
             bytes.extend_from_slice(&(-1i64).to_le_bytes());
         }
         let mut recipes = Vec::new();
-        crate::design::decode::body::decode_stream(&bytes, "Design/BulkStream.dat", &mut recipes)
-            .unwrap();
+        decode_recipe_fixture(&bytes, &mut recipes).unwrap();
         assert_eq!(recipes.len(), 2);
         assert!(recipes
             .iter()
@@ -2885,8 +2977,7 @@ mod tests {
         body.extend_from_slice(&16u32.to_le_bytes());
         body.extend_from_slice(b"body_recipe_data");
         let mut recipes = Vec::new();
-        crate::design::decode::body::decode_stream(&body, "Design/BulkStream.dat", &mut recipes)
-            .unwrap();
+        decode_recipe_fixture(&body, &mut recipes).unwrap();
         assert_eq!(recipes.len(), 1);
         assert_eq!(
             recipes[0]

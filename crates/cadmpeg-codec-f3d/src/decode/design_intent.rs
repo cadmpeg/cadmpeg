@@ -387,7 +387,7 @@ thread_local! {
 }
 
 /// Make the next Design part-location run on this thread fail with
-/// `failure()`, as if every Design MetaStream were unreadable.
+/// `failure()`, as if every Design `MetaStream` were unreadable.
 #[cfg(test)]
 pub(crate) fn inject_failure(failure: fn() -> CodecError) {
     INJECTED_FAILURE.with(|slot| slot.set(Some(failure)));

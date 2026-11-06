@@ -63,10 +63,21 @@ pub(super) fn presentation_layer_coverage(
             && layer.items.iter().all(|item| {
                 layer_item_id(item).is_some_and(|id| {
                     entities.iter().any(|entity| {
-                        if !entity.source_targets.contains(&id) {
+                        let levels = entity_layer_numbers(entity, &memberships);
+                        let derived_point = matches!(
+                            item,
+                            cadmpeg_ir::presentation::PresentationItem::Point { .. }
+                        ) && !levels.is_empty()
+                            && super::attributes::labels::sheet_boundary_points(ir, entity)
+                                .is_some_and(|points| {
+                                    points.contains(id.as_str())
+                                        && points
+                                            .iter()
+                                            .all(|point| memberships.get(*point) == Some(&levels))
+                                });
+                        if !entity.source_targets.contains(&id) && !derived_point {
                             return false;
                         }
-                        let levels = entity_layer_numbers(entity, &memberships);
                         levels.len() <= 1 || definitions.contains(&levels)
                     })
                 })

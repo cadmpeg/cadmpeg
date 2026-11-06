@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Synthetic ACT MetaStream and BulkStream payloads.
+//! Synthetic ACT `MetaStream` and `BulkStream` payloads.
 
 use super::streams_test::segment_metastream;
 use crate::test_support::{lp_ascii, lp_utf16};

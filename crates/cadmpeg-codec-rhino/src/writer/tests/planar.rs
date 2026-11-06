@@ -549,10 +549,6 @@ fn planar_solid_orientation_is_translation_and_scale_invariant() {
 
 #[test]
 fn reversed_trim_with_edge_convention_pcurve_is_admitted() {
-    // From `core_operations.FCStd` ChamferBase body: a reversed coedge whose
-    // explicit line pcurve shares the edge parametrization (edge convention)
-    // instead of Rhino's traversal convention. The writer keeps the authored
-    // carrier, so the agreement admits the trim.
     use super::super::trims::validate_plane_trim;
     use crate::writer::model::{WritableEdge, WritableEdgeCurve, WritablePcurve};
     use cadmpeg_ir::geometry::{
@@ -593,7 +589,7 @@ fn reversed_trim_with_edge_convention_pcurve_is_admitted() {
         source: &pcurve,
         payload: ([0; 16], vec![]),
     };
-    validate_plane_trim(
+    assert!(validate_plane_trim(
         Point3::new(0.0, 0.0, 0.0),
         Vector3::new(0.0, 0.0, 1.0),
         Vector3::new(0.0, -1.0, 0.0),
@@ -602,7 +598,13 @@ fn reversed_trim_with_edge_convention_pcurve_is_admitted() {
         Sense::Reversed,
         &explicit,
     )
-    .expect("edge-convention trim on a reversed coedge is admitted");
+    .expect("edge-convention trim on a reversed coedge is admitted"));
+    let (_, payload) = super::super::reversed_pcurve_payload(&edge, &explicit)
+        .expect("reverse the edge-convention trim");
+    let mut view = cadmpeg_core::decode::View::over_retained(&payload);
+    assert_eq!(view.req_u8().unwrap(), 0x10);
+    let coordinates: Vec<_> = (0..6).map(|_| view.req_f64_le().unwrap()).collect();
+    assert_eq!(coordinates, [0.0, -12.0, 0.0, 0.0, 0.0, 0.0]);
 }
 
 /// A disk sheet bounded by one full-circle edge exercises the arc C3 path,
@@ -1191,6 +1193,23 @@ fn cylinder_solid_with_plane_caps_round_trips() {
         });
     }
     ir.finalize();
+    let model = super::super::model::WritableModel::try_new(&ir).expect("cylinder model");
+    let circle_trims: Vec<_> = model
+        .coedges
+        .iter()
+        .filter(|coedge| {
+            coedge
+                .explicit_pcurve
+                .is_some_and(|pcurve| matches!(pcurve.geometry, PcurveGeometry::Circle(_)))
+        })
+        .collect();
+    assert!(!circle_trims.is_empty());
+    for coedge in circle_trims {
+        assert_eq!(
+            super::super::trim_iso::classify(&model, coedge).expect("arc trim iso"),
+            0
+        );
+    }
     for version in [
         RhinoArchiveVersion::V5,
         RhinoArchiveVersion::V6,

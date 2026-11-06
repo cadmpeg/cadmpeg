@@ -42,14 +42,14 @@ use zip::write::SimpleFileOptions;
 use crate::native::{EntryRecord, ExtensionRecord, ObjectRecord, PropertyBody, PropertyRecord};
 use target::Resolution;
 
-/// FreeCAD has no fixed-width field; every count is an XML attribute or a
+/// `FreeCAD` has no fixed-width field; every count is an XML attribute or a
 /// ZIP member, so there is no capacity row (#238).
 pub(crate) const CAPACITY_FIELDS: &[cadmpeg_ir::codec::write::CapacityField] = &[];
 
-/// Normalization rows: neutral paths FreeCAD stores in reduced form, each
+/// Normalization rows: neutral paths `FreeCAD` stores in reduced form, each
 /// with the loss the writer charges (#238 §5.5, #232 §5.2). A same-format
-/// round trip never reaches one, because a FreeCAD-sourced document already
-/// satisfies FreeCAD's constraints; they occur only cross-format and under
+/// round trip never reaches one, because a `FreeCAD`-sourced document already
+/// satisfies `FreeCAD`'s constraints; they occur only cross-format and under
 /// §5.1(c) edits.
 pub(crate) const REDUCED_FIELDS: &[cadmpeg_ir::codec::write::ReducedField] = &[
     cadmpeg_ir::codec::write::ReducedField {
