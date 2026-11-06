@@ -2,8 +2,28 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 24547,
-      "payload_sha256": "bf75da0814509920b45f36e5af352cb61db924fe75926188353a866ae4f4400a"
+      "payload_len": 19231,
+      "payload_sha256": "379c35450bab5d448336d6a1b9f4fc8a1a5ffb8ab38f5154c3f75fbff7012703"
+    },
+    {
+      "name": "PartShape.brp",
+      "payload_len": 2045,
+      "payload_sha256": "eb2cc56250bb73f4cea7f182b8d5e2c97634ac82758abd794fda50d31964b3d4"
+    },
+    {
+      "name": "PartShape1.brp",
+      "payload_len": 680,
+      "payload_sha256": "ea9436e6f4f725edec62ad51a1f8b185a57cb21911b51ed1d66a78fe6b855e50"
+    },
+    {
+      "name": "PartShape3.brp",
+      "payload_len": 3746,
+      "payload_sha256": "47e461c9156b38a9d02c6b13c4844cd8c248467d1a05fe1f668613fa7c338f6f"
+    },
+    {
+      "name": "GuiDocument.xml",
+      "payload_len": 9903,
+      "payload_sha256": "75870a3c91b4005b381cf014de8dc7b013d39f1e502e43b73d51bcec809421ab"
     },
     {
       "name": "Body.DiffuseColor",
@@ -21,16 +41,6 @@
       "payload_sha256": "33955dd52f77c1f7509de72563635b737e7ab07a4310ec245a433265e9558df2"
     },
     {
-      "name": "Body.brp",
-      "payload_len": 2045,
-      "payload_sha256": "eb2cc56250bb73f4cea7f182b8d5e2c97634ac82758abd794fda50d31964b3d4"
-    },
-    {
-      "name": "GuiDocument.xml",
-      "payload_len": 10092,
-      "payload_sha256": "c2501da280bb620ad73f204c8e161fe92375b475d47e4e27f2f3d317244c9f1b"
-    },
-    {
       "name": "Pad.DiffuseColor",
       "payload_len": 52,
       "payload_sha256": "8dc45259175aced1be2b312626679f631f380b6c336374c882ded144727e2b2d"
@@ -46,11 +56,6 @@
       "payload_sha256": "1a394853eb3da3866107ce11535d3820156a4214b19afebd357b280f56478753"
     },
     {
-      "name": "Pad.brp",
-      "payload_len": 3746,
-      "payload_sha256": "47e461c9156b38a9d02c6b13c4844cd8c248467d1a05fe1f668613fa7c338f6f"
-    },
-    {
       "name": "Sketch.LineColorArray",
       "payload_len": 20,
       "payload_sha256": "4b7e6f023f560d01538078db3b1ad02d6218b6096c6f75444a3a5f68f303503f"
@@ -59,11 +64,6 @@
       "name": "Sketch.PointColorArray",
       "payload_len": 20,
       "payload_sha256": "4b7e6f023f560d01538078db3b1ad02d6218b6096c6f75444a3a5f68f303503f"
-    },
-    {
-      "name": "Sketch.brp",
-      "payload_len": 680,
-      "payload_sha256": "ea9436e6f4f725edec62ad51a1f8b185a57cb21911b51ed1d66a78fe6b855e50"
     }
   ],
   "report": {
@@ -150,7 +150,7 @@
         "configurations": "dropped",
         "curves": "written",
         "declared_measures": "omitted",
-        "drawings": "dropped",
+        "drawings": "reported",
         "edges": "written",
         "faces": "written",
         "feature_input_topologies": "dropped",
@@ -172,7 +172,7 @@
         "product_definitions": "reported",
         "regions": "written",
         "rigid_bodies": "omitted",
-        "semantic_annotations": "dropped",
+        "semantic_annotations": "reported",
         "shells": "written",
         "sketch_constraints": "reported",
         "sketch_entities": "reported",
@@ -184,7 +184,7 @@
         "spreadsheets": "reported",
         "subds": "dropped",
         "surfaces": "written",
-        "tessellations": "dropped",
+        "tessellations": "reported",
         "vertices": "written",
         "view_presentations": "written"
       },
@@ -195,6 +195,16 @@
       "target": "fcstd:schema-4"
     },
     "losses": [
+      {
+        "code": {
+          "code": "feature.source-tag-not-transferred",
+          "kind": "feature_history_retained",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "feature fcstd:design:feature#Parameters source tag Spreadsheet::Sheet is written as App::DocumentObjectGroup",
+        "severity": "info"
+      },
       {
         "code": {
           "code": "feature.not-transferred",
@@ -304,6 +314,16 @@
         },
         "message": "GUI property fcstd:native:gui-property#Pad:PointColorArray has no typed writable side payload and is omitted",
         "severity": "info"
+      },
+      {
+        "code": {
+          "code": "appearance.body-style-not-transferred",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "bodies fcstd:model:body#Pad:AddSubShape:PartShape2.brp:24, fcstd:model:body#Pad:Shape:PartShape3.brp:24%40location1 share one view provider; the first body's style is written",
+        "severity": "warning"
       },
       {
         "code": {
@@ -1582,7 +1602,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 13 native record(s) from `fcstd.entries`: fcstd:native:entry#DiffuseColor, fcstd:native:entry#DiffuseColor1, fcstd:native:entry#DiffuseColor2, fcstd:native:entry#LineColorArray, fcstd:native:entry#LineColorArray1, fcstd:native:entry#LineColorArray2, fcstd:native:entry#PartShape.brp, fcstd:native:entry#PartShape1.brp, fcstd:native:entry#PartShape2.brp, fcstd:native:entry#PartShape3.brp, fcstd:native:entry#PointColorArray, fcstd:native:entry#PointColorArray1, fcstd:native:entry#PointColorArray2",
+        "message": "the fcstd write omits 10 native record(s) from `fcstd.entries`: fcstd:native:entry#DiffuseColor, fcstd:native:entry#DiffuseColor1, fcstd:native:entry#DiffuseColor2, fcstd:native:entry#LineColorArray, fcstd:native:entry#LineColorArray1, fcstd:native:entry#LineColorArray2, fcstd:native:entry#PartShape2.brp, fcstd:native:entry#PointColorArray, fcstd:native:entry#PointColorArray1, fcstd:native:entry#PointColorArray2",
         "severity": "info"
       },
       {
@@ -1592,7 +1612,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 91 native record(s) from `fcstd.gui_properties`: fcstd:native:gui-property#Body:AngularDeflection, fcstd:native:gui-property#Body:BoundingBox, fcstd:native:gui-property#Body:Deviation, fcstd:native:gui-property#Body:DisplayModeBody, fcstd:native:gui-property#Body:DrawStyle, fcstd:native:gui-property#Body:Lighting, fcstd:native:gui-property#Body:LineColor, fcstd:native:gui-property#Body:OnTopWhenSelected, fcstd:native:gui-property#Body:PointColor, fcstd:native:gui-property#Body:Selectable, fcstd:native:gui-property#Body:ShowInTree, fcstd:native:gui-property#Origin:OnTopWhenSelected, fcstd:native:gui-property#Origin:ShowInTree, fcstd:native:gui-property#Pad:AngularDeflection, fcstd:native:gui-property#Pad:BoundingBox, fcstd:native:gui-property#Pad:Deviation, fcstd:native:gui-property#Pad:DrawStyle, fcstd:native:gui-property#Pad:Lighting, fcstd:native:gui-property#Pad:LineColor, fcstd:native:gui-property#Pad:OnTopWhenSelected, fcstd:native:gui-property#Pad:PointColor, fcstd:native:gui-property#Pad:Selectable, fcstd:native:gui-property#Pad:ShowInTree, fcstd:native:gui-property#Parameters:OnTopWhenSelected, fcstd:native:gui-property#Parameters:ShowInTree, fcstd:native:gui-property#Sketch:AngularDeflection, fcstd:native:gui-property#Sketch:Autoconstraints, fcstd:native:gui-property#Sketch:AvoidRedundant, fcstd:native:gui-property#Sketch:BoundingBox, fcstd:native:gui-property#Sketch:Deviation, fcstd:native:gui-property#Sketch:DiffuseColor, fcstd:native:gui-property#Sketch:DrawStyle, fcstd:native:gui-property#Sketch:EditingWorkbench, fcstd:native:gui-property#Sketch:ForceOrtho, fcstd:native:gui-property#Sketch:GridAuto, fcstd:native:gui-property#Sketch:GridSize, fcstd:native:gui-property#Sketch:HideDependent, fcstd:native:gui-property#Sketch:Lighting, fcstd:native:gui-property#Sketch:LineColor, fcstd:native:gui-property#Sketch:OnTopWhenSelected, fcstd:native:gui-property#Sketch:PointColor, fcstd:native:gui-property#Sketch:RestoreCamera, fcstd:native:gui-property#Sketch:SectionView, fcstd:native:gui-property#Sketch:Selectable, fcstd:native:gui-property#Sketch:ShowGrid, fcstd:native:gui-property#Sketch:ShowInTree, fcstd:native:gui-property#Sketch:ShowLinks, fcstd:native:gui-property#Sketch:ShowSupport, fcstd:native:gui-property#Sketch:TempoVis, fcstd:native:gui-property#XY_Plane:BoundingBox, fcstd:native:gui-property#XY_Plane:OnTopWhenSelected, fcstd:native:gui-property#XY_Plane:Selectable, fcstd:native:gui-property#XY_Plane:ShapeColor, fcstd:native:gui-property#XY_Plane:ShowInTree, fcstd:native:gui-property#XY_Plane:Size, fcstd:native:gui-property#XY_Plane:Transparency, fcstd:native:gui-property#XZ_Plane:BoundingBox, fcstd:native:gui-property#XZ_Plane:OnTopWhenSelected, fcstd:native:gui-property#XZ_Plane:Selectable, fcstd:native:gui-property#XZ_Plane:ShapeColor, fcstd:native:gui-property#XZ_Plane:ShowInTree, fcstd:native:gui-property#XZ_Plane:Size, fcstd:native:gui-property#XZ_Plane:Transparency, fcstd:native:gui-property#X_Axis:BoundingBox, fcstd:native:gui-property#X_Axis:OnTopWhenSelected, fcstd:native:gui-property#X_Axis:Selectable, fcstd:native:gui-property#X_Axis:ShapeColor, fcstd:native:gui-property#X_Axis:ShowInTree, fcstd:native:gui-property#X_Axis:Size, fcstd:native:gui-property#X_Axis:Transparency, fcstd:native:gui-property#YZ_Plane:BoundingBox, fcstd:native:gui-property#YZ_Plane:OnTopWhenSelected, fcstd:native:gui-property#YZ_Plane:Selectable, fcstd:native:gui-property#YZ_Plane:ShapeColor, fcstd:native:gui-property#YZ_Plane:ShowInTree, fcstd:native:gui-property#YZ_Plane:Size, fcstd:native:gui-property#YZ_Plane:Transparency, fcstd:native:gui-property#Y_Axis:BoundingBox, fcstd:native:gui-property#Y_Axis:OnTopWhenSelected, fcstd:native:gui-property#Y_Axis:Selectable, fcstd:native:gui-property#Y_Axis:ShapeColor, fcstd:native:gui-property#Y_Axis:ShowInTree, fcstd:native:gui-property#Y_Axis:Size, fcstd:native:gui-property#Y_Axis:Transparency, fcstd:native:gui-property#Z_Axis:BoundingBox, fcstd:native:gui-property#Z_Axis:OnTopWhenSelected, fcstd:native:gui-property#Z_Axis:Selectable, fcstd:native:gui-property#Z_Axis:ShapeColor, fcstd:native:gui-property#Z_Axis:ShowInTree, fcstd:native:gui-property#Z_Axis:Size, fcstd:native:gui-property#Z_Axis:Transparency",
+        "message": "the fcstd write omits 93 native record(s) from `fcstd.gui_properties`: fcstd:native:gui-property#Body:AngularDeflection, fcstd:native:gui-property#Body:BoundingBox, fcstd:native:gui-property#Body:Deviation, fcstd:native:gui-property#Body:DisplayModeBody, fcstd:native:gui-property#Body:DrawStyle, fcstd:native:gui-property#Body:Lighting, fcstd:native:gui-property#Body:LineColor, fcstd:native:gui-property#Body:OnTopWhenSelected, fcstd:native:gui-property#Body:PointColor, fcstd:native:gui-property#Body:Selectable, fcstd:native:gui-property#Body:ShowInTree, fcstd:native:gui-property#Origin:OnTopWhenSelected, fcstd:native:gui-property#Origin:ShowInTree, fcstd:native:gui-property#Pad:AngularDeflection, fcstd:native:gui-property#Pad:BoundingBox, fcstd:native:gui-property#Pad:Deviation, fcstd:native:gui-property#Pad:DrawStyle, fcstd:native:gui-property#Pad:Lighting, fcstd:native:gui-property#Pad:LineColor, fcstd:native:gui-property#Pad:OnTopWhenSelected, fcstd:native:gui-property#Pad:PointColor, fcstd:native:gui-property#Pad:Selectable, fcstd:native:gui-property#Pad:ShapeColor, fcstd:native:gui-property#Pad:ShowInTree, fcstd:native:gui-property#Pad:Transparency, fcstd:native:gui-property#Parameters:OnTopWhenSelected, fcstd:native:gui-property#Parameters:ShowInTree, fcstd:native:gui-property#Sketch:AngularDeflection, fcstd:native:gui-property#Sketch:Autoconstraints, fcstd:native:gui-property#Sketch:AvoidRedundant, fcstd:native:gui-property#Sketch:BoundingBox, fcstd:native:gui-property#Sketch:Deviation, fcstd:native:gui-property#Sketch:DiffuseColor, fcstd:native:gui-property#Sketch:DrawStyle, fcstd:native:gui-property#Sketch:EditingWorkbench, fcstd:native:gui-property#Sketch:ForceOrtho, fcstd:native:gui-property#Sketch:GridAuto, fcstd:native:gui-property#Sketch:GridSize, fcstd:native:gui-property#Sketch:HideDependent, fcstd:native:gui-property#Sketch:Lighting, fcstd:native:gui-property#Sketch:LineColor, fcstd:native:gui-property#Sketch:OnTopWhenSelected, fcstd:native:gui-property#Sketch:PointColor, fcstd:native:gui-property#Sketch:RestoreCamera, fcstd:native:gui-property#Sketch:SectionView, fcstd:native:gui-property#Sketch:Selectable, fcstd:native:gui-property#Sketch:ShowGrid, fcstd:native:gui-property#Sketch:ShowInTree, fcstd:native:gui-property#Sketch:ShowLinks, fcstd:native:gui-property#Sketch:ShowSupport, fcstd:native:gui-property#Sketch:TempoVis, fcstd:native:gui-property#XY_Plane:BoundingBox, fcstd:native:gui-property#XY_Plane:OnTopWhenSelected, fcstd:native:gui-property#XY_Plane:Selectable, fcstd:native:gui-property#XY_Plane:ShapeColor, fcstd:native:gui-property#XY_Plane:ShowInTree, fcstd:native:gui-property#XY_Plane:Size, fcstd:native:gui-property#XY_Plane:Transparency, fcstd:native:gui-property#XZ_Plane:BoundingBox, fcstd:native:gui-property#XZ_Plane:OnTopWhenSelected, fcstd:native:gui-property#XZ_Plane:Selectable, fcstd:native:gui-property#XZ_Plane:ShapeColor, fcstd:native:gui-property#XZ_Plane:ShowInTree, fcstd:native:gui-property#XZ_Plane:Size, fcstd:native:gui-property#XZ_Plane:Transparency, fcstd:native:gui-property#X_Axis:BoundingBox, fcstd:native:gui-property#X_Axis:OnTopWhenSelected, fcstd:native:gui-property#X_Axis:Selectable, fcstd:native:gui-property#X_Axis:ShapeColor, fcstd:native:gui-property#X_Axis:ShowInTree, fcstd:native:gui-property#X_Axis:Size, fcstd:native:gui-property#X_Axis:Transparency, fcstd:native:gui-property#YZ_Plane:BoundingBox, fcstd:native:gui-property#YZ_Plane:OnTopWhenSelected, fcstd:native:gui-property#YZ_Plane:Selectable, fcstd:native:gui-property#YZ_Plane:ShapeColor, fcstd:native:gui-property#YZ_Plane:ShowInTree, fcstd:native:gui-property#YZ_Plane:Size, fcstd:native:gui-property#YZ_Plane:Transparency, fcstd:native:gui-property#Y_Axis:BoundingBox, fcstd:native:gui-property#Y_Axis:OnTopWhenSelected, fcstd:native:gui-property#Y_Axis:Selectable, fcstd:native:gui-property#Y_Axis:ShapeColor, fcstd:native:gui-property#Y_Axis:ShowInTree, fcstd:native:gui-property#Y_Axis:Size, fcstd:native:gui-property#Y_Axis:Transparency, fcstd:native:gui-property#Z_Axis:BoundingBox, fcstd:native:gui-property#Z_Axis:OnTopWhenSelected, fcstd:native:gui-property#Z_Axis:Selectable, fcstd:native:gui-property#Z_Axis:ShapeColor, fcstd:native:gui-property#Z_Axis:ShowInTree, fcstd:native:gui-property#Z_Axis:Size, fcstd:native:gui-property#Z_Axis:Transparency",
         "severity": "info"
       },
       {
@@ -1602,7 +1622,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 20 native record(s) from `fcstd.properties`: fcstd:native:property#Body:BaseFeature, fcstd:native:property#Body:ExpressionEngine, fcstd:native:property#Body:Placement, fcstd:native:property#Origin:ExpressionEngine, fcstd:native:property#Pad:AddSubShape, fcstd:native:property#Pad:BaseFeature, fcstd:native:property#Pad:Direction, fcstd:native:property#Pad:Placement, fcstd:native:property#Pad:ReferenceAxis, fcstd:native:property#Pad:Reversed, fcstd:native:property#Pad:UpToFace, fcstd:native:property#Parameters:ExpressionEngine, fcstd:native:property#Sketch:ExternalGeometry, fcstd:native:property#Sketch:Support, fcstd:native:property#XY_Plane:ExpressionEngine, fcstd:native:property#XZ_Plane:ExpressionEngine, fcstd:native:property#X_Axis:ExpressionEngine, fcstd:native:property#YZ_Plane:ExpressionEngine, fcstd:native:property#Y_Axis:ExpressionEngine, fcstd:native:property#Z_Axis:ExpressionEngine",
+        "message": "the fcstd write omits 13 native record(s) from `fcstd.properties`: fcstd:native:property#Body:BaseFeature, fcstd:native:property#Body:ExpressionEngine, fcstd:native:property#Body:Placement, fcstd:native:property#Pad:AddSubShape, fcstd:native:property#Pad:BaseFeature, fcstd:native:property#Pad:Direction, fcstd:native:property#Pad:Placement, fcstd:native:property#Pad:ReferenceAxis, fcstd:native:property#Pad:Reversed, fcstd:native:property#Pad:UpToFace, fcstd:native:property#Parameters:ExpressionEngine, fcstd:native:property#Sketch:ExternalGeometry, fcstd:native:property#Sketch:Support",
         "severity": "info"
       },
       {
@@ -1687,7 +1707,10 @@
               "disposition": "dropped",
               "records": {
                 "fcstd:native:entry#Document.xml": "regenerated",
-                "fcstd:native:entry#GuiDocument.xml": "regenerated"
+                "fcstd:native:entry#GuiDocument.xml": "regenerated",
+                "fcstd:native:entry#PartShape.brp": "regenerated",
+                "fcstd:native:entry#PartShape1.brp": "regenerated",
+                "fcstd:native:entry#PartShape3.brp": "regenerated"
               }
             },
             "extensions": {
@@ -1733,9 +1756,7 @@
                 "fcstd:native:gui-property#Pad:PointMaterial": "regenerated",
                 "fcstd:native:gui-property#Pad:PointSize": "regenerated",
                 "fcstd:native:gui-property#Pad:SelectionStyle": "regenerated",
-                "fcstd:native:gui-property#Pad:ShapeColor": "regenerated",
                 "fcstd:native:gui-property#Pad:ShapeMaterial": "regenerated",
-                "fcstd:native:gui-property#Pad:Transparency": "regenerated",
                 "fcstd:native:gui-property#Pad:Visibility": "regenerated",
                 "fcstd:native:gui-property#Parameters:DisplayMode": "regenerated",
                 "fcstd:native:gui-property#Parameters:SelectionStyle": "regenerated",
@@ -1814,6 +1835,12 @@
                 "fcstd:native:object#Z_Axis": "written"
               }
             },
+            "polygons3d": {
+              "disposition": "dropped"
+            },
+            "polygons_on_triangulations": {
+              "disposition": "dropped"
+            },
             "product_nodes": {
               "disposition": "dropped"
             },
@@ -1846,6 +1873,7 @@
                 "fcstd:native:property#Body:Tip": "regenerated",
                 "fcstd:native:property#Body:Visibility": "regenerated",
                 "fcstd:native:property#Body:_GroupTouched": "written",
+                "fcstd:native:property#Origin:ExpressionEngine": "written",
                 "fcstd:native:property#Origin:Group": "written",
                 "fcstd:native:property#Origin:Label": "written",
                 "fcstd:native:property#Origin:Label2": "written",
@@ -1890,31 +1918,37 @@
                 "fcstd:native:property#Sketch:Placement": "regenerated",
                 "fcstd:native:property#Sketch:Shape": "regenerated",
                 "fcstd:native:property#Sketch:Visibility": "regenerated",
+                "fcstd:native:property#XY_Plane:ExpressionEngine": "written",
                 "fcstd:native:property#XY_Plane:Label": "written",
                 "fcstd:native:property#XY_Plane:Label2": "written",
                 "fcstd:native:property#XY_Plane:Placement": "regenerated",
                 "fcstd:native:property#XY_Plane:Role": "written",
                 "fcstd:native:property#XY_Plane:Visibility": "written",
+                "fcstd:native:property#XZ_Plane:ExpressionEngine": "written",
                 "fcstd:native:property#XZ_Plane:Label": "written",
                 "fcstd:native:property#XZ_Plane:Label2": "written",
                 "fcstd:native:property#XZ_Plane:Placement": "regenerated",
                 "fcstd:native:property#XZ_Plane:Role": "written",
                 "fcstd:native:property#XZ_Plane:Visibility": "written",
+                "fcstd:native:property#X_Axis:ExpressionEngine": "written",
                 "fcstd:native:property#X_Axis:Label": "written",
                 "fcstd:native:property#X_Axis:Label2": "written",
                 "fcstd:native:property#X_Axis:Placement": "regenerated",
                 "fcstd:native:property#X_Axis:Role": "written",
                 "fcstd:native:property#X_Axis:Visibility": "written",
+                "fcstd:native:property#YZ_Plane:ExpressionEngine": "written",
                 "fcstd:native:property#YZ_Plane:Label": "written",
                 "fcstd:native:property#YZ_Plane:Label2": "written",
                 "fcstd:native:property#YZ_Plane:Placement": "regenerated",
                 "fcstd:native:property#YZ_Plane:Role": "written",
                 "fcstd:native:property#YZ_Plane:Visibility": "written",
+                "fcstd:native:property#Y_Axis:ExpressionEngine": "written",
                 "fcstd:native:property#Y_Axis:Label": "written",
                 "fcstd:native:property#Y_Axis:Label2": "written",
                 "fcstd:native:property#Y_Axis:Placement": "regenerated",
                 "fcstd:native:property#Y_Axis:Role": "written",
                 "fcstd:native:property#Y_Axis:Visibility": "written",
+                "fcstd:native:property#Z_Axis:ExpressionEngine": "written",
                 "fcstd:native:property#Z_Axis:Label": "written",
                 "fcstd:native:property#Z_Axis:Label2": "written",
                 "fcstd:native:property#Z_Axis:Placement": "regenerated",
