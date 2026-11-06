@@ -44,7 +44,7 @@ fn directory_metadata(namespace: &NativeNamespace, record: &NativeRecord, entity
                     .all(|byte| byte.is_ascii_graphic() || byte == b' ')
         })
     {
-        entity.label = label.trim().to_owned();
+        label.trim().clone_into(&mut entity.label);
     }
 }
 
