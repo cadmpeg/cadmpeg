@@ -1505,6 +1505,48 @@ non-UTF-8 type-10 strings, type-10 continuation semantics, remaining geometry
 and design-history graph joins, and non-attribute section grammar to
 transfer the rest of legacy persistence.
 
+### PP-22. Binary geometric-tolerance array framing
+
+**Question.** Which serialized length or terminator bounds each binary
+`geom_tol_array` element and its nested fields?
+
+**Known.** The array header has an `f8` slot count and a class reference. A
+populated element contains nested `dtl_named_item`, `dtl_item`, and `tol_text`
+fields. The first nested `e3` precedes `db_type`, `gtol_place_ptr`, and datum
+reference fields. The ASCII object-array depth grammar has separate row
+boundaries.
+
+**Need.** Establish the complete binary element and array extent from their
+serialized productions. Consume nested fields and distinguish later slots
+before transferring a tolerance or its attachments.
+
+### PP-23. Geometric-tolerance datum identities
+
+**Question.** Which native records bind tolerance datum labels and frame
+references to datum identities and datum features?
+
+**Known.** A tolerance attachment can carry `datum_refs`,
+`frame_datum_refs`, and a null `datum_def_id`. Its `ref_info` identifiers can
+also occur in both vertex and feature-entity namespaces. A numeric match to
+either namespace leaves the datum reference unresolved.
+
+**Need.** Resolve the owned reference tables, ordered datum compartments, and
+their datum-feature targets before constructing a datum system.
+
+### PP-24. Geometric-tolerance attachment targets
+
+**Question.** Which pointer and nested attachment types select dimension,
+curve, surface, and bounded-face targets for a geometric tolerance?
+
+**Known.** A type-1 `gtol_place_ptr` can refer to a dimension slot that names
+the tolerance in `gtol_ids`. A type-2 placement can carry a nested attachment
+whose identifier equals the outer identifier. Dimension and geometry
+identifiers can overlap. A surface reference can resolve without a bounded
+face.
+
+**Need.** Establish each pointer's namespace and its complete owned target
+join before transferring a face or curve attachment.
+
 ## 6. Assembly component table
 
 ### AS-01. Other `ee` frame-slot fills

@@ -14,11 +14,16 @@ use cadmpeg_core::container::ContainerRole;
 
 use std::io::Cursor;
 
-use cadmpeg_core::decode::InspectOptions;
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, InspectOptions};
 use cadmpeg_ir::codec::{Codec, Confidence, DecodeOptions};
-use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::features::{
+    BooleanOp, ExtrudeExtent, FeatureDefinition, FeatureOperation, LinearTermination,
+    PlanarProfileRef,
+};
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::sketches::SketchConstraintDefinitionInput;
+use cadmpeg_ir::topology::BodyKind;
+use cadmpeg_measure::{MeasureInput, MeasureOptions, Measurer, Selection};
 
 use crate::CreoCodec;
 
@@ -1718,4 +1723,188 @@ fn nist_ctc_01_disjoint_planar_regions_keep_their_bores() {
         assert_eq!(matching.len(), 1);
         assert_eq!(matching[0].loops.iter().count(), 2);
     }
+}
+
+/// The native model has a 2 mm blind cut that its STEP twin lacks. The cut
+/// removes its bottom faces' area times its depth from the STEP volume.
+#[test]
+fn nist_ctc_01_closed_solid_volume_accounts_for_native_blind_cut() {
+    const UNOWNED_SOURCE_FACES: [u32; 4] = [336, 409, 476, 543];
+    const STEP_TWIN_VOLUME_MM3: f64 = 14_644_820.506;
+    const CUT_BOTTOM_SURFACE: &str = "creo:visibgeom:surface#3682";
+    const NATIVE_CUT_DEPTH_MM: f64 = 2.0;
+    const FEATURE_LENGTH_TOLERANCE_MM: f64 = 1.0e-12;
+
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../corpus/nist-pmi/creo/nist_ctc_01_asme1_rd_cr10030.prt.5");
+    let result = decode(std::fs::read(path).expect("read NIST CTC-01 Creo part"));
+    assert!(result.report().geometry_transferred());
+
+    let ir = result.ir();
+    let [body] = ir.model.bodies.as_slice() else {
+        panic!("one native body");
+    };
+    assert!(matches!(&body.kind, BodyKind::Solid));
+
+    let native = ir.native.namespace("creo").expect("native Creo records");
+    let surface_rows = native.arenas().get("surface_rows").expect("surface rows");
+    let surface_parameters = native
+        .arenas()
+        .get("surface_parameters")
+        .expect("surface parameters");
+    let unowned_surface_losses = result
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.code == crate::loss::CreoLossCode::TopologyExplicitUnownedSurface.kind()
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(unowned_surface_losses.len(), UNOWNED_SOURCE_FACES.len());
+    for face_id in UNOWNED_SOURCE_FACES {
+        let face_identity = format!("creo:visibgeom:face#{face_id}");
+        for region_id in &body.regions {
+            let region = ir
+                .model
+                .regions
+                .iter()
+                .find(|region| &region.id == region_id)
+                .expect("body region");
+            for shell_id in &region.shells {
+                let shell = ir
+                    .model
+                    .shells
+                    .iter()
+                    .find(|shell| &shell.id == shell_id)
+                    .expect("region shell");
+                assert!(shell
+                    .faces()
+                    .iter()
+                    .all(|shell_face| shell_face.as_str() != face_identity));
+            }
+        }
+
+        let surface_row_identity = format!("creo:visibgeom:surface_row#{face_id}");
+        assert!(surface_rows
+            .iter()
+            .any(|record| record.id() == surface_row_identity));
+        let surface_parameter_identity = format!("creo:visibgeom:surface_parameter#{face_id}");
+        assert!(surface_parameters
+            .iter()
+            .any(|record| record.id() == surface_parameter_identity));
+
+        let face_loss_fragment = format!("source face {face_id}");
+        assert_eq!(
+            unowned_surface_losses
+                .iter()
+                .filter(|loss| loss.message.contains(&face_loss_fragment))
+                .count(),
+            1
+        );
+    }
+
+    let cut = ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.id.as_str() == "creo:model:feature#3646")
+        .expect("native blind-cut feature 3646");
+    let FeatureDefinition::Operation(FeatureOperation::Extrude {
+        profile,
+        extent: ExtrudeExtent::OneSided { side },
+        op: BooleanOp::Cut,
+        ..
+    }) = cut.evaluation.definition()
+    else {
+        panic!("feature 3646 is a one-sided cut extrusion");
+    };
+    assert!(matches!(
+        profile.planar(),
+        Some(PlanarProfileRef::Native(reference))
+            if reference == "creo:featdefs:sketch#3646"
+    ));
+    let LinearTermination::Blind { length } = &side.termination else {
+        panic!("feature 3646 has a blind termination");
+    };
+    let cut_depth_mm = length.get();
+    assert!((cut_depth_mm - NATIVE_CUT_DEPTH_MM).abs() <= FEATURE_LENGTH_TOLERANCE_MM);
+
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy::service();
+    let ctx = DecodeContext::for_loaded_input(&arena, &policy, 0).expect("measure context");
+    let report = Measurer::new(
+        MeasureInput {
+            ir,
+            fidelity: None,
+            geometry_transferred: result.report().geometry_transferred(),
+        },
+        MeasureOptions::default(),
+    )
+    .measure(&ctx, &Selection::default())
+    .expect("measure CTC-01 body");
+
+    let [measured_body] = report.bodies().as_slice() else {
+        panic!("one measured body");
+    };
+    assert!(matches!(measured_body.kind(), BodyKind::Solid));
+    assert!(!measured_body.shells().is_empty());
+    assert!(measured_body.shells().iter().all(|shell| *shell.closed()));
+    let measured_volume = measured_body
+        .volume()
+        .as_ref()
+        .and_then(cadmpeg_measure::value::Quantity::measured)
+        .expect("closed native body has a measured volume");
+
+    let bottom_faces = ir
+        .model
+        .faces
+        .iter()
+        .filter(|face| face.surface.as_str() == CUT_BOTTOM_SURFACE)
+        .map(|face| face.id.clone())
+        .collect::<Vec<_>>();
+    assert_eq!(bottom_faces.len(), 2);
+    let face_report = Measurer::new(
+        MeasureInput {
+            ir,
+            fidelity: None,
+            geometry_transferred: result.report().geometry_transferred(),
+        },
+        MeasureOptions::default(),
+    )
+    .measure(
+        &ctx,
+        &Selection {
+            faces: bottom_faces,
+            ..Selection::default()
+        },
+    )
+    .expect("measure CTC-01 cut bottoms");
+    ctx.finish_session()
+        .expect("measurement session stays unrefused");
+    let (bottom_area_mm2, bottom_area_error_mm2) =
+        face_report
+            .faces()
+            .iter()
+            .fold((0.0, 0.0), |(value, error), face| {
+                let area = face
+                    .measures()
+                    .area()
+                    .measured()
+                    .expect("measured cut bottom");
+                (
+                    value + area.value().value.get(),
+                    error + area.numeric_error().get() + area.model_uncertainty().get(),
+                )
+            });
+    let cut_volume_mm3 = cut_depth_mm * bottom_area_mm2;
+    let expected_volume_mm3 = STEP_TWIN_VOLUME_MM3 - cut_volume_mm3;
+    let measurement_error_mm3 = measured_volume.numeric_error().get()
+        + measured_volume.model_uncertainty().get()
+        + cut_depth_mm * bottom_area_error_mm2;
+    assert!(measurement_error_mm3 < cut_volume_mm3);
+    assert!(
+        (measured_volume.value().value.get() - expected_volume_mm3).abs() <= measurement_error_mm3,
+        "measured volume agrees with STEP volume less the native cut within measurement error"
+    );
+    assert_valid(&result);
 }
