@@ -745,7 +745,9 @@ Every scalar is finite, and target and stored source intervals are strictly incr
 
 Lead `0a` appends one absolute-accuracy word, bit-identical to the magnitude of the signed accuracy. Lead `0b` omits this word and requires signed accuracy to be zero, retaining its sign. The complete frame is consumed. Selectors `0001` and `0003` retain their distinct encoded values. The two operands refer to source-local parameter representations. Geometric data belongs to the referenced carriers.
 
-A B-family scalar class-`25` parameter map uses the complete key `b2/b3/b4 03 25`. The A8 key `a8 03 25` identifies a separate extrusion directrix. A B-family map begins with marker `82`, a source allocation operand, a target allocation operand, and `0a <selector:u16le>` or `0b <selector:u16le>`. Allocation operands use the compact grammar, `06 <u8>`, `0a <u16le>`, or a nonzero single-byte `4n+2` or `4n+3` form. Their addressing forms remain distinct. The selector is a layout code, not a third operand.
+A B-family scalar class-`25` parameter map uses the complete key `b2/b3/b4 03 25`. The A8 key `a8 03 25` identifies a separate extrusion directrix. A B-family map begins with marker `82`, a target-representation allocation operand, a source-representation allocation operand, and `0a <selector:u16le>` or `0b <selector:u16le>`. Allocation operands use the compact grammar, `06 <u8>`, `0a <u16le>`, or a nonzero single-byte `4n+2` or `4n+3` form. Their addressing forms remain distinct. The selector is a layout code, not a third operand.
+
+In a contiguous bounded record source, the allocation address after a frame is the sum of the decoded compact header integers through that frame. A width-coded class-`25` operand selects the frame at the map address minus the operand value. An owned-child operand selects the corresponding forward record in the map's owned allocation. The first operand selects the representation of the stored target range. The second operand selects the representation of the source relation. A class-`18` line or class-`20` pcurve selects its carrier at its own address minus its leading compact operand. Each lookup stays in the same contiguous source scope and requires one target at the selected address.
 
 | Offset | Type | Meaning |
 | --- | --- | --- |
@@ -818,7 +820,20 @@ A consolidated `b2/b3/b4 <flag> 27` plane carrier has a width-coded frame with f
 
 The one-component layout stores `+18` direction component (`f64le`): X for `e4` and Y for `d4`. The 50-byte implicit-axis payload has bounds at `+18`; the 58-byte one-component direction payload has bounds at `+26`; the 66-byte two-component direction payload has bounds at `+34`. Each bounds lane is `u_min,u_max,v_min,v_max` (`4×f64le`) and exhausts the payload. Both intervals are strictly increasing. All scalars are finite. U is horizontal and its hypot length differs from one by at most `1e-12`; no bound supplies a direction component. The chart is `origin=(point_x,point_y,0)`, `v_axis=(0,0,1)`, `normal=unit(u_axis×v_axis)`, and `P(U,V)=origin+U·u_axis+V·v_axis`. Header width and frame flag do not change the scalar layout. An unknown selector retains its complete nonempty finite lane without a neutral plane frame. A known selector with a different lane length, non-unit direction, or unordered bounds is invalid.
 
+A packed consolidated class-`27` plane chart has packed marker `08`, a two-byte little-endian control word, origin `(x,y,z)`, and a scalar lane. The control word selects the chart axes and the scalar order after the origin:
+
+| Control word | U axis | V axis | Scalars after the origin | Payload bytes |
+|---|---|---|---|---:|
+| `1968` | `(1,0,0)` | `(0,v_y,v_z)` | `v_y,v_z` | 43 |
+| `1960` | `(u_x,0,0)` | `(0,v_y,v_z)` | `u_x,v_y,v_z` | 51 |
+| `1c38` | `(0,0,1)` | `(v_x,v_y,0)` | `v_x,v_y` | 43 |
+| `1c30` | `(0,0,u_z)` | `(v_x,v_y,0)` | `u_z,v_x,v_y` | 51 |
+
+An implicit U component gives a 43-byte payload. Its two V components follow the origin. An explicit U component gives a 51-byte payload. Its U component follows the origin, then its two V components exhaust the payload. Every coordinate and direction component is finite. Each axis has hypot length within `1e-12` of one. The chart is `P(U,V)=origin+U·u_axis+V·v_axis`, with normal `u_axis×v_axis`. The [CATIA record layouts](../layouts/catia.md) give both fixed payload layouts. The B-family frame bounds the complete packed payload.
+
 A consolidated pcurve side binds to a known plane chart only when both endpoint lifts reach serialized object-stream vertices within `2e-3` mm and exactly one carrier wins all support candidates. Every definition site lifts through the same chart, and the neutral pcurve chart is identity. Multiple matching carriers leave the side unresolved.
+
+A counted B-family class-`5f` face payload begins with `0x80+n`, followed by `n` allocation references and a terminal `03` or `05`. The first reference selects its surface carrier. Each remaining reference selects a distinct class-`62` owner whose final reference selects the same carrier. The preceding owner references form representation and class-`5e` edge pairs. Each representation selects the same carrier. For a class-`5e` edge with two face occurrences, each occurrence representation and carrier bind to the corresponding class-`25` map operand.
 
 A `B:06` side-use payload ending in `0x84` or `0x88` stores `0x80+n`, exactly `n` compact allocation references, then that terminal sense byte. The counted vector must consume the complete preceding payload; a non-closing payload has no decoded reference vector. The two terminal values are the two edge-use senses. For a complete five-reference edge run whose node curve reference is `c`, the two use-reference vectors are `(c−2,c−1)` then `(c−1,c)`. Checked subtraction is required. The node's final two references are the allocation-local endpoint selectors `(2,1)` and do not occupy the use chain. The use vectors do not identify the owning faces.
 

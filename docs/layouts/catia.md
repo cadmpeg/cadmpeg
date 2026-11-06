@@ -1081,6 +1081,39 @@ Offsets are relative to the payload after the 4+w-byte B-family frame header. He
 | 18 | 16 | `direction_xy` | `f64[2]` | little | spec | `+18` direction XY (`2×f64le`) |
 | 34 | 32 | `bounds` | `f64[4]` | little | spec | the 66-byte two-component direction payload has bounds at `+34` |
 
+## `consolidated_packed_plane_implicit_u_payload`
+
+Spec §6.3 · layout: byte offsets · size: 43 B
+
+Offsets are relative to the B27 payload after its B-family frame header. Controls 0x1968 and 0x1c38 select the implicit positive unit U component.
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/consolidated/packed_plane.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `marker` | `u8` | little | spec | packed marker `08` · value `8` |
+| 1 | 2 | `control` | `u16` | little | spec | a two-byte little-endian control word |
+| 3 | 24 | `origin` | `f64[3]` | little | spec | origin `(x,y,z)` |
+| 27 | 16 | `v_components` | `f64[2]` | little | spec | Its two V components follow the origin. |
+
+## `consolidated_packed_plane_explicit_u_payload`
+
+Spec §6.3 · layout: byte offsets · size: 51 B
+
+Offsets are relative to the B27 payload after its B-family frame header. Controls 0x1960 and 0x1c30 select one stored U component.
+
+Parsed by:
+- `crates/cadmpeg-codec-catia/src/families/consolidated/packed_plane.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `marker` | `u8` | little | spec | packed marker `08` · value `8` |
+| 1 | 2 | `control` | `u16` | little | spec | a two-byte little-endian control word |
+| 3 | 24 | `origin` | `f64[3]` | little | spec | origin `(x,y,z)` |
+| 27 | 8 | `u_component` | `f64` | little | spec | Its U component follows the origin |
+| 35 | 16 | `v_components` | `f64[2]` | little | spec | then its two V components exhaust the payload. |
+
 ## `consolidated_class5b_interval_prefix`
 
 Spec §6.4 · layout: byte offsets · size: 28 B

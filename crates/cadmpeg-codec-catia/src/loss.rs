@@ -77,6 +77,8 @@ pub(crate) enum CatiaLossCode {
     GeometryParameterRangeInvalid,
     /// Equivalent support charts produce non-finite pcurve coordinates.
     GeometryPcurveRechartNonFinite,
+    /// Binary32 coordinate uncertainty widened derived vertex tolerances.
+    GeometryVertexToleranceWidened,
     /// Face-local free-form carriers retain identity without aliased geometry.
     GeometryFaceLocalFreeformNotTransferred,
     /// Revolution carriers retain profile identity without bound directrices.
@@ -150,6 +152,7 @@ impl CatiaLossCode {
         Self::GeometryAnalyticPayloadInvalid,
         Self::GeometryParameterRangeInvalid,
         Self::GeometryPcurveRechartNonFinite,
+        Self::GeometryVertexToleranceWidened,
         Self::GeometryFaceLocalFreeformNotTransferred,
         Self::GeometryRevolutionProfileUnbound,
         Self::GeometryLineProfileNotTransferred,
@@ -197,6 +200,7 @@ impl CatiaLossCode {
             Self::GeometryAnalyticPayloadInvalid => "geometry.analytic-payload-invalid",
             Self::GeometryParameterRangeInvalid => "geometry.parameter-range-invalid",
             Self::GeometryPcurveRechartNonFinite => "geometry.pcurve-rechart-non-finite",
+            Self::GeometryVertexToleranceWidened => "geometry.vertex-tolerance-widened",
             Self::GeometryFaceLocalFreeformNotTransferred => {
                 "geometry.face-local-freeform-not-transferred"
             }
@@ -262,7 +266,8 @@ impl CatiaLossCode {
             Self::SourceDialectUnverified => LossTaxonomy::SourceDialectUnverified,
             Self::SourceRouteFellThrough
             | Self::SourceAnnotationCollision
-            | Self::SourceCatalogScanBounded => LossTaxonomy::DecodeDiagnostic,
+            | Self::SourceCatalogScanBounded
+            | Self::GeometryVertexToleranceWidened => LossTaxonomy::DecodeDiagnostic,
             Self::GeometryCarrierSummary => LossTaxonomy::CarrierSummary,
             Self::GeometryUnresolvedCarriers
             | Self::GeometryBrepNotTransferred
@@ -349,6 +354,7 @@ mod tests {
                 "geometry.analytic-payload-invalid",
                 "geometry.parameter-range-invalid",
                 "geometry.pcurve-rechart-non-finite",
+                "geometry.vertex-tolerance-widened",
                 "geometry.face-local-freeform-not-transferred",
                 "geometry.revolution-profile-unbound",
                 "geometry.line-profile-not-transferred",

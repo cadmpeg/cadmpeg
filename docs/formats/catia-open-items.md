@@ -246,15 +246,15 @@ terminal meaning remain unresolved. Exact framing does not supply those roles.
 
 **Need.** Resolve scalar operands through an independently bound source-local owner before applying the parameter relation to a carrier. Obtain a complete witness before admitting any selector outside the listed grammar, including `0986`.
 
-### SN-08. Class-`0x25` operand namespaces
+### SN-08. Class-`0x25` remaining allocation forms
 
-**Question.** Which source-local curve representations do scalar class-`0x25` allocation operands reference, and what do the separate multi-operand productions encode?
+**Question.** Which allocation identities do the remaining scalar class-`0x25` operand forms select, and what do the separate multi-operand productions encode?
 
-**Known.** `catia.md` §6.3 "A B-family scalar class-`25` parameter map" defines the complete affine and sampled maps, allocation addressing forms, sites, fit tolerance, and adjacent class-`06` use-pair framing. B-family class `25` and A8 class `25` have separate headers and payloads. Two-operand scalar maps retain exact sample pairing and source positions. The separate A8 sampled parameter map is defined in §6.7.
+**Known.** `catia.md` §6.3 "A B-family scalar class-`25` parameter map" defines the scalar maps, their target and source representation order, width-coded allocation addresses, and adjacent class-`06` use-pair framing. B-family class `25` and A8 class `25` have separate headers and payloads. Two-operand scalar maps retain exact sample pairing and source positions. An A-family scalar sampled map can carry more than twelve site pairs; its operands select the same representations as its class-`62` owner occurrences.
 
-**Need.** Bind scalar operands through an independently resolved local owner before applying a map to a carrier. Resolve the multi-operand payloads beginning `83` or `84` separately. Obtain a complete witness before admitting an unlisted scalar selector.
+**Need.** Transfer the wider A-family sampled map and its selected representations. Establish the address semantics for the remaining operand forms through independent owner and carrier relations. Resolve the multi-operand payloads beginning `83` or `84` separately. Obtain a complete witness before admitting an unlisted scalar selector.
 
-**Conflict.** In FTC-07, treating consecutive operand values as one parameter representation joins source operands `7687` and `7688`, whose stored source intervals are approximately `[-58.658, 58.658]` and `[0, 0.901]`. The adjacent use-pair framing supplies no parameter transform between those operands. Two candidate map-to-side matches have matching source intervals and adjacent face carriers. Their chart-side operands are `2` and `6`, and their respective map source operands are `7650` and `7659`. A single additive offset would require both `7648` and `7653` to hold both matches. The 80 chart-side frames and 439 distinct source-scoped records selected by resolved edge endpoint references form disjoint sets. The reconstructed FTC-07 streams contain zero `A8 ?? 25` markers. Its 159 closed `B25` and `06` use-pair triples have successors `B25` (94), `B18` (55), `B20` (9), and `B05` (1).
+**Conflict.** A record-distance reading and a weighted-address reading can select different wrappers for a backward-distance operand. Their parameter ranges do not distinguish the alternatives when the selected wrappers have no evaluable domain.
 
 ### SN-09. A8 parameter-map interpolation and additional operand productions
 
