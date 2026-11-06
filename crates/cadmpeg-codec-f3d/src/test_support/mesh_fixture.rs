@@ -699,3 +699,86 @@ pub(crate) fn synthetic_mesh_graph(with_textures: bool) -> SyntheticMeshGraph {
     synthetic_mesh_graph_with_body_count(with_textures, 1)
 }
 
+
+/// Build a synthetic archive with one indexed mesh feature.
+pub(crate) fn archive(payload: &[u8], brep: Option<&[u8]>) -> Vec<u8> {
+    use std::io::{Cursor, Write};
+
+    let mut graph = synthetic_mesh_graph(false);
+    let timeline_tag = u32::try_from(256 + graph.meta.types.len()).unwrap();
+    graph.meta.types.push(design_type(
+        timeline_tag,
+        crate::design::decode::meta::FEATURE_TIMELINE_TYPE_GUID,
+        Some(crate::design::decode::meta::FEATURE_TIMELINE_BASE_TYPE_GUID),
+        2,
+        "Fusion",
+        vec![200],
+    ));
+    graph
+        .meta
+        .records
+        .push(primary_record(200, graph.bytes.len()));
+    lp_ascii(&mut graph.bytes, &timeline_tag.to_string());
+    graph.bytes.extend_from_slice(&200_u64.to_le_bytes());
+    lp_ascii(&mut graph.bytes, "Timeline");
+    graph.bytes.extend_from_slice(&[0, 0, 1]);
+    graph.bytes.extend_from_slice(&110_u64.to_le_bytes());
+    graph.bytes.extend_from_slice(&[0, 0]);
+    graph.bytes.extend_from_slice(&1_u32.to_le_bytes());
+    graph.bytes.push(1);
+    graph.bytes.extend_from_slice(&109_u64.to_le_bytes());
+    graph.bytes.extend_from_slice(&[0, 0]);
+    let entities: Vec<Vec<_>> = graph
+        .meta
+        .types
+        .iter()
+        .map(|ty| ty.entities.values().copied().collect())
+        .collect();
+    let types: Vec<_> = graph
+        .meta
+        .types
+        .iter()
+        .zip(&entities)
+        .map(|(ty, ids)| {
+            (
+                ty.type_guid.as_str(),
+                ty.base_type_guid.value().map_or("", |base| base.as_str()),
+                ty.version,
+                ty.module.as_str(),
+                ids.as_slice(),
+            )
+        })
+        .collect();
+    let primary: Vec<_> = graph
+        .meta
+        .records
+        .iter()
+        .map(|row| (row.entity_id, row.bulk_offset))
+        .collect();
+    let secondary: Vec<_> = graph
+        .meta
+        .secondary_records
+        .iter()
+        .map(|row| (row.entity_id, row.bulk_offset))
+        .collect();
+    let meta = crate::test_support::streams_test::design_metastream_with_records_and_secondary(
+        &types, &primary, &secondary,
+    );
+    let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+    zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored)
+        .unwrap();
+    zip.write_all(&graph.bytes).unwrap();
+    zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
+        .unwrap();
+    zip.write_all(&meta).unwrap();
+    if let Some(brep) = brep {
+        zip.start_file("FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh", stored)
+            .unwrap();
+        zip.write_all(brep).unwrap();
+    }
+    zip.start_file("FusionAssetName[Active]/ParaMeshGeometry.BlobParts/ParaMeshGeometry.11111111-2222-4333-8444-555555555555.paramesh", stored).unwrap();
+    zip.write_all(payload).unwrap();
+    zip.finish().unwrap().into_inner()
+}

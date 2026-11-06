@@ -1830,7 +1830,6 @@ mod tests {
     use super::{parse_mesh_collection_owner_record, parse_mesh_scene_state_record, parse_mesh_texture_table_record, parse_mesh_wrapper_record, parse_scene_node_record, resolve_mesh_body, MeshBody, MESH_COLLECTION_OWNER_TYPE_GUID, MESH_COLLECTION_OWNER_TYPE_VERSIONS, MESH_COLLECTION_TYPE_GUID, MESH_FEATURE_SCOPE_TYPE_GUID, MESH_SCENE_STATE_TYPE_GUID, MESH_TEXTURE_TABLE_TYPE_GUID, SCENE_NODE_TYPE_GUID};
     use crate::design::decode::meta::{typed_primary_frames, TypedPrimaryFrame};
     use crate::test_support::mesh_fixture::{no_texture_asset, push_indexed_header, put_reference, push_reference, mesh_texture_table_record, mesh_wrapper_record, placed_mesh_scene_node_record, synthetic_mesh_graph_with_body_count, synthetic_mesh_graph_with_collection, synthetic_mesh_graph, CollectionForm, SyntheticMeshGraph};
-    use crate::design::test_support::{design_type, primary_record};
     use crate::layout::{
         paramesh_collection_owner_backlink_prefix as collection_owner,
         paramesh_collection_owner_v17 as collection_owner_v17,
@@ -1840,7 +1839,6 @@ mod tests {
         paramesh_texture_table_prefix as texture_table,
     };
     use crate::paramesh::MeshContainer;
-    use crate::test_support::lp_ascii;
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::features::FinitePoint3;
     use cadmpeg_ir::units::UnitVector3;
@@ -2602,86 +2600,12 @@ mod tests {
     #[test]
     fn synthetic_paramesh_projects_to_document_tessellation() {
         use cadmpeg_ir::codec::{Codec, DecodeOptions};
-        use std::io::{Cursor, Write};
+        use std::io::Cursor;
 
-        let mut graph = synthetic_mesh_graph(false);
-        let timeline_tag = u32::try_from(256 + graph.meta.types.len()).unwrap();
-        graph.meta.types.push(design_type(
-            timeline_tag,
-            super::super::meta::FEATURE_TIMELINE_TYPE_GUID,
-            Some(super::super::meta::FEATURE_TIMELINE_BASE_TYPE_GUID),
-            2,
-            "Fusion",
-            vec![200],
-        ));
-        graph
-            .meta
-            .records
-            .push(primary_record(200, graph.bytes.len()));
-        lp_ascii(&mut graph.bytes, &timeline_tag.to_string());
-        graph.bytes.extend_from_slice(&200_u64.to_le_bytes());
-        lp_ascii(&mut graph.bytes, "Timeline");
-        graph.bytes.extend_from_slice(&[0, 0, 1]);
-        graph.bytes.extend_from_slice(&110_u64.to_le_bytes());
-        graph.bytes.extend_from_slice(&[0, 0]);
-        graph.bytes.extend_from_slice(&1_u32.to_le_bytes());
-        graph.bytes.push(1);
-        graph.bytes.extend_from_slice(&109_u64.to_le_bytes());
-        graph.bytes.extend_from_slice(&[0, 0]);
-        let entities: Vec<Vec<_>> = graph
-            .meta
-            .types
-            .iter()
-            .map(|ty| ty.entities.values().copied().collect())
-            .collect();
-        let types: Vec<_> = graph
-            .meta
-            .types
-            .iter()
-            .zip(&entities)
-            .map(|(ty, ids)| {
-                (
-                    ty.type_guid.as_str(),
-                    ty.base_type_guid.value().map_or("", |base| base.as_str()),
-                    ty.version,
-                    ty.module.as_str(),
-                    ids.as_slice(),
-                )
-            })
-            .collect();
-        let primary: Vec<_> = graph
-            .meta
-            .records
-            .iter()
-            .map(|row| (row.entity_id, row.bulk_offset))
-            .collect();
-        let secondary: Vec<_> = graph
-            .meta
-            .secondary_records
-            .iter()
-            .map(|row| (row.entity_id, row.bulk_offset))
-            .collect();
-        let meta = crate::test_support::streams_test::design_metastream_with_records_and_secondary(
-            &types, &primary, &secondary,
-        );
-        let archive = |payload: &[u8]| {
-            let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
-            let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-            crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
-            zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored)
-                .unwrap();
-            zip.write_all(&graph.bytes).unwrap();
-            zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
-                .unwrap();
-            zip.write_all(&meta).unwrap();
-            zip.start_file("FusionAssetName[Active]/ParaMeshGeometry.BlobParts/ParaMeshGeometry.11111111-2222-4333-8444-555555555555.paramesh", stored).unwrap();
-            zip.write_all(payload).unwrap();
-            zip.finish().unwrap().into_inner()
-        };
         let payload = crate::test_support::paramesh::triangle();
         let result = crate::F3dCodec
             .decode(
-                &mut Cursor::new(archive(&payload)),
+                &mut Cursor::new(crate::test_support::mesh_fixture::archive(&payload, None)),
                 &DecodeOptions::default(),
             )
             .unwrap();
@@ -2700,7 +2624,7 @@ mod tests {
         broken[0] ^= 1;
         let decoded = crate::F3dCodec
             .decode(
-                &mut Cursor::new(archive(&broken)),
+                &mut Cursor::new(crate::test_support::mesh_fixture::archive(&broken, None)),
                 &DecodeOptions::default(),
             )
             .unwrap();
