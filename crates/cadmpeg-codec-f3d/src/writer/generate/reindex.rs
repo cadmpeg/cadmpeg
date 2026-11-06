@@ -7,8 +7,8 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::Model;
 
 use super::native_bytes::{
-    native_enum, native_f64, native_i64, native_ident, native_length_prefixed_string, native_point,
-    native_ref, native_subident, native_vector,
+    native_enum, native_f64, native_i64, native_ident, native_point, native_ref, native_string,
+    native_subident, native_vector,
 };
 
 pub(super) struct Starts {
@@ -223,7 +223,7 @@ fn encode_record(out: &mut Vec<u8>, record: &Record, mapping: &[usize]) -> Resul
                 out.extend_from_slice(&value.to_le_bytes());
             }
             Token::Double(value) => native_f64(out, *value),
-            Token::Str(value) => native_length_prefixed_string(out, value),
+            Token::Str(value) => native_string(out, value),
             Token::True => out.push(0x0a),
             Token::False => out.push(0x0b),
             Token::Ref(value) => {
