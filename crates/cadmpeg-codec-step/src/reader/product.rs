@@ -53,6 +53,8 @@ const DRAWING_ITEM_OWNER_TYPES: &[&str] = &[
 ];
 
 pub(super) struct ProductData {
+    pub(super) definition_prototypes: BTreeMap<u64, ProductDefinitionId>,
+    pub(super) occurrences_by_usage: BTreeMap<u64, Vec<OccurrenceId>>,
     pub(super) product_definition_ids_by_source: BTreeMap<u64, Vec<ProductDefinitionId>>,
     pub(super) product_definition_ids_by_shape: BTreeMap<u64, ProductDefinitionId>,
 }
@@ -556,6 +558,7 @@ pub(super) fn decode(
         losses.push(StepLossCode::NauoPlacementAmbiguous.note(format!("NAUO #{usage_id} has resolved context-dependent and occurrence-owned mapped placements ({records}); no neutral occurrence was admitted and the source placement relations remain opaque")));
     }
     let mut usage_instances = BTreeMap::<u64, usize>::new();
+    let mut occurrences_by_usage = BTreeMap::<u64, Vec<OccurrenceId>>::new();
     let mut missing_placement_reports = BTreeSet::new();
     let mut child_ordinals = BTreeMap::<OccurrenceId, u32>::new();
     let mut usages_by_parent = BTreeMap::<u64, Vec<u64>>::new();
@@ -669,6 +672,10 @@ pub(super) fn decode(
                 admitted_ir_entities,
                 "step_assembly_occurrence",
             )?;
+            occurrences_by_usage
+                .entry(usage_id)
+                .or_default()
+                .push(id.clone());
             *ordinal = ordinal.checked_add(1).ok_or_else(|| {
                 CodecError::malformed("STEP child occurrence ordinal exceeds u32")
             })?;
@@ -757,6 +764,8 @@ pub(super) fn decode(
     }
     Ok(StageOutcome {
         value: ProductData {
+            definition_prototypes,
+            occurrences_by_usage,
             product_definition_ids_by_source,
             product_definition_ids_by_shape,
         },

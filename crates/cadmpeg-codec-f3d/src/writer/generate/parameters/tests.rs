@@ -57,7 +57,8 @@ fn semantic_parameter_families_encode_without_source_locations() {
         })
         .unwrap();
         assert_eq!(original.byte_offset(), None);
-        let bytes = encode_document_parameters(std::slice::from_ref(&original), 19).unwrap();
+        let mut bytes = Vec::new();
+        encode_document_parameter(&mut bytes, &original, 19).unwrap();
         let parsed =
             crate::design::decode::parameters::parse_design_parameter_record(&bytes).unwrap();
         assert_eq!(parsed.class_tag, original.class_tag);
