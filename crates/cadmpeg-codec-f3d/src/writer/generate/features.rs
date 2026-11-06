@@ -352,10 +352,7 @@ pub(super) fn encode(
             })
             .map_err(CodecError::Malformed)?;
             mark_primary(ctx, &mut primary, parameter_index, out.len())?;
-            out.extend_from_slice(&super::parameters::encode_document_parameters(
-                &[parameter],
-                collection_index,
-            )?);
+            super::parameters::encode_document_parameter(&mut out, &parameter, collection_index)?;
         }
     }
     mark_primary(ctx, &mut primary, timeline, out.len())?;
