@@ -1104,20 +1104,14 @@ impl<'a> Builder<'a> {
             })
             .map(str::to_owned)
             .collect();
-        let mut supports = Vec::new();
         for surface in lost_surfaces {
             if let Some(reference) = self
                 .emit_surface(&surface)
                 .filter(|reference| !emitted_items.contains(reference))
             {
-                supports.push(reference);
+                self.emitter
+                    .emit("REPRESENTATION", &format!("'',({reference}),{context}"));
             }
-        }
-        if !supports.is_empty() {
-            self.emitter.emit(
-                "REPRESENTATION",
-                &format!("'',{},{context}", refs(&supports)),
-            );
         }
         let bodies_written = !self.body_step_refs.is_empty();
         if self.ir.model.product_definitions.is_empty() {
