@@ -24,5 +24,3 @@ mod loft_point_groups;
 mod construction_paths;
 
 mod multiple_profiles;
-
-mod frame_bounds;
