@@ -8,6 +8,10 @@ use cadmpeg_ir::semantic_annotations::{DimensionKind, SemanticAnnotationKind};
 const BOX_VOLUME_TOLERANCE: f64 = 1.0e-5;
 const BOX_AREA_TOLERANCE: f64 = 1.0e-5;
 const BOX_BOUNDS_TOLERANCE: f64 = 1.0e-6;
+const SHAPE_VOLUME_TOLERANCE: f64 = 1.0e-5;
+const SHAPE_AREA_TOLERANCE: f64 = 1.0e-5;
+const SHAPE_BOUNDS_TOLERANCE: f64 = 1.0e-6;
+const WIRE_LENGTH_TOLERANCE: f64 = 1.0e-6;
 
 fn assert_authored_box_measures(ir: &cadmpeg_ir::document::CadIr, label: &str) {
     let feature = ir
@@ -62,6 +66,128 @@ fn assert_authored_box_measures(ir: &cadmpeg_ir::document::CadIr, label: &str) {
         assert!(
             (actual.get() - expected).abs() < BOX_BOUNDS_TOLERANCE,
             "{label}: bound {} expected {expected}",
+            actual.get()
+        );
+    }
+}
+
+fn assert_authored_fixture_shape_measures(
+    ir: &cadmpeg_ir::document::CadIr,
+    label: &str,
+    box_length: f64,
+    cylinder_radius: f64,
+) {
+    let report = cadmpeg_measure::test_support::round_trip::measured(label, ir).unwrap();
+    let body_for_feature = |name: &str| {
+        let feature = ir
+            .model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .unwrap_or_else(|| panic!("{label}: missing {name} feature"));
+        let [body_id] = feature.evaluation.outputs().as_slice() else {
+            panic!("{label}: {name} feature must produce one body")
+        };
+        report
+            .bodies()
+            .iter()
+            .find(|body| body.body() == body_id.as_str())
+            .unwrap_or_else(|| panic!("{label}: no measured body for {name} output"))
+    };
+
+    let box_body = body_for_feature("Box");
+    let cylinder_body = body_for_feature("Cylinder");
+    for (name, body, expected_volume, expected_area, expected_bounds) in [
+        (
+            "Box",
+            box_body,
+            box_length * 20.0 * 10.0,
+            2.0 * (box_length * 20.0 + box_length * 10.0 + 20.0 * 10.0),
+            [0.0, 0.0, 0.0, box_length, 20.0, 10.0],
+        ),
+        (
+            "Cylinder",
+            cylinder_body,
+            std::f64::consts::PI * cylinder_radius.powi(2) * 10.0,
+            2.0 * std::f64::consts::PI * cylinder_radius * (cylinder_radius + 10.0),
+            [
+                -cylinder_radius,
+                -cylinder_radius,
+                0.0,
+                cylinder_radius,
+                cylinder_radius,
+                10.0,
+            ],
+        ),
+    ] {
+        let volume = body
+            .volume()
+            .as_ref()
+            .unwrap()
+            .measured()
+            .unwrap()
+            .value()
+            .value
+            .get();
+        assert!(
+            (volume - expected_volume).abs() < SHAPE_VOLUME_TOLERANCE,
+            "{label} {name}: volume {volume}, expected {expected_volume}"
+        );
+        let area = body
+            .area()
+            .as_ref()
+            .unwrap()
+            .measured()
+            .unwrap()
+            .value()
+            .value
+            .get();
+        assert!(
+            (area - expected_area).abs() < SHAPE_AREA_TOLERANCE,
+            "{label} {name}: area {area}, expected {expected_area}"
+        );
+        let bounds = body.bbox().measured().unwrap().value();
+        for (actual, expected) in bounds
+            .min
+            .coordinates()
+            .into_iter()
+            .chain(bounds.max.coordinates())
+            .zip(expected_bounds)
+        {
+            assert!(
+                (actual.get() - expected).abs() < SHAPE_BOUNDS_TOLERANCE,
+                "{label} {name}: bound {}, expected {expected}",
+                actual.get()
+            );
+        }
+    }
+
+    let triangle = body_for_feature("Triangle");
+    let length = triangle
+        .length()
+        .as_ref()
+        .unwrap()
+        .measured()
+        .unwrap()
+        .value()
+        .value
+        .get();
+    let expected_length = 50.0 + 1700.0_f64.sqrt();
+    assert!(
+        (length - expected_length).abs() < WIRE_LENGTH_TOLERANCE,
+        "{label} Triangle: length {length}, expected {expected_length}"
+    );
+    let bounds = triangle.bbox().measured().unwrap().value();
+    for (actual, expected) in bounds
+        .min
+        .coordinates()
+        .into_iter()
+        .chain(bounds.max.coordinates())
+        .zip([10.0, 20.0, 0.0, 50.0, 30.0, 0.0])
+    {
+        assert!(
+            (actual.get() - expected).abs() < SHAPE_BOUNDS_TOLERANCE,
+            "{label} Triangle: bound {}, expected {expected}",
             actual.get()
         );
     }
@@ -332,6 +458,7 @@ fn expanded_templates_dimensions_and_view_families_keep_exact_data_and_losses() 
             .to_vec(),
     );
     assert_valid_document(result.ir());
+    assert_authored_fixture_shape_measures(result.ir(), "techdraw-dimensions", 30.0, 7.0);
     let model = &result.ir().model;
     for (name, kind, value, anchor_count) in [
         ("Length", DimensionKind::HorizontalDistance {}, 30.0, 2),
@@ -478,6 +605,7 @@ fn dimension_measurements_follow_changed_saved_reference_geometry() {
             .to_vec(),
     );
     assert_valid_document(result.ir());
+    assert_authored_fixture_shape_measures(result.ir(), "techdraw-variants", 42.0, 11.0);
     for (name, expected) in [
         ("Length", 42.0),
         ("Euclidean", 42.0),
