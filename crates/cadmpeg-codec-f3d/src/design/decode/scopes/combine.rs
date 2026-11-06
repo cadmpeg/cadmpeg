@@ -111,8 +111,7 @@ pub(super) fn exact_combine_operation(
 }
 
 /// Whether the standard prologue reads the fixed fields and the keep-tools
-/// Boolean of an operand-list frame at `start`. Its operation is then the
-/// presence byte, one.
+/// Boolean of an operand-list frame at `start`.
 fn standard_fields_read(bytes: &[u8], start: usize) -> bool {
     standard_prologue(bytes, start)
         .is_some_and(|prologue| matches!(bytes.get(prologue.keep_tools_offset), Some(0 | 1)))
@@ -544,13 +543,19 @@ fn operand_list_fields_hold(
 /// Whether `record` stores `guid` and three zero bytes before a nonempty
 /// reference table of marked references.
 fn guid_precedes_reference_table(record: &[u8], guid: &[u8]) -> bool {
-    let tail = guid.len().saturating_add(3);
+    let Some(tail) = guid.len().checked_add(3) else {
+        return false;
+    };
     record.windows(tail).enumerate().any(|(at, window)| {
-        let mut cursor = at.saturating_add(tail);
-        let limit = record.len().saturating_sub(cursor) / MARKED_REFERENCE_LEN;
+        let Some(mut cursor) = at.checked_add(tail) else {
+            return false;
+        };
+        let Some(remaining) = record.len().checked_sub(cursor) else {
+            return false;
+        };
         window.starts_with(guid)
             && window.ends_with(&[0; 3])
-            && take_marked_records(record, &mut cursor, limit)
+            && take_marked_records(record, &mut cursor, remaining / MARKED_REFERENCE_LEN)
                 .is_some_and(|table| !table.is_empty())
     })
 }
