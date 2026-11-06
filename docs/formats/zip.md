@@ -10,7 +10,7 @@ Encryption, compression support, payload checksum, and expansion validity concer
 
 The local-file header is 30 bytes in little-endian order. Its signature is `0x04034b50` at offset 0. Extraction version, general flags, and compression code are 16-bit words at offsets 4, 6, and 8. Time and date words are at offsets 10 and 12. CRC-32, compressed length, and expanded length are 32-bit words at offsets 14, 18, and 22. The filename length and extra-data length are 16-bit words at offsets 26 and 28. The filename and extra data follow the fixed header. The stored payload follows the extra data. [PKWARE APPNOTE §4.3.7–4.3.8](https://pkware.cachefly.net/webdocs/casestudies/APPNOTE.TXT).
 
-CADIR decision: a central declaration can retain the identity of a member whose local header cannot be admitted. The unreadable member's physical span extends from its declared local-header position to the next declared local-header position, or to the central directory for the last member. It has no expanded payload. A consumer that requires this member must refuse its contents; the container ledger must identify the bounded physical span. Recovery must report the local-header failure.
+The next declared local-header position bounds a member frame. The central directory bounds the last member frame.
 
 ## 3. End records
 
