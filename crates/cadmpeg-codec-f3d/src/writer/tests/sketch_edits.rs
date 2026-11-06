@@ -14,7 +14,7 @@
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
-use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder, SynthesisCause};
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 
 use crate::test_support::native_test::{f3d_native, update_f3d_native};
 use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
@@ -59,8 +59,8 @@ fn generated_f3d_rewrites_native_sketch_point_coordinates() {
         )
         .unwrap();
     assert!(matches!(
-        plan.report().synthesis_cause(),
-        Some(SynthesisCause::SourceUnrepresented { .. })
+        plan.report().write_path(),
+        cadmpeg_ir::report::export::WritePath::Patched { .. }
     ));
 }
 
@@ -292,7 +292,7 @@ fn generated_f3d_rewrites_native_sketch_nurbs_values() {
         )
         .unwrap();
     assert!(matches!(
-        plan.report().synthesis_cause(),
-        Some(SynthesisCause::SourceUnrepresented { .. })
+        plan.report().write_path(),
+        cadmpeg_ir::report::export::WritePath::Patched { .. }
     ));
 }

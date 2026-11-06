@@ -6,7 +6,6 @@ use cadmpeg_core::decode::u64_from_index;
 use super::identity::Located;
 use super::references::DesignClassTag;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::assets::AssetId;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::transform::Transform;
 use serde::{Deserialize, Serialize};
@@ -36,7 +35,6 @@ cadmpeg_core::named_optional_field!(
     DesignMeshSceneBoundsWire,
     "scene_state_bounds"
 );
-cadmpeg_core::named_optional_field!(deserialize_tessellation_id, String, "tessellation_id");
 /// A hyphenated hexadecimal GUID with its original letter case.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(try_from = "String")]
@@ -198,8 +196,6 @@ pub(crate) struct DesignMeshTextureResource {
     pub(crate) filename_ordinal: u32,
     /// Filename record joined to its archive entry.
     pub(crate) file: DesignMeshTextureFile,
-    /// Neutral embedded asset projected from the matching archive entry.
-    pub(crate) asset: AssetId,
 }
 
 /// A filename record and the archive entry with its exact basename.
@@ -279,8 +275,6 @@ struct DesignMeshTextureResourceWire {
     filename_offset: u64,
     /// Complete matching archive-entry name.
     archive_entry_name: String,
-    /// Neutral embedded asset projected from the matching archive entry.
-    asset: AssetId,
 }
 
 const MESH_TEXTURE_FLAGS_ENTRY_BYTES: u64 = 4 + 36 + 4;
@@ -416,7 +410,6 @@ impl DesignMeshTextureTable {
                 flags: row.flags,
                 filename_ordinal: row.filename_ordinal,
                 file,
-                asset: row.asset,
             });
         }
         let table = Self::new_inner(record, resources)?;
@@ -463,7 +456,6 @@ impl DesignMeshTextureTable {
                     filename_offset: value.file.filename_offset(),
                     filename_record: value.file.record,
                     archive_entry_name: value.file.archive_entry_name,
-                    asset: value.asset,
                 }
             })
             .collect();
@@ -882,8 +874,6 @@ pub(crate) struct DesignMeshBody {
     /// Container-local version-4 mesh UUID from protobuf registry field 12,
     /// when the geometry container joined this Design body.
     pub(crate) container_mesh_uuid: Option<DesignMeshUuid>,
-    /// Neutral tessellation projected from the joined container, when present.
-    pub(crate) tessellation_id: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -975,13 +965,6 @@ struct DesignMeshBodyWire {
     scene_state_reference_offset: u64,
     /// Byte offset of the Scene node's auxiliary-record reference.
     scene_auxiliary_reference_offset: u64,
-    /// Neutral tessellation projected from the joined container, when present.
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        deserialize_with = "deserialize_tessellation_id"
-    )]
-    tessellation_id: Option<String>,
 }
 
 impl From<DesignMeshBody> for DesignMeshBodyWire {
@@ -1034,7 +1017,6 @@ impl From<DesignMeshBody> for DesignMeshBodyWire {
             guid_entry_reference_offset,
             scene_state_reference_offset,
             scene_auxiliary_reference_offset,
-            tessellation_id: value.tessellation_id,
         }
     }
 }
@@ -1118,7 +1100,6 @@ impl DesignMeshBody {
             scene_auxiliary_record: value.scene_auxiliary_record,
             owner_record: value.owner_record,
             container_mesh_uuid: value.container_mesh_uuid,
-            tessellation_id: value.tessellation_id,
         })
     }
 }

@@ -196,3 +196,23 @@ fn source_admission_bounds_every_reference_and_preserves_failed_edits() {
         .unwrap();
     assert_eq!(edited.owner_reference_offset(), Some(76));
 }
+
+#[test]
+fn retained_relation_keeps_unknown_mask_bits_as_typed_state() {
+    let mut relation = source_relation();
+    relation.id = "f3d:Design/BulkStream.dat:sketch-relation#0".into();
+    relation.definition = super::SketchRelationDefinition::new(0x1_0000_0040, None).unwrap();
+    let wire = serde_json::to_value(&relation).unwrap();
+    assert_eq!(wire["state"].as_u64(), Some(0x1_0000_0040));
+    let mut fidelity = cadmpeg_ir::SourceFidelity::for_decode(
+        &cadmpeg_test_support::service_decode_context(),
+        cadmpeg_ir::Annotations::default(),
+    );
+    relation.retain_source(&mut fidelity).unwrap();
+    assert!(fidelity
+        .retained_record(&relation.id)
+        .unwrap()
+        .untyped()
+        .is_empty());
+    assert!(fidelity.unrepresented().is_empty());
+}

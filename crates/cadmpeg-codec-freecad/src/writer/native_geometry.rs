@@ -114,7 +114,6 @@ pub(super) fn project(
         )?;
         losses.extend(graph.losses);
     }
-    super::body_styles::apply(&mut projected, &payloads, &typed_properties)?;
     crate::attributes::transfer(ctx, &mut projected, &objects, &typed_properties)?;
     Ok(Some((projected, losses)))
 }
