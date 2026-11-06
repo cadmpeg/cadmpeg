@@ -430,15 +430,13 @@ fn validate_properties(
             return Err(PatchError::Declined(format!(
                 "edited FCStd property {} is missing from the written graph",
                 property.id
-            ))
-            .into());
+            )));
         };
         if !same_property_semantics(property, candidate) {
             return Err(PatchError::Declined(format!(
                 "edited FCStd property {} changes its admitted value or link graph",
                 property.id
-            ))
-            .into());
+            )));
         }
     }
     Ok(())
