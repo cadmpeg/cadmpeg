@@ -299,6 +299,36 @@ fn native_validation_skips_design_intent_links_after_a_contained_failure() {
 }
 
 #[test]
+fn companion_payload_header_does_not_select_an_unindexed_recipe() {
+    use crate::test_support::zip_test::{
+        f3d_with_smbh_and_protein_with_generated_sketch_dimension,
+        f3d_with_smbh_and_protein_with_original_sketch_dimension, original_design_fixture,
+    };
+
+    let smbh = synthetic_geometry_smbh();
+    let unindexed = original_design_fixture(
+        f3d_with_smbh_and_protein_with_original_sketch_dimension(&smbh),
+        false,
+    );
+    let indexed = f3d_with_smbh_and_protein_with_generated_sketch_dimension(&smbh);
+    let unindexed = decode(unindexed);
+    let indexed = decode(indexed);
+    let unindexed = f3d_native(unindexed.ir());
+    let indexed = f3d_native(indexed.ir());
+    assert!(unindexed
+        .design_parameter_companions
+        .iter()
+        .filter_map(|companion| companion.payload())
+        .all(|payload| payload.owned_recipe_ids().is_empty()));
+    assert_eq!(indexed.design_dimension_recipe_records.len(), 1);
+    assert!(indexed
+        .design_parameter_companions
+        .iter()
+        .filter_map(|companion| companion.payload())
+        .any(|payload| payload.owned_recipe_ids().len() == 1));
+}
+
+#[test]
 fn a_resource_refusal_in_design_intent_still_refuses_the_document() {
     inject_failure(recursion_refusal);
 
