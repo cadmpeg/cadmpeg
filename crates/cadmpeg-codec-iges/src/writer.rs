@@ -146,6 +146,7 @@ mod admission;
 mod brep_order;
 use brep_order::{brep_sense, edge_use_positions, edge_use_sense, pole_use_order};
 mod appearance;
+mod arc_curve;
 mod attributes;
 mod copious_curve;
 mod degrade;
@@ -7525,6 +7526,9 @@ impl CurveEntityEmitter<'_> {
                         oriented_curve_entity(geometry, span, Sense::Reversed, self.version)?
                     }
                 };
+                if sense == Sense::Forward {
+                    arc_curve::retain(self.ir, curve_id, geometry, span, &mut entity);
+                }
                 entity.status = status;
                 let index = self.entities.len();
                 self.entities.push(entity);
