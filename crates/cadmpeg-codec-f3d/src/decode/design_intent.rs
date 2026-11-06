@@ -785,7 +785,8 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     )?;
     model.sketches = planar.sketches;
     model.sketch_entities = planar.entities;
-    losses.extend(planar.losses);
+    let unprofiled_at = losses.len();
+    let unprofiled = planar.unprofiled;
     let spatial = crate::design::sketch_project::project_spatial_sketch_design(
         ctx,
         &design.design_sketch_placements,
@@ -930,6 +931,14 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         },
     )?;
     losses.extend(profile_work.losses());
+    losses.splice(
+        unprofiled_at..unprofiled_at,
+        crate::design::profile_select::unprofiled_curve_losses(
+            unprofiled,
+            &model.features,
+            &model.sketch_entities,
+        ),
+    );
     if matches!(geometry.path, DesignPath::Geometry) {
         crate::history::discard_projection_caches(&mut design.asm_histories);
     }
@@ -1239,10 +1248,10 @@ fn extend_related_design_records(
     design.design_record_headers.extend(scope_headers);
     let indices = scope_related_indices(&design.design_parameter_scopes);
     append_related_record_headers(scan, &mut design.design_record_headers, &indices)?;
-    crate::design::decode::deleted_sketch_members::mark_deleted_sketch_members(
+    crate::design::decode::deleted_members::mark_deleted_members(
         scan,
         &mut design.design_parameter_scopes,
-        &design.design_record_headers,
+        &mut design.design_record_headers,
     )?;
     let profile_losses = crate::design::decode::operands::bind_sketch_profiles(
         scan,
@@ -1357,6 +1366,12 @@ fn extend_related_design_records(
             &design.design_record_headers,
         )?;
     design.design_construction_operand_identities = identities;
+    let indices = collect_related_indices(
+        crate::design::decode::operands::tracking_path_record_indices(
+            &design.design_construction_operand_identities,
+        ),
+    );
+    append_related_record_headers(scan, &mut design.design_record_headers, &indices)?;
     let scopes = design
         .design_parameter_scopes
         .iter()

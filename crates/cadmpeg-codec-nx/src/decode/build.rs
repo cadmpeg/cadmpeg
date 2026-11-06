@@ -159,7 +159,7 @@ pub(super) fn try_decode_geometry(
     let mut body_node_ids = BTreeMap::new();
     let mut parsed = crate::native::substrate::ParsedStreams::parse(scan)?;
     let mut carrier_refusals: Vec<LossNote> = Vec::new();
-    let mut topology_losses = parsed.primary_edge_losses();
+    let mut topology_losses = parsed.primary_losses();
     let mut native_losses: Vec<LossNote> = Vec::new();
     let rmfastload_ids = scan
         .container
@@ -310,7 +310,14 @@ pub(super) fn try_decode_geometry(
             curves: nurbs_curves,
             pcurves: nurbs_pcurves,
             refusals: nurbs_refusals,
+            unresolved_controls,
         } = parsed.parse_nurbs(si);
+        for carrier in unresolved_controls {
+            carrier_refusals.push(NxLossCode::CarrierControlsUnresolved.note(format!(
+                "parasolid#{si} {} at byte {} names no control values that resolve to it",
+                carrier.family, carrier.pos
+            )));
+        }
         for refusal in nurbs_refusals {
             carrier_refusals.push(NxLossCode::CarrierLanesUnpaired.note(format!(
                 "parasolid#{si} {} at byte {} states no carrier: {}",

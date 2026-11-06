@@ -576,6 +576,9 @@ pub(crate) struct Graph {
     /// FACE identities grouped by their SHELL reference, in physical order.
     faces_by_shell: BTreeMap<u32, Vec<u32>>,
     primary_edge_refusals: Vec<usize>,
+    /// Supported non-EDGE nodes of a terminated sequence that the graph
+    /// leaves out, by kind and start.
+    primary_node_refusals: Vec<(NodeKind, usize)>,
     primary_unread_from: Option<usize>,
     /// The node ranges of a terminated primary sequence.
     primary_records: Option<Vec<std::ops::Range<usize>>>,
@@ -1023,7 +1026,7 @@ impl Graph {
     ) -> FixedRecordSelection {
         let mut candidates = Vec::new();
         let mut ownership_candidates = Vec::new();
-        let mut admit = |pos: usize, node_end: Option<usize>| {
+        let mut admit = |pos: usize| {
             if stream.get(pos) != Some(&0) {
                 return;
             }
@@ -1037,12 +1040,6 @@ impl Graph {
                 .into_iter()
                 .flatten()
             {
-                // A node of a terminated sequence spans its framed bytes,
-                // whatever length the fixed layout of its kind states.
-                let candidate = NodeCandidate {
-                    end: node_end.unwrap_or(candidate.end),
-                    ..candidate
-                };
                 if frames.is_some_and(|frames| frames.exclude(&candidate)) {
                     continue;
                 }
@@ -1068,6 +1065,9 @@ impl Graph {
                 {
                     admit(pos, None);
                 }
+                // Counted lane values can spell a BODY or REGION type and identity.
+                let inside = within_any(crate::nurbs::counted_lane_extents(stream));
+                ownership_candidates.retain(|candidate| !inside(candidate.pos()));
             }
         }
 
@@ -1819,6 +1819,27 @@ fn candidate_has_valid_family_framing(
         _ => {}
     }
     Some(())
+}
+
+/// Whether an offset lies inside one of `extents`.
+fn within_any(mut extents: Vec<std::ops::Range<usize>>) -> impl Fn(usize) -> bool {
+    extents.sort_unstable_by_key(|extent| extent.start);
+    // `reaches[i]` is the furthest end of the first `i + 1` extents by start.
+    let mut reach = 0;
+    let reaches = extents
+        .iter()
+        .map(|extent| {
+            reach = reach.max(extent.end);
+            reach
+        })
+        .collect::<Vec<_>>();
+    move |offset| {
+        extents
+            .partition_point(|extent| extent.start <= offset)
+            .checked_sub(1)
+            .and_then(|last| reaches.get(last))
+            .is_some_and(|&reach| offset < reach)
+    }
 }
 
 #[cfg(test)]

@@ -140,6 +140,67 @@ pub(super) struct Coedge {
     pub(super) offset: usize,
 }
 
+/// The sole FIN of a vertex loop: it names its loop and the loop's
+/// vertex-use, and bounds no edge (spec §4, coedge `00 11`).
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct VertexLoopFin {
+    pub(super) attr: u32,
+    pub(super) loop_attr: u32,
+    pub(super) vertex: u32,
+    pub(super) offset: usize,
+}
+
+impl VertexLoopFin {
+    /// The vertex-loop FIN that the coedge cells `refs` and `marker` of
+    /// `attr` state: marker `?`, both ring links to `attr`, and null partner
+    /// and edge.
+    pub(super) fn read(attr: u32, refs: &[u32; 9], marker: u8, offset: usize) -> Option<Self> {
+        (marker == b'?' && refs[2] == attr && refs[3] == attr && refs[5] <= 1 && refs[6] <= 1)
+            .then_some(Self {
+                attr,
+                loop_attr: refs[1],
+                vertex: refs[4],
+                offset,
+            })
+    }
+}
+
+/// A FIN record: an edge coedge or the FIN of a vertex loop.
+#[derive(Debug, Clone, PartialEq)]
+pub(super) enum Fin {
+    Edge(Coedge),
+    Vertex(VertexLoopFin),
+}
+
+impl Fin {
+    /// The FIN of `attr` that the coedge cells `refs` and `marker` state.
+    pub(super) fn read(attr: u32, refs: [u32; 9], marker: u8, offset: usize) -> Option<Self> {
+        match parse_sense(marker) {
+            Some(sense) => Some(Self::Edge(Coedge {
+                attr,
+                refs,
+                sense,
+                offset,
+            })),
+            None => VertexLoopFin::read(attr, &refs, marker, offset).map(Self::Vertex),
+        }
+    }
+
+    pub(super) fn attr(&self) -> u32 {
+        match self {
+            Self::Edge(record) => record.attr,
+            Self::Vertex(record) => record.attr,
+        }
+    }
+
+    pub(super) fn owner(&self) -> u32 {
+        match self {
+            Self::Edge(record) => record.refs[1],
+            Self::Vertex(record) => record.loop_attr,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub(in crate::brep) struct VertexUse {
     pub(super) attr: u32,
@@ -356,33 +417,42 @@ fn parse_tolerant_edge_use_candidates(buf: &[u8], off: usize) -> Vec<EdgeUse> {
 }
 
 fn parse_coedge_candidates(buf: &[u8], off: usize) -> Vec<(Coedge, usize)> {
+    parse_fin_candidates(buf, off)
+        .into_iter()
+        .filter_map(|(fin, end)| match fin {
+            Fin::Edge(record) => Some((record, end)),
+            Fin::Vertex(_) => None,
+        })
+        .collect()
+}
+
+/// The vertex-loop FIN readings at `off`.
+fn parse_vertex_loop_fin_candidates(buf: &[u8], off: usize) -> Vec<(VertexLoopFin, usize)> {
+    parse_fin_candidates(buf, off)
+        .into_iter()
+        .filter_map(|(fin, end)| match fin {
+            Fin::Edge(_) => None,
+            Fin::Vertex(record) => Some((record, end)),
+        })
+        .collect()
+}
+
+fn parse_fin_candidates(buf: &[u8], off: usize) -> Vec<(Fin, usize)> {
     let mut out = Vec::new();
     for p in super::record_starts(buf, off, 0x11) {
         let parsed = (|| {
             let (attr, mut at) = native_prefix(buf, p, false)?;
             let refs = super::native_refs::<9>(buf, &mut at)?;
-            let sense = parse_sense(*buf.get(at)?)?;
-            Some((
-                Coedge {
-                    attr,
-                    refs,
-                    sense,
-                    offset: off,
-                },
-                at + 1,
-            ))
+            let fin = Fin::read(attr, refs, *buf.get(at)?, off)?;
+            Some((fin, at + 1))
         })();
         out.extend(parsed);
     }
     let p = body_start(buf, off, 0x11);
     out.extend(
-        parse_coedge_candidates_short(buf, off)
+        parse_fin_candidates_short(buf, off)
             .into_iter()
-            .filter(|(record, end)| {
-                p.is_some_and(|p| *end == p + fin_delta::LEN)
-                    && record.attr <= MAX_SHORT_POINTER_INDEX
-                    && record.refs.iter().all(|r| *r <= MAX_SHORT_POINTER_INDEX)
-            }),
+            .filter(|(_, end)| p.is_some_and(|p| *end == p + fin_delta::LEN)),
     );
     out.dedup();
     out
@@ -754,47 +824,32 @@ fn admit_tolerant_edge_uses(t: &mut Tables, candidates: CandidateMap<EdgeUse>) {
 /// backward coedge in a forward-linked loop and next coedge in another loop,
 /// `refs[4]` = end vertex-use in a forward-linked loop and start vertex-use in
 /// another loop, `refs[5]` = twin coedge, `refs[6]` = edge-use.
-fn parse_coedge_candidates_short(buf: &[u8], off: usize) -> Vec<(Coedge, usize)> {
+fn parse_fin_candidates_short(buf: &[u8], off: usize) -> Vec<(Fin, usize)> {
     let Some(p) = body_start(buf, off, 0x11) else {
         return Vec::new();
     };
     if p + fin_body::LEN > buf.len() {
         return Vec::new();
     }
-    let Some(attr) = attr_at(buf, p) else {
+    let Some(attr) = attr_at(buf, p).filter(|attr| *attr <= MAX_SHORT_POINTER_INDEX) else {
         return Vec::new();
     };
+    let short_bounded = |refs: &[u32; 9]| refs.iter().all(|r| *r <= MAX_SHORT_POINTER_INDEX);
     let mut out = Vec::new();
     if let (Some(refs), Some(marker)) = (
         refs_be::<9>(buf, p + fin_body::REFS),
         buf.get(p + fin_body::SENSE).copied(),
     ) {
-        if let Some(sense) = parse_sense(marker) {
-            out.push((
-                Coedge {
-                    attr,
-                    refs,
-                    sense,
-                    offset: off,
-                },
-                p + fin_body::LEN,
-            ));
+        if let Some(fin) = Fin::read(attr, refs, marker, off).filter(|_| short_bounded(&refs)) {
+            out.push((fin, p + fin_body::LEN));
         }
     }
     if let (Some(refs), Some(marker)) = (
         refs_tripled::<9>(buf, p + fin_delta::REFS),
         buf.get(p + fin_delta::SENSE).copied(),
     ) {
-        if let Some(sense) = parse_sense(marker) {
-            out.push((
-                Coedge {
-                    attr,
-                    refs,
-                    sense,
-                    offset: off,
-                },
-                p + fin_delta::LEN,
-            ));
+        if let Some(fin) = Fin::read(attr, refs, marker, off).filter(|_| short_bounded(&refs)) {
+            out.push((fin, p + fin_delta::LEN));
         }
     }
     out.dedup();
@@ -1290,9 +1345,41 @@ fn parse_point_short(buf: &[u8], off: usize, prefixed: bool) -> Option<Point> {
     })
 }
 
+#[derive(Clone)]
 struct RecordFrame {
     partition: bool,
     bytes: Option<Vec<u8>>,
+}
+
+/// The effect of merging one frame into the frames of an identity.
+enum FrameMerge {
+    /// The current frame stands, and so does its record.
+    Kept,
+    /// The frames disagree; the identity keeps no record.
+    Ambiguous,
+    /// The new frame replaces the current one, and its record stands.
+    Replaced,
+}
+
+fn merge_frame(
+    frames: &mut HashMap<u32, RecordFrame>,
+    attr: u32,
+    frame: RecordFrame,
+) -> FrameMerge {
+    if let Some(current) = frames.get_mut(&attr) {
+        if current.partition && !frame.partition {
+            return FrameMerge::Kept;
+        }
+        if current.partition == frame.partition {
+            if current.bytes.is_none() || current.bytes != frame.bytes {
+                current.bytes = None;
+                return FrameMerge::Ambiguous;
+            }
+            return FrameMerge::Kept;
+        }
+    }
+    frames.insert(attr, frame);
+    FrameMerge::Replaced
 }
 
 fn merge_record_frame<T>(
@@ -1302,22 +1389,17 @@ fn merge_record_frame<T>(
     frame: RecordFrame,
     record: Option<T>,
 ) {
-    if let Some(current) = frames.get_mut(&attr) {
-        if current.partition && !frame.partition {
-            return;
+    match merge_frame(frames, attr, frame) {
+        FrameMerge::Kept => {}
+        FrameMerge::Ambiguous => {
+            records.remove(&attr);
         }
-        if current.partition == frame.partition {
-            if current.bytes.is_none() || current.bytes != frame.bytes {
-                current.bytes = None;
-                records.remove(&attr);
+        FrameMerge::Replaced => {
+            records.remove(&attr);
+            if let Some(record) = record {
+                records.insert(attr, record);
             }
-            return;
         }
-    }
-    frames.insert(attr, frame);
-    records.remove(&attr);
-    if let Some(record) = record {
-        records.insert(attr, record);
     }
 }
 
@@ -1336,7 +1418,7 @@ fn merge_framed_records<T>(
 }
 
 /// The topology record tables of one stream, each keyed by `attr`.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub(crate) struct Tables {
     bridges: HashMap<u32, Bridge>,
     bridge_frames: HashMap<u32, RecordFrame>,
@@ -1346,15 +1428,58 @@ pub(crate) struct Tables {
     coedges: HashMap<u32, Coedge>,
     coedge_frames: HashMap<u32, RecordFrame>,
     coedge_owners: HashMap<u32, HashSet<u32>>,
+    vertex_loop_fins: HashMap<u32, VertexLoopFin>,
     vertex_uses: HashMap<u32, VertexUse>,
     vertex_frames: HashMap<u32, RecordFrame>,
     vertex_classes: HashMap<u32, bool>,
     owner_classes: HashSet<u32>,
     points: HashMap<u32, Point>,
     point_frames: HashMap<u32, RecordFrame>,
+    /// Partition EDGE identities whose framed record the decoder rejects.
+    rejected_edges: HashSet<u32>,
 }
 
 impl Tables {
+    /// Drop every record whose attribute `attrs` holds.
+    pub(super) fn remove_attrs(&mut self, attrs: &HashSet<u32>) {
+        let keep = |attr: &u32| !attrs.contains(attr);
+        self.bridges.retain(|attr, _| keep(attr));
+        self.bridge_frames.retain(|attr, _| keep(attr));
+        self.loops.retain(|attr, _| keep(attr));
+        self.loop_frames.retain(|attr, _| keep(attr));
+        self.edge_uses.retain(|attr, _| keep(attr));
+        self.coedges.retain(|attr, _| keep(attr));
+        self.coedge_frames.retain(|attr, _| keep(attr));
+        self.coedge_owners.retain(|attr, _| keep(attr));
+        self.vertex_uses.retain(|attr, _| keep(attr));
+        self.vertex_frames.retain(|attr, _| keep(attr));
+        self.vertex_classes.retain(|attr, _| keep(attr));
+        self.points.retain(|attr, _| keep(attr));
+        self.point_frames.retain(|attr, _| keep(attr));
+    }
+
+    /// The attribute of every record and frame of `self`.
+    pub(super) fn attrs(&self) -> impl Iterator<Item = u32> + '_ {
+        self.bridges
+            .keys()
+            .chain(self.bridge_frames.keys())
+            .chain(self.loops.keys())
+            .chain(self.loop_frames.keys())
+            .chain(self.edge_uses.keys())
+            .chain(self.coedges.keys())
+            .chain(self.coedge_frames.keys())
+            .chain(self.vertex_uses.keys())
+            .chain(self.vertex_frames.keys())
+            .chain(self.points.keys())
+            .chain(self.point_frames.keys())
+            .copied()
+    }
+
+    /// Record a partition EDGE identity whose framed record is rejected.
+    pub(super) fn reject_edge(&mut self, attr: u32) {
+        self.rejected_edges.insert(attr);
+    }
+
     pub(super) fn bridges(&self) -> &HashMap<u32, Bridge> {
         &self.bridges
     }
@@ -1404,11 +1529,18 @@ impl Tables {
             .is_some_and(|frame| frame.bytes.is_none())
     }
 
-    fn merge_coedge_frame(
+    pub(super) fn vertex_loop_fins(&self) -> &HashMap<u32, VertexLoopFin> {
+        &self.vertex_loop_fins
+    }
+
+    /// Merge a FIN frame. An edge coedge and a vertex-loop FIN share one frame
+    /// per identity, so a disagreement between the two forms leaves the
+    /// identity ambiguous and a partition frame of either form stands.
+    fn merge_fin_frame(
         &mut self,
         attr: u32,
         frame: RecordFrame,
-        record: Option<Coedge>,
+        record: Option<Fin>,
         owners: HashSet<u32>,
     ) {
         if let Some(current) = self.coedge_frames.get(&attr) {
@@ -1423,13 +1555,26 @@ impl Tables {
         } else {
             self.coedge_owners.insert(attr, owners);
         }
-        merge_record_frame(
-            &mut self.coedges,
-            &mut self.coedge_frames,
-            attr,
-            frame,
-            record,
-        );
+        match merge_frame(&mut self.coedge_frames, attr, frame) {
+            FrameMerge::Kept => {}
+            FrameMerge::Ambiguous => {
+                self.coedges.remove(&attr);
+                self.vertex_loop_fins.remove(&attr);
+            }
+            FrameMerge::Replaced => {
+                self.coedges.remove(&attr);
+                self.vertex_loop_fins.remove(&attr);
+                match record {
+                    Some(Fin::Edge(record)) => {
+                        self.coedges.insert(attr, record);
+                    }
+                    Some(Fin::Vertex(record)) => {
+                        self.vertex_loop_fins.insert(attr, record);
+                    }
+                    None => {}
+                }
+            }
+        }
     }
 
     #[cfg(test)]
@@ -1506,11 +1651,17 @@ impl Tables {
             deltas.loops,
             deltas.loop_frames,
         );
+        deltas
+            .edge_uses
+            .retain(|attr, _| !self.rejected_edges.contains(attr));
         merge_missing(&mut self.edge_uses, deltas.edge_uses);
         for (attr, frame) in deltas.coedge_frames {
-            let record = deltas.coedges.remove(&attr);
+            let record = match deltas.coedges.remove(&attr) {
+                Some(record) => Some(Fin::Edge(record)),
+                None => deltas.vertex_loop_fins.remove(&attr).map(Fin::Vertex),
+            };
             let owners = deltas.coedge_owners.remove(&attr).unwrap_or_default();
-            self.merge_coedge_frame(attr, frame, record, owners);
+            self.merge_fin_frame(attr, frame, record, owners);
         }
         deltas
             .coedges
@@ -1571,6 +1722,15 @@ impl Candidate for Coedge {
 }
 
 impl Candidate for Loop {
+    fn attr(&self) -> u32 {
+        self.attr
+    }
+    fn offset(&self) -> usize {
+        self.offset
+    }
+}
+
+impl Candidate for VertexLoopFin {
     fn attr(&self) -> u32 {
         self.attr
     }
@@ -1825,6 +1985,20 @@ pub(crate) fn scan(body: &[u8]) -> Tables {
     scan_stream(body, false)
 }
 
+/// The body-relative coordinate offset of each POINT record, keyed by the
+/// record's body-relative offset. A stream whose node sequence frames reads
+/// its POINT records from the nodes; any other stream scans its body.
+pub(crate) fn point_value_offsets(payload: &[u8], body_offset: usize) -> HashMap<usize, usize> {
+    let tables = nodes::sequence(payload)
+        .and_then(|records| nodes::tables(&records, payload, body_offset))
+        .unwrap_or_else(|| scan(payload.get(body_offset..).unwrap_or_default()));
+    tables
+        .points()
+        .values()
+        .map(|point| (point.offset, point.xyz_offset))
+        .collect()
+}
+
 /// Scan the stream-local topology records of a plain stream (spec §3.3).
 pub(crate) fn scan_plain(body: &[u8]) -> Tables {
     scan_stream(body, true)
@@ -1917,7 +2091,16 @@ pub(super) fn scan_deltas_with_owner_attrs(
 /// the admission predicates matched, in match order. `plain` reads a plain
 /// stream (spec §3.3).
 pub(super) fn topology_spans(body: &[u8], plain: bool) -> Vec<super::read_ledger::RawSpan> {
-    let tables = scan_stream(body, plain);
+    table_spans(body, &scan_stream(body, plain), plain)
+}
+
+/// Exact-read spans of the records of `tables`, which a scan of `body`
+/// admits, as [`topology_spans`] names them.
+pub(super) fn table_spans(
+    body: &[u8],
+    tables: &Tables,
+    plain: bool,
+) -> Vec<super::read_ledger::RawSpan> {
     let mut spans = Vec::new();
     for record in tables.bridges.values() {
         if let Some(end) = bridge_end(body, record.offset, plain) {
@@ -1931,6 +2114,12 @@ pub(super) fn topology_spans(body: &[u8], plain: bool) -> Vec<super::read_ledger
     }
     framed_spans(&mut spans, &tables.loops, &tables.loop_frames, 0x0f);
     framed_spans(&mut spans, &tables.coedges, &tables.coedge_frames, 0x11);
+    framed_spans(
+        &mut spans,
+        &tables.vertex_loop_fins,
+        &tables.coedge_frames,
+        0x11,
+    );
     framed_spans(&mut spans, &tables.vertex_uses, &tables.vertex_frames, 0x12);
     framed_spans(&mut spans, &tables.points, &tables.point_frames, 0x1d);
     spans
@@ -2058,6 +2247,7 @@ fn scan_records(
     let mut tolerant_edge_candidates = CandidateMap::new();
     let mut coedge_candidates = CandidateMap::new();
     let mut coedge_occurrences = Vec::new();
+    let mut vertex_loop_fin_occurrences = Vec::new();
     let mut vertex_occurrences = Vec::new();
     let scopes = topology_scopes(body, deltas);
     let payload_ranges = &scopes.excluded_starts;
@@ -2123,7 +2313,13 @@ fn scan_records(
                         .or_default()
                         .push(record.clone());
                 }
-                if !frames.is_empty() {
+                if frames.is_empty() {
+                    let mut readings = parse_vertex_loop_fin_candidates(body, i);
+                    readings.dedup();
+                    if !readings.is_empty() {
+                        vertex_loop_fin_occurrences.push(readings);
+                    }
+                } else {
                     coedge_occurrences.push(frames);
                 }
             }
@@ -2154,17 +2350,30 @@ fn scan_records(
             t.point_frames.contains_key(&record.refs[4])
                 || base.is_some_and(|base| base.point_frames.contains_key(&record.refs[4]))
         };
+        let loop_is_current = |loop_attr: u32| {
+            loop_frames.iter().any(|(loop_, _)| {
+                loop_.attr == loop_attr
+                    && (t.bridges.contains_key(&loop_.refs[2])
+                        || base.is_some_and(|base| base.bridges.contains_key(&loop_.refs[2])))
+            }) || base.is_some_and(|base| base.loops.contains_key(&loop_attr))
+        };
         let current_reference = |record: &VertexUse| {
-            coedge_candidates.values().flatten().any(|fin| {
-                fin.refs[4] == record.attr
-                    && (loop_frames.iter().any(|(loop_, _)| {
-                        loop_.attr == fin.refs[1]
-                            && (t.bridges.contains_key(&loop_.refs[2])
-                                || base
-                                    .is_some_and(|base| base.bridges.contains_key(&loop_.refs[2])))
-                    }) || base.is_some_and(|base| base.loops.contains_key(&fin.refs[1])))
-            }) || base
-                .is_some_and(|base| base.coedges.values().any(|fin| fin.refs[4] == record.attr))
+            coedge_candidates
+                .values()
+                .flatten()
+                .any(|fin| fin.refs[4] == record.attr && loop_is_current(fin.refs[1]))
+                || vertex_loop_fin_occurrences.iter().flatten().any(
+                    |(fin, _): &(VertexLoopFin, usize)| {
+                        fin.vertex == record.attr && loop_is_current(fin.loop_attr)
+                    },
+                )
+                || base.is_some_and(|base| {
+                    base.coedges.values().any(|fin| fin.refs[4] == record.attr)
+                        || base
+                            .vertex_loop_fins
+                            .values()
+                            .any(|fin| fin.vertex == record.attr)
+                })
         };
         let class_closed = |record: &VertexUse| {
             record.refs[4] > 1
@@ -2331,13 +2540,36 @@ fn scan_records(
         } else {
             candidates.iter().map(|record| record.refs[1]).collect()
         };
-        t.merge_coedge_frame(
+        t.merge_fin_frame(
             attr,
             RecordFrame {
                 partition: !deltas,
                 bytes,
             },
-            record,
+            record.map(Fin::Edge),
+            owners,
+        );
+    }
+    for readings in vertex_loop_fin_occurrences {
+        let (record, bytes) = match readings.as_slice() {
+            [(record, end)] => (
+                Some(record.clone()),
+                Some(body[record.offset..*end].to_vec()),
+            ),
+            _ => (None, None),
+        };
+        let attr = readings[0].0.attr;
+        let owners = readings
+            .iter()
+            .map(|(record, _)| record.loop_attr)
+            .collect();
+        t.merge_fin_frame(
+            attr,
+            RecordFrame {
+                partition: !deltas,
+                bytes,
+            },
+            record.map(Fin::Vertex),
             owners,
         );
     }
@@ -2392,6 +2624,8 @@ mod scope_tests;
 #[cfg(test)]
 mod tests {
     mod point_frames;
+
+    mod point_values;
 
     mod wide_scopes;
 

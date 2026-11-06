@@ -1,5 +1,7 @@
 A task brief or issue that states its own rule for its work takes precedence over this file.
 
+cadmpeg decodes as much of each file as current format knowledge allows. When the format allows more than one reading, the decoder applies the most likely reading and charges a loss code that names the assumption. Dropping a value that the most likely reading decodes is a regression, also when a loss code reports the drop.
+
 Writing:
 
 - Write dense, direct technical prose in ASD-STE100. No hype, filler, rhetorical framing, or emphasis.

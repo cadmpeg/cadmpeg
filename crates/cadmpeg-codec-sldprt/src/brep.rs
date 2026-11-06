@@ -321,15 +321,21 @@ pub(crate) fn parse_carrier(body: &[u8], off: usize) -> Option<Carrier> {
 
 /// Every compact analytic carrier the body admits, as body-relative spans.
 ///
-/// The sweep matches [`index::scan_carriers`]: each `00 TT` offset is parsed
-/// with the same structural and geometry invariants, and every success names
-/// its record extent. Spline tags are not analytic carriers and never match.
-pub(crate) fn analytic_spans(body: &[u8]) -> Vec<read_ledger::RawSpan> {
+/// The sweep matches the carrier scan of `index`: each `00 TT` offset is
+/// parsed with the same structural and geometry invariants, and every success
+/// names its record extent. `Some(deltas)` selects the record framing of one
+/// stream role, as [`parse_carrier_for_role`] does. Spline tags are not
+/// analytic carriers and never match.
+pub(crate) fn analytic_spans(body: &[u8], role: Option<bool>) -> Vec<read_ledger::RawSpan> {
     let mut spans = Vec::new();
     let mut i = 0usize;
     while i + 2 <= body.len() {
         if body[i] == 0x00 {
-            if let Some(carrier) = parse_carrier(body, i) {
+            let carrier = match role {
+                Some(deltas) => parse_carrier_for_role(body, i, deltas),
+                None => parse_carrier(body, i),
+            };
+            if let Some(carrier) = carrier {
                 let (attr, end) = match &carrier {
                     Carrier::Curve(carrier) => (carrier.attr, carrier.end),
                     Carrier::Surface(carrier) => (carrier.attr, carrier.end),

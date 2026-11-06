@@ -110,10 +110,18 @@ struct SketchArrangementEdge {
     nodes: [usize; 2],
     boundary: cadmpeg_ir::features::SketchProfileBoundaryUse,
     polyline: Vec<Point2>,
+    /// Entities of coincident edges merged into this edge.
+    coincident: Vec<cadmpeg_ir::sketches::SketchEntityId>,
 }
 
 struct SketchArrangementFace {
     boundary: Vec<cadmpeg_ir::features::SketchProfileBoundaryUse>,
+    /// Boundary curves in walk order, one per stored fragment: consecutive
+    /// fragments of one curve that meet at a synthetic circle split node
+    /// are one fragment.
+    fragments: Vec<cadmpeg_ir::sketches::SketchEntityId>,
+    /// Entities of coincident edges merged into the boundary edges.
+    coincident: Vec<cadmpeg_ir::sketches::SketchEntityId>,
     polyline: Vec<Point2>,
     /// Whether a separate connected part of the arrangement lies inside the
     /// face. The face walk gives no hole rings, so the face alone is not the
@@ -274,6 +282,9 @@ fn arrangement_region_matching_curves(
     let mut nodes = Vec::new();
     for (index, left) in segments.iter().enumerate() {
         for right in segments.iter().skip(index + 1) {
+            if collinear_line_segments(left, right, tolerance).is_some() {
+                continue;
+            }
             if let Some(points) = analytic_segment_intersections(left, right) {
                 for point in points.into_iter().flatten() {
                     arrangement_node(&mut nodes, point, tolerance);
@@ -287,12 +298,20 @@ fn arrangement_region_matching_curves(
     let mut selected = None;
     for face in &faces {
         let mut boundary = Vec::new();
-        for use_ in &face.boundary {
-            if boundary.last().copied() != Some(&use_.entity) {
-                boundary.push(&use_.entity);
+        if matches!(selection, CurveProgram::Members(_)) {
+            boundary.extend(&face.fragments);
+            boundary.extend(&face.coincident);
+        } else {
+            for use_ in &face.boundary {
+                if boundary.last().copied() != Some(&use_.entity) {
+                    boundary.push(&use_.entity);
+                }
             }
         }
-        if boundary.len() > 1 && boundary.first() == boundary.last() {
+        if matches!(selection, CurveProgram::Ordered(_))
+            && boundary.len() > 1
+            && boundary.first() == boundary.last()
+        {
             boundary.pop();
         }
         if boundary.len() != program.len() {
@@ -416,6 +435,7 @@ fn sketch_arrangement_faces_with_nodes(
             reversed: use_.reversed,
         });
     }
+    let mut synthetic_nodes = Vec::new();
     for (use_, center, radius) in circles {
         if radius.get() <= tolerance {
             return Ok(None);
@@ -428,7 +448,8 @@ fn sketch_arrangement_faces_with_nodes(
                 [Some(angles[0] + std::f64::consts::PI), None]
             };
             for angle in additional.into_iter().flatten() {
-                arrangement_node(
+                let count = nodes.len();
+                let index = arrangement_node(
                     &mut nodes,
                     Point2::new(
                         center.u + radius.get() * angle.cos(),
@@ -436,6 +457,9 @@ fn sketch_arrangement_faces_with_nodes(
                     ),
                     tolerance,
                 );
+                if nodes.len() > count {
+                    synthetic_nodes.push(index);
+                }
             }
             angles = arrangement_circle_angles(&nodes, center, radius, tolerance);
         }
@@ -502,15 +526,21 @@ fn sketch_arrangement_faces_with_nodes(
             ],
             boundary,
             polyline,
+            coincident: Vec::new(),
         };
         if edge.nodes[0] == edge.nodes[1] {
             return Ok(None);
         }
         let mut coincident = false;
-        for candidate in &edges {
+        for candidate in &mut edges {
             if (candidate.nodes == edge.nodes || candidate.nodes == [edge.nodes[1], edge.nodes[0]])
                 && arrangement_edges_coincident(candidate, &edge, entities, tolerance, ctx)?
             {
+                if candidate.boundary.entity != edge.boundary.entity
+                    && !candidate.coincident.contains(&edge.boundary.entity)
+                {
+                    candidate.coincident.push(edge.boundary.entity.clone());
+                }
                 coincident = true;
                 break;
             }
@@ -638,6 +668,10 @@ fn sketch_arrangement_faces_with_nodes(
             let start = (edge_index, reversed);
             let mut current = start;
             let mut boundary = Vec::new();
+            let mut runs = Vec::<(
+                cadmpeg_ir::sketches::SketchEntityId,
+                Vec<cadmpeg_ir::sketches::SketchEntityId>,
+            )>::new();
             let mut polyline = Vec::new();
             loop {
                 let (index, reverse) = current;
@@ -652,6 +686,19 @@ fn sketch_arrangement_faces_with_nodes(
                 let mut use_ = edge.boundary.clone();
                 if reverse {
                     use_.reversed = !use_.reversed;
+                }
+                let joint = edge.nodes[usize::from(reverse)];
+                match runs.last_mut() {
+                    Some((entity, coincident))
+                        if synthetic_nodes.contains(&joint) && *entity == use_.entity =>
+                    {
+                        for other in &edge.coincident {
+                            if !coincident.contains(other) {
+                                coincident.push(other.clone());
+                            }
+                        }
+                    }
+                    _ => runs.push((use_.entity.clone(), edge.coincident.clone())),
                 }
                 boundary.push(use_);
                 if reverse {
@@ -671,6 +718,20 @@ fn sketch_arrangement_faces_with_nodes(
                 let next = uses[(twin + uses.len() - 1) % uses.len()];
                 current = (next.0, next.1);
             }
+            if runs.len() > 1
+                && runs.first().map(|run| &run.0) == runs.last().map(|run| &run.0)
+                && synthetic_nodes.contains(&edges[edge_index].nodes[usize::from(reversed)])
+            {
+                if let Some((_, coincident)) = runs.pop() {
+                    for other in coincident {
+                        if !runs[0].1.contains(&other) {
+                            runs[0].1.push(other);
+                        }
+                    }
+                }
+            }
+            let fragments = runs.iter().map(|run| run.0.clone()).collect();
+            let coincident = runs.into_iter().flat_map(|run| run.1).collect();
             if polyline.len() >= 3 && signed_polygon_area(&polyline) > tolerance * tolerance {
                 // Proven-disjoint components lie wholly inside or outside
                 // the face, so one node of each decides.
@@ -680,6 +741,8 @@ fn sketch_arrangement_faces_with_nodes(
                     .any(|root| *root != own && point_in_polygon(nodes[*root], &polyline));
                 faces.push(SketchArrangementFace {
                     boundary,
+                    fragments,
+                    coincident,
                     polyline,
                     encloses_island,
                 });
@@ -751,6 +814,9 @@ fn arrangement_edges_meet_only_at_nodes(
     let Some(right_segment) = arrangement_analytic_segment(right, entities) else {
         return false;
     };
+    if let Some(overlap) = collinear_line_segments(&left_segment, &right_segment, tolerance) {
+        return overlap <= tolerance;
+    }
     if let (
         ProfileBoundarySegment::Arc {
             center: left_center,
@@ -977,6 +1043,41 @@ fn arrangement_line_nurbs_meet_only_at_endpoint(
             candidate.abs() > threshold
                 && candidate.is_sign_positive() == first_side.is_sign_positive()
         })
+}
+
+/// The overlap length of two line segments that lie on one line within
+/// `tolerance`, or `None` when either segment is not a line or the lines
+/// diverge by more than `tolerance`.
+fn collinear_line_segments(
+    left: &ProfileBoundarySegment,
+    right: &ProfileBoundarySegment,
+    tolerance: f64,
+) -> Option<f64> {
+    let (
+        ProfileBoundarySegment::Line { start: a, end: b },
+        ProfileBoundarySegment::Line { start: c, end: d },
+    ) = (left, right)
+    else {
+        return None;
+    };
+    let length = point_distance(*a, *b);
+    if length <= tolerance {
+        return None;
+    }
+    let direction = ((b.u - a.u) / length, (b.v - a.v) / length);
+    let offset = |point: &Point2| {
+        let (du, dv) = (point.u - a.u, point.v - a.v);
+        (
+            du * direction.0 + dv * direction.1,
+            du * direction.1 - dv * direction.0,
+        )
+    };
+    let (c_along, c_across) = offset(c);
+    let (d_along, d_across) = offset(d);
+    if c_across.abs() > tolerance || d_across.abs() > tolerance {
+        return None;
+    }
+    Some(length.min(c_along.max(d_along)) - 0.0_f64.max(c_along.min(d_along)))
 }
 
 fn analytic_segment_intersections(
@@ -3152,11 +3253,16 @@ fn point_distance(a: Point2, b: Point2) -> f64 {
     (a.u - b.u).hypot(a.v - b.v)
 }
 
-/// Closed profile loops and unprofiled curve losses for one planar sketch.
+/// Closed profile loops and unprofiled curves for one planar sketch.
 #[derive(Debug, Default, Clone)]
 pub(super) struct ClosedSketchProfiles {
     pub(super) profiles: Vec<Vec<cadmpeg_ir::sketches::SketchEntityUse>>,
-    pub(super) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+    /// Curves in no closed profile loop, each with its loss. The caller emits
+    /// the loss after it knows whether a feature selects a region the curve bounds.
+    pub(super) unprofiled: Vec<(
+        cadmpeg_ir::sketches::SketchEntityId,
+        cadmpeg_ir::report::loss::LossNote,
+    )>,
 }
 
 impl std::ops::Deref for ClosedSketchProfiles {
@@ -3197,7 +3303,7 @@ pub(super) fn closed_sketch_profiles(
         return Ok(ClosedSketchProfiles::default());
     }
     let mut profiles = Vec::new();
-    let mut losses = Vec::new();
+    let mut unprofiled_notes = Vec::new();
     let mut edges = Vec::new();
     for entity in entities
         .iter()
@@ -3221,7 +3327,10 @@ pub(super) fn closed_sketch_profiles(
     }
     if edges.is_empty() {
         profiles.sort_by(|a, b| a[0].entity.cmp(&b[0].entity));
-        return Ok(ClosedSketchProfiles { profiles, losses });
+        return Ok(ClosedSketchProfiles {
+            profiles,
+            unprofiled: Vec::new(),
+        });
     }
 
     let mut endpoints = Vec::new();
@@ -3499,11 +3608,10 @@ pub(super) fn closed_sketch_profiles(
                     .collect();
                 unprofiled.sort();
                 for id in unprofiled {
-                    losses.push(
-                        crate::loss::F3dLossCode::SketchCurveUnprofiled.note(format!(
-                            "sketch entity {id}: curve is not part of any closed profile loop"
-                        )),
-                    );
+                    let note = crate::loss::F3dLossCode::SketchCurveUnprofiled.note(format!(
+                        "sketch entity {id}: curve is not part of any closed profile loop"
+                    ));
+                    unprofiled_notes.push((id, note));
                 }
                 profiles.extend(b_profiles);
             }
@@ -3548,7 +3656,10 @@ pub(super) fn closed_sketch_profiles(
         }
     }
     profiles.sort_by(|a, b| a[0].entity.cmp(&b[0].entity));
-    Ok(ClosedSketchProfiles { profiles, losses })
+    Ok(ClosedSketchProfiles {
+        profiles,
+        unprofiled: unprofiled_notes,
+    })
 }
 
 /// Direction and signed curvature of a half-edge where it leaves its start node.

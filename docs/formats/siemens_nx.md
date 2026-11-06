@@ -835,6 +835,13 @@ Parasolid XT node type.
 
 Types carrying `node_id:u32` place it at record offset `+4` (after shifts). Every `u32` value is valid; node admission has no smaller numerical bound. FIN has no `node_id`. EDGE and VERTEX candidates with denormal tolerance (`abs(tol) < 1e-100`) are payload coincidences, not records. Every POINT coordinate is finite and its converted millimeter value is finite; no normality or model-magnitude condition applies.
 
+In a terminated node sequence, a node keeps these field positions and roles
+when its effective field list begins with the base fields of its type. Each
+leading field has its base name, data type, extent, transmit flag, and
+pointer class. BODY `owner` also keeps its role with pointer class 1040; its
+base class is 101. Fields after the base fields do not move the base
+positions.
+
 A complete body-topology graph owns all of its fixed node frames. A typed XMT
 slot also owns one unique fixed node of the required family: SHELL owns BODY and
 REGION; FACE owns a surface carrier; EDGE and FIN own curve carriers; and
@@ -898,14 +905,12 @@ A PMARK section starts with one or more such nodes. A kind-4 head after its firs
 ordinary node is not a supported transition.
 
 A map prefix consists of zero or more pairs `(nonnull_XMT, kind:u16 BE)`, followed
-by `null_XMT, zero:u16 BE, terminal_word:u16 BE`. Each kind is from 2 through the
+by `null_XMT, terminal_bytes:4`. Each kind is from 2 through the
 declared maximum. The null XMT is `00 01`. Map XMT encoding is canonical: direct
 zero, an extended zero quotient, and an `80 00` remainder are invalid. This
-canonicality rule is local to map entries. The terminal word is below `0x8000`;
-a high bit leaves its encoded width unresolved. Its value does not count the
-section's nodes and does not select a state. The six-byte map tail places null
-XMT at `+0`, zero at `+2`, and terminal word at `+4`, relative to the end of the
-entry pairs.
+canonicality rule is local to map entries. The four terminal bytes take every
+byte value, and the map ends after them. The six-byte map tail places null XMT
+at `+0` and the terminal bytes at `+2`, relative to the end of the entry pairs.
 
 After a closed leading section, a map section is required. After a closed map
 section, a PMARK section or one exact final `T` is required. That final `T`
@@ -931,7 +936,7 @@ Generic native output uses `parasolid_deltas_schemas` and
 `parasolid_deltas_metadata`, one row for each map prefix, primary PMARK,
 section terminator, or final terminator. Each metadata row retains its stream
 ordinal, inflated offset, byte length, SHA-256, and tagged production. A map
-retains every ordered entry and its terminal word. A PMARK retains every field.
+retains every ordered entry and its four terminal bytes. A PMARK retains every field.
 A section terminator retains the closed section's kind and start offset.
 Metadata spans do not overlap. Each definition is shared in memory and serialized
 once, including custom type name and description. Instances join their schema
@@ -1361,19 +1366,19 @@ B_SURFACE / B_CURVE are compact: header through sense `+18`, then `nurbs` ref `+
 
 | Type | Tag    | Role                                                                                                                                                        |
 | ---: | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-|  125 | `007d` | B-surface control-grid payload (`double_count` near `+91`, then values)                                                                                     |
-|  126 | `007e` | B-surface descriptor: `u_periodic +4`, `v_periodic +5`, `u_degree +6`, `v_degree +8`, `u_pole_count +10`, `v_pole_count +14`, U/V knot types `+18/+19`, distinct-knot counts `+20/+24`, rational `+28`, U/V closed `+29/+30`, form `+31`, vertex dimension `+32`, mult/knot refs |
+|   45 | `002d` | B-spline control values (`BSPLINE_VERTICES`): `double_count`, xmt, `double_count × f64`                                                                    |
+|  125 | `007d` | B-surface data (`SURFACE_DATA`)                                                                                                                             |
+|  126 | `007e` | B-surface descriptor: `u_periodic +4`, `v_periodic +5`, `u_degree +6`, `v_degree +8`, `u_pole_count +10`, `v_pole_count +14`, U/V knot types `+18/+19`, distinct-knot counts `+20/+24`, rational `+28`, U/V closed `+29/+30`, form `+31`, vertex dimension `+32`, control-value/mult/knot refs |
 |  127 | `007f` | multiplicity arrays (`alloc`, ref, `alloc × u16`)                                                                                                           |
 |  128 | `0080` | knot arrays (`alloc`, ref, `alloc × f64`)                                                                                                                   |
-|  135 | `0087` | B-curve control payload                                                                                                                                     |
-|  136 | `0088` | B-curve descriptor: `degree +4`, `pole_count +6`, `dimension +10` (2=UV, 3=XYZ), distinct-knot `+12`, knot type `+16`, periodic/closed/rational `+17/+18/+19`, curve form `+20`, mult/knot refs `+23/+25`                  |
+|  135 | `0087` | B-curve data (`CURVE_DATA`)                                                                                                                                 |
+|  136 | `0088` | B-curve descriptor: `degree +4`, `pole_count +6`, `dimension +10` (2=UV, 3=XYZ), distinct-knot `+12`, knot type `+16`, periodic/closed/rational `+17/+18/+19`, curve form `+20`, control-value/mult/knot refs from `+21`                  |
 
-Types 125, 126, 135, and 136 may place an `ff` envelope escape before their xmt. This
-shifts every subsequent logical field by one byte. Type 135 may place a second
-`ff` escape before its control-value count; the count and control-reference tail
-shift by one additional byte. A short or large-index type-126 descriptor's
-embedded type-125 payload header may carry the same envelope escape before its
-payload xmt. Multiplicity and knot references in type 136 are
+Types 45, 125, 126, 135, and 136 may place an `ff` envelope escape before their
+count or xmt. This shifts every subsequent logical field by one byte. The
+type-126 and type-136 `bspline_vertices` field names the type-45 node that holds
+the control values; the type-124 and type-134 `data` field names the type-125 or
+type-135 node. Multiplicity and knot references in type 136 are
 sequential encoded xmts, so an extended multiplicity reference shifts the knot
 reference. Type 136 admits dimensions 2, 3, and 4; dimension 4 is homogeneous
 three-dimensional control data. The periodic, closed, and rational fields are
@@ -1383,7 +1388,7 @@ does not select reference cardinality. The status-framed form has three
 non-null and may use compact or extended XMT encoding. The complete form ends
 after the knot-reference status.
 
-Control-grid stride = `double_count / (u_pole_count · v_pole_count)`; `3` = non-rational xyz and `4` = rational xyzw. A complete status-reference descriptor's declared vertex dimension and rational logical must agree with that stride. Within one physical stream, each support-record XMT is unique. A merged partition-and-delta view may contain compact and status-framed descriptors with the same XMT. They denote one descriptor only when their degree, pole counts, dimension or directional knot types, distinct-knot counts, and multiplicity and knot references agree. A payload reference present in either equivalent representation supplies the shared payload identity; two different payload identities or any differing basis field reject the descriptor. In each direction, degree is less than pole count and multiplicities satisfy `sum(mults) = n_poles + degree + 1`. Pole-grid ordering is u-major.
+Control-grid stride = `double_count / (u_pole_count · v_pole_count)`; `3` = non-rational xyz and `4` = rational xyzw. A complete status-reference descriptor's declared vertex dimension and rational logical must agree with that stride. Within one physical stream, each support-record XMT is unique. A merged partition-and-delta view may contain compact and status-framed descriptors with the same XMT. They denote one descriptor only when their degree, pole counts, dimension or directional knot types, distinct-knot counts, and control-value, multiplicity, and knot references agree; any differing field rejects the descriptor. In each direction, degree is less than pole count and multiplicities satisfy `sum(mults) = n_poles + degree + 1`. Pole-grid ordering is u-major.
 
 The type-126 `u_periodic` and `v_periodic` bytes are binary logical flags at `+4` and `+5`, after the optional envelope/index shift. The bytes at `+18` and `+19` are U/V knot-type values, not periodicity flags. Type 136 stores its knot type at `+16` and its periodic logical flag at `+17`. A type-136 dimension-2 carrier is a pcurve and uses the same periodic flag. Knot types use the Parasolid values `1` = unset, `2` = non-uniform, `3` = uniform, `4` = quasi-uniform, `5` = piecewise Bézier, and `6` = Bézier ends. Knot type is admission metadata only; it does not determine rationality, periodicity, parameter direction, or control-grid stride. Rationality comes from the declared rational logical when the descriptor carries one, and otherwise from the control-grid stride.
 
@@ -3080,15 +3085,14 @@ The scanner layouts below apply to primary semantic input. Deltas physical
 instances use their effective field plans from §4.2, retain floating bits, and
 supply no current geometry or auxiliary replacement input.
 
-A type-125 B-surface control payload stores a parameter-range block, a marker byte, a sense byte, `double_count:u32`, a large-index-capable `first_index`, and `double_count` doubles. An optional envelope escape before `double_count` shifts the remaining fields by one byte. A candidate containing another type-125 header with the same XMT before its `double_count` field is the descriptor prefix of the nested record, not a control payload. A type-125 surface-data header is `007d [ff], xmt, value[8]:f64 BE, marker, marker_lane[12], ref 01, ref 01, ref 01, ref 01`. The XMT is non-null, every value is finite, and `marker` is `01` or `02`. `marker_lane` contains either `marker * 4` bytes `42` followed by `(3 - marker) * 4` bytes `3f`, or, for marker `01`, eight bytes `42` followed by four bytes `3f`.
+A type-45 control-value node is `002d [ff], double_count:u32 BE, xmt, value[double_count]:f64 BE`. The count is nonzero, the XMT is non-null, and every value is finite. A type-125 surface-data header is `007d [ff], xmt, value[8]:f64 BE, marker, marker_lane[12], ref 01, ref 01, ref 01, ref 01`. The XMT is non-null, every value is finite, and `marker` is `01` or `02`. `marker_lane` contains either `marker * 4` bytes `42` followed by `(3 - marker) * 4` bytes `3f`, or, for marker `01`, eight bytes `42` followed by four bytes `3f`.
 
 A type-135 curve-data header is `0087 [ff], xmt, mode, ref 01`, where `mode`
-is `01` or `02`. Its XMT is non-null. A type-135 counted control payload is
-distinct and ends after its declared finite-double lane.
+is `01` or `02`. Its XMT is non-null.
 
-A type-126 B-surface descriptor stores U/V periodic logical flags, degrees, pole counts, U/V knot types, distinct-knot counts, multiplicity references, and knot references. It has a short layout with two-byte references and a large-index layout with variable-width references, a `007d` payload-kind marker, and a control-payload reference. A deltas layout instead terminates after five non-null variable-width references, each followed by status `00`; its control-payload reference is carried by the owning type-124 wrapper.
+A type-126 B-surface descriptor stores U/V periodic logical flags, degrees, pole counts, U/V knot types, distinct-knot counts, rational and U/V closed logical flags, surface form, vertex dimension, and the control-value, multiplicity, and knot references. A deltas layout instead stores the five references as non-null variable-width references, each followed by status `00`.
 
-A type-135 B-curve control payload stores `double_count:u32`, `first_index`, and `double_count` doubles. Type 136 stores degree, pole count, dimension, distinct-knot count, knot type, periodic/closed/rational logical flags, curve form, control-data index, multiplicity reference, and knot reference.
+Type 136 stores degree, pole count, dimension, distinct-knot count, knot type, periodic/closed/rational logical flags, curve form, control-value reference, multiplicity reference, and knot reference.
 
 Type 127 stores `00 7f [ff], count:u32 BE, xmt, value[count]:u16 BE`. Type 128 uses the same envelope and stores `value[count]:f64 BE`; every type-128 value is finite. Counts are nonzero and XMT identities are non-null. Each record ends after its declared value lane. Without the optional envelope, the count starts at offset 2 and the XMT at offset 6 for types 127 and 128. The envelope shifts both positions by one byte. The count is one four-byte integer; a zero high word does not form a separate field.
 
@@ -3118,7 +3122,7 @@ knot-type code.
 
 Parasolid type-79 attribute identifiers are `00 4f [ff], name_len:u32 BE, xmt, name[name_len]`. The name is non-empty printable ASCII. Type-79 records are independent nodes and need not be adjacent to the type-80 definition that references them.
 
-A type-80 attribute definition is `00 50 [ff], field_count:u32 BE, xmt, next_definition, identifier, type_id:u32 BE, action[8], field_names, legal_owner[field_owner_count], field_code[field_count]`. `field_owner_count` is 16 or 14. The 14-byte form is complete only when the field-code lane ends at the next tagged record; this rejects an ambiguous truncated 16-byte form. XMT and reference fields use the compact or extended XMT encoding. The definition XMT, identifier reference, and type ID are non-null. `identifier` must resolve uniquely to a type-79 record in the same stream; otherwise the definition remains untyped. `next_definition` and `field_names` may be null reference `1`. Each action code is in `0..=6`, and each legal-owner flag is binary. Each field code is in `0..=10`; zero is an ignored user-field extension, and codes 1 through 10 denote integer, real, character, point, vector, direction, axis, tag, pointer, and Unicode storage respectively. The definition identity is the type-80 XMT, not its type-79 identifier XMT. Definition order and physical adjacency do not participate in the join.
+A type-80 attribute definition is `00 50 [ff], field_count:u32 BE, xmt, next_definition, identifier, type_id:u32 BE, action[8], field_names, legal_owner[field_owner_count], field_code[field_count]`. `field_owner_count` is the extent of `legal_owners` in the stream's effective type-80 definition: 14 in base schema 13006, or 16 when an embedded schema edit declares it. Base schema 11004 has no `field_names` field. XMT and reference fields use the compact or extended XMT encoding. The definition XMT, identifier reference, and type ID are non-null. `identifier` must resolve uniquely to a type-79 record in the same stream; otherwise the definition remains untyped. `next_definition` and `field_names` may be null reference `1`. Each action code is in `0..=6`, and each legal-owner flag is binary. Each field code is in `0..=10`; zero is an ignored user-field extension, and codes 1 through 10 denote integer, real, character, point, vector, direction, axis, tag, pointer, and Unicode storage respectively. The definition identity is the type-80 XMT, not its type-79 identifier XMT. Definition order and physical adjacency do not participate in the join.
 
 A type-99 field-name list is `00 63 [ff], field_count:u32 BE, xmt, name[field_count]`. The count is nonzero, and the XMT and every name reference are non-null. A type-80 `field_names` reference resolves only when exactly one same-stream type-99 record has that XMT, its count equals the definition's field count, and every ordered name reference resolves uniquely to a same-stream type-84 character or type-98 Unicode value. The resulting names correspond positionally to the definition's field codes.
 
@@ -3127,10 +3131,14 @@ xmt, sequence:u32 BE, definition, references`. XMT fields use the
 compact or extended XMT encoding. `xmt` is non-null, `sequence` is nonzero, and
 `flags` is in `1..=0x20`. The reference count is seven for `flags = 02`, nine
 for `flags = 04`, and in general five plus `flags`. The definition reference does not
-affect framing. References are either consecutive XMT values or individually
-binary-status-prefixed XMT values followed by a binary terminal; the two forms
-are atomic. A
-topology attribute-list identity resolves only when exactly one type-81 record
+affect framing.
+
+In a terminated node sequence, type-81 references are consecutive XMT values.
+The first byte of a reference is the first byte of its XMT encoding, so an index
+cell can start with `01`. Open item PS-41 records the reference form in a stream
+without a terminated node sequence.
+
+A topology attribute-list identity resolves only when exactly one type-81 record
 in the same stream has that xmt. The head record must have the topology XMT in
 its first leading reference. Once the head is valid, every type-81 record in
 the same stream whose first leading reference is that topology XMT is owned by
@@ -3159,8 +3167,9 @@ suppression value. This Parasolid attribute class is distinct from the OM
 registry classes `UGS::OM::ObjectStateCollection` and `UGS::OM::ObjectState`.
 
 A printable type-84 value record is `00 54 [ff], length:u32 BE, xmt,
-text[length], 00`. The length is nonzero, xmt is non-null, and every text byte
-is printable ASCII. The terminator is outside the declared text length. A
+text[length]`. The length is nonzero, xmt is non-null, and every text byte
+is printable ASCII. The record ends after its final text byte; the zero byte
+that follows it is the first byte of the next node type. A
 type-81 reference slot addresses the value only when exactly one type-84 record
 in the same stream has the referenced xmt; reference order is retained.
 
