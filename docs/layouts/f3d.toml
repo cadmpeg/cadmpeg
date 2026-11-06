@@ -18706,6 +18706,174 @@ size = 2
 note = "Two zero bytes close the frame."
 
 [[record]]
+name = "local_component_occurrence_leading_flag_prefix"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/components.rs"
+kind = "byte"
+section = "3.1"
+anchor = "A leading-flag local component occurrence stores its identity flag before its GUIDs"
+size = 51
+note = "Offsets are relative to the carrier's indexed header. A matrix frame stores the matrix at offset 51; the body follows the flag or the matrix."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "Indexed header."
+
+[[record.field]]
+name = "empty_instance_name"
+offset = 11
+type = "bytes[8]"
+source = "spec"
+anchor = "the frame stores u32 `0`, an empty LP-ASCII instance name"
+
+[[record.field]]
+name = "path_marker"
+offset = 19
+type = "u8"
+source = "spec"
+anchor = "`u8 1` at offset 19"
+value = 1
+
+[[record.field]]
+name = "path_count"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "u32 path count `1` at offset 20"
+value = 1
+
+[[record.field]]
+name = "component_reference"
+offset = 24
+type = "bytes[9]"
+source = "spec"
+anchor = "the marked u64 component-record reference at offset 24"
+
+[[record.gap]]
+offset = 33
+size = 2
+note = "Two zero bytes after the component reference."
+
+[[record.field]]
+name = "path_discriminator"
+offset = 35
+type = "u32"
+source = "spec"
+anchor = "the u32 path discriminator at offset 35"
+
+[[record.field]]
+name = "attributes_marker"
+offset = 39
+type = "u8"
+source = "spec"
+anchor = "`u8 1` at offset 39 and u32 count `0` at offset 40"
+value = 1
+
+[[record.field]]
+name = "attribute_count"
+offset = 40
+type = "u32"
+source = "spec"
+anchor = "`u8 1` at offset 39 and u32 count `0` at offset 40"
+value = 0
+
+[[record.field]]
+name = "ordinal_prefix"
+offset = 44
+type = "u16"
+source = "spec"
+anchor = "The u16 ordinal prefix is at offset 44"
+
+[[record.field]]
+name = "occurrence_ordinal"
+offset = 46
+type = "u32"
+source = "spec"
+anchor = "the u32 one-based occurrence ordinal is at offset 46"
+
+[[record.field]]
+name = "identity_flag"
+offset = 50
+type = "u8"
+source = "spec"
+anchor = "the identity flag is at offset 50"
+
+[[record]]
+name = "local_component_occurrence_leading_flag_body"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/components.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The body follows the flag or the matrix"
+size = 180
+note = "Offsets are relative to the end of the 51-byte prefix or of the first matrix. A matrix frame repeats the matrix after the body; the 20-byte identity tail closes the frame."
+
+[[record.field]]
+name = "carrier_guid"
+offset = 0
+type = "bytes[76]"
+source = "spec"
+anchor = "the LP-UTF16 carrier GUID"
+
+[[record.field]]
+name = "occurrence_guid"
+offset = 76
+type = "bytes[76]"
+source = "spec"
+anchor = "the LP-UTF16 occurrence GUID"
+
+[[record.field]]
+name = "record_reference"
+offset = 152
+type = "bytes[9]"
+source = "spec"
+anchor = "a marked same-segment record reference"
+
+[[record.gap]]
+offset = 161
+size = 1
+note = "Zero byte."
+
+[[record.field]]
+name = "path_marker"
+offset = 162
+type = "u8"
+source = "spec"
+anchor = "one zero byte, `u8 1`, u32 path count `1`"
+value = 1
+
+[[record.field]]
+name = "path_count"
+offset = 163
+type = "u32"
+source = "spec"
+anchor = "one zero byte, `u8 1`, u32 path count `1`"
+value = 1
+
+[[record.gap]]
+offset = 167
+size = 1
+note = "Zero byte."
+
+[[record.field]]
+name = "component_reference_repeat"
+offset = 168
+type = "bytes[9]"
+source = "spec"
+anchor = "the repeated marked component-record reference"
+
+[[record.gap]]
+offset = 177
+size = 2
+note = "Two zero bytes."
+
+[[record.field]]
+name = "identity_flag_repeat"
+offset = 179
+type = "u8"
+source = "spec"
+anchor = "a copy of the identity flag"
+
+[[record]]
 name = "root_instance_prefix"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/components.rs"
 kind = "byte"
@@ -29008,6 +29176,60 @@ offset = 20
 type = "u8"
 source = "spec"
 anchor = "an expansion byte `E`"
+
+[[record]]
+name = "assembly_version_four_prologue"
+kind = "byte"
+section = "Assembly operands"
+anchor = "Version 4 uses the version-5 extensions with these differences."
+size = 32
+note = "Offsets are relative to the primary indexed scope header of a compact version-4 Assemble scope. The first connector reference follows the prologue."
+
+[[record.field]]
+name = "header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Version 4 uses the version-5 extensions with these differences."
+
+[[record.field]]
+name = "zero_run"
+offset = 11
+type = "bytes[9]"
+value = [0, 0, 0, 0, 0, 0, 0, 0, 0]
+source = "spec"
+anchor = "Version 4 uses the version-5 extensions with these differences."
+
+[[record.field]]
+name = "expanded"
+offset = 20
+type = "u8"
+value = 0
+source = "spec"
+anchor = "Version 4 uses the version-5 extensions with these differences."
+
+[[record.field]]
+name = "facing"
+offset = 21
+type = "u8"
+source = "spec"
+anchor = "follow the facing byte's two zero bytes"
+
+[[record.field]]
+name = "facing_zeros"
+offset = 22
+type = "bytes[2]"
+value = [0, 0]
+source = "spec"
+anchor = "follow the facing byte's two zero bytes"
+
+[[record.field]]
+name = "prologue_zeros"
+offset = 24
+type = "bytes[8]"
+value = [0, 0, 0, 0, 0, 0, 0, 0]
+source = "spec"
+anchor = "follow the facing byte's two zero bytes"
 
 [[record]]
 name = "assembly_version_five_scope"

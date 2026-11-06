@@ -1265,7 +1265,7 @@ when the operation transition carries no candidate for the group members?
 
 **Question.** What do the eight-byte word between the two identity-GUID pairs and the eight-byte tail after the final u32 `2` mean in a positive-count typed occurrence path, and how do they affect binding?
 
-**Known.** The admitted identity suffix in `f3d.md` §3.1 "A class-329 path begins with its indexed header" stores eight-byte value `2` between the two GUID pairs and an eight-byte zero tail. Twenty-six live version-4 paths of type `96CBEA21-17E0-4BCB-BA77-04EA87B47934`, in four documents, store `0x0000000100000002` and `1` at those positions. Each path has one occurrence key and four identity GUIDs. Each 425-byte path is bounded by its indexed wrapper. The paths belong to thirteen 806-byte Assemble scopes. The primary record index fixes their live offsets. Their scopes retain explicit connector matrices and the `assembly.joint-unprojected` loss.
+**Known.** The admitted identity suffix in `f3d.md` §3.1 "A class-329 path begins with its indexed header" stores eight-byte value `2` between the two GUID pairs and an eight-byte zero tail. Twenty-six live version-4 paths of type `96CBEA21-17E0-4BCB-BA77-04EA87B47934`, in four documents, store `0x0000000100000002` and `1` at those positions. Each path has one or two occurrence keys and four identity GUIDs. Each 425-byte path is bounded by its indexed wrapper. The paths belong to thirteen 806-byte Assemble scopes. The primary record index fixes their live offsets. Their scopes retain explicit connector matrices and the `assembly.joint-unprojected` loss. On all thirteen scopes the occurrence keys resolve, and the connector frames at the current occurrence poses, with the identity for an occurrence that stores no pose, satisfy the joint relation in "Assembly operands" in rotation and translation. These scopes do not separate the two word pairs, because no such scope stores `(2, 0)`.
 
 **Need.** Make controlled saves of one joint between two fixed component occurrences. Give each occurrence an identity-transform child with a coincident connector. In separate saves, change the first operand from its root connector to its child connector, then change the second operand in the same way. Hold both connector matrices fixed. In further independent saves, update only the first component revision, only the second component revision, and only the joint suppression state. Create two component configuration rows with equal geometry and equal connector matrices; switch each operand between those rows independently. Compare both identity words and all five GUID fields with the baseline. Obtain both word pairs `(2, 0)` and `(0x0000000100000002, 1)`. Establish which controlled changes affect each word and whether the words can vary independently before projection.
 
@@ -1284,6 +1284,18 @@ when the operation transition carries no candidate for the group members?
 **Conflict.** The specification gives mapping mode `0x60` and a whole-body recipe member. This scope stores mode `0` and a face-recipe entity selection.
 
 **Note.** None.
+
+### DR-256. Ordinal prefix of a leading-flag local component occurrence
+
+**Question.** What does the u16 ordinal prefix at offset 44 of a leading-flag local component occurrence state?
+
+**Known.** The prefix is `1` for the first new component of a Design and for a pasted second instance of that component, and `0` for a later new component. Its value is independent of the occurrence's grounded, light-bulb, visibility, active, and isolated states. The attributed frame stores two bytes at the same position before its ordinal.
+
+**Need.** A Fusion control that changes the prefix of one occurrence with all other carrier fields equal.
+
+**Conflict.** None.
+
+**Note.** The decoder keeps the prefix in the native occurrence frame.
 
 ### DR-259. Marker-one Revolve frames of other lengths
 

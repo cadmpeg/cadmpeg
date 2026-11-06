@@ -9,12 +9,11 @@ use cadmpeg_ir::geometry::{
     nurbs::{NurbsCurve, NurbsPoleGrid, NurbsPoles3, NurbsSurface},
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
 };
-use cadmpeg_ir::math::{Point2, Point3};
 use cadmpeg_ir::report::loss::LossNote;
 
 use cadmpeg_core::decode::{index_from_u32, View};
 
-use super::{CurveCarrier, SurfaceCarrier, LEN_TO_MM};
+use super::{CurveCarrier, SurfaceCarrier};
 
 use crate::layout::bspline_array_header as arr_hdr;
 use crate::layout::bspline_compact_array_header as compact_arr;
@@ -49,6 +48,8 @@ struct CurveDescriptor {
     periodic: bool,
     control_count: usize,
     dimension: usize,
+    /// The declared distinct-knot count.
+    knot_count: usize,
     /// The descriptor's `rational` logical, which tells a rational
     /// two-dimensional curve (`dimension` 3: `u·w v·w w`) from a polynomial
     /// model-space one with the same `dimension`.
@@ -270,6 +271,20 @@ fn wrapper_fields(bytes: &[u8], p: usize) -> Option<(u32, u32, usize)> {
     Some((attr, descriptor, at))
 }
 
+/// Whether the `sense` of the wrapper at `p` reverses the surface normal.
+fn wrapper_reversed(bytes: &[u8], p: usize) -> Option<bool> {
+    let mut at = p;
+    cadmpeg_parasolid::pointer::read_at(bytes, &mut at)?;
+    View::u32_be_at(bytes, at)?;
+    at += 4;
+    super::native_refs::<5>(bytes, &mut at)?;
+    match bytes.get(at) {
+        Some(0x2b) => Some(false),
+        Some(0x2d) => Some(true),
+        _ => None,
+    }
+}
+
 fn wrapper_start<T>(
     bytes: &[u8],
     off: usize,
@@ -457,6 +472,7 @@ fn parse_curve_descriptor(bytes: &[u8], p: usize) -> Option<(u32, CurveDescripto
     let control_count =
         View::u32_be_at(bytes, p + curve_desc::CONTROL_COUNT).map(index_from_u32)?;
     let dimension = View::u16_be_at(bytes, p + curve_desc::DIMENSION).map(usize::from)?;
+    let knot_count = View::u32_be_at(bytes, p + curve_desc::KNOT_COUNT).map(index_from_u32)?;
     let ([control_attr, multiplicity_attr, knot_attr], at) = descriptor_refs(
         bytes,
         p,
@@ -474,6 +490,7 @@ fn parse_curve_descriptor(bytes: &[u8], p: usize) -> Option<(u32, CurveDescripto
             periodic: logical_byte(bytes, p + curve_desc::PERIODIC)?,
             control_count,
             dimension,
+            knot_count,
             rational: logical_byte(bytes, p + curve_desc::RATIONAL)?,
             control_attr,
             multiplicity_attr,
@@ -544,33 +561,6 @@ fn tripled_b_curve_nurbs(bytes: &[u8], attr_at: usize) -> Option<(u32, usize)> {
     Some((u32::from(nurbs), nurbs_at.checked_add(2)?))
 }
 
-/// Expand a compressed knot vector by its per-value multiplicities, refusing
-/// the expansion when the running length exceeds `expected`.
-///
-/// A NURBS knot vector must have exactly `control_count + degree + 1` entries,
-/// so `expected` is a hard upper bound. Checking the multiplicities against it
-/// incrementally stops an untrusted `u16` multiplicity array (each entry up to
-/// `65535`, over a million-entry table) from growing a multi-hundred-gigabyte
-/// `Vec` before the post-hoc length check would discard it. Returns `None` the
-/// moment the accumulated length would exceed `expected`.
-fn expanded_knots(values: &[f64], multiplicities: &[u16], expected: usize) -> Option<Vec<f64>> {
-    let mut out = Vec::new();
-    for (value, &multiplicity) in values.iter().zip(multiplicities) {
-        if multiplicity == 0 {
-            continue;
-        }
-        if out
-            .len()
-            .checked_add(usize::from(multiplicity))
-            .is_none_or(|next_len| next_len > expected)
-        {
-            return None;
-        }
-        out.extend(std::iter::repeat_n(*value, usize::from(multiplicity)));
-    }
-    Some(out)
-}
-
 fn unique_knots(knots: &[f64]) -> (Vec<f64>, Vec<usize>) {
     let mut values = Vec::new();
     let mut multiplicities = Vec::<usize>::new();
@@ -585,12 +575,6 @@ fn unique_knots(knots: &[f64]) -> (Vec<f64>, Vec<usize>) {
         }
     }
     (values, multiplicities)
-}
-
-fn multiplicity_sum(values: &[u16]) -> Option<usize> {
-    values
-        .iter()
-        .try_fold(0usize, |sum, &value| sum.checked_add(usize::from(value)))
 }
 
 fn array_span(bytes: &[u8], tag: u8, attr: u32) -> Option<(usize, usize)> {
@@ -1009,6 +993,26 @@ pub(crate) fn scan_curve_carriers(
     out
 }
 
+/// The curve fields of `descriptor` over the arrays it names.
+fn curve_fields<'a>(
+    arrays: &'a Arrays,
+    descriptor: &CurveDescriptor,
+) -> Option<cadmpeg_parasolid::geometry::nurbs::CurveFields<'a>> {
+    Some(cadmpeg_parasolid::geometry::nurbs::CurveFields {
+        degree: descriptor.degree,
+        vertex_count: descriptor.control_count,
+        vertex_dim: descriptor.dimension,
+        rational: descriptor.rational,
+        periodic: descriptor.periodic,
+        vertices: arrays.f64s.get(&descriptor.control_attr)?,
+        knots: cadmpeg_parasolid::geometry::nurbs::Knots {
+            count: descriptor.knot_count,
+            multiplicities: arrays.u16s.get(&descriptor.multiplicity_attr)?,
+            values: arrays.f64s.get(&descriptor.knot_attr)?,
+        },
+    })
+}
+
 /// The NURBS curve carrier of `B_CURVE` `attr` at `off` from `descriptor` and
 /// the arrays it names. A lane refusal is recorded in `refusals`.
 fn assemble_curve(
@@ -1018,62 +1022,15 @@ fn assemble_curve(
     descriptor: &CurveDescriptor,
     refusals: &mut Vec<LossNote>,
 ) -> Option<CurveCarrier> {
-    let control = arrays.f64s.get(&descriptor.control_attr)?;
-    let multiplicities = arrays.u16s.get(&descriptor.multiplicity_attr)?;
-    let unique_knots = arrays.f64s.get(&descriptor.knot_attr)?;
-    let expected_control_values = descriptor.control_count.checked_mul(descriptor.dimension)?;
-    if control.len() != expected_control_values {
-        return None;
-    }
-    if !unique_knots.iter().all(|value| value.is_finite()) || !unique_knots.is_sorted() {
-        return None;
-    }
-    let mut points = Vec::new();
-    let mut weights = (descriptor.dimension == 4).then(Vec::new);
-    for pole in control.chunks_exact(descriptor.dimension) {
-        if pole.iter().any(|value| !value.is_finite()) {
-            points.clear();
-            break;
-        }
-        let weight = if descriptor.dimension == 4 {
-            pole[3]
-        } else {
-            1.0
-        };
-        if !weight.is_finite() || weight.abs() <= f64::EPSILON {
-            points.clear();
-            break;
-        }
-        points.push(Point3::new(
-            pole[0] / weight * LEN_TO_MM,
-            pole[1] / weight * LEN_TO_MM,
-            pole[2] / weight * LEN_TO_MM,
-        ));
-        if let Some(values) = &mut weights {
-            values.push(weight);
-        }
-    }
-    if points.len() != descriptor.control_count {
-        return None;
-    }
-    let expected = points.len() + index_from_u32(descriptor.degree) + 1;
-    let knots = expanded_knots(unique_knots, multiplicities, expected)?;
-    if knots.len() != expected {
-        return None;
-    }
-    let nurbs = match cadmpeg_ir::geometry::nurbs::NurbsCurve::from_lanes(
-        descriptor.degree,
-        knots,
-        points,
-        weights,
-        false,
-    ) {
-        Ok(nurbs) => nurbs,
-        Err(error) => {
-            let note = crate::loss::spline_lane_refusal(format_args!(
-                "curve carrier attribute {attr}: {error}"
+    use cadmpeg_parasolid::geometry::nurbs::{b_curve, BCurve};
+    let nurbs = match b_curve(&curve_fields(arrays, descriptor)?) {
+        Ok(BCurve::Spatial(nurbs)) => nurbs,
+        Ok(BCurve::Planar(_)) => return None,
+        Err(refusal) => {
+            refusals.push(crate::loss::spline_refusal(
+                format_args!("curve carrier attribute {attr}"),
+                &refusal,
             ));
-            refusals.push(note);
             return None;
         }
     };
@@ -1088,8 +1045,11 @@ fn assemble_curve(
 }
 
 /// Two-dimensional `00 86` B-curves by `attr`, in stored support parameters
-/// (spec §7.6).
-pub(super) fn scan_pcurve_carriers(bytes: &[u8]) -> HashMap<u32, PcurveNurbs> {
+/// (spec §7.6). A refused carrier is recorded in `refusals`.
+pub(super) fn scan_pcurve_carriers(
+    bytes: &[u8],
+    refusals: &mut Vec<LossNote>,
+) -> HashMap<u32, PcurveNurbs> {
     let mut out = HashMap::new();
     let descriptors = scan_curve_descriptors(bytes, CurveDescriptor::planar);
     if descriptors.is_empty() {
@@ -1119,54 +1079,33 @@ pub(super) fn scan_pcurve_carriers(bytes: &[u8]) -> HashMap<u32, PcurveNurbs> {
         let Some(descriptor) = curve_descriptor(bytes, p, &descriptors) else {
             continue;
         };
-        if let Some(nurbs) = assemble_pcurve(&arrays, descriptor) {
+        if let Some(nurbs) = assemble_pcurve(&arrays, attr, descriptor, refusals) {
             out.entry(attr).or_insert(nurbs);
         }
     }
     out
 }
 
-/// The parameter-space NURBS of a planar `descriptor` from its arrays.
-fn assemble_pcurve(arrays: &Arrays, descriptor: &CurveDescriptor) -> Option<PcurveNurbs> {
-    let (Some(control), Some(multiplicities), Some(unique_knots)) = (
-        arrays.f64s.get(&descriptor.control_attr),
-        arrays.u16s.get(&descriptor.multiplicity_attr),
-        arrays.f64s.get(&descriptor.knot_attr),
-    ) else {
-        return None;
-    };
-    if Some(control.len()) != descriptor.control_count.checked_mul(descriptor.dimension)
-        || !unique_knots.iter().all(|value| value.is_finite())
-        || !unique_knots.is_sorted()
-    {
-        return None;
-    }
-    let mut points = Vec::new();
-    let mut weights = descriptor.rational.then(Vec::new);
-    for pole in control.chunks_exact(descriptor.dimension) {
-        let weight = if descriptor.rational { pole[2] } else { 1.0 };
-        if pole.iter().any(|value| !value.is_finite()) || weight.abs() <= f64::EPSILON {
-            break;
-        }
-        points.push(Point2::new(pole[0] / weight, pole[1] / weight));
-        if let Some(values) = &mut weights {
-            values.push(weight);
+/// The parameter-space NURBS of the planar `descriptor` of `B_CURVE` `attr`
+/// from its arrays. A refusal is recorded in `refusals`.
+fn assemble_pcurve(
+    arrays: &Arrays,
+    attr: u32,
+    descriptor: &CurveDescriptor,
+    refusals: &mut Vec<LossNote>,
+) -> Option<PcurveNurbs> {
+    use cadmpeg_parasolid::geometry::nurbs::{b_curve, BCurve};
+    match b_curve(&curve_fields(arrays, descriptor)?) {
+        Ok(BCurve::Planar(nurbs)) => Some(nurbs),
+        Ok(BCurve::Spatial(_)) => None,
+        Err(refusal) => {
+            refusals.push(crate::loss::spline_refusal(
+                format_args!("pcurve carrier attribute {attr}"),
+                &refusal,
+            ));
+            None
         }
     }
-    if points.len() != descriptor.control_count {
-        return None;
-    }
-    let expected = points.len() + index_from_u32(descriptor.degree) + 1;
-    let knots = expanded_knots(unique_knots, multiplicities, expected)
-        .filter(|knots| knots.len() == expected)?;
-    PcurveNurbs::from_lanes(
-        descriptor.degree,
-        knots,
-        points,
-        weights,
-        descriptor.periodic,
-    )
-    .ok()
 }
 
 fn scan_surface_descriptors(bytes: &[u8]) -> HashMap<u32, SurfaceDescriptor> {
@@ -1303,7 +1242,16 @@ pub(crate) fn scan_surface_carriers(
         let Some(descriptor) = descriptors.get(&descriptor_attr) else {
             continue;
         };
-        if let Some(carrier) = assemble_surface(bytes, &arrays, attr, off, descriptor, refusals) {
+        let normal_reversed = wrapper_reversed(bytes, p) == Some(true);
+        if let Some(carrier) = assemble_surface(
+            bytes,
+            &arrays,
+            attr,
+            off,
+            descriptor,
+            normal_reversed,
+            refusals,
+        ) {
             out.entry(attr).or_insert(carrier);
         }
     }
@@ -1318,6 +1266,7 @@ fn assemble_surface(
     attr: u32,
     off: usize,
     descriptor: &SurfaceDescriptor,
+    normal_reversed: bool,
     refusals: &mut Vec<LossNote>,
 ) -> Option<SurfaceCarrier> {
     let expected_poles = descriptor.u_count.checked_mul(descriptor.v_count)?;
@@ -1343,97 +1292,33 @@ fn assemble_surface(
         descriptor.refs[2],
         descriptor.v_knot_count,
     )?;
-    if control.len() != expected_control_values {
-        return None;
-    }
-    let u_expected = descriptor
-        .u_count
-        .checked_add(index_from_u32(descriptor.u_degree))
-        .and_then(|value| value.checked_add(1))?;
-    let v_expected = descriptor
-        .v_count
-        .checked_add(index_from_u32(descriptor.v_degree))
-        .and_then(|value| value.checked_add(1))?;
-    let u_multiplicity_sum = multiplicity_sum(&u_mult)?;
-    let v_multiplicity_sum = multiplicity_sum(&v_mult)?;
-    if u_multiplicity_sum != u_expected || v_multiplicity_sum != v_expected {
-        return None;
-    }
-    if !u_unique.iter().all(|value| value.is_finite())
-        || !v_unique.iter().all(|value| value.is_finite())
-        || !u_unique.is_sorted()
-        || !v_unique.is_sorted()
-    {
-        return None;
-    }
-    let mut points = Vec::new();
-    let dimension = if descriptor.rational {
-        descriptor.dimension
-    } else {
-        3
+    let fields = cadmpeg_parasolid::geometry::nurbs::SurfaceFields {
+        degrees: [descriptor.u_degree, descriptor.v_degree],
+        vertex_counts: [descriptor.u_count, descriptor.v_count],
+        vertex_dim: descriptor.dimension,
+        rational: descriptor.rational,
+        periodic: [descriptor.u_periodic, descriptor.v_periodic],
+        vertices: &control,
+        knots: [
+            cadmpeg_parasolid::geometry::nurbs::Knots {
+                count: descriptor.u_knot_count,
+                multiplicities: &u_mult,
+                values: &u_unique,
+            },
+            cadmpeg_parasolid::geometry::nurbs::Knots {
+                count: descriptor.v_knot_count,
+                multiplicities: &v_mult,
+                values: &v_unique,
+            },
+        ],
     };
-    let mut weights = descriptor.rational.then(Vec::new);
-    for pole in control.chunks_exact(dimension) {
-        if pole.iter().any(|value| !value.is_finite()) {
-            points.clear();
-            break;
-        }
-        let weight = if descriptor.rational { pole[3] } else { 1.0 };
-        if !weight.is_finite() || weight.abs() <= f64::EPSILON {
-            points.clear();
-            break;
-        }
-        points.push(Point3::new(
-            pole[0] / weight * LEN_TO_MM,
-            pole[1] / weight * LEN_TO_MM,
-            pole[2] / weight * LEN_TO_MM,
-        ));
-        if let Some(values) = &mut weights {
-            values.push(weight);
-        }
-    }
-    if points.len() != expected_poles {
-        return None;
-    }
-    let (Some(u_knots), Some(v_knots)) = (
-        expanded_knots(&u_unique, &u_mult, u_expected),
-        expanded_knots(&v_unique, &v_mult, v_expected),
-    ) else {
-        return None;
-    };
-    if u_knots.len() != u_expected || v_knots.len() != v_expected {
-        return None;
-    }
-    let pole_rows = points
-        .chunks(descriptor.v_count)
-        .map(<[_]>::to_vec)
-        .collect::<Vec<_>>();
-    let weight_rows = weights.map(|values| {
-        values
-            .chunks(descriptor.v_count)
-            .map(<[_]>::to_vec)
-            .collect::<Vec<_>>()
-    });
-    let nurbs = match cadmpeg_ir::geometry::nurbs::NurbsSurface::from_lanes(
-        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
-            descriptor.u_degree,
-            u_knots,
-            descriptor.u_periodic,
-        ),
-        cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
-            descriptor.v_degree,
-            v_knots,
-            descriptor.v_periodic,
-        ),
-        cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(pole_rows, weight_rows),
-        false,
-    ) {
+    let nurbs = match cadmpeg_parasolid::geometry::nurbs::b_surface(&fields, normal_reversed) {
         Ok(nurbs) => nurbs,
-        Err(error) => {
-            let note = crate::loss::spline_lane_refusal(format_args!(
-                "surface carrier attribute {attr}: {error}"
+        Err(refusal) => {
+            refusals.push(crate::loss::spline_refusal(
+                format_args!("surface carrier attribute {attr}"),
+                &refusal,
             ));
-            refusals.push(note);
             return None;
         }
     };
@@ -1970,7 +1855,7 @@ pub(super) mod nodes;
 #[cfg(test)]
 mod tests {
     use super::{
-        curve_descriptor, curve_descriptor_link, expanded_knots, scan_arrays, scan_curve_carriers,
+        curve_descriptor, curve_descriptor_link, scan_arrays, scan_curve_carriers,
         scan_curve_descriptors, scan_surface_carriers, surface_knot_values, unique_knots,
         unique_surface_knot_span, Arrays, CurveDescriptor,
     };
@@ -2167,14 +2052,6 @@ mod tests {
     }
 
     #[test]
-    fn parasolid_knot_expansion_repeats_each_value_by_its_multiplicity() {
-        assert_eq!(
-            expanded_knots(&[0.0, 1.0], &[2, 2], 4),
-            Some(vec![0.0, 0.0, 1.0, 1.0])
-        );
-    }
-
-    #[test]
     fn parasolid_curve_carrier_decodes() {
         let bytes = crate::test_support::parasolid::nurbs_curve_carrier(170, 171);
         assert!(scan_curve_carriers(&bytes, &mut Vec::new()).contains_key(&170));
@@ -2184,6 +2061,47 @@ mod tests {
     fn parasolid_surface_carrier_decodes() {
         let bytes = crate::test_support::parasolid::nurbs_surface_carrier(180, 181, 10);
         assert!(scan_surface_carriers(&bytes, &mut Vec::new()).contains_key(&180));
+    }
+
+    #[test]
+    fn a_negative_b_surface_sense_reverses_the_nurbs_normal() {
+        let normal_reversed = |sense: u8| {
+            let mut bytes = crate::test_support::parasolid::nurbs_surface_carrier(180, 181, 10);
+            assert_eq!(bytes[18], b'+');
+            bytes[18] = sense;
+            let carriers = scan_surface_carriers(&bytes, &mut Vec::new());
+            let cadmpeg_ir::geometry::SurfaceGeometry::Solved(
+                cadmpeg_ir::geometry::SolvedSurfaceGeometry::Nurbs(nurbs),
+            ) = &carriers[&180].geometry
+            else {
+                panic!("expected NURBS surface carrier");
+            };
+            nurbs.normal_reversed()
+        };
+        assert!(!normal_reversed(b'+'));
+        assert!(normal_reversed(b'-'));
+    }
+
+    #[test]
+    fn a_surface_with_a_negative_weight_is_omitted_with_one_loss() {
+        let mut bytes =
+            crate::test_support::parasolid::rational_nurbs_surface_carrier(180, 181, 10);
+        let mut refusals = Vec::new();
+        assert!(scan_surface_carriers(&bytes, &mut refusals).contains_key(&180));
+        assert!(refusals.is_empty());
+        let control = bytes
+            .windows(3)
+            .position(|window| window == [0x00, 0x2d, 0x2b])
+            .unwrap();
+        let weight = control + 9 + 7 * 8;
+        assert_eq!(bytes[weight..weight + 8], 0.5_f64.to_be_bytes());
+        bytes[weight..weight + 8].copy_from_slice(&(-0.5_f64).to_be_bytes());
+        assert!(scan_surface_carriers(&bytes, &mut refusals).is_empty());
+        assert_eq!(refusals.len(), 1);
+        assert_eq!(
+            refusals[0].code,
+            crate::loss::SldprtLossCode::GeometrySplineWeightNonpositive.kind()
+        );
     }
 
     #[test]
