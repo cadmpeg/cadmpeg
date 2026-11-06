@@ -207,6 +207,59 @@ fn drawing_sheet_retains_its_revision_and_item() {
 }
 
 #[test]
+fn presentation_view_retains_its_item() {
+    use cadmpeg_ir::drawings::{Drawing, DrawingId, DrawingKind};
+    use cadmpeg_ir::references::{ReferenceSelection, ReferenceTarget};
+
+    let mut source = unit_cube().expect("cube");
+    let point = source.model.points[0].id.as_str().to_owned();
+    let mut view = Drawing::new(
+        DrawingId::mint("step:test:drawing#view").expect("identity"),
+        "step:test:drawing#view".to_owned(),
+        DrawingKind::View,
+        "PRESENTATION_VIEW".to_owned(),
+        0,
+        None,
+    );
+    view.parameters
+        .insert(cadmpeg_core::nonblank_literal!("name"), "Front".to_owned());
+    view.relationships.insert(
+        cadmpeg_core::nonblank_literal!("items"),
+        vec![ReferenceSelection::new(
+            ReferenceTarget::Local(point),
+            Vec::new(),
+        )],
+    );
+    source.model.drawings.push(view);
+    source.finalize();
+    let plan = StepCodec::default()
+        .plan(EncodeInput::new(&source, None), TargetRequest::Inherit)
+        .expect("presentation view can be written");
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("write STEP");
+    let decoded = StepCodec::default()
+        .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode presentation view");
+    let view = decoded
+        .ir()
+        .model
+        .drawings
+        .iter()
+        .find(|drawing| drawing.kind == DrawingKind::View)
+        .expect("view survives");
+    assert_eq!(view.parameters["name"], "Front");
+    let target = view.relationships["items"][0]
+        .local_target()
+        .expect("view item");
+    assert!(decoded
+        .ir()
+        .model
+        .points
+        .iter()
+        .any(|point| point.id.as_str() == target));
+}
+
+#[test]
 fn complete_geometry_retains_written_coverage() {
     let ir = unit_cube().expect("unit cube fixture is admitted");
     let plan = StepCodec::default()
