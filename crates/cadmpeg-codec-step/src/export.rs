@@ -2550,6 +2550,14 @@ impl<'a> Builder<'a> {
                 continue;
             }
             let item = match &attribute.target {
+                AttributeTarget::Body(id) => {
+                    self.body_step_item_refs.get(id.as_str()).and_then(|items| {
+                        match items.as_slice() {
+                            [item] => Some(*item),
+                            _ => None,
+                        }
+                    })
+                }
                 AttributeTarget::Face(id) => self.face_step_refs.get(id.as_str()).copied(),
                 AttributeTarget::Edge(id) if !self.split_edges.contains(id.as_str()) => {
                     self.edge_refs.get(id.as_str()).copied()
@@ -2563,6 +2571,14 @@ impl<'a> Builder<'a> {
                 AttributeTarget::Point(id) => self.point_refs.get(id.as_str()).copied(),
                 AttributeTarget::Tessellation(id) => self.tessellation_step_refs.get(id).copied(),
                 AttributeTarget::Record { arena, id } => match arena.as_str() {
+                    "bodies" => {
+                        self.body_step_item_refs
+                            .get(id)
+                            .and_then(|items| match items.as_slice() {
+                                [item] => Some(*item),
+                                _ => None,
+                            })
+                    }
                     "faces" => self.face_step_refs.get(id).copied(),
                     "edges" if !self.split_edges.contains(id.as_str()) => {
                         self.edge_refs.get(id).copied()
