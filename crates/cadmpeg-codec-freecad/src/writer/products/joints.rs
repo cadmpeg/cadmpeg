@@ -36,36 +36,23 @@ fn reference(
     operand: &JointOperand,
     names: &HashMap<String, String>,
     losses: &mut Vec<LossNote>,
-) -> Result<String, CodecError> {
+) -> Option<String> {
     let (object, file) = match &operand.container {
         OperandContainer::External { external_document } => {
             (operand.object.clone(), external(external_document, losses))
         }
         OperandContainer::Root {} => (
-            names
-                .get(&operand.object)
-                .cloned()
-                .or_else(|| {
-                    names
-                        .values()
-                        .find(|name| **name == operand.object)
-                        .cloned()
-                })
-                .ok_or_else(|| {
-                    CodecError::malformed(format_args!(
-                        "joint operand {} has no output object",
-                        operand.object
-                    ))
-                })?,
+            names.get(&operand.object).cloned().or_else(|| {
+                names
+                    .values()
+                    .find(|name| **name == operand.object)
+                    .cloned()
+            })?,
             String::new(),
         ),
-        OperandContainer::Occurrence { occurrence, .. } => (
-            names
-                .get(occurrence.as_str())
-                .cloned()
-                .ok_or_else(|| CodecError::malformed("joint operand occurrence is absent"))?,
-            String::new(),
-        ),
+        OperandContainer::Occurrence { occurrence, .. } => {
+            (names.get(occurrence.as_str()).cloned()?, String::new())
+        }
     };
     let nested_subelements;
     let subelements = if let OperandContainer::Occurrence {
@@ -93,7 +80,7 @@ fn reference(
     } else {
         &operand.subelements
     };
-    Ok(xlink(&object, &file, subelements))
+    Some(xlink(&object, &file, subelements))
 }
 
 fn scalar(object: &mut Object, name: &str, value: Option<FiniteReal>, angular: bool) {
@@ -310,7 +297,6 @@ pub(super) fn write(
                 connector,
                 offset_frame,
             } => {
-                let target = reference(&connector.operand, names, losses)?;
                 // Grounded links have no subelement carrier in FreeCAD.
                 if !connector.operand.subelements.is_empty()
                     || matches!(&connector.operand.container, OperandContainer::Occurrence {
@@ -344,14 +330,13 @@ pub(super) fn write(
                         ),
                     );
                 } else {
-                    losses.push(
-                        FreecadLossCode::ExportFeatureNotTransferred
-                            .note(format!("external grounded joint {} is omitted", joint.id)),
-                    );
+                    losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
+                        "grounded joint {} has no available target and is omitted",
+                        joint.id
+                    )));
                     object.properties.shift_remove("ObjectToGround");
                     continue;
                 }
-                drop(target);
                 let placement = if let Some(offset) = offset_frame {
                     losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
                         "grounded joint {} attachment offset is composed into its frame",
@@ -383,14 +368,17 @@ pub(super) fn write(
                 for (index, connector) in connectors.iter().enumerate() {
                     let suffix = index + 1;
                     let key = format!("Reference{suffix}");
-                    object.set(
-                        &key,
-                        xml::property(
+                    if let Some(reference) = reference(&connector.operand, names, losses) {
+                        object.set(
                             &key,
-                            "App::PropertyXLinkSub",
-                            &reference(&connector.operand, names, losses)?,
-                        ),
-                    );
+                            xml::property(&key, "App::PropertyXLinkSub", &reference),
+                        );
+                    } else {
+                        losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
+                            "joint {} reference {suffix} has no available target {} and is omitted",
+                            joint.id, connector.operand.object
+                        )));
+                    }
                     frame(
                         object,
                         &format!("Placement{suffix}"),
