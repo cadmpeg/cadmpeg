@@ -118,15 +118,36 @@ fn authored_gui_appearance_keeps_fused_measures_and_topology_styles() {
             .collect::<BTreeSet<_>>(),
         expected_face_targets
     );
-    let mut remaining_colors = expected_face_colors.to_vec();
-    for binding in face_bindings {
-        let appearance = appearance(&binding.appearance);
-        let color = appearance.base_color.expect("face material color");
-        let index = remaining_colors
+    let [region_id] = model.bodies[0].regions.as_slice() else {
+        panic!("one authored solid region");
+    };
+    let region = model
+        .regions
+        .iter()
+        .find(|region| &region.id == region_id)
+        .expect("authored body region");
+    let [shell_id] = region.shells.as_slice() else {
+        panic!("one authored exterior shell");
+    };
+    let shell = model
+        .shells
+        .iter()
+        .find(|shell| &shell.id == shell_id)
+        .expect("authored body shell");
+    assert_eq!(shell.faces().len(), expected_face_colors.len());
+    for (face_index, face_id) in shell.faces().iter().enumerate() {
+        let target = AppearanceTarget::Face(face_id.clone());
+        let binding = face_bindings
             .iter()
-            .position(|expected| *expected == color)
-            .expect("authored face color");
-        remaining_colors.remove(index);
+            .find(|binding| binding.target == target)
+            .expect("every source shell face has an appearance binding");
+        let appearance = appearance(&binding.appearance);
+        assert_eq!(
+            appearance.base_color,
+            Some(expected_face_colors[face_index]),
+            "authored palette color for source-ordered face {}",
+            face_index + 1
+        );
         let transparency = appearance
             .properties
             .get("transparency")
@@ -137,7 +158,6 @@ fn authored_gui_appearance_keeps_fused_measures_and_topology_styles() {
             "face transparency {transparency}"
         );
     }
-    assert!(remaining_colors.is_empty());
 
     let expected_edge_targets = model
         .edges
