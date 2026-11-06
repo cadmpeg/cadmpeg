@@ -4796,18 +4796,39 @@ fn decode_result(
             {
                 continue;
             }
-            for body in native
-                .design_mesh_features
-                .iter()
-                .flat_map(crate::records::mesh::DesignMeshFeature::bodies)
-            {
-                if body.entry.name() == name && body.container_mesh_uuid.is_none() {
-                    let id = format!(
-                        "{}:mesh-body#{}",
-                        crate::ids::native_scope(&part.name),
-                        body.placement.record().byte_offset()
+            for mesh_feature in &native.design_mesh_features {
+                let mut affected = false;
+                for body in mesh_feature.bodies() {
+                    if body.entry.name() == name && body.container_mesh_uuid.is_none() {
+                        let id = format!(
+                            "{}:mesh-body#{}",
+                            crate::ids::native_scope(&part.name),
+                            body.placement.record().byte_offset()
+                        );
+                        loss.dropped.push(id);
+                        affected = true;
+                    }
+                }
+                if affected
+                    && mesh_feature
+                        .bodies()
+                        .iter()
+                        .all(|body| body.container_mesh_uuid.is_none())
+                {
+                    let stream = crate::ids::native_stream(&mesh_feature.id)
+                        .unwrap_or(crate::ids::DEFAULT_STREAM);
+                    let scope = format!(
+                        "{stream}:design-parameter-scope#{}",
+                        mesh_feature.scope().record().byte_offset()
                     );
-                    loss.dropped.push(id);
+                    if let Some(feature) = ir
+                        .model
+                        .features
+                        .iter()
+                        .find(|feature| feature.native_ref.as_deref() == Some(&scope))
+                    {
+                        loss.dropped.push(feature.id.as_str().to_owned());
+                    }
                 }
             }
             loss.dropped.sort();
