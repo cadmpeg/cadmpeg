@@ -75,6 +75,62 @@ fn three_flag_standard_loft_reads_operation() {
 }
 
 #[test]
+fn standard_loft_reads_marked_group_reference() {
+    let mut bytes = loft_prefix(29, true, false);
+    bytes[33..38].copy_from_slice(&[0, 1, 0, 0, 0]);
+    assert_loft_operation(&bytes, 29);
+
+    bytes[33] = 1;
+    bytes[34..42].copy_from_slice(&16015u64.to_le_bytes());
+    bytes[42..48].copy_from_slice(&[0, 0, 0xff, 0xff, 0xff, 0xff]);
+    assert_loft_operation(&bytes, 29);
+
+    let scope = DesignParameterScope::empty(
+        "generated:loft#20",
+        crate::records::feature::scope::DesignFeatureKind::Loft,
+        20,
+    );
+    for reference in [
+        [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        [1, 0x8f, 0x3e, 0, 0, 0, 0, 0, 0, 1, 0],
+        [2, 0x8f, 0x3e, 0, 0, 0, 0, 0, 0, 0, 0],
+    ] {
+        bytes[33..44].copy_from_slice(&reference);
+        assert_eq!(
+            exact_path_feature_construction(
+                &bytes,
+                &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+                &scope,
+                &[]
+            ),
+            None
+        );
+    }
+}
+
+#[test]
+fn three_flag_standard_loft_requires_null_reference() {
+    let mut bytes = loft_prefix(28, true, true);
+    bytes[32] = 0;
+    assert_loft_operation(&bytes, 28);
+    bytes[32] = 1;
+    let scope = DesignParameterScope::empty(
+        "generated:loft#20",
+        crate::records::feature::scope::DesignFeatureKind::Loft,
+        20,
+    );
+    assert_eq!(
+        exact_path_feature_construction(
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &scope,
+            &[]
+        ),
+        None
+    );
+}
+
+#[test]
 fn loft_forms_reject_invalid_operations() {
     for (offset, standard, three_flags) in [
         (25, false, false),

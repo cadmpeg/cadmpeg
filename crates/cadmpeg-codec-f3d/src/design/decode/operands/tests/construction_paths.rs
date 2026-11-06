@@ -452,7 +452,7 @@ fn parse_test_loft_carrier(
 fn assert_loft_carrier(length: usize, tail: Option<u64>) {
     let carrier =
         parse_test_loft_carrier(&legacy_loft_carrier_frame(length)).expect("legacy Loft carrier");
-    assert_eq!(carrier.paired_byte_offset, length as u64);
+    assert_eq!(carrier.paired_byte_offset, u64::try_from(length).unwrap());
     assert_eq!(carrier.paired_class_tag.as_str(), "451");
     assert_eq!(carrier.member, 900);
     assert_eq!(carrier.next_next_record_index, 102);

@@ -2010,20 +2010,22 @@ fn parse_loft_legacy_body_carrier(
     .into_iter()
     .find(|&length| pair_matches(length))?;
     let three_flags = frame_length == legacy_loft_three::LEN;
-    let common = start + if three_flags {
-        legacy_loft_three::COMMON_PREFIX
-    } else if frame_length == legacy_loft_tail::LEN {
-        legacy_loft_tail::COMMON_PREFIX
-    } else {
-        legacy_loft::INDEXED_HEADER
-    };
+    let common = start
+        + if three_flags {
+            legacy_loft_three::COMMON_PREFIX
+        } else if frame_length == legacy_loft_tail::LEN {
+            legacy_loft_tail::COMMON_PREFIX
+        } else {
+            legacy_loft::INDEXED_HEADER
+        };
     if indexed_record_header_at(bytes, common)
         .is_none_or(|parsed| parsed.record_index != header.record_index)
         || bytes.get(common + legacy_loft::ZERO_RUN_10..common + legacy_loft::PRESENCE)? != [0; 10]
         || bytes.get(common + legacy_loft::PRESENCE)? != &1
         || View::u32_le_at(bytes, common + legacy_loft::OWNER_SCOPE_RECORD_INDEX)?
             != scope.record_index
-        || bytes.get(common + legacy_loft::ZERO_RUN_6..common + legacy_loft::MEMBER_COUNT)? != [0; 6]
+        || bytes.get(common + legacy_loft::ZERO_RUN_6..common + legacy_loft::MEMBER_COUNT)?
+            != [0; 6]
         || View::u32_le_at(bytes, common + legacy_loft::MEMBER_COUNT)? != 1
     {
         return None;
@@ -2041,7 +2043,8 @@ fn parse_loft_legacy_body_carrier(
         bytes,
         common + legacy_loft::OPAQUE_SCALAR,
     )?)?;
-    let repeated_opaque_index = View::u32_le_at(bytes, common + legacy_loft::REPEATED_OPAQUE_INDEX)?;
+    let repeated_opaque_index =
+        View::u32_le_at(bytes, common + legacy_loft::REPEATED_OPAQUE_INDEX)?;
     if repeated_opaque_index != u32::from(opaque_index.get()) {
         return None;
     }
@@ -2122,7 +2125,8 @@ fn parse_loft_legacy_body_carrier(
         repeated_opaque_index_offset: u64::try_from(common + legacy_loft::REPEATED_OPAQUE_INDEX)
             .ok()?,
         next_next_record_index,
-        next_next_reference_offset: u64::try_from(common + legacy_loft::NEXT_NEXT_REFERENCE).ok()?,
+        next_next_reference_offset: u64::try_from(common + legacy_loft::NEXT_NEXT_REFERENCE)
+            .ok()?,
         flags_offset: u64::try_from(common + legacy_loft::FLAGS).ok()?,
         next_record_index,
         next_reference_offset: u64::try_from(next_offset).ok()?,

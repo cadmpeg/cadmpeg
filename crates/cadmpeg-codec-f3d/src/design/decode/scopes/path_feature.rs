@@ -520,10 +520,16 @@ pub(super) fn exact_path_feature_construction(
                 && bytes.get(start + standard_loft::PRESENCE) == Some(&1)
                 && bytes.get(start + standard_loft::ZERO_RUN_4..start + standard_loft::FLAGS)
                     == Some(&[0; 4]);
+            let reference = start + standard_loft::GROUP_REFERENCE;
             let standard = standard_prefix
-                && bytes.get(start + standard_loft::ZERO_FLAG) == Some(&0)
-                && bytes.get(start + standard_loft::ALL_ONES..start + standard_loft::LEN)
-                    == Some(&[0xff; 4]);
+                && match bytes.get(reference) {
+                    Some(0) => true,
+                    Some(1) => {
+                        matches!(View::u64_le_at(bytes, reference + 1), Some(1..))
+                            && bytes.get(reference + 9..reference + 11) == Some(&[0, 0])
+                    }
+                    _ => false,
+                };
             let standard_three = bytes.get(
                 start + three_flag_standard_loft::ZERO_RUN_9
                     ..start + three_flag_standard_loft::PRESENCE,
@@ -533,11 +539,7 @@ pub(super) fn exact_path_feature_construction(
                     start + three_flag_standard_loft::ZERO_RUN_4
                         ..start + three_flag_standard_loft::FLAGS,
                 ) == Some(&[0; 4])
-                && bytes.get(start + three_flag_standard_loft::ZERO_FLAG) == Some(&0)
-                && bytes.get(
-                    start + three_flag_standard_loft::ALL_ONES
-                        ..start + three_flag_standard_loft::LEN,
-                ) == Some(&[0xff; 4]);
+                && bytes.get(start + three_flag_standard_loft::NULL_REFERENCE) == Some(&0);
             let offset = if compact {
                 compact_loft::OPERATION
             } else if compact_three {
