@@ -6114,6 +6114,7 @@ fn append_free_point_entity(
             status
         },
     );
+    support_records::retain_point_parameters(ir, point, &mut entity);
     entity.source_targets.push(point.id.to_string());
     let index = entities.len();
     entities.push(entity);
