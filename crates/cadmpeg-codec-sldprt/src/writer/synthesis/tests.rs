@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Export planning owns patch fallback and per-body degradation.
 
+mod procedural;
+
 use crate::SldprtCodec;
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
