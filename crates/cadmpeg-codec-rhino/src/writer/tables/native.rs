@@ -240,7 +240,7 @@ fn linetype(record: &cadmpeg_ir::NativeRecord, index: usize) -> Result<Vec<u8>, 
         ),
         0,
     ]);
-    Ok(crc_chunk_with_direct(
+    crc_chunk_with_direct(
         0x2000_8078,
         &class_wrapper_with_direct(
             LINETYPE_CLASS,
@@ -248,5 +248,5 @@ fn linetype(record: &cadmpeg_ir::NativeRecord, index: usize) -> Result<Vec<u8>, 
             &[],
         )?,
         &[],
-    )?)
+    )
 }
