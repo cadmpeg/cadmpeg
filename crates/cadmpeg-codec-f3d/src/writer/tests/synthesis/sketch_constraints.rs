@@ -9,6 +9,119 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use crate::F3dCodec;
 
 #[test]
+fn source_less_native_point_relation_preserves_reference_runs() {
+    use cadmpeg_ir::math::{Point2, Point3, Vector3};
+    use cadmpeg_ir::sketches::{
+        NativeOperandField, Sketch, SketchConstraint, SketchConstraintDefinitionInput,
+        SketchEntity, SketchGeometry, SketchGeometryDefinition, SketchNativeOperand,
+        SketchPlacement, SketchProfiles,
+    };
+
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let sketch = "authored:model:sketch#1".try_into().unwrap();
+    ir.model.sketches.push(Sketch {
+        id: sketch,
+        name: Some("Sketch_1".into()),
+        configuration: None,
+        visible: None,
+        placement: SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: SketchProfiles::default(),
+        native_ref: None,
+    });
+    for (id, x) in [
+        ("authored:model:sketch-entity#1", 0.0),
+        ("authored:model:sketch-entity#2", 10.0),
+    ] {
+        ir.model.sketch_entities.push(SketchEntity::new(
+            id.try_into().unwrap(),
+            ir.model.sketches[0].id.clone(),
+            SketchGeometry::try_from(SketchGeometryDefinition::Point {
+                position: Point2::new(x, 0.0),
+            })
+            .unwrap(),
+        ));
+    }
+    let first = ir.model.sketch_entities[0].id().clone();
+    let second = ir.model.sketch_entities[1].id().clone();
+    let operands = [
+        ("member", 100),
+        ("member", 200),
+        ("return", 200),
+        ("return", 100),
+    ]
+    .into_iter()
+    .map(|(field, index)| SketchNativeOperand {
+        native_kind: cadmpeg_core::text::NonBlankString::new("point").unwrap(),
+        field: Some(NativeOperandField {
+            name: cadmpeg_core::text::NonBlankString::new(field).unwrap(),
+            role: None,
+        }),
+        object_index: Some(index),
+        native_ref: None,
+    })
+    .collect::<Vec<_>>();
+    ir.model.sketch_constraints.push(SketchConstraint {
+        id: "authored:model:sketch-constraint#1".try_into().unwrap(),
+        sketch: ir.model.sketches[0].id.clone(),
+        definition: SketchConstraintDefinitionInput::Native {
+            native_kind: cadmpeg_core::text::NonBlankString::new("parallel").unwrap(),
+            native_state: Some(0x10),
+            native_flags: None,
+            native_properties: std::collections::BTreeMap::new(),
+            entities: vec![first.clone(), second.clone(), second, first],
+            parameter: None,
+            operands: operands.clone(),
+        }
+        .try_into()
+        .unwrap(),
+        name: None,
+        driving: None,
+        active: None,
+        virtual_space: None,
+        visible: None,
+        orientation: None,
+        label_distance: None,
+        label_position: None,
+        metadata: None,
+        native_ref: None,
+    });
+    let mut bytes = Vec::new();
+    F3dCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap()
+        .write_to(&mut bytes)
+        .unwrap();
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let [constraint] = decoded.ir().model.sketch_constraints.as_slice() else {
+        panic!("expected one native relation")
+    };
+    let SketchConstraintDefinitionInput::Native {
+        native_kind,
+        native_state,
+        entities,
+        operands: actual,
+        ..
+    } = constraint.definition.kind()
+    else {
+        panic!("expected a native relation")
+    };
+    assert_eq!(native_kind.as_str(), "parallel");
+    assert_eq!(*native_state, Some(0x10));
+    assert_eq!(actual, &operands);
+    assert_eq!(entities.len(), 4);
+    assert_eq!(entities[0], entities[3]);
+    assert_eq!(entities[1], entities[2]);
+    assert_ne!(entities[0], entities[1]);
+}
+
+#[test]
 fn source_less_sketch_horizontal_constraint_survives_synthesis() {
     use cadmpeg_ir::math::{Point2, Point3, Vector3};
     use cadmpeg_ir::sketches::{
