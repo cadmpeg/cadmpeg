@@ -549,10 +549,16 @@ fn named_constraint_recipe_profiles_constraints_and_body_measures() {
                 Some(true),
                 "{label}: Pad.AllowMultiFace"
             );
+            assert!(side.draft.is_none(), "{label}: zero Pad.TaperAngle");
             let LinearTermination::Blind { length } = side.termination else {
                 panic!("{label}: expected blind pad")
             };
             assert!((length.get() - depth).abs() < LENGTH_TOLERANCE, "{label}");
+            assert_eq!(
+                pad.source_properties.get("Visibility").map(String::as_str),
+                Some("true"),
+                "{label}: Pad.Visibility"
+            );
 
             let body = model
                 .features
@@ -588,6 +594,25 @@ fn named_constraint_recipe_profiles_constraints_and_body_measures() {
                 "N11a" => None,
                 _ => unreachable!(),
             };
+            let second_length = model
+                .parameters
+                .iter()
+                .find(|parameter| {
+                    parameter.name == "Length2"
+                        && parameter.native_ref.as_deref()
+                            == Some("fcstd:native:property#Pad:Length2")
+                })
+                .expect("authored Pad.Length2 parameter");
+            let ParameterValue::Length(second_length_value) = second_length.value.as_ref().unwrap()
+            else {
+                panic!("{label}: Pad.Length2 value")
+            };
+            assert_eq!(
+                second_length_value.get(),
+                10.0,
+                "{label}: inactive second length value"
+            );
+            assert!(second_length.dependencies.is_empty(), "{label}");
             if let Some(expression) = pad_length_expression {
                 let length_parameter = model
                     .parameters
@@ -622,6 +647,21 @@ fn named_constraint_recipe_profiles_constraints_and_body_measures() {
                         "{label}"
                     );
                 }
+            } else {
+                let pad_length = model
+                    .parameters
+                    .iter()
+                    .find(|parameter| {
+                        parameter.name == "Length"
+                            && parameter.native_ref.as_deref()
+                                == Some("fcstd:native:property#Pad:Length")
+                    })
+                    .expect("authored fixed Pad.Length parameter");
+                assert!(
+                    !pad_length.properties.contains_key("expression_native_ref"),
+                    "{label}: Pad.ExpressionEngine has no Length expression"
+                );
+                assert!(pad_length.dependencies.is_empty(), "{label}");
             }
             let [body_id] = pad.evaluation.outputs().as_slice() else {
                 panic!("{label}: expected one pad result")
