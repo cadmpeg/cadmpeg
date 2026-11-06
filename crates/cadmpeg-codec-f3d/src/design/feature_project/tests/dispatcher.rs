@@ -709,6 +709,7 @@ fn dispatcher_projects_remaining_operand_feature_scopes() {
                     )
                     .expect("valid entity identity"),
                     entity_reference_offset: 80,
+                    compact_tail_flags: None,
                     region_selection: None,
                     paired_class_tag: crate::records::references::DesignClassTag::try_from(
                         "264".to_owned(),
