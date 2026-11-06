@@ -3,10 +3,11 @@
 use std::collections::BTreeSet;
 use std::io::Cursor;
 
+use cadmpeg_ir::document::Model;
 use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry};
 use cadmpeg_ir::math::Point3;
-use cadmpeg_ir::topology::BodyKind;
+use cadmpeg_ir::topology::{Body, BodyKind, LoopBoundary, Shell};
 use cadmpeg_ir::{Codec, DecodeOptions};
 
 use crate::FcstdCodec;
@@ -291,6 +292,221 @@ fn authored_geometry_topology_keeps_source_objects_body_topology_and_curves() {
         panic!("FreeformSurface: expected an interpolated NURBS surface")
     };
     assert_surface_interpolation_points(nurbs_surface);
+}
+
+#[test]
+fn authored_closed_shapes_keep_void_shells_cylinder_seam_and_disconnected_shells() {
+    let bytes = include_bytes!("../../../../corpus/freecad_fcstd/fixtures/geometry_topology.FCStd");
+    let decoded = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let model = &decoded.ir().model;
+
+    let void_body = body_for_feature(model, "Void");
+    let [void_region_id] = void_body.regions.as_slice() else {
+        panic!("Void: one connected solid region")
+    };
+    let void_region = model
+        .regions
+        .iter()
+        .find(|region| &region.id == void_region_id)
+        .unwrap();
+    let [outer_shell_id, cavity_shell_id] = void_region.shells.as_slice() else {
+        panic!("Void: one exterior shell and one cavity shell")
+    };
+    for shell_id in [outer_shell_id, cavity_shell_id] {
+        let shell = shell_for_id(model, shell_id.as_str());
+        assert_eq!(shell.region, void_region.id, "Void: shell region owner");
+        assert_closed_shell(model, shell, 6);
+    }
+
+    let seam_body = body_for_feature(model, "Seam");
+    let [seam_region_id] = seam_body.regions.as_slice() else {
+        panic!("Seam: one connected solid region")
+    };
+    let seam_region = model
+        .regions
+        .iter()
+        .find(|region| &region.id == seam_region_id)
+        .unwrap();
+    let [seam_shell_id] = seam_region.shells.as_slice() else {
+        panic!("Seam: one closed shell")
+    };
+    let seam_shell = shell_for_id(model, seam_shell_id.as_str());
+    assert_closed_shell(model, seam_shell, 3);
+
+    let cylindrical_faces = seam_shell
+        .faces()
+        .iter()
+        .map(|face_id| model.faces.iter().find(|face| &face.id == face_id).unwrap())
+        .filter(|face| {
+            model
+                .surfaces
+                .iter()
+                .find(|surface| surface.id == face.surface)
+                .is_some_and(|surface| {
+                    matches!(
+                        surface.geometry.solved(),
+                        Some(SolvedSurfaceGeometry::Cylinder(_))
+                    )
+                })
+        })
+        .collect::<Vec<_>>();
+    let [cylindrical_face] = cylindrical_faces.as_slice() else {
+        panic!("Seam: one cylindrical side face")
+    };
+    let cylindrical_loop_ids = cylindrical_face.loops.iter().collect::<Vec<_>>();
+    let [cylindrical_loop_id] = cylindrical_loop_ids.as_slice() else {
+        panic!("Seam: one lateral boundary loop")
+    };
+    let cylindrical_loop = model
+        .loops
+        .iter()
+        .find(|loop_| &loop_.id == *cylindrical_loop_id)
+        .unwrap();
+    let LoopBoundary::Ring(cylindrical_ring) = &cylindrical_loop.boundary else {
+        panic!("Seam: cylindrical boundary is a coedge ring")
+    };
+    assert_eq!(
+        cylindrical_ring.coedges().len(),
+        4,
+        "Seam: lateral loop edges"
+    );
+    let cylindrical_coedges = cylindrical_ring
+        .coedges()
+        .iter()
+        .map(|coedge_id| {
+            model
+                .coedges
+                .iter()
+                .find(|coedge| &coedge.id == coedge_id)
+                .unwrap()
+        })
+        .collect::<Vec<_>>();
+    let mut repeated_edge_uses = Vec::new();
+    for coedge in &cylindrical_coedges {
+        let uses = cylindrical_coedges
+            .iter()
+            .filter(|candidate| candidate.edge == coedge.edge)
+            .copied()
+            .collect::<Vec<_>>();
+        if uses.len() > 1 {
+            if repeated_edge_uses.is_empty() {
+                repeated_edge_uses = uses;
+            } else {
+                assert_eq!(
+                    uses[0].edge, repeated_edge_uses[0].edge,
+                    "Seam: one repeated edge"
+                );
+            }
+        }
+    }
+    let [first_seam_use, second_seam_use] = repeated_edge_uses.as_slice() else {
+        panic!("Seam: the cylindrical face uses its seam edge twice")
+    };
+    assert_ne!(
+        first_seam_use.id, second_seam_use.id,
+        "Seam: distinct coedge uses"
+    );
+    assert_ne!(
+        first_seam_use.sense, second_seam_use.sense,
+        "Seam: opposite traversal"
+    );
+
+    let multi_shell_body = body_for_feature(model, "MultiShell");
+    let mut multi_shell_ids = Vec::new();
+    for region_id in &multi_shell_body.regions {
+        let region = model
+            .regions
+            .iter()
+            .find(|region| &region.id == region_id)
+            .unwrap();
+        let [shell_id] = region.shells.as_slice() else {
+            panic!("MultiShell: one shell per disconnected box")
+        };
+        let shell = shell_for_id(model, shell_id.as_str());
+        assert_eq!(shell.region, region.id, "MultiShell: shell region owner");
+        assert_closed_shell(model, shell, 6);
+        multi_shell_ids.push(shell_id);
+    }
+    assert_eq!(
+        multi_shell_ids.len(),
+        2,
+        "MultiShell: two source box shells"
+    );
+    assert_ne!(multi_shell_ids[0], multi_shell_ids[1]);
+}
+
+fn body_for_feature<'a>(model: &'a Model, name: &str) -> &'a Body {
+    let feature = model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some(name))
+        .unwrap_or_else(|| panic!("missing {name}"));
+    let [body_id] = feature.evaluation.outputs().as_slice() else {
+        panic!("{name}: one output body")
+    };
+    model
+        .bodies
+        .iter()
+        .find(|body| &body.id == body_id)
+        .unwrap_or_else(|| panic!("{name}: output body resolves"))
+}
+
+fn shell_for_id<'a>(model: &'a Model, shell_id: &str) -> &'a Shell {
+    model
+        .shells
+        .iter()
+        .find(|shell| shell.id.as_str() == shell_id)
+        .unwrap_or_else(|| panic!("missing shell {shell_id}"))
+}
+
+fn assert_closed_shell(model: &Model, shell: &Shell, expected_faces: usize) {
+    assert_eq!(shell.faces().len(), expected_faces, "shell face count");
+    let mut uses = Vec::new();
+    for face_id in shell.faces() {
+        let face = model.faces.iter().find(|face| &face.id == face_id).unwrap();
+        assert_eq!(face.shell, shell.id, "face shell owner");
+        for loop_id in &face.loops {
+            let loop_ = model
+                .loops
+                .iter()
+                .find(|loop_| &loop_.id == loop_id)
+                .unwrap();
+            let LoopBoundary::Ring(ring) = &loop_.boundary else {
+                panic!("closed box and cylinder faces have coedge rings")
+            };
+            for coedge_id in ring.coedges() {
+                let coedge = model
+                    .coedges
+                    .iter()
+                    .find(|coedge| &coedge.id == coedge_id)
+                    .unwrap();
+                assert_eq!(coedge.owner_loop, loop_.id, "coedge loop owner");
+                uses.push(coedge);
+            }
+        }
+    }
+
+    let mut edge_ids = Vec::new();
+    for coedge in &uses {
+        if !edge_ids.contains(&coedge.edge.as_str()) {
+            edge_ids.push(coedge.edge.as_str());
+        }
+    }
+    assert!(!edge_ids.is_empty(), "closed shell has boundary edges");
+    for edge_id in edge_ids {
+        let edge_uses = uses
+            .iter()
+            .filter(|coedge| coedge.edge.as_str() == edge_id)
+            .collect::<Vec<_>>();
+        let [first, second] = edge_uses.as_slice() else {
+            panic!("closed shell edge {edge_id} has exactly two face uses")
+        };
+        assert_ne!(first.sense, second.sense, "edge {edge_id}: opposite uses");
+        assert_eq!(first.radial_next, second.id, "edge {edge_id}: radial pair");
+        assert_eq!(second.radial_next, first.id, "edge {edge_id}: radial pair");
+    }
 }
 
 fn assert_curve_interpolation_points(curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve) {
