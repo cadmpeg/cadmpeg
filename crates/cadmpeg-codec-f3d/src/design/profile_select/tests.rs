@@ -45,6 +45,7 @@ use std::collections::{HashMap, HashSet};
 mod crossing_loops;
 mod resolution_rules;
 mod spatial_transition;
+mod sweep_paths;
 mod typed_regions;
 mod unprofiled_curves;
 

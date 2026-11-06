@@ -2305,6 +2305,19 @@ Offsets are relative to the primary indexed header. The variable scope body foll
 | 30 | 4 | `all_ones` | `bytes[4]` | little | spec | offsets 30 through 33 are `ff ff ff ff` |
 | 34 | 11 | `zero_run_11` | `bytes[11]` | little | spec | offsets 34 through 44 are zero |
 
+## `compact_sweep_prologue`
+
+Spec §3.1 · layout: byte offsets · size: 26 B
+
+Offsets are relative to the primary indexed scope header. The scope body follows the prologue.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | A compact Sweep scope stores ten zero bytes at offsets 11 through 20 |
+| 11 | 10 | `zero_run` | `bytes[10]` | little | spec | stores ten zero bytes at offsets 11 through 20 · value `[0, 0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 21 | 4 | `operation` | `u32` | little | spec | the u32 operation enum at offset 21 |
+| 25 | 1 | `marker` | `u8` | little | spec | and byte `1` at offset 25 · value `1` |
+
 ## `legacy_loft_body_carrier_class_322`
 
 Spec §3.1 · layout: byte offsets · size: 87 B

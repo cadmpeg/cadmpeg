@@ -292,3 +292,94 @@ fn compact_two_lane_sweep_pins_admission_rules_and_rejects_mutations() {
         None
     );
 }
+
+/// A six-lane Sweep scope at offset 200 with its six fixed scalar records, and
+/// the scalar value offsets.
+fn six_lane_sweep_bytes(prologue: &[(usize, u8)]) -> (Vec<u8>, Vec<u64>) {
+    let sweep_start = 200usize;
+    let mut bytes = vec![0; sweep_start];
+    indexed_header(&mut bytes, *b"277", 90);
+    bytes.resize(sweep_start + 523, 0);
+    for (offset, value) in prologue {
+        bytes[sweep_start + offset] = *value;
+    }
+    let mut value_offsets = Vec::new();
+    for (ordinal, record_index) in (91u32..97).enumerate() {
+        let scalar_start = bytes.len();
+        let mut scalar = vec![0; 100];
+        scalar[0..4].copy_from_slice(&3u32.to_le_bytes());
+        scalar[4..7].copy_from_slice(b"311");
+        scalar[7..11].copy_from_slice(&record_index.to_le_bytes());
+        scalar[19..24].copy_from_slice(&[1, 1, 0, 0, 0]);
+        scalar[24] = 1;
+        scalar[25..29].copy_from_slice(&90u32.to_le_bytes());
+        scalar[35] = u8::try_from(ordinal).expect("u8 ordinal");
+        scalar[40..48].copy_from_slice(&1.0f64.to_le_bytes());
+        scalar.extend_from_slice(&3u32.to_le_bytes());
+        scalar.extend_from_slice(b"263");
+        scalar.extend_from_slice(&record_index.to_le_bytes());
+        value_offsets.push(u64_from_index(scalar_start) + 40);
+        bytes.extend_from_slice(&scalar);
+    }
+    (bytes, value_offsets)
+}
+
+fn six_lane_sweep_scope() -> DesignParameterScope {
+    let mut scope = DesignParameterScope::empty(
+        "generated:sweep#90",
+        crate::records::feature::scope::DesignFeatureKind::Sweep,
+        90,
+    );
+    scope.class_tag =
+        crate::records::references::DesignClassTag::try_from("277".to_owned()).unwrap();
+    scope.paired_class_tag =
+        crate::records::references::DesignClassTag::try_from("263".to_owned()).unwrap();
+    scope
+        .try_edit(|draft| {
+            draft.byte_offset = 200;
+            draft.frame_length = 523;
+            draft.reference_count_offset = draft.byte_offset + 9;
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![
+                1, 2, 3, 4, 5, 6, 7, 91, 92, 93, 94, 95, 96,
+            ]);
+            draft.layout_fixture_references();
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    scope
+}
+
+fn six_lane_sweep_operation(prologue: &[(usize, u8)]) -> Option<(DesignExtrudeOperation, u64)> {
+    let (bytes, value_offsets) = six_lane_sweep_bytes(prologue);
+    let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
+    match exact_path_feature_construction(&bytes, &records, &six_lane_sweep_scope(), &[])? {
+        DesignPathFeatureConstruction::Sweep(sweep) => {
+            assert_eq!(sweep.record_indexes, (91..97).collect::<Vec<_>>());
+            assert_eq!(sweep.value_offsets, value_offsets);
+            Some((sweep.operation, sweep.operation_offset))
+        }
+        _ => None,
+    }
+}
+
+#[test]
+fn six_lane_sweep_reads_the_operation_of_its_prologue_form() {
+    assert_eq!(
+        six_lane_sweep_operation(&[(20, 1), (25, 2), (29, 1)]),
+        Some((DesignExtrudeOperation::Cut, 225))
+    );
+    assert_eq!(
+        six_lane_sweep_operation(&[(21, 2), (25, 1), (26, 3)]),
+        Some((DesignExtrudeOperation::Cut, 221))
+    );
+    assert_eq!(
+        six_lane_sweep_operation(&[(21, 1), (25, 1), (26, 3)]),
+        Some((DesignExtrudeOperation::Join, 221))
+    );
+    assert_eq!(six_lane_sweep_operation(&[(21, 5), (25, 1)]), None);
+    assert_eq!(
+        six_lane_sweep_operation(&[(15, 1), (21, 2), (25, 1)]),
+        Some((DesignExtrudeOperation::Join, 225))
+    );
+}
