@@ -6085,8 +6085,9 @@ fn native_support_pcurve_with_offset(
     support: &SurfaceGeometry,
     geometry: &PcurveGeometry,
     offset: [f64; 2],
+    range: [f64; 2],
 ) -> Result<PcurveNurbs, CodecError> {
-    let mut native = native_support_pcurve(support, geometry)?;
+    let mut native = native_support_pcurve_for_range(support, geometry, range)?;
     native.try_map_control_points(|_, point| {
         let point = point.get();
         cadmpeg_ir::units::FinitePoint2::new(Point2::new(point.u - offset[0], point.v - offset[1]))
@@ -6986,6 +6987,7 @@ pub(super) fn native_pcurve(
     geometry: &PcurveGeometry,
     form: &NativePcurveForm<'_>,
     support: &SurfaceGeometry,
+    range: [f64; 2],
 ) -> Result<(), CodecError> {
     let inline = match form {
         NativePcurveForm::Reference {
@@ -7005,7 +7007,8 @@ pub(super) fn native_pcurve(
         NativePcurveForm::Inline(inline) => inline,
     };
     let uv_offset = inline.uv_offset();
-    let native_geometry = native_support_pcurve_with_offset(support, geometry, uv_offset.get())?;
+    let native_geometry =
+        native_support_pcurve_with_offset(support, geometry, uv_offset.get(), range)?;
     native_ident(bytes, "pcurve")?;
     native_ref(bytes, -1);
     native_i64(bytes, -1);
@@ -7030,8 +7033,9 @@ pub(super) fn native_ref_pcurve_companion(
     geometry: &PcurveGeometry,
     uv_offset: [f64; 2],
     support: &SurfaceGeometry,
+    range: [f64; 2],
 ) -> Result<(), CodecError> {
-    let native_geometry = native_support_pcurve_with_offset(support, geometry, uv_offset)?;
+    let native_geometry = native_support_pcurve_with_offset(support, geometry, uv_offset, range)?;
     let lifted = native_geometry
         .lift(|point| Point3::new(point.u * 10.0, point.v * 10.0, 0.0))
         .map_err(|error| CodecError::UnsupportedContent(error.to_string()))?;
