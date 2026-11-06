@@ -296,6 +296,33 @@ type Text = &'static str;
 pub(super) fn generated_design_types(
     variant: GeneratedDesignMetastreamVariant,
 ) -> Vec<(Text, Text, u32, Text, &'static [u64])> {
+    const PADDING_GUIDS: [&str; 24] = [
+        "00000000-0000-4000-8000-000000000100",
+        "00000000-0000-4000-8000-000000000101",
+        "00000000-0000-4000-8000-000000000102",
+        "00000000-0000-4000-8000-000000000103",
+        "00000000-0000-4000-8000-000000000104",
+        "00000000-0000-4000-8000-000000000105",
+        "00000000-0000-4000-8000-000000000106",
+        "00000000-0000-4000-8000-000000000107",
+        "00000000-0000-4000-8000-000000000108",
+        "00000000-0000-4000-8000-000000000109",
+        "00000000-0000-4000-8000-00000000010a",
+        "00000000-0000-4000-8000-00000000010b",
+        "00000000-0000-4000-8000-00000000010c",
+        "00000000-0000-4000-8000-00000000010d",
+        "00000000-0000-4000-8000-00000000010e",
+        "00000000-0000-4000-8000-00000000010f",
+        "00000000-0000-4000-8000-000000000110",
+        "00000000-0000-4000-8000-000000000111",
+        "00000000-0000-4000-8000-000000000112",
+        "00000000-0000-4000-8000-000000000113",
+        "00000000-0000-4000-8000-000000000114",
+        "00000000-0000-4000-8000-000000000115",
+        "00000000-0000-4000-8000-000000000116",
+        "00000000-0000-4000-8000-000000000117",
+    ];
+
     let include_sketch_types = matches!(variant, GeneratedDesignMetastreamVariant::SketchDimension);
     let include_dimension_types =
         matches!(variant, GeneratedDesignMetastreamVariant::SketchDimension);
@@ -576,32 +603,6 @@ pub(super) fn generated_design_types(
             &[1601],
         ));
     }
-    const PADDING_GUIDS: [&str; 24] = [
-        "00000000-0000-4000-8000-000000000100",
-        "00000000-0000-4000-8000-000000000101",
-        "00000000-0000-4000-8000-000000000102",
-        "00000000-0000-4000-8000-000000000103",
-        "00000000-0000-4000-8000-000000000104",
-        "00000000-0000-4000-8000-000000000105",
-        "00000000-0000-4000-8000-000000000106",
-        "00000000-0000-4000-8000-000000000107",
-        "00000000-0000-4000-8000-000000000108",
-        "00000000-0000-4000-8000-000000000109",
-        "00000000-0000-4000-8000-00000000010a",
-        "00000000-0000-4000-8000-00000000010b",
-        "00000000-0000-4000-8000-00000000010c",
-        "00000000-0000-4000-8000-00000000010d",
-        "00000000-0000-4000-8000-00000000010e",
-        "00000000-0000-4000-8000-00000000010f",
-        "00000000-0000-4000-8000-000000000110",
-        "00000000-0000-4000-8000-000000000111",
-        "00000000-0000-4000-8000-000000000112",
-        "00000000-0000-4000-8000-000000000113",
-        "00000000-0000-4000-8000-000000000114",
-        "00000000-0000-4000-8000-000000000115",
-        "00000000-0000-4000-8000-000000000116",
-        "00000000-0000-4000-8000-000000000117",
-    ];
     while types.len() < 24 {
         types.push((PADDING_GUIDS[types.len()], base, 0, "Fixture", &[]));
     }
@@ -1492,6 +1493,34 @@ pub(super) fn generated_design_sketch_dimension_bulkstream() -> (Vec<u8>, Vec<(u
 /// absolute stream offsets. Class tags follow the base type table so every
 /// listed record resolves through the primary index.
 pub(crate) fn generated_design_canvas_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
+    fn tail_reference(tail: &mut [u8], at: usize, index: u32) {
+        tail[at] = 1;
+        tail[at + 1..at + 5].copy_from_slice(&index.to_le_bytes());
+    }
+
+    fn reference(run: &mut [u8], at: usize, index: u32) {
+        run[at] = 1;
+        run[at + 1..at + 5].copy_from_slice(&index.to_le_bytes());
+    }
+
+    fn marked_reference(out: &mut Vec<u8>, index: u32) {
+        out.push(1);
+        out.extend_from_slice(&index.to_le_bytes());
+        out.extend_from_slice(&[0; 6]);
+    }
+
+    fn header(out: &mut Vec<u8>, tag: [u8; 3], index: u32) {
+        out.extend_from_slice(&3_u32.to_le_bytes());
+        out.extend_from_slice(&tag);
+        out.extend_from_slice(&index.to_le_bytes());
+    }
+
+    fn header_at(run: &mut [u8], at: usize, tag: [u8; 3], index: u32) {
+        run[at..at + 4].copy_from_slice(&3_u32.to_le_bytes());
+        run[at + 4..at + 7].copy_from_slice(&tag);
+        run[at + 7..at + 11].copy_from_slice(&index.to_le_bytes());
+    }
+
     const GEOMETRY_INDEX: u32 = 10;
     const ASSET_INDEX: u32 = 20;
     const SCOPE_INDEX: u32 = 30;
@@ -1517,23 +1546,8 @@ pub(crate) fn generated_design_canvas_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>)
     let scope_tag = tag(base_rows, 3);
     let paired_scope_tag = tag(base_rows, 4);
 
-    fn header_at(run: &mut [u8], at: usize, tag: [u8; 3], index: u32) {
-        run[at..at + 4].copy_from_slice(&3_u32.to_le_bytes());
-        run[at + 4..at + 7].copy_from_slice(&tag);
-        run[at + 7..at + 11].copy_from_slice(&index.to_le_bytes());
-    }
 
-    fn header(out: &mut Vec<u8>, tag: [u8; 3], index: u32) {
-        out.extend_from_slice(&3_u32.to_le_bytes());
-        out.extend_from_slice(&tag);
-        out.extend_from_slice(&index.to_le_bytes());
-    }
 
-    fn marked_reference(out: &mut Vec<u8>, index: u32) {
-        out.push(1);
-        out.extend_from_slice(&index.to_le_bytes());
-        out.extend_from_slice(&[0; 6]);
-    }
 
     let (mut out, mut records) = generated_design_bulkstream();
     let run_at = u64::try_from(out.len()).expect("synthetic Canvas run offset");
@@ -1559,10 +1573,6 @@ pub(crate) fn generated_design_canvas_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>)
         run[at..at + 8].copy_from_slice(&value.to_le_bytes());
     }
     run[69..73].copy_from_slice(&1.0f32.to_le_bytes());
-    fn reference(run: &mut [u8], at: usize, index: u32) {
-        run[at] = 1;
-        run[at + 1..at + 5].copy_from_slice(&index.to_le_bytes());
-    }
     reference(&mut run, 58, PLANE_SUFFIX);
     reference(&mut run, 146, SCOPE_INDEX);
     reference(&mut run, 157, COMPONENT_SUFFIX);
@@ -1600,10 +1610,6 @@ pub(crate) fn generated_design_canvas_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>)
     );
     // The 98-byte tail opens with the feature ordinal, so no separate
     // ordinal word precedes it.
-    fn tail_reference(tail: &mut [u8], at: usize, index: u32) {
-        tail[at] = 1;
-        tail[at + 1..at + 5].copy_from_slice(&index.to_le_bytes());
-    }
     let mut tail = vec![0; 98];
     tail[0..4].copy_from_slice(&1u32.to_le_bytes());
     tail[12..16].copy_from_slice(&1u32.to_le_bytes());
