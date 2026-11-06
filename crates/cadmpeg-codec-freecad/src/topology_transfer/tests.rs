@@ -148,13 +148,13 @@ fn neutral_identity_keys_use_native_identity_independent_of_matrix_rounding() {
 }
 
 fn test_source_topology_indices(
-    tables: Tables<'_>,
+    tables: &Tables<'_>,
 ) -> Result<HashMap<(TextShapeKind, SourceOccurrenceKey), usize>, super::LocationIdentityError> {
     let arena = DecodeArena::new();
     let policy = DecodePolicy::default();
     let (ctx, _) = DecodeContext::from_root_bytes(&[0], &arena, &policy)?;
-    let mut locations = Locations::new(&ctx, &tables)?;
-    source_topology_indices(&ctx, &tables, &mut locations)
+    let mut locations = Locations::new(&ctx, tables)?;
+    source_topology_indices(&ctx, tables, &mut locations)
 }
 
 #[test]
@@ -198,7 +198,7 @@ fn source_indices_span_root_order_and_deduplicate_repeated_placements() {
         roots: &roots,
     };
 
-    let indices = test_source_topology_indices(tables).expect("valid locations");
+    let indices = test_source_topology_indices(&tables).expect("valid locations");
 
     assert_eq!(
         indices.get(&(
@@ -247,7 +247,7 @@ fn repeated_source_roots_index_one_vertex_occurrence() {
         triangulations: &[],
         roots: &roots,
     };
-    let indices = test_source_topology_indices(tables).expect("source topology indices");
+    let indices = test_source_topology_indices(&tables).expect("source topology indices");
     assert_eq!(indices.len(), 1);
     assert_eq!(
         indices.get(&(
@@ -299,7 +299,7 @@ fn source_indices_follow_depth_first_topology_order() {
         triangulations: &[],
         roots: &roots,
     };
-    let indices = test_source_topology_indices(tables).expect("valid locations");
+    let indices = test_source_topology_indices(&tables).expect("valid locations");
     let index =
         |kind, shape| indices.get(&(kind, SourceOccurrenceKey::new(shape, Located::identity())));
 
@@ -351,7 +351,7 @@ fn source_indices_stop_at_nested_same_kind_shapes() {
         roots: &roots,
     };
 
-    let indices = test_source_topology_indices(tables).expect("valid locations");
+    let indices = test_source_topology_indices(&tables).expect("valid locations");
 
     assert_eq!(
         indices.get(&(
