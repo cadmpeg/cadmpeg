@@ -872,7 +872,7 @@ fn resolve_linked_transforms(
             continue;
         }
         losses.push(FreecadLossCode::ProductLinkedPlacementFolded.note(format!(
-            "prototype {prototype} linked placements disagree, so the effective placement is baked"
+            "prototype {prototype} linked placements disagree and are folded into occurrence placements where possible"
         )));
         for (link, occurrence, _) in &uses {
             let current = ir
@@ -881,10 +881,16 @@ fn resolve_linked_transforms(
                 .iter()
                 .find(|candidate| candidate.id.as_str() == occurrence.as_str())
                 .ok_or_else(|| CodecError::malformed("linked instance has no occurrence"))?;
-            let Some(effective) = current
-                .effective_transform()
-                .map_err(CodecError::malformed)?
-            else {
+            let effective = match current.effective_transform() {
+                Ok(effective) => effective,
+                Err(_) => {
+                    losses.push(FreecadLossCode::ProductLinkedPlacementFolded.note(format!(
+                        "occurrence {occurrence} linked placement cannot be composed and is omitted"
+                    )));
+                    current.transform
+                }
+            };
+            let Some(effective) = effective else {
                 continue;
             };
             let object = objects
