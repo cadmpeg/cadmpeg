@@ -798,8 +798,19 @@ pub(in crate::writer) fn table_settings(
         let fields = record.fields()?;
         match render_settings_record(&fields, version) {
             Ok((body, children)) => {
-                let ranges = crate::chunks::direct_checksum_ranges(&(0..body.len()), &children)
-                    .map_err(|error| WriteError::Fail(CodecError::malformed(error.to_string())))?;
+                let ranges =
+                    match crate::chunks::direct_checksum_ranges(&(0..body.len()), &children) {
+                        Ok(ranges) => ranges,
+                        Err(error) => {
+                            output
+                                .losses
+                                .push(RhinoLossCode::WriterAttributesOmitted.note(format!(
+                                    "{}: render settings omitted: {error}",
+                                    record.id()
+                                )));
+                            continue;
+                        }
+                    };
                 let mut direct = Vec::new();
                 for range in &ranges {
                     direct.extend_from_slice(&body[range.clone()]);
