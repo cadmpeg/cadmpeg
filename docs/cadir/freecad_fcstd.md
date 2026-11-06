@@ -9,6 +9,13 @@ An unprojected vendor object becomes a `Native` feature with typed properties;
 an unprojected `App::` object remains native. `Touched` sets the feature's
 `needs_recompute` flag.
 
+The writer catalog contains schema targets 2, 3, and 4. Schema 4 is the
+default for authored or foreign documents. Patching requires empty
+`unrepresented`; a patch that cannot express an edit selects synthesis. Typed
+property value trees are rebuilt with XML escaping. JSON-mode Python properties
+use their decoded values without executing Python. Opaque payloads enter
+`unrepresented` through their retained-record marks.
+
 The synthesized application graph includes primitive solids, boolean operations,
 extrusions and revolutions, sweeps and lofts, holes and thread controls, patterns,
 dress-up operations, datum/construction objects, binders, body groups and tips.
