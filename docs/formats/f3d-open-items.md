@@ -460,6 +460,14 @@ travel.
 
 **Need.** Saves of one sketch that change one per-sketch setting at a time (Slice, 3D Sketch, Show Profile, Show Points, Show Dimensions, Show Constraints, Show Projected Geometries), each recording the value of byte 34.
 
+### DR-264. Sketch geometry group fields
+
+**Question.** What do byte `01` at offset 49 and the f32 values at offsets 62 and 66 of a sketch geometry group store, and which operations write a group?
+
+**Known.** `f3d.md` §3.1 "A sketch geometry group has type GUID" gives the layout and the ownership joins. Every group stores `01` at offset 49 and f32 `1.0` at offsets 62 and 66. The sketch that owns a group is named by the reference table of a `MeshSection` scope.
+
+**Need.** Groups written by another operation, or groups with other values in these fields.
+
 ## 2. External references
 
 ### DR-111. Component-path poses of nested occurrences
