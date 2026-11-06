@@ -33,6 +33,7 @@ use crate::layout::assembly_class_363_264_frame_388_identity as class_363_identi
 use crate::layout::assembly_operand_path_locator as path_locator;
 use crate::layout::assembly_operand_path_wrapper as path_wrapper;
 use crate::layout::assembly_variable_reference_operand_path_locator as variable_path_locator;
+use crate::layout::combine_operand_list_operation_prefix as combine_lists;
 use crate::layout::class_296_261_legacy_extrude_prefix_scalar_at_54 as class_296_legacy_prefix;
 use crate::layout::class_296_261_legacy_one_sided_distance_tail as class_296_legacy_distance;
 use crate::layout::class_296_261_legacy_one_sided_to_face_tail as class_296_legacy_to_face;
@@ -91,6 +92,30 @@ fn body_recipe_reference_table_is_admitted(
 
 /// A rigid `As-built` alignment has no parameter owners, so its angle and
 /// offset are zero.
+/// An operand-list `Combine` stores its operation after the presence byte, or
+/// after an empty property block, and its keep-tools Boolean after the
+/// companion list.
+fn operand_list_combine_offsets_hold(
+    scope_offset: u64,
+    operation: &records::feature::combine::DesignCombineOperation,
+) -> bool {
+    const EMPTY_PROPERTY_BLOCK_LEN: u64 = 4;
+    const COMPANION_REFERENCE_LEN: u64 = 11;
+    let operation_at = u64_from_index(combine_lists::OPERATION);
+    let keep_tools_after_operation =
+        u64_from_index(combine_lists::KEEP_TOOLS - combine_lists::OPERATION);
+    let property_block = operation
+        .operation_offset
+        .checked_sub(scope_offset)
+        .and_then(|relative| relative.checked_sub(operation_at));
+    let companion_bytes = operation
+        .keep_tools_offset
+        .checked_sub(operation.operation_offset)
+        .and_then(|distance| distance.checked_sub(keep_tools_after_operation));
+    matches!(property_block, Some(0 | EMPTY_PROPERTY_BLOCK_LEN))
+        && companion_bytes.is_some_and(|bytes| bytes.is_multiple_of(COMPANION_REFERENCE_LEN))
+}
+
 fn rigid_alignment_scalars_hold(
     alignment: &records::feature::assembly::DesignAssemblyAlignment,
     rigid_as_built: bool,
@@ -3233,14 +3258,7 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                         records::feature::combine::DesignCombineForm::OperandLists => {
                             !compact_scope
                                 && !extended_reference_scope
-                                && scope.byte_offset().checked_add(21).is_some_and(
-                                    |expected_offset| operation.operation_offset == expected_offset,
-                                )
-                                && scope.byte_offset().checked_add(29).is_some_and(
-                                    |expected_offset| {
-                                        operation.keep_tools_offset == expected_offset
-                                    },
-                                )
+                                && operand_list_combine_offsets_hold(scope.byte_offset(), operation)
                         }
                         records::feature::combine::DesignCombineForm::ExtendedReference => {
                             extended_reference_scope

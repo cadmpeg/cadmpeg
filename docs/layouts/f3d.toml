@@ -6079,9 +6079,9 @@ anchor = "a two-byte zero trailing field"
 name = "combine_operand_list_operation_prefix"
 kind = "byte"
 section = "3.1"
-anchor = "It stores ten zero bytes at offsets 11 through 20, the zero-based operation u32 at offset 21"
+anchor = "It stores nine zero bytes at offsets 11 through 19 and the property-block presence byte at offset 20"
 size = 58
-note = "Offsets are relative to the primary indexed scope header. The tool list count is the last fixed field; the lists after it have variable length."
+note = "Offsets are relative to the primary indexed scope header, for a prologue without a property block and with an empty companion list. An empty property block moves every field after the presence byte four bytes on; each companion reference moves every field after the companion list eleven bytes on. The tool list count is the last fixed field; the lists after it have variable length."
 
 [[record.field]]
 name = "indexed_header"
@@ -6091,11 +6091,18 @@ source = "spec"
 anchor = "An indexed Design record header is `u32 class_tag_length`"
 
 [[record.field]]
-name = "zero_run_10"
+name = "zero_run_9"
 offset = 11
-type = "bytes[10]"
+type = "bytes[9]"
 source = "spec"
-anchor = "ten zero bytes at offsets 11 through 20, the zero-based operation"
+anchor = "nine zero bytes at offsets 11 through 19 and the property-block presence byte"
+
+[[record.field]]
+name = "property_presence"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "the property-block presence byte at offset 20"
 
 [[record.field]]
 name = "operation"
@@ -6105,11 +6112,11 @@ source = "spec"
 anchor = "the zero-based operation u32 at offset 21"
 
 [[record.field]]
-name = "zero_run_4"
+name = "companion_count"
 offset = 25
-type = "bytes[4]"
+type = "u32"
 source = "spec"
-anchor = "four zero bytes at offsets 25 through 28"
+anchor = "the companion count u32 at offset 25"
 
 [[record.field]]
 name = "keep_tools"
@@ -6119,11 +6126,11 @@ source = "spec"
 anchor = "the keep-tools Boolean at offset 29"
 
 [[record.field]]
-name = "zero_flag"
+name = "new_component"
 offset = 30
 type = "u8"
 source = "spec"
-anchor = "zero at byte 30"
+anchor = "the new-component Boolean at offset 30"
 
 [[record.field]]
 name = "constant_one"

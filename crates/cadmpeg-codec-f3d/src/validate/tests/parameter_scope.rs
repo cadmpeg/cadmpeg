@@ -178,6 +178,20 @@ fn operand_list_combine_requires_its_own_offsets() {
     assert_eq!(findings(21, 29), 0);
     assert_eq!(findings(20, 29), 1);
     assert_eq!(findings(21, 25), 1);
+    for (operation_offset, keep_tools_offset) in [(25, 33), (21, 40), (25, 44), (21, 51)] {
+        assert_eq!(
+            findings(operation_offset, keep_tools_offset),
+            0,
+            "{operation_offset} {keep_tools_offset}"
+        );
+    }
+    for (operation_offset, keep_tools_offset) in [(23, 31), (29, 37), (21, 35), (25, 39)] {
+        assert_eq!(
+            findings(operation_offset, keep_tools_offset),
+            1,
+            "{operation_offset} {keep_tools_offset}"
+        );
+    }
 }
 
 #[test]

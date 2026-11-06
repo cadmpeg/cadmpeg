@@ -15,6 +15,7 @@ use crate::records::feature::scope::DesignParameterScope;
 use crate::test_support::indexed_header;
 use crate::test_support::lp_utf16;
 use crate::test_support::push_reference_u64;
+use std::collections::HashMap;
 
 #[test]
 fn external_reference_text_fields_keep_link_and_version() {
@@ -119,7 +120,7 @@ fn combine_tools_keep_first_and_additional_records() {
     )
     .unwrap()
     .expect("Combine scope");
-    let operation = exact_combine_operation(&bytes, &records, &scope)
+    let operation = exact_combine_operation(&bytes, &records, &scope, &HashMap::new())
         .unwrap()
         .expect("two admitted Combine tools");
     assert_eq!(operation.tools.first.record_index, 92);
@@ -219,6 +220,7 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &scope,
+        &HashMap::new(),
     )
     .unwrap()
     .expect("Combine construction");
@@ -303,6 +305,7 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
         &compact_bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&compact_bytes),
         &compact_scope,
+        &HashMap::new(),
     )
     .unwrap()
     .expect("compact Combine construction");
@@ -325,7 +328,8 @@ fn combine_scope_projects_ordered_target_tools_and_retention() {
     assert!(exact_combine_operation(
         &malformed_compact_tail,
         &crate::design::test_support::indexed_record_offsets_for_test(&malformed_compact_tail),
-        &compact_scope
+        &compact_scope,
+        &HashMap::new()
     )
     .unwrap()
     .is_none());
@@ -449,7 +453,7 @@ fn combine_extended_reference_scope_retains_external_tool_identity() {
         })
         .unwrap();
     let records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
-    let operation = exact_combine_operation(&bytes, &records, &scope)
+    let operation = exact_combine_operation(&bytes, &records, &scope, &HashMap::new())
         .unwrap()
         .expect("extended-reference Combine construction");
     assert_eq!(operation.form, DesignCombineForm::ExtendedReference);
@@ -494,7 +498,7 @@ fn combine_extended_reference_scope_retains_external_tool_identity() {
         let mut changed = bytes.clone();
         changed[epoch_at..epoch_at + 4].copy_from_slice(&epoch.to_le_bytes());
         changed[scalar_at..scalar_at + 8].copy_from_slice(&scalar.to_le_bytes());
-        let operation = exact_combine_operation(&changed, &records, &scope)
+        let operation = exact_combine_operation(&changed, &records, &scope, &HashMap::new())
             .unwrap()
             .expect("complete external selector");
         let identity = operation.tools.first.external_identity.as_ref().unwrap();
@@ -510,7 +514,7 @@ fn combine_extended_reference_scope_retains_external_tool_identity() {
     for scalar in [-0.375_f64, f64::INFINITY, f64::NAN] {
         let mut changed = bytes.clone();
         changed[scalar_at..scalar_at + 8].copy_from_slice(&scalar.to_le_bytes());
-        let operation = exact_combine_operation(&changed, &records, &scope)
+        let operation = exact_combine_operation(&changed, &records, &scope, &HashMap::new())
             .unwrap()
             .expect("operation retains its native selector");
         assert!(operation.tools.first.external_identity.is_none());
@@ -524,7 +528,7 @@ fn combine_extended_reference_scope_retains_external_tool_identity() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    assert!(exact_combine_operation(&bytes, &records, &malformed_scope)
+    assert!(exact_combine_operation(&bytes, &records, &malformed_scope, &HashMap::new())
         .unwrap()
         .is_none());
     let mut malformed_reference = bytes.clone();
@@ -532,7 +536,8 @@ fn combine_extended_reference_scope_retains_external_tool_identity() {
     assert!(exact_combine_operation(
         &malformed_reference,
         &crate::design::test_support::indexed_record_offsets_for_test(&malformed_reference),
-        &scope
+        &scope,
+        &HashMap::new()
     )
     .unwrap()
     .is_none());
@@ -543,6 +548,7 @@ fn combine_extended_reference_scope_retains_external_tool_identity() {
         &malformed_external_asset,
         &crate::design::test_support::indexed_record_offsets_for_test(&malformed_external_asset),
         &scope,
+        &HashMap::new(),
     )
     .unwrap()
     .expect("operation remains exact when only the optional external identity is malformed");
@@ -565,6 +571,11 @@ struct OperandListFixture {
     node_flag: u8,
     node_entries: usize,
     node_trailing_bytes: usize,
+    property_block: bool,
+    companions: Vec<u32>,
+    companion_type: &'static str,
+    new_component: u8,
+    omit_consumed: bool,
 }
 
 impl OperandListFixture {
@@ -583,6 +594,11 @@ impl OperandListFixture {
             node_flag: 1,
             node_entries: 1,
             node_trailing_bytes: 0,
+            property_block: false,
+            companions: Vec::new(),
+            companion_type: crate::design::decode::body_consumers::REMOVE_BODY_TYPE_GUID,
+            new_component: 0,
+            omit_consumed: false,
         }
     }
 
@@ -614,7 +630,7 @@ impl OperandListFixture {
         let tool_operations: Vec<u32> =
             self.tools.iter().map(|(operation, _)| *operation).collect();
         let consumed = self.consumed.clone().unwrap_or_else(|| {
-            if self.keep_tools == 0 {
+            if self.keep_tools == 0 && self.companions.is_empty() {
                 self.tools
                     .iter()
                     .map(|(_, selection)| selection + 100)
@@ -625,11 +641,17 @@ impl OperandListFixture {
         });
         let mut bytes = Vec::new();
         indexed_header(&mut bytes, *b"412", 90);
-        bytes.extend_from_slice(&[0; 10]);
+        bytes.extend_from_slice(&[0; 9]);
+        if self.property_block {
+            bytes.push(1);
+            bytes.extend_from_slice(&0u32.to_le_bytes());
+        } else {
+            bytes.push(0);
+        }
         bytes.extend_from_slice(&self.operation.to_le_bytes());
-        bytes.extend_from_slice(&[0; 4]);
+        marked_list(&mut bytes, &self.companions);
         bytes.push(self.keep_tools);
-        bytes.push(0);
+        bytes.push(self.new_component);
         bytes.extend_from_slice(&1u32.to_le_bytes());
         marked(&mut bytes, 377);
         bytes.extend_from_slice(&306u64.to_le_bytes());
@@ -638,7 +660,9 @@ impl OperandListFixture {
             self.listed_tools.as_deref().unwrap_or(&tool_operations),
         );
         bytes.extend_from_slice(&[0; 8]);
-        marked_list(&mut bytes, &consumed);
+        if !self.omit_consumed {
+            marked_list(&mut bytes, &consumed);
+        }
         marked_list(&mut bytes, &[self.listed_target.unwrap_or(self.target.0)]);
         bytes.extend_from_slice(&self.guid_units.to_le_bytes());
         for unit in "00000000-0000-0000-0000-000000000000"
@@ -709,11 +733,23 @@ impl OperandListFixture {
     }
 
     fn decode(&self) -> Option<DesignCombineOperation> {
-        decode_combine_frame(&self.bytes())
+        let types = self
+            .companions
+            .iter()
+            .map(|record| (u64::from(*record), (self.companion_type, 0)))
+            .collect();
+        decode_combine_frame_with(&self.bytes(), &types)
     }
 }
 
 fn decode_combine_frame(bytes: &[u8]) -> Option<DesignCombineOperation> {
+    decode_combine_frame_with(bytes, &HashMap::new())
+}
+
+fn decode_combine_frame_with(
+    bytes: &[u8],
+    stream_types: &HashMap<u64, (&str, u32)>,
+) -> Option<DesignCombineOperation> {
     let records = crate::design::test_support::indexed_record_offsets_for_test(bytes);
     let class_tag = crate::records::references::DesignClassTag::try_from("412".to_owned()).unwrap();
     let scope = parse_parameter_scope_with_type_guid(
@@ -726,7 +762,7 @@ fn decode_combine_frame(bytes: &[u8]) -> Option<DesignCombineOperation> {
     )
     .unwrap()
     .expect("Combine scope");
-    exact_combine_operation(bytes, &records, &scope).unwrap()
+    exact_combine_operation(bytes, &records, &scope, stream_types).unwrap()
 }
 
 #[test]
@@ -874,8 +910,82 @@ fn operand_list_keeps_its_operation_when_a_browser_node_is_not_exact() {
 }
 
 #[test]
-fn nonzero_byte_twenty_is_not_the_operand_list_prologue() {
-    let mut bytes = OperandListFixture::new(0, 0).bytes();
-    bytes[20] = 1;
-    assert_eq!(decode_combine_frame(&bytes), None);
+fn byte_twenty_of_the_operand_list_prologue_is_the_property_block_presence() {
+    let mut empty_block = OperandListFixture::new(1, 0);
+    empty_block.property_block = true;
+    let operation = empty_block.decode().expect("operand-list Combine");
+    assert_eq!(operation.operation, cadmpeg_ir::features::BooleanKind::Cut);
+    assert_eq!(operation.operation_offset, 25);
+    assert_eq!(operation.keep_tools_offset, 33);
+
+    let mut presence_without_block = OperandListFixture::new(0, 0).bytes();
+    presence_without_block[20] = 1;
+    assert_eq!(decode_combine_frame(&presence_without_block), None);
+    let mut nonempty_block = empty_block.bytes();
+    nonempty_block[21] = 1;
+    assert_eq!(decode_combine_frame(&nonempty_block), None);
+    let mut presence_two = OperandListFixture::new(0, 0).bytes();
+    presence_two[20] = 2;
+    assert_eq!(decode_combine_frame(&presence_two), None);
+}
+
+#[test]
+fn operand_list_companions_remove_the_tools_of_a_consuming_combine() {
+    let companion = |property_block: bool, companions: Vec<u32>| {
+        let mut fixture = OperandListFixture::new(0, 0).two_tools();
+        fixture.property_block = property_block;
+        fixture.companions = companions;
+        fixture
+    };
+    for (property_block, companions, operation_offset, keep_tools_offset) in [
+        (false, vec![500], 21, 40),
+        (true, vec![500], 25, 44),
+        (false, vec![500, 501], 21, 51),
+    ] {
+        let operation = companion(property_block, companions)
+            .decode()
+            .expect("Combine with companions");
+        assert_eq!(operation.form, DesignCombineForm::OperandLists);
+        assert_eq!(operation.operation, cadmpeg_ir::features::BooleanKind::Join);
+        assert_eq!(operation.operation_offset, operation_offset);
+        assert!(!operation.keep_tools);
+        assert_eq!(operation.keep_tools_offset, keep_tools_offset);
+        assert_eq!(operation.target_record_index, 96);
+        assert_eq!(
+            operation
+                .tools
+                .iter()
+                .map(|tool| tool.record_index)
+                .collect::<Vec<_>>(),
+            [92, 94]
+        );
+    }
+    let mut two_lists = companion(true, vec![500]);
+    two_lists.omit_consumed = true;
+    assert_eq!(
+        two_lists.decode().map(|operation| operation.keep_tools_offset),
+        Some(44)
+    );
+
+    let mut other_type = companion(false, vec![500]);
+    other_type.companion_type = crate::design::decode::body_consumers::COMBINE_TYPE_GUID;
+    let unregistered = companion(false, vec![500]).bytes();
+    let mut kept_tools = companion(false, vec![500]);
+    kept_tools.keep_tools = 1;
+    let mut consumed_tools = companion(false, vec![500]);
+    consumed_tools.consumed = Some(vec![192, 194]);
+    let mut two_lists_without_companion = OperandListFixture::new(0, 1).two_tools();
+    two_lists_without_companion.omit_consumed = true;
+    let mut new_component = companion(true, vec![500]);
+    new_component.new_component = 1;
+    for fixture in [
+        other_type,
+        kept_tools,
+        consumed_tools,
+        two_lists_without_companion,
+        new_component,
+    ] {
+        assert_eq!(fixture.decode(), None);
+    }
+    assert_eq!(decode_combine_frame(&unregistered), None);
 }

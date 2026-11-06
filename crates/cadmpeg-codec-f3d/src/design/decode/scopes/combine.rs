@@ -6,6 +6,7 @@ use super::parameter_scope::parameter_scope_payload_length;
 use super::shared_frames::marked_record_reference;
 use crate::bytes::lp_utf16_bounded;
 use crate::bytes::take_reference;
+use crate::design::decode::body_consumers::REMOVE_BODY_TYPE_GUID;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::decode::text::fixed_guid_end;
 
@@ -29,109 +30,214 @@ use crate::records::feature::combine::DesignCombineOperation;
 use crate::records::feature::scope::DesignParameterScope;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
+use std::collections::HashMap;
 
 const MARKED_REFERENCE_LEN: usize = 11;
 const COMBINE_CLAUSE_LEN: usize = 12;
+/// An empty property block is its u32 entry count.
+const EMPTY_PROPERTY_BLOCK_LEN: usize = 4;
 
 pub(super) fn exact_combine_operation(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
+    stream_types: &HashMap<u64, (&str, u32)>,
 ) -> Result<Option<DesignCombineOperation>, CodecError> {
-    (|| {
-        if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::Combine)
-            || scope.reference_members().len() < 4
-            || !scope.reference_members().len().is_multiple_of(2)
-        {
-            return None;
+    if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::Combine)
+        || scope.reference_members().len() < 4
+        || !scope.reference_members().len().is_multiple_of(2)
+    {
+        return Ok(None);
+    }
+    let Ok(start) = usize::try_from(scope.byte_offset()) else {
+        return Ok(None);
+    };
+    for prologue in combine_prologues(bytes, start, scope, stream_types) {
+        if let Some(operation) = combine_operation_with(bytes, records, scope, prologue)? {
+            return Ok(Some(operation));
         }
-        let start = usize::try_from(scope.byte_offset()).ok()?;
-        let compact = scope.class_tag.as_str() == "387"
-            && scope.paired_class_tag.as_str() == "258"
-            && parameter_scope_payload_length(scope) == Some(314);
-        let extended_reference = scope.class_tag.as_str() == "329"
-            && scope.paired_class_tag.as_str() == "261"
-            && scope.frame_length() == 363;
-        let operand_lists = !compact
-            && !extended_reference
-            && bytes.get(start + combine_lists::OPERATION - 1) == Some(&0);
-        let (form, operation_offset, keep_tools_offset) = if compact {
-            if bytes
-                .get(start + combine_compact::ZERO_RUN_10..start + combine_compact::OPERATION)?
-                != [0; 10]
-                || bytes.get(
-                    start + combine_compact::ZERO_RUN_3..start + combine_compact::REFERENCE_FORM,
-                )? != [0; 3]
-                || bytes.get(
-                    start + combine_compact::REFERENCE_FORM..start + combine_compact::CONSTANT_ONE,
-                )? != [1, 0]
-                || View::u32_le_at(bytes, start + combine_compact::CONSTANT_ONE) != Some(1)
-                || bytes.get(start + combine_compact::REFERENCE_MARKER) != Some(&1)
-                || View::u64_le_at(bytes, start + combine_compact::REFERENCE_VALUE) == Some(0)
-                || bytes
-                    .get(start + combine_compact::REFERENCE_TAIL..start + combine_compact::LEN)?
-                    != [0; 2]
-            {
-                return None;
-            }
-            (
-                DesignCombineForm::Compact,
-                start + combine_compact::OPERATION,
-                start + combine_compact::KEEP_TOOLS,
-            )
-        } else if extended_reference {
-            let mut reference_at = start.checked_add(combine_extended::REFERENCE_MARKER)?;
-            let reference = take_reference(bytes, &mut reference_at)?;
-            if bytes
-                .get(start + combine_extended::ZERO_RUN_18..start + combine_extended::FORM_MARKER)?
-                != [0; 18]
-                || bytes.get(start + combine_extended::FORM_MARKER) != Some(&1)
-                || reference.local().is_none_or(|(target, _)| target == 0)
-                || reference_at != start.checked_add(combine_extended::LEN)?
-            {
-                return None;
-            }
-            (
-                DesignCombineForm::ExtendedReference,
-                start + combine_extended::OPERATION,
-                start + combine_extended::KEEP_TOOLS,
-            )
-        } else if operand_lists {
-            if bytes.get(start + combine_lists::ZERO_RUN_10..start + combine_lists::OPERATION)?
-                != [0; 10]
-                || bytes
-                    .get(start + combine_lists::ZERO_RUN_4..start + combine_lists::KEEP_TOOLS)?
-                    != [0; 4]
-                || bytes.get(start + combine_lists::ZERO_FLAG) != Some(&0)
-                || View::u32_le_at(bytes, start + combine_lists::CONSTANT_ONE) != Some(1)
-                || bytes.get(start + combine_lists::REFERENCE_MARKER) != Some(&1)
-                || View::u64_le_at(bytes, start + combine_lists::REFERENCE_VALUE) == Some(0)
-                || bytes.get(start + combine_lists::REFERENCE_TAIL..start + combine_lists::STAMP)?
-                    != [0; 2]
-            {
-                return None;
-            }
-            (
-                DesignCombineForm::OperandLists,
-                start + combine_lists::OPERATION,
-                start + combine_lists::KEEP_TOOLS,
-            )
-        } else {
-            if bytes
-                .get(start + combine_standard::ZERO_RUN_9..start + combine_standard::OPERATION)?
-                != [0; 9]
-                || bytes.get(start + combine_standard::ZERO_FLAG) != Some(&0)
-                || bytes.get(start + combine_standard::ZERO_RUN_7..start + combine_standard::LEN)?
-                    != [0; 7]
-            {
-                return None;
-            }
-            (
-                DesignCombineForm::Standard,
-                start + combine_standard::OPERATION,
-                start + combine_standard::KEEP_TOOLS,
-            )
-        };
+    }
+    Ok(None)
+}
+
+/// The fixed fields of one prologue reading.
+struct CombinePrologue {
+    form: DesignCombineForm,
+    operation_offset: usize,
+    keep_tools_offset: usize,
+    lists: Option<OperandLists>,
+}
+
+/// Where the operand lists of an operand-list prologue start, and the
+/// companion `RemoveBody` scopes it names.
+struct OperandLists {
+    tool_count_offset: usize,
+    companions: Vec<u32>,
+}
+
+/// The prologue readings to try in order. A frame whose byte 20 is one is an
+/// operand-list frame only when its lists close at the reference table.
+fn combine_prologues(
+    bytes: &[u8],
+    start: usize,
+    scope: &DesignParameterScope,
+    stream_types: &HashMap<u64, (&str, u32)>,
+) -> Vec<CombinePrologue> {
+    let compact = scope.class_tag.as_str() == "387"
+        && scope.paired_class_tag.as_str() == "258"
+        && parameter_scope_payload_length(scope) == Some(314);
+    let extended_reference = scope.class_tag.as_str() == "329"
+        && scope.paired_class_tag.as_str() == "261"
+        && scope.frame_length() == 363;
+    if compact {
+        return compact_prologue(bytes, start).into_iter().collect();
+    }
+    if extended_reference {
+        return extended_reference_prologue(bytes, start)
+            .into_iter()
+            .collect();
+    }
+    let mut prologues = usize::try_from(scope.reference_count_offset())
+        .ok()
+        .and_then(|table_at| bytes.get(..table_at))
+        .and_then(|prologue| operand_list_prologue(prologue, start, stream_types))
+        .into_iter()
+        .collect::<Vec<_>>();
+    if bytes.get(start + combine_lists::PROPERTY_PRESENCE) != Some(&0) {
+        prologues.extend(standard_prologue(bytes, start));
+    }
+    prologues
+}
+
+fn compact_prologue(bytes: &[u8], start: usize) -> Option<CombinePrologue> {
+    if bytes.get(start + combine_compact::ZERO_RUN_10..start + combine_compact::OPERATION)?
+        != [0; 10]
+        || bytes.get(start + combine_compact::ZERO_RUN_3..start + combine_compact::REFERENCE_FORM)?
+            != [0; 3]
+        || bytes
+            .get(start + combine_compact::REFERENCE_FORM..start + combine_compact::CONSTANT_ONE)?
+            != [1, 0]
+        || View::u32_le_at(bytes, start + combine_compact::CONSTANT_ONE) != Some(1)
+        || bytes.get(start + combine_compact::REFERENCE_MARKER) != Some(&1)
+        || View::u64_le_at(bytes, start + combine_compact::REFERENCE_VALUE) == Some(0)
+        || bytes.get(start + combine_compact::REFERENCE_TAIL..start + combine_compact::LEN)?
+            != [0; 2]
+    {
+        return None;
+    }
+    Some(CombinePrologue {
+        form: DesignCombineForm::Compact,
+        operation_offset: start + combine_compact::OPERATION,
+        keep_tools_offset: start + combine_compact::KEEP_TOOLS,
+        lists: None,
+    })
+}
+
+fn extended_reference_prologue(bytes: &[u8], start: usize) -> Option<CombinePrologue> {
+    let mut reference_at = start.checked_add(combine_extended::REFERENCE_MARKER)?;
+    let reference = take_reference(bytes, &mut reference_at)?;
+    if bytes.get(start + combine_extended::ZERO_RUN_18..start + combine_extended::FORM_MARKER)?
+        != [0; 18]
+        || bytes.get(start + combine_extended::FORM_MARKER) != Some(&1)
+        || reference.local().is_none_or(|(target, _)| target == 0)
+        || reference_at != start.checked_add(combine_extended::LEN)?
+    {
+        return None;
+    }
+    Some(CombinePrologue {
+        form: DesignCombineForm::ExtendedReference,
+        operation_offset: start + combine_extended::OPERATION,
+        keep_tools_offset: start + combine_extended::KEEP_TOOLS,
+        lists: None,
+    })
+}
+
+/// Read the fixed fields of an operand-list prologue from `prologue`, the
+/// stream bytes up to the scope's reference table.
+fn operand_list_prologue(
+    prologue: &[u8],
+    start: usize,
+    stream_types: &HashMap<u64, (&str, u32)>,
+) -> Option<CombinePrologue> {
+    let property_block = match prologue.get(start + combine_lists::PROPERTY_PRESENCE)? {
+        0 => 0,
+        1 if View::u32_le_at(prologue, start + combine_lists::OPERATION)? == 0 => {
+            EMPTY_PROPERTY_BLOCK_LEN
+        }
+        _ => return None,
+    };
+    if prologue.get(start + combine_lists::ZERO_RUN_9..start + combine_lists::PROPERTY_PRESENCE)?
+        != [0; 9]
+    {
+        return None;
+    }
+    let mut cursor = start.checked_add(combine_lists::COMPANION_COUNT + property_block)?;
+    let companion_limit = prologue.len().checked_sub(cursor)? / MARKED_REFERENCE_LEN;
+    let companions = take_marked_records(prologue, &mut cursor, companion_limit)?;
+    if companions.iter().any(|record_index| {
+        stream_types
+            .get(&u64::from(*record_index))
+            .is_none_or(|(type_guid, _)| !type_guid.eq_ignore_ascii_case(REMOVE_BODY_TYPE_GUID))
+    }) {
+        return None;
+    }
+    let shift = cursor.checked_sub(start.checked_add(combine_lists::KEEP_TOOLS)?)?;
+    let field = |offset: usize| start.checked_add(offset)?.checked_add(shift);
+    let keep_tools_offset = field(combine_lists::KEEP_TOOLS)?;
+    if prologue.get(field(combine_lists::NEW_COMPONENT)?) != Some(&0)
+        || View::u32_le_at(prologue, field(combine_lists::CONSTANT_ONE)?) != Some(1)
+        || prologue.get(field(combine_lists::REFERENCE_MARKER)?) != Some(&1)
+        || View::u64_le_at(prologue, field(combine_lists::REFERENCE_VALUE)?)
+            .is_none_or(|reference| reference == 0)
+        || prologue.get(field(combine_lists::REFERENCE_TAIL)?..field(combine_lists::STAMP)?)?
+            != [0; 2]
+        || (!companions.is_empty() && prologue.get(keep_tools_offset) != Some(&0))
+    {
+        return None;
+    }
+    Some(CombinePrologue {
+        form: DesignCombineForm::OperandLists,
+        operation_offset: start
+            .checked_add(combine_lists::OPERATION)?
+            .checked_add(property_block)?,
+        keep_tools_offset,
+        lists: Some(OperandLists {
+            tool_count_offset: field(combine_lists::TOOL_COUNT)?,
+            companions,
+        }),
+    })
+}
+
+fn standard_prologue(bytes: &[u8], start: usize) -> Option<CombinePrologue> {
+    if bytes.get(start + combine_standard::ZERO_RUN_9..start + combine_standard::OPERATION)?
+        != [0; 9]
+        || bytes.get(start + combine_standard::ZERO_FLAG) != Some(&0)
+        || bytes.get(start + combine_standard::ZERO_RUN_7..start + combine_standard::LEN)?
+            != [0; 7]
+    {
+        return None;
+    }
+    Some(CombinePrologue {
+        form: DesignCombineForm::Standard,
+        operation_offset: start + combine_standard::OPERATION,
+        keep_tools_offset: start + combine_standard::KEEP_TOOLS,
+        lists: None,
+    })
+}
+
+fn combine_operation_with(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+    prologue: CombinePrologue,
+) -> Result<Option<DesignCombineOperation>, CodecError> {
+    let CombinePrologue {
+        form,
+        operation_offset,
+        keep_tools_offset,
+        lists,
+    } = prologue;
+    (|| {
         let first_operation_code = u32::from(form != DesignCombineForm::OperandLists);
         let operation =
             match View::u32_le_at(bytes, operation_offset)?.checked_sub(first_operation_code)? {
@@ -208,17 +314,18 @@ pub(super) fn exact_combine_operation(
             }
         }
         let target = target?;
-        if form == DesignCombineForm::OperandLists
-            && !operand_lists_name_operands(
-                bytes,
-                start,
-                scope,
+        if let Some(lists) = &lists {
+            let table_at = usize::try_from(scope.reference_count_offset()).ok()?;
+            if !operand_lists_name_operands(
+                bytes.get(..table_at)?,
+                lists,
+                scope.reference_members().len(),
                 keep_tools,
                 &tool_operations,
                 target_operation?,
-            )?
-        {
-            return None;
+            ) {
+                return None;
+            }
         }
         let tools = combine::DesignCombineTools {
             first: first_tool?,
@@ -239,34 +346,50 @@ pub(super) fn exact_combine_operation(
 }
 
 /// Check the lists between the operand-list prologue and the reference table.
+///
+/// `prologue` holds the stream bytes up to the reference table. A prologue
+/// with a companion can store two lists between the tool list and the target
+/// list in place of three.
 fn operand_lists_name_operands(
-    bytes: &[u8],
-    start: usize,
-    scope: &DesignParameterScope,
+    prologue: &[u8],
+    lists: &OperandLists,
+    reference_count: usize,
     keep_tools: bool,
     tool_operations: &[u32],
     target_operation: u32,
-) -> Option<bool> {
-    let reference_count = scope.reference_members().len();
-    let mut cursor = start.checked_add(combine_lists::TOOL_COUNT)?;
-    let tools = take_marked_records(bytes, &mut cursor, reference_count)?;
-    let zero_values = (
-        View::u32_le_at(bytes, cursor)?,
-        View::u32_le_at(bytes, cursor.checked_add(4)?)?,
-    );
-    cursor = cursor.checked_add(8)?;
-    let consumed = take_marked_records(bytes, &mut cursor, reference_count)?;
-    let targets = take_marked_records(bytes, &mut cursor, reference_count)?;
-    let guid_end = fixed_guid_end(bytes, cursor)?;
-    let table_at = guid_end.checked_add(3)?;
-    Some(
-        zero_values == (0, 0)
-            && tools == tool_operations
-            && targets == [target_operation]
-            && consumed.len() == if keep_tools { 0 } else { tools.len() }
-            && bytes.get(guid_end..table_at)? == [0; 3]
-            && u64::try_from(table_at).ok()? == scope.reference_count_offset(),
-    )
+) -> bool {
+    let has_companion = !lists.companions.is_empty();
+    let consumed_count = if keep_tools || has_companion {
+        0
+    } else {
+        tool_operations.len()
+    };
+    let read = |middle_count: usize| -> Option<bool> {
+        let mut cursor = lists.tool_count_offset;
+        let tools = take_marked_records(prologue, &mut cursor, reference_count)?;
+        let mut middle = Vec::new();
+        for _ in 0..middle_count {
+            middle.push(take_marked_records(prologue, &mut cursor, reference_count)?);
+        }
+        let targets = take_marked_records(prologue, &mut cursor, reference_count)?;
+        let guid_end = fixed_guid_end(prologue, cursor)?;
+        let table_at = guid_end.checked_add(3)?;
+        let middle_holds = match &middle[..] {
+            [first, second, consumed] => {
+                first.is_empty() && second.is_empty() && consumed.len() == consumed_count
+            }
+            [first, second] => has_companion && first.is_empty() && second.is_empty(),
+            _ => false,
+        };
+        Some(
+            middle_holds
+                && tools == tool_operations
+                && targets == [target_operation]
+                && prologue.get(guid_end..table_at)? == [0; 3]
+                && table_at == prologue.len(),
+        )
+    };
+    read(3) == Some(true) || read(2) == Some(true)
 }
 
 fn selection_body_node(

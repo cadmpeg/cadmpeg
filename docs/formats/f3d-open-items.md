@@ -1063,6 +1063,18 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** The body-visibility join in `f3d.md` admits only the `0x01 0x01` member form.
 
+
+### DR-262. List that a two-list Combine prologue omits
+
+**Question.** Which of the three lists between the tool list and the target list does an operand-list `Combine` prologue omit when it stores only two?
+
+**Known.** `f3d.md` §3.1 gives the operand-list prologue: after the tool list, an empty list, a list that names the new component's browser node, the consumed-body list, and the target list. A prologue with a property block and a companion `RemoveBody` stores two empty lists between the tool list and the target list. A `Combine` with a companion consumes no tool in its own scope, so the reading of every stored field is the same for each omitted list.
+
+**Need.** A two-list prologue whose `Combine` places its result in a new component or consumes a tool in its own scope, or the Fusion version that adds the third list.
+
+**Conflict.** None.
+
+**Note.** None.
 ### DR-202. Fields of the older Shell frames
 
 **Question.** Do the fixed-length `Shell` frames with a Boolean at offset 21 store the fields of the wall-slot form?
