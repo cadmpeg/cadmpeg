@@ -43,7 +43,8 @@ pub(super) fn pattern_seed_group<'a>(
     )
 }
 
-/// Seeds of a pattern scope whose transform does not project.
+/// Seeds of a pattern scope whose transform does not project. A feature seed
+/// is kept only when it precedes the pattern in the modelling history.
 pub(super) fn unprojected_pattern_seeds(
     scope: &DesignParameterScope,
     groups: &[DesignConstructionOperandGroup],
@@ -61,13 +62,56 @@ pub(super) fn unprojected_pattern_seeds(
                 scopes,
             )
         })
+        .filter(|seeds| {
+            seeds.iter().all(|seed| match seed {
+                cadmpeg_ir::features::patterns::PatternSeed::Feature(id) => scopes
+                    .iter()
+                    .filter(|candidate| crate::ids::neutral_feature_id(candidate) == *id)
+                    .all(|candidate| precedes_in_history(candidate, scope, scopes)),
+                _ => true,
+            })
+        })
         .unwrap_or_default()
+}
+
+/// Whether `candidate` precedes `scope` in the modelling history: walking the
+/// preceding history states back from `scope` reaches `candidate`'s state.
+fn precedes_in_history(
+    candidate: &DesignParameterScope,
+    scope: &DesignParameterScope,
+    scopes: &[DesignParameterScope],
+) -> bool {
+    let Some(target) = candidate.history_state_id() else {
+        return false;
+    };
+    let stream = native_stream(&scope.id);
+    let mut state = scope.previous_history_state_id();
+    for _ in 0..=scopes.len() {
+        let Some(current) = state else {
+            return false;
+        };
+        if current == target {
+            return true;
+        }
+        let Some(owner) = unique_feature_match(scopes.iter().filter(|owner| {
+            native_stream(&owner.id) == stream && owner.history_state_id() == Some(current)
+        })) else {
+            return false;
+        };
+        state = owner
+            .previous_history_state_id()
+            .filter(|previous| *previous != current);
+    }
+    false
 }
 
 /// Seeds of a pattern's seed group. A body-role group selects its bodies. A
 /// face-role group selects its historical faces in the scope's preceding
 /// state; otherwise, when every member is a compact entity selection that
-/// names a feature scope, it selects those features in member order.
+/// names a feature scope, it selects those features in member order. A face
+/// seed group whose members all decode as bounded-face operands selects their
+/// historical faces, or the group's native faces; with any other member it
+/// selects nothing.
 pub(super) fn pattern_group_seeds(
     scope: &DesignParameterScope,
     group: &DesignConstructionOperandGroup,
@@ -78,6 +122,24 @@ pub(super) fn pattern_group_seeds(
     use cadmpeg_ir::features::patterns::PatternSeed;
 
     if group.role() == DesignOperandRole::ROLE_0X10 {
+        let stream = native_stream(&group.id);
+        let all_bounded_faces = group.members().iter().enumerate().all(|(ordinal, member)| {
+            face_operands.iter().any(|operand| {
+                native_stream(&operand.id) == stream
+                    && operand.scope_record_index == scope.record_index
+                    && operand.group_record_index() == Some(group.record_index)
+                    && operand
+                        .group_member_ordinal()
+                        .and_then(|member_ordinal| usize::try_from(member_ordinal).ok())
+                        == Some(ordinal)
+                    && operand.record_index() == member.value
+                    && operand.recipe_kind
+                        == crate::records::recipes::ConstructionRecipeKind::BoundedFace
+            })
+        });
+        if !all_bounded_faces {
+            return Vec::new();
+        }
         return vec![PatternSeed::Faces(
             resolved_historical_face_group(
                 scope,

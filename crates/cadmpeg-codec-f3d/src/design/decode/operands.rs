@@ -1052,7 +1052,12 @@ pub(crate) fn decode_face_operands(
                 },
                 recipes,
             ) {
-                out.push(operand?);
+                let operand = operand?;
+                if !is_pattern_face_seed
+                    || operand.recipe_kind == ConstructionRecipeKind::BoundedFace
+                {
+                    out.push(operand);
+                }
             }
         }
     }
