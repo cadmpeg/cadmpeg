@@ -12,7 +12,6 @@ pub(super) fn regenerate(
     geometry: &CurveGeometry,
     span: Option<&CurveSpan>,
     sense: Sense,
-    parameter_curve: bool,
 ) -> Option<Entity> {
     if sense != Sense::Forward {
         return None;
@@ -64,13 +63,29 @@ pub(super) fn regenerate(
     let form = record.field("form")?.as_i64()?;
     let interpretation = record.field("interpretation")?.as_i64()?;
     if !(matches!((form, interpretation), (11, 1) | (12, 2) | (13, 3))
-        || parameter_curve && form == 63 && interpretation == 1 && points.first() == points.last())
+        || form == 63 && interpretation == 1 && points.first() == points.last())
     {
         return None;
     }
     let positions = points.iter().map(|point| point.get()).collect::<Vec<_>>();
     if interpretation == 1 && positions.iter().any(|point| point.z != positions[0].z) {
         return None;
+    }
+    if form == 63 {
+        let tuples = record.field("tuples")?;
+        let tuples = tuples.as_array()?;
+        if tuples.len() != positions.len()
+            || record.field("common_z")?.as_f64()? != positions[0].z
+            || tuples.iter().zip(&positions).any(|(tuple, point)| {
+                tuple.as_array().is_none_or(|tuple| {
+                    tuple.len() != 2
+                        || tuple[0].as_f64() != Some(point.x)
+                        || tuple[1].as_f64() != Some(point.y)
+                })
+            })
+        {
+            return None;
+        }
     }
     let vectors = if interpretation == 3 {
         let directory = ir
@@ -275,14 +290,7 @@ pub(super) fn parameter_curve(
     if matches.next().is_some() {
         return None;
     }
-    let mut entity = regenerate(
-        ir,
-        &candidate.id,
-        &candidate.geometry,
-        None,
-        Sense::Forward,
-        true,
-    )?;
+    let mut entity = regenerate(ir, &candidate.id, &candidate.geometry, None, Sense::Forward)?;
     entity.status = EntityStatus::ParameterCurve;
     entity.source_targets.push(candidate.id.to_string());
     Some(entity)

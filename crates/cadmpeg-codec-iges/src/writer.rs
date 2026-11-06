@@ -7495,9 +7495,7 @@ impl CurveEntityEmitter<'_> {
             _ => {
                 let mut entity = match sense {
                     Sense::Forward => {
-                        match copious_curve::regenerate(
-                            self.ir, curve_id, geometry, span, sense, false,
-                        ) {
+                        match copious_curve::regenerate(self.ir, curve_id, geometry, span, sense) {
                             Some(entity) => entity,
                             None => curve_entity(
                                 geometry.solved().ok_or_else(|| {

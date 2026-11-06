@@ -746,9 +746,10 @@ fn free_curve_duplicating_a_written_parameter_curve_has_an_export_loss() {
 
 #[test]
 fn parameter_space_carriers_are_not_exported_as_unowned_model_curves() {
-    for (file, expected_pcurves, retained_copious) in [
+    for (file, expected_pcurves, retained_copious, model_copious) in [
         (
             crate::test_support::test_surface_fixtures::trimmed_plane_file(),
+            1,
             1,
             1,
         ),
@@ -756,6 +757,7 @@ fn parameter_space_carriers_are_not_exported_as_unowned_model_curves() {
             crate::test_support::test_drawing_and_trimming::multi_pcurve_boundary_file(),
             2,
             0,
+            1,
         ),
     ] {
         let decoded = IgesCodec
@@ -774,9 +776,9 @@ fn parameter_space_carriers_are_not_exported_as_unowned_model_curves() {
             .count();
         assert_eq!(
             curve_entries.len(),
-            (1 + expected_pcurves - retained_copious) * 2
+            (1 + expected_pcurves - retained_copious - model_copious) * 2
         );
-        assert_eq!(copious_entries, retained_copious * 2);
+        assert_eq!(copious_entries, (retained_copious + model_copious) * 2);
         assert_eq!(
             generated
                 .losses
