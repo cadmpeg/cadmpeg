@@ -236,8 +236,9 @@ impl<'a> BlendRows<'a> {
 /// face or has no rebuilt boundary, a support has no input boundary, an edge
 /// that two supports share has no axis row or tangent, a blend's supports
 /// share more than one edge along its spine, or none and the blend is not a
-/// cylinder for which `BlendRows::rounded_edge` reads an edge, the transition
-/// keeps that edge, or two blends replace one edge.
+/// cylinder whose row radius is its radius and for which
+/// `BlendRows::rounded_edge` reads an edge, the transition keeps that edge,
+/// or two blends replace one edge.
 fn transition_blends(
     transition: &AsmHistoricalTransition,
     input: &AsmHistoricalTopology,
