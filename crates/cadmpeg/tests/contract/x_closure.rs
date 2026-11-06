@@ -626,7 +626,10 @@ fn observe_f3d() -> ObservedF3d {
         .map(|row| ReducedProbe {
             path: row.path,
             storage: row.storage,
-            normalize: None,
+            normalize: match row.path {
+                "model.bodies[].color.a" | "model.faces[].color.a" => Some(|_| serde_json::Value::from(1.0)),
+                _ => None,
+            },
         })
         .collect();
     ObservedF3d {

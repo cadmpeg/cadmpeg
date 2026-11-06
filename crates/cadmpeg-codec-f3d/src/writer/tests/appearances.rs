@@ -30,6 +30,24 @@ use crate::test_support::zip_test::{
 use crate::F3dCodec;
 
 #[test]
+fn direct_color_alpha_reductions_are_declared_and_named() {
+    use cadmpeg_ir::codec::write::{EncoderBackend, ReducedStorage};
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let translucent = cadmpeg_ir::topology::Color::new(0.2, 0.4, 0.6, 0.25).unwrap();
+    ir.model.bodies[0].color = Some(translucent);
+    ir.model.faces[0].color = Some(translucent);
+    let (output, report) = super::source_less_analytic::synthesize_document(&ir, None);
+    for (path, id, color) in [
+        ("model.bodies[].color.a", ir.model.bodies[0].id.as_str(), output.ir().model.bodies[0].color),
+        ("model.faces[].color.a", ir.model.faces[0].id.as_str(), output.ir().model.faces[0].color),
+    ] {
+        assert!(<F3dCodec as EncoderBackend>::REDUCED_FIELDS.iter().any(|row| row.path == path && matches!(row.storage, ReducedStorage::Normalized { loss: "f3d/writer.appearance-properties-omitted" })));
+        assert_eq!(color.unwrap().a(), 1.0);
+        assert!(report.losses.iter().any(|loss| loss.code == crate::loss::F3dLossCode::WriterAppearancePropertiesOmitted.kind() && loss.message.contains(id)));
+    }
+}
+
+#[test]
 fn source_less_synthesis_writes_body_material_assignment() {
     let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
     let decoded = F3dCodec
