@@ -234,8 +234,13 @@ pub(crate) fn plate<'a>(
         first_direction.as_raw().dot(*u_axis.as_raw()).abs() >= 1.0 - EPS_ATTACHMENT_DIRECTION,
         PlateRefusal::FirstDirection,
     )?;
+    // The second direction is parallel to V, or antiparallel to V when the
+    // first direction is antiparallel to U.
+    let along_v = second_direction.as_raw().dot(*v_axis.as_raw());
+    let first_reversed = first_direction.as_raw().dot(*u_axis.as_raw()) < 0.0;
     require(
-        second_direction.as_raw().dot(*v_axis.as_raw()) >= 1.0 - EPS_ATTACHMENT_DIRECTION,
+        along_v >= 1.0 - EPS_ATTACHMENT_DIRECTION
+            || (first_reversed && along_v <= -1.0 + EPS_ATTACHMENT_DIRECTION),
         PlateRefusal::SecondDirection,
     )?;
     require(same(*thickness, slots[3]), PlateRefusal::ThicknessReference)?;

@@ -263,6 +263,32 @@ pub(crate) fn decode_recipe_references(
     }
 }
 
+/// The operand start of each persistent name of a standard recipe prefix
+/// whose operands carry several names, keyed by the name's prefix offset.
+///
+/// The word at offset 18 counts the operands. Each operand opens with a word
+/// counting its names; the standard frame reads that word as the first name's
+/// selector. A prefix whose operands each carry one name, or whose counted
+/// operands do not end exactly at the reference suffix, has no such starts.
+fn counted_operand_starts(prefix: &[u8]) -> Option<HashMap<usize, usize>> {
+    let operand_count = View::u32_le_at(prefix, 18).map(index_from_u32)?;
+    let mut starts = HashMap::new();
+    let mut names_total = 0usize;
+    let mut at = 22usize;
+    for _ in 0..operand_count {
+        let names = View::u32_le_at(prefix, at)
+            .map(index_from_u32)
+            .filter(|names| *names != 0 && *names <= prefix.len() / 17)?;
+        let start = at;
+        for _ in 0..names {
+            starts.insert(at, start);
+            at = scan_recipe_reference_operand(prefix, at, RecipeReferenceTokenFrame::Either)?.next;
+        }
+        names_total = names_total.checked_add(names)?;
+    }
+    (names_total > operand_count && recipe_reference_suffix(prefix.get(at..)?)).then_some(starts)
+}
+
 fn decode_standard_recipe_references(
     prefix: &[u8],
     prefix_offset: u64,
@@ -270,6 +296,9 @@ fn decode_standard_recipe_references(
     if View::u32_le_at(prefix, 22).is_none_or(|value| value == 0) {
         return Vec::new();
     }
+    // A recipe operand may carry several persistent names; each keeps the
+    // operand's offset so the names share the program's operand ordinal.
+    let operand_starts = counted_operand_starts(prefix);
     let mut references = Vec::new();
     let mut at = 22usize;
     while prefix
@@ -280,6 +309,21 @@ fn decode_standard_recipe_references(
         if recipe_reference_suffix(&prefix[at..]) {
             return references;
         }
+        let operand_offset = match &operand_starts {
+            Some(starts) => {
+                let Some(start) = starts.get(&at) else {
+                    return Vec::new();
+                };
+                let Some(offset) = u64::try_from(*start)
+                    .ok()
+                    .and_then(|start| prefix_offset.checked_add(start))
+                else {
+                    return Vec::new();
+                };
+                Some(offset)
+            }
+            None => None,
+        };
         let Some(parsed) = decode_recipe_reference_operand(
             prefix,
             prefix_offset,
@@ -292,7 +336,10 @@ fn decode_standard_recipe_references(
             references: operand_references,
             next,
         } = parsed;
-        references.extend(operand_references);
+        references.extend(operand_references.into_iter().map(|mut reference| {
+            reference.operand_offset = operand_offset;
+            reference
+        }));
         at = next;
     }
     if prefix.get(at..) == Some(&[0, 0, 0, 0]) {
@@ -651,6 +698,7 @@ fn decode_recipe_reference_operand(
             candidate_edges: Vec::new(),
             alternate_selector_faces: Vec::new(),
             alternate_selector_edges: Vec::new(),
+            operand_offset: None,
         };
         references.push(reference);
     }

@@ -5442,12 +5442,11 @@ fn bind_historical_face_operand_candidates<'a>(
     for reference in &mut operand.recipe_references {
         bind_historical_recipe_reference_candidates(reference, topology, recipe_topologies)?;
     }
+    let recipe_face = face_recipes
+        .get(topology, face_recipe::FaceRecipeIndex::new)
+        .resolve(operand);
     if scope.kind() == crate::records::feature::scope::DesignFeatureKind::DeleteFace {
-        operand.resolved_face_slots = face_recipes
-            .get(topology, face_recipe::FaceRecipeIndex::new)
-            .resolve(operand)
-            .into_iter()
-            .collect();
+        operand.resolved_face_slots = recipe_face.into_iter().collect();
         return Ok(());
     }
     if let Some(recipe_record_index) = recipe_record_indices.get(operand.recipe_id.as_str()) {
@@ -5741,6 +5740,11 @@ fn bind_historical_face_operand_candidates<'a>(
                 None => {}
             }
         }
+    }
+    if let Some(face) = recipe_face {
+        // Every recipe node matches one boundary edge of this face and the
+        // face fans around both of its ends.
+        operand.resolved_face_slots = vec![face];
     }
     Ok(())
 }
@@ -7292,18 +7296,22 @@ impl FaceBoundaryArena {
 
 fn edge_recipe_reference_context<'a>(
     reference_ordinal: u32,
-    reference: &crate::records::dimensions::DesignRecipeReference,
+    lane: &[crate::records::dimensions::DesignRecipeReference],
     result: EdgeBoundaryContext<'a, '_>,
     preceding: EdgeBoundaryContext<'a, '_>,
     changed_edges: &HashSet<i64>,
     topology_queries: &mut TopologyQueryCache<'a>,
     face_boundaries: &mut FaceBoundaryArena,
 ) -> crate::records::topology::historical_context::DesignEdgeRecipeReferenceContext {
-    let candidate_faces = if reference.candidate_faces.is_empty() {
-        reference.alternate_selector_faces.as_slice()
-    } else {
-        reference.candidate_faces.as_slice()
-    };
+    let mut candidate_faces = Vec::new();
+    for reference in lane {
+        for face in effective_faces(reference) {
+            if !candidate_faces.contains(face) {
+                candidate_faces.push(face.clone());
+            }
+        }
+    }
+    let candidate_faces = candidate_faces.as_slice();
     let face_slots = |faces: &[cadmpeg_ir::ids::FaceId]| {
         faces
             .iter()
@@ -7763,13 +7771,16 @@ fn bind_historical_edge_operand<'a>(
         .map(|&edge| edge_contexts.context(edge))
         .collect::<Vec<_>>();
     let mut reference_contexts = Vec::new();
-    for (ordinal, reference) in operand.recipe_references.iter().enumerate() {
+    for (ordinal, lane) in crate::records::dimensions::reference_lanes(&operand.recipe_references)
+        .into_iter()
+        .enumerate()
+    {
         let Ok(reference_ordinal) = u32::try_from(ordinal) else {
             continue;
         };
         let context = edge_recipe_reference_context(
             reference_ordinal,
-            reference,
+            lane,
             EdgeBoundaryContext {
                 state,
                 topology: result_topology,
@@ -7933,7 +7944,100 @@ fn bind_historical_edge_operand<'a>(
             })
         });
     }
+    if operand.resolved_edge_slot.is_none()
+        && matches!(
+            crate::design::design_feature_family(&scope.kind()),
+            Some(
+                crate::design::DesignFeatureFamily::Fillet
+                    | crate::design::DesignFeatureFamily::Chamfer
+            )
+        )
+    {
+        operand.resolved_edge_slot = side_one_reference_face_edge(
+            operand.recipe_structure.as_ref(),
+            &operand.recipe_references,
+            &operand.preceding_boundary_edge_slots,
+            topology,
+            topology_queries,
+        );
+    }
     Ok(())
+}
+
+/// The one edge of `topology` that every face named by the first side of a
+/// standard edge recipe bounds and that the recipe's candidate faces bound.
+///
+/// Each nonzero first-side value is a one-based prefix-reference ordinal;
+/// every persistent name of a counted operand supplies that ordinal's faces. Each operand must stand
+/// for exactly one face of the topology with complete loops, at least two
+/// distinct faces must be named, and the intersection of their boundary edges
+/// with `candidate_boundary_edges` must hold one edge.
+fn side_one_reference_face_edge<'a>(
+    structure: Option<&crate::records::topology::edge_recipe::DesignEdgeRecipeStructure>,
+    references: &[crate::records::dimensions::DesignRecipeReference],
+    candidate_boundary_edges: &[i64],
+    topology: &'a AsmHistoricalTopology,
+    topology_queries: &mut TopologyQueryCache<'a>,
+) -> Option<i64> {
+    if candidate_boundary_edges.is_empty() {
+        return None;
+    }
+    let side = structure.and_then(|structure| structure.sides.first())?;
+    let lanes = crate::records::dimensions::reference_lanes(references);
+    let mut ordinals = Vec::new();
+    for value in std::iter::once(side.header_value)
+        .chain(side.scalars.iter().copied())
+        .filter(|value| *value != 0)
+    {
+        ordinals.push(usize::try_from(value).ok()?.checked_sub(1)?);
+    }
+    ordinals.sort_unstable_by(Ord::cmp);
+    ordinals.dedup();
+    let mut faces = Vec::new();
+    for ordinal in ordinals {
+        let lane: Vec<cadmpeg_ir::ids::FaceId> = lanes
+            .get(ordinal)?
+            .iter()
+            .flat_map(|reference| effective_faces(reference).iter().cloned())
+            .collect();
+        if lane.is_empty() {
+            return None;
+        }
+        let mut in_topology = selection::faces_in_topology(&lane, topology);
+        in_topology.sort_by(|a, b| a.as_str().cmp(b.as_str()));
+        in_topology.dedup();
+        let [face] = in_topology.as_slice() else {
+            return None;
+        };
+        let face = stable_ref(face.as_str())?;
+        if !faces.contains(&face) {
+            faces.push(face);
+        }
+    }
+    if faces.len() < 2 {
+        return None;
+    }
+    let mut common: Vec<i64> = candidate_boundary_edges.to_vec();
+    for face in faces {
+        let [boundary] = face_boundary_contexts_for_slots(&[face], topology, topology_queries)
+            .try_into()
+            .ok()?;
+        if boundary.loops.is_empty() {
+            return None;
+        }
+        let edges: Vec<i64> = boundary
+            .loops
+            .iter()
+            .flat_map(|face_loop| face_loop.boundary.coedges().map(|row| row.edge_slot))
+            .collect();
+        common.retain(|edge| edges.contains(edge));
+    }
+    common.sort_unstable_by(Ord::cmp);
+    common.dedup();
+    match common.as_slice() {
+        [edge] => Some(*edge),
+        _ => None,
+    }
 }
 
 /// A resolved axis with finite origin and unit direction.
