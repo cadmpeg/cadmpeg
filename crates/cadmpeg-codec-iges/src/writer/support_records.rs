@@ -112,9 +112,16 @@ pub(super) fn retain_point_parameters(
     let Some(parameters) = parameters.as_array() else {
         return;
     };
-    if parameters.len() != 4 {
+    let symbol = if parameters.len() == 4 {
+        false
+    } else if parameters.len() >= 5
+        && parameters[4]["value"]["kind"].as_str() == Some("integer")
+        && parameters[4]["value"]["value"].as_i64() == Some(0)
+    {
+        true
+    } else {
         return;
-    }
+    };
     let coordinates = point.position().coordinates();
     let mut values = Vec::new();
     for (index, coordinate) in coordinates.into_iter().enumerate() {
@@ -144,6 +151,9 @@ pub(super) fn retain_point_parameters(
             }
             _ => return,
         }
+    }
+    if symbol {
+        values.push("0".into());
     }
     entity.parameter_body = format!("{};", values.join(",")).into_bytes();
 }
