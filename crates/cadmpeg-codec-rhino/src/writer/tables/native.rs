@@ -117,7 +117,7 @@ pub(in crate::writer) fn linetypes(ir: &CadIr) -> Result<LinetypeExport, CodecEr
                 | CodecError::InvalidInput(reason)
                 | CodecError::UnsupportedContent(reason),
             ) => result.losses.push(
-                crate::loss::RhinoLossCode::WriterLinetypeReduced
+                crate::loss::RhinoLossCode::WriterLinetypeOmitted
                     .note(format!("linetype {} omitted: {reason}", record.id())),
             ),
             Err(error) => return Err(error),
