@@ -8,7 +8,11 @@ use cadmpeg_ir::examples::unit_cube;
 use predicates::prelude::{predicate, PredicateBooleanExt};
 use tempfile::tempdir;
 
-use crate::support::{fixture, geometryless_creo, minimal_rhino_archive};
+use crate::support::fixture;
+#[cfg(all(feature = "creo", feature = "step"))]
+use crate::support::geometryless_creo;
+#[cfg(feature = "rhino")]
+use crate::support::minimal_rhino_archive;
 
 #[test]
 fn garbage_reports_supported_formats() {
@@ -52,6 +56,7 @@ fn exit_codes_distinguish_semantic_and_operational_failures() {
         .code(1);
 }
 
+#[cfg(all(feature = "creo", feature = "step"))]
 #[test]
 fn reject_lossy_refuses_lossy_export_as_a_model_refusal() {
     let dir = tempdir().unwrap();
@@ -95,6 +100,7 @@ fn reject_lossy_refuses_lossy_export_as_a_model_refusal() {
         .success();
 }
 
+#[cfg(feature = "rhino")]
 #[test]
 fn strict_decode_refusal_is_semantic_and_serializes_the_completed_report() {
     let dir = tempdir().unwrap();
@@ -134,6 +140,7 @@ fn strict_decode_refusal_is_semantic_and_serializes_the_completed_report() {
     }
 }
 
+#[cfg(all(feature = "creo", feature = "step"))]
 #[test]
 fn convert_writes_when_native_decode_has_no_geometry() {
     let dir = tempdir().unwrap();
@@ -161,6 +168,7 @@ fn convert_writes_when_native_decode_has_no_geometry() {
 }
 
 /// A container-only document is shallower than a geometry encoder plans from.
+#[cfg(all(feature = "creo", feature = "step"))]
 #[test]
 fn convert_refuses_container_only_geometry_at_its_depth() {
     let dir = tempdir().unwrap();
@@ -196,6 +204,7 @@ fn convert_refuses_container_only_geometry_at_its_depth() {
 /// be, so it fails against an absent path as a typed plan refusal. A dialect
 /// token is admitted by the selected encoder's catalog at the same static
 /// boundary.
+#[cfg(all(feature = "catia", feature = "iges", feature = "step"))]
 #[test]
 fn an_unwritable_output_format_refuses_before_reading_input() {
     let dir = tempdir().unwrap();
@@ -297,6 +306,7 @@ fn an_unwritable_output_format_refuses_before_reading_input() {
 /// This is the whole error surface the deleted `--iges-target requires IGES
 /// output` strings used to hand-write. The catalog in the message comes from
 /// `Encoder::targets()`, so it reflects the build's own feature set.
+#[cfg(all(feature = "iges", feature = "step"))]
 #[test]
 fn an_unknown_dialect_is_refused_with_the_encoder_catalog() {
     let dir = tempdir().unwrap();
@@ -435,6 +445,7 @@ fn an_unknown_dialect_is_refused_with_the_encoder_catalog() {
 }
 
 /// Archive word 5 is a read-only dialect, not shorthand for archive 50.
+#[cfg(feature = "rhino")]
 #[test]
 fn rhino_word_5_is_refused_with_the_encoder_catalog() {
     let dir = tempdir().unwrap();
@@ -475,6 +486,7 @@ fn rhino_word_5_is_refused_with_the_encoder_catalog() {
 /// exit 1 rather than 2. A file that loses nothing is written under every
 /// scope, which is what proves the scope is a predicate and not a switch that
 /// refuses on sight.
+#[cfg(all(feature = "creo", feature = "step"))]
 #[test]
 fn reject_lossy_scopes_select_which_losses_refuse() {
     let dir = tempdir().unwrap();

@@ -2,6 +2,7 @@
 //! Fixture builders shared by the CLI test groups.
 
 use std::fs;
+#[cfg(feature = "fcstd")]
 use std::io::Write;
 
 use cadmpeg_ir::examples::unit_cube;
@@ -16,6 +17,7 @@ pub(crate) fn fixture(
     path
 }
 
+#[cfg(feature = "fcstd")]
 pub(crate) fn minimal_fcstd(dir: &std::path::Path, name: &str) -> std::path::PathBuf {
     let path = dir.join(name);
     let file = fs::File::create(&path).unwrap();
@@ -33,6 +35,7 @@ pub(crate) fn minimal_fcstd(dir: &std::path::Path, name: &str) -> std::path::Pat
     path
 }
 
+#[cfg(feature = "creo")]
 pub(crate) fn geometryless_creo(dir: &std::path::Path, name: &str) -> std::path::PathBuf {
     let path = dir.join(name);
     fs::write(
@@ -43,6 +46,7 @@ pub(crate) fn geometryless_creo(dir: &std::path::Path, name: &str) -> std::path:
     path
 }
 
+#[cfg(feature = "rhino")]
 pub(crate) fn rhino_header(version: &str) -> Vec<u8> {
     let mut bytes = b"3D Geometry File Format ".to_vec();
     let mut version_field = [b' '; 8];
@@ -53,6 +57,7 @@ pub(crate) fn rhino_header(version: &str) -> Vec<u8> {
     bytes
 }
 
+#[cfg(feature = "rhino")]
 fn rhino_long_chunk(version: u64, typecode: u32, body: &[u8]) -> Vec<u8> {
     let mut bytes = typecode.to_le_bytes().to_vec();
     if version >= 50 {
@@ -72,6 +77,7 @@ fn rhino_long_chunk(version: u64, typecode: u32, body: &[u8]) -> Vec<u8> {
     bytes
 }
 
+#[cfg(feature = "rhino")]
 fn rhino_short_chunk(version: u64, typecode: u32, value: i64) -> Vec<u8> {
     let mut bytes = typecode.to_le_bytes().to_vec();
     if version >= 50 {
@@ -86,17 +92,20 @@ fn rhino_short_chunk(version: u64, typecode: u32, value: i64) -> Vec<u8> {
     bytes
 }
 
+#[cfg(feature = "rhino")]
 fn rhino_crc_chunk(version: u64, typecode: u32, body: &[u8]) -> Vec<u8> {
     let mut payload = body.to_vec();
     payload.extend(crc32fast::hash(body).to_le_bytes());
     rhino_long_chunk(version, typecode, &payload)
 }
 
+#[cfg(feature = "rhino")]
 fn rhino_table(version: u64, typecode: u32) -> Vec<u8> {
     let end = rhino_short_chunk(version, 0xffff_ffff, 0);
     rhino_long_chunk(version, typecode, &end)
 }
 
+#[cfg(feature = "rhino")]
 fn rhino_object_record(version: u64, class_uuid: [u8; 16], payload: &[u8]) -> Vec<u8> {
     let object_type = rhino_short_chunk(version, 0x8200_0071, 1);
     let mut uuid_body = class_uuid.to_vec();
@@ -117,6 +126,7 @@ fn rhino_object_record(version: u64, class_uuid: [u8; 16], payload: &[u8]) -> Ve
     )
 }
 
+#[cfg(feature = "rhino")]
 pub(crate) fn synthetic_rhino_point(
     dir: &std::path::Path,
     name: &str,
@@ -166,6 +176,7 @@ pub(crate) fn synthetic_rhino_point(
     path
 }
 
+#[cfg(feature = "rhino")]
 pub(crate) fn minimal_rhino_archive(
     dir: &std::path::Path,
     name: &str,
@@ -174,6 +185,7 @@ pub(crate) fn minimal_rhino_archive(
     minimal_rhino_archive_with_comment(dir, name, version_text, b"cadmpeg test")
 }
 
+#[cfg(feature = "rhino")]
 fn minimal_rhino_archive_with_comment(
     dir: &std::path::Path,
     name: &str,

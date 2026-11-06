@@ -19,7 +19,20 @@
 //!
 //! `UPDATE_CORPUS_DIALECTS=1 cargo test -p cadmpeg --test corpus_manifest`
 //! rewrites the pins in place; review the diff as a classification change.
+//!
+//! The manifest names every codec, so the target is compiled out unless the
+//! build includes all of them.
 
+#![cfg(all(
+    feature = "catia",
+    feature = "creo",
+    feature = "f3d",
+    feature = "fcstd",
+    feature = "inventor",
+    feature = "nx",
+    feature = "sldprt",
+    feature = "step"
+))]
 #![allow(clippy::unwrap_used)] // Test code: a failed unwrap is a test failure.
 
 use std::fmt::Write as _;

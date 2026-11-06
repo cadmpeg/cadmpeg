@@ -71,6 +71,8 @@ cargo build --workspace
 cargo test-fast
 ```
 
+To test one codec, build the `cadmpeg` package with `--no-default-features --features <codec>`, for example `cargo test -p cadmpeg --all-targets --no-default-features --features f3d`. A CLI test that needs a codec that is not built is compiled out.
+
 Lint levels live in `[workspace.lints]` in the root `Cargo.toml`, so `cargo clippy` needs no trailing lint flags. Do not add them back: trailing lint flags are part of the compilation fingerprint, so a flagged run and a bare run evict each other's cached artifacts, and an editor running bare `cargo check` or `cargo clippy` then re-checks the workspace on every alternation.
 
 Manifest levels apply to every cargo command, so a warning fails `cargo build` and `cargo test`, not only `cargo clippy`. Jobs on an unpinned toolchain set `RUSTFLAGS: -A warnings`, because lint sets differ between releases; the MSRV job is the only one.
