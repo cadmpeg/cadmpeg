@@ -89,6 +89,24 @@ fn empty_document_charges_the_records_step_writes() {
 }
 
 #[test]
+fn unstated_linear_tolerance_is_not_written_as_uncertainty() {
+    for mut document in [cadmpeg_ir::CadIr::empty(), seed_golden()] {
+        document.tolerances.linear = None;
+        let plan = StepCodec::default()
+            .plan(EncodeInput::new(&document, None), request())
+            .expect("an unstated tolerance does not prevent writing");
+        let mut bytes = Vec::new();
+        plan.write_to(&mut bytes).expect("write STEP");
+        let text = std::str::from_utf8(&bytes).expect("STEP text");
+        assert!(!text.contains("UNCERTAINTY_MEASURE_WITH_UNIT"));
+        assert!(!text.contains("GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT"));
+        StepCodec::default()
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("decode the written representation context");
+    }
+}
+
+#[test]
 fn reduced_cone_chart_row_matches_the_written_surface_and_names_it() {
     use cadmpeg_ir::codec::write::ReducedStorage;
     use cadmpeg_ir::geometry::analytic::ConeSurface;

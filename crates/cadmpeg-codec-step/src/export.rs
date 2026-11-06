@@ -2297,6 +2297,13 @@ impl<'a> Builder<'a> {
         let Some(parts) = self.retained_context_partials() else {
             return;
         };
+        if self.ir.tolerances.linear.is_none()
+            && parts
+                .iter()
+                .any(|part| part == "GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT")
+        {
+            return;
+        }
         if parts.iter().any(|part| {
             !matches!(
                 part.as_str(),
@@ -3241,22 +3248,9 @@ impl<'a> Builder<'a> {
                         parts.push("GEOMETRIC_REPRESENTATION_CONTEXT(3)".to_string());
                     }
                     "GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT" => {
-                        let unc = self.emitter.emit(
-                            "UNCERTAINTY_MEASURE_WITH_UNIT",
-                            &format!(
-                                "LENGTH_MEASURE({}),{len},{},{}",
-                                self.emitter.real(
-                                    self.ir
-                                        .tolerances
-                                        .linear
-                                        .expect("stated linear tolerance")
-                                        .get()
-                                ),
-                                string("distance_accuracy_value"),
-                                string("maximum model space distance")
-                            ),
-                        );
-                        parts.push(format!("GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT(({unc}))"));
+                        if let Some(unc) = self.emit_linear_uncertainty(len) {
+                            parts.push(format!("GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT(({unc}))"));
+                        }
                     }
                     "GLOBAL_UNIT_ASSIGNED_CONTEXT" => {
                         parts.push(format!(
@@ -3305,30 +3299,31 @@ impl<'a> Builder<'a> {
     }
 
     fn emit_default_context(&mut self, len: Ref, angle: Ref, solid: Ref) -> Ref {
-        let unc = self.emitter.emit(
-            "UNCERTAINTY_MEASURE_WITH_UNIT",
-            &format!(
-                "LENGTH_MEASURE({}),{len},{},{}",
-                self.emitter.real(
-                    self.ir
-                        .tolerances
-                        .linear
-                        .expect("stated linear tolerance")
-                        .get()
-                ),
-                string("distance_accuracy_value"),
-                string("maximum model space distance")
-            ),
-        );
+        let uncertainty = self
+            .emit_linear_uncertainty(len)
+            .map(|unc| format!("GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT(({unc})) "))
+            .unwrap_or_default();
         self.emitter.emit_raw(
             "GEOMETRIC_REPRESENTATION_CONTEXT",
             &format!(
                 "( GEOMETRIC_REPRESENTATION_CONTEXT(3) \
-                 GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT(({unc})) \
-                 GLOBAL_UNIT_ASSIGNED_CONTEXT(({len},{angle},{solid})) \
+                 {uncertainty}GLOBAL_UNIT_ASSIGNED_CONTEXT(({len},{angle},{solid})) \
                  REPRESENTATION_CONTEXT('Context','3D') )"
             ),
         )
+    }
+
+    fn emit_linear_uncertainty(&mut self, len: Ref) -> Option<Ref> {
+        let tolerance = self.ir.tolerances.linear?;
+        Some(self.emitter.emit(
+            "UNCERTAINTY_MEASURE_WITH_UNIT",
+            &format!(
+                "LENGTH_MEASURE({}),{len},{},{}",
+                self.emitter.real(tolerance.get()),
+                string("distance_accuracy_value"),
+                string("maximum model space distance")
+            ),
+        ))
     }
 
     fn emit_length_unit(&mut self) -> Ref {
@@ -5208,13 +5203,7 @@ impl<'a> Builder<'a> {
         let tolerance = edge
             .tolerance
             .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get)
-            .max(
-                self.ir
-                    .tolerances
-                    .linear
-                    .expect("stated linear tolerance")
-                    .get(),
-            );
+            .max(self.ir.tolerances.linear_or_default().get());
         if coedge.pcurves.is_empty() {
             return Ok(false);
         }
@@ -5951,17 +5940,15 @@ impl<'a> Builder<'a> {
                 if self.failed_helix_fits.contains_key(id) {
                     return None;
                 }
-                let fitted = match helix_surface_nurbs(
-                    helix,
-                    self.ir.tolerances.linear.expect("stated linear tolerance"),
-                ) {
-                    Ok(fitted) => fitted,
-                    Err(error) => {
-                        self.failed_helix_fits
-                            .insert(id.to_owned(), helix_fit_failure(&error));
-                        return None;
-                    }
-                };
+                let fitted =
+                    match helix_surface_nurbs(helix, self.ir.tolerances.linear_or_default()) {
+                        Ok(fitted) => fitted,
+                        Err(error) => {
+                            self.failed_helix_fits
+                                .insert(id.to_owned(), helix_fit_failure(&error));
+                            return None;
+                        }
+                    };
                 let reference = geometry::surface(
                     &mut self.emitter,
                     &name,
@@ -6321,10 +6308,7 @@ impl<'a> Builder<'a> {
                 if self.failed_helix_fits.contains_key(id) {
                     return None;
                 }
-                let fitted = match helix_nurbs(
-                    helix,
-                    self.ir.tolerances.linear.expect("stated linear tolerance"),
-                ) {
+                let fitted = match helix_nurbs(helix, self.ir.tolerances.linear_or_default()) {
                     Ok(fitted) => fitted,
                     Err(error) => {
                         self.failed_helix_fits
@@ -8947,8 +8931,16 @@ impl<'a> Builder<'a> {
                 .map(|(owner, _)| format!("'{owner}'"))
                 .collect::<Vec<_>>()
                 .join(", ");
+            let tolerance = if self.ir.tolerances.linear.is_some() {
+                "the linear tolerance".to_owned()
+            } else {
+                format!(
+                    "a computational linear tolerance of {} mm",
+                    self.ir.tolerances.linear_or_default().get()
+                )
+            };
             let mut message = format!(
-                "{} helix curve definition(s) and {} helix surface definition(s) without a solved carrier were written as B-splines within the linear tolerance: {fitted}",
+                "{} helix curve definition(s) and {} helix surface definition(s) without a solved carrier were written as B-splines within {tolerance}: {fitted}",
                 self.fitted_helix_curves.len(),
                 self.fitted_helix_surfaces.len()
             );
