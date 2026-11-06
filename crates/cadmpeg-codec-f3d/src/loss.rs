@@ -99,6 +99,9 @@ pub(crate) enum F3dLossCode {
     LocalOccurrenceEnvelopeSuperseded,
     /// An identity carrier has an unresolved later ordinal.
     LocalOccurrenceIdentityOrdinalUnresolved,
+    /// An attributed occurrence whose source reference names no record of the occurrence source
+    /// type in its Design segment; the occurrence projects from its frame.
+    LocalOccurrenceSourceUnregistered,
     /// Saved free-edge bodies without a product-definition owner.
     SavedFreeEdgeBodyUnowned,
     /// Design assembly joint scopes whose operands, frames, limits, or alignment values do not
@@ -245,6 +248,8 @@ pub(crate) enum F3dLossCode {
     SketchProfileSearchCapped,
     /// Non-construction sketch curves form no closed profile loop.
     SketchCurveUnprofiled,
+    /// A sketch curve outside every closed profile loop bounds a region an Extrude selects.
+    SketchCurveUnprofiledSelected,
     /// Design dimension parameters have no parameter-backed sketch constraint.
     DimensionUnprojected,
     /// Feature profile selections retain native identities; no unique profile.
@@ -489,6 +494,7 @@ impl F3dLossCode {
         Self::RootInstanceDefinitionUnbound,
         Self::LocalOccurrenceEnvelopeSuperseded,
         Self::LocalOccurrenceIdentityOrdinalUnresolved,
+        Self::LocalOccurrenceSourceUnregistered,
         Self::SavedFreeEdgeBodyUnowned,
         Self::AssemblyJointUnprojected,
         Self::AssemblyAlignmentPartial,
@@ -558,6 +564,7 @@ impl F3dLossCode {
         Self::SketchPatternStateUnprojected,
         Self::SketchProfileSearchCapped,
         Self::SketchCurveUnprofiled,
+        Self::SketchCurveUnprofiledSelected,
         Self::DimensionUnprojected,
         Self::FeatureProfileSelectionNative,
         Self::FeatureExtrudeProfileGroupNative,
@@ -696,6 +703,9 @@ impl F3dLossCode {
             Self::LocalOccurrenceIdentityOrdinalUnresolved => {
                 "assembly.local-occurrence-identity-ordinal-unresolved"
             }
+            Self::LocalOccurrenceSourceUnregistered => {
+                "assembly.local-occurrence-source-unregistered"
+            }
             Self::LocalOccurrenceEnvelopeSuperseded => {
                 "assembly.local-occurrence-envelope-superseded"
             }
@@ -767,6 +777,7 @@ impl F3dLossCode {
             Self::SketchPatternStateUnprojected => "sketch.pattern-state-unprojected",
             Self::SketchProfileSearchCapped => "sketch.profile-search-capped",
             Self::SketchCurveUnprofiled => "sketch.curve-unprofiled",
+            Self::SketchCurveUnprofiledSelected => "sketch.curve-unprofiled-selected",
             Self::DimensionUnprojected => "dimension.unprojected",
             Self::FeatureExtrudeProfileGroupNative => "feature.extrude-profile-group-native",
             Self::FeatureProfileSelectionNative => "feature.profile-selection-native",
@@ -900,6 +911,7 @@ impl F3dLossCode {
             | Self::NurbsCurveCarrier
             | Self::MeshSurfaceSentinel
             | Self::SketchRegionBodyOmitted
+            | Self::SketchCurveUnprofiledSelected
             | Self::ThreadLiveFaceUnproven => Severity::Info,
             Self::HistoryBindingBudgetExceeded
             | Self::HistoryBindingWorkExceeded
@@ -941,6 +953,7 @@ impl F3dLossCode {
             | Self::ComponentInsertOrderUnknown
             | Self::SavedFreeEdgeBodyUnowned
             | Self::LocalOccurrenceIdentityOrdinalUnresolved
+            | Self::LocalOccurrenceSourceUnregistered
             | Self::LocalOccurrenceEnvelopeSuperseded
             | Self::RootInstanceDefinitionUnbound
             | Self::ComponentDefinitionRevised
@@ -1228,6 +1241,7 @@ impl F3dLossCode {
             | Self::ComponentInsertOrderUnknown
             | Self::SavedFreeEdgeBodyUnowned
             | Self::LocalOccurrenceIdentityOrdinalUnresolved
+            | Self::LocalOccurrenceSourceUnregistered
             | Self::LocalOccurrenceEnvelopeSuperseded
             | Self::RootInstanceDefinitionUnbound
             | Self::ComponentDefinitionRevised
@@ -1256,9 +1270,9 @@ impl F3dLossCode {
             | Self::NurbsSurfaceCarrier
             | Self::NurbsCurveCarrier
             | Self::MeshSurfaceSentinel => LossTaxonomy::CarrierSummary,
-            Self::VertexToleranceWidened | Self::SketchRegionBodyOmitted => {
-                LossTaxonomy::DecodeDiagnostic
-            }
+            Self::VertexToleranceWidened
+            | Self::SketchRegionBodyOmitted
+            | Self::SketchCurveUnprofiledSelected => LossTaxonomy::DecodeDiagnostic,
             Self::ProceduralCurveUndecoded
             | Self::ProceduralSupportChartUnresolved
             | Self::SpringSupportPcurveUnresolved
@@ -1363,6 +1377,7 @@ mod tests {
                 "assembly.root-instance-definition-unbound",
                 "assembly.local-occurrence-envelope-superseded",
                 "assembly.local-occurrence-identity-ordinal-unresolved",
+                "assembly.local-occurrence-source-unregistered",
                 "assembly.saved-free-edge-body-unowned",
                 "assembly.joint-unprojected",
                 "assembly.alignment-partial",
@@ -1432,6 +1447,7 @@ mod tests {
                 "sketch.pattern-state-unprojected",
                 "sketch.profile-search-capped",
                 "sketch.curve-unprofiled",
+                "sketch.curve-unprofiled-selected",
                 "dimension.unprojected",
                 "feature.profile-selection-native",
                 "feature.extrude-profile-group-native",

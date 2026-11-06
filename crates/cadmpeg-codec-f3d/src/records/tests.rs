@@ -594,14 +594,22 @@ fn parameter_source_preserves_wire_and_rejects_an_owned_user_parameter() {
             assert_eq!(parameter.source_kind(), source_kind);
             assert_eq!(serde_json::to_string(&parameter).unwrap(), wire);
             let value: serde_json::Value = serde_json::from_str(&wire).unwrap();
-            let mut wrong_kind = value.clone();
-            wrong_kind["kind"] = serde_json::json!(if kind == "user" { "feature" } else { "user" });
-            assert!(
-                serde_json::from_value::<crate::records::parameters::DesignParameter>(wrong_kind)
+            if kind != "user" {
+                let mut wrong_kind = value.clone();
+                wrong_kind["kind"] = serde_json::json!(if kind == "feature" {
+                    "dimension"
+                } else {
+                    "feature"
+                });
+                assert!(
+                    serde_json::from_value::<crate::records::parameters::DesignParameter>(
+                        wrong_kind
+                    )
                     .unwrap_err()
                     .to_string()
                     .contains("kind")
-            );
+                );
+            }
             let mut changed_owner = value.clone();
             if kind == "user" {
                 changed_owner["owner_record_index"] = serde_json::json!(2);

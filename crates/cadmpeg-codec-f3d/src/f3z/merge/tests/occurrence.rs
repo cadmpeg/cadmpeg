@@ -1550,6 +1550,132 @@ fn a_refused_joint_leaves_its_feature_native() {
     ));
 }
 
+/// A standalone model with one insertion occurrence, one `Assemble` feature
+/// and one joint of the same scope whose first operand descends by `keys`.
+fn standalone_joint_model(keys: Vec<String>) -> (Model, cadmpeg_ir::ids::OccurrenceId) {
+    use cadmpeg_ir::ids::OccurrenceId;
+    use cadmpeg_ir::products::{
+        AssemblyJoint, JointConnector, JointId, JointOperand, Occurrence, OccurrenceParent,
+        PairedJointKind, PrototypeReference,
+    };
+    let insertion = OccurrenceId::mint("f3d:model:occurrence#insertion").unwrap();
+    let mut joint = AssemblyJoint::paired(
+        JointId::mint("f3d:model:joint#standalone").unwrap(),
+        PairedJointKind::Fixed {
+            angle: None,
+            translation_offset: None,
+            angular_limits: None,
+            linear_limits: None,
+        },
+        [
+            JointConnector {
+                operand: JointOperand::occurrence(
+                    insertion.clone(),
+                    "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+                    keys,
+                ),
+                frame: Transform::identity(),
+                detached: false,
+            },
+            JointConnector {
+                operand: JointOperand::root("root", Vec::new()),
+                frame: Transform::identity(),
+                detached: false,
+            },
+        ],
+        None,
+    );
+    joint.native_ref = Some("f3d:scope#standalone".to_owned());
+    let mut assemble = feature("f3d:model:feature#standalone", 0);
+    assemble.native_ref = Some("f3d:scope#standalone".to_owned());
+    let mut model = Model::default();
+    model.features = vec![assemble];
+    model.assembly_joints = vec![joint];
+    model.occurrences = vec![Occurrence {
+        id: insertion.clone(),
+        prototype: PrototypeReference::Unresolved {},
+        parent: OccurrenceParent::Root {},
+        ordinal: 0,
+        transform: Transform::identity(),
+        linked_prototype: None,
+        scale: [cadmpeg_ir::scalar::FiniteReal::ONE; 3],
+        name: None,
+        visible: None,
+        link: None,
+        native_ref: None,
+    }];
+    (model, insertion)
+}
+
+#[test]
+fn standalone_joint_of_a_complete_scope_binds_its_feature() {
+    use cadmpeg_ir::features::FeatureOperation;
+    let (mut model, insertion) = standalone_joint_model(Vec::new());
+    let complete = std::collections::BTreeSet::from(["f3d:scope#standalone".to_owned()]);
+    let children = std::collections::BTreeMap::new();
+    let mut losses = Vec::new();
+    super::super::rebind_joints(
+        &mut super::super::JointRows {
+            occurrences: &model.occurrences,
+            joints: &mut model.assembly_joints,
+            features: &mut model.features,
+        },
+        &children,
+        &children,
+        &complete,
+        super::super::JointRebind::CompleteScopes,
+        &mut losses,
+    );
+    assert!(losses.is_empty());
+    assert_eq!(model.assembly_joints.len(), 1);
+    assert!(model
+        .assembly_joints
+        .iter()
+        .flat_map(cadmpeg_ir::products::AssemblyJoint::connectors)
+        .any(|connector| matches!(
+            &connector.operand.container,
+            cadmpeg_ir::products::OperandContainer::Occurrence { occurrence, .. }
+                if occurrence == &insertion
+        )));
+    assert!(matches!(
+        model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::AssemblyJoint { .. })
+    ));
+}
+
+#[test]
+fn standalone_joint_below_an_unmerged_placement_keeps_its_decoded_operand() {
+    use cadmpeg_ir::features::FeatureOperation;
+    let (mut model, _) =
+        standalone_joint_model(vec!["ffffffff-bbbb-4ccc-8ddd-eeeeeeeeeeee".into()]);
+    let decoded = model.assembly_joints.clone();
+    let complete = std::collections::BTreeSet::from(["f3d:scope#standalone".to_owned()]);
+    let children = std::collections::BTreeMap::new();
+    let mut losses = Vec::new();
+    super::super::rebind_joints(
+        &mut super::super::JointRows {
+            occurrences: &model.occurrences,
+            joints: &mut model.assembly_joints,
+            features: &mut model.features,
+        },
+        &children,
+        &children,
+        &complete,
+        super::super::JointRebind::CompleteScopes,
+        &mut losses,
+    );
+    assert_eq!(model.assembly_joints, decoded);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::F3dLossCode::AssemblyOperandDescentUnresolved.kind()
+    );
+    assert!(matches!(
+        model.features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::Native { .. })
+    ));
+}
+
 #[test]
 fn complete_joint_descent_consumes_occurrence_keys_in_each_insertion() {
     use cadmpeg_ir::ids::OccurrenceId;

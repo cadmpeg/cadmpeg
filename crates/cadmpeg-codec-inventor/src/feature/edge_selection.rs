@@ -218,7 +218,8 @@ fn selector(
     )?;
     Ok(
         historical::parse(&ctx, payload, version)?.and_then(|stored| {
-            let [generator] = stored.generators.as_slice() else {
+            let ([generator], []) = (stored.generators.as_slice(), stored.secondary.as_slice())
+            else {
                 return None;
             };
             Some(Selector {
@@ -457,11 +458,22 @@ pub(super) fn inventory(
                 .map(|record| (record.ordinal, record.type_id)),
         );
         let mut selector_sources = HashMap::<u32, usize>::new();
+        let mut record_sources = HashSet::<u32>::new();
         let stored_start = stored_selectors.len();
         for record in &table.records {
             has_flange |= record.type_id == super::sheet_metal::flange::TYPE;
             sample_geometry |= record.type_id == super::sheet_metal::flange::TYPE
                 && super::sheet_metal::style::prefix_len(version).is_some();
+            if matches!(
+                record.type_id,
+                super::FEATURE_TYPE
+                    | super::RECTANGULAR_PATTERN_FEATURE_TYPE
+                    | super::MIRROR_FEATURE_TYPE
+            ) {
+                if let Ok(source) = historical::source(record.payload, version) {
+                    record_sources.insert(source);
+                }
+            }
             if record.type_id != SELECTOR_TYPE {
                 continue;
             }
@@ -474,7 +486,9 @@ pub(super) fn inventory(
                 Err(_) => None,
             };
             if let Some(stored) = stored {
-                if let [generator] = stored.generators.as_slice() {
+                if let ([generator], []) =
+                    (stored.generators.as_slice(), stored.secondary.as_slice())
+                {
                     selectors.push(Selector {
                         source: stored.source,
                         generator: *generator,
@@ -490,8 +504,9 @@ pub(super) fn inventory(
         }
         let mut position = 0;
         stored_selectors.retain(|selector| {
-            let keep =
-                position < stored_start || selector_sources.get(&selector.source) == Some(&1);
+            let keep = position < stored_start
+                || (selector_sources.get(&selector.source) == Some(&1)
+                    && historical::secondary_names_known(selector, &record_sources));
             position += 1;
             keep
         });

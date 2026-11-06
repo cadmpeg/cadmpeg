@@ -20,6 +20,7 @@ pub mod pointer;
 include!("registry_ids.rs");
 
 pub mod deltas;
+pub mod geometry;
 pub mod records;
 #[cfg(any(test, feature = "test-support"))]
 pub mod test_support;

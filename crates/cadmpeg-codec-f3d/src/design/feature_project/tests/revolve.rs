@@ -102,6 +102,32 @@ fn revolve_projects_with_native_profile() {
             groups[0].id.clone()
         ))
     );
+    let mut unresolved_axis = axis.clone();
+    unresolved_axis.resolved_axis = None;
+    let Some(cadmpeg_ir::features::FeatureDefinition::Operation(
+        cadmpeg_ir::features::FeatureOperation::Revolve {
+            construction: unresolved,
+            ..
+        },
+    )) = super::super::project_fixed_revolve_with_entities(
+        &scope,
+        &groups,
+        &[unresolved_axis],
+        &[],
+        &[],
+        (&[], &[]),
+        &[],
+    )
+    else {
+        panic!("expected a revolve with an unresolved axis");
+    };
+    assert_eq!(unresolved.axis(), None);
+    assert_eq!(
+        unresolved.profile(),
+        Some(&cadmpeg_ir::features::PlanarProfileRef::Native(
+            groups[0].id.clone()
+        ))
+    );
     let cadmpeg_ir::features::RevolveConstruction::Resolved { solid, .. } = construction else {
         panic!("expected a resolved revolve");
     };

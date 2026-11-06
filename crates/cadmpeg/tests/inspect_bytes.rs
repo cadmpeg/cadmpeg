@@ -608,6 +608,7 @@ fn cmp_exits_one_when_only_lengths_differ() {
         );
 }
 
+#[cfg(feature = "fcstd")]
 #[test]
 fn inspect_without_a_subcommand_still_runs_the_container_summary() {
     let dir = tempdir().unwrap();
