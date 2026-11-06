@@ -910,6 +910,7 @@ fn dimension_four_rational_curve_stream(weights: [f64; 2]) -> Vec<u8> {
         .position(|window| window == [0, 136, 0, 40])
         .expect("curve descriptor");
     put_ref(&mut stream, descriptor + 10, 4);
+    stream[descriptor + 19] = 1;
     let payload = stream
         .windows(4)
         .position(|window| window == [0, 135, 0, 41])
@@ -918,6 +919,7 @@ fn dimension_four_rational_curve_stream(weights: [f64; 2]) -> Vec<u8> {
     let mut rational_payload = record(135, 15 + 8 * 8);
     put_ref(&mut rational_payload, 2, 41);
     rational_payload[9..13].copy_from_slice(&8u32.to_be_bytes());
+    put_ref(&mut rational_payload, 13, 44);
     let [first, second] = weights;
     for (index, value) in [0.0, 0.0, 0.0, first, 0.02 * second, 0.0, 0.0, second]
         .into_iter()
