@@ -329,6 +329,9 @@ pub(crate) enum F3dLossCode {
     /// Extrude profile selections assume that a supported hole boundary of an inserted region
     /// identifies the selected profile.
     FeatureProfileHoleBoundaryInferred,
+    /// Extrude profile selections assume that an unsupported hole of an inserted region belongs to
+    /// the selected profile.
+    FeatureProfileRegionHoleInferred,
     /// Feature path selections retain native identities; no unique path.
     FeaturePathSelectionNative,
     /// Feature face selections retain native candidates; no unique face.
@@ -706,6 +709,7 @@ impl F3dLossCode {
         Self::FeatureProfileCapOutlineAssumed,
         Self::FeatureProfileCapCarrierAssumed,
         Self::FeatureProfileHoleBoundaryInferred,
+        Self::FeatureProfileRegionHoleInferred,
         Self::FeaturePathSelectionNative,
         Self::FeatureFaceSelectionNative,
         Self::FeatureFaceSelectionActiveSubstituted,
@@ -984,6 +988,7 @@ impl F3dLossCode {
             Self::FeatureProfileCapOutlineAssumed => "feature.profile-cap-outline-assumed",
             Self::FeatureProfileCapCarrierAssumed => "feature.profile-cap-carrier-assumed",
             Self::FeatureProfileHoleBoundaryInferred => "feature.profile-hole-boundary-inferred",
+            Self::FeatureProfileRegionHoleInferred => "feature.profile-region-hole-inferred",
             Self::FeaturePathSelectionNative => "feature.path-selection-native",
             Self::FeatureFaceSelectionNative => "feature.face-selection-native",
             Self::FeatureFaceSelectionActiveSubstituted => {
@@ -1281,6 +1286,7 @@ impl F3dLossCode {
             | Self::FeatureProfileCapOutlineAssumed
             | Self::FeatureProfileCapCarrierAssumed
             | Self::FeatureProfileHoleBoundaryInferred
+            | Self::FeatureProfileRegionHoleInferred
             | Self::FeaturePathSelectionNative
             | Self::FeatureFaceSelectionNative
             | Self::FeatureFaceSelectionActiveSubstituted
@@ -1496,6 +1502,7 @@ impl F3dLossCode {
             | Self::FeatureProfileCapOutlineAssumed
             | Self::FeatureProfileCapCarrierAssumed
             | Self::FeatureProfileHoleBoundaryInferred
+            | Self::FeatureProfileRegionHoleInferred
             | Self::FeaturePathSelectionNative
             | Self::FeatureFaceSelectionNative
             | Self::FeatureFaceSelectionActiveSubstituted
@@ -1807,6 +1814,7 @@ mod tests {
                 "feature.profile-cap-outline-assumed",
                 "feature.profile-cap-carrier-assumed",
                 "feature.profile-hole-boundary-inferred",
+                "feature.profile-region-hole-inferred",
                 "feature.path-selection-native",
                 "feature.face-selection-native",
                 "feature.face-selection-active-substituted",

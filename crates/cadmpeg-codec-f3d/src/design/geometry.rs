@@ -61,6 +61,7 @@ pub(crate) struct ProfileGeometryWork {
     cap_carrier_assumed: Cell<bool>,
     cap_carrier_assumed_selections: Cell<usize>,
     hole_boundary_inferred_selections: Cell<usize>,
+    region_hole_inferred_selections: Cell<usize>,
 }
 
 impl ProfileGeometryWork {
@@ -86,6 +87,7 @@ impl ProfileGeometryWork {
             cap_carrier_assumed: Cell::new(false),
             cap_carrier_assumed_selections: Cell::new(0),
             hole_boundary_inferred_selections: Cell::new(0),
+            region_hole_inferred_selections: Cell::new(0),
         }
     }
 
@@ -94,12 +96,21 @@ impl ProfileGeometryWork {
             .set(self.hole_boundary_inferred_selections.get() + 1);
     }
 
-    pub(crate) fn hole_boundary_inferred_count(&self) -> usize {
-        self.hole_boundary_inferred_selections.get()
+    pub(crate) fn record_region_hole_profile_inferred(&self) {
+        self.region_hole_inferred_selections
+            .set(self.region_hole_inferred_selections.get() + 1);
     }
 
-    pub(crate) fn set_hole_boundary_inferred_count(&self, count: usize) {
-        self.hole_boundary_inferred_selections.set(count);
+    pub(crate) fn inferred_counts(&self) -> (usize, usize) {
+        (
+            self.hole_boundary_inferred_selections.get(),
+            self.region_hole_inferred_selections.get(),
+        )
+    }
+
+    pub(crate) fn set_inferred_counts(&self, counts: (usize, usize)) {
+        self.hole_boundary_inferred_selections.set(counts.0);
+        self.region_hole_inferred_selections.set(counts.1);
     }
 
     /// Close one profile selection. Count it against each cap that skipped a
@@ -214,6 +225,12 @@ impl ProfileGeometryWork {
         if hole_inferred != 0 {
             losses.push(F3dLossCode::FeatureProfileHoleBoundaryInferred.note(format!(
                 "{hole_inferred} extrude profile selection(s) assume that the supported hole boundary of an inserted region identifies the selected profile."
+            )));
+        }
+        let region_hole_inferred = self.region_hole_inferred_selections.get();
+        if region_hole_inferred != 0 {
+            losses.push(F3dLossCode::FeatureProfileRegionHoleInferred.note(format!(
+                "{region_hole_inferred} extrude profile selection(s) assume that an unsupported hole of an inserted region belongs to the selected profile."
             )));
         }
         losses
