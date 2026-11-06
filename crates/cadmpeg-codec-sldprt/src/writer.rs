@@ -12,6 +12,7 @@ mod edge_direction;
 mod envelope;
 mod ownership;
 mod previews;
+mod surface_curve;
 mod synthesis;
 pub(crate) mod target;
 pub(crate) mod write_error;
@@ -4133,6 +4134,10 @@ pub(crate) fn brep_body(
     }
     for curve in &ir.model.curves {
         if derived_sphere_seam_curves.contains(&curve.id) {
+            continue;
+        }
+        if surface_curve::supported(ir, curve).is_some() {
+            surface_curve::write(&mut out, ir, curve, curves[&curve.id], &surfaces, &mut next)?;
             continue;
         }
         if let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(nurbs)) = &curve.geometry {

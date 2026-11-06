@@ -11,6 +11,158 @@ const PARAMETER_TOLERANCE: f64 = 1.0e-9;
 use std::io::Cursor;
 
 #[test]
+fn surface_curve_construction_survives_source_less_synthesis() {
+    use crate::test_support::parasolid::{
+        cylinder_carrier, edge_use, owned_triangle_on, planar_b_curve, sp_curve_records,
+        triangle_body,
+    };
+    use cadmpeg_ir::geometry::{
+        pcurve::PcurveGeometry, CurveGeometry, ProceduralCurveDefinition, SurfaceCurveFamily,
+    };
+    const UV_TOLERANCE: f64 = 1.0e-9;
+
+    let mut cylinder = cylinder_carrier(100, [0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 1.0);
+    cylinder.extend(owned_triangle_on(
+        0,
+        900,
+        [[1.0, 0.0, 0.0], [1.0, 0.0, 1.0], [0.0, 1.0, 0.0]],
+        100,
+        1,
+    ));
+    for (template, start, end, points) in [
+        (
+            triangle_body(),
+            [0.0, 0.0],
+            [1.0, 0.0],
+            [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]],
+        ),
+        (
+            cylinder,
+            [0.0, 0.0],
+            [0.0, 1.0],
+            [[1.0, 0.0, 0.0], [1.0, 0.0, 1.0]],
+        ),
+    ] {
+        for rational in [false, true] {
+            let mut body = template.clone();
+            let old = edge_use(40, 0);
+            let at = body
+                .windows(old.len())
+                .position(|window| window == old)
+                .unwrap();
+            body.splice(at..at + old.len(), edge_use(40, 70));
+            body.extend(planar_b_curve(start, end, rational));
+            body.extend(sp_curve_records(100, points));
+            let source = crate::test_support::container::sldprt_with_body(&body);
+            let input = crate::SldprtCodec
+                .decode(&mut Cursor::new(source), &DecodeOptions::default())
+                .unwrap();
+            let expected = input
+                .ir()
+                .model
+                .procedural_curves
+                .iter()
+                .find_map(|curve| {
+                    let ProceduralCurveDefinition::SurfaceCurve {
+                        family: SurfaceCurveFamily::Parametric { context, .. },
+                    } = curve.definition()
+                    else {
+                        return None;
+                    };
+                    context.sides()[0]
+                        .pcurve
+                        .as_ref()
+                        .map(|pcurve| pcurve.geometry.clone())
+                })
+                .expect("native surface curve");
+            let id = input
+                .ir()
+                .model
+                .curves
+                .iter()
+                .find(|curve| matches!(curve.geometry, CurveGeometry::Procedural { .. }))
+                .unwrap()
+                .id
+                .clone();
+            let plan = crate::SldprtCodec
+                .plan(EncodeInput::new(input.ir(), None), TargetRequest::Inherit)
+                .unwrap();
+            assert!(plan
+                .report()
+                .losses
+                .iter()
+                .any(
+                    |loss| loss.code.local_code() == "record.residual-unavailable"
+                        && loss.message.contains(id.as_str())
+                ));
+            assert!(!plan
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.code.local_code() == "writer.procedural-reduced"
+                    && loss.message.contains(id.as_str())));
+            let mut bytes = Vec::new();
+            plan.write_to(&mut bytes).unwrap();
+            let output = crate::SldprtCodec
+                .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+                .unwrap();
+            assert!(output
+                .ir()
+                .model
+                .curves
+                .iter()
+                .any(|curve| matches!(curve.geometry, CurveGeometry::Procedural { .. })));
+            let actual = output
+                .ir()
+                .model
+                .procedural_curves
+                .iter()
+                .find_map(|curve| {
+                    let ProceduralCurveDefinition::SurfaceCurve {
+                        family: SurfaceCurveFamily::Parametric { context, .. },
+                    } = curve.definition()
+                    else {
+                        return None;
+                    };
+                    context.sides()[0]
+                        .pcurve
+                        .as_ref()
+                        .map(|pcurve| &pcurve.geometry)
+                })
+                .expect("written surface curve");
+            let (PcurveGeometry::Nurbs { nurbs: before }, PcurveGeometry::Nurbs { nurbs: after }) =
+                (&expected, actual)
+            else {
+                panic!("surface curve UV spline");
+            };
+            assert_eq!(before.degree(), after.degree());
+            assert_eq!(before.periodic(), after.periodic());
+            assert_eq!(before.knots().len(), after.knots().len());
+            for (left, right) in before.knots().iter().zip(after.knots().iter()) {
+                assert!((left - right).abs() < UV_TOLERANCE);
+            }
+            let before_points = before.control_points();
+            let after_points = after.control_points();
+            assert_eq!(before_points.len(), after_points.len());
+            for (left, right) in before_points.iter().zip(after_points.iter()) {
+                assert!((left.get().u - right.get().u).abs() < UV_TOLERANCE);
+                assert!((left.get().v - right.get().v).abs() < UV_TOLERANCE);
+            }
+            match (before.weights(), after.weights()) {
+                (Some(left), Some(right)) => {
+                    assert_eq!(left.len(), right.len());
+                    for (left, right) in left.iter().zip(right.iter()) {
+                        assert!((left.get() - right.get()).abs() < UV_TOLERANCE);
+                    }
+                }
+                (None, None) => {}
+                _ => panic!("surface curve weight form changed"),
+            }
+        }
+    }
+}
+
+#[test]
 fn linear_edge_parameter_range_is_authored_as_a_bounded_curve() {
     let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
     for edge in &mut ir.model.edges[1..] {
@@ -36,12 +188,10 @@ fn linear_edge_parameter_range_is_authored_as_a_bounded_curve() {
     let written = crate::SldprtCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
-    assert!(written
-        .ir()
-        .model
-        .edges
-        .iter()
-        .any(|edge| edge.param_range().map(cadmpeg_ir::units::FiniteVector::get) == Some([0.0, 10.0])));
+    assert!(written.ir().model.edges.iter().any(|edge| edge
+        .param_range()
+        .map(cadmpeg_ir::units::FiniteVector::get)
+        == Some([0.0, 10.0])));
 }
 
 #[test]

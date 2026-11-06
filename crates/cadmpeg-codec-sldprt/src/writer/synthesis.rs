@@ -262,7 +262,17 @@ pub(super) fn plan(
             surface.geometry = SurfaceGeometry::Solved(cache.clone());
         }
     }
+    let surface_curves = projected
+        .model
+        .curves
+        .iter()
+        .filter(|curve| super::surface_curve::supported(&projected, curve).is_some())
+        .map(|curve| curve.id.clone())
+        .collect::<std::collections::HashSet<_>>();
     for curve in &mut projected.model.curves {
+        if surface_curves.contains(&curve.id) {
+            continue;
+        }
         if let Some(cache) = curve.geometry.solved_cache() {
             losses.push(SldprtLossCode::WriterProceduralReduced.note(format!(
                 "curve {} was written from its solved carrier",
@@ -272,7 +282,18 @@ pub(super) fn plan(
         }
     }
     projected.model.procedural_surfaces.clear();
-    projected.model.procedural_curves.clear();
+    let retained_constructions = projected
+        .model
+        .curves
+        .iter()
+        .filter(|curve| surface_curves.contains(&curve.id))
+        .filter_map(|curve| curve.geometry.procedural_construction())
+        .cloned()
+        .collect::<std::collections::HashSet<_>>();
+    projected
+        .model
+        .procedural_curves
+        .retain(|curve| retained_constructions.contains(&curve.id));
     cascade_validation_errors(&mut projected, &mut losses)?;
     // D13: the synthesis base is the active configuration. A document with no
     // active configuration still writes its base state instead of refusing at
@@ -738,6 +759,13 @@ pub(super) fn plan(
             SldprtLossCode::WriterNoExportableSolids
                 .note("the document has no exportable B-rep solids"),
         );
+    }
+    for curve in &projected.model.curves {
+        if super::surface_curve::supported(&projected, curve).is_some() {
+            losses.push(cadmpeg_ir::codec::write::ExportLossCode::RecordResidualUnavailable.note(format!(
+                "surface curve {}: node identifiers and tolerance to the absent original curve are unspecified", curve.id
+            )));
+        }
     }
     losses.extend(super::accounting::losses(input.ir, true));
     losses.extend(super::accounting::arena_losses(input.ir, &coverage));
