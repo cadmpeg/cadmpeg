@@ -7235,11 +7235,18 @@ fn validate_entity_selection_operands(ctx: &Ctx, findings: &mut Vec<Finding>) {
                     == Some(&operand.record_index())
         }) && header.is_some_and(|header| {
             header.byte_offset == operand.byte_offset() && header.class_tag == *operand.class_tag()
-        }) && entity_selection_slots.insert((
-            native_stream,
-            operand.group_record_index,
-            operand.group_member_ordinal,
-        ));
+        }) && (operand.sketch_point().is_none()
+            || group.is_some_and(|group| {
+                crate::design::decode::operands::is_loft_point_group(
+                    group,
+                    &native.design_parameter_scopes,
+                )
+            }))
+            && entity_selection_slots.insert((
+                native_stream,
+                operand.group_record_index,
+                operand.group_member_ordinal,
+            ));
         if !valid {
             push_constant_finding(
                 findings,

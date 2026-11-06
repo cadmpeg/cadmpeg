@@ -6,6 +6,7 @@ use crate::records::feature::extrude::DesignExtrudeOperation;
 use crate::records::feature::path_features::DesignLoftConstruction;
 use crate::records::feature::scope::DesignScopePayload;
 use crate::records::topology::construction::DesignConstructionOperandRole;
+use crate::records::topology::entity_selection::DesignEntitySelectionOperand;
 use crate::records::topology::extrude_selection::DesignOperandRole;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
@@ -37,23 +38,46 @@ fn project(
     ctx: &DecodeContext<'_>,
     scope: &crate::records::feature::scope::DesignParameterScope,
     groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
+    entity_selection_operands: &[DesignEntitySelectionOperand],
 ) -> Result<Option<FeatureDefinition>, CodecError> {
     project_fixed_loft(
         scope,
         &crate::design::feature_project::ProjectInputs {
             construction_groups: groups,
+            entity_selection_operands,
             ..Default::default()
         },
         ctx,
     )
 }
 
+/// The compact sketch-point selection that forms the member of `group`.
+fn point_selection(
+    group: &crate::records::topology::construction::DesignConstructionOperandGroup,
+) -> DesignEntitySelectionOperand {
+    let mut draft = loft_point_sources().1.into_draft();
+    draft.group_record_index = group.record_index;
+    DesignEntitySelectionOperand::try_new(at_record(draft, group.members()[0].value)).unwrap()
+}
+
+/// `draft` moved to member record `record_index` with its nested records.
+fn at_record(
+    mut draft: crate::records::topology::entity_selection::DesignEntitySelectionOperandDraft,
+    record_index: u32,
+) -> crate::records::topology::entity_selection::DesignEntitySelectionOperandDraft {
+    draft.record_index = record_index;
+    draft.identity_record_index = record_index + 3;
+    draft.next_record_index = record_index + 4;
+    draft
+}
+
 fn assert_loft_sections(roles: [DesignOperandRole; 2], has_point: bool) {
     let (scope, groups) = loft_input(roles);
-    let definition =
-        crate::test_support::with_decode_context(|decode_ctx| project(decode_ctx, &scope, &groups))
-            .unwrap()
-            .unwrap();
+    let definition = crate::test_support::with_decode_context(|decode_ctx| {
+        project(decode_ctx, &scope, &groups, &[])
+    })
+    .unwrap()
+    .unwrap();
     assert!(matches!(definition,
         FeatureDefinition::Operation(FeatureOperation::Loft { sections, .. })
             if sections.len() == 2
@@ -79,9 +103,15 @@ fn loft_projects_native_sections() {
 
 fn projected_sections(roles: [DesignOperandRole; 2]) -> Option<Vec<LoftSection>> {
     let (scope, groups) = loft_input(roles);
-    let definition =
-        crate::test_support::with_decode_context(|decode_ctx| project(decode_ctx, &scope, &groups))
-            .unwrap()?;
+    let selections = groups
+        .iter()
+        .filter(|group| group.role() == DesignOperandRole::ROLE_0X21)
+        .map(point_selection)
+        .collect::<Vec<_>>();
+    let definition = crate::test_support::with_decode_context(|decode_ctx| {
+        project(decode_ctx, &scope, &groups, &selections)
+    })
+    .unwrap()?;
     let FeatureDefinition::Operation(FeatureOperation::Loft { sections, .. }) = definition else {
         panic!("Loft definition: {definition:?}");
     };
@@ -131,11 +161,43 @@ fn a_profile_and_a_point_group_project_in_scope_reference_order() {
             },
         ])
         .unwrap();
+    let selection = point_selection(&point);
     assert!(crate::test_support::with_decode_context(|decode_ctx| {
-        project(decode_ctx, &scope, &[profile, point])
+        project(decode_ctx, &scope, &[profile, point], &[selection])
     })
     .unwrap()
     .is_none());
+}
+
+#[test]
+fn a_profile_to_point_loft_needs_one_selection_of_its_point_member() {
+    let (scope, [profile, point]) =
+        loft_input([DesignOperandRole::PROFILE, DesignOperandRole::ROLE_0X21]);
+    let selection = point_selection(&point);
+    let mut second_member = selection.clone().into_draft();
+    second_member.group_member_ordinal = 1;
+    let other_record = at_record(selection.clone().into_draft(), selection.record_index() + 1);
+    let projects = |selections: Vec<DesignEntitySelectionOperand>| {
+        crate::test_support::with_decode_context(|decode_ctx| {
+            project(
+                decode_ctx,
+                &scope,
+                &[profile.clone(), point.clone()],
+                &selections,
+            )
+        })
+        .unwrap()
+        .is_some()
+    };
+    assert!(projects(vec![selection.clone()]));
+    for selections in [
+        Vec::new(),
+        vec![DesignEntitySelectionOperand::try_new(second_member).unwrap()],
+        vec![DesignEntitySelectionOperand::try_new(other_record).unwrap()],
+        vec![selection.clone(), selection],
+    ] {
+        assert!(!projects(selections));
+    }
 }
 
 const LOFT_STREAM: &str = "f3d:Design/BulkStream.dat";
@@ -411,6 +473,33 @@ fn a_loft_point_section_needs_a_sketch_point_frame() {
         let sources = crate::design::feature_project::LoftPointSources {
             groups: std::slice::from_ref(&group),
             entity_operands: std::slice::from_ref(&colliding),
+            sketch_points: std::slice::from_ref(&point),
+            sketches: std::slice::from_ref(&sketch),
+            sketch_entities: std::slice::from_ref(&entity),
+        };
+        assert!(matches!(
+            bound_point_section(loft_to_point(&group_id), &sources),
+            LoftPointSection::Native(_)
+        ));
+    }
+}
+
+#[test]
+fn a_loft_point_section_needs_the_selection_of_its_point_member() {
+    use cadmpeg_ir::features::LoftPointSection;
+    let (group, operand, point, sketch, entity) = loft_point_sources();
+    let group_id = group.id.clone();
+    let mut section_group = group.clone();
+    section_group.operand_role = DesignConstructionOperandRole::Other(DesignOperandRole::ROLE_0X5);
+    let other_record = DesignEntitySelectionOperand::try_new(at_record(
+        operand.clone().into_draft(),
+        operand.record_index() + 1,
+    ))
+    .unwrap();
+    for (group, operand) in [(&group, &other_record), (&section_group, &operand)] {
+        let sources = crate::design::feature_project::LoftPointSources {
+            groups: std::slice::from_ref(group),
+            entity_operands: std::slice::from_ref(operand),
             sketch_points: std::slice::from_ref(&point),
             sketches: std::slice::from_ref(&sketch),
             sketch_entities: std::slice::from_ref(&entity),

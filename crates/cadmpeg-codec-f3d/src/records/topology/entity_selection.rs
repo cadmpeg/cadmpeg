@@ -330,9 +330,9 @@ impl DesignEntitySelectionOperand {
             _ => None,
         }
     }
-    /// The primary and secondary identities as history topology identities.
-    /// A compact sketch-point identity names a Sketch record and a sketch
-    /// point, so it carries none.
+    /// The primary and secondary identities that history normalization
+    /// resolves. Every frame form except the compact sketch-point identity
+    /// supplies them; that identity names a Sketch record and a sketch point.
     pub(crate) fn topology_identities(&self) -> Option<(u64, Option<u64>)> {
         self.sketch_point().is_none().then(|| {
             (

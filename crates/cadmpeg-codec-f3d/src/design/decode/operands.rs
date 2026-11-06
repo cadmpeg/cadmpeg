@@ -3957,21 +3957,24 @@ pub(crate) fn decode_entity_selection_operands(
     Ok(out)
 }
 
-/// Whether `group` is a role-`0x21` group of a Loft scope, whose members can
-/// carry the compact sketch-point identity.
-pub(super) fn is_loft_point_group(
+/// Whether `group` is a role-`0x21` group whose one owning scope is a Loft, so
+/// that its members can carry the compact sketch-point identity.
+pub(crate) fn is_loft_point_group(
     group: &DesignConstructionOperandGroup,
     scopes: &[DesignParameterScope],
 ) -> bool {
+    let mut owners = scopes.iter().filter(|scope| {
+        scope.record_index == group.scope_record_index
+            && native_stream(&scope.id) == native_stream(&group.id)
+    });
     group.role() == DesignOperandRole::ROLE_0X21
-        && scopes.iter().any(|scope| {
-            scope.record_index == group.scope_record_index
-                && native_stream(&scope.id) == native_stream(&group.id)
-                && matches!(
-                    crate::design::design_feature_family(&scope.kind()),
-                    Some(crate::design::DesignFeatureFamily::Loft)
-                )
+        && owners.next().is_some_and(|scope| {
+            matches!(
+                crate::design::design_feature_family(&scope.kind()),
+                Some(crate::design::DesignFeatureFamily::Loft)
+            )
         })
+        && owners.next().is_none()
 }
 
 pub(super) fn parse_entity_selection_operand(

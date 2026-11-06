@@ -833,8 +833,9 @@ pub(crate) fn bind_extrude_selection_history(
     }
 }
 
-/// Resolve both identities in nested entity-selection operands against the
-/// owning feature's exact input topology.
+/// Resolve both identities of each nested entity-selection operand, other than
+/// a compact sketch-point identity, against the owning feature's exact input
+/// topology.
 pub(crate) fn bind_entity_selection_history(
     operands: &mut [crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     scopes: &[crate::records::feature::scope::DesignParameterScope],

@@ -3170,15 +3170,8 @@ fn loft_sketch_point(
 
     let group = only(sources.groups.iter().filter(|group| group.id == group_id))?;
     let stream = native_stream(&group.id)?;
-    if group.members().len() != 1 {
-        return None;
-    }
-    let operand = only(sources.entity_operands.iter().filter(|operand| {
-        native_stream(&operand.id) == Some(stream)
-            && operand.group_record_index == group.record_index
-            && operand.group_member_ordinal == 0
-    }))?;
-    let (sketch_record, persistent_id) = operand.sketch_point()?;
+    let (sketch_record, persistent_id) =
+        loft_point_operand(group, sources.entity_operands)?.sketch_point()?;
     let sketch_record = u32::try_from(sketch_record).ok()?;
     let point = only(sources.sketch_points.iter().filter(|point| {
         native_stream(&point.id) == Some(stream)
@@ -3203,6 +3196,28 @@ fn loft_sketch_point(
             .filter(|sketch| sketch.id == entity.sketch),
     )?;
     crate::design::geometry::sketch_point_to_model(sketch, position.get())
+}
+
+/// The one entity-selection operand that forms the single member of a
+/// role-`0x21` Loft point group.
+fn loft_point_operand<'a>(
+    group: &DesignConstructionOperandGroup,
+    operands: &'a [crate::records::topology::entity_selection::DesignEntitySelectionOperand],
+) -> Option<&'a crate::records::topology::entity_selection::DesignEntitySelectionOperand> {
+    let stream = native_stream(&group.id)?;
+    let [member] = group.members() else {
+        return None;
+    };
+    let mut matches = operands.iter().filter(|operand| {
+        native_stream(&operand.id) == Some(stream)
+            && operand.group_record_index == group.record_index
+            && operand.group_member_ordinal == 0
+    });
+    let operand = matches.next()?;
+    (group.role() == DesignOperandRole::ROLE_0X21
+        && matches.next().is_none()
+        && operand.record_index() == member.value)
+        .then_some(operand)
 }
 
 /// Bind `WorkPoint` inputs that select a sketch point after the sketch arenas
@@ -6551,6 +6566,7 @@ pub(super) fn project_fixed_loft(
         legacy_loft_body_carriers: legacy_body_carriers,
         edge_operands,
         edge_identity_operands,
+        entity_selection_operands,
         face_operands,
         face_boundaries,
         ..
@@ -6760,9 +6776,9 @@ pub(super) fn project_fixed_loft(
         } else if operands.len() == 2
             && profile_groups.len() == 1
             && profile_groups[0].role() == DesignOperandRole::PROFILE
-            && operands.iter().any(|group| {
-                group.role() == DesignOperandRole::ROLE_0X21 && group.members().len() == 1
-            })
+            && operands
+                .iter()
+                .any(|group| loft_point_operand(group, entity_selection_operands).is_some())
         {
             let mut sections = Vec::new();
             for group in &operands {
