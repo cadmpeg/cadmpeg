@@ -438,6 +438,11 @@ pub(super) fn write_with_limits(
                 "sketch {id}: generated member-run records have unspecified state fields"
             )));
         }
+        for id in &sketches.renamed_sketches {
+            residual_losses.push(crate::loss::F3dLossCode::WriterDesignRecordsOmitted.note(format!(
+                "sketch {id} uses a generated Design entity name"
+            )));
+        }
         for id in &sketches.text_entities {
             residual_losses.push(ExportLossCode::RecordResidualUnavailable.note(format!(
                 "sketch text {id}: generated glyph color and formatting use unspecified defaults"
