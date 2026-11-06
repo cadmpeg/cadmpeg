@@ -195,7 +195,7 @@ pub(super) fn encode(
     value: &Value,
     ir: &cadmpeg_ir::CadIr,
     materials: &super::super::materials::MaterialPlan,
-) -> Result<(Vec<u8>, Option<String>), WriteError> {
+) -> Result<(Vec<u8>, Vec<u8>, Option<String>), WriteError> {
     const FIELDS: &[&str] = &[
         "source_uuid",
         "name",
@@ -264,13 +264,7 @@ pub(super) fn encode(
             )));
         }
     }
-    for name in [
-        "casts_shadows",
-        "receives_shadows",
-        "advanced_texture_preview",
-        "custom_render_mesh",
-        "mesh_modifiers",
-    ] {
+    for name in ["custom_render_mesh", "mesh_modifiers"] {
         if fields.get(name).is_some_and(|value| !value.is_null()) {
             return Err(WriteError::Omit(format!(
                 "light attribute {name} is not writable yet"
@@ -313,6 +307,39 @@ pub(super) fn encode(
     body.extend(written_linetype.to_le_bytes());
     body.push(4);
     body.extend(written_material.to_le_bytes());
+    let mut rendering_child = None;
+    if [
+        "casts_shadows",
+        "receives_shadows",
+        "advanced_texture_preview",
+    ]
+    .iter()
+    .any(|name| fields.get(*name).is_some_and(|value| !value.is_null()))
+    {
+        let flag = |name: &str, default: bool| -> Result<bool, WriteError> {
+            match fields.get(name) {
+                None | Some(Value::Null) => Ok(default),
+                Some(value) => value
+                    .as_bool()
+                    .filter(|value| *value != default)
+                    .ok_or_else(|| {
+                        WriteError::Omit(format!(
+                            "light attribute {name} must use its non-default boolean"
+                        ))
+                    }),
+            }
+        };
+        let casts = flag("casts_shadows", true)?;
+        let receives = flag("receives_shadows", true)?;
+        let preview = flag("advanced_texture_preview", false)?;
+        let mut rendering = 0_i32.to_le_bytes().to_vec();
+        rendering.extend(0_i32.to_le_bytes());
+        rendering.extend([u8::from(casts), u8::from(receives), u8::from(preview)]);
+        body.push(5);
+        let start = body.len();
+        body.extend(super::super::anonymous(1, 3, &rendering)?);
+        rendering_child = Some(start..body.len());
+    }
     for (tag, name) in [(6, "color"), (7, "plot_color")] {
         body.push(tag);
         body.extend(color(fields, name)?);
@@ -487,5 +514,12 @@ pub(super) fn encode(
         }
     }
     let change = (!changes.is_empty()).then(|| changes.join(", "));
-    Ok((body, change))
+    let direct = if let Some(child) = rendering_child {
+        let mut direct = body[..child.start].to_vec();
+        direct.extend(&body[child.end..]);
+        direct
+    } else {
+        body.clone()
+    };
+    Ok((body, direct, change))
 }
