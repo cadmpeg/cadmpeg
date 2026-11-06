@@ -443,7 +443,9 @@ pub(super) fn append(
                                         self::owners(ir, native, &targets).as_ref() == Some(&owners)
                                     },
                                 );
-                                tables::directory_metadata(namespace, record, &mut entity);
+                                if entity.form == 15 {
+                                    tables::directory_metadata(namespace, record, &mut entity);
+                                }
                                 entity.source_targets.push(record.id().to_owned());
                                 if let Some(source) = string_field(record, "source_entity") {
                                     entity.source_targets.push(source);
