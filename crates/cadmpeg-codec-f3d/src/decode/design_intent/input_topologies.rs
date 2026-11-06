@@ -15,6 +15,7 @@ pub(super) fn project(
     design: &DesignNative,
     features: &[Feature],
     inputs: &mut Vec<FeatureInputTopology>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), CodecError> {
     let features_by_native: HashMap<_, _> = features
         .iter()
@@ -74,6 +75,9 @@ pub(super) fn project(
             return Ok(());
         };
         let Some(feature) = owners.get(&(stream, scope)).copied() else {
+            losses.push(crate::loss::F3dLossCode::FeatureInputOwnerUnresolved.note(format!(
+                "Feature input operand {id} has no projected feature for scope {scope}."
+            )));
             return Ok(());
         };
         let index = if let Some(index) = input_by_feature.get(&feature.id).copied() {
@@ -156,6 +160,35 @@ mod tests {
     };
 
     #[test]
+    fn operand_without_projected_feature_reports_its_identity() {
+        let mut design = DesignNative::default();
+        design.design_construction_operand_groups.push(
+            serde_json::from_value(serde_json::json!({
+                "id": "f3d:Design/BulkStream.dat:construction-group#9",
+                "scope_record_index": 7,
+                "scope_reference_ordinal": 0,
+                "record_index": 9,
+                "class_tag": "300",
+                "members": [11],
+                "frame": {"opaque_index": 1, "opaque_scalar": 1.0, "variant": false},
+                "role": 0x10_0000_0000u64,
+                "paired_class_tag": "258"
+            }))
+            .unwrap(),
+        );
+        let mut inputs = Vec::new();
+        let mut losses = Vec::new();
+        project(&design, &[], &mut inputs, &mut losses).unwrap();
+        assert!(inputs.is_empty());
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code,
+            crate::loss::F3dLossCode::FeatureInputOwnerUnresolved.kind()
+        );
+        assert!(losses[0].message.contains("construction-group#9"));
+    }
+
+    #[test]
     fn construction_inputs_survive_without_history_and_stay_stream_local() {
         let mut design = DesignNative::default();
         let scope = crate::records::feature::scope::DesignParameterScope::empty(
@@ -213,10 +246,12 @@ mod tests {
             );
         }
         let mut inputs = Vec::new();
+        let mut losses = Vec::new();
         project(
             &design,
             &[feature.clone(), other_feature.clone()],
             &mut inputs,
+            &mut losses,
         )
         .unwrap();
         assert_eq!(inputs.len(), 2);
@@ -243,7 +278,8 @@ mod tests {
         let mut with_history = inputs.clone();
         with_history[0].native_ref = Some("f3d:history:state#4".into());
         let history_id = with_history[0].id.clone();
-        project(&design, &[feature, other_feature], &mut with_history).unwrap();
+        project(&design, &[feature, other_feature], &mut with_history, &mut losses).unwrap();
+        assert!(losses.is_empty());
         assert_eq!(with_history.len(), 2);
         assert_eq!(with_history[0].id, history_id);
         assert_eq!(
