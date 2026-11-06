@@ -180,37 +180,50 @@ pub(crate) fn decode(scan: &ContainerScan<'_>) -> Result<DecodedAct, CodecError>
             .iter()
             .filter_map(|frame| table_payload_offset(bytes, frame).map(|payload| (frame, payload)))
             .collect::<Vec<_>>();
-        let [(table_frame, table_payload)] = table_frames.as_slice() else {
-            return Err(CodecError::malformed(format_args!(
-                "F3D ACT segment must have exactly one indexed ACTTable record: {}",
-                entry.name
-            )));
-        };
-        let table_id = crate::ids::native_scoped_id(&entry.name, "act-table", table_frame.start);
-        let table_data = match decode_table(bytes, table_frame, *table_payload, &entry.name) {
-            Ok(table) => {
-                tables.push(crate::records::act_table::ActTable {
-                    id: table_id,
-                    record_index: table_frame.record_index,
-                    class_tag: table_frame.class_tag.clone(),
-                });
-                Some(table)
+        let damaged_tables: Vec<_> = damaged.iter().enumerate().filter_map(|(index, fault)| {
+            let payload = fault.extent.start.checked_add(crate::layout::indexed_design_record_header::LEN)?;
+            table_payload_at(bytes, payload, fault.extent.end).map(|_| index)
+        }).collect();
+        let (table_index, table_data) = match (table_frames.as_slice(), damaged_tables.as_slice()) {
+            ([(table_frame, table_payload)], []) => {
+                let table_id = crate::ids::native_scoped_id(&entry.name, "act-table", table_frame.start);
+                let result = match decode_table(bytes, table_frame, *table_payload, &entry.name) {
+                    Ok(table) => {
+                        tables.push(crate::records::act_table::ActTable {
+                            id: table_id,
+                            record_index: table_frame.record_index,
+                            class_tag: table_frame.class_tag.clone(),
+                        });
+                        Some(table)
+                    }
+                    Err(error @ CodecError::Io(_)) => return Err(error),
+                    Err(CodecError::ResourceLimit(limit))
+                        if limit.scope == cadmpeg_core::decode::LimitScope::Session => {
+                            return Err(CodecError::ResourceLimit(limit));
+                        }
+                    Err(error) => {
+                        damaged.push(UnreadableActFrame {
+                            stream: entry.name.clone(),
+                            extent: table_frame.start..table_frame.end,
+                            record_index: u64::from(table_frame.record_index),
+                            error,
+                            dropped: vec![table_id],
+                        });
+                        None
+                    }
+                };
+                (u64::from(table_frame.record_index), result)
             }
-            Err(error @ CodecError::Io(_)) => return Err(error),
-            Err(CodecError::ResourceLimit(limit))
-                if limit.scope == cadmpeg_core::decode::LimitScope::Session => {
-                    return Err(CodecError::ResourceLimit(limit));
-                }
-            Err(error) => {
-                damaged.push(UnreadableActFrame {
-                    stream: entry.name.clone(),
-                    extent: table_frame.start..table_frame.end,
-                    record_index: u64::from(table_frame.record_index),
-                    error,
-                    dropped: vec![table_id],
-                });
-                None
+            ([], [index]) => {
+                let fault = &mut damaged[*index];
+                fault.dropped.push(crate::ids::native_scoped_id(
+                    &entry.name, "act-table", fault.extent.start,
+                ));
+                (fault.record_index, None)
             }
+            _ => return Err(CodecError::malformed(format_args!(
+                "F3D ACT segment must have exactly one indexed ACTTable record: {}", entry.name
+            ))),
         };
         let table_unreadable = table_data.is_none();
         let DecodedTable {
@@ -284,7 +297,7 @@ pub(crate) fn decode(scan: &ContainerScan<'_>) -> Result<DecodedAct, CodecError>
         let mut represented_groups = BTreeSet::new();
         let stream_entities = if table_unreadable {
             let fault = damaged.iter_mut()
-                .find(|fault| fault.record_index == u64::from(table_frame.record_index))
+                .find(|fault| fault.record_index == table_index)
                 .ok_or_else(|| CodecError::malformed("ACT table failure has no part"))?;
             for group in groups {
                 represented_groups.insert(group.record_index);
@@ -302,7 +315,9 @@ pub(crate) fn decode(scan: &ContainerScan<'_>) -> Result<DecodedAct, CodecError>
             .iter()
             .map(ActEntity::record_index)
             .collect::<BTreeSet<_>>();
-        represented.insert(table_frame.record_index);
+        if let Ok(index) = u32::try_from(table_index) {
+            represented.insert(index);
+        }
         represented.extend(represented_groups);
         represented.extend(damaged.iter().filter_map(|fault| u32::try_from(fault.record_index).ok()));
         let scope = crate::ids::native_scope(&entry.name);
@@ -351,8 +366,12 @@ pub(crate) fn decode(scan: &ContainerScan<'_>) -> Result<DecodedAct, CodecError>
 }
 
 fn table_payload_offset(bytes: &[u8], frame: &RecordFrame) -> Option<usize> {
-    let name_offset = frame.payload_offset.checked_add(4)?;
-    if name_offset > frame.end || bytes.get(frame.payload_offset..name_offset)? != [0; 4] {
+    table_payload_at(bytes, frame.payload_offset, frame.end)
+}
+
+fn table_payload_at(bytes: &[u8], payload_offset: usize, end: usize) -> Option<usize> {
+    let name_offset = payload_offset.checked_add(4)?;
+    if name_offset > end || bytes.get(payload_offset..name_offset)? != [0; 4] {
         return None;
     }
     let name_len = usize::try_from(View::u32_le_at(bytes, name_offset)?).ok()?;
@@ -361,7 +380,7 @@ fn table_payload_offset(bytes: &[u8], frame: &RecordFrame) -> Option<usize> {
     }
     let name_start = name_offset.checked_add(4)?;
     let payload = name_start.checked_add(name_len)?;
-    (bytes.get(name_start..payload)? == b"ACTTable" && payload <= frame.end).then_some(payload)
+    (bytes.get(name_start..payload)? == b"ACTTable" && payload <= end).then_some(payload)
 }
 
 struct TableEntry {
