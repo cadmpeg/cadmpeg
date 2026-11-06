@@ -1180,12 +1180,17 @@ pub(crate) fn feature_owns_planar_sketch(
     sketch: &SketchId,
 ) -> bool {
     let owns = |definition: &FeatureDefinition| {
-        matches!(
-            definition,
-            FeatureDefinition::Operation(FeatureOperation::Sketch {
-                sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(candidate)),
-            }) if candidate == sketch
-        )
+        match definition {
+            FeatureDefinition::Operation(
+                FeatureOperation::Sketch {
+                    sketch: cadmpeg_ir::features::SketchFeatureBinding::Planar(Some(candidate)),
+                }
+                | FeatureOperation::SketchBlockDefinition {
+                    sketch: Some(candidate),
+                },
+            ) => candidate == sketch,
+            _ => false,
+        }
     };
     owns(feature.evaluation.definition())
         || ir

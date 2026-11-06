@@ -830,6 +830,52 @@ fn source_less_scale_retains_unresolved_construction() {
     ));
     ir.source = None;
     ir.native = cadmpeg_ir::Native::default();
+#[test]
+fn source_less_sketch_block_definition_retains_its_sketch_geometry() {
+    const EPS_SKETCH_MM: f64 = 1.0e-8;
+    let source = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/golden/fixtures/authored_nested_circle.sldprt")).unwrap();
+    let decoded = SldprtCodec.decode(&mut Cursor::new(source), &DecodeOptions::default()).unwrap();
+    let mut ir = decoded.ir().clone();
+    let sketch_id = ir.model.sketches[0].id.clone();
+    let expected_count = ir.model.sketch_entities.iter().filter(|entity| entity.sketch == sketch_id).count();
+    assert!(expected_count > 0);
+    let expected_geometry = ir.model.sketch_entities.iter().find(|entity| entity.sketch == sketch_id).unwrap().geometry.clone();
+    let owner_name = Some("Block geometry".to_owned());
+    ir.model.features.push(cadmpeg_ir::features::Feature {
+        product_definition: None,
+        id: cadmpeg_ir::features::FeatureId::mint("test:design:feature#block").unwrap(),
+        ordinal: 0,
+        name: owner_name.clone(),
+        suppressed: Some(false),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        source_properties: std::collections::BTreeMap::default(),
+        source_tag: Some("Sketch".into()),
+        source_text: None,
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
+        needs_recompute: false,
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(FeatureDefinition::Operation(FeatureOperation::SketchBlockDefinition { sketch: Some(sketch_id) })),
+        native_ref: None,
+    });
+    ir.source = None;
+    ir.native = cadmpeg_ir::Native::default();
+    for feature in &mut ir.model.features { feature.native_ref = None; }
+    let plan = SldprtCodec.plan(EncodeInput::new(&ir, None), TargetRequest::Inherit).unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = SldprtCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()).unwrap();
+    let owner = output.ir().model.features.iter().find(|feature| feature.name == owner_name).unwrap();
+    let FeatureDefinition::Operation(FeatureOperation::SketchBlockDefinition { sketch: Some(written) }) = owner.evaluation.definition() else {
+        let native = crate::test_support::native::sldprt_native(output.ir());
+        panic!("block definition lost its sketch: {:?}; histories {:?}; lanes {:?}", owner.evaluation.definition(), native.feature_histories.iter().flat_map(|history| &history.features).map(|feature| (&feature.id, &feature.name, &feature.source_id, &feature.input_class)).collect::<Vec<_>>(), native.feature_input_lanes.iter().map(|lane| (&lane.id, &lane.configuration, &lane.names, lane.sketch_entities.iter().map(|entity| (entity.offset(), &entity.feature_ref)).collect::<Vec<_>>())).collect::<Vec<_>>());
+    };
+    assert_eq!(output.ir().model.sketch_entities.iter().filter(|entity| &entity.sketch == written).count(), expected_count, "geometry: {:?}", output.ir().model.sketch_entities.iter().filter(|entity| &entity.sketch == written).map(|entity| entity.geometry.definition()).collect::<Vec<_>>());
+    let geometry = &output.ir().model.sketch_entities.iter().find(|entity| &entity.sketch == written).unwrap().geometry;
+    let (cadmpeg_ir::sketches::SketchGeometryDefinition::Circle { center: before, radius: before_radius }, cadmpeg_ir::sketches::SketchGeometryDefinition::Circle { center: after, radius: after_radius }) = (expected_geometry.definition(), geometry.definition()) else { panic!("circle geometry: before {:?}, after {:?}", expected_geometry.definition(), geometry.definition()); };
+    assert!((before.get().u - after.get().u).abs() < EPS_SKETCH_MM);
+    assert!((before.get().v - after.get().v).abs() < EPS_SKETCH_MM);
+    assert!((before_radius.get() - after_radius.get()).abs() < EPS_SKETCH_MM);
+}
+
     ir.model.features[0].native_ref = None;
     let plan = SldprtCodec
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
