@@ -4809,6 +4809,9 @@ fn decode_result(
                         affected = true;
                     }
                 }
+                if affected {
+                    loss.dropped.push(mesh_feature.id.clone());
+                }
                 if affected
                     && mesh_feature
                         .bodies()

@@ -2,7 +2,7 @@
 
 # cadmpeg IR (`.cadir.json`) specification
 
-`CadIr` is the versioned JSON product representation shared by codecs, validation, diffing, and encoders. This specification defines the current required IR version `"10"`. The `cadmpeg-ir` Rust types define field-level JSON types, and `cadir_json_schema()` derives the matching JSON Schema.
+`CadIr` is the versioned JSON product representation shared by codecs, validation, diffing, and encoders. This specification defines the current required IR version `"11"`. The `cadmpeg-ir` Rust types define field-level JSON types, and `cadir_json_schema()` derives the matching JSON Schema.
 
 ## Document layering
 
@@ -256,10 +256,8 @@ A sketch native operand has a nonempty native kind and an optional field. A pres
 
 `native_ref` names the native row carrying the neutral record. The linkage runs from the neutral record to the native row. A neutral record without a native row states no association. The neutral definition keeps its own meaning.
 
-`source_content` retains the ordered mixed content of a feature. Parameter items
-reference entries in the document parameter arena. A referenced parameter may
-be owned by another feature, including a global equations node, and may occur
-more than once when the source serializes repeated consumption slots.
+`source_content` retains the ordered mixed content of a feature. A parameter
+item may occur more than once when the source has repeated consumption slots.
 
 ## Design parameters, configurations, and resolvers
 
@@ -272,9 +270,9 @@ A `DesignParameter` holds its id, name, ordinal, owning feature, canonical
 link. The `expression` holds ordered `tokens`: literal `Text` fragments and
 `Parameter` references by id. The expression is canonical and the value is its
 cache. A single-literal expression equals the value. Dependencies derive from
-the tokens. `owner` names the consuming feature and is independent of product
-ownership. A `source_content` `Parameter(id)` item resolves against the
-parameter arena; the code it carries is canonical over the owner field. `driving`
+the tokens. `owner` optionally names the owning feature and is independent of
+product ownership. A `source_content` `Parameter(id)` item resolves against the
+parameter arena and must name a parameter owned by the containing feature. `driving`
 marks a parameter that drives its constrained dimension. `set_dimension` edits
 the bound parameter through the feature definition path and returns
 `DrivenParameter` when the parameter does not drive or has dependencies.
@@ -290,16 +288,14 @@ prototype body colour for an occurrence. Consumers read visibility through
 `CadIr::effective_visibility`: the applicable explicit gates combine with
 logical AND. A display-colour field holds only a source colour that builds no
 Appearance. Computed world placement comes from `effective_transform`, which
-composes the occurrence parent tree in document coordinates. Body placements
-stay local to their product definition; the world placement is computed and is
-never stored.
+composes the occurrence parent tree in document coordinates. `Body.transform`
+and `Occurrence.transform` are optional `Transform` values. Body placements
+stay local to their product definition; the world placement is computed.
 
-`Feature.needs_recompute` is required on the wire. The edit helpers mark the
-edited feature and its dependents. Decoders set the flag from stored state:
-FreeCAD object status Touched, Creo station-value disagreement, and SolidWorks
-`swConfigurationNeedsUpdate` for every feature; every other decoder reports
-false. Writers preserve the format flag where one exists and otherwise charge
-`export:evaluation.stale` naming the features.
+`Feature.needs_recompute` is required on the wire. It states that the feature's
+stored evaluation may no longer match its inputs. The edit helpers mark the
+edited feature and its dependents. The [document contract](document-contract.md#rules-d-p-w-b-e)
+states the decoder and writer rules.
 
 ## Assembly joints
 
@@ -473,7 +469,7 @@ Structural failures are errors. Same-sense two-member radial rings, unknown anno
 
 Readers provide no migration.
 
-Readers accept exactly `ir_version: "10"`. The `model.subds` arena is required, including when empty. Source annotations and retained records are excluded from the neutral product model. Recursive affine-transformed curve and surface carriers preserve exact source parameterization under occurrence placement. Maintainers select the IR version for each release. After a release, removing or renaming a product field, or changing its type, units, parameterization, or invariant, requires a new IR version. New product fields carry identity, units, ordering, reference, and validation contracts.
+Readers accept exactly `ir_version: "11"`. The `model.subds` arena is required, including when empty. Source annotations and retained records are excluded from the neutral product model. Recursive affine-transformed curve and surface carriers preserve exact source parameterization under occurrence placement. Maintainers select the IR version for each release. After a release, removing or renaming a product field, or changing its type, units, parameterization, or invariant, requires a new IR version. New product fields carry identity, units, ordering, reference, and validation contracts.
 
 `Sweep.section` is a required sum type and `Sweep.sections` is a same-typed list. A sweep section is unresolved, references a `ProfileRef`, or owns generated section geometry. A generated circular region stores its outer radius and optional inward wall thickness.
 
@@ -481,7 +477,7 @@ JSON Schema is generated per IR version by `cadmpeg_ir::cadir_json_schema()`, wh
 
 ## Version history
 
-Version 6 was written inconsistently by releases 0.6.0–0.6.1 and 0.6.2. Versions 7, 8 and 9 record `decode_depth` instead of `scope`. Version 10 replaces that depth field with content scope and changes decode transfer to carry scope. Readers refuse every earlier wire version.
+Version 6 was written inconsistently by releases 0.6.0–0.6.1 and 0.6.2. Versions 7, 8, 9 and 10 record `decode_depth`. Version 11 replaces that field with content scope and changes decode transfer to carry scope. Readers refuse every earlier wire version.
 
 ## Worked cube
 
@@ -491,7 +487,7 @@ The generated document begins with this complete hierarchy and representative ra
 
 ```json
 {
-  "ir_version": "10",
+  "ir_version": "11",
   "scope": { "model": true, "design": true },
   "units": { "length": "millimeter" },
   "tolerances": { "linear": 1e-6, "angular": 1e-10 },
