@@ -66,7 +66,7 @@ pub(super) fn write(
         .map(|namespace| namespace.arena_as::<ObjectRecord>("objects"))
         .transpose()?
         .unwrap_or_default();
-    let native_properties = namespace
+    let mut native_properties = namespace
         .map(|namespace| namespace.arena_as::<PropertyRecord>("properties"))
         .transpose()?
         .unwrap_or_default();
@@ -94,9 +94,18 @@ pub(super) fn write(
         }
     }
     let available: HashSet<String> = retained.keys().cloned().collect();
-    for property in &native_properties {
-        xml::validate(property, &available)?;
-    }
+    native_properties.retain(|property| match xml::validate(property, &available) {
+        Ok(()) => true,
+        Err(error) => {
+            losses.push(
+                FreecadLossCode::ExportNativePropertyNotTransferred.note(format!(
+                    "property {} cannot be written: {error}",
+                    property.id
+                )),
+            );
+            false
+        }
+    });
     names = super::names::prepare(ir, &native_objects, &native_properties);
     let mut entries = BTreeMap::<String, Vec<u8>>::new();
     // Replays restore the source declaration order: the re-decode derives

@@ -126,6 +126,7 @@ fn pointers(entity: &WrittenEntity) -> Vec<u32> {
         }
         120 => indices.extend([1, 2]),
         122 => indices.push(1),
+        140 => indices.push(5),
         142 => indices.extend([2, 3, 4]),
         143 => {
             indices.push(2);
