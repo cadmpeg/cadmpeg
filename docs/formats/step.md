@@ -486,10 +486,6 @@ binary contents and are forbidden in resources, ANCHOR sections, and
 REFERENCE sections. String and binary literals retain the other source bytes
 needed for escape decoding.
 
-Byte accounting assigns each consumed byte to structural syntax, whitespace,
-comments, a typed record, or an opaque record. An unclassified byte raises a
-parse error.
-
 ## 3. Tokens
 
 ```text
@@ -2236,6 +2232,8 @@ the datum target basis; the writer emits the relationship for each shape-aspect
 basis target. A relationship without a resolvable datum target remains
 source-native. Geometric-item usages whose identified item is a Cartesian point
 transfer that point as a typed PMI target.
+`ROW_REPRESENTATION_ITEM` contains an ordered list of representation items.
+Each item states its value through its own representation-item subtype.
 A geometric validation property is a `PROPERTY_DEFINITION` named
 `geometric validation property`, linked to a representation by
 `PROPERTY_DEFINITION_REPRESENTATION`. Its definition is either a
