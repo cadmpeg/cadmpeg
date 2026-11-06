@@ -7,6 +7,8 @@
 //! reference vectors are kept as written. The `sense` byte stays with the
 //! host, which assigns its meaning.
 
+pub mod nurbs;
+
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::geometry::analytic::{
     CircleCurve, ConeSurface, CylinderSurface, EllipseCurve, LineCurve, PlaneSurface,

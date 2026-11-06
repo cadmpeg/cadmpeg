@@ -788,6 +788,7 @@ fn scan_carriers_with_framing(
             }
         }
     }
+    let scanned_splines = node_splines.is_none();
     let (curves, surfaces) = match node_splines {
         Some(splines) => (splines.curves, splines.surfaces),
         None => (
@@ -852,8 +853,12 @@ fn scan_carriers_with_framing(
     // SP_CURVEs read on the supports indexed above.
     if body.windows(2).any(|tag| tag == [0x00, 0x89]) {
         out.sp_curves = node_sp_curves.unwrap_or_else(|| {
-            let mut pcurves = spline::scan_pcurve_carriers(body);
-            pcurves.retain(|attr, _| !exclude.contains(attr));
+            let mut pcurve_refusals = Vec::new();
+            let mut pcurves = spline::scan_pcurve_carriers(body, &mut pcurve_refusals);
+            if scanned_splines {
+                lane_refusals.append(&mut pcurve_refusals);
+            }
+                pcurves.retain(|attr, _| !exclude.contains(attr));
             sp_curve::scan(body, &pcurves)
         });
         for wrapper in subset::resolve(ctx, &bounded, &out, subset::Pass::SurfaceCurves)? {
