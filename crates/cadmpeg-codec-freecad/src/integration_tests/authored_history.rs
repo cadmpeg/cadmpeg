@@ -3,9 +3,11 @@
 use std::io::Cursor;
 
 use cadmpeg_ir::features::{
-    edge_treatments::RadiusSpec, BooleanOp, ExtrudeExtent, FeatureDefinition, FeatureOperation,
-    LinearTermination, ParameterValue, PlanarProfileRef, ProfileRef,
+    edge_treatments::RadiusSpec, BooleanOp, EdgeSelection, ExtrudeExtent, FeatureDefinition,
+    FeatureOperation, LinearTermination, ParameterValue, PlanarProfileRef, ProfileRef,
 };
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
+use cadmpeg_ir::products::{OccurrenceParent, ProductDefinitionKind};
 use cadmpeg_ir::sketches::{SketchConstraintDefinitionInput, SketchGeometryDefinition};
 use cadmpeg_ir::{Codec, DecodeOptions};
 
@@ -13,6 +15,8 @@ use crate::FcstdCodec;
 
 const LENGTH_TOLERANCE: f64 = 1.0e-12;
 const VOLUME_TOLERANCE: f64 = 1.0e-6;
+const AREA_TOLERANCE: f64 = 1.0e-6;
+const BOUNDS_TOLERANCE: f64 = 1.0e-6;
 
 #[test]
 fn authored_design_history_keeps_sketches_constraints_and_operations() {
@@ -132,11 +136,25 @@ fn authored_design_history_keeps_sketches_constraints_and_operations() {
     let measures =
         cadmpeg_measure::test_support::round_trip::measured("design_history", decoded.ir())
             .unwrap();
-    for (name, expected) in [
-        ("Pad", 24.0 * 16.0 * 10.0),
+    for (name, expected_volume, expected_area, bounds) in [
+        (
+            "Pad",
+            24.0 * 16.0 * 10.0,
+            2.0 * (24.0 * 16.0 + 24.0 * 10.0 + 16.0 * 10.0),
+            [0.0, 0.0, 0.0, 24.0, 16.0, 10.0],
+        ),
         (
             "Pocket",
             24.0 * 16.0 * 10.0 - std::f64::consts::PI * 3.0 * 3.0 * 6.0,
+            2.0 * (24.0 * 16.0 + 24.0 * 10.0 + 16.0 * 10.0)
+                + 2.0 * std::f64::consts::PI * 3.0 * 6.0,
+            [0.0, 0.0, 0.0, 24.0, 16.0, 10.0],
+        ),
+        (
+            "Fillet",
+            3830.0 - 103.0 * std::f64::consts::PI / 2.0,
+            1546.0 + 83.0 * std::f64::consts::PI / 2.0,
+            [0.0, 0.0, 0.0, 24.0, 16.0, 10.0],
         ),
     ] {
         let feature = model
@@ -165,12 +183,123 @@ fn authored_design_history_keeps_sketches_constraints_and_operations() {
             .value
             .get();
         assert!(
-            (volume - expected).abs() < VOLUME_TOLERANCE,
+            (volume - expected_volume).abs() < VOLUME_TOLERANCE,
             "{name}: volume {volume}"
         );
+        let area = body
+            .area()
+            .as_ref()
+            .unwrap()
+            .measured()
+            .unwrap()
+            .value()
+            .value
+            .get();
+        assert!(
+            (area - expected_area).abs() < AREA_TOLERANCE,
+            "{name}: area {area}"
+        );
+        let bbox = body.bbox().measured().unwrap().value();
+        for (actual, expected) in bbox
+            .min
+            .coordinates()
+            .into_iter()
+            .chain(bbox.max.coordinates())
+            .zip(bounds)
+        {
+            assert!(
+                (actual.get() - expected).abs() < BOUNDS_TOLERANCE,
+                "{name}: bounding box"
+            );
+        }
     }
     assert!(
         matches!(operation("Fillet"), FeatureOperation::Fillet { groups } if matches!(groups.as_slice(), [group] if matches!(group.radius, RadiusSpec::Constant { radius } if (radius.get() - 1.0).abs() < LENGTH_TOLERANCE)))
+    );
+    let properties = decoded
+        .ir()
+        .native
+        .namespace("fcstd")
+        .unwrap()
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .unwrap();
+    let base = properties
+        .iter()
+        .find(|property| {
+            property.owner == crate::native::native_id("object", "Fillet")
+                && property.name == "Base"
+        })
+        .unwrap();
+    let [Some(link)] = base.links() else {
+        panic!("Fillet.Base link")
+    };
+    assert_eq!(link.document(), None);
+    let pocket_id = crate::native::native_id("object", "Pocket");
+    assert_eq!(link.object(), Some(pocket_id.as_str()));
+    assert_eq!(link.subelements(), ["Edge1"]);
+    let FeatureOperation::Fillet { groups } = operation("Fillet") else {
+        panic!("Fillet operation")
+    };
+    let [group] = groups.as_slice() else {
+        panic!("Fillet group")
+    };
+    let EdgeSelection::Resolved { edges, native } = &group.edges else {
+        panic!("Fillet.Edge1 selection is unresolved")
+    };
+    assert_eq!(native, &base.id);
+    let [selected] = edges.as_slice() else {
+        panic!("Fillet.Edge1 selection count")
+    };
+    let edge = model
+        .edges
+        .iter()
+        .find(|edge| &edge.id == selected)
+        .unwrap();
+    let vertex_position = |id: &cadmpeg_ir::ids::VertexId| {
+        let vertex = model
+            .vertices
+            .iter()
+            .find(|vertex| &vertex.id == id)
+            .unwrap();
+        model
+            .points
+            .iter()
+            .find(|point| point.id == vertex.point)
+            .unwrap()
+            .position()
+            .get()
+    };
+    let start = vertex_position(&edge.start);
+    let end = vertex_position(&edge.end);
+    let at_bottom = |point: cadmpeg_ir::math::Point3| {
+        point.x.abs() < LENGTH_TOLERANCE
+            && point.y.abs() < LENGTH_TOLERANCE
+            && point.z.abs() < LENGTH_TOLERANCE
+    };
+    let at_top = |point: cadmpeg_ir::math::Point3| {
+        point.x.abs() < LENGTH_TOLERANCE
+            && point.y.abs() < LENGTH_TOLERANCE
+            && (point.z - 10.0).abs() < LENGTH_TOLERANCE
+    };
+    assert!(
+        (at_bottom(start) && at_top(end)) || (at_top(start) && at_bottom(end)),
+        "Fillet.Edge1 endpoints: {start:?}, {end:?}"
+    );
+    let curve_id = edge.curve().unwrap();
+    let curve = model
+        .curves
+        .iter()
+        .find(|curve| &curve.id == curve_id)
+        .unwrap();
+    let Some(SolvedCurveGeometry::Line(line)) = curve.geometry.solved() else {
+        panic!("Fillet.Edge1 is not a line")
+    };
+    let direction = *line.direction().as_raw();
+    assert!(
+        direction.x.abs() < LENGTH_TOLERANCE
+            && direction.y.abs() < LENGTH_TOLERANCE
+            && (direction.z.abs() - 1.0).abs() < LENGTH_TOLERANCE,
+        "Fillet.Edge1 direction: {direction:?}"
     );
 }
 
@@ -238,6 +367,25 @@ fn authored_core_product_keeps_primitive_dimensions_and_results() {
         operation("DesignedFeature"),
         FeatureOperation::StoredGeometry {}
     ));
+    let properties = decoded
+        .ir()
+        .native
+        .namespace("fcstd")
+        .unwrap()
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .unwrap();
+    let length = properties
+        .iter()
+        .find(|property| {
+            property.owner == crate::native::native_id("object", "DesignedFeature")
+                && property.name == "Length"
+        })
+        .unwrap();
+    let [value] = length.values() else {
+        panic!("one authored feature length")
+    };
+    let length = value.attributes["value"].parse::<f64>().unwrap();
+    assert!((length - 5.0).abs() < LENGTH_TOLERANCE);
     let [profile] = model.sketches.as_slice() else {
         panic!("expected one profile sketch");
     };
@@ -288,6 +436,57 @@ fn authored_core_product_keeps_primitive_dimensions_and_results() {
         .dependencies
         .iter()
         .any(|id| id == &feature("Profile").id));
+    let product = model
+        .product_definitions
+        .iter()
+        .find(|definition| definition.source_name.as_deref() == Some("Product"))
+        .unwrap();
+    assert!(matches!(&product.kind, ProductDefinitionKind::Part));
+    assert_eq!(product.label.as_deref(), Some("CC0 Product"));
+    let product_occurrence = model
+        .occurrences
+        .iter()
+        .find(|occurrence| occurrence.id.as_str() == "fcstd:model:occurrence#Product:container")
+        .unwrap();
+    assert!(matches!(
+        &product_occurrence.parent,
+        OccurrenceParent::Root {}
+    ));
+    assert!(matches!(
+        &product_occurrence.prototype,
+        cadmpeg_ir::products::PrototypeReference::Local { definition }
+            if definition == &product.id
+    ));
+    for (ordinal, name) in ["Box", "Cylinder", "Cut", "Profile", "DesignedFeature"]
+        .into_iter()
+        .enumerate()
+    {
+        let child = model
+            .occurrences
+            .iter()
+            .find(|occurrence| {
+                occurrence.native_ref.as_deref()
+                    == Some(crate::native::native_id("object", name).as_str())
+            })
+            .unwrap();
+        assert!(matches!(
+            &child.parent,
+            OccurrenceParent::Occurrence { occurrence } if occurrence == &product_occurrence.id
+        ));
+        assert_eq!(child.ordinal, u32::try_from(ordinal).unwrap());
+    }
+    let cylinder_occurrence = model
+        .occurrences
+        .iter()
+        .find(|occurrence| occurrence.id.as_str().ends_with("#Cylinder:container"))
+        .unwrap();
+    let frame = cylinder_occurrence.effective_transform().unwrap().rows();
+    for (actual, expected) in [frame[0][3], frame[1][3], frame[2][3]]
+        .into_iter()
+        .zip([15.0, 10.0, 0.0])
+    {
+        assert!((actual - expected).abs() < LENGTH_TOLERANCE);
+    }
     let occurrence = model
         .occurrences
         .iter()
@@ -298,6 +497,7 @@ fn authored_core_product_keeps_primitive_dimensions_and_results() {
                 .is_some_and(|id| id.ends_with("#Occurrence"))
         })
         .unwrap();
+    assert!(matches!(&occurrence.parent, OccurrenceParent::Root {}));
     let cadmpeg_ir::products::PrototypeReference::Local { definition } = &occurrence.prototype
     else {
         panic!("local occurrence prototype");
@@ -358,14 +558,32 @@ fn authored_core_product_keeps_primitive_dimensions_and_results() {
     let report =
         cadmpeg_measure::test_support::round_trip::measured("core_design_product", decoded.ir())
             .unwrap();
-    for (name, expected) in [
-        ("Box", 30.0 * 20.0 * 10.0),
-        ("Cylinder", std::f64::consts::PI * 4.0 * 4.0 * 16.0),
+    for (name, expected_volume, expected_area, bounds) in [
+        (
+            "Box",
+            30.0 * 20.0 * 10.0,
+            2.0 * (30.0 * 20.0 + 20.0 * 10.0 + 30.0 * 10.0),
+            [0.0, 0.0, 0.0, 30.0, 20.0, 10.0],
+        ),
+        (
+            "Cylinder",
+            std::f64::consts::PI * 4.0 * 4.0 * 16.0,
+            2.0 * std::f64::consts::PI * 4.0 * (4.0 + 16.0),
+            [-4.0, -4.0, 0.0, 4.0, 4.0, 16.0],
+        ),
         (
             "Cut",
             30.0 * 20.0 * 10.0 - std::f64::consts::PI * 4.0 * 4.0 * 10.0,
+            2.0 * (30.0 * 20.0 + 20.0 * 10.0 + 30.0 * 10.0)
+                + 2.0 * std::f64::consts::PI * 4.0 * (10.0 - 4.0),
+            [0.0, 0.0, 0.0, 30.0, 20.0, 10.0],
         ),
-        ("DesignedFeature", 12.0 * 8.0 * 5.0),
+        (
+            "DesignedFeature",
+            12.0 * 8.0 * 5.0,
+            2.0 * (12.0 * 8.0 + 8.0 * 5.0 + 12.0 * 5.0),
+            [0.0, 0.0, 0.0, 12.0, 8.0, 5.0],
+        ),
     ] {
         let [body] = feature(name).evaluation.outputs().as_slice() else {
             panic!("{name}: expected one body")
@@ -377,7 +595,7 @@ fn authored_core_product_keeps_primitive_dimensions_and_results() {
                 row.body() == body.as_str() && matches!(row.placement(), RowPlacement::Model {})
             })
             .unwrap();
-        let actual = row
+        let actual_volume = row
             .volume()
             .as_ref()
             .unwrap()
@@ -387,8 +605,34 @@ fn authored_core_product_keeps_primitive_dimensions_and_results() {
             .value
             .get();
         assert!(
-            (actual - expected).abs() < VOLUME_TOLERANCE,
-            "{name}: volume {actual}"
+            (actual_volume - expected_volume).abs() < VOLUME_TOLERANCE,
+            "{name}: volume {actual_volume}"
         );
+        let actual_area = row
+            .area()
+            .as_ref()
+            .unwrap()
+            .measured()
+            .unwrap()
+            .value()
+            .value
+            .get();
+        assert!(
+            (actual_area - expected_area).abs() < AREA_TOLERANCE,
+            "{name}: area {actual_area}"
+        );
+        let bbox = row.bbox().measured().unwrap().value();
+        for (actual, expected) in bbox
+            .min
+            .coordinates()
+            .into_iter()
+            .chain(bbox.max.coordinates())
+            .zip(bounds)
+        {
+            assert!(
+                (actual.get() - expected).abs() < BOUNDS_TOLERANCE,
+                "{name}: bounding box"
+            );
+        }
     }
 }

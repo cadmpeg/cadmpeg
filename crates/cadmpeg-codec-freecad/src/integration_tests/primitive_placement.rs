@@ -39,9 +39,8 @@ fn primitive_placement_cc0_recipe_frames_and_validator() {
             let decoded = FcstdCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
                 .unwrap();
-            let feature = decoded
-                .ir()
-                .model
+            let model = &decoded.ir().model;
+            let feature = model
                 .features
                 .iter()
                 .find(|feature| matches!(operation(feature), FeatureOperation::Primitive { .. }))
@@ -54,6 +53,104 @@ fn primitive_placement_cc0_recipe_frames_and_validator() {
             else {
                 panic!("primitive placement")
             };
+            let body_feature = model
+                .features
+                .iter()
+                .find(|candidate| candidate.name.as_deref() == Some("Body"))
+                .unwrap_or_else(|| panic!("{version} F14{variant}: body feature"));
+            let FeatureDefinition::Operation(FeatureOperation::TreeNode { children, .. }) =
+                body_feature.evaluation.definition()
+            else {
+                panic!("{version} F14{variant}: body tree")
+            };
+            let expected_group = match variant {
+                'a' | 'c' => &["AdditiveBox"][..],
+                'b' if version == "0.21.2" => &["AdditiveBox", "Sketch", "SketchDatumPoint"][..],
+                'b' => &["AdditiveBox", "Sketch"][..],
+                'd' if version == "0.21.2" => &[
+                    "DatumPlane",
+                    "Sketch",
+                    "AdditiveCylinder",
+                    "SketchDatumPoint",
+                ][..],
+                'd' => &["DatumPlane", "Sketch", "AdditiveCylinder"][..],
+                _ => unreachable!(),
+            };
+            let actual_group = children
+                .iter()
+                .map(|child| {
+                    model
+                        .features
+                        .iter()
+                        .find(|candidate| &candidate.id == child)
+                        .and_then(|candidate| candidate.name.as_deref())
+                        .unwrap_or_else(|| panic!("{version} F14{variant}: body group child"))
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(
+                actual_group.as_slice(),
+                expected_group,
+                "{version} F14{variant}: Body.Group"
+            );
+            let expected_tip = if variant == 'd' {
+                "AdditiveCylinder"
+            } else {
+                "AdditiveBox"
+            };
+            let actual_tip = children.active_child().as_ref().and_then(|tip| {
+                model
+                    .features
+                    .iter()
+                    .find(|candidate| &candidate.id == tip)
+                    .and_then(|candidate| candidate.name.as_deref())
+            });
+            assert_eq!(
+                actual_tip,
+                Some(expected_tip),
+                "{version} F14{variant}: Body.Tip"
+            );
+            let native_properties = decoded
+                .ir()
+                .native
+                .namespace("fcstd")
+                .unwrap()
+                .arena_as::<crate::native::PropertyRecord>("properties")
+                .unwrap();
+            let body_id = crate::native::native_id("object", "Body");
+            let group = native_properties
+                .iter()
+                .find(|property| property.owner == body_id && property.name == "Group")
+                .unwrap_or_else(|| panic!("{version} F14{variant}: Body.Group record"));
+            let actual_native_group = group
+                .links()
+                .iter()
+                .map(|link| {
+                    link.as_ref()
+                        .and_then(crate::native::LinkTarget::object)
+                        .unwrap_or_else(|| panic!("{version} F14{variant}: Body.Group link"))
+                        .to_owned()
+                })
+                .collect::<Vec<_>>();
+            let expected_native_group = expected_group
+                .iter()
+                .map(|name| crate::native::native_id("object", name))
+                .collect::<Vec<_>>();
+            assert_eq!(
+                actual_native_group, expected_native_group,
+                "{version} F14{variant}: source Body.Group"
+            );
+            let tip = native_properties
+                .iter()
+                .find(|property| property.owner == body_id && property.name == "Tip")
+                .unwrap_or_else(|| panic!("{version} F14{variant}: Body.Tip record"));
+            let [Some(tip)] = tip.links() else {
+                panic!("{version} F14{variant}: Body.Tip link")
+            };
+            assert_eq!(
+                tip.object(),
+                Some(crate::native::native_id("object", expected_tip).as_str()),
+                "{version} F14{variant}: source Body.Tip"
+            );
             if variant == 'd' {
                 assert!(
                     matches!(solid.kind(), PrimitiveSolidKind::Cylinder { radius, height, angle } if (radius.get() - 4.0).abs() < EPS_PRIMITIVE_FRAME && (height.get() - 12.0).abs() < EPS_PRIMITIVE_FRAME && (angle.get() - std::f64::consts::TAU).abs() < EPS_PRIMITIVE_FRAME)
@@ -157,7 +254,6 @@ fn primitive_placement_cc0_recipe_frames_and_validator() {
                 }
             }
             if matches!(variant, 'b' | 'd') {
-                let model = &decoded.ir().model;
                 let sketch = model
                     .sketches
                     .iter()
@@ -189,6 +285,18 @@ fn primitive_placement_cc0_recipe_frames_and_validator() {
                                 && constraint.name.as_deref() == Some(name)
                         })
                         .unwrap();
+                    assert_eq!(constraint.name.as_deref(), Some(name));
+                    assert_eq!(constraint.driving, Some(true));
+                    assert_eq!(
+                        constraint.label_distance,
+                        Some(10.0_f64.try_into().unwrap()),
+                        "{version} F14{variant}: {name} label distance"
+                    );
+                    assert_eq!(
+                        constraint.label_position,
+                        Some(0.0_f64.try_into().unwrap()),
+                        "{version} F14{variant}: {name} label position"
+                    );
                     let parameter = match constraint.definition.kind() {
                         SketchConstraintDefinitionInput::HorizontalDistance {
                             parameter, ..
@@ -209,6 +317,48 @@ fn primitive_placement_cc0_recipe_frames_and_validator() {
                         panic!("{name}: length")
                     };
                     assert!((value.get() - expected).abs() < EPS_PRIMITIVE_FRAME);
+                }
+                if version == "0.21.2" {
+                    let datum_id = crate::native::native_id("object", "SketchDatumPoint");
+                    let expressions = native_properties
+                        .iter()
+                        .find(|property| {
+                            property.owner == datum_id && property.name == "ExpressionEngine"
+                        })
+                        .unwrap_or_else(|| {
+                            panic!("{version} F14{variant}: SketchDatumPoint expressions")
+                        })
+                        .values()
+                        .iter()
+                        .filter(|value| value.tag == "Expression")
+                        .map(|value| {
+                            (
+                                value.attributes.get("path").map_or_else(
+                                    || panic!("{version} F14{variant}: expression path"),
+                                    String::as_str,
+                                ),
+                                value.attributes.get("expression").map_or_else(
+                                    || panic!("{version} F14{variant}: expression body"),
+                                    String::as_str,
+                                ),
+                            )
+                        })
+                        .collect::<Vec<_>>();
+                    assert_eq!(
+                        expressions.as_slice(),
+                        &[
+                            (
+                                ".Placement.Base.x",
+                                "Sketch.Placement.Base.x + Sketch.Constraints.point_x"
+                            ),
+                            (
+                                ".Placement.Base.y",
+                                "Sketch.Placement.Base.y + Sketch.Constraints.point_y"
+                            ),
+                            (".Placement.Base.z", "Sketch.Placement.Base.z"),
+                        ],
+                        "{version} F14{variant}: native datum point expressions"
+                    );
                 }
             }
             let attachments = decoded
