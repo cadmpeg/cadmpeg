@@ -1012,6 +1012,44 @@ fn rekey_ephemeral_brep_ids(value: &mut serde_json::Value) {
         match value {
             serde_json::Value::String(text) => {
                 if ephemeral_id(text) && !mapping.contains_key(text.as_str()) {
+    fn rotate_rings(value: &mut serde_json::Value) {
+        match value {
+            serde_json::Value::Array(values) => {
+                for value in values {
+                    rotate_rings(value);
+                }
+            }
+            serde_json::Value::Object(fields) => {
+                if let Some(boundary) = fields.get_mut("boundary") {
+                    if let Some(boundary) = boundary.as_object_mut() {
+                        let is_ring =
+                            boundary.get("kind").and_then(|kind| kind.as_str()) == Some("ring");
+                        if is_ring {
+                            if let Some(coedges) = boundary
+                                .get_mut("coedges")
+                                .and_then(|coedges| coedges.as_array_mut())
+                            {
+                                if let Some(position) = coedges
+                                    .iter()
+                                    .map(std::string::ToString::to_string)
+                                    .enumerate()
+                                    .min_by(|(_, left), (_, right)| left.cmp(right))
+                                    .map(|(position, _)| position)
+                                {
+                                    coedges.rotate_left(position);
+                                }
+                            }
+                        }
+                    }
+                }
+                for value in fields.values_mut() {
+                    rotate_rings(value);
+                }
+            }
+            _ => {}
+        }
+    }
+
                     let kind = text.rsplit_once('#').map_or(text.as_str(), |(kind, _)| kind);
                     kinds
                         .entry(kind.to_owned())
@@ -1110,43 +1148,6 @@ fn rekey_ephemeral_brep_ids(value: &mut serde_json::Value) {
     // Loop rings have no canonical start. Rotate each ring to its smallest
     // member after rekeying so a rotated-but-identical boundary compares
     // equal on both sides.
-    fn rotate_rings(value: &mut serde_json::Value) {
-        match value {
-            serde_json::Value::Array(values) => {
-                for value in values {
-                    rotate_rings(value);
-                }
-            }
-            serde_json::Value::Object(fields) => {
-                if let Some(boundary) = fields.get_mut("boundary") {
-                    if let Some(boundary) = boundary.as_object_mut() {
-                        let is_ring =
-                            boundary.get("kind").and_then(|kind| kind.as_str()) == Some("ring");
-                        if is_ring {
-                            if let Some(coedges) = boundary
-                                .get_mut("coedges")
-                                .and_then(|coedges| coedges.as_array_mut())
-                            {
-                                if let Some(position) = coedges
-                                    .iter()
-                                    .map(std::string::ToString::to_string)
-                                    .enumerate()
-                                    .min_by(|(_, left), (_, right)| left.cmp(right))
-                                    .map(|(position, _)| position)
-                                {
-                                    coedges.rotate_left(position);
-                                }
-                            }
-                        }
-                    }
-                }
-                for value in fields.values_mut() {
-                    rotate_rings(value);
-                }
-            }
-            _ => {}
-        }
-    }
     rewrite(value, &mapping);
     // Loop rings have no canonical start; rotate after rekeying so both
     // sides start at the same canonical member.
