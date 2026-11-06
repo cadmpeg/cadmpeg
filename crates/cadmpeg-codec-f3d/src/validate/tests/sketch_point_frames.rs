@@ -57,8 +57,6 @@ fn group(role: DesignOperandRole) -> DesignConstructionOperandGroup {
 /// The compact sketch-point selection of group 100's member.
 fn sketch_point_selection() -> DesignEntitySelectionOperand {
     DesignEntitySelectionOperand::try_new(DesignEntitySelectionOperandDraft {
-        serialization_form:
-            crate::records::topology::entity_selection::SelectionSerializationForm::Zero,
         id: format!("{STREAM}:design-entity-selection-operand#1000"),
         scope_record_index: 10,
         group_record_index: 100,
@@ -66,6 +64,7 @@ fn sketch_point_selection() -> DesignEntitySelectionOperand {
         record_index: 200,
         byte_offset: 1_000,
         class_tag: DesignClassTag::try_from("369".to_owned()).unwrap(),
+        serialization_form: Default::default(),
         asset_id: "11111111-2222-4333-8444-555555555555"
             .to_owned()
             .try_into()
