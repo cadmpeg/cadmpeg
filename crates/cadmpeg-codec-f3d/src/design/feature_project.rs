@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Project parameter-design features and dispatch per feature family.
 
-use cadmpeg_core::decode::u64_from_index;
-
 use crate::design::decode::operands::entity_selection_matches_curve;
 use crate::design::dimensions::expression_identifiers;
 use crate::design::edge_resolve::{
@@ -21,7 +19,6 @@ use crate::design::face_resolve::{
 
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{self, native_stream};
-use crate::layout::coil_long_scope_fixed_prologue as coil_long;
 
 use crate::records::{
     bodies::DesignBodyBinding,
@@ -9737,11 +9734,7 @@ fn project_coil(
             // Boolean target and must not suppress the typed result.
             None
         } else {
-            let expected_role = if scope.coil_operation_offset()
-                == scope
-                    .byte_offset()
-                    .checked_add(u64_from_index(coil_long::OPERATION))
-            {
+            let expected_role = if scope.coil_has_ten_reference_target() {
                 DesignOperandRole::BODIES_A
             } else {
                 DesignOperandRole::BODIES_B

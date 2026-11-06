@@ -43,6 +43,7 @@ const INTERSECTION_DATA_FIELD: &str = "intersection_data";
 const NULL_POINTER: u32 = 1;
 
 /// One decoded chart: solved points in metres and parameter bookkeeping.
+#[derive(Clone)]
 struct Chart {
     endpoints: [[f64; 3]; 2],
     interior_points: Vec<[f64; 3]>,
@@ -214,6 +215,7 @@ impl UvWidth {
     }
 }
 
+#[derive(Clone)]
 struct UvRecord {
     width: UvWidth,
     values: Vec<f64>,
@@ -235,6 +237,7 @@ struct NodeSchema {
 }
 
 /// One framed INTERSECTION node.
+#[derive(Clone)]
 struct Node {
     attr: u32,
     supports: [u32; 2],
@@ -743,6 +746,7 @@ pub(super) fn chartless(inputs: &Inputs) -> HashMap<u32, [u32; 2]> {
 }
 
 /// The INTERSECTION nodes, charts, and terminator points of one stream.
+#[derive(Clone)]
 pub(super) struct Inputs {
     /// Tag offset and node.
     nodes: Vec<(usize, Node)>,
