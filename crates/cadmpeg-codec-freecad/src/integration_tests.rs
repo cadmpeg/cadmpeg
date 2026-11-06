@@ -8,6 +8,7 @@ mod authored_constraints;
 mod authored_drawing;
 mod authored_history;
 mod authored_operations;
+mod geometry_topology;
 mod measured_geometry;
 mod mesh_placement;
 mod metadata_recovery;
