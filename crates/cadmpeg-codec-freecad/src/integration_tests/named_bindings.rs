@@ -135,7 +135,7 @@ fn named_constraint_recipe_bindings() {
                     assert_eq!(
                         tokens.next().and_then(|token| match token {
                             ExpressionToken::Text(tail) => Some(tail.as_str()),
-                            _ => None,
+                            ExpressionToken::Parameter(_) => None,
                         }),
                         Some(" / 2"),
                         "{version} {recipe}"
