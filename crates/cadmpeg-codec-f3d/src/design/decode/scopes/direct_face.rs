@@ -20,6 +20,7 @@ use crate::layout::move_transform_frame_253 as move_frame;
 use crate::layout::move_transform_frame_254 as move_frame_254;
 use crate::layout::move_transform_frame_273 as move_frame_273;
 use crate::layout::move_transform_frame_274 as move_frame_274;
+use crate::records::entity_header::SegmentType;
 use crate::records::feature::body_ops::DesignScaleOperation;
 use crate::records::feature::direct_face;
 use crate::records::feature::direct_face::DesignDirectFaceOperation;
@@ -269,12 +270,19 @@ pub(super) fn exact_move_operation(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
+    class_types: &HashMap<u32, &SegmentType>,
 ) -> Option<DesignMoveOperation> {
     if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::Move) {
         return None;
     }
-    marked_move_transform(bytes, records, scope)
-        .or_else(|| unique_move_transform(bytes, records, scope.reference_members().values()))
+    marked_move_transform(bytes, records, scope).or_else(|| {
+        unique_move_transform(
+            bytes,
+            records,
+            scope.reference_members().values(),
+            class_types,
+        )
+    })
 }
 
 /// The transform record that a `Move` scope selects by the marked reference
@@ -414,45 +422,43 @@ fn unique_move_transform<'a>(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     record_indices: impl IntoIterator<Item = &'a u32>,
+    class_types: &HashMap<u32, &SegmentType>,
 ) -> Option<DesignMoveOperation> {
     let mut candidate = None;
     for record_index in record_indices {
         for (start, paired) in records.frames(*record_index) {
-            let class_tag_len = usize::try_from(View::u32_le_at(bytes, start)?).ok()?;
-            if class_tag_len > 2000 {
-                return None;
-            }
-            let after_tag = start.checked_add(4)?.checked_add(class_tag_len)?;
-            let class_tag = std::str::from_utf8(bytes.get(start + 4..after_tag)?).ok()?;
-            if !class_tag.bytes().all(|byte| byte.is_ascii_graphic()) {
-                return None;
-            }
-            let frame_length = paired.checked_sub(start)?;
+            let Some((class_tag, after_tag)) =
+                lp_ascii_filtered_view(bytes, start, 3..=3, u8::is_ascii_digit)
+            else {
+                continue;
+            };
+            let Ok(class_tag) = class_tag.parse::<u32>() else {
+                continue;
+            };
             if View::u32_le_at(bytes, after_tag) != Some(*record_index) {
                 continue;
             }
-            let Some(lengths) = move_transform_lengths(class_tag) else {
+            let Some(row) = class_types.get(&class_tag) else {
                 continue;
             };
-            if !lengths.contains(&frame_length) {
+            if row.version != 2
+                || !row
+                    .type_guid
+                    .as_str()
+                    .eq_ignore_ascii_case("84E6245F-1CDC-4FB8-8048-163A85FAD3F0")
+            {
                 continue;
             }
-            let expected_paired_class = match class_tag {
-                "447" => Some("263"),
-                "456" => Some("258"),
-                "452" => Some("262"),
-                _ => None,
+            let frame_length = paired.checked_sub(start)?;
+            let expected_form = match frame_length {
+                move_frame::LEN | move_frame_254::LEN => direct_face::DesignMoveForm::Form5,
+                move_frame_273::LEN | move_frame_274::LEN => direct_face::DesignMoveForm::Form1,
+                _ => continue,
             };
-            if expected_paired_class.is_some_and(|expected| {
-                lp_ascii_filtered_view(bytes, paired, 3..=3, u8::is_ascii_digit)
-                    .is_none_or(|(paired_class_tag, _)| paired_class_tag != expected)
-            }) {
-                continue;
-            }
             let Some(next) = move_transform_at(bytes, start, *record_index) else {
                 continue;
             };
-            if !move_transform_form_holds(class_tag, next.form) {
+            if next.form != expected_form {
                 continue;
             }
             if candidate.replace(next).is_some() {
@@ -463,30 +469,6 @@ fn unique_move_transform<'a>(
     candidate
 }
 
-fn move_transform_lengths(class_tag: &str) -> Option<&'static [usize]> {
-    match class_tag {
-        "296" | "362" | "433" | "447" | "293" | "393" | "442" | "451" | "456" | "452" => {
-            Some(&[move_frame::LEN])
-        }
-        "349" => Some(&[move_frame_254::LEN, move_frame_274::LEN]),
-        "368" => Some(&[move_frame_254::LEN]),
-        "330" | "273" | "408" | "372" | "289" | "394" | "406" | "282" | "403" | "391" => {
-            Some(&[move_frame_273::LEN])
-        }
-        _ => None,
-    }
-}
-
-fn move_transform_form_holds(class_tag: &str, form: direct_face::DesignMoveForm) -> bool {
-    match class_tag {
-        "330" | "273" | "408" | "372" | "289" | "394" | "406" | "282" | "403" | "391" => {
-            form == direct_face::DesignMoveForm::Form1
-        }
-        "452" => form == direct_face::DesignMoveForm::Form5,
-        _ => true,
-    }
-}
-
 pub(crate) fn move_operation_links_hold(
     scope: &DesignParameterScope,
     header: Option<&crate::records::decal::DesignRecordHeader>,
@@ -494,12 +476,12 @@ pub(crate) fn move_operation_links_hold(
     scope.move_operation().is_none_or(|operation| {
         header.is_some_and(|header| {
             (is_move_face(scope)
-                || operation.transform_reference_offset
-                    == scope
+                || operation.transform_reference_offset.is_none_or(|offset| {
+                    scope
                         .byte_offset()
                         .checked_add(u64_from_index(marked_move::TRANSFORM_REFERENCE))
-                || (move_transform_lengths(header.class_tag.as_str()).is_some()
-                    && move_transform_form_holds(header.class_tag.as_str(), operation.form)))
+                        == Some(offset)
+                }))
                 && scope
                     .reference_members()
                     .values()

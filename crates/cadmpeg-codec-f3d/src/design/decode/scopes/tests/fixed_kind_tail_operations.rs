@@ -53,6 +53,8 @@ pub(super) fn fixed_kind_tail_operations(
     scope: DesignParameterScope,
     transform: [[f64; 4]; 4],
 ) {
+    let row = super::move_transform_type("84E6245F-1CDC-4FB8-8048-163A85FAD3F0", 2);
+    let class_types = super::move_transform_types(&row, &[368, 296, 362, 433]);
     let move_at = bytes.len();
     let mut move_frame = vec![0; 254];
     move_frame[0..4].copy_from_slice(&3u32.to_le_bytes());
@@ -87,6 +89,7 @@ pub(super) fn fixed_kind_tail_operations(
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &move_scope,
+        &class_types,
     )
     .expect("class-368 Move frame");
     assert_eq!(decoded.transform, move_transform.try_into().unwrap());
@@ -98,7 +101,7 @@ pub(super) fn fixed_kind_tail_operations(
     compact_move[0..4].copy_from_slice(&3u32.to_le_bytes());
     compact_move[4..7].copy_from_slice(b"296");
     compact_move[7..11].copy_from_slice(&91u32.to_le_bytes());
-    compact_move[43..47].copy_from_slice(&1u32.to_le_bytes());
+    compact_move[43..47].copy_from_slice(&5u32.to_le_bytes());
     for (ordinal, value) in move_transform.into_iter().flatten().enumerate() {
         let at = 48 + ordinal * 8;
         compact_move[at..at + 8].copy_from_slice(&value.to_le_bytes());
@@ -124,6 +127,7 @@ pub(super) fn fixed_kind_tail_operations(
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &compact_move_scope,
+        &class_types,
     )
     .expect("class-296 Move frame");
     assert_eq!(decoded.transform, move_transform.try_into().unwrap());
@@ -132,7 +136,7 @@ pub(super) fn fixed_kind_tail_operations(
         u64_from_index(compact_move_at + 48)
     );
     assert_eq!(decoded.transform_record_index, 91);
-    assert_eq!(u32::from(decoded.form), 1);
+    assert_eq!(u32::from(decoded.form), 5);
     assert_eq!(decoded.form_offset, u64_from_index(compact_move_at + 43));
     bytes[compact_move_at + 4..compact_move_at + 7].copy_from_slice(b"362");
     bytes[compact_move_at + 43..compact_move_at + 47].copy_from_slice(&5u32.to_le_bytes());
@@ -140,6 +144,7 @@ pub(super) fn fixed_kind_tail_operations(
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &compact_move_scope,
+        &class_types,
     )
     .expect("class-362 Move frame");
     assert_eq!(decoded.transform, move_transform.try_into().unwrap());
@@ -176,6 +181,7 @@ pub(super) fn fixed_kind_tail_operations(
         &bytes,
         &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
         &class_433_move_scope,
+        &class_types,
     )
     .expect("class-433 Move frame");
     assert_eq!(decoded.transform, move_transform.try_into().unwrap());
