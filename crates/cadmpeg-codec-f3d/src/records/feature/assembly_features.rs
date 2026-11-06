@@ -276,6 +276,8 @@ pub(crate) struct DesignComponentOccurrence {
 }
 
 pub(crate) const OCCURRENCE_OWNER_TYPE_GUID: &str = "904F885E-D859-4755-A7EF-6EBED8732FAD";
+/// Registered type of the record an attributed occurrence's source reference names.
+pub(crate) const OCCURRENCE_SOURCE_TYPE_GUID: &str = "8ACBA2E5-5A4C-4438-8351-276DE96E6982";
 
 /// The frame form of a local component-occurrence carrier.
 #[derive(Debug, Clone, PartialEq)]
@@ -317,6 +319,8 @@ pub(crate) struct DesignAttributedOccurrenceFrame {
     /// Marked record reference after the occurrence key.
     pub(crate) key_record_index: u64,
     pub(crate) key_segment_index: u32,
+    /// Local reference to the source design record, when the frame stores one.
+    pub(crate) source_record_index: Option<u64>,
     /// Byte offset of the carrier GUID payload.
     pub(crate) component_guid_offset: u64,
     /// Byte offset of the occurrence key payload.
@@ -578,6 +582,15 @@ impl DesignComponentOccurrence {
             + Self::leading_flag_matrix_bytes(placement)
     }
 
+    /// Source design record that an attributed frame references.
+    #[must_use]
+    pub(crate) fn source_record_index(&self) -> Option<u64> {
+        match &self.frame {
+            DesignComponentOccurrenceFrame::Attributed(frame) => frame.source_record_index,
+            _ => None,
+        }
+    }
+
     /// Attributed-frame members on the wire, for an attributed frame.
     fn attributed_wire(&self) -> Option<DesignAttributedOccurrenceWire> {
         match &self.frame {
@@ -592,6 +605,7 @@ impl DesignComponentOccurrence {
                     path_discriminator: frame.path_discriminator,
                     key_record_index: frame.key_record_index,
                     key_segment_index: frame.key_segment_index,
+                    source_record_index: frame.source_record_index,
                 })
             }
         }
@@ -833,7 +847,16 @@ struct DesignAttributedOccurrenceWire {
     /// Marked record reference after the occurrence key.
     key_record_index: u64,
     key_segment_index: u32,
+    /// Local reference to the source design record, when the frame stores one.
+    #[serde(
+        default,
+        deserialize_with = "deserialize_source_record_index",
+        skip_serializing_if = "Option::is_none"
+    )]
+    source_record_index: Option<u64>,
 }
+
+cadmpeg_core::named_optional_field!(deserialize_source_record_index, u64, "source_record_index");
 
 cadmpeg_core::named_optional_field!(
     deserialize_attributed_frame,
@@ -1003,6 +1026,9 @@ impl TryFrom<DesignComponentOccurrenceWire> for DesignComponentOccurrence {
             if value.path_discriminator.is_some() {
                 return Err("an attributed frame stores its discriminator in attributed".into());
             }
+            if attributed.source_record_index == Some(0) {
+                return Err("an attributed frame's source reference names a nonzero record".into());
+            }
             let mut record = Self::try_new_attributed(
                 draft,
                 DesignAttributedOccurrenceFrame {
@@ -1011,6 +1037,7 @@ impl TryFrom<DesignComponentOccurrenceWire> for DesignComponentOccurrence {
                     path_discriminator: attributed.path_discriminator,
                     key_record_index: attributed.key_record_index,
                     key_segment_index: attributed.key_segment_index,
+                    source_record_index: attributed.source_record_index,
                     component_guid_offset: value.component_guid_offset,
                     occurrence_guid_offset: value.occurrence_guid_offset,
                     transform_offset: value.transform_offset,

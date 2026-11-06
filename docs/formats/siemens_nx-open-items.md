@@ -224,6 +224,22 @@ or regenerated current-design selection.
 
 **Conflict.** The decoder's type-81 scan accepts the prefixed form when the first reference byte is `01`. A consecutive reference whose index cell starts with `01` then fails to frame. The decoder omits that record and reports a topology attribute list that reaches it with the loss `nx/attribute.list-unresolved`.
 
+### PS-42. Control values outside a terminated sequence
+
+**Question.** In a stream that the shared node reader does not frame to its terminator, where does the type-45 node that a type-126 or type-136 `bspline_vertices` field names begin? What is the width and encoding of `bspline_vertices` in the compact type-136 and short type-126 layouts?
+
+**Known.** `siemens_nx.md` §6.2 "Types 45, 125, 126, 135, and 136 may place" gives the `bspline_vertices` reference. A terminated node sequence resolves that reference to a framed node. In an unterminated stream the decoder reads the count, XMT, and values at a fixed offset after a type-125 or type-135 node, and admits the values only when that XMT equals the descriptor's `bspline_vertices` reference. The status-framed type-136 and type-126 layouts and the long type-126 layout encode `bspline_vertices` as an XMT. In the compact type-136 layout the field starts at `+21`, and the multiplicity reference starts at `+23`. In the short type-126 layout the field starts at `+34`, and the U multiplicity reference starts at `+36`. The decoder reports a compact or short carrier with `carrier.controls-unresolved`.
+
+**Need.** We must know the node boundary to decode a B-spline carrier whose type-45 node does not follow its type-125 or type-135 node. We must know the compact and short `bspline_vertices` field width and encoding to resolve the control values of a compact or short carrier.
+
+### PS-43. TORUS with a negative major radius
+
+**Question.** Can an NX TORUS record store a negative major radius, and what surface and face sense does it then describe?
+
+**Known.** `siemens_nx.md` §6.1 "Validity gates: CIRCLE, ELLIPSE, CYLINDER, and SPHERE radii are positive." gives positive TORUS radii. `sldprt.md` §7.1 gives a negative major radius for SLDPRT that reverses the surface parameter frame. The NX decoder omits a TORUS record with a negative major radius and reports `carrier.torus-negative-major-unresolved`.
+
+**Need.** We must know the surface and its face sense before an NX TORUS with a negative major radius can transfer as exact geometry.
+
 ## 2. Object model and body composition
 
 ### OM-01. Per-class OM field serialization

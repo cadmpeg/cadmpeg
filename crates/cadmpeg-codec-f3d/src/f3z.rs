@@ -16,7 +16,7 @@ use crate::loss::F3dLossCode;
 use cadmpeg_ir::report::loss::LossNote;
 
 mod archive;
-mod merge;
+pub(crate) mod merge;
 pub(crate) mod observer;
 mod session;
 

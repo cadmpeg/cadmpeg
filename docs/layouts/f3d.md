@@ -8573,6 +8573,21 @@ Parsed by:
 | 11 | 9 | `zero_run` | `bytes[9]` | little | spec | eleven-byte indexed header, nine zero bytes, and an expansion byte · value `[0, 0, 0, 0, 0, 0, 0, 0, 0]` |
 | 20 | 1 | `expanded` | `u8` | little | spec | an expansion byte `E` |
 
+## `assembly_version_four_prologue`
+
+Spec §Assembly operands · layout: byte offsets · size: 32 B
+
+Offsets are relative to the primary indexed scope header of a compact version-4 Assemble scope. The first connector reference follows the prologue.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | Version 4 uses the version-5 extensions with these differences. |
+| 11 | 9 | `zero_run` | `bytes[9]` | little | spec | Version 4 uses the version-5 extensions with these differences. · value `[0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 20 | 1 | `expanded` | `u8` | little | spec | Version 4 uses the version-5 extensions with these differences. · value `0` |
+| 21 | 1 | `facing` | `u8` | little | spec | follow the facing byte's two zero bytes |
+| 22 | 2 | `facing_zeros` | `bytes[2]` | little | spec | follow the facing byte's two zero bytes · value `[0, 0]` |
+| 24 | 8 | `prologue_zeros` | `bytes[8]` | little | spec | follow the facing byte's two zero bytes · value `[0, 0, 0, 0, 0, 0, 0, 0]` |
+
 ## `assembly_version_five_scope`
 
 Spec §Assembly operands · layout: byte offsets · size: 945 B
