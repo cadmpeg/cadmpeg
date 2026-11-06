@@ -864,17 +864,18 @@ fn serialize_geometry_inner(
         .iter()
         .filter(|vertex| vertices.contains(vertex.id.as_str()))
     {
-        let point = ir
+        let Some(point) = ir
             .model
             .points
             .iter()
             .find(|point| point.id == vertex.point)
-            .ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "vertex {} references absent point {}",
-                    vertex.id, vertex.point
-                ))
-            })?;
+        else {
+            losses.push(FreecadLossCode::ExportGeometryNotTransferred.note(format!(
+                "vertex {} references absent point {} and is omitted",
+                vertex.id, vertex.point
+            )));
+            continue;
+        };
         indices.insert(vertex.id.as_str(), shapes.len());
         shapes.push(Shape {
             kind: "Ve",
@@ -914,17 +915,15 @@ fn serialize_geometry_inner(
         .iter()
         .filter(|edge| edges.contains(edge.id.as_str()))
     {
-        let Some(start) = indices.get(edge.start.as_str()).copied() else {
-            return Err(CodecError::malformed(format_args!(
-                "edge {} references absent start vertex",
-                edge.id
+        let (Some(start), Some(end)) = (
+            indices.get(edge.start.as_str()).copied(),
+            indices.get(edge.end.as_str()).copied(),
+        ) else {
+            losses.push(FreecadLossCode::ExportGeometryNotTransferred.note(format!(
+                "edge {} has unavailable endpoint {} or {} and is omitted",
+                edge.id, edge.start, edge.end
             )));
-        };
-        let Some(end) = indices.get(edge.end.as_str()).copied() else {
-            return Err(CodecError::malformed(format_args!(
-                "edge {} references absent end vertex",
-                edge.id
-            )));
+            continue;
         };
         let degenerate = edge.curve().is_none()
             || edge
@@ -984,13 +983,21 @@ fn serialize_geometry_inner(
             if coedge.pcurves.is_empty() {
                 continue;
             }
-            let face = ir
+            let Some(face) = ir
                 .model
                 .loops
                 .iter()
                 .find(|wire| wire.id == coedge.owner_loop)
                 .and_then(|wire| ir.model.faces.iter().find(|face| face.id == wire.face))
-                .ok_or_else(|| CodecError::malformed("coedge has an absent loop or face"))?;
+            else {
+                for usage in &coedge.pcurves {
+                    losses.push(FreecadLossCode::ExportGeometryNotTransferred.note(format!(
+                        "pcurve {} on coedge {} has no available owning face and is omitted",
+                        usage.pcurve, coedge.id
+                    )));
+                }
+                continue;
+            };
             let Some((surface, surface_location, _)) = surface_ids.get(face.surface.as_str())
             else {
                 for usage in &coedge.pcurves {
@@ -1124,14 +1131,14 @@ fn serialize_geometry_inner(
         let mut children = Vec::new();
         let mut complete = true;
         for coedge in wire.coedges() {
-            let coedge = ir
-                .model
-                .coedges
-                .iter()
-                .find(|value| value.id == *coedge)
-                .ok_or_else(|| {
-                    CodecError::malformed(format_args!("loop {} references absent coedge", wire.id))
-                })?;
+            let Some(coedge) = ir.model.coedges.iter().find(|value| value.id == *coedge) else {
+                losses.push(FreecadLossCode::ExportGeometryNotTransferred.note(format!(
+                    "loop {} references absent coedge {coedge}",
+                    wire.id
+                )));
+                complete = false;
+                continue;
+            };
             if let Some(index) = indices.get(coedge.edge.as_str()) {
                 children.push((*index, coedge.sense));
             } else {
@@ -1968,6 +1975,59 @@ pub(super) mod tests {
             triangulation_sections(&ir, &[], &faces, true, &HashSet::new(), &mut Vec::new());
         assert_eq!(rows.len(), 1);
         assert_eq!(face_rows.get(face.as_str()), Some(&1));
+    }
+
+    #[test]
+    fn missing_topology_members_do_not_refuse_sibling_geometry() {
+        use cadmpeg_ir::{Codec, DecodeOptions};
+        use std::io::Cursor;
+
+        let input = crate::FcstdCodec
+            .decode(
+                &mut Cursor::new(crate::test_support::test_archive::GEOMETRY),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        for missing in ["point", "vertex", "coedge"] {
+            let mut ir = input.ir().clone();
+            let missing_id = match missing {
+                "point" => {
+                    let id = ir.model.vertices[0].point.clone();
+                    ir.model.points.retain(|point| point.id != id);
+                    id.to_string()
+                }
+                "vertex" => {
+                    let id = ir.model.edges[0].start.clone();
+                    ir.model.vertices.retain(|vertex| vertex.id != id);
+                    id.to_string()
+                }
+                "coedge" => {
+                    let id = ir.model.loops[0].coedges()[0].clone();
+                    ir.model.coedges.retain(|coedge| coedge.id != id);
+                    id.to_string()
+                }
+                _ => unreachable!(),
+            };
+            let ctx = cadmpeg_test_support::service_decode_context();
+            let current = crate::topology_transfer::current_bindings(&ctx, &ir).unwrap();
+            let roots = RootKinds::new(&ctx, &ir, &current).unwrap();
+            let bodies: Vec<_> = ir.model.bodies.iter().collect();
+            let mut losses = Vec::new();
+            let result = serialize_with_uses(&ctx, &ir, &bodies, &roots, None, &mut losses)
+                .unwrap()
+                .unwrap();
+            assert!(
+                losses.iter().any(|loss| loss.message.contains(&missing_id)),
+                "{missing}"
+            );
+            assert!(
+                result
+                    .uses
+                    .iter()
+                    .any(|item| item.neutral_id == bodies[0].id.as_str()),
+                "{missing}"
+            );
+        }
     }
 
     #[test]

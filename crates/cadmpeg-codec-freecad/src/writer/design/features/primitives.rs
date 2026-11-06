@@ -3,10 +3,10 @@
 
 use super::super::super::xml::{self, Object};
 use super::properties::{angle, length, number, tag, unsupported};
-use cadmpeg_core::CodecError;
+use super::FeatureError;
 use serde_json::Value;
 
-pub(super) fn primitive(value: &Value, object: &mut Object) -> Result<(), CodecError> {
+pub(super) fn primitive(value: &Value, object: &mut Object) -> Result<(), FeatureError> {
     let shape = tag(value);
     let class = match shape {
         "box" => "Box",

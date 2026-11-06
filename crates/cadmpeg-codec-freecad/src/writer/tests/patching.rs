@@ -403,7 +403,7 @@ fn seekable_encoder_matches_the_write_only_fallback() {
     };
     assert!(matches!(
         error,
-        cadmpeg_core::CodecError::ResourceLimit(limit)
+        crate::writer::PatchError::Codec(cadmpeg_core::CodecError::ResourceLimit(limit))
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::InputBytes
     ));
 }

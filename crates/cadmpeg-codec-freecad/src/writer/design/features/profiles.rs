@@ -6,7 +6,7 @@ use super::properties::{
     angle, boolean, enumeration, length, link, link_names, links, number, references, selection,
     selector, tag, unsupported, vector,
 };
-use cadmpeg_core::CodecError;
+use super::FeatureError;
 use cadmpeg_ir::report::loss::LossNote;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -16,7 +16,7 @@ pub(super) fn extrude(
     object: &mut Object,
     names: &HashMap<String, String>,
     losses: &mut Vec<LossNote>,
-) -> Result<(), CodecError> {
+) -> Result<(), FeatureError> {
     if value["op"] == "new_body" {
         return standalone_extrude(value, object, names);
     }
@@ -97,7 +97,7 @@ pub(super) fn linear_side(
     suffix: &str,
     names: &HashMap<String, String>,
     losses: &mut Vec<LossNote>,
-) -> Result<(), CodecError> {
+) -> Result<(), FeatureError> {
     let term = side.get("termination").unwrap_or(side);
     let kind = tag(term);
     let mode = match kind {
@@ -148,7 +148,7 @@ pub(super) fn revolve(
     value: &Value,
     object: &mut Object,
     names: &HashMap<String, String>,
-) -> Result<(), CodecError> {
+) -> Result<(), FeatureError> {
     let construction = &value["construction"];
     if construction["state"] != "resolved" {
         return unsupported("revolution construction unresolved");
@@ -186,7 +186,7 @@ pub(super) fn angular_side(
     object: &mut Object,
     suffix: &str,
     names: &HashMap<String, String>,
-) -> Result<(), CodecError> {
+) -> Result<(), FeatureError> {
     match tag(term) {
         "angle" => {
             if suffix.is_empty() && !object.properties.contains_key("Type") {
@@ -213,7 +213,7 @@ pub(super) fn loft(
     value: &Value,
     object: &mut Object,
     names: &HashMap<String, String>,
-) -> Result<(), CodecError> {
+) -> Result<(), FeatureError> {
     object.kind = match value["op"].as_str() {
         Some("cut") => "PartDesign::SubtractiveLoft",
         Some("new_body") => "Part::Loft",
@@ -222,7 +222,7 @@ pub(super) fn loft(
     .into();
     let sections = value["sections"]
         .as_array()
-        .ok_or_else(|| CodecError::UnsupportedContent("loft sections absent".into()))?;
+        .ok_or_else(|| FeatureError::Unsupported("loft sections absent".into()))?;
     let profiles = sections
         .iter()
         .map(|section| references(section.get("value").unwrap_or(section), names))
@@ -265,7 +265,7 @@ pub(super) fn sweep(
     value: &Value,
     object: &mut Object,
     names: &HashMap<String, String>,
-) -> Result<(), CodecError> {
+) -> Result<(), FeatureError> {
     for field in ["twist", "path_extent", "guide_rail", "taper", "scale"] {
         if !value[field].is_null() {
             return unsupported(format!("sweep modifier `{field}` has no FreeCAD mapping"));
@@ -359,7 +359,7 @@ pub(super) fn helical_sweep(
     value: &Value,
     object: &mut Object,
     names: &HashMap<String, String>,
-) -> Result<(), CodecError> {
+) -> Result<(), FeatureError> {
     let construction = &value["construction"];
     object.kind = if matches!(value["op"].as_str(), Some("cut" | "intersect")) {
         "PartDesign::SubtractiveHelix"
@@ -438,7 +438,7 @@ pub(super) fn standalone_extrude(
     value: &Value,
     object: &mut Object,
     names: &HashMap<String, String>,
-) -> Result<(), CodecError> {
+) -> Result<(), FeatureError> {
     object.kind = "Part::Extrusion".into();
     link(object, "Base", &value["profile"], names)?;
     match tag(&value["direction"]) {
