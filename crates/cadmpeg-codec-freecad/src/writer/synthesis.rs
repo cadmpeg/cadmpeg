@@ -101,6 +101,31 @@ pub(super) fn write(
             retained.insert(record.name().to_owned(), bytes.to_vec());
         }
     }
+    let empty_shapes = namespace
+        .map(|namespace| namespace.arena_as::<crate::brep::ShapePayloadRecord>("shape_payloads"))
+        .transpose()?
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|payload| matches!(payload.payload, crate::brep::ShapePayload::Empty))
+        .filter_map(|payload| {
+            let property = native_properties
+                .iter()
+                .find(|property| property.id == payload.property && property.name != "Shape")?;
+            let entry = native_entries
+                .iter()
+                .find(|entry| entry.id() == payload.entry)?;
+            if property
+                .side_entries()
+                .iter()
+                .any(|name| name == entry.name())
+            {
+                retained.insert(entry.name().to_owned(), Vec::new());
+                Some(property.id.clone())
+            } else {
+                None
+            }
+        })
+        .collect::<HashSet<_>>();
     let available: HashSet<String> = retained.keys().cloned().collect();
     native_properties.retain(|property| match xml::validate(property, &available) {
         Ok(()) => true,
@@ -290,7 +315,7 @@ pub(super) fn write(
         if !super::native::property_held(ir, property, &native_objects) {
             continue;
         }
-        if property.type_name == "Part::PropertyPartShape" {
+        if property.type_name == "Part::PropertyPartShape" && !empty_shapes.contains(&property.id) {
             continue;
         }
         let destination = names
