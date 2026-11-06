@@ -28,6 +28,65 @@ const EPS_TESSELLATED_CURVE_POINT: f64 = 1.0e-12;
 const EPS_APLL_POINT: f64 = 1.0e-12;
 const EPS_TP03_PARAMETER_SCALE: f64 = 1.0e-12;
 
+#[test]
+fn standalone_pcurve_retains_its_three_dimensional_curve() {
+    let result = decode_inline(
+        "#1=CARTESIAN_POINT('',(0.,0.,0.));
+#2=DIRECTION('',(0.,0.,1.));
+#3=DIRECTION('',(1.,0.,0.));
+#4=AXIS2_PLACEMENT_3D('',#1,#2,#3);
+#5=PLANE('',#4);
+#6=CARTESIAN_POINT('',(0.,0.));
+#7=CARTESIAN_POINT('',(1.,1.));
+#8=B_SPLINE_CURVE_WITH_KNOTS('',1,(#6,#7),.UNSPECIFIED.,.F.,.U.,(2,2),(0.,1.),.UNSPECIFIED.);
+#9=REPRESENTATION_CONTEXT('','');
+#10=DEFINITIONAL_REPRESENTATION('',(#8),#9);
+#11=PCURVE('',#5,#10);
+#12=GEOMETRIC_CURVE_SET('',(#11));
+#13=SHAPE_REPRESENTATION('',(#12),$);",
+    );
+    let index = ModelIndex::build(result.ir());
+    let point = model_curve_point_by_id(
+        cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+        &index,
+        &CurveId::mint("step:data:curve#11").unwrap(),
+        0.5,
+    )
+    .expect("the pcurve defines a 3D curve on its support");
+    assert!((point.x - 0.5).abs() < 1.0e-12);
+    assert!((point.y - 0.5).abs() < 1.0e-12);
+    assert!(point.z.abs() < 1.0e-12);
+    let mut bytes = Vec::new();
+    let report = write_step(
+        result.ir(),
+        &mut bytes,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .unwrap();
+    assert!(!report
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::ProceduralReducedToCarrier.kind()));
+    let written = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(written.ir().model.curves.iter().any(|curve| {
+        let index = ModelIndex::build(written.ir());
+        model_curve_point_by_id(
+            cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+            &index,
+            &curve.id,
+            0.5,
+        )
+        .is_ok_and(|point| {
+            (point.x - 0.5).abs() < 1.0e-12
+                && (point.y - 0.5).abs() < 1.0e-12
+                && point.z.abs() < 1.0e-12
+        })
+    }));
+}
+
 fn assert_tessellated_curve_polyline(curve: &Curve, expected: &[(f64, f64, f64)]) {
     let Some(SolvedCurveGeometry::Polyline(polyline)) = curve.geometry.solved() else {
         panic!("expected tessellated curve to transfer as a polyline");
