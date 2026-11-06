@@ -92,7 +92,10 @@ fn apply_sheet_boundary_labels(
     targets: &Targets,
     result: &mut AttributeExport,
 ) {
-    for entity in entities.iter_mut().filter(|entity| entity.type_code == 143) {
+    for entity in entities
+        .iter_mut()
+        .filter(|entity| matches!(entity.type_code, 143 | 144))
+    {
         let Some(points) = sheet_boundary_points(ir, entity) else {
             continue;
         };
@@ -150,7 +153,7 @@ pub(in crate::writer) fn sheet_boundary_points<'a>(
     ir: &'a CadIr,
     entity: &Entity,
 ) -> Option<BTreeSet<&'a str>> {
-    if entity.type_code != 143 {
+    if !matches!(entity.type_code, 143 | 144) {
         return None;
     }
     let face = ir.model.faces.iter().find(|face| {
