@@ -295,7 +295,7 @@ fn an_operand_list_combine_that_the_standard_prologue_reads_keeps_the_standard_b
     };
 
     const STREAM: &str = "f3d:Design/BulkStream.dat";
-    let bind = |operation_offset: u64, keep_tools_offset: u64| {
+    let bind = |operation_offset: u64, keep_tools_offset: u64, operation: BooleanKind| {
         let mut scope = DesignParameterScope::empty(
             &format!("{STREAM}:design-parameter-scope#10"),
             DesignFeatureKind::Combine,
@@ -312,7 +312,7 @@ fn an_operand_list_combine_that_the_standard_prologue_reads_keeps_the_standard_b
         if let DesignScopePayloadMut::Combine(slot) = scope.payload_mut() {
             *slot = Some(DesignCombineOperation {
                 form: DesignCombineForm::OperandLists,
-                operation: BooleanKind::Join,
+                operation,
                 operation_offset: start + operation_offset,
                 keep_tools: false,
                 keep_tools_offset: start + keep_tools_offset,
@@ -381,7 +381,7 @@ fn an_operand_list_combine_that_the_standard_prologue_reads_keeps_the_standard_b
                         BodySelection::Native(format!("{STREAM}:design-record#12")),
                     )
                     .unwrap(),
-                    op: BooleanKind::Join,
+                    op: operation,
                     keep_tools: false,
                 }),
             ),
@@ -408,8 +408,20 @@ fn an_operand_list_combine_that_the_standard_prologue_reads_keeps_the_standard_b
     };
 
     assert!(
-        matches!(bind(25, 33), BodySelection::Historical { ref bodies, .. } if bodies.len() == 1),
+        matches!(bind(25, 33, BooleanKind::Join), BodySelection::Historical { ref bodies, .. } if bodies.len() == 1),
         "an empty property block and no companion keep the standard binding"
     );
-    assert!(matches!(bind(21, 29), BodySelection::Native(_)));
+    for (operation_offset, keep_tools_offset, operation) in [
+        (21, 29, BooleanKind::Join),
+        (25, 44, BooleanKind::Join),
+        (25, 33, BooleanKind::Intersect),
+    ] {
+        assert!(
+            matches!(
+                bind(operation_offset, keep_tools_offset, operation),
+                BodySelection::Native(_)
+            ),
+            "{operation_offset} {keep_tools_offset} {operation:?}"
+        );
+    }
 }
