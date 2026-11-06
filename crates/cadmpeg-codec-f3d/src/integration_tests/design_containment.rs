@@ -420,7 +420,7 @@ fn one_damaged_protein_asset_gives_up_only_its_part() {
         })
         .collect::<Vec<_>>();
     assert_eq!(unreadable.len(), 1);
-    assert!(unreadable[0].message.contains("f3d.protein_record"));
+    assert!(unreadable[0].message.contains("zip.entry"));
     assert!(result
         .source_fidelity()
         .retained_records()
