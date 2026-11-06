@@ -17,7 +17,7 @@ fn write_matrix(bytes: &mut [u8], at: usize) {
     }
 }
 
-/// A leading-flag frame for component record 202, root reference 11 and owner
+/// A leading-flag frame for component record 202, record reference 11 and owner
 /// entity 6, with a matrix when `matrix` is set.
 fn frame(matrix: bool) -> Vec<u8> {
     let extra = if matrix { 128 } else { 0 };
@@ -107,6 +107,9 @@ fn leading_flag_frames_state_the_occurrence_and_its_offsets() {
             changed[field] = serde_json::json!(wire[field].as_u64().unwrap() + 1);
             assert!(serde_json::from_value::<DesignComponentOccurrence>(changed).is_err());
         }
+        let mut owned = wire.clone();
+        owned["owner_type_guid"] = serde_json::json!(OWNER_TYPE);
+        assert!(serde_json::from_value::<DesignComponentOccurrence>(owned).is_err());
     }
 }
 
@@ -149,26 +152,32 @@ fn a_leading_flag_frame_with_one_wrong_field_states_no_occurrence() {
     }
 }
 
-/// The bytes registered as entity 253 at offset 0 under one Component type.
-fn registered_under(type_guid: &str) -> crate::metastream::MetaStream {
+/// Component types each registering one entity at one offset.
+fn registered(rows: &[(&str, u32, u64)]) -> crate::metastream::MetaStream {
     use crate::metastream::{MetaStream, RecordIndexEntry};
     use crate::records::entity_header::{BaseTypeGuid, SegmentTypeData};
     use crate::records::identity::ReferenceRun;
     MetaStream {
-        types: vec![SegmentTypeData {
-            byte_offset: 0,
-            type_guid: type_guid.to_owned().try_into().unwrap(),
-            type_guid_offset: 0,
-            base_type_guid: BaseTypeGuid::Absent,
-            version: 2,
-            version_offset: 0,
-            module: "Component".to_owned(),
-            entities: ReferenceRun::unlocated(vec![253]),
-        }],
-        records: vec![RecordIndexEntry {
-            entity_id: 253,
-            bulk_offset: 0,
-        }],
+        types: rows
+            .iter()
+            .map(|&(type_guid, entity, _)| SegmentTypeData {
+                byte_offset: 0,
+                type_guid: type_guid.to_owned().try_into().unwrap(),
+                type_guid_offset: 0,
+                base_type_guid: BaseTypeGuid::Absent,
+                version: 2,
+                version_offset: 0,
+                module: "Component".to_owned(),
+                entities: ReferenceRun::unlocated(vec![u64::from(entity)]),
+            })
+            .collect(),
+        records: rows
+            .iter()
+            .map(|&(_, entity, bulk_offset)| RecordIndexEntry {
+                entity_id: u64::from(entity),
+                bulk_offset,
+            })
+            .collect(),
         secondary_records: Vec::new(),
     }
 }
@@ -197,39 +206,196 @@ fn discover(
         .iter()
         .map(|frame| (frame.start, frame.member_end))
         .collect();
-    let (mut occurrences, losses) = super::super::discover_occurrences(
+    let admitted = super::super::admitted_stream_occurrences(
         bytes,
         STREAM,
         &frame_ends,
-        &typed_primary,
         &super::super::occurrence_source_entities(meta),
+        &primary,
+        &typed_primary,
     );
-    let superseded =
-        super::super::admit_occurrence_envelopes(&mut occurrences, &primary, &typed_primary);
-    (occurrences, losses, superseded)
+    (admitted.occurrences, admitted.losses, admitted.superseded)
+}
+
+const OWNER_TYPE: &str = "904F885E-D859-4755-A7EF-6EBED8732FAD";
+
+fn header(bytes: &mut [u8], class_tag: &[u8; 3], record_index: u32) {
+    bytes[4..7].copy_from_slice(class_tag);
+    bytes[7..11].copy_from_slice(&record_index.to_le_bytes());
 }
 
 #[test]
-fn a_leading_flag_frame_is_a_carrier_only_under_the_occurrence_placement_type() {
-    const OWNER_TYPE: &str = "904F885E-D859-4755-A7EF-6EBED8732FAD";
-    let placement = registered_under(super::super::OCCURRENCE_PLACEMENT_TYPE_GUID);
-    let other = registered_under(OWNER_TYPE);
+fn a_leading_flag_frame_under_another_type_is_kept_with_a_registration_loss() {
+    let placement = registered(&[(super::super::OCCURRENCE_PLACEMENT_TYPE_GUID, 253, 0)]);
+    let other = registered(&[(OWNER_TYPE, 253, 0)]);
     for matrix in [false, true] {
         let mut bytes = frame(matrix);
-        bytes[4..7].copy_from_slice(b"256");
+        header(&mut bytes, b"256", 253);
+        if matrix {
+            bytes[46..50].copy_from_slice(&2_u32.to_le_bytes());
+        }
         let (occurrences, losses, superseded) = discover(&bytes, &placement);
         assert_eq!(occurrences.len(), 1);
-        assert_eq!(occurrences[0].component_record_index, 202);
         assert!(losses.is_empty());
         assert_eq!(superseded, 0);
         let (occurrences, losses, superseded) = discover(&bytes, &other);
-        assert!(occurrences.is_empty());
-        assert!(losses.is_empty());
+        assert_eq!(occurrences.len(), 1);
+        assert_eq!(occurrences[0].component_record_index, 202);
         assert_eq!(superseded, 0);
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code,
+            crate::loss::F3dLossCode::LocalOccurrenceTypeUnregistered.kind()
+        );
+        assert!(losses[0].message.contains(&occurrences[0].id));
     }
+}
+
+fn codes(losses: &[cadmpeg_ir::report::loss::LossNote]) -> Vec<crate::loss::F3dLossCode> {
+    use crate::loss::F3dLossCode;
+    [
+        F3dLossCode::LocalOccurrenceTypeUnregistered,
+        F3dLossCode::LocalOccurrenceYieldedToRegistered,
+        F3dLossCode::LocalOccurrenceKeyRepeated,
+        F3dLossCode::LocalOccurrenceFirstMatrixRefused,
+        F3dLossCode::LocalOccurrenceIdentityOrdinalUnresolved,
+    ]
+    .into_iter()
+    .filter(|code| losses.iter().any(|loss| loss.code == code.kind()))
+    .collect()
+}
+
+/// `first` at offset 0 and `second` after it, with the offset of `second`.
+fn two_frames(first: Vec<u8>, second: &[u8]) -> (Vec<u8>, u64) {
+    let mut bytes = first;
+    let second_offset = u64::try_from(bytes.len()).unwrap();
+    bytes.extend_from_slice(second);
+    (bytes, second_offset)
+}
+
+#[test]
+fn an_occurrence_with_a_registered_and_an_unregistered_frame_takes_the_registered_one() {
+    use crate::loss::F3dLossCode;
+    let mut registered_frame = frame(false);
+    header(&mut registered_frame, b"256", 253);
+    let mut unregistered = frame(false);
+    header(&mut unregistered, b"257", 254);
+    let (bytes, second) = two_frames(registered_frame, &unregistered);
+    let meta = registered(&[
+        (super::super::OCCURRENCE_PLACEMENT_TYPE_GUID, 253, 0),
+        (OWNER_TYPE, 254, second),
+    ]);
+    let (occurrences, losses, superseded) = discover(&bytes, &meta);
+    assert_eq!(occurrences.len(), 1);
+    assert_eq!(occurrences[0].byte_offset(), 0);
+    assert_eq!(superseded, 0);
+    assert_eq!(
+        codes(&losses),
+        [F3dLossCode::LocalOccurrenceYieldedToRegistered]
+    );
+
+    let mut upper = unregistered.clone();
+    let guid_at = 51 + 76 + 4;
+    for unit in upper[guid_at..guid_at + 72].chunks_mut(2) {
+        unit[0] = unit[0].to_ascii_uppercase();
+    }
+    let mut lower = frame(false);
+    header(&mut lower, b"256", 253);
+    let (bytes, _) = two_frames(lower, &upper);
+    let (occurrences, losses, _) = discover(&bytes, &meta);
+    assert_eq!(occurrences.len(), 1);
+    assert_eq!(
+        codes(&losses),
+        [F3dLossCode::LocalOccurrenceYieldedToRegistered]
+    );
+
+    let mut unproven = frame(false);
+    header(&mut unproven, b"256", 253);
+    unproven[46..50].copy_from_slice(&2_u32.to_le_bytes());
+    let (bytes, _) = two_frames(unproven, &unregistered);
+    let (occurrences, losses, _) = discover(&bytes, &meta);
+    assert_eq!(occurrences.len(), 1);
+    assert_eq!(occurrences[0].record_index, 254);
+    assert_eq!(
+        codes(&losses),
+        [
+            F3dLossCode::LocalOccurrenceTypeUnregistered,
+            F3dLossCode::LocalOccurrenceIdentityOrdinalUnresolved
+        ]
+    );
+
+    let mut first = frame(false);
+    header(&mut first, b"256", 253);
+    let (bytes, second) = two_frames(first, &unregistered);
+    let both_unregistered = registered(&[(OWNER_TYPE, 253, 0), (OWNER_TYPE, 254, second)]);
+    let (occurrences, losses, superseded) = discover(&bytes, &both_unregistered);
+    assert!(occurrences.is_empty());
+    assert_eq!(superseded, 0);
+    assert_eq!(codes(&losses), [F3dLossCode::LocalOccurrenceKeyRepeated]);
+    assert!(losses[0].message.contains("#0, "));
+
+    let mut first = frame(false);
+    header(&mut first, b"256", 253);
+    let (bytes, second) = two_frames(first, &upper);
+    let both_registered = registered(&[
+        (super::super::OCCURRENCE_PLACEMENT_TYPE_GUID, 253, 0),
+        (super::super::OCCURRENCE_PLACEMENT_TYPE_GUID, 254, second),
+    ]);
+    let (occurrences, losses, _) = discover(&bytes, &both_registered);
+    assert!(occurrences.is_empty());
+    assert_eq!(codes(&losses), [F3dLossCode::LocalOccurrenceKeyRepeated]);
+}
+
+#[test]
+fn a_leading_flag_frame_is_read_only_at_a_primary_record_start() {
     let mut later = frame(false);
-    later[4..7].copy_from_slice(b"256");
+    header(&mut later, b"256", 253);
     later[46..50].copy_from_slice(&2_u32.to_le_bytes());
-    assert_eq!(discover(&later, &placement).1.len(), 1);
-    assert!(discover(&later, &other).1.is_empty());
+    indexed_header(&mut later, *b"300", 999);
+    let (occurrences, losses, superseded) = discover(&later, &registered(&[]));
+    assert!(occurrences.is_empty());
+    assert!(losses.is_empty());
+    assert_eq!(superseded, 0);
+
+    let mut spanning = vec![0_u8; 40];
+    spanning[0..4].copy_from_slice(&3_u32.to_le_bytes());
+    header(&mut spanning, b"300", 300);
+    let mut inside = frame(false);
+    header(&mut inside, b"257", 253);
+    indexed_header(&mut inside, *b"300", 999);
+    let (bytes, _) = two_frames(spanning, &inside);
+    let (occurrences, losses, superseded) = discover(&bytes, &registered(&[(OWNER_TYPE, 300, 0)]));
+    assert!(occurrences.is_empty());
+    assert!(losses.is_empty());
+    assert_eq!(superseded, 0);
+}
+
+#[test]
+fn a_class_256_leading_flag_frame_stores_a_matrix_only_after_ordinal_one() {
+    use crate::loss::F3dLossCode;
+    let placement = registered(&[(super::super::OCCURRENCE_PLACEMENT_TYPE_GUID, 253, 0)]);
+    let mut first = frame(true);
+    header(&mut first, b"256", 253);
+    let (occurrences, losses, superseded) = discover(&first, &placement);
+    assert!(occurrences.is_empty());
+    assert_eq!(superseded, 0);
+    assert_eq!(
+        codes(&losses),
+        [F3dLossCode::LocalOccurrenceFirstMatrixRefused]
+    );
+    assert!(losses[0].message.contains("#0."));
+
+    let mut later = first.clone();
+    later[46..50].copy_from_slice(&2_u32.to_le_bytes());
+    let (occurrences, losses, _) = discover(&later, &placement);
+    assert_eq!(occurrences.len(), 1);
+    assert!(losses.is_empty());
+
+    let mut identity = frame(false);
+    header(&mut identity, b"256", 253);
+    let (occurrences, losses, _) = discover(&identity, &placement);
+    assert_eq!(occurrences.len(), 1);
+    assert!(losses.is_empty());
+
+    assert!(!parse(&frame(true)).unwrap().is_class_256_first_matrix());
 }
