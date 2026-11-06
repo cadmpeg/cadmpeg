@@ -1032,14 +1032,9 @@ configuration identity, including when the manifest contains several
 when the manifest does not provide a name. A missing or unmatched active name
 leaves the Keywords configuration identity unresolved.
 
-`swConfigurationNeedsUpdate="YES"` warns that the configuration's cached
-geometry may require regeneration. For the active configuration the decoder
-conservatively marks every current feature `needs_recompute`, because this
-source flag has configuration granularity. It retains readable cached geometry
-and parameter values. A writer sets the active configuration flag to `YES`
-when any current feature is stale; this coarse flag does not preserve exact
-per-feature recompute state. `swConfigurationFlags` and
-`swConfigurationAlternateName` are configuration-manifest metadata.
+`swConfigurationNeedsUpdate` is the configuration-manifest update flag.
+`swConfigurationFlags` and `swConfigurationAlternateName` are additional
+configuration-manifest fields.
 
 Keywords `Feature` elements use the `Type` attribute as their operation-family token. Feature instances with the same exact `Type` token and the same class token use the same feature-input class. A directly object-ID-bound class instance therefore supplies the class of the other instances that carry that `Type` token and its class token. Instances with one `Type` token can carry different class tokens: a `Boss-Extrude` instance's name record can carry the repeated class token of `moICE_c`. `Helix/Spiral`, `Surface-Sweep`, and `Thicken` denote helix, surface-sweep, and face-thickening operations independently of the localized display name in `Name`.
 
