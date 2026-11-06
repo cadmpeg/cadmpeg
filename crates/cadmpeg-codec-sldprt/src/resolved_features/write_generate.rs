@@ -974,20 +974,23 @@ mod writer_rule_tests {
 
     #[test]
     fn extended_scalar_name_keeps_its_value() {
-        let name = "A".repeat(255);
-        let mut payload = Vec::new();
-        append_generated_scalar(&mut payload, "moLengthParameter_c", &name, 1.25, 2, &[]).unwrap();
-        let lane = super::super::write_prepare::generated_native_lane(
-            &[],
-            "sldprt:feature-input#long-scalar",
-            None,
-            payload,
-        )
-        .unwrap();
-        assert_eq!(lane.names.len(), 1);
-        assert_eq!(lane.names[0].value, name);
-        assert_eq!(lane.scalars.len(), 1);
-        assert!((lane.scalars[0].value.get() - 1.25).abs() < 1e-12);
+        for length in [255, 256, 65_535] {
+            let name = "A".repeat(length);
+            let mut payload = Vec::new();
+            append_generated_scalar(&mut payload, "moLengthParameter_c", &name, 1.25, 2, &[])
+                .unwrap();
+            let lane = super::super::write_prepare::generated_native_lane(
+                &[],
+                "sldprt:feature-input#long-scalar",
+                None,
+                payload,
+            )
+            .unwrap();
+            assert_eq!(lane.names.len(), 1);
+            assert_eq!(lane.names[0].value, name);
+            assert_eq!(lane.scalars.len(), 1);
+            assert!((lane.scalars[0].value.get() - 1.25).abs() < 1e-12);
+        }
     }
 
     #[test]
