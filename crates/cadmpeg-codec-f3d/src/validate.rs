@@ -11,6 +11,7 @@
 
 mod body_ownership;
 mod emboss;
+mod path_pattern;
 mod sheet_metal_settings;
 mod xref;
 
@@ -1056,6 +1057,7 @@ fn validate_loaded(
     validate_parameter_scopes(&ctx, &mut findings)?;
     emboss::validate(&ctx, &mut findings);
     sheet_metal_settings::validate(&ctx, &mut findings);
+    path_pattern::validate(&ctx, &mut findings);
     validate_extrude_selection_groups(&ctx, &mut findings);
     validate_construction_operand_groups(&ctx, &mut findings);
     validate_path_feature_operand_roles(&ctx, &mut findings);
@@ -5281,7 +5283,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                     ) && group.scope_reference_ordinal == 1;
                     let path = group.role() == DesignOperandRole::ROLE_0X5
                         && group.scope_reference_ordinal > 1;
-                    (seed || path) && group.extrude_role().is_none()
+                    (seed || path || is_path_seed_group(group)) && group.extrude_role().is_none()
                 }
                 None if scope.kind()
                     == crate::records::feature::scope::DesignFeatureKind::Decal =>
@@ -5351,7 +5353,8 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                             design::DesignFeatureFamily::CircularPattern
                                 | design::DesignFeatureFamily::RectangularPattern
                         )
-                    )
+                    ) || scope.kind()
+                        == crate::records::feature::scope::DesignFeatureKind::PathPattern
                 }) && is_path_seed_group(group))
             && {
                 let mut seen = HashSet::new();

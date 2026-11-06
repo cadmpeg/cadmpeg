@@ -8748,6 +8748,8 @@ pub(crate) mod path_pattern_settings {
     pub(crate) const FLIPPED: usize = 80;
     /// Offset of `path_oriented` (`u8`). Spec §Assembly operands.
     pub(crate) const PATH_ORIENTED: usize = 81;
+    /// Offset of `path_group_reference` (`bytes[11]`). Spec §Assembly operands.
+    pub(crate) const PATH_GROUP_REFERENCE: usize = 83;
     /// Offset of `distance_type_marker` (`bytes[4]`). Spec §Assembly operands.
     pub(crate) const DISTANCE_TYPE_MARKER: usize = 152;
     /// Offset of `distance_type` (`u8`). Spec §Assembly operands.

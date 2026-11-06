@@ -1043,10 +1043,7 @@ fn exact_fixed_pattern_count(
     candidates.next().is_none().then_some(candidate)
 }
 
-/// Type GUID of the `PathPattern` settings record.
-const PATH_PATTERN_SETTINGS_TYPE: &str = "BE1FB171-D98A-4A4D-99C2-3738627CF79C";
-/// Type GUID of the `PathPattern` path-start record.
-const PATH_PATTERN_START_TYPE: &str = "69EE2FA7-BCC7-449E-9CA9-976CEFDFED44";
+use crate::records::feature::patterns::{PATH_PATTERN_SETTINGS_TYPE, PATH_PATTERN_START_TYPE};
 
 /// Fixed settings of a `PathPattern` scope: the settings record that the scope
 /// prefix names and the path-start record in the scope reference table.
@@ -1062,69 +1059,73 @@ pub(super) fn exact_path_pattern_settings(
         return None;
     }
     let start = usize::try_from(scope.byte_offset()).ok()?;
-    let reference_at = if bytes.get(start + 11..start + 20)? == [0; 9]
-        && View::u32_le_at(bytes, start + 20)? == 1
-        && *bytes.get(start + 24)? == 0
+    let prefix_end = usize::try_from(scope.reference_count_offset()).ok()?;
+    let prefix = bytes.get(..prefix_end)?;
+    let reference_at = if prefix.get(start + 11..start + 20)? == [0; 9]
+        && View::u32_le_at(prefix, start + 20)? == 1
+        && *prefix.get(start + 24)? == 0
     {
         start + 25
-    } else if bytes.get(start + 11..start + 21)? == [0; 10] {
+    } else if prefix.get(start + 11..start + 21)? == [0; 10] {
         start + 21
     } else {
         return None;
     };
-    let settings_record_index = marked_record_reference(bytes, reference_at)?;
+    let settings_record_index = marked_record_reference(prefix, reference_at)?;
     let settings_at = typed_record_frame(
         bytes,
         records,
         class_types,
         settings_record_index,
-        (PATH_PATTERN_SETTINGS_TYPE, 4),
+        PATH_PATTERN_SETTINGS_TYPE,
         settings_layout::LEN,
     )?;
+    let settings = bytes.get(settings_at..settings_at.checked_add(settings_layout::LEN)?)?;
     let flag = |offset: usize| {
-        let at = settings_at.checked_add(offset)?;
-        match bytes.get(at)? {
-            0 => Some(Located {
-                value: false,
-                offset: u64_from_index(at),
-            }),
-            1 => Some(Located {
-                value: true,
-                offset: u64_from_index(at),
-            }),
-            _ => None,
-        }
+        let value = match settings.get(offset)? {
+            0 => false,
+            1 => true,
+            _ => return None,
+        };
+        Some(Located {
+            value,
+            offset: u64_from_index(settings_at.checked_add(offset)?),
+        })
     };
-    if *bytes.get(settings_at + settings_layout::SETTINGS_MARKER)?
-        != settings_layout::SETTINGS_MARKER_VALUE
-        || bytes.get(
-            settings_at + settings_layout::DISTANCE_TYPE_MARKER
-                ..settings_at + settings_layout::DISTANCE_TYPE,
-        )? != [0xff; 4]
+    if *settings.get(settings_layout::SETTINGS_MARKER)? != settings_layout::SETTINGS_MARKER_VALUE
+        || settings.get(settings_layout::DISTANCE_TYPE_MARKER..settings_layout::DISTANCE_TYPE)?
+            != [0xff; 4]
     {
         return None;
     }
     let total_extent = flag(settings_layout::DISTANCE_TYPE)?;
     let flipped = flag(settings_layout::FLIPPED)?;
     let path_oriented = flag(settings_layout::PATH_ORIENTED)?;
-    let mut starts = scope
-        .reference_members()
-        .values()
-        .filter_map(|record_index| {
-            typed_record_frame(
-                bytes,
-                records,
-                class_types,
-                *record_index,
-                (PATH_PATTERN_START_TYPE, 3),
-                start_layout::LEN,
-            )
-            .map(|at| (*record_index, at))
-        });
-    let (start_record_index, start_record_at) = starts.next()?;
+    let path_group_record_index =
+        marked_record_reference(settings, settings_layout::PATH_GROUP_REFERENCE)?;
+    let mut starts = scope.reference_members().values().filter(|record_index| {
+        record_frames_of_type(
+            bytes,
+            records,
+            class_types,
+            **record_index,
+            PATH_PATTERN_START_TYPE.0,
+        )
+        .next()
+        .is_some()
+    });
+    let start_record_index = *starts.next()?;
     if starts.next().is_some() {
         return None;
     }
+    let start_record_at = typed_record_frame(
+        bytes,
+        records,
+        class_types,
+        start_record_index,
+        PATH_PATTERN_START_TYPE,
+        start_layout::LEN,
+    )?;
     let start_parameter_at = start_record_at.checked_add(start_layout::START_PARAMETER)?;
     let [start_parameter] = finite_reals_at::<1>(bytes, start_parameter_at)?;
     Some(patterns::DesignPathPatternSettings {
@@ -1132,6 +1133,7 @@ pub(super) fn exact_path_pattern_settings(
         total_extent,
         flipped,
         path_oriented,
+        path_group_record_index,
         start_record_index,
         start_parameter: Located {
             value: start_parameter,
@@ -1140,9 +1142,31 @@ pub(super) fn exact_path_pattern_settings(
     })
 }
 
-/// Header offset of the unique primary frame of `record_index` whose class
-/// tag names the type GUID and version and whose next indexed header follows
-/// at `length` bytes.
+/// Header offsets of the frames of `record_index` whose class tag names
+/// `type_guid`, at any version.
+fn record_frames_of_type<'a>(
+    bytes: &'a [u8],
+    records: &'a IndexedRecordOffsets,
+    class_types: &'a std::collections::HashMap<u32, &crate::records::entity_header::SegmentType>,
+    record_index: u32,
+    type_guid: &'a str,
+) -> impl Iterator<Item = (usize, &'a crate::records::entity_header::SegmentType)> + 'a {
+    records.offsets(record_index).iter().filter_map(move |at| {
+        let row = bytes
+            .get(at + 4..at + 7)
+            .and_then(|tag| std::str::from_utf8(tag).ok())
+            .and_then(|tag| tag.parse::<u32>().ok())
+            .and_then(|tag| class_types.get(&tag))?;
+        row.type_guid
+            .as_str()
+            .eq_ignore_ascii_case(type_guid)
+            .then_some((*at, *row))
+    })
+}
+
+/// Header offset of the frame of `record_index` whose class tag names the
+/// type GUID. That frame must be unique, carry `version`, and end at the next
+/// indexed header `length` bytes after its own.
 fn typed_record_frame(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
@@ -1151,22 +1175,14 @@ fn typed_record_frame(
     (type_guid, version): (&str, u32),
     length: usize,
 ) -> Option<usize> {
-    let mut frames = records.offsets(record_index).iter().copied().filter(|at| {
-        bytes
-            .get(at + 4..at + 7)
-            .and_then(|tag| std::str::from_utf8(tag).ok())
-            .and_then(|tag| tag.parse::<u32>().ok())
-            .and_then(|tag| class_types.get(&tag))
-            .is_some_and(|row| {
-                row.type_guid.as_str().eq_ignore_ascii_case(type_guid) && row.version == version
-            })
-            && at
-                .checked_add(11)
-                .and_then(|body| next_indexed_record_offset(bytes, body))
-                == at.checked_add(length)
-    });
-    let at = frames.next()?;
-    frames.next().is_none().then_some(at)
+    let mut frames = record_frames_of_type(bytes, records, class_types, record_index, type_guid);
+    let (at, row) = frames.next()?;
+    if frames.next().is_some() || row.version != version {
+        return None;
+    }
+    let frame_end = at.checked_add(length)?;
+    let window = bytes.get(..frame_end.checked_add(11)?.min(bytes.len()))?;
+    (next_indexed_record_offset(window, at.checked_add(11)?) == Some(frame_end)).then_some(at)
 }
 
 #[cfg(test)]

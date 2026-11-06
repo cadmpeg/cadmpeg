@@ -1348,7 +1348,9 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
             return None;
         }
         let kind = scope_feature_kind(&kind_text, type_family.as_ref())?;
-        let source_kind = (kind_text != kind.as_str()).then_some(kind_text);
+        let source_kind = (kind_text != kind.as_str()
+            || kind == scope::DesignFeatureKind::PathPattern)
+            .then_some(kind_text);
         let label = if tail_form == ScopeTailForm::Named {
             let label_at = kind_end.checked_add(8)?;
             let (value, _) = lp_utf16_bounded(bytes, label_at, 0..=256)?;

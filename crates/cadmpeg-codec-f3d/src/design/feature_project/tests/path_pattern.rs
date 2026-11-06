@@ -46,6 +46,7 @@ fn settings(
             value: path_oriented,
             offset: 0,
         },
+        path_group_record_index: PATH_GROUP,
         start_record_index: 343,
         start_parameter: Located {
             value: cadmpeg_ir::scalar::FiniteReal::new(start_parameter).unwrap(),
@@ -352,4 +353,21 @@ fn path_pattern_settings_select_the_spacing_and_name_dropped_placement() {
     ] {
         assert!(loss.message.contains(setting), "{}", loss.message);
     }
+}
+
+#[test]
+fn path_pattern_settings_naming_another_path_group_leave_the_form_unresolved() {
+    let (count, distance) = (count(4.0), distance(2.5));
+    let mut other_group = settings(false, false, false, 0.0);
+    other_group.path_group_record_index = PATH_GROUP + 1;
+    let projected = project_path_pattern(
+        &scope_with(Some(other_group)),
+        &groups(DesignOperandRole::BODIES_B),
+        &[(0, &count), (1, &distance)],
+    )
+    .expect("path pattern");
+    assert!(matches!(
+        pattern(projected.definition).1,
+        PatternTransform::Unresolved { .. }
+    ));
 }

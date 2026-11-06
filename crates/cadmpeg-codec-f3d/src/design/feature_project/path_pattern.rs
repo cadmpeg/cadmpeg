@@ -107,7 +107,9 @@ pub(super) fn project_path_pattern(
         }))
         .map(|(_, parameter)| *parameter)
     };
-    let settings = scope.path_pattern_settings();
+    let settings = scope
+        .path_pattern_settings()
+        .filter(|settings| settings.path_group_record_index == path_group.record_index);
     let curve_driven = settings
         .zip(parameter(0, COUNT_SOURCE_KIND))
         .zip(parameter(1, DISTANCE_SOURCE_KIND))

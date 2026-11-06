@@ -1733,6 +1733,9 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                 present.join(", ")
             )));
         }
+        if wire.kind == DesignFeatureKind::PathPattern && wire.source_kind.is_none() {
+            wire.kind = DesignFeatureKind::native(wire.kind.as_str());
+        }
         let payload = match &wire.kind {
             DesignFeatureKind::Sketch => DesignScopePayload::Sketch(wire.sketch_entity.take()),
             DesignFeatureKind::Assemble => {
