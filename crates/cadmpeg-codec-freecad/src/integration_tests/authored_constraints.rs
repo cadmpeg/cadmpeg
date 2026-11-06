@@ -6,6 +6,7 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::sketches::SketchGeometryDefinition;
 use cadmpeg_ir::{Codec, DecodeOptions};
+use cadmpeg_measure::test_support::round_trip::measured;
 use serde_json::{json, Value};
 use std::io::Cursor;
 
@@ -15,6 +16,8 @@ const DIRECTION_TOLERANCE: f64 = 1.0e-12;
 const RATIO_TOLERANCE: f64 = 1.0e-12;
 const WEIGHT_TOLERANCE: f64 = 1.0e-12;
 const KNOT_TOLERANCE: f64 = 1.0e-12;
+const MEASURE_LENGTH_TOLERANCE: f64 = 1.0e-6;
+const MEASURE_BBOX_TOLERANCE: f64 = 1.0e-6;
 
 #[test]
 fn authored_constraint_families_keep_operands_and_values() {
@@ -495,3 +498,54 @@ const GEOMPOINT_GEOMETRY: &[(&str, usize, [f64; 2])] = &[
 
 const ELLIPSE_GEOMETRY: &[(&str, usize, [f64; 5])] =
     &[("InternalAlignmentRelations", 1, [0.0, 0.0, 12.0, 5.0, -0.0])];
+
+#[test]
+fn authored_symmetry_constraint_sketch_has_source_derived_measures() {
+    let data = include_bytes!("../../../../corpus/freecad_fcstd/fixtures/sketch_constraints.FCStd");
+    let decoded = FcstdCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .unwrap();
+    let feature = decoded
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("SymmetryRelation"))
+        .unwrap();
+    let [body_id] = feature.evaluation.outputs().as_slice() else {
+        panic!("one symmetry sketch body")
+    };
+    let report = measured("sketch_constraints", decoded.ir()).unwrap();
+    let body = report
+        .bodies()
+        .iter()
+        .find(|body| body.body() == body_id.as_str())
+        .unwrap();
+    let length = body
+        .length()
+        .as_ref()
+        .unwrap()
+        .measured()
+        .unwrap()
+        .value()
+        .value
+        .get();
+    let expected_length = 20.0 + 4.0 * std::f64::consts::SQRT_2;
+    assert!(
+        (length - expected_length).abs() < MEASURE_LENGTH_TOLERANCE,
+        "symmetry sketch length {length}"
+    );
+    let bbox = body.bbox().measured().unwrap().value();
+    for (actual, expected) in bbox
+        .min
+        .coordinates()
+        .into_iter()
+        .chain(bbox.max.coordinates())
+        .zip([-8.0, -10.0, 0.0, 8.0, 10.0, 0.0])
+    {
+        assert!(
+            (actual.get() - expected).abs() < MEASURE_BBOX_TOLERANCE,
+            "symmetry sketch bbox"
+        );
+    }
+}
