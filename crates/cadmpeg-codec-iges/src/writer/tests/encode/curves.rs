@@ -50,6 +50,15 @@ fn unchanged_planar_ellipse_retains_its_parameter_tokens() {
 
 #[test]
 fn ellipse_fixture_synthesis_preserves_its_records() {
+    assert_conic_fixture_synthesis("conic_ellipse");
+}
+
+#[test]
+fn parabola_fixture_synthesis_preserves_its_records() {
+    assert_conic_fixture_synthesis("conic_parabola");
+}
+
+fn assert_conic_fixture_synthesis(fixture: &str) {
     use cadmpeg_test_support::writer_closure::{without_fidelity, Redecoded};
 
     let harness = cadmpeg_test_support::golden::Harness::new(
@@ -60,11 +69,11 @@ fn ellipse_fixture_synthesis_preserves_its_records() {
     let (_, bytes) = harness
         .fixture_inputs()
         .into_iter()
-        .find(|(name, _)| name == "conic_ellipse")
-        .expect("ellipse fixture");
+        .find(|(name, _)| name == fixture)
+        .expect("conic fixture");
     let input = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .expect("ellipse fixture decodes");
+        .expect("conic fixture decodes");
     let redecode = |bytes: &[u8]| -> Result<Redecoded, String> {
         let result = IgesCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
