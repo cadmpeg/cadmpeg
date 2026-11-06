@@ -33,12 +33,34 @@ const EPS_ELLIPSE_FRAME: f64 = 1.0e-6;
 /// parameter bounds of its ellipse.
 const EPS_ELLIPSE_RANGE: f64 = 1.0e-9;
 
+/// Largest difference between the components of two unit tangents that are
+/// the same direction.
+const EPS_SAME_TANGENT: f64 = 1.0e-6;
+
 #[derive(Debug, Clone, PartialEq)]
 pub(in crate::feature) struct EdgeGeometry {
     pub(in crate::feature) start: FinitePoint3,
     pub(in crate::feature) end: FinitePoint3,
     pub(in crate::feature) interior: FinitePoint3,
     pub(in crate::feature) tangent: UnitVector3,
+}
+
+impl EdgeGeometry {
+    /// Whether both edges have the same start, end, interior point, and
+    /// tangent: the points within the kernel linear tolerance of the vertex
+    /// proof and the tangents within `EPS_SAME_TANGENT`.
+    pub(super) fn same_as(&self, other: &Self) -> bool {
+        let near = |a: FinitePoint3, b: FinitePoint3| {
+            a.as_raw().distance(*b.as_raw()) <= EPS_EDGE_REVISION_POINT_MM
+        };
+        let (a, b) = (self.tangent.as_raw(), other.tangent.as_raw());
+        near(self.start, other.start)
+            && near(self.end, other.end)
+            && near(self.interior, other.interior)
+            && (a.x - b.x).abs() <= EPS_SAME_TANGENT
+            && (a.y - b.y).abs() <= EPS_SAME_TANGENT
+            && (a.z - b.z).abs() <= EPS_SAME_TANGENT
+    }
 }
 
 fn position(record: &Record) -> Option<FinitePoint3> {

@@ -121,7 +121,10 @@ pub(super) fn links(selector: &StoredSelector, type_at: impl Fn(u32) -> Option<[
 
 #[derive(Debug)]
 pub(in crate::feature) struct SelectedEdge {
+    /// The matched owner with the lowest record index.
     pub(super) owner: i64,
+    /// Number of matched owners, all with the same geometry.
+    pub(super) owners: usize,
     pub(super) item: u32,
     pub(super) geometry: EdgeGeometry,
 }
@@ -164,16 +167,30 @@ pub(super) fn selected(
         let Some(owners) = matches.get(&(selector.source, selector.key)) else {
             continue;
         };
-        if owners.len() != 1 {
+        let Some(owner) = owners.iter().min().copied() else {
             continue;
+        };
+        let mut geometry = None::<super::geometry::EdgeGeometry>;
+        let mut agree = true;
+        for candidate in owners {
+            let Some(edge) = by_index.get(candidate) else {
+                agree = false;
+                break;
+            };
+            let Some(found) = super::geometry::revision(ctx, edge, &by_index, &subtypes)? else {
+                agree = false;
+                break;
+            };
+            match &geometry {
+                Some(first) if !first.same_as(&found) => {
+                    agree = false;
+                    break;
+                }
+                Some(_) => {}
+                None => geometry = Some(found),
+            }
         }
-        let Some(owner) = owners.iter().next().copied() else {
-            continue;
-        };
-        let Some(edge) = by_index.get(&owner) else {
-            continue;
-        };
-        let Some(geometry) = super::geometry::revision(ctx, edge, &by_index, &subtypes)? else {
+        let Some(geometry) = geometry.filter(|_| agree) else {
             continue;
         };
         let Some(item) = selector.item.record_ordinal() else {
@@ -183,6 +200,7 @@ pub(super) fn selected(
             selector.source,
             SelectedEdge {
                 owner,
+                owners: owners.len(),
                 item,
                 geometry,
             },
@@ -511,6 +529,35 @@ pub(crate) fn valid<'a>(
                         == 1
             })
     })
+}
+
+/// One note counting the edge-treatment features that use a selected input
+/// edge with several matched owners of identical geometry.
+pub(super) fn ambiguous_owner_losses(
+    inventory: &crate::feature::FeatureInventory,
+    features: &[Feature],
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    let ambiguous = inventory
+        .edge_inputs
+        .historical
+        .iter()
+        .filter(|(_, edge)| edge.owners > 1)
+        .filter_map(|((token, source), _)| edge_id(token, *source).ok())
+        .collect::<HashSet<_>>();
+    let count = features
+        .iter()
+        .filter(|feature| {
+            selections(feature).iter().any(|selection| {
+                matches!(selection, EdgeSelection::Historical { edges, .. }
+                    if edges.iter().any(|edge| ambiguous.contains(edge)))
+            })
+        })
+        .count();
+    if count == 0 {
+        Vec::new()
+    } else {
+        vec![crate::loss::InventorLossCode::FeatureEdgeOwnerIdenticalGeometry.note(format!("{count} edge-treatment feature(s) select an input edge with several matched owner edges of identical geometry; the stored body state of the edge is not proven and the owner with the lowest record index is used."))]
+    }
 }
 
 pub(super) fn native_losses(features: &[Feature]) -> Vec<cadmpeg_ir::report::loss::LossNote> {

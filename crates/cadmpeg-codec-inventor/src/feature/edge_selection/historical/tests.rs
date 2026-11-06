@@ -521,6 +521,7 @@ pub(crate) fn fixture(
             9,
         ),
         SelectedEdge {
+            owners: 1,
             owner: 1,
             item,
             geometry: sample,
@@ -671,6 +672,106 @@ fn historical_matching_uses_exact_revisions_with_opaque_generated_names() {
     );
 }
 
+/// A copy of the fixture edge (records 1 to 6) as record numbers 21 to 26,
+/// matched under the same source index and key as the original. `shift`
+/// moves its start and end points and straight carrier along y; `carrier`
+/// replaces the carrier record name.
+fn second_owner(records: &mut Vec<Record>, schema: u32, shift: f64, carrier: &str) {
+    let copies = records
+        .iter()
+        .filter(|record| (1..=6).contains(&record.index))
+        .cloned()
+        .collect::<Vec<_>>();
+    for mut copy in copies {
+        copy.index += 20;
+        let tokens = copy
+            .tokens
+            .iter()
+            .map(|token| match token {
+                Token::Ref(value) if *value > 0 => Token::Ref(value + 20),
+                Token::Position([x, y, z]) => Token::Position([*x, y + shift, *z]),
+                other => other.clone(),
+            })
+            .collect::<Vec<_>>();
+        copy.tokens = tokens.into();
+        if copy.index == 26 {
+            copy.name = carrier.into();
+        }
+        records.push(copy);
+    }
+    records.push(attribute(
+        30,
+        21,
+        schema,
+        "NMx_Matched_Entity",
+        &[1, 9, -1, 7, 0],
+    ));
+}
+
+#[test]
+fn identical_geometry_owners_resolve_to_the_lowest_record_index() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service())
+            .expect("context");
+    for schema in [38, 40, 42, 44] {
+        let bytes = selector_bytes(&[31, 37], &[], 29);
+        let selector = || {
+            parse(View::over_retained(&bytes), 29)
+                .expect("framed")
+                .expect("direct")
+        };
+        let mut identical = records(schema, &[31, 37]);
+        second_owner(&mut identical, schema, 0.0, "straight");
+        let edges = selected(&ctx, &identical, &[selector()], schema).expect("no refusal");
+        assert_eq!((edges[&9].owner, edges[&9].owners), (1, 2));
+        // Owners of different geometry, and an owner with none, stay native.
+        for (shift, carrier) in [(1.0, "straight"), (0.0, "unknown-curve")] {
+            let mut other = records(schema, &[31, 37]);
+            second_owner(&mut other, schema, shift, carrier);
+            assert!(selected(&ctx, &other, &[selector()], schema)
+                .expect("no refusal")
+                .is_empty());
+        }
+    }
+}
+
+#[test]
+fn ambiguous_owner_loss_counts_features_that_use_such_an_edge() {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let (ctx, _) =
+        DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service())
+            .expect("context");
+    for owners in [1, 2] {
+        let (mut inventory, mut feature) = fixture(&ctx, false);
+        let token = inventory.features[0]
+            .identity
+            .segment_token
+            .as_str()
+            .to_owned();
+        inventory
+            .edge_inputs
+            .historical
+            .get_mut(&(token, 9))
+            .expect("revision")
+            .owners = owners;
+        let states =
+            project(&ctx, std::slice::from_mut(&mut feature), &inventory).expect("projection");
+        assert_eq!(states.len(), 1);
+        let losses = ambiguous_owner_losses(&inventory, std::slice::from_ref(&feature));
+        assert_eq!(losses.len(), usize::from(owners == 2));
+        if let Some(loss) = losses.first() {
+            assert_eq!(
+                loss.code,
+                crate::loss::InventorLossCode::FeatureEdgeOwnerIdenticalGeometry
+                    .note("expected")
+                    .code
+            );
+            assert!(loss.message.starts_with("1 edge-treatment feature(s)"));
+        }
+    }
+}
+
 #[test]
 fn selector_list_counts_are_bounded_before_allocation() {
     let mut bytes = selector_bytes(&[31, 37], &[], 29);
@@ -728,6 +829,7 @@ fn every_member_of_a_historical_group_must_join_a_distinct_revision() {
                 .get(&(token.clone(), 9))
                 .expect("first revision");
             let second = SelectedEdge {
+                owners: if change == 2 { 2 } else { 1 },
                 owner: if change == 2 { 1 } else { 2 },
                 item: first.item,
                 geometry: first.geometry.clone(),
