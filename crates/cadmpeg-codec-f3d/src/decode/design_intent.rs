@@ -745,6 +745,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &design,
         &model.features,
         &mut model.feature_input_topologies,
+        &mut losses,
     )?;
     losses.extend(crate::history::bind_feature_outputs(
         &mut model.features,
