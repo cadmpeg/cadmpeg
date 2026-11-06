@@ -40,7 +40,7 @@ pub(crate) struct UnreadableActFrame {
     pub(crate) stream: String,
     pub(crate) extent: std::ops::Range<usize>,
     pub(crate) record_index: u64,
-    pub(crate) reason: String,
+    pub(crate) error: CodecError,
     pub(crate) dropped: Vec<String>,
 }
 
@@ -116,7 +116,7 @@ fn decode_record_frames(
             Ok(frame) => frames.push(frame),
             Err(error) => unreadable.push(UnreadableActFrame {
                 stream: stream.to_owned(), extent: start..end,
-                record_index: record.entity_id, reason: error.to_string(), dropped: Vec::new(),
+                record_index: record.entity_id, error, dropped: Vec::new(),
             }),
         }
     }
@@ -196,12 +196,17 @@ pub(crate) fn decode(scan: &ContainerScan<'_>) -> Result<DecodedAct, CodecError>
                 });
                 Some(table)
             }
+            Err(error @ CodecError::Io(_)) => return Err(error),
+            Err(CodecError::ResourceLimit(limit))
+                if limit.scope == cadmpeg_core::decode::LimitScope::Session => {
+                    return Err(CodecError::ResourceLimit(limit));
+                }
             Err(error) => {
                 damaged.push(UnreadableActFrame {
                     stream: entry.name.clone(),
                     extent: table_frame.start..table_frame.end,
                     record_index: u64::from(table_frame.record_index),
-                    reason: error.to_string(),
+                    error,
                     dropped: vec![table_id],
                 });
                 None
@@ -217,21 +222,26 @@ pub(crate) fn decode(scan: &ContainerScan<'_>) -> Result<DecodedAct, CodecError>
         let mut groups = Vec::new();
         for frame in &frames {
             let selected = table.iter().any(|row| row.record_index == frame.record_index);
-            let reason = match decode_channel_group(bytes, frame, &entry.name) {
+            let error = match decode_channel_group(bytes, frame, &entry.name) {
                 Ok(Some(group)) => {
                     groups.push(group);
                     continue;
                 }
                 Ok(None) if !selected => continue,
-                Ok(None) => "ACT table group matches no channel grammar".to_owned(),
+                Ok(None) => CodecError::malformed("ACT table group matches no channel grammar"),
+                Err(error @ CodecError::Io(_)) => return Err(error),
+                Err(CodecError::ResourceLimit(limit))
+                    if limit.scope == cadmpeg_core::decode::LimitScope::Session => {
+                        return Err(CodecError::ResourceLimit(limit));
+                    }
                 Err(error) if !selected => return Err(error),
-                Err(error) => error.to_string(),
+                Err(error) => error,
             };
             damaged.push(UnreadableActFrame {
                 stream: entry.name.clone(),
                 extent: frame.start..frame.end,
                 record_index: u64::from(frame.record_index),
-                reason,
+                error,
                 dropped: Vec::new(),
             });
         }
@@ -311,7 +321,7 @@ pub(crate) fn decode(scan: &ContainerScan<'_>) -> Result<DecodedAct, CodecError>
                     stream: entry.name.clone(),
                     extent: frame.start..frame.end,
                     record_index: u64::from(frame.record_index),
-                    reason: "no supported ACT payload grammar".to_owned(),
+                    error: CodecError::malformed("no supported ACT payload grammar"),
                     dropped: Vec::new(),
                 }),
         );
