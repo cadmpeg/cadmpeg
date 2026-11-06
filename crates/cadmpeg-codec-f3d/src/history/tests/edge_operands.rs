@@ -582,3 +582,18 @@ fn side_one_support_faces_prove_an_edge_on_the_candidate_face_boundaries_and_inf
     ];
     assert_eq!(resolve(&lane, &[31]), Some((31, false)));
 }
+
+#[test]
+fn an_inferred_side_one_edge_names_its_operand_state_and_slot() {
+    let note = crate::history::inferred_edge_selection_note("f3d:test:operand#20", 7, 31);
+    assert_eq!(
+        note.code,
+        crate::loss::F3dLossCode::HistoricalEdgeSelectionInferred.kind()
+    );
+    assert!(note
+        .message
+        .starts_with("edge operand f3d:test:operand#20 reads edge slot 31 of history state 7"));
+    assert!(note
+        .message
+        .contains("bounds none of the recipe's candidate faces"));
+}

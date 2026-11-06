@@ -1135,7 +1135,7 @@ The first closing reference run identifies a direct contained child by its local
 
 **Conflict.** None.
 
-**Note.** A non-unique or incomplete reference proof retains its native operand identity and reports `history.edge-midpoints-unresolved` when the feature requires edge samples.
+**Note.** A non-unique or incomplete reference proof retains its native operand identity and reports `history.edge-midpoints-unresolved` when the feature requires edge samples. When the referenced faces share exactly one live edge and that edge bounds none of the recipe's candidate faces, the decoder reads that edge and reports `history.edge-selection-inferred`. Whether a recipe's candidate faces can omit the selected edge is open.
 
 ### DR-170. Unresolved DeleteFace operand bindings
 

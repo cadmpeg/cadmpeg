@@ -7672,11 +7672,7 @@ pub(crate) fn bind_edge_operand_history_candidates_with_notes(
     inferred.sort_by_key(|(position, ..)| *position);
     let notes = inferred
         .into_iter()
-        .map(|(_, operand, state, edge)| {
-            crate::loss::F3dLossCode::HistoricalEdgeSelectionInferred.note(format!(
-                "edge operand {operand} reads edge slot {edge} of history state {state} from the faces its recipe's first side names: they share only that edge. The edge bounds none of the recipe's candidate faces, so the reading assumes those candidates are incomplete."
-            ))
-        })
+        .map(|(_, operand, state, edge)| inferred_edge_selection_note(&operand, state, edge))
         .collect();
     Ok((face_boundaries.into_records(), notes))
 }
@@ -8052,6 +8048,18 @@ fn bind_historical_edge_operand<'a>(
         }
     }
     Ok(false)
+}
+
+/// The note for an edge operand whose edge the faces its recipe's first
+/// side names select alone, off the recipe's candidate faces.
+fn inferred_edge_selection_note(
+    operand: &str,
+    state: i64,
+    edge: i64,
+) -> cadmpeg_ir::report::loss::LossNote {
+    crate::loss::F3dLossCode::HistoricalEdgeSelectionInferred.note(format!(
+        "edge operand {operand} reads edge slot {edge} of history state {state} from the faces its recipe's first side names: they share only that edge. The edge bounds none of the recipe's candidate faces, so the reading assumes those candidates are incomplete."
+    ))
 }
 
 /// An edge read from the faces a recipe's first side names.
