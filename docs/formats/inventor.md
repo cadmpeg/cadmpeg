@@ -351,7 +351,7 @@ PmDc references store a one-based record index in bits 0 through 30 and a qualif
 
 A type-8 reference array starts with u16 values `8, 0x3000` and a u32 count. A nonempty array then stores two u16 metadata values and the counted PmDc references. A type-2 reference list starts with u16 values `2, 0x3000` and a u32 count. A nonempty list then stores two u32 metadata values and the counted references.
 
-Planar sketch entities add `entity_flags:u32` and `sketch_reference:u32` after the content header. The sketch reference identifies the owning planar sketch. Entity-flag bit `0x8000` of a line marks an axis line for distance dimensions. Entity-flag bits `0x40`, `0x1000`, and `0x40000` do not mark construction geometry. Bit `0x80000` of a circle, ellipse, or spline, bit `0x200` of a line or circle, and bit `0x8000` of a line do not mark construction geometry. Bit `0x4` of a spline entity does not mark construction geometry. Bits `0x80000` and `0x200000` of a line mark construction geometry: a construction line bounds no profile loop.
+Planar sketch entities add `entity_flags:u32` and `sketch_reference:u32` after the content header. The sketch reference identifies the owning planar sketch. Entity-flag bit `0x8000` of a line marks an axis line for distance dimensions. Entity-flag bits `0x40`, `0x1000`, and `0x40000` do not mark construction geometry. Bit `0x80000` of a circle, ellipse, or spline, bit `0x200` of a line or circle, and bit `0x8000` of a line do not mark construction geometry. Bit `0x4` of a spline entity does not mark construction geometry. Bits `0x80000` and `0x200000` of a line mark construction geometry: a construction line bounds no profile loop. A line stores a carrier (`origin` and `direction`) and two endpoint point references. The carrier and the endpoint positions agree when the endpoint span is parallel to the direction and the first endpoint lies on the carrier. A construction line whose carrier and endpoint positions disagree has no neutral geometry: the reader keeps the record native, projects no line from either the carrier or the endpoints, and keeps every relation that names the line native. It reports the lines with the loss `sketch.construction-carrier-conflict`. Because a construction line bounds no profile, the rest of the sketch projects and closes. A line without a construction bit whose carrier and endpoint positions disagree has no neutral projection and leaves its sketch open. A line with a zero-length endpoint span or a zero direction is not a carrier conflict.
 
 The planar entity types are:
 
@@ -437,6 +437,26 @@ This open form has equal primary and secondary arrays. It uses the spline curve 
 | Curve terminal value | `0` |
 
 The open cubic knot vector has `knot_count = pole_count + 4`. Each endpoint knot has multiplicity four. Its interval is the full nonempty knot domain from knot 3 through knot `pole_count`. The curve is polynomial and nonperiodic.
+
+Type `46737b31d3117c7a60001cb3d1c1fbb0` stores a planar curve member. After the planar-entity prefix it stores a type-2 point-reference list, the auxiliary lists, `body_kind:u32`, `state:u32`, and a body. The auxiliary lists use the line encoding: one type-2 list, or a u32 gate pair. Gate `0, 0` stores no list. Gate `1, 0` stores one or two type-2 lists. Body kind 5 stores `value:u32` and ends the record; the curve is not stored in the record. Body kind 4 stores one curve:
+
+| Field | Type |
+| --- | --- |
+| `form`, `degree` | u32 each |
+| Tolerance | f64 |
+| `knot_count`, knot value, scalar width `8` | u32 each |
+| Knots | `knot_count` f64 values |
+| `weight_count`, weight value, scalar width `8` | u32 each |
+| Weights | `weight_count` f64 values |
+| `pole_count`, pole value, scalar width `8` | u32 each |
+| Poles | `pole_count` two-f64 poles |
+| Pole tolerance | f64 |
+| Curve values | u32[2] |
+| Interval | f64[2] |
+| Terminal value | f64 |
+| Scalar width `8` | u32 |
+
+The curve body ends the record. `weight_count` is 0 for a polynomial curve and equals `pole_count` for a rational curve. Poles use internal centimetres. The record form does not fix `state`, `form`, the weight, knot, and pole values, the curve values, or the order and count of the knots: the reader keeps each as stored, and DE-03 states their open roles. The reader keeps the point list, the auxiliary lists, and every lane. It does not select a neutral curve from them: the record projects as a native sketch entity with the loss `sketch.member-curve-native`, and the sketch that lists it closes without a profile through it. A record whose body kind is not 4 or 5, whose list gate is not `0, 0` or `1, 0`, whose scalar width is not `8`, or whose weight count is neither 0 nor the pole count is not a planar curve member of this form.
 
 Type `9e146d7cd1115bd5000847b00524dc09` stores a spline-point relation. After the constraint header it stores a spline reference and a point reference, in that order.
 

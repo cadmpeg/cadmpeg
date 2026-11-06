@@ -1038,6 +1038,7 @@ fn owned_base_feature_takes_its_timeline_object_position() {
                     bodies: Vec::new(),
                     owner_record,
                     owner_reference_offset: 0,
+                    copy_sources: Vec::new(),
                 },
             );
         }

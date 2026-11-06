@@ -1062,8 +1062,6 @@ fn a_compact_sketch_point_identity_round_trips_through_the_operand_record() {
     )
     .expect("compact sketch-point identity");
     let draft = DesignEntitySelectionOperandDraft {
-        serialization_form:
-            crate::records::topology::entity_selection::SelectionSerializationForm::Zero,
         id: "f3d:Design/BulkStream.dat:design-entity-selection-operand#0".to_owned(),
         scope_record_index: 12,
         group_record_index: 50,
@@ -1071,6 +1069,7 @@ fn a_compact_sketch_point_identity_round_trips_through_the_operand_record() {
         record_index: frame.record_index,
         byte_offset: frame.byte_offset,
         class_tag: "369".to_owned().try_into().unwrap(),
+        serialization_form: frame.serialization_form,
         asset_id: frame.asset_id.clone().try_into().unwrap(),
         asset_id_offset: frame.asset_id_offset,
         context_id: frame.context_id.clone().try_into().unwrap(),
@@ -1114,8 +1113,6 @@ fn a_sketch_point_frame_matches_no_curve_and_names_no_topology_identity() {
     };
     let operand = |primary_offset: u64, secondary_offset: u64, class_tag: &str| {
         DesignEntitySelectionOperand::try_new(DesignEntitySelectionOperandDraft {
-            serialization_form:
-                crate::records::topology::entity_selection::SelectionSerializationForm::Zero,
             id: "f3d:Design/BulkStream.dat:design-entity-selection-operand#0".to_owned(),
             scope_record_index: 12,
             group_record_index: 50,
@@ -1123,6 +1120,7 @@ fn a_sketch_point_frame_matches_no_curve_and_names_no_topology_identity() {
             record_index: 100,
             byte_offset: 0,
             class_tag: class_tag.to_owned().try_into().unwrap(),
+            serialization_form: Default::default(),
             asset_id: "7b3dec6f-f69c-4bfa-a537-9274f341c66e"
                 .to_owned()
                 .try_into()

@@ -449,6 +449,17 @@ impl DesignComponentOccurrence {
         })
     }
 
+    /// Whether a class-256 carrier stores this matrix frame at ordinal one. A
+    /// class-256 carrier places a matrix only after its first occurrence;
+    /// every other carrier class can place ordinal one.
+    pub(crate) fn is_class_256_first_matrix(&self) -> bool {
+        self.class_tag.as_str() == "256"
+            && matches!(
+                self.placement,
+                DesignComponentOccurrencePlacement::Explicit { ordinal, .. } if ordinal.get() == 1
+            )
+    }
+
     pub(crate) fn has_unresolved_identity_ordinal(&self) -> bool {
         matches!(
             self.frame,
@@ -609,6 +620,11 @@ impl DesignComponentOccurrence {
                 })
             }
         }
+    }
+
+    /// Whether this occurrence was read from a leading-flag frame.
+    pub(crate) fn is_leading_flag(&self) -> bool {
+        self.leading_flag_frame().is_some()
     }
 
     /// Leading-flag members, for a leading-flag frame.
@@ -1050,6 +1066,9 @@ impl TryFrom<DesignComponentOccurrenceWire> for DesignComponentOccurrence {
             return Ok(record);
         }
         let mut record = if let Some(frame) = value.leading_flag {
+            if value.owner_type_guid.is_some() {
+                return Err("a leading-flag frame stores no owner type".into());
+            }
             Self::try_new_leading_flag(draft, frame)?
         } else if value.component_guid_offset.checked_sub(value.byte_offset)
             == Some(cadmpeg_core::decode::u64_from_index(

@@ -4739,18 +4739,7 @@ fn validate_component_occurrences(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>
         let key = format!("{}", LowerAscii(occurrence.occurrence_guid.as_str()));
         let unique_identity = identities.insert((stream, key));
         let unique_record = record_indices.insert((stream, occurrence.record_index));
-        // A class-256 carrier stores a placed frame only after its first
-        // occurrence; every other carrier class can place ordinal one.
-        let placement_admitted = match occurrence.placement() {
-            records::feature::assembly_features::DesignComponentOccurrencePlacement::Base
-            | records::feature::assembly_features::DesignComponentOccurrencePlacement::Identity {
-                ..
-            } => true,
-            records::feature::assembly_features::DesignComponentOccurrencePlacement::Explicit {
-                ordinal,
-                ..
-            } => occurrence.class_tag.as_str() != "256" || ordinal.get() > 1,
-        };
+        let placement_admitted = !occurrence.is_class_256_first_matrix();
         // The duplicated references must agree within one carrier, which
         // the decoder checks. The component-record reference names the
         // definition; carriers of one definition can store different
