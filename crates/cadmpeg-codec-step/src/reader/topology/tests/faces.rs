@@ -773,7 +773,7 @@ fn duplicate_face_outer_bound_witnesses_recover_unspecified_loops_in_any_order()
                 cadmpeg_core::decode::u64_from_index(start)
             );
             let stub = unknowns.iter().find(|record| record.id == *id).unwrap();
-            for link in stub.links.iter() {
+            for link in &stub.links {
                 assert!(
                     unknowns
                         .iter()

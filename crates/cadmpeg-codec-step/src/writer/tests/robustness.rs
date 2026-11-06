@@ -119,7 +119,8 @@ fn reduced_cone_chart_row_matches_the_written_surface_and_names_it() {
     let expected = cadmpeg_test_support::reduced::step_cone_chart(&original);
     assert_ne!(original, expected);
 
-    let encoder = &StepCodec::default() as &dyn Encoder;
+    let codec = StepCodec::default();
+    let encoder: &dyn Encoder = &codec;
     let plan = encoder
         .plan(EncodeInput::new(&seed, None), request())
         .expect("plan cone");

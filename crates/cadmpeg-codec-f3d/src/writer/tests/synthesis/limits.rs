@@ -115,7 +115,7 @@ fn source_less_appearance_charges_both_protein_records() {
         library_id: None, visual_guid: None, physical_token: None,
         schema: Some("GenericSchema".into()), category: None,
         base_color: Some(cadmpeg_ir::topology::Color::new(0.2, 0.4, 0.6, 1.0).unwrap()),
-        properties: Default::default(), textures: Vec::new(),
+        properties: std::collections::BTreeMap::default(), textures: Vec::new(),
     });
     let mut limited = EncodeInput::new(&ir, None);
     limited.limits.max_entities = 3;
