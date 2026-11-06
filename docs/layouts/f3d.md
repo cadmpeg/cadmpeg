@@ -2657,6 +2657,18 @@ Offsets are relative to the object's primary indexed header. The counted referen
 | 21 | 4 | `zero_u32` | `bytes[4]` | little | spec | bytes 21 through 24 are zero |
 | 25 | 4 | `body_count` | `u32` | little | spec | offset 25 stores u32 `N` |
 
+## `timeline_owned_paste_source_pairs`
+
+Spec §3.1 · layout: byte offsets · size: 9 B
+
+Offsets are relative to the byte after the two parallel 15-byte body runs. The GUID pairs start at the end of this prefix.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `marker` | `u8` | little | spec | the two runs are followed by byte `0x01` |
+| 1 | 4 | `zero_run_4` | `bytes[4]` | little | spec | four zero bytes |
+| 5 | 4 | `pair_count` | `u32` | little | spec | u32 `N`, and `N` pairs of LP-UTF16 GUIDs |
+
 ## `base_feature_wide_zero_body`
 
 Spec §3.1 · layout: byte offsets · size: 63 B
@@ -3666,7 +3678,31 @@ Unstated regions:
 - `0..55` (55 B): The fixed placement envelope precedes the explicit marker block.
 - `194..341` (147 B): The carrier tail is not assigned a semantic field.
 
-## `class_403_revolve_scope_frame`
+## `unmarked_u32_one_revolve_scope_frame`
+
+Spec §3.1 · layout: byte offsets · size: 45 B
+
+Offsets are relative to the primary indexed header through the trailing field of the marked angle-owner reference.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/path_feature.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | Offsets 11 through 20 are zero. Offset 21 stores the result operation, offset 25 stores extent kind `2`, and offset 29 |
+| 21 | 4 | `operation` | `u32` | little | spec | Offsets 11 through 20 are zero. Offset 21 stores the result operation, offset 25 stores extent kind `2`, and offset 29 |
+| 25 | 4 | `extent_kind` | `u32` | little | spec | Offsets 11 through 20 are zero. Offset 21 stores the result operation, offset 25 stores extent kind `2`, and offset 29 |
+| 29 | 1 | `direction_kind` | `u8` | little | spec | Offsets 11 through 20 are zero. Offset 21 stores the result operation, offset 25 stores extent kind `2`, and offset 29 |
+| 30 | 4 | `u32_one` | `u32` | little | spec | Offset 30 stores u32 one |
+| 34 | 1 | `angle_reference_marker` | `u8` | little | spec | The marked u64 reference at offset 34 has a two-byte zero trailing field |
+| 35 | 8 | `angle_record_index` | `u64` | little | spec | The marked u64 reference at offset 34 has a two-byte zero trailing field |
+| 43 | 2 | `trailing_zero` | `bytes[2]` | little | spec | The marked u64 reference at offset 34 has a two-byte zero trailing field |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed header is outside this field run.
+
+## `direction_pair_revolve_scope_frame`
 
 Spec §3.1 · layout: byte offsets · size: 387 B
 
@@ -3677,10 +3713,12 @@ Parsed by:
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | Offsets 11 through 20 are zero. Offset 21 stores the result operation, offset 25 stores extent kind `2`, offset 29 |
 | 21 | 4 | `operation` | `u32` | little | spec | Offset 21 stores the result operation |
 | 25 | 4 | `extent_kind` | `u32` | little | spec | offset 25 stores extent kind `2` |
 | 29 | 1 | `direction_kind` | `u8` | little | spec | offset 29 stores direction kind `0` |
 | 30 | 1 | `envelope_marker` | `u8` | little | spec | offset 30 stores marker `1` |
+| 31 | 3 | `zero_run_3` | `bytes[3]` | little | spec | Offsets 31 through 33 are zero |
 | 34 | 1 | `angle_reference_marker` | `u8` | little | spec | A marked angle-owner reference starts at offset 34 |
 | 35 | 4 | `angle_record_index` | `u32` | little | spec | A marked angle-owner reference starts at offset 34 |
 | 107 | 4 | `guid_code_unit_count` | `u32` | little | spec | A 36-code-unit null GUID starts at offset 107 |
@@ -3694,8 +3732,7 @@ Parsed by:
 
 Unstated regions:
 
-- `0..21` (21 B): The indexed header and the class-403/258 prefix before the operation are outside this field run.
-- `31..34` (3 B): Three zero bytes separate the fixed prefix from the angle-owner reference.
+- `0..11` (11 B): The indexed header is outside this field run.
 - `39..107` (68 B): The auxiliary marked references and their separators occupy offsets 39 through 106.
 - `183..186` (3 B): Three zero bytes precede the ordered-reference count.
 - `190..278` (88 B): The eight eleven-byte ordered references occupy offsets 190 through 277.
@@ -3706,7 +3743,7 @@ Unstated regions:
 
 Spec §3.1 · layout: byte offsets · size: 38 B
 
-Offsets are relative to the Revolve primary indexed header. Every marker-one class pair uses the same fixed prologue.
+Offsets are relative to the Revolve primary indexed header. Every marker-one frame length uses the same fixed prologue.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -5043,7 +5080,7 @@ Unstated regions:
 
 Spec §3.1 · layout: byte offsets · size: 123 B
 
-Offsets are relative to the primary indexed header for the ordinary one-member, two-null-auxiliary, one-trailing-reference envelope. Primary/paired classes are 257/262, 323/262, 328/263, 338/261, 282/262, and 302/258; the tail discriminants are 01 01, 01 01, 01 01, 01 01, 00 01, and 00 01 respectively. The class-328 Move variant remains 123 bytes but uses a null auxiliary reference at +36, a present auxiliary reference to N+13 at +37, trailing count zero at +48, and a retained null trailing-slot byte at +52 before the role at +53; its tail has byte 0 at +98, discriminant 01 01 at +99, an unmarked N+1 reference at +101, and the owning-scope reference at +112. It has no counted trailing-reference run.
+Offsets are relative to the primary indexed header for the ordinary one-member, two-null-auxiliary, one-trailing-reference envelope. The class-328 Move variant remains 123 bytes but uses a null auxiliary reference at +36, a present auxiliary reference to N+13 at +37, trailing count zero at +48, and a retained null trailing-slot byte at +52 before the role at +53. It has no counted trailing-reference run.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -5055,7 +5092,7 @@ Offsets are relative to the primary indexed header for the ordinary one-member, 
 | 75 | 8 | `opaque_scalar` | `f64` | little | spec | one finite f64 opaque scalar |
 | 83 | 4 | `repeated_ordinal` | `u32` | little | spec | a second copy of `opaque_ordinal` |
 | 87 | 11 | `n_plus_2_reference` | `bytes[11]` | little | spec | a reference to `N+2` |
-| 98 | 2 | `tail_discriminant` | `bytes[2]` | little | spec | a two-byte discriminant |
+| 98 | 2 | `tail_discriminant` | `bytes[2]` | little | spec | the two-byte construction-group flag block |
 | 100 | 11 | `n_plus_1_reference` | `bytes[11]` | little | spec | a reference to `N+1` |
 | 111 | 1 | `tail_zero` | `u8` | little | spec | byte `0` |
 | 112 | 11 | `owning_scope_reference` | `bytes[11]` | little | spec | a reference to the owning scope |

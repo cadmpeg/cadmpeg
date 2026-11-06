@@ -839,6 +839,7 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
                 kind_offset: byte_offset + 100,
                 feature_ordinal: std::num::NonZeroU32::MIN,
                 feature_ordinal_offset: 0,
+                label: None,
                 history_state_id: current,
 
                 previous_history_state_id: previous,
@@ -1038,6 +1039,7 @@ fn owned_base_feature_takes_its_timeline_object_position() {
                     bodies: Vec::new(),
                     owner_record,
                     owner_reference_offset: 0,
+                    copy_sources: Vec::new(),
                 },
             );
         }

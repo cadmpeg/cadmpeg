@@ -438,6 +438,11 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     let (untyped_tracking_paths, profile_losses) =
         extend_related_design_records(ctx, scan, prereqs, timelines, geometry, &mut design)?;
     losses.extend(profile_losses);
+    losses.extend(
+        crate::design::decode::operands::body_recipe_serialization_form_losses(
+            &design.design_body_recipe_operands,
+        ),
+    );
     if untyped_tracking_paths != 0 {
         push_loss_vec(&mut losses, F3dLossCode::ConstructionTrackingPathUntyped,
             format_args!("{untyped_tracking_paths} construction tracking path reference(s) remain source-only because no matching indexed registration was admitted."));
@@ -597,6 +602,11 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             sheet_metal_settings: &design.design_sheet_metal_settings,
         },
     )?;
+    losses.extend(
+        crate::design::decode::operands::construction_closing_flag_losses(
+            &design.design_construction_operand_groups,
+        ),
+    );
     losses.extend(projected.unruled_flange_thickness_loss());
     losses.extend(projected.hole_losses);
     losses.extend(
@@ -696,14 +706,14 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         },
         &mut scope_histories,
     );
-    crate::history::fillet_blends::bind_fillet_blend_edges(
+    losses.extend(crate::history::fillet_blends::bind_fillet_blend_edges(
         &mut model.features,
         crate::history::fillet_blends::FilletBlendInputs {
             scopes: &design.design_parameter_scopes,
             groups: &design.design_construction_operand_groups,
             histories: &mut design.asm_histories,
         },
-    );
+    ));
     model.feature_input_topologies = crate::history::project_feature_input_topologies(
         &model.features,
         &design.design_parameter_scopes,
