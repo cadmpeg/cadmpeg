@@ -296,6 +296,7 @@ mod tests {
         reindexed["name"] = json!("reindexed linetype");
         reindexed["archive_index"] = json!(3);
         reindexed["attributes"]["linetype_index"] = json!(4);
+        reindexed["attributes"]["layer_index"] = json!(7);
         let mut unresolved = attributed.clone();
         unresolved["source_uuid"] = json!("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
         unresolved["name"] = json!("unresolved linetype");
@@ -320,6 +321,27 @@ mod tests {
                 }),
             )],
         );
+        ir.native.namespace_mut("rhino").arenas_mut().insert(
+            "layers".into(),
+            vec![record(
+                "rhino:test:layer#source",
+                json!({
+                    "archive_index": 7, "name": "layer", "visible": true,
+                    "locked": false, "color": "00000000"
+                }),
+            )],
+        );
+        ir.model
+            .presentation_layers
+            .push(cadmpeg_ir::presentation::PresentationLayer {
+                id: "rhino:test:layer#neutral".try_into().unwrap(),
+                native_ref: Some("rhino:test:layer#source".into()),
+                name: "layer".into(),
+                parent: None,
+                description: None,
+                visible: Some(true),
+                items: Vec::new(),
+            });
         ir.finalize();
         for target in [
             "rhino:archive-50",
@@ -394,6 +416,7 @@ mod tests {
                 loss.code == crate::loss::RhinoLossCode::WriterLightAttributeIndexReassigned.kind()
                     && loss.message.contains("rhino:test:light#zzz-reindexed")
                     && loss.message.contains("linetype index 4 is written as 0")
+                    && loss.message.contains("layer index 7 is written as 0")
             }));
             assert_eq!(
                 report.native_dispositions.record_disposition(
@@ -431,6 +454,10 @@ mod tests {
             );
             assert_eq!(
                 lights[3].field("attributes").unwrap()["linetype_index"],
+                json!(0)
+            );
+            assert_eq!(
+                lights[3].field("attributes").unwrap()["layer_index"],
                 json!(0)
             );
         }
