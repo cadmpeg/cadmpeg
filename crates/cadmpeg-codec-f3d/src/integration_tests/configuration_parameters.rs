@@ -134,7 +134,7 @@ fn configuration_parameter_cells_bind_to_neutral_parameter_identity() {
                 configuration
                     .parameter_overrides
                     .get(&width.id)
-                    .and_then(|expression| expression.literal_text()),
+                    .and_then(cadmpeg_ir::Expression::literal_text),
                 Some(expression.to_owned())
             );
         }

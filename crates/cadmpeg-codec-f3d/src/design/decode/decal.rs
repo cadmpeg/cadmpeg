@@ -567,7 +567,7 @@ mod tests {
                     &ctx,
                 );
                 assert!(
-                    super::decode_decal_images(&ctx, &mut output, scan, &[scope.clone()])
+                    super::decode_decal_images(&ctx, &mut output, scan, std::slice::from_ref(&scope))
                         .unwrap()
                         .is_empty()
                 );
