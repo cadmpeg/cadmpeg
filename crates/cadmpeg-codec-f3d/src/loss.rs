@@ -97,6 +97,17 @@ pub(crate) enum F3dLossCode {
     RootInstanceDefinitionUnbound,
     /// Alternate occurrence frames without a unique primary-indexed selection.
     LocalOccurrenceEnvelopeSuperseded,
+    /// A leading-flag occurrence frame whose record the occurrence-placement
+    /// type row does not register.
+    LocalOccurrenceTypeUnregistered,
+    /// An unregistered occurrence frame yields to a registered frame of the
+    /// same occurrence.
+    LocalOccurrenceYieldedToRegistered,
+    /// Two or more occurrence frames of one Design stream state one occurrence
+    /// key.
+    LocalOccurrenceKeyRepeated,
+    /// A class-256 occurrence frame stores a matrix at ordinal one.
+    LocalOccurrenceFirstMatrixRefused,
     /// An identity carrier has an unresolved later ordinal.
     LocalOccurrenceIdentityOrdinalUnresolved,
     /// An attributed occurrence whose source reference names no record of the occurrence source
@@ -118,6 +129,9 @@ pub(crate) enum F3dLossCode {
     /// enabled. The neutral joint carries no rest; the native record retains
     /// the valid rest or the malformed-rest mark.
     AssemblyJointRestUnprojected,
+    /// Projected Design assembly joints whose activation state is assumed
+    /// active because the scope-tail booleans' activation meaning is unknown.
+    AssemblyJointActivationAssumed,
     /// Rotation limits retained natively because the zero-lane freedom value is unsettled.
     AssemblyJointAngularLimitsNative,
     /// Projected Design assembly joints whose operand paths carry occurrence
@@ -487,6 +501,10 @@ impl F3dLossCode {
         Self::ComponentNamingSpaceUnbound,
         Self::RootInstanceDefinitionUnbound,
         Self::LocalOccurrenceEnvelopeSuperseded,
+        Self::LocalOccurrenceTypeUnregistered,
+        Self::LocalOccurrenceYieldedToRegistered,
+        Self::LocalOccurrenceKeyRepeated,
+        Self::LocalOccurrenceFirstMatrixRefused,
         Self::LocalOccurrenceIdentityOrdinalUnresolved,
         Self::LocalOccurrenceSourceUnregistered,
         Self::SavedFreeEdgeBodyUnowned,
@@ -495,6 +513,7 @@ impl F3dLossCode {
         Self::AssemblyRigidGroupFrameUnparsed,
         Self::AssemblyJointMotionUndecoded,
         Self::AssemblyJointRestUnprojected,
+        Self::AssemblyJointActivationAssumed,
         Self::AssemblyJointAngularLimitsNative,
         Self::AssemblyOperandPathPairsNative,
         Self::AssemblyRootPathIdentitiesNative,
@@ -701,11 +720,20 @@ impl F3dLossCode {
             Self::LocalOccurrenceEnvelopeSuperseded => {
                 "assembly.local-occurrence-envelope-superseded"
             }
+            Self::LocalOccurrenceTypeUnregistered => "assembly.local-occurrence-type-unregistered",
+            Self::LocalOccurrenceYieldedToRegistered => {
+                "assembly.local-occurrence-yielded-to-registered"
+            }
+            Self::LocalOccurrenceKeyRepeated => "assembly.local-occurrence-key-repeated",
+            Self::LocalOccurrenceFirstMatrixRefused => {
+                "assembly.local-occurrence-first-matrix-refused"
+            }
             Self::AssemblyAlignmentPartial => "assembly.alignment-partial",
             Self::AssemblyJointUnprojected => "assembly.joint-unprojected",
             Self::AssemblyRigidGroupFrameUnparsed => "assembly.rigid-group-frame-unparsed",
             Self::AssemblyJointMotionUndecoded => "assembly.joint-motion-undecoded",
             Self::AssemblyJointRestUnprojected => "assembly.joint-rest-unprojected",
+            Self::AssemblyJointActivationAssumed => "assembly.joint-activation-assumed",
             Self::AssemblyJointAngularLimitsNative => "assembly.joint-angular-limits-native",
             Self::AssemblyOperandPathPairsNative => "assembly.operand-path-pairs-native",
             Self::AssemblyRootPathIdentitiesNative => "assembly.root-path-identities-native",
@@ -942,7 +970,11 @@ impl F3dLossCode {
             | Self::SavedFreeEdgeBodyUnowned
             | Self::LocalOccurrenceIdentityOrdinalUnresolved
             | Self::LocalOccurrenceSourceUnregistered
+            | Self::LocalOccurrenceKeyRepeated
+            | Self::LocalOccurrenceFirstMatrixRefused
             | Self::LocalOccurrenceEnvelopeSuperseded
+            | Self::LocalOccurrenceTypeUnregistered
+            | Self::LocalOccurrenceYieldedToRegistered
             | Self::RootInstanceDefinitionUnbound
             | Self::ComponentDefinitionRevised
             | Self::ComponentNamingSpaceUnbound
@@ -952,6 +984,7 @@ impl F3dLossCode {
             | Self::AssemblyJointMotionUndecoded
             | Self::AssemblyJointAngularLimitsNative
             | Self::AssemblyJointRestUnprojected
+            | Self::AssemblyJointActivationAssumed
             | Self::AssemblyOperandPathPairsNative
             | Self::AssemblyOperandDescentUnresolved
             | Self::AssemblyOperandDescentAmbiguous
@@ -1207,6 +1240,7 @@ impl F3dLossCode {
             | Self::AssemblyJointMotionUndecoded
             | Self::AssemblyJointAngularLimitsNative
             | Self::AssemblyJointRestUnprojected
+            | Self::AssemblyJointActivationAssumed
             | Self::AssemblyOperandPathPairsNative
             | Self::AssemblyOperandDescentUnresolved
             | Self::AssemblyOperandDescentAmbiguous
@@ -1226,6 +1260,9 @@ impl F3dLossCode {
             | Self::SavedFreeEdgeBodyUnowned
             | Self::LocalOccurrenceIdentityOrdinalUnresolved
             | Self::LocalOccurrenceSourceUnregistered
+            | Self::LocalOccurrenceTypeUnregistered
+            | Self::LocalOccurrenceKeyRepeated
+            | Self::LocalOccurrenceFirstMatrixRefused
             | Self::LocalOccurrenceEnvelopeSuperseded
             | Self::RootInstanceDefinitionUnbound
             | Self::ComponentDefinitionRevised
@@ -1248,6 +1285,7 @@ impl F3dLossCode {
             }
             Self::MeshContainerUndecoded
             | Self::DialectLayerCollision
+            | Self::LocalOccurrenceYieldedToRegistered
             | Self::DesignIntentUndecoded => LossTaxonomy::DecodeDiagnostic,
             Self::MeshVertexPrecisionReduced => LossTaxonomy::MeshVertexPrecision,
             Self::BodylessDesignCarrier
@@ -1360,6 +1398,10 @@ mod tests {
                 "assembly.component-naming-space-unbound",
                 "assembly.root-instance-definition-unbound",
                 "assembly.local-occurrence-envelope-superseded",
+                "assembly.local-occurrence-type-unregistered",
+                "assembly.local-occurrence-yielded-to-registered",
+                "assembly.local-occurrence-key-repeated",
+                "assembly.local-occurrence-first-matrix-refused",
                 "assembly.local-occurrence-identity-ordinal-unresolved",
                 "assembly.local-occurrence-source-unregistered",
                 "assembly.saved-free-edge-body-unowned",
@@ -1368,6 +1410,7 @@ mod tests {
                 "assembly.rigid-group-frame-unparsed",
                 "assembly.joint-motion-undecoded",
                 "assembly.joint-rest-unprojected",
+                "assembly.joint-activation-assumed",
                 "assembly.joint-angular-limits-native",
                 "assembly.operand-path-pairs-native",
                 "assembly.root-path-identities-native",

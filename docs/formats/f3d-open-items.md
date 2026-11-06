@@ -895,11 +895,11 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** A path selection retains its native selection and loss. The selected region can be the union of several atomic arrangement faces, which no single face proves.
 
-### DR-146. Later ordinal in a fixed identity occurrence
+### DR-146. Later ordinal in a fixed or leading-flag identity occurrence
 
-**Question.** What placement does a fixed untyped occurrence with identity flag `1` and ordinal greater than one select?
+**Question.** What placement does a fixed untyped or leading-flag occurrence with identity flag `1` and ordinal greater than one select?
 
-**Known.** Two standard 229-byte frames store ordinal `2` and identity flag `1`. Attributed identity frames retain later ordinals.
+**Known.** Two standard 229-byte frames store ordinal `2` and identity flag `1`. Attributed identity frames retain later ordinals. The leading-flag frame stores the same identity flag and one-based ordinal.
 
 **Need.** Independent files that vary the occurrence ordinal and placement separately.
 
@@ -1220,7 +1220,7 @@ when the operation transition carries no candidate for the group members?
 
 **Question.** Which saved assembly state selects the occurrence poses for an Assemble joint relation, and what activation state do the two scope-tail booleans encode?
 
-**Known.** The version-three connector equation uses scope frames, four referenced angle and XYZ lanes, and facing. Ordered occurrence keys select the innermost child within one insertion, including inserted documents. The corrected output has 383 new V1.8 joint instances: 5 have a consumer-pose residual above 0.1 mm, and 6 exceed that threshold under current carriers. RailCore v1 has 3 new instances and 0 consumer residuals above 0.1 mm. The 46 incomplete V1.8 bindings included 45 open relations and one closing relation. RailCore v1 records 3068 and 3232 and V1.8 record 4176 store `01 01` in the two tail booleans and retain native alignment. Record 4176 closes. The earlier version-three control has terminal bytes `00 00`; the six version-four controls have an extra preceding `01` marker followed by `00 00`. The neutral constructor supplies `suppressed = false` independently of these bytes.
+**Known.** The version-three connector equation uses scope frames, four referenced angle and XYZ lanes, and facing. Ordered occurrence keys select the innermost child within one insertion, including inserted documents. The corrected output has 383 new V1.8 joint instances: 5 have a consumer-pose residual above 0.1 mm, and 6 exceed that threshold under current carriers. RailCore v1 has 3 new instances and 0 consumer residuals above 0.1 mm. The 46 incomplete V1.8 bindings included 45 open relations and one closing relation. RailCore v1 records 3068 and 3232 and V1.8 record 4176 store `01 01` in the two tail booleans and retain native alignment. Record 4176 closes. The earlier version-three control has terminal bytes `00 00`; the six version-four controls have an extra preceding `01` marker followed by `00 00`. Projection assumes every projected Assemble joint is active, supplies `suppressed = false` independently of these bytes, and charges `assembly.joint-activation-assumed`.
 
 **Need.** A byte-level saved-state selector with links from joints to occurrence-pose carriers. Public states that change each tail boolean independently and establish the joint's activation state across independent designs.
 
@@ -1305,7 +1305,7 @@ when the operation transition carries no candidate for the group members?
 
 **Question.** What does the u16 ordinal prefix at offset 44 of a leading-flag local component occurrence state?
 
-**Known.** The prefix is `1` for the first new component of a Design and for a pasted second instance of that component, and `0` for a later new component. Its value is independent of the occurrence's grounded, light-bulb, visibility, active, and isolated states. The attributed frame stores two bytes at the same position before its ordinal.
+**Known.** The prefix is `1` for the first new component of a Design and for a pasted second instance of that component, and `0` for a later new component. Its value is independent of the occurrence's grounded, light-bulb, visibility, active, and isolated states. The attributed frame stores two bytes after its attribute run, before its ordinal.
 
 **Need.** A Fusion control that changes the prefix of one occurrence with all other carrier fields equal.
 
