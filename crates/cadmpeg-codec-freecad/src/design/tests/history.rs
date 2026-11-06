@@ -107,7 +107,7 @@ fn distinguishes_stored_base_and_application_owned_features() {
             })
             .unwrap_or_else(|| panic!("{name} has a census record"));
         assert_eq!(record.semantic_kind, semantic_kind);
-        assert!(serde_json::to_value(&record)
+        assert!(serde_json::to_value(record)
             .unwrap()
             .get("feature")
             .is_none());
