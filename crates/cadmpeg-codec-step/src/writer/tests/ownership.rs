@@ -483,7 +483,7 @@ fn subset_curve_reports_its_unwritten_cache_fit_tolerance() {
     assert_eq!(
         row.storage,
         cadmpeg_ir::codec::write::ReducedStorage::Normalized {
-            loss: "step/geometry.procedural-cache-tolerance-omitted",
+            loss: "step/geometry.procedural-curve-cache-tolerance-omitted",
         }
     );
     let original = serde_json::to_value(ir.model.procedural_curves[0].definition()).unwrap();
@@ -499,6 +499,12 @@ fn subset_curve_reports_its_unwritten_cache_fit_tolerance() {
             .disposition(EntityKind::ProceduralCurve),
         ArenaDisposition::Reported
     );
+    assert_eq!(
+        plan.report()
+            .coverage
+            .disposition(EntityKind::ProceduralSurface),
+        ArenaDisposition::Written
+    );
     let mut bytes = Vec::new();
     let report = write_step(
         &ir,
@@ -511,7 +517,7 @@ fn subset_curve_reports_its_unwritten_cache_fit_tolerance() {
         .losses
         .iter()
         .filter(|loss| {
-            loss.code == StepLossCode::ProceduralCacheToleranceOmitted.kind()
+            loss.code == StepLossCode::ProceduralCurveCacheToleranceOmitted.kind()
                 && loss.message.contains("test:model:procedural_curve#subset")
         })
         .count();
@@ -541,15 +547,17 @@ fn subset_curve_reports_its_unwritten_cache_fit_tolerance() {
     assert!(!exact_report
         .losses
         .iter()
-        .any(|loss| { loss.code == StepLossCode::ProceduralCacheToleranceOmitted.kind() }));
+        .any(|loss| { loss.code == StepLossCode::ProceduralCurveCacheToleranceOmitted.kind() }));
 }
 
 #[test]
 fn subset_surface_reports_its_unwritten_cache_fit_tolerance() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, ArenaDisposition, EncodeInput, Encoder};
     use cadmpeg_ir::geometry::{
         surface_payloads::SubsetSurfaceConstruction, LegacyCache, ProceduralSurface,
         ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
     };
+    use cadmpeg_ir::schema::EntityKind;
     let mut ir = CadIr::empty();
     let support = edgeless_doc().model.surfaces.remove(0);
     let solved = support.geometry.solved().unwrap().clone();
@@ -585,6 +593,21 @@ fn subset_surface_reports_its_unwritten_cache_fit_tolerance() {
     ir.model.procedural_surfaces.push(construction);
     let validation = cadmpeg_ir::validate_neutral(&ir, Vec::new()).unwrap();
     assert!(validation.is_ok(), "{:?}", validation.findings);
+    let plan = crate::StepCodec::default()
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert_eq!(
+        plan.report()
+            .coverage
+            .disposition(EntityKind::ProceduralSurface),
+        ArenaDisposition::Reported
+    );
+    assert_eq!(
+        plan.report()
+            .coverage
+            .disposition(EntityKind::ProceduralCurve),
+        ArenaDisposition::Written
+    );
     let mut bytes = Vec::new();
     let report = write_step(
         &ir,
@@ -598,7 +621,7 @@ fn subset_surface_reports_its_unwritten_cache_fit_tolerance() {
             .losses
             .iter()
             .filter(|loss| {
-                loss.code == StepLossCode::ProceduralCacheToleranceOmitted.kind()
+                loss.code == StepLossCode::ProceduralSurfaceCacheToleranceOmitted.kind()
                     && loss
                         .message
                         .contains("test:model:procedural_surface#subset")
