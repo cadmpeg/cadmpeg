@@ -104,9 +104,43 @@ fn layer_index(ir: &cadmpeg_ir::CadIr, source: i32) -> Result<i32, WriteError> {
     Ok(super::wire_index(index)?)
 }
 
+fn material_index(
+    ir: &cadmpeg_ir::CadIr,
+    materials: &super::super::materials::MaterialPlan,
+    source: i32,
+) -> Result<i32, WriteError> {
+    if source < 0 {
+        return Ok(source);
+    }
+    let mut records = super::records(ir, "materials").iter().filter(|record| {
+        record
+            .field("archive_index")
+            .and_then(|value| value.as_i64())
+            == Some(i64::from(source))
+    });
+    let record = records
+        .next()
+        .ok_or_else(|| WriteError::Omit(format!("light material index {source} is unresolved")))?;
+    if records.next().is_some() {
+        return Err(WriteError::Omit(format!(
+            "light material index {source} is ambiguous"
+        )));
+    }
+    match materials.native_targets(record.id()) {
+        [index] => Ok(*index),
+        [] => Err(WriteError::Omit(format!(
+            "light material index {source} is not emitted"
+        ))),
+        _ => Err(WriteError::Omit(format!(
+            "light material index {source} has multiple outputs"
+        ))),
+    }
+}
+
 pub(super) fn encode(
     value: &Value,
     ir: &cadmpeg_ir::CadIr,
+    materials: &super::super::materials::MaterialPlan,
 ) -> Result<(Vec<u8>, Option<String>), WriteError> {
     const FIELDS: &[&str] = &[
         "source_uuid",
@@ -161,11 +195,6 @@ pub(super) fn encode(
             "light attribute {name} has no encoder"
         )));
     }
-    if integer(fields, "material_index")? != -1 {
-        return Err(WriteError::Omit(
-            "light attribute material_index needs table-index remapping".into(),
-        ));
-    }
     for name in [
         "group_indexes",
         "rendering_materials",
@@ -207,6 +236,8 @@ pub(super) fn encode(
         .ok_or_else(|| WriteError::Omit("light attribute source_uuid is invalid".into()))?;
     let source_layer = integer(fields, "layer_index")?;
     let written_layer = layer_index(ir, source_layer)?;
+    let source_material = integer(fields, "material_index")?;
+    let written_material = material_index(ir, materials, source_material)?;
     let source_linetype = integer(fields, "linetype_index")?;
     let written_linetype = linetype_index(ir, source_linetype)?;
     let mut body = vec![0x2d];
@@ -219,7 +250,7 @@ pub(super) fn encode(
     body.push(3);
     body.extend(written_linetype.to_le_bytes());
     body.push(4);
-    body.extend(integer(fields, "material_index")?.to_le_bytes());
+    body.extend(written_material.to_le_bytes());
     for (tag, name) in [(6, "color"), (7, "plot_color")] {
         body.push(tag);
         body.extend(color(fields, name)?);
@@ -362,6 +393,11 @@ pub(super) fn encode(
     if source_layer != written_layer {
         changes.push(format!(
             "layer index {source_layer} is written as {written_layer}"
+        ));
+    }
+    if source_material != written_material {
+        changes.push(format!(
+            "material index {source_material} is written as {written_material}"
         ));
     }
     if source_linetype != written_linetype {

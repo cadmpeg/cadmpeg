@@ -57,14 +57,17 @@ struct LightRecordExport {
     attribute_change: Option<String>,
 }
 
-pub(in crate::writer) fn lights(ir: &CadIr) -> Result<LightExport, WriteError> {
+pub(in crate::writer) fn lights(
+    ir: &CadIr,
+    materials: &super::materials::MaterialPlan,
+) -> Result<LightExport, WriteError> {
     let mut output = LightExport {
         records: Vec::new(),
         written: BTreeSet::new(),
         losses: Vec::new(),
     };
     for record in records(ir, "lights") {
-        match light(record, output.records.len(), ir) {
+        match light(record, output.records.len(), ir, materials) {
             Ok(exported) => {
                 output.records.push(exported.payload);
                 let links = record.field("links").is_some_and(|value| {
@@ -122,6 +125,7 @@ fn light(
     record: &cadmpeg_ir::NativeRecord,
     index: usize,
     ir: &CadIr,
+    materials: &super::materials::MaterialPlan,
 ) -> Result<LightRecordExport, WriteError> {
     let fields = record.fields().map_err(|error| match error {
         cadmpeg_ir::native::NativeConvertError::Resource(
@@ -195,7 +199,7 @@ fn light(
     let mut attribute_loss = None;
     let mut attribute_change = None;
     if let Some(value) = fields.get("attributes").filter(|value| !value.is_null()) {
-        match attributes::encode(value, ir) {
+        match attributes::encode(value, ir, materials) {
             Ok((attributes, change)) => {
                 body.extend(crc_chunk_with_direct(
                     0x0200_8061,
@@ -297,6 +301,7 @@ mod tests {
         reindexed["archive_index"] = json!(3);
         reindexed["attributes"]["linetype_index"] = json!(4);
         reindexed["attributes"]["layer_index"] = json!(7);
+        reindexed["attributes"]["material_index"] = json!(9);
         let mut unresolved = attributed.clone();
         unresolved["source_uuid"] = json!("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
         unresolved["name"] = json!("unresolved linetype");
@@ -331,6 +336,29 @@ mod tests {
                 }),
             )],
         );
+        ir.native.namespace_mut("rhino").arenas_mut().insert(
+            "materials".into(),
+            vec![record(
+                "rhino:test:material#source",
+                json!({"archive_index": 9}),
+            )],
+        );
+        ir.model
+            .appearances
+            .push(cadmpeg_ir::appearance::Appearance {
+                id: "rhino:test:appearance#neutral".try_into().unwrap(),
+                native_ref: Some("rhino:test:material#source".into()),
+                name: Some("material".into()),
+                asset_guid: None,
+                library_id: None,
+                visual_guid: None,
+                physical_token: None,
+                schema: None,
+                category: None,
+                base_color: None,
+                properties: Default::default(),
+                textures: Vec::new(),
+            });
         ir.model
             .presentation_layers
             .push(cadmpeg_ir::presentation::PresentationLayer {
@@ -417,6 +445,7 @@ mod tests {
                     && loss.message.contains("rhino:test:light#zzz-reindexed")
                     && loss.message.contains("linetype index 4 is written as 0")
                     && loss.message.contains("layer index 7 is written as 0")
+                    && loss.message.contains("material index 9 is written as 0")
             }));
             assert_eq!(
                 report.native_dispositions.record_disposition(
@@ -458,6 +487,10 @@ mod tests {
             );
             assert_eq!(
                 lights[3].field("attributes").unwrap()["layer_index"],
+                json!(0)
+            );
+            assert_eq!(
+                lights[3].field("attributes").unwrap()["material_index"],
                 json!(0)
             );
         }
