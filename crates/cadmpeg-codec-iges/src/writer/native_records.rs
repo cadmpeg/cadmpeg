@@ -75,6 +75,7 @@ pub(super) fn source_status(ir: &CadIr, record: &NativeRecord) -> Option<EntityS
 }
 
 pub(super) const ARENAS: &[&str] = &[
+    "directions",
     "text_fonts",
     "line_fonts",
     "text_templates",
@@ -346,6 +347,7 @@ fn shape(arena: &str, record: &NativeRecord) -> Result<(u32, i64), String> {
             .ok_or("record has no typed form".into())
     };
     Ok(match arena {
+        "directions" => (123, 0),
         "text_fonts" => (310, 0),
         "text_templates" => (312, form()?),
         "flashes" => (125, form()?),
