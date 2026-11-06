@@ -224,7 +224,7 @@ pub(crate) enum F3dLossCode {
     HistoricalEdgeMidpointsUnresolved,
     /// A `Fillet` edge is inferred from blend geometry; no two supports share it.
     HistoricalFilletEdgeInferred,
-    /// A `Fillet` edge is the best-ranked deleted one of several geometric candidates.
+    /// A `Fillet` edge is the first deleted one of several ranked geometric candidates.
     HistoricalFilletEdgeAmbiguous,
     /// Historical body bounding geometry could not be computed from point carriers.
     HistoricalBodyBoundsUnresolved,
