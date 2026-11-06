@@ -46,6 +46,19 @@ fn inputs() -> Vec<(String, Vec<u8>)> {
     ]
 }
 
+#[test]
+fn model_states_fixture_matches_builder() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/golden/fixtures/model_states.ipt");
+    let built = crate::test_support::test_fixtures::model_state_envelope_fixture();
+    if std::env::var_os("UPDATE_GOLDEN_FIXTURES").is_some() {
+        std::fs::create_dir_all(path.parent().expect("fixture directory"))
+            .expect("create fixture directory");
+        std::fs::write(&path, &built).expect("write fixture");
+    }
+    assert_eq!(std::fs::read(path).expect("read fixture"), built);
+}
+
 fn inspect_snapshot(bytes: &[u8]) -> String {
     let value = match InventorCodec.inspect(&mut Cursor::new(bytes), &InspectOptions::default()) {
         Ok(summary) => serde_json::to_value(summary).expect("serialize inspect summary"),

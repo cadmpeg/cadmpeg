@@ -27,6 +27,31 @@ fn document_strings(result: &cadmpeg_ir::codec::DecodeResult, name: &str) -> Vec
 }
 
 #[test]
+fn file_descriptions_round_trip_in_order() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+
+    let source = "ISO-10303-21;HEADER;FILE_DESCRIPTION(('0','1','2','3','4','5','6','7','8','9','10','11'),'2;1');FILE_NAME('part','2026-07-14T00:00:00',(''),(''),'','','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CARTESIAN_POINT('',(1.,2.,3.));ENDSEC;END-ISO-10303-21;";
+    let expected = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"];
+    let codec = StepCodec::default();
+    let input = codec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode descriptions");
+    assert_eq!(document_strings(&input, "start"), expected);
+    let plan = codec
+        .plan(
+            EncodeInput::new(input.ir(), None),
+            TargetRequest::Explicit("step:ap242-e3"),
+        )
+        .expect("plan descriptions");
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("write descriptions");
+    let output = codec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode written descriptions");
+    assert_eq!(document_strings(&output, "start"), expected);
+}
+
+#[test]
 fn file_name_fields_project_as_document_attributes() {
     let source = "ISO-10303-21;HEADER;FILE_DESCRIPTION(('test'),'2;1');FILE_NAME('part','2026-07-14T00:00:00',('anne','beth'),('org'),'cadmpeg-step','origin','');FILE_SCHEMA(('AP242'));ENDSEC;DATA;#1=CARTESIAN_POINT('',(1.,2.,3.));ENDSEC;END-ISO-10303-21;";
     let result = StepCodec::default()
