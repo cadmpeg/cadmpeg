@@ -412,6 +412,102 @@ fn native_spatial_operand_address_has_a_checked_capacity() {
     check_native_spatial_relation(true, ["d6", "e1"], 65536);
 }
 
+#[test]
+fn source_less_native_spatial_dimension_families_round_trip() {
+    use cadmpeg_ir::codec::write::Encoder;
+    use cadmpeg_ir::features::{DesignParameter, ParameterId, ParameterValue};
+    use cadmpeg_ir::sketches::{
+        SketchConstraintId, SketchNativeOperand, SpatialSketchConstraint,
+        SpatialSketchConstraintDefinitionInput,
+    };
+    const ANGLE_TOLERANCE: f64 = 1e-9;
+    const LENGTH_TOLERANCE: f64 = 1e-9;
+
+    for (kind, count, angle, tag) in [
+        ("sgLLDist", 2, false, "e1"),
+        ("sgPntPntDist", 2, false, "d6"),
+        ("sgPntPntHorDist", 2, false, "cb8d"),
+        ("sgPntPntVertDist", 2, false, "cb8d"),
+        ("sgCircleDim", 1, false, "fe83"),
+        ("sgAnglDim", 2, true, "da8d"),
+    ] {
+        let mut ir =
+            source_less_spatial_line(Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0));
+        let parameter_id = ParameterId::mint("synthetic:test:parameter#dimension").unwrap();
+        let value = if angle {
+            ParameterValue::Angle(cadmpeg_ir::scalar::Angle::new(0.5).unwrap())
+        } else {
+            ParameterValue::Length(cadmpeg_ir::scalar::Length::new(4.0).unwrap())
+        };
+        ir.model.parameters.push(DesignParameter {
+            product_definition: None,
+            id: parameter_id.clone(),
+            owner: Some(ir.model.features[0].id.clone()),
+            ordinal: 0,
+            name: "D1".into(),
+            expression: if angle { "0.5rad" } else { "4mm" }.into(),
+            driving: true,
+            display: None,
+            value: Some(value),
+            properties: BTreeMap::new(),
+            pmi: None,
+            native_ref: None,
+        });
+        let constraint_id =
+            SketchConstraintId::mint("synthetic:test:constraint#dimension").unwrap();
+        let operands = (0..count)
+            .map(|index| SketchNativeOperand {
+                native_kind: cadmpeg_core::text::NonBlankString::new(tag).unwrap(),
+                field: None,
+                object_index: Some(10 + index),
+                native_ref: None,
+            })
+            .collect();
+        ir.model
+            .spatial_sketch_constraints
+            .push(SpatialSketchConstraint {
+                id: constraint_id.clone(),
+                sketch: ir.model.spatial_sketches[0].id.clone(),
+                definition: SpatialSketchConstraintDefinitionInput::Native {
+                    native_kind: cadmpeg_core::text::NonBlankString::new(kind).unwrap(),
+                    native_state: None,
+                    parameter: Some(parameter_id),
+                    operands,
+                }
+                .try_into()
+                .unwrap(),
+                native_ref: None,
+            });
+        let plan = crate::SldprtCodec
+            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+            .unwrap();
+        assert!(
+            !plan
+                .report()
+                .losses
+                .iter()
+                .any(|loss| loss.message.contains(constraint_id.as_str())),
+            "{kind}"
+        );
+        let mut bytes = Vec::new();
+        plan.write_to(&mut bytes).unwrap();
+        let output = crate::SldprtCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        assert!(output.ir().model.spatial_sketch_constraints.iter().any(|constraint| matches!(
+            constraint.definition.kind(),
+            SpatialSketchConstraintDefinitionInput::Native { native_kind, parameter: Some(id), operands, .. }
+                if native_kind.as_str() == kind && operands.len() == usize::try_from(count).unwrap()
+                    && operands.iter().all(|operand| operand.native_kind.as_str() == tag)
+                    && output.ir().model.parameters.iter().any(|parameter| &parameter.id == id && match &parameter.value {
+                        Some(ParameterValue::Angle(value)) if angle => (value.get() - 0.5).abs() < ANGLE_TOLERANCE,
+                        Some(ParameterValue::Length(value)) if !angle => (value.get() - 4.0).abs() < LENGTH_TOLERANCE,
+                        _ => false,
+                    })
+        )), "{kind}: {:#?}", output.ir().model.spatial_sketch_constraints);
+    }
+}
+
 fn check_native_spatial_relation(driving: bool, tags: [&str; 2], address: u32) {
     use cadmpeg_ir::codec::write::Encoder;
     use cadmpeg_ir::features::{DesignParameter, ParameterId, ParameterValue};
