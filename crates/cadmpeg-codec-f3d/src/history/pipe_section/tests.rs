@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::{bind_circular_pipe_sections, PipeSectionInputs};
+use crate::loss::F3dLossCode;
 use crate::records::feature::extrude::DesignExtrudeOperation;
 use crate::records::feature::path_features::DesignPipeConstruction;
 use crate::records::feature::scope::{DesignFeatureKind, DesignParameterScope, DesignScopePayload};
@@ -18,6 +19,7 @@ use cadmpeg_ir::features::{
 };
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
 use cadmpeg_ir::math::{Point3, Vector3};
+use cadmpeg_ir::report::loss::LossKind;
 
 const STREAM: &str = "f3d:Design/BulkStream.dat";
 const LINEAR_TOLERANCE: f64 = 1.0e-6;
@@ -215,10 +217,21 @@ fn bound_with(
     carriers: &[SurfaceGeometry],
     edit: impl FnOnce(&mut cadmpeg_ir::CadIr, &mut Vec<Feature>),
 ) -> FeatureDefinition {
+    bound_with_losses(scope, owners, groups, carriers, edit).0
+}
+
+/// `bound_with`, and the loss kinds the binder reports.
+fn bound_with_losses(
+    scope: &DesignParameterScope,
+    owners: &[DesignParameterOwner],
+    groups: &[DesignConstructionOperandGroup],
+    carriers: &[SurfaceGeometry],
+    edit: impl FnOnce(&mut cadmpeg_ir::CadIr, &mut Vec<Feature>),
+) -> (FeatureDefinition, Vec<LossKind>) {
     let mut ir = result_model(carriers);
     let mut features = vec![pipe_feature(scope, &ir)];
     edit(&mut ir, &mut features);
-    bind_circular_pipe_sections(
+    let losses = bind_circular_pipe_sections(
         &mut features,
         &PipeSectionInputs {
             scopes: std::slice::from_ref(scope),
@@ -231,7 +244,10 @@ fn bound_with(
             linear_tolerance: LINEAR_TOLERANCE,
         },
     );
-    features[0].evaluation.definition().clone()
+    (
+        features[0].evaluation.definition().clone(),
+        losses.into_iter().map(|loss| loss.code).collect(),
+    )
 }
 
 /// The outer radius and wall thickness of a bound circular section.
@@ -259,8 +275,21 @@ fn circular_section(definition: &FeatureDefinition) -> Option<(f64, Option<f64>)
 fn a_new_body_pipe_with_circular_result_faces_projects_as_a_circular_sweep() {
     let scope = pipe_scope(DesignExtrudeOperation::NewBody, false);
     let groups = [path_group(30, DesignOperandRole::ROLE_0X5)];
-    let definition = bound(&scope, &owners(0.5, 0.1), &groups, &[cylinder(2.5)]);
+    let (definition, losses) = bound_with_losses(
+        &scope,
+        &owners(0.5, 0.1),
+        &groups,
+        &[cylinder(2.5)],
+        |_, _| {},
+    );
     assert_eq!(circular_section(&definition), Some((2.5, None)));
+    assert_eq!(
+        losses,
+        [
+            F3dLossCode::FeaturePipeCircularSectionInferred.kind(),
+            F3dLossCode::FeaturePipeWholePathExtentAssumed.kind()
+        ]
+    );
     let FeatureDefinition::Operation(FeatureOperation::Sweep {
         path: Some(PathRef::Native(path)),
         path_extent: Some(extent),
@@ -344,15 +373,18 @@ fn a_pipe_needs_whole_path_fractions() {
     let scope = pipe_scope(DesignExtrudeOperation::NewBody, false);
     let groups = [path_group(30, DesignOperandRole::ROLE_0X5)];
     for fractions in [[1.0, 0.0], [0.5, 1.0]] {
+        let (definition, losses) = bound_with_losses(
+            &scope,
+            &owners_with_fractions(fractions, 0.5, 0.1),
+            &groups,
+            &[cylinder(2.5)],
+            |_, _| {},
+        );
         assert!(matches!(
-            bound(
-                &scope,
-                &owners_with_fractions(fractions, 0.5, 0.1),
-                &groups,
-                &[cylinder(2.5)]
-            ),
+            definition,
             FeatureDefinition::Operation(FeatureOperation::Native { .. })
         ));
+        assert!(losses.is_empty());
     }
 }
 

@@ -146,9 +146,13 @@ The class-290 primary paired with class-261 uses the same six-byte fields on its
 
 **Question.** Which native carrier stores the editable `Pipe` section type? What sets the origin and orientation of a partially consumed path?
 
-**Known.** `f3d.md` defines the compact and legacy operation prefixes, the independent `isHollow` Boolean, the four canonical scalar owners, the settings record, the complete construction groups, the optional point-selection pair, and the outside-size and inward-thickness conventions. The two bytes after the operation are opaque. Square hollow, circular hollow, and triangular solid sections can share that pair. A section shape can be bound from unique saved topology. Forward and reverse path fractions remain exact native values. The point-selection pair does not establish a path origin.
+**Known.** `f3d.md` defines the compact and legacy operation prefixes, the independent `isHollow` Boolean, the four canonical scalar owners, the settings record, the complete construction groups, the optional point-selection pair, and the outside-size and inward-thickness conventions. The two bytes after the operation are opaque. Square hollow, circular hollow, and triangular solid sections can share that pair. Forward and reverse path fractions remain exact native values. The point-selection pair does not establish a path origin. The decoder infers a circular section from the planes, cylinders and tori of the result bodies, and reads a Pipe whose fractions both equal one as a sweep along its whole path group.
 
 **Need.** Independently authored section-type changes must hold the path, fractions, hollow state, size, and thickness fixed and identify the changing semantic carrier through its type registration and owner links. Partial-path reconstruction needs the native path parameter origin and orientation.
+
+**Conflict.** None.
+
+**Note.** The decoder reports `feature.pipe-circular-section-inferred` and `feature.pipe-whole-path-extent-assumed`.
 
 ### DR-61. Cross-document selection stamp and evaluation scalar
 

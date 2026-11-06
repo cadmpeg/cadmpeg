@@ -1,14 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Bind a new-body Pipe whose result topology proves a circular section.
+//! Bind a new-body Pipe whose result topology fits a circular section.
 
 use std::collections::{HashMap, HashSet};
 
 use cadmpeg_ir::features::{Feature, FeatureDefinition, FeatureOperation};
 use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface};
 use cadmpeg_ir::ids::SurfaceId;
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::topology::BodyKind;
 
 use crate::ids::native_stream;
+use crate::loss::F3dLossCode;
 use crate::records::feature::extrude::DesignExtrudeOperation;
 use crate::records::feature::path_features::DesignPipeConstruction;
 use crate::records::feature::scope::{DesignParameterScope, DesignScopePayload};
@@ -28,13 +30,13 @@ pub(crate) struct PipeSectionInputs<'a> {
     pub(crate) linear_tolerance: f64,
 }
 
-/// Project each native new-body Pipe whose unchanged result faces prove a
+/// Project each native new-body Pipe whose unchanged result faces fit a
 /// circular section, and whose fractions both equal one, as a Sweep of that
 /// circular region along its whole path group.
 pub(crate) fn bind_circular_pipe_sections(
     features: &mut [Feature],
     inputs: &PipeSectionInputs<'_>,
-) {
+) -> Vec<LossNote> {
     let mut surfaces = HashMap::<&SurfaceId, Option<&Surface>>::new();
     for surface in inputs.surfaces {
         surfaces
@@ -46,11 +48,21 @@ pub(crate) fn bind_circular_pipe_sections(
         .iter()
         .map(|feature| circular_pipe_sweep(feature, features, inputs, &surfaces))
         .collect::<Vec<_>>();
+    let mut losses = Vec::new();
     for (feature, definition) in features.iter_mut().zip(definitions) {
         if let Some(definition) = definition {
             feature.evaluation.set_definition(definition);
+            losses.push(F3dLossCode::FeaturePipeCircularSectionInferred.note(format!(
+                "feature {}: the Pipe section is inferred as a circle from the planes, cylinders and tori of its result bodies",
+                feature.id
+            )));
+            losses.push(F3dLossCode::FeaturePipeWholePathExtentAssumed.note(format!(
+                "feature {}: the Pipe forward and reverse fractions are 1, and the sweep is assumed to cover its whole path group",
+                feature.id
+            )));
         }
     }
+    losses
 }
 
 fn only<T>(mut matches: impl Iterator<Item = T>) -> Option<T> {
@@ -101,7 +113,7 @@ fn circular_pipe_sweep(
     let wall = construction.is_hollow.then_some(thickness * 10.0);
     let inner_radius = wall.map(|wall| outer_radius - wall);
     if !result_bodies_unchanged(feature, features)
-        || !result_faces_prove_circle(feature, inputs, surfaces, outer_radius, inner_radius)
+        || !result_faces_fit_circle(feature, inputs, surfaces, outer_radius, inner_radius)
     {
         return None;
     }
@@ -177,7 +189,7 @@ fn result_bodies_unchanged(feature: &Feature, features: &[Feature]) -> bool {
 /// Whether the feature's result bodies are solids whose every face lies on a
 /// plane, or on a cylinder or torus whose radius is the outer or, when hollow,
 /// the inner section radius, with at least one curved face of each radius.
-fn result_faces_prove_circle(
+fn result_faces_fit_circle(
     feature: &Feature,
     inputs: &PipeSectionInputs<'_>,
     surfaces: &HashMap<&SurfaceId, Option<&Surface>>,
