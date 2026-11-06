@@ -438,7 +438,7 @@ This open form has equal primary and secondary arrays. It uses the spline curve 
 
 The open cubic knot vector has `knot_count = pole_count + 4`. Each endpoint knot has multiplicity four. Its interval is the full nonempty knot domain from knot 3 through knot `pole_count`. The curve is polynomial and nonperiodic.
 
-Type `46737b31d3117c7a60001cb3d1c1fbb0` stores a planar curve member. After the planar-entity prefix it stores a type-2 point-reference list, the auxiliary lists, `body_kind:u32`, `state:u32`, and a body. The auxiliary lists use the line encoding: one type-2 list, or a u32 gate pair. Gate `0, 0` stores no list. Gate `1, 0` stores one or two type-2 lists. `state` is 0. Body kind 5 stores `value:u32` and ends the record; the curve is not stored in the record. Body kind 4 stores one curve:
+Type `46737b31d3117c7a60001cb3d1c1fbb0` stores a planar curve member. After the planar-entity prefix it stores a type-2 point-reference list, the auxiliary lists, `body_kind:u32`, `state:u32`, and a body. The auxiliary lists use the line encoding: one type-2 list, or a u32 gate pair. Gate `0, 0` stores no list. Gate `1, 0` stores one or two type-2 lists. Body kind 5 stores `value:u32` and ends the record; the curve is not stored in the record. Body kind 4 stores one curve:
 
 | Field | Type |
 | --- | --- |
@@ -456,7 +456,7 @@ Type `46737b31d3117c7a60001cb3d1c1fbb0` stores a planar curve member. After the 
 | Terminal value | f64 |
 | Scalar width `8` | u32 |
 
-The curve body ends the record. `form` is 0. `weight_count` is 0 for a polynomial curve, with weight value 0, and equals `pole_count` for a rational curve. The pole value is 8 and the curve values are `1, 1`. The knot vector is nondecreasing with `knot_count = pole_count + degree + 1`. Poles use internal centimetres. The reader keeps the point list, the auxiliary lists, and every lane. It does not select a neutral curve from them: the record projects as a native sketch entity with the loss `sketch.member-curve-native`, and the sketch that lists it closes without a profile through it. A record whose body kind is not 4 or 5, whose list gate is not `0, 0` or `1, 0`, whose scalar width is not `8`, or whose weight count is neither 0 nor the pole count is not a planar curve member of this form.
+The curve body ends the record. `weight_count` is 0 for a polynomial curve and equals `pole_count` for a rational curve. Poles use internal centimetres. The record form does not fix `state`, `form`, the weight, knot, and pole values, the curve values, or the order and count of the knots: the reader keeps each as stored, and DE-03 states their open roles. The reader keeps the point list, the auxiliary lists, and every lane. It does not select a neutral curve from them: the record projects as a native sketch entity with the loss `sketch.member-curve-native`, and the sketch that lists it closes without a profile through it. A record whose body kind is not 4 or 5, whose list gate is not `0, 0` or `1, 0`, whose scalar width is not `8`, or whose weight count is neither 0 nor the pole count is not a planar curve member of this form.
 
 Type `9e146d7cd1115bd5000847b00524dc09` stores a spline-point relation. After the constraint header it stores a spline reference and a point reference, in that order.
 

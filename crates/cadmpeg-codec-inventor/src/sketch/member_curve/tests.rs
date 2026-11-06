@@ -70,16 +70,37 @@ pub(crate) fn reference_fixture(first: u32, second: u32, auxiliary: Auxiliary) -
 
 /// A kind-4 record of degree 2 with three poles. A rational curve has
 /// `weights` of the pole count; a polynomial curve has none.
+/// Stored values that the record form does not fix.
+struct Unfixed {
+    state: u32,
+    form: u32,
+    pole_value: u32,
+    curve_values: [u32; 2],
+    knots: [f64; 6],
+}
+
+const USUAL: Unfixed = Unfixed {
+    state: 0,
+    form: 0,
+    pole_value: 8,
+    curve_values: [1, 1],
+    knots: [0., 0., 0., 1., 1., 1.],
+};
+
 pub(crate) fn curve_fixture(first: u32, second: u32, weights: &[f64]) -> Vec<u8> {
+    curve_fixture_with(first, second, weights, &USUAL)
+}
+
+fn curve_fixture_with(first: u32, second: u32, weights: &[f64], unfixed: &Unfixed) -> Vec<u8> {
     let mut bytes = prefix(first, second, Auxiliary::List);
-    for value in [4, 0, 0, 2] {
+    for value in [4, unfixed.state, unfixed.form, 2] {
         word(&mut bytes, value);
     }
     real(&mut bytes, 1e-9);
     for value in [6, 6, 8] {
         word(&mut bytes, value);
     }
-    for value in [0., 0., 0., 1., 1., 1.] {
+    for value in unfixed.knots {
         real(&mut bytes, value);
     }
     let weight_count = u32::try_from(weights.len()).expect("fixture count");
@@ -89,7 +110,7 @@ pub(crate) fn curve_fixture(first: u32, second: u32, weights: &[f64]) -> Vec<u8>
     for value in weights {
         real(&mut bytes, *value);
     }
-    for value in [3, 8, 8] {
+    for value in [3, unfixed.pole_value, 8] {
         word(&mut bytes, value);
     }
     for pole in [[0., 0.], [1., 1.], [2., 0.]] {
@@ -98,7 +119,7 @@ pub(crate) fn curve_fixture(first: u32, second: u32, weights: &[f64]) -> Vec<u8>
         }
     }
     real(&mut bytes, 1e-12);
-    for value in [1, 1] {
+    for value in unfixed.curve_values {
         word(&mut bytes, value);
     }
     for value in [0., 1., 0.] {
@@ -202,4 +223,22 @@ fn an_unrecognised_shape_is_skipped_not_admitted() {
     let at = gate.len() - 20;
     gate[at..at + 4].copy_from_slice(&2u32.to_le_bytes());
     assert!(matches!(record(&gate), Err(CodecError::NotImplemented(_))));
+}
+
+#[test]
+fn values_the_form_does_not_fix_are_kept_as_stored() {
+    let unusual = Unfixed {
+        state: 1,
+        form: 1,
+        pole_value: 9,
+        curve_values: [2, 3],
+        knots: [0., 1., 0.5, 1., 1., 1.],
+    };
+    let data = data(&curve_fixture_with(4, 5, &[], &unusual));
+    let MemberCurveBody::Curve(curve) = &data.body else {
+        panic!("curve body");
+    };
+    assert_eq!(curve.form, 1);
+    assert_eq!(curve.knots[2].get(), 0.5);
+    assert!(data.native_reason().contains("exact curve rule"));
 }
