@@ -134,6 +134,217 @@ fn failed_face_does_not_promote_its_surface_to_a_geometric_set() {
     assert!(!report.losses.is_empty());
 }
 
+fn face_with_unbounded_support() -> CadIr {
+    use cadmpeg_ir::topology::FaceLoops;
+    let mut ir = edgeless_doc();
+    ir.model.faces[0].loops = FaceLoops::unspecified(Vec::new());
+    ir.model.loops.clear();
+    ir.model.coedges.clear();
+    ir.model.edges.clear();
+    ir.model.vertices.clear();
+    ir.model.points.clear();
+    ir.model.surfaces[0].source_object = Some(cadmpeg_ir::SourceObjectAssociation {
+        format: cadmpeg_ir::CodecFormat::Iges,
+        geometry_role: Some(cadmpeg_ir::SourceGeometryRole::Support),
+        object_id: cadmpeg_core::nonblank_literal!("support-surface"),
+        instance_path: Vec::new(),
+    });
+    ir
+}
+
+#[test]
+fn failed_face_retains_its_surface_without_a_shape_root() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use std::io::Cursor;
+
+    let ir = face_with_unbounded_support();
+    let expected = ir.model.surfaces[0].geometry.clone();
+    let surface_id = ir.model.surfaces[0].id.clone();
+    let face_id = ir.model.faces[0].id.clone();
+    let mut bytes = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut bytes,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .unwrap();
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == StepLossCode::FaceNoWritableBounds.kind()
+            && loss.message.contains(face_id.as_str())
+    }));
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == StepLossCode::SourceAssociationOmitted.kind()
+            && loss.message.contains(surface_id.as_str())
+    }));
+    assert!(!report
+        .losses
+        .iter()
+        .any(|loss| loss.code == StepLossCode::NoExportableSolids.kind()));
+    let text = std::str::from_utf8(&bytes).unwrap();
+    assert!(text
+        .lines()
+        .any(|line| line.contains(" = REPRESENTATION('',(#")));
+    assert!(!text.contains("GEOMETRIC_SET("));
+    let decoded = crate::StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let surface = decoded
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.geometry == expected)
+        .expect("surface retained");
+    assert_ne!(
+        surface
+            .source_object
+            .as_ref()
+            .and_then(|source| source.geometry_role),
+        Some(cadmpeg_ir::SourceGeometryRole::Independent)
+    );
+    assert!(decoded.ir().model.faces.is_empty());
+}
+
+#[test]
+fn failed_face_supports_do_not_gain_a_shared_representation() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use cadmpeg_ir::geometry::analytic::PlaneSurface;
+    use std::io::Cursor;
+
+    let mut ir = face_with_unbounded_support();
+    let mut surface = ir.model.surfaces[0].clone();
+    surface.id = "test:model:surface#second".try_into().unwrap();
+    surface.source_object.as_mut().unwrap().object_id =
+        cadmpeg_core::nonblank_literal!("second-support-surface");
+    surface.geometry = cadmpeg_ir::geometry::SurfaceGeometry::Solved(
+        cadmpeg_ir::geometry::SolvedSurfaceGeometry::Plane(
+            PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 5.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        ),
+    );
+    let mut face = ir.model.faces[0].clone();
+    face.id = "test:model:face#second".try_into().unwrap();
+    face.surface = surface.id.clone();
+    face.shell = "test:model:shell#second".try_into().unwrap();
+    let shell = cadmpeg_ir::topology::Shell::with_face(
+        face.shell.clone(),
+        "test:model:region#second".try_into().unwrap(),
+        face.id.clone(),
+    );
+    let mut region = ir.model.regions[0].clone();
+    region.id = shell.region.clone();
+    region.body = "test:model:body#second".try_into().unwrap();
+    region.shells = vec![shell.id.clone()];
+    let mut body = ir.model.bodies[0].clone();
+    body.id = region.body.clone();
+    body.regions = vec![region.id.clone()];
+    ir.model.faces.push(face);
+    ir.model.surfaces.push(surface);
+    ir.model.shells.push(shell);
+    ir.model.regions.push(region);
+    ir.model.bodies.push(body);
+    let mut bytes = Vec::new();
+    write_step(
+        &ir,
+        &mut bytes,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .unwrap();
+    let (exchange, _) =
+        crate::test_support::with_service_context(&bytes, crate::parse::parse_inner).unwrap();
+    let members = exchange
+        .records()
+        .values()
+        .flat_map(|record| &record.partials)
+        .filter(|partial| partial.name == "REPRESENTATION")
+        .map(|partial| match &partial.parameters[1] {
+            crate::parse::Value::List(members) => members.len(),
+            _ => panic!("representation items"),
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(members, vec![1, 1]);
+    let decoded = crate::StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    for surface in &ir.model.surfaces {
+        assert!(decoded
+            .ir()
+            .model
+            .surfaces
+            .iter()
+            .any(|actual| actual.geometry == surface.geometry));
+    }
+}
+
+#[test]
+fn failed_face_does_not_promote_a_written_construction_support() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use cadmpeg_ir::geometry::{
+        surface_payloads::SubsetSurfaceConstruction, ProceduralSurface,
+        ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+    };
+    use std::io::Cursor;
+
+    let mut ir = face_with_unbounded_support();
+    let support = ir.model.surfaces[0].id.clone();
+    let expected = ir.model.surfaces[0].geometry.clone();
+    let construction = ProceduralSurface::new(
+        "test:model:procedural_surface#subset".try_into().unwrap(),
+        ProceduralSurfaceDefinition::Subset(
+            SubsetSurfaceConstruction::try_new(
+                support,
+                [[0.0, 1.0], [0.0, 1.0]],
+                Some(true),
+                Some(true),
+                None,
+            )
+            .unwrap(),
+        ),
+        None,
+    );
+    ir.model.surfaces.push(Surface {
+        native_ref: None,
+        id: "test:model:surface#subset".try_into().unwrap(),
+        geometry: SurfaceGeometry::Procedural {
+            construction: construction.id.clone(),
+            cache: None,
+        },
+        source_object: None,
+    });
+    ir.model.procedural_surfaces.push(construction);
+    let mut bytes = Vec::new();
+    write_step(
+        &ir,
+        &mut bytes,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .unwrap();
+    let decoded = crate::StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let surface = decoded
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .find(|surface| surface.geometry == expected)
+        .unwrap();
+    assert_eq!(
+        surface
+            .source_object
+            .as_ref()
+            .and_then(|source| source.geometry_role),
+        Some(cadmpeg_ir::SourceGeometryRole::Support)
+    );
+}
+
 #[test]
 fn an_unwritten_vertex_does_not_promote_its_support_point() {
     let mut fixture = edgeless_doc();
@@ -388,8 +599,7 @@ fn procedural_support_is_not_an_export_root_even_when_construction_fails() {
     }
 }
 
-#[test]
-fn standalone_subset_curve_does_not_export_its_untrimmed_basis_as_a_root() {
+fn standalone_subset_curve(cache: Option<cadmpeg_ir::geometry::LegacyCache>) -> CadIr {
     use cadmpeg_ir::geometry::{
         curve_payloads::SubsetCurveConstruction, ProceduralCurve, ProceduralCurveDefinition,
     };
@@ -398,7 +608,7 @@ fn standalone_subset_curve_does_not_export_its_untrimmed_basis_as_a_root() {
     let construction = ProceduralCurve::new(
         "test:model:procedural_curve#subset".try_into().unwrap(),
         ProceduralCurveDefinition::Subset(
-            SubsetCurveConstruction::try_new(basis.clone(), [2.0, 3.0], true, None).unwrap(),
+            SubsetCurveConstruction::try_new(basis.clone(), [2.0, 3.0], true, cache).unwrap(),
         ),
     );
     ir.model.curves.push(Curve {
@@ -413,6 +623,14 @@ fn standalone_subset_curve_does_not_export_its_untrimmed_basis_as_a_root() {
             ),
         )),
     });
+    let solved = cache.map(|_| {
+        let ProceduralCurveDefinition::Subset(subset) = construction.definition() else {
+            unreachable!("the fixture constructs a subset")
+        };
+        subset
+            .local_cache(ir.model.curves[0].geometry.solved().unwrap())
+            .unwrap()
+    });
     ir.model.curves.push(Curve {
         native_ref: None,
         id: "test:model:curve#subset".try_into().unwrap(),
@@ -420,10 +638,16 @@ fn standalone_subset_curve_does_not_export_its_untrimmed_basis_as_a_root() {
         source_object: None,
         geometry: CurveGeometry::Procedural {
             construction: construction.id.clone(),
-            cache: None,
+            cache: solved,
         },
     });
     ir.model.procedural_curves.push(construction);
+    ir
+}
+
+#[test]
+fn standalone_subset_curve_does_not_export_its_untrimmed_basis_as_a_root() {
+    let ir = standalone_subset_curve(None);
     let mut bytes = Vec::new();
     let report = write_step(
         &ir,
@@ -452,6 +676,173 @@ fn standalone_subset_curve_does_not_export_its_untrimmed_basis_as_a_root() {
         .losses
         .iter()
         .any(|loss| loss.code == StepLossCode::GeometryCarrierNotWritten.kind()));
+}
+
+#[test]
+fn subset_curve_reports_its_unwritten_cache_fit_tolerance() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, ArenaDisposition, EncodeInput, Encoder};
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use cadmpeg_ir::geometry::{LegacyCache, ProceduralCurve};
+    use cadmpeg_ir::schema::EntityKind;
+    use std::io::Cursor;
+
+    let mut ir = standalone_subset_curve(Some(LegacyCache::try_new(0.01).unwrap()));
+    let validation = cadmpeg_ir::validate_neutral(&ir, Vec::new()).unwrap();
+    assert!(validation.is_ok(), "{:?}", validation.findings);
+    let row = &crate::writer::REDUCED_FIELDS[2];
+    assert_eq!(row.path, "model.procedural_curves[].definition");
+    assert_eq!(
+        row.storage,
+        cadmpeg_ir::codec::write::ReducedStorage::Normalized {
+            loss: "step/geometry.procedural-curve-cache-tolerance-omitted",
+        }
+    );
+    let original = serde_json::to_value(ir.model.procedural_curves[0].definition()).unwrap();
+    let normalized = cadmpeg_test_support::reduced::step_trimmed_curve_cache(&original);
+    assert_ne!(original, normalized);
+    assert_eq!(normalized["cache"]["fit_tolerance"], 0.0);
+    let plan = crate::StepCodec::default()
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert_eq!(
+        plan.report()
+            .coverage
+            .disposition(EntityKind::ProceduralCurve),
+        ArenaDisposition::Reported
+    );
+    assert_eq!(
+        plan.report()
+            .coverage
+            .disposition(EntityKind::ProceduralSurface),
+        ArenaDisposition::Written
+    );
+    let mut bytes = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut bytes,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .unwrap();
+    let losses = report
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.code == StepLossCode::ProceduralCurveCacheToleranceOmitted.kind()
+                && loss.message.contains("test:model:procedural_curve#subset")
+        })
+        .count();
+    assert_eq!(losses, 1);
+    let decoded = crate::StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let fit = decoded
+        .ir()
+        .model
+        .procedural_curves
+        .iter()
+        .find_map(ProceduralCurve::cache_fit_tolerance)
+        .unwrap();
+    assert_eq!(fit.get(), 0.0);
+    ir.model.procedural_curves[0]
+        .set_cache_fit_tolerance(Some(0.0))
+        .unwrap();
+    let mut exact_bytes = Vec::new();
+    let exact_report = write_step(
+        &ir,
+        &mut exact_bytes,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .unwrap();
+    assert!(!exact_report
+        .losses
+        .iter()
+        .any(|loss| { loss.code == StepLossCode::ProceduralCurveCacheToleranceOmitted.kind() }));
+}
+
+#[test]
+fn subset_surface_reports_its_unwritten_cache_fit_tolerance() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, ArenaDisposition, EncodeInput, Encoder};
+    use cadmpeg_ir::geometry::{
+        surface_payloads::SubsetSurfaceConstruction, LegacyCache, ProceduralSurface,
+        ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+    };
+    use cadmpeg_ir::schema::EntityKind;
+    let mut ir = CadIr::empty();
+    let support = edgeless_doc().model.surfaces.remove(0);
+    let solved = support.geometry.solved().unwrap().clone();
+    let construction = ProceduralSurface::new(
+        "test:model:procedural_surface#subset".try_into().unwrap(),
+        ProceduralSurfaceDefinition::Subset(
+            SubsetSurfaceConstruction::try_new(
+                support.id.clone(),
+                [[0.0, 1.0], [0.0, 1.0]],
+                Some(true),
+                Some(true),
+                Some(LegacyCache::try_new(0.01).unwrap()),
+            )
+            .unwrap(),
+        ),
+        None,
+    );
+    ir.model.surfaces.push(support);
+    ir.model.surfaces.push(Surface {
+        native_ref: None,
+        id: "test:model:surface#subset".try_into().unwrap(),
+        geometry: SurfaceGeometry::Procedural {
+            construction: construction.id.clone(),
+            cache: Some(solved),
+        },
+        source_object: Some(cadmpeg_ir::SourceObjectAssociation {
+            format: cadmpeg_ir::CodecFormat::Step,
+            geometry_role: Some(cadmpeg_ir::SourceGeometryRole::Independent),
+            object_id: cadmpeg_core::nonblank_literal!("authored-surface"),
+            instance_path: Vec::new(),
+        }),
+    });
+    ir.model.procedural_surfaces.push(construction);
+    let validation = cadmpeg_ir::validate_neutral(&ir, Vec::new()).unwrap();
+    assert!(validation.is_ok(), "{:?}", validation.findings);
+    let plan = crate::StepCodec::default()
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert_eq!(
+        plan.report()
+            .coverage
+            .disposition(EntityKind::ProceduralSurface),
+        ArenaDisposition::Reported
+    );
+    assert_eq!(
+        plan.report()
+            .coverage
+            .disposition(EntityKind::ProceduralCurve),
+        ArenaDisposition::Written
+    );
+    let mut bytes = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut bytes,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .unwrap();
+    assert_eq!(
+        report
+            .losses
+            .iter()
+            .filter(|loss| {
+                loss.code == StepLossCode::ProceduralSurfaceCacheToleranceOmitted.kind()
+                    && loss
+                        .message
+                        .contains("test:model:procedural_surface#subset")
+            })
+            .count(),
+        1
+    );
+    assert!(std::str::from_utf8(&bytes)
+        .unwrap()
+        .contains("RECTANGULAR_TRIMMED_SURFACE("));
 }
 
 #[test]
