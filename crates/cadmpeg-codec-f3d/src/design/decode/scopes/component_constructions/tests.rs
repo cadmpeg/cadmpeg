@@ -127,9 +127,24 @@ fn run_component_insert_scope_fixture() {
         Some(u64_from_index(carrier_transform_at))
     );
 
+    let mut other_bytes = bytes.clone();
+    other_bytes[scope_at + 403..scope_at + 406].copy_from_slice(b"260");
+    let mut other_scope = scope.clone();
+    other_scope.paired_class_tag = "260".to_owned().try_into().unwrap();
+    assert_eq!(
+        tested_component_insert_construction(
+            &other_bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&other_bytes),
+            &other_scope,
+        ),
+        Some(construction)
+    );
+
     for (frame_length, paired_class_tag, transform_at, relation_at, expanded_prologue) in [
         (381_usize, "261", 49_usize, 38_usize, true),
+        (381, "262", 49, 38, true),
         (395, "258", 46, 34, false),
+        (395, "259", 46, 34, false),
     ] {
         let mut legacy = bytes[..scope_at].to_vec();
         legacy.resize(scope_at + frame_length, 0);

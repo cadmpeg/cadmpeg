@@ -1488,6 +1488,8 @@ fn fixed_kind_edge_and_revolve_operations(
                 )
                 .unwrap(),
                 context_id_offset: 0,
+                serialization_form:
+                    crate::records::topology::entity_selection::SelectionSerializationForm::Zero,
                 identity_record_index: 903,
                 identity_record_offset: 0,
                 primary_identity: 100,

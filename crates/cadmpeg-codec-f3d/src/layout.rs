@@ -242,6 +242,50 @@ pub(crate) mod design_parameter_wide_discriminated_prefix {
     pub(crate) const COMMENT_LENGTH: usize = 31;
 }
 
+/// Byte offsets for the `design_parameter_comment_discriminated_prefix` record.
+///
+/// Spec §3.1. Record length 30 B.
+///
+/// ```text
+/// Offsets are relative to the indexed header of a comment discriminated parameter through the comment code-unit count. The comment code units follow, then the source ordinal and the owner form.
+/// ```
+pub(crate) mod design_parameter_comment_discriminated_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 30;
+    /// Offset of `zero_run_11` (`bytes[11]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_11: usize = 11;
+    /// Offset of `family_discriminator` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const FAMILY_DISCRIMINATOR: usize = 22;
+    /// Offset of `comment_length` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const COMMENT_LENGTH: usize = 26;
+}
+
+/// Byte offsets for the `design_parameter_comment_expression_trailer` record.
+///
+/// Spec §3.1. Record length 5 B.
+///
+/// ```text
+/// This trailer is relative to the end of the variable LP-UTF16 expression of a comment discriminated parameter.
+/// ```
+pub(crate) mod design_parameter_comment_expression_trailer {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 5;
+    /// Offset of `driven` (`u8`). Spec §3.1.
+    pub(crate) const DRIVEN: usize = 0;
+    /// Offset of `reserved_1` (`u8`). Spec §3.1.
+    pub(crate) const RESERVED_1: usize = 1;
+    /// Stated value of `reserved_1` (`u8`). Spec §3.1.
+    pub(crate) const RESERVED_1_VALUE: u8 = 0;
+    /// Offset of `favorite` (`u8`). Spec §3.1.
+    pub(crate) const FAVORITE: usize = 2;
+    /// Offset of `reserved_3` (`u8`). Spec §3.1.
+    pub(crate) const RESERVED_3: usize = 3;
+    /// Stated value of `reserved_3` (`u8`). Spec §3.1.
+    pub(crate) const RESERVED_3_VALUE: u8 = 0;
+    /// Offset of `document` (`u8`). Spec §3.1.
+    pub(crate) const DOCUMENT: usize = 4;
+}
+
 /// Byte offsets for the `design_parameter_tail` record.
 ///
 /// Spec §3.1. Record length 12 B.
@@ -3294,14 +3338,14 @@ pub(crate) mod work_point_sketch_point_compact_identity {
     pub(crate) const POINT_PERSISTENT_ID: usize = 29;
 }
 
-/// Byte offsets for the `class_338_sketch_curve_identity` record.
+/// Byte offsets for the `marked_sketch_curve_identity` record.
 ///
 /// Spec §3.1. Record length 49 B.
 ///
 /// ```text
-/// Offsets are relative to the class-`361` identity record's indexed header. The following indexed record begins at offset 49.
+/// Offsets are relative to the identity record's indexed header. The following indexed record begins at offset 49.
 /// ```
-pub(crate) mod class_338_sketch_curve_identity {
+pub(crate) mod marked_sketch_curve_identity {
     /// Record length in bytes. Spec §3.1.
     pub(crate) const LEN: usize = 49;
     /// Offset of `zero_prefix` (`bytes[9]`). Spec §3.1.

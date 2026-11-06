@@ -2554,6 +2554,11 @@ impl DesignParameterScope {
     pub(crate) fn frame_length(&self) -> u64 {
         self.frame_length
     }
+    #[cfg(test)]
+    pub(crate) fn set_fixture_kind_offset(&mut self, offset: u64) {
+        self.kind_offset = offset;
+    }
+
     pub(crate) fn kind_offset(&self) -> u64 {
         self.kind_offset
     }

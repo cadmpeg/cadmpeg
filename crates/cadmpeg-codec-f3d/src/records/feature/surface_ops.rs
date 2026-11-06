@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Surface operations: stitch, extend, offset, trim, rule and patch.
 
+use crate::records::topology::entity_selection::SelectionSerializationForm;
 use crate::records::{
     identity::NonEmptyVec, mesh::DesignRelaxedGuidText, references::DesignClassTag,
 };
@@ -135,6 +136,7 @@ pub(crate) struct DesignSurfaceTrimOperation {
     pub(crate) selection_record_index: u32,
     /// Byte offset of the entity-selection record.
     selection_byte_offset: u64,
+    serialization_form: SelectionSerializationForm,
     /// Indexed record immediately following the entity-selection frame.
     pub(crate) selection_next_record_index: u32,
     /// Byte offset of the record immediately following the entity-selection frame.
@@ -179,6 +181,7 @@ impl Clone for DesignSurfaceTrimOperation {
             scope_record_index: self.scope_record_index,
             selection_record_index: self.selection_record_index,
             selection_byte_offset: self.selection_byte_offset,
+            serialization_form: self.serialization_form,
             selection_next_record_index: self.selection_next_record_index,
             selection_next_byte_offset: self.selection_next_byte_offset,
             chain_records: self.chain_records.clone(),
@@ -203,6 +206,8 @@ struct DesignSurfaceTrimOperationRef<'a> {
     scope_record_index: u32,
     selection_record_index: u32,
     selection_byte_offset: u64,
+    #[serde(skip_serializing_if = "crate::history_records::is_default")]
+    serialization_form: SelectionSerializationForm,
     selection_next_record_index: u32,
     selection_next_byte_offset: u64,
     chain_records: &'a [DesignSurfaceTrimChainRecord; 2],
@@ -226,6 +231,7 @@ impl Serialize for DesignSurfaceTrimOperation {
             scope_record_index: self.scope_record_index,
             selection_record_index: self.selection_record_index,
             selection_byte_offset: self.selection_byte_offset,
+            serialization_form: self.serialization_form,
             selection_next_record_index: self.selection_next_record_index,
             selection_next_byte_offset: self.selection_next_byte_offset,
             chain_records: &self.chain_records,
@@ -255,6 +261,8 @@ pub(crate) struct DesignSurfaceTrimOperationWire {
     pub(crate) selection_record_index: u32,
     /// Byte offset of the entity-selection record.
     pub(crate) selection_byte_offset: u64,
+    #[serde(default, skip_serializing_if = "crate::history_records::is_default")]
+    pub(crate) serialization_form: SelectionSerializationForm,
     /// Indexed record immediately following the entity-selection frame.
     pub(crate) selection_next_record_index: u32,
     /// Byte offset of the record immediately following the entity-selection frame.
@@ -295,6 +303,7 @@ impl TryFrom<DesignSurfaceTrimOperationWire> for DesignSurfaceTrimOperation {
             scope_record_index: wire.scope_record_index,
             selection_record_index: wire.selection_record_index,
             selection_byte_offset: wire.selection_byte_offset,
+            serialization_form: wire.serialization_form,
             selection_next_record_index: wire.selection_next_record_index,
             selection_next_byte_offset: wire.selection_next_byte_offset,
             chain_records: wire.chain_records,
@@ -321,6 +330,7 @@ impl From<DesignSurfaceTrimOperation> for DesignSurfaceTrimOperationWire {
             scope_record_index: value.scope_record_index,
             selection_record_index: value.selection_record_index,
             selection_byte_offset: value.selection_byte_offset,
+            serialization_form: value.serialization_form,
             selection_next_record_index: value.selection_next_record_index,
             selection_next_byte_offset: value.selection_next_byte_offset,
             chain_records: value.chain_records,
@@ -463,7 +473,8 @@ pub(crate) struct DesignSurfacePatchBoundary {
 mod tests {
     use super::{
         DesignSurfaceTrimCellEntry, DesignSurfaceTrimChainRecord, DesignSurfaceTrimOperation,
-        DesignSurfaceTrimOperationWire, SURFACE_TRIM_OPERATION_CLONE_COUNT,
+        DesignSurfaceTrimOperationWire, SelectionSerializationForm,
+        SURFACE_TRIM_OPERATION_CLONE_COUNT,
     };
 
     fn record(count: u32) -> DesignSurfaceTrimOperation {
@@ -480,6 +491,7 @@ mod tests {
             scope_record_index: 1,
             selection_record_index: 2,
             selection_byte_offset: 20,
+            serialization_form: SelectionSerializationForm::Zero,
             selection_next_record_index: 3,
             selection_next_byte_offset: 30,
             chain_records: std::array::from_fn(|index| DesignSurfaceTrimChainRecord {
