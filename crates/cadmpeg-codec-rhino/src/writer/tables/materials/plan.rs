@@ -201,11 +201,11 @@ impl MaterialPlan {
             let stored = crate::wire::Uuid::from_wire(uuid).to_string();
             let stored_value = Some(stored.as_str());
             if appearance.asset_guid.as_deref() != stored_value {
-                plan.losses.push(RhinoLossCode::WriterAttributesOmitted.note(format!("appearance {} /asset_guid {:?} -> {:?}; distinct Rhino material components require unique physical UUIDs",appearance.id,appearance.asset_guid,stored_value)));
+                plan.losses.push(RhinoLossCode::WriterMaterialUuidReassigned.note(format!("appearance {} /asset_guid {:?} -> {:?}; distinct Rhino material components require unique physical UUIDs",appearance.id,appearance.asset_guid,stored_value)));
             }
             let native = own_material(ir, appearance);
             if native.is_none() && !appearance.textures.is_empty() {
-                plan.losses.push(RhinoLossCode::WriterMaterialOmitted.note(format!(
+                plan.losses.push(RhinoLossCode::WriterMaterialTextureOmitted.note(format!(
                     "appearance {} textures are omitted; a neutral appearance carries no ON_Texture channel, type, or mode mapping (no linked native material)",
                     appearance.id
                 )));
@@ -224,7 +224,7 @@ impl MaterialPlan {
                                     .and_then(Value::as_array)
                                     .is_some_and(|textures| !textures.is_empty()))
                         {
-                            plan.losses.push(RhinoLossCode::WriterMaterialOmitted.note(format!(
+                            plan.losses.push(RhinoLossCode::WriterMaterialTextureOmitted.note(format!(
                                 "material {} texture channels are incomplete; the material is written without texture channels",
                                 record.id()
                             )));
@@ -232,7 +232,7 @@ impl MaterialPlan {
                         complete
                     }
                     Err(_) => {
-                        plan.losses.push(RhinoLossCode::WriterMaterialOmitted.note(format!(
+                        plan.losses.push(RhinoLossCode::WriterMaterialTextureOmitted.note(format!(
                             "material {} fields are unreadable; the material is written without texture channels",
                             record.id()
                         )));
@@ -244,7 +244,7 @@ impl MaterialPlan {
             if let Some(record) = native {
                 let previous = record.field("source_uuid").unwrap_or(Value::Null);
                 if previous != Value::String(stored.clone()) {
-                    plan.losses.push(RhinoLossCode::WriterAttributesOmitted.note(format!("appearance {} linked native {} /source_uuid {} -> {:?}; distinct Rhino material components require unique physical UUIDs",appearance.id,record.id(),previous,stored)));
+                    plan.losses.push(RhinoLossCode::WriterMaterialUuidReassigned.note(format!("appearance {} linked native {} /source_uuid {} -> {:?}; distinct Rhino material components require unique physical UUIDs",appearance.id,record.id(),previous,stored)));
                 }
                 plan.native_targets
                     .entry(record.id().to_owned())
@@ -280,7 +280,7 @@ impl MaterialPlan {
                                 .and_then(Value::as_array)
                                 .is_some_and(|textures| !textures.is_empty()))
                     {
-                        plan.losses.push(RhinoLossCode::WriterMaterialOmitted.note(format!(
+                        plan.losses.push(RhinoLossCode::WriterMaterialTextureOmitted.note(format!(
                             "material {} texture channels are incomplete; the material is written without texture channels",
                             record.id()
                         )));
@@ -288,7 +288,7 @@ impl MaterialPlan {
                     complete
                 }
                 Err(_) => {
-                    plan.losses.push(RhinoLossCode::WriterMaterialOmitted.note(format!(
+                    plan.losses.push(RhinoLossCode::WriterMaterialTextureOmitted.note(format!(
                         "material {} fields are unreadable; the material is written without texture channels",
                         record.id()
                     )));
