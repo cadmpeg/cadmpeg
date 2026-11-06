@@ -78,6 +78,8 @@ macro_rules! required {
 pub(crate) struct DesignObjects<'a> {
     pub(crate) objects: &'a [ObjectRecord],
     pub(crate) extensions: &'a [crate::native::ExtensionRecord],
+    pub(crate) products: &'a [crate::native::ProductNodeRecord],
+    pub(crate) joints: &'a [crate::native::joint::JointRecord],
 }
 
 pub(crate) fn transfer(
@@ -92,6 +94,8 @@ pub(crate) fn transfer(
     let DesignObjects {
         objects,
         extensions,
+        products,
+        joints,
     } = graph;
     let crate::entry_sources::ArchiveEntries {
         records: entries,
@@ -120,7 +124,7 @@ pub(crate) fn transfer(
     let expression_objects = ExpressionObjects::new(objects, &properties_by_owner);
     let feature_objects: HashSet<&str> = objects
         .iter()
-        .filter(|object| should_project_feature(object, &ir.model))
+        .filter(|object| should_project_feature(object, &ir.model, products, joints))
         .map(|object| object.id().as_str())
         .collect();
     let mut feature_ids = HashMap::new();
@@ -8833,12 +8837,19 @@ pub(crate) fn is_design_object(kind: &str) -> bool {
             && !crate::product::is_product_type(kind))
 }
 
-fn should_project_feature(object: &ObjectRecord, model: &cadmpeg_ir::document::Model) -> bool {
+fn should_project_feature(
+    object: &ObjectRecord,
+    model: &cadmpeg_ir::document::Model,
+    products: &[crate::native::ProductNodeRecord],
+    joints: &[crate::native::joint::JointRecord],
+) -> bool {
     if !is_design_object(&object.type_name)
         && !matches!(
             object.type_name.as_str(),
             "Mesh::Feature" | "Points::Feature"
         )
+        && !(is_design_kind(&object.type_name)
+            && crate::product::is_product_type(&object.type_name))
     {
         return false;
     }
@@ -8846,6 +8857,11 @@ fn should_project_feature(object: &ObjectRecord, model: &cadmpeg_ir::document::M
         return true;
     }
     let owner = object.id().as_str();
+    if products.iter().any(|product| product.object == owner)
+        || joints.iter().any(|joint| joint.object() == owner)
+    {
+        return false;
+    }
     !model.tessellations.iter().any(|mesh| {
         mesh.source_object
             .as_ref()
@@ -8901,6 +8917,8 @@ pub(crate) fn has_typed_projection(kind: &str) -> bool {
 pub(crate) fn census(
     objects: &[ObjectRecord],
     model: &cadmpeg_ir::document::Model,
+    products: &[crate::native::ProductNodeRecord],
+    joints: &[crate::native::joint::JointRecord],
 ) -> Result<Vec<crate::native::DesignCensusRecord>, CodecError> {
     let mut features_by_native = HashMap::new();
     for feature in &model.features {
@@ -8911,7 +8929,7 @@ pub(crate) fn census(
     let mut census = Vec::new();
     for object in objects
         .iter()
-        .filter(|object| should_project_feature(object, model))
+        .filter(|object| should_project_feature(object, model, products, joints))
     {
         let feature = features_by_native
             .get(object.id().as_str())
