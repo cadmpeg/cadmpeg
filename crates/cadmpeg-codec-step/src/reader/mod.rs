@@ -492,6 +492,7 @@ fn decode_exchange_mode(
         exchange,
         &carrier_index,
         &topology.value,
+        &product.value.definition_prototypes,
         &mut session.ir,
         session.ctx,
     )?;

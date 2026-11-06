@@ -292,7 +292,10 @@ mod tests {
             "clipping_plane_uuids":["55555555-5555-5555-5555-555555555555","66666666-6666-6666-6666-666666666666"],
             "hatch_pattern_index":-1, "section_hatch_scale":2.0, "section_hatch_rotation":0.5,
             "linetype_pattern_scale":1.5, "hatch_background":"090a0b0c", "hatch_boundary_visible":true,
-            "section_fill_rule":1, "clipping_plane_label_style":2, "detail_background_visible":true, "rendering_materials":[],
+            "section_fill_rule":1, "clipping_plane_label_style":2, "detail_background_visible":true, "rendering_materials":[
+                {"plugin_uuid":"11111111-2222-3333-4444-555555555555", "front_material_uuid":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "back_material_uuid":null, "material_source":null},
+                {"plugin_uuid":"11111111-2222-3333-4444-555555555555", "front_material_uuid":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", "back_material_uuid":"99999999-8888-7777-6666-555555555555", "material_source":2}
+            ],
             "casts_shadows":false, "receives_shadows":false, "advanced_texture_preview":true
         });
         let expected_attributes = attributed["attributes"].clone();
