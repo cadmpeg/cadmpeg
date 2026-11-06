@@ -175,6 +175,14 @@ pub(crate) enum F3dLossCode {
     FeatureStoredBodiesRecipeAbsent,
     /// A Base Feature has no complete unique body binding.
     FeatureStoredBodiesUnbound,
+    /// A paste keeps its bodies; its source pairs or a source node do not resolve.
+    FeaturePasteSourcesUnresolved,
+    /// Several timeline objects name one owned scope; the lowest readable record owns it.
+    FeatureTimelineOwnerCompeting,
+    /// A timeline owner has no same-index paired header; its copy form stays unread.
+    FeatureTimelineOwnerUnpaired,
+    /// A pasted copy is assumed to keep its source placement.
+    FeaturePasteCopyPlacementAssumed,
     /// A feature scope has no complete unique ASM output transition interval.
     FeatureOutputStateChainUnbound,
     /// An affected body slot has no unique active body in the selected BREP.
@@ -535,6 +543,10 @@ impl F3dLossCode {
         Self::FeatureStoredBodiesEmpty,
         Self::FeatureStoredBodiesRecipeAbsent,
         Self::FeatureStoredBodiesUnbound,
+        Self::FeaturePasteSourcesUnresolved,
+        Self::FeatureTimelineOwnerCompeting,
+        Self::FeatureTimelineOwnerUnpaired,
+        Self::FeaturePasteCopyPlacementAssumed,
         Self::FeatureOutputStateChainUnbound,
         Self::FeatureOutputBodyUnbound,
         Self::FeatureDerivedBaseUnresolved,
@@ -753,6 +765,10 @@ impl F3dLossCode {
             Self::FeatureStoredBodiesEmpty => "feature.stored-bodies-empty",
             Self::FeatureStoredBodiesRecipeAbsent => "feature.stored-bodies-recipe-absent",
             Self::FeatureStoredBodiesUnbound => "feature.stored-bodies-unbound",
+            Self::FeaturePasteSourcesUnresolved => "feature.paste-sources-unresolved",
+            Self::FeatureTimelineOwnerCompeting => "feature.timeline-owner-competing",
+            Self::FeatureTimelineOwnerUnpaired => "feature.timeline-owner-unpaired",
+            Self::FeaturePasteCopyPlacementAssumed => "feature.paste-copy-placement-assumed",
             Self::FeatureOutputStateChainUnbound => "feature.output-state-chain-unbound",
             Self::FeatureOutputBodyUnbound => "feature.output-body-unbound",
             Self::FeatureDerivedBaseUnresolved => "feature.derived-base-unresolved",
@@ -1000,6 +1016,10 @@ impl F3dLossCode {
             | Self::FeatureOutputBodyUnbound
             | Self::FeatureOutputStateChainUnbound
             | Self::FeatureStoredBodiesUnbound
+            | Self::FeaturePasteSourcesUnresolved
+            | Self::FeatureTimelineOwnerCompeting
+            | Self::FeatureTimelineOwnerUnpaired
+            | Self::FeaturePasteCopyPlacementAssumed
             | Self::FeatureDerivedBaseUnresolved
             | Self::FeatureBoxPrimitiveUnresolved
             | Self::FeatureDefinitionIncomplete
@@ -1176,6 +1196,10 @@ impl F3dLossCode {
             | Self::FeatureOutputBodyUnbound
             | Self::FeatureOutputStateChainUnbound
             | Self::FeatureStoredBodiesUnbound
+            | Self::FeaturePasteSourcesUnresolved
+            | Self::FeatureTimelineOwnerCompeting
+            | Self::FeatureTimelineOwnerUnpaired
+            | Self::FeaturePasteCopyPlacementAssumed
             | Self::FeatureDerivedBaseUnresolved
             | Self::FeatureBoxPrimitiveUnresolved
             | Self::FeatureDefinitionIncomplete
@@ -1432,6 +1456,10 @@ mod tests {
                 "feature.stored-bodies-empty",
                 "feature.stored-bodies-recipe-absent",
                 "feature.stored-bodies-unbound",
+                "feature.paste-sources-unresolved",
+                "feature.timeline-owner-competing",
+                "feature.timeline-owner-unpaired",
+                "feature.paste-copy-placement-assumed",
                 "feature.output-state-chain-unbound",
                 "feature.output-body-unbound",
                 "feature.derived-base-unresolved",
