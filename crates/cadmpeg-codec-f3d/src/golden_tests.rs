@@ -1207,7 +1207,7 @@ fn an_edit_survives_native_writer_fallback() {
                         if let Some(carrier) = extra.pointer_mut("/declared/carrier") {
                             if carrier
                                 .as_str()
-                                .is_some_and(|carrier| std::path::Path::new(carrier).extension() == Some(std::ffi::OsStr::new("smbh")))
+                                .is_some_and(|carrier| carrier.as_bytes().ends_with(b".smbh"))
                             {
                                 *carrier =
                                     serde_json::Value::String("neutralized-carrier.smbh".into());
