@@ -60,7 +60,7 @@ pub(crate) fn edit_timestamp_attribute(
         }
     }
     let mut attributes = ir.model.attributes.iter_mut().filter(|attribute| {
-        target_id(&attribute.target).as_deref() == Some(neutral.as_str())
+        target_id(&attribute.target) == Some(neutral.as_str())
             && crate::brep::creation_timestamp_value(attribute).is_some()
     });
     let attribute = attributes.next().expect("canonical timestamp attribute");
