@@ -952,6 +952,38 @@ mod tests {
     }
 
     #[test]
+    fn subset_cache_normalization_preserves_the_construction() {
+        let rows = [ReducedProbe {
+            path: "model.procedural_curves[].definition",
+            storage: ReducedStorage::Normalized {
+                loss: "step/geometry.procedural-cache-tolerance-omitted",
+            },
+            normalize: Some(crate::reduced::step_trimmed_curve_cache),
+        }];
+        let source = json!({"model":{"procedural_curves":[{"id":"curve#1", "definition":{
+            "kind":"subset", "source":"curve#base", "parameter_range":[2.0,3.0],
+            "sense":true, "cache":{"fit_tolerance":0.01}
+        }}]}});
+        let mut target = source.clone();
+        target["model"]["procedural_curves"][0]["definition"]["cache"]["fit_tolerance"] =
+            json!(0.0);
+        let mut wrong = target.clone();
+        wrong["model"]["procedural_curves"][0]["definition"]["parameter_range"][0] = json!(1.0);
+        assert_eq!(
+            apply_reduced(&source, &rows, true),
+            apply_reduced(&target, &rows, false)
+        );
+        assert_ne!(
+            apply_reduced(&source, &rows, true),
+            apply_reduced(&wrong, &rows, false)
+        );
+        assert_ne!(
+            apply_reduced(&source, &rows, false),
+            apply_reduced(&target, &rows, false)
+        );
+    }
+
+    #[test]
     fn step_radius_normalization_keeps_other_surface_fields() {
         let normalize = crate::reduced::step_surface_chart;
         for (source, expected) in [
