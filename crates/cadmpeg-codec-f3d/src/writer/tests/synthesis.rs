@@ -1077,7 +1077,7 @@ fn independent_native_streams_may_reuse_local_registry_and_recipe_identities() {
                 kind: ConstructionRecipeKind::Body,
                 design: Some(ConstructionRecipeDesign {
                     id: RecordedValue {
-                        value: "333".into(),
+                        value: "256".into(),
                         offset: Some(0),
                     },
                     selector: None,
