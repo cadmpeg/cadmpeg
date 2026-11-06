@@ -240,6 +240,45 @@ mod tests {
     use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 
     #[test]
+    fn written_quadratic_rational_curve_is_decoded() {
+        use cadmpeg_ir::codec::{Codec, DecodeOptions};
+        use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsPoles3};
+        use cadmpeg_ir::geometry::{Curve, CurveGeometry, SolvedCurveGeometry};
+        use cadmpeg_ir::ids::CurveId;
+        use cadmpeg_ir::math::Point3;
+
+        let poles = NurbsPoles3::from_lanes(
+            vec![
+                Point3::new(2.0, 0.0, 0.0),
+                Point3::new(2.0, 2.0, 0.0),
+                Point3::new(0.0, 2.0, 0.0),
+            ],
+            Some(vec![1.0, std::f64::consts::FRAC_1_SQRT_2, 1.0]),
+        )
+        .unwrap();
+        let curve = NurbsCurve::new(2, vec![4.0, 4.0, 4.0, 9.0, 9.0, 9.0], poles, false).unwrap();
+        let mut ir = cadmpeg_ir::CadIr::empty();
+        ir.model.curves.push(Curve {
+            native_ref: None,
+            id: CurveId::mint("test:model:curve#quadratic").unwrap(),
+            geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve)),
+            parameter_range: None,
+            source_object: None,
+        });
+        let body = crate::writer::brep_body(&ir, 0.001, false).unwrap();
+        let arena = DecodeArena::new();
+        let policy = DecodePolicy::desktop();
+        let (ctx, _) = DecodeContext::from_root_bytes(&body, &arena, &policy).unwrap();
+        let decoded = super::decode(&ctx, &body, &cadmpeg_ir::stream_name!("standalone")).unwrap();
+        assert!(decoded.is_some_and(|brep| brep.curves.len() == 1));
+        let source = crate::test_support::container::sldprt_with_body(&body);
+        let decoded = crate::SldprtCodec
+            .decode(&mut std::io::Cursor::new(source), &DecodeOptions::default())
+            .unwrap();
+        assert_eq!(decoded.ir().model.curves.len(), 1);
+    }
+
+    #[test]
     fn requires_complete_records_and_unique_identities() -> Result<(), cadmpeg_core::CodecError> {
         let line =
             crate::test_support::parasolid::line_carrier(2, [0.0, 0.0, 0.0], [1.0, 0.0, 0.0]);

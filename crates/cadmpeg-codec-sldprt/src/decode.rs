@@ -2434,9 +2434,13 @@ fn try_decode_brep(
         });
     let selected_has_geometry = !decoded_sites[selected_site].2.faces.is_empty()
         || !decoded_sites[selected_site].2.surfaces.is_empty()
+        || !decoded_sites[selected_site].2.curves.is_empty()
         || !decoded_sites[selected_site].2.points.is_empty();
     let any_site_has_geometry = decoded_sites.iter().any(|(_, _, decoded)| {
-        !decoded.faces.is_empty() || !decoded.surfaces.is_empty() || !decoded.points.is_empty()
+        !decoded.faces.is_empty()
+            || !decoded.surfaces.is_empty()
+            || !decoded.curves.is_empty()
+            || !decoded.points.is_empty()
     });
     // Imported bodies stand in for an empty partition/deltas model (spec §3.3).
     let takes_local_bodies =
