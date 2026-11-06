@@ -73,13 +73,21 @@ impl CadIr {
                     .unwrap_or(&binding.target)
                     == target
             })
-            .find_map(|binding| {
-                self.model
+            .filter_map(|binding| {
+                let color = self
+                    .model
                     .appearances
                     .iter()
                     .find(|appearance| appearance.id == binding.appearance)
-                    .and_then(|appearance| appearance.base_color)
+                    .and_then(|appearance| appearance.base_color)?;
+                let priority = u8::from(
+                    binding.channels.get("precedence").map(String::as_str)
+                        != Some("shape_over_object"),
+                );
+                Some((priority, color))
             })
+            .min_by_key(|(priority, _)| *priority)
+            .map(|(_, color)| color)
     }
 
     /// Combines applicable explicit visibility gates with logical AND. Absence

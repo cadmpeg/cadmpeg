@@ -4,10 +4,8 @@
 use cadmpeg_test_support::assembly;
 
 use crate::native;
-use crate::product::{
-    list_layout, product_cycle_nodes, product_kind, product_record_index, read_real, ProductKind,
-    RealWidth,
-};
+use crate::numeric_list::{list_layout, read_real, RealWidth};
+use crate::product::{product_cycle_nodes, product_kind, product_record_index, ProductKind};
 use crate::test_support::test_archive::{archive, archive_entries, assert_valid_document};
 use crate::FcstdCodec;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, View};

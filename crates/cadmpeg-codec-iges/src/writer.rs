@@ -642,10 +642,16 @@ fn synthesize_with_admission(
     let (admitted, admission_losses) = admission::edge_carriers(pcurves.as_ref())?;
     let (stripped, strip_losses) = admission::strip_unusable_face_topology(admitted.as_ref());
     let ir = stripped.as_ref().unwrap_or(admitted.as_ref());
-    let mut graph = match synthesis_graph(ctx, ir, version) {
-        Ok(graph) => graph,
-        Err(CodecError::UnsupportedContent(reason)) => degrade::graph(ctx, ir, version, &reason)?,
-        Err(error) => return Err(error.into()),
+    let mut graph = if degrade::has_dangling_body_region(ir) {
+        degrade::graph(ctx, ir, version, "a body references a missing region")?
+    } else {
+        match synthesis_graph(ctx, ir, version) {
+            Ok(graph) => graph,
+            Err(CodecError::UnsupportedContent(reason)) => {
+                degrade::graph(ctx, ir, version, &reason)?
+            }
+            Err(error) => return Err(error.into()),
+        }
     };
     let pcurves_adapted = !pcurve_losses.is_empty();
     graph.losses.extend(pole_losses);
@@ -6108,6 +6114,7 @@ fn append_free_point_entity(
             status
         },
     );
+    support_records::retain_point_parameters(ir, point, &mut entity);
     entity.source_targets.push(point.id.to_string());
     let index = entities.len();
     entities.push(entity);

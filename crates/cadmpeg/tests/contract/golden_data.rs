@@ -200,6 +200,38 @@ fn sampled_pairs(
     super::sampled(pairs)
 }
 
+// The FreeCAD golden pins native arenas by digest. Check 1b needs the
+// actual records to prove a property moved to its native home (#209 §1.1).
+#[cfg(feature = "fcstd")]
+fn hydrate_freecad_native(pairs: &mut [(DecodeGolden, DecodeGolden)]) {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use std::io::Cursor;
+    use std::path::Path;
+
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let golden_root = "crates/cadmpeg-codec-freecad/tests/golden/decode/";
+    for (head, _) in pairs {
+        let relative = head
+            .path
+            .strip_prefix(golden_root)
+            .expect("FreeCAD golden path");
+        let mut fixture = if relative.starts_with("damaged/") {
+            root.join("crates/cadmpeg-codec-freecad/tests/golden/fixtures")
+                .join(relative)
+        } else {
+            root.join("corpus/freecad_fcstd/fixtures").join(relative)
+        };
+        fixture.set_extension("FCStd");
+        let bytes = std::fs::read(&fixture)
+            .unwrap_or_else(|error| panic!("{}: {error}", fixture.display()));
+        let decoded = cadmpeg_codec_freecad::FcstdCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap_or_else(|error| panic!("{}: {error}", fixture.display()));
+        head.ir["native"] =
+            serde_json::to_value(&decoded.ir().native).expect("serialize native records");
+    }
+}
+
 macro_rules! base_data_checks {
     ($($codec:ident => $crate_name:literal, $namespace:literal, $loss:ident, $bindings:ident, $ordinals:ident),* $(,)?) => {
         $(mod $codec {
@@ -209,6 +241,14 @@ macro_rules! base_data_checks {
             fn $loss() {
                 let (base, pairs) = super::goldens_with_base($crate_name);
                 let pairs = super::sampled_pairs(pairs);
+                #[cfg(feature = "fcstd")]
+                let pairs = {
+                    let mut pairs = pairs;
+                    if NAMESPACE == "fcstd" {
+                        super::hydrate_freecad_native(&mut pairs);
+                    }
+                    pairs
+                };
                 super::assert_pairs_clean($crate_name, &base, &pairs, |at_base, head| {
                     super::base_property_loss_findings(NAMESPACE, at_base, head)
                 });

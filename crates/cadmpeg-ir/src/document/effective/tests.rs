@@ -178,3 +178,42 @@ fn only_the_objects_provider_contributes_view_visibility() {
         Some(false)
     );
 }
+
+#[test]
+fn shape_material_binding_precedes_object_color_regardless_of_record_order() {
+    let mut ir = crate::examples::unit_cube().unwrap();
+    let target = AppearanceTarget::Body(ir.model.bodies[0].id.clone());
+    let object_color = Color::from_rgba8(255, 0, 0, 255);
+    let material_color = Color::from_rgba8(0, 255, 0, 255);
+    let object = Appearance {
+        native_ref: None,
+        id: "test:display:appearance#one".try_into().unwrap(),
+        name: None,
+        asset_guid: None,
+        library_id: None,
+        visual_guid: None,
+        physical_token: None,
+        schema: None,
+        category: None,
+        base_color: Some(object_color),
+        properties: std::collections::BTreeMap::new(),
+        textures: vec![],
+    };
+    let mut material = object.clone();
+    material.id = "test:display:appearance#two".try_into().unwrap();
+    material.base_color = Some(material_color);
+    ir.model.appearances.push(object.clone());
+    ir.model.appearances.push(material.clone());
+    let original = binding(target.clone());
+    let mut override_binding = binding(target.clone());
+    override_binding.id = "test:display:binding#two".try_into().unwrap();
+    override_binding.appearance = material.id;
+    override_binding.channels.insert(
+        cadmpeg_core::nonblank_literal!("precedence"),
+        "shape_over_object".into(),
+    );
+    ir.model.appearance_bindings = vec![original.clone(), override_binding.clone()];
+    assert_eq!(ir.effective_display_color(&target), Some(material_color));
+    ir.model.appearance_bindings = vec![override_binding, original];
+    assert_eq!(ir.effective_display_color(&target), Some(material_color));
+}

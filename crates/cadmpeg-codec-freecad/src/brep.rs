@@ -234,9 +234,8 @@ impl<'a> Tables<'a> {
         polygons3d: &'a [Polygon3dRecord],
         polygons_on_triangulations: &'a [PolygonOnTriangulationRecord],
     ) -> Result<Option<Self>, CodecError> {
-        let set = match payload.shape_set() {
-            Some(set) => set,
-            None => return Ok(None),
+        let Some(set) = payload.shape_set() else {
+            return Ok(None);
         };
         Ok(Some(Self {
             locations: &set.locations,

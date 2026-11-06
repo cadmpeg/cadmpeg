@@ -74,9 +74,18 @@ fn malformed_value_keeps_its_property_header_and_exact_child_home_with_a_readabl
         );
         let fidelity = decoded.source_fidelity();
         let parts = crate::test_support::source_fidelity::given_up(fidelity);
-        let [(_, retained)] = parts.as_slice() else {
+        let [(stub_id, retained)] = parts.as_slice() else {
             panic!("one failed child")
         };
+        let unknowns = decoded
+            .ir()
+            .native
+            .namespace("fcstd")
+            .unwrap()
+            .arena_as::<cadmpeg_ir::NativeUnknownRecord>("unknowns")
+            .unwrap();
+        assert!(unknowns.iter().any(|stub| stub.id.as_str() == *stub_id
+            && stub.links.iter().any(|id| id.as_str() == bad_property.id)));
         assert_eq!(
             retained.offset(),
             u64::try_from(xml.find(bad).unwrap()).unwrap()
@@ -94,6 +103,18 @@ fn malformed_value_keeps_its_property_header_and_exact_child_home_with_a_readabl
             .collect::<Vec<_>>();
         assert_eq!(errors.len(), 1);
         assert_eq!(errors[0].severity, cadmpeg_ir::report::Severity::Error);
+        assert_eq!(
+            errors[0]
+                .dropped_fields
+                .iter()
+                .map(|field| (field.record.as_str(), field.field.as_str()))
+                .collect::<Vec<_>>(),
+            vec![
+                (bad_property.id.as_str(), "values"),
+                (bad_property.id.as_str(), "links"),
+                (bad_property.id.as_str(), "side_entries")
+            ]
+        );
         assert!(!decoded
             .report()
             .losses

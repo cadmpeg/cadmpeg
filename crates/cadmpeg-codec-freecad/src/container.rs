@@ -65,6 +65,123 @@ pub(crate) fn has_document_markers(
     Ok(contains(document, b"<Document") && contains(document, b"SchemaVersion"))
 }
 
+/// A truncated first member can still contain its complete declarations.
+/// Only a fully framed and parsed declaration section settles design scope.
+fn partial_design_scope(
+    ctx: &DecodeContext<'_>,
+    root: View<'_>,
+) -> Result<Option<bool>, CodecError> {
+    use cadmpeg_core::decode::{XmlEncoding, XmlTermination};
+    let bytes = root.window();
+    if !bytes.starts_with(b"PK\x03\x04") {
+        return Ok(None);
+    }
+    let Some(flags) = View::u16_le_at(bytes, 6) else {
+        return Ok(None);
+    };
+    let Some(method) = View::u16_le_at(bytes, 8) else {
+        return Ok(None);
+    };
+    let Some(size) = View::u32_le_at(bytes, 18).and_then(|size| usize::try_from(size).ok()) else {
+        return Ok(None);
+    };
+    let Some(name_len) = View::u16_le_at(bytes, 26).map(usize::from) else {
+        return Ok(None);
+    };
+    let Some(extra_len) = View::u16_le_at(bytes, 28).map(usize::from) else {
+        return Ok(None);
+    };
+    let Some(name_end) = 30_usize.checked_add(name_len) else {
+        return Ok(None);
+    };
+    let Some(start) = name_end.checked_add(extra_len) else {
+        return Ok(None);
+    };
+    if flags & 1 != 0
+        || bytes.get(30..name_end) != Some(b"Document.xml")
+        || start > bytes.len()
+        || size <= bytes.len() - start
+    {
+        return Ok(None);
+    }
+    let payload = &bytes[start..];
+    let inflated;
+    let prefix = match method {
+        0 => payload,
+        8 => {
+            let Some(expanded) = View::u32_le_at(bytes, 22) else {
+                return Ok(None);
+            };
+            let bounded = u64::from(expanded).min(ctx.per_expand_allowance());
+            let allowance = usize::try_from(bounded).map_err(|_| {
+                CodecError::malformed("partial ZIP expansion size is not addressable")
+            })?;
+            inflated = ctx.inflate_probe(View::over_retained(payload), allowance, false)?;
+            let Some(ref prefix) = inflated else {
+                return Ok(None);
+            };
+            prefix.as_slice()
+        }
+        _ => return Ok(None),
+    };
+    let view = View::over_retained(prefix);
+    let scan =
+        ctx.scan_xml_elements(view, XmlEncoding::Utf8, "scan partial FreeCAD declarations")?;
+    let elements = scan.elements();
+    let mut sections = elements.iter().filter(|element| {
+        let Some(parent) = element.parent().and_then(|index| elements.get(index)) else {
+            return false;
+        };
+        matches!(element.name().window(), b"Objects" | b"Features")
+            && parent.parent().is_none()
+            && parent.name().window() == b"Document"
+    });
+    let Some(element) = sections.next() else {
+        return Ok(None);
+    };
+    if sections.next().is_some()
+        || element.termination() != XmlTermination::EndTag
+        || element.nesting_damage()
+    {
+        return Ok(None);
+    }
+    let name = element.name().window();
+    let Ok(text) = std::str::from_utf8(element.extent().window()) else {
+        return Ok(None);
+    };
+    let xml = match ctx.parse_xml(text, "parse partial FreeCAD declarations") {
+        Ok(xml) => xml,
+        Err(CodecError::ResourceLimit(limit)) => return Err(CodecError::ResourceLimit(limit)),
+        Err(_) => return Ok(None),
+    };
+    let declarations = xml.root_element();
+    let Some(count) = declarations
+        .attribute("Count")
+        .and_then(|value| value.parse::<usize>().ok())
+    else {
+        return Ok(None);
+    };
+    let tag = if name == b"Objects" {
+        "Object"
+    } else {
+        "Feature"
+    };
+    let rows = || {
+        declarations
+            .children()
+            .filter(|node| node.has_tag_name(tag))
+    };
+    if rows().count() != count
+        || rows().any(|node| node.attribute("type").is_none() || node.attribute("name").is_none())
+    {
+        return Ok(None);
+    }
+    Ok(Some(rows().any(|node| {
+        node.attribute("type")
+            .is_some_and(crate::design::is_design_object)
+    })))
+}
+
 /// Fully scanned container used by inspection and decode.
 pub(crate) struct Scan<'a> {
     /// Recoverable container metadata diagnostics.
@@ -84,6 +201,8 @@ pub(crate) struct Scan<'a> {
     pub(crate) failed_members: BTreeSet<String>,
     /// Retained-record identities each failed member's give-up kept.
     pub(crate) failed_retained: BTreeMap<String, Vec<cadmpeg_ir::ids::UnknownId>>,
+    /// The incomplete ZIP directory or unframed tail, when present.
+    pub(crate) recovery_part: Option<cadmpeg_ir::ids::UnknownId>,
     /// Inflated entry views, each retaining its [`SpaceId`](cadmpeg_core::decode::SpaceId).
     pub(crate) data: BTreeMap<String, View<'a>>,
 }
@@ -169,7 +288,7 @@ pub(crate) fn attempt<'a>(
     // drops design and the cut scope matches the readable decode (#224
     // ruling 1). Declarations never admitted leave design unknown and the
     // stub keeps both classes.
-    let mut found_design: Option<bool> = None;
+    let mut found_design = partial_design_scope(ctx, root)?;
     let retained_before: std::collections::BTreeSet<_> = parts
         .fidelity()
         .retained_records()
@@ -199,11 +318,40 @@ pub(crate) fn attempt<'a>(
             );
         }
         let opened = parts::open_optional(ctx, &archive, root, stage)?;
+        let mut recovery_part = None;
+        if let Some(reason) = archive.recovery_reason() {
+            let (start, end) = if let Some(tail) = archive.recovery_tail() {
+                let absolute = |offset| {
+                    usize::try_from(offset)
+                        .ok()
+                        .and_then(|offset| root.start().checked_add(offset))
+                };
+                absolute(tail.start)
+                    .zip(absolute(tail.end))
+                    .ok_or_else(|| CodecError::malformed("ZIP recovery tail offsets overflow"))?
+            } else {
+                (root.end(), root.end())
+            };
+            let extent = root
+                .child(start, end)
+                .ok_or_else(|| CodecError::malformed("ZIP recovery tail escapes its source"))?;
+            let label = if extent.window().starts_with(b"PK\x03\x04") {
+                "zip.local_header"
+            } else {
+                "zip.central_directory"
+            };
+            let spec = cadmpeg_ir::source_fidelity::parts::PartSpec::new(label)
+                .holding(std::iter::empty::<cadmpeg_ir::ArenaClass>());
+            recovery_part = Some(spec.unreadable_id(cadmpeg_ir::CodecFormat::Fcstd, extent)?);
+            ctx.decode_part(stage, extent, spec, |_| {
+                Err::<(), _>(CodecError::malformed(reason))
+            })?;
+        }
         let Some(document) = document else {
             parts::keep_readable_entries(ctx, &archive, &opened, stage)?;
             return Ok(None);
         };
-        scan_impl(&archive, document, opened).map(Some)
+        scan_impl(&archive, document, opened, recovery_part).map(Some)
     })?;
     match outcome {
         Some(Some(scan)) => Ok(ScanOutcome::Readable {
@@ -255,6 +403,7 @@ fn scan_impl<'a>(
     archive: &ArchiveSnapshot<'a>,
     document: parts::Document<'a>,
     mut opened: parts::OptionalMembers<'a>,
+    recovery_part: Option<cadmpeg_ir::ids::UnknownId>,
 ) -> Result<Scan<'a>, CodecError> {
     let parts::Document {
         view: document_view,
@@ -303,6 +452,7 @@ fn scan_impl<'a>(
         object_declarations,
         failed_members: opened.failed,
         failed_retained: opened.failed_retained,
+        recovery_part,
         data,
     })
 }
@@ -312,6 +462,7 @@ pub(crate) fn entry_records(
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
     failed_retained: &BTreeMap<String, Vec<cadmpeg_ir::ids::UnknownId>>,
+    failed_member_classes: &BTreeMap<String, cadmpeg_ir::ArenaClasses>,
     fidelity: &mut cadmpeg_ir::source_fidelity::SourceFidelity,
 ) -> Result<Vec<EntryRecord>, CodecError> {
     let mut records = Vec::new();
@@ -340,7 +491,7 @@ pub(crate) fn entry_records(
                 // attributes are read again here for this member alone.
                 let mut owners = references
                     .get(entry.name.as_str())
-                    .map_or(Vec::new(), |owners| owners.clone());
+                    .map_or(Vec::new(), Clone::clone);
                 for (index, property) in properties.iter().enumerate() {
                     if owners.contains(&index) {
                         continue;
@@ -355,12 +506,12 @@ pub(crate) fn entry_records(
                     }
                 }
                 refine_failed_member(
-                    &entry.name,
-                    entry.role,
+                    (&entry.name, entry.role),
                     &owners,
                     objects,
                     properties,
                     failed_retained,
+                    failed_member_classes.get(&entry.name),
                     fidelity,
                 )?;
                 continue;
@@ -405,16 +556,17 @@ pub(crate) fn entry_records(
 /// Narrow a failed member's retained give-up to the classes its bytes can
 /// hold: the referring properties' classes when named, else the entry role.
 fn refine_failed_member(
-    name: &str,
-    role: ContainerRole,
+    entry: (&str, ContainerRole),
     owners: &[usize],
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
     failed_retained: &BTreeMap<String, Vec<cadmpeg_ir::ids::UnknownId>>,
+    held_classes: Option<&cadmpeg_ir::ArenaClasses>,
     fidelity: &mut cadmpeg_ir::source_fidelity::SourceFidelity,
 ) -> Result<(), CodecError> {
     use cadmpeg_ir::document::{ArenaClass, ArenaClasses};
-    let mut classes = ArenaClasses::new();
+    let (name, role) = entry;
+    let mut classes = held_classes.cloned().unwrap_or_else(ArenaClasses::new);
     match role {
         ContainerRole::Brep | ContainerRole::Thumbnail => {
             classes.insert(ArenaClass::Model);
