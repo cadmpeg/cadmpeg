@@ -466,26 +466,6 @@ impl<'a> ScopeHistoryGraph<'a> {
         }
     }
 
-    fn state_key(
-        &self,
-        scope: &DesignParameterScope,
-        state_id: i64,
-    ) -> Option<(String, ComponentHistoryNamespace, String, i64)> {
-        let (Some(stream), Some(namespace), Some(history_id)) = (
-            native_stream(&scope.id),
-            self.component_namespaces.get(&scope.id),
-            self.history_id(scope),
-        ) else {
-            return None;
-        };
-        Some((
-            stream.to_owned(),
-            *namespace,
-            history_id.to_owned(),
-            state_id,
-        ))
-    }
-
     /// Follow `scope.previous_history_state_id()` until a scope accepted by
     /// `projected` is reached. Internal scopes preserve state continuity but
     /// are not themselves authored top-level features.
