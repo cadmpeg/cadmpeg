@@ -959,6 +959,36 @@ fn sketch_graph_point(record_index: u32) -> SketchPoint {
 }
 
 #[test]
+fn sketch_member_run_counts_base_point_and_stops_at_count() {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(b"282");
+    bytes.extend_from_slice(&100u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 41]);
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    for value in [1130u32, 1131, 1179] {
+        bytes.push(1);
+        bytes.extend_from_slice(&value.to_le_bytes());
+        bytes.extend_from_slice(&[0; 6]);
+    }
+    bytes.extend_from_slice(&[0; 4]);
+    bytes.extend_from_slice(&[1, 9, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    let values = |bytes: &[u8]| {
+        tested_parse_sketch_member_run(bytes, 0, 100)
+            .into_iter()
+            .map(|member| member.value)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(values(&bytes), vec![1130, 1131, 1179]);
+    bytes[52..56].copy_from_slice(&2u32.to_le_bytes());
+    bytes.truncate(78);
+    bytes.extend_from_slice(&[1, 9, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+    assert_eq!(values(&bytes), vec![1130, 1131]);
+    bytes[52..56].copy_from_slice(&0u32.to_le_bytes());
+    assert_eq!(values(&bytes), Vec::<u32>::new());
+}
+
+#[test]
 fn sketch_member_run_backfills_relation_free_owners() {
     let mut bytes = vec![0u8; 40];
     let paired_at = bytes.len();
@@ -966,7 +996,7 @@ fn sketch_member_run_backfills_relation_free_owners() {
     bytes.extend_from_slice(b"282");
     bytes.extend_from_slice(&100u32.to_le_bytes());
     bytes.extend_from_slice(&[0; 41]);
-    bytes.extend_from_slice(&2u32.to_le_bytes());
+    bytes.extend_from_slice(&3u32.to_le_bytes());
     let mut member_offsets = Vec::new();
     member_offsets.push(u64_from_index(bytes.len() + 1));
     bytes.push(1);
