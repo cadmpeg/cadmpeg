@@ -30563,7 +30563,7 @@ section = "Assembly operands"
 anchor = "A path-pattern settings record has type GUID"
 size = 267
 note = "Offsets are relative to the record's indexed header; the next indexed header follows at offset 267."
-parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/pattern.rs"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/path_pattern.rs"
 
 [[record.gap]]
 offset = 0
@@ -30666,7 +30666,7 @@ section = "Assembly operands"
 anchor = "A path-start record in the scope reference table has type GUID"
 size = 197
 note = "Offsets are relative to the record's indexed header; the next indexed header follows at offset 197."
-parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/pattern.rs"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/path_pattern.rs"
 
 [[record.gap]]
 offset = 0

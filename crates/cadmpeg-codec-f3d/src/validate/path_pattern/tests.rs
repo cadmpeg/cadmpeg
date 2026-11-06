@@ -9,7 +9,6 @@ use crate::records::identity::Located;
 fn settings() -> DesignPathPatternSettings {
     DesignPathPatternSettings {
         settings_record_index: 322,
-        settings_class_tag: "256".to_owned().try_into().unwrap(),
         settings_byte_offset: 1_000,
         total_extent: Located {
             value: false,
@@ -124,7 +123,13 @@ fn path_pattern_settings_link_their_typed_records_and_offsets() {
     assert_eq!(finding_count(&native(settings(), vec![333], 3)), 1);
     assert_eq!(finding_count(&native(settings(), vec![319], 3)), 1);
     assert_eq!(finding_count(&native(settings(), vec![319, 333], 4)), 1);
-    let mut wrong_class = settings();
-    wrong_class.settings_class_tag = "257".to_owned().try_into().unwrap();
-    assert_eq!(finding_count(&native(wrong_class, vec![319, 333], 3)), 1);
+    let mut moved_settings = settings();
+    moved_settings.settings_byte_offset = 1_001;
+    assert_eq!(finding_count(&native(moved_settings, vec![319, 333], 3)), 1);
+    let mut unknown_settings = settings();
+    unknown_settings.settings_record_index = 321;
+    assert_eq!(
+        finding_count(&native(unknown_settings, vec![319, 333], 3)),
+        1
+    );
 }

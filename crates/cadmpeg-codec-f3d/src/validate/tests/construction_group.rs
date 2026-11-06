@@ -683,7 +683,8 @@ fn a_path_pattern_group_role_matches_its_scope_reference_ordinal() {
         let path_table = || vec![300, 301, 302, 100, 101];
         assert_eq!(findings(seed_table(), 1, DesignOperandRole::BODIES_B), 0);
         assert_eq!(findings(seed_table(), 1, DesignOperandRole::ROLE_0X10), 0);
-        assert_eq!(findings(seed_table(), 1, DesignOperandRole::BODIES_A), 1);
+        assert_eq!(findings(seed_table(), 1, DesignOperandRole::BODIES_A), 0);
+        assert_eq!(findings(seed_table(), 1, DesignOperandRole::ROLE_0X21), 1);
         assert_eq!(findings(seed_table(), 1, DesignOperandRole::ROLE_0X5), 1);
         assert_eq!(findings(path_table(), 3, DesignOperandRole::ROLE_0X5), 0);
         assert_eq!(findings(path_table(), 3, DesignOperandRole::BODIES_B), 1);

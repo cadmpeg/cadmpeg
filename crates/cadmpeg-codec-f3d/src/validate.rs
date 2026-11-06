@@ -5279,7 +5279,9 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                 {
                     let seed = matches!(
                         group.role(),
-                        DesignOperandRole::BODIES_B | DesignOperandRole::ROLE_0X10
+                        DesignOperandRole::BODIES_A
+                            | DesignOperandRole::BODIES_B
+                            | DesignOperandRole::ROLE_0X10
                     ) && group.scope_reference_ordinal == 1;
                     let path = group.role() == DesignOperandRole::ROLE_0X5
                         && group.scope_reference_ordinal > 1;

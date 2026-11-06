@@ -46,27 +46,16 @@ pub(super) fn validate(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>) {
             (headers.next().is_none() && row.version == version).then_some(header.byte_offset)
         };
         let at = |base: u64, offset: usize| base.checked_add(u64_from_index(offset));
-        let (settings_guid, settings_version) = PATH_PATTERN_SETTINGS_TYPE;
-        let settings_typed = settings
-            .settings_class_tag
-            .as_str()
-            .parse::<usize>()
-            .ok()
-            .and_then(|tag| tag.checked_sub(256))
-            .and_then(|ordinal| rows.get(ordinal))
-            .is_some_and(|row| {
-                row.type_guid.as_str().eq_ignore_ascii_case(settings_guid)
-                    && row.version == settings_version
-            });
-        let settings_valid = settings_typed
-            .then_some(settings.settings_byte_offset)
-            .is_some_and(|base| {
-                Some(settings.flipped.offset) == at(base, settings_layout::FLIPPED)
-                    && Some(settings.path_oriented.offset)
-                        == at(base, settings_layout::PATH_ORIENTED)
-                    && Some(settings.total_extent.offset)
-                        == at(base, settings_layout::DISTANCE_TYPE)
-            });
+        let settings_valid =
+            typed_header(settings.settings_record_index, PATH_PATTERN_SETTINGS_TYPE)
+                .filter(|base| *base == settings.settings_byte_offset)
+                .is_some_and(|base| {
+                    Some(settings.flipped.offset) == at(base, settings_layout::FLIPPED)
+                        && Some(settings.path_oriented.offset)
+                            == at(base, settings_layout::PATH_ORIENTED)
+                        && Some(settings.total_extent.offset)
+                            == at(base, settings_layout::DISTANCE_TYPE)
+                });
         let start_valid = typed_header(settings.start_record_index, PATH_PATTERN_START_TYPE)
             .is_some_and(|base| {
                 Some(settings.start_parameter.offset) == at(base, start_layout::START_PARAMETER)

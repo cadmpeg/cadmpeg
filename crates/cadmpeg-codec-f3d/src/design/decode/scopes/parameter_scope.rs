@@ -184,8 +184,12 @@ pub(crate) fn decode_parameter_scopes(
             if let scope::DesignScopePayloadMut::Emboss(slot) = scope.payload_mut() {
                 *slot = emboss;
             }
-            let path_pattern =
-                super::pattern::exact_path_pattern_settings(bytes, &records, &scope, &class_types);
+            let path_pattern = super::path_pattern::exact_path_pattern_settings(
+                bytes,
+                &records,
+                &scope,
+                &class_types,
+            );
             if let scope::DesignScopePayloadMut::PathPattern(slot) = scope.payload_mut() {
                 *slot = path_pattern;
             }

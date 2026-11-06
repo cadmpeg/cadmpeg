@@ -1192,6 +1192,11 @@ pub(super) fn scope_related_indices(
             .chain(thread_trailer)
             .chain(
                 scope
+                    .path_pattern_settings()
+                    .map(|settings| settings.settings_record_index),
+            )
+            .chain(
+                scope
                     .occurrence_transfer
                     .as_ref()
                     .into_iter()

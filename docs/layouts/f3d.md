@@ -8967,7 +8967,7 @@ Spec §Assembly operands · layout: byte offsets · size: 267 B
 Offsets are relative to the record's indexed header; the next indexed header follows at offset 267.
 
 Parsed by:
-- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/pattern.rs`
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/path_pattern.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -8997,7 +8997,7 @@ Spec §Assembly operands · layout: byte offsets · size: 197 B
 Offsets are relative to the record's indexed header; the next indexed header follows at offset 197.
 
 Parsed by:
-- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/pattern.rs`
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/path_pattern.rs`
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
