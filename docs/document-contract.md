@@ -46,8 +46,6 @@ A record that contains a given-up part keeps the fields it read. A field whose b
 
 Whole-file refusals are `WrongFormat`, `UnsupportedDialect`, a session-scope `ResourceLimit`, `Io`, and `Malformed` or `Truncated` when the decoder finds no part at all. A strict-mode rejection is the caller's rejection of a completed decode and is not a codec refusal.
 
-Diagnostic records that restate a part give-up or unread bytes predate this home. Their removal belongs to the decoder units that own them (#222 IGES, #223 Rhino, #224 FreeCAD, #225 F3D, #227 Inventor, #229 Creo, #230 NX). The arena inventories name what the tree holds today.
-
 ## Out-of-scope classes
 
 `scope[C] = false` holds when the decoder holds no record of class C and found no part of class C: the request excluded C, or no part of C could be located. A class whose parts were found but failed stays in scope; its failed parts are given up, and their classes enter `unrepresented`. A class for which the format defines no part is held whenever the request includes it, with empty arenas. A container-only decode delivers empty scope.
@@ -68,11 +66,11 @@ Rule E stores evaluation staleness as `Feature.needs_recompute` on the wire. The
 
 ## Residual bytes
 
-A synthesized record carries document content authored from neutral and typed native records. Retained source bytes travel with the `unknowns` stub for their part and do not enter synthesized records. The per-record residual accounting of #232 §3.3 belongs to the writer units that own it (#233 STEP, #234 IGES, #235 Rhino, #236 F3D, #237 SLDPRT, #238 FreeCAD).
+A synthesized record carries document content authored from neutral and typed native records. Retained source bytes travel with the `unknowns` stub for their part and do not enter synthesized records. For positions the decoder does not read, the writer uses the value stated in the format specification. When the specification gives no value, the writer charges `export:record.residual-unavailable` (Warning), naming the record. A test checks the authored values and the loss.
 
 ## Patch rule
 
-Patch and replay are eligible with empty `unrepresented` and an unedited document. A patch that cannot express the edit selects synthesis and records `SynthesisCause::PatchDeclined { reason }`. The content-equality gate of #232 E1 and its test belong to the writer units that own them.
+Patch and replay require empty `unrepresented`. Replay requires an unedited document. A patch that cannot express the edit selects synthesis and records `SynthesisCause::PatchDeclined { reason }`. The patch and replay test writes an unedited decode with fidelity, decodes the output, and checks agreement in both directions with zero export losses.
 
 ## New codecs, writers, classes, parts
 

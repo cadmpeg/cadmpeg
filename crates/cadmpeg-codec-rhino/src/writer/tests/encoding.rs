@@ -2,7 +2,7 @@
 
 use crate::writer::{
     archive_body_len, archive_final_size, brep_loop_type, brep_trim_type, native_i32_count, utf16,
-    wire_index,
+    wire_index, writable_i32_count,
 };
 use cadmpeg_ir::codec::write::target::TargetRequest;
 use cadmpeg_ir::codec::write::EncodeInput;
@@ -54,6 +54,19 @@ fn admitted_native_counts_outside_i32_lanes_are_writer_limits() {
         index_error,
         cadmpeg_core::CodecError::InvalidInput(_)
     ));
+}
+
+#[test]
+fn unsupported_nurbs_count_names_its_record() {
+    let count = usize::try_from(i32::MAX).unwrap() + 1;
+    let error = writable_i32_count(
+        count,
+        "curve cadir:model:curve#large exceeds native count".into(),
+    )
+    .unwrap_err();
+    assert!(
+        matches!(error, crate::writer::WriteError::Omit(message) if message.contains("cadir:model:curve#large"))
+    );
 }
 
 #[test]
