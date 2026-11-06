@@ -50,6 +50,13 @@ pub(in crate::writer) struct LightExport {
     pub(in crate::writer) losses: Vec<LossNote>,
 }
 
+struct LightRecordExport {
+    payload: Vec<u8>,
+    reassigned: Option<(i32, i32)>,
+    attribute_loss: Option<String>,
+    attribute_change: Option<String>,
+}
+
 pub(in crate::writer) fn lights(ir: &CadIr) -> Result<LightExport, WriteError> {
     let mut output = LightExport {
         records: Vec::new(),
@@ -57,31 +64,42 @@ pub(in crate::writer) fn lights(ir: &CadIr) -> Result<LightExport, WriteError> {
         losses: Vec::new(),
     };
     for record in records(ir, "lights") {
-        match light(record, output.records.len()) {
-            Ok((payload, reassigned, attribute_loss)) => {
-                output.records.push(payload);
+        match light(record, output.records.len(), ir) {
+            Ok(exported) => {
+                output.records.push(exported.payload);
                 let links = record.field("links").is_some_and(|value| {
                     !value.is_null() && value.as_array().is_none_or(|links| !links.is_empty())
                 });
-                if attribute_loss.is_some() || links {
+                if exported.attribute_loss.is_some() || links {
                     let mut omitted = Vec::new();
-                    if let Some(reason) = attribute_loss {
-                        omitted.push(format!("attributes: {reason}"));
+                    if let Some(reason) = &exported.attribute_loss {
+                        omitted.push(reason.clone());
                     }
                     if links {
-                        omitted.push("links".to_owned());
+                        omitted.push("links omitted".to_owned());
                     }
                     output
                         .losses
                         .push(RhinoLossCode::WriterAttributesOmitted.note(format!(
-                            "light {} omitted {}",
+                            "light {}: {}",
                             record.id(),
                             omitted.join(", ")
                         )));
-                } else if reassigned.is_none() {
+                }
+                if let Some(change) = &exported.attribute_change {
+                    output.losses.push(
+                        RhinoLossCode::WriterLightAttributeIndexReassigned
+                            .note(format!("light {}: {change}", record.id())),
+                    );
+                }
+                if exported.attribute_loss.is_none()
+                    && !links
+                    && exported.attribute_change.is_none()
+                    && exported.reassigned.is_none()
+                {
                     output.written.insert(record.id().to_owned());
                 }
-                if let Some((source, written)) = reassigned {
+                if let Some((source, written)) = exported.reassigned {
                     output
                         .losses
                         .push(RhinoLossCode::WriterLightIndexReassigned.note(format!(
@@ -103,7 +121,8 @@ pub(in crate::writer) fn lights(ir: &CadIr) -> Result<LightExport, WriteError> {
 fn light(
     record: &cadmpeg_ir::NativeRecord,
     index: usize,
-) -> Result<(Vec<u8>, Option<(i32, i32)>, Option<String>), WriteError> {
+    ir: &CadIr,
+) -> Result<LightRecordExport, WriteError> {
     let fields = record.fields().map_err(|error| match error {
         cadmpeg_ir::native::NativeConvertError::Resource(
             cadmpeg_core::CodecError::ResourceLimit(limit),
@@ -174,24 +193,31 @@ fn light(
     payload.extend(scalar(&fields, "hotspot")?.to_le_bytes());
     let mut body = class_wrapper(LIGHT_CLASS, &payload)?;
     let mut attribute_loss = None;
+    let mut attribute_change = None;
     if let Some(value) = fields.get("attributes").filter(|value| !value.is_null()) {
-        match attributes::encode(value) {
-            Ok(attributes) => body.extend(crc_chunk_with_direct(
-                0x0200_8061,
-                &attributes,
-                &attributes,
-            )?),
-            Err(WriteError::Omit(reason)) => attribute_loss = Some(reason),
+        match attributes::encode(value, ir) {
+            Ok((attributes, change)) => {
+                body.extend(crc_chunk_with_direct(
+                    0x0200_8061,
+                    &attributes,
+                    &attributes,
+                )?);
+                attribute_change = change;
+            }
+            Err(WriteError::Omit(reason)) => {
+                attribute_loss = Some(format!("attributes omitted: {reason}"))
+            }
             Err(error) => return Err(error),
         }
     }
     body.extend(short_chunk(0x8200_006f, 0));
     let payload = crc_chunk_with_direct(0x2000_8060, &body, &[])?;
-    Ok((
+    Ok(LightRecordExport {
         payload,
-        (source_index != written_index).then_some((source_index, written_index)),
+        reassigned: (source_index != written_index).then_some((source_index, written_index)),
         attribute_loss,
-    ))
+        attribute_change,
+    })
 }
 
 #[cfg(test)]
@@ -265,14 +291,35 @@ mod tests {
             "section_fill_rule":1, "clipping_plane_label_style":2, "detail_background_visible":true, "rendering_materials":[]
         });
         let expected_attributes = attributed["attributes"].clone();
+        let mut reindexed = attributed.clone();
+        reindexed["source_uuid"] = json!("99999999-9999-9999-9999-999999999999");
+        reindexed["name"] = json!("reindexed linetype");
+        reindexed["archive_index"] = json!(3);
+        reindexed["attributes"]["linetype_index"] = json!(4);
+        let mut unresolved = attributed.clone();
+        unresolved["source_uuid"] = json!("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+        unresolved["name"] = json!("unresolved linetype");
+        unresolved["archive_index"] = json!(4);
+        unresolved["attributes"]["linetype_index"] = json!(99);
         records.push(record("rhino:test:light#valid", valid));
         records.push(record("rhino:test:light#z-partial", partial));
         records.push(record("rhino:test:light#zz-attributed", attributed));
+        records.push(record("rhino:test:light#zzz-reindexed", reindexed));
+        records.push(record("rhino:test:light#zzzz-unresolved", unresolved));
         let mut ir = CadIr::empty();
         ir.native
             .namespace_mut("rhino")
             .arenas_mut()
             .insert("lights".into(), records);
+        ir.native.namespace_mut("rhino").arenas_mut().insert(
+            "linetypes".into(),
+            vec![record(
+                "rhino:test:linetype#source",
+                json!({
+                    "archive_index": 4, "name": "line", "segments": [], "taper_points": []
+                }),
+            )],
+        );
         ir.finalize();
         for target in [
             "rhino:archive-50",
@@ -340,8 +387,26 @@ mod tests {
             assert!(report.losses.iter().any(|loss| {
                 loss.code == crate::loss::RhinoLossCode::WriterAttributesOmitted.kind()
                     && loss.message.contains("rhino:test:light#z-partial")
-                    && loss.message.contains("attributes:")
+                    && loss.message.contains("attributes omitted:")
                     && loss.message.contains("links")
+            }));
+            assert!(report.losses.iter().any(|loss| {
+                loss.code == crate::loss::RhinoLossCode::WriterLightAttributeIndexReassigned.kind()
+                    && loss.message.contains("rhino:test:light#zzz-reindexed")
+                    && loss.message.contains("linetype index 4 is written as 0")
+            }));
+            assert_eq!(
+                report.native_dispositions.record_disposition(
+                    "rhino",
+                    "lights",
+                    "rhino:test:light#zzz-reindexed"
+                ),
+                cadmpeg_ir::codec::write::NativeDisposition::Dropped
+            );
+            assert!(report.losses.iter().any(|loss| {
+                loss.code == crate::loss::RhinoLossCode::WriterAttributesOmitted.kind()
+                    && loss.message.contains("rhino:test:light#zzzz-unresolved")
+                    && loss.message.contains("linetype index 99 is unresolved")
             }));
             let decoded = crate::RhinoCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
@@ -357,12 +422,16 @@ mod tests {
                 .namespace("rhino")
                 .expect("rhino")
                 .arenas()["lights"];
-            assert_eq!(lights.len(), 3);
+            assert_eq!(lights.len(), 5);
             assert_eq!(lights[0].field("name"), Some(json!("valid light")));
             assert_eq!(lights[0].field("archive_index"), Some(json!(0)));
             assert_eq!(
                 lights[2].field("attributes"),
                 Some(expected_attributes.clone())
+            );
+            assert_eq!(
+                lights[3].field("attributes").unwrap()["linetype_index"],
+                json!(0)
             );
         }
     }

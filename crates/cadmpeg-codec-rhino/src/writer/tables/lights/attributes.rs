@@ -43,7 +43,35 @@ fn absent_or_empty(value: &Value) -> bool {
     value.is_null() || value.as_array().is_some_and(Vec::is_empty)
 }
 
-pub(super) fn encode(value: &Value) -> Result<Vec<u8>, WriteError> {
+fn linetype_index(ir: &cadmpeg_ir::CadIr, source: i32) -> Result<i32, WriteError> {
+    if source < 0 {
+        return Ok(source);
+    }
+    let mut matches = super::records(ir, "linetypes")
+        .iter()
+        .enumerate()
+        .filter(|(_, record)| {
+            record
+                .field("archive_index")
+                .and_then(|value| value.as_i64())
+                == Some(i64::from(source))
+        });
+    let index = matches
+        .next()
+        .map(|(index, _)| index)
+        .ok_or_else(|| WriteError::Omit(format!("light linetype index {source} is unresolved")))?;
+    if matches.next().is_some() {
+        return Err(WriteError::Omit(format!(
+            "light linetype index {source} is ambiguous"
+        )));
+    }
+    Ok(super::wire_index(index)?)
+}
+
+pub(super) fn encode(
+    value: &Value,
+    ir: &cadmpeg_ir::CadIr,
+) -> Result<(Vec<u8>, Option<String>), WriteError> {
     const FIELDS: &[&str] = &[
         "source_uuid",
         "name",
@@ -97,7 +125,7 @@ pub(super) fn encode(value: &Value) -> Result<Vec<u8>, WriteError> {
             "light attribute {name} has no encoder"
         )));
     }
-    for name in ["layer_index", "material_index", "linetype_index"] {
+    for name in ["layer_index", "material_index"] {
         if integer(fields, name)? != -1 {
             return Err(WriteError::Omit(format!(
                 "light attribute {name} needs table-index remapping"
@@ -143,6 +171,8 @@ pub(super) fn encode(value: &Value) -> Result<Vec<u8>, WriteError> {
     }
     let id = crate::presentation::parse_uuid_text(string(fields, "source_uuid")?)
         .ok_or_else(|| WriteError::Omit("light attribute source_uuid is invalid".into()))?;
+    let source_linetype = integer(fields, "linetype_index")?;
+    let written_linetype = linetype_index(ir, source_linetype)?;
     let mut body = vec![0x2d];
     body.extend(id.to_wire());
     body.extend((-1_i32).to_le_bytes());
@@ -150,10 +180,10 @@ pub(super) fn encode(value: &Value) -> Result<Vec<u8>, WriteError> {
         body.push(tag);
         body.extend(super::utf16(string(fields, name)?)?);
     }
-    for (tag, name) in [(3, "linetype_index"), (4, "material_index")] {
-        body.push(tag);
-        body.extend(integer(fields, name)?.to_le_bytes());
-    }
+    body.push(3);
+    body.extend(written_linetype.to_le_bytes());
+    body.push(4);
+    body.extend(integer(fields, "material_index")?.to_le_bytes());
     for (tag, name) in [(6, "color"), (7, "plot_color")] {
         body.push(tag);
         body.extend(color(fields, name)?);
@@ -292,5 +322,7 @@ pub(super) fn encode(value: &Value) -> Result<Vec<u8>, WriteError> {
         body.extend([42, 1]);
     }
     body.push(0);
-    Ok(body)
+    let change = (source_linetype != written_linetype)
+        .then(|| format!("linetype index {source_linetype} is written as {written_linetype}"));
+    Ok((body, change))
 }

@@ -247,6 +247,8 @@ pub(crate) enum RhinoLossCode {
     WriterLightOmitted,
     /// A light's stored archive index changes to its emitted table position.
     WriterLightIndexReassigned,
+    /// A light attribute reference uses a reassigned table index.
+    WriterLightAttributeIndexReassigned,
     /// A hatch pattern has incomplete or unrepresentable fields.
     WriterHatchPatternOmitted,
     /// Hatch pattern fields cannot be retained by the selected table layout.
@@ -388,6 +390,7 @@ impl RhinoLossCode {
         Self::WriterAttributesOmitted,
         Self::WriterLightOmitted,
         Self::WriterLightIndexReassigned,
+        Self::WriterLightAttributeIndexReassigned,
         Self::WriterHatchPatternOmitted,
         Self::WriterHatchPatternFieldsReduced,
         Self::WriterLayerMembershipOmitted,
@@ -479,6 +482,7 @@ impl RhinoLossCode {
             Self::WriterAttributesOmitted => "writer.attributes-omitted",
             Self::WriterLightOmitted => "writer.light-omitted",
             Self::WriterLightIndexReassigned => "writer.light-index-reassigned",
+            Self::WriterLightAttributeIndexReassigned => "writer.light-attribute-index-reassigned",
             Self::WriterHatchPatternOmitted => "writer.hatch-pattern-omitted",
             Self::WriterHatchPatternFieldsReduced => "writer.hatch-pattern-fields-reduced",
             Self::WriterLayerMembershipOmitted => "writer.layer-membership-omitted",
@@ -619,6 +623,7 @@ impl RhinoLossCode {
             Self::WriterAttributesOmitted
             | Self::WriterLightOmitted
             | Self::WriterLightIndexReassigned
+            | Self::WriterLightAttributeIndexReassigned
             | Self::WriterHatchPatternOmitted
             | Self::WriterHatchPatternFieldsReduced => LossTaxonomy::AttributesNotTransferred,
             Self::WriterColorPrecisionReduced => LossTaxonomy::AppearanceReduced,
@@ -738,6 +743,7 @@ mod tests {
                 "writer.attributes-omitted",
                 "writer.light-omitted",
                 "writer.light-index-reassigned",
+                "writer.light-attribute-index-reassigned",
                 "writer.hatch-pattern-omitted",
                 "writer.hatch-pattern-fields-reduced",
                 "writer.layer-membership-omitted",
