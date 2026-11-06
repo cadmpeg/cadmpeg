@@ -230,7 +230,7 @@ impl ProfileGeometryWork {
         let region_hole_inferred = self.region_hole_inferred_selections.get();
         if region_hole_inferred != 0 {
             losses.push(F3dLossCode::FeatureProfileRegionHoleInferred.note(format!(
-                "{region_hole_inferred} extrude profile selection(s) assume that an unsupported hole of an inserted region belongs to the selected profile."
+                "{region_hole_inferred} extrude profile selection(s) assume that an inserted region's holes belong to the selected profile."
             )));
         }
         losses

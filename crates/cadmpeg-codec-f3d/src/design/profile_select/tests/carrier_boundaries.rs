@@ -110,7 +110,19 @@ fn transition_profile_prefers_consistent_side_loops_and_combines_cap_boundaries(
         Some(crate::design::profile_select::ResolvedProfileSelection::Loops(vec![0, 1])),
     ]);
     assert_eq!(resolved_outer_and_hole, Some(region.clone()));
-    assert!(outer_losses.is_empty());
+    assert!(outer_losses.iter().any(|loss| {
+        loss.code == crate::loss::F3dLossCode::FeatureProfileRegionHoleInferred.kind()
+    }));
+
+    let (resolved_region_and_both_loops, both_loops_losses) =
+        transition_selection_with_losses(vec![
+            Some(region.clone()),
+            Some(crate::design::profile_select::ResolvedProfileSelection::Loops(vec![0, 1])),
+        ]);
+    assert_eq!(resolved_region_and_both_loops, Some(region.clone()));
+    assert!(both_loops_losses.iter().any(|loss| {
+        loss.code == crate::loss::F3dLossCode::FeatureProfileRegionHoleInferred.kind()
+    }));
 
     let (resolved_outer_only, outer_only_losses) = transition_selection_with_losses(vec![
         Some(region.clone()),

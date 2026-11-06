@@ -3129,9 +3129,7 @@ pub(in crate::design) fn transition_inserted_profile_selection(
     let Some(region) = SketchProfileRegion::loops(outer, owned_holes).ok() else {
         return Ok(None);
     };
-    if !holes.iter().all(|hole| supported_holes.contains(hole)) {
-        profile_work.record_region_hole_profile_inferred();
-    }
+    profile_work.record_region_hole_profile_inferred();
     let output = vec![region];
     Ok(Some(ResolvedProfileSelection::Regions(output)))
 }

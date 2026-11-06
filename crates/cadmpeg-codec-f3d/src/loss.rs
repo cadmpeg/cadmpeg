@@ -329,8 +329,8 @@ pub(crate) enum F3dLossCode {
     /// Extrude profile selections assume that a supported hole boundary of an inserted region
     /// identifies the selected profile.
     FeatureProfileHoleBoundaryInferred,
-    /// Extrude profile selections assume that an unsupported hole of an inserted region belongs to
-    /// the selected profile.
+    /// Extrude profile selections assume that an inserted region's holes belong to the selected
+    /// profile.
     FeatureProfileRegionHoleInferred,
     /// Feature path selections retain native identities; no unique path.
     FeaturePathSelectionNative,
