@@ -374,6 +374,18 @@ fn a_document_parameter_is_authored_without_native_records_and_keeps_supported_s
     assert_eq!(parameters[0].value, ir.model.parameters[0].value);
     assert_eq!(parameters[1].name, "angle");
     assert_eq!(parameters[1].value, ir.model.parameters[2].value);
+    assert_eq!(parameters[1].ordinal, ir.model.parameters[2].ordinal);
+}
+
+#[test]
+fn non_driving_document_parameter_reduction_is_named() {
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("cube");
+    let mut value = parameter("width", 0, ParameterValue::Length(cadmpeg_ir::scalar::Length::new(42.0).unwrap()));
+    value.driving = false;
+    ir.model.parameters.push(value);
+    let (output, report) = super::source_less_analytic::synthesize_document(&ir, None);
+    assert_eq!(output.ir().model.parameters[0].value, ir.model.parameters[0].value);
+    assert!(report.losses.iter().any(|loss| loss.message.contains(ir.model.parameters[0].id.as_str()) && loss.message.contains("non-driving")));
 }
 
 #[test]

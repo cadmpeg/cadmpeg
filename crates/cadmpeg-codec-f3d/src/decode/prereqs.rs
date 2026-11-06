@@ -170,11 +170,12 @@ pub(super) fn decode(
             history_index.push(history);
         }
     }
-    let construction_recipes = crate::design::decode::parameters::decode_recipes(scan)?;
-    let design_material_assignments = crate::materials::decode_design_assignments(scan)?;
-    let design_types = crate::design::decode::meta::decode_types(scan)?;
     let mut record_parts =
         cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, ctx);
+    let construction_recipes =
+        crate::design::decode::parameters::decode_recipes(ctx, &mut record_parts, scan)?;
+    let design_material_assignments = crate::materials::decode_design_assignments(scan)?;
+    let design_types = crate::design::decode::meta::decode_types(scan)?;
     let modeling_length_unit =
         crate::design::decode::units::decode_document_length_unit(ctx, &mut record_parts, scan)?;
     let mut parameter_state_targets = std::collections::BTreeMap::new();
