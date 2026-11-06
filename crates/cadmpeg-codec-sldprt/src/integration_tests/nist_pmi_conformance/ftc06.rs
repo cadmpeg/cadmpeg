@@ -203,8 +203,10 @@ fn ftc_06_positions_target_typed_cylinders_only() {
         }
     }
 
-    let mut conical_hole_datums = Vec::new();
-    for (name, x) in [("Position15", -76.2), ("Position16", 76.2)] {
+    for (name, x, expected_datums) in [
+        ("Position15", -76.2, ["D", "H"]),
+        ("Position16", 76.2, ["D", "G"]),
+    ] {
         let annotation = ir
             .model
             .pmi
@@ -225,12 +227,18 @@ fn ftc_06_positions_target_typed_cylinders_only() {
             &cadmpeg_ir::pmi::GeometricToleranceKind::Position
         );
         assert!((magnitude.get().value.get() - 0.015 * MM_PER_INCH).abs() < VALUE_TOLERANCE);
-        let mut datums = datum_system
+        let datums = datum_system
             .as_ref()
             .map(|system| datum_names(ir, system))
             .unwrap_or_default();
-        datums.sort();
-        conical_hole_datums.push(datums);
+        assert_eq!(
+            datums,
+            expected_datums
+                .into_iter()
+                .map(String::from)
+                .collect::<Vec<_>>(),
+            "{name} ordered datum references"
+        );
         assert_eq!(annotation.targets.len(), 1);
         let geometry = cylinder_geometry(ir, annotation);
         let [(radius, origin, axis)] = geometry.as_slice() else {
@@ -244,12 +252,4 @@ fn ftc_06_positions_target_typed_cylinders_only() {
             "{name} cylinder axis direction"
         );
     }
-    conical_hole_datums.sort();
-    assert_eq!(
-        conical_hole_datums,
-        vec![
-            vec![String::from("D"), String::from("G")],
-            vec![String::from("D"), String::from("H")],
-        ]
-    );
 }
