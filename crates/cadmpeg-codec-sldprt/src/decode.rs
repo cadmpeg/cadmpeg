@@ -402,7 +402,8 @@ fn decode_result(
     retention.apply(&mut source_fidelity)?;
     // Layout oracles describe the delivered neutral state, including an
     // explicit Container request and derived configuration snapshots.
-    stamp_local_digests(ctx, &mut ir)?;
+    let complete = !body.losses.iter().any(|loss| loss.code.local_code() == "record.unreadable");
+    stamp_local_digests(ctx, &mut ir, complete)?;
     Ok(Decoded {
         ir,
         body,
@@ -5263,12 +5264,19 @@ fn bind_active_configuration_partition(
 }
 
 /// Fingerprint current document state for byte-layout eligibility only.
-fn stamp_local_digests(ctx: &DecodeContext<'_>, ir: &mut CadIr) -> Result<(), CodecError> {
+fn stamp_local_digests(
+    ctx: &DecodeContext<'_>,
+    ir: &mut CadIr,
+    complete: bool,
+) -> Result<(), CodecError> {
     ir.finalize();
     if let Some(source) = ir.source.as_mut() {
         for key in ["block_count", "compound_stream_count"] {
             source.attributes.remove(key);
         }
+    }
+    if !complete {
+        return Ok(());
     }
     let brep = brep_local_sha256_in_place(ctx, ir)?;
     let (swobjects, material, identities) = match (|| -> Result<_, CodecError> {
