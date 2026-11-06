@@ -2,6 +2,7 @@ use crate::design::decode::text::{fixed_guid_end, fixed_relaxed_guid_text, fixed
 use crate::layout::base_feature_class_377_prefix as class_377;
 use crate::layout::base_feature_class_452_262_compact as class_452_compact;
 use crate::layout::base_feature_class_452_262_expanded as class_452_expanded;
+use crate::loss::F3dLossCode;
 use crate::records::feature::base_feature::DesignBaseFeatureConstruction;
 use crate::records::feature::base_feature::DesignBaseFeatureEntry;
 use crate::records::feature::base_feature::DesignLegacyBaseFeatureBody;
@@ -800,6 +801,8 @@ pub(super) struct TimelineBodyOwner {
     record: u32,
     body_count: usize,
     reference_offset: u64,
+    /// A same-index paired header closes the object's frame.
+    paired: bool,
     /// The object is a paste object: its scope stores a source pair per body.
     pastes: bool,
     /// The paste object stores a null removal key: it pastes copies and keeps
@@ -829,14 +832,14 @@ fn null_removal_key_at(envelope: &[u8], at: usize) -> bool {
         .is_some_and(|(key, _)| key == NULL_GUID)
 }
 
-/// Index each scope named by exactly one paste or body-to-component timeline
-/// object.
+/// Index the paste and body-to-component timeline objects that name each
+/// scope, in ascending object record order.
 pub(super) fn timeline_body_owners<'a>(
     bytes: &[u8],
     records: &crate::design::decode::sketch::IndexedRecordOffsets,
     types: impl Iterator<Item = &'a crate::records::entity_header::SegmentType>,
-) -> HashMap<u32, TimelineBodyOwner> {
-    let mut owners = HashMap::<u32, Option<TimelineBodyOwner>>::new();
+) -> HashMap<u32, Vec<TimelineBodyOwner>> {
+    let mut owners = HashMap::<u32, Vec<TimelineBodyOwner>>::new();
     for design_type in types.filter(|design_type| {
         [PASTE_BODIES_TYPE_GUID, BODY_TO_COMPONENT_TYPE_GUID]
             .iter()
@@ -850,16 +853,14 @@ pub(super) fn timeline_body_owners<'a>(
             else {
                 continue;
             };
-            owners
-                .entry(scope)
-                .and_modify(|named| *named = None)
-                .or_insert(Some(owner));
+            owners.entry(scope).or_default().push(owner);
         }
     }
+    for named in owners.values_mut() {
+        named.sort_by_key(|owner| owner.record);
+        named.dedup_by_key(|owner| owner.record);
+    }
     owners
-        .into_iter()
-        .filter_map(|(scope, owner)| Some((scope, owner?)))
-        .collect()
 }
 
 fn parse_timeline_body_owner(
@@ -871,8 +872,11 @@ fn parse_timeline_body_owner(
     let offsets = records.offsets(record);
     let start = *offsets.first()?;
     // The object's frame ends at its next same-index header.
-    let end = *offsets.iter().find(|offset| **offset > start)?;
-    let bytes = bytes.get(..end)?;
+    let end = offsets.iter().copied().find(|offset| *offset > start);
+    let bytes = match end {
+        Some(end) => bytes.get(..end)?,
+        None => bytes,
+    };
     let count_at = if bytes
         .get(start + owner_prefix::ZERO_RUN_10..start + owner_prefix::BODY_COUNT)?
         == [0; 10]
@@ -906,8 +910,9 @@ fn parse_timeline_body_owner(
             record,
             body_count,
             reference_offset,
+            paired: end.is_some(),
             pastes,
-            keeps_sources: pastes && null_removal_key_at(bytes, cursor),
+            keeps_sources: pastes && end.is_some() && null_removal_key_at(bytes, cursor),
         },
     ))
 }
@@ -957,16 +962,65 @@ fn paste_sources(
         .collect()
 }
 
+/// The owned construction of the first object, in record order, whose owned
+/// runs read. Several objects add a loss and leave the copy sources empty; a
+/// paste object without a paired header and copy sources that do not resolve
+/// each add a loss.
+pub(super) fn timeline_owned_base_feature(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    owners: &[TimelineBodyOwner],
+    nodes: &HashMap<String, Option<u64>>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Option<DesignBaseFeatureConstruction> {
+    let (owner, (mut construction, source_loss)) = owners.iter().find_map(|owner| {
+        Some((
+            owner,
+            exact_timeline_owned_base_feature(bytes, scope, *owner, nodes)?,
+        ))
+    })?;
+    if owners.len() > 1 {
+        losses.push(F3dLossCode::FeatureTimelineOwnerCompeting.note(format!(
+            "{} is named by timeline objects {}; object {}, the lowest record whose owned runs read, owns it.",
+            scope.id,
+            owners
+                .iter()
+                .map(|owner| owner.record.to_string())
+                .collect::<Vec<_>>()
+                .join(", "),
+            owner.record
+        )));
+        if let DesignBaseFeatureConstruction::TimelineOwnedBodies { copy_sources, .. } =
+            &mut construction
+        {
+            copy_sources.clear();
+        }
+    } else {
+        losses.extend(source_loss);
+    }
+    if owner.pastes && !owner.paired {
+        losses.push(F3dLossCode::FeatureTimelineOwnerUnpaired.note(format!(
+            "{} is owned by timeline object {}, which has no same-index paired header; its copy form stays unread.",
+            scope.id, owner.record
+        )));
+    }
+    Some(construction)
+}
+
 /// Read the parallel parameter-body and body-entity runs of an owned scope.
 /// A paste object's scope also stores a GUID pair per body before its
 /// reference table; the source of each copy is read when the paste keeps its
-/// sources.
+/// sources. Unread pairs or unresolved sources then leave the copy sources
+/// empty and give a loss.
 pub(super) fn exact_timeline_owned_base_feature(
     bytes: &[u8],
     scope: &DesignParameterScope,
     owner: TimelineBodyOwner,
     nodes: &HashMap<String, Option<u64>>,
-) -> Option<DesignBaseFeatureConstruction> {
+) -> Option<(
+    DesignBaseFeatureConstruction,
+    Option<cadmpeg_ir::report::loss::LossNote>,
+)> {
     if scope.kind() != scope::DesignFeatureKind::BaseFeature {
         return None;
     }
@@ -991,27 +1045,41 @@ pub(super) fn exact_timeline_owned_base_feature(
     };
     let parameter_bodies = run(owner.body_count)?;
     let bodies = run(owner.body_count)?;
-    let pairs = if owner.pastes {
-        let references = usize::try_from(scope.reference_count_offset()).ok()?;
-        Some(paste_source_pairs(
-            bytes.get(..references)?,
-            cursor,
-            owner.body_count,
-        )?)
+    let mut source_loss = None;
+    let copy_sources = if owner.keeps_sources {
+        let pairs = usize::try_from(scope.reference_count_offset())
+            .ok()
+            .and_then(|references| bytes.get(..references))
+            .and_then(|bounded| paste_source_pairs(bounded, cursor, owner.body_count));
+        match pairs {
+            None => {
+                source_loss = Some(F3dLossCode::FeaturePasteSourcesUnresolved.note(format!(
+                    "{} keeps its pasted bodies; its source GUID pairs are missing or unreadable.",
+                    scope.id
+                )));
+                Vec::new()
+            }
+            Some(pairs) => paste_sources(pairs, nodes).unwrap_or_else(|| {
+                source_loss = Some(F3dLossCode::FeaturePasteSourcesUnresolved.note(format!(
+                    "{} keeps its pasted copies as stored bodies; a source GUID names no unique browser node.",
+                    scope.id
+                )));
+                Vec::new()
+            }),
+        }
     } else {
-        None
+        Vec::new()
     };
-    let copy_sources = pairs
-        .filter(|_| owner.keeps_sources)
-        .and_then(|pairs| paste_sources(pairs, nodes))
-        .unwrap_or_default();
-    Some(DesignBaseFeatureConstruction::TimelineOwnedBodies {
-        parameter_bodies,
-        bodies,
-        owner_record: owner.record,
-        owner_reference_offset: owner.reference_offset,
-        copy_sources,
-    })
+    Some((
+        DesignBaseFeatureConstruction::TimelineOwnedBodies {
+            parameter_bodies,
+            bodies,
+            owner_record: owner.record,
+            owner_reference_offset: owner.reference_offset,
+            copy_sources,
+        },
+        source_loss,
+    ))
 }
 
 /// Read the zero-body frame whose shared-metadata reference starts at offset 36.

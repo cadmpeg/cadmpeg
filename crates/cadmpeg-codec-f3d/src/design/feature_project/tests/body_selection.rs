@@ -226,7 +226,7 @@ fn paste_copy(
     cadmpeg_ir::features::FeatureDefinition,
     Vec<cadmpeg_ir::ids::BodyId>,
 )> {
-    super::super::same_component_paste_copy(
+    super::super::paste_copy::same_component_paste_copy(
         scope,
         scope.base_feature_construction().unwrap(),
         bindings,

@@ -152,16 +152,18 @@ fn browser_node_guid(record: &[u8]) -> Option<(String, usize)> {
 
 /// Map each decoded browser node's GUID, compared case-insensitively, to its
 /// Design entity suffix. A GUID that two typed browser-node frames of any
-/// version store maps to no suffix.
+/// version store maps to no suffix, and a typed frame without a readable GUID
+/// leaves the map empty.
 pub(super) fn browser_node_suffixes(
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
 ) -> Result<HashMap<String, Option<u64>>, CodecError> {
     let mut frames = HashMap::<String, usize>::new();
     for frame in typed_primary_frames(bytes, meta, BROWSER_NODE_TYPE_GUID, "browser-node")? {
-        if let Some((guid, _)) = browser_node_guid(&bytes[frame.start..frame.end]) {
-            *frames.entry(guid.to_ascii_lowercase()).or_default() += 1;
-        }
+        let Some((guid, _)) = browser_node_guid(&bytes[frame.start..frame.end]) else {
+            return Ok(HashMap::new());
+        };
+        *frames.entry(guid.to_ascii_lowercase()).or_default() += 1;
     }
     Ok(browser_node_records(bytes, meta)?
         .into_iter()
@@ -796,6 +798,10 @@ mod tests {
         assert_eq!(
             suffixes(Some((other, [0, 1, 1], BROWSER_NODE_TYPE_VERSION))),
             Some(Some(42))
+        );
+        assert_eq!(
+            suffixes(Some(("short", [0, 1, 1], BROWSER_NODE_TYPE_VERSION + 1))),
+            None
         );
         for second in [
             (lower.as_str(), [0, 1, 1], BROWSER_NODE_TYPE_VERSION),

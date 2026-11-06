@@ -161,7 +161,7 @@ fn base_feature_scope(
 }
 
 #[test]
-fn a_base_feature_scope_projected_as_a_paste_copy_reports_no_stored_body_loss() {
+fn a_base_feature_scope_projected_as_a_paste_copy_reports_its_assumed_placement() {
     use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
     let bodies = || {
         cadmpeg_ir::features::DistinctMembers::try_from(vec![
@@ -199,5 +199,11 @@ fn a_base_feature_scope_projected_as_a_paste_copy_reports_no_stored_body_loss() 
             rotation: None,
             copies: 1,
         }));
-    assert!(super::losses(&[feature], &[scope]).is_empty());
+    assert_eq!(
+        super::losses(&[feature], &[scope])
+            .iter()
+            .map(|loss| loss.code.clone())
+            .collect::<Vec<_>>(),
+        [crate::loss::F3dLossCode::FeaturePasteCopyPlacementAssumed.kind()]
+    );
 }

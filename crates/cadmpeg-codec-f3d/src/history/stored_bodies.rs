@@ -187,6 +187,10 @@ pub(crate) fn losses(
             "Base Feature" => {
                 let selection = match feature.map(|feature| feature.evaluation.definition()) {
                     Some(FeatureDefinition::Operation(FeatureOperation::MoveBody { .. })) => {
+                        losses.push(F3dLossCode::FeaturePasteCopyPlacementAssumed.note(format!(
+                            "{} pastes copies with zero translation and no rotation; the paste stores no placement.",
+                            scope.id
+                        )));
                         continue;
                     }
                     Some(FeatureDefinition::Operation(FeatureOperation::BaseFeature {
