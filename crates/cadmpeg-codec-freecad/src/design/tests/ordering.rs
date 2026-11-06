@@ -200,6 +200,12 @@ fn orderings(graph: &crate::persistence::Graph) -> (Ordering, Ordering) {
             &properties_by_owner,
             &parent_by_member,
             &std::collections::HashSet::new(),
+            &graph
+                .objects
+                .iter()
+                .filter(|object| super::super::is_design_object(&object.type_name))
+                .map(|object| object.id().as_str())
+                .collect(),
         )),
         owned_ordering(pairwise_feature_ordinals(
             &graph.objects,
@@ -374,6 +380,12 @@ fn design_object_ordering_is_linear_in_a_reverse_dependency_chain() {
         &properties_by_owner,
         &HashMap::new(),
         &std::collections::HashSet::new(),
+        &graph
+            .objects
+            .iter()
+            .filter(|object| super::super::is_design_object(&object.type_name))
+            .map(|object| object.id().as_str())
+            .collect(),
     )
     .expect("acyclic chain");
     let mut source_ordinals = graph
