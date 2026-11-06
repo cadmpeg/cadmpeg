@@ -858,7 +858,7 @@ fn scan_carriers_with_framing(
             if scanned_splines {
                 lane_refusals.append(&mut pcurve_refusals);
             }
-                pcurves.retain(|attr, _| !exclude.contains(attr));
+            pcurves.retain(|attr, _| !exclude.contains(attr));
             sp_curve::scan(body, &pcurves)
         });
         for wrapper in subset::resolve(ctx, &bounded, &out, subset::Pass::SurfaceCurves)? {
