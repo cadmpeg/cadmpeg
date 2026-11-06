@@ -1310,6 +1310,19 @@ fn prune_pass(
         .map(|row| (row.id.clone(), row.region.clone()))
         .collect::<std::collections::BTreeMap<_, _>>();
     scoped.model.regions.retain_mut(|row| {
+        if !scoped
+            .model
+            .bodies
+            .iter()
+            .any(|body| body.id == row.body && body.regions.contains(&row.id))
+        {
+            pruned(
+                "region",
+                row.id.as_str(),
+                format!("body {} does not own this region", row.body),
+            );
+            return false;
+        }
         for id in row.shells.clone() {
             if shell_owners.get(&id) != Some(&row.id) {
                 pruned(
@@ -1327,13 +1340,23 @@ fn prune_pass(
         }
         true
     });
-    let regions = existing!(regions);
+    let region_owners = scoped
+        .model
+        .regions
+        .iter()
+        .map(|row| (row.id.clone(), row.body.clone()))
+        .collect::<std::collections::BTreeMap<_, _>>();
     for body in &mut scoped.model.bodies {
         for id in body.regions.clone() {
-            if !regions.contains(id.as_str()) {
-                pruned("body", body.id.as_str(), format!("region {id} is missing"));
+            if region_owners.get(&id) != Some(&body.id) {
+                pruned(
+                    "body",
+                    body.id.as_str(),
+                    format!("region {id} is missing or belongs to another body"),
+                );
             }
         }
-        body.regions.retain(|id| regions.contains(id.as_str()));
+        body.regions
+            .retain(|id| region_owners.get(id) == Some(&body.id));
     }
 }
