@@ -35,8 +35,8 @@ fn path_projects_as_string() {
     );
 }
 
-fn assert_vector(values: Vec<Option<AttributeValue>>, expected: &[f64]) {
-    let [Some(AttributeValue::Vector(actual))] = values.as_slice() else {
+fn assert_vector(values: &[Option<AttributeValue>], expected: &[f64]) {
+    let [Some(AttributeValue::Vector(actual))] = values else {
         panic!("expected vector")
     };
     assert_eq!(actual.len(), expected.len());
@@ -48,7 +48,7 @@ fn assert_vector(values: Vec<Option<AttributeValue>>, expected: &[f64]) {
 #[test]
 fn rotation_projects_axis_and_angle() {
     assert_vector(
-        attribute(
+        &attribute(
             r#"<Property name="Extra" type="App::PropertyRotation"><PropertyRotation A="0.5" Ox="0" Oy="1" Oz="0"/></Property>"#,
             None,
         ),
@@ -59,7 +59,7 @@ fn rotation_projects_axis_and_angle() {
 #[test]
 fn matrix_projects_in_row_order() {
     assert_vector(
-        attribute(
+        &attribute(
             r#"<Property name="Extra" type="App::PropertyMatrix"><PropertyMatrix a11="1" a12="2" a13="3" a14="4" a21="5" a22="6" a23="7" a24="8" a31="9" a32="10" a33="11" a34="12" a41="13" a42="14" a43="15" a44="16"/></Property>"#,
             None,
         ),
