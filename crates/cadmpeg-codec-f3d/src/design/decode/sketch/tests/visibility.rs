@@ -37,6 +37,7 @@ fn sketch_visibility_member_decodes_both_boolean_values() {
     assert_eq!(hidden.stream_ordinal_offset(), 30);
     assert_eq!(hidden.visible_offset(), 35);
     assert!(!hidden.visible);
+    assert!(!hidden.sketch_flag);
 
     let visible =
         decode_sketch_visibility_member(&member(513, 1), 0, ENTITY_SUFFIX).expect("visible member");
@@ -50,12 +51,14 @@ fn sketch_visibility_member_accepts_sketch_flag_one() {
     hidden[34] = 1;
     let hidden = decode_sketch_visibility_member(&hidden, 0, ENTITY_SUFFIX).expect("hidden member");
     assert!(!hidden.visible);
+    assert!(hidden.sketch_flag);
 
     let mut visible = member(1, 1);
     visible[34] = 1;
     let visible =
         decode_sketch_visibility_member(&visible, 0, ENTITY_SUFFIX).expect("visible member");
     assert!(visible.visible);
+    assert!(visible.sketch_flag);
 }
 
 #[test]

@@ -474,6 +474,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
             unprojected_sketch_text_styles: 0,
             unprojected_sketch_relations: 0,
             unprojected_sketch_pattern_states: 0,
+            unprojected_sketch_flags: 0,
             unprojected_dimensions: 0,
             profile_selections: 2,
             path_selections: 1,

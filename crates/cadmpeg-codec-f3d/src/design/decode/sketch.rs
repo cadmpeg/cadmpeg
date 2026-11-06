@@ -555,12 +555,11 @@ fn decode_sketch_visibility_member(
         return None;
     }
     let stream_ordinal = std::num::NonZeroU32::new(View::u32_le_at(bytes, cursor)?)?;
-    if !matches!(
-        bytes.get(member_at + visibility_member::SKETCH_FLAG),
-        Some(0 | 1)
-    ) {
-        return None;
-    }
+    let sketch_flag = match bytes.get(member_at + visibility_member::SKETCH_FLAG) {
+        Some(0) => false,
+        Some(1) => true,
+        _ => return None,
+    };
     let stream_ordinal_offset = cursor;
     let visible_offset = member_at + visibility_member::VISIBLE;
     let visible = match bytes.get(visible_offset) {
@@ -574,6 +573,7 @@ fn decode_sketch_visibility_member(
         visible,
     )
     .ok()?;
+    visibility.sketch_flag = sketch_flag;
     let mut collection_at = member_at + visibility_member::TAIL_MARKER;
     let reference = take_reference(bytes, &mut collection_at)?;
     if matches!(reference, Reference::Null) {

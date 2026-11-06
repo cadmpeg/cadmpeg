@@ -272,6 +272,8 @@ pub(crate) enum F3dLossCode {
     SketchRelationUnprojected,
     /// Sketch patterns retain unrepresented symmetry, suppression or flag state.
     SketchPatternStateUnprojected,
+    /// Sketch Geometry members set the byte-34 flag, which has no neutral sketch field.
+    SketchGeometryFlagUnprojected,
     /// A spatial sketch's closed-profile search stopped at a local cap.
     SketchProfileSearchCapped,
     /// Non-construction sketch curves form no closed profile loop.
@@ -598,6 +600,7 @@ impl F3dLossCode {
         Self::SketchTextStyleUnprojected,
         Self::SketchRelationUnprojected,
         Self::SketchPatternStateUnprojected,
+        Self::SketchGeometryFlagUnprojected,
         Self::SketchProfileSearchCapped,
         Self::SketchCurveUnprofiled,
         Self::SketchCurveUnprofiledSelected,
@@ -826,6 +829,7 @@ impl F3dLossCode {
             Self::SketchTextStyleUnprojected => "sketch.text-style-unprojected",
             Self::SketchRelationUnprojected => "sketch.relation-unprojected",
             Self::SketchPatternStateUnprojected => "sketch.pattern-state-unprojected",
+            Self::SketchGeometryFlagUnprojected => "sketch.geometry-flag-unprojected",
             Self::SketchProfileSearchCapped => "sketch.profile-search-capped",
             Self::SketchCurveUnprofiled => "sketch.curve-unprofiled",
             Self::SketchCurveUnprofiledSelected => "sketch.curve-unprofiled-selected",
@@ -1078,6 +1082,7 @@ impl F3dLossCode {
             | Self::SketchTextStyleUnprojected
             | Self::SketchRelationUnprojected
             | Self::SketchPatternStateUnprojected
+            | Self::SketchGeometryFlagUnprojected
             | Self::SketchProfileSearchCapped
             | Self::SketchCurveUnprofiled
             | Self::DimensionUnprojected
@@ -1260,6 +1265,7 @@ impl F3dLossCode {
             | Self::SketchTextStyleUnprojected
             | Self::SketchRelationUnprojected
             | Self::SketchPatternStateUnprojected
+            | Self::SketchGeometryFlagUnprojected
             | Self::SketchProfileSearchCapped
             | Self::SketchCurveUnprofiled
             | Self::DimensionUnprojected
@@ -1527,6 +1533,7 @@ mod tests {
                 "sketch.text-style-unprojected",
                 "sketch.relation-unprojected",
                 "sketch.pattern-state-unprojected",
+                "sketch.geometry-flag-unprojected",
                 "sketch.profile-search-capped",
                 "sketch.curve-unprofiled",
                 "sketch.curve-unprofiled-selected",

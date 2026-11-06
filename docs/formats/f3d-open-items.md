@@ -484,6 +484,8 @@ travel.
 
 **Need.** Saves of one sketch that change one per-sketch setting at a time (Slice, 3D Sketch, Show Profile, Show Points, Show Dimensions, Show Constraints, Show Projected Geometries), each recording the value of byte 34.
 
+**Note.** The decoder stores byte 34 in the native sketch visibility field `sketch_flag` and emits `sketch.geometry-flag-unprojected` when it is `1`.
+
 ### DR-264. Sketch geometry group fields
 
 **Question.** What do byte `01` at offset 49 and the f32 values at offsets 62 and 66 of a sketch geometry group store, and which operations write a group?
