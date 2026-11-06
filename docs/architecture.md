@@ -1,6 +1,6 @@
 # cadmpeg architecture
 
-cadmpeg routes native CAD through format codecs into `CadIr` version 11. Source fidelity rides beside the product document as a sidecar. Codecs may validate and encode afterward. [cad-ir.md](cad-ir.md) defines the IR. Crate docs and `cadmpeg --help` define APIs and CLI options. [dialects.toml](dialects.toml) owns dialect identity, [dialect-support.toml](../crates/cadmpeg-registry/docs/dialect-support.toml) owns per-dialect capability, and [format-support.md](format-support.md) renders aggregate format capability.
+cadmpeg routes native CAD through format codecs into `CadIr` version 11. Source fidelity rides beside the product document as a sidecar. Codecs may validate and encode afterward. [cad-ir.md](cad-ir.md) defines the IR. The [codec CADIR guides](cadir/) state projection and writer behavior. Crate docs and `cadmpeg --help` define APIs and CLI options. [dialects.toml](dialects.toml) owns dialect identity, [dialect-support.toml](../crates/cadmpeg-registry/docs/dialect-support.toml) owns per-dialect capability, and [format-support.md](format-support.md) renders aggregate format capability.
 
 ## Pipeline
 

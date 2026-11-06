@@ -136,41 +136,30 @@ pub(super) fn decode(
         }) else {
             continue;
         };
-        let value = if let Some(item) = value_record.partial("DESCRIPTIVE_REPRESENTATION_ITEM") {
-            let Some(value) = item.parameters.get(1).and_then(|value| {
-                decode_text(
-                    exchange,
-                    value,
-                    &mut losses,
-                    value_id,
-                    "property value",
-                    StepLossCode::MetadataStringInvalid,
-                )
-            }) else {
+        let value_ids: Vec<u64> = if let Some(row) = value_record.partial("ROW_REPRESENTATION_ITEM")
+        {
+            let Some(Value::List(items)) = row.parameters.get(1) else {
                 continue;
             };
-            AttributeValue::String(value)
-        } else if let Some(item) = value_record.partial("INTEGER_REPRESENTATION_ITEM") {
-            let Some(value) = item.parameters.get(1).and_then(ValueExt::integer) else {
-                continue;
-            };
-            AttributeValue::Integer(value)
-        } else if let Some(item) = value_record.partial("REAL_REPRESENTATION_ITEM") {
-            let Some(value) = item
-                .parameters
-                .get(1)
-                .and_then(ValueExt::number)
-                .and_then(AttributeValue::float)
+            let Some(ids) = items
+                .iter()
+                .map(ValueExt::reference)
+                .collect::<Option<Vec<_>>>()
             else {
                 continue;
             };
-            value
-        } else if let Some(item) = value_record.partial("BOOLEAN_REPRESENTATION_ITEM") {
-            let Some(value) = item.parameters.get(1).and_then(ValueExt::logical) else {
+            if ids.is_empty() {
                 continue;
-            };
-            AttributeValue::Boolean(value)
+            }
+            ids
         } else {
+            vec![value_id]
+        };
+        let Some(values) = value_ids
+            .iter()
+            .map(|id| scalar_property_value(exchange, *id, &mut losses))
+            .collect::<Option<Vec<_>>>()
+        else {
             continue;
         };
         ir.model.attributes.push(SourceAttribute::new(
@@ -179,7 +168,7 @@ pub(super) fn decode(
             None,
             target,
             name.clone(),
-            vec![value.clone()],
+            values.clone(),
         )?);
         if let Some(items) = occurrences.get(&owner_id) {
             for (ordinal, occurrence) in items.iter().enumerate().skip(1) {
@@ -192,7 +181,7 @@ pub(super) fn decode(
                     None,
                     AttributeTarget::Occurrence(occurrence.clone()),
                     name.clone(),
-                    vec![value.clone()],
+                    values.clone(),
                 )?);
             }
         }
@@ -203,6 +192,7 @@ pub(super) fn decode(
             representation_id,
             value_id,
         ]);
+        typed.extend(value_ids);
         if let Some(owner_rep_id) = owner_rep_id {
             let owner_rep = &exchange.records()[&owner_rep_id];
             if representation::item_values(owner_rep).is_some_and(|items| items.len() == 1)
@@ -222,6 +212,45 @@ pub(super) fn decode(
     })
 }
 
+fn scalar_property_value(
+    exchange: &Exchange,
+    id: u64,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> Option<AttributeValue> {
+    let record = exchange.records().get(&id)?;
+    if !record.parameter(0).is_some_and(empty_or_omitted) {
+        return None;
+    }
+    if let Some(item) = record.partial("DESCRIPTIVE_REPRESENTATION_ITEM") {
+        decode_text(
+            exchange,
+            item.parameters.get(1)?,
+            losses,
+            id,
+            "property value",
+            StepLossCode::MetadataStringInvalid,
+        )
+        .map(AttributeValue::String)
+    } else if let Some(item) = record.partial("INTEGER_REPRESENTATION_ITEM") {
+        item.parameters
+            .get(1)?
+            .integer()
+            .map(AttributeValue::Integer)
+    } else if let Some(item) = record.partial("REAL_REPRESENTATION_ITEM") {
+        item.parameters
+            .get(1)?
+            .number()
+            .and_then(AttributeValue::float)
+    } else if let Some(item) = record.partial("BOOLEAN_REPRESENTATION_ITEM") {
+        item.parameters
+            .get(1)?
+            .logical()
+            .map(AttributeValue::Boolean)
+    } else {
+        None
+    }
+}
+
 fn single<T>(group: &NonemptyGroup<T>) -> Option<&T> {
     let mut items = group.iter();
     let first = items.next()?;
@@ -236,6 +265,59 @@ fn empty_or_omitted(value: &Value) -> bool {
 mod tests {
     use crate::test_support::exchange::decode_inline;
     use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
+
+    #[test]
+    fn ordered_property_row_decodes_and_round_trips() {
+        use cadmpeg_ir::codec::{Codec, DecodeOptions};
+        let source = decode_inline(
+            "#1=CARTESIAN_POINT('',(1.,2.,3.));
+#2=(GEOMETRIC_REPRESENTATION_CONTEXT(3) REPRESENTATION_CONTEXT('',''));
+#3=REPRESENTATION('',(#1),#2);
+#4=CHARACTERIZED_ITEM_WITHIN_REPRESENTATION('','',#1,#3);
+#5=PROPERTY_DEFINITION('Values','',#4);
+#6=INTEGER_REPRESENTATION_ITEM('',7);
+#7=DESCRIPTIVE_REPRESENTATION_ITEM('','example');
+#8=BOOLEAN_REPRESENTATION_ITEM('',.T.);
+#9=ROW_REPRESENTATION_ITEM('',(#6,#7,#8));
+#10=REPRESENTATION('',(#9),#2);
+#11=PROPERTY_DEFINITION_REPRESENTATION(#5,#10);",
+        );
+        let expected = vec![
+            Some(AttributeValue::Integer(7)),
+            Some(AttributeValue::String("example".into())),
+            Some(AttributeValue::Boolean(true)),
+        ];
+        assert!(source
+            .ir()
+            .model
+            .attributes
+            .iter()
+            .any(|attribute| attribute.name == "Values"
+                && attribute.values == expected
+                && matches!(attribute.target, AttributeTarget::Point(_))));
+        let mut bytes = Vec::new();
+        crate::export::write_step(
+            source.ir(),
+            &mut bytes,
+            crate::StepSchema::Ap242Edition3,
+            &crate::StepWriteOptions::default(),
+        )
+        .expect("write ordered property");
+        assert!(std::str::from_utf8(&bytes)
+            .unwrap()
+            .contains("ROW_REPRESENTATION_ITEM"));
+        let decoded = crate::StepCodec::default()
+            .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+            .expect("decode ordered property");
+        assert!(decoded
+            .ir()
+            .model
+            .attributes
+            .iter()
+            .any(|attribute| attribute.name == "Values"
+                && attribute.values == expected
+                && matches!(attribute.target, AttributeTarget::Point(_))));
+    }
 
     #[test]
     fn occurrence_property_follows_each_expansion_of_a_shared_usage() {
