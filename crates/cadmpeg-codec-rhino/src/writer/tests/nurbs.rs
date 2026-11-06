@@ -1149,6 +1149,10 @@ fn shared_pcurve_uses_directed_native_curves_for_opposite_trims() {
         loss.code == crate::loss::RhinoLossCode::WriterPcurveExpanded.kind()
             && loss.message.contains(id.as_str())
     }));
+    assert!(model.edge_conversions.iter().any(|loss| {
+        loss.code == crate::loss::RhinoLossCode::WriterPcurveDirectionReversed.kind()
+            && loss.message.contains(id.as_str())
+    }));
     let mut bytes = Vec::new();
     RhinoCodec
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
