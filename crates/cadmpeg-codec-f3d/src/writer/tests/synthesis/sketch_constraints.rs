@@ -72,7 +72,7 @@ fn source_less_native_point_relation_preserves_reference_runs() {
             native_kind: cadmpeg_core::text::NonBlankString::new("parallel").unwrap(),
             native_state: Some(0x10),
             native_flags: None,
-            native_properties: Default::default(),
+            native_properties: std::collections::BTreeMap::new(),
             entities: vec![first.clone(), second.clone(), second, first],
             parameter: None,
             operands: operands.clone(),
