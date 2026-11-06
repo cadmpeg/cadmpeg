@@ -1031,12 +1031,19 @@ fn prune_pass(
         }
     }
     scoped.model.coedges.retain(|coedge| {
-        let missing = (!edges.contains(coedge.edge.as_str()))
-            .then(|| format!("edge {} is missing", coedge.edge))
-            .or_else(|| {
-                (!loops.contains(coedge.owner_loop.as_str()))
-                    .then(|| format!("loop {} is missing", coedge.owner_loop))
-            });
+        let missing =
+            (!edges.contains(coedge.edge.as_str()))
+                .then(|| format!("edge {} is missing", coedge.edge))
+                .or_else(|| {
+                    (!loops.contains(coedge.owner_loop.as_str()))
+                        .then(|| format!("loop {} is missing", coedge.owner_loop))
+                })
+                .or_else(|| {
+                    (!scoped.model.loops.iter().any(|row| {
+                        row.id == coedge.owner_loop && row.coedges().contains(&coedge.id)
+                    }))
+                    .then(|| format!("loop {} does not own this coedge", coedge.owner_loop))
+                });
         if let Some(missing) = missing {
             pruned("coedge", coedge.id.as_str(), missing);
             return false;
