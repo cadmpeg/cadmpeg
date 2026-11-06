@@ -1707,7 +1707,7 @@ impl<'a> WritableModel<'a> {
             }
         }
         for id in reversed_pcurves {
-            edge_conversions.push(RhinoLossCode::WriterCarrierResolved.note(format!(
+            edge_conversions.push(RhinoLossCode::WriterPcurveDirectionReversed.note(format!(
                 "pcurve {id} is reparameterized to follow its 3DM trim direction"
             )));
         }
