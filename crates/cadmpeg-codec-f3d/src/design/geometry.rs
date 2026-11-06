@@ -116,8 +116,8 @@ impl ProfileGeometryWork {
         self.crossing_loop_assumed.set(true);
     }
 
-    /// Record that the open selection took a counted member ring with an
-    /// edge of coincident curves.
+    /// Record that the member flags of an edge of coincident curves decided
+    /// a counted member ring of the open selection.
     pub(crate) fn note_coincident_direction_assumed(&self) {
         self.coincident_direction_assumed.set(true);
     }
@@ -152,7 +152,7 @@ impl ProfileGeometryWork {
         let coincident = self.coincident_direction_assumed_selections.get();
         if coincident != 0 {
             losses.push(F3dLossCode::FeatureProfileCoincidentDirectionAssumed.note(format!(
-                "{coincident} extrude profile selection(s) matched a counted member to an edge of coincident curves. The reading assumes that the member's direction flag states the traversal against the direction of the curve that the member names; which curve's direction sets the flag is open (DR-124)."
+                "{coincident} extrude profile selection(s) depended on the member flags of an edge of coincident curves: a selected ring has such an edge, or a ring with such an edge has the curves of a member list. The reading accepts such an edge when one distinct member that names one of its curves has that curve's traversal direction, and it checks no flag of the edge's other members; which curve's direction sets the flag is open (DR-124)."
             )));
         }
         losses
@@ -208,9 +208,8 @@ impl ArrangementRing {
     }
 
     /// Whether `members` name the ring's fragment and coincident curves with
-    /// their multiplicities, and each fragment has a distinct member that
-    /// names one of its curves with that curve's traversal direction.
-    fn matches_members(&self, members: &[cadmpeg_ir::sketches::SketchEntityUse]) -> bool {
+    /// their multiplicities.
+    fn has_curves(&self, members: &[cadmpeg_ir::sketches::SketchEntityUse]) -> bool {
         let mut curves = self.curves().collect::<Vec<_>>();
         if curves.len() != members.len() {
             return false;
@@ -218,7 +217,14 @@ impl ArrangementRing {
         curves.sort_unstable();
         let mut named = members.iter().map(|use_| &use_.entity).collect::<Vec<_>>();
         named.sort_unstable();
-        if curves != named {
+        curves == named
+    }
+
+    /// Whether `members` have the ring's curves, and each fragment has a
+    /// distinct member that names one of its curves with that curve's
+    /// traversal direction.
+    fn matches_members(&self, members: &[cadmpeg_ir::sketches::SketchEntityUse]) -> bool {
+        if !self.has_curves(members) {
             return false;
         }
         let mut free = members.iter().collect::<Vec<_>>();
@@ -277,8 +283,10 @@ struct SketchArrangementFace {
     ring: ArrangementRing,
     polyline: Vec<Point2>,
     /// The outer walk of each arrangement component that lies inside the
-    /// face and inside no smaller face, or `None` when one of those
-    /// components has no unique outer walk.
+    /// face and inside no smaller face. `None` when such a component has no
+    /// unique outer walk, when the face belongs to a component inside
+    /// another face that has no unique outer walk, or when the polyline of
+    /// the face cannot decide whether a component lies inside it.
     holes: Option<Vec<ArrangementRing>>,
 }
 
@@ -405,11 +413,19 @@ pub(super) fn arrangement_region_matching_curve_program(
     Ok(selected.and_then(arrangement_face_region))
 }
 
-/// The regions that counted member rings select. Each ring names its curves
-/// and whether the boundary traverses each against the curve's direction. A
-/// ring that matches the outer ring of a face selects that face, and a ring
-/// that matches the outer walk of an island of a selected face is a hole
-/// ring of that face's region.
+/// The regions that counted member rings select in the arrangement of the
+/// non-construction lines, circles, circular arcs, bounded ellipses, and
+/// nonperiodic NURBS of `sketch`. Each ring names its curves and whether the
+/// boundary traverses each against the curve's direction. A ring that
+/// matches the outer ring of a face selects that face, and a ring that
+/// matches the outer walk of an island of a selected face is a hole ring of
+/// that face's region. `None` when the rings are empty, the arrangement is
+/// undefined, a ring matches no walk or several walks, two rings match one
+/// face or one hole ring, a hole ring belongs to a face that no ring
+/// selects, a selected face has an island that no ring names or `None`
+/// holes, a region does not form, the work budget runs out, which also
+/// marks `arrangement_skipped`, or the Sketch has another non-construction
+/// curve without bounds or with bounds that meet a selected face.
 pub(super) fn arrangement_regions_matching_member_rings(
     sketch: &cadmpeg_ir::sketches::Sketch,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
@@ -421,12 +437,15 @@ pub(super) fn arrangement_regions_matching_member_rings(
     if rings.is_empty() {
         return Ok(None);
     }
+    let mut outside = Vec::new();
+    for entity in entities.iter().filter(|entity| {
+        entity.sketch == sketch.id && !entity.construction && !arrangement_family(entity)
+    }) {
+        outside.push(geometric!(outside_curve_bounds(entity)));
+    }
     let faces = geometric!(curve_arrangement_faces(
         sketch, entities, tolerance, work, ctx, true
     )?);
-    if faces.iter().any(|face| face.holes.is_none()) {
-        return Ok(None);
-    }
     let mut candidates = Vec::new();
     for (index, face) in faces.iter().enumerate() {
         candidates.push((index, None, &face.ring, face.ring.curves().count()));
@@ -452,16 +471,16 @@ pub(super) fn arrangement_regions_matching_member_rings(
                 work.arrangement_skipped.set(true);
                 return Ok(None);
             }
+            coincident |= ring.shared_fragments() != 0 && ring.has_curves(members);
             if !ring.matches_members(members) {
                 continue;
             }
             if found.is_some() {
                 return Ok(None);
             }
-            found = Some((*index, *hole, ring.shared_fragments() != 0));
+            found = Some((*index, *hole));
         }
-        let (face, hole, shared) = geometric!(found);
-        coincident |= shared;
+        let (face, hole) = geometric!(found);
         match hole {
             None if !outers.contains(&face) => outers.push(face),
             Some(hole) if !holes.contains(&(face, hole)) => holes.push((face, hole)),
@@ -474,6 +493,13 @@ pub(super) fn arrangement_regions_matching_member_rings(
     let mut regions = Vec::new();
     for face_index in outers {
         let face = &faces[face_index];
+        let bounds = geometric!(polyline_bounds(&face.polyline));
+        if outside
+            .iter()
+            .any(|curve| bounds_meet(*curve, bounds, tolerance))
+        {
+            return Ok(None);
+        }
         let islands = geometric!(face.holes.as_ref());
         let named = holes
             .iter()
@@ -497,16 +523,92 @@ pub(super) fn arrangement_regions_matching_member_rings(
 /// The regions that counted member rings select.
 pub(super) struct MemberRingRegions {
     pub(super) regions: Vec<cadmpeg_ir::features::SketchProfileRegion>,
-    /// Whether a selected ring has an edge of coincident curves.
+    /// Whether a ring with an edge of coincident curves has the curves of a
+    /// member list, so that the member flags of that edge decided the
+    /// selection.
     pub(super) coincident: bool,
 }
 
-/// The bounded faces of the arrangement of every non-construction curve of
+/// Whether the arrangement of every curve holds `entity`: a line, circle,
+/// circular arc, bounded ellipse, or nonperiodic NURBS, or a point or text,
+/// which bound no face.
+fn arrangement_family(entity: &cadmpeg_ir::sketches::SketchEntity) -> bool {
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
+
+    matches!(
+        entity.geometry.definition(),
+        SketchGeometryDefinition::Point { .. }
+            | SketchGeometryDefinition::Text { .. }
+            | SketchGeometryDefinition::Circle { .. }
+    ) || sketch_geometry_parameter_range(&entity.geometry).is_some()
+}
+
+/// The lowest and highest corners of a box that holds a curve outside the
+/// arrangement families: a full ellipse, or a periodic NURBS without a
+/// negative weight. `None` for every other curve.
+fn outside_curve_bounds(entity: &cadmpeg_ir::sketches::SketchEntity) -> Option<[Point2; 2]> {
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
+
+    match entity.geometry.definition() {
+        SketchGeometryDefinition::Ellipse {
+            center,
+            radii,
+            bounds: None,
+            ..
+        } => {
+            let center = center.get();
+            let reach = radii.major().get().max(radii.minor().get());
+            Some([
+                Point2::new(center.u - reach, center.v - reach),
+                Point2::new(center.u + reach, center.v + reach),
+            ])
+        }
+        SketchGeometryDefinition::Nurbs { curve }
+            if curve
+                .weights()
+                .is_none_or(|weights| weights.iter().all(|weight| weight.get() > 0.0)) =>
+        {
+            polyline_bounds(
+                &curve
+                    .control_points()
+                    .into_iter()
+                    .map(cadmpeg_ir::units::FinitePoint2::get)
+                    .collect::<Vec<_>>(),
+            )
+        }
+        _ => None,
+    }
+}
+
+/// The lowest and highest corners of the box of `points`, or `None` when
+/// there is no point.
+fn polyline_bounds(points: &[Point2]) -> Option<[Point2; 2]> {
+    let first = *points.first()?;
+    Some(points.iter().fold([first, first], |[low, high], point| {
+        [
+            Point2::new(low.u.min(point.u), low.v.min(point.v)),
+            Point2::new(high.u.max(point.u), high.v.max(point.v)),
+        ]
+    }))
+}
+
+/// Whether two boxes overlap or lie within `tolerance` of each other.
+fn bounds_meet(left: [Point2; 2], right: [Point2; 2], tolerance: f64) -> bool {
+    left[0].u <= right[1].u + tolerance
+        && right[0].u <= left[1].u + tolerance
+        && left[0].v <= right[1].v + tolerance
+        && right[0].v <= left[1].v + tolerance
+}
+
+/// The bounded faces of the arrangement of the non-construction lines,
+/// circles, circular arcs, bounded ellipses, and nonperiodic NURBS of
 /// `sketch` when `all_curves` holds or the sketch has no profile loop, and
-/// otherwise of the curves of its profile loops. Every intersection of two
-/// non-construction curves that are not collinear splits these curves.
-/// `None` when the arrangement is undefined, which includes an `all_curves`
-/// arrangement with a curve outside the arrangement's families.
+/// otherwise of the curves of its profile loops. The nodes are the end points
+/// of these curves and the intersection points of every two non-construction
+/// lines, circular arcs, or circles that are not collinear line segments. A
+/// node splits a line, circular arc, or circle that passes through it.
+/// `None` when the arrangement is undefined, which includes two edges that
+/// meet away from their common nodes.
 fn curve_arrangement_faces(
     sketch: &cadmpeg_ir::sketches::Sketch,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
@@ -515,23 +617,6 @@ fn curve_arrangement_faces(
     ctx: &DecodeContext<'_>,
     all_curves: bool,
 ) -> Result<Option<Vec<SketchArrangementFace>>, CodecError> {
-    use cadmpeg_ir::sketches::SketchGeometryDefinition;
-
-    if all_curves
-        && entities.iter().any(|entity| {
-            entity.sketch == sketch.id
-                && !entity.construction
-                && !matches!(
-                    entity.geometry.definition(),
-                    SketchGeometryDefinition::Point { .. }
-                        | SketchGeometryDefinition::Text { .. }
-                        | SketchGeometryDefinition::Circle { .. }
-                )
-                && sketch_geometry_parameter_range(&entity.geometry).is_none()
-        })
-    {
-        return Ok(None);
-    }
     let segments = entities
         .iter()
         .filter(|entity| entity.sketch == sketch.id && !entity.construction)
@@ -947,19 +1032,20 @@ fn sketch_arrangement_faces_with_nodes(
             if (candidate.nodes == edge.nodes || candidate.nodes == [edge.nodes[1], edge.nodes[0]])
                 && arrangement_edges_coincident(candidate, &edge, entities, tolerance, ctx)?
             {
-                if candidate.boundary.entity != edge.boundary.entity
-                    && !candidate
+                if candidate.boundary.entity == edge.boundary.entity
+                    || candidate
                         .coincident
                         .iter()
                         .any(|use_| use_.entity == edge.boundary.entity)
                 {
-                    candidate
-                        .coincident
-                        .push(cadmpeg_ir::sketches::SketchEntityUse {
-                            entity: edge.boundary.entity.clone(),
-                            reversed: edge.boundary.reversed != (candidate.nodes != edge.nodes),
-                        });
+                    return Ok(None);
                 }
+                candidate
+                    .coincident
+                    .push(cadmpeg_ir::sketches::SketchEntityUse {
+                        entity: edge.boundary.entity.clone(),
+                        reversed: edge.boundary.reversed != (candidate.nodes != edge.nodes),
+                    });
                 coincident = true;
                 break;
             }
@@ -1077,6 +1163,17 @@ fn sketch_arrangement_faces_with_nodes(
             }
         }
     }
+    let mut edge_deviations = Vec::new();
+    for edge in &edges {
+        let entity = geometric!(entities
+            .iter()
+            .find(|entity| entity.id() == &edge.boundary.entity));
+        edge_deviations.push(geometric!(polyline_deviation(
+            &entity.geometry,
+            edge.boundary.parameter_range.endpoints(),
+            edge.polyline.len()
+        )));
+    }
     let mut visited = ctx.alloc_filled(edges.len(), [false; 2], "f3d arrangement edge visits")?;
     let mut faces = Vec::new();
     let mut face_components = Vec::new();
@@ -1091,6 +1188,7 @@ fn sketch_arrangement_faces_with_nodes(
             let mut boundary = Vec::new();
             let mut runs = Vec::<ArrangementFragment>::new();
             let mut polyline = Vec::new();
+            let mut deviation = 0.0_f64;
             loop {
                 let (index, reverse) = current;
                 if visited[index][usize::from(reverse)] {
@@ -1101,6 +1199,7 @@ fn sketch_arrangement_faces_with_nodes(
                 }
                 visited[index][usize::from(reverse)] = true;
                 let edge = &edges[index];
+                deviation = deviation.max(edge_deviations[index]);
                 let mut use_ = edge.boundary.clone();
                 if reverse {
                     use_.reversed = !use_.reversed;
@@ -1118,12 +1217,8 @@ fn sketch_arrangement_faces_with_nodes(
                         if synthetic_nodes.contains(&joint) && run.curve.entity == use_.entity =>
                     {
                         for other in coincident {
-                            if !run
-                                .coincident
-                                .iter()
-                                .any(|use_| use_.entity == other.entity)
-                            {
-                                run.coincident.push(other);
+                            if !merge_coincident(&mut run.coincident, other) {
+                                return Ok(None);
                             }
                         }
                     }
@@ -1160,12 +1255,8 @@ fn sketch_arrangement_faces_with_nodes(
             {
                 if let Some(last) = runs.pop() {
                     for other in last.coincident {
-                        if !runs[0]
-                            .coincident
-                            .iter()
-                            .any(|use_| use_.entity == other.entity)
-                        {
-                            runs[0].coincident.push(other);
+                        if !merge_coincident(&mut runs[0].coincident, other) {
+                            return Ok(None);
                         }
                     }
                 }
@@ -1185,38 +1276,94 @@ fn sketch_arrangement_faces_with_nodes(
                     polyline,
                     holes: Some(Vec::new()),
                 });
-                face_components.push((own, area));
+                face_components.push((own, area, deviation));
             } else if area < -(tolerance * tolerance) {
                 outer_walks.push((own, ring));
             }
         }
     }
     for root in &component_roots {
+        let node = nodes[*root];
         let mut container = None::<(usize, f64)>;
+        let mut undecided = Vec::new();
         for (index, face) in faces.iter().enumerate() {
-            let (own, area) = face_components[index];
-            if own != *root
-                && point_in_polygon(nodes[*root], &face.polyline)
+            let (own, area, deviation) = face_components[index];
+            if own == *root {
+                continue;
+            }
+            if polygon_edges(&face.polyline)
+                .any(|edge| point_segment_distance(node, edge) <= deviation + tolerance)
+            {
+                undecided.push(index);
+            } else if point_in_polygon(node, &face.polyline)
                 && container.is_none_or(|(_, smallest)| area < smallest)
             {
                 container = Some((index, area));
             }
         }
-        let Some((container, _)) = container else {
+        if container.is_none() && undecided.is_empty() {
             continue;
-        };
+        }
         let mut walks = outer_walks.iter().filter(|(own, _)| own == root);
         let walk = walks
             .next()
             .filter(|_| walks.next().is_none())
             .map(|(_, walk)| walk.clone());
-        let face = &mut faces[container];
-        face.holes = face.holes.take().zip(walk).map(|(mut holes, walk)| {
-            holes.push(walk);
-            holes
-        });
+        match (container, walk) {
+            (Some((container, _)), Some(walk)) if undecided.is_empty() => {
+                if let Some(holes) = faces[container].holes.as_mut() {
+                    holes.push(walk);
+                }
+            }
+            (container, walk) => {
+                let unwalked = walk.is_none();
+                for (index, face) in faces.iter_mut().enumerate() {
+                    if undecided.contains(&index)
+                        || container.is_some_and(|(container, _)| container == index)
+                        || (unwalked && face_components[index].0 == *root)
+                    {
+                        face.holes = None;
+                    }
+                }
+            }
+        }
     }
     Ok((!faces.is_empty()).then_some(faces))
+}
+
+/// Add `other` to the coincident curves of a fragment. `false` when the
+/// fragment already holds the curve in the other direction.
+fn merge_coincident(
+    coincident: &mut Vec<cadmpeg_ir::sketches::SketchEntityUse>,
+    other: cadmpeg_ir::sketches::SketchEntityUse,
+) -> bool {
+    match coincident.iter().find(|use_| use_.entity == other.entity) {
+        Some(held) => held.reversed == other.reversed,
+        None => {
+            coincident.push(other);
+            true
+        }
+    }
+}
+
+/// The largest distance between a curve over `range` and the polyline of
+/// `points` evenly spaced points on it: zero for a line, and otherwise half
+/// the travel bound of one polyline step. `None` when the curve has no speed
+/// bound or the polyline has fewer than two points.
+fn polyline_deviation(
+    geometry: &cadmpeg_ir::sketches::SketchGeometry,
+    range: [f64; 2],
+    points: usize,
+) -> Option<f64> {
+    if matches!(
+        geometry.definition(),
+        cadmpeg_ir::sketches::SketchGeometryDefinition::Line { .. }
+    ) {
+        return Some(0.0);
+    }
+    let steps = f64_from_index(points.checked_sub(1).filter(|steps| *steps > 0)?)?;
+    let travel = sketch_geometry_speed_bound(geometry, range)? * (range[1] - range[0]).abs();
+    Some(travel / (2.0 * steps)).filter(|deviation| deviation.is_finite())
 }
 
 fn arrangement_edges_meet_only_at_nodes(

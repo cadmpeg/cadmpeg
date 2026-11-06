@@ -394,7 +394,7 @@ fn a_selection_through_a_coincident_edge_reports_the_direction_assumption() {
     );
     assert_eq!(
         loss.message,
-        "1 extrude profile selection(s) matched a counted member to an edge of coincident curves. The reading assumes that the member's direction flag states the traversal against the direction of the curve that the member names; which curve's direction sets the flag is open (DR-124)."
+        "1 extrude profile selection(s) depended on the member flags of an edge of coincident curves: a selected ring has such an edge, or a ring with such an edge has the curves of a member list. The reading accepts such an edge when one distinct member that names one of its curves has that curve's traversal direction, and it checks no flag of the edge's other members; which curve's direction sets the flag is open (DR-124)."
     );
 
     let (profile, losses) = bound_fixture_with_losses(fixture(&[2, 2, 4, 2, 6, 3, 5, 2]));

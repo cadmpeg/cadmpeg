@@ -419,18 +419,30 @@ fn a_counted_hole_ring_names_the_island_of_the_selected_face() {
         .iter()
         .map(|entity| entity.id().clone())
         .collect::<Vec<_>>();
-    let ordered = crate::test_support::with_decode_context(|ctx| {
-        super::super::arrangement_region_matching_curve_program(
-            &sketch,
-            &entities,
-            &program,
-            PROFILE_PROGRAM_TOLERANCE,
-            &ProfileGeometryWork::new(),
-            ctx,
-        )
-    })
-    .unwrap();
-    assert_eq!(ordered, None);
+    let ordered = |sketch: &Sketch, entities: &[SketchEntity]| {
+        crate::test_support::with_decode_context(|ctx| {
+            super::super::arrangement_region_matching_curve_program(
+                sketch,
+                entities,
+                &program,
+                PROFILE_PROGRAM_TOLERANCE,
+                &ProfileGeometryWork::new(),
+                ctx,
+            )
+        })
+        .unwrap()
+    };
+    let both_loops = sketch_with_loops(id.clone(), &[&outer, &island]);
+    assert_eq!(
+        ordered(&both_loops, &entities),
+        None,
+        "the outer face encloses the island"
+    );
+    let outer_loop = sketch_with_loops(id, &[&outer]);
+    assert!(
+        ordered(&outer_loop, &outer).is_some(),
+        "the outer face alone is a region"
+    );
 }
 
 #[test]
@@ -609,7 +621,7 @@ fn a_hole_ring_of_coincident_circles_states_a_coincident_edge() {
     let sides = rectangle(&id, "sides", (0.0, 0.0), (40.0, 30.0));
     let circle = |name: &str| {
         SketchEntity::new(
-            SketchEntityId::mint(&format!("synthetic:test:id#{name}")).unwrap(),
+            SketchEntityId::mint(format!("synthetic:test:id#{name}")).unwrap(),
             id.clone(),
             SketchGeometry::try_from(SketchGeometryDefinition::Circle {
                 center: Point2::new(20.0, 15.0),
@@ -657,6 +669,199 @@ fn a_full_ellipse_leaves_counted_members_without_a_region() {
         member_regions(&sketch, &entities, &[ring(&outer, false)]),
         None
     );
+}
+
+/// A full ellipse of `sketch` centred at `center`, with radii 6 and 3.
+fn full_ellipse(sketch: &SketchId, center: (f64, f64)) -> SketchEntity {
+    SketchEntity::new(
+        SketchEntityId::mint("synthetic:test:id#far-ellipse").unwrap(),
+        sketch.clone(),
+        SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
+            center: Point2::new(center.0, center.1),
+            major_angle: cadmpeg_ir::scalar::Angle::new(0.0).unwrap(),
+            radii: cadmpeg_ir::sketches::EllipseRadii {
+                major_radius: Length::new(6.0).unwrap(),
+                minor_radius: Length::new(3.0).unwrap(),
+            },
+            bounds: None,
+        })
+        .unwrap(),
+    )
+}
+
+#[test]
+fn a_full_ellipse_clear_of_the_selected_face_keeps_the_selection() {
+    let id = SketchId::mint("synthetic:test:id#ellipse-far").unwrap();
+    let outer = rectangle(&id, "outer", (0.0, 0.0), (40.0, 30.0));
+    let sketch = sketch_with_loops(id.clone(), &[&outer]);
+    let mut far = outer.clone();
+    far.push(full_ellipse(&id, (100.0, 100.0)));
+    let (exterior, holes) = single_region(&sketch, &far, &[ring(&outer, false)]);
+    assert_eq!(exterior.len(), 4);
+    assert!(holes.is_empty());
+    let mut near = outer.clone();
+    near.push(full_ellipse(&id, (45.0, 15.0)));
+    assert_eq!(
+        member_regions(&sketch, &near, &[ring(&outer, false)]),
+        None,
+        "the ellipse box meets the face box"
+    );
+    let mut unbounded = outer.clone();
+    unbounded.push(SketchEntity::new(
+        SketchEntityId::mint("synthetic:test:id#far-reference").unwrap(),
+        id,
+        SketchGeometry::try_from(SketchGeometryDefinition::ReferenceLine {
+            origin: Point2::new(100.0, 100.0),
+            direction: Point2::new(1.0, 0.0),
+        })
+        .unwrap(),
+    ));
+    assert_eq!(
+        member_regions(&sketch, &unbounded, &[ring(&outer, false)]),
+        None,
+        "a reference line has no bounds"
+    );
+}
+
+#[test]
+fn an_island_within_the_polyline_deviation_of_a_face_leaves_its_islands_unknown() {
+    let id = SketchId::mint("synthetic:test:id#near-island").unwrap();
+    let disk = SketchEntity::new(
+        SketchEntityId::mint("synthetic:test:id#disk").unwrap(),
+        id.clone(),
+        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+            center: Point2::new(0.0, 0.0),
+            radius: Length::new(10.0).unwrap(),
+        })
+        .unwrap(),
+    );
+    let faces = |island: &[SketchEntity]| {
+        let mut entities = vec![disk.clone()];
+        entities.extend(island.iter().cloned());
+        let sketch = sketch_with_loops(id.clone(), &[std::slice::from_ref(&disk), island]);
+        crate::test_support::with_decode_context(|ctx| {
+            super::super::curve_arrangement_faces(
+                &sketch,
+                &entities,
+                PROFILE_PROGRAM_TOLERANCE,
+                &ProfileGeometryWork::new(),
+                ctx,
+                true,
+            )
+        })
+        .unwrap()
+        .expect("the arrangement")
+    };
+    let disk_holes = |faces: &[super::super::SketchArrangementFace]| {
+        faces
+            .iter()
+            .find(|face| face.ring.curves().any(|curve| curve == disk.id()))
+            .expect("the disk face")
+            .holes
+            .as_ref()
+            .map(Vec::len)
+    };
+    let centred = rectangle(&id, "centred", (-1.0, -1.0), (1.0, 1.0));
+    assert_eq!(disk_holes(&faces(&centred)), Some(1));
+    let near = rectangle(&id, "near", (9.95, -0.005), (9.97, 0.005));
+    assert_eq!(disk_holes(&faces(&near)), None);
+
+    // Outside the disk, near its boundary, inside a 40 x 40 square: the
+    // square contains the island, and the disk cannot decide it.
+    let frame = rectangle(&id, "frame", (-20.0, -20.0), (20.0, 20.0));
+    let outside = rectangle(&id, "outside", (10.03, -0.005), (10.05, 0.005));
+    let mut framed = frame.clone();
+    framed.extend(outside.iter().cloned());
+    let arranged = faces(&framed);
+    let frame_face = arranged
+        .iter()
+        .find(|face| face.ring.curves().any(|curve| curve == frame[0].id()))
+        .expect("the frame face");
+    assert_eq!(frame_face.holes.as_ref().map(Vec::len), None);
+    assert_eq!(disk_holes(&arranged), None);
+
+    let square = rectangle(&id, "square", (0.0, 0.0), (20.0, 20.0));
+    let island = rectangle(&id, "beside", (19.98, 5.0), (19.99, 6.0));
+    let mut entities = square.clone();
+    entities.extend(island.iter().cloned());
+    let sketch = sketch_with_loops(id.clone(), &[&square, &island]);
+    let faces = crate::test_support::with_decode_context(|ctx| {
+        super::super::curve_arrangement_faces(
+            &sketch,
+            &entities,
+            PROFILE_PROGRAM_TOLERANCE,
+            &ProfileGeometryWork::new(),
+            ctx,
+            true,
+        )
+    })
+    .unwrap()
+    .expect("the arrangement");
+    let square_face = faces
+        .iter()
+        .find(|face| face.ring.curves().any(|curve| curve == square[0].id()))
+        .expect("the square face");
+    assert_eq!(
+        square_face.holes.as_ref().map(Vec::len),
+        Some(1),
+        "a straight side has no polyline deviation"
+    );
+}
+
+#[test]
+fn a_coincident_curve_merges_once_in_its_own_direction() {
+    let use_ = |name: &str, reversed: bool| SketchEntityUse {
+        entity: SketchEntityId::mint(format!("synthetic:test:id#{name}")).unwrap(),
+        reversed,
+    };
+    let mut coincident = vec![use_("held", false)];
+    assert!(super::super::merge_coincident(
+        &mut coincident,
+        use_("held", false)
+    ));
+    assert_eq!(coincident.len(), 1);
+    assert!(super::super::merge_coincident(
+        &mut coincident,
+        use_("added", true)
+    ));
+    assert_eq!(coincident.len(), 2);
+    assert!(!super::super::merge_coincident(
+        &mut coincident,
+        use_("held", true)
+    ));
+}
+
+#[test]
+fn an_exhausted_member_ring_budget_selects_nothing_and_marks_the_cap() {
+    let (sketch, entities) = divided_circle(false);
+    let [circle, line] = [&entities[0], &entities[1]];
+    let rings = [vec![
+        SketchEntityUse {
+            entity: line.id().clone(),
+            reversed: false,
+        },
+        SketchEntityUse {
+            entity: circle.id().clone(),
+            reversed: false,
+        },
+    ]];
+    for (limit, selects) in [(usize::MAX, true), (0, false)] {
+        let work = ProfileGeometryWork::with_arrangement_work(limit);
+        let selected = crate::test_support::with_decode_context(|ctx| {
+            super::super::arrangement_regions_matching_member_rings(
+                &sketch,
+                &entities,
+                &rings,
+                PROFILE_PROGRAM_TOLERANCE,
+                &work,
+                ctx,
+            )
+        })
+        .unwrap();
+        assert_eq!(selected.is_some(), selects, "limit {limit}");
+        work.finish_selection();
+        assert_eq!(work.losses().is_empty(), selects, "limit {limit}");
+    }
 }
 
 #[test]
