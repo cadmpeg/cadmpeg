@@ -8,7 +8,6 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::num::NonZeroU32;
 
 use cadmpeg_core::decode::{u64_from_index, DecodeContext, View, WorkBudget};
-use cadmpeg_core::text::NonBlankString;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::annotations::Annotations;
 use cadmpeg_ir::ids::{EdgeId, FaceId, PmiId, VertexId};
@@ -1371,8 +1370,7 @@ fn tolerance_constraints(class: &str, entity: &Entity) -> ToleranceConstraints {
     }
     ToleranceConstraints {
         zones: vec![ToleranceZone {
-            form: NonBlankString::new("spherical".to_owned())
-                .expect("static tolerance zone form is nonblank"),
+            form: cadmpeg_core::nonblank_literal!("spherical"),
             projections: Vec::new(),
         }],
         ..ToleranceConstraints::default()

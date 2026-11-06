@@ -35,7 +35,7 @@ struct DomainRelationWire {
     id: String,
     source_index: u64,
     source_offset: u64,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_adjacent_uses")]
     adjacent_uses: Option<[Class25UseFrame; 2]>,
     #[serde(flatten)]
     definition: CatiaConsolidatedEdgeDefinition,
@@ -224,6 +224,13 @@ pub(super) fn derive(
     }
     Ok(relations)
 }
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(
+    deserialize_adjacent_uses,
+    [Class25UseFrame; 2],
+    "adjacent_uses"
+);
 
 #[cfg(test)]
 mod tests;
