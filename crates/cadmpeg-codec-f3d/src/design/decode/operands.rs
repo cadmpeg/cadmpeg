@@ -2673,10 +2673,8 @@ impl From<&DesignRecordHeader> for RecordFrame {
 /// auxiliary reference, a zero trailing count, and a retained null trailing
 /// slot before the role. The ordinary tail is a reference to record `N + 2`,
 /// a flag block, a reference to record `N + 1`, a zero byte, the owning scope's
-/// reference, and the same-index paired header. The class-328 Move tail has a
-/// leading zero, the flag block, an unmarked `N + 1` u64 reference with three
-/// zero bytes, and the owning-scope reference. The flag block's last byte is
-/// zero; one container generation prefixes it with a further byte. Neither
+/// reference, and the same-index paired header. One container generation
+/// prefixes the flag block with a further byte. Neither
 /// the repeated ordinal nor the prefix byte is announced, so the tail settles
 /// both: exactly one of the four readings reaches a paired header carrying
 /// this record's own index.
@@ -2819,15 +2817,9 @@ pub(super) fn parse_construction_operand_group(
             let Some(flags) = bytes.get(tail..tail + flag_bytes) else {
                 continue;
             };
-            let closing_flags: &[u8] = if flag_bytes == 3 { &[0, 1] } else { &[0] };
-            if !flags
-                .last()
-                .is_some_and(|last| closing_flags.contains(last))
-            {
+            if flags[flag_bytes - 2] > 1 || flags[flag_bytes - 1] > 1 {
                 continue;
             }
-            // The wider block prefixes the narrower one, so the variant flag is
-            // always the byte before the terminating zero.
             let variant = flags[flag_bytes - 2] != 0;
             let closing_flag = flags[flag_bytes - 1] != 0;
             let mut after = tail + flag_bytes;
@@ -2859,16 +2851,6 @@ pub(super) fn parse_construction_operand_group(
             {
                 return Unclosed;
             }
-        }
-    }
-    if let Some((variant, paired_at, paired_class_tag)) =
-        legacy_body_group_tail(bytes, scope, header, cursor, opaque_index.get())
-    {
-        if closed
-            .replace((variant, false, paired_at, paired_class_tag))
-            .is_some()
-        {
-            return Unclosed;
         }
     }
     let Some((variant, closing_flag, paired_at, paired_class_tag)) = closed else {
@@ -2961,85 +2943,6 @@ pub(super) fn parse_construction_operand_group(
         return Unclosed;
     };
     Complete(Box::new(group))
-}
-
-/// Read the legacy Move/RemoveBody tail whose two flag bytes have no
-/// terminating zero. The class and feature gates keep this admission separate
-/// from the terminated flag-block grammar used by other construction groups.
-fn legacy_body_group_tail(
-    bytes: &[u8],
-    scope: &DesignParameterScope,
-    header: &RecordFrame,
-    cursor: usize,
-    opaque_index: u32,
-) -> Option<(bool, usize, String)> {
-    let body_scope = design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Move)
-        || scope.kind() == crate::records::feature::scope::DesignFeatureKind::RemoveBody;
-    let (flag_pair, variant) = match header.class_tag.as_str() {
-        "257" | "323" | "338" if body_scope => ([1, 1], true),
-        "328" if scope.kind() == crate::records::feature::scope::DesignFeatureKind::Move => {
-            ([1, 1], true)
-        }
-        "282" | "302" if body_scope => ([0, 1], false),
-        _ => return None,
-    };
-    let mut tail = cursor;
-    if View::u32_le_at(bytes, tail)? != opaque_index {
-        return None;
-    }
-    tail += 4;
-    if take_record_reference(bytes, &mut tail).map(|(index, _)| index)
-        != header.record_index.checked_add(2)
-    {
-        return None;
-    }
-    if scope.kind() == crate::records::feature::scope::DesignFeatureKind::Move
-        && header.class_tag.as_str() == "328"
-    {
-        if bytes.get(tail) != Some(&0) {
-            return None;
-        }
-        tail += 1;
-        if bytes.get(tail..tail + 2) != Some(&flag_pair) {
-            return None;
-        }
-        tail += 2;
-        if View::u64_le_at(bytes, tail)? != u64::from(header.record_index.checked_add(1)?)
-            || bytes.get(tail + 8..tail + 11) != Some(&[0; 3])
-        {
-            return None;
-        }
-        tail += 11;
-    } else {
-        if bytes.get(tail..tail + 2) != Some(&flag_pair) {
-            return None;
-        }
-        tail += 2;
-        if take_record_reference(bytes, &mut tail).map(|(index, _)| index)
-            != header.record_index.checked_add(1)
-        {
-            return None;
-        }
-        if bytes.get(tail) != Some(&0) {
-            return None;
-        }
-        tail += 1;
-    }
-    if take_record_reference(bytes, &mut tail).map(|(index, _)| index) != Some(scope.record_index) {
-        return None;
-    }
-    let (paired_class_tag, after_tag) =
-        lp_ascii_filtered_view(bytes, tail, 3..=3, u8::is_ascii_digit)?;
-    if scope.kind() == crate::records::feature::scope::DesignFeatureKind::Move
-        && header.class_tag.as_str() == "328"
-        && paired_class_tag != "263"
-    {
-        return None;
-    }
-    if View::u32_le_at(bytes, after_tag) != Some(header.record_index) {
-        return None;
-    }
-    Some((variant, tail, paired_class_tag.to_owned()))
 }
 
 fn construction_tracking_registry<'cache>(
@@ -4443,6 +4346,16 @@ pub(super) fn parse_entity_selection_frame_with(
     })
 }
 
+pub(crate) fn body_recipe_serialization_form_losses(
+    operands: &[DesignBodyRecipeOperand],
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    operands.iter().filter_map(|operand| operand.serialization_form().filter(|form| *form > 1).map(|form| {
+        crate::loss::F3dLossCode::BodyRecipeSerializationFormAssumed.note(format!(
+            "body recipe operand {} stores serialization form {form}; its reference runs decode with the layout of forms 0 and 1", operand.id
+        ))
+    })).collect()
+}
+
 /// Decode whole-body construction operands that contain one persistent body recipe.
 pub(crate) fn decode_body_recipe_operands(
     scan: &ContainerScan,
@@ -4848,17 +4761,9 @@ fn parse_body_recipe_operand_frame_with_index(
         .get(selector_tail_at..selector_tail_at.checked_add(4)?)?
         .try_into()
         .ok()?;
-    let selector_tail_is_valid = match header.class_tag.as_str() {
-        // The class-365 member is a four-byte generation-dependent value.
-        // Retain it until DR-24 identifies its neutral meaning.
-        "365" => true,
-        "367" => selector_tail == [1, 0, 0, 0],
-        _ => selector_tail == [0; 4],
-    };
     if !is_guid_relaxed(&asset_id)
         || !is_guid_relaxed(&context_id)
         || View::u32_le_at(bytes, after_context_id)? != 2
-        || !selector_tail_is_valid
         || nested_record_index != u64::from(header.record_index.checked_add(3)?)
     {
         return None;
@@ -7177,4 +7082,19 @@ fn parse_profile_loop_lists(
         }
     }
     Ok((view.remaining() == 0).then_some(lists))
+}
+
+pub(crate) fn construction_closing_flag_losses(
+    groups: &[DesignConstructionOperandGroup],
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    groups
+        .iter()
+        .filter(|group| group.frame.closing_flag)
+        .map(|group| {
+            crate::loss::F3dLossCode::ConstructionClosingFlagAssumed.note(format!(
+                "construction group {} has closing flag 1; its interpretation assumes the flag does not change operation semantics",
+                group.id
+            ))
+        })
+        .collect()
 }
