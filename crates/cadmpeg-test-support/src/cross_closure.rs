@@ -924,7 +924,7 @@ mod tests {
             storage: ReducedStorage::Normalized {
                 loss: "step/geometry.analytic-surface-normalized",
             },
-            normalize: Some(crate::reduced::step_cone_chart),
+            normalize: Some(crate::reduced::step_surface_chart),
         }];
         let source = json!({"model":{"surfaces":[{"geometry":{
             "kind":"cone", "half_angle":-0.5, "axis":{"x":0.0,"y":0.0,"z":-1.0}, "radius":2.0
@@ -946,6 +946,26 @@ mod tests {
             apply_reduced(&source, &rows, false),
             apply_reduced(&target, &rows, false)
         );
+    }
+
+    #[test]
+    fn step_radius_normalization_keeps_other_surface_fields() {
+        let normalize = crate::reduced::step_surface_chart;
+        for (source, expected) in [
+            (
+                json!({"kind":"sphere", "radius":-4.0, "center":{"x":1.0,"y":2.0,"z":3.0}}),
+                json!({"kind":"sphere", "radius":4.0, "center":{"x":1.0,"y":2.0,"z":3.0}}),
+            ),
+            (
+                json!({"kind":"torus", "minor_radius":-2.0, "major_radius":5.0}),
+                json!({"kind":"torus", "minor_radius":2.0, "major_radius":5.0}),
+            ),
+        ] {
+            assert_eq!(normalize(&source), expected);
+            assert_eq!(normalize(&expected), expected);
+        }
+        let unrelated = json!({"kind":"cylinder", "radius":-4.0});
+        assert_eq!(normalize(&unrelated), unrelated);
     }
 
     #[test]

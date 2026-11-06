@@ -5756,6 +5756,14 @@ impl<'a> Builder<'a> {
                         format!("surface '{surface_id}' uses a reversed axis and positive cone semi-angle in STEP"),
                     );
                 }
+                if matches!(basis, SolvedSurfaceGeometry::Sphere(sphere) if sphere.radius().get() < 0.0)
+                    || matches!(basis, SolvedSurfaceGeometry::Torus(torus) if torus.minor_radius().get() < 0.0)
+                {
+                    self.loss(
+                        StepLossCode::AnalyticSurfaceNormalized,
+                        format!("surface '{surface_id}' uses a positive radius and an adjusted parameter chart in STEP"),
+                    );
+                }
                 self.written_analytic_surfaces
                     .push(WrittenAnalyticSurface::Carrier(basis));
                 let chart = geometry::WrittenChart::of(basis);

@@ -116,7 +116,7 @@ fn reduced_cone_chart_row_matches_the_written_surface_and_names_it() {
     let ReducedStorage::Normalized { loss } = row.storage else {
         panic!("cone normalization")
     };
-    let expected = cadmpeg_test_support::reduced::step_cone_chart(&original);
+    let expected = cadmpeg_test_support::reduced::step_surface_chart(&original);
     assert_ne!(original, expected);
 
     let codec = StepCodec::default();
@@ -149,6 +149,56 @@ fn reduced_cone_chart_row_matches_the_written_surface_and_names_it() {
         serde_json::to_value(&written.geometry).expect("written geometry JSON"),
         expected
     );
+}
+
+#[test]
+fn signed_sphere_and_torus_radii_are_normalized_and_named() {
+    use cadmpeg_ir::geometry::analytic::{SphereSurface, TorusSurface};
+    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
+    use cadmpeg_ir::math::{Point3, Vector3};
+
+    let center = Point3::new(1.0, 2.0, 3.0);
+    let axis = Vector3::new(0.0, 0.0, 1.0);
+    let reference = Vector3::new(1.0, 0.0, 0.0);
+    let cases = [
+        SolvedSurfaceGeometry::Sphere(
+            SphereSurface::try_new(center, axis, reference, -2.0).expect("sphere"),
+        ),
+        SolvedSurfaceGeometry::Torus(
+            TorusSurface::try_new(center, axis, reference, 5.0, -2.0).expect("torus"),
+        ),
+    ];
+    for (index, geometry) in cases.into_iter().enumerate() {
+        let mut seed = seed_golden();
+        let surface = &mut seed.model.surfaces[0];
+        let id = surface.id.to_string();
+        surface.geometry = SurfaceGeometry::Solved(geometry);
+        let codec = StepCodec::default();
+        let plan = codec
+            .plan(EncodeInput::new(&seed, None), request())
+            .expect("plan surface");
+        let mut bytes = Vec::new();
+        let report = plan.write_to(&mut bytes).expect("write surface");
+        assert!(report.losses.iter().any(|loss| {
+            loss.code == crate::loss::StepLossCode::AnalyticSurfaceNormalized.kind()
+                && loss.message.contains(&id)
+        }));
+        let decoded = codec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("decode surface");
+        assert!(decoded.ir().model.surfaces.iter().any(|surface| {
+            match (index, surface.geometry.solved()) {
+                (0, Some(SolvedSurfaceGeometry::Sphere(sphere))) => {
+                    (sphere.radius().get() - 2.0).abs() < 1e-12
+                }
+                (1, Some(SolvedSurfaceGeometry::Torus(torus))) => {
+                    (torus.major_radius().get() - 5.0).abs() < 1e-12
+                        && (torus.minor_radius().get() - 2.0).abs() < 1e-12
+                }
+                _ => false,
+            }
+        }));
+    }
 }
 
 #[test]
