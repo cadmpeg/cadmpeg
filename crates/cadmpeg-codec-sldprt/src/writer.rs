@@ -1586,7 +1586,12 @@ fn remap_written_geometry_references(
                         || (feature.kind.eq_ignore_ascii_case("Revolve")
                             && feature.input_class.as_deref() == Some("moRevolution_c")))
             })
-            .map(|feature| (feature.id.clone(), feature.kind.clone()))
+            .map(|feature| {
+                (
+                    feature.id.clone(),
+                    (feature.kind.clone(), feature.input_class.clone()),
+                )
+            })
             .collect::<HashMap<_, _>>()
     });
     let (_, written_classes) = crate::history::write::features::synthesize_neutral_features(
@@ -1602,8 +1607,9 @@ fn remap_written_geometry_references(
             .iter_mut()
             .flat_map(|history| &mut history.features)
         {
-            if let Some(kind) = lane_owned_operations.get(&feature.id) {
+            if let Some((kind, class)) = lane_owned_operations.get(&feature.id) {
                 feature.kind.clone_from(kind);
+                feature.input_class.clone_from(class);
                 feature.properties.remove("Operation");
             }
         }
@@ -5793,8 +5799,16 @@ mod nurbs_write_tests {
         ];
         for points in surface_points {
             let surface = NurbsSurface::from_lanes(
-                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    false,
+                ),
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(
+                    1,
+                    vec![0.0, 0.0, 1.0, 1.0],
+                    false,
+                ),
                 cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(points, None),
                 false,
             )
