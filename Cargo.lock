@@ -261,6 +261,7 @@ version = "0.6.8"
 dependencies = [
  "cadmpeg-core",
  "cadmpeg-ir",
+ "cadmpeg-measure",
  "cadmpeg-test-support",
  "regex",
  "serde",

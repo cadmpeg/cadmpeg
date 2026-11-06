@@ -190,6 +190,8 @@ pub(crate) enum CreoLossCode {
     TopologyIncompleteComponents,
     /// A face component whose faces have no visible surface row stays native.
     TopologyUnownedComponent,
+    /// A visible face row with a null body and quilt owner stays native.
+    TopologyExplicitUnownedSurface,
     /// A half-edge orbit is past the stated topological vertex identifier width.
     TopologyVertexIdentifierUnstatable,
     /// Neutral feature, configuration, graph, material, and display data remain open.
@@ -364,6 +366,7 @@ impl CreoLossCode {
             Self::CarrierTorusParameterRetention => "carrier.torus-parameter-retention",
             Self::TopologyIncompleteComponents => "topology.incomplete-components",
             Self::TopologyUnownedComponent => "topology.unowned-component",
+            Self::TopologyExplicitUnownedSurface => "topology.explicit-unowned-surface",
             Self::TopologyVertexIdentifierUnstatable => "topology.vertex-identifier-unstatable",
             Self::FeatureNeutralSemanticsIncomplete => "feature.neutral-semantics-incomplete",
             Self::FeatureSweepIncomplete => "feature.sweep-incomplete",
@@ -439,6 +442,7 @@ impl CreoLossCode {
             | Self::GeometryInstanceCarriersGated
             | Self::TopologyIncompleteComponents
             | Self::TopologyUnownedComponent
+            | Self::TopologyExplicitUnownedSurface
             | Self::TopologyVertexIdentifierUnstatable
             | Self::ExtrusionBodyRejected => Severity::Blocking,
             Self::SectionSplineUnresolved
@@ -610,6 +614,7 @@ impl CreoLossCode {
             Self::CountFramedCurveCarrierUnverified => LossTaxonomy::CarrierAxisInferred,
             Self::TopologyIncompleteComponents
             | Self::TopologyUnownedComponent
+            | Self::TopologyExplicitUnownedSurface
             | Self::TopologyVertexIdentifierUnstatable
             | Self::ExtrusionBodyRejected => LossTaxonomy::TopologyNotTransferred,
             Self::FeatureNeutralSemanticsIncomplete
@@ -767,6 +772,7 @@ mod tests {
                 "carrier.torus-parameter-retention",
                 "topology.incomplete-components",
                 "topology.unowned-component",
+                "topology.explicit-unowned-surface",
                 "topology.vertex-identifier-unstatable",
                 "feature.neutral-semantics-incomplete",
                 "feature.sweep-incomplete",
