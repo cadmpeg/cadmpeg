@@ -522,6 +522,12 @@ pub(crate) struct Stats {
     pub(crate) withheld_fin_links: usize,
     /// Faces withheld with their surface because no loop of the face decodes.
     pub(crate) withheld_faces: usize,
+    /// Faces withheld with their surface because a vertex loop of the face
+    /// names no resolved vertex.
+    pub(crate) withheld_vertex_loop_faces: usize,
+    /// Faces withheld with their surface because a loop of the face holds an
+    /// ambiguous FIN.
+    pub(crate) withheld_ambiguous_fin_faces: usize,
     /// Canonical faces that no explicit body record claims.
     pub(crate) unclaimed_faces: usize,
     /// Faces on a support surface this codec does not type; emitted with an
@@ -694,11 +700,23 @@ struct WalkedFace {
     sense: Sense,
     /// `(loop_attr, ordered_coedge_attrs)` in sibling order.
     loops: Vec<(u32, Vec<u32>)>,
+    /// `(loop_attr, vertex_use_attr)` of each vertex loop, in sibling order.
+    vertex_loops: Vec<(u32, u32)>,
     unresolved_loop: Option<u32>,
     unresolved_fins: Vec<u32>,
     withheld_forward_links: usize,
     /// Walked loops that are not forward linked.
     unlinked_loops: HashSet<u32>,
+}
+
+impl WalkedFace {
+    /// The attrs of the ring loops, then of the vertex loops.
+    fn loop_attrs(&self) -> impl Iterator<Item = u32> + '_ {
+        self.loops
+            .iter()
+            .map(|(attr, _)| *attr)
+            .chain(self.vertex_loops.iter().map(|(attr, _)| *attr))
+    }
 }
 
 /// Resolve a face whose `refs[4]` carrier is a swept/spun construction to a
@@ -1076,6 +1094,40 @@ fn ensure_surface_support(
     result
 }
 
+/// Whether a walked face enters the model with its surface.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum FaceAdmission {
+    Admitted,
+    VertexLoopUnresolved,
+    FinAmbiguous,
+    NoLoop,
+}
+
+fn face_admission(
+    face: &WalkedFace,
+    loop_set: &HashSet<u32>,
+    t: &topology::Tables,
+    carriers: &CarrierIndex,
+) -> FaceAdmission {
+    if face
+        .vertex_loops
+        .iter()
+        .any(|(loop_attr, _)| !loop_set.contains(loop_attr))
+    {
+        FaceAdmission::VertexLoopUnresolved
+    } else if !face.unresolved_fins.is_empty() {
+        FaceAdmission::FinAmbiguous
+    } else if face
+        .loop_attrs()
+        .any(|loop_attr| loop_set.contains(&loop_attr))
+        || covers_whole_sphere(face, t, carriers)
+    {
+        FaceAdmission::Admitted
+    } else {
+        FaceAdmission::NoLoop
+    }
+}
+
 /// Whether `face` stores no loop and lies on a sphere. A sphere is a closed
 /// surface without boundary, so the face covers the whole surface (spec §7.1).
 fn covers_whole_sphere(face: &WalkedFace, t: &topology::Tables, carriers: &CarrierIndex) -> bool {
@@ -1099,6 +1151,7 @@ fn covers_whole_sphere(face: &WalkedFace, t: &topology::Tables, carriers: &Carri
 fn walk_face(bridge: &topology::Bridge, t: &topology::Tables) -> WalkedFace {
     let surface_attr = bridge.refs[4];
     let mut loops = Vec::new();
+    let mut vertex_loops = Vec::new();
     let mut loop_ref = bridge.refs[2];
     let mut unresolved_loop = None;
     let mut unresolved_fins = Vec::new();
@@ -1120,6 +1173,15 @@ fn walk_face(bridge: &topology::Bridge, t: &topology::Tables) -> WalkedFace {
             break;
         }
         let first = lp.refs[1];
+        if let Some(fin) = t
+            .vertex_loop_fins()
+            .get(&first)
+            .filter(|fin| fin.loop_attr == loop_ref)
+        {
+            vertex_loops.push((loop_ref, fin.vertex));
+            loop_ref = lp.refs[3];
+            continue;
+        }
         let mut ring = Vec::new();
         let mut ce_ref = first;
         let mut ce_guard = HashSet::new();
@@ -1163,6 +1225,7 @@ fn walk_face(bridge: &topology::Bridge, t: &topology::Tables) -> WalkedFace {
         surface_attr,
         sense: bridge.sense,
         loops,
+        vertex_loops,
         unresolved_loop,
         unresolved_fins,
         withheld_forward_links,
@@ -2205,17 +2268,22 @@ fn insert_edge_ends(
 ) {
     edge_ends.insert(edge_attr, (start_vuse, end_vuse, curve_attr, fin_attr));
     for vuse in [start_vuse, end_vuse] {
-        if vuse == 0 {
-            continue;
-        }
-        if let Some(vu) = t.vertex_uses().get(&vuse) {
-            let point_attr = vu.refs[4];
-            if t.points().contains_key(&point_attr) {
-                kept.vertices.insert(vuse);
-                kept.points.insert(point_attr);
-            } else if t.point_is_ambiguous(point_attr) {
-                kept.unresolved_points.insert(point_attr);
-            }
+        keep_vertex_use(t, kept, vuse);
+    }
+}
+
+/// Keep a vertex use and its point when both resolve.
+fn keep_vertex_use(t: &topology::Tables, kept: &mut KeptTopology<'_>, vuse: u32) {
+    if vuse == 0 {
+        return;
+    }
+    if let Some(vu) = t.vertex_uses().get(&vuse) {
+        let point_attr = vu.refs[4];
+        if t.points().contains_key(&point_attr) {
+            kept.vertices.insert(vuse);
+            kept.points.insert(point_attr);
+        } else if t.point_is_ambiguous(point_attr) {
+            kept.unresolved_points.insert(point_attr);
         }
     }
 }
@@ -2265,7 +2333,7 @@ pub(crate) fn decode(
     )
 }
 
-fn is_deltas_stream(header: &StreamHeader) -> bool {
+pub(super) fn is_deltas_stream(header: &StreamHeader) -> bool {
     header
         .description
         .as_bytes()
@@ -2296,13 +2364,50 @@ pub(crate) fn decode_bodies(
     bodies: &[(&[u8], &StreamHeader)],
     stream: &cadmpeg_ir::StreamName,
 ) -> Result<Brep, cadmpeg_core::CodecError> {
+    let mut site = scan_site(ctx, bodies, &mut |_| {})?;
+    decode_graph(
+        ctx,
+        &mut site.carriers,
+        &site.tables,
+        site.facts,
+        &site.typed_facts,
+        stream,
+    )
+}
+
+/// The merged record state of one site.
+struct SiteState {
+    carriers: CarrierIndex,
+    tables: topology::Tables,
+    facts: entity::Facts,
+    typed_facts: typed::Facts,
+}
+
+/// The topology tables the site scan reads from one stream, before they
+/// merge into the site tables.
+pub(super) struct StreamTopology<'a> {
+    /// The position of the stream in the site's `bodies`.
+    pub(super) index: usize,
+    pub(super) body: &'a [u8],
+    /// Whether the tables come from the stream's node sequence.
+    pub(super) from_nodes: bool,
+    pub(super) tables: &'a topology::Tables,
+}
+
+/// Read the streams of one site into one record state. `observe` receives
+/// the topology tables of each stream in scan order.
+fn scan_site(
+    ctx: &DecodeContext<'_>,
+    bodies: &[(&[u8], &StreamHeader)],
+    observe: &mut dyn FnMut(StreamTopology<'_>),
+) -> Result<SiteState, cadmpeg_core::CodecError> {
     let mut carriers = CarrierIndex::default();
     let mut tables = topology::Tables::default();
     let mut facts = entity::Facts::default();
     let mut initialized = false;
-    let mut ordered: Vec<&(&[u8], &StreamHeader)> = Vec::new();
-    ordered.extend(bodies.iter());
-    ordered.sort_by_key(|entry| is_deltas_stream(entry.1));
+    let mut order: Vec<usize> = (0..bodies.len()).collect();
+    order.sort_by_key(|index| is_deltas_stream(bodies[*index].1));
+    let ordered: Vec<&(&[u8], &StreamHeader)> = order.iter().map(|index| &bodies[*index]).collect();
     let mut entity_streams = Vec::new();
     for (payload, header) in &ordered {
         let body = header_body(payload, header)?;
@@ -2335,6 +2440,7 @@ pub(crate) fn decode_bodies(
     let mut node_tables = Vec::new();
     let mut node_attributes = Vec::new();
     let mut deltas_typed = Vec::new();
+    let mut deltas_blends = Vec::new();
     for (((payload, header), (body, prefixed)), deltas) in
         ordered.iter().zip(&entity_streams).zip(&deltas_records)
     {
@@ -2343,7 +2449,6 @@ pub(crate) fn decode_bodies(
             .flatten()
             .and_then(|records| {
                 let tables = topology::nodes::tables(&records, payload, header.body_offset)?;
-                let analytic = super::carrier_nodes::analytic(&records, header.body_offset);
                 let mut lane_refusals = Vec::new();
                 let splines = super::spline::nodes::carriers(
                     &records,
@@ -2353,6 +2458,11 @@ pub(crate) fn decode_bodies(
                 if splines.is_none() {
                     lane_refusals.clear();
                 }
+                let analytic = super::carrier_nodes::analytic(
+                    &records,
+                    header.body_offset,
+                    &mut lane_refusals,
+                );
                 let sp_curves = splines.as_ref().and_then(|splines| {
                     super::sp_curve::from_nodes(&records, header.body_offset, &splines.pcurves)
                 });
@@ -2396,8 +2506,10 @@ pub(crate) fn decode_bodies(
                 let sp_curves = splines.as_ref().and_then(|splines| {
                     super::sp_curve::from_nodes_of(&nodes, offset, &splines.pcurves)
                 });
+                let analytic =
+                    super::carrier_nodes::analytic_of(&nodes, offset, &mut lane_refusals);
                 let carriers = NodeCarriers {
-                    analytic: super::carrier_nodes::analytic_of(&nodes, offset),
+                    analytic,
                     splines,
                     offsets: super::offset::from_nodes_of(&nodes, offset),
                     blends: None,
@@ -2407,14 +2519,17 @@ pub(crate) fn decode_bodies(
                     intersections: super::intersection::from_nodes_of(&nodes, offset),
                     lane_refusals,
                 };
-                Some((facts, tables, carriers))
+                let blends = super::blend::from_nodes_of(&nodes, offset);
+                Some((facts, tables, carriers, blends))
             });
         if let Some((facts, attributes, node_records)) = node_stream {
             typed_streams.push(facts);
             node_attributes.push(attributes);
             node_tables.push(Some(node_records));
             deltas_typed.push(None);
-        } else if let Some((facts, tables, carriers)) = deltas_stream {
+            deltas_blends.push(None);
+        } else if let Some((facts, tables, carriers, blends)) = deltas_stream {
+            deltas_blends.push(blends);
             typed_streams.push(typed::scan_with_payload_exclusions(body, *prefixed));
             deltas_typed.push(Some(facts));
             node_attributes.push((None, None));
@@ -2424,6 +2539,7 @@ pub(crate) fn decode_bodies(
             node_attributes.push((None, None));
             node_tables.push(None);
             deltas_typed.push(None);
+            deltas_blends.push(None);
         }
     }
     // Node-built and scanned Deltas frames start at different bytes, so one
@@ -2478,13 +2594,64 @@ pub(crate) fn decode_bodies(
         }
     }
     let evidence = SiteEvidence::of(&entity_streams, &typed_streams);
-    for (stream_order, ((((payload, header), stream_typed_facts), node_tables), attributes)) in
-        ordered
-            .into_iter()
-            .zip(typed_streams)
-            .zip(node_tables)
-            .zip(node_attributes)
-            .enumerate()
+    // A Deltas blend enters only when the current faces, edges, and carriers
+    // reach it, directly or through reached Deltas carriers.
+    let mut seeds: Vec<u32> = evidence
+        .typed
+        .faces
+        .iter()
+        .map(|face| face.refs[4])
+        .collect();
+    let mut deltas_edges = HashMap::<u32, Vec<u32>>::new();
+    let mut deltas_bridges = Vec::new();
+    let mut partition_bridges = 0;
+    for (entry, (_, prefixed)) in node_tables.iter().zip(&entity_streams) {
+        let Some((tables, carriers)) = entry else {
+            continue;
+        };
+        let references = carriers.iter().flat_map(NodeCarriers::reference_edges);
+        if *prefixed {
+            deltas_bridges.extend(tables.bridges().values().map(|bridge| bridge.refs[4]));
+            for (from, to) in references {
+                deltas_edges.entry(from).or_default().push(to);
+            }
+        } else {
+            partition_bridges += tables.bridges().len();
+            seeds.extend(tables.bridges().values().map(|bridge| bridge.refs[4]));
+            seeds.extend(
+                tables
+                    .edge_uses()
+                    .values()
+                    .map(|edge| edge.references.curve()),
+            );
+            seeds.extend(tables.coedges().values().map(|coedge| coedge.refs[7]));
+            seeds.extend(references.map(|(_, to)| to));
+        }
+    }
+    if partition_bridges == 0 && evidence.bridge_attrs.is_none() {
+        seeds.extend(deltas_bridges);
+    }
+    let mut referenced = HashSet::new();
+    while let Some(attr) = seeds.pop() {
+        if attr > 1 && referenced.insert(attr) {
+            seeds.extend(deltas_edges.get(&attr).into_iter().flatten().copied());
+        }
+    }
+    for (tables, blends) in node_tables.iter_mut().zip(deltas_blends) {
+        if let (Some((_, Some(carriers))), Some(blends)) = (tables, blends) {
+            carriers.blends = Some(blends.reached_from(&referenced));
+        }
+    }
+    for (
+        stream_order,
+        (((((payload, header), stream_typed_facts), node_tables), attributes), index),
+    ) in ordered
+        .into_iter()
+        .zip(typed_streams)
+        .zip(node_tables)
+        .zip(node_attributes)
+        .zip(order)
+        .enumerate()
     {
         let body = header_body(payload, header)?;
         let is_deltas = is_deltas_stream(header);
@@ -2501,6 +2668,7 @@ pub(crate) fn decode_bodies(
             node_carriers.flatten(),
             exclude,
         )?);
+        let from_nodes = node_tables.is_some();
         let scanned_tables = stream_topology(
             (body, header),
             &stream_typed_facts,
@@ -2510,6 +2678,12 @@ pub(crate) fn decode_bodies(
             &tables,
             exclude,
         );
+        observe(StreamTopology {
+            index,
+            body,
+            from_nodes,
+            tables: &scanned_tables,
+        });
         let (attributes, entities) = attributes;
         let attributes = attributes.unwrap_or_else(|| attrib::Records::scan(body));
         let mut scanned_facts = entity::metadata(body, is_deltas, &attributes, entities);
@@ -2528,7 +2702,22 @@ pub(crate) fn decode_bodies(
             initialized = true;
         }
     }
-    decode_graph(ctx, &mut carriers, &tables, facts, &evidence.typed, stream)
+    Ok(SiteState {
+        carriers,
+        tables,
+        facts,
+        typed_facts: evidence.typed,
+    })
+}
+
+/// Read the streams of one site as [`decode_bodies`] does, without building
+/// the B-rep. `observe` receives the topology tables of each stream.
+pub(super) fn observe_site(
+    ctx: &DecodeContext<'_>,
+    bodies: &[(&[u8], &StreamHeader)],
+    observe: &mut dyn FnMut(StreamTopology<'_>),
+) -> Result<(), cadmpeg_core::CodecError> {
+    scan_site(ctx, bodies, observe).map(|_| ())
 }
 
 /// The site-level evidence that the topology scan of each stream reads.
@@ -3072,6 +3261,11 @@ fn decode_graph(
     let mut unresolved_vertices = HashSet::new();
 
     for f in &faces {
+        for (_, vertex_use) in &f.vertex_loops {
+            if t.vertex_is_unresolved(*vertex_use) {
+                unresolved_vertices.insert(*vertex_use);
+            }
+        }
         for (loop_attr, ring) in &f.loops {
             let forward_linked = !f.unlinked_loops.contains(loop_attr);
             let k = ring.len();
@@ -3199,6 +3393,18 @@ fn decode_graph(
             [start_vuse, end_vuse],
             curve_attr,
             canonical,
+        );
+    }
+
+    for (_, vertex_use) in faces.iter().flat_map(|face| &face.vertex_loops) {
+        keep_vertex_use(
+            t,
+            &mut KeptTopology {
+                vertices: &mut kept_vertices,
+                points: &mut kept_points,
+                unresolved_points: &mut unresolved_points,
+            },
+            *vertex_use,
         );
     }
 
@@ -3772,6 +3978,28 @@ fn decode_graph(
                 boundary: cadmpeg_ir::topology::LoopBoundary::Ring(ring),
             });
         }
+        for (loop_attr, vertex_use) in &f.vertex_loops {
+            if !kept_vertices.contains(vertex_use) {
+                continue;
+            }
+            let off = t.loops().get(loop_attr).map_or(0, |r| r.offset);
+            annotations.note(
+                id_loop(*loop_attr).as_str(),
+                &source_stream,
+                u64_from_index(off),
+                Some("00_0f"),
+            );
+            admit_brep_entity(ctx)?;
+            out.loops.push(Loop {
+                id: id_loop(*loop_attr),
+                face: id_face(f.bridge_attr),
+                boundary: cadmpeg_ir::topology::LoopBoundary::Vertex {
+                    vertex: id_vertex(*vertex_use),
+                    pcurves: Vec::new(),
+                },
+            });
+            kept_loops.insert(*loop_attr);
+        }
     }
     let loop_set = kept_loops;
 
@@ -3825,11 +4053,7 @@ fn decode_graph(
     }
     let mut emitted_face_surface_by_carrier = HashMap::<u32, u32>::new();
     for face in &faces {
-        if face
-            .loops
-            .iter()
-            .any(|(loop_attr, _)| loop_set.contains(loop_attr))
-        {
+        if face_admission(face, &loop_set, t, carriers) == FaceAdmission::Admitted {
             emitted_face_surface_by_carrier
                 .entry(face.surface_attr)
                 .and_modify(|bridge| *bridge = (*bridge).min(face.bridge_attr))
@@ -3837,16 +4061,26 @@ fn decode_graph(
         }
     }
     for f in &faces {
-        let mut loops = Vec::new();
-        for (loop_attr, _) in &f.loops {
-            if loop_set.contains(loop_attr) {
-                loops.push(id_loop(*loop_attr));
+        match face_admission(f, &loop_set, t, carriers) {
+            FaceAdmission::Admitted => {}
+            FaceAdmission::VertexLoopUnresolved => {
+                out.stats.withheld_vertex_loop_faces += 1;
+                continue;
+            }
+            FaceAdmission::FinAmbiguous => {
+                out.stats.withheld_ambiguous_fin_faces += 1;
+                continue;
+            }
+            FaceAdmission::NoLoop => {
+                out.stats.withheld_faces += 1;
+                continue;
             }
         }
-        if loops.is_empty() && !covers_whole_sphere(f, t, carriers) {
-            out.stats.withheld_faces += 1;
-            continue;
-        }
+        let loops: Vec<_> = f
+            .loop_attrs()
+            .filter(|loop_attr| loop_set.contains(loop_attr))
+            .map(id_loop)
+            .collect();
         // Support surface: a decoded surface carrier, else an opaque carrier.
         let surf_off = t.bridges().get(&f.bridge_attr).map_or(0, |r| r.offset);
         let mut surface_orientation_reversed = false;
@@ -4739,6 +4973,11 @@ fn prune_rejected_topology(out: &mut Brep) {
         .edges
         .iter()
         .flat_map(|edge| [&edge.start, &edge.end])
+        .chain(
+            out.loops
+                .iter()
+                .flat_map(cadmpeg_ir::topology::Loop::vertices),
+        )
         .map(cadmpeg_ir::ids::VertexId::as_str)
         .collect::<std::collections::HashSet<_>>();
     out.vertices
@@ -10848,3 +11087,6 @@ mod partition_framing_tests;
 mod periodic_seam_tests;
 #[cfg(test)]
 mod tolerant_edge_tests;
+
+#[cfg(test)]
+mod vertex_loop_tests;

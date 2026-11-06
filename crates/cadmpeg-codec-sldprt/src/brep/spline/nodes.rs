@@ -100,7 +100,7 @@ pub(in crate::brep) fn carriers_of<N: NodeFields>(
                     continue;
                 };
                 if !descriptor.spatial() {
-                    if let Some(pcurve) = assemble_pcurve(&arrays, descriptor) {
+                    if let Some(pcurve) = assemble_pcurve(&arrays, attr, descriptor, refusals) {
                         out.pcurves.insert(attr, pcurve);
                     }
                 } else if let Some(carrier) =
@@ -113,9 +113,16 @@ pub(in crate::brep) fn carriers_of<N: NodeFields>(
                 let Some(descriptor) = surface_descriptors.get(&node.pointer("nurbs")?) else {
                     continue;
                 };
-                if let Some(carrier) =
-                    assemble_surface(&[], &arrays, attr, offset, descriptor, refusals)
-                {
+                let normal_reversed = node.char("sense") == Some(b'-');
+                if let Some(carrier) = assemble_surface(
+                    &[],
+                    &arrays,
+                    attr,
+                    offset,
+                    descriptor,
+                    normal_reversed,
+                    refusals,
+                ) {
                     out.surfaces.insert(attr, carrier);
                 }
             }
@@ -133,6 +140,7 @@ fn curve_descriptor(node: &impl NodeFields) -> Option<(CurveDescriptor, bool)> {
         periodic: node.logical("periodic")?,
         control_count: index_from_u32(node.integer("n_vertices")?),
         dimension: usize::from(node.short("vertex_dim")?),
+        knot_count: index_from_u32(node.integer("n_knots")?),
         rational: node.logical("rational")?,
         control_attr: node.pointer("bspline_vertices")?,
         multiplicity_attr: node.pointer("knot_mult")?,

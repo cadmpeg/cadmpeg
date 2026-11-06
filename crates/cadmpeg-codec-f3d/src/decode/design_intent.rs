@@ -438,6 +438,11 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     let (untyped_tracking_paths, profile_losses) =
         extend_related_design_records(ctx, scan, prereqs, timelines, geometry, &mut design)?;
     losses.extend(profile_losses);
+    losses.extend(
+        crate::design::decode::operands::body_recipe_serialization_form_losses(
+            &design.design_body_recipe_operands,
+        ),
+    );
     if untyped_tracking_paths != 0 {
         push_loss_vec(&mut losses, F3dLossCode::ConstructionTrackingPathUntyped,
             format_args!("{untyped_tracking_paths} construction tracking path reference(s) remain source-only because no matching indexed registration was admitted."));
@@ -597,6 +602,11 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             sheet_metal_settings: &design.design_sheet_metal_settings,
         },
     )?;
+    losses.extend(
+        crate::design::decode::operands::construction_closing_flag_losses(
+            &design.design_construction_operand_groups,
+        ),
+    );
     losses.extend(projected.unruled_flange_thickness_loss());
     losses.extend(projected.hole_losses);
     losses.extend(
@@ -696,14 +706,14 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         },
         &mut scope_histories,
     );
-    crate::history::fillet_blends::bind_fillet_blend_edges(
+    losses.extend(crate::history::fillet_blends::bind_fillet_blend_edges(
         &mut model.features,
         crate::history::fillet_blends::FilletBlendInputs {
             scopes: &design.design_parameter_scopes,
             groups: &design.design_construction_operand_groups,
             histories: &mut design.asm_histories,
         },
-    );
+    ));
     model.feature_input_topologies = crate::history::project_feature_input_topologies(
         &model.features,
         &design.design_parameter_scopes,
@@ -785,7 +795,8 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     )?;
     model.sketches = planar.sketches;
     model.sketch_entities = planar.entities;
-    losses.extend(planar.losses);
+    let unprofiled_at = losses.len();
+    let unprofiled = planar.unprofiled;
     let spatial = crate::design::sketch_project::project_spatial_sketch_design(
         ctx,
         &design.design_sketch_placements,
@@ -808,6 +819,16 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         &mut model.features,
         &design.design_parameter_scopes,
         &model.sketch_entities,
+    );
+    crate::design::feature_project::bind_loft_sketch_point_sections(
+        &mut model.features,
+        &crate::design::feature_project::LoftPointSources {
+            groups: &design.design_construction_operand_groups,
+            entity_operands: &design.design_entity_selection_operands,
+            sketch_points: &design.sketch_points,
+            sketches: &model.sketches,
+            sketch_entities: &model.sketch_entities,
+        },
     );
     let profile_work = crate::design::geometry::ProfileGeometryWork::new();
     crate::design::profile_select::bind_sweep_sketch_selections(
@@ -930,6 +951,14 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         },
     )?;
     losses.extend(profile_work.losses());
+    losses.splice(
+        unprofiled_at..unprofiled_at,
+        crate::design::profile_select::unprofiled_curve_losses(
+            unprofiled,
+            &model.features,
+            &model.sketch_entities,
+        ),
+    );
     if matches!(geometry.path, DesignPath::Geometry) {
         crate::history::discard_projection_caches(&mut design.asm_histories);
     }
@@ -1465,6 +1494,7 @@ fn extend_related_design_records(
     design.design_entity_selection_operands =
         crate::design::decode::operands::decode_entity_selection_operands(
             scan,
+            &design.design_parameter_scopes,
             &design.design_construction_operand_groups,
             &design.design_record_headers,
         )?;

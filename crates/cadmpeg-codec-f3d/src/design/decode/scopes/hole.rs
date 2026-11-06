@@ -364,6 +364,7 @@ fn exact_hole_face_selection(
                 asset_id_offset: frame.asset_id_offset,
                 context_id,
                 context_id_offset: frame.context_id_offset,
+                serialization_form: frame.serialization_form,
                 identity_record_index: frame.identity_record_index,
                 identity_record_offset: frame.identity_record_offset,
                 primary_identity: frame.primary_identity,

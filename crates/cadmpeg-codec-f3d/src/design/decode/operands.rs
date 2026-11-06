@@ -4,6 +4,7 @@
 mod fillet_variable_groups;
 
 use crate::bytes::lp_utf16_bounded;
+use crate::records::topology::entity_selection::SelectionSerializationForm;
 use crate::records::topology::{
     construction::DesignConstructionOperandRole, extrude_selection::DesignExtrudeFaceEncoding,
 };
@@ -29,7 +30,6 @@ use crate::design::decode::text::relaxed_guid_end;
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::native_stream;
 use crate::layout::body_recipe_family_name_frame as body_recipe_end;
-use crate::layout::class_338_sketch_curve_identity as class_338_curve;
 use crate::layout::coil_compact_face_selection_prefix as coil_face_sel;
 use crate::layout::coil_compact_persistent_selection_prefix as coil_persist_sel;
 use crate::layout::coil_modern_selection_prefix as coil_modern_sel;
@@ -40,6 +40,7 @@ use crate::layout::indexed_design_record_header as indexed_header;
 use crate::layout::legacy_loft_body_carrier_class_322 as legacy_loft_322;
 use crate::layout::legacy_loft_body_carrier_class_322_tail as legacy_loft_322_tail;
 use crate::layout::legacy_loft_body_carrier_class_411 as legacy_loft_411;
+use crate::layout::marked_sketch_curve_identity as marked_curve;
 use crate::layout::sheet_metal_region_carrier_prefix as region_carrier;
 use crate::layout::sheet_metal_region_carrier_scalar_lane as region_scalar;
 use crate::layout::sheet_metal_region_identity_reference as region_reference;
@@ -446,6 +447,7 @@ pub(crate) fn bind_work_point_input_carriers(
                         asset_id_offset: selection.asset_id_offset,
                         context_id,
                         context_id_offset: selection.context_id_offset,
+                        serialization_form: selection.serialization_form,
                         identity_record_index: selection.identity_record_index,
                         identity_record_offset: selection.identity_record_offset,
                         primary_identity: selection.primary_identity,
@@ -581,6 +583,7 @@ fn resolve_sketch_point_selection(
             asset_id_offset: frame.asset_id_offset,
             context_id,
             context_id_offset: frame.context_id_offset,
+            serialization_form: frame.serialization_form,
             identity_record_index: frame.identity_record_index,
             identity_record_offset: frame.identity_record_offset,
             identity_form: frame.identity_form,
@@ -2651,10 +2654,8 @@ impl From<&DesignRecordHeader> for RecordFrame {
 /// auxiliary reference, a zero trailing count, and a retained null trailing
 /// slot before the role. The ordinary tail is a reference to record `N + 2`,
 /// a flag block, a reference to record `N + 1`, a zero byte, the owning scope's
-/// reference, and the same-index paired header. The class-328 Move tail has a
-/// leading zero, the flag block, an unmarked `N + 1` u64 reference with three
-/// zero bytes, and the owning-scope reference. The flag block's last byte is
-/// zero; one container generation prefixes it with a further byte. Neither
+/// reference, and the same-index paired header. One container generation
+/// prefixes the flag block with a further byte. Neither
 /// the repeated ordinal nor the prefix byte is announced, so the tail settles
 /// both: exactly one of the four readings reaches a paired header carrying
 /// this record's own index.
@@ -2797,15 +2798,9 @@ pub(super) fn parse_construction_operand_group(
             let Some(flags) = bytes.get(tail..tail + flag_bytes) else {
                 continue;
             };
-            let closing_flags: &[u8] = if flag_bytes == 3 { &[0, 1] } else { &[0] };
-            if !flags
-                .last()
-                .is_some_and(|last| closing_flags.contains(last))
-            {
+            if flags[flag_bytes - 2] > 1 || flags[flag_bytes - 1] > 1 {
                 continue;
             }
-            // The wider block prefixes the narrower one, so the variant flag is
-            // always the byte before the terminating zero.
             let variant = flags[flag_bytes - 2] != 0;
             let closing_flag = flags[flag_bytes - 1] != 0;
             let mut after = tail + flag_bytes;
@@ -2837,16 +2832,6 @@ pub(super) fn parse_construction_operand_group(
             {
                 return Unclosed;
             }
-        }
-    }
-    if let Some((variant, paired_at, paired_class_tag)) =
-        legacy_body_group_tail(bytes, scope, header, cursor, opaque_index.get())
-    {
-        if closed
-            .replace((variant, false, paired_at, paired_class_tag))
-            .is_some()
-        {
-            return Unclosed;
         }
     }
     let Some((variant, closing_flag, paired_at, paired_class_tag)) = closed else {
@@ -2939,85 +2924,6 @@ pub(super) fn parse_construction_operand_group(
         return Unclosed;
     };
     Complete(Box::new(group))
-}
-
-/// Read the legacy Move/RemoveBody tail whose two flag bytes have no
-/// terminating zero. The class and feature gates keep this admission separate
-/// from the terminated flag-block grammar used by other construction groups.
-fn legacy_body_group_tail(
-    bytes: &[u8],
-    scope: &DesignParameterScope,
-    header: &RecordFrame,
-    cursor: usize,
-    opaque_index: u32,
-) -> Option<(bool, usize, String)> {
-    let body_scope = design_feature_family(&scope.kind()) == Some(DesignFeatureFamily::Move)
-        || scope.kind() == crate::records::feature::scope::DesignFeatureKind::RemoveBody;
-    let (flag_pair, variant) = match header.class_tag.as_str() {
-        "257" | "323" | "338" if body_scope => ([1, 1], true),
-        "328" if scope.kind() == crate::records::feature::scope::DesignFeatureKind::Move => {
-            ([1, 1], true)
-        }
-        "282" | "302" if body_scope => ([0, 1], false),
-        _ => return None,
-    };
-    let mut tail = cursor;
-    if View::u32_le_at(bytes, tail)? != opaque_index {
-        return None;
-    }
-    tail += 4;
-    if take_record_reference(bytes, &mut tail).map(|(index, _)| index)
-        != header.record_index.checked_add(2)
-    {
-        return None;
-    }
-    if scope.kind() == crate::records::feature::scope::DesignFeatureKind::Move
-        && header.class_tag.as_str() == "328"
-    {
-        if bytes.get(tail) != Some(&0) {
-            return None;
-        }
-        tail += 1;
-        if bytes.get(tail..tail + 2) != Some(&flag_pair) {
-            return None;
-        }
-        tail += 2;
-        if View::u64_le_at(bytes, tail)? != u64::from(header.record_index.checked_add(1)?)
-            || bytes.get(tail + 8..tail + 11) != Some(&[0; 3])
-        {
-            return None;
-        }
-        tail += 11;
-    } else {
-        if bytes.get(tail..tail + 2) != Some(&flag_pair) {
-            return None;
-        }
-        tail += 2;
-        if take_record_reference(bytes, &mut tail).map(|(index, _)| index)
-            != header.record_index.checked_add(1)
-        {
-            return None;
-        }
-        if bytes.get(tail) != Some(&0) {
-            return None;
-        }
-        tail += 1;
-    }
-    if take_record_reference(bytes, &mut tail).map(|(index, _)| index) != Some(scope.record_index) {
-        return None;
-    }
-    let (paired_class_tag, after_tag) =
-        lp_ascii_filtered_view(bytes, tail, 3..=3, u8::is_ascii_digit)?;
-    if scope.kind() == crate::records::feature::scope::DesignFeatureKind::Move
-        && header.class_tag.as_str() == "328"
-        && paired_class_tag != "263"
-    {
-        return None;
-    }
-    if View::u32_le_at(bytes, after_tag) != Some(header.record_index) {
-        return None;
-    }
-    Some((variant, tail, paired_class_tag.to_owned()))
 }
 
 fn construction_tracking_registry<'cache>(
@@ -3912,6 +3818,7 @@ pub(crate) fn tracking_path_record_indices(
 /// Decode nested persistent-entity frames named by construction groups.
 pub(crate) fn decode_entity_selection_operands(
     scan: &ContainerScan,
+    scopes: &[DesignParameterScope],
     groups: &[DesignConstructionOperandGroup],
     headers: &[DesignRecordHeader],
 ) -> Result<Vec<DesignEntitySelectionOperand>, CodecError> {
@@ -3921,6 +3828,7 @@ pub(crate) fn decode_entity_selection_operands(
         let Some(stream) = native_stream(&group.id) else {
             continue;
         };
+        let loft_point_group = is_loft_point_group(group, scopes);
         let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
         else {
             continue;
@@ -3938,7 +3846,8 @@ pub(crate) fn decode_entity_selection_operands(
             let Some(header) = headers.get(&(stream, record_index)) else {
                 continue;
             };
-            if let Some(mut operand) = parse_entity_selection_operand(bytes, group, ordinal, header)
+            if let Some(mut operand) =
+                parse_entity_selection_operand_with(bytes, group, ordinal, header, loft_point_group)
             {
                 operand.id = design_record_id(
                     &entry.name,
@@ -3954,17 +3863,50 @@ pub(crate) fn decode_entity_selection_operands(
     Ok(out)
 }
 
+/// Whether `group` is a role-`0x21` group whose one owning scope is a Loft, so
+/// that its members can carry the compact sketch-point identity.
+pub(crate) fn is_loft_point_group(
+    group: &DesignConstructionOperandGroup,
+    scopes: &[DesignParameterScope],
+) -> bool {
+    let mut owners = scopes.iter().filter(|scope| {
+        scope.record_index == group.scope_record_index
+            && native_stream(&scope.id) == native_stream(&group.id)
+    });
+    group.role() == DesignOperandRole::ROLE_0X21
+        && owners.next().is_some_and(|scope| {
+            matches!(
+                crate::design::design_feature_family(&scope.kind()),
+                Some(crate::design::DesignFeatureFamily::Loft)
+            )
+        })
+        && owners.next().is_none()
+}
+
 pub(super) fn parse_entity_selection_operand(
     bytes: &[u8],
     group: &DesignConstructionOperandGroup,
     group_member_ordinal: u32,
     header: &DesignRecordHeader,
 ) -> Option<DesignEntitySelectionOperand> {
-    let frame = parse_entity_selection_frame(
+    parse_entity_selection_operand_with(bytes, group, group_member_ordinal, header, false)
+}
+
+/// `parse_entity_selection_operand`; `sketch_point` also admits the compact
+/// sketch-point identity of a Loft point member.
+fn parse_entity_selection_operand_with(
+    bytes: &[u8],
+    group: &DesignConstructionOperandGroup,
+    group_member_ordinal: u32,
+    header: &DesignRecordHeader,
+    sketch_point: bool,
+) -> Option<DesignEntitySelectionOperand> {
+    let frame = parse_entity_selection_frame_with(
         bytes,
         header.record_index,
         header.byte_offset,
         header.class_tag.as_str(),
+        sketch_point,
     )?;
     DesignEntitySelectionOperand::try_new(
         crate::records::topology::entity_selection::DesignEntitySelectionOperandDraft {
@@ -3979,6 +3921,7 @@ pub(super) fn parse_entity_selection_operand(
             asset_id_offset: frame.asset_id_offset,
             context_id: frame.context_id.try_into().ok()?,
             context_id_offset: frame.context_id_offset,
+            serialization_form: frame.serialization_form,
             identity_record_index: frame.identity_record_index,
             identity_record_offset: frame.identity_record_offset,
             primary_identity: frame.primary_identity,
@@ -4005,6 +3948,7 @@ pub(in crate::design::decode) struct EntitySelectionFrame {
     pub(super) asset_id_offset: u64,
     pub(super) context_id: String,
     pub(super) context_id_offset: u64,
+    pub(super) serialization_form: SelectionSerializationForm,
     pub(super) identity_record_index: u32,
     pub(super) identity_record_offset: u64,
     pub(super) primary_identity: u64,
@@ -4021,6 +3965,7 @@ pub(in crate::design::decode) struct EntitySelectionPrefix {
     pub(super) asset_id_offset: u64,
     pub(super) context_id: String,
     pub(super) context_id_offset: u64,
+    pub(super) serialization_form: SelectionSerializationForm,
     after_context_id: usize,
 }
 
@@ -4065,10 +4010,14 @@ pub(super) fn parse_entity_selection_prefix(
     };
     let (asset_id, after_asset_id) = lp_utf16_bounded(bytes, asset_start, 1..=256)?;
     let (context_id, after_context_id) = lp_utf16_bounded(bytes, after_asset_id, 1..=256)?;
+    let serialization_form = SelectionSerializationForm::try_from(View::u32_le_at(
+        bytes,
+        after_context_id.checked_add(4)?,
+    )?)
+    .ok()?;
     if !is_guid_relaxed(&asset_id)
         || !is_guid_relaxed(&context_id)
         || View::u32_le_at(bytes, after_context_id)? != 2
-        || bytes.get(after_context_id + 4..after_context_id + 8)? != [0; 4]
     {
         return None;
     }
@@ -4077,6 +4026,7 @@ pub(super) fn parse_entity_selection_prefix(
         asset_id_offset: u64::try_from(asset_start.checked_add(4)?).ok()?,
         context_id,
         context_id_offset: u64::try_from(after_asset_id.checked_add(4)?).ok()?,
+        serialization_form,
         after_context_id,
     })
 }
@@ -4086,12 +4036,13 @@ pub(in crate::design) fn entity_selection_matches_curve(
     operand: &DesignEntitySelectionOperand,
     curve: &SketchCurveIdentity,
 ) -> bool {
-    operand.secondary().is_some_and(|secondary| {
-        curve.primary_id.get() == secondary.identity.value
-            && secondary
-                .curve_identity
-                .is_none_or(|identity| curve.secondary_id == identity.value)
-    })
+    operand.sketch_point().is_none()
+        && operand.secondary().is_some_and(|secondary| {
+            curve.primary_id.get() == secondary.identity.value
+                && secondary
+                    .curve_identity
+                    .is_none_or(|identity| curve.secondary_id == identity.value)
+        })
 }
 
 /// Direct sketch-point identity carried by a `WorkPoint` input.
@@ -4101,6 +4052,7 @@ struct WorkPointSketchPointFrame {
     asset_id_offset: u64,
     context_id: String,
     context_id_offset: u64,
+    serialization_form: SelectionSerializationForm,
     identity_record_index: u32,
     identity_record_offset: u64,
     identity_form: DesignWorkPointSketchPointIdentityForm,
@@ -4205,6 +4157,7 @@ fn parse_work_point_sketch_point_frame(
         asset_id_offset: prefix.asset_id_offset,
         context_id: prefix.context_id,
         context_id_offset: prefix.context_id_offset,
+        serialization_form: prefix.serialization_form,
         identity_record_index: record_index.checked_add(3)?,
         identity_record_offset: u64::try_from(identity_at).ok()?,
         identity_form,
@@ -4230,6 +4183,18 @@ pub(super) fn parse_entity_selection_frame(
     byte_offset: u64,
     class_tag: &str,
 ) -> Option<EntitySelectionFrame> {
+    parse_entity_selection_frame_with(bytes, record_index, byte_offset, class_tag, false)
+}
+
+/// `parse_entity_selection_frame`; `sketch_point` also admits the compact
+/// sketch-point identity of a Loft point member.
+pub(super) fn parse_entity_selection_frame_with(
+    bytes: &[u8],
+    record_index: u32,
+    byte_offset: u64,
+    class_tag: &str,
+    sketch_point: bool,
+) -> Option<EntitySelectionFrame> {
     let start = usize::try_from(byte_offset).ok()?;
     let prefix = parse_entity_selection_prefix(bytes, start, record_index)?;
     let paired_at = next_indexed_record_offset(bytes, prefix.after_context_id + 8)?;
@@ -4252,42 +4217,38 @@ pub(super) fn parse_entity_selection_frame(
             return None;
         }
     }
-    let (identity_class_tag, _) =
-        lp_ascii_filtered_view(bytes, identity_at, 0..=2000, u8::is_ascii_graphic)?;
     let (_, after_next_tag) =
         lp_ascii_filtered_view(bytes, next_at, 0..=2000, u8::is_ascii_graphic)?;
     let next_record_index = View::u32_le_at(bytes, after_next_tag)?;
-    let (primary_identity_offset, primary_identity, secondary) = if class_tag == "338"
-        && identity_class_tag == "361"
+    let (primary_identity_offset, primary_identity, secondary) = if bytes
+        .get(identity_at + marked_curve::ZERO_PREFIX..identity_at + marked_curve::PRESENCE)?
+        == [0; 9]
+        && bytes.get(identity_at + marked_curve::PRESENCE) == Some(&1)
         && bytes.get(
-            identity_at + class_338_curve::ZERO_PREFIX..identity_at + class_338_curve::PRESENCE,
-        )? == [0; 9]
-        && bytes.get(identity_at + class_338_curve::PRESENCE) == Some(&1)
-        && bytes.get(
-            identity_at + class_338_curve::PRESENCE + 1
-                ..identity_at + class_338_curve::OWNER_RECORD_INDEX,
+            identity_at + marked_curve::PRESENCE + 1
+                ..identity_at + marked_curve::OWNER_RECORD_INDEX,
         )? == [0; 12]
-        && View::u32_le_at(bytes, identity_at + class_338_curve::OWNER_HIGH_ZERO)? == 0
-        && View::u32_le_at(bytes, identity_at + class_338_curve::CURVE_HIGH_ZERO)? == 0
-        && identity_at.checked_add(class_338_curve::LEN)? == next_at
+        && View::u32_le_at(bytes, identity_at + marked_curve::OWNER_HIGH_ZERO)? == 0
+        && View::u32_le_at(bytes, identity_at + marked_curve::CURVE_HIGH_ZERO)? == 0
+        && identity_at.checked_add(marked_curve::LEN)? == next_at
         && next_record_index == record_index.checked_add(4)?
     {
         let primary_identity = u64::from(View::u32_le_at(
             bytes,
-            identity_at + class_338_curve::OWNER_RECORD_INDEX,
+            identity_at + marked_curve::OWNER_RECORD_INDEX,
         )?);
         let secondary_identity = u64::from(View::u32_le_at(
             bytes,
-            identity_at + class_338_curve::CURVE_PERSISTENT_ID,
+            identity_at + marked_curve::CURVE_PERSISTENT_ID,
         )?);
         (
-            identity_at.checked_add(class_338_curve::OWNER_RECORD_INDEX)?,
+            identity_at.checked_add(marked_curve::OWNER_RECORD_INDEX)?,
             primary_identity,
             Some(crate::records::identity::DesignSecondaryIdentity {
                 identity: crate::records::identity::Located {
                     value: secondary_identity,
                     offset: u64::try_from(
-                        identity_at.checked_add(class_338_curve::CURVE_PERSISTENT_ID)?,
+                        identity_at.checked_add(marked_curve::CURVE_PERSISTENT_ID)?,
                     )
                     .ok()?,
                 },
@@ -4315,6 +4276,26 @@ pub(super) fn parse_entity_selection_frame(
                 .filter(|identity| identity.value != 0),
             }),
         )
+    } else if sketch_point
+        && bytes.get(identity_at + 11..identity_at + compact_identity::SKETCH_RECORD_INDEX)?
+            == [0; 10]
+        && identity_at.checked_add(compact_identity::LEN)? == next_at
+    {
+        let primary_identity_offset =
+            identity_at.checked_add(compact_identity::SKETCH_RECORD_INDEX)?;
+        let secondary_identity_offset =
+            identity_at.checked_add(compact_identity::POINT_PERSISTENT_ID)?;
+        (
+            primary_identity_offset,
+            View::u64_le_at(bytes, primary_identity_offset)?,
+            Some(crate::records::identity::DesignSecondaryIdentity {
+                identity: crate::records::identity::Located {
+                    value: View::u64_le_at(bytes, secondary_identity_offset)?,
+                    offset: u64::try_from(secondary_identity_offset).ok()?,
+                },
+                curve_identity: None,
+            }),
+        )
     } else if bytes.get(identity_at + 11..identity_at + 21)? == [0; 10]
         && identity_at.checked_add(29)? == next_at
     {
@@ -4335,6 +4316,7 @@ pub(super) fn parse_entity_selection_frame(
         asset_id_offset: prefix.asset_id_offset,
         context_id: prefix.context_id,
         context_id_offset: prefix.context_id_offset,
+        serialization_form: prefix.serialization_form,
         identity_record_index: record_index.checked_add(3)?,
         identity_record_offset: u64::try_from(identity_at).ok()?,
         primary_identity,
@@ -4343,6 +4325,16 @@ pub(super) fn parse_entity_selection_frame(
         next_record_index,
         next_byte_offset: u64::try_from(next_at).ok()?,
     })
+}
+
+pub(crate) fn body_recipe_serialization_form_losses(
+    operands: &[DesignBodyRecipeOperand],
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    operands.iter().filter_map(|operand| operand.serialization_form().filter(|form| *form > 1).map(|form| {
+        crate::loss::F3dLossCode::BodyRecipeSerializationFormAssumed.note(format!(
+            "body recipe operand {} stores serialization form {form}; its reference runs decode with the layout of forms 0 and 1", operand.id
+        ))
+    })).collect()
 }
 
 /// Decode whole-body construction operands that contain one persistent body recipe.
@@ -4750,17 +4742,9 @@ fn parse_body_recipe_operand_frame_with_index(
         .get(selector_tail_at..selector_tail_at.checked_add(4)?)?
         .try_into()
         .ok()?;
-    let selector_tail_is_valid = match header.class_tag.as_str() {
-        // The class-365 member is a four-byte generation-dependent value.
-        // Retain it until DR-24 identifies its neutral meaning.
-        "365" => true,
-        "367" => selector_tail == [1, 0, 0, 0],
-        _ => selector_tail == [0; 4],
-    };
     if !is_guid_relaxed(&asset_id)
         || !is_guid_relaxed(&context_id)
         || View::u32_le_at(bytes, after_context_id)? != 2
-        || !selector_tail_is_valid
         || nested_record_index != u64::from(header.record_index.checked_add(3)?)
     {
         return None;
@@ -5723,6 +5707,17 @@ fn parse_recipe_operand(
                         && native_stream(&recipe.id) == Some(stream)
                 })
                 .min_by_key(|recipe| recipe.byte_offset)?;
+            if recipe_kind == ConstructionRecipeKind::Edge
+                && parse_entity_selection_frame(
+                    bytes,
+                    header.record_index,
+                    header.byte_offset,
+                    header.class_tag.as_str(),
+                )
+                .is_some_and(|selection| recipe.byte_offset >= selection.next_byte_offset)
+            {
+                return None;
+            }
             let recipe_program_at = usize::try_from(recipe.byte_offset)
                 .ok()?
                 .checked_add(family_name.len())?;
@@ -5845,12 +5840,18 @@ fn parse_edge_operand(
     };
     let surface_patch_recipe_structure =
         if scope.kind() == crate::records::feature::scope::DesignFeatureKind::SurfacePatch {
-            surface_patch_recipe_structure(&parsed.recipe_program, parsed.recipe_references.len())
+            surface_patch_recipe_structure(
+                &parsed.recipe_program,
+                crate::records::dimensions::reference_lanes(&parsed.recipe_references).len(),
+            )
         } else {
             None
         };
     let local_topology_references = recipe_structure.as_ref().and_then(|structure| {
-        edge_recipe_local_topology_references(structure, parsed.recipe_references.len())
+        edge_recipe_local_topology_references(
+            structure,
+            crate::records::dimensions::reference_lanes(&parsed.recipe_references).len(),
+        )
     });
     let id = design_record_id(
         stream
@@ -7062,4 +7063,19 @@ fn parse_profile_loop_lists(
         }
     }
     Ok((view.remaining() == 0).then_some(lists))
+}
+
+pub(crate) fn construction_closing_flag_losses(
+    groups: &[DesignConstructionOperandGroup],
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    groups
+        .iter()
+        .filter(|group| group.frame.closing_flag)
+        .map(|group| {
+            crate::loss::F3dLossCode::ConstructionClosingFlagAssumed.note(format!(
+                "construction group {} has closing flag 1; its interpretation assumes the flag does not change operation semantics",
+                group.id
+            ))
+        })
+        .collect()
 }

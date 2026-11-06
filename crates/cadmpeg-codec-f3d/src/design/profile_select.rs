@@ -32,6 +32,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use std::collections::{HashMap, HashSet};
 
+mod cap_regions;
 mod region_members;
 
 /// Bind each Extrude's counted sketch selection to exact neutral profile loops
@@ -797,6 +798,73 @@ pub(crate) fn bind_extrude_profile_selections(
     Ok(())
 }
 
+/// Loss notes for sketch curves that lie in no closed profile loop.
+///
+/// A curve that is a boundary ring member of a region in an Extrude's exact
+/// region union, in the same sketch, is part of the selection the feature
+/// records. The curve reports `SketchCurveUnprofiledSelected`. Any other curve
+/// keeps its `SketchCurveUnprofiled` note.
+pub(crate) fn unprofiled_curve_losses(
+    unprofiled: Vec<(
+        cadmpeg_ir::sketches::SketchEntityId,
+        cadmpeg_ir::report::loss::LossNote,
+    )>,
+    features: &[cadmpeg_ir::features::Feature],
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    use cadmpeg_ir::features::{
+        FeatureDefinition, FeatureOperation, PlanarProfileRef, ProfileRef, SketchProfileRegion,
+    };
+
+    let mut selected = HashSet::new();
+    for feature in features {
+        let FeatureDefinition::Operation(FeatureOperation::Extrude {
+            profile: ProfileRef::Planar(PlanarProfileRef::SketchRegions { sketch, regions }),
+            ..
+        }) = feature.evaluation.definition()
+        else {
+            continue;
+        };
+        for region in regions.iter() {
+            let SketchProfileRegion::Trimmed {
+                outer_boundary,
+                hole_boundaries,
+            } = region
+            else {
+                continue;
+            };
+            for use_ in outer_boundary
+                .iter()
+                .chain(hole_boundaries.iter().flat_map(|ring| ring.iter()))
+            {
+                selected.insert((sketch, &use_.entity));
+            }
+        }
+    }
+    if selected.is_empty() {
+        return unprofiled.into_iter().map(|(_, note)| note).collect();
+    }
+    let sketch_of: HashMap<_, _> = entities
+        .iter()
+        .map(|entity| (entity.id(), &entity.sketch))
+        .collect();
+    unprofiled
+        .into_iter()
+        .map(|(id, note)| {
+            let in_selection = sketch_of
+                .get(&id)
+                .is_some_and(|sketch| selected.contains(&(*sketch, &id)));
+            if in_selection {
+                crate::loss::F3dLossCode::SketchCurveUnprofiledSelected.note(format!(
+                    "sketch entity {id}: curve is not part of any closed profile loop; it bounds a region that an Extrude selects"
+                ))
+            } else {
+                note
+            }
+        })
+        .collect()
+}
+
 fn resolve_entity_selection_profile(
     group: &DesignConstructionOperandGroup,
     resolution: &EntitySelectionPathResolution<'_>,
@@ -1320,6 +1388,18 @@ pub(super) fn resolved_extrude_profile_selection(
         {
             resolved_profiles =
                 transition_profile_selection(sketch, resolution, state_id, previous_state_id)?;
+        }
+    }
+    if let (Some(state_id), Some(previous_state_id)) = (history_state_id, previous_history_state_id)
+    {
+        if let Some(proven) = cap_regions::cap_profile_selection(
+            sketch,
+            resolution,
+            state_id,
+            previous_state_id,
+            resolved_profiles.as_ref(),
+        )? {
+            resolved_profiles = Some(proven);
         }
     }
     if resolved_profiles.is_none() && exact_member_run {
@@ -3592,6 +3672,7 @@ fn resolve_profile_curve_arrangement_regions(
         return Ok(None);
     };
     let mut regions = Vec::new();
+    let mut assumed = false;
     let mut cursor = 0usize;
     for (ordinal, member) in group.members().iter().enumerate() {
         let Some(selection) = resolution.profile_curves.iter().find(|selection| {
@@ -3629,7 +3710,24 @@ fn resolve_profile_curve_arrangement_regions(
                 scoped.ctx,
             )?
             else {
-                return Ok(None);
+                let Some(split) = crate::design::geometry::arrangement_regions_of_crossing_loop(
+                    source,
+                    resolution.sketch_entities,
+                    program,
+                    scoped.linear_tolerance,
+                    scoped.profile_work,
+                    scoped.ctx,
+                )?
+                else {
+                    return Ok(None);
+                };
+                assumed = true;
+                for region in split {
+                    if !regions.contains(&region) {
+                        regions.push(region);
+                    }
+                }
+                continue;
             };
             if !regions.contains(&region) {
                 regions.push(region);
@@ -3639,9 +3737,13 @@ fn resolve_profile_curve_arrangement_regions(
     if cursor != curves.len() {
         return Ok(None);
     }
-    Ok(PlanarProfileRef::sketch_regions(sketch, regions)
+    let profile = PlanarProfileRef::sketch_regions(sketch, regions)
         .ok()
-        .map(ProfileRef::Planar))
+        .map(ProfileRef::Planar);
+    if assumed && profile.is_some() {
+        scoped.profile_work.note_crossing_loop_assumed();
+    }
+    Ok(profile)
 }
 
 fn resolve_profile_curve_path(
