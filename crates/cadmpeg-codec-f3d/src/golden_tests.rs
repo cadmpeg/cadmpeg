@@ -1129,7 +1129,7 @@ fn rekey_ephemeral_brep_ids(value: &mut serde_json::Value) {
                             {
                                 if let Some(position) = coedges
                                     .iter()
-                                    .map(|coedge| coedge.to_string())
+                                    .map(std::string::ToString::to_string)
                                     .enumerate()
                                     .min_by(|(_, left), (_, right)| left.cmp(right))
                                     .map(|(position, _)| position)
