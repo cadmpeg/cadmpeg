@@ -57,6 +57,44 @@ fn paired_joint_emits_current_family_limits_and_connector_references() {
 }
 
 #[test]
+fn overflowing_grounded_joint_offset_keeps_its_frame() {
+    let large_translation = Transform::affine([
+        [1.0, 0.0, 0.0, f64::MAX],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+    ])
+    .unwrap();
+    let connector = JointConnector {
+        operand: JointOperand::root("part", Vec::new()),
+        frame: large_translation,
+        detached: false,
+    };
+    let mut ir = CadIr::empty();
+    ir.model.assembly_joints.push(AssemblyJoint::grounded(
+        JointId::mint("authored:model:joint#Ground").unwrap(),
+        connector,
+        Some(large_translation),
+    ));
+    let mut objects = vec![Object::new("Part".into(), "Part::Feature", "Part")];
+    let mut names = HashMap::from([("part".into(), "Part".into())]);
+    let mut losses = Vec::new();
+    write(&ir, &mut objects, &mut names, &mut losses).unwrap();
+    let document =
+        roxmltree::Document::parse(&objects.last().unwrap().properties["Placement"]).unwrap();
+    let placement = document
+        .descendants()
+        .find(|node| node.has_tag_name("PropertyPlacement"))
+        .unwrap();
+    assert_eq!(
+        placement.attribute("Px").unwrap().parse::<f64>().unwrap(),
+        f64::MAX
+    );
+    assert!(losses.iter().any(|loss| loss
+        .message
+        .contains("attachment offset cannot be composed")));
+}
+
+#[test]
 fn missing_grounded_joint_target_is_reported() {
     let mut ir = CadIr::empty();
     let connector = JointConnector {

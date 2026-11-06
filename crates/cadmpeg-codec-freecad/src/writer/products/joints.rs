@@ -338,14 +338,24 @@ pub(super) fn write(
                     continue;
                 }
                 let placement = if let Some(offset) = offset_frame {
-                    losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
-                        "grounded joint {} attachment offset is composed into its frame",
-                        joint.id
-                    )));
-                    connector
-                        .frame
-                        .compose(*offset)
-                        .map_err(CodecError::malformed)?
+                    match connector.frame.compose(*offset) {
+                        Ok(placement) => {
+                            losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(
+                                format!(
+                                "grounded joint {} attachment offset is composed into its frame",
+                                joint.id
+                            ),
+                            ));
+                            placement
+                        }
+                        Err(_) => {
+                            losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
+                                "grounded joint {} attachment offset cannot be composed and is omitted",
+                                joint.id
+                            )));
+                            connector.frame
+                        }
+                    }
                 } else {
                     connector.frame
                 };
