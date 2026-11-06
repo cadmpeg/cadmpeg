@@ -36,6 +36,7 @@ pub struct PartSpec {
     containing: Option<Identity>,
     absent_fields: Vec<&'static str>,
     affected_fields: Vec<(Identity, &'static str)>,
+    dropped_records: Vec<Identity>,
 }
 
 impl PartSpec {
@@ -49,6 +50,7 @@ impl PartSpec {
             containing: None,
             absent_fields: Vec::new(),
             affected_fields: Vec::new(),
+            dropped_records: Vec::new(),
         }
     }
 
@@ -80,6 +82,13 @@ impl PartSpec {
     #[must_use]
     pub fn record_id(mut self, record: Identity) -> Self {
         self.record = Some(record);
+        self
+    }
+
+    /// Name a record that cannot be formed because this part is unreadable.
+    #[must_use]
+    pub fn dropping(mut self, record: Identity) -> Self {
+        self.dropped_records.push(record);
         self
     }
 
@@ -390,6 +399,7 @@ fn give_up(
     let mut dropped: Vec<String> = Vec::new();
     collect_dropped(&stage.model, &mut dropped);
     collect_native_dropped(&output.native, &stage.native, &mut dropped);
+    dropped.extend(spec.dropped_records.iter().map(|record| record.as_str().to_owned()));
     dropped.sort();
     dropped.dedup();
     let message = format!(

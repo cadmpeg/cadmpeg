@@ -26,6 +26,8 @@ use crate::F3dCodec;
 pub(crate) mod act_links;
 pub(crate) mod act_stream_test;
 pub(crate) mod archive_session;
+pub(crate) mod decal;
+pub(crate) mod mesh_fixture;
 pub(crate) mod procedural_support;
 pub(crate) mod sketch_relations;
 pub(crate) mod sketch_text;
