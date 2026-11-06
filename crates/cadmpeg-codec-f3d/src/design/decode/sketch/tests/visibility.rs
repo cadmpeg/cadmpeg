@@ -9,7 +9,34 @@ use crate::records::entity_header::DESIGN_MODULE_SKETCH;
 
 const ENTITY_SUFFIX: u64 = 201;
 
-use crate::design::decode::sketch::decode_sketch_visibilities_in_stream;
+fn decode_sketch_visibilities_in_stream(
+    bytes: &[u8],
+    metadata: &crate::metastream::MetaStream,
+) -> Result<
+    Vec<(
+        u64,
+        crate::records::sketch_placement::DesignSketchVisibility,
+    )>,
+    cadmpeg_core::CodecError,
+> {
+    super::super::decode_sketch_visibilities_in_stream(bytes, metadata, &mut Vec::new())
+}
+
+fn decode_with_losses(
+    bytes: &[u8],
+    metadata: &crate::metastream::MetaStream,
+) -> (
+    Vec<(
+        u64,
+        crate::records::sketch_placement::DesignSketchVisibility,
+    )>,
+    Vec<cadmpeg_ir::report::loss::LossNote>,
+) {
+    let mut losses = Vec::new();
+    let visibilities =
+        super::super::decode_sketch_visibilities_in_stream(bytes, metadata, &mut losses).unwrap();
+    (visibilities, losses)
+}
 
 fn member(stream_ordinal: u32, visible: u8) -> Vec<u8> {
     let mut bytes = Vec::new();
@@ -218,41 +245,141 @@ fn sketch_visibility_retains_its_explicit_ordinal_collection() {
 }
 
 #[test]
-fn sketch_listed_twice_in_collection_is_rejected() {
-    let (bytes, metadata) = collection_stream(300, &[(300, &[ENTITY_SUFFIX, ENTITY_SUFFIX])]);
-    assert!(decode_sketch_visibilities_in_stream(&bytes, &metadata).is_err());
+fn repeated_or_conflicting_members_clear_the_sketch_binding() {
+    for collections in [
+        vec![(300, vec![ENTITY_SUFFIX, ENTITY_SUFFIX])],
+        vec![(300, vec![ENTITY_SUFFIX]), (400, vec![ENTITY_SUFFIX])],
+    ] {
+        let borrowed: Vec<_> = collections
+            .iter()
+            .map(|(id, members)| (*id, members.as_slice()))
+            .collect();
+        let (bytes, metadata) = collection_stream(300, &borrowed);
+        let (visibilities, losses) = decode_with_losses(&bytes, &metadata);
+        assert_eq!(visibilities[0].1.ordinal_collection, None);
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code,
+            crate::loss::F3dLossCode::SketchOwnerUnresolved.kind()
+        );
+    }
 }
 
 #[test]
-fn sketch_listed_in_two_collections_is_rejected() {
-    let (bytes, metadata) =
-        collection_stream(300, &[(300, &[ENTITY_SUFFIX]), (400, &[ENTITY_SUFFIX])]);
-    assert!(decode_sketch_visibilities_in_stream(&bytes, &metadata).is_err());
+fn collection_member_that_names_another_collection_loses_its_binding() {
+    let (bytes, metadata) = collection_stream(400, &[(300, &[ENTITY_SUFFIX]), (400, &[])]);
+    let (visibilities, losses) = decode_with_losses(&bytes, &metadata);
+    assert_eq!(visibilities[0].1.ordinal_collection, None);
+    assert_eq!(losses.len(), 1);
+    assert_eq!(
+        losses[0].code,
+        crate::loss::F3dLossCode::SketchOwnerUnresolved.kind()
+    );
 }
 
 #[test]
-fn collection_listing_sketch_that_names_another_collection_is_rejected() {
-    let (bytes, metadata) =
-        collection_stream(400, &[(300, &[ENTITY_SUFFIX]), (400, &[ENTITY_SUFFIX])]);
-    let error = decode_sketch_visibilities_in_stream(&bytes, &metadata).unwrap_err();
-    assert!(error
-        .to_string()
-        .contains("sketch ordinal collection 300 has an invalid sketch member 201"));
-}
-
-#[test]
-fn collection_run_target_must_resolve_to_sketch_container() {
+fn unknown_collection_run_target_reports_a_loss() {
     let (bytes, metadata) = collection_stream(300, &[(300, &[ENTITY_SUFFIX, 202])]);
-    assert!(decode_sketch_visibilities_in_stream(&bytes, &metadata).is_err());
+    let (visibilities, losses) = decode_with_losses(&bytes, &metadata);
+    assert_eq!(visibilities[0].1.ordinal_collection.unwrap().get(), 300);
+    assert_eq!(losses.len(), 1);
 }
 
 #[test]
-fn typed_sketch_visibility_requires_reciprocal_collection_membership() {
-    let (bytes, metadata) = collection_stream(300, &[(300, &[ENTITY_SUFFIX])]);
-    let visibilities = decode_sketch_visibilities_in_stream(&bytes, &metadata).unwrap();
-    assert_eq!(visibilities[0].1.ordinal_collection.unwrap().get(), 300);
+fn unlisted_sketch_keeps_its_collection_without_loss() {
     let (bytes, metadata) = collection_stream(300, &[(300, &[])]);
-    assert!(decode_sketch_visibilities_in_stream(&bytes, &metadata).is_err());
+    let (visibilities, losses) = decode_with_losses(&bytes, &metadata);
+    assert_eq!(visibilities[0].1.ordinal_collection.unwrap().get(), 300);
+    assert!(losses.is_empty());
+}
+
+fn append_folder(
+    bytes: &mut Vec<u8>,
+    metadata: &mut crate::metastream::MetaStream,
+    name: &str,
+    flag: u8,
+    zero_count: usize,
+) {
+    let offset = bytes.len();
+    crate::test_support::lp_ascii(bytes, "259");
+    bytes.extend_from_slice(&500u32.to_le_bytes());
+    bytes.extend_from_slice(&[0; 9]);
+    bytes.push(1);
+    bytes.extend_from_slice(&[0; 5]);
+    bytes.push(flag);
+    bytes.extend_from_slice(&[0; 5]);
+    let units: Vec<_> = name.encode_utf16().collect();
+    bytes.extend_from_slice(&u32::try_from(units.len()).unwrap().to_le_bytes());
+    for unit in units {
+        bytes.extend_from_slice(&unit.to_le_bytes());
+    }
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    for target in [ENTITY_SUFFIX, 300] {
+        bytes.push(1);
+        bytes.extend_from_slice(&target.to_le_bytes());
+        bytes.extend_from_slice(&[0; 2]);
+    }
+    bytes.extend(vec![0; zero_count]);
+    bytes.push(1);
+    bytes.extend_from_slice(&21u64.to_le_bytes());
+    bytes.extend_from_slice(&[0; 2]);
+    let mut folder_type = metadata.types[1].clone();
+    folder_type.type_guid = "45B3FDEA-5EBA-4B33-ADF8-47041CAC3602"
+        .to_owned()
+        .try_into()
+        .unwrap();
+    folder_type.base_type_guid = crate::records::entity_header::BaseTypeGuid::Guid {
+        value: "A193F53F-86D7-4F45-A01C-51F5ECEEFC0E"
+            .to_owned()
+            .try_into()
+            .unwrap(),
+        offset: 0,
+    };
+    folder_type.version = 1;
+    folder_type.entities = crate::records::identity::ReferenceRun::unlocated(vec![500]);
+    metadata.types.push(folder_type);
+    metadata.records.push(crate::metastream::RecordIndexEntry {
+        entity_id: 500,
+        bulk_offset: cadmpeg_core::decode::u64_from_index(offset),
+    });
+}
+
+#[test]
+fn folder_example_frames_decode() {
+    let examples = [
+        ("03 00 00 00 34 31 33 24 4d 00 00 00 00 00 00 00 00 00 00 00 01 00 00 00 00 00 00 00 00 00 00 00 0b 00 00 00 42 00 48 00 20 00 53 00 6b 00 65 00 74 00 63 00 68 00 65 00 73 00 01 00 00 00 08 00 00 00 01 e9 35 00 00 00 00 00 00 00 00 01 57 09 00 00 00 00 00 00 00 00 01 f0 0a 00 00 00 00 00 00 00 00 01 59 0b 00 00 00 00 00 00 00 00 01 b4 0b 00 00 00 00 00 00 00 00 01 12 0c 00 00 00 00 00 00 00 00 01 79 0c 00 00 00 00 00 00 00 00 01 90 0a 00 00 00 00 00 00 00 00 01 09 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 01 15 00 00 00 00 00 00 00 00 00", "BH Sketches", 8),
+        ("03 00 00 00 34 32 34 63 09 00 00 00 00 00 00 00 00 00 00 00 01 00 00 00 00 00 01 00 00 00 00 00 00 00 00 00 01 00 00 00 02 00 00 00 01 d7 03 00 00 00 00 00 00 00 00 01 2f 05 00 00 00 00 00 00 00 00 01 09 00 00 00 00 00 00 00 00 00 00 00 00 00 01 15 00 00 00 00 00 00 00 00 00", "", 2),
+    ];
+    for (hex, name, count) in examples {
+        let bytes: Vec<_> = hex
+            .split_whitespace()
+            .map(|byte| u8::from_str_radix(byte, 16).unwrap())
+            .collect();
+        let folder = super::super::parse_sketch_folder(&bytes).unwrap();
+        assert_eq!(folder.name, name);
+        assert_eq!(folder.number, 1);
+        assert_eq!(folder.members.len(), count);
+        assert_eq!(folder.parent, 9);
+        for end in 0..bytes.len() {
+            assert!(super::super::parse_sketch_folder(&bytes[..end]).is_none());
+        }
+    }
+}
+
+#[test]
+fn folder_sketch_uses_parent_collection() {
+    for (name, flag, zero_count) in [("BH Sketches", 0, 8), ("", 1, 4)] {
+        let (mut bytes, mut metadata) = collection_stream(500, &[(300, &[500])]);
+        append_folder(&mut bytes, &mut metadata, name, flag, zero_count);
+        let (visibilities, losses) = decode_with_losses(&bytes, &metadata);
+        assert_eq!(visibilities[0].1.ordinal_collection.unwrap().get(), 300);
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code,
+            crate::loss::F3dLossCode::SketchFolderUnprojected.kind()
+        );
+    }
 }
 
 #[test]

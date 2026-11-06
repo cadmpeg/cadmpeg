@@ -1253,7 +1253,7 @@ fn extend_related_design_records(
         &mut design.design_parameter_scopes,
         &mut design.design_record_headers,
     )?;
-    let profile_losses = crate::design::decode::operands::bind_sketch_profiles(
+    let mut profile_losses = crate::design::decode::operands::bind_sketch_profiles(
         scan,
         &mut design.design_parameter_scopes,
         &design.design_record_headers,
@@ -1658,6 +1658,7 @@ fn extend_related_design_records(
         scan,
         &design.design_parameter_scopes,
         &prereqs.design_entity_headers,
+        &mut profile_losses,
     )?;
     let mut stream_lengths = std::collections::HashMap::new();
     for entry in scan

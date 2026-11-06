@@ -90,3 +90,19 @@ fn collection_ownership_assigns_a_component_and_reports_an_unresolved_link() {
         .iter()
         .any(|loss| loss.code == F3dLossCode::SketchOwnerUnresolved.kind()));
 }
+
+#[test]
+fn unlisted_and_folder_sketches_use_collection_owner() {
+    let product = ProductDefinitionId::mint("test:model:product#part").unwrap();
+    let collection_owners = [(300, Some(product.clone()))].into_iter().collect();
+    let entities = std::collections::BTreeMap::new();
+    for sketch in [201, 202] {
+        let owner = super::placement_owner(
+            std::num::NonZeroU64::new(300),
+            sketch,
+            &collection_owners,
+            &entities,
+        );
+        assert_eq!(owner, Some(&Some(product.clone())));
+    }
+}

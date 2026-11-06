@@ -1284,3 +1284,27 @@ when the operation transition carries no candidate for the group members?
 **Conflict.** The specification gives mapping mode `0x60` and a whole-body recipe member. This scope stores mode `0` and a face-recipe entity selection.
 
 **Note.** None.
+
+### DR-260. Sketch folder tail zero run
+
+Question: What does the length of the zero run between the parent collection reference and the folder-list reference of a sketch folder encode?
+
+Known: The run is four bytes in a folder with an empty name and eight bytes in named folders. The decoder reads the run as zero bytes of any length that ends at the closing reference.
+
+Need: Folders that differ only in this run length.
+
+### DR-261. Sketch folder flag byte
+
+Question: What does the flag byte at sketch folder record offset 26 select?
+
+Known: The byte is `0` or `1`. Folders with either value carry sketch runs and a parent collection reference of the same form.
+
+Need: Two saves of one folder that differ only in a folder property.
+
+### DR-262. Sketches omitted from their collection run
+
+Question: Which stored value selects the sketches whose Geometry member names an ordinal collection that does not list them?
+
+Known: Such sketches carry unique ordinals in the collection namespace, a Sketch feature scope, and a Sketch browser node. Their Sketch features follow every Sketch feature of a listed sketch in the timeline. The 960-byte timeline record does not distinguish them.
+
+Need: The record that stores the timeline end position.
