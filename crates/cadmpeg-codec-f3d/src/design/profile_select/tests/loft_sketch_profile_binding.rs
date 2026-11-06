@@ -80,11 +80,11 @@ fn loft_binding(
         ordinal: 0,
         name: None,
         suppressed: None,
-        dependencies: Default::default(),
-        source_properties: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        source_properties: std::collections::BTreeMap::default(),
         source_tag: None,
         source_text: None,
-        source_content: Default::default(),
+        source_content: cadmpeg_ir::features::FeatureContent::default(),
         evaluation: FeatureEvaluation::from_definition(FeatureDefinition::Operation(
             FeatureOperation::Loft {
                 sections: vec![LoftSection::Profile(ProfileRef::Planar(
