@@ -3,9 +3,10 @@
 use std::io::Cursor;
 
 use cadmpeg_ir::features::{
-    edge_treatments::RadiusSpec, BooleanOp, ExtrudeExtent, FeatureDefinition, FeatureOperation,
-    LinearTermination, ParameterValue, PlanarProfileRef, ProfileRef,
+    edge_treatments::RadiusSpec, BooleanOp, EdgeSelection, ExtrudeExtent, FeatureDefinition,
+    FeatureOperation, LinearTermination, ParameterValue, PlanarProfileRef, ProfileRef,
 };
+use cadmpeg_ir::geometry::SolvedCurveGeometry;
 use cadmpeg_ir::sketches::{SketchConstraintDefinitionInput, SketchGeometryDefinition};
 use cadmpeg_ir::{Codec, DecodeOptions};
 
@@ -138,6 +139,7 @@ fn authored_design_history_keeps_sketches_constraints_and_operations() {
             "Pocket",
             24.0 * 16.0 * 10.0 - std::f64::consts::PI * 3.0 * 3.0 * 6.0,
         ),
+        ("Fillet", 3830.0 - 103.0 * std::f64::consts::PI / 2.0),
     ] {
         let feature = model
             .features
@@ -171,6 +173,91 @@ fn authored_design_history_keeps_sketches_constraints_and_operations() {
     }
     assert!(
         matches!(operation("Fillet"), FeatureOperation::Fillet { groups } if matches!(groups.as_slice(), [group] if matches!(group.radius, RadiusSpec::Constant { radius } if (radius.get() - 1.0).abs() < LENGTH_TOLERANCE)))
+    );
+    let properties = decoded
+        .ir()
+        .native
+        .namespace("fcstd")
+        .unwrap()
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .unwrap();
+    let base = properties
+        .iter()
+        .find(|property| {
+            property.owner == crate::native::native_id("object", "Fillet")
+                && property.name == "Base"
+        })
+        .unwrap();
+    let [Some(link)] = base.links() else {
+        panic!("Fillet.Base link")
+    };
+    assert_eq!(link.document(), None);
+    let pocket_id = crate::native::native_id("object", "Pocket");
+    assert_eq!(link.object(), Some(pocket_id.as_str()));
+    assert_eq!(link.subelements(), ["Edge1"]);
+    let FeatureOperation::Fillet { groups } = operation("Fillet") else {
+        panic!("Fillet operation")
+    };
+    let [group] = groups.as_slice() else {
+        panic!("Fillet group")
+    };
+    let EdgeSelection::Resolved { edges, native } = &group.edges else {
+        panic!("Fillet.Edge1 selection is unresolved")
+    };
+    assert_eq!(native, &base.id);
+    let [selected] = edges.as_slice() else {
+        panic!("Fillet.Edge1 selection count")
+    };
+    let edge = model
+        .edges
+        .iter()
+        .find(|edge| &edge.id == selected)
+        .unwrap();
+    let vertex_position = |id: &cadmpeg_ir::ids::VertexId| {
+        let vertex = model
+            .vertices
+            .iter()
+            .find(|vertex| &vertex.id == id)
+            .unwrap();
+        model
+            .points
+            .iter()
+            .find(|point| point.id == vertex.point)
+            .unwrap()
+            .position()
+            .get()
+    };
+    let start = vertex_position(&edge.start);
+    let end = vertex_position(&edge.end);
+    let at_bottom = |point: cadmpeg_ir::math::Point3| {
+        point.x.abs() < LENGTH_TOLERANCE
+            && point.y.abs() < LENGTH_TOLERANCE
+            && point.z.abs() < LENGTH_TOLERANCE
+    };
+    let at_top = |point: cadmpeg_ir::math::Point3| {
+        point.x.abs() < LENGTH_TOLERANCE
+            && point.y.abs() < LENGTH_TOLERANCE
+            && (point.z - 10.0).abs() < LENGTH_TOLERANCE
+    };
+    assert!(
+        (at_bottom(start) && at_top(end)) || (at_top(start) && at_bottom(end)),
+        "Fillet.Edge1 endpoints: {start:?}, {end:?}"
+    );
+    let curve_id = edge.curve().unwrap();
+    let curve = model
+        .curves
+        .iter()
+        .find(|curve| &curve.id == curve_id)
+        .unwrap();
+    let Some(SolvedCurveGeometry::Line(line)) = curve.geometry.solved() else {
+        panic!("Fillet.Edge1 is not a line")
+    };
+    let direction = *line.direction().as_raw();
+    assert!(
+        direction.x.abs() < LENGTH_TOLERANCE
+            && direction.y.abs() < LENGTH_TOLERANCE
+            && (direction.z.abs() - 1.0).abs() < LENGTH_TOLERANCE,
+        "Fillet.Edge1 direction: {direction:?}"
     );
 }
 
