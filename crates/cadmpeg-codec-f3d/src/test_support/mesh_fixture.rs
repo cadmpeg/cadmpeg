@@ -1,11 +1,34 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Synthetic Design mesh graph records.
 
-use cadmpeg_core::CodecError;
-use crate::design::decode::mesh::{COMMON_DATA_MODULE, DATA_MODEL_MODULE, FUSION_MODULE, MATRIX_BYTES, MESH_BODY_BASE_TYPE_GUID, MESH_BODY_OWNER_BASE_TYPE_GUID, MESH_BODY_OWNER_TYPE_GUID, MESH_BODY_OWNER_TYPE_VERSION, MESH_BODY_TYPE_GUID, MESH_BODY_TYPE_VERSION, MESH_COLLECTION_BASE_BASE_TYPE_GUID, MESH_COLLECTION_BASE_TYPE_GUID, MESH_COLLECTION_BASE_TYPE_VERSION, MESH_COLLECTION_OWNER_BASE_TYPE_GUID, MESH_COLLECTION_OWNER_TYPE_GUID, MESH_COLLECTION_OWNER_TYPE_VERSIONS, MESH_COLLECTION_TYPE_GUID, MESH_COLLECTION_TYPE_VERSION, MESH_ENTRY_NAME_BASE_TYPE_GUID, MESH_ENTRY_NAME_TYPE_GUID, MESH_ENTRY_NAME_TYPE_VERSION, MESH_FEATURE_SCOPE_BASE_TYPE_GUID, MESH_FEATURE_SCOPE_TYPE_GUID, MESH_FEATURE_SCOPE_TYPE_VERSION, MESH_GUID_BASE_TYPE_GUID, MESH_GUID_TYPE_GUID, MESH_GUID_TYPE_VERSION, MESH_SCENE_STATE_BASE_TYPE_GUID, MESH_SCENE_STATE_TYPE_GUID, MESH_SCENE_STATE_TYPE_VERSION, MESH_SCOPE_BASE_RECORD_BASE_TYPE_GUID, MESH_SCOPE_BASE_RECORD_TYPE_GUID, MESH_SCOPE_BASE_RECORD_TYPE_VERSION, MESH_TEXTURE_FILENAME_BASE_TYPE_GUID, MESH_TEXTURE_FILENAME_TYPE_GUID, MESH_TEXTURE_FILENAME_TYPE_VERSION, MESH_TEXTURE_TABLE_BASE_TYPE_GUID, MESH_TEXTURE_TABLE_TYPE_GUID, MESH_TEXTURE_TABLE_TYPE_VERSION, MESH_WRAPPER_BASE_TYPE_GUID, MESH_WRAPPER_TYPE_GUID, MESH_WRAPPER_TYPE_VERSION, PARAMESH_MODULE, SAME_SEGMENT_REFERENCE_BYTES, SCENE_AUXILIARY_BASE_TYPE_GUID, SCENE_AUXILIARY_TYPE_GUID, SCENE_AUXILIARY_TYPE_VERSION, SCENE_MODULE, SCENE_NODE_BASE_TYPE_GUID, SCENE_NODE_TYPE_GUID, SCENE_NODE_TYPE_VERSION};
+use crate::design::decode::mesh::{
+    COMMON_DATA_MODULE, DATA_MODEL_MODULE, FUSION_MODULE, MATRIX_BYTES, MESH_BODY_BASE_TYPE_GUID,
+    MESH_BODY_OWNER_BASE_TYPE_GUID, MESH_BODY_OWNER_TYPE_GUID, MESH_BODY_OWNER_TYPE_VERSION,
+    MESH_BODY_TYPE_GUID, MESH_BODY_TYPE_VERSION, MESH_COLLECTION_BASE_BASE_TYPE_GUID,
+    MESH_COLLECTION_BASE_TYPE_GUID, MESH_COLLECTION_BASE_TYPE_VERSION,
+    MESH_COLLECTION_OWNER_BASE_TYPE_GUID, MESH_COLLECTION_OWNER_TYPE_GUID,
+    MESH_COLLECTION_OWNER_TYPE_VERSIONS, MESH_COLLECTION_TYPE_GUID, MESH_COLLECTION_TYPE_VERSION,
+    MESH_ENTRY_NAME_BASE_TYPE_GUID, MESH_ENTRY_NAME_TYPE_GUID, MESH_ENTRY_NAME_TYPE_VERSION,
+    MESH_FEATURE_SCOPE_BASE_TYPE_GUID, MESH_FEATURE_SCOPE_TYPE_GUID,
+    MESH_FEATURE_SCOPE_TYPE_VERSION, MESH_GUID_BASE_TYPE_GUID, MESH_GUID_TYPE_GUID,
+    MESH_GUID_TYPE_VERSION, MESH_SCENE_STATE_BASE_TYPE_GUID, MESH_SCENE_STATE_TYPE_GUID,
+    MESH_SCENE_STATE_TYPE_VERSION, MESH_SCOPE_BASE_RECORD_BASE_TYPE_GUID,
+    MESH_SCOPE_BASE_RECORD_TYPE_GUID, MESH_SCOPE_BASE_RECORD_TYPE_VERSION,
+    MESH_TEXTURE_FILENAME_BASE_TYPE_GUID, MESH_TEXTURE_FILENAME_TYPE_GUID,
+    MESH_TEXTURE_FILENAME_TYPE_VERSION, MESH_TEXTURE_TABLE_BASE_TYPE_GUID,
+    MESH_TEXTURE_TABLE_TYPE_GUID, MESH_TEXTURE_TABLE_TYPE_VERSION, MESH_WRAPPER_BASE_TYPE_GUID,
+    MESH_WRAPPER_TYPE_GUID, MESH_WRAPPER_TYPE_VERSION, PARAMESH_MODULE,
+    SAME_SEGMENT_REFERENCE_BYTES, SCENE_AUXILIARY_BASE_TYPE_GUID, SCENE_AUXILIARY_TYPE_GUID,
+    SCENE_AUXILIARY_TYPE_VERSION, SCENE_MODULE, SCENE_NODE_BASE_TYPE_GUID, SCENE_NODE_TYPE_GUID,
+    SCENE_NODE_TYPE_VERSION,
+};
 use crate::design::test_support::{design_type, primary_record};
-use crate::layout::{paramesh_collection_owner_backlink_prefix as collection_owner, paramesh_mesh_body_join_prefix as mesh_body};
+use crate::layout::{
+    paramesh_collection_owner_backlink_prefix as collection_owner,
+    paramesh_mesh_body_join_prefix as mesh_body,
+};
 use crate::test_support::{lp_ascii, lp_utf16};
+use cadmpeg_core::CodecError;
 
 pub(crate) fn matrix(cells: [f64; 16]) -> Vec<u8> {
     let mut bytes = Vec::with_capacity(MATRIX_BYTES);
@@ -151,8 +174,7 @@ fn mesh_collection_record(
     bytes.extend_from_slice(&[0; 9]);
     bytes.push(u8::from(matches!(form, CollectionForm::Flagged(_))));
     bytes.extend_from_slice(
-        &(u32::try_from(body_record_indices.len()).expect("fixture value fits u32"))
-            .to_le_bytes(),
+        &(u32::try_from(body_record_indices.len()).expect("fixture value fits u32")).to_le_bytes(),
     );
     if let CollectionForm::Flagged(word) = form {
         bytes.extend_from_slice(&word.to_le_bytes());
@@ -162,8 +184,7 @@ fn mesh_collection_record(
     push_indexed_header(&mut bytes, base_class_tag, record_index);
     bytes.extend_from_slice(&[0; 9]);
     bytes.extend_from_slice(
-        &(u32::try_from(body_record_indices.len()).expect("fixture value fits u32"))
-            .to_le_bytes(),
+        &(u32::try_from(body_record_indices.len()).expect("fixture value fits u32")).to_le_bytes(),
     );
     for body in body_record_indices {
         push_reference(&mut bytes, *body);
@@ -201,7 +222,11 @@ pub(crate) fn mesh_texture_table_record(
     bytes
 }
 
-pub(crate) fn mesh_wrapper_record(class_tag: u32, record_index: u32, body_record_index: u32) -> Vec<u8> {
+pub(crate) fn mesh_wrapper_record(
+    class_tag: u32,
+    record_index: u32,
+    body_record_index: u32,
+) -> Vec<u8> {
     let mut bytes = Vec::new();
     push_indexed_header(&mut bytes, class_tag, record_index);
     bytes.extend_from_slice(&[0; 10]);
@@ -276,8 +301,7 @@ fn mesh_scope_record(
     push_indexed_header(&mut bytes, class_tag, record_index);
     bytes.extend_from_slice(&[0; 10]);
     bytes.extend_from_slice(
-        &(u32::try_from(body_record_indices.len()).expect("fixture value fits u32"))
-            .to_le_bytes(),
+        &(u32::try_from(body_record_indices.len()).expect("fixture value fits u32")).to_le_bytes(),
     );
     for body in body_record_indices {
         push_reference(&mut bytes, *body);
@@ -671,7 +695,8 @@ pub(crate) fn synthetic_mesh_graph_with_collection(
         140,
         SCOPE_OWNER,
     );
-    let paired_scope = bytes.len() + scope_frame.len() - crate::layout::paramesh_feature_scope_base::LEN;
+    let paired_scope =
+        bytes.len() + scope_frame.len() - crate::layout::paramesh_feature_scope_base::LEN;
     push_primary_frame(&mut bytes, &mut records, SCOPE, scope_frame);
     push_primary_frame(
         &mut bytes,
@@ -698,7 +723,6 @@ pub(crate) fn synthetic_mesh_graph_with_collection(
 pub(crate) fn synthetic_mesh_graph(with_textures: bool) -> SyntheticMeshGraph {
     synthetic_mesh_graph_with_body_count(with_textures, 1)
 }
-
 
 /// Build a synthetic archive with one indexed mesh feature.
 pub(crate) fn archive(payload: &[u8], brep: Option<&[u8]>) -> Vec<u8> {
@@ -728,6 +752,20 @@ pub(crate) fn archive(payload: &[u8], brep: Option<&[u8]>) -> Vec<u8> {
     graph.bytes.push(1);
     graph.bytes.extend_from_slice(&109_u64.to_le_bytes());
     graph.bytes.extend_from_slice(&[0, 0]);
+    let member_tag = timeline_tag + 1;
+    graph.meta.types.push(design_type(
+        member_tag,
+        "00000000-0000-4000-8000-000000000140",
+        None,
+        1,
+        "Fusion",
+        vec![140],
+    ));
+    graph
+        .meta
+        .records
+        .push(primary_record(140, graph.bytes.len()));
+    push_indexed_header(&mut graph.bytes, member_tag, 140);
     let entities: Vec<Vec<_>> = graph
         .meta
         .types
@@ -774,8 +812,11 @@ pub(crate) fn archive(payload: &[u8], brep: Option<&[u8]>) -> Vec<u8> {
         .unwrap();
     zip.write_all(&meta).unwrap();
     if let Some(brep) = brep {
-        zip.start_file("FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh", stored)
-            .unwrap();
+        zip.start_file(
+            "FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
+            stored,
+        )
+        .unwrap();
         zip.write_all(brep).unwrap();
     }
     zip.start_file("FusionAssetName[Active]/ParaMeshGeometry.BlobParts/ParaMeshGeometry.11111111-2222-4333-8444-555555555555.paramesh", stored).unwrap();

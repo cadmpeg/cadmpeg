@@ -374,6 +374,7 @@
           }
         ],
         "lost_edge_references": [],
+        "mesh_containers": [],
         "mesh_surface_sentinels": [
           {
             "id": "f3d:asm:mesh-surface-sentinel#6",
