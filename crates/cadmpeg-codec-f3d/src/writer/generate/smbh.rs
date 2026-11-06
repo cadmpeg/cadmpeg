@@ -66,7 +66,7 @@ pub(super) fn encode_smbh(
                 let mut bytes = native_smbh_header(target)?;
                 output.charge_entities(1, "F3D BREP record")?;
                 native_ident(&mut bytes, "asmheader")?;
-                native_string(&mut bytes, "231.6.3.65535")?;
+                native_string(&mut bytes, "231.6.3.65535");
                 bytes.push(0x11);
                 native_history_tail(&mut bytes, native, output)?;
                 return Ok(bytes);
@@ -86,6 +86,7 @@ struct PlannedPcurve<'a> {
     geometry: &'a PcurveGeometry,
     support: &'a SurfaceGeometry,
     form: NativePcurveForm<'a>,
+    range: [f64; 2],
 }
 
 #[derive(Debug)]
@@ -157,6 +158,10 @@ impl<'a> NativeRecordPlan<'a> {
                 geometry: &pcurve.geometry,
                 support: pcurve_support_geometry(model, &pcurve.id)?,
                 form,
+                range: pcurve.parameter_range().map_or([0.0, 1.0], |range| {
+                    let [a, b] = range.get();
+                    [a.min(b), a.max(b)]
+                }),
             });
         }
         let pcurve_record_count = model
@@ -236,7 +241,12 @@ fn encode_source_less_wires(
     starts: WireRecordStarts,
     output: &cadmpeg_core::decode::DecodeContext<'_>,
 ) -> Result<BTreeMap<VertexId, i64>, CodecError> {
-    let WireRecordStarts { wire: wire_start, coedge: wire_coedge_start, shell: shell_start, vertex: vertex_start } = starts;
+    let WireRecordStarts {
+        wire: wire_start,
+        coedge: wire_coedge_start,
+        shell: shell_start,
+        vertex: vertex_start,
+    } = starts;
     let model = &target.model;
     let vertex_ordinals = model
         .vertices
@@ -405,7 +415,7 @@ fn encode_wire_body_smbh(
     let mut records = Vec::new();
     output.charge_entities(1, "F3D BREP record")?;
     native_ident(&mut records, "asmheader")?;
-    native_string(&mut records, "231.6.3.65535")?;
+    native_string(&mut records, "231.6.3.65535");
     records.push(0x11);
     for ((ordinal, body), owned) in model.bodies.iter().enumerate().zip(ownership.bodies()) {
         let region_ordinal = owned.first_region;
@@ -497,7 +507,12 @@ fn encode_wire_body_smbh(
         &mut records,
         target,
         topology,
-        WireRecordStarts { wire: wire_start, coedge: wire_coedge_start, shell: shell_start, vertex: vertex_start },
+        WireRecordStarts {
+            wire: wire_start,
+            coedge: wire_coedge_start,
+            shell: shell_start,
+            vertex: vertex_start,
+        },
         output,
     )?;
     let mut edge_base = 0usize;
@@ -776,7 +791,7 @@ fn encode_face_topology_smbh(
     let mut records = Vec::new();
     output.charge_entities(1, "F3D BREP record")?;
     native_ident(&mut records, "asmheader")?;
-    native_string(&mut records, "231.6.3.65535")?;
+    native_string(&mut records, "231.6.3.65535");
     records.push(0x11);
     for (body_ordinal, body) in model.bodies.iter().enumerate() {
         let first_region = body
@@ -971,7 +986,12 @@ fn encode_face_topology_smbh(
         &mut records,
         target,
         topology,
-        WireRecordStarts { wire: wire_start, coedge: wire_coedge_start, shell: shell_start, vertex: vertex_start },
+        WireRecordStarts {
+            wire: wire_start,
+            coedge: wire_coedge_start,
+            shell: shell_start,
+            vertex: vertex_start,
+        },
         output,
     )?;
 
@@ -1300,13 +1320,25 @@ fn encode_face_topology_smbh(
 
     for pcurve in &pcurves {
         output.charge_entities(1, "F3D BREP record")?;
-        native_pcurve(&mut records, pcurve.geometry, &pcurve.form, pcurve.support)?;
+        native_pcurve(
+            &mut records,
+            pcurve.geometry,
+            &pcurve.form,
+            pcurve.support,
+            pcurve.range,
+        )?;
         records.push(0x11);
     }
     for pcurve in &pcurves {
         if let NativePcurveForm::Reference { uv_offset, .. } = pcurve.form {
             output.charge_entities(1, "F3D BREP record")?;
-            native_ref_pcurve_companion(&mut records, pcurve.geometry, uv_offset, pcurve.support)?;
+            native_ref_pcurve_companion(
+                &mut records,
+                pcurve.geometry,
+                uv_offset,
+                pcurve.support,
+                pcurve.range,
+            )?;
             records.push(0x11);
         }
     }
@@ -1595,7 +1627,10 @@ fn encode_source_less_edges_vertices_points(
     attributes: &AttributeIndex<'_>,
     topology: &NativeGenerationIndex<'_>,
     starts: SourceLessRecordStarts,
-    owners: (&BTreeMap<cadmpeg_ir::ids::EdgeId, i64>, &BTreeMap<VertexId, i64>),
+    owners: (
+        &BTreeMap<cadmpeg_ir::ids::EdgeId, i64>,
+        &BTreeMap<VertexId, i64>,
+    ),
     output: &cadmpeg_core::decode::DecodeContext<'_>,
 ) -> Result<(), CodecError> {
     let (edge_owners, free_vertex_owners) = owners;
@@ -1733,7 +1768,7 @@ fn encode_source_less_edges_vertices_points(
         native_ref(records, curve_ref);
         let (sense, continuity) = edge_record_metadata(topology, edge)?;
         records.push(native_bool(sense == Sense::Reversed));
-        native_string(records, &continuity)?;
+        native_string(records, &continuity);
         native_tolerant_edge_tail(records, topology, edge);
         records.push(0x11);
     }

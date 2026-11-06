@@ -7,8 +7,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::document::Model;
 
 use super::native_bytes::{
-    native_enum, native_f64, native_i64, native_ident, native_length_prefixed_string, native_point,
-    native_ref, native_subident, native_vector,
+    native_enum, native_f64, native_i64, native_point, native_ref, native_string, native_vector,
 };
 
 pub(super) struct Starts {
@@ -51,8 +50,17 @@ pub(super) fn preserve_indices(
         ..Default::default()
     };
     let ctx = cadmpeg_core::decode::DecodeContext::for_encode(&arena, &policy);
-    let framed = cadmpeg_asm::sab::frame(&ctx, records, 0, records.len(), RefWidth::Eight, None)
-        .map_err(|error| error.into_codec_error(&ctx, CodecError::malformed))?;
+    let framed =
+        match cadmpeg_asm::sab::frame(&ctx, records, 0, records.len(), RefWidth::Eight, None) {
+            Ok(framed) => framed,
+            Err(cadmpeg_asm::stream_error::StreamFailure::Resource(limit)) => {
+                return Err(limit.into())
+            }
+            Err(error) => {
+                debug_assert!(false, "generated F3D BREP records must frame: {error:?}");
+                return Ok(());
+            }
+        };
     let count = framed.len();
     let mut destinations = ctx.alloc_filled(count, None, "plan F3D BREP record destinations")?;
     let mut occupied = ctx.alloc_filled(count, false, "reserve F3D BREP record indices")?;
@@ -170,10 +178,10 @@ pub(super) fn preserve_indices(
             *destination = available.next();
         }
     }
-    let mapping = destinations
-        .into_iter()
-        .collect::<Option<Vec<_>>>()
-        .ok_or_else(|| CodecError::Malformed("F3D BREP record remap is incomplete".into()))?;
+    let Some(mapping) = destinations.into_iter().collect::<Option<Vec<_>>>() else {
+        debug_assert!(false, "each F3D BREP record has a unique remap destination");
+        return Ok(());
+    };
     if mapping
         .iter()
         .enumerate()
@@ -187,7 +195,9 @@ pub(super) fn preserve_indices(
     }
     let mut rewritten = Vec::with_capacity(records.len());
     for record in ordered.into_iter().flatten() {
-        encode_record(&mut rewritten, record, &mapping)?;
+        if !encode_record(&mut rewritten, record, &mapping) {
+            return Ok(());
+        }
     }
     *records = rewritten;
     Ok(())
@@ -201,13 +211,22 @@ fn entity_index(id: &str) -> Option<usize> {
     native_index(Some(id), "f3d:brep:entity#")
 }
 
-fn encode_record(out: &mut Vec<u8>, record: &Record, mapping: &[usize]) -> Result<(), CodecError> {
+fn generated_identifier(out: &mut Vec<u8>, tag: u8, value: &str) -> bool {
+    let Ok(length) = u8::try_from(value.len()) else {
+        debug_assert!(false, "a framed F3D identifier fits its one-byte length");
+        return false;
+    };
+    out.extend_from_slice(&[tag, length]);
+    out.extend_from_slice(value.as_bytes());
+    true
+}
+
+fn encode_record(out: &mut Vec<u8>, record: &Record, mapping: &[usize]) -> bool {
     let mut names = record.name.split('-').peekable();
     while let Some(name) = names.next() {
-        if names.peek().is_some() {
-            native_subident(out, name)?;
-        } else {
-            native_ident(out, name)?;
+        let tag = if names.peek().is_some() { 0x0e } else { 0x0d };
+        if !generated_identifier(out, tag, name) {
+            return false;
         }
     }
     for token in record.tokens.iter() {
@@ -223,7 +242,7 @@ fn encode_record(out: &mut Vec<u8>, record: &Record, mapping: &[usize]) -> Resul
                 out.extend_from_slice(&value.to_le_bytes());
             }
             Token::Double(value) => native_f64(out, *value),
-            Token::Str(value) => native_length_prefixed_string(out, value)?,
+            Token::Str(value) => native_string(out, value),
             Token::True => out.push(0x0a),
             Token::False => out.push(0x0b),
             Token::Ref(value) => {
@@ -249,10 +268,38 @@ fn encode_record(out: &mut Vec<u8>, record: &Record, mapping: &[usize]) -> Resul
                 out.push(0x17);
                 out.extend_from_slice(&value.to_le_bytes());
             }
-            Token::Ident(value) => native_ident(out, value)?,
-            Token::SubIdent(value) => native_subident(out, value)?,
+            Token::Ident(value) => {
+                if !generated_identifier(out, 0x0d, value) {
+                    return false;
+                }
+            }
+            Token::SubIdent(value) => {
+                if !generated_identifier(out, 0x0e, value) {
+                    return false;
+                }
+            }
         }
     }
     out.push(0x11);
-    Ok(())
+    true
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn reframed_record_keeps_identifiers_and_reindexes_references() {
+        use cadmpeg_asm::{kernel_header::RefWidth, sab::Token, test_support::sab::frame};
+
+        let mut source = vec![0x0e, 2, b'a', b'b', 0x0d, 2, b'c', b'd'];
+        source.extend_from_slice(&[0x0d, 2, b'x', b'y', 0x0c]);
+        source.extend_from_slice(&1_i64.to_le_bytes());
+        source.push(0x11);
+        let records = frame(&source, 0, source.len(), RefWidth::Eight).unwrap();
+        let mut output = Vec::new();
+        assert!(super::encode_record(&mut output, &records[0], &[1, 0]));
+        let rewritten = frame(&output, 0, output.len(), RefWidth::Eight).unwrap();
+        assert_eq!(rewritten[0].name, records[0].name);
+        assert_eq!(rewritten[0].tokens[0], Token::Ident("xy".into()));
+        assert_eq!(rewritten[0].chunk(0), Some(&Token::Ref(0)));
+    }
 }

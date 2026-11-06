@@ -12,7 +12,7 @@ use std::collections::BTreeSet;
 mod annotations;
 pub(super) mod append;
 mod associations;
-mod copious;
+pub(super) mod copious;
 pub(super) mod drawings;
 mod fem;
 mod fonts;
@@ -64,6 +64,8 @@ pub(super) fn source_status(ir: &CadIr, record: &NativeRecord) -> Option<EntityS
     match (subordinate, use_flag) {
         (0, 0) => Some(EntityStatus::Independent),
         (1, 0) => Some(EntityStatus::PhysicallyDependent),
+        (2, 0) => Some(EntityStatus::LogicallyDependent),
+        (3, 0) => Some(EntityStatus::BothDependent),
         (0, 1) => Some(EntityStatus::Annotation),
         (0, 2) => Some(EntityStatus::Definition),
         (1, 1) => Some(EntityStatus::AnnotationDependent),
