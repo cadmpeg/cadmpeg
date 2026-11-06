@@ -186,17 +186,34 @@ pub(crate) fn decode(scan: &ContainerScan<'_>) -> Result<DecodedAct, CodecError>
                 entry.name
             )));
         };
-        tables.push(crate::records::act_table::ActTable {
-            id: crate::ids::native_scoped_id(&entry.name, "act-table", table_frame.start),
-            record_index: table_frame.record_index,
-            class_tag: table_frame.class_tag.clone(),
-        });
+        let table_id = crate::ids::native_scoped_id(&entry.name, "act-table", table_frame.start);
+        let table_data = match decode_table(bytes, table_frame, *table_payload, &entry.name) {
+            Ok(table) => {
+                tables.push(crate::records::act_table::ActTable {
+                    id: table_id,
+                    record_index: table_frame.record_index,
+                    class_tag: table_frame.class_tag.clone(),
+                });
+                Some(table)
+            }
+            Err(error) => {
+                damaged.push(UnreadableActFrame {
+                    stream: entry.name.clone(),
+                    extent: table_frame.start..table_frame.end,
+                    record_index: u64::from(table_frame.record_index),
+                    reason: error.to_string(),
+                    dropped: vec![table_id],
+                });
+                None
+            }
+        };
+        let table_unreadable = table_data.is_none();
         let DecodedTable {
             entries: mut table,
             guids: stream_guids,
             references: mut stream_table_references,
             registry_channels: stream_registry_channels,
-        } = decode_table(bytes, table_frame, *table_payload, &entry.name)?;
+        } = table_data.unwrap_or_default();
         let mut groups = Vec::new();
         for frame in &frames {
             let selected = table.iter().any(|row| row.record_index == frame.record_index);
@@ -254,12 +271,29 @@ pub(crate) fn decode(scan: &ContainerScan<'_>) -> Result<DecodedAct, CodecError>
             }
         }
 
-        let stream_entities = merge_entities(&entry.name, table, groups)?;
+        let mut represented_groups = BTreeSet::new();
+        let stream_entities = if table_unreadable {
+            let fault = damaged.iter_mut()
+                .find(|fault| fault.record_index == u64::from(table_frame.record_index))
+                .ok_or_else(|| CodecError::malformed("ACT table failure has no part"))?;
+            for group in groups {
+                represented_groups.insert(group.record_index);
+                if group.entity_id.is_some() {
+                    fault.dropped.push(crate::ids::native_scoped_id(
+                        &entry.name, "act-entity", group.record_index,
+                    ));
+                }
+            }
+            Vec::new()
+        } else {
+            merge_entities(&entry.name, table, groups)?
+        };
         let mut represented = stream_entities
             .iter()
             .map(ActEntity::record_index)
             .collect::<BTreeSet<_>>();
         represented.insert(table_frame.record_index);
+        represented.extend(represented_groups);
         represented.extend(damaged.iter().filter_map(|fault| u32::try_from(fault.record_index).ok()));
         let scope = crate::ids::native_scope(&entry.name);
         represented.extend(
@@ -326,6 +360,7 @@ struct TableEntry {
     entity_id: String,
 }
 
+#[derive(Default)]
 struct DecodedTable {
     entries: Vec<TableEntry>,
     guids: Vec<ActGuid>,
