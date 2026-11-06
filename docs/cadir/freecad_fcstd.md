@@ -57,9 +57,11 @@ opaque side payloads and dangling native referents are omitted and reported.
 Omitting an unreadable object also removes references to it from dependencies and
 properties, with an Error loss, so independent content still forms a valid archive.
 
-The current synthesized writer drops subds, assets, feature topology bindings,
-configurations, spatial sketches and their entities/constraints, drawings, semantic
-annotations, tessellations, PMI, and presentation layers. Unconsumed admitted
+The synthesized writer supports drawing pages, views, and selected annotations,
+and writes mesh geometry from tessellations. It reports unsupported fields and
+records in those arenas. Subdivision surfaces, assets, feature input and result
+topologies, configurations, spatial sketches and their entities and constraints,
+PMI, and presentation layers are dropped with losses. Unconsumed admitted
 scalar, vector, link, map, JSON, UUID, and integer-list properties project to
 neutral attributes and are written from those attributes. Identity-only Python
 payloads, object materials, and other admitted typed property forms without a
