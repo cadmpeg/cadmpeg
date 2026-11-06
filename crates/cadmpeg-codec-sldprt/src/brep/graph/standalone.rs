@@ -93,6 +93,7 @@ pub(super) fn decode_prefix(
     ctx: &DecodeContext<'_>,
     body: &[u8],
     stream: &cadmpeg_ir::StreamName,
+    emitted_curves: &HashSet<cadmpeg_ir::ids::CurveId>,
 ) -> Result<Option<Brep>, cadmpeg_core::CodecError> {
     let arrays = if has_top_level_spline(body) {
         spline::referenced_array_attrs(body)
@@ -100,7 +101,11 @@ pub(super) fn decode_prefix(
         HashSet::new()
     };
     let mut end = 0;
+    let mut wrapper_count = 0;
     while let Some(carrier) = record(body, end, &arrays) {
+        if body.get(end..end + 2) == Some(&[0, 0x85]) {
+            wrapper_count += 1;
+        }
         end = carrier.end();
         if end == body.len() {
             break;
@@ -109,7 +114,29 @@ pub(super) fn decode_prefix(
     if end == 0 || end == body.len() {
         return Ok(None);
     }
-    decode(ctx, &body[..end], stream)
+    let mut sources = Vec::new();
+    ctx.reserve_working(&mut sources, wrapper_count, "index bounded curve supports")?;
+    let mut offset = 0;
+    while offset < end {
+        let Some(carrier) = record(body, offset, &arrays) else {
+            return Ok(None);
+        };
+        if body.get(offset..offset + 2) == Some(&[0, 0x85]) {
+            if let Some((_, source, _)) = super::super::record_starts(body, offset, 0x85)
+                .filter_map(|start| subset::header(body, start))
+                .find(|(wrapper, _, _)| emitted_curves.contains(&super::id_curve(*wrapper)))
+            {
+                sources.push(super::id_curve(source));
+            }
+        }
+        offset = carrier.end();
+    }
+    sources.sort_unstable();
+    let Some(mut decoded) = decode(ctx, &body[..end], stream)? else {
+        return Ok(None);
+    };
+    decoded.curves.retain(|curve| sources.binary_search(&curve.id).is_err());
+    Ok(Some(decoded))
 }
 
 pub(super) fn decode(
