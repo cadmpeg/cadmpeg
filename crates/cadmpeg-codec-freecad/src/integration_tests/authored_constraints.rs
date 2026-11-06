@@ -593,3 +593,114 @@ fn authored_symmetry_constraint_sketch_has_source_derived_measures() {
         );
     }
 }
+
+#[test]
+fn authored_constraint_sketches_have_source_derived_measures() {
+    let data = include_bytes!("../../../../corpus/freecad_fcstd/fixtures/sketch_constraints.FCStd");
+    let decoded = FcstdCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .unwrap();
+    let model = &decoded.ir().model;
+    let report = measured("sketch_constraints", decoded.ir()).unwrap();
+    let length = |name: &str| {
+        let feature = model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .unwrap();
+        let [body_id] = feature.evaluation.outputs().as_slice() else {
+            panic!("one {name} sketch body")
+        };
+        let body = report
+            .bodies()
+            .iter()
+            .find(|body| body.body() == body_id.as_str())
+            .unwrap();
+        body.length()
+            .as_ref()
+            .unwrap_or_else(|| panic!("{name} sketch length"))
+            .measured()
+            .unwrap_or_else(|| panic!("{name} measured sketch length"))
+            .value()
+            .value
+            .get()
+    };
+
+    let assert_bounds = |name: &str, expected: [f64; 6]| {
+        let feature = model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .unwrap();
+        let [body_id] = feature.evaluation.outputs().as_slice() else {
+            panic!("one {name} sketch body")
+        };
+        let body = report
+            .bodies()
+            .iter()
+            .find(|body| body.body() == body_id.as_str())
+            .unwrap();
+        let bbox = body.bbox().measured().unwrap().value();
+        for (actual, expected) in bbox
+            .min
+            .coordinates()
+            .into_iter()
+            .chain(bbox.max.coordinates())
+            .zip(expected)
+        {
+            assert!(
+                (actual.get() - expected).abs() < MEASURE_BBOX_TOLERANCE,
+                "{name} sketch bounds"
+            );
+        }
+    };
+    assert!(
+        (length("GeometricRelations") - 194.522_430_401_012_12).abs() < MEASURE_LENGTH_TOLERANCE,
+        "GeometricRelations total curve length"
+    );
+
+    assert!(
+        (length("DimensionalRelations") - 106.261_983_410_878_03).abs() < MEASURE_LENGTH_TOLERANCE,
+        "DimensionalRelations total curve length"
+    );
+    assert_bounds(
+        "DimensionalRelations",
+        [-0.062_257_748_326_953_2, -4.0, 0.0, 104.0, 9.0, 0.0],
+    );
+
+    assert!(
+        (length("InactiveRelation") - 10.0).abs() < MEASURE_LENGTH_TOLERANCE,
+        "InactiveRelation source curve length"
+    );
+    assert_bounds("InactiveRelation", [0.0, 0.0, 0.0, 10.0, 0.0, 0.0]);
+    assert!(
+        (length("InternalAlignmentRelations") - 55.695_949_371_084_74).abs()
+            < MEASURE_LENGTH_TOLERANCE,
+        "InternalAlignmentRelations ellipse circumference"
+    );
+
+    assert!(
+        (length("OpticalRelation") - 45.918_847_849_580_55).abs() < MEASURE_LENGTH_TOLERANCE,
+        "OpticalRelation total segment length"
+    );
+    assert_bounds(
+        "OpticalRelation",
+        [
+            -11.999_973_848_754_916,
+            -4.916_827_177_867_217_5,
+            0.0,
+            11.999_973_848_754_916,
+            7.136_414_264_868_549,
+            0.0,
+        ],
+    );
+
+    assert!(
+        (length("SplineWeightRelation") - 16.370_021_786_136_288).abs() < MEASURE_LENGTH_TOLERANCE,
+        "SplineWeightRelation rational cubic arc length"
+    );
+    assert_bounds(
+        "SplineWeightRelation",
+        [0.0, 0.0, 0.0, 12.0, 6.025_648_249_403_19, 0.0],
+    );
+}
