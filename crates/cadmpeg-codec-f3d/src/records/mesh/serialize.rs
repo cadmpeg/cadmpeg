@@ -10,6 +10,7 @@ use super::{
     MESH_TEXTURE_FILENAME_ENTRY_BYTES, MESH_TEXTURE_FLAGS_ENTRY_BYTES,
 };
 use crate::records::serde_column::SliceColumn;
+use cadmpeg_ir::native::bytes::NativeBytes;
 use serde::Serialize;
 
 #[derive(Serialize)]
@@ -86,6 +87,8 @@ impl Serialize for BodyRef<'_> {
             entry_name_offset: u64,
             fusion_uuid: &'a super::DesignGuidText,
             #[serde(skip_serializing_if = "Option::is_none")]
+            guid_opaque_bytes: Option<NativeBytes<&'a [u8]>>,
+            #[serde(skip_serializing_if = "Option::is_none")]
             container_mesh_uuid: Option<&'a DesignMeshUuid>,
             fusion_uuid_offset: u64,
             transform: MeshAffineTransform,
@@ -132,6 +135,7 @@ impl Serialize for BodyRef<'_> {
             entry_name: &body.entry.name,
             entry_name_offset: body.entry.name_offset(),
             fusion_uuid: &body.guid.value,
+            guid_opaque_bytes: body.guid.opaque_run().map(NativeBytes::from),
             container_mesh_uuid: body.container_mesh_uuid.as_ref(),
             fusion_uuid_offset: body.guid.value_offset(),
             transform: body.placement.transform,

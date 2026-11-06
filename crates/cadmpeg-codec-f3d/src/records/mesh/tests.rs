@@ -433,7 +433,8 @@ fn mesh_guid_record_requires_prefix_and_derives_join_offsets() {
             frame_length,
         )
         .unwrap();
-        let record = crate::records::mesh::DesignMeshGuid::new(identity, guid.clone()).unwrap();
+        let record =
+            crate::records::mesh::DesignMeshGuid::new(identity, guid.clone(), None).unwrap();
         assert_eq!(record.value_offset(), 236);
         assert_eq!(record.entry_reference_offset(), 272);
         assert_eq!(record.record().frame_length(), frame_length);
@@ -445,7 +446,25 @@ fn mesh_guid_record_requires_prefix_and_derives_join_offsets() {
         82,
     )
     .unwrap();
-    assert!(crate::records::mesh::DesignMeshGuid::new(short, guid).is_err());
+    assert!(crate::records::mesh::DesignMeshGuid::new(short, guid.clone(), None).is_err());
+    let identity = crate::records::mesh::DesignMeshRecordIdentity::new(
+        crate::records::references::DesignClassTag::try_from("256".to_owned()).unwrap(),
+        4,
+        200,
+        83,
+    )
+    .unwrap();
+    assert!(crate::records::mesh::DesignMeshGuid::new(
+        identity.clone(),
+        guid.clone(),
+        Some([0; 11])
+    )
+    .is_err());
+    let bytes = [
+        0x82, 0x8a, 0x25, 0xde, 0x59, 0x63, 0xf1, 0xc0, 0x00, 0x01, 0x00,
+    ];
+    let record = crate::records::mesh::DesignMeshGuid::new(identity, guid, Some(bytes)).unwrap();
+    assert_eq!(record.opaque_run(), Some(&bytes));
 }
 
 #[test]

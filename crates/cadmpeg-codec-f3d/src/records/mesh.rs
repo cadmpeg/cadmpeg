@@ -8,6 +8,7 @@ use super::references::DesignClassTag;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::assets::AssetId;
 use cadmpeg_ir::features::FinitePoint3;
+use cadmpeg_ir::native::bytes::NativeBytes;
 use cadmpeg_ir::transform::Transform;
 use serde::{Deserialize, Serialize};
 
@@ -727,25 +728,37 @@ impl From<DesignMeshUuid> for String {
 pub(crate) struct DesignMeshGuid {
     record: DesignMeshRecordIdentity,
     value: DesignGuidText,
+    opaque_run: Option<[u8; 11]>,
 }
 
 impl DesignMeshGuid {
     pub(crate) fn new(
         record: DesignMeshRecordIdentity,
         value: DesignGuidText,
+        opaque_run: Option<[u8; 11]>,
     ) -> Result<Self, String> {
         if record.frame_length() < u64_from_index(crate::layout::paramesh_guid_join_prefix::LEN) {
             return Err(
                 "guid_record.frame_length must contain the complete GUID join prefix".into(),
             );
         }
-        Ok(Self { record, value })
+        if opaque_run == Some([0; 11]) {
+            return Err("guid_opaque_bytes must be absent when all eleven bytes are zero".into());
+        }
+        Ok(Self {
+            record,
+            value,
+            opaque_run,
+        })
     }
     pub(crate) fn record(&self) -> &DesignMeshRecordIdentity {
         &self.record
     }
     pub(crate) fn value(&self) -> &str {
         self.value.as_str()
+    }
+    pub(crate) fn opaque_run(&self) -> Option<&[u8; 11]> {
+        self.opaque_run.as_ref()
     }
     fn value_offset(&self) -> u64 {
         self.record.byte_offset()
@@ -939,6 +952,8 @@ struct DesignMeshBodyWire {
     entry_name_offset: u64,
     /// Container identity stored by both Design and `.paramesh` payloads.
     fusion_uuid: DesignGuidText,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    guid_opaque_bytes: Option<NativeBytes<[u8; 11]>>,
     /// Container-local version-4 mesh UUID from protobuf registry field 12,
     /// when the geometry container joined this Design body.
     #[serde(
@@ -1019,6 +1034,7 @@ impl From<DesignMeshBody> for DesignMeshBodyWire {
             entry_name: value.entry.name,
             entry_name_offset,
             fusion_uuid: value.guid.value,
+            guid_opaque_bytes: value.guid.opaque_run.map(NativeBytes::new),
             container_mesh_uuid: value.container_mesh_uuid,
             fusion_uuid_offset,
             transform: value.placement.transform,
@@ -1068,7 +1084,11 @@ impl DesignMeshBody {
         {
             return Err("scene_state_reference_offset/scene_auxiliary_reference_offset must match scene_node_record layout".into());
         }
-        let guid = DesignMeshGuid::new(value.guid_record, value.fusion_uuid)?;
+        let guid = DesignMeshGuid::new(
+            value.guid_record,
+            value.fusion_uuid,
+            value.guid_opaque_bytes.map(NativeBytes::into_inner),
+        )?;
         if value.fusion_uuid_offset != guid.value_offset()
             || value.guid_entry_reference_offset != guid.entry_reference_offset()
         {
