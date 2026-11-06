@@ -1158,7 +1158,7 @@ fn a_frame_whose_lists_name_its_operands_keeps_main_reading_when_a_field_contrad
         assert_eq!(operation, None, "{name}");
         assert_eq!(
             losses.into_iter().map(|loss| loss.code).collect::<Vec<_>>(),
-            [F3dLossCode::FeatureCombineOperandListContradicted.kind()],
+            [F3dLossCode::FeatureCombineOperandListRefused.kind()],
             "{name}"
         );
     }

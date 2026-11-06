@@ -305,9 +305,10 @@ pub(crate) enum F3dLossCode {
     /// A Combine frame that matches the fixed fields of the operand-list and
     /// standard prologues is read in one of them.
     FeatureCombinePrologueAssumed,
-    /// A Combine whose lists name its operands, whose fields contradict the
-    /// operand-list prologue, and which no prologue reads stays native.
-    FeatureCombineOperandListContradicted,
+    /// A Combine whose lists name its operands, whose other fields contradict
+    /// the operand-list prologue or cannot be checked, and which no prologue
+    /// reads stays native.
+    FeatureCombineOperandListRefused,
     /// A Combine that places its result in a new component stays native.
     FeatureCombineNewComponentNative,
     /// Fixed Fillet scalar lanes have no complete group assignment.
@@ -627,7 +628,7 @@ impl F3dLossCode {
         Self::FeatureBodySelectionNative,
         Self::FeatureCombineSelectionNative,
         Self::FeatureCombinePrologueAssumed,
-        Self::FeatureCombineOperandListContradicted,
+        Self::FeatureCombineOperandListRefused,
         Self::FeatureCombineNewComponentNative,
         Self::FeatureFixedFilletAssignmentNative,
         Self::FeatureExtrudeExtentNative,
@@ -863,9 +864,7 @@ impl F3dLossCode {
             Self::FeatureBodySelectionNative => "feature.body-selection-native",
             Self::FeatureCombineSelectionNative => "feature.combine-selection-native",
             Self::FeatureCombinePrologueAssumed => "feature.combine-prologue-assumed",
-            Self::FeatureCombineOperandListContradicted => {
-                "feature.combine-operand-list-contradicted"
-            }
+            Self::FeatureCombineOperandListRefused => "feature.combine-operand-list-refused",
             Self::FeatureCombineNewComponentNative => "feature.combine-new-component-native",
             Self::FeatureFixedFilletAssignmentNative => "feature.fixed-fillet-assignment-native",
             Self::FeatureExtrudeExtentNative => "feature.extrude-extent-native",
@@ -1120,7 +1119,7 @@ impl F3dLossCode {
             | Self::FeatureBodySelectionNative
             | Self::FeatureCombineSelectionNative
             | Self::FeatureCombinePrologueAssumed
-            | Self::FeatureCombineOperandListContradicted
+            | Self::FeatureCombineOperandListRefused
             | Self::FeatureCombineNewComponentNative
             | Self::FeatureFixedFilletAssignmentNative
             | Self::FeatureExtrudeExtentNative
@@ -1309,7 +1308,7 @@ impl F3dLossCode {
             | Self::FeatureBodySelectionNative
             | Self::FeatureCombineSelectionNative
             | Self::FeatureCombinePrologueAssumed
-            | Self::FeatureCombineOperandListContradicted
+            | Self::FeatureCombineOperandListRefused
             | Self::FeatureCombineNewComponentNative
             | Self::FeatureFixedFilletAssignmentNative
             | Self::FeatureExtrudeExtentNative
@@ -1582,7 +1581,7 @@ mod tests {
                 "feature.body-selection-native",
                 "feature.combine-selection-native",
                 "feature.combine-prologue-assumed",
-                "feature.combine-operand-list-contradicted",
+                "feature.combine-operand-list-refused",
                 "feature.combine-new-component-native",
                 "feature.fixed-fillet-assignment-native",
                 "feature.extrude-extent-native",

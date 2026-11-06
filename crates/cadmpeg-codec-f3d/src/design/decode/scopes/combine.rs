@@ -101,7 +101,7 @@ pub(super) fn exact_combine_operation(
             scope.id
         )));
     } else if let Some(reason) = contradiction {
-        losses.push(F3dLossCode::FeatureCombineOperandListContradicted.note(format!(
+        losses.push(F3dLossCode::FeatureCombineOperandListRefused.note(format!(
             "{}: the lists of the Combine frame name its operands and {reason}; no prologue reads it, so the Combine stays native",
             scope.id
         )));
@@ -140,7 +140,7 @@ enum PrologueReading {
     /// the result in a new component.
     NewComponent,
     /// The lists name the scope's operands, and a field contradicts the
-    /// prologue for the stated reason.
+    /// prologue or cannot be checked, for the stated reason.
     Contradicted(&'static str),
     Refused,
 }

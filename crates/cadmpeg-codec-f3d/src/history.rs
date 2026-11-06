@@ -2009,7 +2009,7 @@ pub(crate) fn bind_feature_body_selections(
                             operation.form
                                 == crate::records::feature::combine::DesignCombineForm::OperandLists
                         }) {
-                            bind_operand_list_combine_bodies(
+                            if bind_operand_list_combine_bodies(
                                 target,
                                 tools,
                                 scope,
@@ -2017,8 +2017,12 @@ pub(crate) fn bind_feature_body_selections(
                                 feature_id,
                                 previous_state_id,
                                 (histories, inputs.scopes),
-                            );
-                            return;
+                            )
+                            .is_some()
+                                || !standard_combine_prologue_also_reads(scope, operation)
+                            {
+                                return;
+                            }
                         }
                         let BodySelection::Native(native) = target else {
                             return;
@@ -2553,6 +2557,30 @@ fn bind_operand_list_combine_bodies(
         members,
     };
     Some(())
+}
+
+/// Whether the standard `Combine` prologue also reads an operand-list frame.
+/// Such a frame stores an empty property block and no companion, so its
+/// operation and keep-tools Boolean sit four bytes after their operand-list
+/// offsets, and the low byte of its join or cut code is the standard
+/// keep-tools Boolean.
+fn standard_combine_prologue_also_reads(
+    scope: &crate::records::feature::scope::DesignParameterScope,
+    operation: &crate::records::feature::combine::DesignCombineOperation,
+) -> bool {
+    use crate::layout::combine_operand_list_operation_prefix as combine_lists;
+    const EMPTY_PROPERTY_BLOCK_LEN: usize = 4;
+    let shifted = |offset: usize| {
+        u64::try_from(offset + EMPTY_PROPERTY_BLOCK_LEN)
+            .ok()
+            .and_then(|relative| scope.byte_offset().checked_add(relative))
+    };
+    shifted(combine_lists::OPERATION) == Some(operation.operation_offset)
+        && shifted(combine_lists::KEEP_TOOLS) == Some(operation.keep_tools_offset)
+        && matches!(
+            operation.operation,
+            cadmpeg_ir::features::BooleanKind::Join | cadmpeg_ir::features::BooleanKind::Cut
+        )
 }
 
 fn combine_external_local_tools(
