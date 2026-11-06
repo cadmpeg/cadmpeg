@@ -388,7 +388,7 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
     assert_eq!(
         ownerships
             .iter()
-            .map(|metadata| metadata.endpoint_index.map(|slot| slot.code()))
+            .map(|metadata| metadata.endpoint_index.map(cadmpeg_asm::brep::records::EndpointSlot::code))
             .collect::<Vec<_>>(),
         [Some(0), Some(1), Some(0)]
     );

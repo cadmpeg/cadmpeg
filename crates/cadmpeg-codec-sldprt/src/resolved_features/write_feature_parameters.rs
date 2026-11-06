@@ -142,6 +142,14 @@ pub(crate) fn synthesize_configuration_operations(
             let Some(object_id) = record.source_value() else {
                 continue;
             };
+            if matches!(operation, ConfigurationOperation::Extrusion(_))
+                && !matches!(
+                    record.input_class.as_deref(),
+                    Some("moExtrusion_c" | "moICE_c")
+                )
+            {
+                continue;
+            }
             if matches!(operation, ConfigurationOperation::Revolution(_))
                 && record
                     .input_class
@@ -204,6 +212,143 @@ pub(crate) fn synthesize_configuration_operations(
                 || !lane.id.starts_with("sldprt:generated:")
         });
         native.feature_input_lanes.push(lane);
+    }
+    if let Some(active) = ir
+        .model
+        .configurations
+        .iter()
+        .find(|configuration| configuration.active)
+    {
+        let slot = crate::history::write::configurations::configuration_slot(
+            &active.properties,
+            active.ordinal,
+        )
+        .to_string();
+        let ids = written.iter().map(|(_, id)| id).collect::<HashSet<_>>();
+        let mut payload = native
+            .feature_input_lanes
+            .iter()
+            .filter(|lane| {
+                lane.configuration.as_deref() == Some(&slot)
+                    && lane.id.starts_with("sldprt:generated:")
+            })
+            .flat_map(|lane| lane.native_payload.iter().copied())
+            .collect::<Vec<_>>();
+        let mut appended = false;
+        for feature in ir
+            .model
+            .features
+            .iter()
+            .filter(|feature| ids.contains(&feature.id))
+        {
+            let operation = match feature.evaluation.definition() {
+                FeatureDefinition::Operation(FeatureOperation::Extrude { op, .. }) => {
+                    extrusion_family(*op).map(ConfigurationOperation::Extrusion)
+                }
+                FeatureDefinition::Operation(FeatureOperation::Revolve { op, .. }) => match op {
+                    BooleanOp::NewBody => Some(ConfigurationOperation::Revolution(5)),
+                    BooleanOp::Join => Some(ConfigurationOperation::Revolution(8)),
+                    _ => None,
+                },
+                _ => None,
+            };
+            let Some(operation) = operation else { continue };
+            let Some(record) = native
+                .feature_histories
+                .iter()
+                .flat_map(|history| &history.features)
+                .find(|record| {
+                    feature.native_ref.as_deref() == Some(record.id.as_str())
+                        || (feature.native_ref.is_none()
+                            && record.id
+                                == crate::history::write::features::generated_feature_record_id(
+                                    &feature.id,
+                                ))
+                })
+            else {
+                continue;
+            };
+            let class = match (operation, record.input_class.as_deref()) {
+                (
+                    ConfigurationOperation::Extrusion(_),
+                    Some(class @ ("moExtrusion_c" | "moICE_c")),
+                ) => class,
+                (ConfigurationOperation::Revolution(_), Some("moRevolution_c") | None) => {
+                    "moRevolution_c"
+                }
+                _ => continue,
+            };
+            let Some(object_id) = record.source_value() else {
+                continue;
+            };
+            if let ConfigurationOperation::Revolution(form) = operation {
+                payload.extend_from_slice(&form.to_le_bytes());
+                payload.extend_from_slice(&[0; 4]);
+            }
+            append_named_object(&mut payload, class, &record.name, object_id)?;
+            if let ConfigurationOperation::Extrusion(family) = operation {
+                append_extrusion_operation(&mut payload, family);
+            }
+            appended = true;
+        }
+        if appended {
+            let lane = super::write_prepare::generated_configuration_lane(
+                &native.feature_histories,
+                &slot,
+                payload,
+            )?;
+            native.feature_input_lanes.retain(|lane| {
+                lane.configuration.as_deref() != Some(&slot)
+                    || !lane.id.starts_with("sldprt:generated:")
+            });
+            native.feature_input_lanes.push(lane);
+        }
+    }
+    for (_, feature_id) in &written {
+        let Some(feature) = ir
+            .model
+            .features
+            .iter()
+            .find(|feature| &feature.id == feature_id)
+        else {
+            continue;
+        };
+        let Some(record) = native
+            .feature_histories
+            .iter_mut()
+            .flat_map(|history| &mut history.features)
+            .find(|record| {
+                feature.native_ref.as_deref() == Some(record.id.as_str())
+                    || (feature.native_ref.is_none()
+                        && record.id
+                            == crate::history::write::features::generated_feature_record_id(
+                                feature_id,
+                            ))
+            })
+        else {
+            continue;
+        };
+        match (
+            feature.evaluation.definition(),
+            record.input_class.as_deref(),
+        ) {
+            (
+                FeatureDefinition::Operation(FeatureOperation::Extrude { .. }),
+                Some("moExtrusion_c" | "moICE_c"),
+            ) => {
+                record.kind = "Extrusion".into();
+                record.properties.remove("Operation");
+            }
+            (
+                FeatureDefinition::Operation(FeatureOperation::Revolve { .. }),
+                Some("moRevolution_c") | None,
+            ) => {
+                record.kind = "Revolve".into();
+                record.input_class = Some("moRevolution_c".into());
+                record.properties.remove("Operation");
+            }
+            _ => {}
+        }
     }
     Ok(written)
 }
@@ -424,30 +569,72 @@ mod tests {
         *op = BooleanOp::NewBody;
         let configuration_id =
             ConfigurationId::mint("synthetic:test:configuration#alternate-revolve").unwrap();
-        ir.model.configurations = vec![DesignConfiguration {
-            id: configuration_id.clone(),
-            ordinal: 1,
-            active: false,
-            source_index: Some(1),
-            name: Some("Alternative".into()),
-            material: None,
-            properties: std::collections::BTreeMap::default(),
-            parameter_overrides: std::collections::BTreeMap::default(),
-            bodies: None,
-            parameter_values: std::collections::BTreeMap::default(),
-            feature_states: [(
-                feature_id.clone(),
-                ConfigurationFeatureState::Definition {
-                    definition: Box::new(alternative),
-                },
-            )]
-            .into_iter()
-            .collect(),
-            native_ref: None,
-        }];
+        let active_id = ConfigurationId::mint("synthetic:test:configuration#base-revolve").unwrap();
+        ir.model.configurations = vec![
+            DesignConfiguration {
+                id: active_id,
+                ordinal: 0,
+                active: true,
+                source_index: Some(0),
+                name: Some("Base".into()),
+                material: None,
+                properties: std::collections::BTreeMap::default(),
+                parameter_overrides: std::collections::BTreeMap::default(),
+                bodies: None,
+                parameter_values: std::collections::BTreeMap::default(),
+                feature_states: std::collections::BTreeMap::default(),
+                native_ref: None,
+            },
+            DesignConfiguration {
+                id: configuration_id.clone(),
+                ordinal: 1,
+                active: false,
+                source_index: Some(1),
+                name: Some("Alternative".into()),
+                material: None,
+                properties: std::collections::BTreeMap::default(),
+                parameter_overrides: std::collections::BTreeMap::default(),
+                bodies: None,
+                parameter_values: std::collections::BTreeMap::default(),
+                feature_states: [(
+                    feature_id.clone(),
+                    ConfigurationFeatureState::Definition {
+                        definition: Box::new(alternative),
+                    },
+                )]
+                .into_iter()
+                .collect(),
+                native_ref: None,
+            },
+        ];
         let mut native = crate::test_support::native::sldprt_native(decoded.ir());
         let written = super::synthesize_configuration_operations(&ir, &mut native).unwrap();
         assert!(written.contains(&(configuration_id, feature_id)));
+        let active = native
+            .feature_input_lanes
+            .iter()
+            .find(|lane| {
+                lane.configuration.as_deref() == Some("0")
+                    && lane.id.starts_with("sldprt:generated:")
+            })
+            .unwrap();
+        let active_class = active
+            .classes
+            .iter()
+            .find(|class| class.name == "moRevolution_c")
+            .unwrap();
+        let active_offset = usize::try_from(active_class.offset).unwrap();
+        assert_eq!(
+            &active.native_payload[active_offset - 8..active_offset],
+            &[8, 0, 0, 0, 0, 0, 0, 0]
+        );
+        let history = native
+            .feature_histories
+            .iter()
+            .flat_map(|history| &history.features)
+            .find(|feature| feature.name == "Turn")
+            .unwrap();
+        assert!(!history.properties.contains_key("Operation"));
         let lane = native
             .feature_input_lanes
             .iter()

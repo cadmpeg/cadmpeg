@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Typed projection controls read back from retained documents.
 //!
-//! The writer emits product facts in FreeCAD's own state (object type, name,
+//! The writer emits product facts in `FreeCAD`'s own state (object type, name,
 //! Label, Placement, Group, Visibility) and no longer writes these
 //! properties; the reader below restores facts from documents that still
 //! carry them.

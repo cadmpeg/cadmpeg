@@ -107,6 +107,8 @@ fn binary_product_encoding_recovery_keeps_independent_geometry() {
 
 #[test]
 fn truncated_stored_brep_keeps_its_complete_kernel_header() {
+    const ZIP_LOCAL_COMPRESSED_LENGTH_OFFSET: usize = 18;
+
     use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
     use crate::test_support::smbh_header_test::smbh_header_prefix;
     use crate::test_support::zip_test::f3d_with_smbh;
@@ -209,7 +211,6 @@ fn truncated_stored_brep_keeps_its_complete_kernel_header() {
                 && field.field == "tolerances.linear"
         })
     }));
-    const ZIP_LOCAL_COMPRESSED_LENGTH_OFFSET: usize = 18;
     let mut invalid = source[..cut].to_vec();
     invalid[local_header + ZIP_LOCAL_COMPRESSED_LENGTH_OFFSET
         ..local_header + ZIP_LOCAL_COMPRESSED_LENGTH_OFFSET + 4]

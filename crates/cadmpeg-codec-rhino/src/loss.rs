@@ -261,10 +261,14 @@ pub(crate) enum RhinoLossCode {
     WriterPointCloudAppearanceReduced,
     /// A free vertex loses its tolerance or its point's dependency role.
     WriterFreeVertexMetadataReduced,
+    /// A point and vertex are reidentified as members of a point cloud.
+    WriterPointCloudIdentityReduced,
     /// A point's display assignment replaces its containing body's color.
     WriterBodyColorReduced,
     /// A shared pcurve needs different native carriers for its used intervals.
     WriterPcurveExpanded,
+    /// A pcurve is reparameterized to follow its trim direction.
+    WriterPcurveDirectionReversed,
     /// An unbounded line pcurve is restricted to its used trim intervals.
     WriterPcurveDomainRestricted,
     /// An infinite plane carrier is represented with a finite native domain.
@@ -381,8 +385,10 @@ impl RhinoLossCode {
         Self::WriterSubobjectAppearanceReduced,
         Self::WriterPointCloudAppearanceReduced,
         Self::WriterFreeVertexMetadataReduced,
+        Self::WriterPointCloudIdentityReduced,
         Self::WriterBodyColorReduced,
         Self::WriterPcurveExpanded,
+        Self::WriterPcurveDirectionReversed,
         Self::WriterPcurveDomainRestricted,
         Self::WriterPlaneDomainRestricted,
         Self::WriterColorPrecisionReduced,
@@ -465,8 +471,10 @@ impl RhinoLossCode {
             Self::WriterSubobjectAppearanceReduced => "writer.subobject-appearance-reduced",
             Self::WriterPointCloudAppearanceReduced => "writer.point-cloud-appearance-reduced",
             Self::WriterFreeVertexMetadataReduced => "writer.free-vertex-metadata-reduced",
+            Self::WriterPointCloudIdentityReduced => "writer.point-cloud-identity-reduced",
             Self::WriterBodyColorReduced => "writer.body-color-reduced",
             Self::WriterPcurveExpanded => "writer.pcurve-expanded",
+            Self::WriterPcurveDirectionReversed => "writer.pcurve-direction-reversed",
             Self::WriterPcurveDomainRestricted => "writer.pcurve-domain-restricted",
             Self::WriterPlaneDomainRestricted => "writer.plane-domain-restricted",
             Self::WriterColorPrecisionReduced => "appearance.color-precision-reduced",
@@ -562,7 +570,9 @@ impl RhinoLossCode {
             Self::WriterBodyOmitted
             | Self::WriterBodyReduced
             | Self::WriterFreeVertexMetadataReduced
+            | Self::WriterPointCloudIdentityReduced
             | Self::WriterPcurveExpanded
+            | Self::WriterPcurveDirectionReversed
             | Self::WriterPcurveDomainRestricted => LossTaxonomy::TopologyNotTransferred,
             Self::WriterBodyTransformNotApplied => LossTaxonomy::BodyTransformNotApplied,
             Self::WriterScopeExpanded => LossTaxonomy::MetadataNotTransferred,

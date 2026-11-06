@@ -15,8 +15,7 @@ pub(super) fn representation<'a>(
     ir: &'a CadIr,
     edge: &Edge,
     sources: &PolygonSources,
-    face_rows: &HashMap<String, usize>,
-    covered: &HashSet<String>,
+    (face_rows, covered): (&HashMap<String, usize>, &HashSet<String>),
     rows: &mut Vec<String>,
     source_rows: &HashMap<(String, usize), usize>,
 ) -> Result<Option<(String, Option<&'a str>)>, CodecError> {
@@ -150,8 +149,7 @@ pub(super) fn representation<'a>(
                 ir,
                 curve,
                 original_secondary,
-                source_mesh.nodes(),
-                &vertices,
+                (source_mesh.nodes(), &vertices),
                 rows,
                 source_row,
             )?
