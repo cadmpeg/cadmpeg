@@ -62,6 +62,7 @@ pub(super) fn source_status(ir: &CadIr, record: &NativeRecord) -> Option<EntityS
     let subordinate = fields.get("subordinate_status")?.as_i64()?;
     let use_flag = fields.get("use_flag")?.as_i64()?;
     match (subordinate, use_flag) {
+        (0, 0) => Some(EntityStatus::Independent),
         (1, 0) => Some(EntityStatus::PhysicallyDependent),
         (0, 1) => Some(EntityStatus::Annotation),
         (0, 2) => Some(EntityStatus::Definition),
