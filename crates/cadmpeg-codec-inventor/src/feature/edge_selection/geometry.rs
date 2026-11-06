@@ -193,7 +193,7 @@ fn spline(
         Some(Err(_)) | None => return Ok(None),
     };
     if !matches!(decoded.construction, ProceduralCurveConstruction::Exact)
-        || decoded.cache_fit_tolerance.is_some_and(|fit| fit != 0.0)
+        || decoded.cache_fit_tolerance != Some(0.0)
         || decoded.curve.periodic()
     {
         return Ok(None);

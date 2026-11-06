@@ -574,7 +574,7 @@ struct SplineSpec {
     weights: Option<Vec<f64>>,
     carrier_reversed: bool,
     construction: &'static str,
-    fit: f64,
+    fit: Option<f64>,
     closure: i64,
     edge_reversed: bool,
     range: [f64; 2],
@@ -624,7 +624,9 @@ fn spline_records(spec: &SplineSpec) -> Vec<Record> {
             tokens.push(Token::Double(weights[index]));
         }
     }
-    tokens.push(Token::Double(spec.fit));
+    if let Some(fit) = spec.fit {
+        tokens.push(Token::Double(fit));
+    }
     tokens.push(Token::SubtypeClose);
     records[5] = record(6, "intcurve", tokens);
     records
@@ -657,7 +659,7 @@ fn quadratic(range: [f64; 2]) -> SplineSpec {
         weights: None,
         carrier_reversed: false,
         construction: "exact_int_cur",
-        fit: 0.0,
+        fit: Some(0.0),
         closure: 0,
         edge_reversed: false,
         range,
@@ -750,7 +752,7 @@ fn rational_spline_revision_evaluates_the_weighted_bspline() {
         weights: Some(vec![1.0, w, 1.0]),
         carrier_reversed: false,
         construction: "exact_int_cur",
-        fit: 0.0,
+        fit: Some(0.0),
         closure: 0,
         edge_reversed: false,
         range: [0.25, 0.75],
@@ -797,7 +799,9 @@ fn spline_revision_refuses_unproven_carriers() {
     refuses(&|spec| spec.edge_reversed = true);
     // A procedural construction or an approximate cache.
     refuses(&|spec| spec.construction = "off_int_cur");
-    refuses(&|spec| spec.fit = 1.0e-4);
+    refuses(&|spec| spec.fit = Some(1.0e-4));
+    // No stored fit tolerance.
+    refuses(&|spec| spec.fit = None);
     // A periodic spline, and a closed edge.
     refuses(&|spec| spec.closure = 2);
     refuses(&|spec| {
