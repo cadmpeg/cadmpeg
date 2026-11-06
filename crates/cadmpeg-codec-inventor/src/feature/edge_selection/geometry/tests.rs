@@ -438,3 +438,122 @@ fn ellipse_revisions_that_the_vertices_do_not_prove_stay_unresolved() {
     records[5].name = "intcurve".into();
     assert!(revision_of(&records).is_none());
 }
+
+/// Quarter-circle arc about (1, 2, 3) from (3, 2, 3) to (1, 4, 3) with the
+/// carrier's two optional range endpoints replaced by `tail`.
+fn bounded_arc(reversed: bool, tail: &[Token]) -> Vec<Record> {
+    let half = std::f64::consts::FRAC_PI_2;
+    let mut records = if reversed {
+        // The sense negates the parameters: u = -t runs from 0 to pi / 2.
+        ellipse_records(&circle(
+            [-half, 0.0],
+            true,
+            [1.0, 4.0, 3.0],
+            [3.0, 2.0, 3.0],
+        ))
+    } else {
+        ellipse_records(&circle(
+            [0.0, half],
+            false,
+            [3.0, 2.0, 3.0],
+            [1.0, 4.0, 3.0],
+        ))
+    };
+    let mut tokens = records[5].tokens[..7].to_vec();
+    tokens.extend_from_slice(tail);
+    records[5].tokens = tokens.into();
+    records
+}
+
+#[test]
+fn ellipse_range_endpoints_bound_the_carrier_parameter_of_the_edge() {
+    let half = std::f64::consts::FRAC_PI_2;
+    let range = |low: f64, high: f64| {
+        [
+            Token::True,
+            Token::Double(low),
+            Token::True,
+            Token::Double(high),
+        ]
+    };
+    let none = || bounded_arc(false, &[]);
+    let expected = revision_of(&none()).expect("unbounded arc");
+    // Bounds that contain, or equal, the edge interval leave the geometry unchanged.
+    for (low, high) in [(0.0, half), (-1.0, 4.0)] {
+        assert_eq!(
+            revision_of(&bounded_arc(false, &range(low, high))),
+            Some(expected.clone())
+        );
+    }
+    // One absent endpoint leaves that side unbounded.
+    let low_only = [Token::True, Token::Double(0.0), Token::False];
+    assert_eq!(
+        revision_of(&bounded_arc(false, &low_only)),
+        Some(expected.clone())
+    );
+    let high_only = [Token::False, Token::True, Token::Double(half)];
+    assert_eq!(
+        revision_of(&bounded_arc(false, &high_only)),
+        Some(expected.clone())
+    );
+    // A reversed edge is tested on u = -t.
+    let reversed = revision_of(&bounded_arc(true, &range(0.0, half))).expect("reversed arc");
+    assert_eq!(reversed.start, expected.end);
+    assert_eq!(reversed.end, expected.start);
+    // An edge interval outside the bounds does not resolve.
+    assert!(revision_of(&bounded_arc(false, &range(0.1, half))).is_none());
+    assert!(revision_of(&bounded_arc(false, &range(0.0, half - 0.1))).is_none());
+    assert!(revision_of(&bounded_arc(true, &range(-half, 0.0))).is_none());
+    assert!(revision_of(&bounded_arc(false, &high_only[..1])).is_none());
+    // Unordered bounds, a truncated endpoint, a non-numeric endpoint, and a
+    // trailing value do not resolve.
+    assert!(revision_of(&bounded_arc(false, &range(half, 0.0))).is_none());
+    assert!(revision_of(&bounded_arc(false, &[Token::True])).is_none());
+    assert!(revision_of(&bounded_arc(
+        false,
+        &[Token::True, Token::False, Token::False]
+    ))
+    .is_none());
+    assert!(revision_of(&bounded_arc(
+        false,
+        &[Token::False, Token::False, Token::False]
+    ))
+    .is_none());
+    assert!(revision_of(&bounded_arc(false, &[Token::Long(0), Token::Long(0)])).is_none());
+}
+
+/// The arc of `bounded_arc` with its start vertex moved by `offset_cm` along x
+/// and tolerant with these three tolerance slots in centimetres.
+fn tolerant_start(offset_cm: f64, slots: Option<[f64; 3]>) -> Vec<Record> {
+    let mut records = bounded_arc(false, &[Token::False, Token::False]);
+    let tokens = std::sync::Arc::make_mut(&mut records[3].tokens);
+    tokens[3] = Token::Position([3.0 + offset_cm, 2.0, 3.0]);
+    if let Some(slots) = slots {
+        records[1].name = "tvertex".into();
+        let mut tokens = records[1].tokens.to_vec();
+        tokens.extend(slots.map(Token::Double));
+        records[1].tokens = tokens.into();
+    }
+    records
+}
+
+#[test]
+fn tolerant_vertex_tolerance_widens_the_endpoint_proof() {
+    let off = 2.0e-5; // 2e-4 mm
+    let value = revision_of(&tolerant_start(off, Some([-1.0, 3.0e-5, 3.0e-5]))).expect("tolerant");
+    // The stored vertex stays the edge start.
+    assert!(same_point(
+        value.start.as_raw(),
+        30.0 + 10.0 * off,
+        20.0,
+        30.0
+    ));
+    // The last slot is the tolerance; an earlier slot does not widen it.
+    assert!(revision_of(&tolerant_start(off, Some([-1.0, 3.0e-5, 1.0e-5]))).is_none());
+    assert!(revision_of(&tolerant_start(off, Some([3.0e-5, 3.0e-5, -1.0]))).is_none());
+    // A plain vertex keeps the kernel linear tolerance.
+    assert!(revision_of(&tolerant_start(off, None)).is_none());
+    assert!(revision_of(&tolerant_start(0.0, None)).is_some());
+    // The tolerance does not admit a vertex that is farther away.
+    assert!(revision_of(&tolerant_start(1.0e-3, Some([-1.0, 3.0e-5, 3.0e-5]))).is_none());
+}
