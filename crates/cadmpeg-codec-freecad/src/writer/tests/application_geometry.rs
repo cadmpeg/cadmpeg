@@ -141,8 +141,8 @@ fn deleting_cloud_points_does_not_replay_the_old_payload() {
 fn point_cloud_keeps_source_order_past_single_digit_indices() {
     let xml = br#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="Points::Feature" name="Cloud"/></Objects><ObjectData Count="1"><Object name="Cloud"><Properties Count="1"><Property name="Points" type="Points::PropertyPointKernel"><Points file="Cloud.points"/></Property></Properties></Object></ObjectData></Document>"#;
     let mut payload = 12_u32.to_le_bytes().to_vec();
-    for index in 0..12 {
-        for value in [index as f32, 0.0, 0.0] {
+    for index in 0_u8..12 {
+        for value in [f32::from(index), 0.0, 0.0] {
             payload.extend_from_slice(&value.to_le_bytes());
         }
     }
