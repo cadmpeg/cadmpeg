@@ -535,6 +535,8 @@ fn write_archive_prefix(
     let mut image_losses = Vec::new();
     let mut dimstyle_losses = Vec::new();
     let mut texture_losses = Vec::new();
+    let mut light_losses = Vec::new();
+    let mut hatch_losses = Vec::new();
     for typecode in [
         TCODE_BITMAP_TABLE,
         TCODE_TEXTURE_MAPPING_TABLE,
@@ -553,9 +555,17 @@ fn write_archive_prefix(
                 image_losses.extend(exported.losses);
                 exported.records
             }
-            TCODE_LIGHT_TABLE => tables::lights::lights(ir)?,
+            TCODE_LIGHT_TABLE => {
+                let exported = tables::lights::lights(ir)?;
+                light_losses.extend(exported.losses);
+                exported.records
+            }
             TCODE_FONT_TABLE => tables::fonts::styles(ir)?,
-            TCODE_HATCH_PATTERN_TABLE => tables::hatches::patterns(ir)?,
+            TCODE_HATCH_PATTERN_TABLE => {
+                let exported = tables::hatches::patterns(ir)?;
+                hatch_losses.extend(exported.losses);
+                exported.records
+            }
             TCODE_INSTANCE_DEFINITION_TABLE => {
                 tables::products::definitions(ir, written_bodies, version)?
             }
@@ -591,6 +601,8 @@ fn write_archive_prefix(
     losses.extend(image_losses);
     losses.extend(dimstyle_losses);
     losses.extend(texture_losses);
+    losses.extend(light_losses);
+    losses.extend(hatch_losses);
     losses.extend(tables::unwritten::losses(ir));
     Ok(losses)
 }
@@ -1094,11 +1106,17 @@ fn prepare_write<'a, 'budget>(
             )));
             body.transform = None;
         }
+        let local = baked.clone();
         match placement::bake(&mut baked) {
             Ok(()) => {}
             Err(WriteError::Omit(reason)) => {
-                losses.push(omitted_body(&baked, &reason, &carried));
-                continue;
+                baked = local;
+                let body = &mut baked.model.bodies[0];
+                losses.push(RhinoLossCode::WriterBodyPlacementOmitted.note(format!(
+                    "body {} placement omitted: {reason}; geometry is written in its local frame",
+                    body.id
+                )));
+                body.transform = None;
             }
             Err(error) => return Err(error),
         }
@@ -1562,9 +1580,21 @@ fn native_dispositions(
             );
         }
     }
-    for arena in ["lights", "hatch_patterns"] {
-        for record in records_in(ir, arena) {
-            dispositions.set_record("rhino", arena, record.id(), NativeDisposition::Written);
+    let emitted_lights = tables::lights::lights(ir)?;
+    for record in records_in(ir, "lights") {
+        if emitted_lights.written.contains(record.id()) {
+            dispositions.set_record("rhino", "lights", record.id(), NativeDisposition::Written);
+        }
+    }
+    let emitted_hatches = tables::hatches::patterns(ir)?;
+    for record in records_in(ir, "hatch_patterns") {
+        if emitted_hatches.written.contains(record.id()) {
+            dispositions.set_record(
+                "rhino",
+                "hatch_patterns",
+                record.id(),
+                NativeDisposition::Written,
+            );
         }
     }
     let table_settings = tables::document::table_settings(ir, version)?;
