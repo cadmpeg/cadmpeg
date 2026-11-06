@@ -14,7 +14,9 @@ use crate::test_support::test_prt::prt_with_partition;
 use crate::test_support::test_streams::charted_intersection_with_edge_endpoint_witnesses_stream;
 use crate::test_support::test_streams::deltas_intersection_curve_stream;
 use crate::test_support::test_streams::offset_surface_topology_partition_stream;
+use crate::test_support::test_streams::push_vertex_loop;
 use crate::test_support::test_streams::topology_partition_stream;
+use crate::test_support::test_streams::vertex_loop_topology_partition_stream;
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
@@ -1244,47 +1246,9 @@ fn edge_endpoint_witness_uses_partner_and_only_null_falls_back() {
     }
 }
 
-/// Append LOOP `loop_xmt` of FACE `face`, whose single FIN `fin_xmt` is a
-/// vertex-loop FIN at VERTEX `vertex`.
-fn push_vertex_loop(stream: &mut Vec<u8>, loop_xmt: u16, fin_xmt: u16, face: u16, vertex: u16) {
-    let mut loop_ = record(15, 16);
-    put_ref(&mut loop_, 2, loop_xmt);
-    put_ref(&mut loop_, 8, 1);
-    put_ref(&mut loop_, 10, fin_xmt);
-    put_ref(&mut loop_, 12, face);
-    put_ref(&mut loop_, 14, 1);
-    stream.extend(loop_);
-    let mut fin = record(17, 23);
-    put_ref(&mut fin, 2, fin_xmt);
-    put_ref(&mut fin, 4, 1);
-    put_ref(&mut fin, 6, loop_xmt);
-    put_ref(&mut fin, 8, fin_xmt);
-    put_ref(&mut fin, 10, fin_xmt);
-    put_ref(&mut fin, 12, vertex);
-    put_ref(&mut fin, 14, 1);
-    put_ref(&mut fin, 16, 1);
-    put_ref(&mut fin, 18, 1);
-    put_ref(&mut fin, 20, 1);
-    fin[22] = b'?';
-    stream.extend(fin);
-}
-
 #[test]
 fn vertex_loop_fin_emits_a_vertex_boundary_beside_the_ring_loop() {
-    let mut stream = topology_partition_stream();
-    let graph = Graph::parse(&stream);
-    let ring_loop = graph.get(NodeKind::Loop, 5).expect("ring loop");
-    put_ref(&mut stream, ring_loop.pos() + 14, 21);
-    push_vertex_loop(&mut stream, 21, 22, 4, 40);
-    let mut apex = record(18, 28);
-    put_ref(&mut apex, 2, 40);
-    put_ref(&mut apex, 16, 41);
-    put_f64(&mut apex, 18, 0.000_1);
-    stream.extend(apex);
-    let mut apex_point = record(29, 40);
-    put_ref(&mut apex_point, 2, 41);
-    put_vec3(&mut apex_point, 16, [0.0, 0.0, 0.0]);
-    stream.extend(apex_point);
+    let stream = vertex_loop_topology_partition_stream(40);
     let graph = Graph::parse(&stream);
     assert_eq!(
         graph.face_loops(4).expect("face loops"),
@@ -1375,5 +1339,40 @@ fn face_with_an_unresolved_vertex_loop_vertex_is_withheld() {
         loss.code == NxLossCode::TopologyVertexLoopWithheld.kind()
             && loss.message.contains("FACE 30")
             && loss.message.contains("VERTEX 99")
+    }));
+}
+
+#[test]
+fn one_face_shell_whose_face_is_withheld_withholds_its_shell_and_body() {
+    let stream = vertex_loop_topology_partition_stream(99);
+    let mut input = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec
+        .decode(&mut input, &DecodeOptions::default())
+        .expect("decode");
+    let model = &result.ir().model;
+    assert!(model.faces.is_empty());
+    assert!(model.loops.is_empty());
+    assert!(!model
+        .shells
+        .iter()
+        .any(|shell| shell.id.as_str() == "nx:s0:shell#3"));
+    assert!(!model
+        .bodies
+        .iter()
+        .any(|body| body.id.as_str() == "nx:s0:body#2"));
+    assert!(!model
+        .regions
+        .iter()
+        .any(|region| region.id.as_str() == "nx:s0:region#12"));
+    let losses = &result.report().losses;
+    assert!(losses.iter().any(|loss| {
+        loss.code == NxLossCode::TopologyVertexLoopWithheld.kind()
+            && loss.message.contains("FACE 4")
+    }));
+    assert!(losses.iter().any(|loss| {
+        loss.code == NxLossCode::TopologyShellWithheld.kind() && loss.message.contains("SHELL 3")
+    }));
+    assert!(losses.iter().any(|loss| {
+        loss.code == NxLossCode::TopologyShellWithheld.kind() && loss.message.contains("BODY 2")
     }));
 }

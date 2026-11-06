@@ -212,8 +212,46 @@ pub(super) fn emit_topology(
             }
         }
     }
-    let mut first_body_shells = BTreeMap::new();
+    let mut admitted_shell_faces: BTreeMap<u32, Vec<u32>> = BTreeMap::new();
+    for face in graph
+        .of_kind(NodeKind::Face)
+        .filter(|face| valid_face_xmts.contains(&face.xmt()))
+    {
+        let Some(face_fields) = face.face_fields() else {
+            continue;
+        };
+        let Some(shell) = face_fields.shell.map(u32::from) else {
+            continue;
+        };
+        if face_fields
+            .surface
+            .is_some_and(|surface| surfaces.contains_key(&u32::from(surface)))
+        {
+            admitted_shell_faces
+                .entry(shell)
+                .or_default()
+                .push(face.xmt());
+        }
+    }
+    let mut admitted_shells = Vec::new();
+    let mut shape_bodies = BTreeSet::new();
     for shell in graph.body_shape_shells() {
+        shape_bodies.extend(
+            shell
+                .shell_fields()
+                .and_then(|fields| fields.body.map(u32::from)),
+        );
+        if admitted_shell_faces.contains_key(&shell.xmt()) {
+            admitted_shells.push(shell);
+        } else {
+            topology_losses.push(crate::loss::NxLossCode::TopologyShellWithheld.note(format!(
+                "parasolid#{stream_index} SHELL {} is withheld: no FACE of the shell is admitted",
+                shell.xmt()
+            )));
+        }
+    }
+    let mut first_body_shells = BTreeMap::new();
+    for &shell in &admitted_shells {
         if let Some(body) = shell
             .shell_fields()
             .and_then(|fields| fields.body.map(u32::from))
@@ -251,7 +289,7 @@ pub(super) fn emit_topology(
 
     let mut regions: BTreeMap<u32, (RegionId, BodyId)> = BTreeMap::new();
     let mut shells: BTreeMap<u32, ShellId> = BTreeMap::new();
-    for node in graph.body_shape_shells() {
+    for &node in &admitted_shells {
         let Some(fields) = node.shell_fields() else {
             continue;
         };
@@ -312,25 +350,11 @@ pub(super) fn emit_topology(
             scope.id_from_display(&cadmpeg_ir::identity_component!("shell"), node.xmt())?;
         annotate_node(annotations, shell_id.as_str(), source_stream, node, "SHELL");
         let mut shell_faces = Vec::new();
-        for face in graph
-            .of_kind(NodeKind::Face)
-            .filter(|face| valid_face_xmts.contains(&face.xmt()))
-        {
-            let Some(face_fields) = face.face_fields() else {
-                continue;
-            };
-            if face_fields.shell.map(u32::from) != Some(node.xmt())
-                || !face_fields
-                    .surface
-                    .is_some_and(|surface| surfaces.contains_key(&u32::from(surface)))
-            {
-                continue;
-            }
-
+        for face_xmt in admitted_shell_faces.get(&node.xmt()).into_iter().flatten() {
             shell_faces.push(
                 scope.id_from_display::<FaceId>(
                     &cadmpeg_ir::identity_component!("face"),
-                    face.xmt(),
+                    face_xmt,
                 )?,
             );
         }
@@ -355,6 +379,28 @@ pub(super) fn emit_topology(
         }
         shells.insert(node.xmt(), shell_id);
     }
+    let mut shell_owners = BTreeSet::new();
+    for region in ir
+        .model
+        .regions
+        .iter()
+        .filter(|region| !region.shells.is_empty())
+    {
+        shell_owners.insert(region.body.clone());
+    }
+    let mut withheld_bodies = BTreeSet::new();
+    for body_xmt in shape_bodies {
+        let body = bodies.get(&body_xmt);
+        if body.is_none_or(|body| !shell_owners.contains(body)) {
+            topology_losses.push(crate::loss::NxLossCode::TopologyShellWithheld.note(format!(
+                "parasolid#{stream_index} BODY {body_xmt} is withheld: no SHELL of the body is emitted"
+            )));
+            withheld_bodies.extend(body.cloned());
+        }
+    }
+    ir.model
+        .bodies
+        .retain(|body| !withheld_bodies.contains(&body.id));
     let mut vertices: BTreeMap<u32, VertexId> = BTreeMap::new();
     let mut vertex_positions: BTreeMap<VertexId, (Point3, Option<f64>)> = BTreeMap::new();
     for node in graph
@@ -1240,8 +1286,8 @@ fn resolved_vertex_point<'points>(
     point_positions: &BTreeMap<PointId, Point3>,
     vertex_xmt: u32,
 ) -> Option<(VertexFields, &'points PointId, Point3)> {
-    let fields = graph.get(NodeKind::Vertex, vertex_xmt)?.vertex_fields()?;
-    let point_ref = points.get(&u32::from(fields.point?))?;
+    let (fields, point_xmt) = graph.resolved_vertex(vertex_xmt)?;
+    let point_ref = points.get(&point_xmt)?;
     let position = point_positions.get(point_ref).copied()?;
     Some((fields, point_ref, position))
 }

@@ -1659,10 +1659,13 @@ pub(super) fn topology_body_node_ids(
             .iter()
             .flat_map(|loop_xmt| vertex_loop_fins_by_loop.get(loop_xmt).into_iter().flatten())
         {
-            let Some(vertex) = vertex else {
+            let Some(vertex) = vertex
+                .map(u32::from)
+                .filter(|vertex| graph.resolved_vertex(*vertex).is_some())
+            else {
                 continue 'body;
             };
-            vertex_xmts.insert(u32::from(vertex));
+            vertex_xmts.insert(vertex);
         }
         let mut ids = BTreeSet::new();
         for face in faces {
