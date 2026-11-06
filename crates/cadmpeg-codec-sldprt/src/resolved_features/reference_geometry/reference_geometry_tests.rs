@@ -218,6 +218,88 @@ fn sketch_block_terminal_identity_carries_its_origin() {
 }
 
 #[test]
+fn synthetic_block_instance_archive_has_a_declared_placement() {
+    fn class(bytes: &mut Vec<u8>, name: &str) {
+        bytes.extend_from_slice(CLASS_MARKER);
+        bytes.extend_from_slice(&u16::try_from(name.len()).unwrap().to_le_bytes());
+        bytes.extend_from_slice(name.as_bytes());
+    }
+    fn string(bytes: &mut Vec<u8>, value: &str) {
+        bytes.extend_from_slice(&NAME_MARKER[2..]);
+        bytes.push(u8::try_from(value.encode_utf16().count()).unwrap());
+        for unit in value.encode_utf16() {
+            bytes.extend_from_slice(&unit.to_le_bytes());
+        }
+    }
+    fn named(bytes: &mut Vec<u8>, name: &str, id: u32) {
+        bytes.extend_from_slice(&0x8001_u16.to_le_bytes());
+        string(bytes, name);
+        bytes.extend_from_slice(&[0; 8]);
+        bytes.extend_from_slice(&id.to_le_bytes());
+        bytes.extend_from_slice(&[0; 4]);
+        string(bytes, "");
+    }
+    fn block_tail(bytes: &mut Vec<u8>, local_id: u32) {
+        bytes.extend_from_slice(&[0; 47]);
+        string(bytes, "");
+        let start = bytes.len();
+        bytes.resize(start + 68, 0);
+        bytes[start..start + 5].copy_from_slice(&[0, 0xff, 0xff, 0, 0]);
+        bytes[start + 5] = 1;
+        bytes[start + 6..start + 14].fill(0xff);
+        bytes[start + 14..start + 18].copy_from_slice(&(-1.0_f32).to_le_bytes());
+        bytes[start + 46..start + 50].fill(0xff);
+        bytes[start + 54..start + 56].copy_from_slice(&2_u16.to_le_bytes());
+        if local_id != 0 {
+            bytes[start + 58] = 2;
+        }
+        bytes[start + 64..start + 68].copy_from_slice(&local_id.to_le_bytes());
+    }
+
+    let mut payload = Vec::new();
+    class(&mut payload, "moSketchBlockInst_c");
+    named(&mut payload, "Use", 102);
+    payload.extend_from_slice(&[0; 6]);
+    payload.extend_from_slice(&1_u16.to_le_bytes());
+    class(&mut payload, "moSketchBlockDef_c");
+    named(&mut payload, "Block", 101);
+    payload.extend_from_slice(&[0; 8]);
+    block_tail(&mut payload, 0);
+    payload.extend_from_slice(&[0; 10]);
+    payload.extend_from_slice(&0_u16.to_le_bytes());
+    payload.push(0);
+    payload.extend_from_slice(&[0; 24]);
+    payload.extend_from_slice(&1.0_f64.to_le_bytes());
+    let trailer = payload.len();
+    payload.resize(trailer + 31, 0);
+    payload[trailer + 3] = 2;
+    block_tail(&mut payload, 17);
+    payload.extend_from_slice(&[0; 18]);
+    payload.extend_from_slice(&[0, 0, 1, 0]);
+    class(&mut payload, "moAbsolutePoint_c");
+    for value in [0.01_f64, 0.02, 0.03] {
+        payload.extend_from_slice(&value.to_le_bytes());
+    }
+    payload.extend_from_slice(&[0; 160]);
+
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::desktop();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
+    let known = [(1, std::sync::Arc::<str>::from("moNodeName_c"))]
+        .into_iter()
+        .collect();
+    let mut reader = crate::carchive::reader::Reader::new(&ctx, &payload, 0, known, 2, None);
+    reader.ptr(None).unwrap();
+    assert_eq!(reader.p, payload.len());
+    let point = sketch_block_record_origin(&payload, 0, payload.len()).unwrap();
+    const EPS_BLOCK_ORIGIN_MM: f64 = 1e-12;
+    assert!((point.x - 10.0).abs() < EPS_BLOCK_ORIGIN_MM);
+    assert!((point.y - 20.0).abs() < EPS_BLOCK_ORIGIN_MM);
+    assert!((point.z - 30.0).abs() < EPS_BLOCK_ORIGIN_MM);
+}
+
+#[test]
 fn sketch_block_identity_normalization_is_inverted_for_placement() {
     let mut payload = vec![0; 300];
     payload.extend_from_slice(CLASS_MARKER);
