@@ -20,6 +20,96 @@ use cadmpeg_ir::CadIr;
 use cadmpeg_ir::Codec;
 use std::io::Cursor;
 
+#[test]
+fn bounded_sheet_preserves_shared_boundary_point_labels() {
+    use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
+
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(bounded_plane_file()),
+            &DecodeOptions::default(),
+        )
+        .expect("bounded sheet decodes");
+    let names = decoded
+        .ir()
+        .model
+        .attributes
+        .iter()
+        .filter(|attribute| {
+            attribute.name == "name"
+                && matches!(attribute.target, AttributeTarget::Point(_))
+                && attribute.values == [Some(AttributeValue::String("BOUNDED".into()))]
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(names.len(), 4);
+    let plan = IgesCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), None),
+            TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+        )
+        .expect("bounded sheet synthesizes");
+    for name in names {
+        assert!(plan
+            .report()
+            .losses
+            .iter()
+            .all(|loss| !loss.message.contains(name.id.as_str())));
+    }
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("bounded sheet writes");
+    let output = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("written bounded sheet decodes");
+    let names = output
+        .ir()
+        .model
+        .attributes
+        .iter()
+        .filter(|attribute| {
+            attribute.name == "name"
+                && matches!(attribute.target, AttributeTarget::Point(_))
+                && attribute.values == [Some(AttributeValue::String("BOUNDED".into()))]
+        })
+        .count();
+    assert_eq!(names, 4);
+}
+
+#[test]
+fn distinct_boundary_point_labels_do_not_become_one_sheet_label() {
+    use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
+
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(bounded_plane_file()),
+            &DecodeOptions::default(),
+        )
+        .expect("bounded sheet decodes");
+    let mut ir = decoded.ir().clone();
+    let edited = ir
+        .model
+        .attributes
+        .iter_mut()
+        .find(|attribute| {
+            attribute.name == "name" && matches!(attribute.target, AttributeTarget::Point(_))
+        })
+        .expect("a boundary point has a name");
+    edited.values = vec![Some(AttributeValue::String("CHANGED".into()))];
+    let plan = IgesCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+        )
+        .expect("bounded sheet synthesizes");
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("bounded sheet writes");
+    let output = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("written bounded sheet decodes");
+    assert!(!output.ir().model.attributes.iter().any(|attribute| {
+        attribute.name == "name" && matches!(attribute.target, AttributeTarget::Point(_))
+    }));
+}
+
 fn display_color(
     ir: &CadIr,
     body: &cadmpeg_ir::topology::Body,

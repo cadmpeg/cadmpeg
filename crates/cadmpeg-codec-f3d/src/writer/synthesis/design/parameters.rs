@@ -111,6 +111,12 @@ pub(super) fn regenerate(
         .map_err(CodecError::Malformed)?;
         native.design_parameters.push(generated);
         authored.push((parameter.id.clone(), native.design_parameters.len() - 1));
+        if !parameter.driving {
+            losses.push(F3dLossCode::WriterDesignRecordsOmitted.note(format!(
+                "parameter {} retains its value and expression; its non-driving state is not encoded",
+                parameter.id,
+            )));
+        }
         if parameter.display.is_some()
             || parameter.pmi.is_some()
             || parameter.properties.keys().any(|key| {
