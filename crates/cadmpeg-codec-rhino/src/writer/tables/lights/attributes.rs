@@ -107,7 +107,6 @@ pub(super) fn encode(value: &Value) -> Result<Vec<u8>, WriteError> {
     for name in [
         "group_indexes",
         "display_materials",
-        "clipping_plane_uuids",
         "rendering_materials",
         "rendering_mappings",
         "user_strings",
@@ -122,15 +121,13 @@ pub(super) fn encode(value: &Value) -> Result<Vec<u8>, WriteError> {
             )));
         }
     }
-    for (name, expected) in [
-        ("clipping_proof", Value::Bool(false)),
-        ("hatch_pattern_index", Value::from(-1)),
-    ] {
-        if fields.get(name).is_some_and(|value| value != &expected) {
-            return Err(WriteError::Omit(format!(
-                "light attribute {name} is not writable yet"
-            )));
-        }
+    if fields
+        .get("hatch_pattern_index")
+        .is_some_and(|value| value != &Value::from(-1))
+    {
+        return Err(WriteError::Omit(
+            "light attribute hatch_pattern_index needs table-index remapping".into(),
+        ));
     }
     for name in [
         "casts_shadows",
@@ -196,6 +193,32 @@ pub(super) fn encode(value: &Value) -> Result<Vec<u8>, WriteError> {
     }
     body.push(22);
     body.extend(integer(fields, "display_order")?.to_le_bytes());
+    let proof = fields.get("clipping_proof").map_or(Ok(false), |value| {
+        value.as_bool().ok_or_else(|| {
+            WriteError::Omit("light attribute clipping_proof must be boolean".into())
+        })
+    })?;
+    let ids = fields
+        .get("clipping_plane_uuids")
+        .map_or(Ok(&[][..]), |value| {
+            value.as_array().map(Vec::as_slice).ok_or_else(|| {
+                WriteError::Omit("light attribute clipping_plane_uuids must be a list".into())
+            })
+        })?;
+    if proof || !ids.is_empty() {
+        let count = i32::try_from(ids.len())
+            .map_err(|_| WriteError::Omit("light clipping UUID count exceeds i32".into()))?;
+        let mut list = count.to_le_bytes().to_vec();
+        for value in ids {
+            let id = value
+                .as_str()
+                .and_then(crate::presentation::parse_uuid_text)
+                .ok_or_else(|| WriteError::Omit("light clipping UUID is invalid".into()))?;
+            list.extend(id.to_wire());
+        }
+        body.extend([28, u8::from(proof)]);
+        body.extend(super::super::anonymous(1, 0, &list)?);
+    }
     for (tag, name) in [
         (31, "section_hatch_scale"),
         (32, "section_hatch_rotation"),

@@ -257,7 +257,8 @@ mod tests {
             "object_mode":2, "decoration":1, "wire_density":3, "color_source":1, "linetype_source":0,
             "material_source":0, "plot_color_source":1, "plot_weight_source":1, "plot_color":"05060708",
             "plot_weight_mm":0.25, "group_indexes":[], "display_materials":[], "active_space":0,
-            "viewport_uuid":null, "display_order":7, "clipping_proof":false, "clipping_plane_uuids":[],
+            "viewport_uuid":null, "display_order":7, "clipping_proof":true,
+            "clipping_plane_uuids":["55555555-5555-5555-5555-555555555555","66666666-6666-6666-6666-666666666666"],
             "hatch_pattern_index":-1, "section_hatch_scale":2.0, "section_hatch_rotation":0.5,
             "linetype_pattern_scale":1.5, "hatch_background":"090a0b0c", "hatch_boundary_visible":true,
             "section_fill_rule":1, "clipping_plane_label_style":2, "detail_background_visible":true, "rendering_materials":[]
