@@ -2640,7 +2640,7 @@ mod tests {
             feature.definition(),
             cadmpeg_ir::features::FeatureDefinition::Operation(
                 cadmpeg_ir::features::FeatureOperation::MeshImport { tessellations }
-            ) if tessellations.iter().any(|id| id == mesh.id.as_str())
+            ) if tessellations.iter().any(|id| id == &mesh.id)
         )));
         let mut broken = payload;
         broken[0] ^= 1;

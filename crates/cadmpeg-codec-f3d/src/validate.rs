@@ -1304,13 +1304,6 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
     let mut texture_table_records = HashSet::new();
     let mut filename_records = HashMap::new();
     let mut projected_tessellations = HashSet::new();
-    let asset_ids = ctx
-        .ir
-        .model
-        .assets
-        .iter()
-        .map(|asset| &asset.id)
-        .collect::<std::collections::HashSet<_>>();
     for feature in &ctx.native.design_mesh_features {
         let stream = design_stream(&feature.id);
         let scope = ctx
@@ -1344,10 +1337,20 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
             filename_records
                 .entry(filename_key)
                 .or_insert(resource.file.record());
+            let asset_id = crate::ids::neutral_asset_id(resource.file.archive_entry_name());
+            let suffix = asset_id
+                .as_str()
+                .strip_prefix(crate::ids::SCHEME_PREFIX)
+                .unwrap_or(asset_id.as_str());
             resources_valid = filename_record_consistent
-                && asset_ids.contains(&crate::ids::neutral_asset_id(
-                    resource.file.archive_entry_name(),
-                ));
+                && ctx.ir.model.assets.iter().any(|asset| {
+                    asset
+                        .id
+                        .as_str()
+                        .strip_suffix(suffix)
+                        .is_some_and(|prefix| feature.id.starts_with(prefix))
+                        && crate::ids::same_native_occurrence(&feature.id, asset.id.as_str())
+                });
             if !resources_valid {
                 break;
             }
