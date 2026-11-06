@@ -74,6 +74,7 @@ fn source_less_material_assignment_without_protein_preserves_appearance() {
     let mut ir = decoded.ir().clone();
     let appearance = &mut ir.model.appearances[0];
     appearance.physical_token = Some("PrismMaterial-019".into());
+    appearance.name = Some("Prism-024".into());
     appearance.base_color = None;
     appearance.schema = None;
     appearance.library_id = None;
@@ -85,6 +86,12 @@ fn source_less_material_assignment_without_protein_preserves_appearance() {
     assert_eq!(written.ir().model.appearances.len(), 1);
     assert_eq!(written.ir().model.appearances[0].physical_token, ir.model.appearances[0].physical_token);
     assert_eq!(written.ir().model.appearances[0].base_color, None);
+    assert_eq!(written.ir().model.appearances[0].name, ir.model.appearances[0].name);
+    ir.model.appearances[0].name = Some("Custom material".into());
+    let (reduced, report) = super::source_less_analytic::synthesize_document(&ir, None);
+    assert_eq!(reduced.ir().model.appearance_bindings.len(), 1);
+    assert_eq!(reduced.ir().model.appearances[0].name, None);
+    assert!(report.losses.iter().any(|loss| loss.code == crate::loss::F3dLossCode::WriterAppearancePropertiesOmitted.kind() && loss.message.contains(ir.model.appearances[0].id.as_str())));
 }
 
 #[test]
