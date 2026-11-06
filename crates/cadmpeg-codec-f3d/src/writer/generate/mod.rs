@@ -34,7 +34,7 @@ use preconditions::{
     validate_source_less_auxiliary_geometry, validate_source_less_design_bindings,
     validate_source_less_design_links, validate_source_less_design_ownership,
     validate_source_less_face_keys, validate_source_less_history_graph,
-    validate_source_less_procedural_carriers, validate_source_less_recipes,
+    validate_source_less_procedural_carriers,
     validate_source_less_sketch_graph, validate_source_less_topology_tolerances,
 };
 use presentation::GeneratedDesignRegistry;
@@ -45,6 +45,7 @@ pub(super) struct Generated {
     pub(super) coverage: ArenaDispositions,
     pub(super) losses: Vec<LossNote>,
     pub(super) regenerated_parameters: BTreeSet<String>,
+    pub(super) written_recipes: BTreeSet<String>,
 }
 
 #[cfg(test)]
@@ -179,7 +180,6 @@ pub(super) fn write_with_limits(
         }
         validate_source_less_design_ownership(&native)?;
         validate_source_less_sketch_graph(&native)?;
-        validate_source_less_recipes(&native)?;
         validate_source_less_design_links(target, &native, &attributes)?;
     }
     let generated_features = features::encode(target, &output_ctx)?;
@@ -445,9 +445,10 @@ pub(super) fn write_with_limits(
             )));
         }
         for id in &sketches.renamed_sketches {
-            residual_losses.push(crate::loss::F3dLossCode::WriterDesignRecordsOmitted.note(format!(
-                "sketch {id} uses a generated Design entity name"
-            )));
+            residual_losses.push(
+                crate::loss::F3dLossCode::WriterDesignRecordsOmitted
+                    .note(format!("sketch {id} uses a generated Design entity name")),
+            );
         }
         for id in &sketches.text_entities {
             residual_losses.push(ExportLossCode::RecordResidualUnavailable.note(format!(
@@ -461,6 +462,9 @@ pub(super) fn write_with_limits(
         }
     }
     for (ordinal, appearance) in target.model.appearances.iter().enumerate() {
+        if appearance.base_color.is_none() && appearance.schema.is_none() {
+            continue;
+        }
         let protein = crate::materials::encode_protein(appearance)?;
         output_ctx.charge_entities(1, "F3D Protein instance record")?;
         output_ctx.charge_entities(1, "F3D Protein catalog record")?;
@@ -575,11 +579,20 @@ pub(super) fn write_with_limits(
                 partial = true;
             }
             let kind = match feature.evaluation.definition() {
-                cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Primitive { .. }) => Some("CylinderPrimitive"),
-                cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Block { .. }) => Some("BoxPrimitive"),
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::Primitive { .. },
+                ) => Some("CylinderPrimitive"),
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::Block { .. },
+                ) => Some("BoxPrimitive"),
                 _ => None,
             };
-            if kind.is_some_and(|kind| feature.name.as_ref().is_some_and(|name| name != &format!("{kind} {}", feature.ordinal + 1))) {
+            if kind.is_some_and(|kind| {
+                feature
+                    .name
+                    .as_ref()
+                    .is_some_and(|name| name != &format!("{kind} {}", feature.ordinal + 1))
+            }) {
                 partial = true;
                 residual_losses.push(crate::loss::F3dLossCode::WriterDesignRecordsOmitted.note(
                     format!("feature {} uses a generated Design name", feature.id),
@@ -626,6 +639,7 @@ pub(super) fn write_with_limits(
         coverage: dispositions,
         losses: residual_losses,
         regenerated_parameters,
+        written_recipes: design_bulk.map_or_else(BTreeSet::new, |bulk| bulk.written_recipes),
     })
 }
 

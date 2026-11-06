@@ -219,7 +219,7 @@ pub(super) fn coverage(
     };
     let binding_coverage = disposition(ir.model.appearance_bindings.len(), written_bindings.len());
     let appearance_coverage = disposition(ir.model.appearances.len(), written_appearances.len());
-    let losses = ir
+    let mut losses: Vec<_> = ir
         .model
         .appearance_bindings
         .iter()
@@ -243,6 +243,15 @@ pub(super) fn coverage(
                 }),
         )
         .collect();
+    let mut seen = BTreeSet::new();
+    for binding in &ir.model.appearance_bindings {
+        if !seen.insert(binding.id.as_str()) {
+            losses.push(IgesLossCode::WriterArenaOmitted.note(format!(
+                "IGES omits duplicate appearance_bindings record {}",
+                binding.id
+            )));
+        }
+    }
     (appearance_coverage, binding_coverage, losses)
 }
 

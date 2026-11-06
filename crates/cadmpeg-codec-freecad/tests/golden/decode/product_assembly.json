@@ -863,6 +863,19 @@
           ]
         },
         {
+          "id": "fcstd:model:attribute#BracketOccurrence:VisibilityList:property",
+          "name": "VisibilityList",
+          "native_ref": "fcstd:native:property#BracketOccurrence:VisibilityList",
+          "target": {
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#BracketOccurrence:definition"
+            },
+            "kind": "record"
+          },
+          "values": []
+        },
+        {
           "id": "fcstd:model:attribute#BracketOccurrence:_LinkOwner:property",
           "name": "_LinkOwner",
           "native_ref": "fcstd:native:property#BracketOccurrence:_LinkOwner",
@@ -1210,6 +1223,19 @@
           ]
         },
         {
+          "id": "fcstd:model:attribute#ExternalOccurrence:VisibilityList:property",
+          "name": "VisibilityList",
+          "native_ref": "fcstd:native:property#ExternalOccurrence:VisibilityList",
+          "target": {
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#ExternalOccurrence:definition"
+            },
+            "kind": "record"
+          },
+          "values": []
+        },
+        {
           "id": "fcstd:model:attribute#ExternalOccurrence:_LinkOwner:property",
           "name": "_LinkOwner",
           "native_ref": "fcstd:native:property#ExternalOccurrence:_LinkOwner",
@@ -1499,6 +1525,19 @@
           ]
         },
         {
+          "id": "fcstd:model:attribute#NestedBracketOccurrence:VisibilityList:property",
+          "name": "VisibilityList",
+          "native_ref": "fcstd:native:property#NestedBracketOccurrence:VisibilityList",
+          "target": {
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#NestedBracketOccurrence:definition"
+            },
+            "kind": "record"
+          },
+          "values": []
+        },
+        {
           "id": "fcstd:model:attribute#NestedBracketOccurrence:_LinkOwner:property",
           "name": "_LinkOwner",
           "native_ref": "fcstd:native:property#NestedBracketOccurrence:_LinkOwner",
@@ -1581,6 +1620,32 @@
             "kind": "record"
           },
           "values": [
+            {
+              "kind": "boolean",
+              "value": true
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#OccurrenceGroup:VisibilityList:property",
+          "name": "VisibilityList",
+          "native_ref": "fcstd:native:property#OccurrenceGroup:VisibilityList",
+          "target": {
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#OccurrenceGroup:definition"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": true
+            },
+            {
+              "kind": "boolean",
+              "value": true
+            },
             {
               "kind": "boolean",
               "value": true
@@ -1870,6 +1935,32 @@
             "kind": "record"
           },
           "values": [
+            {
+              "kind": "boolean",
+              "value": true
+            }
+          ]
+        },
+        {
+          "id": "fcstd:model:attribute#PinArray:VisibilityList:property",
+          "name": "VisibilityList",
+          "native_ref": "fcstd:native:property#PinArray:VisibilityList",
+          "target": {
+            "id": {
+              "arena": "product_definitions",
+              "id": "fcstd:model:product_definition#PinArray:definition"
+            },
+            "kind": "record"
+          },
+          "values": [
+            {
+              "kind": "boolean",
+              "value": true
+            },
+            {
+              "kind": "boolean",
+              "value": true
+            },
             {
               "kind": "boolean",
               "value": true
@@ -2764,6 +2855,19 @@
               "value": true
             }
           ]
+        },
+        {
+          "id": "fcstd:model:attribute#PinOccurrence:VisibilityList:property",
+          "name": "VisibilityList",
+          "native_ref": "fcstd:native:property#PinOccurrence:VisibilityList",
+          "target": {
+            "id": {
+              "arena": "occurrences",
+              "id": "fcstd:model:occurrence#PinOccurrence:instance"
+            },
+            "kind": "record"
+          },
+          "values": []
         },
         {
           "id": "fcstd:model:attribute#PinOccurrence:_LinkOwner:property",
@@ -6372,7 +6476,7 @@
       "__arena_sha256": {
         "fcstd": {
           "annotations": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-          "applications": "220b1d9e4435305a8054adbf50085ddf7d94f8f51740a12c465172783c2419aa",
+          "applications": "1d41848ac10ccf28f1f593b7a3943a4ff71d75f3c5a271c91e2f5676d97323df",
           "carrier_census": "147c6dc0f6c52fb287bc431cb8451c904e4a9e6834b24a996e86a6b776197264",
           "design_census": "aaabc2ce23cc3d07695c643c1bd1db929e3e49608a7dbed18f43fb5cba7a113e",
           "document": "d27a09450e1f85f171efe00a3e8b3cc2e08a19a28dc61be032372c38722ab377",
@@ -8355,108 +8459,7 @@
         }
       }
     },
-    "losses": [
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#BracketOccurrence:VisibilityList (App::PropertyBoolList) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#ExternalOccurrence:VisibilityList (App::PropertyBoolList) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#NestedBracketOccurrence:VisibilityList (App::PropertyBoolList) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#OccurrenceGroup:VisibilityList (App::PropertyBoolList) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#PinArray:VisibilityList (App::PropertyBoolList) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#PinOccurrence:VisibilityList (App::PropertyBoolList) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#RevoluteJoint:Offset1 (App::PropertyPlacement) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#RevoluteJoint:Offset2 (App::PropertyPlacement) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#RevoluteJoint:Placement1 (App::PropertyPlacement) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#RevoluteJoint:Placement2 (App::PropertyPlacement) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      }
-    ],
+    "losses": [],
     "notes": [
       "SchemaVersion=4",
       "FileVersion=1",

@@ -67,14 +67,20 @@ pub(crate) fn parse(
     xml: &roxmltree::Document<'_>,
     file_version: Option<usize>,
     properties: &[PropertyRecord],
-    archive: crate::entry_sources::ArchiveEntries<'_>,
+    archive: (
+        crate::entry_sources::ArchiveEntries<'_>,
+        &std::collections::BTreeSet<String>,
+    ),
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     mut fidelity: Option<&mut cadmpeg_ir::SourceFidelity>,
 ) -> Result<(StringTables, Vec<ElementMapRecord>), CodecError> {
-    let crate::entry_sources::ArchiveEntries {
-        records: entries,
-        sources,
-    } = archive;
+    let (
+        crate::entry_sources::ArchiveEntries {
+            records: entries,
+            sources,
+        },
+        failed_members,
+    ) = archive;
     // Orphan carriers are diagnosed once; each marker still proves its own
     // framing so a damaged table cannot erase independently framed peers.
     // discarded-value: framing errors become diagnostics; node admission below is authoritative
@@ -186,8 +192,20 @@ pub(crate) fn parse(
             .map(Some)
             .map_err(CodecError::Malformed)
         })();
-        let payload = recover_metadata(parsed, losses, "StringHasher payload")?.flatten();
-        if payload.is_none() || save_all.is_none() || threshold.is_none() {
+        let data_node = if node.attribute("new").is_some_and(|value| value != "0") {
+            string_hasher_successor(node).ok()
+        } else {
+            Some(node)
+        };
+        let missing_member = data_node
+            .and_then(|node| node.attribute("file"))
+            .is_some_and(|name| failed_members.contains(name));
+        let payload = if missing_member {
+            None
+        } else {
+            recover_metadata(parsed, losses, "StringHasher payload")?.flatten()
+        };
+        if (payload.is_none() && !missing_member) || save_all.is_none() || threshold.is_none() {
             source_only(
                 &mut fidelity,
                 owner_property
@@ -942,6 +960,58 @@ fn split_indexed_name(value: &str) -> Result<(String, usize), CodecError> {
         )));
     }
     Ok((type_name.to_owned(), index))
+}
+
+/// Link fields derived from a missing string-table member to that member's
+/// already recorded give-up. Framing attributes on the table remain held.
+pub(crate) fn link_unreadable_table_fields(
+    xml: &roxmltree::Document<'_>,
+    tables: &StringTables,
+    failed: &BTreeMap<String, Vec<cadmpeg_ir::ids::UnknownId>>,
+    fidelity: &cadmpeg_ir::SourceFidelity,
+    losses: &mut [cadmpeg_ir::report::loss::LossNote],
+) {
+    for (table, node) in tables.as_slice().iter().zip(
+        xml.descendants()
+            .filter(|node| node.has_tag_name("StringHasher")),
+    ) {
+        if table.entries().is_some() {
+            continue;
+        }
+        let data = if node.attribute("new").is_some_and(|value| value != "0") {
+            let Ok(next) = string_hasher_successor(node) else {
+                continue;
+            };
+            next
+        } else {
+            node
+        };
+        let Some(ids) = data.attribute("file").and_then(|name| failed.get(name)) else {
+            continue;
+        };
+        for id in ids {
+            let Some(retained) = fidelity.retained_record(id.as_str()) else {
+                continue;
+            };
+            let Some(loss) = losses.iter_mut().find(|loss| {
+                loss.code.local_code() == "record.unreadable"
+                    && loss.provenance.as_ref().is_some_and(|source| {
+                        source.offset == retained.offset()
+                            && source.stream_name().unwrap_or("") == retained.stream()
+                            && source.byte_len().unwrap_or(0) == retained.byte_len()
+                    })
+            }) else {
+                continue;
+            };
+            for field in ["source_entry", "declared_count", "entries"] {
+                loss.dropped_fields
+                    .push(cadmpeg_ir::report::loss::DroppedField {
+                        record: table.id(),
+                        field: field.to_owned(),
+                    });
+            }
+        }
+    }
 }
 
 fn string_hasher_successor<'a, 'input>(

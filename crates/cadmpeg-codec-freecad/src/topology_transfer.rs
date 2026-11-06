@@ -2545,8 +2545,8 @@ fn source_topology_indices(
             let mut stack = Vec::new();
             stack.push((root.clone(), Located::identity()));
             while let Some((shape_use, parent)) = stack.pop() {
-                let local = locations.source(&tables, shape_use.location)?;
-                let transform = locations.admit(ctx, &tables, parent, local)?;
+                let local = locations.source(tables, shape_use.location)?;
+                let transform = locations.admit(ctx, tables, parent, local)?;
                 if !locations.visit(ctx, &mut visited, shape_use.shape, transform)? {
                     continue;
                 }
@@ -2725,7 +2725,7 @@ fn select_pcurve_representation<'a>(
         if candidate_surface != surface {
             continue;
         }
-        let local = locations.source(&tables, location)?;
+        let local = locations.source(tables, location)?;
         let candidate = locations.compose(edge_transform, local)?;
         if candidate.identity == surface_transform.identity {
             matched = PcurveSelection::Selected(index, representation);

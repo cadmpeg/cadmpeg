@@ -53,7 +53,7 @@ impl Plan {
     ) -> Result<Self, LocationIdentityError> {
         let mut result = Self::default();
         for (root_position, root) in tables.roots.iter().enumerate() {
-            let root_location = locations.source(&tables, root.location)?;
+            let root_location = locations.source(tables, root.location)?;
             let mut visited = HashSet::new();
             let mut stack = Vec::new();
             ctx.reserve_working(&mut stack, 1, "FreeCAD source-use traversal")?;
@@ -62,7 +62,7 @@ impl Plan {
                 if !locations.visit(ctx, &mut visited, shape_index, local)? {
                     continue;
                 }
-                let placed = locations.admit(ctx, &tables, root_location, local)?;
+                let placed = locations.admit(ctx, tables, root_location, local)?;
                 let shape = tables.tshapes.resolve(shape_index)?;
                 let root_number = root_position
                     .checked_add(1)
@@ -108,15 +108,15 @@ impl Plan {
                 result.by_key.insert(key, parent_row);
                 match &shape.geometry {
                     crate::brep::TextTShapeGeometry::Face { location, .. } => {
-                        let support = locations.source(&tables, *location)?;
-                        locations.admit(ctx, &tables, local, support)?;
+                        let support = locations.source(tables, *location)?;
+                        locations.admit(ctx, tables, local, support)?;
                     }
                     crate::brep::TextTShapeGeometry::Edge {
                         representations, ..
                     } => {
                         for representation in representations {
-                            let carrier = locations.source(&tables, representation.location())?;
-                            locations.admit(ctx, &tables, local, carrier)?;
+                            let carrier = locations.source(tables, representation.location())?;
+                            locations.admit(ctx, tables, local, carrier)?;
                         }
                     }
                     _ => {}
@@ -128,8 +128,8 @@ impl Plan {
                         )
                         .into());
                     }
-                    let child_location = locations.source(&tables, child.location)?;
-                    let child_location = locations.admit(ctx, &tables, local, child_location)?;
+                    let child_location = locations.source(tables, child.location)?;
+                    let child_location = locations.admit(ctx, tables, local, child_location)?;
                     let slot = slot
                         .checked_add(1)
                         .ok_or_else(|| CodecError::malformed("source-use child index overflows"))?;

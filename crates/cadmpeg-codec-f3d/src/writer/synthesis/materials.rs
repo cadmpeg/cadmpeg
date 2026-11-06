@@ -15,17 +15,23 @@ pub(super) fn author_neutral(
     native: &mut F3dNative,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
-    if !native.design_types.is_empty() || !native.design_material_assignments.is_empty() {
-        return Ok(());
-    }
     let mut used = native
         .body_visibilities
         .iter()
         .map(|row| row.entity_suffix)
         .collect::<std::collections::BTreeSet<_>>();
+    let registered = native.design_types.iter().flat_map(|kind| kind.entities.values().copied()).collect::<std::collections::BTreeSet<_>>();
+    used.extend(registered.iter().copied());
     let mut presentations = Vec::new();
     let mut scenes = Vec::new();
-    let mut container = None;
+    let mut container = native.design_types.iter().find(|kind| {
+        kind.type_guid.as_str().eq_ignore_ascii_case(crate::design::presentation::BREP_CONTAINER_TYPE_GUID)
+            && kind.version == crate::design::presentation::BREP_CONTAINER_TYPE_VERSION
+    }).and_then(|kind| {
+        let mut values = kind.entities.values().copied();
+        let first = values.next()?;
+        values.next().is_none().then_some(first)
+    });
     for binding in &mut target.model.appearance_bindings {
         if binding.source_entity_id.is_some() {
             continue;
@@ -65,6 +71,7 @@ pub(super) fn author_neutral(
         let old = native.body_visibilities[visibility_index].entity_suffix;
         let available = old.checked_add(2).is_some_and(|end| {
             old.checked_add(3).is_some()
+                && !registered.contains(&old)
                 && !used.contains(&(old + 1))
                 && (container.is_some() || !used.contains(&end))
         });
@@ -81,7 +88,7 @@ pub(super) fn author_neutral(
         };
         let scene = entity + 1;
         let container_id = *container.get_or_insert(entity + 2);
-        if entity != old {
+        if entity != old && !registered.contains(&old) {
             used.remove(&old);
         }
         used.extend([entity, scene, container_id, last]);
@@ -135,6 +142,9 @@ pub(super) fn author_neutral(
         .model
         .appearance_bindings
         .retain(|binding| binding.source_entity_id.is_some());
+    if presentations.is_empty() {
+        return Ok(());
+    }
     let Some(container) = container else {
         return Ok(());
     };
@@ -161,9 +171,16 @@ pub(super) fn author_neutral(
             vec![container],
         ),
     ];
-    for (ordinal, (guid, base, version, module, entities)) in registrations.into_iter().enumerate()
-    {
-        let ordinal = u32::try_from(ordinal).map_err(CodecError::malformed)?;
+    for (guid, base, version, module, entities) in registrations {
+        if let Some(existing) = native.design_types.iter_mut().find(|kind| kind.type_guid.as_str().eq_ignore_ascii_case(guid) && kind.version == version) {
+            let mut combined = existing.entities.values().copied().collect::<Vec<_>>();
+            for entity in entities {
+                if !combined.contains(&entity) { combined.push(entity); }
+            }
+            existing.set_entities(ReferenceRun::unlocated(combined));
+            continue;
+        }
+        let ordinal = u32::try_from(native.design_types.len()).map_err(CodecError::malformed)?;
         native.design_types.push(
             SegmentType::try_new(
                 format!("f3d:generated/Design1/MetaStream.dat:design-type#{ordinal}"),

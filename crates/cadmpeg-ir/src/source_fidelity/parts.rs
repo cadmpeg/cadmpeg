@@ -35,6 +35,7 @@ pub struct PartSpec {
     /// The innermost containing native record, when one exists.
     containing: Option<Identity>,
     absent_fields: Vec<&'static str>,
+    affected_fields: Vec<(Identity, &'static str)>,
 }
 
 impl PartSpec {
@@ -47,6 +48,7 @@ impl PartSpec {
             record: None,
             containing: None,
             absent_fields: Vec::new(),
+            affected_fields: Vec::new(),
         }
     }
 
@@ -85,6 +87,13 @@ impl PartSpec {
     #[must_use]
     pub fn absent_field(mut self, field: &'static str) -> Self {
         self.absent_fields.push(field);
+        self
+    }
+
+    /// Name a field derived solely from this part in another retained record.
+    #[must_use]
+    pub fn affected_field(mut self, record: Identity, field: &'static str) -> Self {
+        self.affected_fields.push((record, field));
         self
     }
 
@@ -254,6 +263,17 @@ pub trait DecodeParts {
         spec: PartSpec,
         decode: impl FnOnce(&mut PartOutput) -> Result<T, CodecError>,
     ) -> Result<Option<T>, CodecError>;
+
+    /// Commit a containing native record only if the part fails, before
+    /// retaining the failed bytes and linking their stub to that record.
+    fn decode_part_with_failure_parent<T>(
+        &self,
+        output: &mut PartOutput,
+        extent: View<'_>,
+        spec: PartSpec,
+        parent: impl FnOnce(&mut PartOutput) -> Result<(), CodecError>,
+        decode: impl FnOnce(&mut PartOutput) -> Result<T, CodecError>,
+    ) -> Result<Option<T>, CodecError>;
 }
 
 impl DecodeParts for DecodeContext<'_> {
@@ -262,6 +282,17 @@ impl DecodeParts for DecodeContext<'_> {
         output: &mut PartOutput,
         extent: View<'_>,
         spec: PartSpec,
+        decode: impl FnOnce(&mut PartOutput) -> Result<T, CodecError>,
+    ) -> Result<Option<T>, CodecError> {
+        self.decode_part_with_failure_parent(output, extent, spec, |_| Ok(()), decode)
+    }
+
+    fn decode_part_with_failure_parent<T>(
+        &self,
+        output: &mut PartOutput,
+        extent: View<'_>,
+        spec: PartSpec,
+        parent: impl FnOnce(&mut PartOutput) -> Result<(), CodecError>,
         decode: impl FnOnce(&mut PartOutput) -> Result<T, CodecError>,
     ) -> Result<Option<T>, CodecError> {
         if !spec.absent_fields.is_empty() && spec.containing.is_none() {
@@ -291,6 +322,7 @@ impl DecodeParts for DecodeContext<'_> {
         match result {
             Ok(value) => Ok(Some(value)),
             Err(error) => {
+                parent(output)?;
                 give_up(self, output, extent, &spec, &error, &stage)?;
                 Ok(None)
             }
@@ -382,6 +414,13 @@ fn give_up(
             })
             .collect();
     }
+    loss.dropped_fields
+        .extend(spec.affected_fields.iter().map(|(record, field)| {
+            crate::report::loss::DroppedField {
+                record: record.as_str().to_owned(),
+                field: (*field).to_owned(),
+            }
+        }));
     output.push_loss(ctx, loss)
 }
 
