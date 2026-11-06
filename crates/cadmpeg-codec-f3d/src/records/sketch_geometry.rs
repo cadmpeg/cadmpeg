@@ -1553,6 +1553,16 @@ pub(crate) struct SketchCurveIdentity {
     pub(crate) planar_z_noise: Option<[f64; 3]>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct SketchGeometryGroup {
+    pub(crate) id: String,
+    pub(crate) record_index: u32,
+    pub(crate) byte_offset: u64,
+    pub(crate) ordinal: u32,
+    pub(crate) members: Vec<u32>,
+    pub(crate) sketch_reference: u32,
+}
+
 /// One persistent tensor-product surface owned by a spatial Fusion sketch.
 #[derive(Debug, PartialEq, Deserialize)]
 #[serde(try_from = "SketchSurfaceWire")]
@@ -2703,6 +2713,22 @@ mod tests {
             serde_json::to_value(&curve).unwrap()["geometry_group"],
             json!(50)
         );
+    }
+
+    #[test]
+    fn sketch_geometry_group_wire_reads_back() {
+        let wire = json!({
+            "id": "f3d:stream:sketch-geometry-group#120", "record_index": 50,
+            "byte_offset": 120, "ordinal": 3, "members": [41, 60],
+            "sketch_reference": 17
+        });
+        let group: super::SketchGeometryGroup = serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(group.record_index, 50);
+        assert_eq!(group.byte_offset, 120);
+        assert_eq!(group.ordinal, 3);
+        assert_eq!(group.members, [41, 60]);
+        assert_eq!(group.sketch_reference, 17);
+        assert_eq!(serde_json::to_value(&group).unwrap(), wire);
     }
 
     #[test]

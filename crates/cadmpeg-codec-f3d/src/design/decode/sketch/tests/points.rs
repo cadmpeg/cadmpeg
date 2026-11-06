@@ -341,7 +341,8 @@ fn sketch_geometry_group_validates_the_complete_member_sequence() {
     assert_eq!(bytes.len(), 90 + 11 * 2);
     let group = parse_sketch_geometry_group(&bytes).unwrap();
     assert_eq!(group.sketch, OWNER);
-    assert_eq!(group.members, [41, 60].into_iter().collect());
+    assert_eq!(group.ordinal, 3);
+    assert_eq!(group.members, [41, 60]);
     for offset in [11, 20, 29, 41, 48, 49, 50, 61, 70, 97] {
         let mut invalid = bytes.clone();
         invalid[offset] ^= 1;
@@ -515,6 +516,66 @@ fn sketch_group_assigns_an_unlisted_backlink_to_the_group_sketch() {
             "1 sketch {kind} record(s) in Design/BulkStream.dat, first record {record},"
         )));
     }
+}
+
+fn decode_group_records(
+    bytes: &[u8],
+    meta: &crate::metastream::MetaStream,
+) -> (
+    Vec<crate::records::sketch_geometry::SketchGeometryGroup>,
+    Vec<cadmpeg_ir::report::loss::LossNote>,
+) {
+    let (points, curves, mut losses) = decode_group_stream(bytes, meta);
+    let groups = crate::design::decode::sketch::decode_sketch_geometry_groups_from_stream(
+        bytes,
+        meta,
+        "Design/BulkStream.dat",
+        &points,
+        &curves,
+        &mut losses,
+    )
+    .unwrap();
+    (groups, losses)
+}
+
+#[test]
+fn sketch_geometry_group_keeps_ordinal_and_member_run() {
+    let (mut bytes, meta) = group_stream(&[41, 60], OWNER);
+    let group_start = usize::try_from(meta.records[2].bulk_offset).unwrap();
+    let (groups, losses) = decode_group_records(&bytes, &meta);
+    let [group] = groups.as_slice() else {
+        panic!("one sketch geometry group");
+    };
+    assert_eq!(group.record_index, 50);
+    assert_eq!(group.byte_offset, u64::try_from(group_start).unwrap());
+    assert!(group
+        .id
+        .ends_with(&format!(":sketch-geometry-group#{group_start}")));
+    assert_eq!(group.ordinal, 3);
+    assert_eq!(group.members, [41, 60]);
+    assert_eq!(group.sketch_reference, OWNER);
+    assert!(losses.is_empty());
+    bytes[group_start + 21..group_start + 25].copy_from_slice(&9u32.to_le_bytes());
+    let (groups, losses) = decode_group_records(&bytes, &meta);
+    assert_eq!(groups[0].ordinal, 9);
+    assert!(losses.is_empty());
+}
+
+#[test]
+fn sketch_geometry_group_reports_a_member_without_a_backlink() {
+    let (bytes, meta) = group_stream(&[41, 55, 60], OWNER);
+    let (groups, losses) = decode_group_records(&bytes, &meta);
+    assert_eq!(groups[0].members, [41, 55, 60]);
+    let [loss] = losses.as_slice() else {
+        panic!("one unbacklinked-member loss");
+    };
+    assert_eq!(
+        loss.code,
+        crate::loss::F3dLossCode::SketchGeometryGroupMemberUnbacklinked.kind()
+    );
+    assert!(loss.message.starts_with(
+        "1 sketch geometry group member reference(s) in Design/BulkStream.dat, first group 50 member 55,"
+    ));
 }
 
 #[test]

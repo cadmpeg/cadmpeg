@@ -4645,6 +4645,9 @@ fn populate_annotations(
         for entity in &native.sketch_surfaces {
             note!(&entity.id, "sketch_surface");
         }
+        for entity in &native.sketch_geometry_groups {
+            note!(&entity.id, "sketch_geometry_group");
+        }
         for entity in &native.sketch_curve_links {
             note!(&entity.id, "sketch_curve_link");
         }

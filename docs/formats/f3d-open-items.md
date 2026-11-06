@@ -532,7 +532,7 @@ travel.
 
 **Conflict.** None.
 
-**Note.** The decoder reads the group ordinal as a u32 and keeps the group for each value.
+**Note.** The decoder keeps the group for each ordinal value and stores the ordinal in the `ordinal` field of the native `sketch_geometry_groups` record.
 
 ### DR-289. Sketch geometry group membership
 
@@ -544,7 +544,7 @@ travel.
 
 **Conflict.** None.
 
-**Note.** The decoder assigns a point or curve whose backlink names a group to the sketch that the group names, stores the group record index in `geometry_group`, and emits `sketch.geometry-group-member-unlisted` when the member run omits the record.
+**Note.** The decoder assigns a point or curve whose backlink names a group to the sketch that the group names, stores the group record index in `geometry_group`, and emits `sketch.geometry-group-member-unlisted` when the member run omits the record. The native `sketch_geometry_groups` record keeps the member run in `members` and the owning sketch reference in `sketch_reference`. A member reference that names a record without a decoded backlink to the group assigns no owner, and the decoder emits `sketch.geometry-group-member-unbacklinked`.
 
 ## 2. External references
 
