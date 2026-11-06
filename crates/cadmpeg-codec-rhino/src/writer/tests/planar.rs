@@ -1193,6 +1193,23 @@ fn cylinder_solid_with_plane_caps_round_trips() {
         });
     }
     ir.finalize();
+    let model = super::super::model::WritableModel::try_new(&ir).expect("cylinder model");
+    let circle_trims: Vec<_> = model
+        .coedges
+        .iter()
+        .filter(|coedge| {
+            coedge
+                .explicit_pcurve
+                .is_some_and(|pcurve| matches!(pcurve.geometry, PcurveGeometry::Circle(_)))
+        })
+        .collect();
+    assert!(!circle_trims.is_empty());
+    for coedge in circle_trims {
+        assert_eq!(
+            super::super::trim_iso::classify(&model, coedge).expect("arc trim iso"),
+            0
+        );
+    }
     for version in [
         RhinoArchiveVersion::V5,
         RhinoArchiveVersion::V6,
