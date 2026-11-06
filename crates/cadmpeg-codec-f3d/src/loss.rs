@@ -282,6 +282,10 @@ pub(crate) enum F3dLossCode {
     FeatureProfileArrangementCapped,
     /// Extrude profile selections skipped a certified profile test at a local cap.
     FeatureProfileDensificationCapped,
+    /// Extrude profile selections skipped a self-crossing loop split at a local cap.
+    FeatureProfileCrossingLoopCapped,
+    /// Extrude profile selections split a self-crossing loop by curve-use counts alone.
+    FeatureProfileCrossingLoopAssumed,
     /// Feature path selections retain native identities; no unique path.
     FeaturePathSelectionNative,
     /// Feature face selections retain native candidates; no unique face.
@@ -597,6 +601,8 @@ impl F3dLossCode {
         Self::FeatureExtrudeProfileGroupNative,
         Self::FeatureProfileArrangementCapped,
         Self::FeatureProfileDensificationCapped,
+        Self::FeatureProfileCrossingLoopCapped,
+        Self::FeatureProfileCrossingLoopAssumed,
         Self::FeaturePathSelectionNative,
         Self::FeatureFaceSelectionNative,
         Self::FeatureFaceSelectionActiveSubstituted,
@@ -822,6 +828,8 @@ impl F3dLossCode {
             Self::FeatureProfileSelectionNative => "feature.profile-selection-native",
             Self::FeatureProfileArrangementCapped => "feature.profile-arrangement-capped",
             Self::FeatureProfileDensificationCapped => "feature.profile-densification-capped",
+            Self::FeatureProfileCrossingLoopCapped => "feature.profile-crossing-loop-capped",
+            Self::FeatureProfileCrossingLoopAssumed => "feature.profile-crossing-loop-assumed",
             Self::FeaturePathSelectionNative => "feature.path-selection-native",
             Self::FeatureFaceSelectionNative => "feature.face-selection-native",
             Self::FeatureFaceSelectionActiveSubstituted => {
@@ -1070,6 +1078,8 @@ impl F3dLossCode {
             | Self::FeatureExtrudeProfileGroupNative
             | Self::FeatureProfileArrangementCapped
             | Self::FeatureProfileDensificationCapped
+            | Self::FeatureProfileCrossingLoopCapped
+            | Self::FeatureProfileCrossingLoopAssumed
             | Self::FeaturePathSelectionNative
             | Self::FeatureFaceSelectionNative
             | Self::FeatureFaceSelectionActiveSubstituted
@@ -1250,6 +1260,8 @@ impl F3dLossCode {
             | Self::FeatureExtrudeProfileGroupNative
             | Self::FeatureProfileArrangementCapped
             | Self::FeatureProfileDensificationCapped
+            | Self::FeatureProfileCrossingLoopCapped
+            | Self::FeatureProfileCrossingLoopAssumed
             | Self::FeaturePathSelectionNative
             | Self::FeatureFaceSelectionNative
             | Self::FeatureFaceSelectionActiveSubstituted
@@ -1514,6 +1526,8 @@ mod tests {
                 "feature.extrude-profile-group-native",
                 "feature.profile-arrangement-capped",
                 "feature.profile-densification-capped",
+                "feature.profile-crossing-loop-capped",
+                "feature.profile-crossing-loop-assumed",
                 "feature.path-selection-native",
                 "feature.face-selection-native",
                 "feature.face-selection-active-substituted",
