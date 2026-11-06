@@ -1,34 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parameter frames authored from semantic values, without retained envelopes.
 
-use std::collections::BTreeSet;
-
 use cadmpeg_core::CodecError;
 
 use crate::records::parameters::DesignParameter;
 
 use super::records::{native_lp_ascii, native_lp_utf16};
 
-pub(super) fn encode_document_parameters(
-    parameters: &[DesignParameter],
-    collection_index: u32,
-) -> Result<Vec<u8>, CodecError> {
-    let mut out = Vec::new();
-    let mut indices = BTreeSet::new();
-    let mut ordinals = BTreeSet::new();
-    for parameter in parameters {
-        if !indices.insert(parameter.record_index) || !ordinals.insert(parameter.source_ordinal) {
-            return Err(CodecError::malformed(format_args!(
-                "F3D Design parameter {} duplicates a record index or source ordinal",
-                parameter.id,
-            )));
-        }
-        encode(&mut out, parameter, collection_index)?;
-    }
-    Ok(out)
-}
-
-fn encode(
+pub(super) fn encode_document_parameter(
     out: &mut Vec<u8>,
     parameter: &DesignParameter,
     collection_index: u32,
