@@ -81,18 +81,35 @@ pub(super) fn regenerate(
                 })
             })
             .unwrap_or_default();
-        let had_empty_parameters = variant
+        let previous_parameters = variant
             .remove("parameters")
-            .is_some_and(|value| value.as_object().is_some_and(Map::is_empty));
+            .and_then(|value| value.as_object().cloned());
+        let had_empty_parameters = previous_parameters.as_ref().is_some_and(Map::is_empty);
         let had_empty_suppressed = variant
             .remove("suppressed")
             .is_some_and(|value| value.as_array().is_some_and(Vec::is_empty));
         variant.remove("material");
+        let override_value = |name: &str, text: &str| {
+            previous_parameters
+                .as_ref()
+                .and_then(|parameters| parameters.get(name))
+                .filter(|value| match value {
+                    Value::String(value) => value == text,
+                    Value::Null => text == "null",
+                    Value::Bool(value) => text.parse::<bool>() == Ok(*value),
+                    Value::Number(value) => text
+                        .parse::<serde_json::Number>()
+                        .is_ok_and(|parsed| &parsed == value),
+                    Value::Array(_) | Value::Object(_) => false,
+                })
+                .cloned()
+                .unwrap_or_else(|| Value::String(text.to_owned()))
+        };
         let mut overrides = Map::new();
         let mut suppressed = Vec::new();
         for (key, value) in &configuration.properties {
             if let Some(parameter) = key.as_str().strip_prefix("parameter:") {
-                overrides.insert(parameter.to_owned(), Value::String(value.clone()));
+                overrides.insert(parameter.to_owned(), override_value(parameter, value));
             } else if let Some(feature) = key.as_str().strip_prefix("suppressed:") {
                 if value == "true" {
                     suppressed.push(Value::String(feature.to_owned()));
@@ -108,23 +125,22 @@ pub(super) fn regenerate(
         }
         for (id, expression) in &configuration.parameter_overrides {
             if let Some(parameter) = parameters.iter().find(|parameter| &parameter.id == id) {
+                let expression = expression
+                    .render_with(|id| {
+                        parameters
+                            .iter()
+                            .find(|candidate| &candidate.id == id)
+                            .map(|candidate| candidate.name.clone())
+                    })
+                    .ok_or_else(|| {
+                        CodecError::InvalidInput(format!(
+                            "F3D configuration {} has a dangling expression reference",
+                            configuration.id
+                        ))
+                    })?;
                 overrides.insert(
                     parameter.name.clone(),
-                    Value::String(
-                        expression
-                            .render_with(|id| {
-                                parameters
-                                    .iter()
-                                    .find(|candidate| &candidate.id == id)
-                                    .map(|candidate| candidate.name.clone())
-                            })
-                            .ok_or_else(|| {
-                                CodecError::InvalidInput(format!(
-                                    "F3D configuration {} has a dangling expression reference",
-                                    configuration.id
-                                ))
-                            })?,
-                    ),
+                    override_value(&parameter.name, &expression),
                 );
             } else {
                 // (C): a typed override must name a parameter held by the document.
