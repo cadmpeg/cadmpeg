@@ -34,9 +34,9 @@ pub(super) fn parameters(
     owner: &str,
     parameters: &std::collections::BTreeMap<cadmpeg_core::text::NonBlankString, String>,
     properties: &[crate::native::PropertyRecord],
-    names: &HashMap<String, String>,
-    available: &std::collections::HashSet<String>,
+    (names, available): (&HashMap<String, String>, &std::collections::HashSet<String>),
     dedicated: &[&str],
+    losses: &mut Vec<LossNote>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     for (name, value) in parameters {
         if dedicated.contains(&name.as_str()) {
@@ -53,33 +53,45 @@ pub(super) fn parameters(
         {
             continue;
         }
-        let mut property = source.clone();
-        let Some(crate::native::PropertyBody::Persisted { values, .. }) = &mut property.body else {
-            continue;
-        };
-        let mut roots = values.iter_mut().filter(|entry| {
-            entry.parent.is_none()
-                && matches!(entry.tag.as_str(), "String" | "Integer" | "Float" | "Bool")
-        });
-        let Some(entry) = roots.next() else { continue };
-        if roots.next().is_some() {
-            continue;
-        }
-        let emitted = if entry.tag == "Bool" {
-            match value.as_str() {
-                "true" => "1",
-                "false" => "0",
-                _ => continue,
+        let encoded = 'mapping: {
+            let mut property = source.clone();
+            let Some(crate::native::PropertyBody::Persisted { values, .. }) = &mut property.body
+            else {
+                break 'mapping None;
+            };
+            let mut roots = values.iter_mut().filter(|entry| {
+                entry.parent.is_none()
+                    && matches!(entry.tag.as_str(), "String" | "Integer" | "Float" | "Bool")
+            });
+            let Some(entry) = roots.next() else {
+                break 'mapping None;
+            };
+            if roots.next().is_some() {
+                break 'mapping None;
             }
-        } else {
-            value.as_str()
+            let emitted = if entry.tag == "Bool" {
+                match value.as_str() {
+                    "true" => "1",
+                    "false" => "0",
+                    _ => break 'mapping None,
+                }
+            } else {
+                value.as_str()
+            };
+            entry.attributes.insert("value".into(), emitted.to_owned());
+            if crate::attributes::semantic_text(&property).as_deref() != Some(value.as_str()) {
+                break 'mapping None;
+            }
+            xml::native_named(&property, names, available)?
         };
-        entry.attributes.insert("value".into(), emitted.to_owned());
-        if crate::attributes::semantic_text(&property).as_deref() != Some(value.as_str()) {
-            continue;
-        }
-        if let Some(xml) = xml::native_named(&property, names, available)? {
+        if let Some(xml) = encoded {
             object.set(name.as_str(), xml);
+        } else {
+            object.properties.shift_remove(name.as_str());
+            losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
+                "drawing property {} cannot encode its current parameter and is omitted",
+                source.id
+            )));
         }
     }
     Ok(())
@@ -870,6 +882,39 @@ mod tests {
         assert_eq!(parameters["Caption"], "after");
         assert_eq!(parameters["ScaleType"], "1");
         assert_eq!(parameters["LockPosition"], "true");
+    }
+
+    #[test]
+    fn unencodable_view_parameter_does_not_replay_its_old_value() {
+        use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+        use cadmpeg_ir::{Codec, DecodeOptions};
+
+        let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="TechDraw::DrawViewPart" name="View"/></Objects><ObjectData Count="1"><Object name="View"><Properties Count="2"><Property name="Caption" type="App::PropertyString"><String value="kept"/></Property><Property name="ScaleType" type="App::PropertyEnumeration"><Integer value="0"/></Property></Properties></Object></ObjectData></Document>"#;
+        let source = crate::test_support::test_archive::archive(xml);
+        let input = crate::FcstdCodec
+            .decode(&mut std::io::Cursor::new(source), &DecodeOptions::default())
+            .unwrap();
+        let mut ir = input.ir().clone();
+        *ir.model.drawings[0]
+            .parameters
+            .get_mut("ScaleType")
+            .unwrap() = "invalid".into();
+        let plan = crate::FcstdCodec
+            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+            .unwrap();
+        assert!(plan
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains("ScaleType") && loss.message.contains("omitted")));
+        let mut bytes = Vec::new();
+        plan.write_to(&mut bytes).unwrap();
+        let output = crate::FcstdCodec
+            .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        let parameters = &output.ir().model.drawings[0].parameters;
+        assert!(!parameters.contains_key("ScaleType"));
+        assert_eq!(parameters["Caption"], "kept");
     }
 
     #[test]

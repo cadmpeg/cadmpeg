@@ -394,9 +394,9 @@ pub(super) fn write(
                 &drawing.object,
                 &drawing.parameters,
                 &native_properties,
-                &names,
-                &available,
+                (&names, &available),
                 &["X", "Y", "Scale", "Rotation", "Direction"],
+                &mut losses,
             )?;
         }
     }
@@ -423,9 +423,9 @@ pub(super) fn write(
             &annotation.object,
             &annotation.parameters,
             &native_properties,
-            &names,
-            &available,
+            (&names, &available),
             &[],
+            &mut losses,
         )?;
         if annotation.runtime_type.starts_with("TechDraw::") {
             if let Some(height) = annotation.text_style.height {
