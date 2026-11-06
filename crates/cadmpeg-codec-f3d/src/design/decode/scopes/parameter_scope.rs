@@ -440,7 +440,7 @@ pub(crate) fn decode_parameter_scopes(
                         *slot = Some(value);
                         if let Some(length) = marker_one_revolve_assumed_length(bytes, &scope) {
                             losses.push(crate::loss::F3dLossCode::FeatureRevolveLayoutAssumed.note(
-                                format!("Revolve scope {} reads its {length}-byte token-independent frame with the marker-one field offsets (DR-259).", scope.id),
+                                format!("Revolve scope {} reads its {length}-byte token-independent frame with the marker-one field offsets (DR-269).", scope.id),
                             ));
                         }
                     }

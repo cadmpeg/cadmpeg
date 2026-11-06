@@ -1337,7 +1337,7 @@ when the operation transition carries no candidate for the group members?
 
 **Note.** The decoder keeps the prefix in the native occurrence frame.
 
-### DR-259. Marker-one Revolve frames of other lengths
+### DR-269. Marker-one Revolve frames of other lengths
 
 **Question.** Which field layout does a `Revolve` scope use when it has the marker-one prologue and a token-independent frame length other than 345, 355, 367, 351, or 373?
 
