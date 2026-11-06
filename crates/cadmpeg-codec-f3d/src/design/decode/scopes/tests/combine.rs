@@ -528,9 +528,11 @@ fn combine_extended_reference_scope_retains_external_tool_identity() {
             draft.layout_fixture_tail();
         })
         .unwrap();
-    assert!(exact_combine_operation(&bytes, &records, &malformed_scope, &HashMap::new())
-        .unwrap()
-        .is_none());
+    assert!(
+        exact_combine_operation(&bytes, &records, &malformed_scope, &HashMap::new())
+            .unwrap()
+            .is_none()
+    );
     let mut malformed_reference = bytes.clone();
     malformed_reference[35] = 0;
     assert!(exact_combine_operation(
@@ -963,7 +965,9 @@ fn operand_list_companions_remove_the_tools_of_a_consuming_combine() {
     let mut two_lists = companion(true, vec![500]);
     two_lists.omit_consumed = true;
     assert_eq!(
-        two_lists.decode().map(|operation| operation.keep_tools_offset),
+        two_lists
+            .decode()
+            .map(|operation| operation.keep_tools_offset),
         Some(44)
     );
 

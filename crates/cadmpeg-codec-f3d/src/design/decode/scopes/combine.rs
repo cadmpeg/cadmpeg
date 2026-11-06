@@ -112,7 +112,8 @@ fn combine_prologues(
 fn compact_prologue(bytes: &[u8], start: usize) -> Option<CombinePrologue> {
     if bytes.get(start + combine_compact::ZERO_RUN_10..start + combine_compact::OPERATION)?
         != [0; 10]
-        || bytes.get(start + combine_compact::ZERO_RUN_3..start + combine_compact::REFERENCE_FORM)?
+        || bytes
+            .get(start + combine_compact::ZERO_RUN_3..start + combine_compact::REFERENCE_FORM)?
             != [0; 3]
         || bytes
             .get(start + combine_compact::REFERENCE_FORM..start + combine_compact::CONSTANT_ONE)?
@@ -212,8 +213,7 @@ fn standard_prologue(bytes: &[u8], start: usize) -> Option<CombinePrologue> {
     if bytes.get(start + combine_standard::ZERO_RUN_9..start + combine_standard::OPERATION)?
         != [0; 9]
         || bytes.get(start + combine_standard::ZERO_FLAG) != Some(&0)
-        || bytes.get(start + combine_standard::ZERO_RUN_7..start + combine_standard::LEN)?
-            != [0; 7]
+        || bytes.get(start + combine_standard::ZERO_RUN_7..start + combine_standard::LEN)? != [0; 7]
     {
         return None;
     }

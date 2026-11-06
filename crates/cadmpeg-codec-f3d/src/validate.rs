@@ -33,13 +33,13 @@ use crate::layout::assembly_class_363_264_frame_388_identity as class_363_identi
 use crate::layout::assembly_operand_path_locator as path_locator;
 use crate::layout::assembly_operand_path_wrapper as path_wrapper;
 use crate::layout::assembly_variable_reference_operand_path_locator as variable_path_locator;
-use crate::layout::combine_operand_list_operation_prefix as combine_lists;
 use crate::layout::class_296_261_legacy_extrude_prefix_scalar_at_54 as class_296_legacy_prefix;
 use crate::layout::class_296_261_legacy_one_sided_distance_tail as class_296_legacy_distance;
 use crate::layout::class_296_261_legacy_one_sided_to_face_tail as class_296_legacy_to_face;
 use crate::layout::class_296_261_one_sided_to_face_extrude_prefix as class_296_to_face;
 use crate::layout::class_296_261_symmetric_distance_extrude_prefix as class_296_symmetric;
 use crate::layout::class_296_261_two_sided_to_faces_extrude_prefix as class_296_two_faces;
+use crate::layout::combine_operand_list_operation_prefix as combine_lists;
 use crate::layout::legacy_class_397_symmetric_extrude_frame as class_397;
 use crate::layout::legacy_class_415_symmetric_extrude_prefix as class_415;
 use crate::layout::sketch_profile_region_selection_prefix as region_selection;
@@ -90,8 +90,6 @@ fn body_recipe_reference_table_is_admitted(
         })
 }
 
-/// A rigid `As-built` alignment has no parameter owners, so its angle and
-/// offset are zero.
 /// An operand-list `Combine` stores its operation after the presence byte, or
 /// after an empty property block, and its keep-tools Boolean after the
 /// companion list.
@@ -116,6 +114,8 @@ fn operand_list_combine_offsets_hold(
         && companion_bytes.is_some_and(|bytes| bytes.is_multiple_of(COMPANION_REFERENCE_LEN))
 }
 
+/// A rigid `As-built` alignment has no parameter owners, so its angle and
+/// offset are zero.
 fn rigid_alignment_scalars_hold(
     alignment: &records::feature::assembly::DesignAssemblyAlignment,
     rigid_as_built: bool,
