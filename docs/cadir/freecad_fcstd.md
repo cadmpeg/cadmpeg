@@ -5,6 +5,9 @@ Unconsumed properties project to attributes. Feature `source_properties` and
 `ViewPresentation.properties` are empty; GUI properties have typed native
 homes. Spreadsheet cell `alignment`, `style`, `foregroundColor`,
 `backgroundColor`, and `displayUnit` stay with the cell's native data.
+An unprojected vendor object becomes a `Native` feature with typed properties;
+an unprojected `App::` object remains native. `Touched` sets the feature's
+`needs_recompute` flag.
 
 The synthesized application graph includes primitive solids, boolean operations,
 extrusions and revolutions, sweeps and lofts, holes and thread controls, patterns,
