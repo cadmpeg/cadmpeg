@@ -35,19 +35,16 @@ enum Found {
     Shared,
     /// The supports share no edge along the axis; `candidates` are the
     /// candidates of `BlendRows::rounded_edge` in rank order, and the edge is
-    /// `candidates[selected]`, the first one that the transition deletes.
-    Inferred {
-        candidates: Vec<Candidate>,
-        selected: usize,
-    },
+    /// the best-ranked deleted one.
+    Inferred { candidates: Vec<Candidate> },
 }
 
 /// One candidate edge of `BlendRows::rounded_edge`.
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct Candidate {
     edge: i64,
-    /// Whether the edge's other owner is a removed face that meets another
-    /// support at the edge that the blend rolls over.
+    /// Whether the edge has two owner faces and its other owner is a removed
+    /// face that `BlendRows::reaches` another support.
     linked: bool,
     /// Whether the transition deletes the edge.
     deleted: bool,
@@ -128,14 +125,14 @@ impl<'a> BlendRows<'a> {
     }
 
     /// The candidates of a cylinder blend whose supports share no edge along
-    /// its axis, in rank order, and the position of the edge it replaces. A
+    /// its axis, in rank order. A
     /// candidate lies on the preceding boundary of a support, runs along the
     /// axis, lies farther than the radius from the axis line and within the
     /// axial extent of the blend's boundary, and has a support owner whose
     /// plane touches the cylinder. Candidates rank first when their other
     /// owner is a face that the transition removes and that `reaches`
     /// another support, then by distance from the axis line, then by slot.
-    /// The edge is the best-ranked deleted candidate. `None` when no
+    /// The blend replaces the best-ranked deleted candidate. `None` when no
     /// candidate is deleted, or when a row that decides an edge is missing or
     /// unusable.
     fn rounded_edge(
@@ -145,7 +142,7 @@ impl<'a> BlendRows<'a> {
         axis: CylinderAxis,
         radius: f64,
         supports: &[i64],
-    ) -> Option<(Vec<Candidate>, usize)> {
+    ) -> Option<Vec<Candidate>> {
         let mut extent = None::<(f64, f64)>;
         for edge in self.output_boundaries.get(&blend_face)? {
             let position = axis.position(self.output_points.get(edge).copied().flatten()?);
@@ -214,8 +211,10 @@ impl<'a> BlendRows<'a> {
                 deleted: self.deleted.contains(&edge),
             })
             .collect::<Vec<_>>();
-        let selected = ranked.iter().position(|candidate| candidate.deleted)?;
-        Some((ranked, selected))
+        ranked
+            .iter()
+            .any(|candidate| candidate.deleted)
+            .then_some(ranked)
     }
 
     /// Whether the transition removes `face` and `face` meets a support other
@@ -354,14 +353,10 @@ fn transition_blends(
                 .get(&carrier)
                 .copied()
                 .filter(|axis| axis.has_radius(radius))?;
-            let (candidates, selected) =
-                rows.rounded_edge(blend, *spine, axis, radius, &supports)?;
+            let candidates = rows.rounded_edge(blend, *spine, axis, radius, &supports)?;
             (
-                candidates.get(selected)?.edge,
-                Found::Inferred {
-                    candidates,
-                    selected,
-                },
+                candidates.iter().find(|candidate| candidate.deleted)?.edge,
+                Found::Inferred { candidates },
             )
         } else {
             let mut candidates = candidates.into_iter();
@@ -461,10 +456,11 @@ fn replaceable_native(selection: &EdgeSelection) -> Option<&str> {
 /// tangent chain can give the group more or fewer members than edges. A
 /// selection that disagrees with its blend edges contradicts that claim for
 /// the whole transition, so then no group binds. A cylinder blend whose
-/// supports share no edge along its axis gives its first deleted candidate
-/// in rank order. A group that binds such an edge gets a note that states
-/// the assumptions of the reading and, when other candidates exist, a note
-/// that states the rank and the status of every candidate.
+/// supports share no edge along its axis gives its best-ranked deleted
+/// candidate. A group that binds such an edge gets a note that states the
+/// assumptions of the reading and, when other candidates exist, a note that
+/// states the rank and the status of every candidate. A slot that the
+/// replaced partial selection already states gets no note.
 pub(super) fn bind_fillet_groups(
     definition: &mut FeatureDefinition,
     feature_id: &cadmpeg_ir::features::FeatureId,
@@ -510,7 +506,7 @@ pub(super) fn bind_fillet_groups(
         .map(|blend| (blend.edge, &blend.found))
         .collect::<HashMap<_, _>>();
     let stream = crate::ids::native_stream(&scope.id);
-    for (index, (fillet_group, slots)) in fillet_groups.iter_mut().zip(edges).enumerate() {
+    'groups: for (index, (fillet_group, slots)) in fillet_groups.iter_mut().zip(edges).enumerate() {
         let Some(native) = replaceable_native(&fillet_group.edges).map(str::to_owned) else {
             continue;
         };
@@ -525,20 +521,31 @@ pub(super) fn bind_fillet_groups(
         if group.members().is_empty() {
             continue;
         }
+        let stated = match &fillet_group.edges {
+            EdgeSelection::HistoricalPartial { edges, .. } => edges
+                .iter()
+                .filter_map(|edge| {
+                    crate::ids::feature_input_edge_slot(feature_id, previous_state_id, edge)
+                })
+                .collect(),
+            _ => HashSet::new(),
+        };
         let mut inferred = Vec::new();
         for slot in &slots {
-            let Some(Found::Inferred {
-                candidates,
-                selected,
-            }) = found.get(slot)
-            else {
+            let Some(Found::Inferred { candidates }) = found.get(slot) else {
                 continue;
             };
+            if stated.contains(slot) {
+                continue;
+            }
             let at = format!(
                 "Fillet group {index} of feature {}: the edge at slot {slot} of history state {previous_state_id}",
                 feature_id.as_str()
             );
-            inferred.extend(inferred_edge_notes(&at, candidates, *selected));
+            let Some(notes) = inferred_edge_notes(&at, candidates) else {
+                continue 'groups;
+            };
+            inferred.extend(notes);
         }
         let prefix = crate::ids::feature_input_prefix(feature_id, previous_state_id);
         let selected = slots
@@ -556,20 +563,14 @@ pub(super) fn bind_fillet_groups(
     }
 }
 
-/// The notes of the edge `candidates[selected]` that a blend reading infers
-/// from `candidates`, in rank order: the assumptions of the reading and, when
-/// other candidates exist, the rank and status of every candidate.
-fn inferred_edge_notes(at: &str, candidates: &[Candidate], selected: usize) -> Vec<LossNote> {
-    let linked = candidates
-        .get(selected)
-        .is_some_and(|candidate| candidate.linked);
-    let link = if linked {
-        "The edge is linked: its other owner is a removed face that meets another support at the edge that the blend rolls over."
-    } else {
-        "The edge is unlinked: no removed face beside it meets another support at the edge that the blend rolls over."
-    };
+/// The notes of an edge that a blend reading infers from `candidates`, in
+/// rank order: the assumptions of the reading and, when other candidates
+/// exist, the rank and status of every candidate. `None` when no candidate
+/// is deleted.
+fn inferred_edge_notes(at: &str, candidates: &[Candidate]) -> Option<Vec<LossNote>> {
+    let selected = candidates.iter().position(|candidate| candidate.deleted)?;
     let mut notes = vec![F3dLossCode::HistoricalFilletEdgeInferred.note(format!(
-        "{at} is inferred from the blend geometry, because the blend's supports share no edge along its axis. The reading assumes that the rounded edge is an edge of a support in the preceding state that runs along the axis, lies farther than the radius from the axis line and within the blend's axial extent, and has a support owner whose plane touches the blend cylinder, and that the transition deletes the rounded edge. {link}"
+        "{at} is inferred from the blend geometry, because the blend's supports share no edge along its axis. The reading assumes the following about the rounded edge. It is an edge of a support in the preceding state. It runs along the axis. Its interior sample point lies farther than the radius from the axis line and within the blend's axial extent. A support that owns it lies on a plane that touches the blend cylinder. The transition deletes it."
     ))];
     if candidates.len() > 1 {
         let status = candidates
@@ -594,24 +595,28 @@ fn inferred_edge_notes(at: &str, candidates: &[Candidate], selected: usize) -> V
             })
             .collect::<Vec<_>>()
             .join(", ");
-        let skipped = candidates
+        let kept = candidates
             .iter()
             .take(selected)
-            .map(|candidate| candidate.edge)
+            .filter(|candidate| !candidate.deleted)
+            .map(|candidate| candidate.edge.to_string())
             .collect::<Vec<_>>();
-        let skip = if skipped.is_empty() {
-            String::new()
-        } else {
-            format!(
-                " The transition keeps the higher-ranked candidates at slots {skipped:?}, and the reading skips them because it assumes that the transition deletes the rounded edge."
-            )
+        let skip = match kept.as_slice() {
+            [] => String::new(),
+            [slot] => format!(
+                " The transition keeps the higher-ranked candidate at slot {slot}, and the reading skips it because it assumes that the transition deletes the rounded edge."
+            ),
+            slots => format!(
+                " The transition keeps the higher-ranked candidates at slots {}, and the reading skips them because it assumes that the transition deletes the rounded edge.",
+                slots.join(", ")
+            ),
         };
         notes.push(F3dLossCode::HistoricalFilletEdgeAmbiguous.note(format!(
-            "{at} is the first deleted candidate of {} candidates in rank order: linked candidates first, then candidates nearer the axis line, then lower slots.{skip} Candidates in rank order: {status}",
+            "{at} is the best-ranked deleted candidate of {} candidates. The reading assumes that the rounded edge is the best-ranked deleted candidate. The rank puts linked candidates first, then candidates nearer the axis line, then lower slots. A linked candidate has two owner faces, and its other owner is a removed face that meets another support at an edge along the axis whose interior sample point lies on the blend cylinder and within the blend's axial extent.{skip} Candidates in rank order: {status}.",
             candidates.len()
         )));
     }
-    notes
+    Some(notes)
 }
 
 /// Design records that `Fillet` binding reads.

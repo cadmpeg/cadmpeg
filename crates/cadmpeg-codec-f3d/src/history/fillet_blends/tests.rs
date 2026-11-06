@@ -240,10 +240,10 @@ fn rib_blends(input: &AsmHistoricalTopology, output: &AsmHistoricalTopology) -> 
     transition_blends(&transition(&[20], &[17, 18, 21]), input, output)
 }
 
-/// The blend of `rib_fillet()` that reads `candidates[selected]` from
+/// The blend of `rib_fillet()` that reads the best-ranked deleted one of
 /// `candidates`, each an edge with its link and deletion status, in rank
 /// order.
-fn rib_reading(candidates: &[(i64, bool, bool)], selected: usize) -> Vec<Blend> {
+fn rib_reading(candidates: &[(i64, bool, bool)]) -> Vec<Blend> {
     let candidates = candidates
         .iter()
         .map(|(edge, linked, deleted)| Candidate {
@@ -252,13 +252,15 @@ fn rib_reading(candidates: &[(i64, bool, bool)], selected: usize) -> Vec<Blend> 
             deleted: *deleted,
         })
         .collect::<Vec<_>>();
+    let edge = candidates
+        .iter()
+        .find(|candidate| candidate.deleted)
+        .unwrap()
+        .edge;
     vec![Blend {
         radius: 1.0,
-        edge: candidates[selected].edge,
-        found: Found::Inferred {
-            candidates,
-            selected,
-        },
+        edge,
+        found: Found::Inferred { candidates },
     }]
 }
 
@@ -318,7 +320,7 @@ fn rib_with_edge_21(at: Point3, on: i64, beside: Option<(i64, Point3)>) -> AsmHi
 fn a_cylinder_blend_whose_supports_share_no_edge_replaces_the_edge_on_its_touching_support() {
     assert_eq!(
         rib_blends(&rib(), &rib_fillet()),
-        Some(rib_reading(&[(17, true, true)], 0))
+        Some(rib_reading(&[(17, true, true)]))
     );
     let on_cylinder = rib_with_edge_21(
         Point3::new(1.0, -(0.75_f64.sqrt()), 0.0),
@@ -327,7 +329,7 @@ fn a_cylinder_blend_whose_supports_share_no_edge_replaces_the_edge_on_its_touchi
     );
     assert_eq!(
         rib_blends(&on_cylinder, &rib_fillet()),
-        Some(rib_reading(&[(17, true, true)], 0)),
+        Some(rib_reading(&[(17, true, true)])),
         "edge 21 beside touching plate top 10 lies on the cylinder"
     );
 }
@@ -359,7 +361,7 @@ fn a_cylinder_blend_reads_its_nearest_linked_candidate_then_its_lowest_slot() {
             &rib_with_edge_21(Point3::new(1.0, -2.0, 0.0), 10, Some((12, on_rib_top()))),
             &rib_fillet()
         ),
-        Some(rib_reading(&[(17, true, true), (21, true, true)], 0)),
+        Some(rib_reading(&[(17, true, true), (21, true, true)])),
         "linked edge 21 lies farther from the axis than edge 17"
     );
     assert_eq!(
@@ -371,7 +373,7 @@ fn a_cylinder_blend_reads_its_nearest_linked_candidate_then_its_lowest_slot() {
             ),
             &rib_fillet()
         ),
-        Some(rib_reading(&[(17, true, true), (21, true, true)], 0)),
+        Some(rib_reading(&[(17, true, true), (21, true, true)])),
         "linked edge 21 lies as far from the axis as edge 17"
     );
 }
@@ -416,7 +418,7 @@ fn a_cylinder_blend_ranks_a_candidate_that_its_other_support_does_not_reach_last
     for (case, input) in &unlinked {
         assert_eq!(
             rib_blends(input, &rib_fillet()),
-            Some(rib_reading(&[(17, true, true), (21, false, true)], 0)),
+            Some(rib_reading(&[(17, true, true), (21, false, true)])),
             "edge 21 lies nearer the axis, but {case}"
         );
     }
@@ -424,7 +426,7 @@ fn a_cylinder_blend_ranks_a_candidate_that_its_other_support_does_not_reach_last
     alone.edge_samples[0].interior = Point3::new(2.0, 0.0, 0.0);
     assert_eq!(
         rib_blends(&alone, &rib_fillet()),
-        Some(rib_reading(&[(21, false, true)], 0)),
+        Some(rib_reading(&[(21, false, true)])),
         "edge 17 lies outside the blend's extent"
     );
     let persisting = rib_with_edge_21(nearer(), 10, Some((12, on_rib_top())));
@@ -438,7 +440,7 @@ fn a_cylinder_blend_ranks_a_candidate_that_its_other_support_does_not_reach_last
     result_13.coedge_topology.extend(extra.coedge_topology);
     assert_eq!(
         rib_blends(&persisting, &result_13),
-        Some(rib_reading(&[(17, true, true), (21, false, true)], 0)),
+        Some(rib_reading(&[(17, true, true), (21, false, true)])),
         "face 13 persists"
     );
 }
@@ -460,14 +462,11 @@ fn a_cylinder_blend_states_no_edge_whose_touching_owner_is_not_a_support() {
     let axis = crate::history::blend_spine::cylinder_axes(&output)[&120];
     assert_eq!(
         rows.rounded_edge(20, spine, axis, 1.0, &[10, 12]),
-        Some((
-            vec![Candidate {
-                edge: 17,
-                linked: true,
-                deleted: true
-            }],
-            0
-        ))
+        Some(vec![Candidate {
+            edge: 17,
+            linked: true,
+            deleted: true
+        }])
     );
     assert_eq!(
         rows.rounded_edge(20, spine, axis, 1.0, &[11, 12]),
@@ -488,10 +487,14 @@ fn a_cylinder_blend_reads_its_best_deleted_candidate() {
             10,
             Some((12, on_rib_top()))
         )),
-        Some(rib_reading(&[(17, true, false), (21, true, true)], 1)),
+        Some(rib_reading(&[(17, true, false), (21, true, true)])),
         "edge 17 ranks first and keeps its slot"
     );
 }
+
+/// The locator that a note on the 1 mm group of `rib_bound` starts with,
+/// before the slot.
+const RIB_AT: &str = "Fillet group 0 of feature f3d:test:feature#42: the edge at slot";
 
 fn one_mm() -> RadiusSpec {
     RadiusSpec::Constant {
@@ -510,7 +513,16 @@ fn rib_bound_deleting(
     input: &AsmHistoricalTopology,
     deleted: &[i64],
 ) -> (Vec<String>, Vec<LossNote>) {
-    let mut definition = fillet(native(), one_mm());
+    rib_bound_from(native(), input, deleted)
+}
+
+/// `rib_bound_deleting` for a group whose selection is `edges`.
+fn rib_bound_from(
+    edges: EdgeSelection,
+    input: &AsmHistoricalTopology,
+    deleted: &[i64],
+) -> (Vec<String>, Vec<LossNote>) {
+    let mut definition = fillet(edges, one_mm());
     let mut notes = Vec::new();
     bind_fillet_groups(
         &mut definition,
@@ -536,21 +548,10 @@ fn an_inferred_blend_edge_binds_with_a_note() {
         notes[0].code,
         F3dLossCode::HistoricalFilletEdgeInferred.kind()
     );
-    for assumption in [
-        "the blend's supports share no edge along its axis",
-        "runs along the axis",
-        "farther than the radius from the axis line",
-        "within the blend's axial extent",
-        "whose plane touches the blend cylinder",
-        "the transition deletes the rounded edge",
-        "The edge is linked",
-    ] {
-        assert!(
-            notes[0].message.contains(assumption),
-            "{assumption}: {}",
-            notes[0].message
-        );
-    }
+    assert_eq!(
+        notes[0].message,
+        format!("{RIB_AT} 17 of history state 1 is inferred from the blend geometry, because the blend's supports share no edge along its axis. The reading assumes the following about the rounded edge. It is an edge of a support in the preceding state. It runs along the axis. Its interior sample point lies farther than the radius from the axis line and within the blend's axial extent. A support that owns it lies on a plane that touches the blend cylinder. The transition deletes it.")
+    );
 }
 
 #[test]
@@ -574,7 +575,7 @@ fn an_ambiguous_blend_edge_binds_its_best_reading_with_a_note_that_names_the_riv
     assert!(
         notes[1]
             .message
-            .contains("Candidates in rank order: slot 17 (linked, deleted, selected), slot 21 (linked, deleted)"),
+            .contains("Candidates in rank order: slot 17 (linked, deleted, selected), slot 21 (linked, deleted)."),
         "{}",
         notes[1].message
     );
@@ -599,16 +600,27 @@ fn a_blend_edge_below_a_kept_candidate_binds_with_notes_that_name_the_kept_candi
         ]
     );
     assert!(
-        notes[0]
-            .message
-            .contains("the transition deletes the rounded edge"),
+        notes[0].message.ends_with("The transition deletes it."),
         "{}",
         notes[0].message
     );
+    assert_eq!(
+        notes[1].message,
+        format!("{RIB_AT} 21 of history state 1 is the best-ranked deleted candidate of 2 candidates. The reading assumes that the rounded edge is the best-ranked deleted candidate. The rank puts linked candidates first, then candidates nearer the axis line, then lower slots. A linked candidate has two owner faces, and its other owner is a removed face that meets another support at an edge along the axis whose interior sample point lies on the blend cylinder and within the blend's axial extent. The transition keeps the higher-ranked candidate at slot 17, and the reading skips it because it assumes that the transition deletes the rounded edge. Candidates in rank order: slot 17 (linked, kept), slot 21 (linked, deleted, selected).")
+    );
+}
+
+#[test]
+fn a_rank_note_names_a_kept_linked_candidate_above_a_selected_unlinked_edge() {
+    let (slots, notes) = rib_bound_deleting(
+        &rib_with_edge_21(Point3::new(1.0, -0.5, 0.0), 10, None),
+        &[18, 21],
+    );
+    assert_eq!(slots, ["21"]);
+    assert_eq!(notes.len(), 2);
     for statement in [
-        "The transition keeps the higher-ranked candidates at slots [17]",
-        "assumes that the transition deletes the rounded edge",
-        "Candidates in rank order: slot 17 (linked, kept), slot 21 (linked, deleted, selected)",
+        "The transition keeps the higher-ranked candidate at slot 17, and the reading skips it",
+        "Candidates in rank order: slot 17 (linked, kept), slot 21 (unlinked, deleted, selected).",
     ] {
         assert!(
             notes[1].message.contains(statement),
@@ -619,18 +631,10 @@ fn a_blend_edge_below_a_kept_candidate_binds_with_notes_that_name_the_kept_candi
 }
 
 #[test]
-fn an_unlinked_blend_edge_note_states_that_no_removed_face_reaches_another_support() {
-    let input = rib_with_edge_21(Point3::new(1.0, -0.5, 0.0), 10, None);
-    let mut far = input.clone();
-    far.edge_samples[0].interior = Point3::new(2.0, 0.0, 0.0);
-    let (slots, notes) = rib_bound(&far);
-    assert_eq!(slots, ["21"]);
-    assert_eq!(notes.len(), 1);
-    assert!(
-        notes[0].message.contains("The edge is unlinked"),
-        "{}",
-        notes[0].message
-    );
+fn a_slot_that_the_partial_selection_states_binds_without_an_inferred_note() {
+    let (slots, notes) = rib_bound_from(partial(&[17]), &rib(), &[17, 18, 21]);
+    assert_eq!(slots, ["17"]);
+    assert!(notes.is_empty(), "{notes:?}");
 }
 
 #[test]
@@ -655,7 +659,7 @@ fn a_cylinder_blend_states_nothing_when_a_row_that_decides_an_edge_is_unusable()
     let beside = || rib_with_edge_21(Point3::new(1.0, 1.0, 0.5), 12, Some((10, on_plate_top())));
     assert_eq!(
         rib_blends(&beside(), &rib_fillet()),
-        Some(rib_reading(&[(17, true, true)], 0)),
+        Some(rib_reading(&[(17, true, true)])),
         "rib top 12, the support that owns edge 21, does not touch the cylinder"
     );
     let mut across = beside();
@@ -668,7 +672,7 @@ fn a_cylinder_blend_states_nothing_when_a_row_that_decides_an_edge_is_unusable()
         .tangent = Some(y());
     assert_eq!(
         rib_blends(&across, &rib_fillet()),
-        Some(rib_reading(&[(17, true, true)], 0)),
+        Some(rib_reading(&[(17, true, true)])),
         "the tangent of edge 21 runs across the axis"
     );
     let mut unknown = Vec::new();
