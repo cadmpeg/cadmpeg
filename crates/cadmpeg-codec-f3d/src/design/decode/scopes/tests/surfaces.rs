@@ -156,6 +156,7 @@ fn base_feature_scope_decodes_parallel_result_body_runs() {
             kind_offset: 273,
             feature_ordinal: std::num::NonZeroU32::MIN,
             feature_ordinal_offset: 0,
+            label: None,
             history_state_id: Some(2),
 
             previous_history_state_id: Some(2),
