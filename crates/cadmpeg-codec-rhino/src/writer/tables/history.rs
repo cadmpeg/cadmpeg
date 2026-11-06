@@ -808,18 +808,36 @@ fn history_record(ir: &CadIr, feature: &Feature) -> Result<Vec<u8>, WriteError> 
         ..
     }) = feature.evaluation.definition()
     {
-        for name in parameters.keys() {
-            let represented = groups.iter().any(|(id, occurrence, kind)| {
+        for (name, parameter) in parameters {
+            let kind = groups.iter().find_map(|(id, occurrence, kind)| {
                 let group = if *occurrence == 0 {
                     format!("value_{id}")
                 } else {
                     format!("value_{id}_{occurrence}")
                 };
-                name.as_str() == group && kind.is_some()
+                (name.as_str() == group).then_some(*kind).flatten()
             });
-            if !represented {
+            if kind != Some(9) {
                 return Err(WriteError::Omit(format!(
                     "history {record} parameter {name} has no reconstructible wire type"
+                )));
+            }
+            let mut references = Vec::new();
+            for index in indexed(&properties, name.as_str()) {
+                let reference = parse_reference(&properties, &format!("{name}.{index}"), record)?;
+                let object_id = crate::wire::Uuid::from_wire(reference.object_id);
+                references.push(format!(
+                    "{object_id}@{}:{}",
+                    reference.component[0], reference.component[1]
+                ));
+            }
+            let expected = references.join(",");
+            let value = parameter
+                .literal()
+                .and_then(|expression| expression.literal_text());
+            if value.as_deref() != Some(expected.as_str()) {
+                return Err(WriteError::Omit(format!(
+                    "history {record} parameter {name} conflicts with its structured object references"
                 )));
             }
         }
