@@ -122,12 +122,13 @@ fn combine_tools_keep_first_and_additional_records() {
     )
     .unwrap()
     .expect("Combine scope");
-    let operation =
-        exact_combine_operation(&bytes, &records, &scope, &HashMap::new(), &mut Vec::new())
-            .unwrap()
-            .expect("two admitted Combine tools");
+    let mut losses = Vec::new();
+    let operation = exact_combine_operation(&bytes, &records, &scope, &HashMap::new(), &mut losses)
+        .unwrap()
+        .expect("two admitted Combine tools");
     assert_eq!(operation.tools.first.record_index, 92);
     assert_eq!(operation.tools.additional[0].record_index, 94);
+    assert!(losses.is_empty(), "{losses:?}");
 }
 
 #[test]
@@ -593,7 +594,7 @@ struct OperandListFixture {
     companions: Vec<u32>,
     companion_type: &'static str,
     companion_guid: &'static str,
-    companion_guid_tail_zeros: usize,
+    companion_guid_tail: [u8; 3],
     companion_table: bool,
     new_component: u8,
     omit_consumed: bool,
@@ -620,7 +621,7 @@ impl OperandListFixture {
             companions: Vec::new(),
             companion_type: crate::design::decode::body_consumers::REMOVE_BODY_TYPE_GUID,
             companion_guid: "00000000-0000-0000-0000-000000000000",
-            companion_guid_tail_zeros: 3,
+            companion_guid_tail: [0; 3],
             companion_table: true,
             new_component: 0,
             omit_consumed: false,
@@ -763,7 +764,7 @@ impl OperandListFixture {
             indexed_header(&mut bytes, *b"412", companion);
             bytes.extend_from_slice(&[0; 10]);
             lp_utf16(&mut bytes, self.companion_guid);
-            bytes.resize(bytes.len() + self.companion_guid_tail_zeros, 0);
+            bytes.extend_from_slice(&self.companion_guid_tail);
             if self.companion_table {
                 marked_list(&mut bytes, &[self.tools[0].1]);
             }
@@ -1031,7 +1032,7 @@ fn operand_list_companions_remove_the_tools_of_a_consuming_combine() {
     let mut other_guid = companion(false, vec![500]);
     other_guid.companion_guid = "00000000-0000-0000-0000-000000000001";
     let mut guid_without_zeros = companion(false, vec![500]);
-    guid_without_zeros.companion_guid_tail_zeros = 0;
+    guid_without_zeros.companion_guid_tail = [7; 3];
     let mut guid_without_table = companion(false, vec![500]);
     guid_without_table.companion_table = false;
     let repeated = companion(false, vec![500, 500]);
