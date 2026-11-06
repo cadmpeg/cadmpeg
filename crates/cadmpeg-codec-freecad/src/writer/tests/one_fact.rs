@@ -120,6 +120,52 @@ fn source_less_formula_without_marker_keeps_its_parameter_binding() {
 }
 
 #[test]
+fn unresolved_property_expression_keeps_the_parameter_value() {
+    use cadmpeg_ir::features::{Expression, ExpressionToken, ParameterId};
+
+    let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="PartDesign::Feature" name="Owner" id="1"/></Objects><ObjectData Count="1"><Object name="Owner"><Properties Count="1"><Property name="Width" group="Parameters" type="App::PropertyFloat"><Float value="7"/></Property></Properties></Object></ObjectData></Document>"#;
+    let source = crate::test_support::test_archive::archive(xml);
+    let decoded = FcstdCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let mut ir = decoded.ir().clone();
+    let parameter = ir
+        .model
+        .parameters
+        .iter_mut()
+        .find(|parameter| parameter.name == "Width")
+        .unwrap();
+    let id = parameter.id.clone();
+    let value = parameter.value.clone();
+    parameter.expression = Expression {
+        tokens: vec![ExpressionToken::Parameter(
+            ParameterId::mint("cadir:model:parameter#missing").unwrap(),
+        )],
+    };
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(id.as_str()) && loss.message.contains("expression")));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let width = output
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "Width")
+        .unwrap();
+    assert_eq!(width.value, value);
+}
+
+#[test]
 fn parameter_with_missing_owner_keeps_independent_parameters() {
     use cadmpeg_ir::features::{DesignParameter, Expression, FeatureId, ParameterId};
     use cadmpeg_ir::scalar::FiniteReal;
