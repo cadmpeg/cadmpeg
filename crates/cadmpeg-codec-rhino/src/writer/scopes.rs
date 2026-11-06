@@ -1031,19 +1031,31 @@ fn prune_pass(
         }
     }
     scoped.model.coedges.retain(|coedge| {
-        let missing = (!edges.contains(coedge.edge.as_str()))
-            .then(|| format!("edge {} is missing", coedge.edge))
-            .or_else(|| {
-                (!loops.contains(coedge.owner_loop.as_str()))
-                    .then(|| format!("loop {} is missing", coedge.owner_loop))
-            });
+        let missing =
+            (!edges.contains(coedge.edge.as_str()))
+                .then(|| format!("edge {} is missing", coedge.edge))
+                .or_else(|| {
+                    (!loops.contains(coedge.owner_loop.as_str()))
+                        .then(|| format!("loop {} is missing", coedge.owner_loop))
+                })
+                .or_else(|| {
+                    (!scoped.model.loops.iter().any(|row| {
+                        row.id == coedge.owner_loop && row.coedges().contains(&coedge.id)
+                    }))
+                    .then(|| format!("loop {} does not own this coedge", coedge.owner_loop))
+                });
         if let Some(missing) = missing {
             pruned("coedge", coedge.id.as_str(), missing);
             return false;
         }
         true
     });
-    let coedges = existing!(coedges);
+    let coedge_owners = scoped
+        .model
+        .coedges
+        .iter()
+        .map(|coedge| (coedge.id.clone(), coedge.owner_loop.clone()))
+        .collect::<std::collections::BTreeMap<_, _>>();
     prune_orphaned_edges(scoped, pruned);
     let faces = existing!(faces);
     scoped.model.loops.retain_mut(|row| {
@@ -1085,12 +1097,16 @@ fn prune_pass(
                 let kept = row
                     .coedges()
                     .iter()
-                    .filter(|id| coedges.contains(id.as_str()))
+                    .filter(|id| coedge_owners.get(*id) == Some(&row.id))
                     .cloned()
                     .collect::<Vec<_>>();
                 for id in row.coedges() {
-                    if !coedges.contains(id.as_str()) {
-                        pruned("loop", row.id.as_str(), format!("coedge {id} is missing"));
+                    if coedge_owners.get(id) != Some(&row.id) {
+                        pruned(
+                            "loop",
+                            row.id.as_str(),
+                            format!("coedge {id} is missing or belongs to another loop"),
+                        );
                     }
                 }
                 let mut kept_uses = Vec::new();

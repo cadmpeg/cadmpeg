@@ -1706,11 +1706,6 @@ impl ComponentInserts {
         Ok(occurrences)
     }
 
-    /// Source occurrence records whose model content has no typed projection.
-    pub(crate) fn has_untyped_occurrences(&self) -> bool {
-        self.unplaced != 0 || self.unordered != 0
-    }
-
     /// Losses for the inserts that project no occurrence.
     pub(crate) fn losses(&self) -> Vec<LossNote> {
         let mut losses = Vec::new();

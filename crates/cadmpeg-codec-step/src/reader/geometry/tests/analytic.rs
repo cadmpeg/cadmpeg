@@ -73,9 +73,10 @@ pub(crate) fn procedural_step_geometry_round_trips_as_native_entities() {
     ] {
         assert!(text.contains(entity), "missing {entity}");
     }
-    assert!(!report.losses.iter().any(|loss| loss
-        .message
-        .contains("reduced to their solved STEP carriers")));
+    assert!(!report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("reduced to their STEP carriers")));
     assert!(!report
         .losses
         .iter()

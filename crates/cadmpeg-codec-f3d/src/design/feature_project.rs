@@ -1397,28 +1397,6 @@ pub(crate) fn project_parameter_design_with_edge_identities(
         histories,
     );
     for feature in &mut features {
-        let Some(scope) = feature
-            .native_ref
-            .as_deref()
-            .and_then(|native_ref| scopes.iter().find(|scope| scope.id == native_ref))
-        else {
-            continue;
-        };
-        let predecessor_scope = match scope_history.predecessor(scope, |candidate| {
-            let stream = native_stream(&candidate.id).unwrap_or(ids::DEFAULT_STREAM);
-            scope_ids.contains_key(&(stream, candidate.record_index))
-        }) {
-            Ok(ScopeHistoryPredecessor::Scope(predecessor_scope)) => predecessor_scope,
-            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-            Ok(_) | Err(_) => continue,
-        };
-        let stream = native_stream(&predecessor_scope.id).unwrap_or(ids::DEFAULT_STREAM);
-        let Some(predecessor) = scope_ids.get(&(stream, predecessor_scope.record_index)) else {
-            continue;
-        };
-        feature.dependencies.insert(predecessor.clone());
-    }
-    for feature in &mut features {
         let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) =
             feature.evaluation.definition()
         else {
