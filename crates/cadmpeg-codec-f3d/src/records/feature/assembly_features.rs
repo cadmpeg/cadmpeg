@@ -611,6 +611,11 @@ impl DesignComponentOccurrence {
         }
     }
 
+    /// Whether this occurrence was read from a leading-flag frame.
+    pub(crate) fn is_leading_flag(&self) -> bool {
+        self.leading_flag_frame().is_some()
+    }
+
     /// Leading-flag members, for a leading-flag frame.
     fn leading_flag_frame(&self) -> Option<&DesignLeadingFlagOccurrenceFrame> {
         match &self.frame {
@@ -1050,6 +1055,9 @@ impl TryFrom<DesignComponentOccurrenceWire> for DesignComponentOccurrence {
             return Ok(record);
         }
         let mut record = if let Some(frame) = value.leading_flag {
+            if value.owner_type_guid.is_some() {
+                return Err("a leading-flag frame stores no owner type".into());
+            }
             Self::try_new_leading_flag(draft, frame)?
         } else if value.component_guid_offset.checked_sub(value.byte_offset)
             == Some(cadmpeg_core::decode::u64_from_index(
