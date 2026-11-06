@@ -7,6 +7,7 @@ use cadmpeg_ir::features::{
     FeatureOperation, LinearTermination, ParameterValue, PlanarProfileRef, ProfileRef,
 };
 use cadmpeg_ir::geometry::SolvedCurveGeometry;
+use cadmpeg_ir::products::{OccurrenceParent, ProductDefinitionKind};
 use cadmpeg_ir::sketches::{SketchConstraintDefinitionInput, SketchGeometryDefinition};
 use cadmpeg_ir::{Codec, DecodeOptions};
 
@@ -14,6 +15,8 @@ use crate::FcstdCodec;
 
 const LENGTH_TOLERANCE: f64 = 1.0e-12;
 const VOLUME_TOLERANCE: f64 = 1.0e-6;
+const AREA_TOLERANCE: f64 = 1.0e-6;
+const BOUNDS_TOLERANCE: f64 = 1.0e-6;
 
 #[test]
 fn authored_design_history_keeps_sketches_constraints_and_operations() {
@@ -375,6 +378,39 @@ fn authored_core_product_keeps_primitive_dimensions_and_results() {
         .dependencies
         .iter()
         .any(|id| id == &feature("Profile").id));
+    let product = model
+        .product_definitions
+        .iter()
+        .find(|definition| definition.source_name.as_deref() == Some("Product"))
+        .unwrap();
+    assert!(matches!(&product.kind, ProductDefinitionKind::Part));
+    assert_eq!(product.label.as_deref(), Some("CC0 Product"));
+    let product_occurrence = model
+        .occurrences
+        .iter()
+        .find(|occurrence| occurrence.id.as_str() == "fcstd:model:occurrence#Product:container")
+        .unwrap();
+    assert!(matches!(
+        &product_occurrence.parent,
+        OccurrenceParent::Root {}
+    ));
+    assert!(matches!(
+        &product_occurrence.prototype,
+        cadmpeg_ir::products::PrototypeReference::Local { definition }
+            if definition == &product.id
+    ));
+    let cylinder_occurrence = model
+        .occurrences
+        .iter()
+        .find(|occurrence| occurrence.id.as_str().ends_with("#Cylinder:container"))
+        .unwrap();
+    let frame = cylinder_occurrence.effective_transform().unwrap().rows();
+    for (actual, expected) in [frame[0][3], frame[1][3], frame[2][3]]
+        .into_iter()
+        .zip([15.0, 10.0, 0.0])
+    {
+        assert!((actual - expected).abs() < LENGTH_TOLERANCE);
+    }
     let occurrence = model
         .occurrences
         .iter()
@@ -385,6 +421,7 @@ fn authored_core_product_keeps_primitive_dimensions_and_results() {
                 .is_some_and(|id| id.ends_with("#Occurrence"))
         })
         .unwrap();
+    assert!(matches!(&occurrence.parent, OccurrenceParent::Root {}));
     let cadmpeg_ir::products::PrototypeReference::Local { definition } = &occurrence.prototype
     else {
         panic!("local occurrence prototype");
@@ -445,14 +482,32 @@ fn authored_core_product_keeps_primitive_dimensions_and_results() {
     let report =
         cadmpeg_measure::test_support::round_trip::measured("core_design_product", decoded.ir())
             .unwrap();
-    for (name, expected) in [
-        ("Box", 30.0 * 20.0 * 10.0),
-        ("Cylinder", std::f64::consts::PI * 4.0 * 4.0 * 16.0),
+    for (name, expected_volume, expected_area, bounds) in [
+        (
+            "Box",
+            30.0 * 20.0 * 10.0,
+            2.0 * (30.0 * 20.0 + 20.0 * 10.0 + 30.0 * 10.0),
+            [0.0, 0.0, 0.0, 30.0, 20.0, 10.0],
+        ),
+        (
+            "Cylinder",
+            std::f64::consts::PI * 4.0 * 4.0 * 16.0,
+            2.0 * std::f64::consts::PI * 4.0 * (4.0 + 16.0),
+            [-4.0, -4.0, 0.0, 4.0, 4.0, 16.0],
+        ),
         (
             "Cut",
             30.0 * 20.0 * 10.0 - std::f64::consts::PI * 4.0 * 4.0 * 10.0,
+            2.0 * (30.0 * 20.0 + 20.0 * 10.0 + 30.0 * 10.0)
+                + 2.0 * std::f64::consts::PI * 4.0 * (10.0 - 4.0),
+            [0.0, 0.0, 0.0, 30.0, 20.0, 10.0],
         ),
-        ("DesignedFeature", 12.0 * 8.0 * 5.0),
+        (
+            "DesignedFeature",
+            12.0 * 8.0 * 5.0,
+            2.0 * (12.0 * 8.0 + 8.0 * 5.0 + 12.0 * 5.0),
+            [0.0, 0.0, 0.0, 12.0, 8.0, 5.0],
+        ),
     ] {
         let [body] = feature(name).evaluation.outputs().as_slice() else {
             panic!("{name}: expected one body")
@@ -464,7 +519,7 @@ fn authored_core_product_keeps_primitive_dimensions_and_results() {
                 row.body() == body.as_str() && matches!(row.placement(), RowPlacement::Model {})
             })
             .unwrap();
-        let actual = row
+        let actual_volume = row
             .volume()
             .as_ref()
             .unwrap()
@@ -474,8 +529,34 @@ fn authored_core_product_keeps_primitive_dimensions_and_results() {
             .value
             .get();
         assert!(
-            (actual - expected).abs() < VOLUME_TOLERANCE,
-            "{name}: volume {actual}"
+            (actual_volume - expected_volume).abs() < VOLUME_TOLERANCE,
+            "{name}: volume {actual_volume}"
         );
+        let actual_area = row
+            .area()
+            .as_ref()
+            .unwrap()
+            .measured()
+            .unwrap()
+            .value()
+            .value
+            .get();
+        assert!(
+            (actual_area - expected_area).abs() < AREA_TOLERANCE,
+            "{name}: area {actual_area}"
+        );
+        let bbox = row.bbox().measured().unwrap().value();
+        for (actual, expected) in bbox
+            .min
+            .coordinates()
+            .into_iter()
+            .chain(bbox.max.coordinates())
+            .zip(bounds)
+        {
+            assert!(
+                (actual.get() - expected).abs() < BOUNDS_TOLERANCE,
+                "{name}: bounding box"
+            );
+        }
     }
 }
