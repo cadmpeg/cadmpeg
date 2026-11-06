@@ -1198,7 +1198,7 @@ pub(crate) fn decode_parameter_owners(
                     offset: parameter.evaluated_value_offset()?,
                 })
             });
-            let parse = || {
+            let parse_members = |members| {
                 let view = ParameterFrame::new(members);
                 parse_parameter_owner_frame(view).or_else(|| {
                     evaluated.and_then(|value| {
@@ -1217,6 +1217,26 @@ pub(crate) fn decode_parameter_owners(
                             )
                         })
                     })
+                })
+            };
+            let parse = || {
+                parse_members(members).or_else(|| {
+                    if frame.member_end != frame.end {
+                        return None;
+                    }
+                    let paired_at = frame.end.checked_sub(indexed_header::LEN)?;
+                    if paired_at <= frame.start {
+                        return None;
+                    }
+                    let class = super::meta::record_header_class_tag(
+                        source.window(),
+                        paired_at,
+                        frame.end,
+                        frame.entity_id,
+                    )?;
+                    super::meta::dynamic_type(&meta, &class)?;
+                    let paired_start = base.checked_add(paired_at)?;
+                    parse_members(source.child(start, paired_start)?)
                 })
             };
             if parameter.is_none() && !typed {
