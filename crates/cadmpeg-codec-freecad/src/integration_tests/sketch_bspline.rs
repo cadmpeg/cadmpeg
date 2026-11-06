@@ -3,6 +3,8 @@
 use std::{io::Cursor, path::Path};
 
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
+use cadmpeg_ir::geometry::{SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry};
+use cadmpeg_ir::topology::{EdgeCarrier, LoopBoundary};
 use cadmpeg_ir::{
     features::{
         BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrusionDirectionSource, FeatureDefinition,
@@ -13,7 +15,11 @@ use cadmpeg_ir::{
 };
 use cadmpeg_measure::test_support::round_trip::measured;
 
-use crate::{test_support::test_archive::assert_valid_document, FcstdCodec};
+use crate::{
+    brep::{Tables, TextShapeKind, TextSurface, TextTShapeGeometry},
+    test_support::test_archive::assert_valid_document,
+    FcstdCodec,
+};
 
 const POINT_TOLERANCE: f64 = 1.0e-12;
 const VOLUME_TOLERANCE: f64 = 0.01;
@@ -255,14 +261,14 @@ fn recipe_sketch_bspline_body_measures() {
             let decoded = FcstdCodec
                 .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
                 .unwrap();
+            let model = &decoded.ir().model;
             let report = measured(&label, decoded.ir()).unwrap();
-            let pad = decoded
-                .ir()
-                .model
+            let pad = model
                 .features
                 .iter()
                 .find(|feature| feature.name.as_deref() == Some("Pad"))
                 .unwrap();
+            assert_recipe_pad_topology(decoded.ir(), pad, periodic, height, &label);
             let [result] = pad.evaluation.outputs().as_slice() else {
                 panic!("{label}: expected one pad body")
             };
@@ -350,6 +356,286 @@ fn recipe_sketch_bspline_body_measures() {
                 }
             }
         }
+    }
+}
+
+fn assert_recipe_pad_topology(
+    ir: &cadmpeg_ir::CadIr,
+    pad: &cadmpeg_ir::features::Feature,
+    periodic: bool,
+    height: f64,
+    label: &str,
+) {
+    let native = ir.native.namespace("fcstd").unwrap();
+    let properties = native
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .unwrap();
+    let pad_shape_property = properties
+        .iter()
+        .find(|property| {
+            property.owner == crate::native::native_id("object", "Pad") && property.name == "Shape"
+        })
+        .unwrap_or_else(|| panic!("{label}: Pad.Shape property"));
+    let shape_payloads = native
+        .arena_as::<crate::brep::ShapePayloadRecord>("shape_payloads")
+        .unwrap();
+    let source_shape = shape_payloads
+        .iter()
+        .find(|payload| payload.property == pad_shape_property.id)
+        .unwrap_or_else(|| panic!("{label}: Pad.Shape BREP"));
+    let tables = Tables::from_payload(source_shape).unwrap();
+
+    for (kind, expected_count) in [
+        (TextShapeKind::Vertex, 1),
+        (TextShapeKind::Edge, 2),
+        (TextShapeKind::Wire, 2),
+        (TextShapeKind::Face, 2),
+        (TextShapeKind::Shell, 1),
+        (TextShapeKind::Solid, 1),
+    ] {
+        assert_eq!(
+            tables
+                .tshapes
+                .iter()
+                .filter(|shape| shape.kind() == kind)
+                .count(),
+            expected_count,
+            "{label}: Pad.Shape source BREP {kind:?} census"
+        );
+    }
+    let [root] = tables.roots else {
+        panic!("{label}: one saved Pad.Shape root")
+    };
+    let solid = tables.tshapes.resolve(root.shape).unwrap();
+    assert_eq!(solid.kind(), TextShapeKind::Solid, "{label}: source root");
+    let [shell_use] = solid.children.as_slice() else {
+        panic!("{label}: one source shell")
+    };
+    let source_shell = tables.tshapes.resolve(shell_use.shape).unwrap();
+    assert_eq!(
+        source_shell.kind(),
+        TextShapeKind::Shell,
+        "{label}: source shell kind"
+    );
+    let source_face_uses = source_shell
+        .children
+        .iter()
+        .filter(|shape_use| {
+            tables
+                .tshapes
+                .resolve(shape_use.shape)
+                .is_ok_and(|shape| shape.kind() == TextShapeKind::Face)
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(source_face_uses.len(), 3, "{label}: saved shell face uses");
+    let mut source_face_surfaces = [0, 0];
+    for shape_use in &source_face_uses {
+        let face = tables.tshapes.resolve(shape_use.shape).unwrap();
+        let TextTShapeGeometry::Face {
+            surface: Some(surface),
+            ..
+        } = &face.geometry
+        else {
+            panic!("{label}: source face has a surface")
+        };
+        let surface = surface.resolve(tables.surfaces).unwrap();
+        let index = match surface {
+            TextSurface::Extrusion { .. } => 0,
+            TextSurface::Plane { .. } => 1,
+            other => panic!("{label}: unexpected saved Pad face surface {other:?}"),
+        };
+        source_face_surfaces[index] += 1;
+    }
+    assert_eq!(
+        source_face_surfaces,
+        [1, 2],
+        "{label}: source face surfaces"
+    );
+
+    let [body_id] = pad.evaluation.outputs().as_slice() else {
+        panic!("{label}: one Pad output body")
+    };
+    let body = ir
+        .model
+        .bodies
+        .iter()
+        .find(|body| &body.id == body_id)
+        .unwrap_or_else(|| panic!("{label}: Pad output body resolves"));
+    assert_eq!(body.kind, cadmpeg_ir::topology::BodyKind::Solid, "{label}");
+    let [region_id] = body.regions.as_slice() else {
+        panic!("{label}: one output region")
+    };
+    let region = ir
+        .model
+        .regions
+        .iter()
+        .find(|region| &region.id == region_id)
+        .unwrap_or_else(|| panic!("{label}: Pad region resolves"));
+    let [shell_id] = region.shells.as_slice() else {
+        panic!("{label}: one output shell")
+    };
+    let shell = ir
+        .model
+        .shells
+        .iter()
+        .find(|shell| &shell.id == shell_id)
+        .unwrap_or_else(|| panic!("{label}: Pad shell resolves"));
+    let face_ids = shell.faces();
+    assert_eq!(face_ids.len(), 3, "{label}: output shell face uses");
+    let mut output_face_surfaces = [0, 0];
+    let mut loop_coedge_counts = Vec::new();
+    let mut edge_ids = std::collections::BTreeSet::new();
+    let mut vertex_ids = std::collections::BTreeSet::new();
+    let mut edge_curve_kinds = [0, 0];
+    for face_id in face_ids {
+        let face = ir
+            .model
+            .faces
+            .iter()
+            .find(|face| &face.id == face_id)
+            .unwrap_or_else(|| panic!("{label}: face resolves"));
+        assert_eq!(face.shell, shell.id, "{label}: face shell owner");
+        match &ir
+            .model
+            .surfaces
+            .iter()
+            .find(|surface| surface.id == face.surface)
+            .unwrap_or_else(|| panic!("{label}: face surface resolves"))
+            .geometry
+        {
+            SurfaceGeometry::Procedural { cache, .. } => {
+                assert!(
+                    matches!(cache, Some(SolvedSurfaceGeometry::Unknown { .. })),
+                    "{label}: source extrusion cache"
+                );
+                output_face_surfaces[0] += 1;
+            }
+            SurfaceGeometry::Solved(geometry) if is_plane_surface(geometry) => {
+                output_face_surfaces[1] += 1;
+            }
+            other @ SurfaceGeometry::Solved(_) => {
+                panic!("{label}: unexpected decoded Pad face surface {other:?}")
+            }
+        }
+        assert_eq!(face.loops.len(), 1, "{label}: one loop per source face");
+        for loop_id in &face.loops {
+            let loop_ = ir
+                .model
+                .loops
+                .iter()
+                .find(|loop_| &loop_.id == loop_id)
+                .unwrap_or_else(|| panic!("{label}: face loop resolves"));
+            let LoopBoundary::Ring(ring) = &loop_.boundary else {
+                panic!("{label}: source face loop is a coedge ring")
+            };
+            loop_coedge_counts.push(ring.coedges().len());
+            for coedge_id in ring.coedges() {
+                let coedge = ir
+                    .model
+                    .coedges
+                    .iter()
+                    .find(|coedge| &coedge.id == coedge_id)
+                    .unwrap_or_else(|| panic!("{label}: face coedge resolves"));
+                assert_eq!(coedge.owner_loop, loop_.id, "{label}: coedge loop owner");
+                edge_ids.insert(coedge.edge.as_str());
+            }
+        }
+    }
+    assert_eq!(
+        output_face_surfaces,
+        [1, 2],
+        "{label}: decoded face surfaces"
+    );
+    loop_coedge_counts.sort_unstable();
+    assert_eq!(loop_coedge_counts, [1, 1, 4], "{label}: face boundaries");
+    assert_eq!(edge_ids.len(), 3, "{label}: unique output edges");
+    for edge_id in edge_ids {
+        let edge = ir
+            .model
+            .edges
+            .iter()
+            .find(|edge| edge.id.as_str() == edge_id)
+            .unwrap_or_else(|| panic!("{label}: edge resolves"));
+        vertex_ids.insert(edge.start.as_str());
+        vertex_ids.insert(edge.end.as_str());
+        let Some(curve_id) = (match &edge.carrier {
+            EdgeCarrier::Curve(curve_id) | EdgeCarrier::Bounded(curve_id, _) => Some(curve_id),
+            EdgeCarrier::Free | EdgeCarrier::Endpoints(_) => None,
+        }) else {
+            panic!("{label}: closed solid edge has a curve")
+        };
+        let curve = ir
+            .model
+            .curves
+            .iter()
+            .find(|curve| &curve.id == curve_id)
+            .unwrap_or_else(|| panic!("{label}: edge curve resolves"));
+        let Some(geometry) = curve.geometry.solved() else {
+            panic!("{label}: edge curve is solved")
+        };
+        match curve_family(geometry) {
+            Some(false) => edge_curve_kinds[0] += 1,
+            Some(true) => edge_curve_kinds[1] += 1,
+            None => panic!("{label}: spline pad edge curve {geometry:?}"),
+        }
+    }
+    assert_eq!(edge_curve_kinds, [1, 2], "{label}: edge curve families");
+    assert_eq!(vertex_ids.len(), 2, "{label}: output edge vertices");
+    let mut endpoint_positions = vertex_ids
+        .iter()
+        .map(|vertex_id| {
+            let vertex = ir
+                .model
+                .vertices
+                .iter()
+                .find(|vertex| vertex.id.as_str() == *vertex_id)
+                .unwrap_or_else(|| panic!("{label}: output vertex resolves"));
+            let point = ir
+                .model
+                .points
+                .iter()
+                .find(|point| point.id == vertex.point)
+                .unwrap_or_else(|| panic!("{label}: output vertex point resolves"));
+            point
+                .position()
+                .coordinates()
+                .map(cadmpeg_ir::scalar::FiniteReal::get)
+        })
+        .collect::<Vec<_>>();
+    endpoint_positions.sort_by(|left, right| left[2].total_cmp(&right[2]));
+    let start_xy = if periodic {
+        [0.0, -10.0]
+    } else {
+        [-10.0, -10.0]
+    };
+    for (actual, expected) in endpoint_positions.iter().zip([start_xy, start_xy]) {
+        assert!((actual[0] - expected[0]).abs() < POINT_TOLERANCE, "{label}");
+        assert!((actual[1] - expected[1]).abs() < POINT_TOLERANCE, "{label}");
+    }
+    assert!(
+        (endpoint_positions[0][2]).abs() < POINT_TOLERANCE,
+        "{label}: lower profile endpoint"
+    );
+    assert!(
+        (endpoint_positions[1][2] - height).abs() < POINT_TOLERANCE,
+        "{label}: upper profile endpoint"
+    );
+}
+
+fn is_plane_surface(surface: &SolvedSurfaceGeometry) -> bool {
+    match surface {
+        SolvedSurfaceGeometry::Plane(_) => true,
+        SolvedSurfaceGeometry::Transformed(placed) => is_plane_surface(placed.basis()),
+        _ => false,
+    }
+}
+
+fn curve_family(curve: &SolvedCurveGeometry) -> Option<bool> {
+    match curve {
+        SolvedCurveGeometry::Line(_) => Some(false),
+        SolvedCurveGeometry::Nurbs(_) => Some(true),
+        SolvedCurveGeometry::Transformed(placed) => curve_family(placed.basis()),
+        _ => None,
     }
 }
 
