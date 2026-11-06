@@ -1512,11 +1512,12 @@ transfer the rest of legacy persistence.
 
 **Known.** The array header has an `f8` slot count and a class reference. A
 populated element contains type-`00` `dtl_named_item`, `dtl_item`, and
-`tol_text` fields. The first two start with `e2`; `tol_text` can start with
+`tol_text` fields. The first two can start with `e2`; `tol_text` can start with
 `f8 01 f7 0a fb`, followed by `e3` and a named `db_type` field. The named
 binary text row's `owner_id` can equal the first occupied slot. A depth-bounded
-ASCII text row can carry its enclosing slot index in `owner_id`. The named
-binary region contains `value_string`, `datum_refs`, and `frame_datum_refs`.
+ASCII text row can carry its enclosing slot index in `owner_id`. The binary
+window from the first `dtl_named_item` to the next `dim_array` marker contains
+`value_string`, `datum_refs`, and `frame_datum_refs`.
 Depth-bounded ASCII elements can instead contain direct `value` and
 `datum_refs_array` fields. The ASCII object-array depth grammar has separate
 row boundaries.
@@ -1536,7 +1537,15 @@ also occur in both vertex and feature-entity namespaces. A numeric match to
 either namespace leaves the datum reference unresolved. A depth-bounded ASCII
 `datum_refs_array` contains counted `gtol_dtm_xar2` groups. The same reference
 group can occur on tolerances with different feature owners. A group can
-include identifiers both present and absent in the vertex arena.
+include identifiers both present and absent in the vertex arena. An ASCII
+`Sld_FullData` root can also own a `gtol_datum_def` array with `datum_type`,
+`datum_id`, `feat_id`, and `dim_id` fields. A reference's `datum_type` and
+`ref_info.ref_id` can match a row's `datum_type` and `datum_id`. A binary
+`gtol_datum_def_xar` prototype can carry `datum_type` 1 and null `datum_id`,
+`feat_id`, and `gtol_id` fields, followed by a `p_ldr` compound. The window
+before `set_datum_tag_xar` can contain one `e3 01 f6 f6 f6 e3` candidate per
+remaining slot after the leading nulls and prototype. The `p_ldr` data also
+contains nested `e3` markers.
 
 **Need.** Resolve the owned reference tables, ordered datum compartments, and
 their datum-feature targets before constructing a datum system.
