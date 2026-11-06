@@ -482,6 +482,18 @@ pub(super) fn inventory(
         let mut record_sources = HashSet::<u32>::new();
         let stored_start = stored_selectors.len();
         let face_start = face_selectors.len();
+        let body_sources = unique_index(
+            table
+                .records
+                .iter()
+                .filter(|record| record.type_id == super::face_selection::BODY_TYPE)
+                .filter_map(|record| {
+                    Some((
+                        record.ordinal,
+                        historical::source(record.payload, version).ok()?,
+                    ))
+                }),
+        );
         let mut face_sources = HashMap::<u32, usize>::new();
         for record in &table.records {
             has_flange |= record.type_id == super::sheet_metal::flange::TYPE;
@@ -503,9 +515,11 @@ pub(super) fn inventory(
                 }
                 match super::face_selection::parse(ctx, record.payload, version) {
                     Ok(Some(face)) => {
-                        if super::face_selection::links(&face, |ordinal| {
-                            record_types.get(&ordinal).copied().flatten()
-                        }) {
+                        if super::face_selection::links(
+                            &face,
+                            |ordinal| record_types.get(&ordinal).copied().flatten(),
+                            |ordinal| body_sources.get(&ordinal).copied().flatten(),
+                        ) {
                             face_selectors.push(face);
                         }
                     }
