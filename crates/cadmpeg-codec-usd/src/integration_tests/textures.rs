@@ -95,10 +95,10 @@ fn textures(
                 .expect("the texture's asset");
             let file = match &asset.content {
                 AssetContent::External { uri } => uri.to_string(),
-                AssetContent::Embedded { .. } => asset.name.as_ref().map_or_else(
-                    || "embedded".to_owned(),
-                    |name| name.as_str().to_owned(),
-                ),
+                AssetContent::Embedded { .. } => asset
+                    .name
+                    .as_ref()
+                    .map_or_else(|| "embedded".to_owned(), |name| name.as_str().to_owned()),
             };
             (
                 texture.slot.clone(),
@@ -212,10 +212,7 @@ fn a_package_holds_the_images_that_its_asset_source_reads() {
         .all(|asset| matches!(asset.content, AssetContent::Embedded { .. })));
     let write = |ir: &cadmpeg_ir::CadIr| {
         let plan = crate::UsdCodec
-            .plan(
-                EncodeInput::new(ir, None),
-                TargetRequest::Explicit("usdz"),
-            )
+            .plan(EncodeInput::new(ir, None), TargetRequest::Explicit("usdz"))
             .expect("plan the write");
         let mut bytes = Vec::new();
         let report = plan.write_to(&mut bytes).expect("write");

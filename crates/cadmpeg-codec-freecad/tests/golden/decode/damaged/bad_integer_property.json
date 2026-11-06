@@ -107,7 +107,7 @@
           "shape_payloads": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "string_tables": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "topology_uses": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-          "unknowns": "628e106c6a6a6ef099848f48068276c4cfa35a7b558c345f06740218f870b71c"
+          "unknowns": "4ef5ed800169777fce1043dc61754002f840496cb998cc6ea7d0548d766bc360"
         }
       },
       "__elided": "native arena values are omitted; the records are pinned by a digest over their canonical JSON"
@@ -169,6 +169,20 @@
           "scope": "namespaced",
           "strict_floor": "error"
         },
+        "dropped_fields": [
+          {
+            "field": "values",
+            "record": "fcstd:native:property#0:Bad"
+          },
+          {
+            "field": "links",
+            "record": "fcstd:native:property#0:Bad"
+          },
+          {
+            "field": "side_entries",
+            "record": "fcstd:native:property#0:Bad"
+          }
+        ],
         "message": "part freecad.property_value stream=\"Document.xml\" offset=115 length=38: malformed container: property fcstd:native:document#0/Bad value cannot be read: malformed container: App::PropertyInteger Integer value \"9223372036854775808\" is invalid; dropped=[]",
         "provenance": {
           "byte_len": 38,

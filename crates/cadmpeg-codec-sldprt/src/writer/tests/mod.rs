@@ -2,9 +2,9 @@
 //! Semantic-writer unit tests.
 
 mod anonymous_metadata;
-mod brep_agreement;
 mod body_subsets;
 mod bounded_curves;
+mod brep_agreement;
 pub(crate) mod configuration_carriers;
 mod digests;
 mod dispositions;

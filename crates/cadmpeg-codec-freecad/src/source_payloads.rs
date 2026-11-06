@@ -4,21 +4,25 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::{
-    features::FeatureOperation, report::loss::LossNote, ArenaClass, ArenaClasses, CadIr,
-};
+use cadmpeg_ir::{features::FeatureOperation, ArenaClass, ArenaClasses, CadIr};
 
-use super::FreecadLossCode;
 use crate::native::{
     EntryRecord, ExtensionRecord, GuiPropertyRecord, GuiViewProviderRecord, ObjectRecord,
     ProductNodeRecord, PropertyRecord, StringTableRecord,
 };
 
-pub(crate) fn decode_losses(
+/// One source payload whose semantic content remains untyped.
+pub(crate) struct OpaquePayload {
+    pub(crate) name: String,
+    pub(crate) classes: ArenaClasses,
+}
+
+pub(crate) fn retain_untyped(
     ir: &CadIr,
     sources: &crate::entry_sources::EntrySources<'_>,
     fidelity: &mut cadmpeg_ir::SourceFidelity,
-) -> Result<Vec<LossNote>, CodecError> {
+    failed_sidecars: &BTreeSet<String>,
+) -> Result<Vec<OpaquePayload>, CodecError> {
     let Some(native) = ir.native.namespace("fcstd") else {
         return Ok(Vec::new());
     };
@@ -50,7 +54,12 @@ pub(crate) fn decode_losses(
             .map_or(property.owner.as_str(), |extension| {
                 extension.owner.as_str()
             });
-        let typed = match property.type_name.as_str() {
+        let attribute_holds = ir
+            .model
+            .attributes
+            .iter()
+            .any(|attribute| attribute.native_ref.as_deref() == Some(property.id.as_str()));
+        let typed = attribute_holds || match property.type_name.as_str() {
             "App::PropertyPlacementList" | "App::PropertyVectorList"
                 if matches!(property.name.as_str(), "PlacementList" | "ScaleList") =>
             {
@@ -111,11 +120,34 @@ pub(crate) fn decode_losses(
         };
         let key = cadmpeg_ir::ids::IdentityKey::encode_segment(&provider.name);
         let prefix = format!("fcstd:appearance:{family}#{key}:");
-        if ir
-            .model
-            .appearances
-            .iter()
-            .any(|appearance| appearance.id.as_str().starts_with(&prefix))
+        let decoded_empty = if property.values.iter().any(|value| {
+            if property.name == "ShapeAppearance" {
+                value.tag == "MaterialList"
+                    && value
+                        .attributes
+                        .get("version")
+                        .map_or(Some(0), |value| value.parse::<u32>().ok())
+                        .is_some_and(|version| version <= 3)
+            } else {
+                value.tag == "ColorList"
+            }
+        }) {
+            match property.side_entries.as_slice() {
+                [name] => match entries.iter().find(|entry| entry.name() == name) {
+                    Some(entry) => sources.view(entry)?.window() == [0, 0, 0, 0],
+                    None => false,
+                },
+                _ => false,
+            }
+        } else {
+            false
+        };
+        if decoded_empty
+            || ir
+                .model
+                .appearances
+                .iter()
+                .any(|appearance| appearance.id.as_str().starts_with(&prefix))
         {
             represented.extend(property.side_entries.iter().cloned());
         }
@@ -123,7 +155,7 @@ pub(crate) fn decode_losses(
     let mut opaque = BTreeMap::<(String, String), ArenaClasses>::new();
     for property in properties
         .iter()
-        .filter(|property| crate::persistence::opaque_python_payload(property))
+        .filter(|property| crate::fidelity::opaque_property_payload(property))
     {
         let owner = extensions
             .iter()
@@ -147,10 +179,9 @@ pub(crate) fn decode_losses(
             ArenaClasses::from([class]),
         );
     }
-    for entry in entries
-        .iter()
-        .filter(|entry| !represented.contains(entry.name()))
-    {
+    for entry in entries.iter().filter(|entry| {
+        !represented.contains(entry.name()) && !failed_sidecars.contains(entry.name())
+    }) {
         let mut classes = ArenaClasses::new();
         for property in properties.iter().filter(|property| {
             property
@@ -200,25 +231,19 @@ pub(crate) fn decode_losses(
                 entry.name(),
                 cadmpeg_core::decode::u64_from_index(source.start()),
                 source.window(),
-                ArenaClasses::new(),
+                classes.clone(),
             )?;
+        } else {
+            fidelity
+                .mark_untyped(entry.id(), classes.iter().copied())
+                .map_err(CodecError::malformed)?;
         }
         opaque.insert((entry.id().to_owned(), entry.name().to_owned()), classes);
     }
-    let mut losses = Vec::new();
-    for ((id, entry), classes) in opaque {
-        fidelity
-            .mark_untyped(&id, classes.iter().copied())
-            .map_err(CodecError::malformed)?;
-        for class in classes {
-            let code = match class {
-                ArenaClass::Model => FreecadLossCode::SourceModelPayloadUnrepresented,
-                ArenaClass::Design => FreecadLossCode::SourceDesignPayloadUnrepresented,
-            };
-            losses.push(code.note(format!("opaque payload {entry} survives only as source bytes; its {class:?} content has no typed representation")));
-        }
-    }
-    Ok(losses)
+    Ok(opaque
+        .into_iter()
+        .map(|((_id, name), classes)| OpaquePayload { name, classes })
+        .collect())
 }
 
 #[cfg(test)]

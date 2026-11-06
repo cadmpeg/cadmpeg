@@ -54,7 +54,7 @@ impl Locations {
             work: WorkBudget::new(allowance),
         };
         for identity in tables.location_identities(ctx)? {
-            let index = result.intern(ctx, &tables, identity)?;
+            let index = result.intern(ctx, tables, identity)?;
             result
                 .source
                 .try_reserve(1)
@@ -177,7 +177,7 @@ impl Locations {
             let product = self.identities[left.identity]
                 .0
                 .compose(ctx, &self.identities[right.identity].0)?;
-            let identity = self.intern(ctx, &tables, product)?;
+            let identity = self.intern(ctx, tables, product)?;
             self.charge(1)?;
             self.products
                 .try_reserve(1)

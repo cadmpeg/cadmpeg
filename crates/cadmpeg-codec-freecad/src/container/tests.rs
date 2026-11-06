@@ -82,8 +82,15 @@ fn with_entry_records<T>(
         cadmpeg_ir::Annotations::default(),
     );
     let failed_retained = scan.failed_retained.clone();
-    let entries = super::entry_records(scan, objects, properties, &failed_retained, &mut fidelity)
-        .expect("entry records");
+    let entries = super::entry_records(
+        scan,
+        objects,
+        properties,
+        &failed_retained,
+        &std::collections::BTreeMap::new(),
+        &mut fidelity,
+    )
+    .expect("entry records");
     f(entries)
 }
 
@@ -666,5 +673,29 @@ fn equivalent_numeric_schema_declarations_select_the_same_persistence_grammar() 
         assert_eq!(recovered.ir().model, expected.ir().model);
         assert_valid_document(recovered.ir());
         assert!(crate::test_support::validate_native(recovered.ir()).is_empty());
+    }
+}
+
+#[test]
+fn partial_document_scope_uses_only_a_complete_declaration_section() {
+    use cadmpeg_test_support::zip_fixture::{self, RawEntry};
+    for (kind, expected) in [("TechDraw::DrawPage", false), ("PartDesign::Pad", true)] {
+        let xml = format!("<Document SchemaVersion='4'><Objects Count='1'><Object name='A' type='{kind}'/></Objects><ObjectData Count='1'><Object name='A'><Properties Count='0'/></Object></ObjectData></Document>");
+        let full = zip_fixture::archive(&[RawEntry::stored("Document.xml", xml.as_bytes())]);
+        let header = 30 + "Document.xml".len();
+        let cut = header + xml.find("</Objects>").unwrap() + "</Objects>".len();
+        let arena = DecodeArena::new();
+        let (ctx, view) =
+            DecodeContext::from_root_bytes(&full[..cut], &arena, &DecodePolicy::service()).unwrap();
+        assert_eq!(
+            super::partial_design_scope(&ctx, view).unwrap(),
+            Some(expected)
+        );
+        let before_close = cut - "</Objects>".len();
+        let arena = DecodeArena::new();
+        let (ctx, view) =
+            DecodeContext::from_root_bytes(&full[..before_close], &arena, &DecodePolicy::service())
+                .unwrap();
+        assert_eq!(super::partial_design_scope(&ctx, view).unwrap(), None);
     }
 }
