@@ -383,7 +383,7 @@ pub(crate) fn project_native_fixture(
             role: crate::design::scope::BrepSegmentRole::Document,
         }],
         issues: Vec::new(),
-        opaque_base_units: std::collections::HashSet::default(),
+        opaque_base_units: std::collections::HashMap::default(),
     };
     let sketch = crate::sketch::SketchInventory {
         sketches: Vec::new(),

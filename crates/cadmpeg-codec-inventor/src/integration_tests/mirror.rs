@@ -91,7 +91,7 @@ fn mirrors_without_a_history_or_with_multiple_segments_keep_the_pinned_loss() {
         model_roots: Vec::new(),
         brep_segments: Vec::new(),
         issues: Vec::new(),
-        opaque_base_units: std::collections::HashSet::default(),
+        opaque_base_units: std::collections::HashMap::default(),
     };
     let sketch = crate::sketch::SketchInventory {
         sketches: Vec::new(),
