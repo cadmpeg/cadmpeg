@@ -44,6 +44,7 @@ pub(crate) mod delete_face;
 pub(crate) mod derived;
 pub(crate) mod edge_selection;
 pub(crate) mod extrusion;
+pub(crate) mod face_selection;
 pub(crate) mod fillet;
 pub(crate) mod history;
 mod hole;
@@ -2727,6 +2728,7 @@ pub(crate) fn project(
         &mut features,
         inventory,
     )?);
+    input_topologies.extend(face_selection::project(ctx, &mut features, inventory)?);
     let unresolved_chamfers = features
         .iter()
         .filter(|feature| {

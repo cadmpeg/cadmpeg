@@ -94,6 +94,8 @@ pub(crate) enum InventorLossCode {
     FeatureEdgeSelectionNative,
     /// An edge-treatment input edge has several matched owners of identical geometry.
     FeatureEdgeOwnerIdenticalGeometry,
+    /// A Move Face feature retains a face operand that does not join exactly one stored face revision.
+    FeatureMoveFaceSelectionNative,
     /// Extrusion construction operands remain native.
     FeatureExtrusionOperandsNative,
     /// An extrusion retains its exact profile selection without a neutral sketch graph.
@@ -285,6 +287,7 @@ impl InventorLossCode {
         Self::FeatureEdgeSelectionEmptyItemsNative,
         Self::FeatureEdgeSelectionNative,
         Self::FeatureEdgeOwnerIdenticalGeometry,
+        Self::FeatureMoveFaceSelectionNative,
         Self::FeatureExtrusionOperandsNative,
         Self::FeatureExtrusionProfileNative,
         Self::FeatureExtrusionTargetFaceNative,
@@ -408,6 +411,7 @@ impl InventorLossCode {
             }
             Self::FeatureEdgeSelectionNative => "feature.edge-selection-native",
             Self::FeatureEdgeOwnerIdenticalGeometry => "feature.edge-owner-identical-geometry",
+            Self::FeatureMoveFaceSelectionNative => "feature.move-face-selection-native",
             Self::FeatureThreadDefinitionPartial => "feature.thread-definition-partial",
             Self::FeatureThickenOperandsNative => "feature.thicken-operands-native",
             Self::FeatureThickenConstructionNative => "feature.thicken-construction-native",
@@ -533,6 +537,7 @@ impl InventorLossCode {
             | Self::FeatureEdgeSelectionEmptyItemsNative
             | Self::FeatureEdgeSelectionNative
             | Self::FeatureEdgeOwnerIdenticalGeometry
+            | Self::FeatureMoveFaceSelectionNative
             | Self::FeatureExtrusionOperandsNative
             | Self::FeatureExtrusionProfileNative
             | Self::FeatureExtrusionTargetFaceNative
@@ -685,6 +690,7 @@ mod tests {
                 "feature.edge-selection-empty-items-native",
                 "feature.edge-selection-native",
                 "feature.edge-owner-identical-geometry",
+                "feature.move-face-selection-native",
                 "feature.extrusion-operands-native",
                 "feature.extrusion-profile-native",
                 "feature.extrusion-target-face-native",

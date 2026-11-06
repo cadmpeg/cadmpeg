@@ -27,6 +27,7 @@ pub(super) struct EdgeInventory {
     pub(super) generated_sources: Option<HashMap<u32, SourceNames>>,
     pub(super) generated_sources_complete: bool,
     pub(super) historical: HashMap<(String, u32), historical::SelectedEdge>,
+    pub(super) faces: HashMap<(String, u32), super::face_selection::SelectedFace>,
 }
 
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -127,7 +128,11 @@ pub(super) const fn legacy_schema(schema: u32) -> bool {
     matches!(schema, 38 | 40 | 42)
 }
 
-fn source_names(record: &Record, fields: &[&Token], schema: u32) -> Option<(i64, HashSet<u32>)> {
+pub(super) fn source_names(
+    record: &Record,
+    fields: &[&Token],
+    schema: u32,
+) -> Option<(i64, HashSet<u32>)> {
     let [Token::Ref(_), Token::Long(_), Token::Ref(_), Token::Ref(_), Token::Ref(owner), rest @ ..] =
         fields
     else {
@@ -198,7 +203,7 @@ struct Selector {
 
 /// Whether the direct edge selector of a `PmDc` segment major version stores
 /// the qualifier word between its topology and naming-form words.
-const fn selector_has_qualifier(version: u8) -> bool {
+pub(super) const fn selector_has_qualifier(version: u8) -> bool {
     version != SELECTOR_WITHOUT_QUALIFIER
 }
 
@@ -239,7 +244,7 @@ pub(super) struct EdgeName {
     role: i64,
 }
 
-fn values(record: &Record) -> Vec<&Token> {
+pub(super) fn values(record: &Record) -> Vec<&Token> {
     record.chunks().collect()
 }
 
@@ -250,13 +255,15 @@ fn custom(record: &Record) -> bool {
                 if family == "ATTRIB_CUSTOM" && base == "attrib"))
 }
 
-fn matched(record: &Record, schema: u32) -> Option<(u32, u32, i64)> {
+/// A matching attribute with its qualifier. Qualifier 0 identifies an edge and
+/// qualifier 1 identifies a face.
+pub(super) fn matched_qualified(record: &Record, schema: u32) -> Option<(u32, u32, i64, i64)> {
     let fields = values(record);
-    let (owner, source, key) = if legacy_schema(schema) {
+    let (owner, source, key, qualifier) = if legacy_schema(schema) {
         if legacy_family(record)? != "NMx_Matched_Entity" {
             return None;
         }
-        let [Token::Ref(_), Token::Long(_), Token::Ref(_), Token::Ref(_), Token::Ref(owner), Token::Long(stored_schema), Token::Long(1), Token::Long(source), Token::Long(-1), Token::Long(key), Token::Long(0)] =
+        let [Token::Ref(_), Token::Long(_), Token::Ref(_), Token::Ref(_), Token::Ref(owner), Token::Long(stored_schema), Token::Long(1), Token::Long(source), Token::Long(-1), Token::Long(key), Token::Long(qualifier)] =
             fields.as_slice()
         else {
             return None;
@@ -264,12 +271,12 @@ fn matched(record: &Record, schema: u32) -> Option<(u32, u32, i64)> {
         if *stored_schema != i64::from(schema) {
             return None;
         }
-        (owner, source, key)
+        (owner, source, key, qualifier)
     } else {
         if !custom(record) {
             return None;
         }
-        let [Token::Ref(_), Token::Long(_), Token::Ref(_), Token::Ref(_), Token::Ref(owner), Token::Str(family), Token::Long(1), Token::Long(44), Token::Long(1), Token::Long(source), Token::Long(-1), Token::Long(key), Token::Long(0)] =
+        let [Token::Ref(_), Token::Long(_), Token::Ref(_), Token::Ref(_), Token::Ref(owner), Token::Str(family), Token::Long(1), Token::Long(44), Token::Long(1), Token::Long(source), Token::Long(-1), Token::Long(key), Token::Long(qualifier)] =
             fields.as_slice()
         else {
             return None;
@@ -277,7 +284,7 @@ fn matched(record: &Record, schema: u32) -> Option<(u32, u32, i64)> {
         if family != "INV_NMX_MATCHED_ATTRIB" {
             return None;
         }
-        (owner, source, key)
+        (owner, source, key, qualifier)
     };
     if *owner < 0 {
         return None;
@@ -286,7 +293,13 @@ fn matched(record: &Record, schema: u32) -> Option<(u32, u32, i64)> {
         u32::try_from(*source).ok()?,
         u32::try_from(*key).ok()?,
         *owner,
+        *qualifier,
     ))
+}
+
+fn matched(record: &Record, schema: u32) -> Option<(u32, u32, i64)> {
+    let (source, key, owner, qualifier) = matched_qualified(record, schema)?;
+    (qualifier == 0).then_some((source, key, owner))
 }
 
 fn generated(record: &Record, schema: u32) -> Option<(i64, EdgeName)> {
@@ -431,6 +444,7 @@ pub(super) fn inventory(
     }
     let mut selectors = Vec::new();
     let mut stored_selectors = Vec::new();
+    let mut face_selectors = Vec::new();
     let mut sample_geometry = false;
     let mut has_flange = false;
     let mut tokens = HashSet::new();
@@ -460,6 +474,8 @@ pub(super) fn inventory(
         let mut selector_sources = HashMap::<u32, usize>::new();
         let mut record_sources = HashSet::<u32>::new();
         let stored_start = stored_selectors.len();
+        let face_start = face_selectors.len();
+        let mut face_sources = HashMap::<u32, usize>::new();
         for record in &table.records {
             has_flange |= record.type_id == super::sheet_metal::flange::TYPE;
             sample_geometry |= record.type_id == super::sheet_metal::flange::TYPE
@@ -473,6 +489,23 @@ pub(super) fn inventory(
                 if let Ok(source) = historical::source(record.payload, version) {
                     record_sources.insert(source);
                 }
+            }
+            if record.type_id == super::face_selection::SELECTOR_TYPE {
+                if let Ok(source) = historical::source(record.payload, version) {
+                    *face_sources.entry(source).or_default() += 1;
+                }
+                match super::face_selection::parse(ctx, record.payload, version) {
+                    Ok(Some(face)) => {
+                        if super::face_selection::links(&face, |ordinal| {
+                            record_types.get(&ordinal).copied().flatten()
+                        }) {
+                            face_selectors.push(face);
+                        }
+                    }
+                    Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+                    Ok(None) | Err(_) => {}
+                }
+                continue;
             }
             if record.type_id != SELECTOR_TYPE {
                 continue;
@@ -502,6 +535,12 @@ pub(super) fn inventory(
                 }
             }
         }
+        let mut face_position = 0;
+        face_selectors.retain(|face: &super::face_selection::FaceSelector| {
+            let keep = face_position < face_start || face_sources.get(&face.source) == Some(&1);
+            face_position += 1;
+            keep
+        });
         let mut position = 0;
         stored_selectors.retain(|selector| {
             let keep = position < stored_start
@@ -514,6 +553,7 @@ pub(super) fn inventory(
     let name_corners = has_flange && matches!(carrier.schema, 38 | 40 | 42 | 44);
     if tokens.len() != 1
         || (stored_selectors.is_empty()
+            && face_selectors.is_empty()
             && (selectors.is_empty() || !names_joined(carrier.schema, has_flange))
             && !name_corners)
     {
@@ -535,6 +575,14 @@ pub(super) fn inventory(
     } else {
         HashMap::new()
     };
+    let faces = if archive_complete {
+        super::face_selection::selected(&records, &face_selectors, carrier.schema)
+            .into_iter()
+            .map(|(source, face)| ((token.clone(), source), face))
+            .collect()
+    } else {
+        HashMap::new()
+    };
     let (generated_sources, generated_sources_complete) = if name_corners {
         let (sources, complete) = generated_sources(&records, carrier.schema);
         (Some(sources), archive_complete && complete)
@@ -546,6 +594,7 @@ pub(super) fn inventory(
             generated_sources,
             generated_sources_complete,
             historical,
+            faces,
             ..EdgeInventory::default()
         });
     }
@@ -560,6 +609,7 @@ pub(super) fn inventory(
     };
     Ok(EdgeInventory {
         historical,
+        faces,
         generated_sources,
         generated_sources_complete,
         names: names
