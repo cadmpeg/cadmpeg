@@ -26,7 +26,41 @@ const SCOPE: u32 = 315;
 const SEED_GROUP: u32 = 323;
 const PATH_GROUP: u32 = 333;
 
+fn settings(
+    total_extent: bool,
+    flipped: bool,
+    path_oriented: bool,
+    start_parameter: f64,
+) -> crate::records::feature::patterns::DesignPathPatternSettings {
+    crate::records::feature::patterns::DesignPathPatternSettings {
+        settings_record_index: 322,
+        total_extent: Located {
+            value: total_extent,
+            offset: 0,
+        },
+        flipped: Located {
+            value: flipped,
+            offset: 0,
+        },
+        path_oriented: Located {
+            value: path_oriented,
+            offset: 0,
+        },
+        start_record_index: 343,
+        start_parameter: Located {
+            value: cadmpeg_ir::scalar::FiniteReal::new(start_parameter).unwrap(),
+            offset: 0,
+        },
+    }
+}
+
 fn scope() -> DesignParameterScope {
+    scope_with(Some(settings(false, false, false, 0.0)))
+}
+
+fn scope_with(
+    settings: Option<crate::records::feature::patterns::DesignPathPatternSettings>,
+) -> DesignParameterScope {
     let mut scope = DesignParameterScope::empty(
         &format!("{STREAM}:design-parameter-scope#38353"),
         DesignFeatureKind::PathPattern,
@@ -49,6 +83,11 @@ fn scope() -> DesignParameterScope {
             draft.paired_byte_offset += shift;
         })
         .unwrap();
+    if let crate::records::feature::scope::DesignScopePayloadMut::PathPattern(slot) =
+        scope.payload_mut()
+    {
+        *slot = settings;
+    }
     scope
 }
 
@@ -156,18 +195,7 @@ fn path_pattern_reads_seed_path_count_and_spacing() {
     ] {
         let projected =
             project_path_pattern(&scope(), &groups(role), &parameters).expect("path pattern");
-        assert_eq!(
-            projected
-                .losses
-                .iter()
-                .map(|loss| loss.code.clone())
-                .collect::<Vec<_>>(),
-            [
-                crate::loss::F3dLossCode::FeaturePathPatternCountAssumed.kind(),
-                crate::loss::F3dLossCode::FeaturePathPatternSpacingAssumed.kind(),
-                crate::loss::F3dLossCode::FeaturePathPatternPlacementAssumed.kind(),
-            ]
-        );
+        assert!(projected.losses.is_empty());
         let (seeds, transform) = pattern(projected.definition);
         assert_eq!(seeds, vec![seed]);
         let PatternTransform::CurveDriven {
@@ -268,4 +296,60 @@ fn path_pattern_rejects_groups_outside_its_form() {
         project_path_pattern(&unclosed, &groups(DesignOperandRole::BODIES_B), &parameters)
             .is_none()
     );
+}
+
+#[test]
+fn path_pattern_settings_select_the_spacing_and_name_dropped_placement() {
+    let (count, distance) = (count(4.0), distance(6.0));
+    let parameters = [(0, &count), (1, &distance)];
+    let spacing_of = |scope: DesignParameterScope| {
+        let projected =
+            project_path_pattern(&scope, &groups(DesignOperandRole::BODIES_B), &parameters)
+                .expect("path pattern");
+        let (_, transform) = pattern(projected.definition);
+        match transform {
+            PatternTransform::CurveDriven { spacing, .. } => Some(spacing.get()),
+            _ => None,
+        }
+    };
+    assert!(
+        spacing_of(scope_with(Some(settings(false, false, false, 0.0))))
+            .is_some_and(|spacing| (spacing - 60.0).abs() <= 1.0e-12)
+    );
+    assert!(
+        spacing_of(scope_with(Some(settings(true, false, false, 0.0))))
+            .is_some_and(|spacing| (spacing - 20.0).abs() <= 1.0e-12)
+    );
+    assert_eq!(spacing_of(scope_with(None)), None);
+    let one = self::count(1.0);
+    assert!(project_path_pattern(
+        &scope_with(Some(settings(true, false, false, 0.0))),
+        &groups(DesignOperandRole::BODIES_B),
+        &[(0, &one), (1, &distance)],
+    )
+    .is_some_and(|projected| matches!(
+        pattern(projected.definition).1,
+        PatternTransform::Unresolved { .. }
+    )));
+
+    let projected = project_path_pattern(
+        &scope_with(Some(settings(false, true, true, 0.5))),
+        &groups(DesignOperandRole::BODIES_B),
+        &parameters,
+    )
+    .expect("path pattern");
+    let [loss] = projected.losses.as_slice() else {
+        panic!("one placement loss");
+    };
+    assert_eq!(
+        loss.code,
+        crate::loss::F3dLossCode::FeaturePathPatternPlacementNotTransferred.kind()
+    );
+    for setting in [
+        "flipped direction",
+        "path-direction orientation",
+        "path parameter 0.5",
+    ] {
+        assert!(loss.message.contains(setting), "{}", loss.message);
+    }
 }

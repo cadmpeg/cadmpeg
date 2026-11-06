@@ -1799,3 +1799,87 @@ fn rectangular_pattern_payload_binds_secondary_vector_to_owners_and_seed() {
     ambiguous.extend_from_slice(&bytes);
     assert!(parse(&ambiguous).is_none());
 }
+
+/// A `PathPattern` scope frame in the expanded or compact prefix form, its
+/// settings record 322, and its path-start record 319.
+fn path_pattern_frame(compact_prefix: bool, distance_type: u8, settings_tail: usize) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    indexed_header(&mut bytes, *b"300", 315);
+    if compact_prefix {
+        bytes.extend_from_slice(&[0; 10]);
+    } else {
+        bytes.extend_from_slice(&[0; 9]);
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.push(0);
+    }
+    push_marked_reference(&mut bytes, 322);
+    let settings_at = bytes.len();
+    indexed_header(&mut bytes, *b"301", 322);
+    bytes.resize(settings_at + 267 + settings_tail, 0);
+    bytes[settings_at + 79] = 1;
+    bytes[settings_at + 80] = 1;
+    bytes[settings_at + 81] = 0;
+    bytes[settings_at + 152..settings_at + 156].copy_from_slice(&[0xff; 4]);
+    bytes[settings_at + 156] = distance_type;
+    let start_at = bytes.len();
+    indexed_header(&mut bytes, *b"302", 319);
+    bytes.resize(start_at + 197, 0);
+    bytes[start_at + 25..start_at + 33].copy_from_slice(&0.5f64.to_le_bytes());
+    indexed_header(&mut bytes, *b"303", 330);
+    bytes
+}
+
+#[test]
+fn path_pattern_settings_read_the_settings_and_path_start_records() {
+    use crate::records::entity_header::SegmentType;
+
+    let segment_type = |guid: &str, version: u32, ordinal: u64| {
+        SegmentType::try_new(
+            crate::ids::native_design_type_id("FusionAssetName[Active]/Design1/MetaStream.dat", 0),
+            crate::design::test_support::design_type(guid, None, version, "Fusion", vec![ordinal]),
+        )
+        .unwrap()
+    };
+    let settings = segment_type("BE1FB171-D98A-4A4D-99C2-3738627CF79C", 4, 0);
+    let start = segment_type("69EE2FA7-BCC7-449E-9CA9-976CEFDFED44", 3, 1);
+    let old_settings = segment_type("BE1FB171-D98A-4A4D-99C2-3738627CF79C", 3, 2);
+    let mut scope = DesignParameterScope::empty(
+        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter-scope#0",
+        crate::records::feature::scope::DesignFeatureKind::PathPattern,
+        315,
+    );
+    scope
+        .try_edit(|draft| {
+            draft.reference_members = crate::records::identity::ReferenceRun::located(vec![
+                crate::records::identity::Located {
+                    value: 319,
+                    offset: 14,
+                },
+            ]);
+        })
+        .unwrap();
+    let read = |bytes: &[u8], settings_type: &SegmentType| {
+        let class_types = std::collections::HashMap::from([(301, settings_type), (302, &start)]);
+        super::exact_path_pattern_settings(
+            bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(bytes),
+            &scope,
+            &class_types,
+        )
+    };
+    for compact_prefix in [false, true] {
+        let bytes = path_pattern_frame(compact_prefix, 1, 0);
+        let settings_read = read(&bytes, &settings).expect("path-pattern settings");
+        assert_eq!(settings_read.settings_record_index, 322);
+        assert!(settings_read.total_extent.value);
+        assert!(settings_read.flipped.value);
+        assert!(!settings_read.path_oriented.value);
+        assert_eq!(settings_read.start_record_index, 319);
+        assert!((settings_read.start_parameter.value.get() - 0.5).abs() <= f64::EPSILON);
+    }
+    assert!(read(&path_pattern_frame(false, 0, 0), &settings)
+        .is_some_and(|read| !read.total_extent.value));
+    assert!(read(&path_pattern_frame(false, 2, 0), &settings).is_none());
+    assert!(read(&path_pattern_frame(false, 1, 1), &settings).is_none());
+    assert!(read(&path_pattern_frame(false, 1, 0), &old_settings).is_none());
+}

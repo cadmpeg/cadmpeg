@@ -107,39 +107,56 @@ pub(super) fn project_path_pattern(
         }))
         .map(|(_, parameter)| *parameter)
     };
-    let curve_driven = parameter(0, COUNT_SOURCE_KIND)
+    let settings = scope.path_pattern_settings();
+    let curve_driven = settings
+        .zip(parameter(0, COUNT_SOURCE_KIND))
         .zip(parameter(1, DISTANCE_SOURCE_KIND))
-        .and_then(|(count, distance)| {
+        .and_then(|((settings, count), distance)| {
             let count = count
                 .unit()
                 .is_none()
                 .then(|| count.evaluated_value().get())
                 .filter(|count| *count >= 1.0 && count.fract() == 0.0)
                 .and_then(cadmpeg_core::convert::truncate_f64_to_u32)?;
+            let distance = design_positive_length(distance)?;
+            let spacing = if settings.total_extent.value {
+                let intervals = count.checked_sub(1).filter(|intervals| *intervals > 0)?;
+                cadmpeg_ir::scalar::PositiveLength::new(distance.get() / f64::from(intervals))?
+            } else {
+                distance
+            };
             PatternKind::new(PatternTransform::CurveDriven {
                 path: Some(PathRef::Native(path_group.id.clone())),
-                spacing: design_positive_length(distance)?,
+                spacing,
                 count,
             })
             .ok()
         });
-    let losses = if curve_driven.is_some() {
+    let mut dropped = Vec::new();
+    if let Some(settings) = settings.filter(|_| curve_driven.is_some()) {
+        if settings.flipped.value {
+            dropped.push("the flipped direction".to_owned());
+        }
+        if settings.path_oriented.value {
+            dropped.push("the path-direction orientation".to_owned());
+        }
+        if settings.start_parameter.value.get() != 0.0 {
+            dropped.push(format!(
+                "the start point at path parameter {}",
+                settings.start_parameter.value.get()
+            ));
+        }
+    }
+    let losses = if dropped.is_empty() {
+        Vec::new()
+    } else {
         vec![
-            F3dLossCode::FeaturePathPatternCountAssumed.note(format!(
-                "PathPattern scope {} reads its `{COUNT_SOURCE_KIND}` parameter as the instance count including the seed (DR-290).",
-                scope.id
-            )),
-            F3dLossCode::FeaturePathPatternSpacingAssumed.note(format!(
-                "PathPattern scope {} reads its `{DISTANCE_SOURCE_KIND}` parameter as the arc-length spacing between adjacent instances (DR-290).",
-                scope.id
-            )),
-            F3dLossCode::FeaturePathPatternPlacementAssumed.note(format!(
-                "PathPattern scope {} places its first instance at the seed and repeats along the stored path direction (DR-290).",
-                scope.id
+            F3dLossCode::FeaturePathPatternPlacementNotTransferred.note(format!(
+                "PathPattern scope {} drops {}: a curve-driven pattern has no field for them.",
+                scope.id,
+                dropped.join(", ")
             )),
         ]
-    } else {
-        Vec::new()
     };
     Some(ProjectedPathPattern {
         definition: FeatureDefinition::Operation(FeatureOperation::Pattern {

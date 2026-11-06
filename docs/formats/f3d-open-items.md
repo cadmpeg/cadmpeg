@@ -1387,12 +1387,12 @@ when the operation transition carries no candidate for the group members?
 
 **Note.** The decoder reports `feature.profile-crossing-loop-assumed` for each selection that takes regions from this rule.
 
-### DR-290. PathPattern scalar owners and path settings
+### DR-290. PathPattern settings scalars at offsets 94 and 124
 
-**Question.** Does the `countU` count of a `PathPattern` scope include the seed, does its `PathPatternDelta` distance give the spacing between adjacent instances or the total extent, and which fields give the start position on the path, the orientation, and the flip direction?
+**Question.** What do the f64 values at offsets 94 and 124 of a path-pattern settings record encode?
 
-**Known.** `f3d.md` §3.1 gives the seed group, the path group, and the `countU` and `PathPatternDelta` parameters. The scope class GUID `B0B3D9E5-1C25-47BC-ABCD-E723F193DF1B` selects the family; a stored family name equal to the decoder token `PathPattern` keeps a scope native. The decoder reads `countU` as the instance count including the seed, reads `PathPatternDelta` as the arc-length spacing between adjacent instances, and places the first instance at the seed with repetition along the stored path direction. It records `feature.path-pattern-count-assumed`, `feature.path-pattern-spacing-assumed`, and `feature.path-pattern-placement-assumed` for each scope it projects with these readings. A missing, repeated, non-integer, nonpositive, or wrongly dimensioned parameter gives the pattern its seeds and an unresolved curve-driven form. A scope whose groups leave the stated form, or that has an unclosed group, keeps its native definition. A path whose entity selections do not resolve to sketch curves keeps the native path group. The settings record at scope-reference ordinal zero, the record of type `69EE2FA7-BCC7-449E-9CA9-976CEFDFED44` (two f64 values, a u32, and three f64 values of `-1.0`), and the trailing persistent selection are the candidate carriers of the distance type, start position, orientation, and flip direction.
+**Known.** `f3d.md` §3.1 gives the path-pattern settings record. The f64 at offset 94 is 3.0 on four line paths whose adjacent spacing is 3 cm and whose start point is at path parameter 0. It is −1.92699 on a circular-arc path of radius 5 cm with a 2 cm spacing and its start point at path parameter π/4. The f64 at offset 124 is 0.5 on that arc path and zero on the line paths. The decoder reads neither value.
 
-**Need.** Controlled saves that pattern one 10 mm cube three times on a sketch path: (a) a straight line path, distance type Extent, 60 mm; (b) a circular-arc path of radius 50 mm and 90 degrees, distance type Spacing, 20 mm, start point at the middle of the path, orientation Path direction; (c) save (a) with Flip direction. Compare the parameter values, the settings record, and the `69EE2FA7` record across the saves.
+**Need.** Saves that vary the spacing and the start point on one path, with the two values compared against the instance positions.
 
 **Conflict.** None.

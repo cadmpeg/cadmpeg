@@ -8603,3 +8603,41 @@ pub(crate) mod class_349_two_sided_through_all_extrude_frame {
     #[cfg(test)]
     pub(crate) const PREVIOUS_HISTORY_STATE: usize = 450;
 }
+
+/// Byte offsets for the `path_pattern_settings` record.
+///
+/// Spec §Assembly operands. Record length 267 B.
+///
+/// ```text
+/// Offsets are relative to the record's indexed header; the next indexed header follows at offset 267.
+/// ```
+pub(crate) mod path_pattern_settings {
+    /// Record length in bytes. Spec §Assembly operands.
+    pub(crate) const LEN: usize = 267;
+    /// Offset of `settings_marker` (`u8`). Spec §Assembly operands.
+    pub(crate) const SETTINGS_MARKER: usize = 79;
+    /// Stated value of `settings_marker` (`u8`). Spec §Assembly operands.
+    pub(crate) const SETTINGS_MARKER_VALUE: u8 = 1;
+    /// Offset of `flipped` (`u8`). Spec §Assembly operands.
+    pub(crate) const FLIPPED: usize = 80;
+    /// Offset of `path_oriented` (`u8`). Spec §Assembly operands.
+    pub(crate) const PATH_ORIENTED: usize = 81;
+    /// Offset of `distance_type_marker` (`bytes[4]`). Spec §Assembly operands.
+    pub(crate) const DISTANCE_TYPE_MARKER: usize = 152;
+    /// Offset of `distance_type` (`u8`). Spec §Assembly operands.
+    pub(crate) const DISTANCE_TYPE: usize = 156;
+}
+
+/// Byte offsets for the `path_pattern_start` record.
+///
+/// Spec §Assembly operands. Record length 197 B.
+///
+/// ```text
+/// Offsets are relative to the record's indexed header; the next indexed header follows at offset 197.
+/// ```
+pub(crate) mod path_pattern_start {
+    /// Record length in bytes. Spec §Assembly operands.
+    pub(crate) const LEN: usize = 197;
+    /// Offset of `start_parameter` (`f64`, little-endian). Spec §Assembly operands.
+    pub(crate) const START_PARAMETER: usize = 25;
+}

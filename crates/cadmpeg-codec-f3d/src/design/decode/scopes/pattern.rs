@@ -14,6 +14,7 @@ use crate::design::decode::text::relaxed_guid_end;
 use crate::design::design_feature_family;
 use crate::design::DesignFeatureFamily;
 use crate::ids::native_stream;
+use crate::layout::{path_pattern_settings as settings_layout, path_pattern_start as start_layout};
 use crate::records::feature::patterns;
 use crate::records::feature::patterns::DesignCircularPatternConstruction;
 use crate::records::feature::patterns::DesignRectangularPatternConstruction;
@@ -1040,6 +1041,132 @@ fn exact_fixed_pattern_count(
         });
     let candidate = candidates.next()?;
     candidates.next().is_none().then_some(candidate)
+}
+
+/// Type GUID of the `PathPattern` settings record.
+const PATH_PATTERN_SETTINGS_TYPE: &str = "BE1FB171-D98A-4A4D-99C2-3738627CF79C";
+/// Type GUID of the `PathPattern` path-start record.
+const PATH_PATTERN_START_TYPE: &str = "69EE2FA7-BCC7-449E-9CA9-976CEFDFED44";
+
+/// Fixed settings of a `PathPattern` scope: the settings record that the scope
+/// prefix names and the path-start record in the scope reference table.
+pub(super) fn exact_path_pattern_settings(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+    class_types: &std::collections::HashMap<u32, &crate::records::entity_header::SegmentType>,
+) -> Option<patterns::DesignPathPatternSettings> {
+    use crate::records::identity::Located;
+
+    if scope.kind() != crate::records::feature::scope::DesignFeatureKind::PathPattern {
+        return None;
+    }
+    let start = usize::try_from(scope.byte_offset()).ok()?;
+    let reference_at = if bytes.get(start + 11..start + 20)? == [0; 9]
+        && View::u32_le_at(bytes, start + 20)? == 1
+        && *bytes.get(start + 24)? == 0
+    {
+        start + 25
+    } else if bytes.get(start + 11..start + 21)? == [0; 10] {
+        start + 21
+    } else {
+        return None;
+    };
+    let settings_record_index = marked_record_reference(bytes, reference_at)?;
+    let settings_at = typed_record_frame(
+        bytes,
+        records,
+        class_types,
+        settings_record_index,
+        (PATH_PATTERN_SETTINGS_TYPE, 4),
+        settings_layout::LEN,
+    )?;
+    let flag = |offset: usize| {
+        let at = settings_at.checked_add(offset)?;
+        match bytes.get(at)? {
+            0 => Some(Located {
+                value: false,
+                offset: u64_from_index(at),
+            }),
+            1 => Some(Located {
+                value: true,
+                offset: u64_from_index(at),
+            }),
+            _ => None,
+        }
+    };
+    if *bytes.get(settings_at + settings_layout::SETTINGS_MARKER)?
+        != settings_layout::SETTINGS_MARKER_VALUE
+        || bytes.get(
+            settings_at + settings_layout::DISTANCE_TYPE_MARKER
+                ..settings_at + settings_layout::DISTANCE_TYPE,
+        )? != [0xff; 4]
+    {
+        return None;
+    }
+    let total_extent = flag(settings_layout::DISTANCE_TYPE)?;
+    let flipped = flag(settings_layout::FLIPPED)?;
+    let path_oriented = flag(settings_layout::PATH_ORIENTED)?;
+    let mut starts = scope
+        .reference_members()
+        .values()
+        .filter_map(|record_index| {
+            typed_record_frame(
+                bytes,
+                records,
+                class_types,
+                *record_index,
+                (PATH_PATTERN_START_TYPE, 3),
+                start_layout::LEN,
+            )
+            .map(|at| (*record_index, at))
+        });
+    let (start_record_index, start_record_at) = starts.next()?;
+    if starts.next().is_some() {
+        return None;
+    }
+    let start_parameter_at = start_record_at.checked_add(start_layout::START_PARAMETER)?;
+    let [start_parameter] = finite_reals_at::<1>(bytes, start_parameter_at)?;
+    Some(patterns::DesignPathPatternSettings {
+        settings_record_index,
+        total_extent,
+        flipped,
+        path_oriented,
+        start_record_index,
+        start_parameter: Located {
+            value: start_parameter,
+            offset: u64_from_index(start_parameter_at),
+        },
+    })
+}
+
+/// Header offset of the unique primary frame of `record_index` whose class
+/// tag names the type GUID and version and whose next indexed header follows
+/// at `length` bytes.
+fn typed_record_frame(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    class_types: &std::collections::HashMap<u32, &crate::records::entity_header::SegmentType>,
+    record_index: u32,
+    (type_guid, version): (&str, u32),
+    length: usize,
+) -> Option<usize> {
+    let mut frames = records.offsets(record_index).iter().copied().filter(|at| {
+        bytes
+            .get(at + 4..at + 7)
+            .and_then(|tag| std::str::from_utf8(tag).ok())
+            .and_then(|tag| tag.parse::<u32>().ok())
+            .and_then(|tag| class_types.get(&tag))
+            .is_some_and(|row| {
+                row.type_guid.as_str().eq_ignore_ascii_case(type_guid) && row.version == version
+            })
+            && at
+                .checked_add(11)
+                .and_then(|body| next_indexed_record_offset(bytes, body))
+                == at.checked_add(length)
+    });
+    let at = frames.next()?;
+    frames.next().is_none().then_some(at)
 }
 
 #[cfg(test)]

@@ -249,6 +249,11 @@ cadmpeg_core::named_optional_field!(
     "ruled_surface_operation"
 );
 cadmpeg_core::named_optional_field!(
+    deserialize_path_pattern_settings,
+    crate::records::feature::patterns::DesignPathPatternSettings,
+    "path_pattern_settings"
+);
+cadmpeg_core::named_optional_field!(
     deserialize_scale_operation,
     DesignScaleOperation,
     "scale_operation"
@@ -586,6 +591,7 @@ design_feature_kinds! {
         RPattern => "R-Pattern": Option<DesignRectangularPatternConstruction>,
         RectangularPattern => "Rectangular Pattern": Option<DesignRectangularPatternConstruction>,
         Mirror => "Mirror": Option<DesignMirrorConstruction>,
+        PathPattern => "PathPattern": Option<crate::records::feature::patterns::DesignPathPatternSettings>,
         Align => "Align": Option<DesignAlignEnvelope>,
         Move => "Move": Option<DesignMoveOperation>,
         MoveFace => "MoveFace": Option<DesignMoveOperation>,
@@ -639,7 +645,6 @@ design_feature_kinds! {
         CustomFeature => "CustomFeature",
         Form => "Form",
         SplitFace => "SplitFace",
-        PathPattern => "PathPattern",
         DeleteFace => "DeleteFace",
         SurfaceDeleteFace => "SurfaceDeleteFace",
         RemoveBody => "RemoveBody",
@@ -900,6 +905,13 @@ struct DesignParameterScopeSerde {
         deserialize_with = "deserialize_scale_operation"
     )]
     scale_operation: Option<DesignScaleOperation>,
+    /// Fixed settings carried by a `PathPattern` scope.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_path_pattern_settings"
+    )]
+    path_pattern_settings: Option<crate::records::feature::patterns::DesignPathPatternSettings>,
     /// Exact tolerance and setting-record references carried by a `SurfaceStitch` scope.
     #[serde(
         default,
@@ -1637,6 +1649,9 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
         if wire.scale_operation.is_some() {
             present.push("scale_operation");
         }
+        if wire.path_pattern_settings.is_some() {
+            present.push("path_pattern_settings");
+        }
         if wire.surface_stitch_operation.is_some() {
             present.push("surface_stitch_operation");
         }
@@ -1932,7 +1947,9 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                 DesignScopePayload::CopyPasteBodies(wire.copy_paste_bodies_operation.take())
             }
             DesignFeatureKind::SplitFace => DesignScopePayload::SplitFace,
-            DesignFeatureKind::PathPattern => DesignScopePayload::PathPattern,
+            DesignFeatureKind::PathPattern => {
+                DesignScopePayload::PathPattern(wire.path_pattern_settings.take())
+            }
             DesignFeatureKind::DeleteFace => DesignScopePayload::DeleteFace,
             DesignFeatureKind::SurfaceDeleteFace => DesignScopePayload::SurfaceDeleteFace,
             DesignFeatureKind::RemoveBody => DesignScopePayload::RemoveBody,
@@ -1995,6 +2012,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             || wire.align_envelope.is_some()
             || wire.move_operation.is_some()
             || wire.scale_operation.is_some()
+            || wire.path_pattern_settings.is_some()
             || wire.surface_stitch_operation.is_some()
             || wire.surface_extend_operation.is_some()
             || wire.surface_offset_operation.is_some()
@@ -2117,6 +2135,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             align_envelope: None,
             move_operation: None,
             scale_operation: None,
+            path_pattern_settings: None,
             surface_stitch_operation: None,
             surface_extend_operation: None,
             surface_offset_operation: None,
@@ -2219,6 +2238,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             DesignScopePayload::Scale(value) => {
                 wire.scale_operation = value;
             }
+            DesignScopePayload::PathPattern(value) => wire.path_pattern_settings = value,
             DesignScopePayload::SurfaceStitch(value) => wire.surface_stitch_operation = Some(value),
             DesignScopePayload::SurfaceExtend(value) => wire.surface_extend_operation = value,
             DesignScopePayload::SurfaceOffset(value) => wire.surface_offset_operation = value,
@@ -2273,7 +2293,6 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             | DesignScopePayload::CustomFeature
             | DesignScopePayload::Form
             | DesignScopePayload::SplitFace
-            | DesignScopePayload::PathPattern
             | DesignScopePayload::DeleteFace
             | DesignScopePayload::SurfaceDeleteFace
             | DesignScopePayload::RemoveBody
@@ -2709,6 +2728,15 @@ impl DesignParameterScope {
     pub(crate) fn move_operation(&self) -> Option<&DesignMoveOperation> {
         match &self.payload {
             DesignScopePayload::Move(value) | DesignScopePayload::MoveFace(value) => value.as_ref(),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn path_pattern_settings(
+        &self,
+    ) -> Option<&crate::records::feature::patterns::DesignPathPatternSettings> {
+        match &self.payload {
+            DesignScopePayload::PathPattern(value) => value.as_ref(),
             _ => None,
         }
     }

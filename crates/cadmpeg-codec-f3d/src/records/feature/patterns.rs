@@ -1355,3 +1355,22 @@ mod tests {
 }
 
 mod identity_rewrite;
+
+/// Fixed settings of a `PathPattern` scope, from its settings record and its
+/// path-start record.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub(crate) struct DesignPathPatternSettings {
+    /// Settings record named by the scope prefix.
+    pub(crate) settings_record_index: u32,
+    /// The distance parameter is the total extent; otherwise it is the
+    /// spacing between adjacent instances.
+    pub(crate) total_extent: Located<bool>,
+    /// The instances run against the path direction.
+    pub(crate) flipped: Located<bool>,
+    /// Each instance follows the path direction.
+    pub(crate) path_oriented: Located<bool>,
+    /// Path-start record in the scope reference table.
+    pub(crate) start_record_index: u32,
+    /// Path parameter of the pattern start point.
+    pub(crate) start_parameter: Located<FiniteReal>,
+}
