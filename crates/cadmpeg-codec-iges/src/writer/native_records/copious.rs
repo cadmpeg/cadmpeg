@@ -46,7 +46,10 @@ pub(in crate::writer) fn matching_points(
             .points
             .iter()
             .find(|point| point.id.as_str() == id)?;
-        let [x, y, z] = point.position().coordinates().map(|value| value.get());
+        let [x, y, z] = point
+            .position()
+            .coordinates()
+            .map(cadmpeg_ir::scalar::FiniteReal::get);
         if values[0].as_f64()? != x || values[1].as_f64()? != y || values[2].as_f64()? != z {
             return None;
         }
