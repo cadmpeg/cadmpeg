@@ -656,6 +656,9 @@ impl Emitter<'_, '_> {
                 .filter(|status| !matches!(status, EntityStatus::Definition))
                 .unwrap_or(EntityStatus::Annotation);
         } else if arena == "copious_data" {
+            if let Some(points) = copious::matching_points(self.ir, record) {
+                entity.source_targets.extend(points);
+            }
             if let Some(status) = super::source_status(self.ir, record)
                 .filter(|status| !matches!(status, EntityStatus::Definition))
             {

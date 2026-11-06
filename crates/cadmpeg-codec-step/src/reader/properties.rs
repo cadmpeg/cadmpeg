@@ -7,7 +7,7 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::ids::{AttributeId, ProductDefinitionId};
+use cadmpeg_ir::ids::{AttributeId, IdentityKey, OccurrenceId, ProductDefinitionId};
 
 use crate::ids::{self, kind};
 use crate::loss::StepLossCode;
@@ -23,6 +23,7 @@ pub(super) fn decode(
     index: &CarrierIndex,
     topology: &TopologyData,
     definitions: &BTreeMap<u64, ProductDefinitionId>,
+    occurrences: &BTreeMap<u64, Vec<OccurrenceId>>,
     ir: &mut CadIr,
     ctx: &DecodeContext<'_>,
 ) -> Result<StageOutcome<()>, CodecError> {
@@ -54,6 +55,9 @@ pub(super) fn decode(
         };
         let (target, owner_rep_id) = if let Some(definition) = definitions.get(&owner_id) {
             (AttributeTarget::ProductDefinition(definition.clone()), None)
+        } else if let Some(occurrence) = occurrences.get(&owner_id).and_then(|items| items.first())
+        {
+            (AttributeTarget::Occurrence(occurrence.clone()), None)
         } else {
             let Some(owner) = exchange
                 .records()
@@ -174,9 +178,24 @@ pub(super) fn decode(
             AttributeId::from(ids::data(kind!("scalar-property"), relation_id)),
             None,
             target,
-            name,
-            vec![value],
+            name.clone(),
+            vec![value.clone()],
         )?);
+        if let Some(items) = occurrences.get(&owner_id) {
+            for (ordinal, occurrence) in items.iter().enumerate().skip(1) {
+                ir.model.attributes.push(SourceAttribute::new(
+                    ctx,
+                    AttributeId::from(ids::data(
+                        kind!("scalar-property"),
+                        IdentityKey::from(relation_id).dash(ordinal),
+                    )),
+                    None,
+                    AttributeTarget::Occurrence(occurrence.clone()),
+                    name.clone(),
+                    vec![value.clone()],
+                )?);
+            }
+        }
         typed.extend([
             relation_id,
             property_id,
@@ -217,6 +236,72 @@ fn empty_or_omitted(value: &Value) -> bool {
 mod tests {
     use crate::test_support::exchange::decode_inline;
     use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
+
+    #[test]
+    fn occurrence_property_follows_each_expansion_of_a_shared_usage() {
+        let decoded = decode_inline(
+            "#1=APPLICATION_CONTEXT('mechanical design');
+#2=PRODUCT_CONTEXT('',#1,'mechanical');
+#3=PRODUCT('A','Assembly','',(#2));
+#4=PRODUCT_DEFINITION_FORMATION('','',#3);
+#5=PRODUCT_DEFINITION_CONTEXT('',#1,'design');
+#6=PRODUCT_DEFINITION('','',#4,#5);
+#7=PRODUCT('B','Subassembly','',(#2));
+#8=PRODUCT_DEFINITION_FORMATION('','',#7);
+#9=PRODUCT_DEFINITION('','',#8,#5);
+#10=PRODUCT('C','Part','',(#2));
+#11=PRODUCT_DEFINITION_FORMATION('','',#10);
+#12=PRODUCT_DEFINITION('','',#11,#5);
+#13=NEXT_ASSEMBLY_USAGE_OCCURRENCE('1','','',#6,#9,$);
+#14=NEXT_ASSEMBLY_USAGE_OCCURRENCE('2','','',#6,#9,$);
+#15=NEXT_ASSEMBLY_USAGE_OCCURRENCE('3','','',#9,#12,$);
+#16=PROPERTY_DEFINITION('Grade','',#15);
+#17=INTEGER_REPRESENTATION_ITEM('',7);
+#18=(GEOMETRIC_REPRESENTATION_CONTEXT(3) REPRESENTATION_CONTEXT('',''));
+#19=REPRESENTATION('',(#17),#18);
+#20=PROPERTY_DEFINITION_REPRESENTATION(#16,#19);",
+        );
+        let attributes: Vec<_> = decoded
+            .ir()
+            .model
+            .attributes
+            .iter()
+            .filter(|attribute| attribute.name == "Grade")
+            .collect();
+        assert_eq!(attributes.len(), 2);
+        assert!(attributes.iter().all(|attribute| matches!(
+            attribute.target,
+            AttributeTarget::Occurrence(_)
+        ) && attribute.values
+            == [Some(AttributeValue::Integer(7))]));
+        assert_ne!(attributes[0].target, attributes[1].target);
+    }
+
+    #[test]
+    fn occurrence_scalar_property_is_retained() {
+        let decoded = decode_inline(
+            "#1=APPLICATION_CONTEXT('mechanical design');
+#2=PRODUCT_CONTEXT('',#1,'mechanical');
+#3=PRODUCT('A','Assembly','',(#2));
+#4=PRODUCT_DEFINITION_FORMATION('','',#3);
+#5=PRODUCT_DEFINITION_CONTEXT('',#1,'design');
+#6=PRODUCT_DEFINITION('','',#4,#5);
+#7=PRODUCT('B','Part','',(#2));
+#8=PRODUCT_DEFINITION_FORMATION('','',#7);
+#9=PRODUCT_DEFINITION('','',#8,#5);
+#10=NEXT_ASSEMBLY_USAGE_OCCURRENCE('','', '',#6,#9,$);
+#11=PROPERTY_DEFINITION('Grade','',#10);
+#12=INTEGER_REPRESENTATION_ITEM('',7);
+#13=(GEOMETRIC_REPRESENTATION_CONTEXT(3) REPRESENTATION_CONTEXT('',''));
+#14=REPRESENTATION('',(#12),#13);
+#15=PROPERTY_DEFINITION_REPRESENTATION(#11,#14);",
+        );
+        assert!(decoded.ir().model.attributes.iter().any(|attribute| {
+            matches!(attribute.target, AttributeTarget::Occurrence(_))
+                && attribute.name == "Grade"
+                && attribute.values == [Some(AttributeValue::Integer(7))]
+        }));
+    }
 
     #[test]
     fn product_definition_scalar_property_is_retained() {
