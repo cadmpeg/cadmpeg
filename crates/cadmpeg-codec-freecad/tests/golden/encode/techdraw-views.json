@@ -516,6 +516,9 @@
                 "fcstd:native:object#Vertical": "written"
               }
             },
+            "orphan_object_data": {
+              "disposition": "dropped"
+            },
             "polygons3d": {
               "disposition": "dropped"
             },
@@ -608,7 +611,7 @@
                 "fcstd:native:property#Euclidean:BoxCorners": "written",
                 "fcstd:native:property#Euclidean:Caption": "regenerated",
                 "fcstd:native:property#Euclidean:EqualTolerance": "regenerated",
-                "fcstd:native:property#Euclidean:ExpressionEngine": "written",
+                "fcstd:native:property#Euclidean:ExpressionEngine": "regenerated",
                 "fcstd:native:property#Euclidean:ExtensionAngle": "regenerated",
                 "fcstd:native:property#Euclidean:FormatSpec": "regenerated",
                 "fcstd:native:property#Euclidean:FormatSpecOverTolerance": "regenerated",
@@ -671,7 +674,7 @@
                 "fcstd:native:property#Length:BoxCorners": "written",
                 "fcstd:native:property#Length:Caption": "regenerated",
                 "fcstd:native:property#Length:EqualTolerance": "regenerated",
-                "fcstd:native:property#Length:ExpressionEngine": "written",
+                "fcstd:native:property#Length:ExpressionEngine": "regenerated",
                 "fcstd:native:property#Length:ExtensionAngle": "regenerated",
                 "fcstd:native:property#Length:FormatSpec": "regenerated",
                 "fcstd:native:property#Length:FormatSpecOverTolerance": "regenerated",
@@ -698,7 +701,7 @@
                 "fcstd:native:property#Length:X": "regenerated",
                 "fcstd:native:property#Length:Y": "regenerated",
                 "fcstd:native:property#Note:Caption": "regenerated",
-                "fcstd:native:property#Note:ExpressionEngine": "written",
+                "fcstd:native:property#Note:ExpressionEngine": "regenerated",
                 "fcstd:native:property#Note:Font": "regenerated",
                 "fcstd:native:property#Note:Label": "regenerated",
                 "fcstd:native:property#Note:Label2": "regenerated",
@@ -913,7 +916,7 @@
                 "fcstd:native:property#Vertical:BoxCorners": "written",
                 "fcstd:native:property#Vertical:Caption": "regenerated",
                 "fcstd:native:property#Vertical:EqualTolerance": "regenerated",
-                "fcstd:native:property#Vertical:ExpressionEngine": "written",
+                "fcstd:native:property#Vertical:ExpressionEngine": "regenerated",
                 "fcstd:native:property#Vertical:ExtensionAngle": "regenerated",
                 "fcstd:native:property#Vertical:FormatSpec": "regenerated",
                 "fcstd:native:property#Vertical:FormatSpecOverTolerance": "regenerated",

@@ -26,8 +26,16 @@ fn validate(
     context: &DecodeContext<'_>,
     property: &[GuiPropertyRecord],
     entries: &BTreeMap<String, cadmpeg_core::decode::View<'_>>,
-) -> Result<std::collections::HashMap<String, Vec<crate::gui::GuiMaterial>>, CodecError> {
-    validate_gui_list_payloads(context, None, property, entries, false)
+) -> Result<std::collections::HashMap<String, crate::gui::GuiMaterialList>, CodecError> {
+    validate_gui_list_payloads(
+        context,
+        None,
+        &mut property.to_vec(),
+        &BTreeMap::new(),
+        entries,
+        (false, false),
+        &mut std::collections::BTreeSet::new(),
+    )
 }
 
 #[test]

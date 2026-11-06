@@ -2452,6 +2452,7 @@
             "ArbitraryTolerances": "false",
             "Caption": "",
             "EqualTolerance": "true",
+            "ExpressionEngine": "[]",
             "ExtensionAngle": "0.0",
             "FormatSpecOverTolerance": "%+.2w",
             "FormatSpecUnderTolerance": "%+.2w",
@@ -2515,6 +2516,7 @@
           "order": 1,
           "parameters": {
             "Caption": "",
+            "ExpressionEngine": "[]",
             "Font": "osifont",
             "Label": "Note",
             "Label2": "",
@@ -2828,8 +2830,8 @@
       },
       "__arena_sha256": {
         "fcstd": {
-          "annotations": "b7306a27326ddb3703d8f25be51d7791893366cc1ef1c136323ab867ee9eb27b",
-          "applications": "8e85b4e688f6e51c7fbada5f559b3bea5b9541b8a01bc210478a4a814b9d7ef7",
+          "annotations": "8fc2928e98c0e9932b152427e68ceef08645f434fe63af6248675beceb775ad2",
+          "applications": "2ea4df624ee785452ae19f1a9d355c3b879ae897ac549506c48165baf537dd55",
           "carrier_census": "7d06a4bde9c8713ac37f69996b4d2a2c142332c4c992b6e3560336e3c18383f4",
           "design_census": "248a630a8c70009bcf5b260103e4ad5f5ce52d2b98d48c5ba613618cb8a76b11",
           "document": "6f858ee6b2e86afbed818de68dbc980ed677b216825802860f13dd9da72dc246",
@@ -3043,116 +3045,6 @@
           "scope": "namespaced"
         },
         "message": "fcstd:native:object#Note: untyped font properties, alignment, colour, line spacing, rich text, captions and dimension presentation remain native",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#Front:CenterLines (TechDraw::PropertyCenterLineList) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#Front:CosmeticEdges (TechDraw::PropertyCosmeticEdgeList) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#Front:CosmeticVertexes (TechDraw::PropertyCosmeticVertexList) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#Front:GeomFormats (TechDraw::PropertyGeomFormatList) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#Length:BoxCorners (App::PropertyVectorList) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#Length:SavedGeometry (Part::PropertyTopoShapeList) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#Template:PageResult (App::PropertyFileIncluded) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#Top:CenterLines (TechDraw::PropertyCenterLineList) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#Top:CosmeticEdges (TechDraw::PropertyCosmeticEdgeList) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#Top:CosmeticVertexes (TechDraw::PropertyCosmeticVertexList) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#Top:GeomFormats (TechDraw::PropertyGeomFormatList) has no neutral attribute encoding; its admitted typed native values remain held",
         "severity": "warning"
       },
       {
