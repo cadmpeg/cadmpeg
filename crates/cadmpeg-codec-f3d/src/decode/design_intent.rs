@@ -438,6 +438,11 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     let (untyped_tracking_paths, profile_losses) =
         extend_related_design_records(ctx, scan, prereqs, timelines, geometry, &mut design)?;
     losses.extend(profile_losses);
+    losses.extend(
+        crate::design::decode::operands::body_recipe_serialization_form_losses(
+            &design.design_body_recipe_operands,
+        ),
+    );
     if untyped_tracking_paths != 0 {
         push_loss_vec(&mut losses, F3dLossCode::ConstructionTrackingPathUntyped,
             format_args!("{untyped_tracking_paths} construction tracking path reference(s) remain source-only because no matching indexed registration was admitted."));
