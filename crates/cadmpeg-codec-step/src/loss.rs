@@ -303,7 +303,7 @@ pub(crate) enum StepLossCode {
     SourceAttributeNotWritten,
     /// A document timestamp uses STEP's extended syntax.
     TimestampNormalized,
-    /// Procedural definitions were reduced to solved STEP carriers.
+    /// Procedural definitions were reduced to STEP carriers.
     ProceduralReducedToCarrier,
     /// A procedural curve's solved-cache fit tolerance was not represented.
     ProceduralCurveCacheToleranceOmitted,
