@@ -717,6 +717,7 @@ fn synthesize_with_admission(
         .iter()
         .flat_map(|entity| entity.source_targets.iter())
         .collect::<BTreeSet<_>>();
+    copious_curve::clear_written_parameter_losses(ir, &graph.entities, &mut graph.losses);
     let mut emitted_procedurals = 0;
     for procedural in &ir.model.procedural_curves {
         let Some(owner) = ir.model.procedural_curve_owner(&procedural.id) else {
@@ -5175,6 +5176,9 @@ fn pcurve_entity(ir: &CadIr, pcurve: &Pcurve) -> Result<Entity, CodecError> {
     let curve = nurbs
         .lift(|point| Point3::new(point.u, point.v, 0.0))
         .map_err(|error| CodecError::malformed(format_args!("pcurve {}: {error}", pcurve.id)))?;
+    if let Some(entity) = copious_curve::parameter_curve(ir, &pcurve, &curve, range) {
+        return Ok(entity);
+    }
     encode_nurbs(&curve, range, "PCURVE")
 }
 
@@ -7491,7 +7495,9 @@ impl CurveEntityEmitter<'_> {
             _ => {
                 let mut entity = match sense {
                     Sense::Forward => {
-                        match copious_curve::regenerate(self.ir, curve_id, geometry, span, sense) {
+                        match copious_curve::regenerate(
+                            self.ir, curve_id, geometry, span, sense, false,
+                        ) {
                             Some(entity) => entity,
                             None => curve_entity(
                                 geometry.solved().ok_or_else(|| {
