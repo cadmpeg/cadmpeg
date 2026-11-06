@@ -351,3 +351,49 @@ fn point_synthesis_preserves_records_or_names_losses() {
         findings.join("\n")
     );
 }
+
+#[test]
+fn sphere_vertex_loop_synthesis_preserves_layer_order() {
+    let harness = cadmpeg_test_support::golden::Harness::new(
+        env!("CARGO_MANIFEST_DIR"),
+        "igs",
+        "UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-iges golden",
+    );
+    let (_, bytes) = harness
+        .fixture_inputs()
+        .into_iter()
+        .find(|(name, _)| name == "colored_explicit_vertex_loop")
+        .expect("vertex loop fixture");
+    let input = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("fixture decodes");
+    let plan = IgesCodec
+        .plan(EncodeInput::new(input.ir(), None), request())
+        .expect("fixture synthesizes");
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("fixture writes");
+    let output = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("fixture re-decodes");
+    let kinds = |ir: &cadmpeg_ir::CadIr| {
+        let layer = ir
+            .model
+            .presentation_layers
+            .iter()
+            .find(|layer| layer.name == "0")
+            .expect("level zero");
+        layer
+            .items
+            .iter()
+            .map(|item| match item {
+                cadmpeg_ir::presentation::PresentationItem::Surface { .. } => "surface",
+                cadmpeg_ir::presentation::PresentationItem::Point { .. } => "point",
+                cadmpeg_ir::presentation::PresentationItem::Face { .. } => "face",
+                cadmpeg_ir::presentation::PresentationItem::Body { .. } => "body",
+                _ => panic!("unexpected level member"),
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(kinds(input.ir()), ["surface", "point", "face", "body"]);
+    assert_eq!(kinds(output.ir()), kinds(input.ir()));
+}
