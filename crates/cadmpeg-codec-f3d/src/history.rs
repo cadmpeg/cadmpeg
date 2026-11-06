@@ -1661,7 +1661,9 @@ pub(crate) fn bind_feature_outputs(
             )));
             continue;
         };
-        if stored_bodies::bound_result_bodies(feature).is_some() {
+        if stored_bodies::bound_result_bodies(feature).is_some()
+            || stored_bodies::is_base_feature_copy(feature, scopes)
+        {
             continue;
         }
         let source = historical_brep_source(&histories[history_index].id);
