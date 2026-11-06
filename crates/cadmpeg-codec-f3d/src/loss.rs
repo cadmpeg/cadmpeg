@@ -46,6 +46,7 @@ pub(crate) enum F3dLossCode {
     DimensionCompanionUntyped,
     /// A whole-body reference tail has no admitted standard reference-run frame.
     BodyReferenceTailUntyped,
+    BodyRecipeSerializationFormAssumed,
     /// A placement construction has no unambiguous registered member layout.
     PlacementConstructionUntyped,
     /// A work plane has no unique checked solved placement.
@@ -495,6 +496,7 @@ impl F3dLossCode {
         Self::OperationPoseNative,
         Self::DimensionCompanionUntyped,
         Self::BodyReferenceTailUntyped,
+        Self::BodyRecipeSerializationFormAssumed,
         Self::PlacementConstructionUntyped,
         Self::WorkPlaneFrameUnbound,
         Self::CylinderPlacementUnbound,
@@ -710,6 +712,7 @@ impl F3dLossCode {
             Self::OperationPoseNative => "assembly.operation-table-pose-native",
             Self::DimensionCompanionUntyped => "dimension.companion-untyped",
             Self::BodyReferenceTailUntyped => "body-reference.tail-untyped",
+            Self::BodyRecipeSerializationFormAssumed => "body-recipe.serialization-form-assumed",
             Self::PlacementConstructionUntyped => "placement.construction-untyped",
             Self::WorkPlaneFrameUnbound => "work-plane.frame-unbound",
             Self::CylinderPlacementUnbound => "feature.cylinder-placement-unbound",
@@ -1069,6 +1072,7 @@ impl F3dLossCode {
             | Self::HistoricalFaceSelectionUnbound
             | Self::HistoricalEdgeMidpointsUnresolved
             | Self::HistoricalFilletEdgeInferred
+            | Self::BodyRecipeSerializationFormAssumed
             | Self::HistoricalFilletEdgeAmbiguous
             | Self::HistoricalBodyBoundsUnresolved
             | Self::SketchRelationNativeRetained
@@ -1253,6 +1257,7 @@ impl F3dLossCode {
             | Self::HistoricalFaceSelectionUnbound
             | Self::HistoricalEdgeMidpointsUnresolved
             | Self::HistoricalFilletEdgeInferred
+            | Self::BodyRecipeSerializationFormAssumed
             | Self::HistoricalFilletEdgeAmbiguous
             | Self::HistoricalBodyBoundsUnresolved
             | Self::SketchRelationNativeRetained
@@ -1428,6 +1433,7 @@ mod tests {
                 "assembly.operation-table-pose-native",
                 "dimension.companion-untyped",
                 "body-reference.tail-untyped",
+                "body-recipe.serialization-form-assumed",
                 "placement.construction-untyped",
                 "work-plane.frame-unbound",
                 "feature.cylinder-placement-unbound",
