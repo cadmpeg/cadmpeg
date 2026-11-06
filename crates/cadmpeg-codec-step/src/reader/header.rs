@@ -13,7 +13,7 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::ids::AttributeId;
+use cadmpeg_ir::ids::{AttributeId, IdentityKey};
 
 use crate::ids::{self, key_word, kind};
 use crate::parse::{Exchange, Value};
@@ -49,6 +49,32 @@ pub(super) fn project_file_name_attributes(
     ir: &mut CadIr,
     ctx: &DecodeContext<'_>,
 ) -> Result<(), CodecError> {
+    if let Some(Value::List(items)) = exchange
+        .header()
+        .iter()
+        .find(|record| record.name == "FILE_DESCRIPTION")
+        .and_then(|record| record.parameters.first())
+    {
+        for (ordinal, item) in items.iter().enumerate() {
+            let Value::String(bytes) = item else {
+                continue;
+            };
+            let Ok(value) = exchange.decode_string(bytes) else {
+                continue;
+            };
+            ir.model.attributes.push(SourceAttribute::new(
+                ctx,
+                AttributeId::from(ids::data(
+                    kind!("file-description"),
+                    IdentityKey::encode_key_text(&format!("{ordinal:020}")),
+                )),
+                None,
+                AttributeTarget::Document,
+                "start".to_owned(),
+                vec![AttributeValue::String(value)],
+            )?);
+        }
+    }
     let Some(record) = exchange
         .header()
         .iter()
