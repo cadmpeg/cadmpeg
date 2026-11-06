@@ -145,3 +145,6 @@ pub fn materialize_record_table<'a>(
     records.sort_unstable_by_key(|a| a.index);
     Some(records)
 }
+
+#[cfg(test)]
+mod tests;
