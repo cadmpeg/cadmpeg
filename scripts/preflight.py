@@ -35,6 +35,8 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
+PYTHON_NAMES = ("python3", "python")
+
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS = Path(__file__).resolve().parent
 UPSTREAM_URL = re.compile(r"github\.com[:/]cadmpeg/cadmpeg(?:\.git)?/?$")
@@ -95,6 +97,9 @@ class Context:
     def run(self, command: list[str], env: dict[str, str] | None = None) -> tuple[int, str]:
         """Run a program in the tree root and return its status and combined output."""
         merged = {**os.environ, **(env or {})}
+        if command and command[0] in PYTHON_NAMES:
+            # `python3` can be a Microsoft Store stub on Windows; use the running interpreter.
+            command = [sys.executable, *command[1:]]
         process = subprocess.run(command, cwd=self.root, capture_output=True, text=True,
                                  errors="replace", env=merged)
         return process.returncode, (process.stdout + process.stderr).strip()

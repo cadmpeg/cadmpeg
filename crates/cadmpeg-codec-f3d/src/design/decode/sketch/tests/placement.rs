@@ -1215,6 +1215,7 @@ fn member_run_test_scope(
             kind_offset: byte_offset + 110,
             feature_ordinal: std::num::NonZeroU32::MIN,
             feature_ordinal_offset: 0,
+            label: None,
             history_state_id: None,
             previous_history_state_id: None,
             previous_history_state_id_offset: None,
@@ -1227,7 +1228,7 @@ fn member_run_test_scope(
             .unwrap(),
             payload: DesignFeatureKind::Sketch.try_into().unwrap(),
             unclosed_construction_operand_groups: Vec::new(),
-            deleted_sketch_members: Vec::new(),
+            deleted_members: None,
             paired_class_tag: DesignClassTag::try_from("261".to_owned()).unwrap(),
             paired_byte_offset: byte_offset + 200,
         }

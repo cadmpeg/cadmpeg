@@ -418,6 +418,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
                 kind_offset: 0,
                 feature_ordinal: std::num::NonZeroU32::MIN,
                 feature_ordinal_offset: 0,
+                label: None,
                 history_state_id: None,
                 previous_history_state_id: None,
                 previous_history_state_id_offset: None,
@@ -435,7 +436,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
                 .try_into()
                 .unwrap(),
                 unclosed_construction_operand_groups: Vec::new(),
-                deleted_sketch_members: Vec::new(),
+                deleted_members: None,
                 paired_class_tag: crate::records::references::DesignClassTag::try_from(
                     "001".to_owned(),
                 )
@@ -608,6 +609,7 @@ fn design_projection_gaps_require_unique_scope_state_dependencies() {
                 kind_offset: 0,
                 feature_ordinal: std::num::NonZeroU32::new(record_index).expect("nonzero ordinal"),
                 feature_ordinal_offset: 0,
+                label: None,
                 history_state_id: current,
                 previous_history_state_id: previous,
                 previous_history_state_id_offset: None,
@@ -625,7 +627,7 @@ fn design_projection_gaps_require_unique_scope_state_dependencies() {
                 .try_into()
                 .unwrap(),
                 unclosed_construction_operand_groups: Vec::new(),
-                deleted_sketch_members: Vec::new(),
+                deleted_members: None,
                 paired_class_tag: crate::records::references::DesignClassTag::try_from(
                     "001".to_owned(),
                 )

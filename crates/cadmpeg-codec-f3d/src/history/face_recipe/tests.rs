@@ -84,6 +84,7 @@ fn operand() -> DesignFaceOperand {
                 alternate_selector_faces: Vec::new(),
                 candidate_edges: Vec::new(),
                 alternate_selector_edges: Vec::new(),
+                operand_offset: None,
             });
     }
     for (other, fans) in [
@@ -142,6 +143,25 @@ fn bounded_face_nodes_join_a_packed_token_reference_to_the_preceding_operand() {
     packed.token_offset = 14;
     packed.design_reference = 999;
     operand.recipe_references.insert(1, packed);
+    assert_eq!(FaceRecipeIndex::new(&topology).resolve(&operand), Some(100));
+}
+
+#[test]
+fn a_negative_design_reference_adds_no_face_to_its_lane() {
+    let topology = topology();
+    let mut operand = operand();
+    let every_face: Vec<_> = [100, 101, 102, 103]
+        .into_iter()
+        .map(crate::ids::brep_face_id)
+        .collect();
+    let mut references = Vec::new();
+    for reference in &operand.recipe_references {
+        let mut changed = reference.clone();
+        changed.design_reference = -5;
+        changed.candidate_faces.clone_from(&every_face);
+        references.extend([reference.clone(), changed]);
+    }
+    operand.recipe_references = references;
     assert_eq!(FaceRecipeIndex::new(&topology).resolve(&operand), Some(100));
 }
 

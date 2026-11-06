@@ -635,6 +635,7 @@ Parsed by:
 | 2 | 2 | `degree` | `u16` | big | spec | degree |
 | 4 | 4 | `control_count` | `u32` | big | spec | control_count |
 | 8 | 2 | `dimension` | `u16` | big | spec | dimension |
+| 10 | 4 | `knot_count` | `u32` | big | spec | knot_count |
 | 15 | 1 | `periodic` | `u8` | big | spec | body +15 is the `periodic` logical |
 | 17 | 1 | `rational` | `u8` | big | spec | body +17 the `rational` logical |
 | 19 | 2 | `control_attr` | `u16` | big | spec | control/multiplicity/knot array attrs |
@@ -643,7 +644,7 @@ Parsed by:
 
 Unstated regions:
 
-- `10..15` (5 B): `knot_count`, `subtype` and the flags before `periodic`; the reader takes no field here.
+- `14..15` (1 B): `subtype`; the reader takes no field here.
 - `16..17` (1 B): A flag between `periodic` and `rational`; the reader takes no field here.
 - `18..19` (1 B): The last flag; the reader takes no field here.
 
