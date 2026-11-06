@@ -597,6 +597,7 @@ fn write_archive_prefix(
     }
     let mut losses = documents.losses;
     losses.extend(setting_losses);
+    losses.extend(tables::layer_linetype_losses(ir));
     losses.extend(views.losses);
     losses.extend(image_losses);
     losses.extend(dimstyle_losses);
@@ -1428,7 +1429,10 @@ fn native_dispositions(
     {
         for record in records {
             if ir.model.presentation_layers.iter().any(|value| {
-                value.native_ref.as_deref() == Some(record.id()) && value.description.is_none()
+                let (source, target) = tables::layer_linetype(ir, value);
+                value.native_ref.as_deref() == Some(record.id())
+                    && value.description.is_none()
+                    && source == target
             }) && tables::native_layer_complete(record)
             {
                 dispositions.set_record(
