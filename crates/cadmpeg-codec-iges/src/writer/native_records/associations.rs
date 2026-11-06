@@ -45,6 +45,18 @@ pub(super) fn link(ir: &CadIr, entities: &mut [Entity], targets: &Targets) {
             Some("dimensioned_geometry") => {
                 members.extend(fields.get("dimension").and_then(Value::as_str));
             }
+            Some("flow") if fields.get("form").and_then(Value::as_i64) == Some(18) => {
+                for name in ["connections", "joins", "continuations"] {
+                    members.extend(
+                        fields
+                            .get(name)
+                            .and_then(Value::as_array)
+                            .into_iter()
+                            .flatten()
+                            .filter_map(Value::as_str),
+                    );
+                }
+            }
             _ => continue,
         }
         for member in members {
