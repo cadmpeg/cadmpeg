@@ -34,6 +34,13 @@ macro_rules! geometric {
     };
 }
 
+/// Radians between the departure tangents of two arrangement edges at one
+/// node that leave in the same direction.
+const ARRANGEMENT_TANGENT_TOLERANCE: f64 = 1.0e-9;
+/// Inverse millimetres between the signed curvatures of two arrangement
+/// edges that leave a node with the same tangent and bend alike.
+const ARRANGEMENT_CURVATURE_TOLERANCE: f64 = 1.0e-12;
+
 /// Local work cap for arrangement edge retention walks, shared by every walk
 /// of one decode. An exhausted cap skips the arrangement.
 pub(crate) const MAX_ARRANGEMENT_WALK_WORK: usize = 1_000_000;
@@ -299,15 +306,33 @@ fn assign_fragment(
     false
 }
 
+impl SketchArrangementFace {
+    /// Whether `point` lies within the deviation bound of a polyline segment,
+    /// plus `tolerance`, where the polyline cannot decide its side.
+    fn near_boundary(&self, point: Point2, tolerance: f64) -> bool {
+        polygon_edges(&self.polyline)
+            .zip(&self.deviations)
+            .any(|(edge, deviation)| point_segment_distance(point, edge) <= deviation + tolerance)
+    }
+}
+
 struct SketchArrangementFace {
     ring: ArrangementRing,
     polyline: Vec<Point2>,
     /// The outer walk of each arrangement component that lies inside the
     /// face and inside no smaller face. `None` when such a component has no
     /// unique outer walk, when the face belongs to a component inside
-    /// another face that has no unique outer walk, or when the polyline of
-    /// the face cannot decide whether a component lies inside it.
+    /// another face that has no unique outer walk, or when the polylines
+    /// cannot decide whether a component lies inside the face or which of
+    /// its containers is innermost.
     holes: Option<Vec<ArrangementRing>>,
+    /// For each polyline segment, from its point to the next one, an upper
+    /// bound on the distance from the curve it samples to the segment.
+    deviations: Vec<f64>,
+    /// The lowest and highest corners of a box that holds the face's
+    /// boundary curves: exact for lines and circular arcs, and the certified
+    /// tube bounds for other curves.
+    bounds: [Point2; 2],
 }
 
 pub(super) fn arrangement_region_containing_points(
@@ -360,6 +385,9 @@ pub(super) fn arrangement_region_containing_points(
                     on_boundary = true;
                     break;
                 }
+            }
+            if !on_boundary && face.near_boundary(*point, tolerance) {
+                return Ok(None);
             }
             if on_boundary || !point_in_polygon(*point, &face.polyline) {
                 matches = false;
@@ -513,10 +541,9 @@ pub(super) fn arrangement_regions_matching_member_rings(
     let mut regions = Vec::new();
     for face_index in outers {
         let face = &faces[face_index];
-        let bounds = geometric!(polyline_bounds(&face.polyline));
         if outside
             .iter()
-            .any(|curve| bounds_meet(*curve, bounds, tolerance))
+            .any(|curve| bounds_meet(*curve, face.bounds, tolerance))
         {
             return Ok(None);
         }
@@ -1139,21 +1166,18 @@ fn sketch_arrangement_faces_with_nodes(
         Vec::<(usize, bool, f64)>::new(),
         "f3d_arrangement_outgoing",
     )?;
+    let mut departures = ctx.alloc_filled(
+        nodes.len(),
+        Vec::<Departure>::new(),
+        "f3d_arrangement_departures",
+    )?;
     for (edge_index, edge) in edges.iter().enumerate() {
-        let forward = geometric!(edge.polyline.get(1));
-        let reverse = geometric!(edge
-            .polyline
-            .get(geometric!(edge.polyline.len().checked_sub(2))));
-        outgoing[edge.nodes[0]].push((
-            edge_index,
-            false,
-            (forward.v - nodes[edge.nodes[0]].v).atan2(forward.u - nodes[edge.nodes[0]].u),
-        ));
-        outgoing[edge.nodes[1]].push((
-            edge_index,
-            true,
-            (reverse.v - nodes[edge.nodes[1]].v).atan2(reverse.u - nodes[edge.nodes[1]].u),
-        ));
+        for reverse in [false, true] {
+            let node = edge.nodes[usize::from(reverse)];
+            let departure = geometric!(arrangement_departure(edge, reverse, entities));
+            outgoing[node].push((edge_index, reverse, departure.angle));
+            departures[node].push(departure);
+        }
     }
     if edges
         .iter()
@@ -1161,8 +1185,13 @@ fn sketch_arrangement_faces_with_nodes(
     {
         return Ok(None);
     }
-    for uses in &mut outgoing {
-        uses.sort_by(|left, right| left.2.total_cmp(&right.2));
+    for (uses, departures) in outgoing.iter_mut().zip(departures.iter()) {
+        let mut order = (0..uses.len()).collect::<Vec<_>>();
+        if !order_departures(&mut order, departures, tolerance) {
+            return Ok(None);
+        }
+        let sorted = order.iter().map(|index| uses[*index]).collect::<Vec<_>>();
+        *uses = sorted;
     }
     let mut component = ctx.alloc_filled(nodes.len(), usize::MAX, "f3d arrangement components")?;
     let mut component_roots = Vec::new();
@@ -1194,6 +1223,10 @@ fn sketch_arrangement_faces_with_nodes(
             edge.polyline.len()
         )));
     }
+    let mut edge_boxes = Vec::new();
+    for (edge, certified) in edges.iter().zip(&edge_bounds) {
+        edge_boxes.push(geometric!(arrangement_edge_box(edge, entities, *certified)));
+    }
     let mut visited = ctx.alloc_filled(edges.len(), [false; 2], "f3d arrangement edge visits")?;
     let mut faces = Vec::new();
     let mut face_components = Vec::new();
@@ -1208,7 +1241,8 @@ fn sketch_arrangement_faces_with_nodes(
             let mut boundary = Vec::new();
             let mut runs = Vec::<ArrangementFragment>::new();
             let mut polyline = Vec::new();
-            let mut deviation = 0.0_f64;
+            let mut deviations = Vec::new();
+            let mut bounds = None::<[Point2; 2]>;
             loop {
                 let (index, reverse) = current;
                 if visited[index][usize::from(reverse)] {
@@ -1219,7 +1253,13 @@ fn sketch_arrangement_faces_with_nodes(
                 }
                 visited[index][usize::from(reverse)] = true;
                 let edge = &edges[index];
-                deviation = deviation.max(edge_deviations[index]);
+                let [low, high] = edge_boxes[index];
+                bounds = Some(bounds.map_or([low, high], |[face_low, face_high]| {
+                    [
+                        Point2::new(face_low.u.min(low.u), face_low.v.min(low.v)),
+                        Point2::new(face_high.u.max(high.u), face_high.v.max(high.v)),
+                    ]
+                }));
                 let mut use_ = edge.boundary.clone();
                 if reverse {
                     use_.reversed = !use_.reversed;
@@ -1254,10 +1294,12 @@ fn sketch_arrangement_faces_with_nodes(
                 if reverse {
                     for point in edge.polyline.iter().rev().take(edge.polyline.len() - 1) {
                         polyline.push(*point);
+                        deviations.push(edge_deviations[index]);
                     }
                 } else {
                     for point in edge.polyline.iter().take(edge.polyline.len() - 1) {
                         polyline.push(*point);
+                        deviations.push(edge_deviations[index]);
                     }
                 }
                 let destination = edge.nodes[usize::from(!reverse)];
@@ -1295,8 +1337,10 @@ fn sketch_arrangement_faces_with_nodes(
                     ring,
                     polyline,
                     holes: Some(Vec::new()),
+                    deviations,
+                    bounds: geometric!(bounds),
                 });
-                face_components.push((own, area, deviation));
+                face_components.push(own);
             } else if area < -(tolerance * tolerance) {
                 outer_walks.push((own, ring));
             }
@@ -1304,23 +1348,46 @@ fn sketch_arrangement_faces_with_nodes(
     }
     for root in &component_roots {
         let node = nodes[*root];
-        let mut container = None::<(usize, f64)>;
+        let mut containers = Vec::new();
         let mut undecided = Vec::new();
         for (index, face) in faces.iter().enumerate() {
-            let (own, area, deviation) = face_components[index];
-            if own == *root {
+            if face_components[index] == *root {
                 continue;
             }
-            if polygon_edges(&face.polyline)
-                .any(|edge| point_segment_distance(node, edge) <= deviation + tolerance)
-            {
+            if face.near_boundary(node, tolerance) {
                 undecided.push(index);
-            } else if point_in_polygon(node, &face.polyline)
-                && container.is_none_or(|(_, smallest)| area < smallest)
-            {
-                container = Some((index, area));
+            } else if point_in_polygon(node, &face.polyline) {
+                containers.push(index);
             }
         }
+        // Containers nest, and the innermost lies inside every other one. The
+        // root of a face's component, clear of another face's deviation
+        // bound, decides whether it lies inside that face; either root of a
+        // pair orders the pair.
+        let inside = |inner: usize, outer: usize| -> Option<bool> {
+            let root = nodes[face_components[inner]];
+            let face = &faces[outer];
+            if face.near_boundary(root, tolerance) {
+                return None;
+            }
+            Some(point_in_polygon(root, &face.polyline))
+        };
+        let nested = |inner: usize, outer: usize| {
+            inside(inner, outer).or_else(|| inside(outer, inner).map(|outside| !outside))
+        };
+        let mut innermost = containers.iter().copied().filter(|candidate| {
+            containers
+                .iter()
+                .filter(|other| *other != candidate)
+                .all(|other| nested(*candidate, *other) == Some(true))
+        });
+        let container = match (innermost.next(), innermost.next()) {
+            (Some(only), None) => Some(only),
+            _ => {
+                undecided.extend(&containers);
+                None
+            }
+        };
         if container.is_none() && undecided.is_empty() {
             continue;
         }
@@ -1330,7 +1397,7 @@ fn sketch_arrangement_faces_with_nodes(
             .filter(|_| walks.next().is_none())
             .map(|(_, walk)| walk.clone());
         match (container, walk) {
-            (Some((container, _)), Some(walk)) if undecided.is_empty() => {
+            (Some(container), Some(walk)) if undecided.is_empty() => {
                 if let Some(holes) = faces[container].holes.as_mut() {
                     holes.push(walk);
                 }
@@ -1339,8 +1406,8 @@ fn sketch_arrangement_faces_with_nodes(
                 let unwalked = walk.is_none();
                 for (index, face) in faces.iter_mut().enumerate() {
                     if undecided.contains(&index)
-                        || container.is_some_and(|(container, _)| container == index)
-                        || (unwalked && face_components[index].0 == *root)
+                        || container == Some(index)
+                        || (unwalked && face_components[index] == *root)
                     {
                         face.holes = None;
                     }
@@ -1349,6 +1416,312 @@ fn sketch_arrangement_faces_with_nodes(
         }
     }
     Ok((!faces.is_empty()).then_some(faces))
+}
+
+/// The direction in which an arrangement edge leaves a node, and its signed
+/// curvature there, positive when it turns left.
+#[derive(Clone, Copy)]
+struct Departure {
+    angle: f64,
+    curvature: DepartureCurvature,
+}
+
+#[derive(Clone, Copy)]
+enum DepartureCurvature {
+    /// The signed curvature in inverse millimetres.
+    Exact(f64),
+    /// The sign of the curvature: -1, 0, or 1.
+    Sign(f64),
+    /// The departure is the direction of the polyline's first chord.
+    Unknown,
+}
+
+impl DepartureCurvature {
+    fn sign(self) -> Option<f64> {
+        match self {
+            Self::Exact(curvature) => Some(if curvature == 0.0 {
+                0.0
+            } else {
+                curvature.signum()
+            }),
+            Self::Sign(sign) => Some(sign),
+            Self::Unknown => None,
+        }
+    }
+}
+
+/// How `edge` leaves its start node, or its end node when `reverse`. A line
+/// leaves along its direction with curvature zero, a circular arc along its
+/// tangent with curvature `1 / r` signed by its turn, and a clamped NURBS end
+/// along its first nonzero control leg with the sign of its first turn.
+/// Another edge leaves along the first chord of its polyline with an unknown
+/// curvature. `None` when the edge has no polyline step.
+fn arrangement_departure(
+    edge: &SketchArrangementEdge,
+    reverse: bool,
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+) -> Option<Departure> {
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
+
+    let polyline = &edge.polyline;
+    let (from, to) = if reverse {
+        (
+            *polyline.last()?,
+            *polyline.get(polyline.len().checked_sub(2)?)?,
+        )
+    } else {
+        (*polyline.first()?, *polyline.get(1)?)
+    };
+    let chord = (to.u - from.u, to.v - from.v);
+    let chord_departure = Departure {
+        angle: chord.1.atan2(chord.0),
+        curvature: DepartureCurvature::Unknown,
+    };
+    let entity = entities
+        .iter()
+        .find(|entity| entity.id() == &edge.boundary.entity)?;
+    match entity.geometry.definition() {
+        SketchGeometryDefinition::Line { .. } => Some(Departure {
+            angle: chord_departure.angle,
+            curvature: DepartureCurvature::Exact(0.0),
+        }),
+        SketchGeometryDefinition::Circle { center, radius }
+        | SketchGeometryDefinition::Arc { center, radius, .. } => {
+            let center = center.get();
+            let radial = (from.u - center.u, from.v - center.v);
+            let counterclockwise = (-radial.1, radial.0);
+            let turns_left = counterclockwise.0 * chord.0 + counterclockwise.1 * chord.1 > 0.0;
+            let (u, v) = if turns_left {
+                counterclockwise
+            } else {
+                (-counterclockwise.0, -counterclockwise.1)
+            };
+            let curvature = 1.0 / radius.get();
+            Some(Departure {
+                angle: v.atan2(u),
+                curvature: DepartureCurvature::Exact(if turns_left {
+                    curvature
+                } else {
+                    -curvature
+                }),
+            })
+        }
+        SketchGeometryDefinition::Nurbs { curve } => {
+            let at_start = reverse == edge.boundary.reversed;
+            Some(nurbs_departure(curve, at_start).unwrap_or(chord_departure))
+        }
+        _ => Some(chord_departure),
+    }
+}
+
+/// How a clamped NURBS leaves its start, or its end: along its first nonzero
+/// control leg, with the sign of the turn to the first later leg that is not
+/// parallel to it. `None` when that end is not clamped, a weight is not
+/// positive, or every leg is zero.
+fn nurbs_departure(
+    curve: &cadmpeg_ir::geometry::pcurve::PcurveNurbs,
+    at_start: bool,
+) -> Option<Departure> {
+    if curve
+        .weights()
+        .is_some_and(|weights| weights.iter().any(|weight| weight.get() <= 0.0))
+    {
+        return None;
+    }
+    let degree = usize::try_from(curve.degree()).ok()?;
+    let knots = curve.knots().as_slice();
+    let end = if at_start {
+        knots.get(..=degree)?
+    } else {
+        knots.get(knots.len().checked_sub(degree + 1)?..)?
+    };
+    if end.iter().any(|knot| *knot != end[0]) {
+        return None;
+    }
+    let mut points = curve
+        .control_points()
+        .into_iter()
+        .map(cadmpeg_ir::units::FinitePoint2::get)
+        .collect::<Vec<_>>();
+    if !at_start {
+        points.reverse();
+    }
+    let mut legs = points
+        .windows(2)
+        .map(|pair| (pair[1].u - pair[0].u, pair[1].v - pair[0].v))
+        .filter(|leg| leg.0 != 0.0 || leg.1 != 0.0);
+    let leg = legs.next()?;
+    let turn = legs
+        .map(|next| leg.0 * next.1 - leg.1 * next.0)
+        .find(|cross| *cross != 0.0)
+        .map_or(0.0, f64::signum);
+    Some(Departure {
+        angle: leg.1.atan2(leg.0),
+        curvature: DepartureCurvature::Sign(turn),
+    })
+}
+
+/// Order `order`, indices into `departures`, counterclockwise around their
+/// node. A departure's key is its angle, plus half the turn of an exact
+/// curvature over `tolerance`, where it leaves the node's ball. The cyclic
+/// order starts after the widest gap between keys, so no group straddles
+/// the start. Neighbours whose keys or tangent angles are equal form a
+/// group, and groups order by increasing signed curvature. Two departures need no order. `false` when a departure along a
+/// polyline chord meets more than one other edge, or when a group with the
+/// same key cannot be ordered.
+fn order_departures(order: &mut [usize], departures: &[Departure], tolerance: f64) -> bool {
+    let key = |index: usize| {
+        let departure = departures[index];
+        match departure.curvature {
+            DepartureCurvature::Exact(curvature) => departure.angle + curvature * tolerance / 2.0,
+            DepartureCurvature::Sign(_) | DepartureCurvature::Unknown => departure.angle,
+        }
+    };
+    order.sort_by(|left, right| key(*left).total_cmp(&key(*right)));
+    let count = order.len();
+    if count <= 2 {
+        return true;
+    }
+    if order
+        .iter()
+        .any(|index| matches!(departures[*index].curvature, DepartureCurvature::Unknown))
+    {
+        return false;
+    }
+    let gap = |position: usize| {
+        let next = (position + 1) % count;
+        let mut gap = key(order[next]) - key(order[position]);
+        if next == 0 {
+            gap += std::f64::consts::TAU;
+        }
+        gap
+    };
+    let Some(widest) = (0..count).max_by(|left, right| gap(*left).total_cmp(&gap(*right))) else {
+        return false;
+    };
+    order.rotate_left((widest + 1) % count);
+    let mut keys = Vec::<(f64, f64)>::with_capacity(count);
+    let mut turns = 0.0;
+    for index in order.iter() {
+        if keys
+            .last()
+            .is_some_and(|previous| key(*index) + turns < previous.0)
+        {
+            turns += std::f64::consts::TAU;
+        }
+        keys.push((key(*index) + turns, departures[*index].angle + turns));
+    }
+    let tied = |left: (f64, f64), right: (f64, f64)| {
+        right.0 - left.0 <= ARRANGEMENT_TANGENT_TOLERANCE
+            || (right.1 - left.1).abs() <= ARRANGEMENT_TANGENT_TOLERANCE
+    };
+    let mut start = 0;
+    while start < count {
+        let mut end = start + 1;
+        while end < count && tied(keys[end - 1], keys[end]) {
+            end += 1;
+        }
+        if end - start > 1 && !order_by_curvature(&mut order[start..end], departures) {
+            return false;
+        }
+        start = end;
+    }
+    true
+}
+
+/// Order a group of departures with the same tangent by increasing signed
+/// curvature. `false` when two of them cannot be told apart.
+fn order_by_curvature(group: &mut [usize], departures: &[Departure]) -> bool {
+    let exact = group
+        .iter()
+        .map(|index| match departures[*index].curvature {
+            DepartureCurvature::Exact(curvature) => Some(curvature),
+            DepartureCurvature::Sign(_) | DepartureCurvature::Unknown => None,
+        })
+        .collect::<Option<Vec<_>>>();
+    if let Some(mut curvatures) = exact {
+        let mut pairs = group
+            .iter()
+            .copied()
+            .zip(curvatures.drain(..))
+            .collect::<Vec<_>>();
+        pairs.sort_by(|left, right| left.1.total_cmp(&right.1));
+        if pairs
+            .windows(2)
+            .any(|pair| pair[1].1 - pair[0].1 <= ARRANGEMENT_CURVATURE_TOLERANCE)
+        {
+            return false;
+        }
+        for (slot, (index, _)) in group.iter_mut().zip(pairs) {
+            *slot = index;
+        }
+        return true;
+    }
+    let signs = group
+        .iter()
+        .map(|index| departures[*index].curvature.sign())
+        .collect::<Option<Vec<_>>>();
+    let Some(signs) = signs else {
+        return false;
+    };
+    let mut pairs = group.iter().copied().zip(signs).collect::<Vec<_>>();
+    pairs.sort_by(|left, right| left.1.total_cmp(&right.1));
+    if pairs.windows(2).any(|pair| pair[1].1 <= pair[0].1) {
+        return false;
+    }
+    for (slot, (index, _)) in group.iter_mut().zip(pairs) {
+        *slot = index;
+    }
+    true
+}
+
+/// The lowest and highest corners of a box that holds `edge`: its end
+/// points for a line, its end points and the axis extremes inside its swept
+/// angle for a circular arc, and the `certified` tube bounds otherwise.
+fn arrangement_edge_box(
+    edge: &SketchArrangementEdge,
+    entities: &[cadmpeg_ir::sketches::SketchEntity],
+    certified: [Point2; 2],
+) -> Option<[Point2; 2]> {
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
+
+    let entity = entities
+        .iter()
+        .find(|entity| entity.id() == &edge.boundary.entity)?;
+    match entity.geometry.definition() {
+        SketchGeometryDefinition::Line { .. } => {
+            polyline_bounds(&[*edge.polyline.first()?, *edge.polyline.last()?])
+        }
+        SketchGeometryDefinition::Circle { center, radius }
+        | SketchGeometryDefinition::Arc { center, radius, .. } => {
+            let [start, end] = edge.boundary.parameter_range.endpoints();
+            let (low, high) = (start.min(end), start.max(end));
+            let quarter = std::f64::consts::FRAC_PI_2;
+            let first = (low / quarter).ceil();
+            let last = (high / quarter).floor();
+            if !(first.is_finite() && last.is_finite()) || last - first > 8.0 {
+                return Some(certified);
+            }
+            let mut angles = vec![start, end];
+            let mut step = first;
+            while step <= last {
+                angles.push(step * quarter);
+                step += 1.0;
+            }
+            let center = center.get();
+            let points = angles
+                .into_iter()
+                .map(|angle| {
+                    Point2::new(
+                        center.u + radius.get() * angle.cos(),
+                        center.v + radius.get() * angle.sin(),
+                    )
+                })
+                .collect::<Vec<_>>();
+            polyline_bounds(&points)
+        }
+        _ => Some(certified),
+    }
 }
 
 /// Add `other` to the coincident curves of a fragment. `false` when the
@@ -1366,22 +1739,30 @@ fn merge_coincident(
     }
 }
 
-/// The largest distance between a curve over `range` and the polyline of
-/// `points` evenly spaced points on it: zero for a line, and otherwise half
-/// the travel bound of one polyline step. `None` when the curve has no speed
-/// bound or the polyline has fewer than two points.
+/// An upper bound on the distance from each point of a curve over `range` to
+/// the polyline of `points` points at even parameter steps on it: zero for a
+/// line, the sagitta of one step for a circular arc, and otherwise half the
+/// travel bound of one step, because each curve point lies within that
+/// travel of a step end. `None` when the curve has no speed bound, the
+/// polyline has fewer than two points, or the bound is not finite.
 fn polyline_deviation(
     geometry: &cadmpeg_ir::sketches::SketchGeometry,
     range: [f64; 2],
     points: usize,
 ) -> Option<f64> {
-    if matches!(
-        geometry.definition(),
-        cadmpeg_ir::sketches::SketchGeometryDefinition::Line { .. }
-    ) {
-        return Some(0.0);
-    }
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
+
     let steps = f64_from_index(points.checked_sub(1).filter(|steps| *steps > 0)?)?;
+    match geometry.definition() {
+        SketchGeometryDefinition::Line { .. } => return Some(0.0),
+        SketchGeometryDefinition::Circle { radius, .. }
+        | SketchGeometryDefinition::Arc { radius, .. } => {
+            let step = (range[1] - range[0]).abs() / steps;
+            return Some(radius.get() * (1.0 - (step / 2.0).min(std::f64::consts::PI).cos()))
+                .filter(|deviation| deviation.is_finite());
+        }
+        _ => {}
+    }
     let travel = sketch_geometry_speed_bound(geometry, range)? * (range[1] - range[0]).abs();
     Some(travel / (2.0 * steps)).filter(|deviation| deviation.is_finite())
 }

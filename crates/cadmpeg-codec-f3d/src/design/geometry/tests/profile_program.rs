@@ -723,15 +723,185 @@ fn a_full_ellipse_clear_of_the_selected_face_keeps_the_selection() {
     );
 }
 
+/// A full ellipse of `sketch` centred at `center`, with radii 3e-5 and 2e-5.
+fn tiny_ellipse(sketch: &SketchId, center: (f64, f64)) -> SketchEntity {
+    SketchEntity::new(
+        SketchEntityId::mint("synthetic:test:id#tiny-ellipse").unwrap(),
+        sketch.clone(),
+        SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
+            center: Point2::new(center.0, center.1),
+            major_angle: cadmpeg_ir::scalar::Angle::new(0.0).unwrap(),
+            radii: cadmpeg_ir::sketches::EllipseRadii {
+                major_radius: Length::new(3.0e-5).unwrap(),
+                minor_radius: Length::new(2.0e-5).unwrap(),
+            },
+            bounds: None,
+        })
+        .unwrap(),
+    )
+}
+
+#[test]
+fn an_ellipse_beyond_the_sampled_bounds_of_a_curved_face_voids_its_selection() {
+    // A radius-10 arc over 180 degrees, closed by its chord in two halves.
+    // The arc's extreme point lies midway between two polyline vertices, so
+    // the polyline box stops 1.9e-4 short of the arc. The ellipse box starts
+    // 3e-5 from the extreme point.
+    let id = SketchId::mint("synthetic:test:id#d-face").unwrap();
+    let point = |degrees: f64| {
+        let angle = degrees.to_radians();
+        (10.0 * angle.cos(), 10.0 * angle.sin())
+    };
+    for (start, extreme) in [(-80.507_812_5, (10.0, 0.0)), (99.492_187_5, (-10.0, 0.0))] {
+        let arc = SketchEntity::new(
+            SketchEntityId::mint("synthetic:test:id#d-arc").unwrap(),
+            id.clone(),
+            SketchGeometry::try_from(SketchGeometryDefinition::Arc {
+                center: Point2::new(0.0, 0.0),
+                radius: Length::new(10.0).unwrap(),
+                start_angle: Angle::new(f64::to_radians(start)).unwrap(),
+                end_angle: Angle::new(f64::to_radians(start + 180.0)).unwrap(),
+            })
+            .unwrap(),
+        );
+        let (top, bottom) = (point(start + 180.0), point(start));
+        let middle = (
+            f64::midpoint(top.0, bottom.0),
+            f64::midpoint(top.1, bottom.1),
+        );
+        let upper = line_entity(&id, "d-upper", top, middle);
+        let lower = line_entity(&id, "d-lower", middle, bottom);
+        let curves = vec![arc.clone(), upper.clone(), lower.clone()];
+        let sketch = sketch_with_loops(id.clone(), &[&curves]);
+        let ring = [vec![(&arc, false), (&upper, false), (&lower, false)]];
+        let (exterior, holes) = single_region(&sketch, &curves, &ring);
+        assert_eq!(exterior.len(), 3, "arc from {start} degrees");
+        assert!(holes.is_empty());
+        let mut far = curves.clone();
+        far.push(tiny_ellipse(&id, (3.0 * extreme.0, 0.0)));
+        assert!(
+            member_regions(&sketch, &far, &ring).is_some(),
+            "arc from {start} degrees"
+        );
+        let mut beyond = curves.clone();
+        beyond.push(tiny_ellipse(&id, extreme));
+        assert_eq!(
+            member_regions(&sketch, &beyond, &ring),
+            None,
+            "arc from {start} degrees"
+        );
+    }
+}
+
+#[test]
+fn the_innermost_container_holds_the_island_when_the_polylines_decide_it() {
+    // Two concentric circles around a small square: the square lies in both
+    // disks, and the inner disk lies inside the outer one.
+    let id = SketchId::mint("synthetic:test:id#nested-disks").unwrap();
+    let circle = |name: &str, radius: f64| {
+        SketchEntity::new(
+            SketchEntityId::mint(format!("synthetic:test:id#{name}")).unwrap(),
+            id.clone(),
+            SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+                center: Point2::new(0.0, 0.0),
+                radius: Length::new(radius).unwrap(),
+            })
+            .unwrap(),
+        )
+    };
+    let square = rectangle(&id, "core", (-1.0, -1.0), (1.0, 1.0));
+    let inner_holes = |inner_radius: f64, outer_radius: f64| {
+        let inner = circle("inner-disk", inner_radius);
+        let outer = circle("outer-disk", outer_radius);
+        let mut entities = vec![inner.clone(), outer.clone()];
+        entities.extend(square.iter().cloned());
+        let sketch = sketch_with_loops(
+            id.clone(),
+            &[
+                std::slice::from_ref(&inner),
+                std::slice::from_ref(&outer),
+                &square,
+            ],
+        );
+        let faces = crate::test_support::with_decode_context(|ctx| {
+            super::super::curve_arrangement_faces(
+                &sketch,
+                &entities,
+                PROFILE_PROGRAM_TOLERANCE,
+                &ProfileGeometryWork::new(),
+                ctx,
+                true,
+            )
+        })
+        .unwrap()
+        .expect("the arrangement");
+        faces
+            .iter()
+            .find(|face| face.ring.curves().any(|curve| curve == inner.id()))
+            .expect("the inner disk")
+            .holes
+            .as_ref()
+            .map(Vec::len)
+    };
+    assert_eq!(inner_holes(10.0, 13.0), Some(1));
+    assert_eq!(inner_holes(10.0, 10.1), Some(1), "a thin wall still nests");
+    // Radius 1e4: each circle's polyline sagitta is about 0.19, more than
+    // the 0.15 wall, so the polylines cannot order the two disks.
+    assert_eq!(inner_holes(1.0e4, 1.0e4 + 0.15), None);
+
+    // The outer circle's centre moves 100 left, so the wall stays 0.15 on
+    // the right, where the inner root lies. A spur gives the outer circle a
+    // first node on its far left: that root lies clear outside the inner
+    // disk, which orders the pair.
+    let inner = circle("inner-disk", 1.0e4);
+    let outer = SketchEntity::new(
+        SketchEntityId::mint("synthetic:test:id#outer-disk").unwrap(),
+        id.clone(),
+        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+            center: Point2::new(-100.0, 0.0),
+            radius: Length::new(1.0e4 + 100.15).unwrap(),
+        })
+        .unwrap(),
+    );
+    let spur = line_entity(&id, "spur", (-10_200.15, 0.0), (-10_205.0, 0.0));
+    let mut entities = vec![spur.clone(), inner.clone(), outer.clone()];
+    entities.extend(square.iter().cloned());
+    let sketch = sketch_with_loops(
+        id.clone(),
+        &[
+            std::slice::from_ref(&inner),
+            std::slice::from_ref(&outer),
+            &square,
+        ],
+    );
+    let faces = crate::test_support::with_decode_context(|ctx| {
+        super::super::curve_arrangement_faces(
+            &sketch,
+            &entities,
+            PROFILE_PROGRAM_TOLERANCE,
+            &ProfileGeometryWork::new(),
+            ctx,
+            true,
+        )
+    })
+    .unwrap()
+    .expect("the arrangement");
+    let inner_face = faces
+        .iter()
+        .find(|face| face.ring.curves().any(|curve| curve == inner.id()))
+        .expect("the inner disk");
+    assert_eq!(inner_face.holes.as_ref().map(Vec::len), Some(1));
+}
 #[test]
 fn an_island_within_the_polyline_deviation_of_a_face_leaves_its_islands_unknown() {
+    // A radius-1e4 disk: its polyline sagitta is about 0.19.
     let id = SketchId::mint("synthetic:test:id#near-island").unwrap();
     let disk = SketchEntity::new(
         SketchEntityId::mint("synthetic:test:id#disk").unwrap(),
         id.clone(),
         SketchGeometry::try_from(SketchGeometryDefinition::Circle {
             center: Point2::new(0.0, 0.0),
-            radius: Length::new(10.0).unwrap(),
+            radius: Length::new(1.0e4).unwrap(),
         })
         .unwrap(),
     );
@@ -763,13 +933,19 @@ fn an_island_within_the_polyline_deviation_of_a_face_leaves_its_islands_unknown(
     };
     let centred = rectangle(&id, "centred", (-1.0, -1.0), (1.0, 1.0));
     assert_eq!(disk_holes(&faces(&centred)), Some(1));
-    let near = rectangle(&id, "near", (9.95, -0.005), (9.97, 0.005));
+    let near = rectangle(&id, "near", (9_999.85, -0.005), (9_999.86, 0.005));
     assert_eq!(disk_holes(&faces(&near)), None);
+    let clear = rectangle(&id, "clear", (9_999.5, -0.005), (9_999.6, 0.005));
+    assert_eq!(
+        disk_holes(&faces(&clear)),
+        Some(1),
+        "0.4 inside the boundary, beyond the 0.19 sagitta"
+    );
 
-    // Outside the disk, near its boundary, inside a 40 x 40 square: the
+    // Outside the disk, near its boundary, inside a larger square: the
     // square contains the island, and the disk cannot decide it.
-    let frame = rectangle(&id, "frame", (-20.0, -20.0), (20.0, 20.0));
-    let outside = rectangle(&id, "outside", (10.03, -0.005), (10.05, 0.005));
+    let frame = rectangle(&id, "frame", (-2.0e4, -2.0e4), (2.0e4, 2.0e4));
+    let outside = rectangle(&id, "outside", (10_000.14, -0.005), (10_000.15, 0.005));
     let mut framed = frame.clone();
     framed.extend(outside.iter().cloned());
     let arranged = faces(&framed);
@@ -808,6 +984,371 @@ fn an_island_within_the_polyline_deviation_of_a_face_leaves_its_islands_unknown(
     );
 }
 
+#[test]
+fn an_ellipse_clear_of_the_exact_face_box_keeps_the_selection() {
+    // The upper half of a radius-10 disk, and an ellipse 0.03 beyond the
+    // disk on the x axis.
+    let id = SketchId::mint("synthetic:test:id#upper-half").unwrap();
+    let disk = SketchEntity::new(
+        SketchEntityId::mint("synthetic:test:id#half-disk").unwrap(),
+        id.clone(),
+        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+            center: Point2::new(0.0, 0.0),
+            radius: Length::new(10.0).unwrap(),
+        })
+        .unwrap(),
+    );
+    let diameter = line_entity(&id, "diameter", (-10.0, 0.0), (10.0, 0.0));
+    let ellipse = |center: (f64, f64)| {
+        SketchEntity::new(
+            SketchEntityId::mint("synthetic:test:id#clear-ellipse").unwrap(),
+            id.clone(),
+            SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
+                center: Point2::new(center.0, center.1),
+                major_angle: cadmpeg_ir::scalar::Angle::new(0.0).unwrap(),
+                radii: cadmpeg_ir::sketches::EllipseRadii {
+                    major_radius: Length::new(0.01).unwrap(),
+                    minor_radius: Length::new(0.005).unwrap(),
+                },
+                bounds: None,
+            })
+            .unwrap(),
+        )
+    };
+    let curves = vec![disk.clone(), diameter.clone()];
+    let sketch = sketch_with_loops(id.clone(), &[&curves]);
+    let ring = [vec![(&disk, false), (&diameter, false)]];
+    let (exterior, _) = single_region(&sketch, &curves, &ring);
+    assert_eq!(exterior.len(), 2);
+    // Beside the disk, and inside the lower half, which the selected upper
+    // half's box excludes.
+    for center in [(10.04, 0.0), (0.0, -5.0)] {
+        let mut with_ellipse = curves.clone();
+        with_ellipse.push(ellipse(center));
+        assert!(
+            member_regions(&sketch, &with_ellipse, &ring).is_some(),
+            "ellipse at {center:?}"
+        );
+    }
+}
+
+#[test]
+fn internally_tangent_circles_leave_their_node_in_curvature_order() {
+    // A radius-10 circle inside a radius-1000 circle, tangent at (0, 0):
+    // both leave the node along x, and the smaller one turns faster.
+    let id = SketchId::mint("synthetic:test:id#tangent-disks").unwrap();
+    let circle = |name: &str, center: (f64, f64), radius: f64| {
+        SketchEntity::new(
+            SketchEntityId::mint(format!("synthetic:test:id#{name}")).unwrap(),
+            id.clone(),
+            SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+                center: Point2::new(center.0, center.1),
+                radius: Length::new(radius).unwrap(),
+            })
+            .unwrap(),
+        )
+    };
+    let small = circle("small-disk", (0.0, 10.0), 10.0);
+    let large = circle("large-disk", (0.0, 1000.0), 1000.0);
+    let entities = vec![small.clone(), large.clone()];
+    let sketch = sketch_with_loops(
+        id,
+        &[std::slice::from_ref(&small), std::slice::from_ref(&large)],
+    );
+    let faces = crate::test_support::with_decode_context(|ctx| {
+        super::super::curve_arrangement_faces(
+            &sketch,
+            &entities,
+            PROFILE_PROGRAM_TOLERANCE,
+            &ProfileGeometryWork::new(),
+            ctx,
+            true,
+        )
+    })
+    .unwrap()
+    .expect("the arrangement");
+    let mut rings = faces
+        .iter()
+        .map(|face| {
+            let mut curves = face.ring.curves().cloned().collect::<Vec<_>>();
+            curves.sort_unstable();
+            curves
+        })
+        .collect::<Vec<_>>();
+    rings.sort_unstable();
+    let mut both = vec![small.id().clone(), large.id().clone()];
+    both.sort_unstable();
+    assert_eq!(rings, [both, vec![small.id().clone()]]);
+}
+
+#[test]
+fn departures_with_one_tangent_order_by_curvature_or_stay_unordered() {
+    use super::super::{order_departures, Departure, DepartureCurvature};
+
+    let departure = |angle: f64, curvature: DepartureCurvature| Departure { angle, curvature };
+    let ordered = |departures: &[Departure]| {
+        let mut order = (0..departures.len()).collect::<Vec<_>>();
+        order_departures(&mut order, departures, PROFILE_PROGRAM_TOLERANCE).then_some(order)
+    };
+    let far = departure(2.0, DepartureCurvature::Exact(0.0));
+    let tight = departure(0.0, DepartureCurvature::Exact(0.1));
+    let wide = departure(0.0, DepartureCurvature::Exact(0.001));
+    let right = departure(0.0, DepartureCurvature::Exact(-0.1));
+    assert_eq!(ordered(&[tight, wide, right]), Some(vec![2, 1, 0]));
+    assert_eq!(ordered(&[tight, tight, far]), None, "equal curvatures");
+    let left_sign = departure(0.0, DepartureCurvature::Sign(1.0));
+    let right_sign = departure(0.0, DepartureCurvature::Sign(-1.0));
+    assert_eq!(ordered(&[left_sign, right_sign, far]), Some(vec![1, 0, 2]));
+    assert_eq!(
+        ordered(&[
+            left_sign,
+            departure(0.0, DepartureCurvature::Exact(0.0)),
+            far
+        ]),
+        Some(vec![1, 0, 2]),
+        "a straight departure has sign zero"
+    );
+    assert_eq!(ordered(&[left_sign, tight, far]), None, "equal signs");
+    let chord = departure(0.5, DepartureCurvature::Unknown);
+    assert!(ordered(&[chord, wide]).is_some(), "two edges need no order");
+    assert_eq!(ordered(&[chord, wide, far]), None, "a chord departure");
+    assert_eq!(
+        ordered(&[
+            departure(-std::f64::consts::PI, DepartureCurvature::Exact(0.0)),
+            departure(std::f64::consts::PI, DepartureCurvature::Exact(0.1)),
+            departure(1.0, DepartureCurvature::Exact(0.0)),
+        ]),
+        Some(vec![2, 0, 1]),
+        "one tangent on both sides of the angle seam"
+    );
+    // Tangents 1e-8 apart: the radius-0.1 arc turns past the line within
+    // the node's ball, so it orders after it.
+    assert_eq!(
+        ordered(&[
+            departure(0.0, DepartureCurvature::Exact(10.0)),
+            departure(1.0e-8, DepartureCurvature::Exact(0.0)),
+            far,
+        ]),
+        Some(vec![1, 0, 2])
+    );
+}
+
+#[test]
+fn a_circle_resting_on_a_line_leaves_the_tangent_node_in_order() {
+    // A unit circle on the bottom side of a 10 x 4 rectangle: at (0, 0) the
+    // circle's clockwise tangent points along -x, as the westward side does.
+    let id = SketchId::mint("synthetic:test:id#resting-disk").unwrap();
+    let mut entities = rectangle(&id, "box", (-5.0, 0.0), (5.0, 4.0));
+    let disk = SketchEntity::new(
+        SketchEntityId::mint("synthetic:test:id#resting-circle").unwrap(),
+        id.clone(),
+        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+            center: Point2::new(0.0, 1.0),
+            radius: Length::new(1.0).unwrap(),
+        })
+        .unwrap(),
+    );
+    let sides = entities.clone();
+    entities.push(disk.clone());
+    let sketch = sketch_with_loops(id, &[&sides, std::slice::from_ref(&disk)]);
+    let faces = crate::test_support::with_decode_context(|ctx| {
+        super::super::curve_arrangement_faces(
+            &sketch,
+            &entities,
+            PROFILE_PROGRAM_TOLERANCE,
+            &ProfileGeometryWork::new(),
+            ctx,
+            true,
+        )
+    })
+    .unwrap()
+    .expect("the arrangement");
+    assert_eq!(faces.len(), 2);
+    assert!(faces
+        .iter()
+        .any(|face| face.ring.curves().all(|curve| curve == disk.id())));
+}
+
+#[test]
+fn a_circle_edge_across_two_pi_boxes_its_axis_extreme() {
+    use super::super::{arrangement_edge_box, SketchArrangementEdge};
+
+    let id = SketchId::mint("synthetic:test:id#wrap-circle").unwrap();
+    let circle = SketchEntity::new(
+        SketchEntityId::mint("synthetic:test:id#wrap").unwrap(),
+        id,
+        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+            center: Point2::new(0.0, 0.0),
+            radius: Length::new(1.0).unwrap(),
+        })
+        .unwrap(),
+    );
+    let range = [6.0, 1.0 + std::f64::consts::TAU];
+    let end = |angle: f64| Point2::new(angle.cos(), angle.sin());
+    let edge = SketchArrangementEdge {
+        nodes: [0, 1],
+        boundary: cadmpeg_ir::features::SketchProfileBoundaryUse {
+            entity: circle.id().clone(),
+            parameter_range: cadmpeg_ir::geometry::DirectedParameterRange::new(range).unwrap(),
+            reversed: false,
+        },
+        polyline: vec![end(range[0]), end(range[1])],
+        coincident: Vec::new(),
+    };
+    let certified = [Point2::new(-1.0, -1.0), Point2::new(1.0, 1.0)];
+    let [low, high] = arrangement_edge_box(&edge, &[circle], certified).unwrap();
+    assert_eq!(high.u, 1.0, "the box reaches (1, 0)");
+    assert!(low.v < 0.0 && high.v > 0.8 && low.u > 0.5);
+}
+
+#[test]
+fn a_point_beside_an_exact_edge_of_a_face_with_a_curved_edge_selects_the_face() {
+    // A 100 x 10 face whose top side is a NURBS: its polyline band is wide,
+    // and the bottom line's band is zero.
+    use cadmpeg_ir::geometry::pcurve::{PcurveNurbs, PcurveNurbsPoles};
+
+    let id = SketchId::mint("synthetic:test:id#nurbs-top").unwrap();
+    let top = SketchEntity::new(
+        SketchEntityId::mint("synthetic:test:id#nurbs-top-curve").unwrap(),
+        id.clone(),
+        SketchGeometry::try_from(SketchGeometryDefinition::Nurbs {
+            curve: PcurveNurbs::new(
+                2,
+                vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                PcurveNurbsPoles::from_lanes(
+                    vec![
+                        Point2::new(100.0, 10.0),
+                        Point2::new(50.0, 12.0),
+                        Point2::new(0.0, 10.0),
+                    ],
+                    None,
+                )
+                .unwrap(),
+                false,
+            )
+            .unwrap(),
+        })
+        .unwrap(),
+    );
+    let entities = vec![
+        line_entity(&id, "nurbs-bottom", (0.0, 0.0), (100.0, 0.0)),
+        line_entity(&id, "nurbs-right", (100.0, 0.0), (100.0, 10.0)),
+        top,
+        line_entity(&id, "nurbs-left", (0.0, 10.0), (0.0, 0.0)),
+    ];
+    let sketch = sketch_with_loops(id, &[&entities]);
+    let region = crate::test_support::with_decode_context(|ctx| {
+        super::super::arrangement_region_containing_points(
+            &sketch,
+            &entities,
+            &[Point2::new(50.0, 0.1)],
+            PROFILE_PROGRAM_TOLERANCE,
+            &ProfileGeometryWork::new(),
+            ctx,
+        )
+    })
+    .unwrap();
+    assert!(region.is_some());
+}
+#[test]
+fn a_clamped_nurbs_end_leaves_along_its_first_control_leg() {
+    use super::super::{nurbs_departure, DepartureCurvature};
+    use cadmpeg_ir::geometry::pcurve::{PcurveNurbs, PcurveNurbsPoles};
+
+    let curve = |knots: Vec<f64>, weights: Option<Vec<f64>>| {
+        PcurveNurbs::new(
+            2,
+            knots,
+            PcurveNurbsPoles::from_lanes(
+                vec![
+                    Point2::new(0.0, 0.0),
+                    Point2::new(5.0, 0.0),
+                    Point2::new(10.0, 5.0),
+                ],
+                weights,
+            )
+            .unwrap(),
+            false,
+        )
+        .unwrap()
+    };
+    let clamped = curve(vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0], None);
+    let start = nurbs_departure(&clamped, true).expect("clamped start");
+    assert_eq!(start.angle, 0.0);
+    assert!(matches!(start.curvature, DepartureCurvature::Sign(sign) if sign == 1.0));
+    let end = nurbs_departure(&clamped, false).expect("clamped end");
+    assert_eq!(end.angle, (-5.0_f64).atan2(-5.0));
+    assert!(matches!(end.curvature, DepartureCurvature::Sign(sign) if sign == -1.0));
+    let unclamped = curve(vec![0.0, 0.5, 1.0, 2.0, 3.0, 4.0], None);
+    assert!(nurbs_departure(&unclamped, true).is_none());
+    let negative = curve(
+        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        Some(vec![1.0, -1.0, 1.0]),
+    );
+    assert!(nurbs_departure(&negative, true).is_none());
+    let rational = curve(
+        vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+        Some(vec![1.0, 3.0, 0.5]),
+    );
+    let start = nurbs_departure(&rational, true).expect("rational start");
+    assert_eq!(start.angle, 0.0);
+    assert!(matches!(start.curvature, DepartureCurvature::Sign(sign) if sign == 1.0));
+}
+
+#[test]
+fn a_point_between_a_curved_boundary_and_its_polyline_selects_no_face() {
+    // A 20 x 20 square split by an arc about (0, 10) from (10, 0) to
+    // (10, 20) that bulges to x = 14.14. The arc polyline has vertices at 0
+    // and pi / 512 rad; a point at half that angle, 3e-5 inside the arc,
+    // lies in the left face but beyond the chord, where the right face's
+    // polyline holds it.
+    let id = SketchId::mint("synthetic:test:id#bulge").unwrap();
+    let radius = 200.0_f64.sqrt();
+    let arc = SketchEntity::new(
+        SketchEntityId::mint("synthetic:test:id#bulge-arc").unwrap(),
+        id.clone(),
+        SketchGeometry::try_from(SketchGeometryDefinition::Arc {
+            center: Point2::new(0.0, 10.0),
+            radius: Length::new(radius).unwrap(),
+            start_angle: Angle::new(-std::f64::consts::FRAC_PI_4).unwrap(),
+            end_angle: Angle::new(std::f64::consts::FRAC_PI_4).unwrap(),
+        })
+        .unwrap(),
+    );
+    let mut entities = rectangle(&id, "frame", (0.0, 0.0), (20.0, 20.0));
+    entities.push(arc.clone());
+    let sketch = sketch_with_loops(id, &[&entities]);
+    let region = |point: Point2| {
+        crate::test_support::with_decode_context(|ctx| {
+            super::super::arrangement_region_containing_points(
+                &sketch,
+                &entities,
+                &[point],
+                PROFILE_PROGRAM_TOLERANCE,
+                &ProfileGeometryWork::new(),
+                ctx,
+            )
+        })
+        .unwrap()
+    };
+    assert!(
+        region(Point2::new(5.0, 10.0)).is_some(),
+        "inside the left face"
+    );
+    assert!(
+        region(Point2::new(17.0, 10.0)).is_some(),
+        "inside the right face"
+    );
+    let half_step = std::f64::consts::PI / 1024.0;
+    let inside = radius - 3.0e-5;
+    assert_eq!(
+        region(Point2::new(
+            inside * half_step.cos(),
+            10.0 + inside * half_step.sin()
+        )),
+        None
+    );
+}
 #[test]
 fn a_coincident_curve_merges_once_in_its_own_direction() {
     let use_ = |name: &str, reversed: bool| SketchEntityUse {
