@@ -7,7 +7,7 @@ use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, FeatureOperation};
 #[test]
 fn inactive_literal_expression_override_reaches_the_output() {
     use cadmpeg_ir::features::{ConfigurationId, DesignConfiguration, Expression, ParameterValue};
-    use cadmpeg_ir::scalar::Length;
+    use cadmpeg_ir::scalar::{Angle, Length};
 
     let mut ir = source_less_extrusion();
     let parameter = ir
@@ -18,6 +18,14 @@ fn inactive_literal_expression_override_reaches_the_output() {
         .unwrap();
     let parameter_id = parameter.id.clone();
     assert!(matches!(parameter.value, Some(ParameterValue::Length(_))));
+    let mut angular = parameter.clone();
+    angular.id = cadmpeg_ir::features::ParameterId::mint("synthetic:test:parameter#angle").unwrap();
+    angular.name = "Angle".into();
+    angular.ordinal = 1;
+    angular.expression = Expression::text("0.5rad");
+    angular.value = Some(ParameterValue::Angle(Angle::new(0.5).unwrap()));
+    let angular_id = angular.id.clone();
+    ir.model.parameters.push(angular);
     let bodies = cadmpeg_ir::features::DistinctMembers::try_from(
         ir.model
             .bodies
@@ -46,6 +54,10 @@ fn inactive_literal_expression_override_reaches_the_output() {
     ir.model.configurations[1]
         .parameter_overrides
         .insert(parameter_id.clone(), expression.clone());
+    let angular_expression = Expression::text("1rad");
+    ir.model.configurations[1]
+        .parameter_overrides
+        .insert(angular_id.clone(), angular_expression.clone());
     ir.model.finalize();
     let plan = SldprtCodec
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
@@ -55,6 +67,12 @@ fn inactive_literal_expression_override_reaches_the_output() {
         .losses
         .iter()
         .any(|loss| loss.message.contains(parameter_id.as_str())
+            && loss.message.contains("expression override omitted")));
+    assert!(!plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(angular_id.as_str())
             && loss.message.contains("expression override omitted")));
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).unwrap();
@@ -82,6 +100,21 @@ fn inactive_literal_expression_override_reaches_the_output() {
     assert_eq!(
         configuration.parameter_values.get(&parameter.id),
         Some(&ParameterValue::Length(Length::new(50.0).unwrap()))
+    );
+    let angular = result
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "Angle")
+        .unwrap();
+    assert_eq!(
+        configuration.parameter_overrides.get(&angular.id),
+        Some(&angular_expression)
+    );
+    assert_eq!(
+        configuration.parameter_values.get(&angular.id),
+        Some(&ParameterValue::Angle(Angle::new(1.0).unwrap()))
     );
 }
 
