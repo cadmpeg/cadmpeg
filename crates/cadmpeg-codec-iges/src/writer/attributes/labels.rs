@@ -12,10 +12,10 @@ fn carrier(target: &AttributeTarget) -> bool {
     )
 }
 
-fn short_label(value: &str) -> bool {
+pub(in crate::writer) fn short_label(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 8
-        && value.trim_end_matches(' ') == value
+        && value.trim() == value
         && value
             .bytes()
             .all(|byte| byte.is_ascii_graphic() || byte == b' ')

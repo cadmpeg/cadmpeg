@@ -289,6 +289,22 @@ fn vertex_list_source(ir: &CadIr, points: &[String]) -> Option<String> {
     Some(id)
 }
 
+fn vertex_label_group(ir: &CadIr, point: &cadmpeg_ir::ids::PointId) -> Option<String> {
+    use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
+    let mut labels = ir.model.attributes.iter().filter(|attribute| {
+        matches!(&attribute.target, AttributeTarget::Point(id) if id == point)
+            && matches!(attribute.name.as_str(), "name" | "iges.directory_label")
+    });
+    let label = labels.next()?;
+    if labels.next().is_some() {
+        return None;
+    }
+    let [Some(AttributeValue::String(value))] = label.values.as_slice() else {
+        return None;
+    };
+    attributes::labels::short_label(value).then(|| value.clone())
+}
+
 fn counts_for_ir(ir: &CadIr) -> BTreeMap<String, usize> {
     let mut counts = BTreeMap::new();
     if let Some(namespace) = ir.native.namespace("iges") {
@@ -2621,7 +2637,7 @@ fn brep_entities(
 
         let mut vertex_ids = body_vertex_ids.into_iter().collect::<Vec<_>>();
         vertex_ids.sort_by(Ord::cmp);
-        let mut vertex_groups = BTreeMap::<Option<String>, Vec<String>>::new();
+        let mut vertex_groups = BTreeMap::<(Option<String>, Option<String>), Vec<String>>::new();
         for vertex_id in &vertex_ids {
             let vertex = ir
                 .model
@@ -2634,13 +2650,20 @@ fn brep_entities(
                     ))
                 })?;
             let source = vertex_list_source(ir, &[vertex.point.to_string()]);
+            let label = vertex_label_group(ir, &vertex.point);
             vertex_groups
-                .entry(source)
+                .entry((source, label))
                 .or_default()
                 .push(vertex_id.clone());
         }
         let mut vertex_indices = BTreeMap::new();
-        for (source, group) in vertex_groups {
+        let mut source_counts = BTreeMap::<String, usize>::new();
+        for (source, _) in vertex_groups.keys() {
+            if let Some(source) = source {
+                *source_counts.entry(source.clone()).or_default() += 1;
+            }
+        }
+        for ((source, _), group) in vertex_groups {
             let list_index = entities.len();
             let mut parameters = group.len().to_string();
             let mut point_targets = Vec::with_capacity(group.len());
@@ -2663,7 +2686,7 @@ fn brep_entities(
                 vertex_indices.insert(vertex_id.clone(), (list_index, index));
             }
             parameters.push(';');
-            point_targets.extend(source);
+            point_targets.extend(source.filter(|source| source_counts.get(source) == Some(&1)));
             entities.push(Entity {
                 structure: None,
                 property_links: Vec::new(),
