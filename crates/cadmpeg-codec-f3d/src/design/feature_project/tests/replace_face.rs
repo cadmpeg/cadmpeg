@@ -369,7 +369,7 @@ fn trim_body_draft(
             preceding_candidate_faces: Vec::new(),
             preceding_body_slots: Vec::new(),
         }],
-        nested_record_index: record_index + 3,
+        nested_record_index: u64::from(record_index) + 3,
         nested_record_index_offset: 38,
         recipe_id: format!("f3d:Design/BulkStream.dat:recipe#{}", record_index + 4),
         resolved_face_slot: None,
