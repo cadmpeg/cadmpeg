@@ -220,6 +220,39 @@ Parsed by:
 | 30 | 1 | `reserved_30` | `u8` | little | spec | In the wide form, the nine bytes from offset 26 are · value `0` |
 | 31 | 4 | `comment_length` | `u32` | little | spec | In the wide form, the nine bytes from offset 26 are |
 
+## `design_parameter_comment_discriminated_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 30 B
+
+Offsets are relative to the indexed header of a comment discriminated parameter through the comment code-unit count. The comment code units follow, then the source ordinal and the owner form.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/parameters.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The comment discriminated form stores eleven zero bytes |
+| 11 | 11 | `zero_run_11` | `bytes[11]` | little | spec | The comment discriminated form stores eleven zero bytes |
+| 22 | 4 | `family_discriminator` | `u32` | little | spec | a u32 family discriminator at offset 22 |
+| 26 | 4 | `comment_length` | `u32` | little | spec | the u32 code-unit count of the LP-UTF16 parameter comment at offset 26 |
+
+## `design_parameter_comment_expression_trailer`
+
+Spec §3.1 · layout: byte offsets · size: 5 B
+
+This trailer is relative to the end of the variable LP-UTF16 expression of a comment discriminated parameter.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/parameters.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `driven` | `u8` | little | spec | The comment expression trailer is five bytes |
+| 1 | 1 | `reserved_1` | `u8` | little | spec | The comment expression trailer is five bytes · value `0` |
+| 2 | 1 | `favorite` | `u8` | little | spec | The comment expression trailer is five bytes |
+| 3 | 1 | `reserved_3` | `u8` | little | spec | The comment expression trailer is five bytes · value `0` |
+| 4 | 1 | `document` | `u8` | little | spec | The comment expression trailer is five bytes |
+
 ## `design_parameter_tail`
 
 Spec §3.1 · layout: byte offsets · size: 12 B
@@ -3184,11 +3217,11 @@ Unstated regions:
 - `0..11` (11 B): The indexed identity header occupies the first 11 bytes.
 - `11..21` (10 B): The compact identity stores zero bytes at offsets 11 through 20.
 
-## `class_338_sketch_curve_identity`
+## `marked_sketch_curve_identity`
 
 Spec §3.1 · layout: byte offsets · size: 49 B
 
-Offsets are relative to the class-`361` identity record's indexed header. The following indexed record begins at offset 49.
+Offsets are relative to the identity record's indexed header. The following indexed record begins at offset 49.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -5645,6 +5678,58 @@ Unstated regions:
 
 - `128..137` (9 B): Nine zero bytes.
 - `146..148` (2 B): Two zero bytes close the frame.
+
+## `local_component_occurrence_leading_flag_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 51 B
+
+Offsets are relative to the carrier's indexed header. A matrix frame stores the matrix at offset 51; the body follows the flag or the matrix.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/components.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 8 | `empty_instance_name` | `bytes[8]` | little | spec | the frame stores u32 `0`, an empty LP-ASCII instance name |
+| 19 | 1 | `path_marker` | `u8` | little | spec | `u8 1` at offset 19 · value `1` |
+| 20 | 4 | `path_count` | `u32` | little | spec | u32 path count `1` at offset 20 · value `1` |
+| 24 | 9 | `component_reference` | `bytes[9]` | little | spec | the marked u64 component-record reference at offset 24 |
+| 35 | 4 | `path_discriminator` | `u32` | little | spec | the u32 path discriminator at offset 35 |
+| 39 | 1 | `attributes_marker` | `u8` | little | spec | `u8 1` at offset 39 and u32 count `0` at offset 40 · value `1` |
+| 40 | 4 | `attribute_count` | `u32` | little | spec | `u8 1` at offset 39 and u32 count `0` at offset 40 · value `0` |
+| 44 | 2 | `ordinal_prefix` | `u16` | little | spec | The u16 ordinal prefix is at offset 44 |
+| 46 | 4 | `occurrence_ordinal` | `u32` | little | spec | the u32 one-based occurrence ordinal is at offset 46 |
+| 50 | 1 | `identity_flag` | `u8` | little | spec | the identity flag is at offset 50 |
+
+Unstated regions:
+
+- `0..11` (11 B): Indexed header.
+- `33..35` (2 B): Two zero bytes after the component reference.
+
+## `local_component_occurrence_leading_flag_body`
+
+Spec §3.1 · layout: byte offsets · size: 180 B
+
+Offsets are relative to the end of the 51-byte prefix or of the first matrix. A matrix frame repeats the matrix after the body; the 20-byte identity tail closes the frame.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/components.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 76 | `carrier_guid` | `bytes[76]` | little | spec | the LP-UTF16 carrier GUID |
+| 76 | 76 | `occurrence_guid` | `bytes[76]` | little | spec | the LP-UTF16 occurrence GUID |
+| 152 | 9 | `record_reference` | `bytes[9]` | little | spec | a marked same-segment record reference |
+| 162 | 1 | `path_marker` | `u8` | little | spec | one zero byte, `u8 1`, u32 path count `1` · value `1` |
+| 163 | 4 | `path_count` | `u32` | little | spec | one zero byte, `u8 1`, u32 path count `1` · value `1` |
+| 168 | 9 | `component_reference_repeat` | `bytes[9]` | little | spec | the repeated marked component-record reference |
+| 179 | 1 | `identity_flag_repeat` | `u8` | little | spec | a copy of the identity flag |
+
+Unstated regions:
+
+- `161..162` (1 B): Zero byte.
+- `167..168` (1 B): Zero byte.
+- `177..179` (2 B): Two zero bytes.
 
 ## `root_instance_prefix`
 
@@ -8505,6 +8590,21 @@ Parsed by:
 | 0 | 11 | `header` | `bytes[11]` | little | spec | eleven-byte indexed header, nine zero bytes, and an expansion byte |
 | 11 | 9 | `zero_run` | `bytes[9]` | little | spec | eleven-byte indexed header, nine zero bytes, and an expansion byte · value `[0, 0, 0, 0, 0, 0, 0, 0, 0]` |
 | 20 | 1 | `expanded` | `u8` | little | spec | an expansion byte `E` |
+
+## `assembly_version_four_prologue`
+
+Spec §Assembly operands · layout: byte offsets · size: 32 B
+
+Offsets are relative to the primary indexed scope header of a compact version-4 Assemble scope. The first connector reference follows the prologue.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | Version 4 uses the version-5 extensions with these differences. |
+| 11 | 9 | `zero_run` | `bytes[9]` | little | spec | Version 4 uses the version-5 extensions with these differences. · value `[0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 20 | 1 | `expanded` | `u8` | little | spec | Version 4 uses the version-5 extensions with these differences. · value `0` |
+| 21 | 1 | `facing` | `u8` | little | spec | follow the facing byte's two zero bytes |
+| 22 | 2 | `facing_zeros` | `bytes[2]` | little | spec | follow the facing byte's two zero bytes · value `[0, 0]` |
+| 24 | 8 | `prologue_zeros` | `bytes[8]` | little | spec | follow the facing byte's two zero bytes · value `[0, 0, 0, 0, 0, 0, 0, 0]` |
 
 ## `assembly_version_five_scope`
 

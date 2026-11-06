@@ -436,6 +436,14 @@ travel.
 
 **Note.** The decoder retains each profile operand in the native scope and emits `feature.extrude-profile-group-native` for each scope with multiple Sketch-profile operands.
 
+### DR-257. Entity-selection serialization form
+
+**Question.** What does the u32 serialization form after `u32 2` in a nested entity-selection member encode?
+
+**Known.** `f3d.md` §3.1 "A nested entity-selection member has primary indexed record `N`." states that the field is `0` or `1`. The field layout after it is the same for both values. Every member in one Design stream stores the same value. Value `1` occurs in documents whose product version is an ASM 231 or 232 Windows build; documents from the same builds also store value `0`. Members of both values resolve their identities to Sketch curves that close Extrude profile regions and to Revolve axis lines.
+
+**Need.** A pair of documents that differ only in the form value, and the Fusion setting or document generation that produces each value.
+
 ### DR-258. Second marked reference of the 87-byte scope tail
 
 **Question.** What record does the marked reference at tail byte 30 of an 87-byte parameter-scope tail name, and does it change the operation of its scope?
@@ -1292,3 +1300,15 @@ when the operation transition carries no candidate for the group members?
 **Conflict.** The specification gives mapping mode `0x60` and a whole-body recipe member. This scope stores mode `0` and a face-recipe entity selection.
 
 **Note.** None.
+
+### DR-256. Ordinal prefix of a leading-flag local component occurrence
+
+**Question.** What does the u16 ordinal prefix at offset 44 of a leading-flag local component occurrence state?
+
+**Known.** The prefix is `1` for the first new component of a Design and for a pasted second instance of that component, and `0` for a later new component. Its value is independent of the occurrence's grounded, light-bulb, visibility, active, and isolated states. The attributed frame stores two bytes at the same position before its ordinal.
+
+**Need.** A Fusion control that changes the prefix of one occurrence with all other carrier fields equal.
+
+**Conflict.** None.
+
+**Note.** The decoder keeps the prefix in the native occurrence frame.

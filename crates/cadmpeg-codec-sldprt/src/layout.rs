@@ -537,6 +537,8 @@ pub(crate) mod bspline_curve_descriptor {
     pub(crate) const CONTROL_COUNT: usize = 4;
     /// Offset of `dimension` (`u16`, big-endian). Spec §7.2.
     pub(crate) const DIMENSION: usize = 8;
+    /// Offset of `knot_count` (`u32`, big-endian). Spec §7.2.
+    pub(crate) const KNOT_COUNT: usize = 10;
     /// Offset of `periodic` (`u8`). Spec §7.2.
     pub(crate) const PERIODIC: usize = 15;
     /// Offset of `rational` (`u8`). Spec §7.2.
