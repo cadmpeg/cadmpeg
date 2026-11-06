@@ -397,3 +397,49 @@ fn sphere_vertex_loop_synthesis_preserves_layer_order() {
     assert_eq!(kinds(input.ir()), ["surface", "point", "face", "body"]);
     assert_eq!(kinds(output.ir()), kinds(input.ir()));
 }
+
+#[test]
+fn trimmed_plane_retains_parameter_curve_name() {
+    let bytes = crate::test_support::test_surface_fixtures::trimmed_plane_file();
+    let input = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("trimmed plane decodes");
+    let plan = IgesCodec
+        .plan(EncodeInput::new(input.ir(), None), request())
+        .expect("trimmed plane synthesizes");
+    assert!(
+        plan.report()
+            .losses
+            .iter()
+            .all(|loss| !loss.message.contains("iges:model:curve#D5")),
+        "losses: {:?}",
+        plan.report().losses
+    );
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("trimmed plane writes");
+    let output = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("trimmed plane re-decodes");
+    assert!(output
+        .ir()
+        .model
+        .attributes
+        .iter()
+        .any(|attribute| attribute.name == "name"
+            && attribute.values
+                == [Some(cadmpeg_ir::attributes::AttributeValue::String(
+                    "PCURVE".into()
+                ))]));
+    let records = &output
+        .ir()
+        .native
+        .namespace("iges")
+        .expect("native namespace")
+        .arenas()["entities"];
+    assert!(records.iter().any(|record| record
+        .field("entity_type")
+        .and_then(|value| value.as_i64())
+        == Some(106)
+        && record.field("form").and_then(|value| value.as_i64()) == Some(63)
+        && record.field("use_flag").and_then(|value| value.as_i64()) == Some(5)));
+}
