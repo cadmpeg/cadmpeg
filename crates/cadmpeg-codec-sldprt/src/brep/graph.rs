@@ -2423,14 +2423,17 @@ pub(crate) fn decode_bodies(
     }
     let mut decoded = decode_graph(ctx, &mut carriers, &tables, facts, &typed_facts, stream)?;
     if let (false, [(payload, header)]) = (decoded.bodies.is_empty(), bodies) {
-        if let Some(mut prefix) =
-            standalone::decode_prefix(ctx, header_body(payload, header)?, stream)?
-        {
-            let existing = decoded
-                .curves
-                .iter()
-                .map(|curve| curve.id.clone())
-                .collect::<HashSet<_>>();
+        let existing = decoded
+            .curves
+            .iter()
+            .map(|curve| curve.id.clone())
+            .collect::<HashSet<_>>();
+        if let Some(mut prefix) = standalone::decode_prefix(
+            ctx,
+            header_body(payload, header)?,
+            stream,
+            &existing,
+        )? {
             prefix.curves.retain(|curve| !existing.contains(&curve.id));
             let existing_points = decoded
                 .points
