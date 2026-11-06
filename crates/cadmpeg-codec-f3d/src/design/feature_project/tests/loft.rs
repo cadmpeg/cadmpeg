@@ -217,6 +217,8 @@ fn loft_point_sources() -> (
     let operand =
         crate::records::topology::entity_selection::DesignEntitySelectionOperand::try_new(
             crate::records::topology::entity_selection::DesignEntitySelectionOperandDraft {
+                serialization_form:
+                    crate::records::topology::entity_selection::SelectionSerializationForm::Zero,
                 id: format!("{LOFT_STREAM}:design-entity-selection-operand#201"),
                 scope_record_index: 12,
                 group_record_index: 101,
@@ -445,7 +447,7 @@ fn a_loft_point_section_without_one_sketch_point_stays_native() {
 
 #[test]
 fn a_loft_point_section_needs_a_sketch_point_frame() {
-    use crate::layout::class_338_sketch_curve_identity as curve_identity;
+    use crate::layout::marked_sketch_curve_identity as curve_identity;
     use cadmpeg_ir::features::LoftPointSection;
     let (group, operand, point, sketch, entity) = loft_point_sources();
     let group_id = group.id.clone();
