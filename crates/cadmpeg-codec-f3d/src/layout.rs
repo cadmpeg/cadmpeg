@@ -3338,14 +3338,14 @@ pub(crate) mod work_point_sketch_point_compact_identity {
     pub(crate) const POINT_PERSISTENT_ID: usize = 29;
 }
 
-/// Byte offsets for the `class_338_sketch_curve_identity` record.
+/// Byte offsets for the `marked_sketch_curve_identity` record.
 ///
 /// Spec §3.1. Record length 49 B.
 ///
 /// ```text
-/// Offsets are relative to the class-`361` identity record's indexed header. The following indexed record begins at offset 49.
+/// Offsets are relative to the identity record's indexed header. The following indexed record begins at offset 49.
 /// ```
-pub(crate) mod class_338_sketch_curve_identity {
+pub(crate) mod marked_sketch_curve_identity {
     /// Record length in bytes. Spec §3.1.
     pub(crate) const LEN: usize = 49;
     /// Offset of `zero_prefix` (`bytes[9]`). Spec §3.1.

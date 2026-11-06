@@ -152,6 +152,8 @@ fn draft_entity_neutral_selection_projects_a_unique_historical_face() {
         )
         .unwrap(),
         context_id_offset: 0,
+        serialization_form:
+            crate::records::topology::entity_selection::SelectionSerializationForm::Zero,
         identity_record_index: 115,
         identity_record_offset: 0,
         primary_identity: 225,

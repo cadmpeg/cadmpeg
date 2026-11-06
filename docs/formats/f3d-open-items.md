@@ -436,6 +436,14 @@ travel.
 
 **Note.** The decoder retains each profile operand in the native scope and emits `feature.extrude-profile-group-native` for each scope with multiple Sketch-profile operands.
 
+### DR-257. Entity-selection serialization form
+
+**Question.** What does the u32 serialization form after `u32 2` in a nested entity-selection member encode?
+
+**Known.** `f3d.md` §3.1 "A nested entity-selection member has primary indexed record `N`." states that the field is `0` or `1`. The field layout after it is the same for both values. Every member in one Design stream stores the same value. Value `1` occurs in documents whose product version is an ASM 231 or 232 Windows build; documents from the same builds also store value `0`. Members of both values resolve their identities to Sketch curves that close Extrude profile regions and to Revolve axis lines.
+
+**Need.** A pair of documents that differ only in the form value, and the Fusion setting or document generation that produces each value.
+
 ## 2. External references
 
 ### DR-111. Component-path poses of nested occurrences
