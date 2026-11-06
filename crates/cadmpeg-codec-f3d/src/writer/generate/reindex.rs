@@ -51,8 +51,17 @@ pub(super) fn preserve_indices(
         ..Default::default()
     };
     let ctx = cadmpeg_core::decode::DecodeContext::for_encode(&arena, &policy);
-    let framed = cadmpeg_asm::sab::frame(&ctx, records, 0, records.len(), RefWidth::Eight, None)
-        .map_err(|error| error.into_codec_error(&ctx, CodecError::malformed))?;
+    let framed =
+        match cadmpeg_asm::sab::frame(&ctx, records, 0, records.len(), RefWidth::Eight, None) {
+            Ok(framed) => framed,
+            Err(cadmpeg_asm::stream_error::StreamFailure::Resource(limit)) => {
+                return Err(limit.into())
+            }
+            Err(error) => {
+                debug_assert!(false, "generated F3D BREP records must frame: {error:?}");
+                return Ok(());
+            }
+        };
     let count = framed.len();
     let mut destinations = ctx.alloc_filled(count, None, "plan F3D BREP record destinations")?;
     let mut occupied = ctx.alloc_filled(count, false, "reserve F3D BREP record indices")?;
@@ -170,10 +179,10 @@ pub(super) fn preserve_indices(
             *destination = available.next();
         }
     }
-    let mapping = destinations
-        .into_iter()
-        .collect::<Option<Vec<_>>>()
-        .ok_or_else(|| CodecError::Malformed("F3D BREP record remap is incomplete".into()))?;
+    let Some(mapping) = destinations.into_iter().collect::<Option<Vec<_>>>() else {
+        debug_assert!(false, "each F3D BREP record has a unique remap destination");
+        return Ok(());
+    };
     if mapping
         .iter()
         .enumerate()
