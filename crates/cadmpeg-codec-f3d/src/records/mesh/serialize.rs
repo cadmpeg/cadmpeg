@@ -171,7 +171,6 @@ impl Serialize for TextureRef<'_> {
             filename: &'a str,
             filename_offset: u64,
             archive_entry_name: &'a str,
-            asset: &'a super::AssetId,
         }
         let resource = self.resource;
         let flags_start = self.table.record.byte_offset()
@@ -195,7 +194,6 @@ impl Serialize for TextureRef<'_> {
             filename: resource.file.filename(),
             filename_offset: resource.file.filename_offset(),
             archive_entry_name: resource.file.archive_entry_name(),
-            asset: &resource.asset,
         }
         .serialize(serializer)
     }

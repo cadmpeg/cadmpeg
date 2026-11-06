@@ -726,9 +726,17 @@ pub(crate) fn synthetic_mesh_graph(with_textures: bool) -> SyntheticMeshGraph {
 
 /// Build a synthetic archive with one indexed mesh feature.
 pub(crate) fn archive(payload: &[u8], brep: Option<&[u8]>) -> Vec<u8> {
+    archive_with_textures(payload, brep, false)
+}
+
+pub(crate) fn archive_with_textures(
+    payload: &[u8],
+    brep: Option<&[u8]>,
+    textures: bool,
+) -> Vec<u8> {
     use std::io::{Cursor, Write};
 
-    let mut graph = synthetic_mesh_graph(false);
+    let mut graph = synthetic_mesh_graph(textures);
     let timeline_tag = u32::try_from(256 + graph.meta.types.len()).unwrap();
     graph.meta.types.push(design_type(
         timeline_tag,
@@ -821,5 +829,18 @@ pub(crate) fn archive(payload: &[u8], brep: Option<&[u8]>) -> Vec<u8> {
     }
     zip.start_file("FusionAssetName[Active]/ParaMeshGeometry.BlobParts/ParaMeshGeometry.11111111-2222-4333-8444-555555555555.paramesh", stored).unwrap();
     zip.write_all(payload).unwrap();
+    if textures {
+        for (name, contents) in [
+            ("mesh-a.png", b"PNG".as_slice()),
+            ("mesh-b.jpg", b"JPEG".as_slice()),
+        ] {
+            zip.start_file(
+                format!("FusionAssetName[Active]/Design1/Images.BlobParts/{name}"),
+                stored,
+            )
+            .unwrap();
+            zip.write_all(contents).unwrap();
+        }
+    }
     zip.finish().unwrap().into_inner()
 }
