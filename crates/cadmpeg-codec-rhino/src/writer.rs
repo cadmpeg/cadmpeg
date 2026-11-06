@@ -2166,17 +2166,28 @@ fn generated_projected_brep_c2_curve(
                 center.y + y.y,
                 center.z + y.z,
             ));
-            let axis_2d = if xuv[0] * yuv[1] - xuv[1] * yuv[0] >= 0.0 {
-                cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0)
+            let axis_z = if xuv[0] * yuv[1] - xuv[1] * yuv[0] >= 0.0 {
+                1.0
             } else {
-                cadmpeg_ir::math::Vector3::new(0.0, 0.0, -1.0)
+                -1.0
             };
             let domain = FiniteReal::raw_array(edge.domain);
+            let (xuv, axis_z) = if sense == Sense::Reversed {
+                let angle = domain[0].rem_euclid(std::f64::consts::TAU)
+                    + domain[1].rem_euclid(std::f64::consts::TAU);
+                let (sin, cos) = angle.sin_cos();
+                (
+                    [cos * xuv[0] + sin * yuv[0], cos * xuv[1] + sin * yuv[1]],
+                    -axis_z,
+                )
+            } else {
+                (xuv, axis_z)
+            };
             (
                 ARC_CLASS,
                 circle_payload(
                     cadmpeg_ir::math::Point3::new(cuv[0], cuv[1], 0.0),
-                    axis_2d,
+                    cadmpeg_ir::math::Vector3::new(0.0, 0.0, axis_z),
                     cadmpeg_ir::math::Vector3::new(xuv[0], xuv[1], 0.0),
                     circle.radius().get(),
                     domain,
@@ -2205,6 +2216,70 @@ fn canonicalize_native_curve_knots(
         .edit_knots(|knots| knots.copy_from_slice(&reconstructed))
         .map_err(|error| WriteError::Omit(format!("curve {id}: {error}")))?;
     Ok(())
+}
+
+fn reversed_pcurve_payload(
+    edge: &WritableEdge<'_>,
+    pcurve: &WritablePcurve<'_>,
+) -> Result<([u8; 16], Vec<u8>), WriteError> {
+    use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
+    let domain = pcurve.domain(edge);
+    let [lo, hi] = FiniteReal::raw_array(domain);
+    let id = pcurve.source.id.as_str();
+    match &pcurve.source.geometry {
+        PcurveGeometry::Line(line) => {
+            let origin = line.origin().as_raw();
+            let direction = line.direction().as_raw();
+            let point = |t: f64| [origin.u + direction.u * t, origin.v + direction.v * t, 0.0];
+            Ok((
+                LINE_CLASS,
+                bounded_line_payload(point(hi), point(lo), [lo, hi], 2)?,
+            ))
+        }
+        PcurveGeometry::Nurbs { nurbs } => {
+            let mut curve = nurbs
+                .lift(|point| cadmpeg_ir::math::Point3::new(point.u, point.v, 0.0))
+                .map_err(|error| WriteError::Omit(format!("pcurve {id}: {error}")))?;
+            curve
+                .reverse_parameterization_in_range(domain[0], domain[1])
+                .ok_or_else(|| {
+                    WriteError::Omit(format!("pcurve {id} has non-finite reflected knots"))
+                })?;
+            canonicalize_native_curve_knots(&mut curve, id)?;
+            Ok((NURBS_CURVE_CLASS, nurbs_curve_payload_dimension(&curve, 2)?))
+        }
+        PcurveGeometry::Circle(circle) => {
+            let center = circle.center().get();
+            let x = circle.x_axis().get();
+            let y = circle.y_axis().get();
+            let angle = lo.rem_euclid(std::f64::consts::TAU) + hi.rem_euclid(std::f64::consts::TAU);
+            let (sin, cos) = angle.sin_cos();
+            let axis_z = if x.u * y.v - x.v * y.u >= 0.0 {
+                -1.0
+            } else {
+                1.0
+            };
+            Ok((
+                ARC_CLASS,
+                circle_payload(
+                    cadmpeg_ir::math::Point3::new(center.u, center.v, 0.0),
+                    cadmpeg_ir::math::Vector3::new(0.0, 0.0, axis_z),
+                    cadmpeg_ir::math::Vector3::new(
+                        cos * x.u + sin * y.u,
+                        cos * x.v + sin * y.v,
+                        0.0,
+                    ),
+                    circle.radius().get(),
+                    [lo, hi],
+                    [lo, hi],
+                    2,
+                )?,
+            ))
+        }
+        _ => Err(WriteError::Omit(format!(
+            "pcurve {id} has no reversible trim carrier"
+        ))),
+    }
 }
 
 fn admit_pcurve<'a>(
@@ -2328,7 +2403,7 @@ fn admit_pcurve<'a>(
 }
 
 /// Checks that an explicit pcurve tracks its directed edge curve through the
-/// NURBS surface.
+/// NURBS surface. Returns whether the trim needs its parameter direction reversed.
 ///
 /// `face_tolerance` is an admitted IR-stated tolerance from
 /// `stated_write_tolerance`.
@@ -2338,19 +2413,17 @@ fn validate_nurbs_trim(
     edge: &WritableEdge<'_>,
     sense: cadmpeg_ir::topology::Sense,
     explicit: &WritablePcurve<'_>,
-) -> Result<(), WriteError> {
-    // A reversed coedge's explicit trim follows either the traversal
-    // convention Rhino authors or the edge convention other kernels write;
-    // see `trims::validate_plane_trim`. Either agreement admits the trim.
+) -> Result<bool, WriteError> {
     use cadmpeg_ir::topology::Sense;
 
     let reflected = sense == Sense::Reversed;
     match check_nurbs_trim(surface, face_tolerance, edge, reflected, explicit) {
-        Ok(()) => Ok(()),
+        Ok(()) => Ok(false),
         Err(WriteError::Omit(first)) if reflected => {
             match check_nurbs_trim(surface, face_tolerance, edge, false, explicit) {
                 Err(WriteError::Omit(_)) => Err(WriteError::Omit(first)),
-                result => result,
+                Ok(()) => Ok(true),
+                Err(error) => Err(error),
             }
         }
         Err(error) => Err(error),
