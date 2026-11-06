@@ -310,3 +310,208 @@ fn derived_point_nested_record_stores_no_property_block() {
     let frames = crate::design::decode::meta::design_primary_frames(&bytes, &meta).unwrap();
     assert!(decode_derived_sketch_point_record(&bytes, &meta, &frames[0]).is_none());
 }
+
+fn geometry_group(members: &[u32], sketch: u32) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    push_header(&mut bytes, "258", 50);
+    bytes.extend_from_slice(&[0; 10]);
+    bytes.extend_from_slice(&3u32.to_le_bytes());
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    bytes.push(0);
+    push_header(&mut bytes, "259", 50);
+    bytes.extend_from_slice(&[0; 8]);
+    bytes.push(1);
+    bytes.extend_from_slice(&[0; 12]);
+    bytes.extend_from_slice(&1.0f32.to_le_bytes());
+    bytes.extend_from_slice(&1.0f32.to_le_bytes());
+    bytes.push(0);
+    bytes.extend_from_slice(&u32::try_from(members.len()).unwrap().to_le_bytes());
+    for &member in members {
+        push_reference(&mut bytes, member, None);
+    }
+    bytes.extend_from_slice(&[0; 4]);
+    push_reference(&mut bytes, sketch, None);
+    bytes
+}
+
+#[test]
+fn sketch_geometry_group_validates_the_complete_member_sequence() {
+    use crate::design::decode::sketch::parse_sketch_geometry_group;
+    let bytes = geometry_group(&[41, 60], OWNER);
+    assert_eq!(bytes.len(), 90 + 11 * 2);
+    let group = parse_sketch_geometry_group(&bytes).unwrap();
+    assert_eq!(group.sketch, OWNER);
+    assert_eq!(group.members, [41, 60].into_iter().collect());
+    for offset in [11, 20, 29, 41, 48, 49, 50, 61, 70, 97] {
+        let mut invalid = bytes.clone();
+        invalid[offset] ^= 1;
+        assert!(
+            parse_sketch_geometry_group(&invalid).is_none(),
+            "offset {offset}"
+        );
+    }
+    for offset in [62, 66] {
+        let mut invalid = bytes.clone();
+        invalid[offset..offset + 4].copy_from_slice(&2.0f32.to_le_bytes());
+        assert!(parse_sketch_geometry_group(&invalid).is_none());
+    }
+    assert!(parse_sketch_geometry_group(&bytes[..bytes.len() - 1]).is_none());
+    let mut extended = bytes.clone();
+    extended.push(0);
+    assert!(parse_sketch_geometry_group(&extended).is_none());
+    assert!(parse_sketch_geometry_group(&geometry_group(&[60, 41], OWNER)).is_none());
+    assert!(parse_sketch_geometry_group(&geometry_group(&[41, 41], OWNER)).is_none());
+    let mut missing_zeros = bytes.clone();
+    missing_zeros.drain(97..101);
+    assert!(parse_sketch_geometry_group(&missing_zeros).is_none());
+}
+
+fn group_stream(members: &[u32], group_owner: u32) -> (Vec<u8>, crate::metastream::MetaStream) {
+    use crate::design::test_support::{design_type, primary_record};
+    let mut point = tagged_point_payload(11, false, 0, 0, false);
+    point[4..7].copy_from_slice(b"256");
+    let tail = point.len() - 11;
+    point[tail + 1..tail + 9].copy_from_slice(&50u64.to_le_bytes());
+    let mut companion = Vec::new();
+    push_header(&mut companion, "257", COMPANION);
+    companion.extend_from_slice(&[0; 10]);
+    companion.extend_from_slice(&0u32.to_le_bytes());
+    companion.push(0);
+    push_reference(&mut companion, POINT, None);
+    let group = geometry_group(members, group_owner);
+    let mut owner = Vec::new();
+    push_header(&mut owner, "260", OWNER);
+    let mut curve = Vec::new();
+    push_header(&mut curve, "261", 60);
+    curve.extend_from_slice(&[0; 9]);
+    curve.push(1);
+    curve.extend_from_slice(&2u32.to_le_bytes());
+    for (name, value) in [("crv_primary_id", 700u64), ("crv_secondary_id", 0)] {
+        lp_ascii(&mut curve, name);
+        lp_ascii(&mut curve, "IntrinsicMetaTypeuint64");
+        curve.extend_from_slice(&value.to_le_bytes());
+    }
+    push_reference(&mut curve, 50, None);
+    let mut bytes = Vec::new();
+    let mut records = Vec::new();
+    for (id, frame) in [
+        (41, point),
+        (43, companion),
+        (50, group),
+        (17, owner),
+        (60, curve),
+    ] {
+        records.push(primary_record(id, bytes.len()));
+        bytes.extend_from_slice(&frame);
+    }
+    let meta = crate::metastream::MetaStream {
+        types: vec![
+            design_type(SKETCH_POINT_TYPE_GUID, None, 11, "Geometry", vec![41]),
+            design_type(SKETCH_POINT_COMPANION_TYPE.0, None, 0, "Geometry", vec![43]),
+            design_type(
+                "67F4EECB-EB2C-48E6-8A25-1751E9924EAE",
+                None,
+                0,
+                "MSketch",
+                vec![50],
+            ),
+            design_type(
+                "0F551F3B-B195-4486-93D0-711CB83482CE",
+                None,
+                0,
+                "Geometry",
+                vec![],
+            ),
+            design_type(SKETCH_CONTAINER_TYPE_GUID, None, 0, "MSketch", vec![17]),
+            design_type(
+                "00000000-0000-0000-0000-000000000001",
+                None,
+                0,
+                "Geometry",
+                vec![60],
+            ),
+        ],
+        records,
+        secondary_records: vec![],
+    };
+    (bytes, meta)
+}
+
+#[test]
+fn sketch_group_resolves_point_and_curve_owners() {
+    use crate::design::decode::sketch::{
+        decode_sketch_curve_identities_from_stream, decode_sketch_points_from_stream,
+    };
+    let (bytes, meta) = group_stream(&[41, 60], OWNER);
+    let points = decode_sketch_points_from_stream(&bytes, &meta, "Design/BulkStream.dat").unwrap();
+    assert_eq!(points[0].owner_reference, Some(OWNER));
+    let curves =
+        decode_sketch_curve_identities_from_stream(&bytes, &meta, "Design/BulkStream.dat").unwrap();
+    assert_eq!(curves[0].owner_reference, Some(OWNER));
+    let (bytes, meta) = group_stream(&[60], OWNER);
+    assert!(
+        decode_sketch_points_from_stream(&bytes, &meta, "Design/BulkStream.dat")
+            .unwrap_err()
+            .to_string()
+            .contains("invalid trailing container reference")
+    );
+    let (bytes, meta) = group_stream(&[41, 60], 43);
+    assert!(
+        decode_sketch_points_from_stream(&bytes, &meta, "Design/BulkStream.dat")
+            .unwrap_err()
+            .to_string()
+            .contains("invalid member sequence")
+    );
+    for nested in [b"256".as_slice(), b"260".as_slice()] {
+        let (mut bytes, meta) = group_stream(&[41, 60], OWNER);
+        let group_start = usize::try_from(meta.records[2].bulk_offset).unwrap();
+        bytes[group_start + 34..group_start + 37].copy_from_slice(nested);
+        assert!(
+            decode_sketch_points_from_stream(&bytes, &meta, "Design/BulkStream.dat")
+                .unwrap_err()
+                .to_string()
+                .contains("invalid member sequence")
+        );
+    }
+    let (mut bytes, meta) = group_stream(&[41, 60], OWNER);
+    let group_start = usize::try_from(meta.records[2].bulk_offset).unwrap();
+    bytes[group_start + 37..group_start + 41].copy_from_slice(&51u32.to_le_bytes());
+    assert!(
+        decode_sketch_points_from_stream(&bytes, &meta, "Design/BulkStream.dat")
+            .unwrap_err()
+            .to_string()
+            .contains("invalid member sequence")
+    );
+}
+
+#[test]
+fn sketch_geometry_group_does_not_create_legacy_sketch_header() {
+    use std::io::{Cursor, Write};
+    let bulk = geometry_group(&[41, 60], OWNER);
+    assert!(crate::design::decode::sketch::parse_legacy_sketch_member_run(&bulk, 0, 50).is_some());
+    let meta = crate::test_support::streams_test::design_metastream_with_records(
+        &[(
+            "67F4EECB-EB2C-48E6-8A25-1751E9924EAE",
+            "",
+            0,
+            "MSketch",
+            &[50],
+        )],
+        &[(50, 0)],
+    );
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(zip::CompressionMethod::Stored);
+    crate::test_support::manifest_test::write_synthetic_manifests(&mut zip, stored);
+    zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored)
+        .unwrap();
+    zip.write_all(&bulk).unwrap();
+    zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
+        .unwrap();
+    zip.write_all(&meta).unwrap();
+    let archive = zip.finish().unwrap().into_inner();
+    crate::test_support::zip_test::with_scan(&archive, |scan| {
+        assert!(crate::design::decode::sketch::decode_entity_headers(scan)
+            .unwrap()
+            .is_empty());
+    });
+}

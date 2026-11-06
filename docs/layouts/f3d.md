@@ -113,6 +113,28 @@ Cross-checked against code:
 
 - `crates/cadmpeg-codec-f3d/src/design/decode/sketch.rs` — The decoder selects the member by this type GUID before reading this prefix.
 
+## `sketch_geometry_group_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 75 B
+
+Offsets are relative to the group's primary indexed header. The member reference run, four zero bytes and the owning sketch container reference follow.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Its primary frame stores the indexed header |
+| 11 | 10 | `zero_run` | `bytes[10]` | little | spec | ten zero bytes, a u32 ordinal at offset 21 |
+| 21 | 4 | `sketch_ordinal` | `u32` | little | spec | a u32 ordinal at offset 21 |
+| 25 | 4 | `constant_one` | `u32` | little | spec | u32 `1` at offset 25 · value `1` |
+| 29 | 1 | `zero_byte` | `u8` | little | spec | a zero byte at offset 29 · value `0` |
+| 30 | 11 | `nested_header` | `bytes[11]` | little | spec | A nested indexed header with the same record index starts at offset 30 |
+| 41 | 8 | `nested_zero_run` | `bytes[8]` | little | spec | eight zero bytes at offsets 41 through 48 |
+| 49 | 1 | `marker` | `u8` | little | spec | `01` at offset 49 · value `1` |
+| 50 | 12 | `nested_zero_run_2` | `bytes[12]` | little | spec | twelve zero bytes at offsets 50 through 61 |
+| 62 | 4 | `scale_a` | `f32` | little | spec | f32 `1.0` at offsets 62 and 66 |
+| 66 | 4 | `scale_b` | `f32` | little | spec | f32 `1.0` at offsets 62 and 66 |
+| 70 | 1 | `zero_byte_2` | `u8` | little | spec | a zero byte at offset 70 · value `0` |
+| 71 | 4 | `member_count` | `u32` | little | spec | A u32 member count `N` at offset 71 |
+
 ## `design_decal_scope_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 44 B

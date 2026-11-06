@@ -114,6 +114,50 @@ pub(crate) mod sketch_container_visibility_member_prefix {
     pub(crate) const TAIL_MARKER: usize = 36;
 }
 
+/// Byte offsets for the `sketch_geometry_group_prefix` record.
+///
+/// Spec §3.1. Record length 75 B.
+///
+/// ```text
+/// Offsets are relative to the group's primary indexed header. The member reference run, four zero bytes and the owning sketch container reference follow.
+/// ```
+pub(crate) mod sketch_geometry_group_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 75;
+    /// Offset of `zero_run` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_RUN: usize = 11;
+    /// Offset of `sketch_ordinal` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const SKETCH_ORDINAL: usize = 21;
+    /// Offset of `constant_one` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const CONSTANT_ONE: usize = 25;
+    /// Stated value of `constant_one` (`u32`). Spec §3.1.
+    pub(crate) const CONSTANT_ONE_VALUE: u32 = 0x0000_0001;
+    /// Offset of `zero_byte` (`u8`). Spec §3.1.
+    pub(crate) const ZERO_BYTE: usize = 29;
+    /// Stated value of `zero_byte` (`u8`). Spec §3.1.
+    pub(crate) const ZERO_BYTE_VALUE: u8 = 0;
+    /// Offset of `nested_header` (`bytes[11]`). Spec §3.1.
+    pub(crate) const NESTED_HEADER: usize = 30;
+    /// Offset of `nested_zero_run` (`bytes[8]`). Spec §3.1.
+    pub(crate) const NESTED_ZERO_RUN: usize = 41;
+    /// Offset of `marker` (`u8`). Spec §3.1.
+    pub(crate) const MARKER: usize = 49;
+    /// Stated value of `marker` (`u8`). Spec §3.1.
+    pub(crate) const MARKER_VALUE: u8 = 1;
+    /// Offset of `nested_zero_run_2` (`bytes[12]`). Spec §3.1.
+    pub(crate) const NESTED_ZERO_RUN_2: usize = 50;
+    /// Offset of `scale_a` (`f32`, little-endian). Spec §3.1.
+    pub(crate) const SCALE_A: usize = 62;
+    /// Offset of `scale_b` (`f32`, little-endian). Spec §3.1.
+    pub(crate) const SCALE_B: usize = 66;
+    /// Offset of `zero_byte_2` (`u8`). Spec §3.1.
+    pub(crate) const ZERO_BYTE_2: usize = 70;
+    /// Stated value of `zero_byte_2` (`u8`). Spec §3.1.
+    pub(crate) const ZERO_BYTE_2_VALUE: u8 = 0;
+    /// Offset of `member_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const MEMBER_COUNT: usize = 71;
+}
+
 /// Byte offsets for the `design_decal_scope_prefix` record.
 ///
 /// Spec §3.1. Record length 44 B.

@@ -41,7 +41,7 @@ use cadmpeg_ir::scalar::{Angle, FiniteReal, NonNegativeLength, NonNegativeReal, 
 use cadmpeg_ir::sketches::TextPlacement;
 use cadmpeg_ir::topology::Color;
 use cadmpeg_ir::units::{FinitePoint2, UnitVector3};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use super::meta::{
     decode_types, design_primary_frames, metadata_for_bulk_stream, stream_types_by_class_tag,
@@ -1312,7 +1312,8 @@ pub(crate) fn decode_entity_headers(
                 insert_entity_module(&mut entity_modules, stream, entity_id, &design_type.module);
             }
         }
-        if design_type.module == DESIGN_MODULE_SKETCH {
+        if design_type.module == DESIGN_MODULE_SKETCH && !is_sketch_geometry_group_type(design_type)
+        {
             let Some(stream) = native_stream(design_type.id()) else {
                 continue;
             };
@@ -1973,6 +1974,7 @@ fn decode_sketch_points_from_stream(
             ),
         );
     }
+    let groups = collect_sketch_geometry_groups(bytes, meta, &frames)?;
     let mut out = Vec::new();
     for frame in &frames {
         let derived = is_derived_sketch_point_type(frame.design_type);
@@ -2002,15 +2004,17 @@ fn decode_sketch_points_from_stream(
             ))
         })?;
         let (u, v) = (decoded.coordinates[0] * 10.0, decoded.coordinates[1] * 10.0);
-        if !point_target_has_guid(
+        let owner = direct_sketch_owner(
             &types_by_entity,
+            &groups,
+            record_index,
             decoded.trailing_reference(),
-            SKETCH_CONTAINER_TYPE_GUID,
-        ) {
-            return Err(crate::design::text::malformed_design(format_args!(
+        )
+        .ok_or_else(|| {
+            crate::design::text::malformed_design(format_args!(
                 "F3D sketch point {record_index} has an invalid trailing container reference"
-            )));
-        }
+            ))
+        })?;
         let (record_form, companion) = frames_by_entity
             .get(&decoded.paired_reference)
             .filter(|companion_frame| {
@@ -2040,7 +2044,7 @@ fn decode_sketch_points_from_stream(
             SketchPoint::try_from(crate::records::sketch_geometry::SketchPointDraft {
                 id: design_record_id(stream, ":sketch-point#", u64_from_index(frame.start)),
                 record_index,
-                owner_reference: decoded.owner_reference,
+                owner_reference: decoded.owner_reference.map(|_| owner),
                 class_tag: frame.class_tag.clone(),
                 byte_offset: u64_from_index(frame.start),
                 coordinate_offset: decoded.coordinate_offset,
@@ -3372,6 +3376,147 @@ fn decode_sketch_point_companion(
     parsed
 }
 
+const SKETCH_GEOMETRY_GROUP_TYPE: (&str, u32, &str) =
+    ("67F4EECB-EB2C-48E6-8A25-1751E9924EAE", 0, "MSketch");
+const SKETCH_GEOMETRY_GROUP_BASE_TYPE: (&str, u32, &str) =
+    ("0F551F3B-B195-4486-93D0-711CB83482CE", 0, "Geometry");
+
+fn matches_sketch_type(
+    data: &crate::records::entity_header::SegmentTypeData,
+    expected: (&str, u32, &str),
+) -> bool {
+    data.type_guid.as_str().eq_ignore_ascii_case(expected.0)
+        && data.version == expected.1
+        && data.module == expected.2
+}
+
+fn is_sketch_geometry_group_type(data: &crate::records::entity_header::SegmentTypeData) -> bool {
+    matches_sketch_type(data, SKETCH_GEOMETRY_GROUP_TYPE)
+}
+
+#[derive(Debug)]
+struct SketchGeometryGroup {
+    sketch: u32,
+    members: HashSet<u32>,
+}
+
+fn parse_sketch_geometry_group(payload: &[u8]) -> Option<SketchGeometryGroup> {
+    use crate::layout::sketch_geometry_group_prefix as group;
+    let field = |offset, len| {
+        let mut view = View::over_retained(payload);
+        view.skip(offset)?;
+        view.take(len)
+    };
+    if indexed_record_header_at(payload, 0).is_none()
+        || field(group::ZERO_RUN, group::SKETCH_ORDINAL - group::ZERO_RUN)? != [0; 10]
+        || View::u32_le_at(payload, group::SKETCH_ORDINAL).is_none()
+        || View::u32_le_at(payload, group::CONSTANT_ONE) != Some(group::CONSTANT_ONE_VALUE)
+        || field(group::ZERO_BYTE, 1)? != [group::ZERO_BYTE_VALUE]
+        || indexed_record_header_at(payload, group::NESTED_HEADER).is_none()
+        || field(
+            group::NESTED_ZERO_RUN,
+            group::MARKER - group::NESTED_ZERO_RUN,
+        )? != [0; 8]
+        || field(group::MARKER, 1)? != [group::MARKER_VALUE]
+        || field(
+            group::NESTED_ZERO_RUN_2,
+            group::SCALE_A - group::NESTED_ZERO_RUN_2,
+        )? != [0; 12]
+        || View::f32_le_at(payload, group::SCALE_A) != Some(1.0)
+        || View::f32_le_at(payload, group::SCALE_B) != Some(1.0)
+        || field(group::ZERO_BYTE_2, 1)? != [group::ZERO_BYTE_2_VALUE]
+    {
+        return None;
+    }
+    let count = View::u32_le_at(payload, group::MEMBER_COUNT)?;
+    let count = cadmpeg_core::decode::bounded_len(
+        u64::from(count),
+        11,
+        payload.len().checked_sub(group::LEN)?,
+    )?;
+    let mut cursor = group::LEN;
+    let mut members = HashSet::new();
+    let mut previous = None;
+    for _ in 0..count {
+        let member = take_same_segment_sketch_reference(payload, &mut cursor)?;
+        if previous.is_some_and(|last| member <= last) {
+            return None;
+        }
+        members.insert(member);
+        previous = Some(member);
+    }
+    let mut tail = View::over_retained(payload);
+    tail.skip(cursor)?;
+    if tail.take(4)? != [0; 4] {
+        return None;
+    }
+    cursor = cursor.checked_add(4)?;
+    let sketch = take_same_segment_sketch_reference(payload, &mut cursor)?;
+    (cursor == payload.len()).then_some(SketchGeometryGroup { sketch, members })
+}
+
+fn collect_sketch_geometry_groups(
+    bytes: &[u8],
+    meta: &crate::metastream::MetaStream,
+    frames: &[super::meta::DesignPrimaryFrame<'_>],
+) -> Result<HashMap<u32, SketchGeometryGroup>, CodecError> {
+    let mut groups = HashMap::new();
+    for frame in frames
+        .iter()
+        .filter(|frame| is_sketch_geometry_group_type(frame.design_type))
+    {
+        let index = u32::try_from(frame.entity_id)
+            .map_err(|_| CodecError::malformed("F3D sketch geometry group index exceeds u32"))?;
+        let Some(payload) = bytes.get(frame.start..frame.end) else {
+            continue;
+        };
+        let parsed = (|| {
+            let group = parse_sketch_geometry_group(payload)?;
+            let nested = indexed_record_header_at(
+                payload,
+                crate::layout::sketch_geometry_group_prefix::NESTED_HEADER,
+            )?;
+            let (_, base) = super::meta::dynamic_type(meta, &nested.class_tag)?;
+            if nested.record_index != index
+                || !matches_sketch_type(base, SKETCH_GEOMETRY_GROUP_BASE_TYPE)
+                || !frames.iter().any(|owner| {
+                    owner.entity_id == u64::from(group.sketch)
+                        && owner
+                            .design_type
+                            .type_guid
+                            .as_str()
+                            .eq_ignore_ascii_case(SKETCH_CONTAINER_TYPE_GUID)
+                })
+            {
+                return None;
+            }
+            Some(group)
+        })()
+        .ok_or_else(|| {
+            crate::design::text::malformed_design(format_args!(
+                "F3D sketch geometry group {index} has an invalid member sequence"
+            ))
+        })?;
+        groups.insert(index, parsed);
+    }
+    Ok(groups)
+}
+
+fn direct_sketch_owner(
+    types: &HashMap<u32, (&str, u32, &str)>,
+    groups: &HashMap<u32, SketchGeometryGroup>,
+    record: u32,
+    target: Option<u32>,
+) -> Option<u32> {
+    let target = target?;
+    if point_target_has_guid(types, Some(target), SKETCH_CONTAINER_TYPE_GUID) {
+        Some(target)
+    } else {
+        let group = groups.get(&target)?;
+        group.members.contains(&record).then_some(group.sketch)
+    }
+}
+
 const SKETCH_POINT_TYPE_GUID: &str = "C2CEDAE7-1716-47C1-B7B1-07B70081D0FB";
 pub(crate) const CURRENT_SKETCH_POINT_TYPE: (&str, u32, &str) =
     (SKETCH_POINT_TYPE_GUID, 11, "Geometry");
@@ -3448,8 +3593,10 @@ fn decode_sketch_curve_identities_from_stream(
     meta: &crate::metastream::MetaStream,
     stream: &str,
 ) -> Result<Vec<SketchCurveIdentity>, CodecError> {
+    let frames = design_primary_frames(bytes, meta)?;
+    let groups = collect_sketch_geometry_groups(bytes, meta, &frames)?;
     let mut out = Vec::new();
-    for frame in design_primary_frames(bytes, meta)? {
+    for frame in frames {
         let payload = &bytes[frame.start..frame.end];
         let Some((primary_id, secondary_id, geometry_shift, entity_genesis)) =
             decode_sketch_curve_identity(payload)
@@ -3493,7 +3640,14 @@ fn decode_sketch_curve_identities_from_stream(
                 u64_from_index(frame.start),
             ),
             record_index,
-            owner_reference: trailing_sketch_owner_reference(payload),
+            owner_reference: trailing_sketch_owner_reference(payload).and_then(|target| {
+                groups.get(&target).map_or(Some(target), |group| {
+                    group
+                        .members
+                        .contains(&record_index)
+                        .then_some(group.sketch)
+                })
+            }),
             class_tag: frame.class_tag,
             byte_offset: u64_from_index(frame.start),
             geometry_offset: u32::try_from(geometry_offset).map_err(|_| {
