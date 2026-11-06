@@ -422,7 +422,7 @@ pub(super) fn plan(
             .curves
             .iter()
             .filter(|curve| {
-                !retained_curves.contains(&curve.id) && super::can_write_curve(&curve.geometry)
+                !retained_curves.contains(&curve.id) && super::can_write_curve(&before_subset, curve)
             })
             .cloned(),
     );

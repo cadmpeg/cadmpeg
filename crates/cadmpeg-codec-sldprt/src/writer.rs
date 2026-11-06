@@ -147,7 +147,7 @@ fn write_through_validation_error(
                     && (matches!(
                         curve.geometry.solved(),
                         Some(SolvedCurveGeometry::Composite { .. })
-                    ) || can_write_curve(&curve.geometry))
+                    ) || can_write_curve(ir, curve))
             }) || ir
                 .model
                 .surfaces
@@ -181,8 +181,8 @@ fn can_write_surface(geometry: &SurfaceGeometry) -> bool {
     })
 }
 
-fn can_write_curve(geometry: &CurveGeometry) -> bool {
-    geometry.solved().is_some_and(|solved| {
+fn can_write_curve(ir: &CadIr, curve: &cadmpeg_ir::geometry::Curve) -> bool {
+    surface_curve::supported(ir, curve).is_some() || curve.geometry.solved().is_some_and(|solved| {
         matches!(solved, SolvedCurveGeometry::Nurbs(_))
             || curve_values(&CurveGeometry::Solved(solved.clone()), 1.0).is_ok()
     })
@@ -1929,7 +1929,7 @@ fn body_subset(ir: &CadIr, selected: &[cadmpeg_ir::ids::BodyId]) -> Result<CadIr
             ir.model
                 .curves
                 .iter()
-                .filter(|curve| !owned.contains(&curve.id) && can_write_curve(&curve.geometry))
+                .filter(|curve| !owned.contains(&curve.id) && can_write_curve(ir, curve))
                 .map(|curve| curve.id.clone()),
         );
     }
