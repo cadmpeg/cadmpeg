@@ -120,6 +120,17 @@ class ContextTests(FixtureCase):
         self.assertFalse(preflight.is_test_path("crates/x/src/foo.rs"))
 
 
+class PythonChildTests(FixtureCase):
+    def test_python_children_run_under_the_current_interpreter(self) -> None:
+        self.repo.commit({"a.txt": "a\n"})
+        self.repo.branch()
+        context = self.repo.context()
+        probe = "import sys; print(sys.executable)"
+        for name in ("python3", "python"):
+            status, output = context.run([name, "-c", probe])
+            self.assertEqual((status, output), (0, sys.executable))
+
+
 class ReportTests(unittest.TestCase):
     def test_any_fail_exits_one(self) -> None:
         out = io.StringIO()
