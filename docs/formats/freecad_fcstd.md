@@ -23,9 +23,7 @@ Synthesis generates `Document.xml`, `GuiDocument.xml`, and exact-shape side entr
 from CADIR. Neutral arenas own every value with a neutral form. The writer's typed
 native records supply application values that have no neutral form; retained XML,
 archive bytes, and unreadable payloads never supply synthesized content. Vendor
-application objects with independently typed properties remain writable. An object
-with an unreadable property is omitted, and independent neutral geometry remains
-available for export. Unsupported arenas and entities produce export losses; only
+application objects with independently typed properties remain writable. A given-up property has one `unknowns` stub and a `record.unreadable` loss; independently read properties remain available. Unsupported arenas and entities produce export losses; only
 malformed input, capacity limits, and an unresolved target can refuse a write.
 
 Source-less construction and synthesis share the structured document writer.

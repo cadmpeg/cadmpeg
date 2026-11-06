@@ -104,17 +104,6 @@ Narrowing a keep-full route to a `Check` subset is a claim about the documents
 that route sees. Read the row above first: on IGES and SLDPRT the current
 evidence covers one row each.
 
-## Native passthrough arenas
-
-A semantic writer refuses a native arena it cannot preserve, so an arena the
-writer does not regenerate is admitted by name. The IGES semantic writer admits
-`quarantined_directory_records` and `quarantined_parameter_records` as
-passthrough arenas. It regenerates neither, because a record that failed typing
-has no fields to write; a non-empty one appears in the export report as
-`export/native.records-omitted`, naming the arena and each record.
-Byte-exact replay is a separate path and is unaffected: it copies the retained
-source image, which holds every quarantined card.
-
 ## Application composition
 
 `cadmpeg check` / convert validation =
