@@ -882,6 +882,89 @@ fn fixtures_synthesize_without_source_bytes() {
     }
 }
 
+#[test]
+fn sketch_fixture_keeps_its_design_graph() {
+    let input = read_fixture("design_sketch_constraints").expect("dimension fixture");
+    let decoded = decode_result(&input).expect("decode dimension fixture");
+    let model = &decoded.ir().model;
+    assert_eq!(model.features.len(), 1);
+    assert_eq!(model.sketches.len(), 1);
+    assert_eq!(model.sketch_entities.len(), 8);
+    assert_eq!(model.sketch_constraints.len(), 4);
+}
+
+#[test]
+fn base_flange_fixture_keeps_its_design_graph() {
+    let input = read_fixture("design_base_flange").expect("base flange fixture");
+    let decoded = decode_result(&input).expect("decode base flange fixture");
+    assert_eq!(decoded.ir().model.features.len(), 1);
+}
+
+#[test]
+fn canvas_fixture_keeps_its_image_asset() {
+    let input = read_fixture("design_canvas").expect("canvas fixture");
+    let decoded = decode_result(&input).expect("decode canvas fixture");
+    assert_eq!(decoded.ir().model.assets.len(), 1);
+}
+
+#[test]
+fn source_less_dimension_keeps_its_non_driving_state() {
+    const EPS_DIMENSION_ROUNDTRIP: f64 = 1.0e-12;
+
+    let input = read_fixture("design_sketch_constraints").expect("dimension fixture");
+    let decoded = decode_result(&input).expect("decode dimension fixture");
+    let mut dimension = decoded
+        .ir()
+        .model
+        .parameters
+        .first()
+        .expect("fixture has a dimension")
+        .clone();
+    dimension.driving = false;
+    dimension.owner = None;
+    dimension.native_ref = None;
+    let mut authored = CadIr::empty();
+    authored.model.parameters.push(dimension.clone());
+    let mut bytes = Vec::new();
+    F3dCodec
+        .encode(&authored, &mut bytes)
+        .expect("synthesize dimension");
+    let output = decode_result(&bytes).expect("decode synthesized dimension");
+    let written = output
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == dimension.name)
+        .expect("dimension is written");
+    assert!(!written.driving);
+    let (
+        Some(cadmpeg_ir::features::ParameterValue::Length(expected)),
+        Some(cadmpeg_ir::features::ParameterValue::Length(actual)),
+    ) = (&dimension.value, &written.value)
+    else {
+        panic!("dimension retains its length value");
+    };
+    assert!((actual.get() - expected.get()).abs() < EPS_DIMENSION_ROUNDTRIP);
+}
+
+#[test]
+fn source_less_synthesis_obeys_the_entity_limit() {
+    let input = read_fixture("design_sketch_constraints").expect("dimension fixture");
+    let decoded = decode_result(&input).expect("decode dimension fixture");
+    let mut encode_input = EncodeInput::new(decoded.ir(), None);
+    encode_input.limits.max_entities = 0;
+    let error = F3dCodec
+        .plan(encode_input, TargetRequest::Inherit)
+        .expect_err("a zero entity ceiling rejects generated records");
+    assert!(matches!(
+        error,
+        cadmpeg_ir::codec::write::EncodeError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities
+                && limit.limit == 0
+    ));
+}
+
 /// How far the mutation lane moves a point, in millimetres.
 const MUTATION_MM: f64 = 1.0;
 
@@ -958,16 +1041,24 @@ fn an_edit_survives_the_patch_writer() {
                             );
                         }
                     } else {
-                        let plan = F3dCodec.plan(
-                            EncodeInput::new(edited, Some(decoded.source_fidelity())),
-                            TargetRequest::Inherit,
-                        ).expect("synthesis plan");
-                        assert!(matches!(plan.report().synthesis_cause(),
-                            Some(cadmpeg_ir::codec::write::SynthesisCause::SourceUnrepresented { .. })));
+                        let plan = F3dCodec
+                            .plan(
+                                EncodeInput::new(edited, Some(decoded.source_fidelity())),
+                                TargetRequest::Inherit,
+                            )
+                            .expect("synthesis plan");
+                        assert!(matches!(
+                            plan.report().synthesis_cause(),
+                            Some(
+                                cadmpeg_ir::codec::write::SynthesisCause::SourceUnrepresented { .. }
+                            )
+                        ));
                         let mut complete = plan.report().clone();
                         complete.coverage = cadmpeg_ir::codec::write::ArenaCoverage::Complete;
                         cadmpeg_test_support::contract::assert_written_arenas_agree(
-                            &complete, edited, round_trip.ir(),
+                            &complete,
+                            edited,
+                            round_trip.ir(),
                         );
                         assert_eq!(edited.tolerances, round_trip.ir().tolerances);
                     }
@@ -1071,7 +1162,9 @@ fn rekey_ephemeral_brep_ids(value: &mut serde_json::Value) {
         match value {
             serde_json::Value::String(text) => {
                 if ephemeral_id(text) && !mapping.contains_key(text.as_str()) {
-                    let kind = text.rsplit_once('#').map_or(text.as_str(), |(kind, _)| kind);
+                    let kind = text
+                        .rsplit_once('#')
+                        .map_or(text.as_str(), |(kind, _)| kind);
                     kinds
                         .entry(kind.to_owned())
                         .or_default()

@@ -18,6 +18,44 @@ use crate::test_support::manifest_test::write_synthetic_manifests;
 use crate::test_support::streams_test::design_metastream_with_records;
 use crate::test_support::zip_test::with_scan;
 
+#[test]
+fn unindexed_pair_requires_matching_entity_and_registered_class() {
+    let metadata = design_metastream_with_records(
+        &[
+            ("11111111-2222-3333-4444-555555555555", "", 1, "Fusion", &[44]),
+            ("22222222-3333-4444-5555-666666666666", "", 1, "Fusion", &[]),
+        ],
+        &[(44, 0)],
+    );
+    let metadata = crate::metastream::parse(&metadata, "Design/MetaStream.dat").unwrap();
+    let mut bulk = Vec::new();
+    lp_ascii(&mut bulk, "256");
+    bulk.extend_from_slice(&44u32.to_le_bytes());
+    bulk.extend_from_slice(&[0; 3]);
+    let paired_at = bulk.len();
+    lp_ascii(&mut bulk, "257");
+    bulk.extend_from_slice(&44u32.to_le_bytes());
+    bulk.extend_from_slice(&[0; 3]);
+    let frames = super::design_primary_frames(&bulk, &metadata).unwrap();
+    let extents = super::primary_frame_extents_with_unindexed_pairs(&frames, &bulk, &metadata);
+    assert_eq!(extents[0].member_end, paired_at);
+
+    let index_at = paired_at + 7;
+    bulk[index_at..index_at + 4].copy_from_slice(&45u32.to_le_bytes());
+    let extents = super::primary_frame_extents_with_unindexed_pairs(&frames, &bulk, &metadata);
+    assert_eq!(extents[0].member_end, bulk.len());
+    bulk[index_at..index_at + 4].copy_from_slice(&44u32.to_le_bytes());
+    bulk[paired_at + 4..paired_at + 7].copy_from_slice(b"258");
+    let extents = super::primary_frame_extents_with_unindexed_pairs(&frames, &bulk, &metadata);
+    assert_eq!(extents[0].member_end, bulk.len());
+    bulk[paired_at + 4..paired_at + 7].copy_from_slice(b"257");
+    lp_ascii(&mut bulk, "257");
+    bulk.extend_from_slice(&44u32.to_le_bytes());
+    let frames = super::design_primary_frames(&bulk, &metadata).unwrap();
+    let extents = super::primary_frame_extents_with_unindexed_pairs(&frames, &bulk, &metadata);
+    assert_eq!(extents[0].member_end, bulk.len());
+}
+
 fn timeline_parts(
     scan: &crate::container::ContainerScan<'_>,
 ) -> (

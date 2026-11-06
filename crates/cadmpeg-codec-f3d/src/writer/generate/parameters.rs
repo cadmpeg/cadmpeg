@@ -76,7 +76,9 @@ fn encode(
     native_lp_utf16(out, parameter.expression())?;
     if discriminator.is_some() {
         out.extend_from_slice(&[0; 8]);
-        out.push(u8::from(parameter.source_kind_str() == "User Parameter"));
+        out.push(u8::from(
+            parameter.kind() == crate::records::parameters::DesignParameterKind::User,
+        ));
     } else {
         out.extend_from_slice(&[0; 5]);
     }

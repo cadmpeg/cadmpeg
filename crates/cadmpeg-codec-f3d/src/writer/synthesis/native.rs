@@ -103,6 +103,7 @@ pub(super) fn reconcile(
     target: &mut CadIr,
     mut original: F3dNative,
     losses: &mut Vec<LossNote>,
+    limits: cadmpeg_core::decode::ResourceLimits,
 ) -> Result<(), CodecError> {
     // W2: chain links are source layout, not content. Rebuild them from the
     // retained state order instead of refusing an edited chain.
@@ -745,20 +746,23 @@ pub(super) fn reconcile(
     }
     super::act::reconcile(target, &mut native, losses)?;
     super::geometry::reconcile(target, &mut native);
-    super::design::regenerate(target, &mut native, losses)?;
+    super::design::regenerate(target, &mut native, losses, limits)?;
     target.model.assembly_joints.clear();
     target.native.0.remove("f3d");
-    super::design::with_context(|ctx| {
+    super::design::with_context(limits, |ctx| {
         native.store(ctx, target.native.namespace_mut("f3d"))?;
         Ok(())
     })
 }
 
 /// Rejoin independently admitted body candidates using one output key space.
-pub(super) fn repair_keys(target: &mut CadIr) -> Result<(), CodecError> {
+pub(super) fn repair_keys(
+    target: &mut CadIr,
+    limits: cadmpeg_core::decode::ResourceLimits,
+) -> Result<(), CodecError> {
     let mut native = super::super::primitives::f3d_native(target)?.unwrap_or_default();
     super::body_keys::reconcile(target, &mut native)?;
-    super::design::with_context(|ctx| {
+    super::design::with_context(limits, |ctx| {
         native.store(ctx, target.native.namespace_mut("f3d"))?;
         Ok(())
     })
@@ -767,7 +771,10 @@ pub(super) fn repair_keys(target: &mut CadIr) -> Result<(), CodecError> {
 /// Terminal §5.0 reduction: shed every native record the Design generator
 /// reads, keeping BREP-anchored carriers and feature-owned neutral parameters.
 /// Every omission is reported through the export dispositions.
-pub(super) fn shed_design(target: &mut CadIr) -> Result<(), CodecError> {
+pub(super) fn shed_design(
+    target: &mut CadIr,
+    limits: cadmpeg_core::decode::ResourceLimits,
+) -> Result<(), CodecError> {
     let native = super::super::primitives::f3d_native(target)?.unwrap_or_default();
     let kept = F3dNative {
         body_native_keys: native.body_native_keys,
@@ -797,7 +804,7 @@ pub(super) fn shed_design(target: &mut CadIr) -> Result<(), CodecError> {
     target.model.configurations.clear();
     target.model.assembly_joints.clear();
     target.native.0.remove("f3d");
-    super::design::with_context(|ctx| {
+    super::design::with_context(limits, |ctx| {
         kept.store(ctx, target.native.namespace_mut("f3d"))?;
         Ok(())
     })
@@ -811,7 +818,10 @@ fn retain_mesh_sentinels(target: &CadIr, native: &mut F3dNative) {
     });
 }
 
-pub(super) fn prune(target: &mut CadIr) -> Result<(), CodecError> {
+pub(super) fn prune(
+    target: &mut CadIr,
+    limits: cadmpeg_core::decode::ResourceLimits,
+) -> Result<(), CodecError> {
     let mut native = super::super::primitives::f3d_native(target)?.unwrap_or_default();
     retain_mesh_sentinels(target, &mut native);
     native.body_native_keys.retain(|record| {
@@ -929,7 +939,7 @@ pub(super) fn prune(target: &mut CadIr) -> Result<(), CodecError> {
     });
     super::geometry::reconcile(target, &mut native);
     target.native.0.remove("f3d");
-    super::design::with_context(|ctx| {
+    super::design::with_context(limits, |ctx| {
         native.store(ctx, target.native.namespace_mut("f3d"))?;
         Ok(())
     })
