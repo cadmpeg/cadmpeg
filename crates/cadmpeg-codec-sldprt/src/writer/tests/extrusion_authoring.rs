@@ -1175,6 +1175,7 @@ fn source_less_sketch_block_definition_retains_its_sketch_geometry() {
     let decoded = SldprtCodec.decode(&mut Cursor::new(source), &DecodeOptions::default()).unwrap();
     let mut ir = decoded.ir().clone();
     let sketch_id = ir.model.sketches[0].id.clone();
+    let expected_name = ir.model.sketches[0].name.clone();
     let expected_count = ir.model.sketch_entities.iter().filter(|entity| entity.sketch == sketch_id).count();
     assert!(expected_count > 0);
     let expected_geometry = ir.model.sketch_entities.iter().find(|entity| entity.sketch == sketch_id).unwrap().geometry.clone();
@@ -1206,6 +1207,10 @@ fn source_less_sketch_block_definition_retains_its_sketch_geometry() {
         let native = crate::test_support::native::sldprt_native(output.ir());
         panic!("block definition lost its sketch: {:?}; histories {:?}; lanes {:?}", owner.evaluation.definition(), native.feature_histories.iter().flat_map(|history| &history.features).map(|feature| (&feature.id, &feature.name, &feature.source_id, &feature.input_class)).collect::<Vec<_>>(), native.feature_input_lanes.iter().map(|lane| (&lane.id, &lane.configuration, &lane.names, lane.sketch_entities.iter().map(|entity| (entity.offset(), &entity.feature_ref)).collect::<Vec<_>>())).collect::<Vec<_>>());
     };
+    assert_eq!(
+        output.ir().model.sketches.iter().find(|sketch| &sketch.id == written).unwrap().name,
+        expected_name
+    );
     assert_eq!(output.ir().model.sketch_entities.iter().filter(|entity| &entity.sketch == written).count(), expected_count, "geometry: {:?}", output.ir().model.sketch_entities.iter().filter(|entity| &entity.sketch == written).map(|entity| entity.geometry.definition()).collect::<Vec<_>>());
     let geometry = &output.ir().model.sketch_entities.iter().find(|entity| &entity.sketch == written).unwrap().geometry;
     let (cadmpeg_ir::sketches::SketchGeometryDefinition::Circle { center: before, radius: before_radius }, cadmpeg_ir::sketches::SketchGeometryDefinition::Circle { center: after, radius: after_radius }) = (expected_geometry.definition(), geometry.definition()) else { panic!("circle geometry: before {:?}, after {:?}", expected_geometry.definition(), geometry.definition()); };
