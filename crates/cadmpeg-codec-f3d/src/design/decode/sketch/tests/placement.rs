@@ -247,6 +247,7 @@ fn entity_genesis_placement_origin_scales_to_neutral_units() {
         id: "f3d:native:sketch-point#0".into(),
         record_index: 20,
         owner_reference: Some(100),
+        geometry_group: None,
         class_tag: crate::records::references::DesignClassTag::try_from("256".to_owned()).unwrap(),
         byte_offset: 0,
         coordinate_offset: 141,
@@ -864,6 +865,7 @@ fn legacy_sketch_nurbs_decodes_its_counted_arrays() {
         &bytes,
         &meta,
         "Design/BulkStream.dat",
+        &mut Vec::new(),
     )
     .expect("primary NURBS frame with a nested subtype header");
     let [curve] = curves.as_slice() else {
@@ -940,6 +942,7 @@ fn sketch_graph_point(record_index: u32) -> SketchPoint {
         id: format!("f3d:native:sketch-point#{record_index}"),
         record_index,
         owner_reference: None,
+        geometry_group: None,
         class_tag: crate::records::references::DesignClassTag::try_from("256".to_owned()).unwrap(),
         byte_offset: u64::from(record_index),
         coordinate_offset: 141,
