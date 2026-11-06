@@ -1,0 +1,1252 @@
+{
+  "ir": {
+    "ir_version": "10",
+    "scope": {
+      "model": true,
+      "design": true
+    },
+    "source": {
+      "identity": {
+        "classification": "classified",
+        "dialects": {
+          "primary": {
+            "dialect": "f3d:manifest-3-2-0-0",
+            "declared": {
+              "top_level_manifest_version": "3-2-0-0"
+            },
+            "admission": "admitted"
+          },
+          "extra": [
+            {
+              "dialect": "acis:asm-binaryfile-8",
+              "declared": {
+                "carrier": "FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
+                "reference_width": "8",
+                "save_format_major": "231",
+                "save_format_minor": "0"
+              },
+              "admission": "admitted"
+            }
+          ]
+        }
+      },
+      "attributes": {
+        "asset_folder": "FusionAssetName[Active]",
+        "product_family": "Autodesk Neutron",
+        "product_version": "ASM 231.6.3.65535 OSX",
+        "save_date": "Tue Mar 31 16:16:19 2026"
+      }
+    },
+    "units": {
+      "length": "millimeter"
+    },
+    "tolerances": {
+      "linear": 9.999999999999999e-6,
+      "angular": 1e-10
+    },
+    "model": {
+      "bodies": [
+        {
+          "native_ref": "f3d:asm:body-native-key#1",
+          "id": "f3d:brep:entity#1",
+          "kind": "sheet",
+          "regions": [
+            "f3d:brep:entity#2"
+          ]
+        }
+      ],
+      "regions": [
+        {
+          "id": "f3d:brep:entity#2",
+          "body": "f3d:brep:entity#1",
+          "shells": [
+            "f3d:brep:entity#3"
+          ]
+        }
+      ],
+      "shells": [
+        {
+          "id": "f3d:brep:entity#3",
+          "region": "f3d:brep:entity#2",
+          "members": [
+            {
+              "kind": "face",
+              "id": "f3d:brep:entity#4"
+            }
+          ]
+        }
+      ],
+      "faces": [
+        {
+          "native_ref": "f3d:asm:face-native-key#4",
+          "id": "f3d:brep:entity#4",
+          "shell": "f3d:brep:entity#3",
+          "surface": "f3d:brep:entity#6",
+          "sense": "forward",
+          "loops": {
+            "classification": "unspecified",
+            "loops": [
+              "f3d:brep:entity#5"
+            ]
+          }
+        }
+      ],
+      "loops": [
+        {
+          "id": "f3d:brep:entity#5",
+          "face": "f3d:brep:entity#4",
+          "boundary": {
+            "kind": "ring",
+            "coedges": [
+              "f3d:brep:entity#7",
+              "f3d:brep:entity#8",
+              "f3d:brep:entity#9"
+            ]
+          }
+        }
+      ],
+      "coedges": [
+        {
+          "id": "f3d:brep:entity#7",
+          "owner_loop": "f3d:brep:entity#5",
+          "edge": "f3d:brep:entity#10",
+          "radial_next": "f3d:brep:entity#7",
+          "sense": "forward"
+        },
+        {
+          "id": "f3d:brep:entity#8",
+          "owner_loop": "f3d:brep:entity#5",
+          "edge": "f3d:brep:entity#11",
+          "radial_next": "f3d:brep:entity#8",
+          "sense": "forward"
+        },
+        {
+          "id": "f3d:brep:entity#9",
+          "owner_loop": "f3d:brep:entity#5",
+          "edge": "f3d:brep:entity#12",
+          "radial_next": "f3d:brep:entity#9",
+          "sense": "forward"
+        }
+      ],
+      "edges": [
+        {
+          "native_ref": "f3d:asm:edge-ownership#10",
+          "id": "f3d:brep:entity#10",
+          "carrier": {
+            "param_range": [
+              0.0,
+              1.0
+            ]
+          },
+          "start": "f3d:brep:entity#13",
+          "end": "f3d:brep:entity#14"
+        },
+        {
+          "native_ref": "f3d:asm:edge-ownership#11",
+          "id": "f3d:brep:entity#11",
+          "carrier": {
+            "param_range": [
+              0.0,
+              1.0
+            ]
+          },
+          "start": "f3d:brep:entity#14",
+          "end": "f3d:brep:entity#15"
+        },
+        {
+          "native_ref": "f3d:asm:edge-ownership#12",
+          "id": "f3d:brep:entity#12",
+          "carrier": {
+            "param_range": [
+              0.0,
+              1.0
+            ]
+          },
+          "start": "f3d:brep:entity#15",
+          "end": "f3d:brep:entity#13"
+        }
+      ],
+      "vertices": [
+        {
+          "native_ref": "f3d:asm:vertex-ownership#13",
+          "id": "f3d:brep:entity#13",
+          "point": "f3d:brep:entity#16"
+        },
+        {
+          "native_ref": "f3d:asm:vertex-ownership#14",
+          "id": "f3d:brep:entity#14",
+          "point": "f3d:brep:entity#17"
+        },
+        {
+          "native_ref": "f3d:asm:vertex-ownership#15",
+          "id": "f3d:brep:entity#15",
+          "point": "f3d:brep:entity#18"
+        }
+      ],
+      "points": [
+        {
+          "id": "f3d:brep:entity#16",
+          "position": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "f3d:brep:entity#17",
+          "position": {
+            "x": 10.0,
+            "y": 0.0,
+            "z": 0.0
+          }
+        },
+        {
+          "id": "f3d:brep:entity#18",
+          "position": {
+            "x": 0.0,
+            "y": 10.0,
+            "z": 0.0
+          }
+        }
+      ],
+      "surfaces": [
+        {
+          "id": "f3d:brep:entity#6",
+          "geometry": {
+            "kind": "plane",
+            "origin": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 0.0
+            },
+            "normal": {
+              "x": 0.0,
+              "y": 0.0,
+              "z": 1.0
+            },
+            "u_axis": {
+              "x": 1.0,
+              "y": 0.0,
+              "z": 0.0
+            }
+          }
+        }
+      ],
+      "curves": [],
+      "subds": [],
+      "pcurves": [],
+      "procedural_surfaces": [],
+      "procedural_curves": [],
+      "features": [
+        {
+          "id": "f3d:model:feature#52:f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat21:Base%20Mesh%20Feature1:109",
+          "ordinal": 0,
+          "name": "Base Mesh Feature 1",
+          "suppressed": false,
+          "needs_recompute": false,
+          "source_properties": {
+            "reference:0": "140"
+          },
+          "source_tag": "Base Mesh Feature",
+          "definition": {
+            "definition": "mesh_import",
+            "tessellations": [
+              "f3d:FusionAssetName[Active]/ParaMeshGeometry.BlobParts/ParaMeshGeometry.11111111-2222-4333-8444-555555555555.paramesh:mesh-body#639"
+            ]
+          },
+          "native_ref": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter-scope#1239"
+        }
+      ],
+      "configurations": [],
+      "parameters": [],
+      "sketches": [],
+      "sketch_entities": [],
+      "sketch_constraints": [],
+      "spatial_sketches": [],
+      "spatial_sketch_entities": [],
+      "spreadsheets": [],
+      "product_definitions": [],
+      "occurrences": [],
+      "assembly_joints": [],
+      "drawings": [],
+      "semantic_annotations": [],
+      "presentation_documents": [],
+      "view_presentations": [],
+      "tessellations": [
+        {
+          "id": "f3d:FusionAssetName[Active]/ParaMeshGeometry.BlobParts/ParaMeshGeometry.11111111-2222-4333-8444-555555555555.paramesh:mesh-body#639",
+          "native_ref": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-mesh-feature#1239",
+          "mesh": {
+            "kind": "list",
+            "vertices": [
+              {
+                "x": 0.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              {
+                "x": 10.0,
+                "y": 0.0,
+                "z": 0.0
+              },
+              {
+                "x": 0.0,
+                "y": 10.0,
+                "z": 0.0
+              }
+            ],
+            "triangles": [
+              [
+                0,
+                1,
+                2
+              ]
+            ]
+          },
+          "channels": []
+        }
+      ],
+      "appearances": [],
+      "appearance_bindings": [],
+      "attributes": [],
+      "pmi": [],
+      "presentation_layers": []
+    },
+    "native": {
+      "f3d": {
+        "act_component_links": [],
+        "act_entities": [],
+        "act_guids": [],
+        "act_registry_channels": [],
+        "act_table_references": [],
+        "act_tables": [],
+        "act_types": [],
+        "asm_bulletin_boards": [],
+        "asm_delta_states": [],
+        "asm_entity_changes": [],
+        "asm_face_boundaries": [],
+        "asm_histories": [],
+        "asm_history_records": [],
+        "body_native_keys": [
+          {
+            "id": "f3d:asm:body-native-key#1",
+            "asm_body_key": 42,
+            "body_ordinal": 0,
+            "record_index": 1,
+            "source_brep": "BREP.synthetic.smbh"
+          }
+        ],
+        "body_visibilities": [],
+        "construction_recipes": [],
+        "creation_timestamps": [],
+        "design_body_bindings": [],
+        "design_body_bounds": [],
+        "design_body_members": [],
+        "design_body_recipe_operands": [],
+        "design_body_reference_tails": [],
+        "design_canvas_images": [],
+        "design_component_naming_spaces": [],
+        "design_component_occurrences": [],
+        "design_component_paths": [],
+        "design_configurations": [],
+        "design_construction_operand_groups": [],
+        "design_construction_operand_identities": [],
+        "design_decal_images": [],
+        "design_dimension_annotation_frames": [],
+        "design_dimension_locus_groups": [],
+        "design_dimension_locus_pairs": [],
+        "design_dimension_null_locus_pairs": [],
+        "design_dimension_presentation_frames": [],
+        "design_dimension_recipe_records": [],
+        "design_edge_identity_operands": [],
+        "design_edge_operands": [],
+        "design_edge_treatment_vertex_operands": [],
+        "design_entity_headers": [],
+        "design_entity_selection_operands": [],
+        "design_extrude_selection_groups": [],
+        "design_extrude_selection_members": [],
+        "design_face_operands": [],
+        "design_face_source_groups": [],
+        "design_feature_timelines": [
+          {
+            "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-feature-timeline#1748",
+            "class_tag": "271",
+            "context_record_index": 110,
+            "item_record_indices": [
+              109
+            ],
+            "record_index": 200,
+            "source_ordinal": 0
+          }
+        ],
+        "design_fillet_radius_groups": [],
+        "design_joint_motions": [],
+        "design_loft_legacy_body_carriers": [],
+        "design_material_assignments": [],
+        "design_mesh_features": [
+          {
+            "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-mesh-feature#1239",
+            "bodies": [
+              {
+                "body_record": {
+                  "byte_offset": 639,
+                  "class_tag": "258",
+                  "frame_length": 600,
+                  "record_index": 104
+                },
+                "collection_reference_offset": 1228,
+                "container_mesh_uuid": "11111111-2222-4333-8444-555555555555",
+                "entry_guid_reference_offset": 134,
+                "entry_name": "ParaMeshGeometry.11111111-2222-4333-8444-555555555555.paramesh",
+                "entry_name_offset": 149,
+                "entry_name_record": {
+                  "byte_offset": 113,
+                  "class_tag": "256",
+                  "frame_length": 160,
+                  "record_index": 102
+                },
+                "fusion_uuid": "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE",
+                "fusion_uuid_offset": 309,
+                "guid_entry_reference_offset": 345,
+                "guid_record": {
+                  "byte_offset": 273,
+                  "class_tag": "257",
+                  "frame_length": 87,
+                  "record_index": 103
+                },
+                "guid_reference_offset": 1180,
+                "owner_record": {
+                  "byte_offset": 1737,
+                  "class_tag": "269",
+                  "frame_length": 11,
+                  "record_index": 111
+                },
+                "owner_reference_offset": 1169,
+                "scene_auxiliary_record": {
+                  "byte_offset": 455,
+                  "class_tag": "267",
+                  "frame_length": 11,
+                  "record_index": 106
+                },
+                "scene_auxiliary_reference_offset": 514,
+                "scene_node_record": {
+                  "byte_offset": 466,
+                  "class_tag": "266",
+                  "frame_length": 133,
+                  "record_index": 107
+                },
+                "scene_node_reference_offset": 1192,
+                "scene_state_record": {
+                  "byte_offset": 360,
+                  "class_tag": "265",
+                  "frame_length": 95,
+                  "record_index": 105
+                },
+                "scene_state_reference_offset": 499,
+                "scope_reference_offset": 1147,
+                "transform": [
+                  [
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  [
+                    0.0,
+                    1.0,
+                    0.0,
+                    0.0
+                  ],
+                  [
+                    0.0,
+                    0.0,
+                    1.0,
+                    0.0
+                  ],
+                  [
+                    0.0,
+                    0.0,
+                    0.0,
+                    1.0
+                  ]
+                ],
+                "transform_offsets": [
+                  681,
+                  810
+                ],
+                "wrapper_body_reference_offset": 620,
+                "wrapper_record": {
+                  "byte_offset": 599,
+                  "class_tag": "262",
+                  "frame_length": 40,
+                  "record_index": 108
+                },
+                "wrapper_reference_offset": 1158
+              }
+            ],
+            "body_count_offsets": [
+              1260,
+              21,
+              58
+            ],
+            "body_record_indices": [
+              104
+            ],
+            "collection_base_record": {
+              "byte_offset": 38,
+              "class_tag": "260",
+              "frame_length": 46,
+              "record_index": 100
+            },
+            "collection_body_reference_offsets": [
+              62
+            ],
+            "collection_owner_backlink_offset": 1726,
+            "collection_owner_record": {
+              "byte_offset": 1464,
+              "class_tag": "268",
+              "frame_length": 273,
+              "record_index": 110
+            },
+            "collection_owner_reference_offset": 73,
+            "collection_record": {
+              "byte_offset": 0,
+              "class_tag": "259",
+              "frame_length": 84,
+              "record_index": 100
+            },
+            "scope_base_record": {
+              "byte_offset": 1434,
+              "class_tag": "264",
+              "frame_length": 30,
+              "record_index": 109
+            },
+            "scope_body_reference_offsets": [
+              1264
+            ],
+            "scope_owner_record_index": 112,
+            "scope_owner_reference_offset": 1453,
+            "scope_record": {
+              "byte_offset": 1239,
+              "class_tag": "263",
+              "frame_length": 225,
+              "record_index": 109
+            },
+            "texture_filename_count_offset": 109,
+            "texture_flags_count_offset": 105,
+            "texture_table_record": {
+              "byte_offset": 84,
+              "class_tag": "261",
+              "frame_length": 29,
+              "record_index": 101
+            },
+            "texture_table_reference_offset": 27,
+            "textures": []
+          }
+        ],
+        "design_parameter_companions": [],
+        "design_parameter_document_headers": [],
+        "design_parameter_owners": [],
+        "design_parameter_scopes": [
+          {
+            "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter-scope#1239",
+            "class_tag": "263",
+            "feature_ordinal": 1,
+            "generation": {
+              "form": "envelope"
+            },
+            "history_state_id": 7,
+            "kind": "Base Mesh Feature",
+            "paired_class_tag": "264",
+            "previous_history_state_id": 2,
+            "record_index": 109,
+            "reference_members": [
+              140
+            ]
+          }
+        ],
+        "design_parameter_state_companions": [],
+        "design_parameter_states": [],
+        "design_parameters": [],
+        "design_placement_constructions": [],
+        "design_profile_curve_selections": [],
+        "design_record_headers": [
+          {
+            "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record-header#1239",
+            "class_tag": "263",
+            "record_index": 109
+          },
+          {
+            "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record-header#1803",
+            "class_tag": "272",
+            "record_index": 140
+          }
+        ],
+        "design_sheet_metal_settings": [],
+        "design_sketch_placements": [],
+        "design_surface_trim_operations": [],
+        "design_types": [
+          {
+            "id": "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#1013",
+            "base_type_guid": "98542EB9-A4F2-4137-A808-DBB5B3CD6159",
+            "base_type_guid_offset": 1057,
+            "byte_offset": 1013,
+            "class_tag": "264",
+            "entity_ids": [],
+            "module": "DataModel",
+            "type_guid": "CB844AB6-240D-4FC9-9C9F-3679DC896D6F",
+            "type_guid_offset": 1017,
+            "version": 1,
+            "version_offset": 1093
+          },
+          {
+            "id": "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#1114",
+            "base_type_guid": "D0EDEF7C-5879-45A4-9651-900659CC4FDD",
+            "base_type_guid_offset": 1158,
+            "byte_offset": 1114,
+            "class_tag": "265",
+            "entity_id_offsets": [
+              1211
+            ],
+            "entity_ids": [
+              105
+            ],
+            "module": "Scene",
+            "type_guid": "F85F2E62-7627-4922-A16D-53E1275D2AAC",
+            "type_guid_offset": 1118,
+            "version": 0,
+            "version_offset": 1194
+          },
+          {
+            "id": "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#1219",
+            "base_type_guid": "EB7847AF-E60D-4AB0-A736-4AC00C1F1D21",
+            "base_type_guid_offset": 1263,
+            "byte_offset": 1219,
+            "class_tag": "266",
+            "entity_id_offsets": [
+              1316
+            ],
+            "entity_ids": [
+              107
+            ],
+            "module": "Scene",
+            "type_guid": "702B9CD2-537C-429E-8CC4-22BEEEB98C37",
+            "type_guid_offset": 1223,
+            "version": 1,
+            "version_offset": 1299
+          },
+          {
+            "id": "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#1324",
+            "base_type_guid": "74D7FEF9-44E9-494D-A25D-81EC33D2841E",
+            "base_type_guid_offset": 1368,
+            "byte_offset": 1324,
+            "class_tag": "267",
+            "entity_id_offsets": [
+              1421
+            ],
+            "entity_ids": [
+              106
+            ],
+            "module": "Scene",
+            "type_guid": "2343B7AB-A2E0-4C66-8B74-99A05E4C670B",
+            "type_guid_offset": 1328,
+            "version": 1,
+            "version_offset": 1404
+          },
+          {
+            "id": "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#1429",
+            "base_type_guid": "42054630-20A0-40E1-B969-CFE9E742F5C9",
+            "base_type_guid_offset": 1473,
+            "byte_offset": 1429,
+            "class_tag": "268",
+            "entity_id_offsets": [
+              1527
+            ],
+            "entity_ids": [
+              110
+            ],
+            "module": "Fusion",
+            "type_guid": "E03784ED-5E19-4E14-B9F2-3B07017018CD",
+            "type_guid_offset": 1433,
+            "version": 23,
+            "version_offset": 1509
+          },
+          {
+            "id": "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#1535",
+            "base_type_guid": "A7AEA631-985B-4DD1-8CE2-DE2C-14B54081",
+            "base_type_guid_offset": 1579,
+            "byte_offset": 1535,
+            "class_tag": "269",
+            "entity_id_offsets": [
+              1632
+            ],
+            "entity_ids": [
+              111
+            ],
+            "module": "Body",
+            "type_guid": "CD57BC48-50EC-47DC-975A-FB6DEA72F4DA",
+            "type_guid_offset": 1539,
+            "version": 4,
+            "version_offset": 1616
+          },
+          {
+            "id": "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#155",
+            "base_type_guid": "130A0711-4E92-4FCD-AADE-B9C82238BB27",
+            "base_type_guid_offset": 199,
+            "byte_offset": 155,
+            "class_tag": "256",
+            "entity_id_offsets": [
+              255
+            ],
+            "entity_ids": [
+              102
+            ],
+            "module": "ParaMesh",
+            "type_guid": "A1BAA3F6-4B67-4A0D-BACC-75F38A2230F3",
+            "type_guid_offset": 159,
+            "version": 0,
+            "version_offset": 235
+          },
+          {
+            "id": "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#1640",
+            "base_type_guid": "98542EB9-A4F2-4137-A808-DBB5B3CD6159",
+            "base_type_guid_offset": 1684,
+            "byte_offset": 1640,
+            "class_tag": "270",
+            "entity_ids": [],
+            "module": "",
+            "type_guid": "830A2A2B-0AA9-4D6A-ACA1-F7A2B2A06573",
+            "type_guid_offset": 1644,
+            "version": 0,
+            "version_offset": 1720
+          },
+          {
+            "id": "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#1732",
+            "base_type_guid": "98542EB9-A4F2-4137-A808-DBB5B3CD6159",
+            "base_type_guid_offset": 1776,
+            "byte_offset": 1732,
+            "class_tag": "271",
+            "entity_id_offsets": [
+              1830
+            ],
+            "entity_ids": [
+              200
+            ],
+            "module": "Fusion",
+            "type_guid": "2F4C1849-1A5A-4F6C-A086-8DD445CBF94B",
+            "type_guid_offset": 1736,
+            "version": 2,
+            "version_offset": 1812
+          },
+          {
+            "id": "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#1838",
+            "byte_offset": 1838,
+            "class_tag": "272",
+            "entity_id_offsets": [
+              1900
+            ],
+            "entity_ids": [
+              140
+            ],
+            "module": "Fusion",
+            "type_guid": "00000000-0000-4000-8000-000000000140",
+            "type_guid_offset": 1842,
+            "version": 1,
+            "version_offset": 1882
+          },
+          {
+            "id": "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#263",
+            "base_type_guid": "98542EB9-A4F2-4137-A808-DBB5B3CD6159",
+            "base_type_guid_offset": 307,
+            "byte_offset": 263,
+            "class_tag": "257",
+            "entity_id_offsets": [
+              363
+            ],
+            "entity_ids": [
+              103
+            ],
+            "module": "ParaMesh",
+            "type_guid": "A8338A26-5436-433C-8BAC-C3CF024AD595",
+            "type_guid_offset": 267,
+            "version": 1,
+            "version_offset": 343
+          },
+          {
+            "id": "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#371",
+            "base_type_guid": "CB844AB6-240D-4FC9-9C9F-3679DC896D6F",
+            "base_type_guid_offset": 415,
+            "byte_offset": 371,
+            "class_tag": "258",
+            "entity_id_offsets": [
+              471
+            ],
+            "entity_ids": [
+              104
+            ],
+            "module": "ParaMesh",
+            "type_guid": "EA90DA22-556C-4C61-89BB-20C2681B7A9D",
+            "type_guid_offset": 375,
+            "version": 7,
+            "version_offset": 451
+          },
+          {
+            "id": "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#479",
+            "base_type_guid": "A7AEA631-985B-4DD1-8CE2-DE2C-14B54081",
+            "base_type_guid_offset": 523,
+            "byte_offset": 479,
+            "class_tag": "259",
+            "entity_id_offsets": [
+              580
+            ],
+            "entity_ids": [
+              100
+            ],
+            "module": "ParaMesh",
+            "type_guid": "443807AD-8025-41A3-8A50-5157579C3D78",
+            "type_guid_offset": 483,
+            "version": 0,
+            "version_offset": 560
+          },
+          {
+            "id": "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#588",
+            "base_type_guid": "834C9DEF-4C39-4587-A08D-A5BD1267B7B4",
+            "base_type_guid_offset": 633,
+            "byte_offset": 588,
+            "class_tag": "260",
+            "entity_ids": [],
+            "module": "CommonData",
+            "type_guid": "A7AEA631-985B-4DD1-8CE2-DE2C-14B54081",
+            "type_guid_offset": 592,
+            "version": 0,
+            "version_offset": 669
+          },
+          {
+            "id": "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#691",
+            "base_type_guid": "98542EB9-A4F2-4137-A808-DBB5B3CD6159",
+            "base_type_guid_offset": 735,
+            "byte_offset": 691,
+            "class_tag": "261",
+            "entity_id_offsets": [
+              791
+            ],
+            "entity_ids": [
+              101
+            ],
+            "module": "ParaMesh",
+            "type_guid": "6FC173DC-C7E3-402C-A8C0-891A26DADF8D",
+            "type_guid_offset": 695,
+            "version": 0,
+            "version_offset": 771
+          },
+          {
+            "id": "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#799",
+            "base_type_guid": "98542EB9-A4F2-4137-A808-DBB5B3CD6159",
+            "base_type_guid_offset": 843,
+            "byte_offset": 799,
+            "class_tag": "262",
+            "entity_id_offsets": [
+              899
+            ],
+            "entity_ids": [
+              108
+            ],
+            "module": "ParaMesh",
+            "type_guid": "E5B3F49A-D8D0-4EEF-BC2B-FCDDAEF9745E",
+            "type_guid_offset": 803,
+            "version": 0,
+            "version_offset": 879
+          },
+          {
+            "id": "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#907",
+            "base_type_guid": "2FCB0587-233E-449B-9724-9AAE5AA23647",
+            "base_type_guid_offset": 951,
+            "byte_offset": 907,
+            "class_tag": "263",
+            "entity_id_offsets": [
+              1005
+            ],
+            "entity_ids": [
+              109
+            ],
+            "module": "Fusion",
+            "type_guid": "99F6967E-ED35-4222-B906-5CCF0AC70B53",
+            "type_guid_offset": 911,
+            "version": 0,
+            "version_offset": 987
+          }
+        ],
+        "edge_continuities": [
+          {
+            "id": "f3d:asm:edge-continuity#10",
+            "continuity": "unknown",
+            "owner": "f3d:asm:edge-ownership#10",
+            "record_index": 10,
+            "sense": "forward"
+          },
+          {
+            "id": "f3d:asm:edge-continuity#11",
+            "continuity": "unknown",
+            "owner": "f3d:asm:edge-ownership#11",
+            "record_index": 11,
+            "sense": "forward"
+          },
+          {
+            "id": "f3d:asm:edge-continuity#12",
+            "continuity": "unknown",
+            "owner": "f3d:asm:edge-ownership#12",
+            "record_index": 12,
+            "sense": "forward"
+          }
+        ],
+        "edge_ownerships": [
+          {
+            "id": "f3d:asm:edge-ownership#10",
+            "record_index": 10
+          },
+          {
+            "id": "f3d:asm:edge-ownership#11",
+            "record_index": 11
+          },
+          {
+            "id": "f3d:asm:edge-ownership#12",
+            "record_index": 12
+          }
+        ],
+        "face_native_keys": [
+          {
+            "id": "f3d:asm:face-native-key#4",
+            "record_index": 4
+          }
+        ],
+        "face_sidedness": [
+          {
+            "id": "f3d:asm:face-sidedness#4",
+            "face_key": "f3d:asm:face-native-key#4",
+            "native_sense": "forward",
+            "normalized_sense": "forward",
+            "record_index": 4
+          }
+        ],
+        "lost_edge_references": [],
+        "mesh_containers": [],
+        "mesh_surface_sentinels": [],
+        "persistent_design_links": [],
+        "persistent_references": [],
+        "persistent_subentity_tags": [],
+        "sketch_curve_identities": [],
+        "sketch_curve_links": [],
+        "sketch_points": [],
+        "sketch_relations": [],
+        "sketch_surfaces": [],
+        "sketch_texts": [],
+        "tolerant_coedge_parameters": [],
+        "tolerant_edge_tails": [],
+        "tolerant_vertex_tails": [],
+        "transform_hints": [],
+        "unknowns": [],
+        "vertex_ownerships": [
+          {
+            "id": "f3d:asm:vertex-ownership#13",
+            "endpoint_index": 0,
+            "owner": "f3d:asm:edge-ownership#10",
+            "record_index": 13
+          },
+          {
+            "id": "f3d:asm:vertex-ownership#14",
+            "endpoint_index": 1,
+            "owner": "f3d:asm:edge-ownership#10",
+            "record_index": 14
+          },
+          {
+            "id": "f3d:asm:vertex-ownership#15",
+            "endpoint_index": 0,
+            "owner": "f3d:asm:edge-ownership#12",
+            "record_index": 15
+          }
+        ],
+        "wire_topologies": [],
+        "xref_designs": [],
+        "xref_references": []
+      }
+    }
+  },
+  "report": {
+    "identity": {
+      "classification": "classified",
+      "dialects": {
+        "primary": {
+          "dialect": "f3d:manifest-3-2-0-0",
+          "declared": {
+            "top_level_manifest_version": "3-2-0-0"
+          },
+          "admission": "admitted"
+        },
+        "extra": [
+          {
+            "dialect": "acis:asm-binaryfile-8",
+            "declared": {
+              "carrier": "FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
+              "reference_width": "8",
+              "save_format_major": "231",
+              "save_format_minor": "0"
+            },
+            "admission": "admitted"
+          }
+        ]
+      }
+    },
+    "transfer": {
+      "scope": {
+        "model": true,
+        "design": true
+      },
+      "geometry_transferred": true
+    },
+    "losses": [
+      {
+        "code": {
+          "scope": "namespaced",
+          "namespace": "f3d",
+          "code": "material.not-transferred",
+          "kind": "material_not_transferred"
+        },
+        "severity": "warning",
+        "message": "Materials/appearances (.protein assets, ACT/design assignments) were not transferred."
+      },
+      {
+        "code": {
+          "scope": "namespaced",
+          "namespace": "f3d",
+          "code": "feature.output-state-chain-unbound",
+          "kind": "feature_history_retained"
+        },
+        "severity": "warning",
+        "message": "f3d:model:feature#52:f3d%3AFusionAssetName[Active]/Design1/BulkStream.dat21:Base%20Mesh%20Feature1:109 has no complete unique output transition chain from state 2 to state 7."
+      }
+    ],
+    "notes": [
+      "Design asset folder (from manifests): FusionAssetName[Active]",
+      "1 ASM BREP stream(s); Design body-to-blob bindings select model geometry",
+      "history-bearing BREP: FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh (1610 bytes uncompressed)"
+    ]
+  },
+  "source_fidelity": {
+    "unrepresented": [],
+    "annotations": {
+      "provenance": {
+        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-parameter-scope#1239": {
+          "stream": "f3d:native",
+          "offset": 0,
+          "tag": "design_parameter_scope"
+        },
+        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record-header#1239": {
+          "stream": "f3d:native",
+          "offset": 0,
+          "tag": "design_record_header"
+        },
+        "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-record-header#1803": {
+          "stream": "f3d:native",
+          "offset": 0,
+          "tag": "design_record_header"
+        },
+        "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#1013": {
+          "stream": "f3d:native",
+          "offset": 0,
+          "tag": "design_type"
+        },
+        "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#1114": {
+          "stream": "f3d:native",
+          "offset": 0,
+          "tag": "design_type"
+        },
+        "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#1219": {
+          "stream": "f3d:native",
+          "offset": 0,
+          "tag": "design_type"
+        },
+        "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#1324": {
+          "stream": "f3d:native",
+          "offset": 0,
+          "tag": "design_type"
+        },
+        "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#1429": {
+          "stream": "f3d:native",
+          "offset": 0,
+          "tag": "design_type"
+        },
+        "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#1535": {
+          "stream": "f3d:native",
+          "offset": 0,
+          "tag": "design_type"
+        },
+        "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#155": {
+          "stream": "f3d:native",
+          "offset": 0,
+          "tag": "design_type"
+        },
+        "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#1640": {
+          "stream": "f3d:native",
+          "offset": 0,
+          "tag": "design_type"
+        },
+        "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#1732": {
+          "stream": "f3d:native",
+          "offset": 0,
+          "tag": "design_type"
+        },
+        "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#1838": {
+          "stream": "f3d:native",
+          "offset": 0,
+          "tag": "design_type"
+        },
+        "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#263": {
+          "stream": "f3d:native",
+          "offset": 0,
+          "tag": "design_type"
+        },
+        "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#371": {
+          "stream": "f3d:native",
+          "offset": 0,
+          "tag": "design_type"
+        },
+        "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#479": {
+          "stream": "f3d:native",
+          "offset": 0,
+          "tag": "design_type"
+        },
+        "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#588": {
+          "stream": "f3d:native",
+          "offset": 0,
+          "tag": "design_type"
+        },
+        "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#691": {
+          "stream": "f3d:native",
+          "offset": 0,
+          "tag": "design_type"
+        },
+        "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#799": {
+          "stream": "f3d:native",
+          "offset": 0,
+          "tag": "design_type"
+        },
+        "f3d:FusionAssetName[Active]/Design1/MetaStream.dat:design-type#907": {
+          "stream": "f3d:native",
+          "offset": 0,
+          "tag": "design_type"
+        },
+        "f3d:brep:entity#1": {
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
+          "offset": 168,
+          "tag": "body"
+        },
+        "f3d:brep:entity#10": {
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
+          "offset": 934,
+          "tag": "edge"
+        },
+        "f3d:brep:entity#11": {
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
+          "offset": 1032,
+          "tag": "edge"
+        },
+        "f3d:brep:entity#12": {
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
+          "offset": 1130,
+          "tag": "edge"
+        },
+        "f3d:brep:entity#13": {
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
+          "offset": 1228,
+          "tag": "vertex"
+        },
+        "f3d:brep:entity#14": {
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
+          "offset": 1291,
+          "tag": "vertex"
+        },
+        "f3d:brep:entity#15": {
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
+          "offset": 1354,
+          "tag": "vertex"
+        },
+        "f3d:brep:entity#16": {
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
+          "offset": 1417,
+          "tag": "point"
+        },
+        "f3d:brep:entity#17": {
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
+          "offset": 1477,
+          "tag": "point"
+        },
+        "f3d:brep:entity#18": {
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
+          "offset": 1537,
+          "tag": "point"
+        },
+        "f3d:brep:entity#2": {
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
+          "offset": 229,
+          "tag": "region"
+        },
+        "f3d:brep:entity#3": {
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
+          "offset": 292,
+          "tag": "shell"
+        },
+        "f3d:brep:entity#4": {
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
+          "offset": 372,
+          "tag": "face"
+        },
+        "f3d:brep:entity#5": {
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
+          "offset": 453,
+          "tag": "loop"
+        },
+        "f3d:brep:entity#6": {
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
+          "offset": 514,
+          "tag": "plane-surface"
+        },
+        "f3d:brep:entity#7": {
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
+          "offset": 634,
+          "tag": "coedge"
+        },
+        "f3d:brep:entity#8": {
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
+          "offset": 734,
+          "tag": "coedge"
+        },
+        "f3d:brep:entity#9": {
+          "stream": "f3d:FusionAssetName[Active]/Breps.BlobParts/BREP.synthetic.smbh",
+          "offset": 834,
+          "tag": "coedge"
+        }
+      },
+      "exactness": {
+        "f3d:brep:entity#6": {
+          "scope": "fields",
+          "fields": {
+            "geometry.normal": "derived",
+            "geometry.u_axis": "derived"
+          }
+        }
+      }
+    },
+    "decode_digest": "2f948d21db77b795b1187d37fbaba584e53f479cc5199af2c637423eb1ac4ce7",
+    "retained_records": {
+      "f3d:file:source-image#0": {
+        "stream": "f3d",
+        "offset": 0,
+        "bytes": {
+          "retention": "inline",
+          "data": "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AAAAAAAkAAAARUE5MERBMjItNTU2Qy00QzYxLTg5QkItMjBDMjY4MUI3QTlEJAAAAENCODQ0QUI2LTI0MEQtNEZDOS05QzlGLTM2NzlEQzg5NkQ2RgcAAAAIAAAAUGFyYU1lc2gBAAAAaAAAAAAAAAAkAAAANDQzODA3QUQtODAyNS00MUEzLThBNTAtNTE1NzU3OUMzRDc4JQAAAEE3QUVBNjMxLTk4NUItNEREMS04Q0UyLURFMkMtMTRCNTQwODEAAAAACAAAAFBhcmFNZXNoAQAAAGQAAAAAAAAAJQAAAEE3QUVBNjMxLTk4NUItNEREMS04Q0UyLURFMkMtMTRCNTQwODEkAAAAODM0QzlERUYtNEMzOS00NTg3LUEwOEQtQTVCRDEyNjdCN0I0AAAAAAoAAABDb21tb25EYXRhAAAAACQAAAA2RkMxNzNEQy1DN0UzLTQwMkMtQThDMC04OTFBMjZEQURGOEQkAAAAOTg1NDJFQjktQTRGMi00MTM3LUE4MDgtREJCNUIzQ0Q2MTU5AAAAAAgAAABQYXJhTWVzaAEAAABlAAAAAAAAACQAAABFNUIzRjQ5QS1EOEQwLTRFRUYtQkMyQi1GQ0REQUVGOTc0NUUkAAAAOTg1NDJFQjktQTRGMi00MTM3LUE4MDgtREJCNUIzQ0Q2MTU5AAAAAAgAAABQYXJhTWVzaAEAAABsAAAAAAAAACQAAAA5OUY2OTY3RS1FRDM1LTQyMjItQjkwNi01Q0NGMEFDNzBCNTMkAAAAMkZDQjA1ODctMjMzRS00NDlCLTk3MjQtOUFBRTVBQTIzNjQ3AAAAAAYAAABGdXNpb24BAAAAbQAAAAAAAAAkAAAAQ0I4NDRBQjYtMjQwRC00RkM5LTlDOUYtMzY3OURDODk2RDZGJAAAADk4NTQyRUI5LUE0RjItNDEzNy1BODA4LURCQjVCM0NENjE1OQEAAAAJAAAARGF0YU1vZGVsAAAAACQAAABGODVGMkU2Mi03NjI3LTQ5MjItQTE2RC01M0UxMjc1RDJBQUMkAAAARDBFREVGN0MtNTg3OS00NUE0LTk2NTEtOTAwNjU5Q0M0RkREAAAAAAUAAABTY2VuZQEAAABpAAAAAAAAACQAAAA3MDJCOUNEMi01MzdDLTQyOUUtOENDNC0yMkJFRUVCOThDMzckAAAARUI3ODQ3QUYtRTYwRC00QUIwLUE3MzYtNEFDMDBDMUYxRDIxAQAAAAUAAABTY2VuZQEAAABrAAAAAAAAACQAAAAyMzQzQjdBQi1BMkUwLTRDNjYtOEI3NC05OUEwNUU0QzY3MEIkAAAANzREN0ZFRjktNDRFOS00OTRELUEyNUQtODFFQzMzRDI4NDFFAQAAAAUAAABTY2VuZQEAAABqAAAAAAAAACQAAABFMDM3ODRFRC01RTE5LTRFMTQtQjlGMi0zQjA3MDE3MDE4Q0QkAAAANDIwNTQ2MzAtMjBBMC00MEUxLUI5NjktQ0ZFOUU3NDJGNUM5FwAAAAYAAABGdXNpb24BAAAAbgAAAAAAAAAkAAAAQ0Q1N0JDNDgtNTBFQy00N0RDLTk3NUEtRkI2REVBNzJGNERBJQAAAEE3QUVBNjMxLTk4NUItNEREMS04Q0UyLURFMkMtMTRCNTQwODEEAAAABAAAAEJvZHkBAAAAbwAAAAAAAAAkAAAAODMwQTJBMkItMEFBOS00RDZBLUFDQTEtRjdBMkIyQTA2NTczJAAAADk4NTQyRUI5LUE0RjItNDEzNy1BODA4LURCQjVCM0NENjE1OQAAAAAAAAAAAAAAACQAAAAyRjRDMTg0OS0xQTVBLTRGNkMtQTA4Ni04REQ0NDVDQkY5NEIkAAAAOTg1NDJFQjktQTRGMi00MTM3LUE4MDgtREJCNUIzQ0Q2MTU5AgAAAAYAAABGdXNpb24BAAAAyAAAAAAAAAAkAAAAMDAwMDAwMDAtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMTQwAAAAAAEAAAAGAAAARnVzaW9uAQAAAIwAAAAAAAAAAAAAAA4AAABkAAAAAAAAAAAAAAAAAAAAZQAAAAAAAABUAAAAAAAAAGYAAAAAAAAAcQAAAAAAAABnAAAAAAAAABEBAAAAAAAAaQAAAAAAAABoAQAAAAAAAGoAAAAAAAAAxwEAAAAAAABrAAAAAAAAANIBAAAAAAAAbAAAAAAAAABXAgAAAAAAAGgAAAAAAAAAfwIAAAAAAABtAAAAAAAAANcEAAAAAAAAbgAAAAAAAAC4BQAAAAAAAG8AAAAAAAAAyQYAAAAAAADIAAAAAAAAANQGAAAAAAAAjAAAAAAAAAALBwAAAAAAAAEAAABtAAAAAAAAAJoFAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFBLAwQKAAAAAAAAACEAPXdPXkoGAABKBgAAOwAAAEZ1c2lvbkFzc2V0TmFtZVtBY3RpdmVdL0JyZXBzLkJsb2JQYXJ0cy9CUkVQLnN5bnRoZXRpYy5zbWJoQVNNIEJpbmFyeUZpbGU4PFoAAAAAAAAAAAAAAAAAAAUAAAAAAAAAAwAAAAAAAAAHEEF1dG9kZXNrIE5ldXRyb24HFUFTTSAyMzEuNi4zLjY1NTM1IE9TWAcYVHVlIE1hciAzMSAxNjoxNjoxOSAyMDI2BgAAAAAAAE5ABo3ttaD3xrA+Bru919nffNs9DQlhc21oZWFkZXIHDTIzMS42LjMuNjU1MzURDQRib2R5DP//////////BCoAAAAAAAAADP//////////DAIAAAAAAAAADP//////////DP//////////EQ0GcmVnaW9uDP//////////BP//////////DP//////////DP//////////DAMAAAAAAAAADAEAAAAAAAAAEQ0Fc2hlbGwM//////////8E//////////8M//////////8M//////////8M//////////8MBAAAAAAAAAAM//////////8MAgAAAAAAAAARDQRmYWNlDP//////////BP//////////DP//////////DP//////////DAUAAAAAAAAADAMAAAAAAAAADP//////////DAYAAAAAAAAACwsRDQRsb29wDP//////////BP//////////DP//////////DP//////////DAcAAAAAAAAADAQAAAAAAAAAEQ4FcGxhbmUNB3N1cmZhY2UM//////////8E//////////8M//////////8TAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFAAAAAAAAAAAAAAAAAAAAAAAAAAAAADwPxQAAAAAAADwPwAAAAAAAAAAAAAAAAAAAAALEQ0GY29lZGdlDP//////////BP//////////DP//////////DAgAAAAAAAAADAkAAAAAAAAADP//////////DAoAAAAAAAAACwwFAAAAAAAAAAQAAAAAAAAAAAz//////////xENBmNvZWRnZQz//////////wT//////////wz//////////wwJAAAAAAAAAAwHAAAAAAAAAAz//////////wwLAAAAAAAAAAsMBQAAAAAAAAAEAAAAAAAAAAAM//////////8RDQZjb2VkZ2UM//////////8E//////////8M//////////8MBwAAAAAAAAAMCAAAAAAAAAAM//////////8MDAAAAAAAAAALDAUAAAAAAAAABAAAAAAAAAAADP//////////EQ0EZWRnZQz//////////wT//////////wz//////////wwNAAAAAAAAAAYAAAAAAAAAAAwOAAAAAAAAAAYAAAAAAADwPwz//////////wz//////////wsHB3Vua25vd24RDQRlZGdlDP//////////BP//////////DP//////////DA4AAAAAAAAABgAAAAAAAAAADA8AAAAAAAAABgAAAAAAAPA/DP//////////DP//////////CwcHdW5rbm93bhENBGVkZ2UM//////////8E//////////8M//////////8MDwAAAAAAAAAGAAAAAAAAAAAMDQAAAAAAAAAGAAAAAAAA8D8M//////////8M//////////8LBwd1bmtub3duEQ0GdmVydGV4DP//////////BP//////////DP//////////DAoAAAAAAAAABAAAAAAAAAAADBAAAAAAAAAAEQ0GdmVydGV4DP//////////BP//////////DP//////////DAoAAAAAAAAABAEAAAAAAAAADBEAAAAAAAAAEQ0GdmVydGV4DP//////////BP//////////DP//////////DAwAAAAAAAAABAAAAAAAAAAADBIAAAAAAAAAEQ0FcG9pbnQM//////////8E//////////8M//////////8TAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEQ0FcG9pbnQM//////////8E//////////8M//////////8TAAAAAAAA8D8AAAAAAAAAAAAAAAAAAAAAEQ0FcG9pbnQM//////////8E//////////8M//////////8TAAAAAAAAAAAAAAAAAADwPwAAAAAAAAAAEQ0LZGVsdGFfc3RhdGVQSwMECgAAAAAAAAAhACtvgdoaAQAAGgEAAHEAAABGdXNpb25Bc3NldE5hbWVbQWN0aXZlXS9QYXJhTWVzaEdlb21ldHJ5LkJsb2JQYXJ0cy9QYXJhTWVzaEdlb21ldHJ5LjExMTExMTExLTIyMjItNDMzMy04NDQ0LTU1NTU1NTU1NTU1NS5wYXJhbWVzaIlVRFBNRVNIDQoaCgIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGUAAAAAAAAAAQAAAEIzCgtmdXNpb25fdXVpZBokQUFBQUFBQUEtQkJCQi00Q0NDLThEREQtRUVFRUVFRUVFRUVFSABiJDExMTExMTExLTIyMjItNDMzMy04NDQ0LTU1NTU1NTU1NTU1NaoBAXayAQF0BwAAAAAAAAADAAAAgqF2AqF0AzMAAAAAAAAABAAAAAcAgqFEA6FUAyQAAABd/gAAAAAAAAAAAAAAAAAAgD8AAAAAAAAAAAAAAAAAAIA/AAAAABsAAAAAAAAABAAAAAcAgqFUAaFkAQwAAABd/gEAAAABAAAAAAAAAFBLAQIKAwoAAAAAAAAAIQCgv7HrOwIAADsCAAAMAAAAAAAAAAAAAACkgQAAAABNYW5pZmVzdC5kYXRQSwECCgMKAAAAAAAAACEAfc3VPU0CAABNAgAAJAAAAAAAAAAAAAAApIFlAgAARnVzaW9uQXNzZXROYW1lW0FjdGl2ZV0vTWFuaWZlc3QuZGF0UEsBAgoDCgAAAAAAAAAhAB9bfDoWBwAAFgcAAC4AAAAAAAAAAAAAAKSB9AQAAEZ1c2lvbkFzc2V0TmFtZVtBY3RpdmVdL0Rlc2lnbjEvQnVsa1N0cmVhbS5kYXRQSwECCgMKAAAAAAAAACEAEA8lHYAIAACACAAALgAAAAAAAAAAAAAApIFWDAAARnVzaW9uQXNzZXROYW1lW0FjdGl2ZV0vRGVzaWduMS9NZXRhU3RyZWFtLmRhdFBLAQIKAwoAAAAAAAAAIQA9d09eSgYAAEoGAAA7AAAAAAAAAAAAAACkgSIVAABGdXNpb25Bc3NldE5hbWVbQWN0aXZlXS9CcmVwcy5CbG9iUGFydHMvQlJFUC5zeW50aGV0aWMuc21iaFBLAQIKAwoAAAAAAAAAIQArb4HaGgEAABoBAABxAAAAAAAAAAAAAACkgcUbAABGdXNpb25Bc3NldE5hbWVbQWN0aXZlXS9QYXJhTWVzaEdlb21ldHJ5LkJsb2JQYXJ0cy9QYXJhTWVzaEdlb21ldHJ5LjExMTExMTExLTIyMjItNDMzMy04NDQ0LTU1NTU1NTU1NTU1NS5wYXJhbWVzaFBLBQYAAAAABgAGAEwCAABuHQAAAAA="
+        },
+        "untyped": []
+      }
+    }
+  }
+}

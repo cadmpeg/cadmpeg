@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::matrix;
+use crate::test_support::mesh_fixture::matrix;
 use crate::design::decode::mesh::{mesh_body_transform, MeshBody};
 use crate::layout::paramesh_mesh_body_join_prefix;
 use crate::paramesh::MeshContainer;
