@@ -70,27 +70,35 @@ pub(super) fn write(
         .map(|namespace| namespace.arena_as::<PropertyRecord>("properties"))
         .transpose()?
         .unwrap_or_default();
-    let entry_names = if let Some(namespace) = namespace {
-        let entries = namespace.arena_as::<crate::native::EntryRecord>("entries")?;
-        super::validate_entry_names(&entries)?;
-        entries
-            .iter()
-            .map(|entry| entry.name().to_owned())
-            .collect::<HashSet<_>>()
-    } else {
-        HashSet::new()
-    };
+    let mut native_entries = namespace
+        .map(|namespace| namespace.arena_as::<crate::native::EntryRecord>("entries"))
+        .transpose()?
+        .unwrap_or_default();
+    native_entries.sort_by_key(crate::native::EntryRecord::order);
+    let mut entry_names = HashSet::new();
+    let mut duplicate_entries = Vec::new();
+    native_entries.retain(|entry| {
+        if entry_names.insert(entry.name().to_owned()) {
+            true
+        } else {
+            losses.push(
+                FreecadLossCode::ExportNativePropertyNotTransferred.note(format!(
+                    "archive entry {} duplicates output name {} and is omitted",
+                    entry.id(),
+                    entry.name()
+                )),
+            );
+            duplicate_entries.push(entry.id().to_owned());
+            false
+        }
+    });
     // Retained opaque entry bytes replay verbatim when the writer emits
     // their entry. Their names are the side-entry availability for typed
     // property replay below.
     let mut retained: HashMap<String, Vec<u8>> = HashMap::new();
-    if let Some(namespace) = namespace {
-        if let Ok(records) = namespace.arena_as::<crate::native::EntryRecord>("entries") {
-            for record in records {
-                if let Some(bytes) = record.payload() {
-                    retained.insert(record.name().to_owned(), bytes.to_vec());
-                }
-            }
+    for record in &native_entries {
+        if let Some(bytes) = record.payload() {
+            retained.insert(record.name().to_owned(), bytes.to_vec());
         }
     }
     let available: HashSet<String> = retained.keys().cloned().collect();
@@ -1320,29 +1328,26 @@ pub(super) fn write(
     // Entries consumed by a typed record that regenerates under a new name
     // never replay: the regenerated entry carries their content.
     if let Some(namespace) = namespace {
-        if let Ok(records) = namespace.arena_as::<crate::native::EntryRecord>("entries") {
-            let mut consumed: HashSet<String> = HashSet::new();
-            if let Ok(tables) =
-                namespace.arena_as::<crate::native::StringTableRecord>("string_tables")
-            {
-                consumed.extend(tables.iter().filter_map(|table| table.source_entry.clone()));
+        let mut consumed: HashSet<String> = HashSet::new();
+        if let Ok(tables) = namespace.arena_as::<crate::native::StringTableRecord>("string_tables")
+        {
+            consumed.extend(tables.iter().filter_map(|table| table.source_entry.clone()));
+        }
+        if let Ok(maps) =
+            namespace.arena_as::<crate::native::element_map::ElementMapRecord>("element_maps")
+        {
+            consumed.extend(maps.iter().filter_map(|map| map.source_entry.clone()));
+        }
+        for record in &native_entries {
+            let name = record.name();
+            if entries.contains_key(name) || !retained.contains_key(name) {
+                continue;
             }
-            if let Ok(maps) =
-                namespace.arena_as::<crate::native::element_map::ElementMapRecord>("element_maps")
-            {
-                consumed.extend(maps.iter().filter_map(|map| map.source_entry.clone()));
-            }
-            for record in records {
-                let name = record.name();
-                if entries.contains_key(name) || !retained.contains_key(name) {
-                    continue;
-                }
-                let referred = entry_referenced(name, &objects, &document_properties, &gui);
-                let orphan = record.referenced_by().is_empty() && !consumed.contains(name);
-                if referred || orphan {
-                    if let Some(bytes) = retained.get(name) {
-                        entries.insert(name.to_owned(), bytes.clone());
-                    }
+            let referred = entry_referenced(name, &objects, &document_properties, &gui);
+            let orphan = record.referenced_by().is_empty() && !consumed.contains(name);
+            if referred || orphan {
+                if let Some(bytes) = retained.get(name) {
+                    entries.insert(name.to_owned(), bytes.clone());
                 }
             }
         }
@@ -1357,6 +1362,14 @@ pub(super) fn write(
         &mut native_dispositions,
     )?;
     topology_join.record_emitted(ctx, &objects, &entries, &mut native_dispositions)?;
+    for id in duplicate_entries {
+        super::dispositions::record(
+            &mut native_dispositions,
+            "entries",
+            &id,
+            cadmpeg_ir::codec::write::NativeDisposition::Dropped,
+        );
+    }
     // Placeholders keep declaration arity, not content: they stay dropped so
     // the omission loss names them as removed.
     for id in &placeholders {
@@ -1378,18 +1391,10 @@ pub(super) fn write(
     // named side entries. Keep Document.xml first even when a BRep name sorts
     // before it lexically.
     let record_order = |name: &str| {
-        namespace
-            .and_then(|namespace| {
-                namespace
-                    .arena_as::<crate::native::EntryRecord>("entries")
-                    .ok()
-            })
-            .and_then(|records| {
-                records
-                    .iter()
-                    .find(|record| record.name() == name)
-                    .map(crate::native::EntryRecord::order)
-            })
+        native_entries
+            .iter()
+            .find(|record| record.name() == name)
+            .map(crate::native::EntryRecord::order)
     };
     let mut entries = entries.into_iter().collect::<Vec<_>>();
     entries.sort_by(|(left, _), (right, _)| {
