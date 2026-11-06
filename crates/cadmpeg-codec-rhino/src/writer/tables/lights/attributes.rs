@@ -68,6 +68,42 @@ fn linetype_index(ir: &cadmpeg_ir::CadIr, source: i32) -> Result<i32, WriteError
     Ok(super::wire_index(index)?)
 }
 
+fn layer_index(ir: &cadmpeg_ir::CadIr, source: i32) -> Result<i32, WriteError> {
+    if source < 0 {
+        return Ok(source);
+    }
+    let mut source_records = super::records(ir, "layers").iter().filter(|record| {
+        record
+            .field("archive_index")
+            .and_then(|value| value.as_i64())
+            == Some(i64::from(source))
+    });
+    let record = source_records
+        .next()
+        .ok_or_else(|| WriteError::Omit(format!("light layer index {source} is unresolved")))?;
+    if source_records.next().is_some() {
+        return Err(WriteError::Omit(format!(
+            "light layer index {source} is ambiguous"
+        )));
+    }
+    let mut layers = ir
+        .model
+        .presentation_layers
+        .iter()
+        .enumerate()
+        .filter(|(_, layer)| layer.native_ref.as_deref() == Some(record.id()));
+    let index = layers
+        .next()
+        .map(|(index, _)| index)
+        .ok_or_else(|| WriteError::Omit(format!("light layer index {source} is not emitted")))?;
+    if layers.next().is_some() {
+        return Err(WriteError::Omit(format!(
+            "light layer index {source} has multiple outputs"
+        )));
+    }
+    Ok(super::wire_index(index)?)
+}
+
 pub(super) fn encode(
     value: &Value,
     ir: &cadmpeg_ir::CadIr,
@@ -125,12 +161,10 @@ pub(super) fn encode(
             "light attribute {name} has no encoder"
         )));
     }
-    for name in ["layer_index", "material_index"] {
-        if integer(fields, name)? != -1 {
-            return Err(WriteError::Omit(format!(
-                "light attribute {name} needs table-index remapping"
-            )));
-        }
+    if integer(fields, "material_index")? != -1 {
+        return Err(WriteError::Omit(
+            "light attribute material_index needs table-index remapping".into(),
+        ));
     }
     for name in [
         "group_indexes",
@@ -171,11 +205,13 @@ pub(super) fn encode(
     }
     let id = crate::presentation::parse_uuid_text(string(fields, "source_uuid")?)
         .ok_or_else(|| WriteError::Omit("light attribute source_uuid is invalid".into()))?;
+    let source_layer = integer(fields, "layer_index")?;
+    let written_layer = layer_index(ir, source_layer)?;
     let source_linetype = integer(fields, "linetype_index")?;
     let written_linetype = linetype_index(ir, source_linetype)?;
     let mut body = vec![0x2d];
     body.extend(id.to_wire());
-    body.extend((-1_i32).to_le_bytes());
+    body.extend(written_layer.to_le_bytes());
     for (tag, name) in [(1, "name"), (2, "url")] {
         body.push(tag);
         body.extend(super::utf16(string(fields, name)?)?);
@@ -322,7 +358,17 @@ pub(super) fn encode(
         body.extend([42, 1]);
     }
     body.push(0);
-    let change = (source_linetype != written_linetype)
-        .then(|| format!("linetype index {source_linetype} is written as {written_linetype}"));
+    let mut changes = Vec::new();
+    if source_layer != written_layer {
+        changes.push(format!(
+            "layer index {source_layer} is written as {written_layer}"
+        ));
+    }
+    if source_linetype != written_linetype {
+        changes.push(format!(
+            "linetype index {source_linetype} is written as {written_linetype}"
+        ));
+    }
+    let change = (!changes.is_empty()).then(|| changes.join(", "));
     Ok((body, change))
 }
