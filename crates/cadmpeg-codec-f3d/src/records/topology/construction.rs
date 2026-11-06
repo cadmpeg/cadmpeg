@@ -281,7 +281,11 @@ struct DesignConstructionOperandGroupSerde {
     byte_offset: u64,
     class_tag: String,
     members: Vec<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_sketch_profile"
+    )]
     sketch_profile: Option<super::sketch_profile::DesignSketchProfileOperand>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     lost_edge_references: Vec<String>,
@@ -2353,6 +2357,12 @@ cadmpeg_core::named_optional_field!(
     deserialize_second_related_identity_offset,
     u64,
     "second_related_identity_offset"
+);
+
+cadmpeg_core::named_optional_field!(
+    deserialize_sketch_profile,
+    super::sketch_profile::DesignSketchProfileOperand,
+    "sketch_profile"
 );
 
 #[cfg(test)]

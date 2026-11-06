@@ -213,7 +213,11 @@ struct DesignSketchProfileOperandWire {
     entity_suffix: u64,
     /// Byte offset of the suffix's UTF-16LE code units.
     entity_reference_offset: u64,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_compact_tail_flags"
+    )]
     compact_tail_flags: Option<[bool; 2]>,
     /// Exact nested profile-region selection, when its complete frame closes.
     #[serde(
@@ -434,6 +438,11 @@ cadmpeg_core::named_optional_field!(
     deserialize_region_selection,
     DesignSketchProfileRegionSelection,
     "region_selection"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_compact_tail_flags,
+    [bool; 2],
+    "compact_tail_flags"
 );
 
 #[cfg(test)]
