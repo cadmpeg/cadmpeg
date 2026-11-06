@@ -2583,27 +2583,43 @@ impl<'a> Builder<'a> {
         context: Ref,
     ) {
         let scalar_items = !matches!(self.schema, StepSchema::Ap203Edition1 | StepSchema::Ap214);
-        let (kind, value) = match attribute.values.as_slice() {
-            [Some(AttributeValue::String(value))] => {
-                ("DESCRIPTIVE_REPRESENTATION_ITEM", string(value))
-            }
-            [Some(AttributeValue::Integer(value))] if scalar_items => {
-                ("INTEGER_REPRESENTATION_ITEM", value.to_string())
-            }
-            [Some(AttributeValue::Float(value))] if scalar_items => {
-                ("REAL_REPRESENTATION_ITEM", self.emitter.real(value.get()))
-            }
-            [Some(AttributeValue::Boolean(value))] if scalar_items => (
-                "BOOLEAN_REPRESENTATION_ITEM",
-                if *value { ".T." } else { ".F." }.to_owned(),
-            ),
-            _ => return,
-        };
+        let mut values = Vec::new();
+        for value in &attribute.values {
+            let item = match value {
+                Some(AttributeValue::String(value)) => {
+                    ("DESCRIPTIVE_REPRESENTATION_ITEM", string(value))
+                }
+                Some(AttributeValue::Integer(value)) if scalar_items => {
+                    ("INTEGER_REPRESENTATION_ITEM", value.to_string())
+                }
+                Some(AttributeValue::Float(value)) if scalar_items => {
+                    ("REAL_REPRESENTATION_ITEM", self.emitter.real(value.get()))
+                }
+                Some(AttributeValue::Boolean(value)) if scalar_items => (
+                    "BOOLEAN_REPRESENTATION_ITEM",
+                    if *value { ".T." } else { ".F." }.to_owned(),
+                ),
+                _ => return,
+            };
+            values.push(item);
+        }
+        if values.is_empty() || (values.len() > 1 && !scalar_items) {
+            return;
+        }
         let property = self.emitter.emit(
             "PROPERTY_DEFINITION",
             &format!("{},'',{owner}", string(&attribute.name)),
         );
-        let item = self.emitter.emit(kind, &format!("'',{value}"));
+        let items: Vec<_> = values
+            .into_iter()
+            .map(|(kind, value)| self.emitter.emit(kind, &format!("'',{value}")))
+            .collect();
+        let item = if let [item] = items.as_slice() {
+            *item
+        } else {
+            self.emitter
+                .emit("ROW_REPRESENTATION_ITEM", &format!("'',{}", refs(&items)))
+        };
         let representation = self
             .emitter
             .emit("REPRESENTATION", &format!("'',({item}),{context}"));
@@ -2625,15 +2641,18 @@ impl<'a> Builder<'a> {
         let ir = self.ir;
         for attribute in &ir.model.attributes {
             if self.attribute_is_written(attribute)
-                || !matches!(
-                    attribute.values.as_slice(),
-                    [Some(
-                        AttributeValue::String(_)
-                            | AttributeValue::Integer(_)
-                            | AttributeValue::Float(_)
-                            | AttributeValue::Boolean(_)
-                    )]
-                )
+                || attribute.values.is_empty()
+                || !attribute.values.iter().all(|value| {
+                    matches!(
+                        value,
+                        Some(
+                            AttributeValue::String(_)
+                                | AttributeValue::Integer(_)
+                                | AttributeValue::Float(_)
+                                | AttributeValue::Boolean(_)
+                        )
+                    )
+                })
             {
                 continue;
             }
