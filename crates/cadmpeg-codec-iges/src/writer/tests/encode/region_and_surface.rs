@@ -55,11 +55,21 @@ fn bounded_sheet_preserves_shared_boundary_point_labels() {
             .iter()
             .all(|loss| !loss.message.contains(name.id.as_str())));
     }
+    let layer = &decoded.ir().model.presentation_layers[0];
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .all(|loss| !loss.message.contains(layer.id.as_str())));
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).expect("bounded sheet writes");
     let output = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("written bounded sheet decodes");
+    assert_eq!(
+        output.ir().model.presentation_layers[0].items.len(),
+        layer.items.len()
+    );
     let names = output
         .ir()
         .model
@@ -108,6 +118,38 @@ fn distinct_boundary_point_labels_do_not_become_one_sheet_label() {
     assert!(!output.ir().model.attributes.iter().any(|attribute| {
         attribute.name == "name" && matches!(attribute.target, AttributeTarget::Point(_))
     }));
+}
+
+#[test]
+fn incomplete_boundary_level_membership_is_reported() {
+    use cadmpeg_ir::presentation::PresentationItem;
+
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(bounded_plane_file()),
+            &DecodeOptions::default(),
+        )
+        .expect("bounded sheet decodes");
+    let mut ir = decoded.ir().clone();
+    let layer = &mut ir.model.presentation_layers[0];
+    let point = layer
+        .items
+        .iter()
+        .position(|item| matches!(item, PresentationItem::Point { .. }))
+        .expect("the layer holds a boundary point");
+    layer.items.remove(point);
+    let layer_id = layer.id.to_string();
+    let plan = IgesCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+        )
+        .expect("bounded sheet synthesizes");
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(&layer_id)));
 }
 
 fn display_color(

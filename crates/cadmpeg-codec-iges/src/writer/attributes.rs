@@ -595,7 +595,7 @@ pub(super) fn append(
 }
 
 mod fields;
-mod labels;
+pub(super) mod labels;
 mod properties;
 mod tables;
 
