@@ -488,8 +488,13 @@ fn decode_exchange_mode(
         session.ctx,
     )?;
     session.charge_pending_ir_entities("step_property_decode")?;
-    let mut properties =
-        properties::decode(exchange, &carrier_index, &mut session.ir, session.ctx)?;
+    let mut properties = properties::decode(
+        exchange,
+        &carrier_index,
+        &topology.value,
+        &mut session.ir,
+        session.ctx,
+    )?;
     if !session.ir.model.points.is_empty()
         || !session.ir.model.curves.is_empty()
         || !session.ir.model.surfaces.is_empty()
