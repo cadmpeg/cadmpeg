@@ -36,6 +36,7 @@ use super::fixed_parameters::exact_fixed_fillet_parameters;
 use super::hole::exact_hole_construction;
 use super::path_feature::{
     exact_path_feature_construction, loft_reference_loss, marker_one_revolve_assumed_length,
+    three_flag_loft_settings_loss,
 };
 use super::pattern::exact_circular_pattern_construction_with_owners;
 use super::pattern::exact_rectangular_pattern_construction;
@@ -439,6 +440,7 @@ pub(crate) fn decode_parameter_scopes(
                 ) = &construction
                 {
                     losses.extend(loft_reference_loss(&scope, value));
+                    losses.extend(three_flag_loft_settings_loss(bytes, &scope, value));
                 }
                 match (scope.payload_mut(), construction) {
                     (

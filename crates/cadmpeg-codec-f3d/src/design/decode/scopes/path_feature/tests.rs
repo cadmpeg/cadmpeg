@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::{exact_path_feature_construction, loft_reference_loss};
+use super::{exact_path_feature_construction, loft_reference_loss, three_flag_loft_settings_loss};
 use crate::records::feature::extrude::DesignExtrudeOperation;
 use crate::records::feature::path_features::DesignPathFeatureConstruction;
 use crate::records::feature::scope::DesignParameterScope;
@@ -467,4 +467,48 @@ fn compact_two_lane_sweep_pins_admission_rules_and_rejects_mutations() {
         exact_path_feature_construction(&mutated, &mutated_records, &scope, &[]),
         None
     );
+}
+
+fn settings_loss_message(bytes: &[u8]) -> Option<String> {
+    let construction = decoded_loft(bytes).expect("Loft construction");
+    three_flag_loft_settings_loss(bytes, &loft_scope(), &construction).map(|loss| {
+        assert_eq!(
+            loss.code,
+            crate::loss::F3dLossCode::FeatureLoftSettingsAssumed.kind()
+        );
+        loss.message
+    })
+}
+
+#[test]
+fn three_flag_compact_loft_reports_assumed_settings() {
+    let mut bytes = loft_prefix(24, false, true);
+    assert_loft_operation(&bytes, 24);
+    assert_eq!(
+        settings_loss_message(&bytes).as_deref(),
+        Some("Loft scope generated:loft#20 stores the three-flag compact prefix with flag bytes 01 01 00 at prefix offset 21; the Loft settings these flags select are unresolved (DR-294), and a Loft projected from the scope uses closed false, solid true, ruled false, and linearize false.")
+    );
+    bytes[23] = 1;
+    assert_loft_operation(&bytes, 24);
+    assert_eq!(
+        settings_loss_message(&bytes).as_deref(),
+        Some("Loft scope generated:loft#20 stores the three-flag compact prefix with flag bytes 01 01 01 at prefix offset 21; the Loft settings these flags select are unresolved (DR-294), and a Loft projected from the scope uses closed false, solid true, ruled false, and linearize false.")
+    );
+}
+
+#[test]
+fn three_flag_standard_loft_reports_assumed_settings() {
+    let mut bytes = loft_prefix(28, true, true);
+    bytes[25..28].copy_from_slice(&[1, 0, 1]);
+    assert_loft_operation(&bytes, 28);
+    assert_eq!(
+        settings_loss_message(&bytes).as_deref(),
+        Some("Loft scope generated:loft#20 stores the three-flag standard prefix with flag bytes 01 00 01 at prefix offset 25; the Loft settings these flags select are unresolved (DR-294), and a Loft projected from the scope uses closed false, solid true, ruled false, and linearize false.")
+    );
+}
+
+#[test]
+fn four_flag_loft_forms_have_no_settings_loss() {
+    assert_eq!(settings_loss_message(&loft_prefix(25, false, false)), None);
+    assert_eq!(settings_loss_message(&loft_prefix(29, true, false)), None);
 }
