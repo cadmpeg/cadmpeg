@@ -6,6 +6,7 @@ use super::{
     crc_chunk_with_direct, records, unit_color_channel, utf16, wire_index, CadIr, CodecError, Map,
     Value,
 };
+use crate::writer::WriteError;
 use cadmpeg_ir::appearance::Appearance;
 mod plan;
 pub(in crate::writer) use plan::MaterialPlan;
@@ -48,7 +49,7 @@ fn encode_material(
     fields: Option<&Map<String, Value>>,
     authored_uuid: Option<[u8; 16]>,
     textures: &[Value],
-) -> Result<Vec<u8>, CodecError> {
+) -> Result<Vec<u8>, WriteError> {
     let nil = Value::String("00000000-0000-0000-0000-000000000000".to_owned());
     let authored =
         authored_uuid.map(|uuid| Value::String(crate::wire::Uuid::from_wire(uuid).to_string()));
@@ -127,7 +128,7 @@ fn encode_material(
         );
     }
     let texture_start = payload.len();
-    payload.extend(texture_array(textures)?);
+    payload.extend(texture_array(textures, identity)?);
     let texture_end = payload.len();
     payload.extend(0i32.to_le_bytes());
     for name in ["shareable", "disable_lighting", "fresnel_reflections"] {
@@ -170,7 +171,7 @@ fn encode_material(
             .and_then(Value::as_bool)
             .unwrap_or(false),
     ));
-    crc_chunk_with_direct(
+    Ok(crc_chunk_with_direct(
         0x2000_8040,
         &class_wrapper_with_direct(
             MATERIAL_CLASS,
@@ -183,7 +184,7 @@ fn encode_material(
             &[],
         )?,
         &[],
-    )
+    )?)
 }
 
 pub(in crate::writer) fn bound_appearance<'a>(
@@ -529,20 +530,22 @@ pub(in crate::writer) fn textures_complete(fields: &Map<String, Value>) -> bool 
     let Some(textures) = fields.get("textures").and_then(Value::as_array) else {
         return false;
     };
-    fields.get("texture_count").and_then(Value::as_u64) == u64::try_from(textures.len()).ok()
+    i32::try_from(textures.len()).is_ok()
+        && fields.get("texture_count").and_then(Value::as_u64) == u64::try_from(textures.len()).ok()
         && textures
             .iter()
             .all(|texture| read_texture(texture).is_some())
 }
 
-fn texture_array(textures: &[Value]) -> Result<Vec<u8>, CodecError> {
+fn texture_array(textures: &[Value], identity: &str) -> Result<Vec<u8>, WriteError> {
     let count = i32::try_from(textures.len())
-        .map_err(|_| CodecError::malformed("Rhino material texture count exceeds i32"))?;
+        .map_err(|_| WriteError::Omit(format!("material {identity} texture count exceeds i32")))?;
     let mut body = count.to_le_bytes().to_vec();
     let mut children = Vec::new();
     for texture in textures {
-        let parsed = read_texture(texture)
-            .ok_or_else(|| CodecError::malformed("Rhino material texture fields are incomplete"))?;
+        let parsed = read_texture(texture).ok_or_else(|| {
+            WriteError::Omit(format!("material {identity} texture fields are incomplete"))
+        })?;
         let start = body.len();
         body.extend(class_wrapper(
             crate::wire::Uuid::to_wire(crate::presentation::TEXTURE),
@@ -550,7 +553,7 @@ fn texture_array(textures: &[Value]) -> Result<Vec<u8>, CodecError> {
         )?);
         children.push(start..body.len());
     }
-    anonymous_with_children(1, 0, &body, &children)
+    Ok(anonymous_with_children(1, 0, &body, &children)?)
 }
 
 #[cfg(test)]

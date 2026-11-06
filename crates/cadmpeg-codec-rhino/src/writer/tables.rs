@@ -145,6 +145,52 @@ pub(super) fn layer_linetype(
     Ok((source, native::linetype_index(ir, source)?.unwrap_or(-1)))
 }
 
+pub(super) fn layer_material(
+    ir: &CadIr,
+    layer: &PresentationLayer,
+    materials: &materials::MaterialPlan,
+) -> (i32, i32) {
+    let native = own_layer(ir, layer);
+    let source = integer(native.as_ref(), "material_index", -1);
+    if source < 0 {
+        return (source, source);
+    }
+    let mut matches = records(ir, "materials").iter().filter(|record| {
+        record
+            .field("archive_index")
+            .and_then(|value| value.as_i64())
+            == Some(i64::from(source))
+    });
+    let target = matches.next().and_then(|record| {
+        if matches.next().is_some() {
+            return None;
+        }
+        match materials.native_targets(record.id()) {
+            [index] => Some(*index),
+            _ => None,
+        }
+    });
+    (source, target.unwrap_or(-1))
+}
+
+pub(super) fn layer_material_losses(
+    ir: &CadIr,
+    materials: &materials::MaterialPlan,
+) -> Vec<LossNote> {
+    let mut losses = Vec::new();
+    for layer in &ir.model.presentation_layers {
+        let (source, target) = layer_material(ir, layer, materials);
+        if source != target {
+            losses.push(RhinoLossCode::WriterLayerMaterialReduced.note(format!(
+                "layer {} native {} material index {source} is written as {target}",
+                layer.id,
+                layer.native_ref.as_deref().unwrap_or("unlinked")
+            )));
+        }
+    }
+    losses
+}
+
 pub(super) fn layer_linetype_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
     let mut losses = Vec::new();
     for layer in &ir.model.presentation_layers {
@@ -218,7 +264,10 @@ pub(super) fn inherits_layer_color(
             == Some(color)
 }
 
-pub(super) fn layers(ir: &CadIr) -> Result<Vec<Vec<u8>>, CodecError> {
+pub(super) fn layers(
+    ir: &CadIr,
+    materials: &materials::MaterialPlan,
+) -> Result<Vec<Vec<u8>>, CodecError> {
     if ir.model.presentation_layers.is_empty() {
         return Ok(vec![crc_chunk_with_direct(
             TCODE_LAYER_RECORD,
@@ -253,7 +302,7 @@ pub(super) fn layers(ir: &CadIr) -> Result<Vec<Vec<u8>>, CodecError> {
                 .to_le_bytes(),
         );
         payload.extend(integer(fields, "iges_level", -1).to_le_bytes());
-        payload.extend(integer(fields, "material_index", -1).to_le_bytes());
+        payload.extend(layer_material(ir, layer, materials).1.to_le_bytes());
         payload.extend((-1_i32).to_le_bytes());
         let display_color = layer_display_color(ir, layer);
         payload.extend(match display_color {
