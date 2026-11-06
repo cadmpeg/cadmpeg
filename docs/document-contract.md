@@ -82,7 +82,7 @@ Adding an arena class changes the wire contract and requires a wire bump. Adding
 
 ## Worked example
 
-A dimension is a literal or a binding: `Dimension<Length>::Literal(Length::new(10.0))` holds its own value, while `Dimension<Length>::Parameter(id)` names the `DesignParameter` whose cached `value` supplies it. `CadIr::dimension_value(&dimension)` resolves either form against the parameter arena. `set_dimension(&feature, "/profile/depth", Length::new(12.0))` edits the bound parameter through the feature definition path; on a driven parameter it returns `DrivenParameter` with the drivers instead of overwriting the value.
+A dimension is a literal or a binding: `Dimension<Length>::Literal(Length::new(10.0).unwrap())` holds its own value, while `Dimension<Length>::Parameter(id)` names the `DesignParameter` whose cached `value` supplies it. `CadIr::dimension_value(&dimension)` resolves either form against the parameter arena. For a path from the feature definition’s `dimension_paths()`, `set_dimension(&feature, &path, Length::new(12.0).unwrap())` edits the bound parameter; on a driven parameter it returns `DrivenParameter` with the drivers instead of overwriting the value.
 
 ## Version policy
 
