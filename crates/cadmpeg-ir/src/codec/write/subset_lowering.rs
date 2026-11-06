@@ -146,10 +146,7 @@ fn lowering(
             return Ok(None);
         };
         if !visited.insert(&candidate.id) {
-            return Err(CodecError::malformed(format_args!(
-                "subset curve {} has a cyclic source chain",
-                curve.id
-            )));
+            return Ok(None);
         }
         let inner = candidate
             .geometry
