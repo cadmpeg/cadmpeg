@@ -969,6 +969,26 @@ mod tests {
     }
 
     #[test]
+    fn step_timestamp_normalization_keeps_the_attribute_owner_and_name() {
+        let normalize = crate::reduced::step_timestamp_attribute;
+        let source = json!({"id":"a", "target":{"kind":"document"}, "name":"generation_date",
+            "values":[{"kind":"string", "value":"20260714.000000"}]});
+        let expected = json!({"id":"a", "target":{"kind":"document"}, "name":"generation_date",
+            "values":[{"kind":"string", "value":"2026-07-14T00:00:00"}]});
+        assert_eq!(normalize(&source), expected);
+        assert_eq!(normalize(&expected), expected);
+        let mut invalid = source.clone();
+        invalid["values"][0]["value"] = json!("20260230.000000");
+        assert_eq!(normalize(&invalid), invalid);
+        let mut other_owner = source.clone();
+        other_owner["target"]["kind"] = json!("body");
+        assert_eq!(normalize(&other_owner), other_owner);
+        let mut other_name = source;
+        other_name["name"] = json!("Comment");
+        assert_eq!(normalize(&other_name), other_name);
+    }
+
+    #[test]
     fn nested_quantization_applies_after_parent_normalization() {
         let rows = [
             ReducedProbe {
