@@ -44,9 +44,9 @@ fn spans_with(ledger: &ExactReadLedger, tag: u8) -> Vec<&ExactReadSpan> {
 
 #[test]
 fn ledger_versions_its_contract_and_collects_nothing_from_empty_input() {
-    assert_eq!(EXACT_READ_LEDGER_VERSION, 1);
+    assert_eq!(EXACT_READ_LEDGER_VERSION, 2);
     let ledger = collect(&[]);
-    assert_eq!(ledger.version, 1);
+    assert_eq!(ledger.version, 2);
     assert!(ledger.is_empty());
     assert_eq!(ledger.len(), 0);
 }

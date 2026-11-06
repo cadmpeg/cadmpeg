@@ -121,11 +121,11 @@ until their enclosing sequence is established.
 
 ### PS-19. Deltas reference/type maps
 
-**Question.** Which transmit context or history edge owns each deltas reference/type map, what action does each entry encode, and what does its terminal word mean?
+**Question.** Which transmit context or history edge owns each deltas reference/type map, what action does each entry encode, and what field structure and meaning do its four terminal bytes have?
 
-**Known.** `siemens_nx.md` §4.2 defines map-section ownership, canonical nonnull XMT/kind pairs, the null XMT and zero slot, the terminal word, and transactional section closure. The terminal word is below `0x8000`. Its value is not a section-node count. Section order does not assign a map's history edge or action.
+**Known.** `siemens_nx.md` §4.2 defines map-section ownership, canonical nonnull XMT/kind pairs, the null XMT, the four terminal bytes, and transactional section closure. Section order does not assign a map's history edge or action. Terminal bytes `00 03 69 e7` and `00 00 b8 60` frame under a single big-endian u32, under two big-endian u16 fields, and under an opaque four-byte field. The reader retains the four bytes in stream order.
 
-**Need.** Establish the preceding and succeeding state relation, the exact typed create/modify/delete key sets, the terminal word's namespace, and the encoding width for terminal words with the high bit set before applying a map to entities.
+**Need.** Establish whether the terminal bytes are one 32-bit value, two 16-bit fields, or another structure, and their namespace. Establish the preceding and succeeding state relation and the exact typed create/modify/delete key sets before applying a map to entities.
 
 ### PS-25. Inline type-12 `BODY` instance state
 
@@ -213,6 +213,32 @@ or regenerated current-design selection.
 **Known.** `siemens_nx.md` §2.4 "The sections after the UGII prefix are clear sections or text-wrapped sections." defines both forms. A clear section ends at the next complete transmit header or at the stream boundary. The decoder reads the text-wrapped sections of a payload only when the payload holds no clear section.
 
 **Need.** We must know the section boundary to extract every stream of a payload that holds both forms without one section's bytes containing another.
+
+### PS-41. Status-prefixed type-81 references outside a terminated sequence
+
+**Question.** Does a partition or plain stream without a terminated node sequence carry type-81 references as binary-status-prefixed XMT values followed by a binary terminal?
+
+**Known.** `siemens_nx.md` §9.4 "In a terminated node sequence, type-81 references" gives the consecutive form in a terminated node sequence.
+
+**Need.** We must know the form to frame type-81 records in a stream that the shared node reader does not frame to its terminator.
+
+**Conflict.** The decoder's type-81 scan accepts the prefixed form when the first reference byte is `01`. A consecutive reference whose index cell starts with `01` then fails to frame. The decoder omits that record and reports a topology attribute list that reaches it with the loss `nx/attribute.list-unresolved`.
+
+### PS-42. Control values outside a terminated sequence
+
+**Question.** In a stream that the shared node reader does not frame to its terminator, where does the type-45 node that a type-126 or type-136 `bspline_vertices` field names begin? What is the width and encoding of `bspline_vertices` in the compact type-136 and short type-126 layouts?
+
+**Known.** `siemens_nx.md` §6.2 "Types 45, 125, 126, 135, and 136 may place" gives the `bspline_vertices` reference. A terminated node sequence resolves that reference to a framed node. In an unterminated stream the decoder reads the count, XMT, and values at a fixed offset after a type-125 or type-135 node, and admits the values only when that XMT equals the descriptor's `bspline_vertices` reference. The status-framed type-136 and type-126 layouts and the long type-126 layout encode `bspline_vertices` as an XMT. In the compact type-136 layout the field starts at `+21`, and the multiplicity reference starts at `+23`. In the short type-126 layout the field starts at `+34`, and the U multiplicity reference starts at `+36`. The decoder reports a compact or short carrier with `carrier.controls-unresolved`.
+
+**Need.** We must know the node boundary to decode a B-spline carrier whose type-45 node does not follow its type-125 or type-135 node. We must know the compact and short `bspline_vertices` field width and encoding to resolve the control values of a compact or short carrier.
+
+### PS-43. TORUS with a negative major radius
+
+**Question.** Can an NX TORUS record store a negative major radius, and what surface and face sense does it then describe?
+
+**Known.** `siemens_nx.md` §6.1 "Validity gates: CIRCLE, ELLIPSE, CYLINDER, and SPHERE radii are positive." gives positive TORUS radii. `sldprt.md` §7.1 gives a negative major radius for SLDPRT that reverses the surface parameter frame. The NX decoder omits a TORUS record with a negative major radius and reports `carrier.torus-negative-major-unresolved`.
+
+**Need.** We must know the surface and its face sense before an NX TORUS with a negative major radius can transfer as exact geometry.
 
 ## 2. Object model and body composition
 

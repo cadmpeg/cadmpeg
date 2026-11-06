@@ -3265,6 +3265,11 @@ pub(crate) fn decode<'a>(ctx: &DecodeContext<'a>, root: View<'a>) -> Result<Deco
         container::F3dContainerKind::Document { .. } => {
             let mut decoded =
                 decode_scanned_document(ctx, &scan, crate::report::ReportScope::Standalone)?;
+            crate::f3z::merge::bind_standalone_joints(
+                ctx,
+                &mut decoded.ir,
+                &mut decoded.body.losses,
+            )?;
             let poses = crate::xref::operation_pose::collect(
                 ctx,
                 &scan,

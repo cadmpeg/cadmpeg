@@ -1026,6 +1026,15 @@ fn decode_container<'a>(
                 unresolved.parameters
             )));
         }
+        if unresolved.value_only_parameters != 0 {
+            losses.push(InventorLossCode::ParameterExpressionNative.note(format!(
+                "Transferred {} Inventor parameter(s) with their exact value and no expression text: the unit record of the root literal has an undefined base-unit type and stays native.",
+                unresolved.value_only_parameters
+            )));
+        }
+        losses.extend(crate::design::layout_assumed_loss(
+            &unresolved.layout_assumed_parameters,
+        ));
         losses.extend(crate::design::bounded_expression_loss(
             unresolved.bounded_parameters,
         ));
@@ -1043,6 +1052,9 @@ fn decode_container<'a>(
         losses.extend(crate::sketch::axis_distance_loss(
             unresolved.sketch_axis_distances,
         ));
+        losses.extend(crate::sketch::carrier_conflict_loss(
+            unresolved.sketch_carrier_conflicts,
+        ));
         losses.extend(crate::sketch::point_tail::paired_association_loss(
             &sketch_inventory,
         ));
@@ -1053,6 +1065,9 @@ fn decode_container<'a>(
         losses.extend(crate::sketch::curve::member_losses(
             &sketch_inventory,
             &container.rse,
+        ));
+        losses.extend(crate::sketch::polygon_control_vertex_loss(
+            &sketch_inventory.constraints,
         ));
         losses.extend(crate::sketch::spline::point_relation_loss(
             &sketch_inventory.constraints,
@@ -1464,6 +1479,8 @@ struct UnresolvedDesign {
     parameters: usize,
     parameter_scopes: usize,
     bounded_parameters: usize,
+    value_only_parameters: usize,
+    layout_assumed_parameters: std::collections::BTreeMap<[u8; 16], usize>,
     sketches: usize,
     sketch_entities: usize,
     sketch_constraints: usize,
@@ -1472,6 +1489,7 @@ struct UnresolvedDesign {
     profile_bodies: usize,
     sketch_construction: usize,
     sketch_axis_distances: usize,
+    sketch_carrier_conflicts: usize,
     extrusion_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     revolve_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     edge_treatment_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
@@ -1546,6 +1564,8 @@ fn project_design(
         parameters: parameters.unresolved,
         parameter_scopes: parameters.unresolved_scopes,
         bounded_parameters: parameters.bounded,
+        value_only_parameters: parameters.value_only,
+        layout_assumed_parameters: parameters.layout_assumed,
         sketches: sketches.unresolved_sketches,
         sketch_entities: sketches.unresolved_entities,
         sketch_constraints: sketches.unresolved_constraints,
@@ -1554,6 +1574,7 @@ fn project_design(
         profile_bodies: profile_bodies.undecoded,
         sketch_construction: sketches.unresolved_construction,
         sketch_axis_distances: sketches.native_axis_distances,
+        sketch_carrier_conflicts: sketches.native_carrier_conflicts,
         extrusion_losses: features.extrusion_losses,
         revolve_losses: features.revolve_losses,
         edge_treatment_losses: features.edge_treatment_losses,

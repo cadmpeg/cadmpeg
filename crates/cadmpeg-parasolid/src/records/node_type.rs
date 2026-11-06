@@ -19,6 +19,12 @@ pub const VERTEX: u16 = 18;
 pub const REGION: u16 = 19;
 /// A point, `POINT`.
 pub const POINT: u16 = 29;
+/// A straight line, `LINE`.
+pub const LINE: u16 = 30;
+/// A circle, `CIRCLE`.
+pub const CIRCLE: u16 = 31;
+/// An ellipse, `ELLIPSE`.
+pub const ELLIPSE: u16 = 32;
 /// A curve of intersection of two surfaces, `INTERSECTION`.
 pub const INTERSECTION: u16 = 38;
 /// The solved point chart of an intersection curve, `CHART`.
@@ -27,6 +33,16 @@ pub const CHART: u16 = 40;
 pub const LIMIT: u16 = 41;
 /// The control-point values of a B-spline, `BSPLINE_VERTICES`.
 pub const BSPLINE_VERTICES: u16 = 45;
+/// A plane, `PLANE`.
+pub const PLANE: u16 = 50;
+/// A circular cylinder, `CYLINDER`.
+pub const CYLINDER: u16 = 51;
+/// A circular cone, `CONE`.
+pub const CONE: u16 = 52;
+/// A sphere, `SPHERE`.
+pub const SPHERE: u16 = 53;
+/// A torus, `TORUS`.
+pub const TORUS: u16 = 54;
 /// A rolling-ball blend surface, `BLEND_SURF`.
 pub const BLEND_SURF: u16 = 56;
 /// One boundary of a blend surface, `BLEND_BOUND`.
@@ -45,6 +61,24 @@ pub const ATTRIB_DEF: u16 = 80;
 pub const ATTRIBUTE: u16 = 81;
 /// Integer attribute values, `INT_VALUES`.
 pub const INT_VALUES: u16 = 82;
+/// Real attribute values, `REAL_VALUES`.
+pub const REAL_VALUES: u16 = 83;
+/// Character attribute values, `CHAR_VALUES`.
+pub const CHAR_VALUES: u16 = 84;
+/// Point attribute values, `POINT_VALUES`.
+pub const POINT_VALUES: u16 = 85;
+/// Vector attribute values, `VECTOR_VALUES`.
+pub const VECTOR_VALUES: u16 = 86;
+/// Axis attribute values, `AXIS_VALUES`.
+pub const AXIS_VALUES: u16 = 87;
+/// Tag attribute values, `TAG_VALUES`.
+pub const TAG_VALUES: u16 = 88;
+/// Direction attribute values, `DIRECTION_VALUES`.
+pub const DIRECTION_VALUES: u16 = 89;
+/// Unicode attribute values, `UNICODE_VALUES`.
+pub const UNICODE_VALUES: u16 = 98;
+/// The field names of an attribute definition, `FIELD_NAMES`.
+pub const FIELD_NAMES: u16 = 99;
 /// A B-spline surface, `B_SURFACE`.
 pub const B_SURFACE: u16 = 124;
 /// The NURBS definition of a B-spline surface, `NURBS_SURF`.

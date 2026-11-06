@@ -875,7 +875,7 @@ mod nx {
         put_ref(&mut surface, 21, 21);
         s.extend(surface);
 
-        let mut descriptor = record(126, 48)?;
+        let mut descriptor = record(126, 49)?;
         put_ref(&mut descriptor, 2, 20);
         put_ref(&mut descriptor, 6, 1);
         put_ref(&mut descriptor, 8, 1);
@@ -885,18 +885,17 @@ mod nx {
         descriptor[19] = 5;
         descriptor[20..24].copy_from_slice(&2u32.to_be_bytes());
         descriptor[24..28].copy_from_slice(&2u32.to_be_bytes());
-        put_ref(&mut descriptor, 36, 30);
-        put_ref(&mut descriptor, 38, 31);
-        put_ref(&mut descriptor, 40, 32);
-        put_ref(&mut descriptor, 42, 33);
-        put_ref(&mut descriptor, 44, 125);
-        put_ref(&mut descriptor, 46, 21);
+        put_ref(&mut descriptor, 32, 3);
+        for (index, reference) in [22, 30, 31, 32, 33].into_iter().enumerate() {
+            put_ref(&mut descriptor, 34 + index * 3, reference);
+        }
         s.extend(descriptor);
 
         let mut data = record(125, 97 + 12 * 8)?;
         put_ref(&mut data, 2, 21);
         data[90] = b'+';
         data[91..95].copy_from_slice(&12u32.to_be_bytes());
+        put_ref(&mut data, 95, 22);
         for (index, value) in [
             0.0, 0.0, 0.0, 0.0, 0.02, 0.0, 0.01, 0.0, 0.0, 0.01, 0.02, 0.0,
         ]
@@ -933,19 +932,21 @@ mod nx {
         put_ref(&mut curve, 19, 40);
         put_ref(&mut curve, 21, 41);
         s.extend(curve);
-        let mut curve_descriptor = record(136, 27)?;
+        let mut curve_descriptor = record(136, 30)?;
         put_ref(&mut curve_descriptor, 2, 40);
         put_ref(&mut curve_descriptor, 4, 1);
         put_ref(&mut curve_descriptor, 8, 2);
         put_ref(&mut curve_descriptor, 10, 3);
         put_ref(&mut curve_descriptor, 14, 2);
         curve_descriptor[16] = 5;
-        put_ref(&mut curve_descriptor, 23, 42);
-        put_ref(&mut curve_descriptor, 25, 43);
+        for (index, reference) in [44, 42, 43].into_iter().enumerate() {
+            put_ref(&mut curve_descriptor, 21 + index * 3, reference);
+        }
         s.extend(curve_descriptor);
         let mut curve_data = record(135, 15 + 6 * 8)?;
         put_ref(&mut curve_data, 2, 41);
         curve_data[9..13].copy_from_slice(&6u32.to_be_bytes());
+        put_ref(&mut curve_data, 13, 44);
         for (index, value) in [0.0, 0.0, 0.0, 0.02, 0.0, 0.0].into_iter().enumerate() {
             put_f64(&mut curve_data, 15 + index * 8, value);
         }

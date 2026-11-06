@@ -28,7 +28,9 @@ pub(crate) fn relation_stays_native(
 ) -> bool {
     use super::PmDcSketchConstraintKind as Kind;
     match constraint.kind {
-        Kind::PolygonRelation { .. } | Kind::BlockGroup { .. } => true,
+        Kind::PolygonRelation { .. } | Kind::PolygonControl { .. } | Kind::BlockGroup { .. } => {
+            true
+        }
         Kind::CircleCenter {
             entity: first,
             center: second,
@@ -90,6 +92,7 @@ fn native_reason(
             "block member link retains instance membership; placed member curves have separate identities",
         ),
         PmDcSketchEntityKind::Spline { .. } => super::spline::native_reason(entity, entities),
+        PmDcSketchEntityKind::MemberCurve { data } => Some(data.native_reason()),
         PmDcSketchEntityKind::Ellipse { .. } if !closed_ellipse(entity) => Some(
             "ellipse state and endpoints require a directed trim rule",
         ),
@@ -122,6 +125,9 @@ pub(crate) fn native_losses(entities: &[PmDcSketchEntity]) -> Vec<LossNote> {
         if let Some(reason) = native_reason(entity, &sources) {
             let code = match entity.kind {
                 PmDcSketchEntityKind::Spline { .. } => InventorLossCode::SketchSplineCurveNative,
+                PmDcSketchEntityKind::MemberCurve { .. } => {
+                    InventorLossCode::SketchMemberCurveNative
+                }
                 PmDcSketchEntityKind::Ellipse { .. } => InventorLossCode::SketchEllipseCurveNative,
                 PmDcSketchEntityKind::Point { .. }
                 | PmDcSketchEntityKind::Line { .. }

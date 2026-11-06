@@ -71,6 +71,16 @@ cadmpeg_core::named_optional_field!(
 
 cadmpeg_core::named_optional_field!(deserialize_source_kind, String, "source_kind");
 cadmpeg_core::named_optional_field!(
+    deserialize_label,
+    crate::records::identity::Located<String>,
+    "label"
+);
+cadmpeg_core::named_optional_field!(
+    deserialize_deleted_members,
+    super::deleted_members::DesignDeletedMembers,
+    "deleted_members"
+);
+cadmpeg_core::named_optional_field!(
     deserialize_assembly_alignment,
     DesignAssemblyAlignment,
     "assembly_alignment"
@@ -689,6 +699,9 @@ pub(crate) struct DesignParameterScope {
     pub(crate) feature_ordinal: std::num::NonZeroU32,
     /// Byte offset of `feature_ordinal`.
     feature_ordinal_offset: u64,
+    /// Label and offset of its UTF-16LE code units.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) label: Option<crate::records::identity::Located<String>>,
     /// ASM delta-state identity produced by this scope, when active.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     history_state_id: Option<i64>,
@@ -709,9 +722,10 @@ pub(crate) struct DesignParameterScope {
     /// group grammar does not close.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) unclosed_construction_operand_groups: Vec<u32>,
-    /// Sketch reference members that name deleted sketch members.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub(crate) deleted_sketch_members: Vec<u32>,
+    /// Record-timestamp evidence for reference members that name deleted
+    /// members.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) deleted_members: Option<super::deleted_members::DesignDeletedMembers>,
     /// Per-file dynamic class tag of the paired header.
     pub(crate) paired_class_tag: DesignClassTag,
     /// Byte offset of the paired indexed record header.
@@ -737,6 +751,8 @@ pub(crate) struct DesignParameterScopeDraft {
     pub(crate) feature_ordinal: std::num::NonZeroU32,
     /// Byte offset of `feature_ordinal`.
     pub(crate) feature_ordinal_offset: u64,
+    /// Label and offset of its UTF-16LE code units.
+    pub(crate) label: Option<crate::records::identity::Located<String>>,
     /// ASM delta-state identity produced by this scope, when active.
     pub(crate) history_state_id: Option<i64>,
     /// ASM delta-state identity immediately preceding this scope, when active.
@@ -752,8 +768,9 @@ pub(crate) struct DesignParameterScopeDraft {
     /// Reference members whose records open a construction-operand group the
     /// group grammar does not close.
     pub(crate) unclosed_construction_operand_groups: Vec<u32>,
-    /// Sketch reference members that name deleted sketch members.
-    pub(crate) deleted_sketch_members: Vec<u32>,
+    /// Record-timestamp evidence for reference members that name deleted
+    /// members.
+    pub(crate) deleted_members: Option<super::deleted_members::DesignDeletedMembers>,
     /// Per-file dynamic class tag of the paired header.
     pub(crate) paired_class_tag: DesignClassTag,
     /// Byte offset of the paired indexed record header.
@@ -805,6 +822,13 @@ struct DesignParameterScopeSerde {
     feature_ordinal: u32,
     /// Byte offset of `feature_ordinal`.
     feature_ordinal_offset: u64,
+    /// Label and offset of its UTF-16LE code units.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_label"
+    )]
+    label: Option<crate::records::identity::Located<String>>,
     /// ASM delta-state identity produced by this scope, when active.
     #[serde(
         default,
@@ -1066,9 +1090,14 @@ struct DesignParameterScopeSerde {
     /// group grammar does not close.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     unclosed_construction_operand_groups: Vec<u32>,
-    /// Sketch reference members that name deleted sketch members.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    deleted_sketch_members: Vec<u32>,
+    /// Record-timestamp evidence for reference members that name deleted
+    /// members.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_deleted_members"
+    )]
+    deleted_members: Option<super::deleted_members::DesignDeletedMembers>,
     /// Exact point-and-direction construction carried by a `Hole` scope.
     #[serde(
         default,
@@ -2012,6 +2041,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                 DesignParameterScopePayloadError("feature_ordinal must be nonzero".into())
             })?,
             feature_ordinal_offset: wire.feature_ordinal_offset,
+            label: wire.label,
             history_state_id: wire.history_state_id,
             previous_history_state_id: wire.previous_history_state_id,
             previous_history_state_id_offset: wire.previous_history_state_id_offset,
@@ -2024,7 +2054,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
             .map_err(DesignParameterScopePayloadError)?,
             payload,
             unclosed_construction_operand_groups: wire.unclosed_construction_operand_groups,
-            deleted_sketch_members: wire.deleted_sketch_members,
+            deleted_members: wire.deleted_members,
             paired_class_tag: wire
                 .paired_class_tag
                 .try_into()
@@ -2065,6 +2095,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             coil: None,
             feature_ordinal: scope.feature_ordinal.get(),
             feature_ordinal_offset: scope.feature_ordinal_offset,
+            label: scope.label,
             history_state_id: scope.history_state_id,
             history_state_id_offset,
             previous_history_state_id: scope.previous_history_state_id,
@@ -2107,7 +2138,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             joint_origin_frame: None,
             work_point_construction: None,
             unclosed_construction_operand_groups: scope.unclosed_construction_operand_groups,
-            deleted_sketch_members: scope.deleted_sketch_members,
+            deleted_members: scope.deleted_members,
             hole_construction: None,
             hole_extent: None,
             sketch_entity: None,
@@ -2315,6 +2346,18 @@ impl DesignParameterScope {
             .checked_sub(draft.feature_ordinal_offset)
             .and_then(|length| usize::try_from(length).ok())
             .ok_or_else(|| fail("feature_ordinal_offset"))?;
+        if let Some(label) = &draft.label {
+            let units = label.value.encode_utf16().count();
+            if units == 0
+                || units > 256
+                || label.value.chars().any(char::is_control)
+                || draft.feature_ordinal_offset.checked_add(12) != Some(label.offset)
+                || 78usize.checked_add(units * 2) != Some(tail)
+                || draft.previous_history_state_id_offset.is_some()
+            {
+                return Err(fail("label"));
+            }
+        }
         // The reference-table stride shows the reference spelling: 11-byte
         // plain references or 51-byte typed references.
         // A table that fits neither width falls through to the plain checks.
@@ -2443,6 +2486,7 @@ impl DesignParameterScope {
             history_state_id_offset,
             feature_ordinal: draft.feature_ordinal,
             feature_ordinal_offset: draft.feature_ordinal_offset,
+            label: draft.label,
             history_state_id: draft.history_state_id,
             previous_history_state_id: draft.previous_history_state_id,
             previous_history_state_id_offset: draft.previous_history_state_id_offset,
@@ -2451,7 +2495,7 @@ impl DesignParameterScope {
             occurrence_transfer: None,
             payload: draft.payload,
             unclosed_construction_operand_groups: draft.unclosed_construction_operand_groups,
-            deleted_sketch_members: draft.deleted_sketch_members,
+            deleted_members: draft.deleted_members,
             paired_class_tag: draft.paired_class_tag,
             paired_byte_offset: draft.paired_byte_offset,
         };
@@ -2475,6 +2519,7 @@ impl DesignParameterScope {
             kind_offset: self.kind_offset,
             feature_ordinal: self.feature_ordinal,
             feature_ordinal_offset: self.feature_ordinal_offset,
+            label: self.label,
             history_state_id: self.history_state_id,
             previous_history_state_id: self.previous_history_state_id,
             previous_history_state_id_offset: self.previous_history_state_id_offset,
@@ -2482,7 +2527,7 @@ impl DesignParameterScope {
             reference_members: self.reference_members,
             payload: self.payload,
             unclosed_construction_operand_groups: self.unclosed_construction_operand_groups,
-            deleted_sketch_members: self.deleted_sketch_members,
+            deleted_members: self.deleted_members,
             paired_class_tag: self.paired_class_tag,
             paired_byte_offset: self.paired_byte_offset,
         }
@@ -2509,6 +2554,11 @@ impl DesignParameterScope {
     pub(crate) fn frame_length(&self) -> u64 {
         self.frame_length
     }
+    #[cfg(test)]
+    pub(crate) fn set_fixture_kind_offset(&mut self, offset: u64) {
+        self.kind_offset = offset;
+    }
+
     pub(crate) fn kind_offset(&self) -> u64 {
         self.kind_offset
     }
@@ -3169,6 +3219,7 @@ impl DesignParameterScope {
             kind_offset: 32,
             feature_ordinal: std::num::NonZeroU32::MIN,
             feature_ordinal_offset: 48,
+            label: None,
             history_state_id: None,
             previous_history_state_id: None,
             previous_history_state_id_offset: None,
@@ -3179,7 +3230,7 @@ impl DesignParameterScope {
             }]),
             payload: payload.try_into().unwrap(),
             unclosed_construction_operand_groups: Vec::new(),
-            deleted_sketch_members: Vec::new(),
+            deleted_members: None,
             paired_class_tag: DesignClassTag::try_from("257".to_owned()).unwrap(),
             paired_byte_offset: 128,
         })

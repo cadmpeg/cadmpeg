@@ -135,6 +135,7 @@ impl Serialize for DesignParameterScope {
 
         emit!("feature_ordinal", self.feature_ordinal.get());
         emit!("feature_ordinal_offset", self.feature_ordinal_offset);
+        emit_opt!("label", self.label.as_ref());
         emit_opt!("history_state_id", self.history_state_id);
         emit!("history_state_id_offset", self.history_state_id_offset());
         emit_opt!("previous_history_state_id", self.previous_history_state_id);
@@ -309,8 +310,8 @@ impl Serialize for DesignParameterScope {
                 &self.unclosed_construction_operand_groups
             );
         }
-        if !self.deleted_sketch_members.is_empty() {
-            emit!("deleted_sketch_members", &self.deleted_sketch_members);
+        if let Some(deleted_members) = &self.deleted_members {
+            emit!("deleted_members", deleted_members);
         }
         emit_opt!("hole_construction", self.hole_construction());
         emit_opt!("hole_extent", self.hole_extent());

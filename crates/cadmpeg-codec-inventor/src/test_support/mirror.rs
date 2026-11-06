@@ -729,6 +729,7 @@ impl Fixture {
                 role: BrepSegmentRole::Document,
             }],
             issues: Vec::new(),
+            opaque_base_units: std::collections::HashMap::default(),
         };
         let sketch = crate::sketch::SketchInventory {
             sketches: Vec::new(),

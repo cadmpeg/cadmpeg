@@ -51,6 +51,66 @@ fn vertex(xmt: u32, node_id: u32) -> Vec<u8> {
     bytes
 }
 
+/// A first-use base-schema BODY: `highest_node_id`, then pointers, reals,
+/// and bytes.
+fn body(xmt: u32, highest_node_id: u32) -> Vec<u8> {
+    let mut bytes = u16::from(NodeKind::Body.code()).to_be_bytes().to_vec();
+    bytes.push(255);
+    bytes.extend(encoded_xmt(xmt));
+    bytes.extend(highest_node_id.to_be_bytes());
+    for _ in 0..6 {
+        bytes.extend(encoded_xmt(1));
+    }
+    bytes.extend(1.0e3f64.to_be_bytes());
+    bytes.extend(1.0e-8f64.to_be_bytes());
+    for _ in 0..3 {
+        bytes.extend(encoded_xmt(1));
+    }
+    bytes.push(0);
+    bytes.extend(encoded_xmt(1));
+    bytes.extend([1, 0]);
+    for _ in 0..7 {
+        bytes.extend(encoded_xmt(1));
+    }
+    bytes
+}
+
+/// A first-use base-schema REGION owned by `body`.
+fn region(xmt: u32, node_id: u32, body: u32) -> Vec<u8> {
+    let mut bytes = u16::from(NodeKind::Region.code()).to_be_bytes().to_vec();
+    bytes.push(255);
+    bytes.extend(encoded_xmt(xmt));
+    bytes.extend(node_id.to_be_bytes());
+    for reference in [1, body, 1, 1, 1] {
+        bytes.extend(encoded_xmt(reference));
+    }
+    bytes.push(b'S');
+    bytes
+}
+
+/// A first-use EDGE whose edit program inserts a pointer before `tolerance`.
+fn edited_edge(xmt: u32, node_id: u32) -> Vec<u8> {
+    let mut bytes = 16u16.to_be_bytes().to_vec();
+    bytes.push(11);
+    bytes.extend(b"CC");
+    bytes.push(b'I');
+    bytes.push(5);
+    bytes.extend(b"extra");
+    bytes.extend(12u16.to_be_bytes());
+    bytes.extend([0, 1]);
+    bytes.extend(b"CCCCCCCC");
+    bytes.push(b'Z');
+    bytes.extend(encoded_xmt(xmt));
+    bytes.extend(node_id.to_be_bytes());
+    bytes.extend(encoded_xmt(1));
+    bytes.extend(encoded_xmt(1));
+    bytes.extend(0.0f64.to_be_bytes());
+    for reference in [45, 1, 46, 9, 1, 1, 3] {
+        bytes.extend(encoded_xmt(reference));
+    }
+    bytes
+}
+
 fn parse(bytes: &[u8]) -> Graph {
     Graph::parse_source(bytes).unwrap()
 }
@@ -306,4 +366,124 @@ fn intersection_first_use(xmt: u32, supports: [u32; 2]) -> Vec<u8> {
     let mut bytes = intersection(xmt, supports);
     bytes.insert(2, 255);
     bytes
+}
+
+#[test]
+fn terminated_body_and_region_keep_their_framed_identity_and_span() {
+    with_decode_context(|_ctx| {
+        let mut bytes = header(13006, true);
+        let body_at = bytes.len();
+        bytes.extend(body(3, 40));
+        let region_at = bytes.len();
+        bytes.extend(region(5, 41, 3));
+        let end = bytes.len();
+        bytes.extend(END);
+        let graph = parse(&bytes);
+        let body = graph.get(NodeKind::Body, 3).expect("framed BODY");
+        let highest_node_id = body.node_id();
+        assert_eq!(
+            (body.pos(), body.end(), highest_node_id),
+            (body_at, region_at, Some(40))
+        );
+        let region = graph.get(NodeKind::Region, 5).expect("framed REGION");
+        assert_eq!(
+            (region.pos(), region.end(), region.node_id()),
+            (region_at, end, Some(41))
+        );
+    });
+}
+
+#[test]
+fn terminated_edge_with_an_inserted_base_field_is_refused() {
+    with_decode_context(|_ctx| {
+        let mut bytes = header(13006, true);
+        let start = bytes.len();
+        bytes.extend(edited_edge(11, 73));
+        bytes.extend(END);
+        let graph = parse(&bytes);
+        assert_eq!(graph.kind_count(NodeKind::Edge), 0);
+        assert_eq!(graph.primary_edge_refusals(), [start]);
+    });
+}
+
+/// A first-use VERTEX whose edit program either retypes `point` to a LINE
+/// pointer or inserts a pointer before `tolerance`.
+fn edited_vertex(xmt: u32, node_id: u32, retype_point: bool) -> Vec<u8> {
+    let mut bytes = u16::from(NodeKind::Vertex.code()).to_be_bytes().to_vec();
+    bytes.push(if retype_point { 8 } else { 9 });
+    if retype_point {
+        bytes.extend(b"CCCCCD");
+        bytes.push(b'I');
+        bytes.push(5);
+        bytes.extend(b"point");
+        bytes.extend(u16::from(NodeKind::Line.code()).to_be_bytes());
+    } else {
+        bytes.extend(b"CCCCCC");
+        bytes.push(b'I');
+        bytes.push(5);
+        bytes.extend(b"extra");
+        bytes.extend(12u16.to_be_bytes());
+    }
+    bytes.extend([0, 1]);
+    bytes.extend(b"CC");
+    bytes.push(b'Z');
+    bytes.extend(encoded_xmt(xmt));
+    bytes.extend(node_id.to_be_bytes());
+    for reference in [1, 1, 1, 1, 45] {
+        bytes.extend(encoded_xmt(reference));
+    }
+    if !retype_point {
+        bytes.extend(encoded_xmt(1));
+    }
+    bytes.extend(0.0f64.to_be_bytes());
+    bytes.extend(encoded_xmt(3));
+    bytes
+}
+
+#[test]
+fn terminated_vertex_with_an_edited_base_field_reports_its_unresolved_projection() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    for retype_point in [false, true] {
+        let mut bytes = header(13006, true);
+        let start = bytes.len();
+        bytes.extend(edited_vertex(7, 73, retype_point));
+        bytes.extend(END);
+        with_decode_context(|_ctx| {
+            let graph = parse(&bytes);
+            assert_eq!(graph.kind_count(NodeKind::Vertex), 0);
+            assert_eq!(graph.primary_node_refusals(), [(NodeKind::Vertex, start)]);
+        });
+        let file = crate::test_support::test_prt::prt_with_partition(&bytes);
+        let decoded = crate::NxCodec
+            .decode(&mut std::io::Cursor::new(file), &DecodeOptions::default())
+            .expect("retained edited VERTEX Source");
+        let code = crate::loss::NxLossCode::PrimaryNodeUnresolved.kind();
+        assert_eq!(
+            decoded
+                .report()
+                .losses
+                .iter()
+                .filter(|loss| loss.code == code)
+                .count(),
+            1
+        );
+    }
+}
+
+#[test]
+fn terminated_vertices_that_share_an_identity_are_both_refused() {
+    with_decode_context(|_ctx| {
+        let mut bytes = header(13006, false);
+        let first = bytes.len();
+        bytes.extend(vertex(82, 73));
+        let second = bytes.len();
+        bytes.extend(vertex(82, 74));
+        bytes.extend(END);
+        let graph = parse(&bytes);
+        assert_eq!(graph.kind_count(NodeKind::Vertex), 0);
+        assert_eq!(
+            graph.primary_node_refusals(),
+            [(NodeKind::Vertex, first), (NodeKind::Vertex, second)]
+        );
+    });
 }
