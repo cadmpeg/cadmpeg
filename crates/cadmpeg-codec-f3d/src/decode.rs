@@ -2800,7 +2800,7 @@ impl<'a> F3dDecodeSession<'a> {
             use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput, PartSpec};
 
             let mut parts = PartOutput::new(cadmpeg_ir::CodecFormat::F3d, self.ctx);
-            for frame in &act.untyped_spans {
+            for frame in act.untyped_spans {
                 let source = scan.entry_view(&frame.stream).ok_or_else(|| {
                     CodecError::malformed("ACT record stream has no source view")
                 })?;
@@ -2821,11 +2821,13 @@ impl<'a> F3dDecodeSession<'a> {
                     spec = spec.dropping(cadmpeg_ir::ids::Identity::try_from(id.as_str())
                         .map_err(CodecError::malformed)?);
                 }
-                self.ctx.decode_part(&mut parts, extent, spec, |_| {
-                    Err::<(), _>(CodecError::malformed(format_args!(
-                        "ACT record {}: {}", frame.record_index, frame.reason
-                    )))
-                })?;
+                let error = match frame.error {
+                    CodecError::Malformed(message) => CodecError::malformed(format_args!(
+                        "ACT record {}: {message}", frame.record_index
+                    )),
+                    error => error,
+                };
+                self.ctx.decode_part(&mut parts, extent, spec, |_| Err::<(), _>(error))?;
             }
             let (_, native, fidelity, losses) = parts.into_parts();
             let stubs = native.namespace("f3d")
