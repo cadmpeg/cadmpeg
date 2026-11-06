@@ -136,47 +136,28 @@ fn integer(fields: Option<&Map<String, Value>>, name: &str, default: i32) -> i32
         .unwrap_or(default)
 }
 
-pub(super) fn layer_linetype(ir: &CadIr, layer: &PresentationLayer) -> (i32, i32) {
+pub(super) fn layer_linetype(
+    ir: &CadIr,
+    layer: &PresentationLayer,
+) -> Result<(i32, i32), CodecError> {
     let native = own_layer(ir, layer);
     let source = integer(native.as_ref(), "linetype_index", -1);
-    if source < 0 {
-        return (source, source);
-    }
-    let mut matches = records(ir, "linetypes")
-        .iter()
-        .enumerate()
-        .filter(|(_, record)| {
-            record
-                .field("archive_index")
-                .and_then(|value| value.as_i64())
-                == Some(i64::from(source))
-        });
-    let first = matches
-        .next()
-        .and_then(|(index, _)| i32::try_from(index).ok());
-    let target = if matches.next().is_none() {
-        first
-    } else {
-        None
-    };
-    (source, target.unwrap_or(-1))
+    Ok((source, native::linetype_index(ir, source)?.unwrap_or(-1)))
 }
 
-pub(super) fn layer_linetype_losses(ir: &CadIr) -> Vec<LossNote> {
-    ir.model
-        .presentation_layers
-        .iter()
-        .filter_map(|layer| {
-            let (source, target) = layer_linetype(ir, layer);
-            (source != target).then(|| {
-                RhinoLossCode::WriterLayerLinetypeReduced.note(format!(
-                    "layer {} native {} linetype index {source} is written as {target}",
-                    layer.id,
-                    layer.native_ref.as_deref().unwrap_or("unlinked")
-                ))
-            })
-        })
-        .collect()
+pub(super) fn layer_linetype_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
+    let mut losses = Vec::new();
+    for layer in &ir.model.presentation_layers {
+        let (source, target) = layer_linetype(ir, layer)?;
+        if source != target {
+            losses.push(RhinoLossCode::WriterLayerLinetypeReduced.note(format!(
+                "layer {} native {} linetype index {source} is written as {target}",
+                layer.id,
+                layer.native_ref.as_deref().unwrap_or("unlinked")
+            )));
+        }
+    }
+    Ok(losses)
 }
 
 fn color(fields: Option<&Map<String, Value>>, name: &str) -> Result<[u8; 4], CodecError> {
@@ -290,7 +271,7 @@ pub(super) fn layers(ir: &CadIr) -> Result<Vec<Vec<u8>>, CodecError> {
         payload.extend(1.0_f64.to_le_bytes());
         payload.extend(utf16(&layer.name)?);
         payload.push(u8::from(layer.visible.unwrap_or(true)));
-        payload.extend(layer_linetype(ir, layer).1.to_le_bytes());
+        payload.extend(layer_linetype(ir, layer)?.1.to_le_bytes());
         payload.extend(color(fields, "plot_color")?);
         payload.extend(
             fields

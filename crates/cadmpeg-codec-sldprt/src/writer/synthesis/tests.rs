@@ -141,7 +141,7 @@ fn empty_authored_document_produces_a_native_file_and_empty_model_loss() {
 }
 
 #[test]
-fn unrepresented_source_content_never_reaches_patch_or_replay() {
+fn unrepresented_classes_content_never_reaches_patch_or_replay() {
     let source = crate::test_support::history::sldprt_with_body_and_history(
         &crate::test_support::parasolid::triangle_body(),
     );

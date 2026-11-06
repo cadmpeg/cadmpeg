@@ -4,7 +4,9 @@ The decoder projects readable bodies and topology, feature history, sketches,
 parameters, configurations, presentation, and PMI into their neutral arenas.
 Typed native records retain SOLIDWORKS-specific content. Feature
 `source_properties` are empty; the decoder consumes feature fields into their
-typed homes. Custom properties project to neutral attributes.
+typed homes. Custom properties project to neutral attributes. Parameter properties are
+empty; `EquationId` and `Driven` stay in the native dimension record.
+`Driven` supplies the parameter's `driving` state.
 
 The active configuration's `swConfigurationNeedsUpdate="YES"` marks every
 feature `needs_recompute`. The decoder keeps the cached geometry and parameter

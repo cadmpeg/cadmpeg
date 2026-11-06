@@ -290,8 +290,47 @@ fn decoded(
     admitted_entities: &mut u64,
     outcome: RouteOutcome,
 ) -> Result<Decoded, CodecError> {
-    let (annotations, unknowns) = source;
+    let (annotations, mut unknowns) = source;
     let RouteOutcome { design_held, parts } = outcome;
+    if !design_held {
+        for (ordinal, entry) in scan.container.entries.iter().enumerate() {
+            if !entry_holds_design(entry.content()) {
+                continue;
+            }
+            let Some((offset, len)) = entry.file_span() else {
+                continue;
+            };
+            let start = usize::try_from(offset)
+                .map_err(|_| CodecError::malformed("NX entry offset exceeds usize"))?;
+            let len = usize::try_from(len)
+                .map_err(|_| CodecError::malformed("NX entry length exceeds usize"))?;
+            let end = start
+                .checked_add(len)
+                .ok_or_else(|| CodecError::malformed("NX entry extent overflows"))?;
+            let extent = scan
+                .container
+                .data
+                .view()
+                .child(start, end)
+                .ok_or_else(|| {
+                    CodecError::malformed("NX entry extent lies outside its container")
+                })?;
+            let id: cadmpeg_ir::ids::UnknownId =
+                ids::IdScope::native(cadmpeg_ir::identity_component!("failed-attachment"))
+                    .id(&cadmpeg_ir::identity_component!("entry"), ordinal);
+            ctx.retain_bytes(
+                cadmpeg_core::decode::u64_from_index(len),
+                "retain NX failed attachment entry",
+            )?;
+            scan.note_untyped(id.as_str(), [cadmpeg_ir::ArenaClass::Design]);
+            unknowns.push(UnknownRecord::retained(
+                id,
+                offset,
+                extent.window().to_vec(),
+                Vec::new(),
+            ));
+        }
+    }
     let (_staged_model, staged_native, staged_fidelity, staged_losses) = parts.into_parts();
     // Lanes write the live document; the helper's stages stay empty. Only
     // give-ups (retained bytes, stub records, losses) arrive here.
