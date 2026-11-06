@@ -473,6 +473,12 @@ fn subset_curve_reports_its_unwritten_cache_fit_tolerance() {
     assert!(validation.is_ok(), "{:?}", validation.findings);
     let row = &crate::writer::REDUCED_FIELDS[2];
     assert_eq!(row.path, "model.procedural_curves[].definition");
+    assert_eq!(
+        row.storage,
+        cadmpeg_ir::codec::write::ReducedStorage::Normalized {
+            loss: "step/geometry.procedural-cache-tolerance-omitted",
+        }
+    );
     let original = serde_json::to_value(ir.model.procedural_curves[0].definition()).unwrap();
     let normalized = cadmpeg_test_support::reduced::step_trimmed_curve_cache(&original);
     assert_ne!(original, normalized);
