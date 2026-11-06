@@ -155,10 +155,10 @@ pub(super) fn regenerate(
     Some(entity)
 }
 
-fn source_parameter_sequence(
-    ir: &CadIr,
+fn source_curve_on_surface<'a>(
+    ir: &'a CadIr,
     pcurve: &cadmpeg_ir::geometry::pcurve::Pcurve,
-) -> Option<u64> {
+) -> Option<&'a cadmpeg_ir::native::NativeRecord> {
     let mut owners = ir
         .model
         .coedges
@@ -181,15 +181,22 @@ fn source_parameter_sequence(
         .faces
         .iter()
         .find(|face| face.id == boundary.face)?;
-    if face.loops.iter().count() != 1 || !face.loops.iter().any(|id| *id == boundary.id) {
+    if !matches!(
+        face.loops,
+        cadmpeg_ir::topology::FaceLoops::Classified { .. }
+    ) {
         return None;
     }
+    let loop_index = face.loops.iter().position(|id| *id == boundary.id)?;
     let face_sequence = face
         .id
         .as_str()
         .strip_prefix("iges:model:face#D")?
         .parse::<u64>()
         .ok()?;
+    if boundary.id.as_str() != format!("iges:model:loop#D{face_sequence}:{loop_index}") {
+        return None;
+    }
     let surface = ir
         .model
         .surfaces
@@ -227,11 +234,11 @@ fn source_parameter_sequence(
     };
     if integer(face_fields, 1)? != surface_sequence
         || integer(face_fields, 2)? != 1
-        || integer(face_fields, 3)? != 0
+        || usize::try_from(integer(face_fields, 3)?).ok()? != face.loops.len().checked_sub(1)?
     {
         return None;
     }
-    let curve_on_surface = find(integer(face_fields, 4)?)?;
+    let curve_on_surface = find(integer(face_fields, 4 + loop_index)?)?;
     if curve_on_surface.field("entity_type")?.as_u64()? != 142
         || curve_on_surface.field("transform")?.as_i64()? != 0
     {
@@ -242,7 +249,7 @@ fn source_parameter_sequence(
     if integer(curve_fields, 2)? != surface_sequence {
         return None;
     }
-    integer(curve_fields, 3)
+    Some(curve_on_surface)
 }
 
 pub(super) fn parameter_curve(
@@ -251,7 +258,14 @@ pub(super) fn parameter_curve(
     curve: &cadmpeg_ir::geometry::nurbs::NurbsCurve,
     range: cadmpeg_ir::units::FiniteVector<2>,
 ) -> Option<Entity> {
-    let source_parameter_sequence_value = source_parameter_sequence(ir, pcurve)?;
+    let source = source_curve_on_surface(ir, pcurve)?;
+    let fields = source.field("parameters")?;
+    let source_parameter_sequence_value = fields
+        .as_array()?
+        .get(3)?
+        .get("value")?
+        .get("value")?
+        .as_u64()?;
     let records = ir.native.namespace("iges")?.arenas().get("entities")?;
     let mut matches = ir.model.curves.iter().filter(|candidate| {
         let Some(SolvedCurveGeometry::Nurbs(solved)) = candidate.geometry.solved() else {
@@ -323,4 +337,78 @@ pub(super) fn clear_written_parameter_losses(
             });
         }
     }
+}
+
+pub(super) fn curve_on_surface_properties(
+    ir: &CadIr,
+    pcurve: &cadmpeg_ir::geometry::pcurve::Pcurve,
+    parameter: &Entity,
+    model: &Entity,
+) -> Option<(String, String, i64)> {
+    let source = source_curve_on_surface(ir, pcurve)?;
+    let fields = source.field("parameters")?;
+    let fields = fields.as_array()?;
+    let integer = |index: usize| fields.get(index)?.get("value")?.get("value")?.as_i64();
+    if integer(1)? != 0 || parameter.type_code != 106 || model.type_code != 106 {
+        return None;
+    }
+    for (entity, index) in [(parameter, 3), (model, 4)] {
+        let identity = format!("iges:entity:directory#{}", integer(index)?);
+        if !entity.source_targets.contains(&identity) {
+            return None;
+        }
+    }
+    let preference = integer(5)?;
+    if !(1..=3).contains(&preference) {
+        return None;
+    }
+    let bytes: cadmpeg_ir::native::bytes::NativeBytes =
+        serde_json::from_value(source.field("label")?).ok()?;
+    let label = std::str::from_utf8(bytes.as_ref()).ok()?;
+    if label.len() > 8
+        || !label
+            .bytes()
+            .all(|byte| byte.is_ascii_graphic() || byte == b' ')
+    {
+        return None;
+    }
+    Some((source.id().to_owned(), label.to_owned(), preference))
+}
+
+pub(super) fn boundary_properties(
+    ir: &CadIr,
+    boundary: &super::WrittenBoundary<'_>,
+    pcurve_indices: &std::collections::BTreeMap<String, usize>,
+    entities: &[Entity],
+    model_index: usize,
+    parameter_reference: &str,
+) -> (Vec<String>, String, i64) {
+    let preserved = (|| {
+        let [written] = boundary.coedges.as_slice() else {
+            return None;
+        };
+        let [use_] = written.pcurves.as_slice() else {
+            return None;
+        };
+        let parameter_index = *pcurve_indices.get(use_.pcurve.id.as_str())?;
+        if parameter_reference != super::reference_marker(parameter_index) {
+            return None;
+        }
+        curve_on_surface_properties(
+            ir,
+            use_.pcurve,
+            entities.get(parameter_index)?,
+            entities.get(model_index)?,
+        )
+    })();
+    preserved.map_or_else(
+        || {
+            (
+                Vec::new(),
+                String::new(),
+                i64::from(super::CURVE_ON_SURFACE_PREFERENCE_MODEL_CURVE),
+            )
+        },
+        |(id, label, preference)| (vec![id], label, preference),
+    )
 }

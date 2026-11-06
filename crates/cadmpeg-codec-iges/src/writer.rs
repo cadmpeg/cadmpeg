@@ -4567,19 +4567,27 @@ fn curve_on_surface_entity(
             EntityStatus::ParameterCurve,
         )?)
     };
+    let (source_targets, label, preference) = copious_curve::boundary_properties(
+        ir,
+        boundary,
+        pcurve_indices,
+        entities,
+        model_curve,
+        &parameter_curve,
+    );
     Ok(Entity {
         structure: None,
         property_links: Vec::new(),
         association_links: Vec::new(),
         line_font: None,
-        source_targets: Vec::new(),
+        source_targets,
         type_code: 142,
         form: 0,
-        label: String::new(),
+        label,
         status: EntityStatus::PhysicallyDependent,
         subscript: 0,
         parameter_body: format!(
-            "{CURVE_ON_SURFACE_CREATION_UNSPECIFIED},{},{},{},{CURVE_ON_SURFACE_PREFERENCE_MODEL_CURVE};",
+            "{CURVE_ON_SURFACE_CREATION_UNSPECIFIED},{},{},{},{preference};",
             reference_marker(surface_index),
             parameter_curve,
             reference_marker(model_curve)

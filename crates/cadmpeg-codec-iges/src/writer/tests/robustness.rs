@@ -443,3 +443,153 @@ fn trimmed_plane_retains_parameter_curve_name() {
         && record.field("form").and_then(|value| value.as_i64()) == Some(63)
         && record.field("use_flag").and_then(|value| value.as_i64()) == Some(5)));
 }
+
+#[test]
+fn trimmed_plane_synthesis_preserves_records_or_names_losses() {
+    use cadmpeg_test_support::writer_closure::{without_fidelity, Redecoded};
+    let harness = cadmpeg_test_support::golden::Harness::new(
+        env!("CARGO_MANIFEST_DIR"),
+        "igs",
+        "UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-iges golden",
+    );
+    let mut findings = Vec::new();
+    let (name, bytes) = harness
+        .fixture_inputs()
+        .into_iter()
+        .find(|(name, _)| name == "trimmed_plane")
+        .expect("trimmed plane fixture");
+    {
+        let options = DecodeOptions {
+            depth: IgesCodec.request(),
+            ..DecodeOptions::default()
+        };
+        let input = IgesCodec
+            .decode(&mut Cursor::new(bytes), &options)
+            .expect("fixture decodes");
+        let redecode = |written: &[u8]| -> Result<Redecoded, String> {
+            let output = IgesCodec
+                .decode(&mut Cursor::new(written), &options)
+                .map_err(|error| error.to_string())?;
+            Ok(Redecoded {
+                ir: serde_json::to_value(output.ir()).map_err(|error| error.to_string())?,
+                loss_codes: output
+                    .report()
+                    .losses
+                    .iter()
+                    .map(|loss| loss.code.to_string())
+                    .collect(),
+                members: Vec::new(),
+            })
+        };
+        findings.extend(
+            without_fidelity(&input, &IgesCodec, &redecode)
+                .into_iter()
+                .map(|finding| format!("{name}: {finding}")),
+        );
+    }
+    assert!(
+        findings.is_empty(),
+        "fixture synthesis findings:\n{}",
+        findings.join("\n")
+    );
+}
+
+#[test]
+fn trimmed_plane_with_inner_loop_preserves_records_or_names_losses() {
+    use cadmpeg_test_support::writer_closure::{without_fidelity, Redecoded};
+    let harness = cadmpeg_test_support::golden::Harness::new(
+        env!("CARGO_MANIFEST_DIR"),
+        "igs",
+        "UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-iges golden",
+    );
+    let mut findings = Vec::new();
+    let (name, bytes) = harness
+        .fixture_inputs()
+        .into_iter()
+        .find(|(name, _)| name == "trimmed_plane_inner_loop")
+        .expect("trimmed plane with inner loop fixture");
+    {
+        let options = DecodeOptions {
+            depth: IgesCodec.request(),
+            ..DecodeOptions::default()
+        };
+        let input = IgesCodec
+            .decode(&mut Cursor::new(bytes), &options)
+            .expect("fixture decodes");
+        let redecode = |written: &[u8]| -> Result<Redecoded, String> {
+            let output = IgesCodec
+                .decode(&mut Cursor::new(written), &options)
+                .map_err(|error| error.to_string())?;
+            Ok(Redecoded {
+                ir: serde_json::to_value(output.ir()).map_err(|error| error.to_string())?,
+                loss_codes: output
+                    .report()
+                    .losses
+                    .iter()
+                    .map(|loss| loss.code.to_string())
+                    .collect(),
+                members: Vec::new(),
+            })
+        };
+        findings.extend(
+            without_fidelity(&input, &IgesCodec, &redecode)
+                .into_iter()
+                .map(|finding| format!("{name}: {finding}")),
+        );
+    }
+    assert!(
+        findings.is_empty(),
+        "fixture synthesis findings:\n{}",
+        findings.join("\n")
+    );
+}
+
+#[test]
+fn bounded_associativity_synthesis_preserves_records_or_names_losses() {
+    use cadmpeg_test_support::writer_closure::{without_fidelity, Redecoded};
+    let harness = cadmpeg_test_support::golden::Harness::new(
+        env!("CARGO_MANIFEST_DIR"),
+        "igs",
+        "UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-iges golden",
+    );
+    let mut findings = Vec::new();
+    let (name, bytes) = harness
+        .fixture_inputs()
+        .into_iter()
+        .find(|(name, _)| name == "bounded_associativity_forms")
+        .expect("associativity fixture");
+    {
+        let options = DecodeOptions {
+            depth: IgesCodec.request(),
+            ..DecodeOptions::default()
+        };
+        let input = IgesCodec
+            .decode(&mut Cursor::new(bytes), &options)
+            .expect("fixture decodes");
+        let redecode = |written: &[u8]| -> Result<Redecoded, String> {
+            let output = IgesCodec
+                .decode(&mut Cursor::new(written), &options)
+                .map_err(|error| error.to_string())?;
+            Ok(Redecoded {
+                ir: serde_json::to_value(output.ir()).map_err(|error| error.to_string())?,
+                loss_codes: output
+                    .report()
+                    .losses
+                    .iter()
+                    .map(|loss| loss.code.to_string())
+                    .collect(),
+                members: Vec::new(),
+            })
+        };
+        findings.extend(
+            without_fidelity(&input, &IgesCodec, &redecode)
+                .into_iter()
+                .map(|finding| format!("{name}: {finding}")),
+        );
+    }
+    assert!(
+        findings.is_empty(),
+        "fixture synthesis findings:\n{}",
+        findings.join("\n")
+    );
+}
