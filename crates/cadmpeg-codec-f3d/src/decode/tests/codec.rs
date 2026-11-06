@@ -81,6 +81,16 @@ fn retained_untyped_act_record_marks_its_content_classes() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
+    let unreadable = decoded.report().losses.iter().filter(|loss| {
+        loss.code == cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable
+            .note(String::new()).code
+    }).count();
+    assert_eq!(unreadable, 1);
+    let unknowns = decoded.ir().native_unknowns("f3d").unwrap();
+    assert_eq!(unknowns.len(), 1);
+    let retained = decoded.source_fidelity().retained_record(unknowns[0].id.as_str()).unwrap();
+    let end = usize::try_from(records[1].1).unwrap();
+    assert_eq!(retained.data(), Some(&bulk[..end]));
     let unrepresented = decoded.source_fidelity().unrepresented();
     assert!(unrepresented.contains(&ArenaClass::Model));
     assert!(unrepresented.contains(&ArenaClass::Design));
