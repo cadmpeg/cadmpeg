@@ -241,6 +241,10 @@ pub(crate) enum RhinoLossCode {
     WriterCarrierResolved,
     /// Material records have no writer encoding.
     WriterMaterialOmitted,
+    /// Material texture channels cannot be written.
+    WriterMaterialTextureOmitted,
+    /// A material identity is changed to keep physical components distinct.
+    WriterMaterialUuidReassigned,
     /// Attribute records have no writer encoding.
     WriterAttributesOmitted,
     /// A native light has incomplete or unrepresentable fields.
@@ -259,6 +263,8 @@ pub(crate) enum RhinoLossCode {
     WriterLinetypeReduced,
     /// A layer linetype reference changes its archive index or is omitted.
     WriterLayerLinetypeReduced,
+    /// A layer material reference changes its archive index or is omitted.
+    WriterLayerMaterialReduced,
     /// Layer membership cannot be assigned to an individual non-object record.
     WriterLayerMembershipOmitted,
     /// An unspecified layer visibility is written as the native default.
@@ -393,6 +399,8 @@ impl RhinoLossCode {
         Self::WriterPcurveReversalDefaulted,
         Self::WriterCarrierResolved,
         Self::WriterMaterialOmitted,
+        Self::WriterMaterialTextureOmitted,
+        Self::WriterMaterialUuidReassigned,
         Self::WriterAttributesOmitted,
         Self::WriterLightOmitted,
         Self::WriterLightIndexReassigned,
@@ -402,6 +410,7 @@ impl RhinoLossCode {
         Self::WriterLinetypeOmitted,
         Self::WriterLinetypeReduced,
         Self::WriterLayerLinetypeReduced,
+        Self::WriterLayerMaterialReduced,
         Self::WriterLayerMembershipOmitted,
         Self::WriterLayerVisibilityDefaulted,
         Self::WriterLayerDescriptionNormalized,
@@ -488,6 +497,8 @@ impl RhinoLossCode {
             Self::WriterPcurveReversalDefaulted => "writer.pcurve-reversal-defaulted",
             Self::WriterCarrierResolved => "writer.carrier-resolved",
             Self::WriterMaterialOmitted => "writer.materials-omitted",
+            Self::WriterMaterialTextureOmitted => "writer.material-texture-omitted",
+            Self::WriterMaterialUuidReassigned => "writer.material-uuid-reassigned",
             Self::WriterAttributesOmitted => "writer.attributes-omitted",
             Self::WriterLightOmitted => "writer.light-omitted",
             Self::WriterLightIndexReassigned => "writer.light-index-reassigned",
@@ -497,6 +508,7 @@ impl RhinoLossCode {
             Self::WriterLinetypeOmitted => "writer.linetype-omitted",
             Self::WriterLinetypeReduced => "writer.linetype-reduced",
             Self::WriterLayerLinetypeReduced => "writer.layer-linetype-reduced",
+            Self::WriterLayerMaterialReduced => "writer.layer-material-reduced",
             Self::WriterLayerMembershipOmitted => "writer.layer-membership-omitted",
             Self::WriterLayerVisibilityDefaulted => "writer.layer-visibility-defaulted",
             Self::WriterLayerDescriptionNormalized => "writer.layer-description-normalized",
@@ -623,9 +635,12 @@ impl RhinoLossCode {
                 LossTaxonomy::ProceduralReduced
             }
             Self::WriterMaterialOmitted
+            | Self::WriterMaterialTextureOmitted
+            | Self::WriterMaterialUuidReassigned
             | Self::WriterLinetypeOmitted
             | Self::WriterLinetypeReduced
             | Self::WriterLayerLinetypeReduced
+            | Self::WriterLayerMaterialReduced
             | Self::WriterLayerMembershipOmitted
             | Self::WriterLayerVisibilityDefaulted
             | Self::WriterLayerDescriptionNormalized
@@ -756,6 +771,8 @@ mod tests {
                 "writer.pcurve-reversal-defaulted",
                 "writer.carrier-resolved",
                 "writer.materials-omitted",
+                "writer.material-texture-omitted",
+                "writer.material-uuid-reassigned",
                 "writer.attributes-omitted",
                 "writer.light-omitted",
                 "writer.light-index-reassigned",
@@ -765,6 +782,7 @@ mod tests {
                 "writer.linetype-omitted",
                 "writer.linetype-reduced",
                 "writer.layer-linetype-reduced",
+                "writer.layer-material-reduced",
                 "writer.layer-membership-omitted",
                 "writer.layer-visibility-defaulted",
                 "writer.layer-description-normalized",
