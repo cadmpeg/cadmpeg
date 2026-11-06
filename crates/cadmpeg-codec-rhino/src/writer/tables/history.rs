@@ -862,9 +862,10 @@ pub(in crate::writer) fn records(ir: &CadIr) -> Result<HistoryExport, WriteError
                     output.written.insert(native.to_owned());
                 }
             }
-            Err(WriteError::Omit(reason)) => output
-                .losses
-                .push(RhinoLossCode::WriterAttributesOmitted.note(format!("{record}: {reason}"))),
+            Err(WriteError::Omit(reason)) => output.losses.push(
+                RhinoLossCode::WriterAttributesOmitted
+                    .note(format!("feature {} history {record}: {reason}", feature.id)),
+            ),
             Err(error) => return Err(error),
         }
     }
