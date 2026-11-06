@@ -237,14 +237,49 @@ fn conversion_carries_measurement_warnings_and_succeeds() {
 #[cfg(feature = "step")]
 /// The freeform B-spline face of `geometry_topology.step` needs far more
 /// than one findings face slice. The check does not read it and states, in
-/// one info finding, how many faces and bodies it did not check, under each
-/// profile; the exit status stays 0.
+/// one info finding, how many faces and bodies it did not check under each
+/// profile.
 #[test]
 fn a_face_beyond_the_findings_slice_is_counted_in_one_info_finding() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../cadmpeg-codec-freecad/tests/golden/step/geometry_topology.step");
+    let text = std::fs::read_to_string(&path).unwrap();
+    let pcurves: std::collections::BTreeSet<&str> = text
+        .lines()
+        .filter_map(|line| line.split_once(" = PCURVE(").map(|(id, _)| id))
+        .collect();
+    let standalone: std::collections::BTreeSet<String> = text
+        .lines()
+        .filter(|line| line.contains("SHAPE_REPRESENTATION("))
+        .flat_map(|line| line.split(|c: char| c != '#' && !c.is_ascii_digit()))
+        .filter(|id| pcurves.contains(id))
+        .map(|id| format!("step:data:pcurve{id}"))
+        .collect();
+    assert!(!standalone.is_empty());
     for args in [&[][..], &["--limits", "service"][..]] {
-        let report = check_json(&path, args);
+        let output = super::cadmpeg()
+            .arg("check")
+            .arg(&path)
+            .arg("--json")
+            .args(args)
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(1));
+        let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+        let errors: Vec<&Value> = report["check_report"]["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|finding| finding["severity"] == "error")
+            .collect();
+        assert!(errors
+            .iter()
+            .all(|finding| finding["check"] == "carrier_reachability"));
+        let entities: std::collections::BTreeSet<&str> = errors
+            .iter()
+            .map(|finding| finding["entity"].as_str().unwrap())
+            .collect();
+        assert_eq!(entities, standalone.iter().map(String::as_str).collect());
         let incomplete: Vec<&Value> = report["check_report"]["findings"]
             .as_array()
             .unwrap()

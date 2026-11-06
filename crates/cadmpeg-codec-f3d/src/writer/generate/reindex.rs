@@ -50,11 +50,7 @@ pub(super) fn preserve_indices(
         limits,
         ..Default::default()
     };
-    let ctx = cadmpeg_core::decode::DecodeContext::new(
-        &arena,
-        &policy,
-        cadmpeg_core::decode::DecodeDepth::Full,
-    );
+    let ctx = cadmpeg_core::decode::DecodeContext::for_encode(&arena, &policy);
     let framed = cadmpeg_asm::sab::frame(&ctx, records, 0, records.len(), RefWidth::Eight, None)
         .map_err(|error| error.into_codec_error(&ctx, CodecError::malformed))?;
     let count = framed.len();

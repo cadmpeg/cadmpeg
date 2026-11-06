@@ -8370,7 +8370,8 @@ fn validate_parameter_companions(ctx: &Ctx<'_, '_>, findings: &mut Vec<Finding>)
         let owner = owners_by_index.get(&(native_stream, companion.owner_record_index()));
         let valid = source_payload_valid
             && recipe_links_valid
-            && records_by_index.contains_key(&(native_stream, companion.record_index()))
+            && (!ctx.holds_design_intent()
+                || records_by_index.contains_key(&(native_stream, companion.record_index())))
             && owner
                 .is_some_and(|owner| owner.companion_record_index() == companion.record_index())
             && unique_index

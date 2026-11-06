@@ -9,6 +9,45 @@ use super::{
 use cadmpeg_ir::native::NativeNamespace;
 use serde_json::Value;
 
+fn directory_metadata(namespace: &NativeNamespace, record: &NativeRecord, entity: &mut Entity) {
+    let Some(source) = string_field(record, "source_entity") else {
+        return;
+    };
+    let Some(directory) = namespace
+        .arenas()
+        .get("entities")
+        .and_then(|records| records.iter().find(|entry| entry.id() == source))
+    else {
+        return;
+    };
+    super::super::native_records::numeric::retain_record(directory, entity);
+    let status = (
+        directory
+            .field("subordinate_status")
+            .and_then(|v| v.as_i64()),
+        directory.field("use_flag").and_then(|v| v.as_i64()),
+    );
+    entity.status = match status {
+        (Some(0), Some(0)) => EntityStatus::Independent,
+        (Some(1), Some(0)) => EntityStatus::PhysicallyDependent,
+        (Some(0), Some(2)) => EntityStatus::Definition,
+        _ => entity.status,
+    };
+    if let Some(label) = directory
+        .field("label")
+        .and_then(|v| serde_json::from_value::<cadmpeg_ir::native::bytes::NativeBytes>(v).ok())
+        .and_then(|bytes| String::from_utf8(bytes.as_ref().to_vec()).ok())
+        .filter(|label| {
+            label.len() <= 8
+                && label
+                    .bytes()
+                    .all(|byte| byte.is_ascii_graphic() || byte == b' ')
+        })
+    {
+        label.trim().clone_into(&mut entity.label);
+    }
+}
+
 fn value(fields: &Fields<'_>, key: &str, kind: i64, targets: &Targets) -> Result<String, String> {
     let mut value = fields.one(key)?;
     if fields.has_native_values() {
@@ -265,7 +304,7 @@ pub(super) fn append(
                 let [fields] = groups.as_slice() else {
                     return Err("attribute defaults have incompatible current owners".into());
                 };
-                let entity = definition(record, fields, targets)?;
+                let mut entity = definition(record, fields, targets)?;
                 let unchanged = native_encoding_matches(
                     record,
                     fields::Family::Definition,
@@ -273,6 +312,7 @@ pub(super) fn append(
                     |native| definition(record, native, targets),
                     |native| fields.is_self_owned() && native.is_self_owned(),
                 );
+                directory_metadata(namespace, record, &mut entity);
                 let index = append_owned(entities, entity, &[], version)?;
                 Ok((index, fields.attribute_ids().collect::<Vec<_>>(), unchanged))
             });
@@ -308,7 +348,7 @@ pub(super) fn append(
                 let (definition, index) = definitions
                     .get(&definition_id)
                     .ok_or("attribute row definition is not emitted")?;
-                let entity = instance(record, definition, *index, fields, targets)?;
+                let mut entity = instance(record, definition, *index, fields, targets)?;
                 let unchanged = native_encoding_matches(
                     record,
                     fields::Family::Instance,
@@ -316,6 +356,7 @@ pub(super) fn append(
                     |native| instance(record, definition, *index, native, targets),
                     |native| fields.is_self_owned() && native.is_self_owned(),
                 );
+                directory_metadata(namespace, record, &mut entity);
                 let index = append_owned(entities, entity, &[], version)?;
                 Ok((index, fields.attribute_ids().collect::<Vec<_>>(), unchanged))
             });
