@@ -155,6 +155,7 @@ mod feature_order;
 mod levels;
 mod native_plane;
 mod native_records;
+mod offset_curve;
 mod pcurve_admission;
 mod placement_entities;
 pub(crate) mod target;
@@ -287,6 +288,22 @@ fn vertex_list_source(ir: &CadIr, points: &[String]) -> Option<String> {
                 && record.field("entity_type").and_then(|value| value.as_i64()) == Some(502)
         })?;
     Some(id)
+}
+
+fn vertex_label_group(ir: &CadIr, point: &cadmpeg_ir::ids::PointId) -> Option<String> {
+    use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
+    let mut labels = ir.model.attributes.iter().filter(|attribute| {
+        matches!(&attribute.target, AttributeTarget::Point(id) if id == point)
+            && matches!(attribute.name.as_str(), "name" | "iges.directory_label")
+    });
+    let label = labels.next()?;
+    if labels.next().is_some() {
+        return None;
+    }
+    let [Some(AttributeValue::String(value))] = label.values.as_slice() else {
+        return None;
+    };
+    attributes::labels::short_label(value).then(|| value.clone())
 }
 
 fn counts_for_ir(ir: &CadIr) -> BTreeMap<String, usize> {
@@ -693,22 +710,21 @@ fn synthesize_with_admission(
         .iter()
         .flat_map(|entity| entity.source_targets.iter())
         .collect::<BTreeSet<_>>();
-    let mut emitted_compounds = 0;
+    let mut emitted_procedurals = 0;
     for procedural in &ir.model.procedural_curves {
         let Some(owner) = ir.model.procedural_curve_owner(&procedural.id) else {
             continue;
         };
-        if compound::geometry(ir, owner).is_some()
-            && graph.entities.iter().any(|entity| {
-                entity.type_code == 102
-                    && matches!(entity.status, EntityStatus::Independent)
-                    && entity
-                        .source_targets
-                        .iter()
-                        .any(|target| target == owner.as_str())
-            })
-        {
-            emitted_compounds += 1;
+        let compound = compound::geometry(ir, owner).is_some();
+        if graph.entities.iter().any(|entity| {
+            ((compound && entity.type_code == 102) || entity.type_code == 130)
+                && matches!(entity.status, EntityStatus::Independent)
+                && entity
+                    .source_targets
+                    .iter()
+                    .any(|target| target == owner.as_str())
+        }) {
+            emitted_procedurals += 1;
             let previous = format!(
                 "IGES procedural definition {} was reduced to a solved carrier",
                 procedural.id
@@ -866,7 +882,7 @@ fn synthesize_with_admission(
         coverage.coedges = ArenaDisposition::Reported;
         coverage.pcurves = ArenaDisposition::Reported;
     }
-    if emitted_compounds > 0 {
+    if emitted_procedurals > 0 {
         coverage.procedural_curves = ArenaDisposition::Reported;
     }
     if emitted_products > 0 {
@@ -2621,7 +2637,7 @@ fn brep_entities(
 
         let mut vertex_ids = body_vertex_ids.into_iter().collect::<Vec<_>>();
         vertex_ids.sort_by(Ord::cmp);
-        let mut vertex_groups = BTreeMap::<Option<String>, Vec<String>>::new();
+        let mut vertex_groups = BTreeMap::<(Option<String>, Option<String>), Vec<String>>::new();
         for vertex_id in &vertex_ids {
             let vertex = ir
                 .model
@@ -2634,13 +2650,20 @@ fn brep_entities(
                     ))
                 })?;
             let source = vertex_list_source(ir, &[vertex.point.to_string()]);
+            let label = vertex_label_group(ir, &vertex.point);
             vertex_groups
-                .entry(source)
+                .entry((source, label))
                 .or_default()
                 .push(vertex_id.clone());
         }
         let mut vertex_indices = BTreeMap::new();
-        for (source, group) in vertex_groups {
+        let mut source_counts = BTreeMap::<String, usize>::new();
+        for (source, _) in vertex_groups.keys() {
+            if let Some(source) = source {
+                *source_counts.entry(source.clone()).or_default() += 1;
+            }
+        }
+        for ((source, _), group) in vertex_groups {
             let list_index = entities.len();
             let mut parameters = group.len().to_string();
             let mut point_targets = Vec::with_capacity(group.len());
@@ -2663,7 +2686,7 @@ fn brep_entities(
                 vertex_indices.insert(vertex_id.clone(), (list_index, index));
             }
             parameters.push(';');
-            point_targets.extend(source);
+            point_targets.extend(source.filter(|source| source_counts.get(source) == Some(&1)));
             entities.push(Entity {
                 structure: None,
                 property_links: Vec::new(),
@@ -7409,6 +7432,17 @@ impl CurveEntityEmitter<'_> {
                 "IGES composite curve graph contains a cycle at {curve_id}"
             )));
         }
+        if sense == Sense::Forward {
+            if let Some(index) =
+                self.append_uniform_circle_offset(curve_id, geometry, span, status)?
+            {
+                self.active.remove(curve_id);
+                self.entities[index]
+                    .source_targets
+                    .push(curve_id.to_string());
+                return Ok(index);
+            }
+        }
         let result = match geometry {
             CurveGeometry::Solved(SolvedCurveGeometry::Composite { segments, .. }) => {
                 let children = self.append_composite_constituents(segments, sense)?;
@@ -8058,6 +8092,25 @@ fn append_unowned_curves(
             );
         }
         mark_curve_descendants(ir, &curve.id, consumed, &mut BTreeSet::new())?;
+    }
+    for procedural in &ir.model.procedural_curves {
+        let cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset(offset) =
+            procedural.definition()
+        else {
+            continue;
+        };
+        let Some(owner) = ir.model.procedural_curve_owner(&procedural.id) else {
+            continue;
+        };
+        if entities.iter().any(|entity| {
+            entity.type_code == 130
+                && entity
+                    .source_targets
+                    .iter()
+                    .any(|target| target == owner.as_str())
+        }) {
+            consumed.insert(offset.source().to_string());
+        }
     }
     for (curve, status) in dependent {
         if consumed.contains(curve.id.as_str()) {

@@ -1724,7 +1724,7 @@ fn vertex_list_names_survive_an_unrelated_feature_edit() {
 }
 
 #[test]
-fn differing_vertex_names_are_reported_without_sharing_one_label() {
+fn differing_vertex_names_are_written_on_separate_lists() {
     let decoded = IgesCodec.decode(
         &mut Cursor::new(crate::test_support::test_solids_and_structure::explicit_tetrahedron_solid_with_boolean_file()),
         &DecodeOptions::default(),
@@ -1749,12 +1749,12 @@ fn differing_vertex_names_are_reported_without_sharing_one_label() {
     let plan = plan_at(IgesVersion::V5_3, &ir, None).expect("valid test value");
     for id in ids {
         assert!(
-            plan.report()
+            !plan
+                .report()
                 .losses
                 .iter()
-                .any(|loss| loss.message.contains(id.as_str())
-                    && loss.message.contains("vertex-list")),
-            "missing loss for {id}"
+                .any(|loss| loss.message.contains(id.as_str())),
+            "unexpected loss for {id}"
         );
     }
     let mut bytes = Vec::new();
@@ -1762,7 +1762,20 @@ fn differing_vertex_names_are_reported_without_sharing_one_label() {
     let output = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("valid test value");
-    assert!(!output.ir().model.attributes.iter().any(|attribute| attribute.name == "name" && matches!(attribute.values.as_slice(), [Some(cadmpeg_ir::attributes::AttributeValue::String(value))] if value == "OTHER" || value == "VERTICES")));
+    for (name, expected) in [("OTHER", 1), ("VERTICES", 3)] {
+        let count = output
+            .ir()
+            .model
+            .attributes
+            .iter()
+            .filter(|attribute| {
+                attribute.name == "name"
+                    && matches!(attribute.values.as_slice(),
+                [Some(cadmpeg_ir::attributes::AttributeValue::String(value))] if value == name)
+            })
+            .count();
+        assert_eq!(count, expected, "written {name}");
+    }
 }
 
 #[test]

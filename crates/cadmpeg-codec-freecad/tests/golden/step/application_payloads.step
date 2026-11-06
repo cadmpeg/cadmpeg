@@ -1,7 +1,7 @@
 ISO-10303-21;
 HEADER;
 FILE_DESCRIPTION(('CAD model exported by cadmpeg'),'2;1');
-FILE_NAME('cadmpeg_model','1970-01-01T00:00:00',(''),(''),'cadmpeg-step','cadmpeg','');
+FILE_NAME('application_payloads','2026-01-01T00:00:00Z',(''),(''),'cadmpeg-step','cadmpeg','');
 FILE_SCHEMA(('AUTOMOTIVE_DESIGN { 1 0 10303 214 1 1 1 1 }'));
 ENDSEC;
 DATA;
