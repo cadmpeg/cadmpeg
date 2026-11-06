@@ -406,13 +406,29 @@ travel.
 
 **Note.** The fixed native occurrence record retains the discriminator value without a component-path binding.
 
+### DR-282. Legacy body-group flag blocks
+
+**Question.** Do the primary and paired class tags determine the frame and flag block of a legacy body group?
+
+**Known.** Legacy body groups with primary/paired classes 257/262, 323/262, and 338/261 have flag block `01 01`; classes 328/263, 282/262, and 302/258 have flag block `00 01`. The group parser accepts both Boolean values for the variant and closing flag and closes the frame by record index.
+
+**Need.** Controlled files that vary each flag for each class pair.
+
+**Conflict.** None.
+
+**Note.** The flag block is retained in the native group frame.
+
 ### DR-130. Construction-operand group closing flag
 
 **Question.** What does closing flag `1` in the tail flag block of a construction-operand group select?
 
-**Known.** `f3d.md` §3.1 "Every `Extrude`, `Extrusion`, `Fillet`" defines the group tail. The flag block ends with the closing flag after `variant`. The closing flag is `0` or `1`, and both values occur in the three-byte block `[1, 1, closing_flag]` of existing-body groups in Extrude scopes. The role, members, and references of the group are the same for both values.
+**Known.** `f3d.md` §3.1 "Every `Extrude`, `Extrusion`, `Fillet`" defines the group tail. The flag block ends with the closing flag after `variant`. The closing flag is `0` or `1` in the two-byte and three-byte blocks. The role, members, and references of the group are the same for both values. The decoder reads both values with the same group semantics, keeps the flag in the native group frame, and reports `feature.construction-closing-flag-assumed` for each group with closing flag `1`.
 
 **Need.** A writer that generates a group must choose the closing flag, and a reader must know whether value `1` changes the group's operation semantics.
+
+**Conflict.** None.
+
+**Note.** Every legacy body group in DR-282 has closing flag `1` in the two-byte block.
 
 ### DR-104. ACT component-link root selection
 
@@ -475,6 +491,18 @@ travel.
 **Known.** `f3d.md` §3.1 "A parameter scope is one logical indexed record" states that tail byte 30 of the 87-byte tail is `0x01` when it begins a second marked reference, and that the preceding history-state identity is then at tail offset 41. In `SplitFace` scopes the reference names record index 42 or 56, and no indexed header in the stream carries that index. These `SplitFace` scopes have the same splitting-tool and target groups as the 77- and 78-byte forms, and the projection does not read the reference.
 
 **Need.** Controlled saves of one `SplitFace` before and after an edit that creates the reference, with the record that carries the referenced index.
+
+### DR-280. Body-recipe serialization form above one
+
+**Question.** What tail layout does a body-recipe serialization form above `1` select?
+
+**Known.** `f3d.md` §3.1 "A class-365 whole-body member starts after its indexed header" states that forms `0` and `1` store the standard tail layout. The decoder reads the standard tail layout for every form value, keeps the form bytes in the native operand, and emits `body-recipe.serialization-form-assumed` for each operand with a form above `1`.
+
+**Need.** A document that stores a body-recipe operand with a form above `1`, and the tail layout of that operand.
+
+**Conflict.** None.
+
+**Note.** DR-257 records the serialization form of nested entity-selection members.
 
 ## 2. External references
 
