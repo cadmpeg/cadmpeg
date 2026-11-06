@@ -29,13 +29,13 @@ mod reindex;
 pub(super) mod sketches;
 mod smbh;
 pub(super) mod subd;
-use parameters::encode_document_parameters;
+use parameters::encode_document_parameter;
 use preconditions::{
     validate_source_less_auxiliary_geometry, validate_source_less_design_bindings,
     validate_source_less_design_links, validate_source_less_design_ownership,
     validate_source_less_face_keys, validate_source_less_history_graph,
-    validate_source_less_procedural_carriers,
-    validate_source_less_sketch_graph, validate_source_less_topology_tolerances,
+    validate_source_less_procedural_carriers, validate_source_less_sketch_graph,
+    validate_source_less_topology_tolerances,
 };
 use presentation::GeneratedDesignRegistry;
 use records::{encode_design_bulkstream, encode_design_metastream};
@@ -128,10 +128,7 @@ pub(super) fn write_with_limits(
                     })?,
                 });
                 indices.push(parameter.record_index);
-                parameter_bytes.extend_from_slice(&encode_document_parameters(
-                    std::slice::from_ref(parameter),
-                    collection_index,
-                )?);
+                encode_document_parameter(&mut parameter_bytes, parameter, collection_index)?;
             }
             output_ctx.charge_entities(1, "F3D parameter record")?;
             primary.push(crate::metastream::RecordIndexEntry {

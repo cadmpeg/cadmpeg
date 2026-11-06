@@ -191,6 +191,45 @@ fn hatch_index(ir: &cadmpeg_ir::CadIr, source: i32) -> Result<i32, WriteError> {
     Ok(super::wire_index(index)?)
 }
 
+fn rendering_material(value: &Value) -> Result<Vec<u8>, WriteError> {
+    let fields = value
+        .as_object()
+        .ok_or_else(|| WriteError::Omit("light rendering material must be an object".into()))?;
+    let uuid = |name: &str| -> Result<[u8; 16], WriteError> {
+        field(fields, name)?
+            .as_str()
+            .and_then(crate::presentation::parse_uuid_text)
+            .map(crate::wire::Uuid::to_wire)
+            .ok_or_else(|| WriteError::Omit(format!("light rendering material {name} is invalid")))
+    };
+    let mut body = uuid("plugin_uuid")?.to_vec();
+    body.extend(uuid("front_material_uuid")?);
+    body.extend(0_i32.to_le_bytes());
+    let minor = match fields.get("material_source") {
+        None | Some(Value::Null) => {
+            if fields
+                .get("back_material_uuid")
+                .is_some_and(|value| !value.is_null())
+            {
+                return Err(WriteError::Omit(
+                    "light rendering material back UUID needs a source".into(),
+                ));
+            }
+            0
+        }
+        Some(_) => {
+            let back = match fields.get("back_material_uuid") {
+                None | Some(Value::Null) => [0; 16],
+                Some(_) => uuid("back_material_uuid")?,
+            };
+            body.extend(back);
+            body.extend([byte(fields, "material_source")?, 0, 0, 0]);
+            1
+        }
+    };
+    Ok(super::super::anonymous(1, minor, &body)?)
+}
+
 pub(super) struct EncodedAttributes {
     pub(super) body: Vec<u8>,
     pub(super) direct: Vec<u8>,
@@ -256,7 +295,6 @@ pub(super) fn encode(
         )));
     }
     for name in [
-        "rendering_materials",
         "rendering_mappings",
         "user_strings",
         "attribute_user_strings",
@@ -313,14 +351,18 @@ pub(super) fn encode(
     body.extend(written_linetype.to_le_bytes());
     body.push(4);
     body.extend(written_material.to_le_bytes());
+    let material_refs = field(fields, "rendering_materials")?
+        .as_array()
+        .ok_or_else(|| WriteError::Omit("light rendering_materials must be a list".into()))?;
     let mut rendering_child = None;
-    if [
-        "casts_shadows",
-        "receives_shadows",
-        "advanced_texture_preview",
-    ]
-    .iter()
-    .any(|name| fields.get(*name).is_some_and(|value| !value.is_null()))
+    if !material_refs.is_empty()
+        || [
+            "casts_shadows",
+            "receives_shadows",
+            "advanced_texture_preview",
+        ]
+        .iter()
+        .any(|name| fields.get(*name).is_some_and(|value| !value.is_null()))
     {
         let flag = |name: &str, default: bool| -> Result<bool, WriteError> {
             match fields.get(name) {
@@ -338,12 +380,22 @@ pub(super) fn encode(
         let casts = flag("casts_shadows", true)?;
         let receives = flag("receives_shadows", true)?;
         let preview = flag("advanced_texture_preview", false)?;
-        let mut rendering = 0_i32.to_le_bytes().to_vec();
+        let mut rendering = super::wire_index(material_refs.len())?
+            .to_le_bytes()
+            .to_vec();
+        let mut children = Vec::new();
+        for material in material_refs {
+            let start = rendering.len();
+            rendering.extend(rendering_material(material)?);
+            children.push(start..rendering.len());
+        }
         rendering.extend(0_i32.to_le_bytes());
         rendering.extend([u8::from(casts), u8::from(receives), u8::from(preview)]);
         body.push(5);
         let start = body.len();
-        body.extend(super::super::anonymous(1, 3, &rendering)?);
+        body.extend(super::super::anonymous_with_children(
+            1, 3, &rendering, &children,
+        )?);
         rendering_child = Some(start..body.len());
     }
     for (tag, name) in [(6, "color"), (7, "plot_color")] {
