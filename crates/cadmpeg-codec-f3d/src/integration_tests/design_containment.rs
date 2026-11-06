@@ -491,6 +491,32 @@ fn one_damaged_primary_index_gives_up_only_its_stream() {
 }
 
 #[test]
+fn geometry_depth_accounts_for_damaged_design_index() {
+    let source = f3d_with_damaged_design_bulkstream(&synthetic_geometry_with_history_smbh());
+    let result = F3dCodec
+        .decode(
+            &mut Cursor::new(source),
+            &DecodeOptions {
+                depth: cadmpeg_core::decode::DecodeDepth::Geometry,
+                ..DecodeOptions::default()
+            },
+        )
+        .unwrap();
+    assert!(result.ir().scope.model);
+    assert!(!result.ir().scope.design);
+    assert_eq!(result.ir().native_unknowns("f3d").unwrap().len(), 1);
+    assert_eq!(
+        result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| loss.code.local_code() == "record.unreadable")
+            .count(),
+        1
+    );
+}
+
+#[test]
 fn unreadable_index_is_given_up_before_recipe_and_timeline_selection() {
     use std::io::Write;
 
