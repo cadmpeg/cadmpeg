@@ -14,6 +14,8 @@ use crate::design::decode::sketch::{
 use crate::design::decode::text::design_record_id;
 use crate::ids::native_stream;
 use crate::layout::indexed_design_record_header as header;
+use crate::layout::surface_trim_cell_entry as cell_entry;
+use crate::layout::surface_trim_cell_table_prefix as cell_table;
 use crate::records::feature::{
     scope::DesignParameterScope,
     surface_ops::{
@@ -63,13 +65,18 @@ fn exact_surface_trim_operation(
         .find(|(primary, _)| *primary == cell_table_byte_offset)?;
     let cell_table_paired_class_tag =
         exact_indexed_header_at(bytes, paired, cell_table.record_index)?;
-    if bytes.get(primary.checked_add(11)?..primary.checked_add(21)?)? != [0; 10] {
+    let cell_count_offset = primary.checked_add(cell_table::CELL_COUNT)?;
+    if bytes
+        .get(primary.checked_add(cell_table::ZERO_RUN)?..cell_count_offset)?
+        .iter()
+        .any(|byte| *byte != 0)
+    {
         return None;
     }
-    let cell_count_offset = primary.checked_add(21)?;
     let cell_count = usize::try_from(View::u32_le_at(bytes, cell_count_offset)?).ok()?;
-    let entries_start = cell_count_offset.checked_add(4)?;
-    let trailing_value_offset = entries_start.checked_add(cell_count.checked_mul(19)?)?;
+    let entries_start = primary.checked_add(cell_table::LEN)?;
+    let trailing_value_offset =
+        entries_start.checked_add(cell_count.checked_mul(cell_entry::LEN)?)?;
     let trailing_zero_offset = trailing_value_offset.checked_add(4)?;
     if paired != trailing_zero_offset.checked_add(4)?
         || View::u32_le_at(bytes, trailing_zero_offset) != Some(0)
@@ -81,9 +88,11 @@ fn exact_surface_trim_operation(
     let mut cell_record_indices = HashSet::new();
     let mut cell_entries = Vec::with_capacity(cell_count);
     for entry_index in 0..cell_count {
-        let entry_start = entries_start.checked_add(entry_index.checked_mul(19)?)?;
-        let cell_record_index = marked_record_reference(bytes, entry_start)?;
-        let ordinal_value = View::u64_le_at(bytes, entry_start.checked_add(11)?)?;
+        let entry_start = entries_start.checked_add(entry_index.checked_mul(cell_entry::LEN)?)?;
+        let reference_start = entry_start.checked_add(cell_entry::RECORD_REFERENCE)?;
+        let cell_record_index = marked_record_reference(bytes, reference_start)?;
+        let ordinal_offset = entry_start.checked_add(cell_entry::VALUE)?;
+        let ordinal_value = View::u64_le_at(bytes, ordinal_offset)?;
         if !cell_record_indices.insert(cell_record_index)
             || records.offsets(cell_record_index).is_empty()
             || ordinal_value == 0
@@ -93,9 +102,9 @@ fn exact_surface_trim_operation(
         }
         cell_entries.push(DesignSurfaceTrimCellEntry {
             record_index: cell_record_index,
-            record_reference_offset: u64::try_from(entry_start.checked_add(1)?).ok()?,
+            record_reference_offset: u64::try_from(reference_start.checked_add(1)?).ok()?,
             ordinal: ordinal_value,
-            ordinal_offset: u64::try_from(entry_start.checked_add(11)?).ok()?,
+            ordinal_offset: u64::try_from(ordinal_offset).ok()?,
         });
     }
     DesignSurfaceTrimOperation::try_from(

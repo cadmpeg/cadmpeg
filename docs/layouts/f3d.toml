@@ -30555,3 +30555,51 @@ anchor = "The scope uses the common 77-byte tail."
 offset = 454
 size = 42
 note = "Common scope-tail lanes after the preceding-history identity."
+
+[[record]]
+name = "surface_trim_cell_table_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "The table's primary header and its same-index paired header bound the table payload."
+size = 25
+note = "Offsets are relative to the cell table's primary indexed header. The entries follow the prefix."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed Design record header (indexed_design_record_header)."
+
+[[record.field]]
+name = "zero_run"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "Ten zero bytes follow the primary header."
+
+[[record.field]]
+name = "cell_count"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "A u32 cell count is at offset 21."
+
+[[record]]
+name = "surface_trim_cell_entry"
+kind = "byte"
+section = "3.1"
+anchor = "The positive count opens entries at offset 25; each entry is 19 bytes"
+size = 19
+
+[[record.field]]
+name = "record_reference"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "a marked indexed-record reference at entry offset 0"
+
+[[record.field]]
+name = "value"
+offset = 11
+type = "u64"
+source = "spec"
+anchor = "a positive u64 entry value at entry offset 11"

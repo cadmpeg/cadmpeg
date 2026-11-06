@@ -8729,3 +8729,31 @@ pub(crate) mod class_349_two_sided_through_all_extrude_frame {
     #[cfg(test)]
     pub(crate) const PREVIOUS_HISTORY_STATE: usize = 450;
 }
+
+/// Byte offsets for the `surface_trim_cell_table_prefix` record.
+///
+/// Spec §3.1. Record length 25 B.
+///
+/// ```text
+/// Offsets are relative to the cell table's primary indexed header. The entries follow the prefix.
+/// ```
+pub(crate) mod surface_trim_cell_table_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 25;
+    /// Offset of `zero_run` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_RUN: usize = 11;
+    /// Offset of `cell_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const CELL_COUNT: usize = 21;
+}
+
+/// Byte offsets for the `surface_trim_cell_entry` record.
+///
+/// Spec §3.1. Record length 19 B.
+pub(crate) mod surface_trim_cell_entry {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 19;
+    /// Offset of `record_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const RECORD_REFERENCE: usize = 0;
+    /// Offset of `value` (`u64`, little-endian). Spec §3.1.
+    pub(crate) const VALUE: usize = 11;
+}

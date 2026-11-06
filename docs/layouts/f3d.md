@@ -8960,6 +8960,30 @@ Unstated regions:
 - `423..450` (27 B): Common scope-tail lanes before the preceding-history identity.
 - `454..496` (42 B): Common scope-tail lanes after the preceding-history identity.
 
+## `surface_trim_cell_table_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 25 B
+
+Offsets are relative to the cell table's primary indexed header. The entries follow the prefix.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 10 | `zero_run` | `bytes[10]` | little | spec | Ten zero bytes follow the primary header. |
+| 21 | 4 | `cell_count` | `u32` | little | spec | A u32 cell count is at offset 21. |
+
+Unstated regions:
+
+- `0..11` (11 B): The indexed Design record header (indexed_design_record_header).
+
+## `surface_trim_cell_entry`
+
+Spec §3.1 · layout: byte offsets · size: 19 B
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `record_reference` | `bytes[11]` | little | spec | a marked indexed-record reference at entry offset 0 |
+| 11 | 8 | `value` | `u64` | little | spec | a positive u64 entry value at entry offset 11 |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

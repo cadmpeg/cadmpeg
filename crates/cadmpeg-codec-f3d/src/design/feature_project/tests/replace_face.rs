@@ -499,32 +499,58 @@ fn surface_trim_requires_groups_that_partition_the_references() {
     assert!(project_surface_trim(&scope, &[target_group, misplaced_tool], &[]).is_none());
 }
 
-#[test]
-fn surface_trim_keeps_native_cells_when_entries_fill_the_trailing_value() {
+fn assert_native_cells(ordinals: &[u64], trailing_value: u32) {
     let scope = DesignParameterScope::empty(
         "f3d:Design/BulkStream.dat:design-parameter-scope#1200",
         crate::records::feature::scope::DesignFeatureKind::SurfaceTrim,
         1200,
     );
     let mut features = [unresolved_trim_feature(&scope)];
-    for ordinals in [[1, 2], [1, 1]] {
-        let operation = trim_operation(&ordinals, 2);
-        assert_eq!(
-            bind_surface_trim_cell_selections(
-                &mut features,
-                std::slice::from_ref(&scope),
-                std::slice::from_ref(&operation),
-            ),
-            1
-        );
-        assert!(matches!(
-            features[0].evaluation.definition(),
-            FeatureDefinition::Operation(FeatureOperation::TrimSurface {
-                keep: cadmpeg_ir::features::TrimRegion::Unresolved,
-                ..
-            })
-        ));
-    }
+    let operation = trim_operation(ordinals, trailing_value);
+    let mut losses = Vec::new();
+    bind_surface_trim_cell_selections(
+        &mut features,
+        std::slice::from_ref(&scope),
+        std::slice::from_ref(&operation),
+        &mut losses,
+    );
+    assert!(matches!(
+        features[0].evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::TrimSurface {
+            keep: cadmpeg_ir::features::TrimRegion::Unresolved,
+            ..
+        })
+    ));
+    assert_eq!(
+        operation
+            .cell_entries()
+            .iter()
+            .map(|entry| entry.ordinal)
+            .collect::<Vec<_>>(),
+        ordinals
+    );
+    assert_eq!(operation.trailing_value, trailing_value);
+    assert_eq!(
+        losses
+            .iter()
+            .map(|loss| (loss.code.clone(), loss.message.as_str()))
+            .collect::<Vec<_>>(),
+        [(
+            crate::loss::F3dLossCode::FeatureTrimCellTableNative.kind(),
+            "1 SurfaceTrim cell table(s) keep native entries because their entry count reaches the trailing value or their entry values repeat."
+        )]
+    );
+}
+
+#[test]
+fn surface_trim_keeps_native_cells_when_entries_fill_the_trailing_value() {
+    assert_native_cells(&[1, 2], 2);
+    assert_native_cells(&[1, 1], 2);
+}
+
+#[test]
+fn surface_trim_keeps_native_cells_when_entry_values_repeat_below_the_trailing_value() {
+    assert_native_cells(&[1, 1], 3);
 }
 
 fn unresolved_trim_feature(scope: &DesignParameterScope) -> cadmpeg_ir::features::Feature {
@@ -675,11 +701,14 @@ fn surface_trim_binds_selected_cells_without_inventing_a_side() {
     )
     .unwrap();
 
+    let mut losses = Vec::new();
     bind_surface_trim_cell_selections(
         std::slice::from_mut(&mut feature),
         std::slice::from_ref(&scope),
         std::slice::from_ref(&operation),
+        &mut losses,
     );
+    assert!(losses.is_empty());
 
     assert!(matches!(
         feature.evaluation.definition(),
@@ -767,6 +796,7 @@ fn surface_trim_selected_cells_keep_cells() {
         &mut unchanged,
         std::slice::from_ref(&scope),
         std::slice::from_ref(&operation),
+        &mut Vec::new(),
     );
     assert!(matches!(
         unchanged[0].evaluation.definition(),

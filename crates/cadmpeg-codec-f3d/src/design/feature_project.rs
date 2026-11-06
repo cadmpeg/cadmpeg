@@ -8418,13 +8418,14 @@ fn project_surface_trim(
 ///
 /// A source trim selects cells for removal. That set is independent of the
 /// canonical inside/outside shorthand and must remain explicit when it is not
-/// reducible to one of those two regions. Returns the native cell-table count.
+/// reducible to one of those two regions.
 pub(crate) fn bind_surface_trim_cell_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     scopes: &[DesignParameterScope],
     operations: &[DesignSurfaceTrimOperation],
-) -> usize {
-    let mut native_tables = 0;
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) {
+    let mut native_tables = 0usize;
     for feature in features {
         if !matches!(
             feature.evaluation.definition(),
@@ -8472,7 +8473,11 @@ pub(crate) fn bind_surface_trim_cell_selections(
             }
         });
     }
-    native_tables
+    if native_tables != 0 {
+        losses.push(crate::loss::F3dLossCode::FeatureTrimCellTableNative.note(format!(
+            "{native_tables} SurfaceTrim cell table(s) keep native entries because their entry count reaches the trailing value or their entry values repeat."
+        )));
+    }
 }
 
 pub(super) fn project_split(

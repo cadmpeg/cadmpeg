@@ -154,17 +154,20 @@ fn surface_trim_cell_table_is_recognized_under_any_class_tag() {
 
 #[test]
 fn surface_trim_keeps_repeated_entry_values() {
-    let (bytes, scope) = surface_trim_carrier(800, *b"263", &[(819, 1), (820, 1)], 2);
-    let operation = decode(&bytes, &scope).expect("repeated entry values");
-    assert_eq!(
-        operation
-            .cell_entries()
-            .iter()
-            .map(|entry| entry.ordinal)
-            .collect::<Vec<_>>(),
-        vec![1, 1]
-    );
-    assert_eq!(operation.trailing_value, 2);
+    for trailing_value in [2, 3] {
+        let (bytes, scope) =
+            surface_trim_carrier(800, *b"263", &[(819, 1), (820, 1)], trailing_value);
+        let operation = decode(&bytes, &scope).expect("repeated entry values");
+        assert_eq!(
+            operation
+                .cell_entries()
+                .iter()
+                .map(|entry| (entry.record_index, entry.ordinal))
+                .collect::<Vec<_>>(),
+            vec![(819, 1), (820, 1)]
+        );
+        assert_eq!(operation.trailing_value, trailing_value);
+    }
 }
 
 #[test]
