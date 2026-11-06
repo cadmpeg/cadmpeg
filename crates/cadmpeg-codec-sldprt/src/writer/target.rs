@@ -21,7 +21,7 @@ pub(crate) fn plan(
     resolved: &ResolvedWrite<'_>,
 ) -> Result<ExportBody, super::write_error::WriteError> {
     debug_assert!(
-        super::REDUCED_FIELDS.len() == 3,
+        super::REDUCED_FIELDS.len() == 4,
         "SolidWorks stores tessellation scalars and base colours in reduced form"
     );
     if !resolved.preserves_source() || input.fidelity.is_none() {
@@ -38,6 +38,21 @@ pub(crate) fn plan(
             input,
             resolved,
             super::synthesis::SynthesisCause::SourceUnrepresented { classes },
+        );
+    }
+    if input
+        .ir
+        .model
+        .tessellations
+        .iter()
+        .any(|mesh| mesh.channels().iter().any(|channel| channel.flags() != 2))
+    {
+        return super::synthesis::plan(
+            input,
+            resolved,
+            super::synthesis::SynthesisCause::PatchDeclined {
+                reason: "display-list channel flags require normalization".into(),
+            },
         );
     }
     if input
@@ -115,7 +130,7 @@ fn write(
 ) -> Result<(Written, Vec<u8>), super::write_error::WriteError> {
     debug_assert_eq!(
         super::REDUCED_FIELDS.len(),
-        3,
+        4,
         "SLDPRT reduced rows name their storage"
     );
     let mut bytes = Vec::new();
