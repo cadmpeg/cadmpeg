@@ -109,7 +109,7 @@ fn definitions(
     losses: &mut Vec<LossNote>,
 ) -> Result<BTreeMap<String, Vec<String>>, CodecError> {
     let mut groups = BTreeMap::new();
-    let native_properties = ir
+    let mut native_properties = ir
         .native
         .namespace("fcstd")
         .map(|namespace| namespace.arena_as::<crate::native::PropertyRecord>("properties"))
@@ -126,6 +126,7 @@ fn definitions(
         .namespace("fcstd")
         .map(super::xml::retained_entry_names)
         .unwrap_or_default();
+    native_properties.retain(|property| xml::validate(property, &available).is_ok());
     for definition in &ir.model.product_definitions {
         let name = names
             .get(definition.id.as_str())
@@ -414,6 +415,7 @@ fn replay_list_properties(
                 "ElementList" | "PlacementList" | "ScaleList"
             )
         })
+        .filter(|property| xml::validate(property, &available).is_ok())
     {
         if object.properties.contains_key(&property.name) {
             continue;
@@ -436,24 +438,26 @@ fn link_state(
     reference: &cadmpeg_ir::products::LinkState,
     names: &HashMap<String, String>,
     losses: &mut Vec<LossNote>,
-) -> Result<(), CodecError> {
+) {
     if let Some(claim) = reference.claim_child() {
         bool_property(object, "LinkClaimChild", claim);
     }
     if let Some(component) = reference.element_component() {
-        let name = names
-            .get(component.as_str())
-            .ok_or_else(|| CodecError::malformed("link element component is absent"))?;
+        let content = if let Some(name) = names.get(component.as_str()) {
+            format!(
+                "<LinkList count=\"1\">{}</LinkList>",
+                xml::element("Link", &[("value", name.clone())])
+            )
+        } else {
+            losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
+                "link {} element component {component} is absent and is omitted",
+                object.name
+            )));
+            "<LinkList count=\"0\"></LinkList>".to_owned()
+        };
         object.set(
             "ElementList",
-            xml::property(
-                "ElementList",
-                "App::PropertyLinkList",
-                &format!(
-                    "<LinkList count=\"1\">{}</LinkList>",
-                    xml::element("Link", &[("value", name.clone())])
-                ),
-            ),
+            xml::property("ElementList", "App::PropertyLinkList", &content),
         );
     }
     if let Some(copy) = reference.copy_on_change() {
@@ -505,7 +509,6 @@ fn link_state(
             bool_property(object, "LinkCopyOnChangeTouched", touched);
         }
     }
-    Ok(())
 }
 
 fn order_siblings(
@@ -640,7 +643,7 @@ pub(super) fn write(
                 ),
             );
             if let Some(reference) = &occurrence.link {
-                link_state(object, reference, names, losses)?;
+                link_state(object, reference, names, losses);
             }
             // Array element lists have no neutral home: the occurrence model
             // carries the link policy but not the per-element placements and
@@ -869,7 +872,7 @@ fn resolve_linked_transforms(
             continue;
         }
         losses.push(FreecadLossCode::ProductLinkedPlacementFolded.note(format!(
-            "prototype {prototype} linked placements disagree, so the effective placement is baked"
+            "prototype {prototype} linked placements disagree and are folded into occurrence placements where possible"
         )));
         for (link, occurrence, _) in &uses {
             let current = ir
@@ -878,17 +881,25 @@ fn resolve_linked_transforms(
                 .iter()
                 .find(|candidate| candidate.id.as_str() == occurrence.as_str())
                 .ok_or_else(|| CodecError::malformed("linked instance has no occurrence"))?;
-            let Some(effective) = current
-                .effective_transform()
-                .map_err(CodecError::malformed)?
-            else {
-                continue;
+            let effective = match current.effective_transform() {
+                Ok(effective) => effective,
+                Err(_) => {
+                    losses.push(FreecadLossCode::ProductLinkedPlacementFolded.note(format!(
+                        "occurrence {occurrence} linked placement cannot be composed and is omitted"
+                    )));
+                    current.transform
+                }
             };
             let object = objects
                 .iter_mut()
                 .find(|object| object.name == *link)
                 .ok_or_else(|| CodecError::malformed("linked instance output is absent"))?;
             bool_property(object, "LinkTransform", false);
+            object.properties.shift_remove("ScaleVector");
+            let Some(effective) = effective else {
+                object.properties.shift_remove("Placement");
+                continue;
+            };
             let (rigid, scale) = split_scale(effective).unwrap_or((effective, [1.0; 3]));
             object.set("Placement", placement(rigid, occurrence.as_str(), losses)?);
             if scale != [1.0; 3] {

@@ -72,7 +72,8 @@ use crate::test_support::zip_test::{
     f3d_with_smbh_and_protein_with_generated_form,
     f3d_with_smbh_and_protein_with_generated_remove_body,
     f3d_with_smbh_and_protein_with_generated_sketch_dimension,
-    f3d_with_smbh_and_protein_with_generated_surface_stitch, f3d_with_unreadable_preview,
+    f3d_with_smbh_and_protein_with_generated_surface_stitch,
+    f3d_with_smbh_and_protein_with_original_sketch_dimension, f3d_with_unreadable_preview,
     original_design_fixture,
 };
 
@@ -116,7 +117,7 @@ fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
         ),
         (
             "design_sketch_constraints",
-            original_design_fixture(f3d_with_smbh_and_protein_with_generated_sketch_dimension(&synthetic_geometry_smbh()), false),
+            original_design_fixture(f3d_with_smbh_and_protein_with_original_sketch_dimension(&synthetic_geometry_smbh()), false),
         ),
         (
             "design_base_feature",
@@ -150,10 +151,21 @@ fn fixtures() -> Vec<(&'static str, Vec<u8>)> {
             "design_canvas",
             original_design_fixture(f3d_with_smbh_and_protein_with_generated_canvas(&synthetic_geometry_smbh()), false),
         ),
+        (
+            "design_decal",
+            crate::test_support::decal::archive(&synthetic_geometry_smbh()),
+        ),
         ("container_metadata_only", f3d_with_smbh(&synthetic_smbh())),
         (
             "mesh_surface",
             f3d_with_smbh(&synthetic_geometry_with_mesh_surface_smbh()),
+        ),
+        (
+            "design_mesh_import",
+            crate::test_support::mesh_fixture::archive(
+                &crate::test_support::paramesh::triangle(),
+                Some(&synthetic_geometry_smbh()),
+            ),
         ),
         (
             "sketch_link",
@@ -352,10 +364,18 @@ fn update_requested() -> bool {
     std::env::var_os("UPDATE_GOLDEN").is_some()
 }
 
-/// Whether the caller asked to rewrite the frozen `tests/golden/fixtures/*.f3d`
-/// inputs from the builders (`UPDATE_GOLDEN_FIXTURES=1`).
+/// Whether the caller asked to create missing fixture inputs from the builders.
 fn fixture_update_requested() -> bool {
     std::env::var_os("UPDATE_GOLDEN_FIXTURES").is_some()
+}
+
+fn create_fixture_if_requested(name: &str, bytes: &[u8]) {
+    let path = golden_root().join("fixtures").join(format!("{name}.f3d"));
+    if fixture_update_requested() && !path.exists() {
+        std::fs::create_dir_all(path.parent().expect("fixtures dir")).expect("create fixtures dir");
+        std::fs::write(&path, bytes)
+            .unwrap_or_else(|error| panic!("write fixture {name}: {error}"));
+    }
 }
 
 fn read_fixture(name: &str) -> Result<Vec<u8>, String> {
@@ -766,13 +786,7 @@ fn golden_snapshots_are_byte_identical() {
     let root = golden_root();
     let mut failures = Vec::new();
     for (name, builder_bytes) in fixtures() {
-        if fixture_update_requested() {
-            let fixture_path = root.join("fixtures").join(format!("{name}.f3d"));
-            std::fs::create_dir_all(fixture_path.parent().expect("fixtures dir"))
-                .expect("create fixtures dir");
-            std::fs::write(&fixture_path, &builder_bytes)
-                .unwrap_or_else(|error| panic!("write fixture {name}: {error}"));
-        }
+        create_fixture_if_requested(name, &builder_bytes);
         let input = match read_fixture(name) {
             Ok(value) => value,
             Err(message) => {
@@ -1350,6 +1364,81 @@ fn an_edit_survives_native_writer_fallback() {
         measured_count >= MEASURED_FIXTURE_FLOOR,
         "fewer fixtures than the floor measure a comparable body through the patch writer"
     );
+}
+
+#[test]
+fn indexed_sketch_constraint_fixture_has_no_unreadable_parts() {
+    let input =
+        f3d_with_smbh_and_protein_with_generated_sketch_dimension(&synthetic_geometry_smbh());
+    let decoded = decode_result(&input).expect("indexed fixture decodes");
+    let unreadable = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.code
+                == cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable
+                    .note(String::new())
+                    .code
+        })
+        .collect::<Vec<_>>();
+    assert!(unreadable.is_empty(), "{unreadable:?}");
+}
+
+fn assert_fixture_valid(decoded: &DecodeResult) {
+    let neutral = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
+        .expect("validate neutral model");
+    assert!(neutral.is_ok(), "{neutral:#?}");
+    let native = crate::validate::validate_native(
+        &cadmpeg_test_support::service_decode_context(),
+        decoded.ir(),
+    )
+    .expect("validate native model");
+    assert!(
+        native
+            .iter()
+            .all(|finding| finding.severity < cadmpeg_ir::report::Severity::Error),
+        "{native:#?}"
+    );
+}
+
+#[test]
+fn synthetic_mesh_fixture_decodes_mesh_and_brep() {
+    let bytes = crate::test_support::mesh_fixture::archive(
+        &crate::test_support::paramesh::triangle(),
+        Some(&synthetic_geometry_smbh()),
+    );
+    create_fixture_if_requested("design_mesh_import", &bytes);
+    let decoded = decode_result(&bytes).unwrap();
+    assert_fixture_valid(&decoded);
+    assert!(!decoded.ir().model.bodies.is_empty());
+    assert_eq!(decoded.ir().model.tessellations.len(), 1);
+    assert!(decoded.ir().model.features.iter().any(|feature| matches!(
+        feature.definition(),
+        cadmpeg_ir::features::FeatureDefinition::Operation(
+            cadmpeg_ir::features::FeatureOperation::MeshImport { .. }
+        )
+    )));
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .all(|loss| loss.code.local_code() != "record.unreadable"));
+}
+
+#[test]
+fn synthetic_decal_fixture_decodes_image_asset() {
+    let bytes = crate::test_support::decal::archive(&synthetic_geometry_smbh());
+    create_fixture_if_requested("design_decal", &bytes);
+    let decoded = decode_result(&bytes).unwrap();
+    assert_fixture_valid(&decoded);
+    assert!(!decoded.ir().model.bodies.is_empty());
+    assert!(!decoded.ir().model.assets.is_empty());
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .all(|loss| loss.code.local_code() != "record.unreadable"));
 }
 
 /// Every committed fixture must still match its builder bytes.
