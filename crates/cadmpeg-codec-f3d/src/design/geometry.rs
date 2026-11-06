@@ -133,17 +133,18 @@ struct ArrangementRing {
 }
 
 impl ArrangementRing {
+    /// The fragment and coincident curves of the ring.
+    fn curves(&self) -> impl Iterator<Item = &cadmpeg_ir::sketches::SketchEntityId> {
+        self.fragments.iter().flat_map(|fragment| {
+            std::iter::once(&fragment.curve.entity).chain(&fragment.coincident)
+        })
+    }
+
     /// Whether `members` name the ring's fragment and coincident curves with
     /// their multiplicities, and each fragment without a coincident curve
     /// with its traversal direction.
     fn matches_members(&self, members: &[cadmpeg_ir::sketches::SketchEntityUse]) -> bool {
-        let mut curves = self
-            .fragments
-            .iter()
-            .flat_map(|fragment| {
-                std::iter::once(&fragment.curve.entity).chain(&fragment.coincident)
-            })
-            .collect::<Vec<_>>();
+        let mut curves = self.curves().collect::<Vec<_>>();
         if curves.len() != members.len() {
             return false;
         }
@@ -331,6 +332,9 @@ pub(super) fn arrangement_regions_matching_member_rings(
                     .map(|(hole, ring)| (Some(hole), ring)),
             );
             for (hole, ring) in candidates {
+                if ring.curves().count() != members.len() {
+                    continue;
+                }
                 let charged = members
                     .len()
                     .checked_mul(members.len())
@@ -379,7 +383,8 @@ pub(super) fn arrangement_regions_matching_member_rings(
 }
 
 /// The bounded faces of the arrangement of every non-construction curve of
-/// `sketch`, split at every intersection of curves that are not collinear.
+/// `sketch`, split at every intersection of curves that are not collinear,
+/// or `None` when one of those curves is outside the arrangement's families.
 fn curve_arrangement_faces(
     sketch: &cadmpeg_ir::sketches::Sketch,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
@@ -387,6 +392,21 @@ fn curve_arrangement_faces(
     work: &ProfileGeometryWork,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<SketchArrangementFace>>, CodecError> {
+    use cadmpeg_ir::sketches::SketchGeometryDefinition;
+
+    if entities.iter().any(|entity| {
+        entity.sketch == sketch.id
+            && !entity.construction
+            && !matches!(
+                entity.geometry.definition(),
+                SketchGeometryDefinition::Point { .. }
+                    | SketchGeometryDefinition::Text { .. }
+                    | SketchGeometryDefinition::Circle { .. }
+            )
+            && sketch_geometry_parameter_range(&entity.geometry).is_none()
+    }) {
+        return Ok(None);
+    }
     let segments = entities
         .iter()
         .filter(|entity| entity.sketch == sketch.id && !entity.construction)
@@ -903,8 +923,6 @@ fn sketch_arrangement_faces_with_nodes(
         }
     }
     for root in &component_roots {
-        // Proven-disjoint components lie wholly inside or outside a face,
-        // so one node of each decides.
         let mut container = None::<(usize, f64)>;
         for (index, face) in faces.iter().enumerate() {
             let (own, area) = face_components[index];
