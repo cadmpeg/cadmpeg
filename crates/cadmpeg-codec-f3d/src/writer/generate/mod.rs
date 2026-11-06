@@ -438,6 +438,11 @@ pub(super) fn write_with_limits(
                 "sketch {id}: generated member-run records have unspecified state fields"
             )));
         }
+        for id in &sketches.renamed_sketches {
+            residual_losses.push(crate::loss::F3dLossCode::WriterDesignRecordsOmitted.note(format!(
+                "sketch {id} uses a generated Design entity name"
+            )));
+        }
         for id in &sketches.text_entities {
             residual_losses.push(ExportLossCode::RecordResidualUnavailable.note(format!(
                 "sketch text {id}: generated glyph color and formatting use unspecified defaults"
@@ -561,6 +566,17 @@ pub(super) fn write_with_limits(
             }
             if feature.needs_recompute {
                 partial = true;
+            }
+            let kind = match feature.evaluation.definition() {
+                cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Primitive { .. }) => Some("CylinderPrimitive"),
+                cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Block { .. }) => Some("BoxPrimitive"),
+                _ => None,
+            };
+            if kind.is_some_and(|kind| feature.name.as_ref().is_some_and(|name| name != &format!("{kind} {}", feature.ordinal + 1))) {
+                partial = true;
+                residual_losses.push(crate::loss::F3dLossCode::WriterDesignRecordsOmitted.note(
+                    format!("feature {} uses a generated Design name", feature.id),
+                ));
             }
             if matches!(feature.evaluation.definition(),
             cadmpeg_ir::features::FeatureDefinition::Operation(

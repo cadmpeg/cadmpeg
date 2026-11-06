@@ -24,6 +24,7 @@ pub(super) struct SketchStream {
     pub(super) bulk: Vec<u8>,
     pub(super) meta: Vec<u8>,
     pub(super) sketches: Vec<SketchId>,
+    pub(super) renamed_sketches: Vec<SketchId>,
     pub(super) entities: Vec<SketchEntityId>,
     pub(super) text_entities: Vec<SketchEntityId>,
     pub(super) nurbs_entities: Vec<SketchEntityId>,
@@ -50,6 +51,7 @@ pub(super) fn encode(
     let mut relation_ids = Vec::new();
     let mut constraints = Vec::new();
     let mut sketches = Vec::new();
+    let mut renamed_sketches = Vec::new();
     let mut entities = Vec::new();
     let mut containers_used = std::collections::BTreeSet::new();
     let mut occupied = target
@@ -64,23 +66,22 @@ pub(super) fn encode(
         .collect::<std::collections::BTreeSet<_>>();
     let mut next = 1u32;
     for sketch in &target.model.sketches {
-        let Some(name) = sketch
+        let original_container = sketch
             .name
             .as_ref()
             .filter(|name| name.encode_utf16().count() <= 256)
-        else {
-            continue;
-        };
-        let Some(container) = crate::records::identity::DesignEntityId::try_from(name.clone())
-            .ok()
+            .and_then(|name| crate::records::identity::DesignEntityId::try_from(name.clone()).ok())
             .and_then(|id| u32::try_from(id.suffix()).ok())
-            .filter(|id| *id != 0)
+            .filter(|id| *id != 0 && !containers_used.contains(id));
+        let Some(container) = original_container.or_else(|| allocate(&mut occupied, &mut next))
         else {
-            continue;
+            break;
         };
-        if containers_used.contains(&container) {
-            continue;
-        }
+        let name = if original_container.is_some() {
+            sketch.name.clone().unwrap_or_default()
+        } else {
+            format!("Sketch_{container}")
+        };
         let Some((origin, normal, axis)) = sketch.resolved_placement() else {
             continue;
         };
@@ -240,7 +241,7 @@ pub(super) fn encode(
         bulk.extend_from_slice(&0u32.to_le_bytes());
         bulk.extend_from_slice(&[0; 5]);
         bulk.push(0);
-        native_lp_utf16(&mut bulk, name)?;
+        native_lp_utf16(&mut bulk, &name)?;
         bulk.extend_from_slice(&u64::MAX.to_le_bytes());
         bulk.push(1);
         bulk.extend_from_slice(&count.to_le_bytes());
@@ -426,6 +427,9 @@ pub(super) fn encode(
         }
         sketches.push(sketch.id.clone());
         containers_used.insert(container);
+        if original_container.is_none() {
+            renamed_sketches.push(sketch.id.clone());
+        }
     }
     if sketches.is_empty() {
         return Ok(None);
@@ -531,6 +535,7 @@ pub(super) fn encode(
         bulk,
         meta,
         sketches,
+        renamed_sketches,
         entities,
         text_entities,
         nurbs_entities,
