@@ -1133,10 +1133,9 @@ fn lp_ascii_matches(bytes: &[u8], at: usize, expected: &[u8]) -> Option<usize> {
 
 /// Parse the counted member-record run of the paired same-index container
 /// record that follows an `EntityGenesis`-form sketch entity header: the u32
-/// member count at paired-record offset 52, the marked reference to the
-/// sketch's base-point record, and `count` entries of `0x01 + u32
-/// record_index + six zero bytes` naming the sketch's owned records. The
-/// base-point reference is returned as the first member.
+/// member count at paired-record offset 52 followed by `count` entries of
+/// `0x01 + u32 record_index + six zero bytes`. The first entry references the
+/// sketch's base-point record and the others name its owned records.
 fn parse_sketch_member_run(
     bytes: &[u8],
     from: usize,
@@ -1154,18 +1153,12 @@ fn parse_sketch_member_run(
     else {
         return empty;
     };
-    if count == 0
-        || bytes.get(paired + 56) != Some(&1)
-        || bytes.get(paired + 61..paired + 67) != Some(&[0u8; 6][..])
-    {
+    if count == 0 {
         return empty;
     }
-    let Some(base_point_index) = View::u32_le_at(bytes, paired + 57) else {
-        return empty;
-    };
     let Some(run_end) = count
         .checked_mul(11)
-        .and_then(|length| paired.checked_add(67)?.checked_add(length))
+        .and_then(|length| paired.checked_add(56)?.checked_add(length))
     else {
         return empty;
     };
@@ -1174,12 +1167,8 @@ fn parse_sketch_member_run(
     }
 
     let mut members = Vec::new();
-    members.push(crate::records::identity::Located {
-        value: base_point_index,
-        offset: u64_from_index(paired + 57),
-    });
     for ordinal in 0..count {
-        let marker = paired + 67 + ordinal * 11;
+        let marker = paired + 56 + ordinal * 11;
         if bytes.get(marker) != Some(&1)
             || bytes.get(marker + 5..marker + 11) != Some(&[0u8; 6][..])
         {
