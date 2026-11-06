@@ -194,13 +194,7 @@ fn select(target: &CadIr) -> Vec<Primitive> {
             }
             _ => continue,
         };
-        let generated_name = format!("{} {}", kind, feature.ordinal + 1);
-        if feature
-            .name
-            .as_ref()
-            .is_some_and(|name| name != &generated_name)
-            || feature.source_tag.as_deref().is_some_and(|tag| tag != kind)
-        {
+        if feature.source_tag.as_deref().is_some_and(|tag| tag != kind) {
             continue;
         }
         let operation = match op {
