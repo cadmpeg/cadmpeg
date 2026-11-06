@@ -1017,6 +1017,13 @@ pub(crate) fn decode_face_operands(
                 .copied()
                 .map(|header| header.byte_offset)
                 .or_else(|| {
+                    if !is_offset_faces_operand
+                        && !is_shell_operand
+                        && !is_extrude_operand
+                        && group_member_index + 1 != group.members().len()
+                    {
+                        return None;
+                    }
                     scope
                         .reference_members()
                         .values()

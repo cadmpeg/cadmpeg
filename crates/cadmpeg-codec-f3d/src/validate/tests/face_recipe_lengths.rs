@@ -356,4 +356,6 @@ fn a_final_group_member_frame_ends_at_the_next_scope_reference() {
     let closed = findings(frame_end);
     assert!(closed.is_empty(), "{closed:#?}");
     assert_eq!(findings(frame_end - 1).len(), 1);
+    let earlier = findings(900);
+    assert!(earlier.is_empty(), "{earlier:#?}");
 }
