@@ -5,11 +5,12 @@
 //! carrier with the frame mapped by the composed placement's rotation
 //! `Q = L/s`. Frames are explicit triples; handedness is not assumed, so a
 //! reflecting placement keeps the chart and reverses the carrier normal
-//! `S_u × S_v`. A NURBS chart evaluates the stored surface in its own
-//! coordinates and maps points and partials by the composed placement.
+//! `S_u × S_v`. NURBS and extrusion charts evaluate their carriers in local
+//! coordinates and map points and partials by the composed placement.
 
 use cadmpeg_ir::features::FiniteVector3;
-use cadmpeg_ir::geometry::nurbs::NurbsSurface;
+use cadmpeg_ir::geometry::nurbs::{NurbsCurve, NurbsSurface};
+use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
 use super::placement::Placement;
@@ -21,6 +22,7 @@ use crate::tolerance::INVERSION_PARAMETER_RESOLUTION;
 
 /// Gauss–Newton steps refining one point inverted onto a NURBS carrier.
 const MAX_INVERSION_REFINEMENT_STEPS: usize = 16;
+const EXTRUSION_INVERSION_SEEDS: u32 = 16;
 
 /// The point and first partials of a chart.
 #[derive(Debug, Clone, Copy)]
@@ -104,6 +106,73 @@ pub(crate) struct NurbsChart<'ir> {
     pub(crate) periods: [Option<f64>; 2],
 }
 
+/// A B-spline directrix swept along a vector, evaluated by the IR carrier.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct ExtrusionChart<'ir> {
+    pub(crate) surface: &'ir SurfaceId,
+    pub(crate) directrix: &'ir NurbsCurve,
+    pub(crate) placement: Placement,
+}
+
+impl ExtrusionChart<'_> {
+    pub(crate) fn period(&self) -> Option<f64> {
+        let domain = cadmpeg_ir::eval::nurbs_curve_parameter_domain(self.directrix)?;
+        self.directrix
+            .periodic()
+            .then_some(domain.upper() - domain.lower())
+    }
+
+    fn invert(
+        &self,
+        eval: &Eval<'_, '_>,
+        point: Point3,
+        seed: Option<[f64; 2]>,
+        tolerance: f64,
+    ) -> Measure<Option<[f64; 2]>> {
+        let Some(domain) = cadmpeg_ir::eval::nurbs_curve_parameter_domain(self.directrix) else {
+            return Ok(None);
+        };
+        let low = domain.lower();
+        let high = domain.upper();
+        let chart = Chart::Extrusion(*self);
+        let starts = seed
+            .into_iter()
+            .chain((0..=EXTRUSION_INVERSION_SEEDS).map(|index| {
+                let fraction = f64::from(index) / f64::from(EXTRUSION_INVERSION_SEEDS);
+                [low + (high - low) * fraction, 0.0]
+            }));
+        for mut uv in starts {
+            uv[0] = uv[0].clamp(low, high);
+            for _ in 0..MAX_INVERSION_REFINEMENT_STEPS {
+                let partials = chart.partials(eval, uv[0], uv[1])?;
+                let residual = point.vector_from(partials.point);
+                if residual.norm() <= tolerance {
+                    return Ok(Some(uv));
+                }
+                let (Some(du), Some(dv)) = (
+                    FiniteVector3::new(partials.du),
+                    FiniteVector3::new(partials.dv),
+                ) else {
+                    break;
+                };
+                let Some((step_u, step_v)) =
+                    cadmpeg_ir::math::solve::least_squares_step(du, dv, residual)
+                else {
+                    break;
+                };
+                let next_u = uv[0] + step_u.get();
+                uv[0] = if let Some(period) = self.period() {
+                    low + (next_u - low).rem_euclid(period)
+                } else {
+                    next_u.clamp(low, high)
+                };
+                uv[1] += step_v.get();
+            }
+        }
+        Ok(None)
+    }
+}
+
 /// A chart in model space.
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum Chart<'ir> {
@@ -113,6 +182,7 @@ pub(crate) enum Chart<'ir> {
     Sphere(SphereChart),
     Torus(TorusChart),
     Nurbs(NurbsChart<'ir>),
+    Extrusion(ExtrusionChart<'ir>),
 }
 
 fn no_value(message: &str) -> MeasureFailure {
@@ -270,6 +340,7 @@ impl Chart<'_> {
             Self::Cylinder(_) | Self::Cone(_) | Self::Sphere(_) => [tau, None],
             Self::Torus(_) => [tau, tau],
             Self::Nurbs(nurbs) => nurbs.periods,
+            Self::Extrusion(extrusion) => [extrusion.period(), None],
         }
     }
 
@@ -285,6 +356,22 @@ impl Chart<'_> {
     pub(crate) fn partials(&self, eval: &Eval<'_, '_>, u: f64, v: f64) -> Measure<Partials> {
         match self {
             Self::Nurbs(nurbs) => nurbs.partials(eval, u, v),
+            Self::Extrusion(extrusion) => {
+                let local = eval.work.evaluate(eval.ctx, |admission| {
+                    cadmpeg_ir::eval::model_surface_partials_by_id(
+                        admission,
+                        eval.index,
+                        extrusion.surface,
+                        u,
+                        v,
+                    )
+                })?;
+                Ok(Partials {
+                    point: extrusion.placement.point(local.point.get()),
+                    du: extrusion.placement.vector(local.du.get()),
+                    dv: extrusion.placement.vector(local.dv.get()),
+                })
+            }
             analytic => analytic
                 .closed_partials(u, v)
                 .ok_or_else(|| no_value("the chart has no closed form")),
@@ -303,6 +390,7 @@ impl Chart<'_> {
     ) -> Measure<Option<[f64; 2]>> {
         match self {
             Self::Nurbs(nurbs) => nurbs.invert(eval, point, seed, tolerance),
+            Self::Extrusion(extrusion) => extrusion.invert(eval, point, seed, tolerance),
             analytic => Ok(analytic.closed_invert(point)),
         }
     }
@@ -400,7 +488,7 @@ impl Chart<'_> {
                     ]),
                 }
             }
-            Self::Nurbs(_) => return None,
+            Self::Nurbs(_) | Self::Extrusion(_) => return None,
         })
     }
 
@@ -449,7 +537,7 @@ impl Chart<'_> {
                 let axial = d.dot(torus.axis);
                 [u, (axial / torus.minor).atan2(radial / torus.minor)]
             }
-            Self::Nurbs(_) => return None,
+            Self::Nurbs(_) | Self::Extrusion(_) => return None,
         })
     }
 
@@ -473,7 +561,7 @@ impl Chart<'_> {
             }
             Self::Sphere(sphere) => -sphere.radius * sphere.radius * v.sin(),
             Self::Torus(torus) => -torus.minor.abs() * (torus.major * v + torus.minor * v.sin()),
-            Self::Nurbs(_) => return None,
+            Self::Nurbs(_) | Self::Extrusion(_) => return None,
         })
     }
 }
@@ -616,7 +704,11 @@ impl Chart<'_> {
                 direction: cone.axis,
                 h: cone.h,
             }),
-            Self::Plane(_) | Self::Sphere(_) | Self::Torus(_) | Self::Nurbs(_) => None,
+            Self::Plane(_)
+            | Self::Sphere(_)
+            | Self::Torus(_)
+            | Self::Nurbs(_)
+            | Self::Extrusion(_) => None,
         }
     }
 

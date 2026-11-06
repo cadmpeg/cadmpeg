@@ -43,6 +43,8 @@ use cadmpeg_ir::{
     scalar::{FiniteReal, Length, NonZeroReal, PositiveLength, PositiveReal},
 };
 
+use crate::layout::fillet_edge_item;
+
 use crate::brep::ShapePayloadRecord;
 use crate::native::{malformed, EntryRecord, ObjectRecord, PropertyRecord};
 
@@ -5235,10 +5237,91 @@ fn extrusion_shape(
 /// selection with any operand that does not name exactly one transferred
 /// face or edge stays native.
 pub(crate) fn resolve_subelement_selections(
+    ctx: &DecodeContext<'_>,
     ir: &mut cadmpeg_ir::CadIr,
     properties: &[PropertyRecord],
+    entries: &[EntryRecord],
     occurrences: &[crate::topology_transfer::TopologyOccurrence],
-) {
+) -> Result<(), CodecError> {
+    let mut dress_up_bases = HashSet::new();
+    let mut face_selection = false;
+    for feature in &ir.model.features {
+        let (FeatureDefinition::Operation(operation)
+        | FeatureDefinition::PostProcess { operation, .. }) = feature.evaluation.definition();
+        match operation {
+            FeatureOperation::Shell { removed_faces, .. }
+            | FeatureOperation::Draft {
+                faces: removed_faces,
+                ..
+            } => {
+                face_selection |= matches!(
+                    removed_faces,
+                    cadmpeg_ir::features::FaceSelection::Native(_)
+                );
+            }
+            FeatureOperation::Fillet { groups } => {
+                for group in groups.as_slice() {
+                    if let EdgeSelection::Native(native) = &group.edges {
+                        dress_up_bases.insert(native.clone());
+                    }
+                }
+            }
+            FeatureOperation::Chamfer { groups, .. } => {
+                for group in groups.as_slice() {
+                    if let EdgeSelection::Native(native) = &group.edges {
+                        dress_up_bases.insert(native.clone());
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    if dress_up_bases.is_empty() && !face_selection {
+        return Ok(());
+    }
+    let occurrence_index = index_occurrences(occurrences);
+    let mut bases = HashMap::new();
+    for base in properties.iter().filter(|property| property.name == "Base") {
+        match bases.entry(base.owner.as_str()) {
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(Some(base));
+            }
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                entry.insert(None);
+            }
+        }
+    }
+    let mut part_indices = HashMap::new();
+    for property in properties.iter().filter(|property| {
+        property.name == "Edges" && property.type_name == "Part::PropertyFilletEdges"
+    }) {
+        if !bases
+            .get(property.owner.as_str())
+            .copied()
+            .flatten()
+            .is_some_and(|base| dress_up_bases.contains(&base.id))
+        {
+            continue;
+        }
+        let indices = part_fillet_edge_values(ctx, &[property], entries)?.and_then(|values| {
+            let distinct = values
+                .iter()
+                .map(|value| value.index)
+                .collect::<BTreeSet<_>>();
+            (!values.is_empty()
+                && distinct.len() == values.len()
+                && values.iter().all(|value| value.index > 0))
+            .then_some(values)
+        });
+        match part_indices.entry(property.owner.as_str()) {
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(indices);
+            }
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                entry.insert(None);
+            }
+        }
+    }
     let resolve = |native: &str, indexed_name: &str| -> Option<Vec<String>> {
         let selection = properties.iter().find(|property| property.id == native)?;
         let mut ids = Vec::new();
@@ -5255,20 +5338,12 @@ pub(crate) fn resolve_subelement_selections(
                 // A mapped name ends with its indexed name after the last `.`.
                 let indexed = subelement.rsplit('.').next()?;
                 let index = indexed.strip_prefix(indexed_name)?.parse::<usize>().ok()?;
-                // An edge or vertex is listed once per use; its identity is shared.
-                let matches = occurrences
-                    .iter()
-                    .filter(|occurrence| {
-                        occurrence.property == shape.id
-                            && occurrence.indexed_name == indexed_name
-                            && occurrence.source_index == index
-                    })
-                    .map(|occurrence| occurrence.topology_id.as_str())
-                    .collect::<BTreeSet<_>>();
-                let [id] = matches.into_iter().collect::<Vec<_>>()[..] else {
-                    return None;
-                };
-                ids.push(id.to_owned());
+                ids.push(
+                    occurrence_index
+                        .get(&(shape.id.as_str(), indexed_name, index))?
+                        .as_ref()?
+                        .to_string(),
+                );
             }
         }
         (!ids.is_empty()).then_some(ids)
@@ -5308,7 +5383,35 @@ pub(crate) fn resolve_subelement_selections(
         let EdgeSelection::Native(native) = selection else {
             return;
         };
+        let part_edges = || -> Option<Vec<String>> {
+            let base = properties.iter().find(|property| property.id == *native)?;
+            if base.name != "Base" || base.type_name != "App::PropertyLink" {
+                return None;
+            }
+            let indices = part_indices.get(base.owner.as_str())?.as_ref()?;
+            let [Some(link)] = base.links() else {
+                return None;
+            };
+            if link.document().is_some() || !link.subelements().is_empty() {
+                return None;
+            }
+            let shape = crate::native::unique_property(properties.iter(), |property| {
+                Some(property.owner.as_str()) == link.object() && property.name == "Shape"
+            })
+            .ok()
+            .flatten()?;
+            indices
+                .iter()
+                .map(|edge| {
+                    occurrence_index
+                        .get(&(shape.id.as_str(), "Edge", usize::try_from(edge.index).ok()?))?
+                        .as_ref()
+                        .map(ToString::to_string)
+                })
+                .collect()
+        };
         let Some(edges) = resolve(native, "Edge")
+            .or_else(part_edges)
             .filter(|ids| ids.iter().all(|id| edge_ids.contains(id)))
             .and_then(|ids| {
                 ids.into_iter()
@@ -5350,6 +5453,31 @@ pub(crate) fn resolve_subelement_selections(
             }
         });
     }
+    Ok(())
+}
+
+fn index_occurrences(
+    occurrences: &[crate::topology_transfer::TopologyOccurrence],
+) -> HashMap<(&str, &str, usize), Option<&str>> {
+    let mut index = HashMap::new();
+    for occurrence in occurrences {
+        let key = (
+            occurrence.property.as_str(),
+            occurrence.indexed_name,
+            occurrence.source_index,
+        );
+        let id = occurrence.topology_id.as_str();
+        match index.entry(key) {
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(Some(id));
+            }
+            std::collections::hash_map::Entry::Occupied(mut entry) if *entry.get() != Some(id) => {
+                entry.insert(None);
+            }
+            std::collections::hash_map::Entry::Occupied(_) => {}
+        }
+    }
+    index
 }
 
 fn dress_up_edge_selection(
@@ -5427,18 +5555,18 @@ fn fillet_definition(
         return Ok(None);
     }
     let part_values = if kind == "Part::Fillet" {
-        part_fillet_edge_values(properties, entries)?
+        part_fillet_edge_values(ctx, properties, entries)?
     } else {
         None
     };
     let radius = if kind == "Part::Fillet" {
         let values = required!(part_values);
         let radius = required!(cadmpeg_ir::scalar::PositiveLength::new(
-            required!(values.first())[0]
+            required!(values.first()).values[0]
         ));
         required!(values
             .iter()
-            .all(|[first, second]| *first == radius.get() && *second == radius.get())
+            .all(|edge| edge.values[0] == radius.get() && edge.values[1] == radius.get())
             .then_some(()));
         radius
     } else {
@@ -5473,18 +5601,19 @@ fn chamfer_definition(
         return Ok(None);
     }
     let part_values = if kind == "Part::Chamfer" {
-        part_fillet_edge_values(properties, entries)?
+        part_fillet_edge_values(ctx, properties, entries)?
     } else {
         None
     };
     let spec = if kind == "Part::Chamfer" {
         let values = required!(part_values);
-        let [first_raw, second_raw] = *required!(values.first());
+        let [first_raw, second_raw] = required!(values.first()).values;
         let first = required!(cadmpeg_ir::scalar::PositiveLength::new(first_raw));
         let second = required!(cadmpeg_ir::scalar::PositiveLength::new(second_raw));
-        if !values.iter().all(|[candidate_first, candidate_second]| {
-            *candidate_first == first.get() && *candidate_second == second.get()
-        }) {
+        if !values
+            .iter()
+            .all(|edge| edge.values[0] == first.get() && edge.values[1] == second.get())
+        {
             return Ok(None);
         }
         if first == second {
@@ -5521,10 +5650,17 @@ fn chamfer_definition(
     )))
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct PartFilletEdge {
+    index: i32,
+    values: [f64; 2],
+}
+
 fn part_fillet_edge_values(
+    ctx: &DecodeContext<'_>,
     properties: &[&PropertyRecord],
     entries: &[EntryRecord],
-) -> Result<Option<Vec<[f64; 2]>>, CodecError> {
+) -> Result<Option<Vec<PartFilletEdge>>, CodecError> {
     let Some(property) = property(properties, "Edges") else {
         return Ok(None);
     };
@@ -5542,23 +5678,35 @@ fn part_fillet_edge_values(
     let Some(count) = view.u32_le() else {
         return Ok(None);
     };
-    if usize::try_from(count)
-        .map_err(|_| CodecError::malformed(format_args!("FreeCAD count {count} exceeds usize")))?
-        > MAX_SKETCH_RECORDS
+    let count_usize = usize::try_from(count)
+        .map_err(|_| CodecError::malformed(format_args!("FreeCAD count {count} exceeds usize")))?;
+    if count_usize > MAX_SKETCH_RECORDS {
+        return Ok(None);
+    }
+    if view
+        .counted(u64::from(count), fillet_edge_item::LEN)
+        .is_none()
     {
         return Ok(None);
     }
-    if view.counted(u64::from(count), 20).is_none() {
-        return Ok(None);
-    }
-    let mut values = Vec::new();
-    for _ in 0..count {
-        let Some((_, first, second)) =
-            (|| Some((view.u32_le()?, view.f64_le()?, view.f64_le()?)))()
+    let mut values = ctx.alloc_filled(
+        count_usize,
+        PartFilletEdge {
+            index: 0,
+            values: [0.0; 2],
+        },
+        "freecad fillet edges",
+    )?;
+    for value in &mut values {
+        let Some((index, first, second)) =
+            (|| Some((view.i32_le()?, view.f64_le()?, view.f64_le()?)))()
         else {
             return Ok(None);
         };
-        values.push([first, second]);
+        *value = PartFilletEdge {
+            index,
+            values: [first, second],
+        };
     }
     Ok(view.is_empty().then_some(values))
 }

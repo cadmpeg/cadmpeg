@@ -52,6 +52,36 @@ fn authored_box_and_cylinder_have_their_scripted_measures() {
         let report = measured(name, decoded.ir()).unwrap();
         assert_eq!(report.bodies().len(), 1, "{name}");
         let body = &report.bodies()[0];
+        if name == "external_component" {
+            let [feature] = decoded.ir().model.features.as_slice() else {
+                panic!("one external prototype feature")
+            };
+            assert_eq!(feature.name.as_deref(), Some("ExternalPrototype"));
+            let owner = crate::native::native_id("object", "ExternalPrototype");
+            assert_eq!(feature.native_ref.as_deref(), Some(owner.as_str()));
+            let [output] = feature.evaluation.outputs().as_slice() else {
+                panic!("one external prototype body")
+            };
+            assert_eq!(output.as_str(), body.body());
+            let properties = decoded
+                .ir()
+                .native
+                .namespace("fcstd")
+                .unwrap()
+                .arena_as::<crate::native::PropertyRecord>("properties")
+                .unwrap();
+            let label = properties
+                .iter()
+                .find(|property| property.owner == owner && property.name == "Label")
+                .unwrap();
+            let [value] = label.values() else {
+                panic!("one external prototype label")
+            };
+            assert_eq!(
+                value.attributes.get("value").map(String::as_str),
+                Some("External spacer")
+            );
+        }
         let actual_volume = body
             .volume()
             .as_ref()
@@ -299,4 +329,113 @@ fn authored_geometry_topology_measures_match_dimensions() {
         .value
         .get();
     assert!((length - 2.0 * 74.0_f64.sqrt()).abs() < LENGTH_TOLERANCE);
+}
+
+#[test]
+fn authored_uniform_appearance_binds_every_box_edge_and_vertex() {
+    use std::collections::BTreeSet;
+
+    use cadmpeg_ir::appearance::AppearanceTarget;
+    use cadmpeg_ir::topology::Color;
+
+    const BOX_OBJECT: &str = "Box";
+    let bytes =
+        include_bytes!("../../../../corpus/freecad_fcstd/fixtures/uniform_appearance.FCStd");
+    let decoded = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let model = &decoded.ir().model;
+
+    assert_eq!(model.bodies.len(), 1);
+    assert_eq!(model.faces.len(), 6);
+    assert_eq!(model.edges.len(), 12);
+    assert_eq!(model.vertices.len(), 8);
+
+    let body_color = Color::from_rgba8(51, 102, 153, 255);
+    let edge_color = Color::from_rgba8(179, 51, 26, 255);
+    let vertex_color = Color::from_rgba8(26, 204, 77, 255);
+
+    let body_target = AppearanceTarget::Body(model.bodies[0].id.clone());
+    let body_bindings = model
+        .appearance_bindings
+        .iter()
+        .filter(|binding| matches!(binding.target, AppearanceTarget::Body(_)))
+        .collect::<Vec<_>>();
+    assert_eq!(body_bindings.len(), 1);
+    let body_binding = body_bindings[0];
+    assert_eq!(body_binding.target, body_target);
+    let body_appearance = model
+        .appearances
+        .iter()
+        .find(|appearance| appearance.id == body_binding.appearance)
+        .unwrap();
+    assert_eq!(body_appearance.base_color, Some(body_color));
+    assert_eq!(model.bodies[0].color, Some(body_color));
+
+    let edge_targets = model
+        .edges
+        .iter()
+        .map(|edge| AppearanceTarget::Edge(edge.id.clone()))
+        .collect::<BTreeSet<_>>();
+    let vertex_targets = model
+        .vertices
+        .iter()
+        .map(|vertex| AppearanceTarget::Vertex(vertex.id.clone()))
+        .collect::<BTreeSet<_>>();
+
+    let mut bound_edge_targets = BTreeSet::new();
+    let mut bound_vertex_targets = BTreeSet::new();
+    for binding in &model.appearance_bindings {
+        let appearance = model
+            .appearances
+            .iter()
+            .find(|appearance| appearance.id == binding.appearance)
+            .expect("every topology appearance binding resolves");
+        match &binding.target {
+            AppearanceTarget::Edge(id) => {
+                assert!(bound_edge_targets.insert(AppearanceTarget::Edge(id.clone())));
+                assert_eq!(appearance.base_color, Some(edge_color));
+                assert_eq!(
+                    appearance
+                        .properties
+                        .get("line_width")
+                        .map(|width| width.get()),
+                    Some(3.0)
+                );
+            }
+            AppearanceTarget::Vertex(id) => {
+                assert!(bound_vertex_targets.insert(AppearanceTarget::Vertex(id.clone())));
+                assert_eq!(appearance.base_color, Some(vertex_color));
+                assert_eq!(
+                    appearance
+                        .properties
+                        .get("point_size")
+                        .map(|size| size.get()),
+                    Some(5.0)
+                );
+            }
+            AppearanceTarget::Body(_) => {}
+            _ => {}
+        }
+    }
+    assert_eq!(bound_edge_targets, edge_targets);
+    assert_eq!(bound_vertex_targets, vertex_targets);
+
+    let [view] = model.view_presentations.as_slice() else {
+        panic!("one authored box view presentation");
+    };
+    assert_eq!(
+        view.object.as_deref(),
+        Some(crate::native::native_id("object", BOX_OBJECT).as_str())
+    );
+    assert_eq!(
+        view.line_width
+            .map(cadmpeg_ir::scalar::NonNegativeReal::get),
+        Some(3.0)
+    );
+    assert_eq!(
+        view.point_size
+            .map(cadmpeg_ir::scalar::NonNegativeReal::get),
+        Some(5.0)
+    );
 }
