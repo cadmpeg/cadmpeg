@@ -6,7 +6,7 @@
 //! originating system. The decoder projects each held field into a
 //! document-targeted neutral attribute, so a re-decode of a file the writer
 //! produced holds the same attributes the writer folded into the header.
-//! The attribute names are the names the IGES and FreeCAD decoders use for
+//! The attribute names are the names the IGES and `FreeCAD` decoders use for
 //! the same facts, so their document attributes pair across formats.
 
 use cadmpeg_core::decode::DecodeContext;

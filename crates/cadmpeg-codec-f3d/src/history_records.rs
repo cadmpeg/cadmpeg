@@ -854,12 +854,12 @@ mod tests {
     fn history_record_borrowed_wire_matches_owned_wire_bytes() {
         use super::{AsmHistoryRecord, AsmHistoryRecordFraming, AsmHistoryRecordWire};
 
-        for framing in [AsmHistoryRecordFraming::Framed {
+        let framing = AsmHistoryRecordFraming::Framed {
             index: 4,
             name: "edge".into(),
             entity_references: vec![7, -1],
-        }] {
-            let record = AsmHistoryRecord {
+        };
+        let record = AsmHistoryRecord {
                 id: "f3d:native:history_record#1".into(),
                 parent: "f3d:native:state#1".into(),
                 revision_id: Some(7),
@@ -868,11 +868,10 @@ mod tests {
                 raw_bytes: (b"history payload".to_vec()).into(),
             };
             let old = AsmHistoryRecordWire::from(record.clone());
-            assert_eq!(
-                serde_json::to_vec(&record).unwrap(),
-                serde_json::to_vec(&old).unwrap()
-            );
-        }
+        assert_eq!(
+            serde_json::to_vec(&record).unwrap(),
+            serde_json::to_vec(&old).unwrap()
+        );
     }
 
     #[test]

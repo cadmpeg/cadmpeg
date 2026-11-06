@@ -292,7 +292,7 @@ fn decode_sketch_visibilities_in_stream(
         out.push(decode_sketch_visibility_frame(bytes, metadata, frame)?);
     }
     let Some(rejected) =
-        validate_sketch_visibility_collections(bytes, metadata, &out, &Default::default(), None)?
+        validate_sketch_visibility_collections(bytes, metadata, &out, &std::collections::HashSet::default(), None)?
     else {
         return Ok(Vec::new());
     };
