@@ -983,13 +983,21 @@ fn serialize_geometry_inner(
             if coedge.pcurves.is_empty() {
                 continue;
             }
-            let face = ir
+            let Some(face) = ir
                 .model
                 .loops
                 .iter()
                 .find(|wire| wire.id == coedge.owner_loop)
                 .and_then(|wire| ir.model.faces.iter().find(|face| face.id == wire.face))
-                .ok_or_else(|| CodecError::malformed("coedge has an absent loop or face"))?;
+            else {
+                for usage in &coedge.pcurves {
+                    losses.push(FreecadLossCode::ExportGeometryNotTransferred.note(format!(
+                        "pcurve {} on coedge {} has no available owning face and is omitted",
+                        usage.pcurve, coedge.id
+                    )));
+                }
+                continue;
+            };
             let Some((surface, surface_location, _)) = surface_ids.get(face.surface.as_str())
             else {
                 for usage in &coedge.pcurves {
