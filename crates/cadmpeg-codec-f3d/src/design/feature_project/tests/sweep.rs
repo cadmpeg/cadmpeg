@@ -107,6 +107,7 @@ fn guide_surface_input() -> (
             asset_id_offset: 32_040,
             entity_id: "0_2718".to_owned().try_into().unwrap(),
             entity_reference_offset: 32_080,
+            compact_tail_flags: None,
             region_selection: None,
             paired_class_tag: "258".to_owned().try_into().unwrap(),
             paired_byte_offset: 32_180,

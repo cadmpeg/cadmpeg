@@ -822,6 +822,7 @@ fn single_curve_annotation_projects_parameterized_offset() {
         id,
         record_index,
         owner_reference: Some(100),
+        geometry_group: None,
         class_tag: crate::records::references::DesignClassTag::try_from("262".to_owned()).unwrap(),
         byte_offset: 0,
         geometry_offset: 0,
@@ -1310,6 +1311,7 @@ fn counted_angular_group_projects_unique_point_selected_line() {
         id: format!("{stream}:sketch-point#40"),
         record_index: 40,
         owner_reference: Some(100),
+        geometry_group: None,
         class_tag: crate::records::references::DesignClassTag::try_from("300".to_owned()).unwrap(),
         byte_offset: 0,
         coordinate_offset: 0,
@@ -1334,6 +1336,7 @@ fn counted_angular_group_projects_unique_point_selected_line() {
             id: format!("{stream}:sketch-curve#{record_index}"),
             record_index,
             owner_reference: Some(100),
+            geometry_group: None,
             class_tag: crate::records::references::DesignClassTag::try_from("301".to_owned())
                 .unwrap(),
             byte_offset: 0,
