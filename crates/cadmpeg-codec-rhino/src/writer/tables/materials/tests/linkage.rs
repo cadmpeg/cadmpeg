@@ -457,3 +457,26 @@ fn incomplete_texture_omits_only_the_texture_channel() {
     let error = super::super::texture_array(&[json!({})], &id).unwrap_err();
     assert!(matches!(error, crate::writer::WriteError::Omit(reason) if reason.contains(&id)));
 }
+
+#[test]
+fn unlinked_material_with_incomplete_texture_keeps_writable_material() {
+    let original = material();
+    let id = original.id().to_owned();
+    let mut fields = original.fields().unwrap();
+    fields.insert("texture_count".into(), json!(1));
+    fields.insert("textures".into(), json!([{"name":"incomplete"}]));
+    let record = NativeRecord::new(id.as_str().try_into().unwrap(), fields).unwrap();
+    let mut ir = CadIr::empty();
+    ir.native
+        .namespace_mut("rhino")
+        .arenas_mut()
+        .insert("materials".into(), vec![record]);
+    let plan = MaterialPlan::new(&ir).unwrap();
+    assert!(plan.losses().iter().any(|loss| loss.message.contains(&id)));
+    let output = read(&plan.encode(&ir).unwrap(), false);
+    assert_eq!(
+        native(&output).field("name"),
+        Some(json!("Source material"))
+    );
+    assert_eq!(native(&output).field("texture_count"), Some(json!(0)));
+}
