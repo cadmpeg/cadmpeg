@@ -508,6 +508,9 @@ pub(super) fn encode_design_bulkstream(
             }
             prefix[0..4].copy_from_slice(&3u32.to_le_bytes());
             prefix[4..7].copy_from_slice(design_id.as_bytes());
+            if let Some(selector) = &design.selector {
+                prefix[7..11].copy_from_slice(&selector.value.to_le_bytes());
+            }
         }
         // A generated Design recipe states its own record index; a native
         // recipe that states none has no index word to regenerate.

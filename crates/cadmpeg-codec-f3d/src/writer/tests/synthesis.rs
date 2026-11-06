@@ -1055,7 +1055,7 @@ fn independent_native_streams_may_reuse_local_registry_and_recipe_identities() {
     use crate::records::entity_header::{BaseTypeGuid, SegmentType, SegmentTypeData};
     use crate::records::identity::{RecordedValue, ReferenceRun};
     use crate::records::recipes::{
-        ConstructionRecipe, ConstructionRecipeDesign, ConstructionRecipeKind,
+        ConstructionRecipe, ConstructionRecipeDesign, ConstructionRecipeKind, ConstructionRecipeSelector,
     };
     use crate::test_support::native_test::{f3d_native, f3d_native_mut};
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("cube");
@@ -1099,7 +1099,7 @@ fn independent_native_streams_may_reuse_local_registry_and_recipe_identities() {
                         value: "333".into(),
                         offset: Some(0),
                     },
-                    selector: None,
+                    selector: Some(ConstructionRecipeSelector { value: 42, byte_offset: None }),
                 }),
                 recipe_index: 0,
                 record_index: Some(RecordedValue {
@@ -1113,6 +1113,7 @@ fn independent_native_streams_may_reuse_local_registry_and_recipe_identities() {
     assert_eq!(output.ir().model.bodies.len(), 1);
     assert_eq!(output.ir().model.faces.len(), ir.model.faces.len());
     assert_eq!(f3d_native(output.ir()).construction_recipes.len(), 1);
+    assert_eq!(f3d_native(output.ir()).construction_recipes[0].design.as_ref().unwrap().selector.as_ref().unwrap().value, 42);
     assert!(report
         .losses
         .iter()
