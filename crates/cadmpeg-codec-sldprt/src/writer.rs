@@ -1339,6 +1339,12 @@ pub(crate) const REDUCED_FIELDS: &[cadmpeg_ir::codec::write::ReducedField] = &[
         path: "model.appearances[].base_color",
         storage: cadmpeg_ir::codec::write::ReducedStorage::U8Channel,
     },
+    cadmpeg_ir::codec::write::ReducedField {
+        path: "model.tessellations[].channels[].flags",
+        storage: cadmpeg_ir::codec::write::ReducedStorage::Normalized {
+            loss: "sldprt/writer.fields-omitted",
+        },
+    },
 ];
 
 /// The u8 UTF-16 code-unit count of one `SWObjects` material name.
@@ -3825,7 +3831,7 @@ fn strip_rows<V: Clone>(
 
 fn tessellation_f32(value: f64, role: &str) -> Result<f32, CodecError> {
     debug_assert!(
-        REDUCED_FIELDS.len() == 3
+        REDUCED_FIELDS.len() == 4
             && REDUCED_FIELDS[0].storage == cadmpeg_ir::codec::write::ReducedStorage::F32
             && REDUCED_FIELDS[1].storage == cadmpeg_ir::codec::write::ReducedStorage::F32,
         "tessellation vertices and normals reduce through the declared F32 rows"
@@ -3951,7 +3957,7 @@ fn material_payload(name: &str, color: Color) -> Result<Vec<u8>, write_error::Wr
     // rounded product is in [0, 255].
     let component = |value: f32| {
         debug_assert!(
-            REDUCED_FIELDS.len() == 3
+            REDUCED_FIELDS.len() == 4
                 && REDUCED_FIELDS[2].storage == cadmpeg_ir::codec::write::ReducedStorage::U8Channel,
             "material base colours reduce through the declared U8Channel row"
         );

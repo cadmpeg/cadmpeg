@@ -396,6 +396,7 @@ fn reduced_rows_hold_their_storage() {
             "model.tessellations[].vertices[]",
             "model.tessellations[].vertex_normals[]",
             "model.appearances[].base_color",
+            "model.tessellations[].channels[].flags",
         ]
     );
     assert_eq!(
@@ -404,6 +405,9 @@ fn reduced_rows_hold_their_storage() {
             cadmpeg_ir::codec::write::ReducedStorage::F32,
             cadmpeg_ir::codec::write::ReducedStorage::F32,
             cadmpeg_ir::codec::write::ReducedStorage::U8Channel,
+            cadmpeg_ir::codec::write::ReducedStorage::Normalized {
+                loss: "sldprt/writer.fields-omitted",
+            },
         ]
     );
     let payload = crate::writer::material_payload(
