@@ -364,7 +364,7 @@ fn mutation_rejects_link_carrier_edits_without_changing_the_graph() {
 #[test]
 fn writer_omits_direct_link_carrier_graph_drift() {
     let document = r#"<Document SchemaVersion="4" FileVersion="1">
-<Objects Count="2"><Object type="Part::Feature" name="Owner"/><Object type="Part::Feature" name="Target"/></Objects>
+<Objects Count="2"><Object type="App::Part" name="Owner"/><Object type="Part::Feature" name="Target"/></Objects>
 <ObjectData Count="2"><Object name="Owner"><Properties Count="1"><Property name="Support" type="App::PropertyLink"><Link value="Target"/></Property></Properties></Object><Object name="Target"><Properties Count="0"/></Object></ObjectData></Document>"#;
     let decoded = FcstdCodec
         .decode(
