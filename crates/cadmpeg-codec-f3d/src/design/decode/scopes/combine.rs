@@ -33,6 +33,7 @@ use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::report::loss::LossNote;
 use std::collections::HashMap;
+use std::collections::HashSet;
 
 const MARKED_REFERENCE_LEN: usize = 11;
 const COMBINE_CLAUSE_LEN: usize = 12;
@@ -56,18 +57,21 @@ pub(super) fn exact_combine_operation(
         return Ok(None);
     };
     let mut operand_lists_refused = false;
-    for prologue in combine_prologues(bytes, start, scope, stream_types) {
+    for prologue in combine_prologues(bytes, start, scope) {
         let operand_lists = prologue.lists.is_some();
-        if let Some(operation) = combine_operation_with(bytes, records, scope, prologue)? {
-            if operand_lists_refused {
-                losses.push(F3dLossCode::FeatureCombineStandardFormAssumed.note(format!(
-                    "{}: the Combine frame matches the fixed operand-list fields and its lists do not name its operands; it is read in the standard prologue",
-                    scope.id
-                )));
+        match combine_operation_with(bytes, records, scope, stream_types, prologue)? {
+            PrologueReading::Operation(operation) => {
+                if operand_lists_refused {
+                    losses.push(F3dLossCode::FeatureCombineStandardFormAssumed.note(format!(
+                        "{}: the Combine frame matches the fixed operand-list fields and its lists do not name its operands; it is read in the standard prologue",
+                        scope.id
+                    )));
+                }
+                return Ok(Some(operation));
             }
-            return Ok(Some(operation));
+            PrologueReading::Native => return Ok(None),
+            PrologueReading::Refused => operand_lists_refused |= operand_lists,
         }
-        operand_lists_refused |= operand_lists;
     }
     Ok(None)
 }
@@ -80,20 +84,29 @@ struct CombinePrologue {
     lists: Option<OperandLists>,
 }
 
-/// Where the operand lists of an operand-list prologue start, and the
-/// companion `RemoveBody` scopes it names.
+/// Where the operand lists of an operand-list prologue start, and the fields
+/// that its lists settle.
 struct OperandLists {
     tool_count_offset: usize,
     companions: Vec<u32>,
+    new_component: u8,
 }
 
-/// The prologue readings to try in order. A frame whose byte 20 is one is an
-/// operand-list frame only when its lists close at the reference table.
+/// The result of reading a frame in one prologue.
+enum PrologueReading {
+    Operation(DesignCombineOperation),
+    /// The lists name the scope's operands, so the frame stores this
+    /// prologue, and a field contradicts it or names a new component.
+    Native,
+    Refused,
+}
+
+/// The prologue readings to try in order. The lists of an operand-list
+/// reading decide whether the frame stores that prologue.
 fn combine_prologues(
     bytes: &[u8],
     start: usize,
     scope: &DesignParameterScope,
-    stream_types: &HashMap<u64, (&str, u32)>,
 ) -> Vec<CombinePrologue> {
     let compact = scope.class_tag.as_str() == "387"
         && scope.paired_class_tag.as_str() == "258"
@@ -112,12 +125,10 @@ fn combine_prologues(
     let mut prologues = usize::try_from(scope.reference_count_offset())
         .ok()
         .and_then(|table_at| bytes.get(..table_at))
-        .and_then(|prologue| operand_list_prologue(prologue, start, stream_types))
+        .and_then(|prologue| operand_list_prologue(prologue, start))
         .into_iter()
         .collect::<Vec<_>>();
-    if bytes.get(start + combine_lists::PROPERTY_PRESENCE) != Some(&0) {
-        prologues.extend(standard_prologue(bytes, start));
-    }
+    prologues.extend(standard_prologue(bytes, start));
     prologues
 }
 
@@ -167,11 +178,7 @@ fn extended_reference_prologue(bytes: &[u8], start: usize) -> Option<CombineProl
 
 /// Read the fixed fields of an operand-list prologue from `prologue`, the
 /// stream bytes up to the scope's reference table.
-fn operand_list_prologue(
-    prologue: &[u8],
-    start: usize,
-    stream_types: &HashMap<u64, (&str, u32)>,
-) -> Option<CombinePrologue> {
+fn operand_list_prologue(prologue: &[u8], start: usize) -> Option<CombinePrologue> {
     let property_block = match prologue.get(start + combine_lists::PROPERTY_PRESENCE)? {
         0 => 0,
         1 if View::u32_le_at(prologue, start + combine_lists::OPERATION)? == 0 => {
@@ -187,24 +194,14 @@ fn operand_list_prologue(
     let mut cursor = start.checked_add(combine_lists::COMPANION_COUNT + property_block)?;
     let companion_limit = prologue.len().checked_sub(cursor)? / MARKED_REFERENCE_LEN;
     let companions = take_marked_records(prologue, &mut cursor, companion_limit)?;
-    if companions.iter().any(|record_index| {
-        stream_types
-            .get(&u64::from(*record_index))
-            .is_none_or(|(type_guid, _)| !type_guid.eq_ignore_ascii_case(REMOVE_BODY_TYPE_GUID))
-    }) {
-        return None;
-    }
     let shift = cursor.checked_sub(start.checked_add(combine_lists::KEEP_TOOLS)?)?;
     let field = |offset: usize| start.checked_add(offset)?.checked_add(shift);
-    let keep_tools_offset = field(combine_lists::KEEP_TOOLS)?;
-    if prologue.get(field(combine_lists::NEW_COMPONENT)?) != Some(&0)
-        || View::u32_le_at(prologue, field(combine_lists::CONSTANT_ONE)?) != Some(1)
+    if View::u32_le_at(prologue, field(combine_lists::CONSTANT_ONE)?) != Some(1)
         || prologue.get(field(combine_lists::REFERENCE_MARKER)?) != Some(&1)
         || View::u64_le_at(prologue, field(combine_lists::REFERENCE_VALUE)?)
             .is_none_or(|reference| reference == 0)
         || prologue.get(field(combine_lists::REFERENCE_TAIL)?..field(combine_lists::STAMP)?)?
             != [0; 2]
-        || (!companions.is_empty() && prologue.get(keep_tools_offset) != Some(&0))
     {
         return None;
     }
@@ -213,10 +210,11 @@ fn operand_list_prologue(
         operation_offset: start
             .checked_add(combine_lists::OPERATION)?
             .checked_add(property_block)?,
-        keep_tools_offset,
+        keep_tools_offset: field(combine_lists::KEEP_TOOLS)?,
         lists: Some(OperandLists {
             tool_count_offset: field(combine_lists::TOOL_COUNT)?,
             companions,
+            new_component: *prologue.get(field(combine_lists::NEW_COMPONENT)?)?,
         }),
     })
 }
@@ -241,8 +239,9 @@ fn combine_operation_with(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
+    stream_types: &HashMap<u64, (&str, u32)>,
     prologue: CombinePrologue,
-) -> Result<Option<DesignCombineOperation>, CodecError> {
+) -> Result<PrologueReading, CodecError> {
     let CombinePrologue {
         form,
         operation_offset,
@@ -251,18 +250,22 @@ fn combine_operation_with(
     } = prologue;
     (|| {
         let first_operation_code = u32::from(form != DesignCombineForm::OperandLists);
-        let operation =
-            match View::u32_le_at(bytes, operation_offset)?.checked_sub(first_operation_code)? {
-                0 => cadmpeg_ir::features::BooleanKind::Join,
-                1 => cadmpeg_ir::features::BooleanKind::Cut,
-                2 => cadmpeg_ir::features::BooleanKind::Intersect,
-                _ => return None,
-            };
-        let keep_tools = match bytes.get(keep_tools_offset)? {
-            0 => false,
-            1 => true,
-            _ => return None,
+        let operation = match View::u32_le_at(bytes, operation_offset)
+            .and_then(|code| code.checked_sub(first_operation_code))
+        {
+            Some(0) => Some(cadmpeg_ir::features::BooleanKind::Join),
+            Some(1) => Some(cadmpeg_ir::features::BooleanKind::Cut),
+            Some(2) => Some(cadmpeg_ir::features::BooleanKind::Intersect),
+            _ => None,
         };
+        let keep_tools = match bytes.get(keep_tools_offset) {
+            Some(0) => Some(false),
+            Some(1) => Some(true),
+            _ => None,
+        };
+        if lists.is_none() && (operation.is_none() || keep_tools.is_none()) {
+            return None;
+        }
         let mut target = None;
         let mut target_body_node = None;
         let mut target_operation = None;
@@ -326,57 +329,68 @@ fn combine_operation_with(
             }
         }
         let target = target?;
-        if let Some(lists) = &lists {
-            let table_at = usize::try_from(scope.reference_count_offset()).ok()?;
-            if !operand_lists_name_operands(
-                bytes.get(..table_at)?,
-                lists,
-                scope.reference_members().len(),
-                keep_tools,
-                &tool_operations,
-                target_operation?,
-            ) {
-                return None;
-            }
-        }
         let tools = combine::DesignCombineTools {
             first: first_tool?,
             additional: additional_tools,
         };
-        Some(Ok(DesignCombineOperation {
+        if let Some(lists) = &lists {
+            let table_at = usize::try_from(scope.reference_count_offset()).ok()?;
+            let stored = stored_operand_lists(
+                bytes.get(..table_at)?,
+                lists,
+                scope.reference_members().len(),
+                &tool_operations,
+                target_operation?,
+            )?;
+            let fields_hold = keep_tools.is_some_and(|keep_tools| {
+                operand_list_fields_hold(
+                    bytes,
+                    records,
+                    stream_types,
+                    lists,
+                    &stored,
+                    keep_tools,
+                    tool_operations.len(),
+                )
+            });
+            if operation.is_none() || !fields_hold {
+                return Some(Ok(PrologueReading::Native));
+            }
+        }
+        Some(Ok(PrologueReading::Operation(DesignCombineOperation {
             form,
-            operation,
+            operation: operation?,
             operation_offset: u64::try_from(operation_offset).ok()?,
-            keep_tools,
+            keep_tools: keep_tools?,
             keep_tools_offset: u64::try_from(keep_tools_offset).ok()?,
             target_record_index: target,
             target_body_node,
             tools,
-        }))
+        })))
     })()
-    .transpose()
+    .unwrap_or(Ok(PrologueReading::Refused))
 }
 
-/// Check the lists between the operand-list prologue and the reference table.
+/// The lists between the tool list and the target list of an operand-list
+/// prologue, and the counted GUID of the `Combine` scope.
+struct StoredOperandLists<'a> {
+    middle: Vec<Vec<u32>>,
+    guid: &'a [u8],
+}
+
+/// Read the lists of an operand-list prologue when they name
+/// `tool_operations` and `target_operation` and end at the reference table.
 ///
 /// `prologue` holds the stream bytes up to the reference table. A prologue
-/// with a companion can store two lists between the tool list and the target
-/// list in place of three.
-fn operand_lists_name_operands(
-    prologue: &[u8],
+/// stores two or three lists between the tool list and the target list.
+fn stored_operand_lists<'a>(
+    prologue: &'a [u8],
     lists: &OperandLists,
     reference_count: usize,
-    keep_tools: bool,
     tool_operations: &[u32],
     target_operation: u32,
-) -> bool {
-    let has_companion = !lists.companions.is_empty();
-    let consumed_count = if keep_tools || has_companion {
-        0
-    } else {
-        tool_operations.len()
-    };
-    let read = |middle_count: usize| -> Option<bool> {
+) -> Option<StoredOperandLists<'a>> {
+    [3, 2].into_iter().find_map(|middle_count| {
         let mut cursor = lists.tool_count_offset;
         let tools = take_marked_records(prologue, &mut cursor, reference_count)?;
         let mut middle = Vec::new();
@@ -384,24 +398,70 @@ fn operand_lists_name_operands(
             middle.push(take_marked_records(prologue, &mut cursor, reference_count)?);
         }
         let targets = take_marked_records(prologue, &mut cursor, reference_count)?;
-        let guid_end = fixed_guid_end(prologue, cursor)?;
+        let guid_at = cursor;
+        let guid_end = fixed_guid_end(prologue, guid_at)?;
         let table_at = guid_end.checked_add(3)?;
-        let middle_holds = match &middle[..] {
-            [first, second, consumed] => {
-                first.is_empty() && second.is_empty() && consumed.len() == consumed_count
-            }
-            [first, second] => has_companion && first.is_empty() && second.is_empty(),
-            _ => false,
-        };
-        Some(
-            middle_holds
-                && tools == tool_operations
-                && targets == [target_operation]
-                && prologue.get(guid_end..table_at)? == [0; 3]
-                && table_at == prologue.len(),
-        )
+        if tools != tool_operations
+            || targets != [target_operation]
+            || prologue.get(guid_end..table_at)? != [0; 3]
+            || table_at != prologue.len()
+        {
+            return None;
+        }
+        Some(StoredOperandLists {
+            middle,
+            guid: prologue.get(guid_at..guid_end)?,
+        })
+    })
+}
+
+/// Check the fields of an operand-list frame whose lists name its operands.
+///
+/// A prologue with a companion can store two lists between the tool list and
+/// the target list in place of three. Each companion is a distinct
+/// `RemoveBody` scope that stores the counted GUID of the `Combine` scope.
+fn operand_list_fields_hold(
+    bytes: &[u8],
+    records: &IndexedRecordOffsets,
+    stream_types: &HashMap<u64, (&str, u32)>,
+    lists: &OperandLists,
+    stored: &StoredOperandLists<'_>,
+    keep_tools: bool,
+    tool_count: usize,
+) -> bool {
+    let has_companion = !lists.companions.is_empty();
+    let consumed_count = if keep_tools || has_companion {
+        0
+    } else {
+        tool_count
     };
-    read(3) == Some(true) || read(2) == Some(true)
+    let middle_holds = match &stored.middle[..] {
+        [first, second, consumed] => {
+            first.is_empty() && second.is_empty() && consumed.len() == consumed_count
+        }
+        [first, second] => has_companion && first.is_empty() && second.is_empty(),
+        _ => false,
+    };
+    let mut companions = HashSet::new();
+    lists.new_component == 0
+        && !(has_companion && keep_tools)
+        && middle_holds
+        && lists.companions.iter().all(|record_index| {
+            companions.insert(*record_index)
+                && stream_types
+                    .get(&u64::from(*record_index))
+                    .is_some_and(|(type_guid, _)| {
+                        type_guid.eq_ignore_ascii_case(REMOVE_BODY_TYPE_GUID)
+                    })
+                && match records.offsets(*record_index) {
+                    [at, end] => bytes.get(*at..*end).is_some_and(|record| {
+                        record
+                            .windows(stored.guid.len())
+                            .any(|window| window == stored.guid)
+                    }),
+                    _ => false,
+                }
+        })
 }
 
 fn selection_body_node(

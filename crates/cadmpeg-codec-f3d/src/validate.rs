@@ -92,7 +92,7 @@ fn body_recipe_reference_table_is_admitted(
 
 /// An operand-list `Combine` stores its operation after the presence byte, or
 /// after an empty property block, and its keep-tools Boolean after the
-/// companion list.
+/// companion list. A `Combine` with a companion consumes its tools.
 fn operand_list_combine_offsets_hold(
     scope_offset: u64,
     operation: &records::feature::combine::DesignCombineOperation,
@@ -111,7 +111,9 @@ fn operand_list_combine_offsets_hold(
         .checked_sub(operation.operation_offset)
         .and_then(|distance| distance.checked_sub(keep_tools_after_operation));
     matches!(property_block, Some(0 | EMPTY_PROPERTY_BLOCK_LEN))
-        && companion_bytes.is_some_and(|bytes| bytes.is_multiple_of(COMPANION_REFERENCE_LEN))
+        && companion_bytes.is_some_and(|bytes| {
+            bytes.is_multiple_of(COMPANION_REFERENCE_LEN) && (bytes == 0 || !operation.keep_tools)
+        })
 }
 
 /// A rigid `As-built` alignment has no parameter owners, so its angle and

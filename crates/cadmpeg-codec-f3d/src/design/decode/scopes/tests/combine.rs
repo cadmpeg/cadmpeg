@@ -592,6 +592,7 @@ struct OperandListFixture {
     middle_lists: [Vec<u32>; 2],
     companions: Vec<u32>,
     companion_type: &'static str,
+    companion_guid: &'static str,
     new_component: u8,
     omit_consumed: bool,
 }
@@ -616,6 +617,7 @@ impl OperandListFixture {
             middle_lists: [Vec::new(), Vec::new()],
             companions: Vec::new(),
             companion_type: crate::design::decode::body_consumers::REMOVE_BODY_TYPE_GUID,
+            companion_guid: "00000000-0000-0000-0000-000000000000",
             new_component: 0,
             omit_consumed: false,
         }
@@ -749,6 +751,16 @@ impl OperandListFixture {
             marked(&mut bytes, selection + 200);
             bytes.resize(bytes.len() + self.node_trailing_bytes, 0);
             indexed_header(&mut bytes, *b"258", node);
+        }
+        let mut companion_records = self.companions.clone();
+        companion_records.sort_unstable();
+        companion_records.dedup();
+        for companion in companion_records {
+            indexed_header(&mut bytes, *b"412", companion);
+            bytes.extend_from_slice(&[0; 10]);
+            lp_utf16(&mut bytes, self.companion_guid);
+            bytes.extend_from_slice(&[0; 3]);
+            indexed_header(&mut bytes, *b"258", companion);
         }
         bytes
     }
@@ -1006,12 +1018,17 @@ fn operand_list_companions_remove_the_tools_of_a_consuming_combine() {
     two_lists_without_companion.omit_consumed = true;
     let mut new_component = companion(true, vec![500]);
     new_component.new_component = 1;
+    let mut other_guid = companion(false, vec![500]);
+    other_guid.companion_guid = "00000000-0000-0000-0000-000000000001";
+    let repeated = companion(false, vec![500, 500]);
     for fixture in [
         other_type,
         kept_tools,
         consumed_tools,
         two_lists_without_companion,
         new_component,
+        other_guid,
+        repeated,
     ] {
         assert_eq!(fixture.decode(), None);
     }
@@ -1062,4 +1079,26 @@ fn a_frame_with_operand_list_fields_and_other_lists_is_read_in_the_standard_prol
         losses.into_iter().map(|loss| loss.code).collect::<Vec<_>>(),
         [F3dLossCode::FeatureCombineStandardFormAssumed.kind()]
     );
+}
+
+#[test]
+fn a_frame_whose_lists_name_its_operands_stays_native_when_a_field_contradicts_it() {
+    let mut new_component = OperandListFixture::new(1, 1);
+    new_component.property_block = true;
+    new_component.new_component = 1;
+    new_component.middle_lists[1] = vec![194];
+    let mut invalid_keep_tools = OperandListFixture::new(0, 2);
+    invalid_keep_tools.property_block = true;
+    let mut unconsumed_tools = OperandListFixture::new(0, 0);
+    unconsumed_tools.property_block = true;
+    unconsumed_tools.consumed = Some(Vec::new());
+    for (name, fixture) in [
+        ("new component", new_component),
+        ("keep-tools", invalid_keep_tools),
+        ("consumed", unconsumed_tools),
+    ] {
+        let (operation, losses) = fixture.decode_with_losses();
+        assert_eq!(operation, None, "{name}");
+        assert!(losses.is_empty(), "{name}");
+    }
 }

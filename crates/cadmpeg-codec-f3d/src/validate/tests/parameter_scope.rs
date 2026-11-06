@@ -122,7 +122,7 @@ fn operand_list_combine_requires_its_own_offsets() {
     };
     use crate::records::identity::ReferenceRun;
 
-    let findings = |operation_offset: u64, keep_tools_offset: u64| {
+    let findings = |operation_offset: u64, keep_tools_offset: u64, keep_tools: bool| {
         let mut scope = DesignParameterScope::empty(
             "f3d:Design/BulkStream.dat:design-parameter-scope#17",
             DesignFeatureKind::Combine,
@@ -143,7 +143,7 @@ fn operand_list_combine_requires_its_own_offsets() {
                 form: DesignCombineForm::OperandLists,
                 operation: cadmpeg_ir::features::BooleanKind::Join,
                 operation_offset,
-                keep_tools: false,
+                keep_tools,
                 keep_tools_offset,
                 target_record_index: 304,
                 target_body_node: None,
@@ -175,23 +175,27 @@ fn operand_list_combine_requires_its_own_offsets() {
             findings.len()
         })
     };
-    assert_eq!(findings(21, 29), 0);
-    assert_eq!(findings(20, 29), 1);
-    assert_eq!(findings(21, 25), 1);
+    assert_eq!(findings(21, 29, false), 0);
+    assert_eq!(findings(20, 29, false), 1);
+    assert_eq!(findings(21, 25, false), 1);
     for (operation_offset, keep_tools_offset) in [(25, 33), (21, 40), (25, 44), (21, 51)] {
         assert_eq!(
-            findings(operation_offset, keep_tools_offset),
+            findings(operation_offset, keep_tools_offset, false),
             0,
             "{operation_offset} {keep_tools_offset}"
         );
     }
     for (operation_offset, keep_tools_offset) in [(23, 31), (29, 37), (21, 35), (25, 39)] {
         assert_eq!(
-            findings(operation_offset, keep_tools_offset),
+            findings(operation_offset, keep_tools_offset, false),
             1,
             "{operation_offset} {keep_tools_offset}"
         );
     }
+    assert_eq!(findings(21, 29, true), 0);
+    assert_eq!(findings(25, 33, true), 0);
+    assert_eq!(findings(21, 40, true), 1);
+    assert_eq!(findings(25, 44, true), 1);
 }
 
 #[test]
