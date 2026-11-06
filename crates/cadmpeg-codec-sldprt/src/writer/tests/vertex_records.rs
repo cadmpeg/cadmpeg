@@ -43,9 +43,10 @@ fn topology_with_wide_references_redecodes() {
     use cadmpeg_ir::ids::PointId;
     use cadmpeg_ir::topology::Point;
 
+    for point_count in [0x8000, 0x1_0000] {
     let mut ir = crate::test_support::ir::source_less_cube();
     let position = ir.model.points[0].position();
-    let mut points = (0..0x8000)
+    let mut points = (0..point_count)
         .map(|index| {
             Point::new(
                 PointId::mint(format!("synthetic:test:point#{index}")).unwrap(),
@@ -65,4 +66,5 @@ fn topology_with_wide_references_redecodes() {
     assert_eq!(output.ir().model.faces.len(), 6);
     assert_eq!(output.ir().model.edges.len(), 12);
     assert_eq!(output.ir().model.vertices.len(), 8);
+    }
 }

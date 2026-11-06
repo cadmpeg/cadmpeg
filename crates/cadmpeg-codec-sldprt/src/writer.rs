@@ -1065,9 +1065,7 @@ fn section_type_ids(
         let mut identities = HashSet::new();
         for block in &scan.blocks {
             if let Some(section) = block.section.name() {
-                if !identities.insert((section, block.type_id))
-                    && emitted.contains(section)
-                {
+                if !identities.insert((section, block.type_id)) && emitted.contains(section) {
                     return Err(write_error::WriteError::Decline(format!(
                         "SLDPRT source member {section} has an ambiguous type identity"
                     )));
@@ -1317,6 +1315,12 @@ pub(crate) const CAPACITY_FIELDS: &[cadmpeg_ir::codec::write::CapacityField] = &
     CONFIGURATION_INDEX_CAPACITY,
     crate::resolved_features::write_prepare::SPATIAL_OPERAND_CAPACITY,
     TYPED_NODE_ID_CAPACITY,
+    cadmpeg_ir::codec::write::CapacityField {
+        field: "parasolid.node_identity",
+        limit: 0x7fff_ffff,
+        source: "docs/formats/sldprt.md §4: node pointer identity uses 31 bits",
+        helper: "take_attr",
+    },
 ];
 
 /// Reduced rows: neutral paths the lump stores in reduced form (#232 §5.2).
@@ -3028,7 +3032,10 @@ fn scaled<const N: usize>(values: [f64; N], scale: f64) -> Option<[f64; N]> {
 
 fn supports_metadata_attribute(attribute: &cadmpeg_ir::attributes::SourceAttribute) -> bool {
     attribute.target == cadmpeg_ir::attributes::AttributeTarget::Document
-        && matches!(MetadataRecord::project(attribute, 0.001, |_| Ok(())), Ok(Some(_)))
+        && matches!(
+            MetadataRecord::project(attribute, 0.001, |_| Ok(())),
+            Ok(Some(_))
+        )
 }
 
 /// This codec's document attributes, ordered by source payload position.
@@ -3989,7 +3996,7 @@ pub(crate) fn brep_body(
         ))
         .into());
     }
-    let mut next = 2u16;
+    let mut next = 2u32;
     let derived_sphere_seam_curves = ir
         .model
         .curves
@@ -4010,14 +4017,14 @@ pub(crate) fn brep_body(
         .surfaces
         .iter()
         .map(|item| Ok((item.id.clone(), take_attr(&mut next)?)))
-        .collect::<Result<HashMap<_, _>, CodecError>>()?;
+        .collect::<Result<HashMap<_, _>, write_error::WriteError>>()?;
     let curves = ir
         .model
         .curves
         .iter()
         .filter(|item| !derived_sphere_seam_curves.contains(&item.id))
         .map(|item| Ok((item.id.clone(), take_attr(&mut next)?)))
-        .collect::<Result<HashMap<_, _>, CodecError>>()?;
+        .collect::<Result<HashMap<_, _>, write_error::WriteError>>()?;
     let arena = DecodeArena::new();
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::desktop())?;
     let mut bounded_curves = HashMap::new();
@@ -4049,43 +4056,43 @@ pub(crate) fn brep_body(
         .points
         .iter()
         .map(|item| Ok((item.id.clone(), take_attr(&mut next)?)))
-        .collect::<Result<HashMap<_, _>, CodecError>>()?;
+        .collect::<Result<HashMap<_, _>, write_error::WriteError>>()?;
     let vertices = ir
         .model
         .vertices
         .iter()
         .map(|item| Ok((item.id.clone(), take_attr(&mut next)?)))
-        .collect::<Result<HashMap<_, _>, CodecError>>()?;
+        .collect::<Result<HashMap<_, _>, write_error::WriteError>>()?;
     let edges = ir
         .model
         .edges
         .iter()
         .map(|item| Ok((item.id.clone(), take_attr(&mut next)?)))
-        .collect::<Result<HashMap<_, _>, CodecError>>()?;
+        .collect::<Result<HashMap<_, _>, write_error::WriteError>>()?;
     let coedges = ir
         .model
         .coedges
         .iter()
         .map(|item| Ok((item.id.clone(), take_attr(&mut next)?)))
-        .collect::<Result<HashMap<_, _>, CodecError>>()?;
+        .collect::<Result<HashMap<_, _>, write_error::WriteError>>()?;
     let loops = ir
         .model
         .loops
         .iter()
         .map(|item| Ok((item.id.clone(), take_attr(&mut next)?)))
-        .collect::<Result<HashMap<_, _>, CodecError>>()?;
+        .collect::<Result<HashMap<_, _>, write_error::WriteError>>()?;
     let faces = ir
         .model
         .faces
         .iter()
         .map(|item| Ok((item.id.clone(), take_attr(&mut next)?)))
-        .collect::<Result<HashMap<_, _>, CodecError>>()?;
+        .collect::<Result<HashMap<_, _>, write_error::WriteError>>()?;
     let body_attrs = ir
         .model
         .bodies
         .iter()
         .map(|body| Ok((body.id.clone(), take_attr(&mut next)?)))
-        .collect::<Result<HashMap<_, _>, CodecError>>()?;
+        .collect::<Result<HashMap<_, _>, write_error::WriteError>>()?;
     let vertex_owners = ownership::vertex_body_owners(ir, &body_attrs)?;
     let reversed_edges = edge_direction::reversed_compact_edges(ir)?;
     let mut out = Vec::new();
@@ -4110,7 +4117,7 @@ pub(crate) fn brep_body(
             surfaces[&surface.id],
             SURFACE_MARKER,
             &values,
-        );
+        )?;
     }
     for curve in &ir.model.curves {
         if derived_sphere_seam_curves.contains(&curve.id) {
@@ -4131,7 +4138,7 @@ pub(crate) fn brep_body(
                 CURVE_ALONG_EDGES_MARKER
             },
             &values,
-        );
+        )?;
     }
     for edge in &ir.model.edges {
         let Some((identity, bounded)) = bounded_curves.get(&edge.id) else {
@@ -4159,14 +4166,14 @@ pub(crate) fn brep_body(
         .faces
         .iter()
         .map(|face| Ok((face.id.clone(), take_attr(&mut next)?)))
-        .collect::<Result<HashMap<_, _>, CodecError>>()?;
+        .collect::<Result<HashMap<_, _>, write_error::WriteError>>()?;
     let face_colors = face_colors(ir);
     let mut colored_faces = face_colors.keys().collect::<Vec<_>>();
     colored_faces.sort();
     let color_attrs = colored_faces
         .into_iter()
         .map(|face| Ok((face.clone(), take_attr(&mut next)?)))
-        .collect::<Result<HashMap<_, _>, CodecError>>()?;
+        .collect::<Result<HashMap<_, _>, write_error::WriteError>>()?;
     let face_color_definition = if color_attrs.is_empty() {
         None
     } else {
@@ -4176,7 +4183,7 @@ pub(crate) fn brep_body(
     };
     for point in &ir.model.points {
         tag(&mut out, 0x1d);
-        pointer_u16(&mut out, points[&point.id]);
+        typed_ref(&mut out, points[&point.id])?;
         be32(&mut out, 0);
         out.extend_from_slice(&[0; 8]);
         for value in [
@@ -4189,10 +4196,10 @@ pub(crate) fn brep_body(
     }
     for vertex in &ir.model.vertices {
         tag(&mut out, 0x12);
-        pointer_u16(&mut out, vertices[&vertex.id]);
+        typed_ref(&mut out, vertices[&vertex.id])?;
         be32(&mut out, 0);
         for value in [0, 0, 0, 0, points[&vertex.point]] {
-            pointer_u16(&mut out, value);
+            typed_ref(&mut out, value)?;
         }
         if let Some(tolerance) = vertex.tolerance {
             let value = tolerance.get() * length_scale;
@@ -4206,7 +4213,7 @@ pub(crate) fn brep_body(
         } else {
             out.extend_from_slice(&MAGIC);
         }
-        pointer_u16(&mut out, vertex_owners[&vertex.id]);
+        typed_ref(&mut out, vertex_owners[&vertex.id])?;
     }
     for edge in &ir.model.edges {
         let owner = vertex_owners
@@ -4219,9 +4226,9 @@ pub(crate) fn brep_body(
             .into());
         }
         tag(&mut out, 0x10);
-        pointer_u16(&mut out, edges[&edge.id]);
+        typed_ref(&mut out, edges[&edge.id])?;
         be32(&mut out, 0);
-        pointer_u16(&mut out, 0);
+        typed_ref(&mut out, 0_u32)?;
         out.extend_from_slice(&MAGIC);
         for value in [
             0,
@@ -4235,9 +4242,9 @@ pub(crate) fn brep_body(
             0,
             0,
         ] {
-            pointer_u16(&mut out, value);
+            typed_ref(&mut out, value)?;
         }
-        pointer_u16(&mut out, *owner);
+        typed_ref(&mut out, *owner)?;
     }
     // XT selects an edge's canonical fin from its forward uses. A boundary
     // edge may survive with only a reversed document use after face reduction.
@@ -4262,7 +4269,7 @@ pub(crate) fn brep_body(
         .collect::<HashSet<_>>();
     for coedge in &ir.model.coedges {
         tag(&mut out, 0x11);
-        pointer_u16(&mut out, coedges[&coedge.id]);
+        typed_ref(&mut out, coedges[&coedge.id])?;
         let edge = ir
             .model
             .edges
@@ -4292,7 +4299,7 @@ pub(crate) fn brep_body(
             0,
             0,
         ] {
-            pointer_u16(&mut out, value);
+            typed_ref(&mut out, value)?;
         }
         let native_forward = (reversed_edges.stored_sense(&coedge.edge, coedge.sense)
             == Sense::Forward)
@@ -4317,7 +4324,7 @@ pub(crate) fn brep_body(
             .nth(position + 1)
             .map_or(0, |id| loops[id]);
         tag(&mut out, 0x0f);
-        pointer_u16(&mut out, loops[&lp.id]);
+        typed_ref(&mut out, loops[&lp.id])?;
         be32(&mut out, 0);
         for value in [
             0,
@@ -4327,14 +4334,14 @@ pub(crate) fn brep_body(
             faces[&lp.face],
             next_loop,
         ] {
-            pointer_u16(&mut out, value);
+            typed_ref(&mut out, value)?;
         }
     }
     for face in &ir.model.faces {
         tag(&mut out, 0x0e);
-        pointer_u16(&mut out, faces[&face.id]);
+        typed_ref(&mut out, faces[&face.id])?;
         be32(&mut out, 0);
-        pointer_u16(&mut out, face_owners[&face.id]);
+        typed_ref(&mut out, face_owners[&face.id])?;
         out.extend_from_slice(&MAGIC);
         let first = match face.loops.iter().next() {
             Some(first) => loops[first],
@@ -4357,7 +4364,7 @@ pub(crate) fn brep_body(
             }
         };
         for value in [0, 0, first, 0, surfaces[&face.surface]] {
-            pointer_u16(&mut out, value);
+            typed_ref(&mut out, value)?;
         }
         out.push(if face.sense == Sense::Forward {
             0x2b
@@ -4383,7 +4390,7 @@ pub(crate) fn brep_body(
     let mut colored_faces = face_colors.into_iter().collect::<Vec<_>>();
     colored_faces.sort_by(|(left, _), (right, _)| left.cmp(right));
     for (face, color) in colored_faces {
-        entity53(&mut out, color_attrs[&face], color);
+        entity53(&mut out, color_attrs[&face], color)?;
     }
     Ok(out)
 }
@@ -4392,19 +4399,19 @@ pub(crate) fn brep_body(
 /// hierarchy writers share.
 #[derive(Clone, Copy)]
 struct HierarchyIdentities<'a> {
-    body_attrs: &'a HashMap<cadmpeg_ir::ids::BodyId, u16>,
-    faces: &'a HashMap<cadmpeg_ir::ids::FaceId, u16>,
-    surfaces: &'a HashMap<cadmpeg_ir::ids::SurfaceId, u16>,
-    face_owners: &'a HashMap<cadmpeg_ir::ids::FaceId, u16>,
-    color_attrs: &'a HashMap<cadmpeg_ir::ids::FaceId, u16>,
-    face_color_definition: Option<(u16, u16)>,
+    body_attrs: &'a HashMap<cadmpeg_ir::ids::BodyId, u32>,
+    faces: &'a HashMap<cadmpeg_ir::ids::FaceId, u32>,
+    surfaces: &'a HashMap<cadmpeg_ir::ids::SurfaceId, u32>,
+    face_owners: &'a HashMap<cadmpeg_ir::ids::FaceId, u32>,
+    color_attrs: &'a HashMap<cadmpeg_ir::ids::FaceId, u32>,
+    face_color_definition: Option<(u32, u32)>,
     schema_32001: bool,
 }
 
 fn write_body_hierarchy(
     ir: &CadIr,
     identities: &HierarchyIdentities<'_>,
-    next: &mut u16,
+    next: &mut u32,
     out: &mut Vec<u8>,
 ) -> Result<(), write_error::WriteError> {
     let HierarchyIdentities {
@@ -4431,12 +4438,9 @@ fn write_body_hierarchy(
     let mut assigned = HashSet::new();
     for body in &ir.model.bodies {
         let typed_only = body.regions.iter().any(|region| {
-            regions
-                .get(region)
-                .is_some_and(|region| {
-                    region.shells.len() > 6
-                        || (body.kind == BodyKind::Sheet && region.shells.len() > 1)
-                })
+            regions.get(region).is_some_and(|region| {
+                region.shells.len() > 6 || (body.kind == BodyKind::Sheet && region.shells.len() > 1)
+            })
         });
         if typed_only {
             for region_id in &body.regions {
@@ -4475,7 +4479,7 @@ fn write_body_hierarchy(
             native_regions.push(native_region);
             let mut native_lumps = Vec::new();
             if body.kind == BodyKind::Sheet && region.shells.is_empty() {
-                entity51(out, AttributeCount::One, native_region, 0x001d, &[0; 6]);
+                entity51(out, AttributeCount::One, native_region, 0x001d, &[0; 6])?;
             }
             for shell_id in &region.shells {
                 let shell = shells.get(shell_id).ok_or_else(|| {
@@ -4509,7 +4513,7 @@ fn write_body_hierarchy(
                         native_region,
                         0x001d,
                         &[head, 0, 0, 0, 0, 0],
-                    );
+                    )?;
                     continue;
                 }
                 let lump = take_attr(next)?;
@@ -4522,26 +4526,26 @@ fn write_body_hierarchy(
                     lump,
                     0x001f,
                     &[shell_node, 0, 0, 0, 0, 0],
-                );
+                )?;
                 entity51(
                     out,
                     AttributeCount::Two,
                     shell_node,
                     0x0021,
                     &[shell_link, 0, 0, 0, 0, 0],
-                );
+                )?;
                 entity51(
                     out,
                     AttributeCount::Two,
                     shell_link,
                     0x0023,
                     &[head, 0, 0, 0, 0, 0],
-                );
+                )?;
             }
             if body.kind != BodyKind::Sheet {
                 let mut references = [0; 6];
                 references[..native_lumps.len()].copy_from_slice(&native_lumps);
-                entity51(out, AttributeCount::One, native_region, 0x001b, &references);
+                entity51(out, AttributeCount::One, native_region, 0x001b, &references)?;
             }
         }
         if native_regions.is_empty() {
@@ -4554,7 +4558,7 @@ fn write_body_hierarchy(
     }
     write_typed_body_hierarchy(ir, faces, surfaces, body_attrs, next, out)?;
     if let Some((key_node, definition_node)) = face_color_definition {
-        attribute_definition(out, key_node, definition_node);
+        attribute_definition(out, key_node, definition_node)?;
     }
     let mut face_owner_items = face_owners.iter().collect::<Vec<_>>();
     face_owner_items.sort_by_key(|(left, _)| *left);
@@ -4572,7 +4576,7 @@ fn write_body_hierarchy(
         } else {
             0x0015
         };
-        entity51(out, AttributeCount::One, *owner, disc, &refs);
+        entity51(out, AttributeCount::One, *owner, disc, &refs)?;
     }
     Ok(())
 }
@@ -4603,10 +4607,10 @@ fn next_typed_node_id(next: &mut u64) -> Result<u32, write_error::WriteError> {
 /// without a second identity map.
 fn write_typed_body_hierarchy(
     ir: &CadIr,
-    faces: &HashMap<cadmpeg_ir::ids::FaceId, u16>,
-    surfaces: &HashMap<cadmpeg_ir::ids::SurfaceId, u16>,
-    body_attrs: &HashMap<cadmpeg_ir::ids::BodyId, u16>,
-    next: &mut u16,
+    faces: &HashMap<cadmpeg_ir::ids::FaceId, u32>,
+    surfaces: &HashMap<cadmpeg_ir::ids::SurfaceId, u32>,
+    body_attrs: &HashMap<cadmpeg_ir::ids::BodyId, u32>,
+    next: &mut u32,
     out: &mut Vec<u8>,
 ) -> Result<(), write_error::WriteError> {
     let mut node_id = 1_u64;
@@ -4615,13 +4619,13 @@ fn write_typed_body_hierarchy(
         .regions
         .iter()
         .map(|region| Ok((region.id.clone(), take_attr(next)?)))
-        .collect::<Result<HashMap<_, _>, CodecError>>()?;
+        .collect::<Result<HashMap<_, _>, write_error::WriteError>>()?;
     let shell_attrs = ir
         .model
         .shells
         .iter()
         .map(|shell| Ok((shell.id.clone(), take_attr(next)?)))
-        .collect::<Result<HashMap<_, _>, CodecError>>()?;
+        .collect::<Result<HashMap<_, _>, write_error::WriteError>>()?;
     let mut face_shells = HashMap::new();
     for shell in &ir.model.shells {
         let shell_attr = shell_attrs[&shell.id];
@@ -4647,12 +4651,7 @@ fn write_typed_body_hierarchy(
             .filter_map(|id| ir.model.regions.iter().find(|region| &region.id == id))
             .find_map(|region| region.shells.first())
             .map_or(1, |shell| shell_attrs[shell]);
-        typed_prefix(
-            out,
-            0x0c,
-            body_attr,
-            next_typed_node_id(&mut node_id)?,
-        );
+        typed_prefix(out, 0x0c, body_attr, next_typed_node_id(&mut node_id)?)?;
         for value in [5_u32, 6, 1, 1, 1, 1] {
             typed_ref(out, value)?;
         }
@@ -4701,7 +4700,7 @@ fn write_typed_body_hierarchy(
             0x0d,
             shell_attrs[&shell.id],
             next_typed_node_id(&mut node_id)?,
-        );
+        )?;
         for value in [
             1,
             body_attrs[&region.body],
@@ -4743,7 +4742,7 @@ fn write_typed_body_hierarchy(
             0x13,
             region_attrs[&region.id],
             next_typed_node_id(&mut node_id)?,
-        );
+        )?;
         for value in [1, body, next_region, previous_region, shell_head] {
             typed_ref(out, value)?;
         }
@@ -4760,7 +4759,7 @@ fn write_typed_body_hierarchy(
             0x0e,
             faces[&face.id],
             next_typed_node_id(&mut node_id)?,
-        );
+        )?;
         typed_ref(out, 1_u32)?;
         out.extend_from_slice(&MAGIC);
         for value in [1, 1, 0, shell, surfaces[&face.surface]] {
@@ -4774,11 +4773,17 @@ fn write_typed_body_hierarchy(
     Ok(())
 }
 
-fn typed_prefix(out: &mut Vec<u8>, kind: u8, attr: u16, node_id: u32) {
+fn typed_prefix(
+    out: &mut Vec<u8>,
+    kind: u8,
+    attr: u32,
+    node_id: u32,
+) -> Result<(), write_error::WriteError> {
     tag(out, kind);
     out.push(0xff);
-    pointer_u16(out, attr);
+    typed_ref(out, attr)?;
     be32(out, node_id);
+    Ok(())
 }
 
 /// Emit one Parasolid XT pointer in its compact or extended two-cell form.
@@ -4819,41 +4824,47 @@ pub(crate) fn face_colors(ir: &CadIr) -> HashMap<cadmpeg_ir::ids::FaceId, Color>
         .collect()
 }
 
-fn entity53(out: &mut Vec<u8>, attr: u16, color: Color) {
+fn entity53(out: &mut Vec<u8>, attr: u32, color: Color) -> Result<(), write_error::WriteError> {
     tag(out, 0x53);
     be32(out, 3);
-    pointer_u16(out, attr);
+    typed_ref(out, attr)?;
     for value in [color.r(), color.g(), color.b()] {
         bef64(out, f64::from(value));
     }
+    Ok(())
 }
 
-fn attribute_definition(out: &mut Vec<u8>, key_node: u16, definition_node: u16) {
+fn attribute_definition(
+    out: &mut Vec<u8>,
+    key_node: u32,
+    definition_node: u32,
+) -> Result<(), write_error::WriteError> {
     const FAMILY: &[u8; 15] = b"SDL/TYSA_COLOUR";
     tag(out, 0x4f);
     be32(out, 15);
-    pointer_u16(out, key_node);
+    typed_ref(out, key_node)?;
     out.extend_from_slice(FAMILY);
     tag(out, 0x50);
     be32(out, 1);
-    pointer_u16(out, definition_node);
-    pointer_u16(out, 1);
-    pointer_u16(out, key_node);
+    typed_ref(out, definition_node)?;
+    typed_ref(out, 1_u32)?;
+    typed_ref(out, key_node)?;
     be32(out, 8001);
     out.extend([0; 8]);
-    pointer_u16(out, 1);
+    typed_ref(out, 1_u32)?;
     let mut legal_owners = [0; 14];
     legal_owners[4] = 1;
     out.extend(legal_owners);
     out.push(2);
+    Ok(())
 }
 
 fn write_face_list(
     out: &mut Vec<u8>,
-    owners: &[u16],
-    next: &mut u16,
-    disc: u16,
-) -> Result<u16, CodecError> {
+    owners: &[u32],
+    next: &mut u32,
+    disc: u32,
+) -> Result<u32, write_error::WriteError> {
     let head = take_attr(next)?;
     write_attribute_list(out, owners, next, disc, head)?;
     Ok(head)
@@ -4861,22 +4872,22 @@ fn write_face_list(
 
 fn write_attribute_list(
     out: &mut Vec<u8>,
-    owners: &[u16],
-    next: &mut u16,
-    disc: u16,
-    head: u16,
-) -> Result<(), CodecError> {
+    owners: &[u32],
+    next: &mut u32,
+    disc: u32,
+    head: u32,
+) -> Result<(), write_error::WriteError> {
     let chunks = owners.chunks(5).collect::<Vec<_>>();
     let attrs = std::iter::once(Ok(head))
         .chain((1..chunks.len()).map(|_| take_attr(next)))
-        .collect::<Result<Vec<_>, CodecError>>()?;
+        .collect::<Result<Vec<_>, write_error::WriteError>>()?;
     for (index, attr) in attrs.iter().enumerate() {
-        let mut refs = [0u16; 6];
+        let mut refs = [0u32; 6];
         refs[0] = attrs.get(index + 1).copied().unwrap_or(0);
         if let Some(chunk) = chunks.get(index) {
             refs[1..=chunk.len()].copy_from_slice(chunk);
         }
-        entity51(out, AttributeCount::Two, *attr, disc, &refs);
+        entity51(out, AttributeCount::Two, *attr, disc, &refs)?;
     }
     Ok(())
 }
@@ -4887,7 +4898,13 @@ enum AttributeCount {
     Two,
 }
 
-fn entity51(out: &mut Vec<u8>, count: AttributeCount, attr: u16, disc: u16, refs: &[u16; 6]) {
+fn entity51(
+    out: &mut Vec<u8>,
+    count: AttributeCount,
+    attr: u32,
+    disc: u32,
+    refs: &[u32; 6],
+) -> Result<(), write_error::WriteError> {
     tag(out, 0x51);
     be32(
         out,
@@ -4896,15 +4913,16 @@ fn entity51(out: &mut Vec<u8>, count: AttributeCount, attr: u16, disc: u16, refs
             AttributeCount::Two => 2,
         },
     );
-    pointer_u16(out, attr);
+    typed_ref(out, attr)?;
     be32(out, 1);
-    pointer_u16(out, disc);
+    typed_ref(out, disc)?;
     for reference in refs {
-        pointer_u16(out, *reference);
+        typed_ref(out, *reference)?;
     }
     if matches!(count, AttributeCount::Two) {
-        pointer_u16(out, 1);
+        typed_ref(out, 1_u32)?;
     }
+    Ok(())
 }
 
 pub(super) fn surface_values(
@@ -5056,9 +5074,9 @@ pub(super) fn surface_values(
 
 fn write_nurbs_curve(
     out: &mut Vec<u8>,
-    wrapper: u16,
+    wrapper: u32,
     nurbs: &NurbsCurve,
-    next: &mut u16,
+    next: &mut u32,
     length_scale: f64,
 ) -> Result<(), write_error::WriteError> {
     let descriptor = take_attr(next)?;
@@ -5070,16 +5088,16 @@ fn write_nurbs_curve(
     let unique = unique_knots(nurbs.knots())?;
     let knot_count = field_u32(&CAPACITY_FIELDS[19], unique.len())?;
     tag(out, 0x86);
-    pointer_u16(out, wrapper);
+    typed_ref(out, wrapper)?;
     be32(out, 1);
     for _ in 0..5 {
-        pointer_u16(out, 1);
+        typed_ref(out, 1_u32)?;
     }
     out.push(0x2b);
-    pointer_u16(out, descriptor);
-    pointer_u16(out, 1);
+    typed_ref(out, descriptor)?;
+    typed_ref(out, 1_u32)?;
     tag(out, 0x88);
-    pointer_u16(out, descriptor);
+    typed_ref(out, descriptor)?;
     be16(out, degree);
     be32(out, control_count);
     let rational = nurbs.weights().is_some();
@@ -5088,7 +5106,7 @@ fn write_nurbs_curve(
     out.push(0);
     out.extend_from_slice(&[u8::from(nurbs.periodic()), 0, u8::from(rational), 0]);
     for attr in [control, multiplicity, knots] {
-        pointer_u16(out, attr);
+        typed_ref(out, attr)?;
     }
     let poles = homogeneous_poles(nurbs.pole_rows(), length_scale)?;
     f64_array(out, 0x2d, control, poles.into_iter())?;
@@ -5103,9 +5121,9 @@ fn write_nurbs_curve(
 
 fn write_nurbs_surface(
     out: &mut Vec<u8>,
-    wrapper: u16,
+    wrapper: u32,
     nurbs: &NurbsSurface,
-    next: &mut u16,
+    next: &mut u32,
     length_scale: f64,
 ) -> Result<(), write_error::WriteError> {
     let u_degree = field_u16(&CAPACITY_FIELDS[20], u64::from(nurbs.u_degree()))?;
@@ -5128,14 +5146,14 @@ fn write_nurbs_surface(
     let u_knots = take_attr(next)?;
     let v_knots = take_attr(next)?;
     tag(out, 0x7c);
-    pointer_u16(out, wrapper);
+    typed_ref(out, wrapper)?;
     be32(out, 1);
     out.extend_from_slice(&[0; 10]);
     out.push(0x2b);
-    pointer_u16(out, descriptor);
+    typed_ref(out, descriptor)?;
     be16(out, 0);
     tag(out, 0x7e);
-    pointer_u16(out, descriptor);
+    typed_ref(out, descriptor)?;
     out.extend_from_slice(&[u8::from(nurbs.u_periodic()), u8::from(nurbs.v_periodic())]);
     be16(out, u_degree);
     be16(out, v_degree);
@@ -5149,7 +5167,7 @@ fn write_nurbs_surface(
     out.push(0x0c);
     be16(out, dimension);
     for attr in [control, u_multiplicity, v_multiplicity, u_knots, v_knots] {
-        pointer_u16(out, attr);
+        typed_ref(out, attr)?;
     }
     f64_array(out, 0x2d, control, poles.into_iter())?;
     u16_array(
@@ -5167,12 +5185,16 @@ fn write_nurbs_surface(
     Ok(())
 }
 
-fn take_attr(next: &mut u16) -> Result<u16, CodecError> {
+fn take_attr(next: &mut u32) -> Result<u32, write_error::WriteError> {
+    let value = u64::from(*next);
+    if value > CAPACITY_FIELDS[43].limit {
+        return Err(write_error::WriteError::Capacity {
+            field: &CAPACITY_FIELDS[43],
+            value,
+        });
+    }
     let attr = *next;
-    *next = next
-        .checked_add(1)
-        // (O-capacity): the target field cannot encode a value outside its width.
-        .ok_or_else(|| CodecError::NotImplemented("SLDPRT attribute space exhausted".into()))?;
+    *next += 1;
     Ok(attr)
 }
 
@@ -5280,14 +5302,14 @@ fn unique_knots(knots: &[f64]) -> Result<Vec<(f64, NonZeroU16)>, write_error::Wr
 fn f64_array(
     out: &mut Vec<u8>,
     kind: u8,
-    attr: u16,
+    attr: u32,
     values: impl ExactSizeIterator<Item = f64>,
 ) -> Result<(), write_error::WriteError> {
     let count = field_u32(&CAPACITY_FIELDS[27], values.len())?;
     tag(out, kind);
     out.push(0x2b);
     be32(out, count);
-    pointer_u16(out, attr);
+    typed_ref(out, attr)?;
     for value in values {
         bef64(out, value);
     }
@@ -5296,14 +5318,14 @@ fn f64_array(
 
 fn u16_array(
     out: &mut Vec<u8>,
-    attr: u16,
+    attr: u32,
     values: impl ExactSizeIterator<Item = u16>,
 ) -> Result<(), write_error::WriteError> {
     let count = field_u32(&CAPACITY_FIELDS[27], values.len())?;
     tag(out, 0x7f);
     out.push(0x2b);
     be32(out, count);
-    pointer_u16(out, attr);
+    typed_ref(out, attr)?;
     for value in values {
         be16(out, value);
     }
@@ -5473,15 +5495,22 @@ const CURVE_ALONG_EDGES_MARKER: u8 = 0x2b;
 /// its parameter.
 const CURVE_AGAINST_EDGES_MARKER: u8 = 0x2d;
 
-fn compact(out: &mut Vec<u8>, kind: u8, attr: u16, marker: u8, values: &[f64]) {
+fn compact(
+    out: &mut Vec<u8>,
+    kind: u8,
+    attr: u32,
+    marker: u8,
+    values: &[f64],
+) -> Result<(), write_error::WriteError> {
     tag(out, kind);
-    pointer_u16(out, attr);
+    typed_ref(out, attr)?;
     be32(out, 0);
     out.extend_from_slice(&[0; 10]);
     out.push(marker);
     for value in values {
         bef64(out, *value);
     }
+    Ok(())
 }
 fn parasolid_stream(body: &[u8], schema: &str) -> Result<Vec<u8>, write_error::WriteError> {
     parasolid_stream_named(body, schema, "partition body")
@@ -5583,12 +5612,6 @@ pub(crate) fn field_u32(
 }
 fn tag(out: &mut Vec<u8>, kind: u8) {
     out.extend_from_slice(&[0, kind]);
-}
-fn pointer_u16(out: &mut Vec<u8>, value: u16) {
-    be16(out, value);
-    if value > 0x7fff {
-        be16(out, 1);
-    }
 }
 fn be16(out: &mut Vec<u8>, value: u16) {
     out.extend_from_slice(&value.to_be_bytes());
@@ -5754,25 +5777,48 @@ mod nurbs_write_tests {
         let points = vec![Point3::new(0.0, 0.0, 0.0), Point3::new(1.0, 0.0, 0.0)];
         let poles = NurbsPoles3::from_lanes(points, None).unwrap();
         let curve = NurbsCurve::new(1, vec![0.0, 0.0, 1.0, 1.0], poles, false).unwrap();
-        let mut bytes = Vec::new();
-        super::write_nurbs_curve(&mut bytes, 0x8000, &curve, &mut 0x8001, 0.001).unwrap();
-        let decoded = crate::brep::spline::scan_curve_carriers(&bytes, &mut Vec::new());
-        assert!(decoded.contains_key(&0x8000));
+        for id in [0x8000, 0x1_0000] {
+            let mut bytes = Vec::new();
+            super::write_nurbs_curve(&mut bytes, id, &curve, &mut (id + 1), 0.001).unwrap();
+            let decoded = crate::brep::spline::scan_curve_carriers(&bytes, &mut Vec::new());
+            assert!(decoded.contains_key(&id));
+        }
 
-        let surface = NurbsSurface::from_lanes(
-            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-            cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
-            cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(
-                vec![vec![Point3::new(0.0, 0.0, 0.0); 2]; 2],
-                None,
-            ),
-            false,
-        )
-        .unwrap();
-        let mut bytes = Vec::new();
-        write_nurbs_surface(&mut bytes, 0x8000, &surface, &mut 0x8001, 0.001).unwrap();
-        let decoded = crate::brep::spline::scan_surface_carriers(&bytes, &mut Vec::new());
-        assert!(decoded.contains_key(&0x8000));
+        let surface_points = [
+            vec![vec![Point3::new(0.0, 0.0, 0.0); 2]; 2],
+            vec![
+                vec![Point3::new(0.0, 0.0, 0.0), Point3::new(0.0, 1.0, 0.0)],
+                vec![Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 1.0, 0.0)],
+            ],
+        ];
+        for points in surface_points {
+            let surface = NurbsSurface::from_lanes(
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceAxis::new(1, vec![0.0, 0.0, 1.0, 1.0], false),
+                cadmpeg_ir::geometry::nurbs::NurbsSurfaceLanes::new(points, None),
+                false,
+            )
+            .unwrap();
+            for id in [0x8000, 0x1_0000] {
+                let mut bytes = Vec::new();
+                write_nurbs_surface(&mut bytes, id, &surface, &mut (id + 1), 0.001).unwrap();
+                let decoded = crate::brep::spline::scan_surface_carriers(&bytes, &mut Vec::new());
+                assert!(decoded.contains_key(&id));
+            }
+        }
+    }
+
+    #[test]
+    fn generated_node_identity_uses_the_full_pointer_range() {
+        let mut next = 0x7fff_ffff;
+        assert_eq!(super::take_attr(&mut next).unwrap(), 0x7fff_ffff);
+        let error: cadmpeg_ir::codec::write::EncodeError =
+            super::take_attr(&mut next).unwrap_err().into();
+        assert!(matches!(error,
+            cadmpeg_ir::codec::write::EncodeError::TargetCapacity {
+                field, limit: 0x7fff_ffff, value: 0x8000_0000,
+            } if field.field == "parasolid.node_identity"
+        ));
     }
 
     #[test]
