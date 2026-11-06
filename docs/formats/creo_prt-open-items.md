@@ -1511,10 +1511,15 @@ transfer the rest of legacy persistence.
 `geom_tol_array` element and its nested fields?
 
 **Known.** The array header has an `f8` slot count and a class reference. A
-populated element contains nested `dtl_named_item`, `dtl_item`, and `tol_text`
-fields. The first nested `e3` precedes `db_type`, `gtol_place_ptr`, and datum
-reference fields. The ASCII object-array depth grammar has separate row
-boundaries.
+populated element contains type-`00` `dtl_named_item`, `dtl_item`, and
+`tol_text` fields. The first two start with `e2`; `tol_text` can start with
+`f8 01 f7 0a fb`, followed by `e3` and a named `db_type` field. The named
+binary text row's `owner_id` can equal the first occupied slot. A depth-bounded
+ASCII text row can carry its enclosing slot index in `owner_id`. The named
+binary region contains `value_string`, `datum_refs`, and `frame_datum_refs`.
+Depth-bounded ASCII elements can instead contain direct `value` and
+`datum_refs_array` fields. The ASCII object-array depth grammar has separate
+row boundaries.
 
 **Need.** Establish the complete binary element and array extent from their
 serialized productions. Consume nested fields and distinguish later slots
@@ -1528,7 +1533,10 @@ references to datum identities and datum features?
 **Known.** A tolerance attachment can carry `datum_refs`,
 `frame_datum_refs`, and a null `datum_def_id`. Its `ref_info` identifiers can
 also occur in both vertex and feature-entity namespaces. A numeric match to
-either namespace leaves the datum reference unresolved.
+either namespace leaves the datum reference unresolved. A depth-bounded ASCII
+`datum_refs_array` contains counted `gtol_dtm_xar2` groups. The same reference
+group can occur on tolerances with different feature owners. A group can
+include identifiers both present and absent in the vertex arena.
 
 **Need.** Resolve the owned reference tables, ordered datum compartments, and
 their datum-feature targets before constructing a datum system.
