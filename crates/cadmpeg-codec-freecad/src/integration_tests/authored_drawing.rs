@@ -126,6 +126,23 @@ fn authored_drawing_keeps_page_view_dimension_and_note() {
     {
         assert!((actual - expected).abs() < LENGTH_TOLERANCE);
     }
+    let properties = decoded
+        .ir()
+        .native
+        .namespace("fcstd")
+        .unwrap()
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .unwrap();
+    assert!(properties.iter().any(|property| {
+        property.owner == crate::native::native_id("object", "Symbol")
+            && property.name == "Symbol"
+            && property.values().iter().any(|value| {
+                value
+                    .attributes
+                    .get("value")
+                    .is_some_and(|path| path.ends_with("cc0_template.svg"))
+            })
+    }));
 }
 
 #[test]
