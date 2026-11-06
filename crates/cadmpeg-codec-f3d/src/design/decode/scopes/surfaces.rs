@@ -10,7 +10,6 @@ use crate::bytes::take_reference;
 use crate::design::decode::operands::parse_construction_operand_group;
 use crate::design::decode::operands::ConstructionOperandGroupParse;
 use crate::design::decode::operands::RecordFrame;
-use crate::design::decode::sketch::next_indexed_record_offset;
 use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::decode::text::fixed_relaxed_guid_text;
 use crate::design::design_feature_family;
@@ -163,7 +162,7 @@ fn exact_surface_offset_face_groups(
                         .skip(1)
                         .any(|value| value == member)
                     || covered_references.contains(member)
-                    || !bounded_face_member(bytes, records, recipes, stream, *member)
+                    || !bounded_face_member(records, recipes, stream, *member)
                 {
                     return None;
                 }
@@ -190,7 +189,6 @@ fn exact_surface_offset_face_groups(
 }
 
 fn bounded_face_member(
-    bytes: &[u8],
     records: &IndexedRecordOffsets,
     recipes: &[ConstructionRecipe],
     stream: &str,
@@ -203,20 +201,23 @@ fn bounded_face_member(
     }) else {
         return false;
     };
-    let recipe_end = next_indexed_record_offset(bytes, recipe_start).unwrap_or(bytes.len());
-    let (Ok(recipe_start), Ok(recipe_end)) =
-        (u64::try_from(recipe_start), u64::try_from(recipe_end))
-    else {
+    let recipe_end = member
+        .checked_add(4)
+        .and_then(|next| records.first_at_or_after(recipe_start, next))
+        .and_then(|offset| u64::try_from(offset).ok())
+        .unwrap_or(u64::MAX);
+    let Ok(recipe_start) = u64::try_from(recipe_start) else {
         return false;
     };
-    let mut member_recipes = recipes.iter().filter(|recipe| {
-        native_stream(&recipe.id) == Some(stream)
-            && (recipe_start..recipe_end).contains(&recipe.byte_offset)
-    });
-    member_recipes
-        .next()
-        .is_some_and(|recipe| recipe.kind == ConstructionRecipeKind::BoundedFace)
-        && member_recipes.next().is_none()
+    recipes
+        .iter()
+        .filter(|recipe| {
+            native_stream(&recipe.id) == Some(stream) && recipe.byte_offset >= recipe_start
+        })
+        .min_by_key(|recipe| recipe.byte_offset)
+        .is_some_and(|recipe| {
+            recipe.kind == ConstructionRecipeKind::BoundedFace && recipe.byte_offset < recipe_end
+        })
 }
 
 fn exact_construction_operand_group(

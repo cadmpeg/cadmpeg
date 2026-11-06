@@ -1545,21 +1545,27 @@ pub(super) fn fixed_kind_tail_operations(
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             &grouped_scope,
         ),
-        Some(grouped_operation)
+        Some(grouped_operation.clone())
     );
     let intervening_header_at = recipe_name_at - 20;
-    bytes[intervening_header_at..intervening_header_at + 4].copy_from_slice(&3u32.to_le_bytes());
-    bytes[intervening_header_at + 4..intervening_header_at + 7].copy_from_slice(b"288");
-    bytes[intervening_header_at + 7..intervening_header_at + 11]
-        .copy_from_slice(&999u32.to_le_bytes());
-    assert_eq!(
-        tested_surface_offset_operation(
-            &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-            &grouped_scope,
-        ),
-        None
-    );
+    for (record_index, expected) in [
+        (999u32, Some(grouped_operation.clone())),
+        (grouped_member_record_index + 4, None),
+    ] {
+        bytes[intervening_header_at..intervening_header_at + 4]
+            .copy_from_slice(&3u32.to_le_bytes());
+        bytes[intervening_header_at + 4..intervening_header_at + 7].copy_from_slice(b"288");
+        bytes[intervening_header_at + 7..intervening_header_at + 11]
+            .copy_from_slice(&record_index.to_le_bytes());
+        assert_eq!(
+            tested_surface_offset_operation(
+                &bytes,
+                &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+                &grouped_scope,
+            ),
+            expected
+        );
+    }
     bytes[intervening_header_at..intervening_header_at + 11].fill(0);
     bytes[recipe_name_at - 4..recipe_name_at].copy_from_slice(&16u32.to_le_bytes());
     bytes[recipe_name_at..recipe_name_at + 24].copy_from_slice(b"edge_recipe_data\0\0\0\0\0\0\0\0");
