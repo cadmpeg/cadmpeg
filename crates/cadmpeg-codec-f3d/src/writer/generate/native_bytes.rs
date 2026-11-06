@@ -75,30 +75,6 @@ pub(super) fn native_length_prefixed_string(bytes: &mut Vec<u8>, value: &str) {
     bytes.extend_from_slice(value.as_bytes());
 }
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn length_prefixed_strings_round_trip_at_width_boundaries() {
-        for length in [255, 256, 65535, 65536] {
-            let value = "a".repeat(length);
-            let mut bytes = vec![0x0d, 1, b'x'];
-            super::native_length_prefixed_string(&mut bytes, &value);
-            bytes.push(0x11);
-            let records = cadmpeg_asm::test_support::sab::frame(
-                &bytes,
-                0,
-                bytes.len(),
-                cadmpeg_asm::kernel_header::RefWidth::Eight,
-            )
-            .unwrap();
-            assert_eq!(
-                records[0].chunk(0),
-                Some(&cadmpeg_asm::sab::Token::Str(value))
-            );
-        }
-    }
-}
-
 fn native_text(bytes: &mut Vec<u8>, tag: u8, value: &str) -> Result<(), CodecError> {
     let length = u8::try_from(value.len())
         .map_err(|_| CodecError::InvalidInput("F3D native text exceeds 255 bytes".into()))?;
@@ -313,4 +289,28 @@ pub(super) fn native_history_tail(
         bytes.push(0x11);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn length_prefixed_strings_round_trip_at_width_boundaries() {
+        for length in [255, 256, 65535, 65536] {
+            let value = "a".repeat(length);
+            let mut bytes = vec![0x0d, 1, b'x'];
+            super::native_length_prefixed_string(&mut bytes, &value);
+            bytes.push(0x11);
+            let records = cadmpeg_asm::test_support::sab::frame(
+                &bytes,
+                0,
+                bytes.len(),
+                cadmpeg_asm::kernel_header::RefWidth::Eight,
+            )
+            .unwrap();
+            assert_eq!(
+                records[0].chunk(0),
+                Some(&cadmpeg_asm::sab::Token::Str(value))
+            );
+        }
+    }
 }
