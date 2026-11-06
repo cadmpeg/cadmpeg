@@ -242,6 +242,11 @@ pub fn base_property_loss_findings(namespace: &str, base: &Value, head: &Value) 
                     continue;
                 }
                 let Some((_, held)) = head_records.get(id) else {
+                    if namespace == "fcstd"
+                        && freecad_constraint_holds(record, key, value, &head_native, &head_records)
+                    {
+                        continue;
+                    }
                     findings.push(format!(
                         "{arena} {id}: record absent at head; {map}[{key:?}] = {} lost",
                         truncated(value),
@@ -267,7 +272,17 @@ pub fn base_property_loss_findings(namespace: &str, base: &Value, head: &Value) 
                         .and_then(Value::as_str)
                         .and_then(|native| head_native.get(native))
                         .is_some_and(|native| typed_field_holds(native, key, value))
-                    || owned_native_holds(head, id, key, value)
+                    || owned_native_holds(head, id, held, key, value)
+                    || (namespace == "fcstd" && freecad_cell_holds(held, key, value, &head_native))
+                    || (namespace == "fcstd"
+                        && key == "is_driving"
+                        && held.get("driving").and_then(Value::as_bool)
+                            == value.as_str().and_then(|text| match text {
+                                "1" => Some(true),
+                                "0" => Some(false),
+                                _ => None,
+                            })
+                        && held.get("driving").and_then(Value::as_bool).is_some())
                 {
                     continue;
                 }
@@ -302,7 +317,8 @@ fn typed_field_holds(record: &Value, key: &str, value: &Value) -> bool {
 
 /// Whether a head native record owned by `owner` names the key and holds the
 /// value: a `value` (or `FreeCAD` `body`) field equal to the map value as text.
-fn owned_native_holds(head: &Value, owner: &str, key: &str, value: &Value) -> bool {
+fn owned_native_holds(head: &Value, owner: &str, record: &Value, key: &str, value: &Value) -> bool {
+    let native_owner = record.get("native_ref").and_then(Value::as_str);
     head.get("native")
         .and_then(Value::as_object)
         .into_iter()
@@ -315,12 +331,246 @@ fn owned_native_holds(head: &Value, owner: &str, key: &str, value: &Value) -> bo
         })
         .flat_map(|rows| rows.as_array().into_iter().flatten())
         .any(|row| {
-            row.get("owner").and_then(Value::as_str) == Some(owner)
+            let row_owner = row.get("owner").and_then(Value::as_str);
+            (row_owner == Some(owner) || native_owner.is_some_and(|id| row_owner == Some(id)))
                 && row.get("name").and_then(Value::as_str) == Some(key)
-                && ["value", "body"]
+                && (["value", "body"]
                     .iter()
                     .filter_map(|field| row.get(*field))
                     .any(|held| value_matches(held, value))
+                    || row.get("links").and_then(Value::as_array).is_some_and(|links| {
+                        matches!(links.as_slice(), [link] if link.get("document").is_none_or(Value::is_null)
+                            && link.get("object").is_some_and(|object| value_matches(object, value)))
+                    })
+                    || freecad_empty_link_sublist_holds(row, key, value)
+                    || row
+                        .get("values")
+                        .and_then(Value::as_array)
+                        .is_some_and(|values| {
+                            values.iter().any(|part| {
+                                part.get("parent").is_some_and(Value::is_null)
+                                    && part
+                                        .get("attributes")
+                                        .and_then(|fields| fields.get("value"))
+                                        .is_some_and(|held| value_matches(held, value))
+                            })
+                        }))
+        })
+}
+
+/// The old `FreeCAD` map sometimes held an entire XML spelling for an empty
+/// `LinkSubList`. Count it as moved only when both trees state that same empty
+/// list and the native property's name and type agree.
+fn freecad_empty_link_sublist_holds(row: &Value, key: &str, value: &Value) -> bool {
+    let Some(text) = value.as_str() else {
+        return false;
+    };
+    if !text.starts_with('<')
+        || row.get("type_name").and_then(Value::as_str) != Some("App::PropertyLinkSubList")
+    {
+        return false;
+    }
+    let ctx = crate::service_decode_context();
+    let Ok(xml) = ctx.parse_xml(text, "compare FreeCAD empty link list") else {
+        return false;
+    };
+    let property = xml.root_element();
+    if !property.has_tag_name("Property")
+        || property.attributes().len() != 2
+        || property.attribute("name") != Some(key)
+        || property.attribute("type") != Some("App::PropertyLinkSubList")
+    {
+        return false;
+    }
+    let mut elements = property.children().filter(roxmltree::Node::is_element);
+    let Some(list) = elements.next() else {
+        return false;
+    };
+    if elements.next().is_some()
+        || !list.has_tag_name("LinkSubList")
+        || list.attributes().len() != 1
+        || list.attribute("count") != Some("0")
+        || list.children().any(|child| child.is_element())
+    {
+        return false;
+    }
+    let Some([native_list]) = row
+        .get("values")
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+    else {
+        return false;
+    };
+    native_list.get("tag").and_then(Value::as_str) == Some("LinkSubList")
+        && native_list.get("parent").is_some_and(Value::is_null)
+        && native_list
+            .get("attributes")
+            .and_then(Value::as_object)
+            .is_some_and(|fields| {
+                fields.len() == 1 && fields.get("count").and_then(Value::as_str) == Some("0")
+            })
+        && row
+            .get("links")
+            .and_then(Value::as_array)
+            .is_some_and(Vec::is_empty)
+}
+
+/// D31 may fold a control parameter into a sketch dimension. Verify the
+/// corresponding constraint row and, for an expression reference, the exact
+/// expression engine and target before counting its base properties as kept.
+fn freecad_constraint_holds(
+    record: &Value,
+    key: &str,
+    value: &Value,
+    native: &BTreeMap<&str, &Value>,
+    model: &BTreeMap<&str, (&str, &Value)>,
+) -> bool {
+    let Some(id) = record.get("id").and_then(Value::as_str) else {
+        return false;
+    };
+    let Some(suffix) = id.strip_prefix("fcstd:design:parameter#") else {
+        return false;
+    };
+    let Some((object, index)) = suffix.rsplit_once(":constraint:") else {
+        return false;
+    };
+    let Some(index) = index
+        .parse::<usize>()
+        .ok()
+        .and_then(|index| index.checked_sub(1))
+    else {
+        return false;
+    };
+    let Some(constraints_id) = record.get("native_ref").and_then(Value::as_str) else {
+        return false;
+    };
+    let Some(constraints) = native.get(constraints_id) else {
+        return false;
+    };
+    if constraints.get("name").and_then(Value::as_str) != Some("Constraints") {
+        return false;
+    }
+    let sketch_id = format!("fcstd:design:sketch-constraint#{object}:{}", index + 1);
+    if !model
+        .get(sketch_id.as_str())
+        .is_some_and(|(_, constraint)| {
+            constraint.get("native_ref").and_then(Value::as_str) == Some(constraints_id)
+        })
+    {
+        return false;
+    }
+    let Some(row) = constraints
+        .get("values")
+        .and_then(Value::as_array)
+        .and_then(|rows| {
+            rows.iter()
+                .filter(|row| row.get("tag").and_then(Value::as_str) == Some("Constrain"))
+                .nth(index)
+        })
+    else {
+        return false;
+    };
+    let Some(fields) = row.get("attributes") else {
+        return false;
+    };
+    match key {
+        "is_driving" => fields
+            .get("IsDriving")
+            .is_some_and(|held| value_matches(held, value)),
+        "source_name" => fields
+            .get("Name")
+            .is_some_and(|held| value_matches(held, value)),
+        "expression_native_ref" => {
+            let Some(engine) = value.as_str().and_then(|id| native.get(id)) else {
+                return false;
+            };
+            let Some(name) = fields
+                .get("Name")
+                .and_then(Value::as_str)
+                .filter(|name| !name.is_empty())
+            else {
+                return false;
+            };
+            let Some(owner) = constraints.get("owner").and_then(Value::as_str) else {
+                return false;
+            };
+            let Some(expression) = record.get("expression").and_then(Value::as_str) else {
+                return false;
+            };
+            let target = format!(".Constraints.{name}");
+            engine.get("name").and_then(Value::as_str) == Some("ExpressionEngine")
+                && engine.get("owner").and_then(Value::as_str) == Some(owner)
+                && engine
+                    .get("values")
+                    .and_then(Value::as_array)
+                    .is_some_and(|rows| {
+                        rows.iter().any(|row| {
+                            row.get("tag").and_then(Value::as_str) == Some("Expression")
+                                && row
+                                    .get("attributes")
+                                    .and_then(|fields| fields.get("path"))
+                                    .and_then(Value::as_str)
+                                    == Some(target.as_str())
+                                && row
+                                    .get("attributes")
+                                    .and_then(|fields| fields.get("expression"))
+                                    .and_then(Value::as_str)
+                                    == Some(expression)
+                        })
+                    })
+        }
+        _ => false,
+    }
+}
+
+/// A spreadsheet parameter names its cell through its identity and points at
+/// the native cells property; only that cell may account for its old keys.
+fn freecad_cell_holds(
+    record: &Value,
+    key: &str,
+    value: &Value,
+    native: &BTreeMap<&str, &Value>,
+) -> bool {
+    if !matches!(key, "address" | "alias") {
+        return false;
+    }
+    let Some(id) = record.get("id").and_then(Value::as_str) else {
+        return false;
+    };
+    let Some(property) = record
+        .get("native_ref")
+        .and_then(Value::as_str)
+        .and_then(|id| native.get(id))
+    else {
+        return false;
+    };
+    if property.get("name").and_then(Value::as_str) != Some("cells") {
+        return false;
+    }
+    property
+        .get("values")
+        .and_then(Value::as_array)
+        .is_some_and(|values| {
+            values.iter().any(|cell| {
+                let Some(fields) = cell.get("attributes") else {
+                    return false;
+                };
+                let Some(address) = fields.get("address").and_then(Value::as_str) else {
+                    return false;
+                };
+                cell.get("tag").and_then(Value::as_str) == Some("Cell")
+                    && id.ends_with(&format!(
+                        ":cell:{}",
+                        cadmpeg_ir::ids::IdentityKey::encode_segment(address)
+                    ))
+                    && fields
+                        .get(key)
+                        .is_some_and(|held| value_matches(held, value))
+                    && (key != "alias"
+                        || record
+                            .get("name")
+                            .is_some_and(|name| value_matches(name, value)))
+            })
         })
 }
 

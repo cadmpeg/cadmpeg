@@ -378,6 +378,9 @@
                 "fcstd:native:object#View": "written"
               }
             },
+            "orphan_object_data": {
+              "disposition": "dropped"
+            },
             "polygons3d": {
               "disposition": "dropped"
             },
@@ -424,7 +427,7 @@
                 "fcstd:native:property#Dimension:BoxCorners": "written",
                 "fcstd:native:property#Dimension:Caption": "regenerated",
                 "fcstd:native:property#Dimension:EqualTolerance": "regenerated",
-                "fcstd:native:property#Dimension:ExpressionEngine": "written",
+                "fcstd:native:property#Dimension:ExpressionEngine": "regenerated",
                 "fcstd:native:property#Dimension:ExtensionAngle": "regenerated",
                 "fcstd:native:property#Dimension:FormatSpec": "regenerated",
                 "fcstd:native:property#Dimension:FormatSpecOverTolerance": "regenerated",
@@ -468,7 +471,7 @@
                 "fcstd:native:property#Model:Width": "regenerated",
                 "fcstd:native:property#Model:_ElementMapVersion": "written",
                 "fcstd:native:property#Note:Caption": "regenerated",
-                "fcstd:native:property#Note:ExpressionEngine": "written",
+                "fcstd:native:property#Note:ExpressionEngine": "regenerated",
                 "fcstd:native:property#Note:Font": "regenerated",
                 "fcstd:native:property#Note:Label": "regenerated",
                 "fcstd:native:property#Note:Label2": "regenerated",
@@ -497,8 +500,8 @@
                 "fcstd:native:property#Page:Views": "regenerated",
                 "fcstd:native:property#Page:Visibility": "written",
                 "fcstd:native:property#Symbol:Caption": "regenerated",
-                "fcstd:native:property#Symbol:EditableTexts": "written",
-                "fcstd:native:property#Symbol:ExpressionEngine": "written",
+                "fcstd:native:property#Symbol:EditableTexts": "regenerated",
+                "fcstd:native:property#Symbol:ExpressionEngine": "regenerated",
                 "fcstd:native:property#Symbol:Label": "regenerated",
                 "fcstd:native:property#Symbol:Label2": "regenerated",
                 "fcstd:native:property#Symbol:LockPosition": "regenerated",

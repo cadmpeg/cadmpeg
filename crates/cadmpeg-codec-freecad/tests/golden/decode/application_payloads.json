@@ -433,6 +433,32 @@
           ]
         },
         {
+          "id": "fcstd:model:attribute#TemperatureConstraint:Normals:property",
+          "name": "Normals",
+          "native_ref": "fcstd:native:property#TemperatureConstraint:Normals",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#TemperatureConstraint"
+            },
+            "kind": "record"
+          },
+          "values": []
+        },
+        {
+          "id": "fcstd:model:attribute#TemperatureConstraint:Points:property",
+          "name": "Points",
+          "native_ref": "fcstd:native:property#TemperatureConstraint:Points",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#TemperatureConstraint"
+            },
+            "kind": "record"
+          },
+          "values": []
+        },
+        {
           "id": "fcstd:model:attribute#TemperatureConstraint:References:property",
           "name": "References",
           "native_ref": "fcstd:native:property#TemperatureConstraint:References",
@@ -726,7 +752,7 @@
       "__arena_sha256": {
         "fcstd": {
           "annotations": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-          "applications": "de484123d908f0a095c74e2fc19072c83c5656992c0ae88c69f2d313c8005029",
+          "applications": "163aec97a1984c1f0472ba26874851e977313c23ced7ae972494bd9dd62a353b",
           "carrier_census": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "design_census": "919a39d48f433022be1a09a9b166ca3df071188be74a19d4863959be18c039be",
           "document": "d93178e2ae60a752308667e099e054b0413f4e1d2aca58c574989f415af65261",
@@ -987,66 +1013,6 @@
     "losses": [
       {
         "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#ExtensionPayload:Payload (App::PropertyFileIncluded) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#TemperatureConstraint:Normals (App::PropertyVectorList) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#TemperatureConstraint:Points (App::PropertyVectorList) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#Toolpath:Path (Path::PropertyPath) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "source.design-payload-unrepresented",
-          "kind": "record_not_typed",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "opaque payload Normals survives only as source bytes; its Design content has no typed representation",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "source.design-payload-unrepresented",
-          "kind": "record_not_typed",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "opaque payload Points survives only as source bytes; its Design content has no typed representation",
-        "severity": "warning"
-      },
-      {
-        "code": {
           "code": "source.design-payload-unrepresented",
           "kind": "record_not_typed",
           "namespace": "fcstd",
@@ -1086,30 +1052,6 @@
     "annotations": {},
     "decode_digest": "410af2e9ed55011039ee065b20e7614037482d382e75e173d78c9a008522de75",
     "retained_records": {
-      "fcstd:native:entry#Normals": {
-        "bytes": {
-          "byte_len": 4,
-          "retention": "digest",
-          "sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
-        },
-        "offset": 0,
-        "stream": "Normals",
-        "untyped": [
-          "design"
-        ]
-      },
-      "fcstd:native:entry#Points": {
-        "bytes": {
-          "byte_len": 4,
-          "retention": "digest",
-          "sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
-        },
-        "offset": 0,
-        "stream": "Points",
-        "untyped": [
-          "design"
-        ]
-      },
       "fcstd:native:entry#Toolpath.nc": {
         "bytes": {
           "byte_len": 114,

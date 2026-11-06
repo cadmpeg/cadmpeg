@@ -390,7 +390,12 @@ fn an_unreadable_unreferenced_member_is_retained_without_refusing_the_root() {
         .report()
         .losses
         .iter()
-        .find(|loss| loss.code == cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable.note("").code)
+        .find(|loss| {
+            loss.code
+                == cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable
+                    .note("")
+                    .code
+        })
         .expect("the unreadable retained member is reported");
     assert!(loss.message.contains("zip.entry"));
     assert!(loss.provenance.is_some());

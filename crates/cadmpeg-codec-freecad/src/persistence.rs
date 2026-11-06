@@ -69,6 +69,8 @@ pub(crate) struct ValueStages<'a> {
 pub(crate) struct Graph {
     /// Declared objects.
     pub(crate) objects: Vec<ObjectRecord>,
+    /// Readable object-data identities whose declaration section was lost.
+    pub(crate) orphan_object_data: Vec<crate::native::OrphanObjectData>,
     pub(crate) property_sources:
         std::collections::BTreeMap<String, crate::fidelity::ValueSourceRanges>,
     /// Dynamic extensions.
@@ -139,15 +141,22 @@ pub(crate) fn resolve_side_entries(
     Ok(())
 }
 
-/// Give up an unreadable geometry value while retaining its property header.
-pub(crate) fn give_up_missing_geometry(
+/// Give up unreadable side-member values while retaining property headers.
+pub(crate) fn give_up_unreadable_side_values(
     ctx: &DecodeContext<'_>,
     stage: &mut PartOutput,
     view: View<'_>,
     graph: &mut Graph,
     entries: &std::collections::BTreeMap<String, View<'_>>,
-) -> Result<(), CodecError> {
+) -> Result<std::collections::BTreeSet<String>, CodecError> {
     use cadmpeg_ir::source_fidelity::parts::DecodeParts;
+    let mut failed_sidecars = std::collections::BTreeSet::new();
+    let owners_with_page_result: std::collections::BTreeSet<_> = graph
+        .properties
+        .iter()
+        .filter(|property| property.name == "PageResult")
+        .map(|property| property.owner.clone())
+        .collect();
     for property in &mut graph.properties {
         let Some(crate::native::PropertyBody::Persisted {
             values,
@@ -157,7 +166,16 @@ pub(crate) fn give_up_missing_geometry(
         else {
             continue;
         };
-        if property.family != PropertyFamily::Geometry {
+        if property.family != PropertyFamily::Geometry
+            && !matches!(
+                property.type_name.as_str(),
+                "App::PropertyVectorList"
+                    | "App::PropertyPlacementList"
+                    | "App::PropertyFloatList"
+                    | "App::PropertyFileIncluded"
+                    | "Part::PropertyTopoShapeList"
+            )
+        {
             continue;
         }
         let missing = values.iter().find_map(|value| {
@@ -175,24 +193,101 @@ pub(crate) fn give_up_missing_geometry(
                 .then_some(name.clone())
             })
         });
-        let Some(missing) = missing else {
-            continue;
+        let invalid = if property.type_name == "App::PropertyVectorList" && missing.is_none() {
+            match side_entries.as_slice() {
+                [name] => entries.get(name).copied().and_then(|source| {
+                    let readable = crate::numeric_list::list_layout::<3>(source, "VectorList")
+                        .is_ok_and(|positions| {
+                            positions.into_iter().all(|position| {
+                                position.into_iter().all(|value| {
+                                    crate::numeric_list::read_real(value).is_ok_and(f64::is_finite)
+                                })
+                            })
+                        });
+                    (!readable).then_some((name.clone(), source))
+                }),
+                _ => None,
+            }
+        } else {
+            None
         };
-        let range = graph
-            .property_sources
-            .get(&property.id)
-            .and_then(crate::fidelity::ValueSourceRanges::value_range)
-            .ok_or_else(|| CodecError::malformed("missing geometry value source range"))?;
-        let extent = crate::fidelity::relative_xml_extent(view, range)?;
+        if missing.is_none() && invalid.is_none() {
+            continue;
+        }
+        let (extent, stream, detail) = if let Some((name, source)) = invalid {
+            failed_sidecars.insert(name.clone());
+            let stream = cadmpeg_ir::StreamName::member(&name).ok_or_else(|| {
+                CodecError::malformed("vector-list side entry has no stream name")
+            })?;
+            (
+                source,
+                stream,
+                format!("vector list in {name} cannot be read"),
+            )
+        } else {
+            let missing = missing.expect("a missing entry was selected");
+            let range = graph
+                .property_sources
+                .get(&property.id)
+                .and_then(crate::fidelity::ValueSourceRanges::value_range)
+                .ok_or_else(|| CodecError::malformed("missing property value source range"))?;
+            (
+                crate::fidelity::relative_xml_extent(view, range)?,
+                cadmpeg_ir::stream_name!("Document.xml"),
+                format!("property references missing side entry {missing}"),
+            )
+        };
         property.body = None;
         stage.insert_native(ctx, "properties", property.clone())?;
         let owner = cadmpeg_ir::ids::Identity::try_from(property.id.as_str())
             .map_err(CodecError::malformed)?;
-        let mut spec = document_part("freecad.property_value")
+        let mut spec = cadmpeg_ir::source_fidelity::parts::PartSpec::new("freecad.property_value")
+            .in_stream(stream)
             .contained_in(owner)
             .absent_field("values")
             .absent_field("links")
             .absent_field("side_entries");
+        if property.type_name == "App::PropertyFileIncluded"
+            && (property.name == "PageResult"
+                || (property.name == "Template"
+                    && !owners_with_page_result.contains(&property.owner)))
+            && graph.objects.iter().any(|object| {
+                object.id().as_str() == property.owner
+                    && matches!(
+                        object.type_name.as_str(),
+                        "TechDraw::DrawTemplate"
+                            | "TechDraw::DrawTemplatePython"
+                            | "TechDraw::DrawSVGTemplate"
+                            | "TechDraw::DrawSVGTemplatePython"
+                            | "TechDraw::DrawDXFTemplate"
+                            | "TechDraw::DrawParametricTemplate"
+                            | "TechDraw::DrawParametricTemplatePython"
+                    )
+            })
+        {
+            let drawing = cadmpeg_ir::ids::Identity::try_from(
+                crate::native::model_id("drawing", &property.owner, "entity").as_str(),
+            )
+            .map_err(CodecError::malformed)?;
+            spec = spec
+                .affected_field(drawing.clone(), "sheet")
+                .affected_field(drawing, "template_geometry");
+        }
+        if property.type_name == "Part::PropertyTopoShapeList"
+            && property.name == "SavedGeometry"
+            && graph.objects.iter().any(|object| {
+                object.id().as_str() == property.owner
+                    && object.type_name == "TechDraw::DrawViewDimension"
+            })
+        {
+            let annotation = cadmpeg_ir::ids::Identity::try_from(
+                crate::native::model_id("semantic-annotation", &property.owner, "content").as_str(),
+            )
+            .map_err(CodecError::malformed)?;
+            spec = spec
+                .affected_field(annotation.clone(), "value")
+                .affected_field(annotation, "reference_anchors");
+        }
         if let Some(classes) = crate::fidelity::property_value_classes(
             &graph.objects,
             &property.owner,
@@ -201,12 +296,10 @@ pub(crate) fn give_up_missing_geometry(
             spec = spec.holding(classes);
         }
         ctx.decode_part(stage, extent, spec, |_| {
-            Err::<(), _>(CodecError::malformed(format_args!(
-                "geometry references missing side entry {missing}"
-            )))
+            Err::<(), _>(CodecError::malformed(detail))
         })?;
     }
-    Ok(())
+    Ok(failed_sidecars)
 }
 
 /// Recover the persistence graph from an already admitted document.
@@ -267,6 +360,9 @@ fn parse_document_impl(
         .unwrap_or_default();
     let section_damaged = |tag: &str| damage.iter().any(|(name, _, _, _)| name == tag.as_bytes());
     let data_section_damaged = section_damaged(data_tag);
+    let declaration_section_stub = damage
+        .iter()
+        .find_map(|(name, _, _, id)| (name == declarations_tag.as_bytes()).then_some(id.as_str()));
     let damaged_declarations: HashMap<&str, &str> = damage
         .iter()
         .filter_map(|(name, ancestors, identity, id)| {
@@ -435,7 +531,9 @@ fn parse_document_impl(
         ));
     }
     if data_by_name.keys().any(|name| {
-        !object_names.contains(name.as_str()) && !damaged_declarations.contains_key(name.as_str())
+        !object_names.contains(name.as_str())
+            && !damaged_declarations.contains_key(name.as_str())
+            && declaration_section_stub.is_none()
     }) || object_names.iter().any(|name| {
         !data_by_name.contains_key(*name) && !data_section_damaged && !damaged_data.contains(*name)
     }) {
@@ -477,16 +575,14 @@ fn parse_document_impl(
                         .map(|(id, source)| (id.clone(), source.clone())),
                 );
                 if !strings.given_up {
-                    parse_properties_impl(
+                    parse_properties(
                         *document_properties,
                         &crate::native::native_id("document", "0"),
                         &mut properties,
                         &mut property_sources,
                         &mut losses,
-                        source,
                         true,
-                        stages,
-                        &objects,
+                        (source, stages, &objects),
                     )?;
                 }
                 properties.sort_by_key(|property| (!property.is_transient(), property.order));
@@ -497,9 +593,8 @@ fn parse_document_impl(
                     &mut properties,
                     &mut property_sources,
                     &mut losses,
-                    source,
-                    stages,
-                    &objects,
+                    false,
+                    (source, stages, &objects),
                 )?;
             }
         }
@@ -520,6 +615,33 @@ fn parse_document_impl(
             )));
         }
     }
+    let mut orphan_object_data: Vec<_> = data_by_name
+        .iter()
+        .filter(|(name, _)| {
+            !object_names.contains(name.as_str())
+                && !damaged_declarations.contains_key(name.as_str())
+        })
+        .filter_map(|(name, data)| declaration_section_stub.map(|stub| (name, data, stub)))
+        .map(|(name, data, stub)| {
+            (
+                crate::native::OrphanObjectData {
+                    id: crate::native::native_id("object-data", name),
+                    name: name.clone(),
+                    owner: stub.to_owned(),
+                },
+                data.range().start,
+            )
+        })
+        .collect();
+    orphan_object_data.sort_by_key(|(_, offset)| *offset);
+    let orphan_object_data: Vec<_> = orphan_object_data
+        .into_iter()
+        .map(|(record, _)| record)
+        .collect();
+    let orphan_data_ids: HashMap<&str, &str> = orphan_object_data
+        .iter()
+        .map(|record| (record.name.as_str(), record.id.as_str()))
+        .collect();
     let mut orphaned: Vec<_> = data_by_name
         .iter()
         .filter_map(|(name, data)| {
@@ -528,7 +650,9 @@ fn parse_document_impl(
             } else {
                 damaged_declarations
                     .get(name.as_str())
-                    .map(|owner| (*owner, *data, false))
+                    .copied()
+                    .or_else(|| orphan_data_ids.get(name.as_str()).copied())
+                    .map(|owner| (owner, *data, false))
             }
         })
         .collect();
@@ -546,8 +670,7 @@ fn parse_document_impl(
         let extension_container = extension_containers.next();
         if extension_containers.next().is_some() {
             return Err(CodecError::malformed(format_args!(
-                "object {} has multiple direct Extensions containers",
-                owner
+                "object {owner} has multiple direct Extensions containers"
             )));
         }
         let mut property_containers = child_nodes
@@ -557,15 +680,13 @@ fn parse_document_impl(
         let property_container = property_containers.next();
         if property_containers.next().is_some() {
             return Err(CodecError::malformed(format_args!(
-                "object {} has multiple direct Properties containers",
-                owner
+                "object {owner} has multiple direct Properties containers"
             )));
         }
         if let (Some(extensions), Some(properties)) = (extension_container, property_container) {
             if extensions.range().start > properties.range().start {
                 return Err(CodecError::malformed(format_args!(
-                    "object {} writes Properties before Extensions",
-                    owner
+                    "object {owner} writes Properties before Extensions"
                 )));
             }
         }
@@ -583,15 +704,13 @@ fn parse_document_impl(
                 let type_name = retained_attr(node, "type")?;
                 if extension_names.contains(&name) {
                     return Err(CodecError::malformed(format_args!(
-                        "duplicate extension name {name} for {}",
-                        owner
+                        "duplicate extension name {name} for {owner}"
                     )));
                 }
                 extension_names.insert(name.clone());
                 if extension_types.contains(&type_name) {
                     return Err(CodecError::malformed(format_args!(
-                        "duplicate extension type {type_name} for {}",
-                        owner
+                        "duplicate extension type {type_name} for {owner}"
                     )));
                 }
                 extension_types.insert(type_name.clone());
@@ -637,9 +756,8 @@ fn parse_document_impl(
                     &mut properties,
                     &mut property_sources,
                     &mut losses,
-                    source,
-                    stages,
-                    &objects,
+                    false,
+                    (source, stages, &objects),
                 )?;
             }
         }
@@ -652,8 +770,7 @@ fn parse_document_impl(
                     .get(&extension.range().start)
                     .ok_or_else(|| {
                         CodecError::malformed(format_args!(
-                            "extension under {} has no native identity",
-                            owner
+                            "extension under {owner} has no native identity"
                         ))
                     })?;
                 for container in extension
@@ -666,9 +783,8 @@ fn parse_document_impl(
                         &mut properties,
                         &mut property_sources,
                         &mut losses,
-                        source,
-                        stages,
-                        &objects,
+                        false,
+                        (source, stages, &objects),
                     )?;
                 }
             }
@@ -687,8 +803,8 @@ fn parse_document_impl(
                     let identity = damaged_declarations
                         .get(target)
                         .copied()
-                        .map(str::to_owned)
-                        .unwrap_or_else(|| crate::native::native_id("object", target));
+                        .or_else(|| orphan_data_ids.get(target).copied())
+                        .map_or_else(|| crate::native::native_id("object", target), str::to_owned);
                     link.set_object(
                         cadmpeg_core::text::NonBlankString::new(identity).ok_or_else(|| {
                             CodecError::malformed("link object identity must not be empty")
@@ -701,6 +817,7 @@ fn parse_document_impl(
 
     Ok(Graph {
         objects,
+        orphan_object_data,
         property_sources,
         extensions,
         properties,
@@ -809,34 +926,14 @@ fn parse_properties(
     output: &mut Vec<PropertyRecord>,
     property_sources: &mut std::collections::BTreeMap<String, crate::fidelity::ValueSourceRanges>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-    source: Option<&source::Source<'_>>,
-    stages: &mut Option<ValueStages<'_>>,
-    objects: &[ObjectRecord],
-) -> Result<(), CodecError> {
-    parse_properties_impl(
-        container,
-        owner,
-        output,
-        property_sources,
-        losses,
-        source,
-        false,
-        stages,
-        objects,
-    )
-}
-
-fn parse_properties_impl(
-    container: roxmltree::Node<'_, '_>,
-    owner: &str,
-    output: &mut Vec<PropertyRecord>,
-    property_sources: &mut std::collections::BTreeMap<String, crate::fidelity::ValueSourceRanges>,
-    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-    source: Option<&source::Source<'_>>,
     skip_adopted: bool,
-    stages: &mut Option<ValueStages<'_>>,
-    objects: &[ObjectRecord],
+    inputs: (
+        Option<&source::Source<'_>>,
+        &mut Option<ValueStages<'_>>,
+        &[ObjectRecord],
+    ),
 ) -> Result<(), CodecError> {
+    let (source, stages, objects) = inputs;
     let property_nodes = container
         .children()
         .filter(|node| node.has_tag_name("Property"))
@@ -961,13 +1058,24 @@ fn parse_persisted_property(
         Some(value) => crate::fidelity::relative_xml_extent(stages.view, value.range())?,
         None => crate::fidelity::relative_xml_extent(stages.view, node.range())?,
     };
-    let mut spec = document_part("freecad.property_value");
+    let identity =
+        cadmpeg_ir::ids::Identity::try_from(property.id.as_str()).map_err(CodecError::malformed)?;
+    let mut spec = document_part("freecad.property_value")
+        .contained_in(identity)
+        .absent_field("values")
+        .absent_field("links")
+        .absent_field("side_entries");
     if let Some(classes) = crate::fidelity::property_value_classes(objects, owner, &type_name) {
         spec = spec.holding(classes);
     }
-    property.body = stages.ctx.decode_part(stages.stage, extent, spec, |_| {
-        Ok(property_body(node, owner, &name, &type_name)?)
-    })?;
+    let header = property.clone();
+    property.body = stages.ctx.decode_part_with_failure_parent(
+        stages.stage,
+        extent,
+        spec,
+        |stage| stage.insert_native(stages.ctx, "properties", header),
+        |_| property_body(node, owner, &name, &type_name),
+    )?;
     Ok(property)
 }
 
@@ -1479,6 +1587,7 @@ pub(crate) fn property_family(type_name: &str) -> PropertyFamily {
         | "App::PropertyIntegerSet"
         | "App::PropertyStringList"
         | "Part::PropertyTopoShapeList"
+        | "Spreadsheet::PropertySheet"
         | "Sketcher::PropertyConstraintList"
         | "TechDraw::PropertyCenterLineList"
         | "TechDraw::PropertyCosmeticEdgeList"
@@ -1622,6 +1731,18 @@ fn validate_scalar_payload(
     node: roxmltree::Node<'_, '_>,
     type_name: &str,
 ) -> Result<(), CodecError> {
+    if matches!(
+        type_name,
+        "App::PropertyVector"
+            | "App::PropertyVectorDistance"
+            | "App::PropertyPosition"
+            | "App::PropertyDirection"
+    ) && direct_vector_value(node, type_name).is_none()
+    {
+        return Err(CodecError::malformed(format_args!(
+            "{type_name} requires three finite vector coordinates"
+        )));
+    }
     // Enumeration persistence also has typed label-list forms; only a numeric
     // scalar's spelling is admitted here. Label-list enums remain native.
     if type_name == "App::PropertyEnumeration" {
