@@ -710,6 +710,47 @@ mod tests {
     };
 
     #[test]
+    fn mapped_dimension_fields_are_not_reported_as_an_omitted_arena() {
+        use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+        use cadmpeg_ir::semantic_annotations::DimensionKind;
+
+        let mut ir = CadIr::empty();
+        let mut annotation = SemanticAnnotation::new(
+            SemanticAnnotationId::mint("cadir:model:annotation#dimension").unwrap(),
+            "cadir:model:feature#dimension".into(),
+            SemanticAnnotationKind::Dimension,
+            "TechDraw::DrawViewDimension".into(),
+            0,
+            "fcstd:native:annotation#dimension".into(),
+        );
+        annotation.dimension_kind = Some(DimensionKind::Distance {});
+        annotation.text = vec!["%0.2f".into()];
+        annotation.format = Some("%0.2f".into());
+        annotation.references.insert(
+            cadmpeg_core::text::NonBlankString::new("References2D").unwrap(),
+            vec![ReferenceSelection::new(ReferenceTarget::Null, Vec::new())],
+        );
+        let id = annotation.id.clone();
+        ir.model.semantic_annotations.push(annotation);
+        let plan = crate::FcstdCodec
+            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+            .unwrap();
+        assert!(!plan.report().losses.iter().any(|loss| loss.code
+            == FreecadLossCode::ExportArenaNotTransferred.note("").code
+            && loss.message.contains(id.as_str())));
+        use cadmpeg_ir::{Codec, DecodeOptions};
+        let mut bytes = Vec::new();
+        plan.write_to(&mut bytes).unwrap();
+        let output = crate::FcstdCodec
+            .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        let dimension = &output.ir().model.semantic_annotations[0];
+        assert_eq!(dimension.dimension_kind, Some(DimensionKind::Distance {}));
+        assert_eq!(dimension.format.as_deref(), Some("%0.2f"));
+        assert!(dimension.references.contains_key("References2D"));
+    }
+
+    #[test]
     fn unresolvable_view_source_is_named_in_a_specific_loss() {
         let mut drawing = cadmpeg_ir::drawings::Drawing::new(
             cadmpeg_ir::drawings::DrawingId::mint("cadir:model:drawing#view").unwrap(),
