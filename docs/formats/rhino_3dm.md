@@ -4462,14 +4462,6 @@ pole receives a zero z coordinate in CADIR, and a dimension-3 pole retains its
 z coordinate. The page-per-model ratio is finite, nonnegative, and
 dimensionless; detail minor 0 defaults it to zero.
 
-CADIR creates one native `detail_view` feature and one linked neutral curve for
-each accepted detail object. The feature retains the page-per-model ratio and
-the boundary link. It retains the bounded `ON_3dmView` payload as `view_bytes`
-and `view_sha256` native properties; the view state is not decoded into the
-neutral `views` arena. This is a CADIR transfer boundary and emits
-`detail.view-not-transferred`; the source detail object remains retained for
-native fidelity.
-
 ### 18.4 NURBS cages
 
 `ON_NurbsCage` writers emit anonymous version 1.0. A reader accepts major 1
