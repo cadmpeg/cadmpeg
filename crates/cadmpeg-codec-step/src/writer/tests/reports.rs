@@ -1878,10 +1878,10 @@ fn procedural_construction_reduction_is_reported() {
         &StepWriteOptions::default(),
     )
     .unwrap();
-    assert!(report.losses.iter().any(|loss| {
-        loss.message
-            .contains("reduced to their solved STEP carriers")
-    }));
+    assert!(report
+        .losses
+        .iter()
+        .any(|loss| { loss.message.contains("reduced to their STEP carriers") }));
     assert_eq!(
         report.coverage.disposition(EntityKind::ProceduralCurve),
         ArenaDisposition::Reported
