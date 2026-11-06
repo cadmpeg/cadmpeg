@@ -447,6 +447,18 @@ impl Node {
 
     /// Decode this graph-owned fixed analytic surface carrier.
     pub(crate) fn surface_geometry(&self) -> Option<cadmpeg_ir::geometry::SurfaceGeometry> {
+        self.surface_record()?.ok()
+    }
+
+    /// Why this graph-owned fixed analytic surface carrier has no surface.
+    pub(crate) fn surface_refusal(&self) -> Option<crate::geometry::SurfaceRefusal> {
+        self.surface_record()?.err()
+    }
+
+    fn surface_record(
+        &self,
+    ) -> Option<Result<cadmpeg_ir::geometry::SurfaceGeometry, crate::geometry::SurfaceRefusal>>
+    {
         matches!(
             self.kind,
             NodeKind::Plane
@@ -457,7 +469,11 @@ impl Node {
         )
         .then_some(())?;
         let payload_shift = self.common_header()?.1.checked_sub(19)?;
-        crate::geometry::decode_surface_record(&self.bytes, self.kind, payload_shift)
+        Some(crate::geometry::decode_surface_record(
+            &self.bytes,
+            self.kind,
+            payload_shift,
+        ))
     }
 
     /// Decode this graph-owned fixed analytic curve carrier.

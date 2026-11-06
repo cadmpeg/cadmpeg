@@ -118,6 +118,14 @@ loss_codes! {
     AssemblyComponentsExternal => ("assembly.components-external", Blocking, AssemblyComponentsExternal),
     /// A carrier record of the right family states lanes the IR carrier refuses.
     CarrierLanesUnpaired => ("carrier.lanes-unpaired", Warning, ObjectRecordsUntransferred),
+    /// A CONE record stores a negative sine or cosine of its half-angle,
+    /// whose surface is unresolved.
+    CarrierConeHalfAngleSignUnresolved => ("carrier.cone-half-angle-sign-unresolved", Warning, ObjectRecordsUntransferred),
+    /// A CONE record's stored sine and cosine break the unit identity.
+    CarrierConeHalfAngleIdentityRefused => ("carrier.cone-half-angle-identity-refused", Warning, ObjectRecordsUntransferred),
+    /// A TORUS record stores a negative major radius, whose surface is
+    /// unresolved (`PS-43`).
+    CarrierTorusNegativeMajorUnresolved => ("carrier.torus-negative-major-unresolved", Warning, ObjectRecordsUntransferred),
     /// A B-spline carrier's descriptor names no control values that resolve to it.
     CarrierControlsUnresolved => ("carrier.controls-unresolved", Warning, ObjectRecordsUntransferred),
     /// No gate-passing analytic carrier was found in the Parasolid streams.
@@ -226,6 +234,9 @@ mod tests {
                 "stream.non-parasolid-omitted",
                 "assembly.components-external",
                 "carrier.lanes-unpaired",
+                "carrier.cone-half-angle-sign-unresolved",
+                "carrier.cone-half-angle-identity-refused",
+                "carrier.torus-negative-major-unresolved",
                 "carrier.controls-unresolved",
                 "geometry.not-transferred",
                 "topology.loop-ring-unresolved",
