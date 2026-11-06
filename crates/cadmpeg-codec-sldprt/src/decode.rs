@@ -84,19 +84,48 @@ impl crate::SldprtCodec {
         let (ctx, root) = DecodeContext::read_root(reader, &arena, &options.policy, options.depth)?;
         let scan = container::scan(&ctx, root)?;
         let streams = active_body_streams(&scan);
+        let mut sites: BTreeMap<String, Vec<usize>> = BTreeMap::new();
+        for (index, stream) in streams.iter().enumerate() {
+            sites.entry(stream.site_key()).or_default().push(index);
+        }
+        let mut site_spans = vec![None; streams.len()];
+        for indices in sites.values() {
+            let bodies = indices
+                .iter()
+                .map(|index| (streams[*index].payload, streams[*index].header))
+                .collect::<Vec<_>>();
+            let scanned = crate::brep::read_ledger::site_scanned(&ctx, &bodies)?;
+            for ((index, nodes), scanned) in indices
+                .iter()
+                .zip(crate::brep::read_ledger::node_spans(&bodies))
+                .zip(scanned)
+            {
+                site_spans[*index] = nodes.or(scanned);
+            }
+        }
         let mut ledgers = Vec::new();
-        for stream in &streams {
+        for (stream, spans) in streams.iter().zip(site_spans) {
             let body = crate::brep::graph::header_body(stream.payload, stream.header)?;
-            ledgers.push(crate::exact_ledger::ExactReadLedger::collect(
-                &stream.site_key(),
-                body,
+            let site = stream.site_key();
+            let spans = spans
+                .unwrap_or_else(|| crate::brep::read_ledger::scanned(body, stream.header, false));
+            ledgers.push(crate::exact_ledger::ExactReadLedger::from_raw(
+                &site, body, spans,
             ));
         }
         for (site, stream) in all_local_body_streams(&scan) {
             let body = crate::brep::graph::header_body(stream.payload, stream.header)?;
-            ledgers.push(crate::exact_ledger::ExactReadLedger::collect_plain(
-                &site, body,
-            ));
+            let spans = crate::brep::read_ledger::node_spans(&[(stream.payload, stream.header)])
+                .pop()
+                .flatten();
+            ledgers.push(match spans {
+                Some(spans) => crate::exact_ledger::ExactReadLedger::from_raw(&site, body, spans),
+                None => crate::exact_ledger::ExactReadLedger::from_raw(
+                    &site,
+                    body,
+                    crate::brep::read_ledger::scanned(body, stream.header, true),
+                ),
+            });
         }
         ctx.finish_session()?;
         Ok((result, ledgers))
