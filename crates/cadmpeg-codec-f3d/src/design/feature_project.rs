@@ -8417,25 +8417,24 @@ fn project_replace_face(
 
 /// Project the source selections of a `SurfaceTrim` scope.
 ///
-/// Fusion stores the surface target as a role-`0x04` body-recipe group and
-/// the trimming path as a role-`0x21` entity-selection group. The cell table
-/// that selects the cells to remove is decoded separately and bound to the
-/// projected operation after the source selections have been resolved.
+/// Fusion stores the surface targets as a role-`0x04` body-recipe group and
+/// the trimming tools as a role-`0x21` group. The cell table that selects the
+/// cells to remove is decoded separately and bound to the projected operation
+/// after the source selections have been resolved.
 fn project_surface_trim(
     scope: &DesignParameterScope,
     construction_groups: &[DesignConstructionOperandGroup],
     body_recipe_operands: &[DesignBodyRecipeOperand],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
-    use cadmpeg_ir::features::{FeatureDefinition, FeatureOperation, PathRef, TrimRegion};
+    use cadmpeg_ir::features::{
+        FaceSelection, FeatureDefinition, FeatureOperation, PathRef, TrimRegion,
+    };
 
-    if scope.kind() != crate::records::feature::scope::DesignFeatureKind::SurfaceTrim
-        || scope.reference_members().len() != 4
-    {
+    if scope.kind() != crate::records::feature::scope::DesignFeatureKind::SurfaceTrim {
         return None;
     }
     let stream = native_stream(&scope.id)?;
-    let references = scope.reference_members().values_array::<4>();
-    let references = references?.map(|value| *value);
+    let references: Vec<u32> = scope.reference_members().values().copied().collect();
     let mut groups = construction_groups.iter().filter(|group| {
         native_stream(&group.id) == Some(stream) && group.scope_record_index == scope.record_index
     });
@@ -8448,26 +8447,35 @@ fn project_surface_trim(
         } else {
             (second, first)
         };
+    let tool_ordinal = usize::try_from(tool_group.scope_reference_ordinal).ok()?;
+    let (Some(target_members), Some(tool_members)) = (
+        references.get(1..tool_ordinal),
+        references.get(tool_ordinal.checked_add(1)?..),
+    ) else {
+        return None;
+    };
     if target_group.scope_reference_ordinal != 0
-        || target_group.record_index != references[0]
+        || target_members.is_empty()
+        || tool_members.is_empty()
+        || references.first() != Some(&target_group.record_index)
         || target_group.role() != DesignOperandRole::BODIES_A
         || !target_group
             .members()
             .iter()
             .map(|member| member.value)
-            .eq(references[1..2].iter().copied())
-        || tool_group.scope_reference_ordinal != 2
-        || tool_group.record_index != references[2]
+            .eq(target_members.iter().copied())
+        || references.get(tool_ordinal) != Some(&tool_group.record_index)
         || tool_group.role() != DesignOperandRole::ROLE_0X21
         || !tool_group
             .members()
             .iter()
             .map(|member| member.value)
-            .eq(references[3..4].iter().copied())
+            .eq(tool_members.iter().copied())
     {
         return None;
     }
-    let faces = resolved_body_recipe_selection(scope, target_group, body_recipe_operands)?;
+    let faces = resolved_body_recipe_selection(scope, target_group, body_recipe_operands)
+        .unwrap_or_else(|| FaceSelection::Native(target_group.id.clone()));
     Some(FeatureDefinition::Operation(
         FeatureOperation::TrimSurface {
             faces,
@@ -8481,12 +8489,13 @@ fn project_surface_trim(
 ///
 /// A source trim selects cells for removal. That set is independent of the
 /// canonical inside/outside shorthand and must remain explicit when it is not
-/// reducible to one of those two regions.
+/// reducible to one of those two regions. Returns the native cell-table count.
 pub(crate) fn bind_surface_trim_cell_selections(
     features: &mut [cadmpeg_ir::features::Feature],
     scopes: &[DesignParameterScope],
     operations: &[DesignSurfaceTrimOperation],
-) {
+) -> usize {
+    let mut native_tables = 0;
     for feature in features {
         if !matches!(
             feature.evaluation.definition(),
@@ -8511,14 +8520,18 @@ pub(crate) fn bind_surface_trim_cell_selections(
         }) else {
             continue;
         };
-        let mut removed = Vec::new();
-        for entry in operation.cell_entries() {
-            removed.push(entry.ordinal);
-        }
-        let Some(selection) = cadmpeg_ir::features::TrimCellSelection::new(
-            removed,
-            u64::from(operation.trailing_value),
-        ) else {
+        let removed = operation
+            .cell_entries()
+            .iter()
+            .map(|entry| entry.ordinal)
+            .collect::<Vec<_>>();
+        let total = u64::from(operation.trailing_value);
+        let selection = u64::try_from(removed.len())
+            .is_ok_and(|count| count < total)
+            .then(|| cadmpeg_ir::features::TrimCellSelection::new(removed, total))
+            .flatten();
+        let Some(selection) = selection else {
+            native_tables += 1;
             continue;
         };
         feature.evaluation.edit(|definition, _| {
@@ -8530,6 +8543,7 @@ pub(crate) fn bind_surface_trim_cell_selections(
             }
         });
     }
+    native_tables
 }
 
 pub(super) fn project_split(

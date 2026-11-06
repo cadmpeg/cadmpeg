@@ -310,6 +310,8 @@ pub(crate) enum F3dLossCode {
     FeatureRevolveLayoutAssumed,
     /// Feature face operands stay unresolved inside historical selections.
     FeatureFaceOperandUnresolved,
+    /// `SurfaceTrim` cell tables outside the removal reading retain native entries.
+    FeatureTrimCellTableNative,
     /// Edge-treatment selections retain native recipes; no historical edge.
     FeatureEdgeSelectionNative,
     /// Edge-treatment operands stay unresolved inside historical selections.
@@ -622,6 +624,7 @@ impl F3dLossCode {
         Self::FeatureExtrudeExtentNative,
         Self::FeatureRevolveLayoutAssumed,
         Self::FeatureFaceOperandUnresolved,
+        Self::FeatureTrimCellTableNative,
         Self::FeatureEdgeSelectionNative,
         Self::FeatureEdgeOperandUnresolved,
         Self::FeatureEdgeSelectionLost,
@@ -855,6 +858,7 @@ impl F3dLossCode {
             Self::FeatureExtrudeExtentNative => "feature.extrude-extent-native",
             Self::FeatureRevolveLayoutAssumed => "feature.revolve-layout-assumed",
             Self::FeatureFaceOperandUnresolved => "feature.face-operand-unresolved",
+            Self::FeatureTrimCellTableNative => "feature.trim-cell-table-native",
             Self::FeatureEdgeSelectionNative => "feature.edge-selection-native",
             Self::FeatureEdgeOperandUnresolved => "feature.edge-operand-unresolved",
             Self::FeatureEdgeSelectionLost => "feature.edge-selection-lost",
@@ -1107,6 +1111,7 @@ impl F3dLossCode {
             | Self::FeatureExtrudeExtentNative
             | Self::FeatureRevolveLayoutAssumed
             | Self::FeatureFaceOperandUnresolved
+            | Self::FeatureTrimCellTableNative
             | Self::FeatureEdgeSelectionNative
             | Self::FeatureEdgeOperandUnresolved
             | Self::FeatureEdgeSelectionLost
@@ -1293,6 +1298,7 @@ impl F3dLossCode {
             | Self::FeatureExtrudeExtentNative
             | Self::FeatureRevolveLayoutAssumed
             | Self::FeatureFaceOperandUnresolved
+            | Self::FeatureTrimCellTableNative
             | Self::FeatureEdgeSelectionNative
             | Self::FeatureEdgeOperandUnresolved
             | Self::FeatureEdgeSelectionLost
@@ -1563,6 +1569,7 @@ mod tests {
                 "feature.extrude-extent-native",
                 "feature.revolve-layout-assumed",
                 "feature.face-operand-unresolved",
+                "feature.trim-cell-table-native",
                 "feature.edge-selection-native",
                 "feature.edge-operand-unresolved",
                 "feature.edge-selection-lost",

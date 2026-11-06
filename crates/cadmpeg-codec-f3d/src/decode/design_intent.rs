@@ -647,11 +647,18 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             scan,
             &design.design_parameter_scopes,
         )?;
-    crate::design::feature_project::bind_surface_trim_cell_selections(
+    let native_trim_cell_tables = crate::design::feature_project::bind_surface_trim_cell_selections(
         &mut model.features,
         &design.design_parameter_scopes,
         &design.design_surface_trim_operations,
     );
+    if native_trim_cell_tables != 0 {
+        push_loss_vec(
+            &mut losses,
+            F3dLossCode::FeatureTrimCellTableNative,
+            format_args!("{native_trim_cell_tables} SurfaceTrim cell table(s) keep native entries because the removal reading needs fewer distinct entries than the trailing value."),
+        );
+    }
     super::bind_mesh_feature_definitions(
         &mut model.features,
         &design.design_parameter_scopes,

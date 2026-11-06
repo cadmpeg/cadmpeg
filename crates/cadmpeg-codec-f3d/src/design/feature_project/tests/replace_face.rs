@@ -95,6 +95,22 @@ fn group(
     member: u32,
     role: DesignOperandRole,
 ) -> DesignConstructionOperandGroup {
+    group_with_members(
+        scope_record_index,
+        scope_reference_ordinal,
+        record_index,
+        &[member],
+        role,
+    )
+}
+
+fn group_with_members(
+    scope_record_index: u32,
+    scope_reference_ordinal: u32,
+    record_index: u32,
+    members: &[u32],
+    role: DesignOperandRole,
+) -> DesignConstructionOperandGroup {
     DesignConstructionOperandGroup::try_from(
         crate::records::topology::construction::DesignConstructionOperandGroupDraft {
             id: format!("f3d:Design/BulkStream.dat:group#{record_index}"),
@@ -104,10 +120,14 @@ fn group(
             byte_offset: 0,
             class_tag: crate::records::references::DesignClassTag::try_from("277".to_owned())
                 .unwrap(),
-            members: vec![crate::records::identity::Located {
-                value: member,
-                offset: 0,
-            }],
+            members: members
+                .iter()
+                .zip((0..).step_by(11))
+                .map(|(member, offset)| crate::records::identity::Located {
+                    value: *member,
+                    offset,
+                })
+                .collect(),
             lost_edge_references: Vec::new(),
             frame: DesignConstructionOperandGroupFrame::try_from(
                 crate::records::topology::construction::DesignConstructionOperandGroupFrameDraft {
@@ -405,6 +425,175 @@ fn surface_trim_projects_body_target_and_curve_tool() {
     ));
 }
 
+fn surface_trim_scope(references: Vec<u32>) -> DesignParameterScope {
+    let mut scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:scope#1200",
+        crate::records::feature::scope::DesignFeatureKind::SurfaceTrim,
+        1200,
+    );
+    scope
+        .try_edit(|draft| {
+            draft.reference_members = crate::records::identity::ReferenceRun::unlocated(references);
+            draft.layout_fixture_references();
+            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
+            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    scope
+}
+
+#[test]
+fn surface_trim_keeps_native_target_when_its_body_is_unresolved() {
+    let (scope, target_group, tool_group, _) = surface_trim_fixture();
+    let definition = project_surface_trim(&scope, &[target_group.clone(), tool_group.clone()], &[])
+        .expect("typed SurfaceTrim");
+    assert!(matches!(
+        definition,
+        FeatureDefinition::Operation(FeatureOperation::TrimSurface {
+            faces: FaceSelection::Native(ref faces),
+            tool: cadmpeg_ir::features::PathRef::Native(ref tool),
+            keep: cadmpeg_ir::features::TrimRegion::Unresolved,
+        }) if faces == &target_group.id && tool == &tool_group.id
+    ));
+}
+
+#[test]
+fn surface_trim_projects_multi_member_target_and_tool_groups() {
+    let scope = surface_trim_scope(vec![1201, 1202, 1203, 1204, 1205, 1206, 1207]);
+    let target_group =
+        group_with_members(1200, 0, 1201, &[1202, 1203], DesignOperandRole::BODIES_A);
+    let tool_group = group_with_members(
+        1200,
+        3,
+        1204,
+        &[1205, 1206, 1207],
+        DesignOperandRole::ROLE_0X21,
+    );
+    let definition = project_surface_trim(&scope, &[tool_group.clone(), target_group.clone()], &[])
+        .expect("typed SurfaceTrim");
+    assert!(matches!(
+        definition,
+        FeatureDefinition::Operation(FeatureOperation::TrimSurface {
+            faces: FaceSelection::Native(ref faces),
+            tool: cadmpeg_ir::features::PathRef::Native(ref tool),
+            ..
+        }) if faces == &target_group.id && tool == &tool_group.id
+    ));
+}
+
+#[test]
+fn surface_trim_requires_groups_that_partition_the_references() {
+    let scope = surface_trim_scope(vec![1201, 1202, 1203, 1204, 1205, 1206, 1207]);
+    let target_group =
+        group_with_members(1200, 0, 1201, &[1202, 1203], DesignOperandRole::BODIES_A);
+    let short_tool = group_with_members(1200, 3, 1204, &[1205, 1206], DesignOperandRole::ROLE_0X21);
+    assert!(project_surface_trim(&scope, &[target_group.clone(), short_tool], &[]).is_none());
+    let misplaced_tool = group_with_members(
+        1200,
+        2,
+        1203,
+        &[1204, 1205, 1206, 1207],
+        DesignOperandRole::ROLE_0X21,
+    );
+    assert!(project_surface_trim(&scope, &[target_group, misplaced_tool], &[]).is_none());
+}
+
+#[test]
+fn surface_trim_keeps_native_cells_when_entries_fill_the_trailing_value() {
+    let scope = DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:design-parameter-scope#1200",
+        crate::records::feature::scope::DesignFeatureKind::SurfaceTrim,
+        1200,
+    );
+    let mut features = [unresolved_trim_feature(&scope)];
+    for ordinals in [[1, 2], [1, 1]] {
+        let operation = trim_operation(&ordinals, 2);
+        assert_eq!(
+            bind_surface_trim_cell_selections(
+                &mut features,
+                std::slice::from_ref(&scope),
+                std::slice::from_ref(&operation),
+            ),
+            1
+        );
+        assert!(matches!(
+            features[0].evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::TrimSurface {
+                keep: cadmpeg_ir::features::TrimRegion::Unresolved,
+                ..
+            })
+        ));
+    }
+}
+
+fn unresolved_trim_feature(scope: &DesignParameterScope) -> cadmpeg_ir::features::Feature {
+    cadmpeg_ir::features::Feature {
+        product_definition: None,
+        id: cadmpeg_ir::features::FeatureId::mint("f3d:test:feature#1200").unwrap(),
+        ordinal: 0,
+        name: None,
+        suppressed: None,
+        dependencies: Default::default(),
+        source_properties: Default::default(),
+        source_tag: None,
+        source_text: None,
+        source_content: Default::default(),
+        evaluation: cadmpeg_ir::features::FeatureEvaluation::from_definition(
+            FeatureDefinition::Operation(FeatureOperation::TrimSurface {
+                faces: FaceSelection::Unresolved,
+                tool: cadmpeg_ir::features::PathRef::Unresolved("tool".into()),
+                keep: cadmpeg_ir::features::TrimRegion::Unresolved,
+            }),
+        ),
+        native_ref: Some(scope.id.clone()),
+    }
+}
+
+fn trim_operation(ordinals: &[u64], trailing_value: u32) -> DesignSurfaceTrimOperation {
+    DesignSurfaceTrimOperation::try_from(
+        crate::records::feature::surface_ops::DesignSurfaceTrimOperationWire {
+            id: "f3d:Design/BulkStream.dat:design-surface-trim-operation#1200".into(),
+            scope_record_index: 1200,
+            chain_records: [
+                crate::records::feature::surface_ops::DesignSurfaceTrimChainRecord {
+                    record_index: 2,
+                    byte_offset: 0,
+                    class_tag: "288".to_owned().try_into().unwrap(),
+                    frame_length: 96,
+                },
+                crate::records::feature::surface_ops::DesignSurfaceTrimChainRecord {
+                    record_index: 6,
+                    byte_offset: 96,
+                    class_tag: "271".to_owned().try_into().unwrap(),
+                    frame_length: 21,
+                },
+            ],
+            cell_table_record_index: 3,
+            cell_table_byte_offset: 0,
+            cell_table_class_tag: "350".to_owned().try_into().unwrap(),
+            cell_table_frame_length: 0,
+            cell_table_paired_class_tag: "266".to_owned().try_into().unwrap(),
+            cell_table_paired_byte_offset: 0,
+            cell_count_offset: 0,
+            cell_entries: ordinals
+                .iter()
+                .zip(4..)
+                .map(|(ordinal, record_index)| DesignSurfaceTrimCellEntry {
+                    record_index,
+                    record_reference_offset: 0,
+                    ordinal: *ordinal,
+                    ordinal_offset: 0,
+                })
+                .collect(),
+            trailing_value,
+            trailing_value_offset: 0,
+            trailing_zero_offset: 0,
+        },
+    )
+    .unwrap()
+}
+
 #[test]
 fn surface_trim_binds_selected_cells_without_inventing_a_side() {
     let scope = DesignParameterScope::empty(
@@ -438,12 +627,6 @@ fn surface_trim_binds_selected_cells_without_inventing_a_side() {
         crate::records::feature::surface_ops::DesignSurfaceTrimOperationWire {
             id: "f3d:Design/BulkStream.dat:design-surface-trim-operation#1200".into(),
             scope_record_index: 1200,
-            selection_record_index: 1,
-            selection_byte_offset: 0,
-            serialization_form:
-                crate::records::topology::entity_selection::SelectionSerializationForm::Zero,
-            selection_next_record_index: 2,
-            selection_next_byte_offset: 0,
             chain_records: [
                 crate::records::feature::surface_ops::DesignSurfaceTrimChainRecord {
                     record_index: 2,
@@ -538,12 +721,6 @@ fn surface_trim_selected_cells_keep_cells() {
         crate::records::feature::surface_ops::DesignSurfaceTrimOperationWire {
             id: "f3d:Design/BulkStream.dat:design-surface-trim-operation#1200".into(),
             scope_record_index: 1200,
-            selection_record_index: 1,
-            selection_byte_offset: 0,
-            serialization_form:
-                crate::records::topology::entity_selection::SelectionSerializationForm::Zero,
-            selection_next_record_index: 2,
-            selection_next_byte_offset: 0,
             chain_records: [
                 crate::records::feature::surface_ops::DesignSurfaceTrimChainRecord {
                     record_index: 2,
