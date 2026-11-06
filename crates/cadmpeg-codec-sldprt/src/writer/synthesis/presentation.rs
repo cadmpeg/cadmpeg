@@ -271,13 +271,104 @@ fn appearances(ir: &mut CadIr, losses: &mut Vec<LossNote>) -> Result<(), CodecEr
     let mut count = 0;
     ir.model.appearance_bindings.retain(|binding| {
         let omitted = matches!(binding.target, AppearanceTarget::Body(_));
+        if omitted {
+            losses.push(
+                SldprtLossCode::WriterAppearanceBindingsOmitted.note(format!(
+                "appearance binding {} omitted when distinct body colors were projected onto faces",
+                binding.id
+            )),
+            );
+        }
         count += usize::from(omitted);
         !omitted
     });
     for body in &mut ir.model.bodies {
-        count += usize::from(body.name.take().is_some());
-        body.color = None;
+        let name = body.name.take().is_some();
+        let color = body.color.take().is_some();
+        count += usize::from(name);
+        if let Some(fields) = match (name, color) {
+            (true, true) => Some("name and color"),
+            (true, false) => Some("name"),
+            (false, true) => Some("color"),
+            (false, false) => None,
+        } {
+            losses.push(SldprtLossCode::WriterFieldsOmitted.note(format!(
+                "body {}: {fields} omitted during material reduction",
+                body.id
+            )));
+        }
     }
     losses.push(SldprtLossCode::WriterFieldsOmitted.note(format!("distinct body materials were reduced to face colors; {count} body material binding/name records omitted")));
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::appearances;
+    use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
+    use cadmpeg_ir::ids::{AppearanceBindingId, AppearanceId, BodyId};
+    use cadmpeg_ir::topology::Color;
+    use std::collections::BTreeMap;
+
+    #[test]
+    fn distinct_body_material_reduction_names_each_binding(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let mut ir = cadmpeg_ir::examples::unit_cube()?;
+        ir.model.bodies[0].name = Some("First body".into());
+        ir.model.bodies[0].color = Color::new(1.0, 0.0, 0.0, 1.0);
+        let body = ir.model.bodies[0].id.clone();
+        let mut second = ir.model.bodies[0].clone();
+        second.id = BodyId::mint("synthetic:test:body#second")?;
+        second.regions.clear();
+        ir.model.bodies.push(second);
+        let mut ids = Vec::new();
+        for (index, color) in [
+            Color::new(1.0, 0.0, 0.0, 1.0).ok_or("red color")?,
+            Color::new(0.0, 0.0, 1.0, 1.0).ok_or("blue color")?,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let appearance = AppearanceId::mint(format!("synthetic:test:appearance#{index}"))?;
+            let binding = AppearanceBindingId::mint(format!("synthetic:test:binding#{index}"))?;
+            ir.model.appearances.push(Appearance {
+                native_ref: None,
+                id: appearance.clone(),
+                name: None,
+                asset_guid: None,
+                library_id: None,
+                visual_guid: None,
+                physical_token: None,
+                schema: None,
+                category: None,
+                base_color: Some(color),
+                properties: BTreeMap::new(),
+                textures: Vec::new(),
+            });
+            ir.model.appearance_bindings.push(AppearanceBinding {
+                native_ref: None,
+                id: binding.clone(),
+                target: AppearanceTarget::Body(ir.model.bodies[index].id.clone()),
+                appearance,
+                source_entity_id: None,
+                object_type: None,
+                visible: None,
+                channels: BTreeMap::new(),
+            });
+            ids.push(binding);
+        }
+        let mut losses = Vec::new();
+        appearances(&mut ir, &mut losses)?;
+        for id in ids {
+            assert!(losses.iter().any(|loss| {
+                loss.code.local_code() == "writer.appearance-bindings-omitted"
+                    && loss.message.contains(id.as_str())
+            }));
+        }
+        assert!(losses.iter().any(|loss| {
+            loss.code.local_code() == "writer.fields-omitted"
+                && loss.message.contains(body.as_str())
+        }));
+        Ok(())
+    }
 }
