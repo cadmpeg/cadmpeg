@@ -250,8 +250,11 @@ pub(super) fn decode(
         )?;
     let design_joint_motions =
         crate::design::decode::joint_motion::decode_joint_motions(scan, &design_parameter_scopes)?;
-    let design_feature_timelines = match crate::design::decode::meta::decode_feature_timelines(scan)
-    {
+    let design_feature_timelines = match crate::design::decode::meta::decode_feature_timeline_parts(
+        ctx,
+        &mut record_parts,
+        scan,
+    ) {
         Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
         other => other,
     };

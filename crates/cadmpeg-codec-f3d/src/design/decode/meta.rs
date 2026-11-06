@@ -1093,10 +1093,12 @@ fn parse_feature_timeline_record(
     .ok()
 }
 
-/// Decode the exact counted scope list that carries authored feature order.
-pub(crate) fn decode_feature_timelines(
+pub(crate) fn decode_feature_timeline_parts(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    output: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
     scan: &ContainerScan,
 ) -> Result<Vec<DesignFeatureTimeline>, CodecError> {
+    use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartSpec};
     #[cfg(test)]
     if let Some(failure) = crate::decode::design_intent::take_injected_failure() {
         return Err(failure());
@@ -1105,133 +1107,99 @@ pub(crate) fn decode_feature_timelines(
     for entry in scan.entries.iter().filter(|entry| {
         super::sheet_metal_settings::is_settings_stream(scan, entry, ContainerRole::Metastream)
     }) {
-        let meta = crate::metastream::parse(scan.entry_bytes(&entry.name)?, &entry.name)?;
+        let meta = scan.parsed_metastream(&entry.name)?;
         if !scan.is_design_stream(entry, ContainerRole::Metastream)
             && !super::sheet_metal_settings::has_supported_settings(&meta)
         {
             continue;
         }
+        let mut ordinals = HashMap::new();
+        let mut by_entity = HashMap::<u64, Vec<&str>>::new();
+        let mut ordinal = 0_u32;
+        for row in &meta.types {
+            for entity in row.entities.values() {
+                by_entity
+                    .entry(*entity)
+                    .or_default()
+                    .push(row.type_guid.as_str());
+                if row
+                    .type_guid
+                    .as_str()
+                    .eq_ignore_ascii_case(FEATURE_TIMELINE_TYPE_GUID)
+                {
+                    ordinals.insert(*entity, ordinal);
+                    ordinal = ordinal.checked_add(1).ok_or_else(|| {
+                        CodecError::malformed("Design feature-timeline ordinal exceeds u32")
+                    })?;
+                }
+            }
+        }
+        if ordinals.is_empty() {
+            continue;
+        }
         let Some(prefix) = entry.name.strip_suffix("MetaStream.dat") else {
             continue;
         };
-        let is_timeline_type = |design_type: &SegmentTypeData| {
-            design_type
+        let bulk_name = paired_bulk_entry_name(scan, prefix)?;
+        let source = scan
+            .entry_view(bulk_name)
+            .ok_or_else(|| CodecError::malformed("Design timeline source View is missing"))?;
+        let bytes = source.window();
+        let (frames, _) = partition_primary_frames(bytes, &meta)?;
+        for frame in frames.into_iter().filter(|frame| {
+            frame
+                .design_type
                 .type_guid
                 .as_str()
                 .eq_ignore_ascii_case(FEATURE_TIMELINE_TYPE_GUID)
-        };
-        if !meta.types.iter().any(is_timeline_type) {
-            continue;
-        }
-        if meta
-            .types
-            .iter()
-            .filter(|design_type| is_timeline_type(design_type))
-            .any(|design_type| !FEATURE_TIMELINE_TYPE_VERSIONS.contains(&design_type.version))
-        {
-            return Err(CodecError::NotImplemented(
-                "unsupported Design feature-timeline record version".into(),
-            ));
-        }
-        if meta
-            .types
-            .iter()
-            .filter(|design_type| is_timeline_type(design_type))
-            .any(|design_type| !is_supported_feature_timeline_type(design_type))
-        {
-            return Err(CodecError::Malformed(
-                "Design feature-timeline type has incompatible registration metadata".into(),
-            ));
-        }
-        if meta
-            .records
-            .windows(2)
-            .any(|pair| pair[0].bulk_offset >= pair[1].bulk_offset)
-        {
-            return Err(CodecError::Malformed(
-                "Design MetaStream record offsets are not strictly increasing".into(),
-            ));
-        }
-        let bulk_name = paired_bulk_entry_name(scan, prefix)?;
-        let bytes = scan.entry_bytes(bulk_name)?;
-        let mut type_guids_by_entity = HashMap::<u64, Vec<&str>>::new();
-        for design_type in &meta.types {
-            for entity_id in design_type.entities.values() {
-                type_guids_by_entity
-                    .entry(*entity_id)
-                    .or_default()
-                    .push(design_type.type_guid.as_str());
-            }
-        }
-        let mut source_ordinal = 0_u32;
-        for (type_ordinal, design_type) in meta
-            .types
-            .iter()
-            .enumerate()
-            .filter(|(_, design_type)| is_timeline_type(design_type))
-        {
-            let expected_class_tag = u32::try_from(type_ordinal)
-                .ok()
-                .and_then(|ordinal| ordinal.checked_add(256))
-                .filter(|class_tag| *class_tag <= 999)
-                .ok_or_else(|| {
-                    CodecError::Malformed(
-                        "Design feature-timeline class tag is not three digits".into(),
-                    )
-                })?
-                .to_string();
-            for entity_id in design_type.entities.values() {
-                let entity_source_ordinal = source_ordinal;
-                source_ordinal = source_ordinal.checked_add(1).ok_or_else(|| {
-                    CodecError::Malformed("Design feature-timeline ordinal exceeds u32".into())
-                })?;
-                let mut matches = meta
-                    .records
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, record)| record.entity_id == *entity_id);
-                let Some((record_ordinal, record)) = matches.next() else {
-                    return Err(CodecError::Malformed(
-                        "Design feature timeline has no unique primary record-index entry".into(),
-                    ));
-                };
-                if matches.next().is_some() {
-                    return Err(CodecError::Malformed(
-                        "Design feature timeline has no unique primary record-index entry".into(),
-                    ));
+        }) {
+            let start = source
+                .start()
+                .checked_add(frame.start)
+                .ok_or_else(|| CodecError::malformed("timeline frame start overflows"))?;
+            let end = source
+                .start()
+                .checked_add(frame.end)
+                .ok_or_else(|| CodecError::malformed("timeline frame end overflows"))?;
+            let extent = source
+                .child(start, end)
+                .ok_or_else(|| CodecError::malformed("timeline frame exceeds its stream"))?;
+            let spec = PartSpec::new("f3d.bulk_record")
+                .holding([cadmpeg_ir::document::ArenaClass::Design]);
+            let spec = if extent.location().space == cadmpeg_core::decode::SpaceId::ROOT {
+                spec
+            } else {
+                spec.in_stream(
+                    cadmpeg_ir::StreamName::try_from(bulk_name.to_owned())
+                        .map_err(CodecError::malformed)?,
+                )
+            };
+            let decoded = ctx.decode_part(output, extent, spec, |_| {
+                if !is_supported_feature_timeline_type(frame.design_type) {
+                    return Err(CodecError::malformed(format_args!(
+                        "unsupported Design feature-timeline registration for entity {}",
+                        frame.entity_id
+                    )));
                 }
-                let start = usize::try_from(record.bulk_offset).map_err(|_| {
-                    CodecError::Malformed("Design feature-timeline offset exceeds usize".into())
+                let source_ordinal = *ordinals.get(&frame.entity_id).ok_or_else(|| {
+                    CodecError::malformed("Design feature-timeline entity has no ordinal")
                 })?;
-                let end = meta.records.get(record_ordinal + 1).map_or_else(
-                    || Ok(bytes.len()),
-                    |next| {
-                        usize::try_from(next.bulk_offset).map_err(|_| {
-                            CodecError::Malformed(
-                                "Design feature-timeline end exceeds usize".into(),
-                            )
-                        })
-                    },
-                )?;
-                if start >= end || end > bytes.len() {
-                    return Err(CodecError::Malformed(
-                        "Design feature-timeline record extent is outside its BulkStream".into(),
-                    ));
-                }
-                let timeline = parse_feature_timeline_record(
+                parse_feature_timeline_record(
                     bytes,
                     bulk_name,
-                    start..end,
-                    (&expected_class_tag, *entity_id),
-                    entity_source_ordinal,
-                    &type_guids_by_entity,
+                    frame.start..frame.end,
+                    (frame.class_tag.as_str(), frame.entity_id),
+                    source_ordinal,
+                    &by_entity,
                 )
                 .ok_or_else(|| {
-                    CodecError::Malformed(
-                        "Design feature-timeline record does not match its exact frame".into(),
-                    )
-                })?;
-
+                    CodecError::malformed(format_args!(
+                        "Design feature-timeline entity {} does not match its exact frame",
+                        frame.entity_id
+                    ))
+                })
+            })?;
+            if let Some(timeline) = decoded {
                 out.push(timeline);
             }
         }
