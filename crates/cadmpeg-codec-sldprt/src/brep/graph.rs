@@ -2432,14 +2432,24 @@ pub(crate) fn decode_bodies(
                 .map(|curve| curve.id.clone())
                 .collect::<HashSet<_>>();
             prefix.curves.retain(|curve| !existing.contains(&curve.id));
+            let existing_points = decoded
+                .points
+                .iter()
+                .map(|point| point.id.clone())
+                .collect::<HashSet<_>>();
+            prefix
+                .points
+                .retain(|point| !existing_points.contains(&point.id));
             let added = prefix
                 .curves
                 .iter()
                 .map(|curve| curve.id.as_str())
+                .chain(prefix.points.iter().map(|point| point.id.as_str()))
                 .collect::<HashSet<_>>();
             prefix.annotations.retain_provenance(|id| added.contains(id));
             decoded.annotations.append(prefix.annotations)?;
             decoded.curves.append(&mut prefix.curves);
+            decoded.points.append(&mut prefix.points);
         }
     }
     Ok(decoded)

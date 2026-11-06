@@ -378,6 +378,36 @@ pub(super) fn plan(
         .bodies
         .sort_by_key(|body| !supported.contains(&body.id));
     projected = super::body_subset(&before_subset, &supported)?;
+    let kept_points = projected
+        .model
+        .points
+        .iter()
+        .map(|point| point.id.clone())
+        .collect::<std::collections::HashSet<_>>();
+    projected.model.points.extend(
+        before_subset
+            .model
+            .points
+            .iter()
+            .filter(|point| !kept_points.contains(&point.id))
+            .cloned(),
+    );
+    let retained_curves = projected
+        .model
+        .curves
+        .iter()
+        .map(|curve| curve.id.clone())
+        .collect::<std::collections::HashSet<_>>();
+    projected.model.curves.extend(
+        before_subset
+            .model
+            .curves
+            .iter()
+            .filter(|curve| {
+                !retained_curves.contains(&curve.id) && super::can_write_curve(&curve.geometry)
+            })
+            .cloned(),
+    );
     let kept_curves = projected
         .model
         .curves

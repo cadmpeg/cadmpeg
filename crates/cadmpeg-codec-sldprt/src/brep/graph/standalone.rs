@@ -3,7 +3,7 @@
 
 use super::{admit_brep_entity, emit_curve, id_surf, retain_surface_geometry, Brep};
 use crate::brep::{
-    parse_carrier, spline, topology, Carrier, CurveCarrier, SurfaceCarrier, LEN_TO_MM,
+    parse_carrier, spline, subset, topology, Carrier, CurveCarrier, SurfaceCarrier, LEN_TO_MM,
 };
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_ir::annotations::{AnnotationBuilder, StreamHandle};
@@ -52,6 +52,8 @@ fn record(body: &[u8], offset: usize, arrays: &HashSet<u32>) -> Option<Record> {
         Some(Record::Spline(end))
     } else if body.get(offset..offset.checked_add(2)?) == Some(&[0, 0x88]) {
         Some(Record::Auxiliary(spline::curve_prefix_end(body, offset)?))
+    } else if body.get(offset..offset.checked_add(2)?) == Some(&[0, 0x85]) {
+        Some(Record::Auxiliary(subset::record_end(body, offset)?))
     } else if matches!(
         body.get(offset..offset.checked_add(2)?),
         Some([0, 0x2d | 0x7f | 0x80])
