@@ -6,7 +6,9 @@ use cadmpeg_ir::examples::unit_cube;
 use predicates::prelude::{predicate, PredicateBooleanExt};
 use tempfile::tempdir;
 
-use crate::support::{cube_with_source, fixture, minimal_rhino_archive};
+#[cfg(feature = "rhino")]
+use crate::support::minimal_rhino_archive;
+use crate::support::{cube_with_source, fixture};
 
 mod geometry;
 
@@ -187,6 +189,7 @@ fn diff_handles_absent_source_metadata() {
     }
 }
 
+#[cfg(feature = "rhino")]
 #[test]
 fn diff_summarizes_the_source_fidelity_sidecar_for_native_inputs() {
     let dir = tempdir().unwrap();
