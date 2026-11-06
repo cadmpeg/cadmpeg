@@ -14,13 +14,26 @@ use serde_json::Value;
 use super::cross_closure::{apply_storage, quantum, ReducedProbe};
 use super::writer_closure::Redecode;
 
-/// Apply STEP's positive-semi-angle chart to a cone carrier.
+/// Apply STEP's positive-radius and positive-semi-angle surface charts.
 #[must_use]
-pub fn step_cone_chart(value: &Value) -> Value {
+pub fn step_surface_chart(value: &Value) -> Value {
     let mut geometry = value.clone();
     let Some(object) = geometry.as_object_mut() else {
         return geometry;
     };
+    let radius_field = match object.get("kind").and_then(Value::as_str) {
+        Some("sphere") => Some("radius"),
+        Some("torus") => Some("minor_radius"),
+        _ => None,
+    };
+    if let Some(field) = radius_field {
+        if let Some(radius) = object.get(field).and_then(Value::as_f64) {
+            if radius < 0.0 {
+                object.insert(field.to_owned(), Value::from(-radius));
+            }
+        }
+        return geometry;
+    }
     if object.get("kind").and_then(Value::as_str) != Some("cone") {
         return geometry;
     }

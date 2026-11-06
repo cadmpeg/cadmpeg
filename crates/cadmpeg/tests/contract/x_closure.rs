@@ -341,7 +341,7 @@ fn run_step_other_format(format: &str, observed: &StepObserved) -> Vec<String> {
             normalize: match row.storage {
                 cadmpeg_ir::codec::write::ReducedStorage::Normalized {
                     loss: "step/geometry.analytic-surface-normalized",
-                } => Some(cadmpeg_test_support::reduced::step_cone_chart),
+                } => Some(cadmpeg_test_support::reduced::step_surface_chart),
                 cadmpeg_ir::codec::write::ReducedStorage::Normalized { loss } => {
                     panic!("unknown STEP normalization {loss}")
                 }
