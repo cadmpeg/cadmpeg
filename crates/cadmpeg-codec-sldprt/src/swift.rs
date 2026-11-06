@@ -556,20 +556,21 @@ pub(crate) fn annotations(
     scan: &ContainerScan<'_>,
     annotations: &mut Annotations,
     topology: Option<&TopologyIdentityIndex>,
-    pattern_hole_nominals: Option<&BTreeMap<String, PositiveReal>>,
     losses: &mut Vec<LossNote>,
 ) -> Result<Vec<PmiAnnotation>, CodecError> {
     let Some((stream, root, rendered_dimensions)) = scan_root(ctx, scan)? else {
         return Ok(Vec::new());
     };
-    let projection = project_with_topology(
-        ctx,
-        &root,
-        topology,
-        &rendered_dimensions,
-        pattern_hole_nominals,
-    )?;
+    let projection = project_with_topology(ctx, &root, topology, &rendered_dimensions)?;
     losses.extend(projection.walk_caps.losses(projection.walk_work_limit));
+    if projection.unresolved_implicit_nominals > 0 {
+        losses.push(
+            crate::loss::SldprtLossCode::PmiSwiftImplicitNominalUnresolved.note(format!(
+                "{} SWIFT diameter dimensions have unresolved implicit nominal values.",
+                projection.unresolved_implicit_nominals
+            )),
+        );
+    }
     let projected = projection.annotations;
     let positions_by_prefix =
         positions_by_id_prefix(projected.iter().map(|annotation| annotation.id.as_str()));
@@ -616,97 +617,6 @@ fn positions_by_id_prefix<'a>(ids: impl Iterator<Item = &'a str>) -> HashMap<&'a
     positions
 }
 
-/// Build the native-history join used when a SWIFT hole-pattern graph omits all
-/// applied members and CAD identifiers. The map is keyed by the SWIFT object
-/// name (`Hole PatternN`) and is populated only by one unambiguous native
-/// `LPatternN` whose sole seed is consumed by exactly one later Hole feature.
-pub(crate) fn pattern_hole_nominal_context(
-    features: &[cadmpeg_ir::features::Feature],
-) -> BTreeMap<String, PositiveReal> {
-    let mut first_ordinals = HashMap::<&cadmpeg_ir::features::FeatureId, u64>::new();
-    let mut native_holes = HashMap::<_, Vec<_>>::new();
-    for feature in features {
-        first_ordinals
-            .entry(&feature.id)
-            .and_modify(|ordinal| *ordinal = (*ordinal).min(feature.ordinal))
-            .or_insert(feature.ordinal);
-        if !feature
-            .native_ref
-            .as_deref()
-            .is_some_and(|native| native.starts_with("sldprt:history:feature#"))
-        {
-            continue;
-        }
-        let cadmpeg_ir::features::FeatureDefinition::Operation(
-            cadmpeg_ir::features::FeatureOperation::Hole { shape, .. },
-        ) = feature.evaluation.definition()
-        else {
-            continue;
-        };
-        let diameter = shape.diameter().map(PositiveReal::from_assigned_length);
-        for dependency in &feature.dependencies {
-            native_holes
-                .entry(dependency)
-                .or_default()
-                .push((feature.ordinal, diameter));
-        }
-    }
-    let mut candidates = BTreeMap::<String, Option<PositiveReal>>::new();
-    for pattern in features {
-        let Some(name) = pattern.name.as_deref() else {
-            continue;
-        };
-        let Some(suffix) = name.strip_prefix("LPattern").filter(|suffix| {
-            !suffix.is_empty() && suffix.chars().all(|character| character.is_ascii_digit())
-        }) else {
-            continue;
-        };
-        if !pattern
-            .native_ref
-            .as_deref()
-            .is_some_and(|native| native.starts_with("sldprt:history:feature#"))
-        {
-            continue;
-        }
-        let cadmpeg_ir::features::FeatureDefinition::Operation(
-            cadmpeg_ir::features::FeatureOperation::Pattern { seeds, .. },
-        ) = pattern.evaluation.definition()
-        else {
-            continue;
-        };
-        let [cadmpeg_ir::features::patterns::PatternSeed::Feature(seed)] = seeds.as_slice() else {
-            continue;
-        };
-        if first_ordinals
-            .get(seed)
-            .is_none_or(|&ordinal| ordinal >= pattern.ordinal)
-        {
-            continue;
-        }
-        let mut later_holes = native_holes
-            .get(seed)
-            .into_iter()
-            .flatten()
-            .filter(|(ordinal, _)| *ordinal > pattern.ordinal);
-        let (Some(&(_, Some(diameter))), None) = (later_holes.next(), later_holes.next()) else {
-            continue;
-        };
-        let semantic_name = format!("Hole Pattern{suffix}");
-        if let Some(value) = candidates.get_mut(&semantic_name) {
-            *value = None;
-        } else {
-            candidates.insert(semantic_name, Some(diameter));
-        }
-    }
-    let mut nominals = BTreeMap::new();
-    for (name, value) in candidates {
-        if let Some(value) = value {
-            nominals.insert(name, value);
-        }
-    }
-    nominals
-}
-
 pub(crate) fn unsupported_annotation_classes(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
@@ -729,7 +639,7 @@ pub(crate) fn unsupported_annotation_classes(
         );
         return Ok(classes);
     }
-    Ok(project_with_topology(ctx, &root, None, &rendered, None)?.unsupported)
+    Ok(project_with_topology(ctx, &root, None, &rendered)?.unsupported)
 }
 
 fn has_root_marker(scan: &ContainerScan<'_>) -> bool {
@@ -1049,7 +959,7 @@ fn project(root: &Entity) -> Vec<PmiAnnotation> {
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service())
             .expect("empty root fits test policy");
-    project_with_topology(&ctx, root, None, &[], None)
+    project_with_topology(&ctx, root, None, &[])
         .expect("test projection fits policy")
         .annotations
 }
@@ -1059,13 +969,12 @@ fn enrich_implicit_nominals(
     root: &Entity,
     rendered: &[RenderedDimension],
     annotations: &mut Vec<PmiAnnotation>,
-    pattern_hole_nominals: Option<&BTreeMap<String, PositiveReal>>,
 ) {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service())
             .expect("empty root fits test policy");
-    *annotations = project_with_topology(&ctx, root, None, rendered, pattern_hole_nominals)
+    *annotations = project_with_topology(&ctx, root, None, rendered)
         .expect("test projection fits policy")
         .annotations;
 }
@@ -1076,6 +985,7 @@ struct AnnotationProjection {
     unsupported: BTreeMap<String, usize>,
     walk_caps: WalkCaps,
     walk_work_limit: usize,
+    unresolved_implicit_nominals: usize,
 }
 
 #[derive(Clone, Copy)]
@@ -1146,7 +1056,6 @@ fn project_with_topology(
     root: &Entity,
     topology: Option<&TopologyIdentityIndex>,
     rendered: &[RenderedDimension],
-    pattern_hole_nominals: Option<&BTreeMap<String, PositiveReal>>,
 ) -> Result<AnnotationProjection, CodecError> {
     if root.annotations.references.len() != root.annotations.entities.len() {
         return Ok(AnnotationProjection::default());
@@ -1175,6 +1084,7 @@ fn project_with_topology(
     }
     let mut projected = Vec::new();
     let mut unsupported = BTreeMap::new();
+    let mut unresolved_implicit_nominals = 0usize;
     for (reference, entity) in root
         .annotations
         .references
@@ -1296,8 +1206,13 @@ fn project_with_topology(
             &feature_index,
             topology,
             rendered,
-            pattern_hole_nominals,
         )? {
+            if unresolved_implicit_diameter(entity, &annotation) {
+                unresolved_implicit_nominals =
+                    unresolved_implicit_nominals.checked_add(1).ok_or_else(|| {
+                        CodecError::malformed("SWIFT unresolved nominal count overflows")
+                    })?;
+            }
             projected.push(annotation);
             AnnotationDisposition::Projected
         } else {
@@ -1310,7 +1225,17 @@ fn project_with_topology(
         unsupported,
         walk_caps: feature_index.caps(),
         walk_work_limit: feature_index.work_limit,
+        unresolved_implicit_nominals,
     })
+}
+
+fn unresolved_implicit_diameter(entity: &Entity, annotation: &PmiAnnotation) -> bool {
+    short_class(&entity.class) == "GdtDiameter"
+        && matches!(
+            &annotation.definition,
+            PmiDefinition::Dimension(dimension)
+                if dimension.kind() == &DimensionKind::Diameter && dimension.nominal().is_none()
+        )
 }
 
 /// The equality of `references`, as an ordered key.
@@ -1492,7 +1417,6 @@ fn project_dimension(
     feature_index: &FeatureIndex<'_>,
     topology: Option<&TopologyIdentityIndex>,
     rendered: &[RenderedDimension],
-    pattern_hole_nominals: Option<&BTreeMap<String, PositiveReal>>,
 ) -> Result<Option<PmiAnnotation>, CodecError> {
     let DimensionSource {
         counterbores,
@@ -1519,14 +1443,7 @@ fn project_dimension(
                 .is_some_and(|dimension| *dimension != 0)
     });
     let implicit_nominal = if explicit_nominal.is_none() {
-        implicit_dimension_nominal(
-            ctx,
-            counterbores,
-            entity,
-            feature_index,
-            rendered,
-            pattern_hole_nominals,
-        )?
+        implicit_dimension_nominal(ctx, counterbores, entity, feature_index, rendered)?
     } else {
         None
     };
@@ -1569,17 +1486,10 @@ fn implicit_dimension_nominal(
     entity: &Entity,
     feature_index: &FeatureIndex<'_>,
     rendered: &[RenderedDimension],
-    pattern_hole_nominals: Option<&BTreeMap<String, PositiveReal>>,
 ) -> Result<Option<FiniteReal>, CodecError> {
     let source =
         match short_class(&entity.class) {
-            "GdtDiameter" => diameter_nominal(
-                ctx,
-                counterbores,
-                entity,
-                feature_index,
-                pattern_hole_nominals,
-            )?,
+            "GdtDiameter" => diameter_nominal(ctx, counterbores, entity, feature_index)?,
             "GdtDepth" => depth_nominal(ctx, counterbores, entity, feature_index)?,
             "GdtWidth" => {
                 width_from_applied_geometry(ctx, entity, feature_index)?.map(ImplicitNominal::Exact)
@@ -1998,7 +1908,6 @@ fn diameter_nominal(
     counterbores: &Counterbores<'_>,
     annotation: &Entity,
     feature_index: &FeatureIndex<'_>,
-    pattern_hole_nominals: Option<&BTreeMap<String, PositiveReal>>,
 ) -> Result<Option<ImplicitNominal>, CodecError> {
     let direct = diameter_from_applied_geometry(ctx, annotation, feature_index)?;
     let geometry = if direct.is_some() {
@@ -2013,58 +1922,7 @@ fn diameter_nominal(
             exact: geometry,
         }));
     }
-    Ok(
-        empty_pattern_hole_nominal(ctx, annotation, feature_index, pattern_hole_nominals)?.map(
-            |geometry| ImplicitNominal::RenderedOrExact {
-                kind: RenderedDimensionKind::Diameter,
-                geometry,
-                exact: geometry,
-            },
-        ),
-    )
-}
-
-fn empty_pattern_hole_nominal(
-    ctx: &DecodeContext<'_>,
-    annotation: &Entity,
-    feature_index: &FeatureIndex<'_>,
-    pattern_hole_nominals: Option<&BTreeMap<String, PositiveReal>>,
-) -> Result<Option<PositiveReal>, CodecError> {
-    let [reference] = annotation.features.references.as_slice() else {
-        return Ok(None);
-    };
-    let Some(pattern) = feature_index.get(reference.id.as_str()) else {
-        return Ok(None);
-    };
-    if short_class(&pattern.class) != "GdtPattern" || !pattern.features.references.is_empty() {
-        return Ok(None);
-    }
-    let Some(collection) = unique_related(pattern, "SubFeatures") else {
-        return Ok(None);
-    };
-    if short_class(&collection.class) != "GdtAppliedFeatureCollection"
-        || !collection.entity.related.is_empty()
-    {
-        return Ok(None);
-    }
-    let mut has_identifier = false;
-    let mut has_nonempty_identifier = false;
-    visit_cad_identifiers(ctx, pattern, &mut |identifier| {
-        has_identifier = true;
-        has_nonempty_identifier |= !identifier.is_empty();
-        Ok(())
-    })?;
-    if !has_identifier || has_nonempty_identifier {
-        return Ok(None);
-    }
-    let Some(name) = pattern
-        .strings
-        .get("ObjectName")
-        .filter(|name| !name.is_empty())
-    else {
-        return Ok(None);
-    };
-    Ok(pattern_hole_nominals.and_then(|nominals| nominals.get(name).copied()))
+    Ok(None)
 }
 
 fn hole_diameter_excluding_counterbore(

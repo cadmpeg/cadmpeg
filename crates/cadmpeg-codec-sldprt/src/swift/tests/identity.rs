@@ -1,28 +1,14 @@
 use super::entity;
-use super::length;
-use super::neutral_feature;
 use super::reference;
-use super::simple_hole_definition;
-use crate::swift::enrich_implicit_nominals;
-use crate::swift::pattern_hole_nominal_context;
 use crate::swift::positions_by_id_prefix;
-use crate::swift::project;
 use crate::swift::project_with_topology;
 use crate::swift::Entity;
-use crate::swift::ObjectSection;
 use crate::swift::RelatedObject;
 use crate::swift::TopologyIdentityIndex;
 use crate::swift::ROOT_CLASS;
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
-use cadmpeg_ir::features::{
-    patterns::{PatternKind, PatternSeed},
-    Feature, FeatureDefinition, FeatureId, FeatureOperation,
-};
 use cadmpeg_ir::ids::FaceId;
-use cadmpeg_ir::pmi::PmiDefinition;
 use cadmpeg_ir::pmi::PmiTarget;
-use cadmpeg_ir::scalar::PositiveReal;
-use std::collections::BTreeMap;
 
 #[test]
 fn id_prefix_positions_match_the_prefix_filter() {
@@ -68,254 +54,6 @@ fn id_prefix_positions_match_the_prefix_filter() {
             );
         }
     }
-}
-
-#[test]
-fn empty_swift_pattern_uses_one_native_hole_join() {
-    let features = pattern_hole_features();
-    let context = pattern_hole_nominal_context(&features);
-    assert_eq!(
-        context.get("Hole Pattern6").copied().map(PositiveReal::get),
-        Some(6.1468)
-    );
-
-    let mut pattern = cad_feature("GdtPattern", "");
-    pattern
-        .strings
-        .insert("ObjectName".into(), "Hole Pattern6".into());
-    pattern.related.push(RelatedObject {
-        name: "SubFeatures".into(),
-        class: "PrizMetrik.GdtAnalysis.GdtAppliedFeatureCollection".into(),
-        entity: entity("GdtAppliedFeatureCollection"),
-    });
-    let mut diameter = entity("GdtDiameter");
-    diameter
-        .strings
-        .insert("ObjectName".into(), "Diameter 8".into());
-    diameter.doubles.insert("Nominal".into(), 0.0);
-    diameter.features.references = vec![reference("FP", "GdtPattern")];
-    let root = Entity {
-        class: ROOT_CLASS.into(),
-        features: ObjectSection {
-            references: vec![reference("FP", "GdtPattern")],
-            entities: vec![pattern],
-        },
-        annotations: ObjectSection {
-            references: vec![reference("A8", "GdtDiameter")],
-            entities: vec![diameter],
-        },
-        ..Entity::default()
-    };
-    let mut projected = project(&root);
-    enrich_implicit_nominals(&root, &[], &mut projected, Some(&context));
-    let PmiDefinition::Dimension(relation) =
-        &projected.first().expect("diameter annotation").definition
-    else {
-        panic!("dimension definition");
-    };
-    let nominal = relation.nominal().expect("dimension nominal");
-    assert_eq!(*nominal, length(6.1468).expect("finite length"));
-
-    let mut ambiguous = features.clone();
-    ambiguous.push(neutral_feature(
-        "hole2",
-        "Hole6",
-        4,
-        vec![FeatureId::mint("sldprt:model:feature#seed").expect("identity grammar")],
-        simple_hole_definition(6.1468),
-    ));
-    assert!(pattern_hole_nominal_context(&ambiguous).is_empty());
-
-    let mut unresolved = features;
-    let mut unresolved_hole = neutral_feature(
-        "hole2",
-        "Hole6",
-        4,
-        vec![FeatureId::mint("sldprt:model:feature#seed").expect("identity grammar")],
-        simple_hole_definition(6.1468),
-    );
-    unresolved_hole.evaluation.edit(|definition, _| {
-        let FeatureDefinition::Operation(FeatureOperation::Hole { shape, .. }) = definition else {
-            panic!("expected hole definition");
-        };
-        shape.try_edit(|_, _, diameter| *diameter = None).unwrap();
-    });
-    unresolved.push(unresolved_hole);
-    assert!(pattern_hole_nominal_context(&unresolved).is_empty());
-}
-
-#[test]
-fn pattern_hole_index_matches_the_feature_scans() {
-    fn linear(features: &[Feature]) -> BTreeMap<String, PositiveReal> {
-        let native = |feature: &Feature| {
-            feature
-                .native_ref
-                .as_deref()
-                .is_some_and(|native| native.starts_with("sldprt:history:feature#"))
-        };
-        let mut candidates = BTreeMap::<String, Option<PositiveReal>>::new();
-        for pattern in features {
-            let Some(suffix) = pattern
-                .name
-                .as_deref()
-                .and_then(|name| name.strip_prefix("LPattern"))
-                .filter(|suffix| {
-                    !suffix.is_empty() && suffix.chars().all(|character| character.is_ascii_digit())
-                })
-            else {
-                continue;
-            };
-            let FeatureDefinition::Operation(FeatureOperation::Pattern { seeds, .. }) =
-                pattern.evaluation.definition()
-            else {
-                continue;
-            };
-            let ([PatternSeed::Feature(seed)], true) = (seeds.as_slice(), native(pattern)) else {
-                continue;
-            };
-            if !features
-                .iter()
-                .any(|candidate| candidate.id == *seed && candidate.ordinal < pattern.ordinal)
-            {
-                continue;
-            }
-            let holes = features
-                .iter()
-                .filter(|candidate| {
-                    candidate.ordinal > pattern.ordinal
-                        && candidate
-                            .dependencies
-                            .iter()
-                            .any(|dependency| dependency == seed)
-                        && native(candidate)
-                })
-                .filter_map(|candidate| match candidate.evaluation.definition() {
-                    FeatureDefinition::Operation(FeatureOperation::Hole { shape, .. }) => {
-                        Some(shape.diameter().map(PositiveReal::from_assigned_length))
-                    }
-                    _ => None,
-                })
-                .take(2)
-                .collect::<Vec<_>>();
-            let [Some(diameter)] = holes.as_slice() else {
-                continue;
-            };
-            candidates
-                .entry(format!("Hole Pattern{suffix}"))
-                .and_modify(|value| *value = None)
-                .or_insert(Some(*diameter));
-        }
-        candidates
-            .into_iter()
-            .filter_map(|(name, value)| Some((name, value?)))
-            .collect()
-    }
-
-    let mut state = 0x2545_f491_u64;
-    let mut next = |bound: u64| {
-        state = state
-            .wrapping_mul(6_364_136_223_846_793_005)
-            .wrapping_add(1_442_695_040_888_963_407);
-        (state >> 33) % bound
-    };
-    let sketch = || {
-        FeatureDefinition::Operation(FeatureOperation::Native {
-            kind: "Sketch".into(),
-            parameters: BTreeMap::new(),
-        })
-    };
-    let seeds = (0..3)
-        .map(|seed| FeatureId::mint(format!("sldprt:model:feature#seed{seed}")).unwrap())
-        .collect::<Vec<_>>();
-    let missing = FeatureId::mint("sldprt:model:feature#missing").unwrap();
-    let mut found = 0;
-    for _ in 0..256 {
-        let mut features = Vec::new();
-        for seed in 0..3 {
-            features.push(neutral_feature(
-                &format!("seed{seed}"),
-                "Sketch",
-                next(12),
-                Vec::new(),
-                sketch(),
-            ));
-        }
-        for pattern in 0..next(4) {
-            let seed = seeds
-                .get(usize::try_from(next(4)).unwrap())
-                .unwrap_or(&missing);
-            let prefix = if next(6) == 0 { "Pattern" } else { "LPattern" };
-            let name = format!("{prefix}{}", next(3));
-            let definition = FeatureDefinition::Operation(FeatureOperation::Pattern {
-                seeds: vec![PatternSeed::Feature(seed.clone())],
-                pattern: PatternKind::UNRESOLVED,
-            });
-            let ordinal = next(12);
-            features.push(neutral_feature(
-                &format!("pattern{pattern}"),
-                &name,
-                ordinal,
-                Vec::new(),
-                definition,
-            ));
-        }
-        for hole in 0..next(6) {
-            let dependencies = seeds
-                .iter()
-                .filter(|_| next(2) == 0)
-                .cloned()
-                .collect::<Vec<_>>();
-            let definition = match next(5) {
-                0 => sketch(),
-                1 | 2 => simple_hole_definition(5.0),
-                _ => simple_hole_definition(6.0),
-            };
-            let ordinal = next(12);
-            let mut feature = neutral_feature(
-                &format!("hole{hole}"),
-                "Hole",
-                ordinal,
-                dependencies,
-                definition,
-            );
-            if next(6) == 0 {
-                feature.native_ref = None;
-            }
-            features.push(feature);
-        }
-        let expected = linear(&features);
-        found += expected.len();
-        assert_eq!(pattern_hole_nominal_context(&features), expected);
-    }
-    assert!(found > 0);
-}
-
-fn pattern_hole_features() -> Vec<Feature> {
-    let seed = FeatureId::mint("sldprt:model:feature#seed").expect("identity grammar");
-    let pattern_definition = FeatureDefinition::Operation(FeatureOperation::Pattern {
-        seeds: vec![PatternSeed::Feature(seed.clone())],
-        pattern: PatternKind::UNRESOLVED,
-    });
-    vec![
-        neutral_feature(
-            "seed",
-            "Sketch20",
-            1,
-            Vec::new(),
-            FeatureDefinition::Operation(FeatureOperation::Native {
-                kind: "Sketch".into(),
-                parameters: BTreeMap::new(),
-            }),
-        ),
-        neutral_feature("pattern", "LPattern6", 2, Vec::new(), pattern_definition),
-        neutral_feature(
-            "hole",
-            "Hole5",
-            3,
-            vec![seed],
-            simple_hole_definition(6.1468),
-        ),
-    ]
 }
 
 fn cad_feature(class: &str, identifier: &str) -> Entity {
@@ -366,7 +104,7 @@ fn cad_identifier_binds_unique_primary_topology_and_preserves_fallback() {
             face: FaceId::mint("sldprt:brep:face#42").expect("identity grammar"),
         }),
     );
-    let projected = project_with_topology(&ctx, &root, Some(&index), &[], None)
+    let projected = project_with_topology(&ctx, &root, Some(&index), &[])
         .expect("test projection fits policy")
         .annotations;
     let first = projected.first().expect("projected datum");
@@ -391,7 +129,7 @@ fn cad_identifier_binds_unique_primary_topology_and_preserves_fallback() {
         .entity
         .strings
         .insert("CadIdentifier".into(), "125:99".into());
-    let projected = project_with_topology(&ctx, &root, Some(&index), &[], None)
+    let projected = project_with_topology(&ctx, &root, Some(&index), &[])
         .expect("test projection fits policy")
         .annotations;
     let first = projected.first().expect("projected datum");
