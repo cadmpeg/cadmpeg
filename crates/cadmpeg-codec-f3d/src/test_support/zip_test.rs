@@ -439,6 +439,14 @@ pub(crate) fn original_design_fixture(bytes: Vec<u8>, remove_body: bool) -> Vec<
         std::io::Read::read_to_end(&mut entry, &mut content).unwrap();
         entries.push((name, content));
     }
+    let (act_bulk, act_records) = generated_act_bulkstream();
+    for (name, content) in &mut entries {
+        if name == "FusionAssetName[Active]/FusionACTSegmentType1/BulkStream.dat" {
+            *content = act_bulk.clone();
+        } else if name == "FusionAssetName[Active]/FusionACTSegmentType1/MetaStream.dat" {
+            *content = generated_act_metastream(&act_records);
+        }
+    }
     let meta_index = entries
         .iter()
         .position(|(name, _)| name == "FusionAssetName[Active]/Design1/MetaStream.dat")
@@ -943,7 +951,7 @@ fn f3d_with_smbh_and_instance_properties_and_design_with_metastream_and_entries(
     design_metastream: &[u8],
     extra_entries: &[(&str, &[u8])],
 ) -> Vec<u8> {
-    let act = generated_act_bulkstream();
+    let act = crate::test_support::act_stream_test::generated_complete_act_bulkstream();
     f3d_with_smbh_and_instance_properties_and_design_with_act(
         smbh, properties, design_bulk, design_metastream, extra_entries, &act,
     )
