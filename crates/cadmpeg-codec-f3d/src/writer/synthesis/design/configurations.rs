@@ -81,8 +81,12 @@ pub(super) fn regenerate(
                 })
             })
             .unwrap_or_default();
-        variant.remove("parameters");
-        variant.remove("suppressed");
+        let had_empty_parameters = variant
+            .remove("parameters")
+            .is_some_and(|value| value.as_object().is_some_and(Map::is_empty));
+        let had_empty_suppressed = variant
+            .remove("suppressed")
+            .is_some_and(|value| value.as_array().is_some_and(Vec::is_empty));
         variant.remove("material");
         let mut overrides = Map::new();
         let mut suppressed = Vec::new();
@@ -177,10 +181,10 @@ pub(super) fn regenerate(
                 configuration.id
             )));
         }
-        if !overrides.is_empty() {
+        if !overrides.is_empty() || had_empty_parameters {
             variant.insert("parameters".into(), Value::Object(overrides));
         }
-        if !suppressed.is_empty() {
+        if !suppressed.is_empty() || had_empty_suppressed {
             variant.insert("suppressed".into(), Value::Array(suppressed));
         }
         if let Some(material) = &configuration.material {
