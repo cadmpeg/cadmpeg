@@ -1282,6 +1282,25 @@ fn an_edit_survives_native_writer_fallback() {
     );
 }
 
+#[test]
+fn indexed_sketch_constraint_fixture_has_no_unreadable_parts() {
+    let input =
+        f3d_with_smbh_and_protein_with_generated_sketch_dimension(&synthetic_geometry_smbh());
+    let decoded = decode_result(&input).expect("indexed fixture decodes");
+    let unreadable = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.code
+                == cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable
+                    .note(String::new())
+                    .code
+        })
+        .collect::<Vec<_>>();
+    assert!(unreadable.is_empty(), "{unreadable:?}");
+}
+
 fn assert_fixture_valid(decoded: &DecodeResult) {
     let neutral = cadmpeg_ir::validate_neutral(decoded.ir(), decoded.report().losses.clone())
         .expect("validate neutral model");
