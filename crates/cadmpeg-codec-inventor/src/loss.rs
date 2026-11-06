@@ -58,12 +58,20 @@ pub(crate) enum InventorLossCode {
     /// A distance dimension measured to an axis line stores twice the distance
     /// between its operands; the dimension stays native.
     SketchAxisDistanceNative,
+    /// A construction line stores a carrier that its endpoints do not lie on;
+    /// the line stays native.
+    SketchConstructionCarrierConflict,
     /// A sketch-point paired association has no neutral relation semantics.
     SketchPairedAssociationUnprojected,
     /// A sketch entity retains unresolved curve construction operands.
     SketchCurveNative,
     /// A listed sketch member has unresolved record and curve semantics.
     SketchMemberNative,
+    /// A planar curve member has no resolved curve rule; it stays native.
+    SketchMemberCurveNative,
+    /// A polygon control relation names two different vertex references; the
+    /// repeated-vertex reading does not apply and both references stay native.
+    SketchPolygonControlVerticesDiffer,
     /// A spline-point relation retains unresolved locus and parameter roles.
     SketchSplinePointNative,
     /// A spline entity retains its source curve pending exact operands.
@@ -182,6 +190,10 @@ pub(crate) enum InventorLossCode {
     ParameterGraphOpen,
     /// Parameter records have an expression whose text passes the local cap.
     ParameterExpressionBounded,
+    /// Parameter records whose root literal has the undefined base-unit type carry their value and no expression text.
+    ParameterExpressionNative,
+    /// Parameter records whose root literal has a base-unit type read by record layout only carry their value and no expression text.
+    ParameterUnitLayoutAssumed,
     /// Parameter records whose parameter table has no established owning model.
     ParameterScopeUnresolved,
     /// Sketch, entity, or constraint records have a neutral graph that is not closed.
@@ -255,9 +267,12 @@ impl InventorLossCode {
         Self::FeatureLabelUnusable,
         Self::SketchConstructionUnresolved,
         Self::SketchAxisDistanceNative,
+        Self::SketchConstructionCarrierConflict,
         Self::SketchPairedAssociationUnprojected,
         Self::SketchCurveNative,
         Self::SketchMemberNative,
+        Self::SketchMemberCurveNative,
+        Self::SketchPolygonControlVerticesDiffer,
         Self::SketchSplinePointNative,
         Self::SketchSplineCurveNative,
         Self::SketchEllipseCurveNative,
@@ -316,6 +331,8 @@ impl InventorLossCode {
         Self::FeatureCoilOperandsNative,
         Self::ParameterGraphOpen,
         Self::ParameterExpressionBounded,
+        Self::ParameterExpressionNative,
+        Self::ParameterUnitLayoutAssumed,
         Self::ParameterScopeUnresolved,
         Self::SketchGraphOpen,
         Self::RseStreamUnpaired,
@@ -364,9 +381,12 @@ impl InventorLossCode {
             Self::FeatureLabelUnusable => "feature.label-unusable",
             Self::SketchConstructionUnresolved => "sketch.construction-unresolved",
             Self::SketchAxisDistanceNative => "sketch.axis-distance-native",
+            Self::SketchConstructionCarrierConflict => "sketch.construction-carrier-conflict",
             Self::SketchPairedAssociationUnprojected => "sketch.paired-association-unprojected",
             Self::SketchCurveNative => "sketch.curve-native",
             Self::SketchMemberNative => "sketch.member-native",
+            Self::SketchMemberCurveNative => "sketch.member-curve-native",
+            Self::SketchPolygonControlVerticesDiffer => "sketch.polygon-control-vertices-differ",
             Self::SketchSplinePointNative => "sketch.spline-point-native",
             Self::SketchSplineCurveNative => "sketch.spline-curve-native",
             Self::SketchEllipseCurveNative => "sketch.ellipse-curve-native",
@@ -439,6 +459,8 @@ impl InventorLossCode {
             Self::FeatureCoilOperandsNative => "feature.coil-operands-native",
             Self::ParameterGraphOpen => "parameter.graph-open",
             Self::ParameterExpressionBounded => "parameter.expression-bounded",
+            Self::ParameterExpressionNative => "parameter.expression-native",
+            Self::ParameterUnitLayoutAssumed => "parameter.unit-layout-assumed",
             Self::ParameterScopeUnresolved => "parameter.scope-unresolved",
             Self::SketchGraphOpen => "sketch.graph-open",
             Self::RseStreamUnpaired => "rse.stream-unpaired",
@@ -549,9 +571,12 @@ impl InventorLossCode {
             | Self::FeatureProfileBodyUndecoded
             | Self::SketchConstructionUnresolved
             | Self::SketchAxisDistanceNative
+            | Self::SketchConstructionCarrierConflict
             | Self::SketchPairedAssociationUnprojected
             | Self::SketchCurveNative
             | Self::SketchMemberNative
+            | Self::SketchMemberCurveNative
+            | Self::SketchPolygonControlVerticesDiffer
             | Self::SketchSplinePointNative
             | Self::SketchSplineCurveNative
             | Self::SketchEllipseCurveNative
@@ -566,6 +591,8 @@ impl InventorLossCode {
             | Self::SketchGraphOpen => LossTaxonomy::FeatureHistoryRetained,
             Self::ParameterGraphOpen
             | Self::ParameterExpressionBounded
+            | Self::ParameterExpressionNative
+            | Self::ParameterUnitLayoutAssumed
             | Self::ParameterScopeUnresolved => LossTaxonomy::ParametricRecordOmitted,
             Self::MetadataPropertyUnmapped
             | Self::FeatureLabelUnusable
@@ -637,9 +664,12 @@ mod tests {
                 "feature.label-unusable",
                 "sketch.construction-unresolved",
                 "sketch.axis-distance-native",
+                "sketch.construction-carrier-conflict",
                 "sketch.paired-association-unprojected",
                 "sketch.curve-native",
                 "sketch.member-native",
+                "sketch.member-curve-native",
+                "sketch.polygon-control-vertices-differ",
                 "sketch.spline-point-native",
                 "sketch.spline-curve-native",
                 "sketch.ellipse-curve-native",
@@ -698,6 +728,8 @@ mod tests {
                 "feature.coil-operands-native",
                 "parameter.graph-open",
                 "parameter.expression-bounded",
+                "parameter.expression-native",
+                "parameter.unit-layout-assumed",
                 "parameter.scope-unresolved",
                 "sketch.graph-open",
                 "rse.stream-unpaired",

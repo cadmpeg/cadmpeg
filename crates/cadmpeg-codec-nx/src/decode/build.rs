@@ -31,6 +31,7 @@ use super::support_uv::{
 use super::{report_untransferred_streams, Counts, Scan};
 use crate::decode::ids::IdScope;
 use crate::framing::node_kind::NodeKind;
+use crate::geometry::SurfaceRefusal;
 use crate::grouping::group_pairs;
 use crate::loss::NxLossCode;
 use crate::topology::{Graph, Node};
@@ -55,6 +56,7 @@ use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::topology::{Body, BodyKind, Point, Region, Shell, Vertex};
 use cadmpeg_ir::unknown::UnknownRecord;
 use cadmpeg_ir::{AnnotationBuilder, Exactness, SourceObjectAssociation};
+use cadmpeg_parasolid::geometry::Refusal;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(super) fn ordered_point_candidates(graph: &Graph) -> Vec<(FinitePoint3, &Node)> {
@@ -81,6 +83,37 @@ pub(super) fn ordered_curve_candidates(graph: &Graph) -> Vec<(CurveGeometry, &No
         [NodeKind::Line, NodeKind::Circle, NodeKind::Ellipse],
         Node::curve_geometry,
     )
+}
+
+/// One loss for each graph-owned CONE or TORUS record whose otherwise valid
+/// fields state a form that has no surface.
+fn surface_refusals(si: usize, graph: &Graph) -> Vec<LossNote> {
+    [(NodeKind::Cone, "CONE"), (NodeKind::Torus, "TORUS")]
+        .into_iter()
+        .flat_map(|(kind, name)| graph.of_kind(kind).map(move |node| (name, node)))
+        .filter_map(|(name, node)| {
+            let (code, cause) = match node.surface_refusal()? {
+                SurfaceRefusal::Analytic(Refusal::ConeHalfAngleSign) => (
+                    NxLossCode::CarrierConeHalfAngleSignUnresolved,
+                    "stores a negative half-angle sine or cosine",
+                ),
+                SurfaceRefusal::Analytic(Refusal::ConeHalfAngleIdentity) => (
+                    NxLossCode::CarrierConeHalfAngleIdentityRefused,
+                    "stores a half-angle sine and cosine whose squared sum differs from one \
+                     by more than 1e-9",
+                ),
+                SurfaceRefusal::NegativeMajorRadius => (
+                    NxLossCode::CarrierTorusNegativeMajorUnresolved,
+                    "stores a negative major radius",
+                ),
+                SurfaceRefusal::Analytic(Refusal::Fields) => return None,
+            };
+            Some(code.note(format!(
+                "parasolid#{si} {name} at byte {} {cause}; the surface is not emitted.",
+                node.pos()
+            )))
+        })
+        .collect()
 }
 
 fn ordered_fixed_candidates<T>(
@@ -126,7 +159,7 @@ pub(super) fn try_decode_geometry(
     let mut body_node_ids = BTreeMap::new();
     let mut parsed = crate::native::substrate::ParsedStreams::parse(scan)?;
     let mut carrier_refusals: Vec<LossNote> = Vec::new();
-    let mut topology_losses = parsed.primary_edge_losses();
+    let mut topology_losses = parsed.primary_losses();
     let mut native_losses: Vec<LossNote> = Vec::new();
     let rmfastload_ids = scan
         .container
@@ -277,14 +310,17 @@ pub(super) fn try_decode_geometry(
             curves: nurbs_curves,
             pcurves: nurbs_pcurves,
             refusals: nurbs_refusals,
+            unresolved_controls,
         } = parsed.parse_nurbs(si);
-        for refusal in nurbs_refusals {
-            carrier_refusals.push(NxLossCode::CarrierLanesUnpaired.note(format!(
-                "parasolid#{si} {} at byte {} states no carrier: {}",
-                refusal.family, refusal.pos, refusal.error
+        carrier_refusals.extend(nurbs_refusals.iter().map(|refusal| refusal.loss(si)));
+        for carrier in unresolved_controls {
+            carrier_refusals.push(NxLossCode::CarrierControlsUnresolved.note(format!(
+                "parasolid#{si} {} at byte {} names no control values that resolve to it",
+                carrier.family, carrier.pos
             )));
         }
         let view = parsed.stream(si);
+        carrier_refusals.extend(surface_refusals(si, &view.graph));
         let stream_name = format!("nx:parasolid#{si}:{}", stream.kind().label());
         let source_stream = StreamHandle::new(
             cadmpeg_ir::StreamName::try_from(stream_name).map_err(CodecError::malformed)?,

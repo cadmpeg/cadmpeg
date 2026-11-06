@@ -857,7 +857,7 @@ fn history_state_identity_orders_cross_family_feature_dependencies() {
                 .try_into()
                 .unwrap(),
                 unclosed_construction_operand_groups: Vec::new(),
-                deleted_sketch_members: Vec::new(),
+                deleted_members: None,
                 paired_class_tag: crate::records::references::DesignClassTag::try_from(
                     "261".to_owned(),
                 )
@@ -1038,6 +1038,7 @@ fn owned_base_feature_takes_its_timeline_object_position() {
                     bodies: Vec::new(),
                     owner_record,
                     owner_reference_offset: 0,
+                    copy_sources: Vec::new(),
                 },
             );
         }
