@@ -111,7 +111,7 @@ fn reduced_cone_chart_row_matches_the_written_surface_and_names_it() {
     ));
     let original = serde_json::to_value(&surface.geometry).expect("geometry JSON");
     let row = &crate::writer::REDUCED_FIELDS[0];
-    assert_eq!(crate::writer::REDUCED_FIELDS.len(), 1);
+    assert_eq!(crate::writer::REDUCED_FIELDS.len(), 2);
     assert_eq!(row.path, "model.surfaces[].geometry");
     let ReducedStorage::Normalized { loss } = row.storage else {
         panic!("cone normalization")

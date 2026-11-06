@@ -301,6 +301,8 @@ pub(crate) enum StepLossCode {
     AppearanceBindingBodyFallback,
     /// Source attribute records were not written.
     SourceAttributeNotWritten,
+    /// A document timestamp uses STEP's extended syntax.
+    TimestampNormalized,
     /// Procedural definitions were reduced to solved STEP carriers.
     ProceduralReducedToCarrier,
     /// Extrusion constructions were written as linear sweeps.
@@ -550,6 +552,7 @@ impl StepLossCode {
         Self::AppearanceBindingMetadataReduced,
         Self::AppearanceBindingBodyFallback,
         Self::SourceAttributeNotWritten,
+        Self::TimestampNormalized,
         Self::ProceduralReducedToCarrier,
         Self::ProceduralExtrusionNormalized,
         Self::HelixFittedToBspline,
@@ -757,6 +760,7 @@ impl StepLossCode {
             Self::AppearanceBindingMetadataReduced => "appearance.binding-metadata-reduced",
             Self::AppearanceBindingBodyFallback => "appearance.binding-body-fallback",
             Self::SourceAttributeNotWritten => "attribute.source-record-not-written",
+            Self::TimestampNormalized => "attribute.timestamp-normalized",
             Self::ProceduralReducedToCarrier => "geometry.procedural-reduced-to-carrier",
             Self::ProceduralExtrusionNormalized => "geometry.procedural-extrusion-normalized",
             Self::HelixFittedToBspline => "geometry.helix-fitted-to-bspline",
@@ -876,6 +880,7 @@ impl StepLossCode {
             | Self::AppearanceBindingMetadataReduced
             | Self::AppearanceBindingBodyFallback
             | Self::SourceAttributeNotWritten
+            | Self::TimestampNormalized
             | Self::ProceduralReducedToCarrier
             | Self::ProceduralExtrusionNormalized
             | Self::HelixFittedToBspline
@@ -942,7 +947,8 @@ impl StepLossCode {
             | Self::TopologyMetadataNotRepresented
             | Self::DrawingPresentationRecordsOmitted
             | Self::DisplayColorUnstyled
-            | Self::SourceAttributeNotWritten => LossTaxonomy::AttributesNotTransferred,
+            | Self::SourceAttributeNotWritten
+            | Self::TimestampNormalized => LossTaxonomy::AttributesNotTransferred,
             Self::PlacementReferenceInferred => LossTaxonomy::CarrierAxisInferred,
             Self::ConflictingRepresentationUnits
             | Self::UncertaintyLengthAmbiguous
@@ -1239,6 +1245,7 @@ mod tests {
                 "appearance.binding-metadata-reduced",
                 "appearance.binding-body-fallback",
                 "attribute.source-record-not-written",
+                "attribute.timestamp-normalized",
                 "geometry.procedural-reduced-to-carrier",
                 "geometry.procedural-extrusion-normalized",
                 "geometry.helix-fitted-to-bspline",

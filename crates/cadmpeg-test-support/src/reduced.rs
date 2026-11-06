@@ -57,6 +57,90 @@ pub fn step_surface_chart(value: &Value) -> Value {
     geometry
 }
 
+/// Apply STEP's extended timestamp syntax to a document date attribute.
+#[must_use]
+pub fn step_timestamp_attribute(value: &Value) -> Value {
+    let mut attribute = value.clone();
+    let Some(record) = attribute.as_object_mut() else {
+        return attribute;
+    };
+    if record
+        .get("target")
+        .and_then(|target| target.get("kind"))
+        .and_then(Value::as_str)
+        != Some("document")
+        || !matches!(
+            record.get("name").and_then(Value::as_str),
+            Some("generation_date" | "model_date" | "CreationDate" | "LastModifiedDate")
+        )
+    {
+        return attribute;
+    }
+    let Some([entry]) = record
+        .get_mut("values")
+        .and_then(Value::as_array_mut)
+        .map(Vec::as_mut_slice)
+    else {
+        return attribute;
+    };
+    if entry.get("kind").and_then(Value::as_str) != Some("string") {
+        return attribute;
+    }
+    let Some(text) = entry.get("value").and_then(Value::as_str) else {
+        return attribute;
+    };
+    let Some((date, time)) = text.split_once('.') else {
+        return attribute;
+    };
+    if date.len() != 8
+        || time.len() != 6
+        || !date.bytes().chain(time.bytes()).all(|b| b.is_ascii_digit())
+    {
+        return attribute;
+    }
+    let parsed = [
+        &date[0..4],
+        &date[4..6],
+        &date[6..8],
+        &time[0..2],
+        &time[2..4],
+        &time[4..6],
+    ]
+    .map(str::parse::<u32>);
+    let [Ok(year), Ok(month), Ok(day), Ok(hour), Ok(minute), Ok(second)] = parsed else {
+        return attribute;
+    };
+    let days = match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if year.is_multiple_of(400) || (year.is_multiple_of(4) && !year.is_multiple_of(100)) => {
+            29
+        }
+        2 => 28,
+        _ => return attribute,
+    };
+    if day == 0
+        || day > days
+        || hour > 24
+        || minute > 59
+        || second > 60
+        || (hour == 24 && (minute != 0 || second != 0))
+    {
+        return attribute;
+    }
+    let timestamp = format!(
+        "{}-{}-{}T{}:{}:{}",
+        &date[0..4],
+        &date[4..6],
+        &date[6..8],
+        &time[0..2],
+        &time[2..4],
+        &time[4..6]
+    );
+    entry["value"] = Value::String(timestamp);
+    attribute
+}
+
 /// Standard unrepresentable probe for a quantum storage. `Normalized` rows
 /// need a writer-supplied probe: only the writer knows its normalization.
 #[must_use]

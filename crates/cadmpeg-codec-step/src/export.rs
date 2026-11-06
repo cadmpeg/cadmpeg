@@ -509,6 +509,33 @@ struct FileNameFields {
     timestamp: Option<String>,
     system: Option<String>,
     consumed: Vec<String>,
+    normalized_timestamps: Vec<String>,
+}
+
+fn file_name_timestamp(value: &str) -> Option<String> {
+    if crate::parse::valid_file_name_timestamp(value) {
+        return Some(value.to_owned());
+    }
+    let (date, time) = value.split_once('.')?;
+    if date.len() != 8
+        || time.len() != 6
+        || !date
+            .bytes()
+            .chain(time.bytes())
+            .all(|byte| byte.is_ascii_digit())
+    {
+        return None;
+    }
+    let timestamp = format!(
+        "{}-{}-{}T{}:{}:{}",
+        &date[0..4],
+        &date[4..6],
+        &date[6..8],
+        &time[0..2],
+        &time[2..4],
+        &time[4..6]
+    );
+    crate::parse::valid_file_name_timestamp(&timestamp).then_some(timestamp)
 }
 
 impl FileNameFields {
@@ -572,18 +599,21 @@ impl FileNameFields {
         }
         let organizations =
             (!organization.is_empty()).then(|| vec![Self::first_non_empty(&organization)]);
-        // A non-conforming held date string (such as an IGES global date)
-        // folds to empty: folding it would author a header the decoder
-        // flags, and normalizing it would break pairing.
         let timestamp = (!stamps.is_empty()).then(|| {
             stamps
                 .iter()
-                .find_map(|(_, value)| {
-                    (!value.is_empty() && crate::parse::valid_file_name_timestamp(value))
-                        .then(|| value.clone())
-                })
+                .filter(|(_, value)| !value.is_empty())
+                .find_map(|(_, value)| file_name_timestamp(value))
                 .unwrap_or_default()
         });
+        let normalized_timestamps = stamps
+            .iter()
+            .filter_map(|(id, value)| {
+                let normalized = file_name_timestamp(value)?;
+                (normalized != *value && timestamp.as_ref() == Some(&normalized))
+                    .then(|| id.clone())
+            })
+            .collect();
         let system = (!sys.is_empty()).then(|| Self::first_non_empty(&sys));
         // An alias is consumed only when the header carries its value back:
         // any other held alias keeps its drop loss, which names it. An
@@ -603,10 +633,9 @@ impl FileNameFields {
             &organization,
             &organizations.clone().unwrap_or_default(),
         ));
-        consumed_ids.extend(consumed(
-            &stamps,
-            &timestamp.clone().into_iter().collect::<Vec<_>>(),
-        ));
+        consumed_ids.extend(stamps.iter().filter_map(|(id, value)| {
+            (file_name_timestamp(value).as_ref() == timestamp.as_ref()).then(|| id.clone())
+        }));
         consumed_ids.extend(consumed(
             &sys,
             &system.clone().into_iter().collect::<Vec<_>>(),
@@ -618,6 +647,7 @@ impl FileNameFields {
             timestamp,
             system,
             consumed: consumed_ids,
+            normalized_timestamps,
         }
     }
 }
@@ -903,6 +933,12 @@ impl<'a> Builder<'a> {
         builder
             .consumed_attribute_ids
             .extend(builder.file_name_fields.consumed.iter().cloned());
+        for id in builder.file_name_fields.normalized_timestamps.clone() {
+            builder.loss(
+                StepLossCode::TimestampNormalized,
+                format!("document attribute '{id}' uses STEP's extended timestamp syntax"),
+            );
+        }
         builder.pcurve_period_shifts = builder.loop_pcurve_period_shifts()?;
         builder.implicit_outer_bounds = builder.implicit_outer_bounds()?;
         builder.seam_rings = builder.seam_rings()?;
