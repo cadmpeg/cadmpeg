@@ -2701,6 +2701,8 @@ fn merge_brep(target: &mut Brep, mut source: Brep) -> Result<(), CodecError> {
     target.stats.withheld_fin_partners += source.stats.withheld_fin_partners;
     target.stats.withheld_fin_links += source.stats.withheld_fin_links;
     target.stats.withheld_faces += source.stats.withheld_faces;
+    target.stats.withheld_vertex_loop_faces += source.stats.withheld_vertex_loop_faces;
+    target.stats.withheld_ambiguous_fin_faces += source.stats.withheld_ambiguous_fin_faces;
     target.stats.withheld_ring_edges += source.stats.withheld_ring_edges;
     target.stats.unclaimed_faces += source.stats.unclaimed_faces;
     target.stats.synthetic_body_grouping |= source.stats.synthetic_body_grouping;
@@ -4212,6 +4214,18 @@ fn append_topology_record_losses(
         losses.push(SldprtLossCode::TopologyFaceWithheld.note(format!(
             "{} face(s) were withheld with their surface because no loop of the face decodes.",
             stats.withheld_faces,
+        )));
+    }
+    if stats.withheld_vertex_loop_faces > 0 {
+        losses.push(SldprtLossCode::TopologyVertexLoopWithheld.note(format!(
+            "{} face(s) were withheld with their surface because a vertex loop of the face names no resolved vertex.",
+            stats.withheld_vertex_loop_faces,
+        )));
+    }
+    if stats.withheld_ambiguous_fin_faces > 0 {
+        losses.push(SldprtLossCode::TopologyAmbiguousFinFaceWithheld.note(format!(
+            "{} face(s) were withheld with their surface because a loop of the face holds an ambiguous FIN.",
+            stats.withheld_ambiguous_fin_faces,
         )));
     }
     if stats.withheld_ring_edges > 0 {

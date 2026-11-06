@@ -3159,6 +3159,7 @@ pub(crate) fn bind_feature_face_selections(
                         feature_id,
                         scope,
                         groups,
+                        operands,
                         &move_face::MoveFaceStates {
                             histories,
                             history,
@@ -5381,7 +5382,40 @@ struct FaceOperandCaches<'a> {
     face_recipes: SnapshotCache<'a, AsmHistoricalTopology, face_recipe::FaceRecipeIndex>,
 }
 
+/// Bind one face operand to the preceding state of its scope. A bounded-face
+/// operand of a `MoveFace` or `OffsetFaces` scope selects the face its recipe
+/// resolves.
 fn bind_historical_face_operand<'a>(
+    operand: &mut crate::records::topology::face::DesignFaceOperand,
+    transition: &FaceOperandTransition<'a>,
+    operand_groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
+    recipe_record_indices: &HashMap<&str, i32>,
+    caches: &mut FaceOperandCaches<'a>,
+) -> Result<(), cadmpeg_core::CodecError> {
+    bind_historical_face_operand_candidates(
+        operand,
+        transition,
+        operand_groups,
+        recipe_record_indices,
+        caches,
+    )?;
+    if matches!(
+        transition.scope.kind(),
+        crate::records::feature::scope::DesignFeatureKind::MoveFace
+            | crate::records::feature::scope::DesignFeatureKind::OffsetFaces
+    ) && operand.recipe_kind == crate::records::recipes::ConstructionRecipeKind::BoundedFace
+    {
+        operand.resolved_face_slots = caches
+            .face_recipes
+            .get(transition.topology, face_recipe::FaceRecipeIndex::new)
+            .resolve(operand)
+            .into_iter()
+            .collect();
+    }
+    Ok(())
+}
+
+fn bind_historical_face_operand_candidates<'a>(
     operand: &mut crate::records::topology::face::DesignFaceOperand,
     transition: &FaceOperandTransition<'a>,
     operand_groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
@@ -6067,17 +6101,15 @@ fn resolve_bounded_face_recipe_target<'a>(
     {
         return Ok(None);
     }
-    let Some(first) = operand.recipe_references.first() else {
+    let Some(ordinals) =
+        crate::records::topology::face::prefix_operand_ordinals(&operand.recipe_references)
+    else {
         return Ok(None);
     };
-    let first_clause_len = operand
-        .recipe_references
-        .iter()
-        .take_while(|reference| {
-            reference.selector_offset == first.selector_offset
-                && reference.token_offset == first.token_offset
-        })
-        .count();
+    let first_clause_len = ordinals.iter().take_while(|ordinal| **ordinal == 0).count();
+    if first_clause_len == 0 {
+        return Ok(None);
+    }
     let first_clause = &operand.recipe_references[..first_clause_len];
     let topology_faces = selection::FamilySlots::new(&preceding.faces);
     let mut target_candidates = BTreeSet::new();
@@ -8298,7 +8330,7 @@ fn treatment_face_supports(
     result: &AsmHistoricalTopology,
     preceding: &AsmHistoricalTopology,
     result_boundaries: &HashMap<i64, HashSet<i64>>,
-) -> Vec<(i64, i64, Vec<i64>)> {
+) -> Vec<(i64, i64, Vec<i64>, bool)> {
     let mut preceding_faces = HashSet::new();
     for face in &preceding.faces {
         preceding_faces.insert(*face);
@@ -8350,6 +8382,33 @@ fn treatment_face_supports(
             adjacent_faces.entry(*edge).or_default().push(*face);
         }
     }
+    // The face that owns each coedge of a result edge, through its loop, or
+    // `None` when the coedge or its loop has no single owner.
+    let mut loop_faces = HashMap::<i64, Option<i64>>::new();
+    for relation in &result.face_loops {
+        for loop_slot in &relation.member_refs {
+            loop_faces
+                .entry(*loop_slot)
+                .and_modify(|face| *face = None)
+                .or_insert(Some(relation.owner_ref));
+        }
+    }
+    let mut coedge_loops = HashMap::<i64, Option<i64>>::new();
+    for row in &result.coedge_topology {
+        coedge_loops
+            .entry(row.coedge)
+            .and_modify(|owner| *owner = None)
+            .or_insert(Some(row.owner_loop));
+    }
+    let mut edge_owners = HashMap::<i64, Vec<Option<i64>>>::new();
+    for row in &result.coedge_topology {
+        let owner = coedge_loops
+            .get(&row.coedge)
+            .copied()
+            .flatten()
+            .and_then(|loop_slot| loop_faces.get(&loop_slot).copied().flatten());
+        edge_owners.entry(row.edge).or_default().push(owner);
+    }
     let mut selected = Vec::new();
     for inserted in inserted_faces.iter().copied() {
         let Some(carrier) = result_carriers.get(&inserted).copied().flatten() else {
@@ -8361,16 +8420,35 @@ fn treatment_face_supports(
         let Some(inserted_boundary) = result_boundaries.get(&inserted) else {
             continue;
         };
-        let mut supports = inserted_boundary
+        // An adjacent face on a preceding carrier, or without one carrier, that
+        // maps to no single preceding face leaves the supports incomplete, and
+        // so does a boundary edge with no other face, or with a coedge whose
+        // owner face is unknown or has no rebuilt boundary.
+        let mut complete = inserted_boundary.iter().all(|edge| {
+            edge_owners.get(edge).is_some_and(|owners| {
+                owners.iter().any(|owner| *owner != Some(inserted))
+                    && owners.iter().all(|owner| {
+                        owner.is_some_and(|face| {
+                            face == inserted || result_boundaries.contains_key(&face)
+                        })
+                    })
+            })
+        });
+        let mut supports = Vec::new();
+        for face in inserted_boundary
             .iter()
             .filter_map(|edge| adjacent_faces.get(edge))
             .flatten()
             .copied()
             .filter(|face| *face != inserted)
-            .filter_map(|face| {
-                let carrier = result_carriers.get(&face).copied().flatten()?;
-                let ancestry = loop_ancestry(face)?;
-                let source = if preceding_faces.contains(&face) {
+        {
+            let Some(carrier) = result_carriers.get(&face).copied().flatten() else {
+                complete = false;
+                continue;
+            };
+            let persists = preceding_faces.contains(&face);
+            let source = loop_ancestry(face).and_then(|ancestry| {
+                let source = if persists {
                     (preceding_carriers.get(&face).copied().flatten() == Some(carrier))
                         .then_some(face)?
                 } else if let Some(only) = preceding_carrier_faces.get(&carrier).copied().flatten()
@@ -8387,12 +8465,19 @@ fn treatment_face_supports(
                     .iter()
                     .all(|owner| *owner == source)
                     .then_some(source)
-            })
-            .collect::<Vec<_>>();
+            });
+            match source {
+                Some(source) => supports.push(source),
+                // A face new to the transition on a new carrier is another
+                // blend, not a support.
+                None if persists || preceding_surfaces.contains(&carrier) => complete = false,
+                None => {}
+            }
+        }
         supports.sort_unstable_by(Ord::cmp);
         supports.dedup();
 
-        selected.push((inserted, carrier, supports));
+        selected.push((inserted, carrier, supports, complete));
     }
     selected
 }

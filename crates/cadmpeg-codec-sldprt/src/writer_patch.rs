@@ -111,11 +111,13 @@ pub(crate) fn patch_partition(
         block.section.source_stream().as_str(),
     )?;
 
+    let point_values =
+        crate::brep::topology::point_value_offsets(&block.payload, header.body_offset);
     let mut payload = block.payload.clone();
     let Some(body) = payload.get_mut(header.body_offset..) else {
         return Ok(None);
     };
-    if patch_points(ir, annotations, &native, body, scale)?.is_none() {
+    if patch_points(ir, annotations, &native, &point_values, body, scale)?.is_none() {
         return Ok(None);
     }
     if patch_surfaces(ir, annotations, &native, body, scale)?.is_none() {
@@ -394,6 +396,7 @@ fn patch_points(
     ir: &CadIr,
     annotations: &Annotations,
     native: &crate::brep::graph::Brep,
+    point_values: &HashMap<usize, usize>,
     payload: &mut [u8],
     scale: f64,
 ) -> Result<Option<()>, CodecError> {
@@ -409,15 +412,9 @@ fn patch_points(
             continue;
         }
         let offset = raw_annotation_offset(annotations, &old.id)?;
-        let tables = crate::brep::topology::scan(payload);
-        let Some(point) = tables
-            .points()
-            .values()
-            .find(|point| point.offset == offset)
-        else {
+        let Some(&values) = point_values.get(&offset) else {
             return Ok(None);
         };
-        let values = point.xyz_offset;
         let old_xyz_m = [
             old.position().get().x * 0.001,
             old.position().get().y * 0.001,

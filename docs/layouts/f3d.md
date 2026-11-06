@@ -3528,7 +3528,7 @@ Unstated regions:
 
 Spec §3.1 · layout: byte offsets · size: 352 B
 
-Offsets are relative to the primary indexed placement header (class 293 paired with class 261, or class 316 paired with class 260). The two-byte lane at offset 62 is opaque.
+Offsets are relative to the primary indexed placement header. The two-byte lane at offset 62 is opaque.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -3548,7 +3548,7 @@ Unstated regions:
 
 Spec §3.1 · layout: byte offsets · size: 363 B
 
-Offsets are relative to the class-289 primary indexed placement header paired with class 258. The two-byte lane at offset 62 is opaque.
+Offsets are relative to the primary indexed placement header. The two-byte lane at offset 62 is opaque.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -3568,7 +3568,7 @@ Unstated regions:
 
 Spec §3.1 · layout: byte offsets · size: 374 B
 
-Offsets are relative to the class-267 primary indexed placement header paired with class 258. The two-byte lane at offset 62 is opaque.
+Offsets are relative to the primary indexed placement header. The two-byte lane at offset 62 is opaque.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -8431,6 +8431,33 @@ Parsed by:
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 1 | `present` | `u8` | little | spec | The metadata header stores `u8 1` and a u32 entry count. · value `1` |
 | 1 | 4 | `entry_count` | `u32` | little | spec | The metadata header stores `u8 1` and a u32 entry count. |
+
+## `dimension_annotation_payload_points`
+
+Spec §3.1 · layout: byte offsets · size: 48 B
+
+Offsets are relative to the start of the annotation byte payload of a two-point Linear Dimension frame whose payload holds at least 48 bytes. The rest of the payload follows the two points.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/dimensions.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 24 | `first_point` | `f64[3]` | little | spec | it [begins with two xyz f64 points](../layouts/f3d.md) |
+| 24 | 24 | `second_point` | `f64[3]` | little | spec | it [begins with two xyz f64 points](../layouts/f3d.md) |
+
+## `dimension_annotation_absent_metadata`
+
+Spec §3.1 · layout: byte offsets · size: 1 B
+
+Starts immediately after the annotation operand run. The annotation byte payload follows it.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/dimension_frames.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `present` | `u8` | little | spec | A frame without a metadata block stores `u8 0` alone · value `0` |
 
 ## `dimension_annotation_genesis_metadata`
 
