@@ -500,6 +500,50 @@ const ELLIPSE_GEOMETRY: &[(&str, usize, [f64; 5])] =
     &[("InternalAlignmentRelations", 1, [0.0, 0.0, 12.0, 5.0, -0.0])];
 
 #[test]
+fn authored_constraint_sketches_have_source_derived_bboxes() {
+    let data = include_bytes!("../../../../corpus/freecad_fcstd/fixtures/sketch_constraints.FCStd");
+    let decoded = FcstdCodec
+        .decode(&mut Cursor::new(data), &DecodeOptions::default())
+        .unwrap();
+    let model = &decoded.ir().model;
+    let report = measured("sketch_constraints", decoded.ir()).unwrap();
+    for (name, expected) in [
+        ("GeometricRelations", [0.0, -5.0, 0.0, 120.0, 17.0, 0.0]),
+        (
+            "InternalAlignmentRelations",
+            [-12.0, -5.0, 0.0, 12.0, 5.0, 0.0],
+        ),
+    ] {
+        let feature = model
+            .features
+            .iter()
+            .find(|feature| feature.name.as_deref() == Some(name))
+            .unwrap();
+        let [body_id] = feature.evaluation.outputs().as_slice() else {
+            panic!("one {name} sketch body")
+        };
+        let body = report
+            .bodies()
+            .iter()
+            .find(|body| body.body() == body_id.as_str())
+            .unwrap();
+        let bbox = body.bbox().measured().unwrap().value();
+        for (actual, expected) in bbox
+            .min
+            .coordinates()
+            .into_iter()
+            .chain(bbox.max.coordinates())
+            .zip(expected)
+        {
+            assert!(
+                (actual.get() - expected).abs() < MEASURE_BBOX_TOLERANCE,
+                "{name} sketch bbox"
+            );
+        }
+    }
+}
+
+#[test]
 fn authored_symmetry_constraint_sketch_has_source_derived_measures() {
     let data = include_bytes!("../../../../corpus/freecad_fcstd/fixtures/sketch_constraints.FCStd");
     let decoded = FcstdCodec
