@@ -92,6 +92,8 @@ pub(crate) enum InventorLossCode {
     FeatureEdgeSelectionEmptyItemsNative,
     /// An edge treatment retains an unresolved input-edge selection.
     FeatureEdgeSelectionNative,
+    /// An edge-treatment input edge has several matched owners of identical geometry.
+    FeatureEdgeOwnerIdenticalGeometry,
     /// Extrusion construction operands remain native.
     FeatureExtrusionOperandsNative,
     /// An extrusion retains its exact profile selection without a neutral sketch graph.
@@ -282,6 +284,7 @@ impl InventorLossCode {
         Self::FeatureOperationGraphOpen,
         Self::FeatureEdgeSelectionEmptyItemsNative,
         Self::FeatureEdgeSelectionNative,
+        Self::FeatureEdgeOwnerIdenticalGeometry,
         Self::FeatureExtrusionOperandsNative,
         Self::FeatureExtrusionProfileNative,
         Self::FeatureExtrusionTargetFaceNative,
@@ -404,6 +407,7 @@ impl InventorLossCode {
                 "feature.edge-selection-empty-items-native"
             }
             Self::FeatureEdgeSelectionNative => "feature.edge-selection-native",
+            Self::FeatureEdgeOwnerIdenticalGeometry => "feature.edge-owner-identical-geometry",
             Self::FeatureThreadDefinitionPartial => "feature.thread-definition-partial",
             Self::FeatureThickenOperandsNative => "feature.thicken-operands-native",
             Self::FeatureThickenConstructionNative => "feature.thicken-construction-native",
@@ -528,6 +532,7 @@ impl InventorLossCode {
             Self::FeatureOperationGraphOpen
             | Self::FeatureEdgeSelectionEmptyItemsNative
             | Self::FeatureEdgeSelectionNative
+            | Self::FeatureEdgeOwnerIdenticalGeometry
             | Self::FeatureExtrusionOperandsNative
             | Self::FeatureExtrusionProfileNative
             | Self::FeatureExtrusionTargetFaceNative
@@ -679,6 +684,7 @@ mod tests {
                 "feature.operation-graph-open",
                 "feature.edge-selection-empty-items-native",
                 "feature.edge-selection-native",
+                "feature.edge-owner-identical-geometry",
                 "feature.extrusion-operands-native",
                 "feature.extrusion-profile-native",
                 "feature.extrusion-target-face-native",
