@@ -1105,7 +1105,7 @@ The first closing reference run identifies a direct contained child by its local
 
 ### DR-272. Combine frame with operand-list fixed fields and other lists
 
-**Question.** Which prologue does a `Combine` frame store when byte 20 is one, its fixed fields match the operand-list prologue, and its lists do not name its operation-identity records?
+**Question.** Which prologue does a `Combine` frame store when byte 20 is one, its fixed fields match the operand-list prologue, and its lists do not name its operation-identity records up to its reference table?
 
 **Known.** `f3d.md` §3.1 gives the standard and operand-list prologues. A standard join and an operand-list prologue with an empty property block both store `01 00 00 00 00` at offsets 20 through 24. The decoder reads such a frame in the standard prologue and reports `feature.combine-standard-form-assumed`.
 

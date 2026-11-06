@@ -1083,22 +1083,54 @@ fn a_frame_with_operand_list_fields_and_other_lists_is_read_in_the_standard_prol
 
 #[test]
 fn a_frame_whose_lists_name_its_operands_stays_native_when_a_field_contradicts_it() {
-    let mut new_component = OperandListFixture::new(1, 1);
-    new_component.property_block = true;
-    new_component.new_component = 1;
-    new_component.middle_lists[1] = vec![194];
     let mut invalid_keep_tools = OperandListFixture::new(0, 2);
     invalid_keep_tools.property_block = true;
     let mut unconsumed_tools = OperandListFixture::new(0, 0);
     unconsumed_tools.property_block = true;
     unconsumed_tools.consumed = Some(Vec::new());
+    let mut new_component_without_node = OperandListFixture::new(1, 1);
+    new_component_without_node.property_block = true;
+    new_component_without_node.new_component = 1;
+    let mut new_component_two = OperandListFixture::new(1, 1);
+    new_component_two.property_block = true;
+    new_component_two.new_component = 2;
+    new_component_two.middle_lists[1] = vec![194, 194];
+    let mut two_lists_new_component = OperandListFixture::new(0, 0).two_tools();
+    two_lists_new_component.property_block = true;
+    two_lists_new_component.companions = vec![500];
+    two_lists_new_component.omit_consumed = true;
+    two_lists_new_component.new_component = 1;
     for (name, fixture) in [
-        ("new component", new_component),
         ("keep-tools", invalid_keep_tools),
         ("consumed", unconsumed_tools),
+        ("new component without a node", new_component_without_node),
+        ("new component two", new_component_two),
+        ("two lists with a new component", two_lists_new_component),
     ] {
         let (operation, losses) = fixture.decode_with_losses();
         assert_eq!(operation, None, "{name}");
         assert!(losses.is_empty(), "{name}");
+    }
+}
+
+#[test]
+fn a_combine_that_places_its_result_in_a_new_component_stays_native_with_a_loss() {
+    let mut kept_tools = OperandListFixture::new(1, 1);
+    kept_tools.property_block = true;
+    kept_tools.new_component = 1;
+    kept_tools.middle_lists[1] = vec![194];
+    let mut companion = OperandListFixture::new(0, 0).two_tools();
+    companion.property_block = true;
+    companion.companions = vec![500];
+    companion.new_component = 1;
+    companion.middle_lists[1] = vec![196];
+    for (name, fixture) in [("kept tools", kept_tools), ("companion", companion)] {
+        let (operation, losses) = fixture.decode_with_losses();
+        assert_eq!(operation, None, "{name}");
+        assert_eq!(
+            losses.into_iter().map(|loss| loss.code).collect::<Vec<_>>(),
+            [F3dLossCode::FeatureCombineNewComponentNative.kind()],
+            "{name}"
+        );
     }
 }

@@ -303,8 +303,11 @@ pub(crate) enum F3dLossCode {
     /// Combine body refinement violates operand arity or disjoint membership.
     FeatureCombineSelectionNative,
     /// A Combine frame that matches the fixed operand-list fields is read in the
-    /// standard prologue; its lists do not name its operands.
+    /// standard prologue; its lists do not name its operands up to its
+    /// reference table.
     FeatureCombineStandardFormAssumed,
+    /// A Combine that places its result in a new component stays native.
+    FeatureCombineNewComponentNative,
     /// Fixed Fillet scalar lanes have no complete group assignment.
     FeatureFixedFilletAssignmentNative,
     /// Extrude scope retains an unassigned extent payload.
@@ -622,6 +625,7 @@ impl F3dLossCode {
         Self::FeatureBodySelectionNative,
         Self::FeatureCombineSelectionNative,
         Self::FeatureCombineStandardFormAssumed,
+        Self::FeatureCombineNewComponentNative,
         Self::FeatureFixedFilletAssignmentNative,
         Self::FeatureExtrudeExtentNative,
         Self::FeatureRevolveLayoutAssumed,
@@ -856,6 +860,7 @@ impl F3dLossCode {
             Self::FeatureBodySelectionNative => "feature.body-selection-native",
             Self::FeatureCombineSelectionNative => "feature.combine-selection-native",
             Self::FeatureCombineStandardFormAssumed => "feature.combine-standard-form-assumed",
+            Self::FeatureCombineNewComponentNative => "feature.combine-new-component-native",
             Self::FeatureFixedFilletAssignmentNative => "feature.fixed-fillet-assignment-native",
             Self::FeatureExtrudeExtentNative => "feature.extrude-extent-native",
             Self::FeatureRevolveLayoutAssumed => "feature.revolve-layout-assumed",
@@ -1109,6 +1114,7 @@ impl F3dLossCode {
             | Self::FeatureBodySelectionNative
             | Self::FeatureCombineSelectionNative
             | Self::FeatureCombineStandardFormAssumed
+            | Self::FeatureCombineNewComponentNative
             | Self::FeatureFixedFilletAssignmentNative
             | Self::FeatureExtrudeExtentNative
             | Self::FeatureRevolveLayoutAssumed
@@ -1296,6 +1302,7 @@ impl F3dLossCode {
             | Self::FeatureBodySelectionNative
             | Self::FeatureCombineSelectionNative
             | Self::FeatureCombineStandardFormAssumed
+            | Self::FeatureCombineNewComponentNative
             | Self::FeatureFixedFilletAssignmentNative
             | Self::FeatureExtrudeExtentNative
             | Self::FeatureRevolveLayoutAssumed
@@ -1567,6 +1574,7 @@ mod tests {
                 "feature.body-selection-native",
                 "feature.combine-selection-native",
                 "feature.combine-standard-form-assumed",
+                "feature.combine-new-component-native",
                 "feature.fixed-fillet-assignment-native",
                 "feature.extrude-extent-native",
                 "feature.revolve-layout-assumed",

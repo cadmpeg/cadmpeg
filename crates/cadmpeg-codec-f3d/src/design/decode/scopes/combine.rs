@@ -63,11 +63,18 @@ pub(super) fn exact_combine_operation(
             PrologueReading::Operation(operation) => {
                 if operand_lists_refused {
                     losses.push(F3dLossCode::FeatureCombineStandardFormAssumed.note(format!(
-                        "{}: the Combine frame matches the fixed operand-list fields and its lists do not name its operands; it is read in the standard prologue",
+                        "{}: the Combine frame matches the fixed operand-list fields and its lists do not name its operands up to its reference table; it is read in the standard prologue",
                         scope.id
                     )));
                 }
                 return Ok(Some(*operation));
+            }
+            PrologueReading::NewComponent => {
+                losses.push(F3dLossCode::FeatureCombineNewComponentNative.note(format!(
+                    "{}: the Combine places its result in a new component, which the IR cannot name; the Combine stays native",
+                    scope.id
+                )));
+                return Ok(None);
             }
             PrologueReading::Native => return Ok(None),
             PrologueReading::Refused => operand_lists_refused |= operand_lists,
@@ -96,7 +103,10 @@ struct OperandLists {
 enum PrologueReading {
     Operation(Box<DesignCombineOperation>),
     /// The lists name the scope's operands, so the frame stores this
-    /// prologue, and a field contradicts it or names a new component.
+    /// prologue, and its fields place the result in a new component.
+    NewComponent,
+    /// The lists name the scope's operands, so the frame stores this
+    /// prologue, and a field contradicts it.
     Native,
     Refused,
 }
@@ -263,9 +273,6 @@ fn combine_operation_with(
             Some(1) => Some(true),
             _ => None,
         };
-        if lists.is_none() && (operation.is_none() || keep_tools.is_none()) {
-            return None;
-        }
         let mut target = None;
         let mut target_body_node = None;
         let mut target_operation = None;
@@ -333,36 +340,44 @@ fn combine_operation_with(
             first: first_tool?,
             additional: additional_tools,
         };
-        if let Some(lists) = &lists {
-            let table_at = usize::try_from(scope.reference_count_offset()).ok()?;
-            let stored = stored_operand_lists(
-                bytes.get(..table_at)?,
-                lists,
-                scope.reference_members().len(),
-                &tool_operations,
-                target_operation?,
-            )?;
-            let fields_hold = keep_tools.is_some_and(|keep_tools| {
-                operand_list_fields_hold(
-                    bytes,
-                    records,
-                    stream_types,
+        let (operation, keep_tools) = match &lists {
+            None => (operation?, keep_tools?),
+            Some(lists) => {
+                let table_at = usize::try_from(scope.reference_count_offset()).ok()?;
+                let stored = stored_operand_lists(
+                    bytes.get(..table_at)?,
                     lists,
-                    &stored,
-                    keep_tools,
-                    tool_operations.len(),
-                )
-            });
-            if operation.is_none() || !fields_hold {
-                return Some(Ok(PrologueReading::Native));
+                    scope.reference_members().len(),
+                    &tool_operations,
+                    target_operation?,
+                )?;
+                match (operation, keep_tools) {
+                    (Some(operation), Some(keep_tools))
+                        if operand_list_fields_hold(
+                            bytes,
+                            records,
+                            stream_types,
+                            lists,
+                            &stored,
+                            keep_tools,
+                            tool_operations.len(),
+                        ) =>
+                    {
+                        if lists.new_component == 1 {
+                            return Some(Ok(PrologueReading::NewComponent));
+                        }
+                        (operation, keep_tools)
+                    }
+                    _ => return Some(Ok(PrologueReading::Native)),
+                }
             }
-        }
+        };
         Some(Ok(PrologueReading::Operation(Box::new(
             DesignCombineOperation {
                 form,
-                operation: operation?,
+                operation,
                 operation_offset: u64::try_from(operation_offset).ok()?,
-                keep_tools: keep_tools?,
+                keep_tools,
                 keep_tools_offset: u64::try_from(keep_tools_offset).ok()?,
                 target_record_index: target,
                 target_body_node,
@@ -419,9 +434,11 @@ fn stored_operand_lists<'a>(
 
 /// Check the fields of an operand-list frame whose lists name its operands.
 ///
-/// A prologue with a companion can store two lists between the tool list and
-/// the target list in place of three. Each companion is a distinct
-/// `RemoveBody` scope that stores the counted GUID of the `Combine` scope.
+/// The second list after the tool list names one browser node when the
+/// new-component Boolean is one. A prologue with a companion can store two
+/// empty lists between the tool list and the target list in place of three.
+/// Each companion is a distinct `RemoveBody` scope that stores the counted
+/// GUID of the `Combine` scope.
 fn operand_list_fields_hold(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
@@ -431,6 +448,10 @@ fn operand_list_fields_hold(
     keep_tools: bool,
     tool_count: usize,
 ) -> bool {
+    if lists.new_component > 1 {
+        return false;
+    }
+    let browser_nodes = usize::from(lists.new_component);
     let has_companion = !lists.companions.is_empty();
     let consumed_count = if keep_tools || has_companion {
         0
@@ -439,14 +460,15 @@ fn operand_list_fields_hold(
     };
     let middle_holds = match &stored.middle[..] {
         [first, second, consumed] => {
-            first.is_empty() && second.is_empty() && consumed.len() == consumed_count
+            first.is_empty() && second.len() == browser_nodes && consumed.len() == consumed_count
         }
-        [first, second] => has_companion && first.is_empty() && second.is_empty(),
+        [first, second] => {
+            has_companion && browser_nodes == 0 && first.is_empty() && second.is_empty()
+        }
         _ => false,
     };
     let mut companions = HashSet::new();
-    lists.new_component == 0
-        && !(has_companion && keep_tools)
+    !(has_companion && keep_tools)
         && middle_holds
         && lists.companions.iter().all(|record_index| {
             companions.insert(*record_index)
