@@ -66,6 +66,7 @@ fn topology_operands_follow_consecutive_nested_records_to_their_recipes() {
             kind_offset: 1100,
             feature_ordinal: std::num::NonZeroU32::MIN,
             feature_ordinal_offset: 0,
+            label: None,
             history_state_id: None,
 
             previous_history_state_id: None,
