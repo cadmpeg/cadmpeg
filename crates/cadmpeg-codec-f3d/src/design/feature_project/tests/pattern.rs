@@ -424,7 +424,7 @@ fn a_single_direction_record_must_agree_with_the_instance_run() {
     assert!(linear_direction(disagreeing).is_none());
 }
 
-fn seed_scope(record_index: u32, history_state_id: Option<i64>) -> DesignParameterScope {
+pub(super) fn seed_scope(record_index: u32, history_state_id: Option<i64>) -> DesignParameterScope {
     DesignParameterScope::try_new(crate::records::feature::scope::DesignParameterScopeDraft {
         id: format!("f3d:Design/BulkStream.dat:design-parameter-scope#{record_index}"),
         byte_offset: 0,
@@ -459,7 +459,7 @@ fn seed_scope(record_index: u32, history_state_id: Option<i64>) -> DesignParamet
 
 /// A compact entity selection: identity record `N + 3` stores one u64
 /// identity at offset 21, and the next header follows at offset 29.
-fn compact_entity_selection(
+pub(super) fn compact_entity_selection(
     group_record_index: u32,
     record_index: u32,
     identity: u64,

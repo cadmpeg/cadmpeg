@@ -983,21 +983,25 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                         })
                     })
                 }
-                Some(DesignFeatureFamily::Mirror) => {
-                    project_mirror(scope, construction_groups, face_operands, scopes)
-                        .unwrap_or_else(|| {
-                            FeatureDefinition::Operation(FeatureOperation::Pattern {
-                                seeds: unprojected_pattern_seeds(
-                                    scope,
-                                    construction_groups,
-                                    face_operands,
-                                    entity_selection_operands,
-                                    scopes,
-                                ),
-                                pattern: PatternKind::UNRESOLVED_MIRROR,
-                            })
-                        })
-                }
+                Some(DesignFeatureFamily::Mirror) => project_mirror(
+                    scope,
+                    construction_groups,
+                    face_operands,
+                    entity_selection_operands,
+                    scopes,
+                )
+                .unwrap_or_else(|| {
+                    FeatureDefinition::Operation(FeatureOperation::Pattern {
+                        seeds: unprojected_pattern_seeds(
+                            scope,
+                            construction_groups,
+                            face_operands,
+                            entity_selection_operands,
+                            scopes,
+                        ),
+                        pattern: PatternKind::UNRESOLVED_MIRROR,
+                    })
+                }),
                 Some(DesignFeatureFamily::OffsetFaces) => {
                     project_offset_faces(scope, &parameters, face_operands, construction_groups)?
                         .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?
@@ -7167,6 +7171,7 @@ fn project_mirror(
     scope: &DesignParameterScope,
     groups: &[DesignConstructionOperandGroup],
     face_operands: &[DesignFaceOperand],
+    entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
     scopes: &[DesignParameterScope],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{
@@ -7198,7 +7203,7 @@ fn project_mirror(
     let (Some(seed_group), Some(_plane_group)) = (seed_group, plane_group) else {
         return None;
     };
-    let seed = if let Some(record_index) = construction
+    let seeds = if let Some(record_index) = construction
         .seed_feature_scope_record_index
         .map(|reference| reference.value)
     {
@@ -7206,22 +7211,16 @@ fn project_mirror(
             native_stream(&candidate.id) == Some(stream) && candidate.record_index == record_index
         }));
         let seed_scope = seed_scope?;
-        PatternSeed::Feature(crate::ids::neutral_feature_id(seed_scope))
-    } else if seed_group.role() == DesignOperandRole::BODIES_B {
-        PatternSeed::Bodies(cadmpeg_ir::features::BodySelection::Native(
-            seed_group.id.clone(),
-        ))
+        vec![PatternSeed::Feature(crate::ids::neutral_feature_id(
+            seed_scope,
+        ))]
     } else {
-        PatternSeed::Faces(
-            match resolved_historical_face_group(
-                scope,
-                scope.previous_history_state_id(),
-                seed_group,
-                face_operands,
-            ) {
-                Some(selection) => selection,
-                None => cadmpeg_ir::features::FaceSelection::Native(seed_group.id.clone()),
-            },
+        pattern_group_seeds(
+            scope,
+            seed_group,
+            face_operands,
+            entity_selection_operands,
+            scopes,
         )
     };
     let (plane_origin, plane_normal, scale_origin) = match construction.plane {
@@ -7259,7 +7258,7 @@ fn project_mirror(
     })
     .ok()?;
     Some(FeatureDefinition::Operation(FeatureOperation::Pattern {
-        seeds: vec![seed],
+        seeds,
         pattern,
     }))
 }
