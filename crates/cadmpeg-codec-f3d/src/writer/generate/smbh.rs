@@ -86,6 +86,7 @@ struct PlannedPcurve<'a> {
     geometry: &'a PcurveGeometry,
     support: &'a SurfaceGeometry,
     form: NativePcurveForm<'a>,
+    range: [f64; 2],
 }
 
 #[derive(Debug)]
@@ -157,6 +158,10 @@ impl<'a> NativeRecordPlan<'a> {
                 geometry: &pcurve.geometry,
                 support: pcurve_support_geometry(model, &pcurve.id)?,
                 form,
+                range: pcurve.parameter_range().map_or([0.0, 1.0], |range| {
+                    let [a, b] = range.get();
+                    [a.min(b), a.max(b)]
+                }),
             });
         }
         let pcurve_record_count = model
@@ -1300,13 +1305,25 @@ fn encode_face_topology_smbh(
 
     for pcurve in &pcurves {
         output.charge_entities(1, "F3D BREP record")?;
-        native_pcurve(&mut records, pcurve.geometry, &pcurve.form, pcurve.support)?;
+        native_pcurve(
+            &mut records,
+            pcurve.geometry,
+            &pcurve.form,
+            pcurve.support,
+            pcurve.range,
+        )?;
         records.push(0x11);
     }
     for pcurve in &pcurves {
         if let NativePcurveForm::Reference { uv_offset, .. } = pcurve.form {
             output.charge_entities(1, "F3D BREP record")?;
-            native_ref_pcurve_companion(&mut records, pcurve.geometry, uv_offset, pcurve.support)?;
+            native_ref_pcurve_companion(
+                &mut records,
+                pcurve.geometry,
+                uv_offset,
+                pcurve.support,
+                pcurve.range,
+            )?;
             records.push(0x11);
         }
     }
