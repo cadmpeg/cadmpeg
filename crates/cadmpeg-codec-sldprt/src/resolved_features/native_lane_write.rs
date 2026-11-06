@@ -264,27 +264,19 @@ pub(crate) fn regenerate(
                     continue;
                 };
                 let mut bytes = Vec::new();
-                let Some(id) = id.value() else {
-                    omitted.push(Omission {
-                        arena: "feature_input_names",
-                        id: name.id.clone(),
-                        reason: "object name has an opaque native identity".into(),
-                    });
-                    continue;
-                };
-                let current_name = if ir.scope.design {
+                let current_name = if ir.scope.design && id.value().is_some() {
                     source
                         .feature_histories
                         .iter()
                         .flat_map(|history| &history.features)
-                        .find(|feature| feature.source_value() == Some(id))
+                        .find(|feature| feature.source_value() == id.value())
                         .and_then(|original| neutral_owners.get(original.id.as_str()))
                         .and_then(|feature| feature.name.as_deref())
                         .unwrap_or(name.value.as_str())
                 } else {
                     name.value.as_str()
                 };
-                append_generated_object_name(&mut bytes, current_name, id)?;
+                append_generated_object_name(&mut bytes, current_name, id.into())?;
                 events.push(Event {
                     sequence: name.sequence,
                     bytes,
