@@ -181,15 +181,22 @@ fn source_curve_on_surface<'a>(
         .faces
         .iter()
         .find(|face| face.id == boundary.face)?;
-    if face.loops.iter().count() != 1 || !face.loops.iter().any(|id| *id == boundary.id) {
+    if !matches!(
+        face.loops,
+        cadmpeg_ir::topology::FaceLoops::Classified { .. }
+    ) {
         return None;
     }
+    let loop_index = face.loops.iter().position(|id| *id == boundary.id)?;
     let face_sequence = face
         .id
         .as_str()
         .strip_prefix("iges:model:face#D")?
         .parse::<u64>()
         .ok()?;
+    if boundary.id.as_str() != format!("iges:model:loop#D{face_sequence}:{loop_index}") {
+        return None;
+    }
     let surface = ir
         .model
         .surfaces
@@ -227,11 +234,11 @@ fn source_curve_on_surface<'a>(
     };
     if integer(face_fields, 1)? != surface_sequence
         || integer(face_fields, 2)? != 1
-        || integer(face_fields, 3)? != 0
+        || usize::try_from(integer(face_fields, 3)?).ok()? != face.loops.len().checked_sub(1)?
     {
         return None;
     }
-    let curve_on_surface = find(integer(face_fields, 4)?)?;
+    let curve_on_surface = find(integer(face_fields, 4 + loop_index)?)?;
     if curve_on_surface.field("entity_type")?.as_u64()? != 142
         || curve_on_surface.field("transform")?.as_i64()? != 0
     {
