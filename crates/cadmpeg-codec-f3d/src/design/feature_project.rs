@@ -3121,6 +3121,105 @@ pub(crate) fn bind_sketch_feature_geometry(
     Ok(())
 }
 
+/// Native and neutral records that solve a Loft point section.
+pub(crate) struct LoftPointSources<'a> {
+    pub(crate) groups: &'a [DesignConstructionOperandGroup],
+    pub(crate) entity_operands:
+        &'a [crate::records::topology::entity_selection::DesignEntitySelectionOperand],
+    pub(crate) sketch_points: &'a [crate::records::sketch_geometry::SketchPoint],
+    pub(crate) sketches: &'a [cadmpeg_ir::sketches::Sketch],
+    pub(crate) sketch_entities: &'a [cadmpeg_ir::sketches::SketchEntity],
+}
+
+/// Solve each Loft point section whose group's one entity-selection member
+/// names a planar sketch point by its Sketch record and persistent id.
+pub(crate) fn bind_loft_sketch_point_sections(
+    features: &mut [cadmpeg_ir::features::Feature],
+    sources: &LoftPointSources<'_>,
+) {
+    use cadmpeg_ir::features::{
+        FeatureDefinition, FeatureOperation, LoftPointSection, LoftSection,
+    };
+
+    for feature in features.iter_mut() {
+        feature.evaluation.edit(|definition, _| {
+            let FeatureDefinition::Operation(FeatureOperation::Loft { sections, .. }) = definition
+            else {
+                return;
+            };
+            for section in sections.iter_mut() {
+                let LoftSection::Point(LoftPointSection::Native(native)) = section else {
+                    continue;
+                };
+                if let Some(point) = loft_sketch_point(native.as_str(), sources) {
+                    *section = LoftSection::Point(LoftPointSection::Point(point));
+                }
+            }
+        });
+    }
+}
+
+fn loft_sketch_point(
+    group_id: &str,
+    sources: &LoftPointSources<'_>,
+) -> Option<cadmpeg_ir::features::FinitePoint3> {
+    fn only<T>(mut matches: impl Iterator<Item = T>) -> Option<T> {
+        let first = matches.next()?;
+        matches.next().is_none().then_some(first)
+    }
+
+    let group = only(sources.groups.iter().filter(|group| group.id == group_id))?;
+    let stream = native_stream(&group.id)?;
+    let (sketch_record, persistent_id) =
+        loft_point_operand(group, sources.entity_operands)?.sketch_point()?;
+    let sketch_record = u32::try_from(sketch_record).ok()?;
+    let point = only(sources.sketch_points.iter().filter(|point| {
+        native_stream(&point.id) == Some(stream)
+            && point.owner_reference == Some(sketch_record)
+            && point.persistent_id() == Some(persistent_id)
+    }))?;
+    let entity = only(
+        sources
+            .sketch_entities
+            .iter()
+            .filter(|entity| entity.native_ref.as_deref() == Some(point.id.as_str())),
+    )?;
+    let cadmpeg_ir::sketches::SketchGeometryDefinition::Point { position } =
+        entity.geometry.definition()
+    else {
+        return None;
+    };
+    let sketch = only(
+        sources
+            .sketches
+            .iter()
+            .filter(|sketch| sketch.id == entity.sketch),
+    )?;
+    crate::design::geometry::sketch_point_to_model(sketch, position.get())
+}
+
+/// The one entity-selection operand that forms the single member of a
+/// role-`0x21` Loft point group.
+fn loft_point_operand<'a>(
+    group: &DesignConstructionOperandGroup,
+    operands: &'a [crate::records::topology::entity_selection::DesignEntitySelectionOperand],
+) -> Option<&'a crate::records::topology::entity_selection::DesignEntitySelectionOperand> {
+    let stream = native_stream(&group.id)?;
+    let [member] = group.members() else {
+        return None;
+    };
+    let mut matches = operands.iter().filter(|operand| {
+        native_stream(&operand.id) == Some(stream)
+            && operand.group_record_index == group.record_index
+            && operand.group_member_ordinal == 0
+    });
+    let operand = matches.next()?;
+    (group.role() == DesignOperandRole::ROLE_0X21
+        && matches.next().is_none()
+        && operand.record_index() == member.value)
+        .then_some(operand)
+}
+
 /// Bind `WorkPoint` inputs that select a sketch point after the sketch arenas
 /// have been projected. The Design selection identifies a native point record;
 /// the neutral point identity depends on whether that record belongs to a
@@ -6467,6 +6566,7 @@ pub(super) fn project_fixed_loft(
         legacy_loft_body_carriers: legacy_body_carriers,
         edge_operands,
         edge_identity_operands,
+        entity_selection_operands,
         face_operands,
         face_boundaries,
         ..
@@ -6671,6 +6771,25 @@ pub(super) fn project_fixed_loft(
                     LoftSection::Profile(ProfileRef::Planar(PlanarProfileRef::Native(id)))
                 };
                 sections.push(section);
+            }
+            (sections, Vec::new(), None)
+        } else if operands.len() == 2
+            && profile_groups.len() == 1
+            && profile_groups[0].role() == DesignOperandRole::PROFILE
+            && operands
+                .iter()
+                .any(|group| loft_point_operand(group, entity_selection_operands).is_some())
+        {
+            let mut sections = Vec::new();
+            for group in &operands {
+                let id = group.id.clone();
+                sections.push(if group.role() == DesignOperandRole::ROLE_0X21 {
+                    LoftSection::Point(LoftPointSection::Native(or_none!(
+                        cadmpeg_core::text::NonBlankString::new(id)
+                    )))
+                } else {
+                    LoftSection::Profile(ProfileRef::Planar(PlanarProfileRef::Native(id)))
+                });
             }
             (sections, Vec::new(), None)
         } else if profile_groups.is_empty() {

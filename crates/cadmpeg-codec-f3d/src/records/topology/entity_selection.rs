@@ -195,6 +195,20 @@ impl DesignEntitySelectionOperand {
                     secondary: secondary.identity.value,
                 }
             }
+            Some(secondary)
+                if draft.identity_record_offset.checked_add(u64_from_index(
+                    crate::layout::work_point_sketch_point_compact_identity::SKETCH_RECORD_INDEX,
+                )) == Some(draft.primary_identity_offset)
+                    && draft.identity_record_offset.checked_add(u64_from_index(
+                        crate::layout::work_point_sketch_point_compact_identity::POINT_PERSISTENT_ID,
+                    )) == Some(secondary.identity.offset)
+                    && secondary.curve_identity.is_none() =>
+            {
+                EntitySelectionFrame::SketchPoint {
+                    secondary: secondary.identity.value,
+                    next_record_index: draft.next_record_index,
+                }
+            }
             _ => return Err(
                 "primary_identity_offset/secondary_identity_offset disagree with selection frame"
                     .into(),
@@ -306,10 +320,34 @@ impl DesignEntitySelectionOperand {
     pub(crate) fn secondary(&self) -> Option<DesignSecondaryIdentity<Located<u64>>> {
         self.selection.secondary(self.identity_record_offset)
     }
+    /// The owning Sketch record index and sketch-point persistent id of a
+    /// compact sketch-point identity.
+    pub(crate) fn sketch_point(&self) -> Option<(u64, u64)> {
+        match self.selection {
+            EntitySelectionFrame::SketchPoint { secondary, .. } => {
+                Some((self.primary_identity, secondary))
+            }
+            _ => None,
+        }
+    }
+    /// The primary and secondary identities that history normalization
+    /// resolves. Every frame form except the compact sketch-point identity
+    /// supplies them; that identity names a Sketch record and a sketch point.
+    pub(crate) fn topology_identities(&self) -> Option<(u64, Option<u64>)> {
+        self.sketch_point().is_none().then(|| {
+            (
+                self.primary_identity,
+                self.secondary().map(|secondary| secondary.identity.value),
+            )
+        })
+    }
     pub(crate) fn next_record_index(&self) -> u32 {
         match self.selection {
             EntitySelectionFrame::Primary { next_record_index }
             | EntitySelectionFrame::Pair {
+                next_record_index, ..
+            }
+            | EntitySelectionFrame::SketchPoint {
                 next_record_index, ..
             } => next_record_index,
             EntitySelectionFrame::SketchCurve { .. } => self.frame.index(4),
@@ -874,6 +912,10 @@ enum EntitySelectionFrame {
     SketchCurve {
         secondary: u64,
     },
+    SketchPoint {
+        secondary: u64,
+        next_record_index: u32,
+    },
 }
 
 impl EntitySelectionFrame {
@@ -881,6 +923,9 @@ impl EntitySelectionFrame {
         match self {
             Self::Primary { .. } => 21,
             Self::Pair { .. } => 29,
+            Self::SketchPoint { .. } => u64_from_index(
+                crate::layout::work_point_sketch_point_compact_identity::SKETCH_RECORD_INDEX,
+            ),
             Self::SketchCurve { .. } => {
                 u64_from_index(crate::layout::class_338_sketch_curve_identity::OWNER_RECORD_INDEX)
             }
@@ -890,6 +935,9 @@ impl EntitySelectionFrame {
         match self {
             Self::Primary { .. } => 29,
             Self::Pair { .. } => 45,
+            Self::SketchPoint { .. } => {
+                u64_from_index(crate::layout::work_point_sketch_point_compact_identity::LEN)
+            }
             Self::SketchCurve { .. } => {
                 u64_from_index(crate::layout::class_338_sketch_curve_identity::LEN)
             }
@@ -916,6 +964,16 @@ impl EntitySelectionFrame {
                     offset: offset
                         + u64_from_index(
                             crate::layout::class_338_sketch_curve_identity::CURVE_PERSISTENT_ID,
+                        ),
+                },
+                curve_identity: None,
+            }),
+            Self::SketchPoint { secondary, .. } => Some(DesignSecondaryIdentity {
+                identity: Located {
+                    value: secondary,
+                    offset: offset
+                        + u64_from_index(
+                            crate::layout::work_point_sketch_point_compact_identity::POINT_PERSISTENT_ID,
                         ),
                 },
                 curve_identity: None,

@@ -3912,6 +3912,7 @@ pub(crate) fn tracking_path_record_indices(
 /// Decode nested persistent-entity frames named by construction groups.
 pub(crate) fn decode_entity_selection_operands(
     scan: &ContainerScan,
+    scopes: &[DesignParameterScope],
     groups: &[DesignConstructionOperandGroup],
     headers: &[DesignRecordHeader],
 ) -> Result<Vec<DesignEntitySelectionOperand>, CodecError> {
@@ -3921,6 +3922,7 @@ pub(crate) fn decode_entity_selection_operands(
         let Some(stream) = native_stream(&group.id) else {
             continue;
         };
+        let loft_point_group = is_loft_point_group(group, scopes);
         let Some(entry) = scan.design_stream_entry_for_scope(ContainerRole::Bulkstream, stream)
         else {
             continue;
@@ -3938,7 +3940,8 @@ pub(crate) fn decode_entity_selection_operands(
             let Some(header) = headers.get(&(stream, record_index)) else {
                 continue;
             };
-            if let Some(mut operand) = parse_entity_selection_operand(bytes, group, ordinal, header)
+            if let Some(mut operand) =
+                parse_entity_selection_operand_with(bytes, group, ordinal, header, loft_point_group)
             {
                 operand.id = design_record_id(
                     &entry.name,
@@ -3954,17 +3957,50 @@ pub(crate) fn decode_entity_selection_operands(
     Ok(out)
 }
 
+/// Whether `group` is a role-`0x21` group whose one owning scope is a Loft, so
+/// that its members can carry the compact sketch-point identity.
+pub(crate) fn is_loft_point_group(
+    group: &DesignConstructionOperandGroup,
+    scopes: &[DesignParameterScope],
+) -> bool {
+    let mut owners = scopes.iter().filter(|scope| {
+        scope.record_index == group.scope_record_index
+            && native_stream(&scope.id) == native_stream(&group.id)
+    });
+    group.role() == DesignOperandRole::ROLE_0X21
+        && owners.next().is_some_and(|scope| {
+            matches!(
+                crate::design::design_feature_family(&scope.kind()),
+                Some(crate::design::DesignFeatureFamily::Loft)
+            )
+        })
+        && owners.next().is_none()
+}
+
 pub(super) fn parse_entity_selection_operand(
     bytes: &[u8],
     group: &DesignConstructionOperandGroup,
     group_member_ordinal: u32,
     header: &DesignRecordHeader,
 ) -> Option<DesignEntitySelectionOperand> {
-    let frame = parse_entity_selection_frame(
+    parse_entity_selection_operand_with(bytes, group, group_member_ordinal, header, false)
+}
+
+/// `parse_entity_selection_operand`; `sketch_point` also admits the compact
+/// sketch-point identity of a Loft point member.
+fn parse_entity_selection_operand_with(
+    bytes: &[u8],
+    group: &DesignConstructionOperandGroup,
+    group_member_ordinal: u32,
+    header: &DesignRecordHeader,
+    sketch_point: bool,
+) -> Option<DesignEntitySelectionOperand> {
+    let frame = parse_entity_selection_frame_with(
         bytes,
         header.record_index,
         header.byte_offset,
         header.class_tag.as_str(),
+        sketch_point,
     )?;
     DesignEntitySelectionOperand::try_new(
         crate::records::topology::entity_selection::DesignEntitySelectionOperandDraft {
@@ -4086,12 +4122,13 @@ pub(in crate::design) fn entity_selection_matches_curve(
     operand: &DesignEntitySelectionOperand,
     curve: &SketchCurveIdentity,
 ) -> bool {
-    operand.secondary().is_some_and(|secondary| {
-        curve.primary_id.get() == secondary.identity.value
-            && secondary
-                .curve_identity
-                .is_none_or(|identity| curve.secondary_id == identity.value)
-    })
+    operand.sketch_point().is_none()
+        && operand.secondary().is_some_and(|secondary| {
+            curve.primary_id.get() == secondary.identity.value
+                && secondary
+                    .curve_identity
+                    .is_none_or(|identity| curve.secondary_id == identity.value)
+        })
 }
 
 /// Direct sketch-point identity carried by a `WorkPoint` input.
@@ -4230,6 +4267,18 @@ pub(super) fn parse_entity_selection_frame(
     byte_offset: u64,
     class_tag: &str,
 ) -> Option<EntitySelectionFrame> {
+    parse_entity_selection_frame_with(bytes, record_index, byte_offset, class_tag, false)
+}
+
+/// `parse_entity_selection_frame`; `sketch_point` also admits the compact
+/// sketch-point identity of a Loft point member.
+pub(super) fn parse_entity_selection_frame_with(
+    bytes: &[u8],
+    record_index: u32,
+    byte_offset: u64,
+    class_tag: &str,
+    sketch_point: bool,
+) -> Option<EntitySelectionFrame> {
     let start = usize::try_from(byte_offset).ok()?;
     let prefix = parse_entity_selection_prefix(bytes, start, record_index)?;
     let paired_at = next_indexed_record_offset(bytes, prefix.after_context_id + 8)?;
@@ -4313,6 +4362,26 @@ pub(super) fn parse_entity_selection_frame(
                     offset: u64::try_from(curve_secondary_identity_offset).ok()?,
                 })
                 .filter(|identity| identity.value != 0),
+            }),
+        )
+    } else if sketch_point
+        && bytes.get(identity_at + 11..identity_at + compact_identity::SKETCH_RECORD_INDEX)?
+            == [0; 10]
+        && identity_at.checked_add(compact_identity::LEN)? == next_at
+    {
+        let primary_identity_offset =
+            identity_at.checked_add(compact_identity::SKETCH_RECORD_INDEX)?;
+        let secondary_identity_offset =
+            identity_at.checked_add(compact_identity::POINT_PERSISTENT_ID)?;
+        (
+            primary_identity_offset,
+            View::u64_le_at(bytes, primary_identity_offset)?,
+            Some(crate::records::identity::DesignSecondaryIdentity {
+                identity: crate::records::identity::Located {
+                    value: View::u64_le_at(bytes, secondary_identity_offset)?,
+                    offset: u64::try_from(secondary_identity_offset).ok()?,
+                },
+                curve_identity: None,
             }),
         )
     } else if bytes.get(identity_at + 11..identity_at + 21)? == [0; 10]
