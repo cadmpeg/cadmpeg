@@ -168,15 +168,27 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** We must identify complete native set-owner, ordered collection, capture-membership, active-view, and geometry-target incidences. Validate each relation independently against producer collections and properties. A named camera, shared structural ancestry, numeric equality, or a display state cannot supply a missing relation. Document design configurations require their own model-variant production.
 
-**Conflict.** FTC-07 has two native scalar candidates with value `0.762`, the same decoded framing, and the same design-object owner. Its STEP twin assigns `0.762 mm` to a parallelism tolerance and to a surface-profile tolerance with different targets. One native candidate's group includes a `0.127` value and fields named `Seg3TolNumValue` and `Seg3TolTabValue`.
+**Conflict.** FTC-07 has two native scalar candidates with value `0.762`, the same decoded framing, and the same design-object owner. Its STEP twin assigns `0.762 mm` to a parallelism tolerance and to a surface-profile tolerance with different targets. Under a contextual one-based reference interpretation, adjacent inline tolerance records select the two scalars and distinct geometry-reference chains. Their terminal `ShortBrpLocation` labels are `1(E,227)` and `1(E,220)`. The second record also selects a `0.127` scalar and segment fields. This supports a composite-profile candidate. The subtype, datum references, and topology targets remain unresolved.
 
 ### DI-29. Sheet topology roots
 
 **Question.** Which native records own sheet bodies and their surface representations?
 
-**Known.** FTC-07 has one FBB group with 304 face rows. `SurfacicReps` supplies analytic carriers for 284 of those faces. Its STEP twin contains a 304-face solid and two separate one-face sheets. Seven native `Line` and `GSMFill` selections share a design-object owner.
+**Known.** FTC-07 has one FBB group with 304 face rows. `SurfacicReps` supplies analytic carriers for 284 of those faces. Its STEP twin contains a 304-face solid and two separate one-face sheets. Six native line programs form two triangular components. A stored chart maps their six local vertices to the STEP sheet vertices. A one-based reference interpretation selects those vertices for the twelve endpoints. The largest line-to-point residual is `0.000000942 mm`. A seventh line extends beyond the two components.
 
-**Need.** Identify the topology root and surface ownership for each sheet, or account for the geometry held by the remaining native representations.
+**Need.** Identify the Fill boundary selection, construction state, sheet orientation, and split policy. Establish the object-head roles and reference encoding that bind the sketch and its members to the Fill.
+
+**Conflict.** The current owner-first head interpretation groups both sketches under one owner slot and groups their points and lines by type. Interpreting the first head operand as a runtime class and the second as a one-based owner reference assigns the points and lines to their respective sketches and both sketches to the geometric set. This alternative requires a class binding and an escaped-head grammar.
+
+### DI-30. Source-schema selector indexing
+
+**Question.** Which source-schema identity and catalog index does each compact or fixed-width selector use, and how does a selected value program bind to its owner?
+
+**Known.** `catia.md` §7.3 defines the current fixed-width selector lookup and the value-chain productions. FTC-07 has compact definition bytes `F3 F4` on both `0.762` scalar candidates. Reading each byte as a one-based identity selects the catalog entries `LENGTH` and `TolNumValue`. A fixed selector `324` on a `0.127` scalar selects `RefTolNumValue` under the same interpretation.
+
+**Need.** Resolve complete selector and value-program framing across definition, value, and suffix fields. Preserve each decoded scalar and its source owner when changing a lookup. Establish contextual entity-reference encoding independently of schema indexing.
+
+**Conflict.** The current lookup selects the catalog entry at the stored fixed-width ordinal. The one-based interpretation selects the preceding entry and gives scalar-compatible roles for these controls. A partial change also alters the number of selectors in a definition and changes downstream value-chain admission.
 
 ## 3. Standard nested `V5_CFV2`
 
@@ -242,7 +254,7 @@ terminal meaning remain unresolved. Exact framing does not supply those roles.
 
 **Need.** Bind scalar operands through an independently resolved local owner before applying a map to a carrier. Resolve the multi-operand payloads beginning `83` or `84` separately. Obtain a complete witness before admitting an unlisted scalar selector.
 
-**Conflict.** In FTC-07, treating consecutive operand values as one parameter representation joins source operands `7687` and `7688`, whose stored source intervals are approximately `[-58.658, 58.658]` and `[0, 0.901]`. The adjacent use-pair framing supplies no parameter transform between those operands. Two candidate map-to-side matches have matching source intervals and adjacent face carriers. Their chart-side operands are `2` and `6`, and their respective map source operands are `7650` and `7659`. A single additive offset would require both `7648` and `7653` to hold both matches. The 80 chart-side frames and 439 distinct source-scoped records selected by resolved edge endpoint references form disjoint sets.
+**Conflict.** In FTC-07, treating consecutive operand values as one parameter representation joins source operands `7687` and `7688`, whose stored source intervals are approximately `[-58.658, 58.658]` and `[0, 0.901]`. The adjacent use-pair framing supplies no parameter transform between those operands. Two candidate map-to-side matches have matching source intervals and adjacent face carriers. Their chart-side operands are `2` and `6`, and their respective map source operands are `7650` and `7659`. A single additive offset would require both `7648` and `7653` to hold both matches. The 80 chart-side frames and 439 distinct source-scoped records selected by resolved edge endpoint references form disjoint sets. The reconstructed FTC-07 streams contain zero `A8 ?? 25` markers. Its 159 closed `B25` and `06` use-pair triples have successors `B25` (94), `B18` (55), `B20` (9), and `B05` (1).
 
 ### SN-09. A8 parameter-map interpolation and additional operand productions
 
