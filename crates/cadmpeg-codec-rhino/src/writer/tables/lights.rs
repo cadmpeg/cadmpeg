@@ -200,9 +200,13 @@ fn light(
     let mut attribute_change = None;
     if let Some(value) = fields.get("attributes").filter(|value| !value.is_null()) {
         match attributes::encode(value, ir, materials) {
-            Ok((attributes, direct, change)) => {
-                body.extend(crc_chunk_with_direct(0x0200_8061, &attributes, &direct)?);
-                attribute_change = change;
+            Ok(attributes) => {
+                body.extend(crc_chunk_with_direct(
+                    0x0200_8061,
+                    &attributes.body,
+                    &attributes.direct,
+                )?);
+                attribute_change = attributes.change;
             }
             Err(WriteError::Omit(reason)) => {
                 attribute_loss = Some(format!("attributes omitted: {reason}"));

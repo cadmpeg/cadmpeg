@@ -191,11 +191,17 @@ fn hatch_index(ir: &cadmpeg_ir::CadIr, source: i32) -> Result<i32, WriteError> {
     Ok(super::wire_index(index)?)
 }
 
+pub(super) struct EncodedAttributes {
+    pub(super) body: Vec<u8>,
+    pub(super) direct: Vec<u8>,
+    pub(super) change: Option<String>,
+}
+
 pub(super) fn encode(
     value: &Value,
     ir: &cadmpeg_ir::CadIr,
     materials: &super::super::materials::MaterialPlan,
-) -> Result<(Vec<u8>, Vec<u8>, Option<String>), WriteError> {
+) -> Result<EncodedAttributes, WriteError> {
     const FIELDS: &[&str] = &[
         "source_uuid",
         "name",
@@ -521,5 +527,9 @@ pub(super) fn encode(
     } else {
         body.clone()
     };
-    Ok((body, direct, change))
+    Ok(EncodedAttributes {
+        body,
+        direct,
+        change,
+    })
 }
