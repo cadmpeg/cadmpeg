@@ -102,6 +102,30 @@ fn writer_names_loop_with_foreign_coedge() {
     assert!(!bytes.is_empty());
 }
 
+#[test]
+fn writer_names_loop_with_inconsistent_face() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    let mut ir = adjacent_quad_sheet();
+    let id = ir.model.loops[0].id.clone();
+    ir.model.loops[0].face = ir
+        .model
+        .faces
+        .iter()
+        .find(|row| row.id != ir.model.loops[0].face)
+        .unwrap()
+        .id
+        .clone();
+    let mut bytes = Vec::new();
+    let report = crate::RhinoCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .unwrap();
+    assert!(report.losses.iter().any(|loss| loss.code
+        == RhinoLossCode::WriterEntityOmitted.kind()
+        && loss.message.contains(id.as_str())));
+    assert!(!bytes.is_empty());
+}
+
 const UNREPRESENTABLE_NATIVE_TOLERANCE: f64 = 1.0e-12;
 
 fn admit(ir: &CadIr) -> Result<(), WriteError> {

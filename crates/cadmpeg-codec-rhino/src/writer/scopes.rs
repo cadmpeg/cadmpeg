@@ -1067,6 +1067,19 @@ fn prune_pass(
             );
             return false;
         }
+        if !scoped
+            .model
+            .faces
+            .iter()
+            .any(|face| face.id == row.face && face.loops.iter().any(|id| id == &row.id))
+        {
+            pruned(
+                "loop",
+                row.id.as_str(),
+                format!("face {} does not own this loop", row.face),
+            );
+            return false;
+        }
         match &mut row.boundary {
             LoopBoundary::Vertex {
                 vertex,
@@ -1149,7 +1162,12 @@ fn prune_pass(
             }
         }
     });
-    let loops = existing!(loops);
+    let loop_owners = scoped
+        .model
+        .loops
+        .iter()
+        .map(|row| (row.id.clone(), row.face.clone()))
+        .collect::<std::collections::BTreeMap<_, _>>();
     scoped.model.faces.retain_mut(|row| {
         if !surfaces.contains(row.surface.as_str()) {
             pruned(
@@ -1163,11 +1181,15 @@ fn prune_pass(
             .loops
             .to_vec()
             .into_iter()
-            .filter(|id| loops.contains(id.as_str()));
+            .filter(|id| loop_owners.get(id) == Some(&row.id));
         let kept = kept.collect::<Vec<_>>();
         for id in &row.loops {
-            if !loops.contains(id.as_str()) {
-                pruned("face", row.id.as_str(), format!("loop {id} is missing"));
+            if loop_owners.get(id) != Some(&row.id) {
+                pruned(
+                    "face",
+                    row.id.as_str(),
+                    format!("loop {id} is missing or belongs to another face"),
+                );
             }
         }
         if kept.is_empty() {
