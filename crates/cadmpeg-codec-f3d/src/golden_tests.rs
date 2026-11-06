@@ -1012,7 +1012,7 @@ fn rekey_ephemeral_brep_ids(value: &mut serde_json::Value) {
         match value {
             serde_json::Value::String(text) => {
                 if ephemeral_id(text) && !mapping.contains_key(text.as_str()) {
-                    let kind = text.rsplit_once('#').map(|(kind, _)| kind).unwrap_or(text);
+                    let kind = text.rsplit_once('#').map_or(text.as_str(), |(kind, _)| kind);
                     kinds
                         .entry(kind.to_owned())
                         .or_default()
