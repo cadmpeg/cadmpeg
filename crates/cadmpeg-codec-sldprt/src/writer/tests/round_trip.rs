@@ -228,6 +228,18 @@ fn check_spatial_point_line_distance_reaches_output(
             .unwrap(),
             native_ref: None,
         });
+    let independent = Point3::new(30.0, 40.0, 50.0);
+    ir.model
+        .spatial_sketch_entities
+        .push(SpatialSketchEntity::new(
+            SpatialSketchEntityId::mint("synthetic:test:spatial-sketch-entity#independent")
+                .unwrap(),
+            ir.model.spatial_sketches[0].id.clone(),
+            SpatialSketchGeometry::try_from(SpatialSketchGeometryDefinition::Point {
+                position: independent,
+            })
+            .unwrap(),
+        ));
     ir.model.finalize();
     let plan = SldprtCodec
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
@@ -248,6 +260,12 @@ fn check_spatial_point_line_distance_reaches_output(
     let output = SldprtCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
+    assert!(output.ir().model.spatial_sketch_entities.iter().any(|entity| {
+        matches!(entity.geometry.definition(), SpatialSketchGeometryDefinition::Point { position }
+            if floats_agree(position.get().x, independent.x)
+                && floats_agree(position.get().y, independent.y)
+                && floats_agree(position.get().z, independent.z))
+    }));
     let native = crate::test_support::native::sldprt_native(output.ir());
     let lane = native
         .feature_input_lanes
@@ -336,6 +354,12 @@ fn check_spatial_point_line_distance_reaches_output(
         let decoded = SldprtCodec
             .decode(&mut Cursor::new(rewritten), &DecodeOptions::default())
             .unwrap();
+        assert!(decoded.ir().model.spatial_sketch_entities.iter().any(|entity| {
+            matches!(entity.geometry.definition(), SpatialSketchGeometryDefinition::Point { position }
+                if floats_agree(position.get().x, independent.x)
+                    && floats_agree(position.get().y, independent.y)
+                    && floats_agree(position.get().z, independent.z))
+        }));
         assert_eq!(
             decoded
                 .ir()
