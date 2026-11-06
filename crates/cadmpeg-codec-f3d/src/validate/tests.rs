@@ -75,6 +75,7 @@ fn recipe_reference() -> crate::records::dimensions::DesignRecipeReference {
         candidate_edges: Vec::new(),
         alternate_selector_faces: Vec::new(),
         alternate_selector_edges: Vec::new(),
+        operand_offset: None,
     }
 }
 
@@ -1551,7 +1552,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
             )
             .unwrap(),
             unclosed_construction_operand_groups: Vec::new(),
-            deleted_sketch_members: Vec::new(),
+            deleted_members: None,
             paired_class_tag: crate::records::references::DesignClassTag::try_from(
                 "261".to_owned(),
             )
@@ -1953,6 +1954,9 @@ mod face_recipe_lengths;
 mod rigid_alignment;
 
 mod work_plane;
+
+mod loft_roles;
+mod sketch_point_frames;
 
 #[test]
 fn loft_accepts_either_body_group_role() {

@@ -303,3 +303,116 @@ fn deltas_versions_agree_across_the_streams_of_a_site() {
         .collect();
     assert_eq!(second_indices, vec![42]);
 }
+
+#[test]
+fn a_vertex_loop_fin_reads_its_loop_and_vertex_and_keeps_its_frame() {
+    let (mut payload, body_offset) = topology_sequence();
+    patch(&mut payload, 17, "sense", b"?");
+    assert!(read(&payload, body_offset).is_none());
+    for field in ["edge", "other"] {
+        patch(&mut payload, 17, field, &1u16.to_be_bytes());
+    }
+    let tables = read(&payload, body_offset).expect("node tables");
+    assert!(!tables.coedges().contains_key(&7));
+    let fin = &tables.vertex_loop_fins()[&7];
+    assert_eq!((fin.loop_attr, fin.vertex), (6, 9));
+    assert!(tables.coedge_frames[&7].bytes.is_some());
+    assert_eq!(tables.coedge_owners[&7], HashSet::from([6]));
+    assert!(tables.loops().contains_key(&6));
+}
+
+/// A Deltas FIN: index, nine status-paired pointers, and `sense`.
+fn deltas_fin(first: bool, index: u16, refs: [u16; 9], sense: u8) -> Vec<u8> {
+    let mut bytes = vec![0, 17];
+    if first {
+        bytes.push(255);
+    }
+    bytes.extend(index.to_be_bytes());
+    for target in refs {
+        bytes.extend(target.to_be_bytes());
+        bytes.push(1);
+    }
+    bytes.push(sense);
+    bytes
+}
+
+const VERTEX_LOOP_FIN: [u16; 9] = [1, 61, 60, 60, 62, 1, 1, 1, 1];
+const EDGE_FIN: [u16; 9] = [1, 61, 60, 60, 62, 1, 63, 1, 1];
+
+fn deltas_fin_tables(fins: &[(u16, [u16; 9], u8)]) -> crate::brep::topology::Tables {
+    use cadmpeg_parasolid::records::DeltasRecords;
+    use cadmpeg_parasolid::test_support::test_pmarks;
+    let mut bytes = test_pmarks::prefix(1);
+    for (position, (index, refs, sense)) in fins.iter().enumerate() {
+        bytes.extend(deltas_fin(position == 0, *index, *refs, *sense));
+    }
+    let bytes = test_pmarks::complete(bytes);
+    let records = DeltasRecords::read(&bytes).unwrap();
+    let agreement = super::DeltasAgreement::new([(&records, bytes.as_slice())]);
+    super::deltas_tables(&records, &bytes, 0, &agreement).unwrap()
+}
+
+#[test]
+fn a_deltas_vertex_loop_fin_and_an_edge_fin_of_one_identity_leave_it_ambiguous() {
+    let agreeing = deltas_fin_tables(&[(60, VERTEX_LOOP_FIN, b'?'), (60, VERTEX_LOOP_FIN, b'?')]);
+    assert_eq!(agreeing.vertex_loop_fins()[&60].vertex, 62);
+    assert!(!agreeing.coedge_is_ambiguous(60));
+
+    for fins in [
+        [(60, VERTEX_LOOP_FIN, b'?'), (60, EDGE_FIN, b'+')],
+        [(60, EDGE_FIN, b'+'), (60, VERTEX_LOOP_FIN, b'?')],
+    ] {
+        let tables = deltas_fin_tables(&fins);
+        assert!(tables.coedge_is_ambiguous(60));
+        assert!(!tables.coedges().contains_key(&60));
+        assert!(!tables.vertex_loop_fins().contains_key(&60));
+    }
+}
+
+#[test]
+fn a_partition_fin_of_either_form_stands_over_its_deltas_version() {
+    let (mut payload, body_offset) = topology_sequence();
+    for field in ["edge", "other"] {
+        patch(&mut payload, 17, field, &1u16.to_be_bytes());
+    }
+    patch(&mut payload, 17, "sense", b"?");
+    let mut partition = read(&payload, body_offset).unwrap();
+    let mut edge_fin = EDGE_FIN;
+    edge_fin[1] = 6;
+    partition.merge_deltas(deltas_fin_tables(&[(7, edge_fin, b'+')]), None);
+    assert!(!partition.coedges().contains_key(&7));
+    assert_eq!(partition.vertex_loop_fins()[&7].loop_attr, 6);
+
+    let (payload, body_offset) = topology_sequence();
+    let mut partition = read(&payload, body_offset).unwrap();
+    let mut vertex_fin = VERTEX_LOOP_FIN;
+    vertex_fin[1..4].copy_from_slice(&[6, 7, 7]);
+    partition.merge_deltas(deltas_fin_tables(&[(7, vertex_fin, b'?')]), None);
+    assert!(!partition.vertex_loop_fins().contains_key(&7));
+    assert_eq!(partition.coedges()[&7].refs[6], 8);
+}
+
+#[test]
+fn a_rejected_partition_edge_is_not_filled_from_deltas() {
+    use cadmpeg_parasolid::records::DeltasRecords;
+    use cadmpeg_parasolid::test_support::test_pmarks;
+    let (mut payload, body_offset) = topology_sequence();
+    let edge = *read(&payload, body_offset)
+        .unwrap()
+        .edge_uses()
+        .keys()
+        .next()
+        .unwrap();
+    patch(&mut payload, 16, "tolerance", &(-1.0f64).to_be_bytes());
+    let mut partition = read(&payload, body_offset).unwrap();
+    assert!(!partition.edge_uses().contains_key(&edge));
+    let mut bytes = test_pmarks::prefix(1);
+    bytes.extend(deltas_edge(true, u16::try_from(edge).unwrap(), 30));
+    let bytes = test_pmarks::complete(bytes);
+    let records = DeltasRecords::read(&bytes).unwrap();
+    let agreement = super::DeltasAgreement::new([(&records, bytes.as_slice())]);
+    let deltas = super::deltas_tables(&records, &bytes, 0, &agreement).unwrap();
+    assert!(deltas.edge_uses().contains_key(&edge));
+    partition.merge_deltas(deltas, None);
+    assert!(!partition.edge_uses().contains_key(&edge));
+}

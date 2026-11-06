@@ -107,8 +107,7 @@ pub(crate) fn is_document_source_kind(source_kind: &str) -> bool {
     DOCUMENT_PARAMETER_SOURCE_KINDS.contains(&source_kind)
 }
 
-/// An owned source family. Its nonempty name cannot identify a user parameter.
-/// A frame with a null owner reference has no owner record index.
+/// An owned source family. A null owner reference has no owner record index.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct OwnedDesignParameter {
     source_kind: NonBlankString,
@@ -117,16 +116,26 @@ pub(crate) struct OwnedDesignParameter {
 }
 
 impl DesignParameterSource {
+    #[cfg(test)]
     pub(crate) fn new(
         source_kind: String,
         owner_record_index: Option<u32>,
         family_discriminator: Option<Located<DesignParameterDiscriminator>>,
     ) -> Result<Self, String> {
+        Self::from_document_flag(source_kind, owner_record_index, family_discriminator, None)
+    }
+
+    pub(crate) fn from_document_flag(
+        source_kind: String,
+        owner_record_index: Option<u32>,
+        family_discriminator: Option<Located<DesignParameterDiscriminator>>,
+        document: Option<bool>,
+    ) -> Result<Self, String> {
         let Some(source_kind) = NonBlankString::new(source_kind) else {
             return Err("design parameter source_kind is empty".into());
         };
         match (
-            is_document_source_kind(source_kind.as_str()),
+            document.unwrap_or_else(|| is_document_source_kind(source_kind.as_str())),
             owner_record_index,
         ) {
             (true, None) => Ok(Self::User {
@@ -190,7 +199,7 @@ pub(crate) struct DesignParameter {
     /// Byte offset of `evaluated_value`.
     evaluated_value_offset: u64,
     /// Nonempty parameter comment, when the frame stores one.
-    comment: Option<Located<NonBlankString>>,
+    comment: Option<Located<String>>,
     flags: DesignParameterFlags,
     /// Value of a text parameter, which can be empty.
     text_value: Option<Located<String>>,
@@ -342,8 +351,11 @@ impl DesignParameter {
                         "comment_offset must lie between byte_offset and expression_offset",
                     );
                 }
+                if comment.value.is_empty() {
+                    return Err("comment must not be empty");
+                }
                 Ok(Located {
-                    value: NonBlankString::new(comment.value).ok_or("comment must not be empty")?,
+                    value: comment.value,
                     offset: comment.offset,
                 })
             })
@@ -477,7 +489,10 @@ impl DesignParameter {
     }
 
     pub(crate) fn kind(&self) -> DesignParameterKind {
-        design_parameter_kind_from_source(self.source_kind_str())
+        match &self.source {
+            DesignParameterSource::User { .. } => DesignParameterKind::User,
+            DesignParameterSource::Owned(_) => design_owned_parameter_kind(self.source_kind_str()),
+        }
     }
 
     pub(crate) fn owner_record_index(&self) -> Option<u32> {
@@ -561,10 +576,8 @@ impl Serialize for DesignParameter {
     }
 }
 
-fn design_parameter_kind_from_source(source_kind: &str) -> DesignParameterKind {
-    if is_document_source_kind(source_kind) {
-        DesignParameterKind::User
-    } else if source_kind.contains("Dimension") {
+fn design_owned_parameter_kind(source_kind: &str) -> DesignParameterKind {
+    if source_kind.contains("Dimension") {
         DesignParameterKind::Dimension
     } else {
         DesignParameterKind::Feature
@@ -651,8 +664,9 @@ impl TryFrom<DesignParameterSerde> for DesignParameter {
     type Error = String;
 
     fn try_from(wire: DesignParameterSerde) -> Result<Self, Self::Error> {
-        let derived = design_parameter_kind_from_source(&wire.source_kind);
-        if wire.kind != derived {
+        if wire.kind != DesignParameterKind::User
+            && wire.kind != design_owned_parameter_kind(&wire.source_kind)
+        {
             return Err("design parameter kind disagrees with source_kind".into());
         }
         let family_discriminator = Located::from_wire(
@@ -667,10 +681,11 @@ impl TryFrom<DesignParameterSerde> for DesignParameter {
             })
         })
         .transpose()?;
-        let source = DesignParameterSource::new(
+        let source = DesignParameterSource::from_document_flag(
             wire.source_kind,
             wire.owner_record_index,
             family_discriminator,
+            Some(wire.kind == DesignParameterKind::User),
         )?;
         Self::try_from(DesignParameterDraft {
             id: wire.id,
@@ -742,7 +757,7 @@ impl From<DesignParameter> for DesignParameterSerde {
             evaluated_value,
             evaluated_value_offset,
             comment_offset: parameter.comment.as_ref().map(|field| field.offset),
-            comment: parameter.comment.map(|field| field.value.to_string()),
+            comment: parameter.comment.map(|field| field.value.clone()),
             driven: parameter.flags.driven,
             favorite: parameter.flags.favorite,
             text_value_offset: parameter.text_value.as_ref().map(|field| field.offset),

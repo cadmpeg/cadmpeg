@@ -1227,7 +1227,7 @@ fn member_run_test_scope(
             .unwrap(),
             payload: DesignFeatureKind::Sketch.try_into().unwrap(),
             unclosed_construction_operand_groups: Vec::new(),
-            deleted_sketch_members: Vec::new(),
+            deleted_members: None,
             paired_class_tag: DesignClassTag::try_from("261".to_owned()).unwrap(),
             paired_byte_offset: byte_offset + 200,
         }

@@ -97,6 +97,52 @@ pub(crate) struct DesignRecipeReference {
     /// different native selector, before a historical state supersedes them.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) alternate_selector_edges: Vec<EdgeId>,
+    /// Byte offset of the counted operand this name belongs to, when a
+    /// standard recipe prefix counts the persistent names of each operand.
+    /// The names of one operand share its operand ordinal.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_operand_offset"
+    )]
+    pub(crate) operand_offset: Option<u64>,
+}
+
+// The optional key names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(deserialize_operand_offset, u64, "operand_offset");
+
+/// Byte width of the u32 selector field of a recipe reference.
+const RECIPE_SELECTOR_FIELD_BYTES: u64 = 4;
+
+/// The prefix references grouped by prefix-reference ordinal: the names of
+/// one counted operand share one ordinal, and every other reference has its
+/// own.
+pub(crate) fn reference_lanes(
+    references: &[DesignRecipeReference],
+) -> Vec<&[DesignRecipeReference]> {
+    let mut lanes = Vec::new();
+    let mut start = 0;
+    for index in 1..=references.len() {
+        let joins = references.get(index).is_some_and(|reference| {
+            reference.operand_offset.is_some()
+                && reference.operand_offset == references[index - 1].operand_offset
+        });
+        if !joins {
+            lanes.push(&references[start..index]);
+            start = index;
+        }
+    }
+    lanes
+}
+
+impl DesignRecipeReference {
+    /// Whether the token bytes follow the u32 selector field without a length
+    /// prefix.
+    pub(crate) fn has_packed_token(&self) -> bool {
+        self.selector_offset
+            .checked_add(RECIPE_SELECTOR_FIELD_BYTES)
+            == Some(self.token_offset)
+    }
 }
 
 /// Paired-locus frame nested under a dimensional parameter companion.
