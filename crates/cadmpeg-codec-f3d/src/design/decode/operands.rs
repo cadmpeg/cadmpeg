@@ -924,8 +924,9 @@ pub(crate) fn decode_face_operands(
         let is_mirror_plane = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::Mirror)
             && group.role() == DesignOperandRole::ROLE_0X5;
-        let is_split_face_operand =
-            scope.kind() == crate::records::feature::scope::DesignFeatureKind::SplitFace;
+        let is_split_face_operand = scope.kind()
+            == crate::records::feature::scope::DesignFeatureKind::SplitFace
+            && group.role() == DesignOperandRole::ROLE_0X10;
         let is_delete_face_operand = matches!(
             scope.kind(),
             crate::records::feature::scope::DesignFeatureKind::MoveFace
@@ -954,6 +955,14 @@ pub(crate) fn decode_face_operands(
         let is_surface_offset_operand = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::SurfaceOffset)
             && group.role() == DesignOperandRole::PROFILE;
+        if scope.kind() == crate::records::feature::scope::DesignFeatureKind::SplitFace
+            && !is_split_face_operand
+        {
+            for member in group.members() {
+                seen.insert((stream, scope.record_index, member.value));
+            }
+            continue;
+        }
         if !is_extrude_operand
             && !is_offset_faces_operand
             && !is_shell_operand
@@ -1008,7 +1017,11 @@ pub(crate) fn decode_face_operands(
                 .copied()
                 .map(|header| header.byte_offset)
                 .or_else(|| {
-                    if !is_offset_faces_operand && !is_shell_operand && !is_extrude_operand {
+                    if !is_offset_faces_operand
+                        && !is_shell_operand
+                        && !is_extrude_operand
+                        && group_member_index + 1 != group.members().len()
+                    {
                         return None;
                     }
                     scope
@@ -1018,7 +1031,11 @@ pub(crate) fn decode_face_operands(
                         .and_then(|ordinal| scope.reference_members().values().nth(ordinal + 1))
                         .and_then(|record_index| header_index.get(&(stream, *record_index)))
                         .map(|next| next.byte_offset)
-                        .filter(|next| !is_extrude_operand || *next > header.byte_offset)
+                        .filter(|next| {
+                            is_offset_faces_operand
+                                || is_shell_operand
+                                || *next > header.byte_offset
+                        })
                 });
             if let Some(operand) = parse_face_operand(
                 ctx,
