@@ -205,7 +205,7 @@ fn light(
                 attribute_change = change;
             }
             Err(WriteError::Omit(reason)) => {
-                attribute_loss = Some(format!("attributes omitted: {reason}"))
+                attribute_loss = Some(format!("attributes omitted: {reason}"));
             }
             Err(error) => return Err(error),
         }
