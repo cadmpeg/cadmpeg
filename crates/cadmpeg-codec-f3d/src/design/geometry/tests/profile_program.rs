@@ -817,3 +817,33 @@ fn a_curve_program_resolves_in_the_arrangement_of_the_profile_loops() {
     assert!(hole_boundaries.is_empty());
     assert_eq!(outer_boundary.len(), 5);
 }
+
+#[test]
+fn a_single_curve_fragment_keeps_the_member_that_only_it_can_take() {
+    // The bottom line has a single-curve fragment from (0, 0) to (5, 0) and a
+    // fragment that a shorter line drawn the other way also covers.
+    let id = SketchId::mint("synthetic:test:id#forced-fragment").unwrap();
+    let entities = vec![
+        line_entity(&id, "bottom", (0.0, 0.0), (10.0, 0.0)),
+        line_entity(&id, "right", (10.0, 0.0), (10.0, 5.0)),
+        line_entity(&id, "top", (10.0, 5.0), (0.0, 5.0)),
+        line_entity(&id, "left", (0.0, 5.0), (0.0, 0.0)),
+        line_entity(&id, "half", (10.0, 0.0), (5.0, 0.0)),
+    ];
+    let [bottom, right, top, left, half] = [0, 1, 2, 3, 4].map(|index| &entities[index]);
+    let sketch = sketch_with_loops(id, &[&entities[..4]]);
+    let ring = |half_reversed: bool| {
+        vec![
+            (bottom, false),
+            (bottom, true),
+            (half, half_reversed),
+            (right, false),
+            (top, false),
+            (left, false),
+        ]
+    };
+    let (exterior, holes) = single_region(&sketch, &entities, &[ring(true)]);
+    assert!(holes.is_empty());
+    assert_eq!(exterior.len(), 5);
+    assert_eq!(member_regions(&sketch, &entities, &[ring(false)]), None);
+}

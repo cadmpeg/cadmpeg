@@ -271,8 +271,7 @@ pub(crate) struct DesignSketchProfileRegionSelection {
     pub(crate) companion_byte_offset: u64,
 }
 
-/// One member list of a nested sketch-profile selection: the boundary ring
-/// of a selected face or of one of its holes.
+/// One member list of a nested sketch-profile selection.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignSketchProfileRegion {
     /// Byte offset of this list's member count.

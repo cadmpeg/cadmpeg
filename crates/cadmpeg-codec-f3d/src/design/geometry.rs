@@ -434,11 +434,12 @@ pub(super) fn arrangement_regions_matching_member_rings(
     Ok(Some(regions))
 }
 
-/// The bounded faces of the arrangement of the non-construction curves of
-/// `sketch` split at every intersection of those that are not collinear:
-/// every such curve when `all_curves` holds, and otherwise the curves of its
-/// profile loops. `None` when the arrangement is undefined, which includes an
-/// `all_curves` arrangement with a curve outside the arrangement's families.
+/// The bounded faces of the arrangement of every non-construction curve of
+/// `sketch` when `all_curves` holds or the sketch has no profile loop, and
+/// otherwise of the curves of its profile loops. Every intersection of two
+/// non-construction curves that are not collinear splits these curves.
+/// `None` when the arrangement is undefined, which includes an `all_curves`
+/// arrangement with a curve outside the arrangement's families.
 fn curve_arrangement_faces(
     sketch: &cadmpeg_ir::sketches::Sketch,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
