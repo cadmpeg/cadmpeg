@@ -66,16 +66,15 @@ pub(crate) fn write_step(
     w: &mut impl Write,
     schema: StepSchema,
     opts: &StepWriteOptions,
-) -> std::io::Result<ExportReport> {
+) -> Result<ExportReport, cadmpeg_ir::codec::write::EncodeError> {
     let plan = crate::StepCodec {
         options: opts.clone(),
     }
     .plan(
         EncodeInput::new(ir, None),
         TargetRequest::Explicit(schema.descriptor().id.as_str()),
-    )
-    .map_err(std::io::Error::other)?;
-    plan.write_to(w).map_err(std::io::Error::other)
+    )?;
+    plan.write_to(w)
 }
 
 /// Report components produced by the STEP writer before the caller fixes its
