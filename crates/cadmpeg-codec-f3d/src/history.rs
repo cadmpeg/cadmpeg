@@ -5365,7 +5365,7 @@ pub(crate) fn bind_face_operand_history_candidates(
         operand_groups,
         histories.get(),
         scope_histories,
-        &withdrawals,
+        &mut withdrawals,
     )?;
     Ok(withdrawals.losses)
 }
@@ -5756,7 +5756,17 @@ fn bind_historical_face_operand_candidates<'a>(
                 Some(LegacyFaceResolution::Active(face)) if !withdrawals.withdrew(operand) => {
                     operand.resolved_active_face = Some(face);
                 }
-                Some(_) | None => {}
+                Some(LegacyFaceResolution::Historical(slot)) => withdrawals.refuse(
+                    &format!("Extrude face operand {}", operand.id),
+                    &format!("face {slot}"),
+                    "legacy start and termination rule",
+                ),
+                Some(LegacyFaceResolution::Active(face)) => withdrawals.refuse(
+                    &format!("Extrude face operand {}", operand.id),
+                    &format!("active face {}", face.as_str()),
+                    "legacy start and termination rule",
+                ),
+                None => {}
             }
         }
     }
@@ -6727,7 +6737,7 @@ fn bind_profile_face_group_cardinality(
     operand_groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
     histories: &[AsmHistory],
     scope_histories: &HashMap<String, String>,
-    withdrawals: &fallback_face::Withdrawals,
+    withdrawals: &mut fallback_face::Withdrawals,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let mut state_indexes = SnapshotCache::default();
     for scope in scopes {
@@ -6836,9 +6846,17 @@ fn bind_profile_face_group_cardinality(
                 continue;
             };
             let mut topology_queries = topology_cache::TopologyQueryCache::default();
-            if !indices.iter().all(|index| {
-                withdrawals.admits(&operands[*index], &faces, topology, &mut topology_queries)
-            }) {
+            let pairs: Vec<_> = indices
+                .iter()
+                .map(|index| &operands[*index])
+                .zip(faces.iter().copied())
+                .collect();
+            if !withdrawals.admits_pairs(&pairs, topology, &mut topology_queries) {
+                withdrawals.refuse(
+                    &format!("Extrude profile group {}", group.id),
+                    &format!("faces {faces:?} in stable face-slot member order"),
+                    "profile-group carrier rule",
+                );
                 continue;
             }
             for (index, face) in indices.into_iter().zip(faces) {

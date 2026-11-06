@@ -262,7 +262,7 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
             &groups,
             &histories,
             &scope_histories,
-            &crate::history::fallback_face::Withdrawals::default(),
+            &mut crate::history::fallback_face::Withdrawals::default(),
         )
     })
     .unwrap();
@@ -294,7 +294,7 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
 
     // A face that the fallback check withdrew from a member keeps the group
     // from taking it back.
-    let mut withdrawn = unbound;
+    let mut withdrawn = unbound.clone();
     let mut withdrawals = crate::history::fallback_face::Withdrawals::default();
     withdrawals.faces.insert(withdrawn[0].id.clone(), vec![10]);
     crate::test_support::with_decode_context(|decode_ctx| {
@@ -305,10 +305,72 @@ fn nested_extrude_profile_uses_root_cardinality_and_member_order() {
             &groups,
             &histories,
             &scope_histories,
-            &withdrawals,
+            &mut withdrawals,
         )
     })
     .unwrap();
     assert!(withdrawn[0].resolved_face_slots.is_empty());
     assert!(withdrawn[1].resolved_face_slots.is_empty());
+    assert_eq!(withdrawals.losses.len(), 1);
+
+    // On a box, the deleted top 10 and front 20 go to the members in slot
+    // order. A withdrawn member's recipe operands name the back 30, which
+    // touches the top and not the front.
+    let mut previous_box = crate::test_support::history::box_topology();
+    previous_box.face_surfaces = previous_box
+        .faces
+        .iter()
+        .map(|face| AsmHistoricalCarrierBinding {
+            entity: *face,
+            carrier: face + 1000,
+        })
+        .collect();
+    let current_box = AsmHistoricalTopology {
+        faces: vec![30, 40, 50, 60],
+        ..AsmHistoricalTopology::default()
+    };
+    let box_histories = vec![crate::test_support::history::history(
+        "f3d:history".into(),
+        0,
+        None,
+        false,
+        vec![
+            state(1, Some(previous_box), None),
+            state(2, Some(current_box), Some(1)),
+        ],
+    )];
+    let box_scope_histories = HashMap::from([(scope.id.clone(), box_histories[0].id.clone())]);
+    let carrier = |member: usize| {
+        let mut operands = unbound.clone();
+        operands[member].recipe_references = vec![
+            crate::test_support::history::recipe_operand_reference(0, "2", 305, &[30]),
+            crate::test_support::history::recipe_operand_reference(1, "3", 305, &[30]),
+        ];
+        let mut withdrawals = crate::history::fallback_face::Withdrawals::default();
+        withdrawals
+            .faces
+            .insert(operands[member].id.clone(), vec![60]);
+        crate::test_support::with_decode_context(|decode_ctx| {
+            bind_profile_face_group_cardinality(
+                decode_ctx,
+                &mut operands,
+                std::slice::from_ref(&scope),
+                &groups,
+                &box_histories,
+                &box_scope_histories,
+                &mut withdrawals,
+            )
+        })
+        .unwrap();
+        (
+            operands
+                .iter()
+                .map(|operand| operand.resolved_face_slots.clone())
+                .collect::<Vec<_>>(),
+            withdrawals.losses.len(),
+        )
+    };
+    // Only the other member's top 10 touches the lane of the member given 20.
+    assert_eq!(carrier(1), (vec![vec![], vec![]], 1));
+    assert_eq!(carrier(0), (vec![vec![10], vec![20]], 0));
 }

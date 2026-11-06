@@ -133,20 +133,18 @@ impl OperandLanes {
     }
 }
 
-/// The prefix-operand ordinals that the recipe's nodes name: each node's root,
-/// first prelude value and fan values. `None` when the recipe has no node or a
-/// node has no parsed structure or names an ordinal outside its operands.
+/// The prefix-operand ordinals that the recipe's parsed nodes name: each
+/// node's root, first prelude value and fan values. A node without a parsed
+/// structure, or one that names an ordinal outside the operands, names none.
+/// `None` when no node names an ordinal.
 fn node_ordinals(operand: &DesignFaceOperand) -> Option<HashSet<usize>> {
-    let nodes = operand
+    let nodes: Vec<_> = operand
         .recipe_nodes
         .iter()
-        .map(|node| node.recipe_structure.as_ref())
-        .collect::<Option<Vec<_>>>()?;
-    if nodes.is_empty()
-        || nodes
-            .iter()
-            .any(|node| !node.has_valid_operand_ordinals(&operand.recipe_references))
-    {
+        .filter_map(|node| node.recipe_structure.as_ref())
+        .filter(|node| node.has_valid_operand_ordinals(&operand.recipe_references))
+        .collect();
+    if nodes.is_empty() {
         return None;
     }
     Some(
@@ -194,6 +192,34 @@ impl Withdrawals {
             && OperandLanes::of(operand, topology, topology_queries).is_some_and(|lanes| {
                 lanes.fit(faces, topology, topology_queries) == LaneFit::Touches
             })
+    }
+
+    /// Report that `rule` offered `candidate` to `owner` after a withdrawal, and
+    /// that the offer was refused.
+    pub(super) fn refuse(&mut self, owner: &str, candidate: &str, rule: &str) {
+        self.losses
+            .push(F3dLossCode::FeatureFaceOperandFallbackContradicted.note(format!(
+                "{owner} refuses {candidate} from the {rule}: a face is withdrawn, or a withdrawn operand's face shares no boundary vertex with the faces of one of its recipe operands."
+            )));
+    }
+
+    /// Whether a group rule may give each face of `pairs` to its operand: no
+    /// face of the group is withdrawn from any of its operands, and each
+    /// operand admits its own face.
+    pub(super) fn admits_pairs<'a>(
+        &self,
+        pairs: &[(&DesignFaceOperand, i64)],
+        topology: &'a AsmHistoricalTopology,
+        topology_queries: &mut TopologyQueryCache<'a>,
+    ) -> bool {
+        let faces: Vec<i64> = pairs.iter().map(|(_, face)| *face).collect();
+        pairs.iter().all(|(operand, _)| {
+            self.faces
+                .get(&operand.id)
+                .is_none_or(|dropped| !dropped.iter().any(|face| faces.contains(face)))
+        }) && pairs
+            .iter()
+            .all(|(operand, face)| self.admits(operand, &[*face], topology, topology_queries))
     }
 }
 

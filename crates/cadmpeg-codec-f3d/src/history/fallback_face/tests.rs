@@ -171,3 +171,55 @@ fn a_withdrawal_keeps_its_faces_by_operand() {
     other.id = "another operand".into();
     assert!(withdrawals.admits(&other, &[60], &topology, &mut queries));
 }
+
+#[test]
+fn a_group_member_needs_its_own_face_to_touch_its_lanes() {
+    let topology = box_topology();
+    let mut queries = TopologyQueryCache::default();
+    // The back 30 touches the top 10 but not the front 20.
+    let mut withdrawn = operand(&[&[30]]);
+    withdrawn.resolved_face_slots = vec![60];
+    let mut withdrawals = Withdrawals::default();
+    check_fallback_faces(&mut withdrawn, &topology, &mut queries, &mut withdrawals);
+    let mut other = operand(&[&[30]]);
+    other.id = "another operand".into();
+    // Only the other member's face touches the withdrawn member's lane.
+    assert!(!withdrawals.admits_pairs(&[(&withdrawn, 20), (&other, 10)], &topology, &mut queries));
+    assert!(withdrawals.admits_pairs(&[(&withdrawn, 10), (&other, 20)], &topology, &mut queries));
+    // The group may not hand the withdrawn face to another member.
+    assert!(!withdrawals.admits_pairs(&[(&withdrawn, 10), (&other, 60)], &topology, &mut queries));
+}
+
+#[test]
+fn a_node_without_a_parsed_structure_names_no_lane() {
+    use crate::records::topology::face::DesignFaceRecipeNode;
+    // Lanes 0 and 1 touch the top 10; lane 2 names the bottom 40.
+    let mut operand = operand(&[&[20], &[30], &[40]]);
+    assert_eq!(fit_of(&operand, &[10]), LaneFit::Apart(2));
+    let structure = crate::test_support::with_decode_context(|ctx| {
+        crate::design::decode::operands::face_recipe_structure(
+            ctx,
+            &[
+                0, -1, 1, -1, 2, -1, 3, 0, -1, 1, -1, 1, -1, 0, 0, -1, 3, 0, -1, 1, -1, 1, -1, 0,
+                0, -1,
+            ],
+        )
+        .unwrap()
+        .unwrap()
+    });
+    operand.recipe_nodes = vec![
+        DesignFaceRecipeNode {
+            byte_offset: 0,
+            end_byte_offset: 12,
+            program: Vec::new(),
+            recipe_structure: Some(structure),
+        },
+        DesignFaceRecipeNode {
+            byte_offset: 12,
+            end_byte_offset: 24,
+            program: Vec::new(),
+            recipe_structure: None,
+        },
+    ];
+    assert_eq!(fit_of(&operand, &[10]), LaneFit::Touches);
+}
