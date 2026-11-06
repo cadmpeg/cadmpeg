@@ -1952,6 +1952,9 @@ mod rigid_alignment;
 
 mod work_plane;
 
+mod loft_roles;
+mod sketch_point_frames;
+
 #[test]
 fn loft_accepts_either_body_group_role() {
     use crate::records::feature::extrude::DesignExtrudeOperation;
