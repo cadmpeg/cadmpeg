@@ -666,6 +666,7 @@ fn synthesize_with_admission(
     appearance::append_color_definitions(ir, &mut graph.entities, &mut graph.presentations)?;
     native_records::solids::append_primitive_features(ir, &mut graph.entities);
     neutral_products::append(ir, &mut graph.entities, version);
+    brep_order::apply_topology_sources(ir, &mut graph.entities);
     let mut native_export = native_records::append::append(ir, &mut graph.entities, version);
     graph.losses.extend(native_export.losses);
     levels::append_level_definitions(ir, &mut graph.entities);
@@ -2713,8 +2714,7 @@ fn brep_entities(
                 vertex_indices.insert(vertex_id.clone(), (list_index, index));
             }
             parameters.push(';');
-            point_targets.extend(source.filter(|source| source_counts.get(source) == Some(&1)));
-            entities.push(Entity {
+            let entity = Entity {
                 structure: None,
                 property_links: Vec::new(),
                 association_links: Vec::new(),
@@ -2728,7 +2728,8 @@ fn brep_entities(
                 parameter_body: parameters.into_bytes(),
                 transform: None,
                 transform_link: None,
-            });
+            };
+            brep_order::push_vertex_list(ir, &mut entities, entity, source, &source_counts);
         }
 
         let mut edge_ids = body_edge_ids.into_iter().collect::<Vec<_>>();
@@ -2766,15 +2767,16 @@ fn brep_entities(
             }
             parameters.push(';');
             let index = entities.len();
+            let source = brep_order::edge_list_source(ir, &edge_ids);
             entities.push(Entity {
                 structure: None,
                 property_links: Vec::new(),
                 association_links: Vec::new(),
                 line_font: None,
-                source_targets: Vec::new(),
+                source_targets: source.iter().map(|(id, _)| id.clone()).collect(),
                 type_code: 504,
                 form: 1,
-                label: String::new(),
+                label: source.map(|(_, label)| label).unwrap_or_default(),
                 status: EntityStatus::PhysicallyDependentEdgeList,
                 subscript: 0,
                 parameter_body: parameters.into_bytes(),
@@ -6269,7 +6271,7 @@ fn append_surface_entities(
     };
     let base_index = entities.len();
     let mut additions = surface_entities_for_ir(ctx, ir, surface, base_index, version)?;
-    support_records::retain(ir, surface, &mut additions);
+    support_records::retain(ir, surface, &mut additions, base_index);
     if let Some(entity) = additions.last_mut() {
         entity.status = status;
         entity.source_targets.push(surface.id.to_string());

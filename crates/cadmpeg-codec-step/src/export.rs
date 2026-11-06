@@ -509,6 +509,33 @@ struct FileNameFields {
     timestamp: Option<String>,
     system: Option<String>,
     consumed: Vec<String>,
+    normalized_timestamps: Vec<String>,
+}
+
+fn file_name_timestamp(value: &str) -> Option<String> {
+    if crate::parse::valid_file_name_timestamp(value) {
+        return Some(value.to_owned());
+    }
+    let (date, time) = value.split_once('.')?;
+    if date.len() != 8
+        || time.len() != 6
+        || !date
+            .bytes()
+            .chain(time.bytes())
+            .all(|byte| byte.is_ascii_digit())
+    {
+        return None;
+    }
+    let timestamp = format!(
+        "{}-{}-{}T{}:{}:{}",
+        &date[0..4],
+        &date[4..6],
+        &date[6..8],
+        &time[0..2],
+        &time[2..4],
+        &time[4..6]
+    );
+    crate::parse::valid_file_name_timestamp(&timestamp).then_some(timestamp)
 }
 
 impl FileNameFields {
@@ -572,18 +599,21 @@ impl FileNameFields {
         }
         let organizations =
             (!organization.is_empty()).then(|| vec![Self::first_non_empty(&organization)]);
-        // A non-conforming held date string (such as an IGES global date)
-        // folds to empty: folding it would author a header the decoder
-        // flags, and normalizing it would break pairing.
         let timestamp = (!stamps.is_empty()).then(|| {
             stamps
                 .iter()
-                .find_map(|(_, value)| {
-                    (!value.is_empty() && crate::parse::valid_file_name_timestamp(value))
-                        .then(|| value.clone())
-                })
+                .filter(|(_, value)| !value.is_empty())
+                .find_map(|(_, value)| file_name_timestamp(value))
                 .unwrap_or_default()
         });
+        let normalized_timestamps = stamps
+            .iter()
+            .filter_map(|(id, value)| {
+                let normalized = file_name_timestamp(value)?;
+                (normalized != *value && timestamp.as_ref() == Some(&normalized))
+                    .then(|| id.clone())
+            })
+            .collect();
         let system = (!sys.is_empty()).then(|| Self::first_non_empty(&sys));
         // An alias is consumed only when the header carries its value back:
         // any other held alias keeps its drop loss, which names it. An
@@ -603,10 +633,12 @@ impl FileNameFields {
             &organization,
             &organizations.clone().unwrap_or_default(),
         ));
-        consumed_ids.extend(consumed(
-            &stamps,
-            &timestamp.clone().into_iter().collect::<Vec<_>>(),
-        ));
+        consumed_ids.extend(
+            stamps
+                .iter()
+                .filter(|(_, value)| file_name_timestamp(value).as_ref() == timestamp.as_ref())
+                .map(|(id, _)| id.clone()),
+        );
         consumed_ids.extend(consumed(
             &sys,
             &system.clone().into_iter().collect::<Vec<_>>(),
@@ -618,6 +650,7 @@ impl FileNameFields {
             timestamp,
             system,
             consumed: consumed_ids,
+            normalized_timestamps,
         }
     }
 }
@@ -903,6 +936,12 @@ impl<'a> Builder<'a> {
         builder
             .consumed_attribute_ids
             .extend(builder.file_name_fields.consumed.iter().cloned());
+        for id in builder.file_name_fields.normalized_timestamps.clone() {
+            builder.loss(
+                StepLossCode::TimestampNormalized,
+                format!("document attribute '{id}' uses STEP's extended timestamp syntax"),
+            );
+        }
         builder.pcurve_period_shifts = builder.loop_pcurve_period_shifts()?;
         builder.implicit_outer_bounds = builder.implicit_outer_bounds()?;
         builder.seam_rings = builder.seam_rings()?;
@@ -1041,6 +1080,41 @@ impl<'a> Builder<'a> {
         let context = self.emit_context();
 
         let mut emitted_items = self.emit_shape_items(context);
+        let retained_surfaces: BTreeSet<_> = self
+            .ir
+            .model
+            .faces
+            .iter()
+            .filter(|face| self.face_step_refs.contains_key(face.id.as_str()))
+            .map(|face| face.surface.as_str())
+            .collect();
+        let lost_surfaces: BTreeSet<_> = self
+            .ir
+            .model
+            .faces
+            .iter()
+            .filter(|face| !self.face_step_refs.contains_key(face.id.as_str()))
+            .map(|face| face.surface.as_str())
+            .filter(|surface| !retained_surfaces.contains(surface))
+            .filter(|surface| {
+                !self.construction_supports.contains(*surface)
+                    || self.surfaces.get(*surface).is_some_and(|surface| {
+                        ownership::is_independent(surface.source_object.as_ref())
+                    })
+            })
+            .map(str::to_owned)
+            .collect();
+        let mut recovered_surface = false;
+        for surface in lost_surfaces {
+            if let Some(reference) = self
+                .emit_surface(&surface)
+                .filter(|reference| !emitted_items.contains(reference))
+            {
+                self.emitter
+                    .emit("REPRESENTATION", &format!("'',({reference}),{context}"));
+                recovered_surface = true;
+            }
+        }
         let bodies_written = !self.body_step_refs.is_empty();
         if self.ir.model.product_definitions.is_empty() {
             let product_def_shape = self.emit_product_structure();
@@ -1094,7 +1168,7 @@ impl<'a> Builder<'a> {
                 );
             }
         }
-        let has_model_items = !emitted_items.is_empty();
+        let has_model_items = recovered_surface || !emitted_items.is_empty();
 
         self.emit_visibility();
         self.emit_tessellations(context);
@@ -5756,6 +5830,14 @@ impl<'a> Builder<'a> {
                         format!("surface '{surface_id}' uses a reversed axis and positive cone semi-angle in STEP"),
                     );
                 }
+                if matches!(basis, SolvedSurfaceGeometry::Sphere(sphere) if sphere.radius().get() < 0.0)
+                    || matches!(basis, SolvedSurfaceGeometry::Torus(torus) if torus.minor_radius().get() < 0.0)
+                {
+                    self.loss(
+                        StepLossCode::AnalyticSurfaceNormalized,
+                        format!("surface '{surface_id}' uses a positive radius and an adjusted parameter chart in STEP"),
+                    );
+                }
                 self.written_analytic_surfaces
                     .push(WrittenAnalyticSurface::Carrier(basis));
                 let chart = geometry::WrittenChart::of(basis);
@@ -8566,6 +8648,48 @@ impl<'a> Builder<'a> {
             }
             let message = format!("{}", AttributeOmission(attribute));
             self.loss(StepLossCode::SourceAttributeNotWritten, message);
+        }
+        let cache_tolerances = self
+            .ir
+            .model
+            .procedural_curves
+            .iter()
+            .filter(|curve| self.written_procedural_curves.contains(curve.id.as_str()))
+            .filter(|curve| {
+                curve
+                    .cache_fit_tolerance()
+                    .is_some_and(|value| value.get() > 0.0)
+            })
+            .map(|curve| {
+                (
+                    StepLossCode::ProceduralCurveCacheToleranceOmitted,
+                    curve.id.to_string(),
+                )
+            })
+            .chain(
+                self.ir
+                    .model
+                    .procedural_surfaces
+                    .iter()
+                    .filter(|surface| {
+                        self.written_procedural_surfaces
+                            .contains(surface.id.as_str())
+                    })
+                    .filter(|surface| {
+                        surface
+                            .cache_fit_tolerance()
+                            .is_some_and(|value| value.get() > 0.0)
+                    })
+                    .map(|surface| {
+                        (
+                            StepLossCode::ProceduralSurfaceCacheToleranceOmitted,
+                            surface.id.to_string(),
+                        )
+                    }),
+            )
+            .collect::<Vec<_>>();
+        for (code, id) in cache_tolerances {
+            self.loss(code, format!("procedural construction {id} has a solved-cache fit tolerance that STEP does not retain"));
         }
         let normalized_extrusions: Vec<_> = self
             .ir
