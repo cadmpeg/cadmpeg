@@ -193,6 +193,104 @@ fn assert_authored_fixture_shape_measures(
     }
 }
 
+fn assert_authored_view(
+    ir: &cadmpeg_ir::document::CadIr,
+    name: &str,
+    source: &str,
+    position: [f64; 2],
+    scale: f64,
+    direction: [f64; 3],
+    rotation_degrees: f64,
+) {
+    let view = ir
+        .model
+        .drawings
+        .iter()
+        .find(|drawing| drawing.object.ends_with(&format!("#{name}")))
+        .unwrap();
+    assert_eq!(view.kind, DrawingKind::View, "{name}");
+    assert_eq!(view.position.unwrap().get(), position, "{name}");
+    assert_eq!(view.scale.unwrap().get(), scale, "{name}");
+    assert_eq!(view.direction.unwrap().as_raw(), &direction, "{name}");
+    assert_eq!(
+        view.x_direction.unwrap().as_raw(),
+        &[1.0, 0.0, 0.0],
+        "{name}"
+    );
+    assert_eq!(
+        view.rotation_degrees.unwrap().get(),
+        rotation_degrees,
+        "{name}"
+    );
+    assert_eq!(
+        view.relationships["Source"][0].local_target(),
+        Some(crate::native::native_id("object", source).as_str()),
+        "{name} source"
+    );
+}
+
+fn assert_authored_dimension(
+    ir: &cadmpeg_ir::document::CadIr,
+    name: &str,
+    position: [f64; 3],
+    expected_references: &[(&str, &[&str])],
+    expected_anchors: &[[f64; 2]],
+) {
+    let drawing = |name: &str| {
+        ir.model
+            .drawings
+            .iter()
+            .find(|drawing| drawing.object.ends_with(&format!("#{name}")))
+            .unwrap()
+    };
+    let page = ir
+        .model
+        .drawings
+        .iter()
+        .find(|drawing| drawing.kind == DrawingKind::Page)
+        .unwrap();
+    let dimension_drawing = drawing(name);
+    assert_eq!(dimension_drawing.kind, DrawingKind::Dimension, "{name}");
+    assert!(
+        page.relationships["Views"]
+            .iter()
+            .any(|reference| reference.local_target() == Some(dimension_drawing.id.as_str())),
+        "Page.Views owns {name}"
+    );
+
+    let annotation = ir
+        .model
+        .semantic_annotations
+        .iter()
+        .find(|annotation| annotation.object.ends_with(&format!("#{name}")))
+        .unwrap();
+    assert_eq!(annotation.position.unwrap().get(), position, "{name}");
+    let references = &annotation.references["References2D"];
+    assert_eq!(references.len(), expected_references.len(), "{name}");
+    for (reference, (view_name, subelements)) in references.iter().zip(expected_references) {
+        assert_eq!(
+            reference.local_target(),
+            Some(drawing(view_name).id.as_str()),
+            "{name} reference view"
+        );
+        assert_eq!(
+            reference
+                .subelements
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            *subelements,
+            "{name} reference subelements"
+        );
+    }
+    let anchors = annotation
+        .reference_anchors
+        .iter()
+        .map(|point| **point)
+        .collect::<Vec<_>>();
+    assert_eq!(anchors.as_slice(), expected_anchors, "{name} anchors");
+}
+
 #[test]
 fn physical_page_template_and_saved_dimension_are_exact() {
     let result =
@@ -477,6 +575,75 @@ fn expanded_templates_dimensions_and_view_families_keep_exact_data_and_losses() 
         assert_eq!(annotation.dimension_kind.as_ref(), Some(&kind));
         assert_eq!(annotation.reference_anchors.len(), anchor_count);
     }
+    for (name, source, position, scale, direction, rotation) in [
+        ("Front", "Box", [65.0, 180.0], 2.0, [0.0, -1.0, 0.0], 0.0),
+        (
+            "TriangleView",
+            "Triangle",
+            [105.0, 148.5],
+            2.0,
+            [0.0, 0.0, 1.0],
+            30.0,
+        ),
+        (
+            "Circular",
+            "Cylinder",
+            [105.0, 148.5],
+            1.0,
+            [0.0, 0.0, 1.0],
+            0.0,
+        ),
+    ] {
+        assert_authored_view(
+            result.ir(),
+            name,
+            source,
+            position,
+            scale,
+            direction,
+            rotation,
+        );
+    }
+    for (name, position, references, anchors) in [
+        (
+            "Length",
+            [65.0, 160.0, 0.0],
+            &[("Front", &["Edge3"][..])][..],
+            &[[35.0, 190.0], [95.0, 190.0]][..],
+        ),
+        (
+            "Euclidean",
+            [90.0, 160.0, 0.0],
+            &[("Front", &["Edge3"][..])][..],
+            &[[35.0, 190.0], [95.0, 190.0]][..],
+        ),
+        (
+            "Vertical",
+            [90.0, 160.0, 0.0],
+            &[("Front", &["Edge1"][..])][..],
+            &[[95.0, 170.0], [95.0, 190.0]][..],
+        ),
+        (
+            "Radius",
+            [140.0, 200.0, 0.0],
+            &[("Circular", &["Edge0"][..])][..],
+            &[[105.0, 148.5], [112.0, 148.5]][..],
+        ),
+        (
+            "Diameter",
+            [140.0, 200.0, 0.0],
+            &[("Circular", &["Edge0"][..])][..],
+            &[[98.0, 148.5], [112.0, 148.5]][..],
+        ),
+        (
+            "Angle",
+            [140.0, 200.0, 0.0],
+            &[("Front", &["Edge1"][..]), ("Front", &["Edge3"][..])][..],
+            &[][..],
+        ),
+    ] {
+        assert_authored_dimension(result.ir(), name, position, references, anchors);
+    }
     let template = model
         .drawings
         .iter()
@@ -623,6 +790,75 @@ fn dimension_measurements_follow_changed_saved_reference_geometry() {
             .unwrap();
         assert_eq!(annotation.value.unwrap().get(), expected);
     }
+    for (name, source, position, scale, direction, rotation) in [
+        ("Front", "Box", [65.0, 180.0], 2.0, [0.0, -1.0, 0.0], 0.0),
+        (
+            "TriangleView",
+            "Triangle",
+            [105.0, 148.5],
+            2.0,
+            [0.0, 0.0, 1.0],
+            0.0,
+        ),
+        (
+            "Circular",
+            "Cylinder",
+            [105.0, 148.5],
+            1.0,
+            [0.0, 0.0, 1.0],
+            0.0,
+        ),
+    ] {
+        assert_authored_view(
+            result.ir(),
+            name,
+            source,
+            position,
+            scale,
+            direction,
+            rotation,
+        );
+    }
+    for (name, position, references, anchors) in [
+        (
+            "Length",
+            [65.0, 160.0, 0.0],
+            &[("Front", &["Edge3"][..])][..],
+            &[[23.0, 190.0], [107.0, 190.0]][..],
+        ),
+        (
+            "Euclidean",
+            [90.0, 160.0, 0.0],
+            &[("Front", &["Edge3"][..])][..],
+            &[[23.0, 190.0], [107.0, 190.0]][..],
+        ),
+        (
+            "Vertical",
+            [90.0, 160.0, 0.0],
+            &[("Front", &["Edge1"][..])][..],
+            &[[107.0, 170.0], [107.0, 190.0]][..],
+        ),
+        (
+            "Radius",
+            [140.0, 200.0, 0.0],
+            &[("Circular", &["Edge0"][..])][..],
+            &[[105.0, 148.5], [116.0, 148.5]][..],
+        ),
+        (
+            "Diameter",
+            [140.0, 200.0, 0.0],
+            &[("Circular", &["Edge0"][..])][..],
+            &[[94.0, 148.5], [116.0, 148.5]][..],
+        ),
+        (
+            "Angle",
+            [140.0, 200.0, 0.0],
+            &[("Front", &["Edge1"][..]), ("Front", &["Edge3"][..])][..],
+            &[][..],
+        ),
+    ] {
+        assert_authored_dimension(result.ir(), name, position, references, anchors);
+    }
 }
 
 #[test]
@@ -738,6 +974,13 @@ fn asymmetric_saved_reference_y_is_reflected_into_page_coordinates() {
             .map(|point| **point)
             .collect::<Vec<_>>(),
         [[65.0, 138.5], [145.0, 138.5]]
+    );
+    assert_authored_dimension(
+        result.ir(),
+        "TriangleBase",
+        [80.0, 100.0, 0.0],
+        &[("TriangleView", &["Edge0"][..])],
+        &[[65.0, 138.5], [145.0, 138.5]],
     );
 }
 
