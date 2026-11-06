@@ -1009,7 +1009,7 @@ pub(crate) fn decode_face_operands(
                 .map(|header| header.byte_offset)
                 .or_else(|| {
                     if !is_offset_faces_operand && !is_shell_operand && !is_extrude_operand {
-                        return None;
+                        return next_scope_group_offset(scope, stream, header, groups);
                     }
                     scope
                         .reference_members()
@@ -1110,7 +1110,7 @@ pub(crate) fn decode_face_operands(
                     .and_then(|record_index| header_index.get(&(stream, *record_index)))
                     .map(|header| header.byte_offset)
             } else {
-                None
+                next_scope_group_offset(scope, stream, header, groups)
             };
             if let Some(operand) = parse_face_operand(
                 ctx,
@@ -1131,6 +1131,25 @@ pub(crate) fn decode_face_operands(
     }
     out.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(out)
+}
+
+/// Header offset of the first construction-operand group of `scope` after
+/// `header`, which closes the frame of the member at `header`.
+fn next_scope_group_offset(
+    scope: &DesignParameterScope,
+    stream: &str,
+    header: &DesignRecordHeader,
+    groups: &[DesignConstructionOperandGroup],
+) -> Option<u64> {
+    groups
+        .iter()
+        .filter(|group| {
+            native_stream(&group.id) == Some(stream)
+                && group.scope_record_index == scope.record_index
+                && group.byte_offset > header.byte_offset
+        })
+        .map(|group| group.byte_offset)
+        .min()
 }
 
 /// Decode ordered sheet-metal source-region identities.
