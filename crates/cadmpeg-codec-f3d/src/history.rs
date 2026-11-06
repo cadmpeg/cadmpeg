@@ -5721,6 +5721,15 @@ fn bind_historical_face_operand_candidates<'a>(
             }
         }
     }
+    if recipe_face.is_none()
+        && feature_family == Some(crate::design::DesignFeatureFamily::Extrude)
+        && operand.recipe_kind == crate::records::recipes::ConstructionRecipeKind::BoundedFace
+        && grouped_reference_face_candidates.is_none()
+        && operand.alternate_selector_candidate_faces.is_empty()
+        && operand.resolved_face_slots == fallback_slots
+    {
+        fallback_face::check_fallback_faces(operand, topology, topology_queries, withdrawals);
+    }
     if operand.resolved_face_slots.is_empty()
         && scope.kind() == crate::records::feature::scope::DesignFeatureKind::Draft
     {
@@ -5739,13 +5748,15 @@ fn bind_historical_face_operand_candidates<'a>(
                 &changed_faces,
                 historical_brep_source(&history.id),
             ) {
-                Some(LegacyFaceResolution::Historical(slot)) => {
+                Some(LegacyFaceResolution::Historical(slot))
+                    if withdrawals.admits(operand, &[slot], topology, topology_queries) =>
+                {
                     operand.resolved_face_slots = vec![slot];
                 }
-                Some(LegacyFaceResolution::Active(face)) => {
+                Some(LegacyFaceResolution::Active(face)) if !withdrawals.withdrew(operand) => {
                     operand.resolved_active_face = Some(face);
                 }
-                None => {}
+                Some(_) | None => {}
             }
         }
     }
@@ -5753,12 +5764,6 @@ fn bind_historical_face_operand_candidates<'a>(
         // Every recipe node matches one boundary edge of this face and the
         // face fans around both of its ends.
         operand.resolved_face_slots = vec![face];
-    } else if feature_family == Some(crate::design::DesignFeatureFamily::Extrude)
-        && operand.recipe_kind == crate::records::recipes::ConstructionRecipeKind::BoundedFace
-        && grouped_reference_face_candidates.is_none()
-        && operand.resolved_face_slots == fallback_slots
-    {
-        fallback_face::check_fallback_faces(operand, topology, topology_queries, withdrawals);
     }
     Ok(())
 }
@@ -6830,10 +6835,10 @@ fn bind_profile_face_group_cardinality(
             let Some(faces) = faces else {
                 continue;
             };
-            if withdrawals.holds(
-                &faces,
-                indices.iter().map(|index| operands[*index].id.as_str()),
-            ) {
+            let mut topology_queries = topology_cache::TopologyQueryCache::default();
+            if !indices.iter().all(|index| {
+                withdrawals.admits(&operands[*index], &faces, topology, &mut topology_queries)
+            }) {
                 continue;
             }
             for (index, face) in indices.into_iter().zip(faces) {

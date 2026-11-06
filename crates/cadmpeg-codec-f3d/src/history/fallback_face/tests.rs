@@ -83,8 +83,14 @@ fn negative_design_references_take_no_part() {
     let mut operand = operand(&[&[10], &[20]]);
     operand.recipe_references[0].design_reference = -1;
     assert_eq!(fit_of(&operand, &[40]), LaneFit::Touches);
+    // A negative reference that names a face leaves its lane unread.
     operand.recipe_references[0].design_reference = 0;
-    assert_eq!(fit_of(&operand, &[40]), LaneFit::Touches);
+    assert_eq!(fit_of(&operand, &[40]), LaneFit::Apart(0));
+    let mut named = operand.clone();
+    named
+        .recipe_references
+        .push(recipe_operand_reference(0, "1", -1, &[20]));
+    assert_eq!(fit_of(&named, &[40]), LaneFit::Touches);
 }
 
 #[test]
@@ -154,8 +160,14 @@ fn a_withdrawal_keeps_its_faces_by_operand() {
     operand.resolved_face_slots = vec![60];
     let mut withdrawals = Withdrawals::default();
     check_fallback_faces(&mut operand, &topology, &mut queries, &mut withdrawals);
-    let id = operand.id.as_str();
-    assert!(withdrawals.holds(&[60, 10], std::iter::once(id)));
-    assert!(!withdrawals.holds(&[10], std::iter::once(id)));
-    assert!(!withdrawals.holds(&[60], std::iter::once("another operand")));
+    assert!(withdrawals.withdrew(&operand));
+    // A later face must hold no withdrawn face and touch the lane of 40.
+    assert!(!withdrawals.admits(&operand, &[60, 20], &topology, &mut queries));
+    assert!(!withdrawals.admits(&operand, &[60], &topology, &mut queries));
+    assert!(withdrawals.admits(&operand, &[20], &topology, &mut queries));
+    assert!(!withdrawals.admits(&operand, &[10], &topology, &mut queries));
+    let other = self::operand(&[&[40]]);
+    let mut other = other;
+    other.id = "another operand".into();
+    assert!(withdrawals.admits(&other, &[60], &topology, &mut queries));
 }

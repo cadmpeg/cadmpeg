@@ -4,9 +4,10 @@
 //!
 //! The nodes of a bounded-face recipe name, by prefix-operand ordinal, faces
 //! around the boundary of the recipe's face. For a recipe whose nodes have no
-//! unique binding, the check takes every prefix operand as naming such faces:
-//! a fallback selection that shares no boundary vertex with the faces of one
-//! prefix operand is withdrawn.
+//! unique binding, the check takes the operands that its parsed nodes name,
+//! or every prefix operand when no node parses, as naming such faces: a
+//! fallback selection that shares no boundary vertex with the faces of one
+//! such operand is withdrawn.
 
 use std::collections::{HashMap, HashSet};
 
@@ -32,9 +33,11 @@ pub(super) enum LaneFit {
 }
 
 /// The faces that each prefix operand of one recipe names in one topology.
-/// A lane has boundary vertices only when every positive Design reference of
-/// its operand names faces, every named face lies in the topology, and every
-/// one of those faces can be read.
+/// A lane has boundary vertices only when its operand is one that the parsed
+/// nodes name (every operand when no node parses), no negative Design
+/// reference of the operand names a face, every other reference of it names
+/// faces, every named face lies in the topology, and every one of those faces
+/// can be read.
 pub(super) struct OperandLanes {
     lanes: Vec<(Vec<i64>, Option<HashSet<i64>>)>,
 }
@@ -47,6 +50,7 @@ impl OperandLanes {
         topology_queries: &mut TopologyQueryCache<'a>,
     ) -> Option<Self> {
         let ordinals = prefix_operand_ordinals(&operand.recipe_references)?;
+        let named = node_ordinals(operand);
         let index = topology_queries
             .vertices
             .get(topology, VertexBoundaryIndex::new);
@@ -57,7 +61,8 @@ impl OperandLanes {
                 faces.push((Vec::new(), true));
             }
             let (lane, complete) = faces.get_mut(ordinal)?;
-            if reference.design_reference <= 0 {
+            if reference.design_reference < 0 {
+                *complete &= reference.candidate_faces.is_empty();
                 continue;
             }
             let named: Vec<Option<i64>> = reference
@@ -70,7 +75,10 @@ impl OperandLanes {
         }
         let lanes = faces
             .into_iter()
-            .map(|(mut lane, complete)| {
+            .zip(0..)
+            .map(|((mut lane, complete), ordinal)| {
+                let complete =
+                    complete && named.as_ref().is_none_or(|named| named.contains(&ordinal));
                 lane.sort_unstable();
                 lane.dedup();
                 let vertices = complete
@@ -125,6 +133,37 @@ impl OperandLanes {
     }
 }
 
+/// The prefix-operand ordinals that the recipe's nodes name: each node's root,
+/// first prelude value and fan values. `None` when the recipe has no node or a
+/// node has no parsed structure or names an ordinal outside its operands.
+fn node_ordinals(operand: &DesignFaceOperand) -> Option<HashSet<usize>> {
+    let nodes = operand
+        .recipe_nodes
+        .iter()
+        .map(|node| node.recipe_structure.as_ref())
+        .collect::<Option<Vec<_>>>()?;
+    if nodes.is_empty()
+        || nodes
+            .iter()
+            .any(|node| !node.has_valid_operand_ordinals(&operand.recipe_references))
+    {
+        return None;
+    }
+    Some(
+        nodes
+            .iter()
+            .flat_map(|node| {
+                [node.root, node.prelude[0]]
+                    .into_iter()
+                    .chain(node.sides.iter().flat_map(|side| {
+                        std::iter::once(side.header_value).chain(side.scalars.iter().copied())
+                    }))
+            })
+            .filter_map(|ordinal| usize::try_from(ordinal).ok())
+            .collect(),
+    )
+}
+
 /// The fallback faces that the check withdrew, by operand, and their losses.
 #[derive(Default)]
 pub(super) struct Withdrawals {
@@ -133,17 +172,28 @@ pub(super) struct Withdrawals {
 }
 
 impl Withdrawals {
-    /// Whether `faces` hold a face withdrawn from one of `members`.
-    pub(super) fn holds<'a>(
+    /// Whether the check withdrew faces from `operand`.
+    pub(super) fn withdrew(&self, operand: &DesignFaceOperand) -> bool {
+        self.faces.contains_key(&operand.id)
+    }
+
+    /// Whether a later rule may give `faces` to `operand`: the check withdrew
+    /// nothing from it, or `faces` hold no withdrawn face and share a
+    /// boundary vertex with every lane of its recipe.
+    pub(super) fn admits<'a>(
         &self,
+        operand: &DesignFaceOperand,
         faces: &[i64],
-        mut members: impl Iterator<Item = &'a str>,
+        topology: &'a AsmHistoricalTopology,
+        topology_queries: &mut TopologyQueryCache<'a>,
     ) -> bool {
-        members.any(|member| {
-            self.faces
-                .get(member)
-                .is_some_and(|dropped| dropped.iter().any(|face| faces.contains(face)))
-        })
+        let Some(dropped) = self.faces.get(&operand.id) else {
+            return true;
+        };
+        !dropped.iter().any(|face| faces.contains(face))
+            && OperandLanes::of(operand, topology, topology_queries).is_some_and(|lanes| {
+                lanes.fit(faces, topology, topology_queries) == LaneFit::Touches
+            })
     }
 }
 
@@ -167,7 +217,7 @@ pub(super) fn check_fallback_faces<'a>(
     };
     let fallback = std::mem::take(&mut operand.resolved_face_slots);
     withdrawals.losses.push(F3dLossCode::FeatureFaceOperandFallbackContradicted.note(format!(
-        "Extrude face operand {} drops its fallback faces {fallback:?}: they share no boundary vertex with the faces {:?} that its recipe operand {lane} names, taken as faces around the selected face's boundary.",
+        "Extrude face operand {} withdraws the faces {fallback:?} that its history fallback selects: they share no boundary vertex with the faces {:?} that its recipe operand {lane} names, taken as faces around the selected face's boundary.",
         operand.id,
         lanes.names(lane),
     )));
