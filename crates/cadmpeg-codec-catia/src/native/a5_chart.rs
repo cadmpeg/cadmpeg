@@ -49,7 +49,11 @@ struct ChartSideFrame {
     origin: FiniteVector<2>,
     direction: FiniteVector<2>,
     sign_ambiguous: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_reverse_interval"
+    )]
     reverse_interval: Option<FiniteVector<2>>,
     frame: ConsolidatedRawFrame<u64>,
 }
@@ -185,6 +189,13 @@ pub(super) fn derive(
     }
     Ok(result)
 }
+
+// Each optional key below names itself in whatever it refuses.
+cadmpeg_core::named_optional_field!(
+    deserialize_reverse_interval,
+    FiniteVector<2>,
+    "reverse_interval"
+);
 
 #[cfg(test)]
 mod tests;
