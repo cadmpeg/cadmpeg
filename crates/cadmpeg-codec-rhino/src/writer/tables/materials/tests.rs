@@ -76,7 +76,7 @@ fn current_material_values_override_native_copies_without_source_bytes() {
 
 mod linkage;
 
-fn materials(ir: &CadIr) -> Result<Vec<Vec<u8>>, CodecError> {
+fn materials(ir: &CadIr) -> Result<Vec<Vec<u8>>, crate::writer::WriteError> {
     MaterialPlan::new(ir)?.encode(ir)
 }
 

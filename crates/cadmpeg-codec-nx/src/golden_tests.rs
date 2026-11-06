@@ -1048,6 +1048,22 @@ fn golden_snapshots_are_byte_identical() {
     harness().check_inputs(&inputs(), &[Branch::root(snapshot)]);
 }
 
+#[test]
+fn assembly_placement_fixture_matches_builder() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/golden/fixtures/assembly_placement.prt");
+    let built = fixtures()
+        .into_iter()
+        .find(|(name, _)| *name == "assembly_placement")
+        .expect("assembly placement fixture")
+        .1;
+    if std::env::var_os("UPDATE_GOLDEN_FIXTURES").is_some() {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, &built).unwrap();
+    }
+    assert_eq!(std::fs::read(path).unwrap(), built);
+}
+
 /// Export only the code-built inputs for independent executable comparisons.
 #[test]
 #[ignore = "requires CADMPEG_NX_FIXTURE_DIR for explicit fixture export"]
