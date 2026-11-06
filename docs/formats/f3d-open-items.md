@@ -1284,3 +1284,15 @@ when the operation transition carries no candidate for the group members?
 **Conflict.** The specification gives mapping mode `0x60` and a whole-body recipe member. This scope stores mode `0` and a face-recipe entity selection.
 
 **Note.** None.
+
+### DR-256. Ordinal prefix of a leading-flag local component occurrence
+
+**Question.** What does the u16 ordinal prefix at offset 44 of a leading-flag local component occurrence state?
+
+**Known.** The prefix is `1` for the first new component of a Design and for a pasted second instance of that component, and `0` for a later new component. Its value is independent of the occurrence's grounded, light-bulb, visibility, active, and isolated states. The attributed frame stores two bytes at the same position before its ordinal.
+
+**Need.** A Fusion control that changes the prefix of one occurrence with all other carrier fields equal.
+
+**Conflict.** None.
+
+**Note.** The decoder keeps the prefix in the native occurrence frame.
