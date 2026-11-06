@@ -4176,7 +4176,7 @@ fn boundary_coedge<'ir>(
             ))
         })?;
     let curve_id = edge.curve().ok_or_else(|| {
-        CodecError::NotImplemented(format!(
+        CodecError::UnsupportedContent(format!(
             "IGES loop {} does not encode carrier-less edge {}",
             loop_.id, edge.id
         ))
@@ -4193,7 +4193,7 @@ fn boundary_coedge<'ir>(
             ))
         })?;
     let geometry = flatten_curve(curve.geometry.solved().ok_or_else(|| {
-        CodecError::NotImplemented("IGES curve carrier has no solved geometry".into())
+        CodecError::UnsupportedContent(format!("IGES curve {curve_id} has no solved geometry"))
     })?)?;
     let span = edge_span(ir, edge, &geometry)?;
     Ok(BoundaryCoedge {

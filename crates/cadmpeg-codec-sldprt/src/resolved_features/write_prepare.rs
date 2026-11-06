@@ -2290,11 +2290,12 @@ fn append_spatial_line_handle(
     local_id: u16,
     construction: bool,
 ) {
+    use crate::layout::extended_geometry_locus_96_construction_line as layout;
+
     if !construction {
         append_spatial_profile_line(payload, first, second, local_id);
         return;
     }
-    use crate::layout::extended_geometry_locus_96_construction_line as layout;
     payload.extend_from_slice(&u32::from(local_id).to_le_bytes());
     let start = payload.len();
     payload.resize(start + layout::IDENTITY_SECOND, 0);

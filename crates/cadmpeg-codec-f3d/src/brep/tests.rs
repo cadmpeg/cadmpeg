@@ -292,7 +292,7 @@ fn body_key_retention_keeps_only_the_selected_connected_graph() {
         native_ref: keys
             .iter()
             .find(|key| key.record_index == index)
-            .map(|key| key.id()),
+            .map(cadmpeg_asm::brep::records::BodyNativeKey::id),
         id: BodyId::mint(format!("f3d:brep:entity#{index}")).expect("identity grammar"),
         kind: BodyKind::default(),
         regions: vec![
@@ -367,7 +367,7 @@ fn body_key_retention_preserves_derived_links_for_reachable_targets() {
         native_ref: keys
             .iter()
             .find(|key| key.record_index == index)
-            .map(|key| key.id()),
+            .map(cadmpeg_asm::brep::records::BodyNativeKey::id),
         id: BodyId::mint(format!("f3d:brep:entity#{index}")).expect("identity grammar"),
         kind: BodyKind::default(),
         regions: Vec::new(),
@@ -380,7 +380,7 @@ fn body_key_retention_preserves_derived_links_for_reachable_targets() {
         cadmpeg_asm::brep::records::identity::NativeRowId::from(
             keys.iter()
                 .find(|key| key.record_index == index)
-                .map(|key| key.id())
+                .map(cadmpeg_asm::brep::records::BodyNativeKey::id)
                 .expect("key row"),
         )
     };
