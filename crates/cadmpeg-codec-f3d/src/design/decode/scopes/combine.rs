@@ -67,7 +67,7 @@ pub(super) fn exact_combine_operation(
                         scope.id
                     )));
                 }
-                return Ok(Some(operation));
+                return Ok(Some(*operation));
             }
             PrologueReading::Native => return Ok(None),
             PrologueReading::Refused => operand_lists_refused |= operand_lists,
@@ -94,7 +94,7 @@ struct OperandLists {
 
 /// The result of reading a frame in one prologue.
 enum PrologueReading {
-    Operation(DesignCombineOperation),
+    Operation(Box<DesignCombineOperation>),
     /// The lists name the scope's operands, so the frame stores this
     /// prologue, and a field contradicts it or names a new component.
     Native,
@@ -357,16 +357,18 @@ fn combine_operation_with(
                 return Some(Ok(PrologueReading::Native));
             }
         }
-        Some(Ok(PrologueReading::Operation(DesignCombineOperation {
-            form,
-            operation: operation?,
-            operation_offset: u64::try_from(operation_offset).ok()?,
-            keep_tools: keep_tools?,
-            keep_tools_offset: u64::try_from(keep_tools_offset).ok()?,
-            target_record_index: target,
-            target_body_node,
-            tools,
-        })))
+        Some(Ok(PrologueReading::Operation(Box::new(
+            DesignCombineOperation {
+                form,
+                operation: operation?,
+                operation_offset: u64::try_from(operation_offset).ok()?,
+                keep_tools: keep_tools?,
+                keep_tools_offset: u64::try_from(keep_tools_offset).ok()?,
+                target_record_index: target,
+                target_body_node,
+                tools,
+            },
+        ))))
     })()
     .unwrap_or(Ok(PrologueReading::Refused))
 }
