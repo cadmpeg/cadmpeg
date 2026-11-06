@@ -6966,10 +6966,175 @@ source = "spec"
 anchor = "offsets 34 through 44 are zero"
 
 [[record]]
-name = "legacy_loft_body_carrier_class_322"
+name = "three_flag_compact_loft_operation_prefix"
 kind = "byte"
 section = "3.1"
-anchor = "The class-`322`/`262` legacy Boolean-Loft body carrier is 87 bytes"
+anchor = "The three-flag compact form stores bytes"
+size = 44
+note = "Offsets are relative to the primary indexed header."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed Design record header (indexed_design_record_header)."
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "ten zero bytes after its indexed header"
+
+[[record.field]]
+name = "flags"
+offset = 21
+type = "bytes[3]"
+source = "spec"
+anchor = "bytes `01 01` and a byte `0` or `1` at offsets 21 through 23"
+
+[[record.field]]
+name = "operation"
+offset = 24
+type = "u32"
+source = "spec"
+anchor = "the result-operation u32 at offset 24"
+
+[[record.field]]
+name = "zero_flag"
+offset = 28
+type = "u8"
+source = "spec"
+anchor = "a zero byte at offset 28"
+
+[[record.field]]
+name = "all_ones"
+offset = 29
+type = "bytes[4]"
+source = "spec"
+anchor = "`ff ff ff ff` at offsets 29 through 32"
+
+[[record.field]]
+name = "zero_run_11"
+offset = 33
+type = "bytes[11]"
+source = "spec"
+anchor = "zero bytes at offsets 33 through 43"
+
+[[record]]
+name = "standard_loft_operation_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "The standard `Loft` scope has nine zero bytes"
+size = 34
+note = "Offsets are relative to the primary indexed header."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed Design record header (indexed_design_record_header)."
+
+[[record.field]]
+name = "zero_run_9"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "nine zero bytes at offsets 11 through 19"
+
+[[record.field]]
+name = "presence"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "byte `01` at offset 20"
+
+[[record.field]]
+name = "zero_run_4"
+offset = 21
+type = "bytes[4]"
+source = "spec"
+anchor = "four zero bytes at offsets 21 through 24"
+
+[[record.field]]
+name = "flags"
+offset = 25
+type = "bytes[4]"
+source = "spec"
+anchor = "four flag bytes at offsets 25 through 28"
+
+[[record.field]]
+name = "operation"
+offset = 29
+type = "u32"
+source = "spec"
+anchor = "the result-operation u32 at offset 29"
+
+[[record.field]]
+name = "group_reference"
+offset = 33
+type = "u8"
+source = "spec"
+anchor = "Byte 33 opens a same-segment marked reference"
+
+[[record]]
+name = "three_flag_standard_loft_operation_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "The three-flag standard form stores three flag bytes"
+size = 33
+note = "Offsets are relative to the primary indexed header."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed Design record header (indexed_design_record_header)."
+
+[[record.field]]
+name = "zero_run_9"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "nine zero bytes at offsets 11 through 19"
+
+[[record.field]]
+name = "presence"
+offset = 20
+type = "u8"
+source = "spec"
+anchor = "byte `01` at offset 20"
+
+[[record.field]]
+name = "zero_run_4"
+offset = 21
+type = "bytes[4]"
+source = "spec"
+anchor = "four zero bytes at offsets 21 through 24"
+
+[[record.field]]
+name = "flags"
+offset = 25
+type = "bytes[3]"
+source = "spec"
+anchor = "three flag bytes at offsets 25 through 27"
+
+[[record.field]]
+name = "operation"
+offset = 28
+type = "u32"
+source = "spec"
+anchor = "the result-operation u32 at offset 28"
+
+[[record.field]]
+name = "null_reference"
+offset = 32
+type = "u8"
+source = "spec"
+anchor = "a null marked reference `00` at offset 32"
+
+[[record]]
+name = "legacy_loft_body_carrier"
+kind = "byte"
+section = "3.1"
+anchor = "The legacy Boolean-Loft body carrier is 87 bytes"
 size = 87
 note = "Offsets are relative to the primary indexed header. The same-index paired header begins at offset 87."
 
@@ -7065,10 +7230,10 @@ source = "spec"
 anchor = "a marked reference to record `N+1` starts at offset 76"
 
 [[record]]
-name = "legacy_loft_body_carrier_class_322_tail"
+name = "legacy_loft_body_carrier_owner_tail"
 kind = "byte"
 section = "3.1"
-anchor = "The class-`322`/`262` legacy Boolean-Loft body carrier with an owner tail is 99 bytes"
+anchor = "The legacy body carrier with an owner tail is 99 bytes"
 size = 99
 note = "Offsets are relative to the primary indexed header. The same-index paired header begins at offset 99."
 
@@ -7077,7 +7242,7 @@ name = "common_prefix"
 offset = 0
 type = "bytes[87]"
 source = "spec"
-anchor = "uses the class-`322`/`262` carrier prefix through offset 86"
+anchor = "uses the 87-byte carrier fields through offset 86"
 
 [[record.field]]
 name = "tail_zero"
@@ -7094,33 +7259,47 @@ source = "spec"
 anchor = "a marked reference to the owning scope at offset 88"
 
 [[record]]
-name = "legacy_loft_body_carrier_class_411"
+name = "legacy_loft_body_carrier_three_flag"
 kind = "byte"
 section = "3.1"
-anchor = "The class-`411`/`266` carrier has the same fields and offsets"
-size = 99
-note = "Offsets are relative to the primary indexed header. The class-specific owner tail occupies offsets 87 through 98."
+anchor = "The legacy body carrier with a three-byte flag block is 100 bytes"
+size = 100
+note = "Offsets are relative to the primary indexed header."
 
 [[record.field]]
 name = "common_prefix"
 offset = 0
-type = "bytes[87]"
+type = "bytes[74]"
 source = "spec"
-anchor = "The class-`322`/`262` legacy Boolean-Loft body carrier is 87 bytes"
+anchor = "uses the 87-byte carrier fields through offset 73"
+
+[[record.field]]
+name = "flags"
+offset = 74
+type = "bytes[3]"
+source = "spec"
+anchor = "flags `[01 00 00]` at offset 74"
+
+[[record.field]]
+name = "next_reference"
+offset = 77
+type = "bytes[11]"
+source = "spec"
+anchor = "a marked reference to record `N+1` at offset 77"
 
 [[record.field]]
 name = "tail_zero"
-offset = 87
+offset = 88
 type = "u8"
 source = "spec"
-anchor = "stores a zero byte at offset 87"
+anchor = "a zero byte at offset 88"
 
 [[record.field]]
 name = "trailing_scope_reference"
-offset = 88
+offset = 89
 type = "bytes[11]"
 source = "spec"
-anchor = "a marked reference to the owning scope at offset 88"
+anchor = "a marked reference to the owning scope at offset 89"
 
 [[record]]
 name = "fixed_pipe_operation_prefix"

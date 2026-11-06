@@ -16,6 +16,9 @@ use crate::layout::compact_loft_operation_prefix as compact_loft;
 use crate::layout::marked_to_object_revolve_prologue as marked_to_object;
 use crate::layout::marker_one_revolve_prologue as revolve;
 use crate::layout::referenced_angle_revolve_prologue as referenced_revolve;
+use crate::layout::standard_loft_operation_prefix as standard_loft;
+use crate::layout::three_flag_compact_loft_operation_prefix as three_flag_compact_loft;
+use crate::layout::three_flag_standard_loft_operation_prefix as three_flag_standard_loft;
 use crate::layout::two_sided_revolve_prologue as two_sided_revolve;
 use crate::layout::unmarked_referenced_angle_revolve_prologue as unmarked_revolve;
 use crate::layout::unmarked_to_object_revolve_prologue as unmarked_to_object;
@@ -483,30 +486,73 @@ pub(super) fn exact_path_feature_construction(
                 },
             ))
         }
-        DesignFeatureFamily::Loft
-            if bytes.get(start + compact_loft::ZERO_RUN_10..start + compact_loft::ONE_RUN_4)
+        DesignFeatureFamily::Loft => {
+            let compact = bytes
+                .get(start + compact_loft::ZERO_RUN_10..start + compact_loft::ONE_RUN_4)
                 == Some(&[0; 10])
                 && bytes.get(start + compact_loft::ONE_RUN_4..start + compact_loft::OPERATION)
                     == Some(&[1; 4])
                 && bytes.get(start + compact_loft::ZERO_FLAG) == Some(&0)
                 && View::u32_le_at(bytes, start + compact_loft::ALL_ONES) == Some(u32::MAX)
                 && bytes.get(start + compact_loft::ZERO_RUN_11..start + compact_loft::LEN)
-                    == Some(&[0; 11]) =>
-        {
+                    == Some(&[0; 11]);
+            let compact_three = bytes.get(
+                start + three_flag_compact_loft::ZERO_RUN_10
+                    ..start + three_flag_compact_loft::FLAGS,
+            ) == Some(&[0; 10])
+                && matches!(
+                    bytes.get(
+                        start + three_flag_compact_loft::FLAGS
+                            ..start + three_flag_compact_loft::OPERATION
+                    ),
+                    Some([1, 1, 0 | 1])
+                )
+                && bytes.get(start + three_flag_compact_loft::ZERO_FLAG) == Some(&0)
+                && View::u32_le_at(bytes, start + three_flag_compact_loft::ALL_ONES)
+                    == Some(u32::MAX)
+                && bytes.get(
+                    start + three_flag_compact_loft::ZERO_RUN_11
+                        ..start + three_flag_compact_loft::LEN,
+                ) == Some(&[0; 11]);
+            let standard_prefix = bytes
+                .get(start + standard_loft::ZERO_RUN_9..start + standard_loft::PRESENCE)
+                == Some(&[0; 9])
+                && bytes.get(start + standard_loft::PRESENCE) == Some(&1)
+                && bytes.get(start + standard_loft::ZERO_RUN_4..start + standard_loft::FLAGS)
+                    == Some(&[0; 4]);
+            let standard = standard_prefix
+                && bytes.get(start + standard_loft::ZERO_FLAG) == Some(&0)
+                && bytes.get(start + standard_loft::ALL_ONES..start + standard_loft::LEN)
+                    == Some(&[0xff; 4]);
+            let standard_three = bytes.get(
+                start + three_flag_standard_loft::ZERO_RUN_9
+                    ..start + three_flag_standard_loft::PRESENCE,
+            ) == Some(&[0; 9])
+                && bytes.get(start + three_flag_standard_loft::PRESENCE) == Some(&1)
+                && bytes.get(
+                    start + three_flag_standard_loft::ZERO_RUN_4
+                        ..start + three_flag_standard_loft::FLAGS,
+                ) == Some(&[0; 4])
+                && bytes.get(start + three_flag_standard_loft::ZERO_FLAG) == Some(&0)
+                && bytes.get(
+                    start + three_flag_standard_loft::ALL_ONES
+                        ..start + three_flag_standard_loft::LEN,
+                ) == Some(&[0xff; 4]);
+            let offset = if compact {
+                compact_loft::OPERATION
+            } else if compact_three {
+                three_flag_compact_loft::OPERATION
+            } else if standard {
+                standard_loft::OPERATION
+            } else if standard_three {
+                three_flag_standard_loft::OPERATION
+            } else {
+                return None;
+            };
             Some(DesignPathFeatureConstruction::Loft(
                 path_features::DesignLoftConstruction {
-                    operation: operation(start + compact_loft::OPERATION)?,
-                    operation_offset: u64::try_from(start + compact_loft::OPERATION).ok()?,
-                },
-            ))
-        }
-        DesignFeatureFamily::Loft
-            if parameter_scope_payload_length(scope).is_some_and(|length| length >= 368) =>
-        {
-            Some(DesignPathFeatureConstruction::Loft(
-                path_features::DesignLoftConstruction {
-                    operation: operation(start + 29)?,
-                    operation_offset: u64::try_from(start + 29).ok()?,
+                    operation: operation(start + offset)?,
+                    operation_offset: u64::try_from(start + offset).ok()?,
                 },
             ))
         }

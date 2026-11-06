@@ -37,9 +37,9 @@ use crate::layout::construction_operand_affine_transform_frame as trailing_affin
 use crate::layout::construction_operand_extended_path_prefix as extended_path;
 use crate::layout::extrude_selection_member_fixed_frame as extrude_member;
 use crate::layout::indexed_design_record_header as indexed_header;
-use crate::layout::legacy_loft_body_carrier_class_322 as legacy_loft_322;
-use crate::layout::legacy_loft_body_carrier_class_322_tail as legacy_loft_322_tail;
-use crate::layout::legacy_loft_body_carrier_class_411 as legacy_loft_411;
+use crate::layout::legacy_loft_body_carrier as legacy_loft;
+use crate::layout::legacy_loft_body_carrier_owner_tail as legacy_loft_tail;
+use crate::layout::legacy_loft_body_carrier_three_flag as legacy_loft_three;
 use crate::layout::sheet_metal_region_carrier_prefix as region_carrier;
 use crate::layout::sheet_metal_region_carrier_scalar_lane as region_scalar;
 use crate::layout::sheet_metal_region_identity_reference as region_reference;
@@ -1986,108 +1986,117 @@ fn push_loft_legacy_body_carrier(
     out.push(carrier);
 }
 
-/// Parse one class-`322`/`262` or class-`411`/`266` legacy Loft body carrier.
+/// Parse one legacy Loft body carrier.
 fn parse_loft_legacy_body_carrier(
     bytes: &[u8],
     scope: &DesignParameterScope,
     header: &DesignRecordHeader,
 ) -> Option<DesignLoftLegacyBodyCarrier> {
     let start = usize::try_from(header.byte_offset).ok()?;
-    let (paired_class, frame_length, has_trailing_scope) = match header.class_tag.as_str() {
-        "322" => {
-            let short_paired_offset = start.checked_add(legacy_loft_322::LEN)?;
-            let long_paired_offset = start.checked_add(legacy_loft_322_tail::LEN)?;
-            let pair_matches = |at: usize| {
-                indexed_record_header_at(bytes, at).is_some_and(|paired| {
-                    paired.record_index == header.record_index && paired.class_tag.as_str() == "262"
-                })
-            };
-            let short_pair_matches = pair_matches(short_paired_offset);
-            let long_pair_matches = pair_matches(long_paired_offset);
-            if short_pair_matches {
-                ("262", legacy_loft_322::LEN, false)
-            } else if long_pair_matches {
-                ("262", legacy_loft_322_tail::LEN, true)
-            } else {
-                return None;
-            }
-        }
-        "411" => ("266", legacy_loft_411::LEN, true),
-        _ => return None,
+    let pair_matches = |length: usize| {
+        start
+            .checked_add(length)
+            .and_then(|at| indexed_record_header_at(bytes, at))
+            .is_some_and(|paired| paired.record_index == header.record_index)
     };
-    if indexed_record_header_at(bytes, start)
+    let frame_length = [
+        legacy_loft::LEN,
+        legacy_loft_tail::LEN,
+        legacy_loft_three::LEN,
+    ]
+    .into_iter()
+    .find(|&length| pair_matches(length))?;
+    let three_flags = frame_length == legacy_loft_three::LEN;
+    let common = start + if three_flags {
+        legacy_loft_three::COMMON_PREFIX
+    } else if frame_length == legacy_loft_tail::LEN {
+        legacy_loft_tail::COMMON_PREFIX
+    } else {
+        legacy_loft::INDEXED_HEADER
+    };
+    if indexed_record_header_at(bytes, common)
         .is_none_or(|parsed| parsed.record_index != header.record_index)
-        || bytes
-            .get(start + legacy_loft_322::ZERO_RUN_10..start + legacy_loft_322::ZERO_RUN_10 + 10)?
-            != [0; 10]
-        || bytes.get(start + legacy_loft_322::PRESENCE)? != &1
-        || View::u32_le_at(bytes, start + legacy_loft_322::OWNER_SCOPE_RECORD_INDEX)?
+        || bytes.get(common + legacy_loft::ZERO_RUN_10..common + legacy_loft::PRESENCE)? != [0; 10]
+        || bytes.get(common + legacy_loft::PRESENCE)? != &1
+        || View::u32_le_at(bytes, common + legacy_loft::OWNER_SCOPE_RECORD_INDEX)?
             != scope.record_index
-        || bytes
-            .get(start + legacy_loft_322::ZERO_RUN_6..start + legacy_loft_322::ZERO_RUN_6 + 6)?
-            != [0; 6]
-        || View::u32_le_at(bytes, start + legacy_loft_322::MEMBER_COUNT)? != 1
+        || bytes.get(common + legacy_loft::ZERO_RUN_6..common + legacy_loft::MEMBER_COUNT)? != [0; 6]
+        || View::u32_le_at(bytes, common + legacy_loft::MEMBER_COUNT)? != 1
     {
         return None;
     }
-    let mut cursor = start.checked_add(legacy_loft_322::MEMBER_REFERENCE)?;
+    let mut cursor = common.checked_add(legacy_loft::MEMBER_REFERENCE)?;
     let member_offset = cursor;
     let (member, _) = take_record_reference(bytes, &mut cursor)?;
-    if cursor != start.checked_add(legacy_loft_322::OPAQUE_INDEX)? {
+    if cursor != common.checked_add(legacy_loft::OPAQUE_INDEX)? {
         return None;
     }
     let opaque_index = u8::try_from(View::u32_le_at(bytes, cursor)?)
         .ok()
         .and_then(std::num::NonZeroU8::new)?;
-    cursor = cursor.checked_add(4)?;
-    let opaque_scalar = cadmpeg_ir::scalar::FiniteReal::new(View::f64_le_at(bytes, cursor)?)?;
-    cursor = cursor.checked_add(8)?;
-    let repeated_opaque_index = View::u32_le_at(bytes, cursor)?;
+    let opaque_scalar = cadmpeg_ir::scalar::FiniteReal::new(View::f64_le_at(
+        bytes,
+        common + legacy_loft::OPAQUE_SCALAR,
+    )?)?;
+    let repeated_opaque_index = View::u32_le_at(bytes, common + legacy_loft::REPEATED_OPAQUE_INDEX)?;
     if repeated_opaque_index != u32::from(opaque_index.get()) {
         return None;
     }
-    cursor = cursor.checked_add(4)?;
+    cursor = common.checked_add(legacy_loft::NEXT_NEXT_REFERENCE)?;
     let (next_next_record_index, _) = take_record_reference(bytes, &mut cursor)?;
-    if cursor != start.checked_add(legacy_loft_322::FLAGS)?
-        || bytes.get(cursor..cursor + 2)? != [0, 0]
+    if next_next_record_index != header.record_index.checked_add(2)?
+        || cursor != common.checked_add(legacy_loft::FLAGS)?
     {
         return None;
     }
-    cursor = cursor.checked_add(2)?;
-    let (next_record_index, _) = take_record_reference(bytes, &mut cursor)?;
-    if cursor != start.checked_add(legacy_loft_322::LEN)? {
-        return None;
-    }
-    let trailing_scope_reference_offset = if has_trailing_scope {
-        if cursor != start + legacy_loft_322_tail::TAIL_ZERO || bytes.get(cursor)? != &0 {
+    let (next_offset, tail_zero, tail_reference) = if three_flags {
+        if bytes.get(start + legacy_loft_three::FLAGS..start + legacy_loft_three::NEXT_REFERENCE)?
+            != [1, 0, 0]
+        {
             return None;
         }
-        cursor = cursor.checked_add(1)?;
-        if cursor != start + legacy_loft_322_tail::TRAILING_SCOPE_REFERENCE {
-            return None;
-        }
-        let reference_offset = cursor;
-        let (record_index, _) = take_record_reference(bytes, &mut cursor)?;
-        if record_index != scope.record_index {
-            return None;
-        }
-        Some(u64::try_from(reference_offset).ok()?)
+        (
+            start.checked_add(legacy_loft_three::NEXT_REFERENCE)?,
+            Some(legacy_loft_three::TAIL_ZERO),
+            Some(legacy_loft_three::TRAILING_SCOPE_REFERENCE),
+        )
     } else {
-        None
+        if bytes.get(common + legacy_loft::FLAGS..common + legacy_loft::NEXT_REFERENCE)? != [0, 0] {
+            return None;
+        }
+        (
+            common.checked_add(legacy_loft::NEXT_REFERENCE)?,
+            (frame_length == legacy_loft_tail::LEN).then_some(legacy_loft_tail::TAIL_ZERO),
+            (frame_length == legacy_loft_tail::LEN)
+                .then_some(legacy_loft_tail::TRAILING_SCOPE_REFERENCE),
+        )
     };
-    let paired_byte_offset = start.checked_add(frame_length)?;
-    if cursor != paired_byte_offset
-        || indexed_record_header_at(bytes, paired_byte_offset)
-            .is_none_or(|parsed| parsed.record_index != header.record_index)
-    {
+    cursor = next_offset;
+    let (next_record_index, _) = take_record_reference(bytes, &mut cursor)?;
+    if next_record_index != header.record_index.checked_add(1)? {
         return None;
     }
-    let paired_class_tag = std::str::from_utf8(bytes.get(
-        paired_byte_offset + indexed_header::CLASS_TAG
-            ..paired_byte_offset + indexed_header::CLASS_TAG + 3,
-    )?)
-    .ok()?;
-    if paired_class_tag != paired_class {
+    let trailing_scope_reference_offset =
+        if let (Some(zero), Some(reference)) = (tail_zero, tail_reference) {
+            if cursor != start.checked_add(zero)? || bytes.get(cursor)? != &0 {
+                return None;
+            }
+            cursor = start.checked_add(reference)?;
+            let reference_offset = cursor;
+            let (record_index, _) = take_record_reference(bytes, &mut cursor)?;
+            if record_index != scope.record_index {
+                return None;
+            }
+            Some(u64::try_from(reference_offset).ok()?)
+        } else {
+            None
+        };
+    let paired_byte_offset = start.checked_add(frame_length)?;
+    if cursor != paired_byte_offset {
+        return None;
+    }
+    let paired = indexed_record_header_at(bytes, paired_byte_offset)?;
+    if paired.record_index != header.record_index {
         return None;
     }
     Some(DesignLoftLegacyBodyCarrier {
@@ -2097,26 +2106,25 @@ fn parse_loft_legacy_body_carrier(
         byte_offset: header.byte_offset,
         class_tag: header.class_tag.clone(),
         owner_scope_record_index_offset: u64::try_from(
-            start + legacy_loft_322::OWNER_SCOPE_RECORD_INDEX,
+            common + legacy_loft::OWNER_SCOPE_RECORD_INDEX,
         )
         .ok()?,
         member,
         member_offset: u64::try_from(member_offset).ok()?,
-        member_count_offset: u64::try_from(start + legacy_loft_322::MEMBER_COUNT).ok()?,
+        member_count_offset: u64::try_from(common + legacy_loft::MEMBER_COUNT).ok()?,
         opaque_index,
-        opaque_index_offset: u64::try_from(start + legacy_loft_322::OPAQUE_INDEX).ok()?,
+        opaque_index_offset: u64::try_from(common + legacy_loft::OPAQUE_INDEX).ok()?,
         opaque_scalar,
-        opaque_scalar_offset: u64::try_from(start + legacy_loft_322::OPAQUE_SCALAR).ok()?,
-        repeated_opaque_index_offset: u64::try_from(start + legacy_loft_322::REPEATED_OPAQUE_INDEX)
+        opaque_scalar_offset: u64::try_from(common + legacy_loft::OPAQUE_SCALAR).ok()?,
+        repeated_opaque_index_offset: u64::try_from(common + legacy_loft::REPEATED_OPAQUE_INDEX)
             .ok()?,
         next_next_record_index,
-        next_next_reference_offset: u64::try_from(start + legacy_loft_322::NEXT_NEXT_REFERENCE)
-            .ok()?,
-        flags_offset: u64::try_from(start + legacy_loft_322::FLAGS).ok()?,
+        next_next_reference_offset: u64::try_from(common + legacy_loft::NEXT_NEXT_REFERENCE).ok()?,
+        flags_offset: u64::try_from(common + legacy_loft::FLAGS).ok()?,
         next_record_index,
-        next_reference_offset: u64::try_from(start + legacy_loft_322::NEXT_REFERENCE).ok()?,
+        next_reference_offset: u64::try_from(next_offset).ok()?,
         trailing_scope_reference_offset,
-        paired_class_tag: paired_class_tag.to_owned().try_into().ok()?,
+        paired_class_tag: paired.class_tag,
         paired_byte_offset: u64::try_from(paired_byte_offset).ok()?,
     })
 }

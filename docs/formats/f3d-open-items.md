@@ -1272,3 +1272,15 @@ when the operation transition carries no candidate for the group members?
 **Conflict.** The nonzero words change the admitted identity suffix. Treating them as padding would discard stored values.
 
 **Note.** The current path decoder retains these scopes natively. Their thirteen paired-frame findings remain errors until the identity state has a complete grammar and binding rule.
+
+### DR-268. Group reference of the standard Loft scope
+
+**Question.** Which Loft setting selects a non-null construction-operand group reference at standard `Loft` scope offset 33?
+
+**Known.** `f3d.md` §3.1 "The standard `Loft` scope has nine zero bytes" gives the reference. In each scope with a non-null reference, the scope has one role-`0x0000000500000000` rail group and the reference names it. Scopes with rail groups or a centerline group also store a null reference.
+
+**Need.** Saves of one railed `Loft` that change one rail or guide setting at a time, each recording byte 33.
+
+**Conflict.** None.
+
+**Note.** None.

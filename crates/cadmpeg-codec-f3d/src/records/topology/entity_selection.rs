@@ -556,7 +556,7 @@ pub(crate) struct DesignLoftLegacyBodyCarrier {
     pub(crate) record_index: u32,
     /// Primary indexed-header byte offset.
     pub(crate) byte_offset: u64,
-    /// Per-file dynamic primary class tag (`322` or `411`).
+    /// Per-file dynamic primary class tag.
     pub(crate) class_tag: DesignClassTag,
     /// Byte offset of `owner_scope_record_index`.
     pub(crate) owner_scope_record_index_offset: u64,
@@ -588,7 +588,7 @@ pub(crate) struct DesignLoftLegacyBodyCarrier {
     pub(crate) next_reference_offset: u64,
     /// Source location of the additional owning-scope reference, when present.
     pub(crate) trailing_scope_reference_offset: Option<u64>,
-    /// Per-file dynamic paired class tag (`262` or `266`).
+    /// Per-file dynamic paired class tag.
     pub(crate) paired_class_tag: DesignClassTag,
     /// Same-index paired-header byte offset.
     pub(crate) paired_byte_offset: u64,
@@ -652,7 +652,7 @@ struct DesignLoftLegacyBodyCarrierRef<'a> {
     repeated_opaque_index_offset: u64,
     next_next_record_index: u32,
     next_next_reference_offset: u64,
-    flags: NativeBytes<[u8; 2]>,
+    flags: NativeBytes<&'a [u8]>,
     flags_offset: u64,
     next_record_index: u32,
     next_reference_offset: u64,
@@ -687,7 +687,13 @@ impl Serialize for DesignLoftLegacyBodyCarrier {
             repeated_opaque_index_offset: self.repeated_opaque_index_offset,
             next_next_record_index: self.next_next_record_index,
             next_next_reference_offset: self.next_next_reference_offset,
-            flags: ([0, 0]).into(),
+            flags: NativeBytes::from(
+                if self.next_reference_offset.checked_sub(self.flags_offset) == Some(3) {
+                    &[1, 0, 0][..]
+                } else {
+                    &[0, 0][..]
+                },
+            ),
             flags_offset: self.flags_offset,
             next_record_index: self.next_record_index,
             next_reference_offset: self.next_reference_offset,
@@ -724,7 +730,7 @@ struct DesignLoftLegacyBodyCarrierSerde {
     repeated_opaque_index_offset: u64,
     next_next_record_index: u32,
     next_next_reference_offset: u64,
-    flags: NativeBytes<[u8; 2]>,
+    flags: NativeBytes<Vec<u8>>,
     flags_offset: u64,
     next_record_index: u32,
     next_reference_offset: u64,
@@ -764,8 +770,14 @@ impl TryFrom<DesignLoftLegacyBodyCarrierSerde> for DesignLoftLegacyBodyCarrier {
         if wire.repeated_opaque_index != wire.opaque_index {
             return Err("repeated_opaque_index disagrees with opaque_index".into());
         }
-        if wire.flags != [0, 0] {
-            return Err("flags must be zero".into());
+        let expected_flags: &[u8] =
+            if wire.next_reference_offset.checked_sub(wire.flags_offset) == Some(3) {
+                &[1, 0, 0]
+            } else {
+                &[0, 0]
+            };
+        if wire.flags.as_ref() != expected_flags {
+            return Err("flags disagree with frame layout".into());
         }
         let trailing_scope_reference_offset = match (
             wire.trailing_scope_record_index,
@@ -832,7 +844,16 @@ impl From<DesignLoftLegacyBodyCarrier> for DesignLoftLegacyBodyCarrierSerde {
             repeated_opaque_index_offset: carrier.repeated_opaque_index_offset,
             next_next_record_index: carrier.next_next_record_index,
             next_next_reference_offset: carrier.next_next_reference_offset,
-            flags: ([0, 0]).into(),
+            flags: (if carrier
+                .next_reference_offset
+                .checked_sub(carrier.flags_offset)
+                == Some(3)
+            {
+                vec![1, 0, 0]
+            } else {
+                vec![0, 0]
+            })
+            .into(),
             flags_offset: carrier.flags_offset,
             next_record_index: carrier.next_record_index,
             next_reference_offset: carrier.next_reference_offset,
