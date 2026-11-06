@@ -1015,6 +1015,33 @@ Offsets are relative to the container-GUID record's indexed header. A type-speci
 | 32 | 40 | `fusion_uuid` | `bytes[40]` | little | spec | the 36-byte LP-ASCII `fusion_uuid` at offset 32 |
 | 72 | 11 | `entry_name_backlink` | `bytes[11]` | little | spec | a marked same-segment backlink to the entry-name record at offset 72 |
 
+## `paramesh_flagged_mesh_body_join_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 568 B
+
+Offsets are relative to the mesh-body primary indexed header. Presentation fields occupy the unstated spans, and the primary record can continue after this fixed prefix.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Its indexed header is followed by ten zero bytes. |
+| 11 | 9 | `zero_run_9` | `bytes[9]` | little | spec | in place of the last of the ten zero bytes, and a u32 at offset 21 |
+| 20 | 1 | `flag` | `u8` | little | spec | A mesh body can instead store byte `01` at offset 20 · value `1` |
+| 21 | 4 | `flagged_word` | `u32` | little | spec | and a u32 at offset 21. In this flagged form |
+| 46 | 128 | `first_transform` | `f64[16]` | little | spec | the matrices start at offsets 46 and 175 |
+| 175 | 128 | `second_transform` | `f64[16]` | little | spec | the matrices start at offsets 46 and 175 |
+| 512 | 11 | `feature_scope_reference` | `bytes[11]` | little | spec | the five references start at offsets 512, 523, 534, 545, and 557 |
+| 523 | 11 | `wrapper_reference` | `bytes[11]` | little | spec | the five references start at offsets 512, 523, 534, 545, and 557 |
+| 534 | 11 | `body_owner_reference` | `bytes[11]` | little | spec | the five references start at offsets 512, 523, 534, 545, and 557 |
+| 545 | 11 | `container_guid_reference` | `bytes[11]` | little | spec | the five references start at offsets 512, 523, 534, 545, and 557 |
+| 557 | 11 | `scene_node_reference` | `bytes[11]` | little | spec | the five references start at offsets 512, 523, 534, 545, and 557 |
+
+Unstated regions:
+
+- `25..46` (21 B): The remaining mesh-body prologue is outside this fixed join table.
+- `174..175` (1 B): One structural byte separates the two transform blocks.
+- `303..512` (209 B): Presentation fields occupy the span before the feature-scope reference.
+- `556..557` (1 B): One structural byte separates the GUID and Scene-node references.
+
 ## `paramesh_mesh_body_join_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 564 B

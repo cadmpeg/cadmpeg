@@ -819,6 +819,38 @@ pub(crate) mod paramesh_guid_join_prefix {
     pub(crate) const ENTRY_NAME_BACKLINK: usize = 72;
 }
 
+/// Byte offsets for the `paramesh_flagged_mesh_body_join_prefix` record.
+///
+/// Spec §3.1. Record length 568 B.
+///
+/// ```text
+/// Offsets are relative to the mesh-body primary indexed header. Presentation fields occupy the unstated spans, and the primary record can continue after this fixed prefix.
+/// ```
+pub(crate) mod paramesh_flagged_mesh_body_join_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 568;
+    /// Offset of `zero_run_9` (`bytes[9]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_9: usize = 11;
+    /// Offset of `flag` (`u8`). Spec §3.1.
+    pub(crate) const FLAG: usize = 20;
+    /// Stated value of `flag` (`u8`). Spec §3.1.
+    pub(crate) const FLAG_VALUE: u8 = 1;
+    /// Offset of `first_transform` (`f64[16]`, little-endian). Spec §3.1.
+    pub(crate) const FIRST_TRANSFORM: usize = 46;
+    /// Offset of `second_transform` (`f64[16]`, little-endian). Spec §3.1.
+    pub(crate) const SECOND_TRANSFORM: usize = 175;
+    /// Offset of `feature_scope_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const FEATURE_SCOPE_REFERENCE: usize = 512;
+    /// Offset of `wrapper_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const WRAPPER_REFERENCE: usize = 523;
+    /// Offset of `body_owner_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const BODY_OWNER_REFERENCE: usize = 534;
+    /// Offset of `container_guid_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const CONTAINER_GUID_REFERENCE: usize = 545;
+    /// Offset of `scene_node_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const SCENE_NODE_REFERENCE: usize = 557;
+}
+
 /// Byte offsets for the `paramesh_mesh_body_join_prefix` record.
 ///
 /// Spec §3.1. Record length 564 B.

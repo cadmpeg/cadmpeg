@@ -24,6 +24,7 @@ use crate::layout::paramesh_collection_owner_v17 as collection_owner_v17;
 use crate::layout::paramesh_entry_name_prefix as entry_name_prefix;
 use crate::layout::paramesh_feature_scope_base as feature_scope_base;
 use crate::layout::paramesh_feature_scope_prefix as feature_scope;
+use crate::layout::paramesh_flagged_mesh_body_join_prefix as flagged_body;
 use crate::layout::paramesh_flagged_mesh_collection_prefix as flagged_collection;
 use crate::layout::paramesh_guid_join_prefix as guid_join;
 use crate::layout::paramesh_mesh_body_join_prefix as mesh_body;
@@ -40,7 +41,7 @@ use crate::records::mesh::{
     DesignMeshEntryName, DesignMeshFeature, DesignMeshFixedRecord, DesignMeshGuid,
     DesignMeshPlacement, DesignMeshRecordIdentity, DesignMeshSceneBounds, DesignMeshSceneNode,
     DesignMeshSceneState, DesignMeshScope, DesignMeshTextureResource, DesignMeshTextureTable,
-    MeshAffineTransform,
+    MeshAffineTransform, MeshBodyLayout,
 };
 use cadmpeg_core::decode::{bounded_len, u64_from_index, View};
 use cadmpeg_core::CodecError;
@@ -170,9 +171,9 @@ impl MeshAffineTransform {
 }
 
 /// The two equal affine maps stored by a mesh-body class record.
-fn mesh_body_transform(payload: &[u8]) -> Option<MeshAffineTransform> {
-    let first = MeshAffineTransform::parse(payload, mesh_body::FIRST_TRANSFORM)?;
-    let second = MeshAffineTransform::parse(payload, mesh_body::SECOND_TRANSFORM)?;
+fn mesh_body_transform(payload: &[u8], layout: MeshBodyLayout) -> Option<MeshAffineTransform> {
+    let first = MeshAffineTransform::parse(payload, layout.first_transform)?;
+    let second = MeshAffineTransform::parse(payload, layout.second_transform)?;
     (first == second).then_some(first)
 }
 
@@ -610,18 +611,26 @@ fn parse_mesh_body_record(
     let record = &bytes[frame.start..frame.end];
     let identity = record_identity(record, frame, "mesh-body")?;
     let parsed = (|| {
-        (record.get(mesh_body::ZERO_RUN_10..mesh_body::ZERO_RUN_10 + 10) == Some(&[0; 10]))
+        let flagged = record.get(flagged_body::FLAG) == Some(&flagged_body::FLAG_VALUE);
+        let zero_run = if flagged {
+            flagged_body::ZERO_RUN_9..flagged_body::FLAG
+        } else {
+            mesh_body::ZERO_RUN_10..mesh_body::ZERO_RUN_10 + 10
+        };
+        record
+            .get(zero_run)?
+            .iter()
+            .all(|byte| *byte == 0)
             .then_some(())?;
-        let transform = mesh_body_transform(record)?;
-        let placement = DesignMeshPlacement::new(identity, transform).ok()?;
-        let scope_record_index =
-            exact_local_record_index(record, mesh_body::FEATURE_SCOPE_REFERENCE)?;
-        let wrapper_record_index = exact_local_record_index(record, mesh_body::WRAPPER_REFERENCE)?;
-        let owner_record_index = exact_local_record_index(record, mesh_body::BODY_OWNER_REFERENCE)?;
-        let guid_record_index =
-            exact_local_record_index(record, mesh_body::CONTAINER_GUID_REFERENCE)?;
+        let layout = MeshBodyLayout::of(flagged);
+        let transform = mesh_body_transform(record, layout)?;
+        let placement = DesignMeshPlacement::new(identity, transform, flagged).ok()?;
+        let scope_record_index = exact_local_record_index(record, layout.feature_scope_reference)?;
+        let wrapper_record_index = exact_local_record_index(record, layout.wrapper_reference)?;
+        let owner_record_index = exact_local_record_index(record, layout.body_owner_reference)?;
+        let guid_record_index = exact_local_record_index(record, layout.container_guid_reference)?;
         let scene_node_record_index =
-            exact_local_record_index(record, mesh_body::SCENE_NODE_REFERENCE)?;
+            exact_local_record_index(record, layout.scene_node_reference)?;
         let collection_reference_at = record.len().checked_sub(SAME_SEGMENT_REFERENCE_BYTES)?;
         let collection_record_index = exact_local_record_index(record, collection_reference_at)?;
         Some(MeshBodyRecord {
@@ -2751,6 +2760,87 @@ mod tests {
         let decoded: crate::records::mesh::DesignMeshFeature =
             serde_json::from_value(wire).unwrap();
         assert_eq!(decoded, *feature);
+    }
+
+    fn flagged_mesh_graph_with_flagged_body() -> (SyntheticMeshGraph, usize) {
+        let mut graph = synthetic_mesh_graph_with_collection(false, 1, CollectionForm::Flagged(4));
+        graph.bytes[21..25].copy_from_slice(&0_u32.to_le_bytes());
+        graph.bytes.splice(77..77, [0; 4]);
+        for record in graph.meta.records.iter_mut().skip(1) {
+            record.bulk_offset += 4;
+        }
+        let start = sole_typed_frame(&graph, MESH_BODY_TYPE_GUID).start;
+        graph.bytes[start + 20] = 1;
+        graph.bytes.splice(start + 21..start + 21, [0; 4]);
+        for record in &mut graph.meta.records {
+            if record.bulk_offset > u64::try_from(start).unwrap() {
+                record.bulk_offset += 4;
+            }
+        }
+        let guid_start = sole_typed_frame(&graph, MESH_GUID_TYPE_GUID).start;
+        graph.bytes[guid_start + 21..guid_start + 32].copy_from_slice(&MESH_GUID_BYTES_21_TO_31);
+        (graph, start)
+    }
+
+    #[test]
+    fn flagged_mesh_body_moves_its_join_fields_by_four_bytes() {
+        let (graph, start) = flagged_mesh_graph_with_flagged_body();
+        let features = parse_mesh_design_records(
+            &graph.bytes,
+            &graph.meta,
+            "Synthetic/BulkStream.dat",
+            &mut no_texture_asset,
+        )
+        .expect("flagged mesh graph");
+        let [feature] = features.as_slice() else {
+            panic!("one mesh feature");
+        };
+        let [body] = feature.bodies() else {
+            panic!("one mesh body");
+        };
+        assert_eq!(body.placement.record().record_index(), 104);
+        assert_eq!(body.placement.record().byte_offset(), start as u64);
+        assert_eq!(
+            body.placement.transform().cells(),
+            [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]
+        );
+        assert_eq!(body.guid.opaque_run(), Some(&MESH_GUID_BYTES_21_TO_31));
+        let start = start as u64;
+        let wire = serde_json::to_value(feature).unwrap();
+        let body_wire = &wire["bodies"][0];
+        assert_eq!(
+            body_wire["transform_offsets"],
+            serde_json::json!([start + 46, start + 175])
+        );
+        assert_eq!(body_wire["scope_reference_offset"], start + 512);
+        assert_eq!(body_wire["wrapper_reference_offset"], start + 523);
+        assert_eq!(body_wire["owner_reference_offset"], start + 534);
+        assert_eq!(body_wire["guid_reference_offset"], start + 545);
+        assert_eq!(body_wire["scene_node_reference_offset"], start + 557);
+        let decoded: crate::records::mesh::DesignMeshFeature =
+            serde_json::from_value(wire.clone()).unwrap();
+        assert_eq!(decoded, *feature);
+        let mut plain_offsets = wire;
+        plain_offsets["bodies"][0]["transform_offsets"] =
+            serde_json::json!([start + 42, start + 171]);
+        assert!(
+            serde_json::from_value::<crate::records::mesh::DesignMeshFeature>(plain_offsets)
+                .is_err()
+        );
+        assert_eq!(super::mesh_guid_byte_losses(&features).count(), 1);
+    }
+
+    #[test]
+    fn flagged_mesh_body_requires_zero_bytes_11_through_19() {
+        let (mut graph, start) = flagged_mesh_graph_with_flagged_body();
+        graph.bytes[start + 19] = 1;
+        assert!(parse_mesh_design_records(
+            &graph.bytes,
+            &graph.meta,
+            "Synthetic/BulkStream.dat",
+            &mut no_texture_asset,
+        )
+        .is_err());
     }
 
     #[test]

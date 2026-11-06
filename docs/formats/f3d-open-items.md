@@ -298,6 +298,18 @@ travel.
 
 **Note.** None.
 
+### DR-293. Flagged mesh-body words
+
+**Question.** What does the u32 at offset 21 of a flagged mesh body store, and what does the u32 at offset 25 that follows it store?
+
+**Known.** `f3d.md` §3.1 "The mesh-body class" gives the flagged layout. The u32 at offset 21 is `0` in every flagged mesh body. The u32 at offset 25 takes values from 1 through 5. An unflagged mesh body can store `1` in the u32 at offset 21. The decoder reads neither word.
+
+**Need.** The flagged mesh-collection words (DR-85) can count the same events. A design in which mesh bodies are inserted and removed one at a time, saved after each step, shows whether the words count bodies, edits, or versions.
+
+**Conflict.** None.
+
+**Note.** None.
+
 ### DR-115. Mesh container decode-failure taxonomy
 
 **Question.** Which malformed or unsupported container states does `mesh.container-undecoded` cover, and does the retained error identify the failing stage?

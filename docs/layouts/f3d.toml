@@ -3262,6 +3262,112 @@ source = "spec"
 anchor = "a marked same-segment backlink to the entry-name record at offset 72"
 
 [[record]]
+name = "paramesh_flagged_mesh_body_join_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "A mesh body can instead store byte `01` at offset 20, in place of the last of the ten zero bytes, and a u32 at offset 21."
+size = 568
+note = "Offsets are relative to the mesh-body primary indexed header. Presentation fields occupy the unstated spans, and the primary record can continue after this fixed prefix."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Its indexed header is followed by ten zero bytes."
+
+[[record.field]]
+name = "zero_run_9"
+offset = 11
+type = "bytes[9]"
+source = "spec"
+anchor = "in place of the last of the ten zero bytes, and a u32 at offset 21"
+
+[[record.field]]
+name = "flag"
+offset = 20
+type = "u8"
+value = 1
+source = "spec"
+anchor = "A mesh body can instead store byte `01` at offset 20"
+
+[[record.field]]
+name = "flagged_word"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "and a u32 at offset 21. In this flagged form"
+
+[[record.gap]]
+offset = 25
+size = 21
+note = "The remaining mesh-body prologue is outside this fixed join table."
+
+[[record.field]]
+name = "first_transform"
+offset = 46
+type = "f64[16]"
+source = "spec"
+anchor = "the matrices start at offsets 46 and 175"
+
+[[record.gap]]
+offset = 174
+size = 1
+note = "One structural byte separates the two transform blocks."
+
+[[record.field]]
+name = "second_transform"
+offset = 175
+type = "f64[16]"
+source = "spec"
+anchor = "the matrices start at offsets 46 and 175"
+
+[[record.gap]]
+offset = 303
+size = 209
+note = "Presentation fields occupy the span before the feature-scope reference."
+
+[[record.field]]
+name = "feature_scope_reference"
+offset = 512
+type = "bytes[11]"
+source = "spec"
+anchor = "the five references start at offsets 512, 523, 534, 545, and 557"
+
+[[record.field]]
+name = "wrapper_reference"
+offset = 523
+type = "bytes[11]"
+source = "spec"
+anchor = "the five references start at offsets 512, 523, 534, 545, and 557"
+
+[[record.field]]
+name = "body_owner_reference"
+offset = 534
+type = "bytes[11]"
+source = "spec"
+anchor = "the five references start at offsets 512, 523, 534, 545, and 557"
+
+[[record.field]]
+name = "container_guid_reference"
+offset = 545
+type = "bytes[11]"
+source = "spec"
+anchor = "the five references start at offsets 512, 523, 534, 545, and 557"
+
+[[record.gap]]
+offset = 556
+size = 1
+note = "One structural byte separates the GUID and Scene-node references."
+
+[[record.field]]
+name = "scene_node_reference"
+offset = 557
+type = "bytes[11]"
+source = "spec"
+anchor = "the five references start at offsets 512, 523, 534, 545, and 557"
+
+[[record]]
 name = "paramesh_mesh_body_join_prefix"
 kind = "byte"
 section = "3.1"
