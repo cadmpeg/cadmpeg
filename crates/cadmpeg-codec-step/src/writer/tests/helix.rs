@@ -16,6 +16,94 @@ use cadmpeg_ir::{
     CadIr,
 };
 
+#[test]
+fn standalone_intersection_with_identical_support_curves_writes_a_pcurve() {
+    use cadmpeg_ir::geometry::{
+        pcurve::{PcurveGeometry, PcurveNurbs},
+        IntcurveSupportContext, IntcurveSupportSide, SupportPcurve,
+    };
+    use cadmpeg_ir::math::Point2;
+
+    let mut ir = edgeless_doc();
+    let curve_id = CurveId::mint("test:model:curve#intersection").unwrap();
+    let construction_id =
+        ProceduralCurveId::mint("test:model:procedural_curve#intersection").unwrap();
+    let nurbs = PcurveNurbs::from_lanes(
+        1,
+        vec![0.0, 0.0, 1.0, 1.0],
+        vec![Point2::new(0.0, 0.0), Point2::new(1.0, 1.0)],
+        None,
+        false,
+    )
+    .unwrap();
+    let expected = PcurveGeometry::Nurbs { nurbs };
+    let side = IntcurveSupportSide {
+        surface: Some(ir.model.surfaces[0].id.clone()),
+        pcurve: Some(SupportPcurve::from(expected.clone())),
+    };
+    let context =
+        IntcurveSupportContext::try_new([side.clone(), side], [0.0, 1.0], Default::default())
+            .unwrap();
+    ir.model.curves.push(Curve {
+        native_ref: None,
+        id: curve_id,
+        parameter_range: None,
+        geometry: CurveGeometry::Procedural {
+            construction: construction_id.clone(),
+            cache: None,
+        },
+        source_object: None,
+    });
+    ir.model.procedural_curves.push(ProceduralCurve::new(
+        construction_id.clone(),
+        ProceduralCurveDefinition::Intersection {
+            context,
+            discontinuity_flag: false,
+            cache: None,
+        },
+    ));
+    let mut bytes = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut bytes,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .unwrap();
+    assert_eq!(entity_count(&bytes, "PCURVE"), 1);
+    assert!(report.losses.iter().any(|loss| loss.code
+        == StepLossCode::ProceduralReducedToCarrier.kind()
+        && loss.message.contains(construction_id.as_str())));
+    let decoded = <crate::StepCodec as cadmpeg_ir::codec::Codec>::decode(
+        &crate::StepCodec::default(),
+        &mut std::io::Cursor::new(bytes),
+        &cadmpeg_ir::codec::DecodeOptions::default(),
+    )
+    .unwrap()
+    .into_parts()
+    .0;
+    let written = decoded
+        .model
+        .pcurves
+        .iter()
+        .find(|pcurve| pcurve.support_surface().is_some())
+        .unwrap();
+    for parameter in [0.0, 0.25, 0.75, 1.0] {
+        let evaluate = |geometry| {
+            cadmpeg_ir::eval::decode::pcurve_uv(
+                cadmpeg_ir::eval::admission::EvaluationAdmission::Standard,
+                geometry,
+                parameter,
+            )
+            .unwrap()
+        };
+        let actual = evaluate(&written.geometry);
+        let source = evaluate(&expected);
+        assert!((actual.u - source.u).abs() < 1.0e-12);
+        assert!((actual.v - source.v).abs() < 1.0e-12);
+    }
+}
+
 /// The edgeless document with its one edge closed on a full turn of a
 /// pitchless helix in the face plane, from and to `(1, 0, 0)`.
 fn helix_edge_doc(cache: bool) -> CadIr {
