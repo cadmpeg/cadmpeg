@@ -14,6 +14,7 @@ impl crate::IgesVersion {
             entity.type_code,
             124 | 125
                 | 106
+                | 130
                 | 132
                 | 150
                 | 152
