@@ -664,6 +664,7 @@ mod tests {
                 "feature.label-unusable",
                 "sketch.construction-unresolved",
                 "sketch.axis-distance-native",
+                "sketch.construction-carrier-conflict",
                 "sketch.paired-association-unprojected",
                 "sketch.curve-native",
                 "sketch.member-native",
