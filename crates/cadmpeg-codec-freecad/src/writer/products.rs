@@ -436,24 +436,26 @@ fn link_state(
     reference: &cadmpeg_ir::products::LinkState,
     names: &HashMap<String, String>,
     losses: &mut Vec<LossNote>,
-) -> Result<(), CodecError> {
+) {
     if let Some(claim) = reference.claim_child() {
         bool_property(object, "LinkClaimChild", claim);
     }
     if let Some(component) = reference.element_component() {
-        let name = names
-            .get(component.as_str())
-            .ok_or_else(|| CodecError::malformed("link element component is absent"))?;
+        let content = if let Some(name) = names.get(component.as_str()) {
+            format!(
+                "<LinkList count=\"1\">{}</LinkList>",
+                xml::element("Link", &[("value", name.clone())])
+            )
+        } else {
+            losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
+                "link {} element component {component} is absent and is omitted",
+                object.name
+            )));
+            "<LinkList count=\"0\"></LinkList>".to_owned()
+        };
         object.set(
             "ElementList",
-            xml::property(
-                "ElementList",
-                "App::PropertyLinkList",
-                &format!(
-                    "<LinkList count=\"1\">{}</LinkList>",
-                    xml::element("Link", &[("value", name.clone())])
-                ),
-            ),
+            xml::property("ElementList", "App::PropertyLinkList", &content),
         );
     }
     if let Some(copy) = reference.copy_on_change() {
@@ -505,7 +507,6 @@ fn link_state(
             bool_property(object, "LinkCopyOnChangeTouched", touched);
         }
     }
-    Ok(())
 }
 
 fn order_siblings(
@@ -640,7 +641,7 @@ pub(super) fn write(
                 ),
             );
             if let Some(reference) = &occurrence.link {
-                link_state(object, reference, names, losses)?;
+                link_state(object, reference, names, losses);
             }
             // Array element lists have no neutral home: the occurrence model
             // carries the link policy but not the per-element placements and
