@@ -4,36 +4,12 @@ Record offsets, field widths, and endianness are also maintained as a machine-ch
 
 ## 1. Support envelope
 
-The primary write envelope is a ZIP archive containing `Document.xml` with document
-`SchemaVersion=4` and `FileVersion=1`. The decode envelope accepts document schemas 2, 3, and 4.
+An FCStd document is a ZIP archive containing `Document.xml`. The persistence
+schemas are 2, 3, and 4.
 The application graph may contain core App, Part, PartDesign, Sketcher,
 Spreadsheet, Assembly, TechDraw, and GUI persistence records. Exact shapes may use text or binary
 B-rep side entries. GUI state, thumbnails, persistent element maps, and string-hasher tables are
 independently optional.
-
-The synthesis catalog contains `fcstd:schema-2`, `fcstd:schema-3`, and
-`fcstd:schema-4`; schema 4 is the default for authored or foreign documents.
-An unchanged, represented source with its fidelity record can use the existing
-patched archive path. The document-local digest, typed native validation, and
-`SourceFidelity::unrepresented()` guard admit that optimization. A changed document,
-an unavailable layout, an opaque source record, or a patch that cannot express the
-edit selects synthesis and reports `PatchDeclined` where applicable.
-
-Synthesis generates `Document.xml`, `GuiDocument.xml`, and exact-shape side entries
-from CADIR. Neutral arenas own every value with a neutral form. The writer's typed
-native records supply application values that have no neutral form; retained XML,
-archive bytes, and unreadable payloads never supply synthesized content. Vendor
-application objects with independently typed properties remain writable. A given-up property has one `unknowns` stub and a `record.unreadable` loss; independently read properties remain available. Unsupported arenas and entities produce export losses; only
-malformed input, capacity limits, and an unresolved target can refuse a write.
-
-Source-less construction and synthesis share the structured document writer.
-Typed property value trees include parent indices, so nested values are rebuilt
-with XML escaping rather than copied or flattened. JSON-mode Python properties
-are decoded into editable `decoded_json` values and regenerated without executing
-Python. Pickles and other opaque embedded or side payloads are unrepresented:
-their served classes enter source fidelity and force synthesis. Geometry requests
-retain typed native design records; this permits patching only when every source
-record is typed, rather than when its filename and bytes were retained.
 
 Schema 2 has one `Features` declaration section and one `FeatureData` value section. Schema 3 and
 schema 4 have one `Objects` declaration section and one `ObjectData` value section. The section and
