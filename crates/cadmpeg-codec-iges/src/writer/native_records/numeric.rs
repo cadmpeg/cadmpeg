@@ -75,6 +75,10 @@ pub(in crate::writer) fn retain_directory(ir: &CadIr, source_id: &str, entity: &
     else {
         return;
     };
+    retain_record(native, entity);
+}
+
+pub(in crate::writer) fn retain_record(native: &NativeRecord, entity: &mut Entity) {
     if native.field("entity_type").and_then(|value| value.as_u64())
         != Some(u64::from(entity.type_code))
     {
