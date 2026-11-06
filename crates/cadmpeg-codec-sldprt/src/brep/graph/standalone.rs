@@ -1,25 +1,31 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Geometry-only streams framed by compact analytic and point records.
+//! Geometry-only streams framed by analytic, spline and point records.
 
 use super::{admit_brep_entity, emit_curve, id_surf, retain_surface_geometry, Brep};
-use crate::brep::{parse_carrier, topology, Carrier, CurveCarrier, SurfaceCarrier, LEN_TO_MM};
+use crate::brep::{
+    parse_carrier, spline, topology, Carrier, CurveCarrier, SurfaceCarrier, LEN_TO_MM,
+};
 use cadmpeg_core::decode::{u64_from_index, DecodeContext};
 use cadmpeg_ir::annotations::{AnnotationBuilder, StreamHandle};
 use cadmpeg_ir::geometry::Surface;
 use cadmpeg_ir::topology::Point;
+use std::collections::HashSet;
 
 enum Record {
     Curve(CurveCarrier),
     Surface(SurfaceCarrier),
     Point(topology::Point, usize),
+    Spline(usize),
+    Auxiliary(usize),
 }
 
 impl Record {
-    fn identity(&self) -> u32 {
+    fn identity(&self) -> Option<u32> {
         match self {
-            Self::Curve(curve) => curve.attr,
-            Self::Surface(surface) => surface.attr,
-            Self::Point(point, _) => point.attr,
+            Self::Curve(curve) => Some(curve.attr),
+            Self::Surface(surface) => Some(surface.attr),
+            Self::Point(point, _) => Some(point.attr),
+            Self::Spline(_) | Self::Auxiliary(_) => None,
         }
     }
 
@@ -27,12 +33,12 @@ impl Record {
         match self {
             Self::Curve(curve) => curve.end,
             Self::Surface(surface) => surface.end,
-            Self::Point(_, end) => *end,
+            Self::Point(_, end) | Self::Spline(end) | Self::Auxiliary(end) => *end,
         }
     }
 }
 
-fn record(body: &[u8], offset: usize) -> Option<Record> {
+fn record(body: &[u8], offset: usize, arrays: &HashSet<u32>) -> Option<Record> {
     if body.get(offset..offset.checked_add(2)?) == Some(&[0, 0x1d]) {
         let point = topology::parse_point(body, offset, false)?;
         let end = point
@@ -40,6 +46,19 @@ fn record(body: &[u8], offset: usize) -> Option<Record> {
             .checked_add(std::mem::size_of::<[f64; 3]>())?;
         body.get(offset..end)?;
         Some(Record::Point(point, end))
+    } else if body.get(offset..offset.checked_add(2)?) == Some(&[0, 0x86]) {
+        let mut end = spline::curve_prefix_end(body, offset)?;
+        cadmpeg_parasolid::pointer::read_at(body, &mut end)?;
+        Some(Record::Spline(end))
+    } else if body.get(offset..offset.checked_add(2)?) == Some(&[0, 0x88]) {
+        Some(Record::Auxiliary(spline::curve_prefix_end(body, offset)?))
+    } else if matches!(
+        body.get(offset..offset.checked_add(2)?),
+        Some([0, 0x2d | 0x7f | 0x80])
+    ) {
+        Some(Record::Auxiliary(spline::array_record_end(
+            body, offset, arrays,
+        )?))
     } else {
         match parse_carrier(body, offset)? {
             Carrier::Curve(curve) => Some(Record::Curve(curve)),
@@ -48,17 +67,47 @@ fn record(body: &[u8], offset: usize) -> Option<Record> {
     }
 }
 
+fn has_top_level_spline(body: &[u8]) -> bool {
+    let mut offset = 0;
+    let arrays = HashSet::new();
+    while offset < body.len() {
+        if body
+            .get(offset..)
+            .is_some_and(|rest| rest.starts_with(&[0, 0x86]))
+        {
+            return true;
+        }
+        match record(body, offset, &arrays) {
+            Some(carrier @ (Record::Curve(_) | Record::Surface(_) | Record::Point(_, _))) => {
+                offset = carrier.end();
+            }
+            _ => return false,
+        }
+    }
+    false
+}
+
 pub(super) fn decode(
     ctx: &DecodeContext<'_>,
     body: &[u8],
     stream: &cadmpeg_ir::StreamName,
 ) -> Result<Option<Brep>, cadmpeg_core::CodecError> {
+    let has_splines = has_top_level_spline(body);
+    let arrays = if has_splines {
+        spline::referenced_array_attrs(body)
+    } else {
+        HashSet::new()
+    };
     let mut offset = 0;
     let mut count = 0usize;
+    let mut spline_count = 0usize;
     while offset < body.len() {
-        let Some(carrier) = record(body, offset) else {
+        let Some(carrier) = record(body, offset, &arrays) else {
             return Ok(None);
         };
+        if matches!(carrier, Record::Spline(_)) {
+            spline_count += 1;
+        }
         offset = carrier.end();
         count += 1;
     }
@@ -71,16 +120,42 @@ pub(super) fn decode(
         count,
         "check standalone carrier identities",
     )?;
+    let mut spline_offsets = Vec::new();
+    ctx.reserve_working(
+        &mut spline_offsets,
+        spline_count,
+        "index standalone spline offsets",
+    )?;
     offset = 0;
     while offset < body.len() {
-        let Some(carrier) = record(body, offset) else {
+        let Some(carrier) = record(body, offset, &arrays) else {
             return Ok(None);
         };
-        identities.push(carrier.identity());
+        if let Some(identity) = carrier.identity() {
+            identities.push(identity);
+        } else if matches!(carrier, Record::Spline(_)) {
+            spline_offsets.push(offset);
+        }
         offset = carrier.end();
     }
+    let mut refusals = Vec::new();
+    let indexed = if has_splines {
+        spline::scan_curve_carriers_at(body, &mut refusals, |offset| {
+            spline_offsets.binary_search(&offset).is_ok()
+        })
+    } else {
+        Default::default()
+    };
+    if !refusals.is_empty() || indexed.len() != spline_offsets.len() {
+        return Ok(None);
+    }
+    let mut splines = Vec::new();
+    ctx.reserve_working(&mut splines, indexed.len(), "index standalone splines")?;
+    splines.extend(indexed.into_values());
+    splines.sort_by_key(|curve| curve.offset);
+    identities.extend(splines.iter().map(|curve| curve.attr));
     identities.sort_unstable();
-    if identities.windows(2).any(|pair| pair[0] == pair[1]) {
+    if identities.is_empty() || identities.windows(2).any(|pair| pair[0] == pair[1]) {
         return Ok(None);
     }
     let mut out = Brep::default();
@@ -88,7 +163,7 @@ pub(super) fn decode(
     let stream = StreamHandle::new(stream.clone());
     offset = 0;
     while offset < body.len() {
-        let Some(carrier) = record(body, offset) else {
+        let Some(carrier) = record(body, offset, &arrays) else {
             return Ok(None);
         };
         match carrier {
@@ -138,6 +213,22 @@ pub(super) fn decode(
                 admit_brep_entity(ctx)?;
                 out.points.push(Point::new(id, position, None));
             }
+            Record::Spline(end) => {
+                let Ok(index) = splines.binary_search_by_key(&offset, |curve| curve.offset) else {
+                    return Ok(None);
+                };
+                let curve = &splines[index];
+                let id = super::id_curve(curve.attr);
+                annotations.note(
+                    id.as_str(),
+                    &stream,
+                    u64_from_index(curve.offset),
+                    Some("nurbs_curve"),
+                );
+                emit_curve(ctx, &mut out, curve)?;
+                offset = end;
+            }
+            Record::Auxiliary(end) => offset = end,
         }
     }
     out.annotations = annotations.build();
@@ -160,10 +251,26 @@ mod tests {
         assert!(super::decode(&ctx, &line[..line.len() - 1], &stream)?.is_none());
         let duplicate = [line.as_slice(), line.as_slice()].concat();
         assert!(super::decode(&ctx, &duplicate, &stream)?.is_none());
+        let incidental = crate::test_support::parasolid::line_carrier(
+            4,
+            [f64::from_bits(0x3ff0_0086_0000_0000), 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+        );
+        assert!(!super::has_top_level_spline(&incidental));
+        assert!(super::decode(&ctx, &incidental, &stream)?.is_some());
         let point = crate::test_support::parasolid::world_point(3, [1.0, 2.0, 3.0]);
         let mixed = [line.as_slice(), point.as_slice()].concat();
         assert!(super::decode(&ctx, &mixed, &stream)?.is_some_and(|brep| brep.points.len() == 1));
         assert!(super::decode(&ctx, &mixed[..mixed.len() - 1], &stream)?.is_none());
+        for spline in [
+            crate::test_support::parasolid::linear_nurbs_curve_carrier(10, 20),
+            crate::test_support::parasolid::rational_linear_nurbs_curve_carrier(10, 20),
+        ] {
+            assert!(super::decode(&ctx, &spline, &stream)?.is_some_and(|brep| {
+                matches!(brep.curves.as_slice(), [curve] if matches!(curve.geometry, cadmpeg_ir::geometry::CurveGeometry::Solved(cadmpeg_ir::geometry::SolvedCurveGeometry::Nurbs(_))))
+            }));
+            assert!(super::decode(&ctx, &spline[..spline.len() - 1], &stream)?.is_none());
+        }
         Ok(())
     }
 }
