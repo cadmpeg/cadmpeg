@@ -126,20 +126,379 @@ fn typed_profile_curve_program_refuses_two_half_disks_with_the_same_program() {
     assert_eq!(region, None);
 }
 
+fn line_entity(sketch: &SketchId, name: &str, start: (f64, f64), end: (f64, f64)) -> SketchEntity {
+    SketchEntity::new(
+        SketchEntityId::mint(format!("synthetic:test:id#{name}")).unwrap(),
+        sketch.clone(),
+        SketchGeometry::try_from(SketchGeometryDefinition::Line {
+            start: Point2::new(start.0, start.1),
+            end: Point2::new(end.0, end.1),
+        })
+        .unwrap(),
+    )
+}
+
+/// Four counterclockwise lines named `{name}-0` to `{name}-3` around the
+/// rectangle from `low` to `high`.
+fn rectangle(
+    sketch: &SketchId,
+    name: &str,
+    low: (f64, f64),
+    high: (f64, f64),
+) -> Vec<SketchEntity> {
+    let corners = [low, (high.0, low.1), high, (low.0, high.1)];
+    (0..4)
+        .map(|index| {
+            line_entity(
+                sketch,
+                &format!("{name}-{index}"),
+                corners[index],
+                corners[(index + 1) % 4],
+            )
+        })
+        .collect()
+}
+
+fn sketch_with_loops(id: SketchId, loops: &[&[SketchEntity]]) -> Sketch {
+    let profiles = loops
+        .iter()
+        .map(|entities| {
+            entities
+                .iter()
+                .map(|entity| SketchEntityUse {
+                    entity: entity.id().clone(),
+                    reversed: false,
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    Sketch {
+        id,
+        name: None,
+        configuration: None,
+        visible: None,
+        placement: cadmpeg_ir::sketches::SketchPlacement::try_resolved(
+            Point3::new(0.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            Vector3::new(1.0, 0.0, 0.0),
+        )
+        .unwrap(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(profiles).unwrap(),
+        native_ref: None,
+    }
+}
+
+/// The member ring that names every curve of `entities` in one direction.
+fn ring(entities: &[SketchEntity], reversed: bool) -> Vec<(&SketchEntity, bool)> {
+    entities.iter().map(|entity| (entity, reversed)).collect()
+}
+
+fn member_regions(
+    sketch: &Sketch,
+    entities: &[SketchEntity],
+    rings: &[Vec<(&SketchEntity, bool)>],
+) -> Option<Vec<SketchProfileRegion>> {
+    let rings = rings
+        .iter()
+        .map(|ring| {
+            ring.iter()
+                .map(|(entity, reversed)| SketchEntityUse {
+                    entity: entity.id().clone(),
+                    reversed: *reversed,
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    crate::test_support::with_decode_context(|ctx| {
+        super::super::arrangement_regions_matching_member_rings(
+            sketch,
+            entities,
+            &rings,
+            PROFILE_PROGRAM_TOLERANCE,
+            &ProfileGeometryWork::new(),
+            ctx,
+        )
+    })
+    .unwrap()
+}
+
+/// The exterior and hole rings of the one region that `rings` select.
+fn single_region(
+    sketch: &Sketch,
+    entities: &[SketchEntity],
+    rings: &[Vec<(&SketchEntity, bool)>],
+) -> (
+    Vec<cadmpeg_ir::features::SketchProfileBoundaryUse>,
+    Vec<Vec<cadmpeg_ir::features::SketchProfileBoundaryUse>>,
+) {
+    let regions = member_regions(sketch, entities, rings).expect("one region");
+    let [SketchProfileRegion::Trimmed {
+        outer_boundary,
+        hole_boundaries,
+    }] = regions.as_slice()
+    else {
+        panic!("one trimmed region: {regions:?}");
+    };
+    (
+        outer_boundary.iter().cloned().collect(),
+        hole_boundaries
+            .iter()
+            .map(|ring| ring.iter().cloned().collect())
+            .collect(),
+    )
+}
+
+fn ring_entities(ring: &[cadmpeg_ir::features::SketchProfileBoundaryUse]) -> Vec<SketchEntityId> {
+    let mut entities = ring
+        .iter()
+        .map(|use_| use_.entity.clone())
+        .collect::<Vec<_>>();
+    entities.sort_unstable();
+    entities
+}
+
+fn sorted_ids(entities: &[&SketchEntity]) -> Vec<SketchEntityId> {
+    let mut ids = entities
+        .iter()
+        .map(|entity| entity.id().clone())
+        .collect::<Vec<_>>();
+    ids.sort_unstable();
+    ids
+}
+
 #[test]
-fn counted_partial_curve_members_refuse_two_regions_with_the_same_multiset() {
+fn counted_member_directions_select_one_of_two_half_disks_with_the_same_curves() {
     let (sketch, entities) = divided_circle(false);
-    let members = [entities[1].id().clone(), entities[0].id().clone()];
-    let region = crate::test_support::with_decode_context(|ctx| {
-        super::super::arrangement_region_matching_curve_members(
+    let [circle, line] = [&entities[0], &entities[1]];
+    let (left, _) = single_region(&sketch, &entities, &[vec![(line, false), (circle, false)]]);
+    assert!(left
+        .iter()
+        .any(|use_| use_.entity == *line.id() && !use_.reversed));
+    let (right, _) = single_region(&sketch, &entities, &[vec![(line, true), (circle, false)]]);
+    assert!(right
+        .iter()
+        .any(|use_| use_.entity == *line.id() && use_.reversed));
+    assert_eq!(
+        member_regions(&sketch, &entities, &[vec![(line, false), (circle, true)]]),
+        None
+    );
+}
+
+#[test]
+fn counted_members_select_a_t_junction_region_with_a_curve_outside_the_profile_loops() {
+    // A 40 x 30 rectangle with one profile loop, and a diagonal from its
+    // lower-left corner that ends on the top side at (20, 30).
+    let id = SketchId::mint("synthetic:test:id#t-junction").unwrap();
+    let mut entities = rectangle(&id, "side", (0.0, 0.0), (40.0, 30.0));
+    let sketch = sketch_with_loops(id.clone(), &[&entities]);
+    entities.push(line_entity(&id, "diagonal", (0.0, 0.0), (20.0, 30.0)));
+    let [bottom, right, top, left, diagonal] = [0, 1, 2, 3, 4].map(|index| &entities[index]);
+
+    let (outer, holes) = single_region(
+        &sketch,
+        &entities,
+        &[vec![
+            (right, false),
+            (bottom, false),
+            (top, false),
+            (diagonal, true),
+        ]],
+    );
+    assert!(holes.is_empty());
+    assert_eq!(
+        ring_entities(&outer),
+        sorted_ids(&[bottom, right, top, diagonal])
+    );
+    let top_use = outer.iter().find(|use_| use_.entity == *top.id()).unwrap();
+    let [start, end] = top_use.parameter_range.endpoints();
+    assert!(
+        start.min(end).abs() < 1e-9 && (start.max(end) - 0.5).abs() < 1e-9,
+        "{start} {end}"
+    );
+
+    let (triangle, holes) = single_region(
+        &sketch,
+        &entities,
+        &[vec![(left, false), (top, false), (diagonal, false)]],
+    );
+    assert!(holes.is_empty());
+    assert_eq!(triangle.len(), 3);
+
+    assert_eq!(
+        member_regions(
             &sketch,
             &entities,
-            &members,
+            &[vec![
+                (right, false),
+                (bottom, false),
+                (top, false),
+                (diagonal, false),
+            ]],
+        ),
+        None
+    );
+}
+
+#[test]
+fn a_counted_hole_ring_names_the_island_of_the_selected_face() {
+    // An 80 x 60 rectangle, a 20 x 20 island, and a bridge line from the
+    // outer corner (0, 0) to the island corner (30, 20).
+    let id = SketchId::mint("synthetic:test:id#bridge").unwrap();
+    let outer = rectangle(&id, "outer", (0.0, 0.0), (80.0, 60.0));
+    let island = rectangle(&id, "island", (30.0, 20.0), (50.0, 40.0));
+    let sketch = sketch_with_loops(id.clone(), &[&island]);
+    let mut entities = outer.clone();
+    entities.extend(island.iter().cloned());
+    entities.push(line_entity(&id, "bridge", (0.0, 0.0), (30.0, 20.0)));
+
+    let (exterior, holes) = single_region(
+        &sketch,
+        &entities,
+        &[ring(&outer, false), ring(&island, true)],
+    );
+    assert_eq!(
+        ring_entities(&exterior),
+        sorted_ids(&outer.iter().collect::<Vec<_>>())
+    );
+    assert!(exterior.iter().all(|use_| !use_.reversed));
+    let [hole] = holes.as_slice() else {
+        panic!("one hole ring: {holes:?}");
+    };
+    assert_eq!(
+        ring_entities(hole),
+        sorted_ids(&island.iter().collect::<Vec<_>>())
+    );
+    assert!(hole.iter().all(|use_| use_.reversed), "{hole:?}");
+
+    let (interior, holes) = single_region(&sketch, &entities, &[ring(&island, false)]);
+    assert!(holes.is_empty());
+    assert!(interior.iter().all(|use_| !use_.reversed));
+
+    assert_eq!(
+        member_regions(&sketch, &entities, &[ring(&outer, false)]),
+        None
+    );
+    assert_eq!(
+        member_regions(
+            &sketch,
+            &entities,
+            &[ring(&outer, false), ring(&island, false)]
+        ),
+        None
+    );
+    assert_eq!(
+        member_regions(&sketch, &entities, &[ring(&island, true)]),
+        None
+    );
+
+    let program = outer
+        .iter()
+        .map(|entity| entity.id().clone())
+        .collect::<Vec<_>>();
+    let ordered = crate::test_support::with_decode_context(|ctx| {
+        super::super::arrangement_region_matching_curve_program(
+            &sketch,
+            &entities,
+            &program,
             PROFILE_PROGRAM_TOLERANCE,
             &ProfileGeometryWork::new(),
             ctx,
         )
     })
     .unwrap();
-    assert_eq!(region, None);
+    assert_eq!(ordered, None);
+}
+
+#[test]
+fn a_counted_hole_ring_names_only_an_island_that_no_smaller_face_holds() {
+    let id = SketchId::mint("synthetic:test:id#nested-islands").unwrap();
+    let outer = rectangle(&id, "outer", (0.0, 0.0), (100.0, 100.0));
+    let middle = rectangle(&id, "middle", (20.0, 20.0), (80.0, 80.0));
+    let inner = rectangle(&id, "inner", (40.0, 40.0), (60.0, 60.0));
+    let sketch = sketch_with_loops(id, &[&outer, &middle, &inner]);
+    let entities = [outer.clone(), middle.clone(), inner.clone()].concat();
+
+    for (exterior, island) in [(&outer, &middle), (&middle, &inner)] {
+        let (_, holes) = single_region(
+            &sketch,
+            &entities,
+            &[ring(exterior, false), ring(island, true)],
+        );
+        let [hole] = holes.as_slice() else {
+            panic!("one hole ring: {holes:?}");
+        };
+        assert_eq!(
+            ring_entities(hole),
+            sorted_ids(&island.iter().collect::<Vec<_>>())
+        );
+    }
+    assert_eq!(
+        member_regions(
+            &sketch,
+            &entities,
+            &[ring(&outer, false), ring(&inner, true)]
+        ),
+        None
+    );
+    let (_, holes) = single_region(&sketch, &entities, &[ring(&inner, false)]);
+    assert!(holes.is_empty());
+
+    let regions = member_regions(
+        &sketch,
+        &entities,
+        &[
+            ring(&inner, false),
+            ring(&outer, false),
+            ring(&middle, true),
+        ],
+    )
+    .expect("two regions");
+    assert_eq!(regions.len(), 2);
+    let SketchProfileRegion::Trimmed {
+        hole_boundaries, ..
+    } = &regions[1]
+    else {
+        panic!("trimmed region");
+    };
+    assert_eq!(hole_boundaries.len(), 1);
+}
+
+#[test]
+fn counted_duplicate_members_select_the_region_around_a_circle_island() {
+    // A 40 x 30 rectangle drawn twice and a circle inside it. The exterior
+    // ring names both copies of each side.
+    let id = SketchId::mint("synthetic:test:id#covered").unwrap();
+    let first = rectangle(&id, "first", (0.0, 0.0), (40.0, 30.0));
+    let second = rectangle(&id, "second", (0.0, 0.0), (40.0, 30.0));
+    let circle = SketchEntity::new(
+        SketchEntityId::mint("synthetic:test:id#circle").unwrap(),
+        id.clone(),
+        SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+            center: Point2::new(20.0, 15.0),
+            radius: Length::new(4.0).unwrap(),
+        })
+        .unwrap(),
+    );
+    let sketch = sketch_with_loops(id, &[&first, std::slice::from_ref(&circle)]);
+    let mut entities = first.clone();
+    entities.extend(second.iter().cloned());
+    entities.push(circle.clone());
+    let sides = [ring(&first, false), ring(&second, false)].concat();
+
+    let (exterior, holes) =
+        single_region(&sketch, &entities, &[sides.clone(), vec![(&circle, true)]]);
+    assert_eq!(exterior.len(), 4);
+    let [hole] = holes.as_slice() else {
+        panic!("one hole ring: {holes:?}");
+    };
+    assert!(hole.iter().all(|use_| use_.entity == *circle.id()));
+
+    assert_eq!(
+        member_regions(
+            &sketch,
+            &entities,
+            &[ring(&first, false), vec![(&circle, true)]]
+        ),
+        None
+    );
 }

@@ -861,9 +861,9 @@ The first closing reference run identifies a direct contained child by its local
 
 ### DR-124. Partial-curve operands in profile selections
 
-**Question.** How do the three u32 operands of a typed profile curve entry and the incidence words of a counted profile member select a partial curve?
+**Question.** How do the three u32 operands of a typed profile curve entry and the two nonzero incidence words of a counted profile member select a partial curve?
 
-**Known.** The identity record stores two region lists. Each region has counted boundary loops with exterior flags. Each curve entry stores a primary identity, a secondary identity, and three u32 operands. Counted profile members store a primary curve identity, one Boolean incidence word, and two nonzero incidence words. A complete neutral loop match, a unique atomic arrangement boundary program, or a unique boundary multiset resolves the selected region.
+**Known.** The identity record stores two region lists. Each region has counted boundary loops with exterior flags. Each curve entry stores a primary identity, a secondary identity, and three u32 operands. Counted profile members store a primary curve identity, a direction flag, and two nonzero incidence words. A complete neutral loop match, a unique atomic arrangement boundary program, or unique directed boundary rings resolve the selected region.
 
 **Need.** Controlled selections of adjacent regions with one shared curve, and of intersecting curves with distinct selected regions, to bind each operand to curve orientation and trim bounds. Selections with the same curve-identity multiset must vary the selected portions independently.
 
