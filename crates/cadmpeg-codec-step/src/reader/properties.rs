@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! STEP scalar property decoding.
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::document::CadIr;
-use cadmpeg_ir::ids::AttributeId;
+use cadmpeg_ir::ids::{AttributeId, ProductDefinitionId};
 
 use crate::ids::{self, kind};
 use crate::loss::StepLossCode;
@@ -22,6 +22,7 @@ pub(super) fn decode(
     exchange: &Exchange,
     index: &CarrierIndex,
     topology: &TopologyData,
+    definitions: &BTreeMap<u64, ProductDefinitionId>,
     ir: &mut CadIr,
     ctx: &DecodeContext<'_>,
 ) -> Result<StageOutcome<()>, CodecError> {
@@ -51,47 +52,54 @@ pub(super) fn decode(
         let Some(owner_id) = property.parameters.get(2).and_then(ValueExt::reference) else {
             continue;
         };
-        let Some(owner) = exchange
-            .records()
-            .get(&owner_id)
-            .and_then(|record| record.partial("CHARACTERIZED_ITEM_WITHIN_REPRESENTATION"))
-        else {
-            continue;
-        };
-        if !owner.parameters.first().is_some_and(empty_or_omitted)
-            || !owner.parameters.get(1).is_some_and(empty_or_omitted)
-        {
-            continue;
-        }
-        let Some(item_id) = owner.parameters.get(2).and_then(ValueExt::reference) else {
-            continue;
-        };
-        let Some(owner_rep_id) = owner.parameters.get(3).and_then(ValueExt::reference) else {
-            continue;
-        };
-        let Some(owner_rep) = exchange.records().get(&owner_rep_id) else {
-            continue;
-        };
-        if !representation::items(owner_rep).is_some_and(|mut items| items.any(|id| id == item_id))
-        {
-            continue;
-        }
-        let target = if let Some(point) = index.points.get(&item_id) {
-            AttributeTarget::Point(ir.model.points[point.index.0].id.clone())
-        } else if let Some(curve) = index.curves.get(&item_id) {
-            AttributeTarget::Curve(ir.model.curves[curve.0].id.clone())
-        } else if let Some(surface) = index.surfaces.get(&item_id) {
-            AttributeTarget::Surface(ir.model.surfaces[surface.0].id.clone())
-        } else if let Some([body]) = topology.body_by_root.get(&item_id).map(Vec::as_slice) {
-            AttributeTarget::Body(body.clone())
-        } else if let Some(face) = topology.faces_by_source.get(&item_id).and_then(single) {
-            AttributeTarget::Face(face.clone())
-        } else if let Some(edge) = topology.edges_by_source.get(&item_id).and_then(single) {
-            AttributeTarget::Edge(edge.clone())
-        } else if let Some(vertex) = topology.vertices_by_source.get(&item_id).and_then(single) {
-            AttributeTarget::Vertex(vertex.clone())
+        let (target, owner_rep_id) = if let Some(definition) = definitions.get(&owner_id) {
+            (AttributeTarget::ProductDefinition(definition.clone()), None)
         } else {
-            continue;
+            let Some(owner) = exchange
+                .records()
+                .get(&owner_id)
+                .and_then(|record| record.partial("CHARACTERIZED_ITEM_WITHIN_REPRESENTATION"))
+            else {
+                continue;
+            };
+            if !owner.parameters.first().is_some_and(empty_or_omitted)
+                || !owner.parameters.get(1).is_some_and(empty_or_omitted)
+            {
+                continue;
+            }
+            let Some(item_id) = owner.parameters.get(2).and_then(ValueExt::reference) else {
+                continue;
+            };
+            let Some(owner_rep_id) = owner.parameters.get(3).and_then(ValueExt::reference) else {
+                continue;
+            };
+            let Some(owner_rep) = exchange.records().get(&owner_rep_id) else {
+                continue;
+            };
+            if !representation::items(owner_rep)
+                .is_some_and(|mut items| items.any(|id| id == item_id))
+            {
+                continue;
+            }
+            let target = if let Some(point) = index.points.get(&item_id) {
+                AttributeTarget::Point(ir.model.points[point.index.0].id.clone())
+            } else if let Some(curve) = index.curves.get(&item_id) {
+                AttributeTarget::Curve(ir.model.curves[curve.0].id.clone())
+            } else if let Some(surface) = index.surfaces.get(&item_id) {
+                AttributeTarget::Surface(ir.model.surfaces[surface.0].id.clone())
+            } else if let Some([body]) = topology.body_by_root.get(&item_id).map(Vec::as_slice) {
+                AttributeTarget::Body(body.clone())
+            } else if let Some(face) = topology.faces_by_source.get(&item_id).and_then(single) {
+                AttributeTarget::Face(face.clone())
+            } else if let Some(edge) = topology.edges_by_source.get(&item_id).and_then(single) {
+                AttributeTarget::Edge(edge.clone())
+            } else if let Some(vertex) = topology.vertices_by_source.get(&item_id).and_then(single)
+            {
+                AttributeTarget::Vertex(vertex.clone())
+            } else {
+                continue;
+            };
+            (target, Some(owner_rep_id))
         };
         let Some(rep) = exchange.records().get(&representation_id) else {
             continue;
@@ -176,12 +184,15 @@ pub(super) fn decode(
             representation_id,
             value_id,
         ]);
-        if matches!(representation::item_values(owner_rep), Some([Value::Reference(id)]) if *id == item_id)
-            && representation::parameters(owner_rep)
-                .and_then(|parameters| parameters.first())
-                .is_some_and(empty_or_omitted)
-        {
-            typed.insert(owner_rep_id);
+        if let Some(owner_rep_id) = owner_rep_id {
+            let owner_rep = &exchange.records()[&owner_rep_id];
+            if representation::item_values(owner_rep).is_some_and(|items| items.len() == 1)
+                && representation::parameters(owner_rep)
+                    .and_then(|parameters| parameters.first())
+                    .is_some_and(empty_or_omitted)
+            {
+                typed.insert(owner_rep_id);
+            }
         }
     }
     Ok(StageOutcome {
@@ -206,6 +217,28 @@ fn empty_or_omitted(value: &Value) -> bool {
 mod tests {
     use crate::test_support::exchange::decode_inline;
     use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
+
+    #[test]
+    fn product_definition_scalar_property_is_retained() {
+        let decoded = decode_inline(
+            "#1=APPLICATION_CONTEXT('mechanical design');
+#2=PRODUCT_CONTEXT('',#1,'mechanical');
+#3=PRODUCT('P','Part','',(#2));
+#4=PRODUCT_DEFINITION_FORMATION('','',#3);
+#5=PRODUCT_DEFINITION_CONTEXT('',#1,'design');
+#6=PRODUCT_DEFINITION('','',#4,#5);
+#7=PROPERTY_DEFINITION('Grade','',#6);
+#8=INTEGER_REPRESENTATION_ITEM('',7);
+#9=(GEOMETRIC_REPRESENTATION_CONTEXT(3) REPRESENTATION_CONTEXT('',''));
+#10=REPRESENTATION('',(#8),#9);
+#11=PROPERTY_DEFINITION_REPRESENTATION(#7,#10);",
+        );
+        assert!(decoded.ir().model.attributes.iter().any(|attribute| {
+            matches!(attribute.target, AttributeTarget::ProductDefinition(_))
+                && attribute.name == "Grade"
+                && attribute.values == [Some(AttributeValue::Integer(7))]
+        }));
+    }
 
     #[test]
     fn writer_round_trips_point_properties() {
