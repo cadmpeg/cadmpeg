@@ -43,10 +43,6 @@ pub(super) fn native_surface_base(bytes: &mut Vec<u8>, kind: &str) -> Result<(),
     Ok(())
 }
 
-pub(super) fn native_string(bytes: &mut Vec<u8>, value: &str) -> Result<(), CodecError> {
-    native_text(bytes, 0x07, value)
-}
-
 pub(super) fn native_u16_string(bytes: &mut Vec<u8>, value: &str) {
     if let Ok(length) = u16::try_from(value.len()) {
         bytes.push(0x08);
@@ -63,7 +59,7 @@ pub(super) fn native_u16_string(bytes: &mut Vec<u8>, value: &str) {
 /// ref-width (8-byte in generated `BinaryFile8` streams) length prefix.
 /// The serializer stores law-formula names this way, so the width follows the
 /// text length rather than a fixed tag.
-pub(super) fn native_length_prefixed_string(bytes: &mut Vec<u8>, value: &str) {
+pub(super) fn native_string(bytes: &mut Vec<u8>, value: &str) {
     if let Ok(length) = u8::try_from(value.len()) {
         bytes.extend_from_slice(&[0x07, length]);
     } else if let Ok(length) = u16::try_from(value.len()) {
@@ -321,7 +317,7 @@ mod tests {
         for length in [255, 256, 65535, 65536] {
             let value = "a".repeat(length);
             let mut bytes = vec![0x0d, 1, b'x'];
-            super::native_length_prefixed_string(&mut bytes, &value);
+            super::native_string(&mut bytes, &value);
             bytes.push(0x11);
             let records = cadmpeg_asm::test_support::sab::frame(
                 &bytes,
