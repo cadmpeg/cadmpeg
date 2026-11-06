@@ -71,6 +71,55 @@ fn assert_authored_box_measures(ir: &cadmpeg_ir::document::CadIr, label: &str) {
     }
 }
 
+fn assert_authored_triangle_measure(
+    ir: &cadmpeg_ir::document::CadIr,
+    report: &cadmpeg_measure::report::MeasureReport,
+    label: &str,
+) {
+    let feature = ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Triangle"))
+        .unwrap_or_else(|| panic!("{label}: missing Triangle feature"));
+    let [body_id] = feature.evaluation.outputs().as_slice() else {
+        panic!("{label}: Triangle feature must produce one body")
+    };
+    let triangle = report
+        .bodies()
+        .iter()
+        .find(|body| body.body() == body_id.as_str())
+        .unwrap_or_else(|| panic!("{label}: no measured body for Triangle output"));
+    let length = triangle
+        .length()
+        .as_ref()
+        .unwrap()
+        .measured()
+        .unwrap()
+        .value()
+        .value
+        .get();
+    let expected_length = 50.0 + 1700.0_f64.sqrt();
+    assert!(
+        (length - expected_length).abs() < WIRE_LENGTH_TOLERANCE,
+        "{label} Triangle: length {length}, expected {expected_length}"
+    );
+    let bounds = triangle.bbox().measured().unwrap().value();
+    for (actual, expected) in bounds
+        .min
+        .coordinates()
+        .into_iter()
+        .chain(bounds.max.coordinates())
+        .zip([10.0, 20.0, 0.0, 50.0, 30.0, 0.0])
+    {
+        assert!(
+            (actual.get() - expected).abs() < SHAPE_BOUNDS_TOLERANCE,
+            "{label} Triangle: bound {}, expected {expected}",
+            actual.get()
+        );
+    }
+}
+
 fn assert_authored_fixture_shape_measures(
     ir: &cadmpeg_ir::document::CadIr,
     label: &str,
@@ -162,35 +211,7 @@ fn assert_authored_fixture_shape_measures(
         }
     }
 
-    let triangle = body_for_feature("Triangle");
-    let length = triangle
-        .length()
-        .as_ref()
-        .unwrap()
-        .measured()
-        .unwrap()
-        .value()
-        .value
-        .get();
-    let expected_length = 50.0 + 1700.0_f64.sqrt();
-    assert!(
-        (length - expected_length).abs() < WIRE_LENGTH_TOLERANCE,
-        "{label} Triangle: length {length}, expected {expected_length}"
-    );
-    let bounds = triangle.bbox().measured().unwrap().value();
-    for (actual, expected) in bounds
-        .min
-        .coordinates()
-        .into_iter()
-        .chain(bounds.max.coordinates())
-        .zip([10.0, 20.0, 0.0, 50.0, 30.0, 0.0])
-    {
-        assert!(
-            (actual.get() - expected).abs() < SHAPE_BOUNDS_TOLERANCE,
-            "{label} Triangle: bound {}, expected {expected}",
-            actual.get()
-        );
-    }
+    assert_authored_triangle_measure(ir, &report, label);
 }
 
 fn assert_authored_view(
@@ -330,6 +351,7 @@ fn physical_page_template_and_saved_dimension_are_exact() {
     assert_eq!(geometry.curves.len(), 6);
     assert_eq!(geometry.texts[0].text, "Synthetic box");
     assert_eq!(geometry.texts[0].position, [115.0, 19.0]);
+    assert_eq!(geometry.texts[0].height.get(), 4.0);
     let dimension = ir
         .model
         .semantic_annotations
@@ -342,6 +364,11 @@ fn physical_page_template_and_saved_dimension_are_exact() {
         dimension.dimension_kind.clone().unwrap(),
         DimensionKind::HorizontalDistance {}
     );
+    let [reference] = dimension.references["References2D"].as_slice() else {
+        panic!("Length must have one 2D reference")
+    };
+    assert_eq!(reference.local_target(), Some(drawing("Front").id.as_str()));
+    assert_eq!(reference.subelements, ["Edge3"]);
     assert_eq!(
         dimension
             .reference_anchors
@@ -451,6 +478,19 @@ fn authored_techdraw_views_keep_page_ownership_and_saved_parameters() {
         triangle_view.relationships["Source"][0].local_target(),
         Some(crate::native::native_id("object", "Triangle").as_str())
     );
+    for (name, kind, value) in [
+        ("Euclidean", DimensionKind::Distance {}, 30.0),
+        ("Vertical", DimensionKind::VerticalDistance {}, 10.0),
+    ] {
+        let annotation = ir
+            .model
+            .semantic_annotations
+            .iter()
+            .find(|annotation| annotation.object.ends_with(&format!("#{name}")))
+            .unwrap();
+        assert_eq!(annotation.dimension_kind.as_ref(), Some(&kind), "{name}");
+        assert_eq!(annotation.value.unwrap().get(), value, "{name}");
+    }
 
     let projection = drawing("Projection");
     assert_eq!(
@@ -489,7 +529,32 @@ fn authored_techdraw_views_keep_page_ownership_and_saved_parameters() {
         detail.relationships["BaseView"][0].local_target(),
         Some(front.id.as_str())
     );
+    let properties = ir
+        .native
+        .namespace("fcstd")
+        .unwrap()
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .unwrap();
+    let section_normal = properties
+        .iter()
+        .find(|property| {
+            property.owner == crate::native::native_id("object", "Section")
+                && property.name == "SectionNormal"
+        })
+        .unwrap();
+    assert_eq!(section_normal.type_name, "App::PropertyVector");
+    assert_eq!(section_normal.values().len(), 1);
+    assert_eq!(
+        ["valueX", "valueY", "valueZ"].map(|axis| {
+            section_normal.values()[0].attributes[axis]
+                .parse::<f64>()
+                .unwrap()
+        }),
+        [1.0, 0.0, 0.0]
+    );
     assert_authored_box_measures(ir, "techdraw-views");
+    let report = cadmpeg_measure::test_support::round_trip::measured("techdraw-views", ir).unwrap();
+    assert_authored_triangle_measure(ir, &report, "techdraw-views");
 }
 
 #[test]
@@ -506,22 +571,46 @@ fn drawing_only_pages_keep_independent_physical_sheets() {
         .filter(|drawing| drawing.kind == DrawingKind::Page)
         .collect::<Vec<_>>();
     assert_eq!(pages.len(), 2);
-    for (name, x) in [("First", 20.0), ("Second", 40.0)] {
-        let page = pages
-            .iter()
-            .find(|page| page.object.ends_with(&format!("#{name}")))
-            .unwrap();
-        let size = result
+    let drawing = |name: &str| {
+        result
             .ir()
             .model
             .drawings
             .iter()
-            .find(|drawing| Some(&drawing.id) == page.template.as_ref())
+            .find(|drawing| drawing.object.ends_with(&format!("#{name}")))
             .unwrap()
-            .sheet
-            .as_ref()
+    };
+    let first_template = drawing("FirstTemplate");
+    let second_template = drawing("SecondTemplate");
+    assert_ne!(first_template.id, second_template.id);
+    for (name, x, template) in [
+        ("First", 20.0, first_template),
+        ("Second", 40.0, second_template),
+    ] {
+        let page = pages
+            .iter()
+            .find(|page| page.object.ends_with(&format!("#{name}")))
             .unwrap();
+        assert_eq!(
+            page.template.as_ref(),
+            Some(&template.id),
+            "{name} template"
+        );
+        assert_eq!(template.kind, DrawingKind::Template, "{name} template");
+        let size = template.sheet.as_ref().unwrap();
         assert_eq!((size.width_mm.get(), size.height_mm.get()), (210.0, 297.0));
+        let geometry = template.template_geometry.as_ref().unwrap();
+        assert_eq!(geometry.texts.len(), 1, "{name} template title");
+        assert_eq!(
+            geometry.texts[0].text, "Synthetic box",
+            "{name} template title"
+        );
+        assert_eq!(
+            geometry.texts[0].position,
+            [115.0, 19.0],
+            "{name} template title"
+        );
+        assert_eq!(geometry.texts[0].height.get(), 4.0, "{name} template title");
         let note_name = format!("{name}Note");
         let note = result
             .ir()
@@ -542,9 +631,10 @@ fn drawing_only_pages_keep_independent_physical_sheets() {
             .find(|drawing| drawing.object.ends_with(&format!("#{note_name}")))
             .unwrap();
         assert_eq!(view.kind, DrawingKind::Annotation);
-        assert!(page.relationships["Views"]
-            .iter()
-            .any(|reference| reference.local_target() == Some(view.id.as_str())));
+        let [reference] = page.relationships["Views"].as_slice() else {
+            panic!("{name} page must own exactly one view")
+        };
+        assert_eq!(reference.local_target(), Some(view.id.as_str()));
     }
 }
 
@@ -773,13 +863,13 @@ fn dimension_measurements_follow_changed_saved_reference_geometry() {
     );
     assert_valid_document(result.ir());
     assert_authored_fixture_shape_measures(result.ir(), "techdraw-variants", 42.0, 11.0);
-    for (name, expected) in [
-        ("Length", 42.0),
-        ("Euclidean", 42.0),
-        ("Vertical", 10.0),
-        ("Radius", 11.0),
-        ("Diameter", 22.0),
-        ("Angle", 90.0),
+    for (name, kind, expected) in [
+        ("Length", DimensionKind::HorizontalDistance {}, 42.0),
+        ("Euclidean", DimensionKind::Distance {}, 42.0),
+        ("Vertical", DimensionKind::VerticalDistance {}, 10.0),
+        ("Radius", DimensionKind::Radius {}, 11.0),
+        ("Diameter", DimensionKind::Diameter {}, 22.0),
+        ("Angle", DimensionKind::Angle {}, 90.0),
     ] {
         let annotation = result
             .ir()
@@ -789,6 +879,7 @@ fn dimension_measurements_follow_changed_saved_reference_geometry() {
             .find(|annotation| annotation.object.ends_with(&format!("#{name}")))
             .unwrap();
         assert_eq!(annotation.value.unwrap().get(), expected);
+        assert_eq!(annotation.dimension_kind.as_ref(), Some(&kind), "{name}");
     }
     for (name, source, position, scale, direction, rotation) in [
         ("Front", "Box", [65.0, 180.0], 2.0, [0.0, -1.0, 0.0], 0.0),
@@ -966,6 +1057,7 @@ fn asymmetric_saved_reference_y_is_reflected_into_page_coordinates() {
         .find(|annotation| annotation.object.ends_with("#TriangleBase"))
         .unwrap();
     assert_eq!(annotation.value.unwrap().get(), 40.0);
+    assert_eq!(annotation.dimension_kind, Some(DimensionKind::Distance {}));
     assert_eq!(annotation.position.unwrap(), [80.0, 100.0, 0.0]);
     assert_eq!(
         annotation
