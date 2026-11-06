@@ -54,6 +54,8 @@ pub(crate) struct ProfileGeometryWork {
     crossing_loop_skipped_selections: Cell<usize>,
     crossing_loop_assumed: Cell<bool>,
     crossing_loop_assumed_selections: Cell<usize>,
+    coincident_direction_assumed: Cell<bool>,
+    coincident_direction_assumed_selections: Cell<usize>,
 }
 
 impl ProfileGeometryWork {
@@ -72,6 +74,8 @@ impl ProfileGeometryWork {
             crossing_loop_skipped_selections: Cell::new(0),
             crossing_loop_assumed: Cell::new(false),
             crossing_loop_assumed_selections: Cell::new(0),
+            coincident_direction_assumed: Cell::new(false),
+            coincident_direction_assumed_selections: Cell::new(0),
         }
     }
 
@@ -95,6 +99,10 @@ impl ProfileGeometryWork {
                 &self.crossing_loop_assumed,
                 &self.crossing_loop_assumed_selections,
             ),
+            (
+                &self.coincident_direction_assumed,
+                &self.coincident_direction_assumed_selections,
+            ),
         ] {
             if skipped.take() {
                 selections.set(selections.get() + 1);
@@ -106,6 +114,12 @@ impl ProfileGeometryWork {
     /// stored loop split by curve-use counts.
     pub(crate) fn note_crossing_loop_assumed(&self) {
         self.crossing_loop_assumed.set(true);
+    }
+
+    /// Record that the open selection took a counted member ring with an
+    /// edge of coincident curves.
+    pub(crate) fn note_coincident_direction_assumed(&self) {
+        self.coincident_direction_assumed.set(true);
     }
 
     /// One loss for each cap that made a closed selection skip a search.
@@ -133,6 +147,12 @@ impl ProfileGeometryWork {
         if crossing_assumed != 0 {
             losses.push(F3dLossCode::FeatureProfileCrossingLoopAssumed.note(format!(
                 "{crossing_assumed} extrude profile selection(s) split a self-crossing stored loop into atomic regions by curve-use counts; the stored curve order of the loop was not checked, and atomic faces that enclose an island were assumed not to be selected."
+            )));
+        }
+        let coincident = self.coincident_direction_assumed_selections.get();
+        if coincident != 0 {
+            losses.push(F3dLossCode::FeatureProfileCoincidentDirectionAssumed.note(format!(
+                "{coincident} extrude profile selection(s) matched a counted member to an edge of coincident curves. The reading assumes that the member's direction flag states the traversal against the direction of the curve that the member names; which curve's direction sets the flag is open (DR-124)."
             )));
         }
         losses
@@ -397,7 +417,7 @@ pub(super) fn arrangement_regions_matching_member_rings(
     tolerance: f64,
     work: &ProfileGeometryWork,
     ctx: &DecodeContext<'_>,
-) -> Result<Option<Vec<cadmpeg_ir::features::SketchProfileRegion>>, CodecError> {
+) -> Result<Option<MemberRingRegions>, CodecError> {
     if rings.is_empty() {
         return Ok(None);
     }
@@ -416,6 +436,7 @@ pub(super) fn arrangement_regions_matching_member_rings(
     }
     let mut outers = Vec::new();
     let mut holes = Vec::new();
+    let mut coincident = false;
     for members in rings {
         let mut found = None;
         for (index, hole, ring, curves) in &candidates {
@@ -437,11 +458,13 @@ pub(super) fn arrangement_regions_matching_member_rings(
             if found.is_some() {
                 return Ok(None);
             }
-            found = Some((*index, *hole));
+            found = Some((*index, *hole, ring.shared_fragments() != 0));
         }
-        match geometric!(found) {
-            (face, None) if !outers.contains(&face) => outers.push(face),
-            (face, Some(hole)) if !holes.contains(&(face, hole)) => holes.push((face, hole)),
+        let (face, hole, shared) = geometric!(found);
+        coincident |= shared;
+        match hole {
+            None if !outers.contains(&face) => outers.push(face),
+            Some(hole) if !holes.contains(&(face, hole)) => holes.push((face, hole)),
             _ => return Ok(None),
         }
     }
@@ -465,7 +488,17 @@ pub(super) fn arrangement_regions_matching_member_rings(
                 .ok()
         ));
     }
-    Ok(Some(regions))
+    Ok(Some(MemberRingRegions {
+        regions,
+        coincident,
+    }))
+}
+
+/// The regions that counted member rings select.
+pub(super) struct MemberRingRegions {
+    pub(super) regions: Vec<cadmpeg_ir::features::SketchProfileRegion>,
+    /// Whether a selected ring has an edge of coincident curves.
+    pub(super) coincident: bool,
 }
 
 /// The bounded faces of the arrangement of every non-construction curve of

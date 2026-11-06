@@ -12,11 +12,13 @@ use crate::design::geometry::ProfileGeometryWork;
 use crate::design::profile_select::{
     bind_extrude_profile_selections, ExtrudeProfileResolution, SketchCurveSelectionResolution,
 };
+use crate::loss::F3dLossCode;
 use crate::records::feature::scope::{
     DesignExtrudeScope, DesignParameterScope, DesignScopePayload,
 };
 use crate::records::sketch_geometry::SketchCurveIdentity;
 use crate::records::topology::sketch_profile::DesignSketchProfileOperand;
+use cadmpeg_ir::report::loss::LossNote;
 
 const REGION_TOLERANCE: f64 = 1.0e-7;
 const ANGULAR_TOLERANCE: f64 = 1.0e-9;
@@ -158,13 +160,26 @@ fn bound_profile(members: &[u32]) -> ProfileRef {
 }
 
 fn bound_fixture(
-    (sketch, entities, curves, scope): (
+    fixture: (
         Sketch,
         Vec<SketchEntity>,
         Vec<SketchCurveIdentity>,
         DesignParameterScope,
     ),
 ) -> ProfileRef {
+    bound_fixture_with_losses(fixture).0
+}
+
+/// `bound_fixture` with the losses of its profile geometry work.
+fn bound_fixture_with_losses(
+    (sketch, entities, curves, scope): (
+        Sketch,
+        Vec<SketchEntity>,
+        Vec<SketchCurveIdentity>,
+        DesignParameterScope,
+    ),
+) -> (ProfileRef, Vec<LossNote>) {
+    let work = ProfileGeometryWork::new();
     let mut feature: Feature = serde_json::from_value(json!({
         "id": "synthetic:test:feature#cut", "ordinal": 0, "suppressed": false,
         "native_ref": scope.id,
@@ -176,7 +191,6 @@ fn bound_fixture(
     crate::test_support::with_decode_context(|ctx| {
         let sketches = [sketch];
         let scopes = [scope];
-        let work = ProfileGeometryWork::new();
         bind_extrude_profile_selections(
             std::slice::from_mut(&mut feature),
             &scopes,
@@ -215,7 +229,7 @@ fn bound_fixture(
     else {
         panic!("Extrude");
     };
-    profile
+    (profile, work.losses())
 }
 
 #[test]
@@ -350,6 +364,45 @@ fn counted_members_name_both_curves_of_a_coincident_boundary_stretch() {
         bound_fixture(fixture_with(geometry, loops, &[1, 2, 3, 5, 4])),
         ProfileRef::Planar(PlanarProfileRef::SketchSelection { .. })
     ));
+}
+
+#[test]
+fn a_selection_through_a_coincident_edge_reports_the_direction_assumption() {
+    let geometry = vec![
+        json!({"kind": "line", "start": {"u": -1.0, "v": -1.0}, "end": {"u": 1.0, "v": -1.0}}),
+        json!({"kind": "line", "start": {"u": 1.0, "v": -1.0}, "end": {"u": 1.0, "v": 1.0}}),
+        json!({"kind": "line", "start": {"u": 1.0, "v": 1.0}, "end": {"u": -1.0, "v": 1.0}}),
+        json!({"kind": "line", "start": {"u": -1.0, "v": 1.0}, "end": {"u": -1.0, "v": -1.0}}),
+        json!({"kind": "line", "start": {"u": 0.0, "v": 1.0}, "end": {"u": 2.0, "v": 1.0}}),
+        json!({"kind": "line", "start": {"u": 2.0, "v": 1.0}, "end": {"u": 2.0, "v": 2.0}}),
+        json!({"kind": "line", "start": {"u": 2.0, "v": 2.0}, "end": {"u": 0.0, "v": 2.0}}),
+        json!({"kind": "line", "start": {"u": 0.0, "v": 2.0}, "end": {"u": 0.0, "v": 1.0}}),
+    ];
+    let loops: &[&[usize]] = &[&[0, 1, 2, 3], &[4, 5, 6, 7]];
+    let (profile, losses) =
+        bound_fixture_with_losses(fixture_with(geometry, loops, &[1, 2, 3, 3, 5, 4]));
+    assert!(matches!(
+        profile,
+        ProfileRef::Planar(PlanarProfileRef::SketchRegions { .. })
+    ));
+    let [loss] = losses.as_slice() else {
+        panic!("expected one loss, got {losses:?}");
+    };
+    assert_eq!(
+        loss.code,
+        F3dLossCode::FeatureProfileCoincidentDirectionAssumed.kind()
+    );
+    assert_eq!(
+        loss.message,
+        "1 extrude profile selection(s) matched a counted member to an edge of coincident curves. The reading assumes that the member's direction flag states the traversal against the direction of the curve that the member names; which curve's direction sets the flag is open (DR-124)."
+    );
+
+    let (profile, losses) = bound_fixture_with_losses(fixture(&[2, 2, 4, 2, 6, 3, 5, 2]));
+    assert!(matches!(
+        profile,
+        ProfileRef::Planar(PlanarProfileRef::SketchRegions { .. })
+    ));
+    assert!(losses.is_empty(), "{losses:?}");
 }
 
 #[test]

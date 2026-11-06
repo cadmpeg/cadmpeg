@@ -38,7 +38,7 @@ pub(super) fn resolve(
         }
         rings.push(members);
     }
-    let Some(regions) = crate::design::geometry::arrangement_regions_matching_member_rings(
+    let Some(selected) = crate::design::geometry::arrangement_regions_matching_member_rings(
         sketch,
         entities,
         &rings,
@@ -49,5 +49,9 @@ pub(super) fn resolve(
     else {
         return Ok(None);
     };
-    Ok(PlanarProfileRef::sketch_regions(sketch.id.clone(), regions).ok())
+    let profile = PlanarProfileRef::sketch_regions(sketch.id.clone(), selected.regions).ok();
+    if selected.coincident && profile.is_some() {
+        resolution.profile_work.note_coincident_direction_assumed();
+    }
+    Ok(profile)
 }

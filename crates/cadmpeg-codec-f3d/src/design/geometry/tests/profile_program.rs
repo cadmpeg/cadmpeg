@@ -198,6 +198,25 @@ fn member_regions(
     entities: &[SketchEntity],
     rings: &[Vec<(&SketchEntity, bool)>],
 ) -> Option<Vec<SketchProfileRegion>> {
+    member_selection(sketch, entities, rings).map(|selected| selected.regions)
+}
+
+/// Whether the rings that `rings` select have an edge of coincident curves.
+fn selects_coincident_edge(
+    sketch: &Sketch,
+    entities: &[SketchEntity],
+    rings: &[Vec<(&SketchEntity, bool)>],
+) -> bool {
+    member_selection(sketch, entities, rings)
+        .expect("selected rings")
+        .coincident
+}
+
+fn member_selection(
+    sketch: &Sketch,
+    entities: &[SketchEntity],
+    rings: &[Vec<(&SketchEntity, bool)>],
+) -> Option<super::super::MemberRingRegions> {
     let rings = rings
         .iter()
         .map(|ring| {
@@ -278,6 +297,11 @@ fn counted_member_directions_select_one_of_two_half_disks_with_the_same_curves()
     assert!(right
         .iter()
         .any(|use_| use_.entity == *line.id() && use_.reversed));
+    assert!(!selects_coincident_edge(
+        &sketch,
+        &entities,
+        &[vec![(line, true), (circle, false)]]
+    ));
     assert_eq!(
         member_regions(&sketch, &entities, &[vec![(line, false), (circle, true)]]),
         None
@@ -566,11 +590,47 @@ fn a_coincident_edge_matches_when_one_of_its_curves_has_its_direction() {
             single_region(&sketch, &entities, &[ring(bottom_reversed, long_reversed)]);
         assert!(holes.is_empty());
         assert_eq!(exterior.len(), 4);
+        assert!(selects_coincident_edge(
+            &sketch,
+            &entities,
+            &[ring(bottom_reversed, long_reversed)]
+        ));
     }
     assert_eq!(
         member_regions(&sketch, &entities, &[ring(false, true)]),
         None
     );
+}
+
+#[test]
+fn a_hole_ring_of_coincident_circles_states_a_coincident_edge() {
+    // A 40 x 30 rectangle around a circle island drawn twice.
+    let id = SketchId::mint("synthetic:test:id#twin-island").unwrap();
+    let sides = rectangle(&id, "sides", (0.0, 0.0), (40.0, 30.0));
+    let circle = |name: &str| {
+        SketchEntity::new(
+            SketchEntityId::mint(&format!("synthetic:test:id#{name}")).unwrap(),
+            id.clone(),
+            SketchGeometry::try_from(SketchGeometryDefinition::Circle {
+                center: Point2::new(20.0, 15.0),
+                radius: Length::new(4.0).unwrap(),
+            })
+            .unwrap(),
+        )
+    };
+    let (first, twin) = (circle("first-circle"), circle("twin-circle"));
+    let sketch = sketch_with_loops(id, &[&sides, std::slice::from_ref(&first)]);
+    let mut entities = sides.clone();
+    entities.push(first.clone());
+
+    let single = [ring(&sides, false), vec![(&first, true)]];
+    assert_eq!(single_region(&sketch, &entities, &single).1.len(), 1);
+    assert!(!selects_coincident_edge(&sketch, &entities, &single));
+
+    entities.push(twin.clone());
+    let doubled = [ring(&sides, false), vec![(&first, true), (&twin, true)]];
+    assert_eq!(single_region(&sketch, &entities, &doubled).1.len(), 1);
+    assert!(selects_coincident_edge(&sketch, &entities, &doubled));
 }
 
 #[test]
