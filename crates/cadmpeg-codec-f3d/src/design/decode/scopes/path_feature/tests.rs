@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-use super::exact_path_feature_construction;
+use super::{exact_path_feature_construction, loft_reference_loss};
 use crate::records::feature::extrude::DesignExtrudeOperation;
 use crate::records::feature::path_features::DesignPathFeatureConstruction;
 use crate::records::feature::scope::DesignParameterScope;
@@ -22,7 +22,7 @@ fn loft_prefix(operation_offset: usize, standard: bool, three_flags: bool) -> Ve
     bytes
 }
 
-fn assert_loft_operation(bytes: &[u8], offset: u64) {
+fn loft_scope() -> DesignParameterScope {
     let mut scope = DesignParameterScope::empty(
         "generated:loft#20",
         crate::records::feature::scope::DesignFeatureKind::Loft,
@@ -35,19 +35,33 @@ fn assert_loft_operation(bytes: &[u8], offset: u64) {
             draft.layout_fixture_tail();
         })
         .unwrap();
+    scope
+}
+
+fn decoded_loft(
+    bytes: &[u8],
+) -> Option<crate::records::feature::path_features::DesignLoftConstruction> {
+    match exact_path_feature_construction(
+        bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(bytes),
+        &loft_scope(),
+        &[],
+    )? {
+        DesignPathFeatureConstruction::Loft(construction) => Some(construction),
+        _ => None,
+    }
+}
+
+fn assert_loft_operation(bytes: &[u8], offset: u64) {
     assert_eq!(
-        exact_path_feature_construction(
-            bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(bytes),
-            &scope,
-            &[]
-        ),
-        Some(DesignPathFeatureConstruction::Loft(
+        decoded_loft(bytes),
+        Some(
             crate::records::feature::path_features::DesignLoftConstruction {
                 operation: DesignExtrudeOperation::Join,
                 operation_offset: offset,
+                reference_target: None,
             }
-        ))
+        )
     );
 }
 
@@ -83,7 +97,24 @@ fn standard_loft_reads_marked_group_reference() {
     bytes[33] = 1;
     bytes[34..42].copy_from_slice(&16015u64.to_le_bytes());
     bytes[42..48].copy_from_slice(&[0, 0, 0xff, 0xff, 0xff, 0xff]);
-    assert_loft_operation(&bytes, 29);
+    let construction = decoded_loft(&bytes).expect("standard Loft with a marked reference");
+    assert_eq!(
+        construction,
+        crate::records::feature::path_features::DesignLoftConstruction {
+            operation: DesignExtrudeOperation::Join,
+            operation_offset: 29,
+            reference_target: Some(16015),
+        }
+    );
+    let loss = loft_reference_loss(&loft_scope(), &construction).expect("reference loss");
+    assert_eq!(
+        loss.code,
+        crate::loss::F3dLossCode::FeatureLoftReferenceUnresolved.kind()
+    );
+    assert_eq!(
+        loss.message,
+        "Loft scope generated:loft#20 stores a non-null marked reference with target 16015 at prefix offset 33; the target and the Loft setting it selects are unresolved (DR-268), and a Loft projected from the scope uses closed false, solid true, ruled false, and linearize false."
+    );
 
     let scope = DesignParameterScope::empty(
         "generated:loft#20",
@@ -104,6 +135,36 @@ fn standard_loft_reads_marked_group_reference() {
                 &[]
             ),
             None
+        );
+    }
+}
+
+#[test]
+fn null_reference_loft_has_no_reference_loss() {
+    let construction = decoded_loft(&loft_prefix(29, true, false)).expect("standard Loft");
+    assert_eq!(loft_reference_loss(&loft_scope(), &construction), None);
+}
+
+#[test]
+fn three_flag_standard_loft_with_zero_byte_33_reads_operation_at_28() {
+    for (value, operation) in [
+        (1u32, DesignExtrudeOperation::Join),
+        (2, DesignExtrudeOperation::Cut),
+        (3, DesignExtrudeOperation::Intersect),
+        (4, DesignExtrudeOperation::NewBody),
+    ] {
+        let mut bytes = loft_prefix(28, true, true);
+        bytes[28..32].copy_from_slice(&value.to_le_bytes());
+        bytes[32..34].fill(0);
+        assert_eq!(
+            decoded_loft(&bytes),
+            Some(
+                crate::records::feature::path_features::DesignLoftConstruction {
+                    operation,
+                    operation_offset: 28,
+                    reference_target: None,
+                }
+            )
         );
     }
 }

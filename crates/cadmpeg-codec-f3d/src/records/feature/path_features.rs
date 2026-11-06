@@ -270,6 +270,9 @@ pub(crate) struct DesignLoftConstruction {
     pub(crate) operation: DesignExtrudeOperation,
     /// Byte offset of the operation u32.
     pub(crate) operation_offset: u64,
+    /// Target of the non-null marked reference at standard-prefix offset 33.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) reference_target: Option<u64>,
 }
 
 /// Fixed construction of a `Sweep` scope.

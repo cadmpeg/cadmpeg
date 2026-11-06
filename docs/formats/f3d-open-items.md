@@ -1337,13 +1337,13 @@ when the operation transition carries no candidate for the group members?
 
 **Note.** The decoder keeps the prefix in the native occurrence frame.
 
-### DR-268. Group reference of the standard Loft scope
+### DR-268. Marked reference of the standard Loft scope
 
-**Question.** Which Loft setting selects a non-null construction-operand group reference at standard `Loft` scope offset 33?
+**Question.** What does the nonzero u64 target of a non-null marked reference at standard `Loft` scope offset 33 name, and which Loft setting selects a non-null reference?
 
-**Known.** `f3d.md` §3.1 "The compact fixed-prefix `Loft` scope has ten zero bytes" gives the reference. In each scope with a non-null reference, the scope has one role-`0x0000000500000000` rail group and the reference names it. Scopes with rail groups or a centerline group also store a null reference.
+**Known.** `f3d.md` §3.1 "The compact fixed-prefix `Loft` scope has ten zero bytes" gives the reference syntax. In each scope with a non-null reference, the scope has one role-`0x0000000500000000` rail group and the target equals the record index of that group. Scopes with rail groups or a centerline group also store a null reference. The decoder keeps the target in the Loft construction, records `feature.loft-reference-unresolved`, and projects the Loft with closed false, solid true, ruled false, and linearize false.
 
-**Need.** Saves of one railed `Loft` that change one rail or guide setting at a time, each recording byte 33.
+**Need.** Saves of one railed `Loft` that change one rail or guide setting at a time, each recording byte 33 and the target, and a save whose target is not a record of the scope's reference table.
 
 **Conflict.** None.
 

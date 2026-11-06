@@ -7152,7 +7152,7 @@ source = "spec"
 anchor = "the result-operation u32 at offset 29"
 
 [[record.field]]
-name = "group_reference"
+name = "marked_reference"
 offset = 33
 type = "u8"
 source = "spec"

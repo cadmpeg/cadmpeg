@@ -2315,7 +2315,7 @@ Offsets are relative to the primary indexed header.
 | 21 | 4 | `zero_run_4` | `bytes[4]` | little | spec | four zero bytes at offsets 21 through 24 |
 | 25 | 4 | `flags` | `bytes[4]` | little | spec | four flag bytes at offsets 25 through 28 |
 | 29 | 4 | `operation` | `u32` | little | spec | the result-operation u32 at offset 29 |
-| 33 | 1 | `group_reference` | `u8` | little | spec | Byte 33 opens a same-segment marked reference |
+| 33 | 1 | `marked_reference` | `u8` | little | spec | Byte 33 opens a same-segment marked reference |
 
 Unstated regions:
 

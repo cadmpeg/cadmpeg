@@ -357,6 +357,17 @@ pub(super) fn marker_one_revolve_assumed_length(
     }
 }
 
+pub(super) fn loft_reference_loss(
+    scope: &DesignParameterScope,
+    construction: &path_features::DesignLoftConstruction,
+) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    let target = construction.reference_target?;
+    Some(crate::loss::F3dLossCode::FeatureLoftReferenceUnresolved.note(format!(
+        "Loft scope {} stores a non-null marked reference with target {target} at prefix offset 33; the target and the Loft setting it selects are unresolved (DR-268), and a Loft projected from the scope uses closed false, solid true, ruled false, and linearize false.",
+        scope.id
+    )))
+}
+
 pub(super) fn exact_path_feature_construction(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
@@ -568,16 +579,18 @@ pub(super) fn exact_path_feature_construction(
                 && bytes.get(start + standard_loft::PRESENCE) == Some(&1)
                 && bytes.get(start + standard_loft::ZERO_RUN_4..start + standard_loft::FLAGS)
                     == Some(&[0; 4]);
-            let reference = start + standard_loft::GROUP_REFERENCE;
+            let reference = start + standard_loft::MARKED_REFERENCE;
             let standard = standard_prefix
-                && match bytes.get(reference) {
-                    Some(0) => true,
-                    Some(1) => {
-                        matches!(View::u64_le_at(bytes, reference + 1), Some(1..))
-                            && bytes.get(reference + 9..reference + 11) == Some(&[0, 0])
-                    }
-                    _ => false,
-                };
+                .then(|| match bytes.get(reference) {
+                    Some(0) => Some(None),
+                    Some(1) => View::u64_le_at(bytes, reference + 1)
+                        .filter(|&target| {
+                            target != 0 && bytes.get(reference + 9..reference + 11) == Some(&[0, 0])
+                        })
+                        .map(Some),
+                    _ => None,
+                })
+                .flatten();
             let standard_three = bytes.get(
                 start + three_flag_standard_loft::ZERO_RUN_9
                     ..start + three_flag_standard_loft::PRESENCE,
@@ -588,23 +601,23 @@ pub(super) fn exact_path_feature_construction(
                         ..start + three_flag_standard_loft::FLAGS,
                 ) == Some(&[0; 4])
                 && bytes.get(start + three_flag_standard_loft::NULL_REFERENCE) == Some(&0);
-            let offset = if compact {
-                compact_loft::OPERATION
-            } else if compact_three {
-                three_flag_compact_loft::OPERATION
-            } else if standard {
-                standard_loft::OPERATION
-            } else if standard_three {
-                three_flag_standard_loft::OPERATION
-            } else {
-                return None;
-            };
-            Some(DesignPathFeatureConstruction::Loft(
-                path_features::DesignLoftConstruction {
-                    operation: operation(start + offset)?,
-                    operation_offset: u64::try_from(start + offset).ok()?,
-                },
-            ))
+            [
+                compact.then_some((compact_loft::OPERATION, None)),
+                compact_three.then_some((three_flag_compact_loft::OPERATION, None)),
+                standard.map(|target| (standard_loft::OPERATION, target)),
+                standard_three.then_some((three_flag_standard_loft::OPERATION, None)),
+            ]
+            .into_iter()
+            .flatten()
+            .find_map(|(offset, reference_target)| {
+                Some(DesignPathFeatureConstruction::Loft(
+                    path_features::DesignLoftConstruction {
+                        operation: operation(start + offset)?,
+                        operation_offset: u64::try_from(start + offset).ok()?,
+                        reference_target,
+                    },
+                ))
+            })
         }
         DesignFeatureFamily::Sweep => {
             let candidate_lanes: Vec<_> = scope

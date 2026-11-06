@@ -2134,8 +2134,8 @@ pub(crate) mod standard_loft_operation_prefix {
     pub(crate) const FLAGS: usize = 25;
     /// Offset of `operation` (`u32`, little-endian). Spec §3.1.
     pub(crate) const OPERATION: usize = 29;
-    /// Offset of `group_reference` (`u8`). Spec §3.1.
-    pub(crate) const GROUP_REFERENCE: usize = 33;
+    /// Offset of `marked_reference` (`u8`). Spec §3.1.
+    pub(crate) const MARKED_REFERENCE: usize = 33;
 }
 
 /// Byte offsets for the `three_flag_standard_loft_operation_prefix` record.
