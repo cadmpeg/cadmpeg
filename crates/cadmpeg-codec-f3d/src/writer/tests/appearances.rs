@@ -68,6 +68,26 @@ fn source_less_synthesis_writes_body_material_assignment() {
 }
 
 #[test]
+fn source_less_material_assignment_without_protein_preserves_appearance() {
+    let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
+    let decoded = F3dCodec.decode(&mut Cursor::new(source), &DecodeOptions::default()).unwrap();
+    let mut ir = decoded.ir().clone();
+    let appearance = &mut ir.model.appearances[0];
+    appearance.physical_token = Some("PrismMaterial-019".into());
+    appearance.base_color = None;
+    appearance.schema = None;
+    appearance.library_id = None;
+    appearance.category = None;
+    appearance.properties.clear();
+    appearance.textures.clear();
+    let (written, _) = super::source_less_analytic::synthesize_document(&ir, None);
+    assert_eq!(written.ir().model.appearance_bindings.len(), 1);
+    assert_eq!(written.ir().model.appearances.len(), 1);
+    assert_eq!(written.ir().model.appearances[0].physical_token, ir.model.appearances[0].physical_token);
+    assert_eq!(written.ir().model.appearances[0].base_color, None);
+}
+
+#[test]
 fn neutral_body_material_authors_design_registry() {
     use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
     let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();

@@ -41,7 +41,12 @@ pub(super) fn prepare(
         else {
             return false;
         };
-        let valid_appearance = appearance.base_color.is_some()
+        let valid_appearance = (appearance.base_color.is_some()
+            || (appearance.schema.is_none()
+                && appearance.library_id.is_none()
+                && appearance.category.is_none()
+                && appearance.properties.is_empty()
+                && appearance.textures.is_empty()))
             && appearance.physical_token.as_deref().is_some_and(|token| {
                 token.starts_with("PrismMaterial") && !token.contains("_physmat_aspects")
             })
@@ -174,6 +179,7 @@ pub(super) fn prepare(
             )));
         }
         if appearance.base_color.is_none()
+            && !bound.contains(&appearance.id)
             && matches!(
                 appearance.schema.as_deref().unwrap_or("GenericSchema"),
                 "GenericSchema"

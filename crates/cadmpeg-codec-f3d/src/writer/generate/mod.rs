@@ -461,6 +461,9 @@ pub(super) fn write_with_limits(
         }
     }
     for (ordinal, appearance) in target.model.appearances.iter().enumerate() {
+        if appearance.base_color.is_none() && appearance.schema.is_none() {
+            continue;
+        }
         let protein = crate::materials::encode_protein(appearance)?;
         output_ctx.charge_entities(1, "F3D Protein instance record")?;
         output_ctx.charge_entities(1, "F3D Protein catalog record")?;
