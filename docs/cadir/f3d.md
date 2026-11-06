@@ -3,8 +3,10 @@
 Decode and export contract for F3D. The format grammar is in
 [f3d.md](../formats/f3d.md).
 
-Design operands project to feature input topology; sketch points, curve
-identities, and relations project to sketch records. Canvas and decal images
+Body recipes, construction operands, edge selections, and face selections
+project to `feature_input_topologies`. Referenced sheet-metal settings feed their
+features; unreferenced settings project to a native feature. Sketch points,
+curve identities, and relations project to sketch records. Canvas and decal images
 project to assets, and mesh features to tessellations. Parameter `source_kind`,
 `owner_record_index`, `unit`, and `evaluated_scalar` stay in typed native
 records. Decoded features have `needs_recompute = false`.
