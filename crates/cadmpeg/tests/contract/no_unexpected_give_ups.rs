@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The §4.5 no-unexpected-give-ups contract (#215): no golden outside a
-//! `damaged/` directory charges `record.unreadable`.
+//! The §4.5 no-unexpected-give-ups contract (#215): give-ups match the
+//! pinned F3D decode, while other undamaged fixtures give up no part.
 
 use super::support;
 
@@ -19,13 +19,53 @@ fn check_format(format: &str) {
                 continue;
             }
         };
-        for loss in &decoded.report().losses {
-            if loss.code.local_code() == super::support::UNREADABLE {
-                findings.push(format!(
-                    "{format}: {} charges record.unreadable outside a damaged directory: {}",
-                    fixture.path.display(),
-                    loss.message
-                ));
+        if format == "f3d" {
+            let golden = fixture.path.parent().and_then(|directory| {
+                fixture.path.file_stem().map(|stem| {
+                    directory
+                        .with_file_name("decode")
+                        .join(stem)
+                        .with_extension("json")
+                })
+            });
+            let expected = golden
+                .and_then(|path| std::fs::read(path).ok())
+                .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+                .and_then(|golden| {
+                    golden
+                        .pointer("/report/losses")
+                        .and_then(serde_json::Value::as_array)
+                        .cloned()
+                });
+            let actual: Vec<_> = decoded
+                .report()
+                .losses
+                .iter()
+                .filter(|loss| loss.code.local_code() == support::UNREADABLE)
+                .map(|loss| serde_json::to_value(loss).expect("serialize give-up"))
+                .collect();
+            let expected: Option<Vec<_>> = expected.map(|losses| {
+                losses
+                    .into_iter()
+                    .filter(|loss| {
+                        loss.pointer("/code/code")
+                            .and_then(serde_json::Value::as_str)
+                            == Some(support::UNREADABLE)
+                    })
+                    .collect()
+            });
+            if expected.as_ref() != Some(&actual) {
+                findings.push(format!("{format}: {} give-ups differ from its pinned decode: expected {expected:?}, got {actual:?}", fixture.path.display()));
+            }
+        } else {
+            for loss in &decoded.report().losses {
+                if loss.code.local_code() == super::support::UNREADABLE {
+                    findings.push(format!(
+                        "{format}: {} charges record.unreadable outside a damaged directory: {}",
+                        fixture.path.display(),
+                        loss.message
+                    ));
+                }
             }
         }
     }
