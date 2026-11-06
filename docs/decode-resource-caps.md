@@ -26,11 +26,10 @@ from the name of the constant.
    Rhino `checked_count_bytes`). Excess refuses that record or that decode as
    malformed or unsupported, or skips that record. A per-input bound does not
    set the session fuse.
-3. **Session ceiling.** Only the six `ResourceLimits` fields are session
-   ceilings: `max_input_bytes`, `max_decompressed_bytes_total`,
-   `max_decompressed_bytes_per_expand`, `max_retained_bytes`,
-   `max_entities`, and `max_recursion_depth`. `DecodeContext` charges them.
-   Excess refuses the session and sets the fuse.
+3. **Resource allowance.** `DecodeContext` charges the six `ResourceLimits`
+   fields. The input, total decompressed, retained, and entity allowances
+   have session scope. Per-expansion and recursion allowances have part scope.
+   A session-scoped exhaustion sets the fuse.
 4. **Local work cap.** The limit bounds a search, an iteration, a
    convergence loop, a walk over derived data, or the size of derived output.
    A `WorkBudget` or a local counter enforces it. At exhaustion the decoder
@@ -90,21 +89,23 @@ before the parent charges again.
 `WorkBudget::recursion_guard` bounds recursion inside a local search; at its
 depth it exhausts the work budget and does not touch the session.
 
-The document records the content delivered, independently of why a phase
-stopped. A completely omitted or failed class has `scope.model = false` or
-`scope.design = false` and empty neutral arenas for that class. A partial
-projection holds the class and reports each omitted record as a decode loss.
-`report.transfer.scope` mirrors the document's `scope`; the request remains
-`DecodeDepth`, and `decode/depth.not-delivered` names required classes that
-were not delivered. No failure-diagnostic arena substitutes for this state.
+The document records the content delivered. A class is out of scope when its
+request excludes it or the decoder finds no part of the class. A class whose
+parts were found but failed stays in scope; each given-up part is reported.
+`report.transfer.scope` mirrors the document's `scope`, and
+`decode/depth.not-delivered` names required classes not delivered.
 
-The codec also declares `SourceFidelity.unrepresented`: classes whose source
-records survive in no typed neutral or native arena. Resource containment that
-leaves only source bytes or unreadable blobs adds the affected class to that
-set. A patch or replay cannot use those bytes to recover content; the writer
-synthesizes from the document and reports any export loss. Retaining a typed
-native record can avoid an unrepresented class even when neutral projection
-was skipped.
+`SourceFidelity.unrepresented` is the union of the `untyped` class marks on
+retained records. The decoder marks records it retains without decoding,
+including given-up parts. A nonempty set makes patch and replay ineligible;
+the writer synthesizes from the document.
+
+## Encode limits
+
+A stored value beyond a declared format capacity returns `TargetCapacity`.
+Exhaustion of a caller resource allowance returns `ResourceLimit`.
+A writer reduces or omits unsupported content and reports the loss. It keeps
+independent content when a record cannot be represented.
 
 A per-input bound refuses or skips one record, or refuses the decode as
 malformed or unsupported. It does not fuse the session, so the decode can
@@ -277,7 +278,6 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-usd`      | `src/usdc/write/encode.rs`                         | `MAX_CHUNK`                               | `0x7E00_0000`                                          | N    | Encoder: the most bytes one chunk of a written compressed buffer expands to, the USDC chunk bound (spec §9.3). Not a decode path. |
 | `cadmpeg-codec-usd`      | `src/usdc/write/encode.rs`                         | `MAX_OFFSET`                              | `0xFFFF`                                               | N    | Encoder: the farthest match offset of a written LZ4 block, the width of the offset field (spec §9.3). Not a decode path. |
 | `cadmpeg-codec-usd`      | `src/usdc/write/values.rs`                         | `MAX_REAL_TABLE`                          | `1024`                                                 | N    | Encoder: the most distinct values of a real array written as a table (spec §9.7); a larger array is written uncompressed. Not a decode path. |
-| `cadmpeg-codec-usd`      | `src/usdz.rs`                                      | `MAX_MEMBER`                              | `0xFFFF_FFFF`                                          | N    | Encoder: the most bytes of a written USDZ member, which has no ZIP64 records; a larger external asset is not packaged. Not a decode path. |
 | `cadmpeg-codec-usd`      | `src/brep/convert.rs`                              | `MAX_ARC_SEGMENT`                         | `π / 2`                                                | N    | Encoder: the largest sweep of one rational quadratic arc segment of a written NURBS carrier. Not a decode path. |
 | `cadmpeg-codec-usd`      | `src/brep/convert.rs`                              | `MAX_TRACE_DEPTH`                         | `12`                                                   | N    | Encoder: the deepest bisection of a traced trim curve; a span at this depth is written as it is. Not a decode path. |
 | `cadmpeg-codec-usd`      | `src/usdc/compression.rs`                          | `MAX_CHUNK_OUTPUT`                        | `0x7E00_0000`                                         | 1    | Bytes one chunk of the USDC compressed-buffer framing expands to (spec §9.3). A chunk that yields more is refused as malformed. |
@@ -332,6 +332,7 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-rhino`    | `src/curves.rs`                                    | `MAX_CURVE_DEPTH`                         | `32`                                                    | 2    | Nested curve and curve-on-surface payload depth; the tree entries also charge `enter_nested`. Excess fails that curve as `Malformed` without fusing the session.                                                                                                             |
 | `cadmpeg-codec-rhino`    | `src/curves.rs`                                    | `MAX_JOIN_DEGREE`                         | `64`                                                    | 2    | Degree a polycurve join raises its segments to; Bezier elevation costs the square of the degree per span. Excess fails that polycurve.                                                                                                                                       |
 | `cadmpeg-codec-rhino`    | `src/curves.rs`                                    | `MAX_JOIN_ELEVATED_POLES`                 | `1 << 20`                                               | 4    | Elevated Bezier poles one polycurve join produces, checked before each segment is elevated. Excess fails that polycurve.                                                                                                                                                     |
+| `cadmpeg-codec-rhino` | `src/writer.rs` | `MAX_ARC_SPAN_EXCESS` | `1.0e-10` | N | Maximum excess over one turn for an exact arc payload. |
 | `cadmpeg-codec-rhino`    | `src/cage.rs`                                      | `MAX_DIMENSION`                           | `10_000`                                                | 2    | NURBS cage dimension. Excess is `Malformed`.                                                                                                                                                                                                                                 |
 | `cadmpeg-codec-rhino`    | `src/cage.rs`                                      | `MAX_CONTROL_POINTS`                      | `1 << 20`                                               | 2    | Cage control-point product. Excess is `Malformed`.                                                                                                                                                                                                                           |
 | `cadmpeg-codec-rhino`    | `src/cage.rs`                                      | `MAX_SCALARS`                             | `1 << 24`                                               | 2    | Cage scalar count, also checked against `remaining / 8` and `View::counted`.                                                                                                                                                                                                 |
@@ -372,7 +373,7 @@ report a loss; a caller may report a general failure for the same item.
 | `cadmpeg-codec-f3d`      | `src/design/decode/sketch.rs`                      | `MAX_RELATION_RUN`                        | `4096`                                                  | 1    | Counted runs in sketch relation, text and pattern records. A larger count rejects the framing candidate (`None`).                                                                                                                                                            |
 | `cadmpeg-codec-f3d`      | `src/design/decode/scopes/sheet_metal.rs`          | `MAX_EDGE_WIDTH_DISTANCE_OWNERS`          | `2`                                                     | 1    | Width-distance owners in the single-edge flange frame. A frame with more is not recognized.                                                                                                                                                                                  |
 | `cadmpeg-codec-f3d`      | `src/design/decode/presentation.rs`                | `MAX_ENVELOPE_GAP`                        | `8`                                                     | 1    | Zero padding admitted while a presentation envelope is located.                                                                                                                                                                                                              |
-| `cadmpeg-codec-f3d`      | `src/writer/generate/native_geometry.rs`           | `MAX_GENERATED_CONIC_SPANS`               | `2_147_483_645`                                         | N    | Encode path: spans generated for a source-less conic. The bound is the largest span count whose control-point, weight, and knot counts fit the sketch record path's `u32` counts (`2 * spans + 4 <= u32::MAX`). Excess is `UnsupportedContent`, which the synthesis reduction path converts to the solved carrier with its loss (§5.2); not a refusal. Allocations are fallible and checked before building. |
+| `cadmpeg-codec-f3d`      | `src/writer/generate/native_geometry.rs`           | `MAX_GENERATED_CONIC_SPANS`               | `2_147_483_645`                                         | N    | Encode path: spans generated for a source-less conic. The bound is the largest span count whose control-point, weight, and knot counts fit the sketch record path's `u32` counts (`2 * spans + 4 <= u32::MAX`). Excess selects the solved carrier with a loss (§5.2). Allocations are fallible and checked before building. |
 | `cadmpeg-codec-f3d`      | `src/decode/geometry_admission/vertex_tolerance.rs` | `MAX_BODY_DIAGONAL_FRACTION`             | `0.01`                                                  | 2    | Largest exact-cache endpoint miss a derived vertex tolerance may cover, as a fraction of each owning body's vertex-point bounding diagonal. A larger miss keeps the vertex tolerance unchanged and still fails validation. |
 | `cadmpeg-codec-f3d`      | `src/design/components.rs`                         | `MAX_PATH_ASSIGNMENT_STEPS`               | `100_000`                                               | 4    | Search steps when assigning component-path carriers to candidate instances. Past the limit the carriers stay unplaced and are reported as unresolved. |
 | `cadmpeg-codec-nx`       | `src/jt.rs`                                        | `MAX_ARITHMETIC_VALUES`                   | `1_000_000`                                             | 2    | Value count of one JT integer packet or arithmetic lane. Symbols can use zero bits, so there is no byte floor; excess leaves the lane undecoded (`None`).                                                                                                                    |
@@ -563,9 +564,9 @@ The six `ResourceLimits` fields are the session ceilings and are not
 By crate: `cadmpeg-core` 3, `cadmpeg-ir` 17, `cadmpeg-measure` 21, `cadmpeg-asm` 4,
 `cadmpeg-protein` 3, `cadmpeg` 3, `cadmpeg-codec-step` 8,
 `cadmpeg-codec-iges` 16, `cadmpeg-codec-inventor` 3,
-`cadmpeg-codec-freecad` 16, `cadmpeg-codec-rhino` 29, `cadmpeg-codec-f3d` 20,
+`cadmpeg-codec-freecad` 16, `cadmpeg-codec-rhino` 30, `cadmpeg-codec-f3d` 20,
 `cadmpeg-codec-nx` 28, `cadmpeg-codec-creo` 20, `cadmpeg-codec-sldprt` 33,
-`cadmpeg-codec-catia` 57, `cadmpeg-codec-pvz` 3, `cadmpeg-codec-usd` 11, and
+`cadmpeg-codec-catia` 57, `cadmpeg-codec-pvz` 3, `cadmpeg-codec-usd` 10, and
 `cadmpeg-tessellate` 4.
 
 ## Routing
