@@ -125,3 +125,105 @@ fn a_cone_pair_off_the_unit_identity_by_1e7_reports_a_loss() {
         [crate::loss::NxLossCode::CarrierConeHalfAngleIdentityRefused.kind()]
     );
 }
+
+#[test]
+fn inactive_body_pruning_keeps_the_vertex_of_a_kept_vertex_loop() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use cadmpeg_ir::ids::{BodyId, PointId, RegionId, ShellId, VertexId};
+    use cadmpeg_ir::topology::{Body, BodyKind, Point, Region, Shell, Vertex};
+
+    let stream = crate::test_support::test_streams::vertex_loop_topology_partition_stream(40);
+    let file = crate::test_support::test_prt::prt_with_partition(&stream);
+    let decoded = crate::NxCodec
+        .decode(&mut std::io::Cursor::new(file), &DecodeOptions::default())
+        .expect("decode");
+    let mut ir = decoded.ir().clone();
+    let kept = ir.model.bodies[0].id.clone();
+    let (vertex, _) = ir
+        .model
+        .loops
+        .iter()
+        .find_map(|loop_| loop_.singular_vertex())
+        .expect("vertex loop");
+    let vertex = vertex.clone();
+    assert!(ir
+        .model
+        .edges
+        .iter()
+        .all(|edge| edge.start != vertex && edge.end != vertex));
+
+    let point = PointId::mint("nx:test:point#other").expect("identity");
+    let other_vertex = VertexId::mint("nx:test:vertex#other").expect("identity");
+    let shell = ShellId::mint("nx:test:shell#other").expect("identity");
+    let region = RegionId::mint("nx:test:region#other").expect("identity");
+    let body = BodyId::mint("nx:test:body#other").expect("identity");
+    ir.model.points.push(Point::new(
+        point.clone(),
+        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(5.0, 5.0, 5.0))
+            .expect("position"),
+        None,
+    ));
+    ir.model.vertices.push(Vertex {
+        id: other_vertex.clone(),
+        point,
+        tolerance: None,
+    });
+    ir.model.shells.push(Shell::with_free_vertex(
+        shell.clone(),
+        region.clone(),
+        other_vertex,
+    ));
+    ir.model.regions.push(Region {
+        id: region.clone(),
+        body: body.clone(),
+        shells: vec![shell],
+    });
+    ir.model.bodies.push(Body {
+        id: body,
+        kind: BodyKind::General,
+        regions: vec![region],
+        transform: None,
+        name: None,
+        color: None,
+        visible: None,
+    });
+
+    super::prune_inactive_topology(&mut ir, &std::collections::BTreeSet::from([kept]));
+    let kept_vertex = ir
+        .model
+        .vertices
+        .iter()
+        .find(|candidate| candidate.id == vertex)
+        .expect("vertex-loop vertex is kept");
+    assert!(ir
+        .model
+        .points
+        .iter()
+        .any(|point| point.id == kept_vertex.point));
+    let validation = cadmpeg_ir::validate::validate_neutral(&ir, Vec::new())
+        .expect("validate the neutral model");
+    assert!(validation.is_ok(), "findings: {:?}", validation.findings);
+}
+
+#[test]
+fn body_node_ids_require_the_vertex_loop_point_that_emission_requires() {
+    let resolved = crate::test_support::test_streams::vertex_loop_topology_partition_stream(40);
+    let graph = crate::topology::Graph::parse(&resolved);
+    assert_eq!(
+        super::topology_body_node_ids(0, &graph)
+            .expect("body node ids")
+            .len(),
+        1
+    );
+
+    let mut unresolved = resolved;
+    let apex = crate::test_support::test_bytes::record_offset(&unresolved, 18, 40);
+    crate::test_support::test_bytes::put_ref(&mut unresolved, apex + 16, 99);
+    let graph = crate::topology::Graph::parse(&unresolved);
+    assert!(graph
+        .get(crate::framing::node_kind::NodeKind::Vertex, 40)
+        .is_some());
+    assert!(super::topology_body_node_ids(0, &graph)
+        .expect("body node ids")
+        .is_empty());
+}

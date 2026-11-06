@@ -16,6 +16,7 @@ use cadmpeg_ir::math::Point3;
 use cadmpeg_ir::scalar::FiniteReal;
 use cadmpeg_ir::topology::Sense;
 use cadmpeg_parasolid::pointer;
+use cadmpeg_parasolid::topology::fin::{FinForm, FinLinks};
 use cadmpeg_parasolid::xmt::{NonNullXmt, XmtTarget};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -162,6 +163,27 @@ pub(crate) struct FinFields {
     pub(crate) curve_xmt: Option<XmtTarget>,
     /// Decoded orientation.
     pub(crate) sense: Sense,
+}
+
+/// Sequentially decoded references of the single FIN of a vertex loop.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct VertexLoopFinFields {
+    /// Owning loop.
+    pub(crate) loop_xmt: Option<XmtTarget>,
+    /// The vertex that the loop bounds the face at.
+    pub(crate) vertex: Option<XmtTarget>,
+}
+
+/// One validated LOOP of a face's loop chain.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum FaceLoop {
+    /// A closed ring of edge FINs.
+    Ring(Vec<u32>),
+    /// A vertex loop: its single FIN and that FIN's vertex reference.
+    Vertex {
+        fin_xmt: u32,
+        vertex: Option<XmtTarget>,
+    },
 }
 
 /// Why a face's linked loop boundary cannot be admitted.
@@ -396,15 +418,12 @@ impl Node {
         })
     }
 
-    /// Decode FIN references with cumulative large-index shifts.
+    /// Decode the references of an edge FIN with cumulative large-index shifts.
     pub(crate) fn fin_fields(&self) -> Option<FinFields> {
         (self.kind == NodeKind::Fin).then_some(())?;
-        let mut at = 4 + self.shift;
-        let refs = read_sequence_at::<9>(&self.bytes, &mut at)?;
-        let sense = match self.bytes.get(at) {
-            Some(b'+') => Sense::Forward,
-            Some(b'-') => Sense::Reversed,
-            _ => return None,
+        let (form, refs) = fin_record_at(&self.bytes, 4 + self.shift, self.xmt())?;
+        let FinForm::Edge(sense) = form else {
+            return None;
         };
         Some(FinFields {
             attributes: XmtTarget::from_wire(refs[0]),
@@ -416,6 +435,16 @@ impl Node {
             edge: XmtTarget::from_wire(refs[6]),
             curve_xmt: XmtTarget::from_wire(refs[7]),
             sense,
+        })
+    }
+
+    /// Decode the references of a vertex-loop FIN with cumulative large-index shifts.
+    pub(crate) fn vertex_loop_fin_fields(&self) -> Option<VertexLoopFinFields> {
+        (self.kind == NodeKind::Fin).then_some(())?;
+        let (form, refs) = fin_record_at(&self.bytes, 4 + self.shift, self.xmt())?;
+        (form == FinForm::VertexLoop).then_some(VertexLoopFinFields {
+            loop_xmt: XmtTarget::from_wire(refs[1]),
+            vertex: XmtTarget::from_wire(refs[4]),
         })
     }
 
@@ -1149,6 +1178,7 @@ impl Graph {
                 stream,
                 pos,
                 kind,
+                frame.xmt(),
                 frame.shift(),
                 frame.end(),
                 full_node_id_domain,
@@ -1369,6 +1399,14 @@ impl Graph {
         references
     }
 
+    /// The fields and POINT xmt of a VERTEX whose POINT has a decoded position.
+    pub(crate) fn resolved_vertex(&self, vertex_xmt: u32) -> Option<(VertexFields, u32)> {
+        let fields = self.get(NodeKind::Vertex, vertex_xmt)?.vertex_fields()?;
+        let point = self.get_target(NodeKind::Point, fields.point)?;
+        point.point_position()?;
+        Some((fields, point.xmt()))
+    }
+
     /// Resolve the exact witnesses of the unique edge carrying a curve.
     pub(crate) fn unique_curve_edge_witness(&self, curve_xmt: u32) -> Option<CurveEdgeWitness> {
         let mut edges = self
@@ -1415,15 +1453,17 @@ impl Graph {
                 return false;
             };
             for face_xmt in face_xmts {
-                let Ok(rings) = self.face_loop_rings(face_xmt) else {
+                let Ok(loops) = self.face_loops(face_xmt) else {
                     return false;
                 };
-                if rings.is_empty() {
+                if loops.is_empty() {
                     return false;
                 }
-                for (_, ring) in rings {
-                    for xmt in ring {
-                        reachable_fins.insert(xmt);
+                for (_, face_loop) in loops {
+                    if let FaceLoop::Ring(ring) = face_loop {
+                        for xmt in ring {
+                            reachable_fins.insert(xmt);
+                        }
                     }
                 }
             }
@@ -1446,16 +1486,17 @@ impl Graph {
             .sum()
     }
 
-    /// Return the validated loop-to-FIN rings owned by a face.
+    /// Return the validated loops owned by a face, in loop-chain order.
     ///
     /// The face's loop chain must terminate at the null reference. Each loop
-    /// points back to the face. Each FIN cycle closes at its first FIN, stays in
-    /// the loop, and has reciprocal forward/backward links. Every FIN resolves
-    /// its edge and vertex.
-    pub(crate) fn face_loop_rings(
+    /// points back to the face. A loop whose first FIN is a vertex-loop FIN
+    /// of that loop is a vertex loop. Every other FIN cycle closes at its
+    /// first FIN, stays in the loop, and has reciprocal forward/backward
+    /// links, and every FIN resolves its edge and vertex.
+    pub(crate) fn face_loops(
         &self,
         face_xmt: u32,
-    ) -> Result<Vec<(u32, Vec<u32>)>, FaceLoopFailure> {
+    ) -> Result<Vec<(u32, FaceLoop)>, FaceLoopFailure> {
         let face = self
             .get(NodeKind::Face, face_xmt)
             .and_then(Node::face_fields)
@@ -1479,9 +1520,18 @@ impl Graph {
             let first_fin = fields
                 .fin
                 .ok_or(FaceLoopFailure::InvalidLoopChain { loop_xmt: current })?;
-            let ring = self.fin_ring(current, first_fin)?;
-
-            rings.push((current, ring));
+            let vertex_loop = self
+                .get_target(NodeKind::Fin, Some(first_fin))
+                .and_then(Node::vertex_loop_fin_fields)
+                .filter(|fields| fields.loop_xmt.map(u32::from) == Some(current));
+            let face_loop = match vertex_loop {
+                Some(fields) => FaceLoop::Vertex {
+                    fin_xmt: u32::from(first_fin),
+                    vertex: fields.vertex,
+                },
+                None => FaceLoop::Ring(self.fin_ring(current, first_fin)?),
+            };
+            rings.push((current, face_loop));
             loop_xmt = fields.next_loop;
         }
         Ok(rings)
@@ -1734,10 +1784,24 @@ impl NodeCandidate {
     }
 }
 
+/// The form and nine references of the FIN `fin_xmt` whose references begin at `at`.
+fn fin_record_at(bytes: &[u8], mut at: usize, fin_xmt: u32) -> Option<(FinForm, [u32; 9])> {
+    let refs = read_sequence_at::<9>(bytes, &mut at)?;
+    let links = FinLinks {
+        fin: fin_xmt,
+        forward_fin: refs[2],
+        backward_fin: refs[3],
+        other_fin: XmtTarget::from_wire(refs[5]).map(u32::from),
+        edge: XmtTarget::from_wire(refs[6]).map(u32::from),
+    };
+    Some((FinForm::classify(&links, *bytes.get(at)?)?, refs))
+}
+
 fn candidate_has_valid_family_framing(
     stream: &[u8],
     pos: usize,
     kind: NodeKind,
+    xmt: NonNullXmt,
     shift: usize,
     end: usize,
     full_node_id_domain: bool,
@@ -1800,9 +1864,7 @@ fn candidate_has_valid_family_framing(
             skip_sequence_at(bytes, &mut at, 7)?;
         }
         NodeKind::Fin => {
-            let mut at = 4 + shift;
-            skip_sequence_at(bytes, &mut at, 9)?;
-            matches!(bytes.get(at), Some(b'+' | b'-')).then_some(())?;
+            fin_record_at(bytes, 4 + shift, u32::from(xmt))?;
         }
         NodeKind::Vertex => {
             let mut at = 8 + shift;
