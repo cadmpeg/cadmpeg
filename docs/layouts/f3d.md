@@ -1232,11 +1232,26 @@ Offsets are relative to the collection-owner indexed header. The record can cont
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The owner has type GUID |
-| 262 | 11 | `collection_backlink` | `bytes[11]` | little | spec | In version 23, its marked same-segment reference at offset 262 points back to the collection. |
+| 262 | 11 | `collection_backlink` | `bytes[11]` | little | spec | In versions 22 and 23, its marked same-segment reference at offset 262 points back to the collection. |
 
 Unstated regions:
 
 - `11..262` (251 B): The owner payload before the reciprocal collection reference is outside this table.
+
+## `paramesh_collection_owner_v21`
+
+Spec §3.1 · layout: byte offsets · size: 29 B
+
+Offsets are relative to the collection-owner indexed header. The name code units follow the count, and the later fields start at the version-22 offsets plus the name length.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The owner has type GUID |
+| 25 | 4 | `name_count` | `u32` | little | spec | Version 21 stores a u32-count UTF-16LE name at offset 25 |
+
+Unstated regions:
+
+- `11..25` (14 B): The owner payload before the name is outside this table.
 
 ## `paramesh_collection_owner_v17`
 

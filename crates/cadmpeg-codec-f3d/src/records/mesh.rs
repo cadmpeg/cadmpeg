@@ -1267,17 +1267,25 @@ enum DesignMeshCollectionBacklink {
     Fixed241,
     Fixed262,
     Terminal,
+    AfterName { count: u32 },
 }
 
 impl DesignMeshCollectionOwner {
     pub(crate) fn new(
         record: DesignMeshRecordIdentity,
         backlink_offset: u64,
+        name_count: Option<u32>,
     ) -> Result<Self, String> {
         let relative = backlink_offset
             .checked_sub(record.byte_offset())
             .ok_or("collection_owner_backlink_offset precedes its record")?;
-        let backlink = if relative
+        let backlink = if let Some(count) = name_count {
+            if relative != Self::after_name_backlink(count) || record.frame_length() < relative + 11
+            {
+                return Err("collection_owner_backlink_offset must follow the collection_owner_name_count name".into());
+            }
+            DesignMeshCollectionBacklink::AfterName { count }
+        } else if relative
             == u64_from_index(crate::layout::paramesh_collection_owner_v17::COLLECTION_BACKLINK)
             && record.frame_length()
                 >= u64_from_index(crate::layout::paramesh_collection_owner_v17::LEN)
@@ -1310,8 +1318,22 @@ impl DesignMeshCollectionOwner {
                 crate::layout::paramesh_collection_owner_backlink_prefix::COLLECTION_BACKLINK,
             ),
             DesignMeshCollectionBacklink::Terminal => self.record.frame_length() - 11,
+            DesignMeshCollectionBacklink::AfterName { count } => Self::after_name_backlink(count),
         };
         self.record.byte_offset() + relative
+    }
+    pub(crate) fn name_count(&self) -> Option<u32> {
+        match self.backlink {
+            DesignMeshCollectionBacklink::AfterName { count } => Some(count),
+            _ => None,
+        }
+    }
+    fn after_name_backlink(count: u32) -> u64 {
+        u64_from_index(
+            crate::layout::paramesh_collection_owner_backlink_prefix::COLLECTION_BACKLINK
+                + crate::layout::paramesh_collection_owner_v21::LEN
+                - crate::layout::paramesh_collection_owner_v21::NAME_COUNT,
+        ) + 2 * u64::from(count)
     }
 }
 
@@ -1594,6 +1616,8 @@ struct DesignMeshFeatureWire {
     collection_owner_reference_offset: u64,
     /// Byte offset of the owner's reciprocal collection reference.
     collection_owner_backlink_offset: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    collection_owner_name_count: Option<u32>,
     /// Design owner of the feature scope.
     scope_owner_record_index: u32,
     /// Byte offset of the paired scope record's owner reference.
@@ -1673,6 +1697,7 @@ impl TryFrom<DesignMeshFeatureWire> for DesignMeshFeature {
             DesignMeshCollectionOwner::new(
                 wire.collection_owner_record,
                 wire.collection_owner_backlink_offset,
+                wire.collection_owner_name_count,
             )?,
             bodies,
         )?;
@@ -1714,6 +1739,7 @@ impl From<DesignMeshFeature> for DesignMeshFeatureWire {
             bodies.push(body.into());
         }
         let collection_owner_backlink_offset = value.collection_owner.backlink_offset();
+        let collection_owner_name_count = value.collection_owner.name_count();
         let (
             texture_table_record,
             texture_flags_count_offset,
@@ -1736,6 +1762,7 @@ impl From<DesignMeshFeature> for DesignMeshFeatureWire {
             collection_owner_record: value.collection_owner.record,
             collection_owner_reference_offset: value.collection.owner_reference_offset(),
             collection_owner_backlink_offset,
+            collection_owner_name_count,
             scope_owner_record_index: value.scope.owner_record_index(),
             scope_owner_reference_offset: value.scope.owner_reference_offset(),
             texture_flags_count_offset,

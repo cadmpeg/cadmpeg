@@ -3898,7 +3898,7 @@ anchor = "the 49-byte bounds payload at offset 212"
 name = "paramesh_collection_owner_backlink_prefix"
 kind = "byte"
 section = "3.1"
-anchor = "In version 23, its marked same-segment reference at offset 262 points back to the collection."
+anchor = "In versions 22 and 23, its marked same-segment reference at offset 262 points back to the collection."
 size = 273
 note = "Offsets are relative to the collection-owner indexed header. The record can continue after this fixed backlink prefix."
 
@@ -3919,7 +3919,34 @@ name = "collection_backlink"
 offset = 262
 type = "bytes[11]"
 source = "spec"
-anchor = "In version 23, its marked same-segment reference at offset 262 points back to the collection."
+anchor = "In versions 22 and 23, its marked same-segment reference at offset 262 points back to the collection."
+
+[[record]]
+name = "paramesh_collection_owner_v21"
+kind = "byte"
+section = "3.1"
+anchor = "Version 21 stores a u32-count UTF-16LE name at offset 25"
+size = 29
+note = "Offsets are relative to the collection-owner indexed header. The name code units follow the count, and the later fields start at the version-22 offsets plus the name length."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "The owner has type GUID"
+
+[[record.gap]]
+offset = 11
+size = 14
+note = "The owner payload before the name is outside this table."
+
+[[record.field]]
+name = "name_count"
+offset = 25
+type = "u32"
+source = "spec"
+anchor = "Version 21 stores a u32-count UTF-16LE name at offset 25"
 
 [[record]]
 name = "paramesh_collection_owner_v17"

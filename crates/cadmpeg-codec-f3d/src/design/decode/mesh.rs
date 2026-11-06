@@ -21,6 +21,7 @@ use crate::layout::indexed_design_record_header as indexed_header;
 use crate::layout::paramesh_body_wrapper as body_wrapper;
 use crate::layout::paramesh_collection_owner_backlink_prefix as collection_owner;
 use crate::layout::paramesh_collection_owner_v17 as collection_owner_v17;
+use crate::layout::paramesh_collection_owner_v21 as collection_owner_v21;
 use crate::layout::paramesh_entry_name_prefix as entry_name_prefix;
 use crate::layout::paramesh_feature_scope_base as feature_scope_base;
 use crate::layout::paramesh_feature_scope_prefix as feature_scope;
@@ -94,7 +95,7 @@ const MESH_TEXTURE_FILENAME_BASE_TYPE_GUID: &str = "98542EB9-A4F2-4137-A808-DBB5
 const MESH_TEXTURE_FILENAME_TYPE_VERSION: u32 = 0;
 const MESH_COLLECTION_OWNER_TYPE_GUID: &str = "E03784ED-5E19-4E14-B9F2-3B07017018CD";
 const MESH_COLLECTION_OWNER_BASE_TYPE_GUID: &str = "42054630-20A0-40E1-B969-CFE9E742F5C9";
-const MESH_COLLECTION_OWNER_TYPE_VERSIONS: [u32; 3] = [15, 17, 23];
+const MESH_COLLECTION_OWNER_TYPE_VERSIONS: [u32; 5] = [15, 17, 23, 21, 22];
 const MESH_BODY_OWNER_TYPE_GUID: &str = "CD57BC48-50EC-47DC-975A-FB6DEA72F4DA";
 const MESH_BODY_OWNER_BASE_TYPE_GUID: &str = "A7AEA631-985B-4DD1-8CE2-DE2C-14B54081";
 const MESH_BODY_OWNER_TYPE_VERSION: u32 = 4;
@@ -425,14 +426,14 @@ fn validate_design_type(
     expected_type_guid: &str,
     expected_base_type_guid: &str,
     expected_version: u32,
-    expected_module: &str,
+    expected_modules: &[&str],
 ) -> bool {
     design_type
         .type_guid
         .as_str()
         .eq_ignore_ascii_case(expected_type_guid)
         && design_type.version == expected_version
-        && design_type.module == expected_module
+        && expected_modules.contains(&design_type.module.as_str())
         && design_type
             .base_type_guid
             .value()
@@ -445,7 +446,7 @@ struct MeshRecordType<'a> {
     type_guid: &'a str,
     base_type_guid: &'a str,
     version: u32,
-    module: &'a str,
+    modules: &'a [&'a str],
 }
 
 #[derive(Clone, Copy)]
@@ -472,7 +473,7 @@ fn nested_record_identity(
         type_guid: expected_type_guid,
         base_type_guid: expected_base_type_guid,
         version: expected_version,
-        module: expected_module,
+        modules: expected_modules,
     } = input;
     let class_tag = indexed_class_tag(record, at)?;
     (View::u32_le_at(record, at.checked_add(indexed_header::RECORD_INDEX)?) == Some(record_index))
@@ -484,7 +485,7 @@ fn nested_record_identity(
         expected_type_guid,
         expected_base_type_guid,
         expected_version,
-        expected_module,
+        expected_modules,
     )
     .then_some(())?;
     DesignMeshRecordIdentity::new(
@@ -703,7 +704,7 @@ fn parse_mesh_collection_record(
                 type_guid: MESH_COLLECTION_BASE_TYPE_GUID,
                 base_type_guid: MESH_COLLECTION_BASE_BASE_TYPE_GUID,
                 version: MESH_COLLECTION_BASE_TYPE_VERSION,
-                module: COMMON_DATA_MODULE,
+                modules: &[COMMON_DATA_MODULE],
             },
         )?;
         (record.get(
@@ -1133,7 +1134,7 @@ fn parse_mesh_scope_record(
                 type_guid: MESH_SCOPE_BASE_RECORD_TYPE_GUID,
                 base_type_guid: MESH_SCOPE_BASE_RECORD_BASE_TYPE_GUID,
                 version: MESH_SCOPE_BASE_RECORD_TYPE_VERSION,
-                module: DATA_MODEL_MODULE,
+                modules: &[DATA_MODEL_MODULE, COMMON_DATA_MODULE],
             },
         )?;
         (record.get(
@@ -1172,12 +1173,21 @@ fn parse_mesh_collection_owner_record(
         "mesh-collection-owner",
     )?;
     let record = &bytes[frame.start..frame.end];
-    let Some(backlink_at) = (match frame.design_type.version {
-        15 => record.len().checked_sub(11),
+    let Some((backlink_at, name_count)) = (match frame.design_type.version {
+        15 => record.len().checked_sub(11).map(|at| (at, None)),
         17 if record.len() >= collection_owner_v17::LEN => {
-            Some(collection_owner_v17::COLLECTION_BACKLINK)
+            Some((collection_owner_v17::COLLECTION_BACKLINK, None))
         }
-        23 => Some(collection_owner::COLLECTION_BACKLINK),
+        21 => lp_utf16_bounded(record, collection_owner_v21::NAME_COUNT, 0..=record.len())
+            .and_then(|(_, end)| {
+                let count = View::u32_le_at(record, collection_owner_v21::NAME_COUNT)?;
+                let name_bytes = end.checked_sub(collection_owner_v21::NAME_COUNT)?;
+                Some((
+                    collection_owner::COLLECTION_BACKLINK.checked_add(name_bytes)?,
+                    Some(count),
+                ))
+            }),
+        22 | 23 => Some((collection_owner::COLLECTION_BACKLINK, None)),
         _ => None,
     }) else {
         return Ok(None);
@@ -1190,6 +1200,7 @@ fn parse_mesh_collection_owner_record(
             identity,
             source_offset(frame.start, backlink_at)
                 .ok_or_else(|| malformed_frame("mesh-collection-owner", frame.entity_id))?,
+            name_count,
         )
         .map_err(|_| malformed_frame("mesh-collection-owner", frame.entity_id))?,
         collection_record_index,
@@ -1834,6 +1845,7 @@ mod tests {
     use crate::layout::{
         paramesh_collection_owner_backlink_prefix as collection_owner,
         paramesh_collection_owner_v17 as collection_owner_v17,
+        paramesh_collection_owner_v21 as collection_owner_v21,
         paramesh_mesh_body_join_prefix as mesh_body,
         paramesh_mesh_collection_base_prefix as mesh_collection_base,
         paramesh_mesh_collection_prefix as mesh_collection, paramesh_scene_node as scene_node,
@@ -3455,6 +3467,133 @@ mod tests {
             owner.owner.backlink_offset(),
             u64_from_index(collection_owner_v17::COLLECTION_BACKLINK)
         );
+    }
+
+    fn owner_frame_bytes(name: Option<&str>, backlink_at: usize) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        push_indexed_header(&mut bytes, 270, 110);
+        bytes.resize(collection_owner_v21::NAME_COUNT, 0);
+        if let Some(name) = name {
+            let units: Vec<u16> = name.encode_utf16().collect();
+            bytes.extend_from_slice(&u32::try_from(units.len()).unwrap().to_le_bytes());
+            for unit in units {
+                bytes.extend_from_slice(&unit.to_le_bytes());
+            }
+        }
+        bytes.resize(backlink_at, 0);
+        push_reference(&mut bytes, 100);
+        bytes.extend_from_slice(&[0; 32]);
+        bytes
+    }
+
+    #[test]
+    fn mesh_collection_owner_versions_twenty_one_and_twenty_two_locate_their_backlinks() {
+        let mut graph = synthetic_mesh_graph(false);
+        for (version, name, backlink_at, name_count) in [
+            (21, Some("1_3"), 272, Some(3)),
+            (21, Some(""), 266, Some(0)),
+            (22, None, 262, None),
+        ] {
+            let design_type = graph
+                .meta
+                .types
+                .iter_mut()
+                .find(|design_type| {
+                    design_type
+                        .type_guid
+                        .as_str()
+                        .eq_ignore_ascii_case(MESH_COLLECTION_OWNER_TYPE_GUID)
+                })
+                .expect("collection-owner type");
+            design_type.version = version;
+            let bytes = owner_frame_bytes(name, backlink_at);
+            let frame = TypedPrimaryFrame {
+                entity_id: 110,
+                start: 0,
+                end: bytes.len(),
+                design_type,
+            };
+            let owner = parse_mesh_collection_owner_record(&bytes, frame)
+                .expect("valid owner frame")
+                .expect("collection owner");
+            assert_eq!(owner.collection_record_index, 100);
+            assert_eq!(owner.owner.backlink_offset(), backlink_at as u64);
+            assert_eq!(owner.owner.name_count(), name_count);
+        }
+    }
+
+    #[test]
+    fn mesh_graph_joins_a_version_twenty_one_collection_owner() {
+        let mut graph = synthetic_mesh_graph(false);
+        graph
+            .meta
+            .types
+            .iter_mut()
+            .find(|design_type| {
+                design_type
+                    .type_guid
+                    .as_str()
+                    .eq_ignore_ascii_case(MESH_COLLECTION_OWNER_TYPE_GUID)
+            })
+            .expect("collection-owner type")
+            .version = 21;
+        let start = sole_typed_frame(&graph, MESH_COLLECTION_OWNER_TYPE_GUID).start;
+        let name = [3, 0, 0, 0, b'1', 0, b'_', 0, b'3', 0];
+        graph.bytes.splice(start + 25..start + 25, name);
+        for record in &mut graph.meta.records {
+            if record.bulk_offset > u64::try_from(start).unwrap() {
+                record.bulk_offset += 10;
+            }
+        }
+        let features = parse_mesh_design_records(
+            &graph.bytes,
+            &graph.meta,
+            "Synthetic/BulkStream.dat",
+            &mut no_texture_asset,
+        )
+        .expect("mesh graph with a version-21 owner");
+        let [feature] = features.as_slice() else {
+            panic!("one mesh feature");
+        };
+        let wire = serde_json::to_value(feature).unwrap();
+        assert_eq!(wire["collection_owner_name_count"], 3);
+        assert_eq!(wire["collection_owner_backlink_offset"], start + 272);
+        let decoded: crate::records::mesh::DesignMeshFeature =
+            serde_json::from_value(wire).unwrap();
+        assert_eq!(decoded, *feature);
+    }
+
+    #[test]
+    fn mesh_scope_base_accepts_the_common_data_add_in() {
+        for (module, joins) in [
+            (COMMON_DATA_MODULE, true),
+            (DATA_MODEL_MODULE, true),
+            (PARAMESH_MODULE, false),
+        ] {
+            let mut graph = synthetic_mesh_graph(false);
+            graph
+                .meta
+                .types
+                .iter_mut()
+                .find(|design_type| {
+                    design_type
+                        .type_guid
+                        .as_str()
+                        .eq_ignore_ascii_case(MESH_SCOPE_BASE_RECORD_TYPE_GUID)
+                })
+                .expect("scope-base type")
+                .module = module.to_owned();
+            let result = parse_mesh_design_records(
+                &graph.bytes,
+                &graph.meta,
+                "Synthetic/BulkStream.dat",
+                &mut no_texture_asset,
+            );
+            assert_eq!(
+                result.map(|features| features.len()).ok(),
+                joins.then_some(1)
+            );
+        }
     }
 
     #[test]
