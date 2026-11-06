@@ -214,6 +214,29 @@ fn a_model_without_a_selected_subset_is_borrowed() {
 }
 
 #[test]
+fn a_cyclic_subset_chain_is_left_for_writer_admission() {
+    let mut ir = nested(true, true, false);
+    let inner = ProceduralCurveId::mint("test:model:construction#inner").unwrap();
+    let construction = ir
+        .model
+        .procedural_curves
+        .iter_mut()
+        .find(|construction| construction.id == inner)
+        .unwrap();
+    *construction = ProceduralCurve::new(
+        inner,
+        ProceduralCurveDefinition::Subset(
+            SubsetCurveConstruction::try_new(id("outer"), [0.5, 3.0], true, None).unwrap(),
+        ),
+    );
+
+    assert!(matches!(
+        super::lower_subset_curves(&ir, |_| true).unwrap(),
+        std::borrow::Cow::Borrowed(_)
+    ));
+}
+
+#[test]
 fn a_spline_cache_moves_back_onto_the_source_parameter() {
     use crate::features::FinitePoint3;
     use crate::geometry::nurbs::{NurbsCurve, NurbsPoles3};
