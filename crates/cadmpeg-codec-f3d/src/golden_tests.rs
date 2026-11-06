@@ -990,28 +990,6 @@ fn an_edit_survives_the_patch_writer() {
 /// numbering. Model records rekey by arena and position; native references,
 /// which have no neutral home, rekey by kind in sorted order.
 fn rekey_ephemeral_brep_ids(value: &mut serde_json::Value) {
-    fn ephemeral_id(text: &str) -> bool {
-        let Some(hash) = text.rfind('#') else {
-            return false;
-        };
-        // A negative sentinel such as `f3d:brep:entity#-1` remints with the
-        // same rule as any other positional identity.
-        let digits = text[hash + 1..]
-            .strip_prefix('-')
-            .unwrap_or(&text[hash + 1..]);
-        text.starts_with("f3d:")
-            && !text[..hash].is_empty()
-            && !digits.is_empty()
-            && digits.bytes().all(|byte| byte.is_ascii_digit())
-    }
-    fn collect_unmapped(
-        value: &serde_json::Value,
-        mapping: &std::collections::BTreeMap<String, String>,
-        kinds: &mut std::collections::BTreeMap<String, std::collections::BTreeSet<String>>,
-    ) {
-        match value {
-            serde_json::Value::String(text) => {
-                if ephemeral_id(text) && !mapping.contains_key(text.as_str()) {
     fn rotate_rings(value: &mut serde_json::Value) {
         match value {
             serde_json::Value::Array(values) => {
@@ -1050,6 +1028,28 @@ fn rekey_ephemeral_brep_ids(value: &mut serde_json::Value) {
         }
     }
 
+    fn ephemeral_id(text: &str) -> bool {
+        let Some(hash) = text.rfind('#') else {
+            return false;
+        };
+        // A negative sentinel such as `f3d:brep:entity#-1` remints with the
+        // same rule as any other positional identity.
+        let digits = text[hash + 1..]
+            .strip_prefix('-')
+            .unwrap_or(&text[hash + 1..]);
+        text.starts_with("f3d:")
+            && !text[..hash].is_empty()
+            && !digits.is_empty()
+            && digits.bytes().all(|byte| byte.is_ascii_digit())
+    }
+    fn collect_unmapped(
+        value: &serde_json::Value,
+        mapping: &std::collections::BTreeMap<String, String>,
+        kinds: &mut std::collections::BTreeMap<String, std::collections::BTreeSet<String>>,
+    ) {
+        match value {
+            serde_json::Value::String(text) => {
+                if ephemeral_id(text) && !mapping.contains_key(text.as_str()) {
                     let kind = text.rsplit_once('#').map_or(text.as_str(), |(kind, _)| kind);
                     kinds
                         .entry(kind.to_owned())
