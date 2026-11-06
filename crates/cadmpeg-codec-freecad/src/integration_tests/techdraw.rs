@@ -3,7 +3,7 @@
 use super::decode;
 use crate::test_support::test_archive::assert_valid_document;
 use cadmpeg_ir::drawings::DrawingKind;
-use cadmpeg_ir::semantic_annotations::DimensionKind;
+use cadmpeg_ir::semantic_annotations::{DimensionKind, SemanticAnnotationKind};
 
 #[test]
 fn physical_page_template_and_saved_dimension_are_exact() {
@@ -84,7 +84,11 @@ fn drawing_only_pages_keep_independent_physical_sheets() {
         .filter(|drawing| drawing.kind == DrawingKind::Page)
         .collect::<Vec<_>>();
     assert_eq!(pages.len(), 2);
-    for page in pages {
+    for (name, x) in [("First", 20.0), ("Second", 40.0)] {
+        let page = pages
+            .iter()
+            .find(|page| page.object.ends_with(&format!("#{name}")))
+            .unwrap();
         let size = result
             .ir()
             .model
@@ -96,6 +100,29 @@ fn drawing_only_pages_keep_independent_physical_sheets() {
             .as_ref()
             .unwrap();
         assert_eq!((size.width_mm.get(), size.height_mm.get()), (210.0, 297.0));
+        let note_name = format!("{name}Note");
+        let note = result
+            .ir()
+            .model
+            .semantic_annotations
+            .iter()
+            .find(|annotation| annotation.object.ends_with(&format!("#{note_name}")))
+            .unwrap();
+        assert_eq!(note.kind, SemanticAnnotationKind::Text);
+        assert_eq!(note.text, [name]);
+        assert_eq!(note.position.unwrap().get(), [x, 30.0, 0.0]);
+        assert_eq!(note.text_style.height.unwrap().get(), 5.0);
+        let view = result
+            .ir()
+            .model
+            .drawings
+            .iter()
+            .find(|drawing| drawing.object.ends_with(&format!("#{note_name}")))
+            .unwrap();
+        assert_eq!(view.kind, DrawingKind::Annotation);
+        assert!(page.relationships["Views"]
+            .iter()
+            .any(|reference| reference.local_target() == Some(view.id.as_str())));
     }
 }
 
