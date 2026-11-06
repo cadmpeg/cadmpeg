@@ -175,6 +175,54 @@ fn damaged_act_group_drops_its_table_entity() {
 }
 
 #[test]
+fn damaged_act_table_keeps_component_links_and_names_dependent_entities() {
+    use crate::test_support::act_stream_test::{
+        generated_act_metastream, generated_complete_act_bulkstream,
+    };
+    const STREAM: &str = "FusionAssetName[Active]/FusionACTSegmentType1/BulkStream.dat";
+    let (mut bulk, records) = generated_complete_act_bulkstream();
+    let start = usize::try_from(records[1].1).unwrap();
+    let end = usize::try_from(records[2].1).unwrap();
+    let mut prefix = Vec::new();
+    crate::test_support::indexed_header(&mut prefix, *b"268", 1);
+    prefix.extend_from_slice(&0u32.to_le_bytes());
+    crate::test_support::lp_ascii(&mut prefix, "ACTTable");
+    prefix.extend_from_slice(&0u16.to_le_bytes());
+    assert_eq!(&bulk[start..start + prefix.len()], prefix);
+    let count = start + prefix.len();
+    bulk[count..count + 4].copy_from_slice(&u32::MAX.to_le_bytes());
+    let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    crate::test_support::manifest_test::write_synthetic_manifests(&mut archive, stored);
+    archive.start_file(STREAM, stored).unwrap();
+    archive.write_all(&bulk).unwrap();
+    archive.start_file("FusionAssetName[Active]/FusionACTSegmentType1/MetaStream.dat", stored).unwrap();
+    archive.write_all(&generated_act_metastream(&records)).unwrap();
+    let decoded = F3dCodec.decode(
+        &mut Cursor::new(archive.finish().unwrap().into_inner()),
+        &DecodeOptions::default(),
+    ).unwrap();
+    let native = crate::test_support::native_test::f3d_native(decoded.ir());
+    assert!(native.act_tables.is_empty());
+    assert!(native.act_entities.is_empty());
+    assert_eq!(native.act_component_links.len(), 1);
+    let loss = decoded.report().losses.iter().find(|loss| {
+        loss.code == cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable.note("").code
+    }).expect("unreadable table");
+    let mut expected = vec![
+        crate::ids::native_scoped_id(STREAM, "act-table", start),
+        crate::ids::native_scoped_id(STREAM, "act-entity", 2),
+        crate::ids::native_scoped_id(STREAM, "act-entity", 7),
+    ];
+    expected.sort();
+    assert_eq!(loss.dropped, expected);
+    let unknowns = decoded.ir().native_unknowns("f3d").unwrap();
+    assert_eq!(unknowns.len(), 1);
+    let retained = decoded.source_fidelity().retained_record(unknowns[0].id.as_str()).unwrap();
+    assert_eq!(retained.data(), Some(&bulk[start..end]));
+}
+
+#[test]
 fn kernel_tolerance_floor_uses_millimetres() {
     let admitted = super::super::admit_kernel_tolerances(
         Some(ABOVE_FLOOR_RESABS_CM),
