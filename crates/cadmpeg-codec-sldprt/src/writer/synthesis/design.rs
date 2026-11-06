@@ -181,6 +181,7 @@ pub(super) fn prepare(
                 cadmpeg_ir::features::ParameterValue::Integer(value) => {
                     cadmpeg_core::convert::f64_from_i64(*value).map(|value| value.to_string())
                 }
+                cadmpeg_ir::features::ParameterValue::Boolean(value) => Some(value.to_string()),
                 _ => None,
             });
             if let Some(value) = value.filter(|value| {

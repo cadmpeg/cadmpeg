@@ -41,7 +41,15 @@ fn inactive_literal_expression_override_reaches_the_output() {
     count.expression = Expression::text("2");
     count.value = Some(ParameterValue::Integer(2));
     let count_id = count.id.clone();
-    ir.model.parameters.extend([angular, ratio, count]);
+    let mut enabled = count.clone();
+    enabled.id =
+        cadmpeg_ir::features::ParameterId::mint("synthetic:test:parameter#enabled").unwrap();
+    enabled.name = "Enabled".into();
+    enabled.ordinal = 4;
+    enabled.expression = Expression::text("false");
+    enabled.value = Some(ParameterValue::Boolean(false));
+    let enabled_id = enabled.id.clone();
+    ir.model.parameters.extend([angular, ratio, count, enabled]);
     let bodies = cadmpeg_ir::features::DistinctMembers::try_from(
         ir.model
             .bodies
@@ -82,6 +90,12 @@ fn inactive_literal_expression_override_reaches_the_output() {
     ir.model.configurations[1]
         .parameter_overrides
         .insert(count_id.clone(), count_expression.clone());
+    ir.model.configurations[1]
+        .parameter_overrides
+        .insert(enabled_id.clone(), Expression::text("true"));
+    ir.model.configurations[1]
+        .parameter_values
+        .insert(enabled_id.clone(), ParameterValue::Boolean(true));
     ir.model.finalize();
     let plan = SldprtCodec
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
@@ -98,7 +112,7 @@ fn inactive_literal_expression_override_reaches_the_output() {
         .iter()
         .any(|loss| loss.message.contains(angular_id.as_str())
             && loss.message.contains("expression override omitted")));
-    for id in [&ratio_id, &count_id] {
+    for id in [&ratio_id, &count_id, &enabled_id] {
         assert!(!plan.report().losses.iter().any(|loss| {
             loss.message.contains(id.as_str())
                 && loss.message.contains("expression override omitted")
@@ -177,6 +191,23 @@ fn inactive_literal_expression_override_reaches_the_output() {
     assert_eq!(
         configuration.parameter_values.get(&count.id),
         Some(&ParameterValue::Integer(3))
+    );
+    let enabled = result
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "Enabled")
+        .unwrap();
+    assert_eq!(enabled.value, Some(ParameterValue::Boolean(false)));
+    assert_eq!(enabled.expression, Expression::text("false"));
+    assert_eq!(
+        configuration.parameter_values.get(&enabled.id),
+        Some(&ParameterValue::Boolean(true))
+    );
+    assert_eq!(
+        configuration.parameter_overrides.get(&enabled.id),
+        Some(&Expression::text("true"))
     );
 }
 
