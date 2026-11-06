@@ -41,6 +41,7 @@ pub(crate) struct UnreadableActFrame {
     pub(crate) extent: std::ops::Range<usize>,
     pub(crate) record_index: u64,
     pub(crate) reason: String,
+    pub(crate) dropped: Vec<String>,
 }
 
 struct RecordFrame {
@@ -115,7 +116,7 @@ fn decode_record_frames(
             Ok(frame) => frames.push(frame),
             Err(error) => unreadable.push(UnreadableActFrame {
                 stream: stream.to_owned(), extent: start..end,
-                record_index: record.entity_id, reason: error.to_string(),
+                record_index: record.entity_id, reason: error.to_string(), dropped: Vec::new(),
             }),
         }
     }
@@ -174,8 +175,7 @@ pub(crate) fn decode(scan: &ContainerScan<'_>) -> Result<DecodedAct, CodecError>
                     .map_err(CodecError::Malformed)?,
             );
         }
-        let (frames, damaged) = decode_record_frames(bytes, &meta, &entry.name)?;
-        untyped_records.extend(damaged);
+        let (frames, mut damaged) = decode_record_frames(bytes, &meta, &entry.name)?;
         let table_frames = frames
             .iter()
             .filter_map(|frame| table_payload_offset(bytes, frame).map(|payload| (frame, payload)))
@@ -192,24 +192,41 @@ pub(crate) fn decode(scan: &ContainerScan<'_>) -> Result<DecodedAct, CodecError>
             class_tag: table_frame.class_tag.clone(),
         });
         let DecodedTable {
-            entries: table,
+            entries: mut table,
             guids: stream_guids,
-            references: stream_table_references,
+            references: mut stream_table_references,
             registry_channels: stream_registry_channels,
         } = decode_table(bytes, table_frame, *table_payload, &entry.name)?;
         let mut frame_indices = BTreeSet::new();
         for frame in &frames {
             frame_indices.insert(frame.record_index);
         }
-        if let Some(reference) = stream_table_references
-            .iter()
-            .find(|reference| !frame_indices.contains(&reference.target_record))
-        {
-            return Err(CodecError::malformed(format_args!(
-                "F3D ACTTable reference targets absent record {}: {}",
-                reference.target_record, entry.name
-            )));
+        for reference in &stream_table_references {
+            if frame_indices.contains(&reference.target_record) {
+                continue;
+            }
+            let Some(fault) = damaged.iter_mut().find(|fault| {
+                fault.record_index == u64::from(reference.target_record)
+            }) else {
+                return Err(CodecError::malformed(format_args!(
+                    "F3D ACTTable reference targets absent record {}: {}",
+                    reference.target_record, entry.name
+                )));
+            };
+            fault.dropped.push(reference.id().clone());
         }
+        stream_table_references.retain(|reference| frame_indices.contains(&reference.target_record));
+        table.retain(|entry_row| {
+            let Some(fault) = damaged.iter_mut().find(|fault| {
+                fault.record_index == u64::from(entry_row.record_index)
+            }) else {
+                return true;
+            };
+            fault.dropped.push(crate::ids::native_scoped_id(
+                &entry.name, "act-entity", entry_row.record_index,
+            ));
+            false
+        });
         let mut groups = Vec::new();
         for frame in &frames {
             if let Some(group) = decode_channel_group(bytes, frame, &entry.name)? {
@@ -235,6 +252,7 @@ pub(crate) fn decode(scan: &ContainerScan<'_>) -> Result<DecodedAct, CodecError>
                 .filter(|record| record.stream() == scope)
                 .map(|record| record.record_index),
         );
+        untyped_records.extend(damaged);
         untyped_records.extend(
             frames
                 .iter()
@@ -244,6 +262,7 @@ pub(crate) fn decode(scan: &ContainerScan<'_>) -> Result<DecodedAct, CodecError>
                     extent: frame.start..frame.end,
                     record_index: u64::from(frame.record_index),
                     reason: "no supported ACT payload grammar".to_owned(),
+                    dropped: Vec::new(),
                 }),
         );
         entities.extend(stream_entities);

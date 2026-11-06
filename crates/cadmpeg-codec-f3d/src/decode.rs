@@ -2810,13 +2810,17 @@ impl<'a> F3dDecodeSession<'a> {
                     .ok_or_else(|| CodecError::malformed("ACT record end overflows"))?;
                 let extent = source.child(start, end)
                     .ok_or_else(|| CodecError::malformed("ACT record extent exceeds its stream"))?;
-                let spec = PartSpec::new("f3d.bulk_record")
+                let mut spec = PartSpec::new("f3d.bulk_record")
                     .holding([
                         cadmpeg_ir::document::ArenaClass::Model,
                         cadmpeg_ir::document::ArenaClass::Design,
                     ])
                     .in_stream(cadmpeg_ir::StreamName::try_from(frame.stream.clone())
                         .map_err(CodecError::malformed)?);
+                for id in &frame.dropped {
+                    spec = spec.dropping(cadmpeg_ir::ids::Identity::try_from(id.as_str())
+                        .map_err(CodecError::malformed)?);
+                }
                 self.ctx.decode_part(&mut parts, extent, spec, |_| {
                     Err::<(), _>(CodecError::malformed(format_args!(
                         "ACT record {}: {}", frame.record_index, frame.reason
