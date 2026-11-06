@@ -256,9 +256,8 @@ A sketch native operand has a nonempty native kind and an optional field. A pres
 
 `native_ref` names the native row carrying the neutral record. The linkage runs from the neutral record to the native row. A neutral record without a native row states no association. The neutral definition keeps its own meaning.
 
-`source_content` retains the ordered mixed content of a feature. Parameter items
-reference entries in the document parameter arena. A referenced parameter is owned by that feature and may occur more than once
-when the source serializes repeated consumption slots.
+`source_content` retains the ordered mixed content of a feature. A parameter
+item may occur more than once when the source has repeated consumption slots.
 
 ## Design parameters, configurations, and resolvers
 
@@ -271,8 +270,8 @@ A `DesignParameter` holds its id, name, ordinal, owning feature, canonical
 link. The `expression` holds ordered `tokens`: literal `Text` fragments and
 `Parameter` references by id. The expression is canonical and the value is its
 cache. A single-literal expression equals the value. Dependencies derive from
-the tokens. `owner` names the consuming feature and is independent of product
-ownership. A `source_content` `Parameter(id)` item resolves against the
+the tokens. `owner` optionally names the owning feature and is independent of
+product ownership. A `source_content` `Parameter(id)` item resolves against the
 parameter arena and must name a parameter owned by the containing feature. `driving`
 marks a parameter that drives its constrained dimension. `set_dimension` edits
 the bound parameter through the feature definition path and returns
@@ -293,12 +292,10 @@ composes the occurrence parent tree in document coordinates. `Body.transform`
 and `Occurrence.transform` are optional `Transform` values. Body placements
 stay local to their product definition; the world placement is computed.
 
-`Feature.needs_recompute` is required on the wire. The edit helpers mark the
-edited feature and its dependents. Decoders set the flag from stored state:
-FreeCAD object status Touched, Creo station-value disagreement, and SolidWorks
-`swConfigurationNeedsUpdate` for every feature; every other decoder reports
-false. Writers preserve the format flag where one exists and otherwise charge
-`export:evaluation.stale` naming the features.
+`Feature.needs_recompute` is required on the wire. It states that the feature's
+stored evaluation may no longer match its inputs. The edit helpers mark the
+edited feature and its dependents. The [document contract](document-contract.md#rules-d-p-w-b-e)
+states the decoder and writer rules.
 
 ## Assembly joints
 
