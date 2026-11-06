@@ -802,8 +802,30 @@ fn history_record(ir: &CadIr, feature: &Feature) -> Result<Vec<u8>, WriteError> 
         "antecedent_objects",
     )?;
     body.extend(uuid_anon(&antecedents)?);
+    let groups = value_groups(&properties);
+    if let cadmpeg_ir::features::FeatureDefinition::Operation(FeatureOperation::Native {
+        parameters,
+        ..
+    }) = feature.evaluation.definition()
+    {
+        for name in parameters.keys() {
+            let represented = groups.iter().any(|(id, occurrence, kind)| {
+                let group = if *occurrence == 0 {
+                    format!("value_{id}")
+                } else {
+                    format!("value_{id}_{occurrence}")
+                };
+                name.as_str() == group && kind.is_some()
+            });
+            if !represented {
+                return Err(WriteError::Omit(format!(
+                    "history {record} parameter {name} has no reconstructible wire type"
+                )));
+            }
+        }
+    }
     let mut values = Vec::new();
-    for (id, occ, kind) in value_groups(&properties) {
+    for (id, occ, kind) in groups {
         let group = if occ == 0 {
             format!("value_{id}")
         } else {

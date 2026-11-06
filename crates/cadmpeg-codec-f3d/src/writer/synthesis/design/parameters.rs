@@ -158,7 +158,6 @@ pub(super) fn regenerate(
                     placements: &native.design_sketch_placements,
                     body_bindings: &native.design_body_bindings,
                     body_key_bodies: Some(&body_key_bodies),
-                    component_naming_spaces: &native.design_component_naming_spaces,
                     histories: &native.asm_histories,
                     face_boundaries: &native.asm_face_boundaries,
                     sheet_metal_settings: &native.design_sheet_metal_settings,
