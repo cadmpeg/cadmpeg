@@ -58,6 +58,9 @@ pub(super) fn from_edge(
         return Ok(None);
     }
     let point = |parameter| -> Result<Option<Point3>, CodecError> {
+        if curve.geometry.solved().is_none() {
+            return super::surface_curve::point_at(ctx, ir, curve, parameter);
+        }
         Ok(
             cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::curve_point(
                 ctx,
