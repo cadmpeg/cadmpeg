@@ -253,7 +253,9 @@ pub(crate) enum RhinoLossCode {
     WriterHatchPatternOmitted,
     /// Hatch pattern fields cannot be retained by the selected table layout.
     WriterHatchPatternFieldsReduced,
-    /// A linetype is omitted or its archive index changes.
+    /// A linetype has no writable record.
+    WriterLinetypeOmitted,
+    /// A linetype archive index changes.
     WriterLinetypeReduced,
     /// A layer linetype reference changes its archive index or is omitted.
     WriterLayerLinetypeReduced,
@@ -397,6 +399,7 @@ impl RhinoLossCode {
         Self::WriterLightAttributeIndexReassigned,
         Self::WriterHatchPatternOmitted,
         Self::WriterHatchPatternFieldsReduced,
+        Self::WriterLinetypeOmitted,
         Self::WriterLinetypeReduced,
         Self::WriterLayerLinetypeReduced,
         Self::WriterLayerMembershipOmitted,
@@ -491,6 +494,7 @@ impl RhinoLossCode {
             Self::WriterLightAttributeIndexReassigned => "writer.light-attribute-index-reassigned",
             Self::WriterHatchPatternOmitted => "writer.hatch-pattern-omitted",
             Self::WriterHatchPatternFieldsReduced => "writer.hatch-pattern-fields-reduced",
+            Self::WriterLinetypeOmitted => "writer.linetype-omitted",
             Self::WriterLinetypeReduced => "writer.linetype-reduced",
             Self::WriterLayerLinetypeReduced => "writer.layer-linetype-reduced",
             Self::WriterLayerMembershipOmitted => "writer.layer-membership-omitted",
@@ -537,6 +541,7 @@ impl RhinoLossCode {
             | Self::WriterBodyOmitted => Severity::Error,
             Self::WriterAnnotationOmitted
             | Self::WriterLightOmitted
+            | Self::WriterLinetypeOmitted
             | Self::WriterHatchPatternOmitted => Severity::Error,
             _ => Severity::Warning,
         }
@@ -618,6 +623,7 @@ impl RhinoLossCode {
                 LossTaxonomy::ProceduralReduced
             }
             Self::WriterMaterialOmitted
+            | Self::WriterLinetypeOmitted
             | Self::WriterLinetypeReduced
             | Self::WriterLayerLinetypeReduced
             | Self::WriterLayerMembershipOmitted
@@ -756,6 +762,7 @@ mod tests {
                 "writer.light-attribute-index-reassigned",
                 "writer.hatch-pattern-omitted",
                 "writer.hatch-pattern-fields-reduced",
+                "writer.linetype-omitted",
                 "writer.linetype-reduced",
                 "writer.layer-linetype-reduced",
                 "writer.layer-membership-omitted",

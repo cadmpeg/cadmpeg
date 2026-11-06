@@ -78,6 +78,22 @@ pub(in crate::writer) fn group_indices(ir: &CadIr, identity: &str) -> Result<Vec
 #[cfg(test)]
 mod tests;
 
+enum LinetypeError {
+    Omit(String),
+    Fail(CodecError),
+}
+
+impl From<CodecError> for LinetypeError {
+    fn from(error: CodecError) -> Self {
+        match error {
+            CodecError::Malformed(reason)
+            | CodecError::InvalidInput(reason)
+            | CodecError::UnsupportedContent(reason) => Self::Omit(reason),
+            error => Self::Fail(error),
+        }
+    }
+}
+
 pub(in crate::writer) struct LinetypeExport {
     pub(in crate::writer) records: Vec<Vec<u8>>,
     pub(in crate::writer) indices: std::collections::BTreeMap<String, i32>,
@@ -112,15 +128,11 @@ pub(in crate::writer) fn linetypes(ir: &CadIr) -> Result<LinetypeExport, CodecEr
                     }
                 }
             }
-            Err(
-                CodecError::Malformed(reason)
-                | CodecError::InvalidInput(reason)
-                | CodecError::UnsupportedContent(reason),
-            ) => result.losses.push(
-                crate::loss::RhinoLossCode::WriterLinetypeReduced
+            Err(LinetypeError::Omit(reason)) => result.losses.push(
+                crate::loss::RhinoLossCode::WriterLinetypeOmitted
                     .note(format!("linetype {} omitted: {reason}", record.id())),
             ),
-            Err(error) => return Err(error),
+            Err(LinetypeError::Fail(error)) => return Err(error),
         }
     }
     Ok(result)
@@ -148,8 +160,8 @@ pub(in crate::writer) fn linetype_index(
     Ok(linetypes(ir)?.indices.get(record.id()).copied())
 }
 
-fn linetype(record: &cadmpeg_ir::NativeRecord, index: usize) -> Result<Vec<u8>, CodecError> {
-    let fields = record.fields()?;
+fn linetype(record: &cadmpeg_ir::NativeRecord, index: usize) -> Result<Vec<u8>, LinetypeError> {
+    let fields = record.fields().map_err(CodecError::from)?;
     let mut payload = component(
         record.id(),
         wire_index(index)?,
@@ -168,7 +180,7 @@ fn linetype(record: &cadmpeg_ir::NativeRecord, index: usize) -> Result<Vec<u8>, 
                 .get("length_millimeters")
                 .and_then(Value::as_f64)
                 .ok_or_else(|| {
-                    CodecError::malformed("Rhino linetype segment has no finite length")
+                    LinetypeError::Omit("Rhino linetype segment has no finite length".into())
                 })?
                 .to_le_bytes(),
         );
@@ -179,7 +191,7 @@ fn linetype(record: &cadmpeg_ir::NativeRecord, index: usize) -> Result<Vec<u8>, 
                     .and_then(Value::as_u64)
                     .unwrap_or(0),
             )
-            .map_err(CodecError::malformed)?
+            .map_err(|error| LinetypeError::Omit(error.to_string()))?
             .to_le_bytes(),
         );
     }
@@ -187,7 +199,7 @@ fn linetype(record: &cadmpeg_ir::NativeRecord, index: usize) -> Result<Vec<u8>, 
         payload.extend([
             tag,
             u8::try_from(fields.get(name).and_then(Value::as_u64).unwrap_or(0))
-                .map_err(CodecError::malformed)?,
+                .map_err(|error| LinetypeError::Omit(error.to_string()))?,
         ]);
     }
     payload.push(3);
@@ -206,7 +218,7 @@ fn linetype(record: &cadmpeg_ir::NativeRecord, index: usize) -> Result<Vec<u8>, 
                 .and_then(Value::as_u64)
                 .unwrap_or(0),
         )
-        .map_err(CodecError::malformed)?,
+        .map_err(|error| LinetypeError::Omit(error.to_string()))?,
     ]);
     payload.push(5);
     let taper = fields
@@ -219,13 +231,15 @@ fn linetype(record: &cadmpeg_ir::NativeRecord, index: usize) -> Result<Vec<u8>, 
             .as_array()
             .filter(|pair| pair.len() == 2)
             .ok_or_else(|| {
-                CodecError::malformed("Rhino linetype taper needs two finite coordinates")
+                LinetypeError::Omit("Rhino linetype taper needs two finite coordinates".into())
             })?;
         for value in pair {
             payload.extend(
                 value
                     .as_f64()
-                    .ok_or_else(|| CodecError::malformed("Rhino linetype taper is nonnumeric"))?
+                    .ok_or_else(|| {
+                        LinetypeError::Omit("Rhino linetype taper is nonnumeric".into())
+                    })?
                     .to_le_bytes(),
             );
         }
@@ -240,7 +254,7 @@ fn linetype(record: &cadmpeg_ir::NativeRecord, index: usize) -> Result<Vec<u8>, 
         ),
         0,
     ]);
-    crc_chunk_with_direct(
+    Ok(crc_chunk_with_direct(
         0x2000_8078,
         &class_wrapper_with_direct(
             LINETYPE_CLASS,
@@ -248,5 +262,5 @@ fn linetype(record: &cadmpeg_ir::NativeRecord, index: usize) -> Result<Vec<u8>, 
             &[],
         )?,
         &[],
-    )
+    )?)
 }
