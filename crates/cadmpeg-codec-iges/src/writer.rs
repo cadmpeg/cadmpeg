@@ -156,6 +156,7 @@ mod levels;
 mod native_plane;
 mod native_records;
 mod offset_curve;
+mod offset_surface;
 mod pcurve_admission;
 mod placement_entities;
 pub(crate) mod target;
@@ -725,6 +726,24 @@ fn synthesize_with_admission(
                     .any(|target| target == owner.as_str())
         }) {
             emitted_procedurals += 1;
+            let previous = format!(
+                "IGES procedural definition {} was reduced to a solved carrier",
+                procedural.id
+            );
+            graph.losses.retain(|loss| loss.message != previous);
+        }
+    }
+    for procedural in &ir.model.procedural_surfaces {
+        let Some(owner) = ir.model.procedural_surface_owner(&procedural.id) else {
+            continue;
+        };
+        if graph.entities.iter().any(|entity| {
+            entity.type_code == 140
+                && entity
+                    .source_targets
+                    .iter()
+                    .any(|target| target == owner.as_str())
+        }) {
             let previous = format!(
                 "IGES procedural definition {} was reduced to a solved carrier",
                 procedural.id
@@ -5707,6 +5726,8 @@ fn entity_counts(entities: &[Entity]) -> BTreeMap<String, usize> {
             123 => "123_direction",
             126 => "126_nurbs_curve",
             128 => "128_nurbs_surface",
+            130 => "130_offset_curve",
+            140 => "140_offset_surface",
             124 => "124_transformation",
             106 => "106_copious_data",
             102 => "102_composite_curve",
@@ -6220,6 +6241,9 @@ fn append_surface_entities(
 ) -> Result<Option<usize>, CodecError> {
     let (ir, version) = input;
     let Some(status) = ownership.surface_status(surface) else {
+        if offset_surface::consumed_support(ir, surface, version) {
+            return Ok(None);
+        }
         report_unowned_support(losses, surface.id.as_str());
         return Ok(None);
     };
@@ -6463,6 +6487,9 @@ fn surface_entities_for_ir(
     version: crate::IgesVersion,
 ) -> Result<Vec<Entity>, CodecError> {
     let geometry = &surface.geometry;
+    if let Some(entities) = offset_surface::entities(ir, surface, base_index, version) {
+        return Ok(entities);
+    }
     if let Some(entity) = native_plane::regenerate(ir, surface) {
         return Ok(vec![entity]);
     }
