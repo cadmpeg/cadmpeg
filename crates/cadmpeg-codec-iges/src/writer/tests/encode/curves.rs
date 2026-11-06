@@ -49,6 +49,42 @@ fn unchanged_planar_ellipse_retains_its_parameter_tokens() {
 }
 
 #[test]
+fn ellipse_fixture_synthesis_preserves_its_records() {
+    use cadmpeg_test_support::writer_closure::{without_fidelity, Redecoded};
+
+    let harness = cadmpeg_test_support::golden::Harness::new(
+        env!("CARGO_MANIFEST_DIR"),
+        "igs",
+        "UPDATE_GOLDEN=1 cargo test-fast golden",
+    );
+    let (_, bytes) = harness
+        .fixture_inputs()
+        .into_iter()
+        .find(|(name, _)| name == "conic_ellipse")
+        .expect("ellipse fixture");
+    let input = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("ellipse fixture decodes");
+    let redecode = |bytes: &[u8]| -> Result<Redecoded, String> {
+        let result = IgesCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .map_err(|error| error.to_string())?;
+        Ok(Redecoded {
+            ir: serde_json::to_value(result.ir()).map_err(|error| error.to_string())?,
+            loss_codes: result
+                .report()
+                .losses
+                .iter()
+                .map(|loss| loss.code.to_string())
+                .collect(),
+            members: Vec::new(),
+        })
+    };
+    let findings = without_fidelity(&input, &IgesCodec, &redecode);
+    assert!(findings.is_empty(), "{findings:#?}");
+}
+
+#[test]
 fn encode_emits_the_typed_ellipse_form_for_v5_0() {
     let decoded = IgesCodec
         .decode(
