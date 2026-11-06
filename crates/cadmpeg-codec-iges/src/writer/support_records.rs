@@ -390,6 +390,50 @@ mod tests {
     }
 
     #[test]
+    fn sphere_support_keeps_both_direction_records() {
+        let specs = [
+            (116, 0, "ORIGIN", "00010000", "116,1,2,3,0;"),
+            (123, 0, "AXIS", "00010000", "123,0,0,1;"),
+            (123, 0, "REFDIR", "00010000", "123,1,0,0;"),
+            (196, 1, "SPHERE", "00000000", "196,1,2,3,5;"),
+        ];
+        let bytes = owned_test_file(
+            &specs
+                .into_iter()
+                .map(
+                    |(entity_type, form, label, status, parameters)| OwnedTestEntity {
+                        entity_type,
+                        form,
+                        label: label.into(),
+                        status,
+                        parameters: parameters.into(),
+                    },
+                )
+                .collect::<Vec<_>>(),
+        );
+        let decoded = IgesCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("fixture decodes");
+        let output = written(decoded.ir());
+        let before = decoded
+            .ir()
+            .native
+            .namespace("iges")
+            .expect("source namespace");
+        let after = output.native.namespace("iges").expect("output namespace");
+        assert_eq!(before.arenas()["directions"].len(), 2);
+        assert_eq!(after.arenas()["directions"].len(), 2);
+        for (source, result) in before.arenas()["entities"]
+            .iter()
+            .take(3)
+            .zip(after.arenas()["entities"].iter())
+        {
+            assert_eq!(source.field("label"), result.field("label"));
+            assert_eq!(source.field("parameters"), result.field("parameters"));
+        }
+    }
+
+    #[test]
     fn analytic_support_keeps_native_labels_and_numeric_tokens_but_writes_edited_geometry() {
         let decoded = IgesCodec
             .decode(&mut Cursor::new(fixture()), &DecodeOptions::default())
