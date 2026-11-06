@@ -126,15 +126,26 @@ impl<'a> ParameterFrame<'a> {
 /// `face_recipe_data`, `bounded_face_recipe_data`, `edge_recipe_data`,
 /// `vertex_recipe_data`) from each design `BulkStream` entry in `scan`.
 /// `recipe_index` is assigned per `(kind, design_id)` group in stream order.
-pub(crate) fn decode_recipes(scan: &ContainerScan) -> Result<Vec<ConstructionRecipe>, CodecError> {
+pub(crate) fn decode_recipes(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    output: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
+    scan: &ContainerScan,
+) -> Result<Vec<ConstructionRecipe>, CodecError> {
     let mut out = Vec::new();
     for entry in scan
         .entries
         .iter()
         .filter(|entry| scan.is_design_stream(entry, ContainerRole::Bulkstream))
     {
-        let bytes = scan.entry_bytes(&entry.name)?;
-        decode_stream(bytes, &entry.name, &mut out)?;
+        let Some(meta) = super::meta::metadata_for_bulk_stream(scan, &entry.name)? else {
+            continue;
+        };
+        let source = scan
+            .entry_view(&entry.name)
+            .ok_or_else(|| CodecError::malformed("recipe stream has no source view"))?;
+        let (frames, _) = super::meta::partition_primary_frames(source.window(), &meta)?;
+        let frames = super::meta::primary_frame_extents(&frames);
+        decode_stream(ctx, output, source, &entry.name, &frames, &mut out)?;
     }
     Ok(out)
 }

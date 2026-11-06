@@ -196,7 +196,7 @@ fn trim_result_on(
         source: &p,
         payload: ([0; 16], vec![]),
     };
-    validate_nurbs_trim(surface, EPS_FIT, &edge, Sense::Forward, &explicit)
+    validate_nurbs_trim(surface, EPS_FIT, &edge, Sense::Forward, &explicit).map(|_| ())
 }
 
 fn vertical_line_at_max() -> PcurveGeometry {

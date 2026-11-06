@@ -138,20 +138,13 @@ pub(super) fn needs_design_bulk(target: &CadIr, native: &F3dNative) -> bool {
 }
 
 pub(super) fn encode_design_bulkstream(
+    output_ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     target: &CadIr,
     native: &F3dNative,
     registry: &GeneratedDesignRegistry,
     parameter_bytes: Vec<u8>,
     brep_name: &str,
 ) -> Result<Option<EncodedDesignBulkStream>, CodecError> {
-    let decode_arena = cadmpeg_core::decode::DecodeArena::new();
-    let (decode_ctx, _) = cadmpeg_core::decode::DecodeContext::from_root_bytes(
-        &[],
-        &decode_arena,
-        &cadmpeg_core::decode::DecodePolicy::default(),
-    )?;
-    let decode_ctx = &decode_ctx;
-
     let body_key_bodies = target
         .model
         .bodies
@@ -164,7 +157,7 @@ pub(super) fn encode_design_bulkstream(
         .collect::<std::collections::BTreeMap<_, _>>();
     let projected_parameters =
         crate::design::feature_project::project_parameter_design_with_edge_identities(
-            decode_ctx,
+            output_ctx,
             &crate::design::feature_project::ProjectInputs {
                 native: &native.design_parameters,
                 owners: &native.design_parameter_owners,
@@ -226,7 +219,7 @@ pub(super) fn encode_design_bulkstream(
     if let Some(body_map) = &registry.body_map {
         let class_tag = body_map.class_tag.as_str();
         let record_index = body_map.record_index;
-        primary_records.push(primary_record(record_index, out.len())?);
+        primary_records.push(primary_record(output_ctx, record_index, out.len())?);
         native_lp_ascii(&mut out, class_tag)?;
         out.extend_from_slice(&record_index.to_le_bytes());
         out.extend_from_slice(&[0; crate::design::body::GENERATED_BODY_MAP_ZERO_PREFIX_LEN]);
@@ -241,9 +234,10 @@ pub(super) fn encode_design_bulkstream(
         out.extend_from_slice(&0u32.to_le_bytes());
         native_lp_utf16(&mut out, brep_name)?;
     }
-    encode_browser_nodes(&mut out, &mut primary_records, registry)?;
+    encode_browser_nodes(output_ctx, &mut out, &mut primary_records, registry)?;
     for assignment in &native.design_material_assignments {
         if encode_material_assignment(
+            output_ctx,
             &mut out,
             &mut primary_records,
             registry,
@@ -290,6 +284,7 @@ pub(super) fn encode_design_bulkstream(
                 "source-less F3D construction recipe states no record index".into(),
             ));
         };
+        output_ctx.charge_entities(1, "F3D Design record")?;
         prefix[11..15].copy_from_slice(&record_index.value.to_le_bytes());
         prefix[23..27].copy_from_slice(
             &u32::try_from(name.len())
@@ -320,7 +315,7 @@ pub(super) fn encode_design_bulkstream(
             .entity_ids
             .first()
             .ok_or_else(|| CodecError::Malformed("missing generated BodiesRoot identity".into()))?;
-        primary_records.push(primary_record_u64(record_index, out.len())?);
+        primary_records.push(primary_record_u64(output_ctx, record_index, out.len())?);
         native_lp_ascii(
             &mut out,
             super::presentation::dynamic_class_tag(ordinal)?.as_str(),
@@ -373,13 +368,19 @@ pub(super) fn encode_design_bulkstream(
             .and_then(|ordinal| registry.types.get(ordinal))
             .is_some_and(|kind| kind.entity_ids.contains(&u64::from(header.record_index)));
         if registered {
-            primary_records.push(primary_record(header.record_index, out.len())?);
+            primary_records.push(primary_record(output_ctx, header.record_index, out.len())?);
+        } else {
+            output_ctx.charge_entities(1, "F3D Design record")?;
         }
         native_lp_ascii(&mut out, header.class_tag.as_str())?;
         out.extend_from_slice(&header.record_index.to_le_bytes());
     }
     for header in &native.design_entity_headers {
-        primary_records.push(primary_record_u64(header.entity_id.suffix(), out.len())?);
+        primary_records.push(primary_record_u64(
+            output_ctx,
+            header.entity_id.suffix(),
+            out.len(),
+        )?);
         out.extend_from_slice(&3u32.to_le_bytes());
         out.extend_from_slice(header.class_tag.as_bytes());
         out.extend_from_slice(&header.entity_id.suffix().to_le_bytes());
@@ -447,9 +448,13 @@ pub(super) fn encode_design_bulkstream(
             )));
         }
         let companion_class_tag = super::presentation::dynamic_class_tag(companion_type_ordinal)?;
-        primary_records.push(primary_record(point.record_index, out.len())?);
+        primary_records.push(primary_record(output_ctx, point.record_index, out.len())?);
         encode_sketch_point(&mut out, point)?;
-        primary_records.push(primary_record(point.paired_reference, out.len())?);
+        primary_records.push(primary_record(
+            output_ctx,
+            point.paired_reference,
+            out.len(),
+        )?);
         encode_sketch_point_companion(
             &mut out,
             &companion_class_tag,
@@ -459,15 +464,19 @@ pub(super) fn encode_design_bulkstream(
         )?;
     }
     for curve in &native.sketch_curve_identities {
-        primary_records.push(primary_record(curve.record_index, out.len())?);
+        primary_records.push(primary_record(output_ctx, curve.record_index, out.len())?);
         encode_sketch_curve_identity(&mut out, curve)?;
     }
     for text in &native.sketch_texts {
-        primary_records.push(primary_record(text.record_index, out.len())?);
+        primary_records.push(primary_record(output_ctx, text.record_index, out.len())?);
         encode_sketch_text(&mut out, text)?;
     }
     for relation in &native.sketch_relations {
-        primary_records.push(primary_record(relation.record_index, out.len())?);
+        primary_records.push(primary_record(
+            output_ctx,
+            relation.record_index,
+            out.len(),
+        )?);
         encode_sketch_relation(&mut out, relation)?;
     }
     let mut used = primary_records
@@ -514,14 +523,22 @@ pub(super) fn encode_design_bulkstream(
                 )));
             }
         } else {
-            primary_records.push(primary_record(reference.record_index, out.len())?);
+            primary_records.push(primary_record(
+                output_ctx,
+                reference.record_index,
+                out.len(),
+            )?);
             native_lp_ascii(&mut out, reference.class_tag.as_str())?;
             out.extend_from_slice(&reference.record_index.to_le_bytes());
         }
         out.extend_from_slice(&[0; 14]);
         out.extend_from_slice(&19u32.to_le_bytes());
         out.extend_from_slice(b"EDGE_REFERENCE_LOST");
-        primary_records.push(primary_record(reference.next_record_index, out.len())?);
+        primary_records.push(primary_record(
+            output_ctx,
+            reference.next_record_index,
+            out.len(),
+        )?);
         native_lp_ascii(&mut out, reference.next_class_tag.as_str())?;
         out.extend_from_slice(&reference.next_record_index.to_le_bytes());
     }
@@ -535,6 +552,7 @@ pub(super) fn encode_design_bulkstream(
             );
             continue;
         }
+        output_ctx.charge_entities(1, "F3D Design record")?;
         out.extend_from_slice(persistent_reference_name(reference.kind));
         out.extend_from_slice(&2u32.to_le_bytes());
         out.extend_from_slice(&14u32.to_le_bytes());
@@ -552,13 +570,15 @@ pub(super) fn encode_design_bulkstream(
 }
 
 fn primary_record(
+    output_ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     entity_id: u32,
     bulk_offset: usize,
 ) -> Result<crate::metastream::RecordIndexEntry, CodecError> {
-    primary_record_u64(u64::from(entity_id), bulk_offset)
+    primary_record_u64(output_ctx, u64::from(entity_id), bulk_offset)
 }
 
 fn encode_material_assignment(
+    output_ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     out: &mut Vec<u8>,
     primary_records: &mut Vec<crate::metastream::RecordIndexEntry>,
     registry: &GeneratedDesignRegistry,
@@ -643,7 +663,7 @@ fn encode_material_assignment(
         return Ok(false);
     };
     let tag = super::presentation::dynamic_class_tag(ordinal)?;
-    primary_records.push(primary_record_u64(entity, out.len())?);
+    primary_records.push(primary_record_u64(output_ctx, entity, out.len())?);
     native_lp_ascii(out, tag.as_str())?;
     out.extend_from_slice(&entity.to_le_bytes());
     out.extend_from_slice(&[0; 6]);
@@ -675,9 +695,11 @@ fn encode_material_assignment(
 }
 
 fn primary_record_u64(
+    output_ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     entity_id: u64,
     bulk_offset: usize,
 ) -> Result<crate::metastream::RecordIndexEntry, CodecError> {
+    output_ctx.charge_entities(1, "F3D Design record")?;
     Ok(crate::metastream::RecordIndexEntry {
         entity_id,
         bulk_offset: u64::try_from(bulk_offset).map_err(|_| {
@@ -1291,6 +1313,7 @@ pub(super) fn encode_design_metastream(
 }
 
 fn encode_browser_nodes(
+    output_ctx: &cadmpeg_core::decode::DecodeContext<'_>,
     out: &mut Vec<u8>,
     primary_records: &mut Vec<crate::metastream::RecordIndexEntry>,
     registry: &GeneratedDesignRegistry,
@@ -1300,7 +1323,7 @@ fn encode_browser_nodes(
     };
     let node_class_tag = browser_nodes.class_tag.as_str();
     for node in &browser_nodes.nodes {
-        primary_records.push(primary_record(node.record_index, out.len())?);
+        primary_records.push(primary_record(output_ctx, node.record_index, out.len())?);
         native_lp_ascii(out, node_class_tag)?;
         out.extend_from_slice(&node.record_index.to_le_bytes());
         out.extend_from_slice(&[0; 10]);
@@ -1354,6 +1377,23 @@ mod tests {
             SketchRelationReturnMember,
         },
     };
+
+    #[test]
+    fn design_records_share_the_output_allowance() {
+        let arena = cadmpeg_core::decode::DecodeArena::new();
+        let mut policy = cadmpeg_core::decode::DecodePolicy::default();
+        policy.limits.max_entities = 2;
+        let ctx = cadmpeg_core::decode::DecodeContext::for_encode(&arena, &policy);
+        ctx.charge_entities(1, "earlier output records").unwrap();
+        let first = super::primary_record(&ctx, 17, 3).unwrap();
+        assert_eq!((first.entity_id, first.bulk_offset), (17, 3));
+        let error = super::primary_record(&ctx, 18, 7).unwrap_err();
+        assert!(
+            matches!(error, cadmpeg_core::CodecError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities
+                && (limit.limit, limit.used, limit.additional) == (2, 2, 1))
+        );
+    }
 
     fn registry_with_entity(entity_id: u64) -> super::GeneratedDesignRegistry {
         super::GeneratedDesignRegistry {

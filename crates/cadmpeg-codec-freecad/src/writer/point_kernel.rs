@@ -144,9 +144,11 @@ pub(super) fn write<'a>(
     ir: &'a cadmpeg_ir::CadIr,
     properties: &[PropertyRecord],
     names: &HashMap<String, String>,
-    entry_names: &HashSet<String>,
-    objects: &mut [Object],
-    entries: &mut BTreeMap<String, Vec<u8>>,
+    (entry_names, objects, entries): (
+        &HashSet<String>,
+        &mut [Object],
+        &mut BTreeMap<String, Vec<u8>>,
+    ),
     losses: &mut Vec<LossNote>,
 ) -> Result<Vec<&'a str>, CodecError> {
     let mut represented = Vec::new();
