@@ -161,6 +161,36 @@ fn group_index(ir: &cadmpeg_ir::CadIr, source: i32) -> Result<i32, WriteError> {
     Ok(super::wire_index(index)?)
 }
 
+fn hatch_index(ir: &cadmpeg_ir::CadIr, source: i32) -> Result<i32, WriteError> {
+    if source < 0 {
+        return Ok(source);
+    }
+    let records = super::records(ir, "hatch_patterns");
+    let mut matching = records.iter().filter(|record| {
+        record
+            .field("archive_index")
+            .and_then(|value| value.as_i64())
+            == Some(i64::from(source))
+    });
+    let record = matching.next().ok_or_else(|| {
+        WriteError::Omit(format!("light hatch pattern index {source} is unresolved"))
+    })?;
+    if matching.next().is_some() {
+        return Err(WriteError::Omit(format!(
+            "light hatch pattern index {source} is ambiguous"
+        )));
+    }
+    let export = super::super::hatches::patterns(ir)?;
+    let index = records
+        .iter()
+        .filter(|record| export.written.contains(record.id()))
+        .position(|candidate| candidate.id() == record.id())
+        .ok_or_else(|| {
+            WriteError::Omit(format!("light hatch pattern index {source} is not emitted"))
+        })?;
+    Ok(super::wire_index(index)?)
+}
+
 pub(super) fn encode(
     value: &Value,
     ir: &cadmpeg_ir::CadIr,
@@ -234,14 +264,6 @@ pub(super) fn encode(
             )));
         }
     }
-    if fields
-        .get("hatch_pattern_index")
-        .is_some_and(|value| value != &Value::from(-1))
-    {
-        return Err(WriteError::Omit(
-            "light attribute hatch_pattern_index needs table-index remapping".into(),
-        ));
-    }
     for name in [
         "casts_shadows",
         "receives_shadows",
@@ -261,6 +283,8 @@ pub(super) fn encode(
     let written_layer = layer_index(ir, source_layer)?;
     let source_material = integer(fields, "material_index")?;
     let written_material = material_index(ir, materials, source_material)?;
+    let source_hatch = integer(fields, "hatch_pattern_index")?;
+    let written_hatch = hatch_index(ir, source_hatch)?;
     let source_linetype = integer(fields, "linetype_index")?;
     let written_linetype = linetype_index(ir, source_linetype)?;
     let source_groups = field(fields, "group_indexes")?
@@ -388,6 +412,8 @@ pub(super) fn encode(
         body.extend([28, u8::from(proof)]);
         body.extend(super::super::anonymous(1, 0, &list)?);
     }
+    body.push(30);
+    body.extend(written_hatch.to_le_bytes());
     for (tag, name) in [
         (31, "section_hatch_scale"),
         (32, "section_hatch_rotation"),
@@ -448,6 +474,11 @@ pub(super) fn encode(
     if source_linetype != written_linetype {
         changes.push(format!(
             "linetype index {source_linetype} is written as {written_linetype}"
+        ));
+    }
+    if source_hatch != written_hatch {
+        changes.push(format!(
+            "hatch pattern index {source_hatch} is written as {written_hatch}"
         ));
     }
     for (source, written) in source_groups.iter().zip(&written_groups) {
