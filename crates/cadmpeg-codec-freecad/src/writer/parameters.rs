@@ -440,13 +440,6 @@ pub(super) fn write(
             )));
             continue;
         }
-        let Some(expression) = render_expression(ir, parameter, names) else {
-            losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
-                "parameter {} has a dangling expression reference or an unencodable owner label",
-                parameter.id
-            )));
-            continue;
-        };
         if ir.model.spreadsheets.iter().any(|sheet| {
             sheet
                 .cells()
@@ -455,10 +448,17 @@ pub(super) fn write(
         }) {
             continue;
         }
+        let expression = render_expression(ir, parameter, names);
+        if expression.is_none() {
+            losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
+                "parameter {} expression has a dangling reference or an unencodable owner label and is omitted",
+                parameter.id
+            )));
+        }
         if let Some((sketch, path)) = constraints.get(parameter.id.as_str()) {
             if is_literal_binding(parameter) {
                 report_literal_normalization(parameter, losses);
-            } else if let Some(name) = names.get(*sketch) {
+            } else if let (Some(name), Some(expression)) = (names.get(*sketch), &expression) {
                 expressions
                     .entry(name.clone())
                     .or_default()
@@ -553,7 +553,7 @@ pub(super) fn write(
         object.set(property_name, property);
         if is_literal_binding(parameter) {
             report_literal_normalization(parameter, losses);
-        } else {
+        } else if let Some(expression) = expression {
             expressions.entry(name).or_default().push(xml::element(
                 "Expression",
                 &[
