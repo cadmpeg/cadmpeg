@@ -87,7 +87,11 @@ pub(super) fn selected_frames<'a>(
     }) {
         return Ok(Vec::new());
     }
-    supported_frames(ctx, source, meta)
+    match supported_frames(ctx, source, meta) {
+        Ok(frames) => Ok(frames),
+        Err(error @ (CodecError::ResourceLimit(_) | CodecError::Io(_))) => Err(error),
+        Err(_) => Ok(Vec::new()),
+    }
 }
 
 fn supported_frames<'a>(

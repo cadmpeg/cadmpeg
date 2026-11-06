@@ -81,9 +81,293 @@ fn retained_untyped_act_record_marks_its_content_classes() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
+    let unreadable = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.code
+                == cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable
+                    .note(String::new())
+                    .code
+        })
+        .count();
+    assert_eq!(unreadable, 1);
+    let unknowns = decoded.ir().native_unknowns("f3d").unwrap();
+    assert_eq!(unknowns.len(), 1);
+    let retained = decoded
+        .source_fidelity()
+        .retained_record(unknowns[0].id.as_str())
+        .unwrap();
+    let end = usize::try_from(records[1].1).unwrap();
+    assert_eq!(retained.data(), Some(&bulk[..end]));
+    assert!(retained.untyped().contains(&ArenaClass::Model));
+    assert!(retained.untyped().contains(&ArenaClass::Design));
+    let image = decoded
+        .source_fidelity()
+        .retained_record("f3d:file:source-image#0")
+        .unwrap();
+    assert!(image.untyped().is_empty());
     let unrepresented = decoded.source_fidelity().unrepresented();
     assert!(unrepresented.contains(&ArenaClass::Model));
     assert!(unrepresented.contains(&ArenaClass::Design));
+}
+
+#[test]
+fn damaged_act_segment_keeps_independent_segment() {
+    use crate::test_support::act_stream_test::{
+        generated_act_metastream, generated_complete_act_bulkstream,
+    };
+    let (bulk, records) = generated_complete_act_bulkstream();
+    let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    crate::test_support::manifest_test::write_synthetic_manifests(&mut archive, stored);
+    for segment in [1, 2] {
+        archive
+            .start_file(
+                format!("FusionAssetName[Active]/FusionACTSegmentType{segment}/BulkStream.dat"),
+                stored,
+            )
+            .unwrap();
+        archive.write_all(&bulk).unwrap();
+        archive
+            .start_file(
+                format!("FusionAssetName[Active]/FusionACTSegmentType{segment}/MetaStream.dat"),
+                stored,
+            )
+            .unwrap();
+        let meta = if segment == 1 {
+            b"bad".to_vec()
+        } else {
+            generated_act_metastream(&records)
+        };
+        archive.write_all(&meta).unwrap();
+    }
+    let bytes = archive.finish().unwrap().into_inner();
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let native = crate::test_support::native_test::f3d_native(decoded.ir());
+    assert_eq!(native.act_tables.len(), 1);
+    assert_eq!(native.act_entities.len(), 2);
+    let unknowns = decoded.ir().native_unknowns("f3d").unwrap();
+    assert_eq!(unknowns.len(), 2);
+    let unreadable = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.code
+                == cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable
+                    .note("")
+                    .code
+        })
+        .count();
+    assert_eq!(unreadable, 2);
+    let image = decoded
+        .source_fidelity()
+        .retained_record("f3d:file:source-image#0")
+        .unwrap();
+    assert!(image.untyped().is_empty());
+}
+
+#[test]
+fn damaged_act_header_gives_up_one_indexed_frame() {
+    use crate::test_support::act_stream_test::{
+        generated_act_metastream, generated_complete_act_bulkstream,
+    };
+    let (mut bulk, records) = generated_complete_act_bulkstream();
+    bulk[4..7].copy_from_slice(b"bad");
+    let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    crate::test_support::manifest_test::write_synthetic_manifests(&mut archive, stored);
+    archive
+        .start_file(
+            "FusionAssetName[Active]/FusionACTSegmentType1/BulkStream.dat",
+            stored,
+        )
+        .unwrap();
+    archive.write_all(&bulk).unwrap();
+    archive
+        .start_file(
+            "FusionAssetName[Active]/FusionACTSegmentType1/MetaStream.dat",
+            stored,
+        )
+        .unwrap();
+    archive
+        .write_all(&generated_act_metastream(&records))
+        .unwrap();
+    let bytes = archive.finish().unwrap().into_inner();
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let native = crate::test_support::native_test::f3d_native(decoded.ir());
+    assert_eq!(native.act_tables.len(), 1);
+    assert_eq!(native.act_entities.len(), 1);
+    let unknowns = decoded.ir().native_unknowns("f3d").unwrap();
+    assert_eq!(unknowns.len(), 1);
+    let retained = decoded
+        .source_fidelity()
+        .retained_record(unknowns[0].id.as_str())
+        .unwrap();
+    assert_eq!(
+        retained.data(),
+        Some(&bulk[..usize::try_from(records[1].1).unwrap()])
+    );
+    let unreadable = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.code
+                == cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable
+                    .note("")
+                    .code
+        })
+        .count();
+    assert_eq!(unreadable, 1);
+}
+
+#[test]
+fn damaged_act_group_drops_its_table_entity() {
+    use crate::test_support::act_stream_test::{
+        generated_act_metastream, generated_complete_act_bulkstream,
+    };
+    const STREAM: &str = "FusionAssetName[Active]/FusionACTSegmentType1/BulkStream.dat";
+    for damage_header in [true, false] {
+        let (mut bulk, records) = generated_complete_act_bulkstream();
+        let group = usize::try_from(records.iter().find(|(id, _)| *id == 7).unwrap().1).unwrap();
+        if damage_header {
+            bulk[group + 4..group + 7].copy_from_slice(b"bad");
+        } else {
+            let mut prefix = Vec::new();
+            crate::test_support::indexed_header(&mut prefix, *b"261", 7);
+            prefix.extend_from_slice(&[0; 10]);
+            assert_eq!(&bulk[group..group + prefix.len()], prefix);
+            let count_offset = group + prefix.len();
+            bulk[count_offset..count_offset + 4].copy_from_slice(&0u32.to_le_bytes());
+        }
+        let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+        crate::test_support::manifest_test::write_synthetic_manifests(&mut archive, stored);
+        archive.start_file(STREAM, stored).unwrap();
+        archive.write_all(&bulk).unwrap();
+        archive
+            .start_file(
+                "FusionAssetName[Active]/FusionACTSegmentType1/MetaStream.dat",
+                stored,
+            )
+            .unwrap();
+        archive
+            .write_all(&generated_act_metastream(&records))
+            .unwrap();
+        let decoded = F3dCodec
+            .decode(
+                &mut Cursor::new(archive.finish().unwrap().into_inner()),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        let native = crate::test_support::native_test::f3d_native(decoded.ir());
+        assert_eq!(native.act_tables.len(), 1);
+        assert_eq!(native.act_entities.len(), 1);
+        assert_eq!(native.act_entities[0].record_index(), 2);
+        let loss = decoded
+            .report()
+            .losses
+            .iter()
+            .find(|loss| {
+                loss.code
+                    == cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable
+                        .note("")
+                        .code
+            })
+            .expect("unreadable group");
+        assert_eq!(
+            loss.dropped,
+            [crate::ids::native_scoped_id(STREAM, "act-entity", 7)]
+        );
+        let unknowns = decoded.ir().native_unknowns("f3d").unwrap();
+        assert_eq!(unknowns.len(), 1);
+        let retained = decoded
+            .source_fidelity()
+            .retained_record(unknowns[0].id.as_str())
+            .unwrap();
+        assert_eq!(retained.data(), Some(&bulk[group..]));
+    }
+}
+
+#[test]
+fn damaged_act_table_keeps_component_links_and_names_dependent_entities() {
+    use crate::test_support::act_stream_test::{
+        generated_act_metastream, generated_complete_act_bulkstream,
+    };
+    const STREAM: &str = "FusionAssetName[Active]/FusionACTSegmentType1/BulkStream.dat";
+    for damage_header in [true, false] {
+        let (mut bulk, records) = generated_complete_act_bulkstream();
+        let start = usize::try_from(records[1].1).unwrap();
+        let end = usize::try_from(records[2].1).unwrap();
+        let mut prefix = Vec::new();
+        crate::test_support::indexed_header(&mut prefix, *b"268", 1);
+        prefix.extend_from_slice(&0u32.to_le_bytes());
+        crate::test_support::lp_ascii(&mut prefix, "ACTTable");
+        prefix.extend_from_slice(&0u16.to_le_bytes());
+        assert_eq!(&bulk[start..start + prefix.len()], prefix);
+        if damage_header {
+            bulk[start + 4..start + 7].copy_from_slice(b"bad");
+        } else {
+            let count = start + prefix.len();
+            bulk[count..count + 4].copy_from_slice(&u32::MAX.to_le_bytes());
+        }
+        let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+        crate::test_support::manifest_test::write_synthetic_manifests(&mut archive, stored);
+        archive.start_file(STREAM, stored).unwrap();
+        archive.write_all(&bulk).unwrap();
+        archive
+            .start_file(
+                "FusionAssetName[Active]/FusionACTSegmentType1/MetaStream.dat",
+                stored,
+            )
+            .unwrap();
+        archive
+            .write_all(&generated_act_metastream(&records))
+            .unwrap();
+        let decoded = F3dCodec
+            .decode(
+                &mut Cursor::new(archive.finish().unwrap().into_inner()),
+                &DecodeOptions::default(),
+            )
+            .unwrap();
+        let native = crate::test_support::native_test::f3d_native(decoded.ir());
+        assert!(native.act_tables.is_empty());
+        assert!(native.act_entities.is_empty());
+        assert_eq!(native.act_component_links.len(), 1);
+        let loss = decoded
+            .report()
+            .losses
+            .iter()
+            .find(|loss| {
+                loss.code
+                    == cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable
+                        .note("")
+                        .code
+            })
+            .expect("unreadable table");
+        let mut expected = vec![
+            crate::ids::native_scoped_id(STREAM, "act-table", start),
+            crate::ids::native_scoped_id(STREAM, "act-entity", 2),
+            crate::ids::native_scoped_id(STREAM, "act-entity", 7),
+        ];
+        expected.sort();
+        assert_eq!(loss.dropped, expected);
+        let unknowns = decoded.ir().native_unknowns("f3d").unwrap();
+        assert_eq!(unknowns.len(), 1);
+        let retained = decoded
+            .source_fidelity()
+            .retained_record(unknowns[0].id.as_str())
+            .unwrap();
+        assert_eq!(retained.data(), Some(&bulk[start..end]));
+    }
 }
 
 #[test]
@@ -958,4 +1242,36 @@ fn kernel_tolerance_invalid_values_keep_defaults_and_the_other_field() {
         super::super::admit_kernel_tolerances(None, None).unwrap(),
         default
     );
+}
+
+#[test]
+fn truncated_mesh_entry_names_its_dependent_tessellation() {
+    let bytes = crate::test_support::mesh_fixture::archive(
+        &crate::test_support::paramesh::triangle(),
+        Some(&crate::test_support::smbh_geometry_test::synthetic_geometry_smbh()),
+    );
+    let full = F3dCodec
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        .unwrap();
+    let cut = F3dCodec
+        .decode(
+            &mut Cursor::new(&bytes[..bytes.len() * 90 / 100]),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mesh_id = full.ir().model.tessellations[0].id.as_str();
+    assert!(cut.ir().model.tessellations.is_empty());
+    let loss = cut
+        .report()
+        .losses
+        .iter()
+        .find(|loss| {
+            loss.code
+                == cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable
+                    .note("")
+                    .code
+        })
+        .unwrap();
+    assert_eq!(loss.dropped, [mesh_id]);
+    assert!(loss.message.contains(mesh_id));
 }

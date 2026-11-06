@@ -307,7 +307,10 @@ fn mesh_feature_binds_tessellations_in_design_body_order() {
         count: 2,
         tessellations_by_scope: std::collections::HashMap::from([(
             ("f3d:Design/BulkStream.dat".into(), 10),
-            vec!["tessellation:z-body".into(), "tessellation:a-body".into()],
+            vec![
+                "synthetic:test:id#tessellation:z-body".into(),
+                "synthetic:test:id#tessellation:a-body".into(),
+            ],
         )]),
     };
 
@@ -316,9 +319,18 @@ fn mesh_feature_binds_tessellations_in_design_body_order() {
     assert_eq!(
         *features[0].evaluation.definition(),
         FeatureDefinition::Operation(FeatureOperation::MeshImport {
-            tessellations: vec!["tessellation:z-body".into(), "tessellation:a-body".into(),]
-                .try_into()
+            tessellations: vec![
+                cadmpeg_ir::tessellation::TessellationId::mint(
+                    "synthetic:test:id#tessellation:z-body"
+                )
                 .unwrap(),
+                cadmpeg_ir::tessellation::TessellationId::mint(
+                    "synthetic:test:id#tessellation:a-body"
+                )
+                .unwrap(),
+            ]
+            .try_into()
+            .unwrap(),
         })
     );
     assert!(!feature_definition_is_incomplete(
@@ -1374,10 +1386,7 @@ fn mesh_texture_bytes_refuse_one_byte_below_their_retained_ceiling() {
             if admitted {
                 let projected = result.unwrap();
                 assert_eq!(projected.id, asset);
-                assert_eq!(
-                    projected.native_ref.as_deref(),
-                    Some("f3d:FusionAssetName[Active]/Textures/a.png:mesh-texture#0")
-                );
+                assert!(projected.native_ref.is_none());
             } else {
                 assert!(matches!(
                     result,
