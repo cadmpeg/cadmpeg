@@ -87,34 +87,67 @@ pub(super) fn close(
                 object.name
             )));
         }
-        let mut omitted = Vec::new();
-        for (name, xml) in &object.properties {
+        for (name, xml) in &mut object.properties {
             let parsed = roxmltree::Document::parse(xml).map_err(CodecError::malformed)?;
-            if parsed
-                .descendants()
-                .filter(roxmltree::Node::is_element)
-                .any(|node| {
-                    if !matches!(node.tag_name().name(), "Link" | "LinkSub" | "XLink")
-                        || node.attribute("file").is_some_and(|file| !file.is_empty())
-                    {
-                        return false;
-                    }
-                    node.attribute("value")
-                        .or_else(|| node.attribute("name"))
-                        .or_else(|| node.attribute("obj"))
-                        .is_some_and(|target| !target.is_empty() && !live.contains(target))
-                })
-            {
-                omitted.push(name.clone());
+            let mut missing = Vec::new();
+            for node in parsed.descendants().filter(roxmltree::Node::is_element) {
+                if !matches!(node.tag_name().name(), "Link" | "LinkSub" | "XLink")
+                    || node.attribute("file").is_some_and(|file| !file.is_empty())
+                {
+                    continue;
+                }
+                let target = ["value", "name", "obj"]
+                    .into_iter()
+                    .find_map(|key| node.attribute_node(key));
+                if let Some(target) = target
+                    .filter(|target| !target.value().is_empty() && !live.contains(target.value()))
+                {
+                    missing.push((target.range_value(), target.value().to_owned()));
+                }
             }
-        }
-        for name in omitted {
-            object.properties.shift_remove(&name);
-            losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
-                "object {} property {name} refers to an omitted record and is removed",
-                object.name
-            )));
+            for (range, target) in missing.into_iter().rev() {
+                xml.replace_range(range, "");
+                losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
+                    "object {} property {name} link to omitted object {target} is cleared",
+                    object.name
+                )));
+            }
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn missing_link_clears_its_slot_and_keeps_siblings() {
+        let mut owner = Object::new("Owner".into(), "App::Feature", "Owner");
+        owner.set(
+            "Links",
+            r#"<Property name="Links" type="App::PropertyLinkList"><LinkList count="3"><Link value="First"/><Link value="Missing"/><Link value="Second"/></LinkList></Property>"#.into(),
+        );
+        let mut objects = vec![
+            owner,
+            Object::new("First".into(), "App::Feature", "First"),
+            Object::new("Second".into(), "App::Feature", "Second"),
+        ];
+        let mut losses = Vec::new();
+        close(&mut objects, &mut losses).unwrap();
+        let xml = roxmltree::Document::parse(&objects[0].properties["Links"]).unwrap();
+        let list = xml
+            .descendants()
+            .find(|node| node.has_tag_name("LinkList"))
+            .unwrap();
+        assert_eq!(list.attribute("count"), Some("3"));
+        assert_eq!(
+            list.children()
+                .filter(|node| node.has_tag_name("Link"))
+                .map(|node| node.attribute("value").unwrap())
+                .collect::<Vec<_>>(),
+            ["First", "", "Second"]
+        );
+        assert_eq!(losses.len(), 1);
+    }
 }

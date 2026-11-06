@@ -997,73 +997,73 @@ fn design_census_matches_projection(ir: &CadIr) -> Result<bool, Box<dyn std::err
     Ok(true)
 }
 
+const PARAMETER_ROUND_TRIP_TOLERANCE: f64 = 1.0e-12;
+
 fn design_property_edit_round_trip(ir: &CadIr) -> Result<bool, Box<dyn std::error::Error>> {
-    let namespace = ir
-        .native
-        .namespace("fcstd")
-        .ok_or("missing fcstd namespace")?;
-    for property in namespace.arenas().get("properties").into_iter().flatten() {
-        let fields = property.fields()?;
-        let Some(owner) = fields.get("owner").and_then(Value::as_str) else {
+    use cadmpeg_ir::features::{Dimension, ParameterValue};
+    use cadmpeg_ir::scalar::Length;
+
+    for parameter in &ir.model.parameters {
+        let (Some(owner), Some(ParameterValue::Length(old))) = (&parameter.owner, &parameter.value)
+        else {
             continue;
         };
         let Some(feature) = ir
             .model
             .features
             .iter()
-            .find(|feature| feature.native_ref.as_deref() == Some(owner))
+            .find(|feature| feature.id == *owner)
         else {
             continue;
         };
-        let Some(original_operation) = typed_operation(feature)? else {
-            continue;
-        };
-        let Some(name) = fields.get("name").and_then(Value::as_str) else {
-            continue;
-        };
-        if !["Length", "Width", "Height", "Radius", "Angle"].contains(&name) {
+        if typed_operation(feature)?.is_none() {
             continue;
         }
-        let Some(old) = property_value_attribute(ir, owner, name, 0, "value")
-            .and_then(|value| value.parse::<f64>().ok())
+        let definition = serde_json::to_value(feature.definition())?;
+        let Some(path) = feature
+            .definition()
+            .dimension_paths()
+            .into_iter()
+            .find(|path| {
+                definition.pointer(path).is_some_and(|value| {
+                    value["kind"] == "parameter" && value["value"] == parameter.id.as_str()
+                })
+            })
         else {
             continue;
         };
-        let new = (old + 1.0).to_string();
-        let object_name = namespace
-            .arenas()
-            .get("objects")
-            .into_iter()
-            .flatten()
-            .find(|record| record.id() == owner)
-            .and_then(|record| record.field("name"))
-            .and_then(|value| value.as_str().map(str::to_owned))
-            .ok_or("design property owner has no object name")?;
+        let Some(new) = Length::new(old.get() + 1.0) else {
+            continue;
+        };
         let mut edited = ir.clone();
-        FcstdCodec.set_property_value_attribute(
-            &mut edited,
-            FcstdPropertyOwner::Object(&object_name),
-            name,
-            0,
-            "value",
-            &new,
-        )?;
+        if edited.set_dimension(&feature.id, &path, new).is_err() {
+            continue;
+        }
         let mut bytes = Vec::new();
         FcstdCodec
             .plan(EncodeInput::new(&edited, None), TargetRequest::Inherit)?
             .write_to(&mut bytes)?;
         let decoded = FcstdCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default())?;
-        if property_value_attribute(decoded.ir(), owner, name, 0, "value") == Some(new)
-            && decoded
-                .ir()
-                .model
-                .features
-                .iter()
-                .find(|candidate| candidate.id == feature.id)
-                .map(typed_operation)
-                .transpose()?
-                .flatten()
-                .is_some_and(|operation| operation != original_operation)
+        let binding_survives = decoded
+            .ir()
+            .model
+            .features
+            .iter()
+            .find(|candidate| candidate.id == feature.id)
+            .map(|candidate| serde_json::to_value(candidate.definition()))
+            .transpose()?
+            .is_some_and(|definition| {
+                definition.pointer(&path).is_some_and(|value| {
+                    value["kind"] == "parameter" && value["value"] == parameter.id.as_str()
+                })
+            });
+        if decoded
+            .ir()
+            .dimension_value(&Dimension::Parameter(parameter.id.clone()))
+            .is_some_and(|value: Length| {
+                (value.get() - new.get()).abs() < PARAMETER_ROUND_TRIP_TOLERANCE
+            })
+            && binding_survives
             && design_census_matches_projection(decoded.ir())?
         {
             return Ok(true);
