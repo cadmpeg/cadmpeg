@@ -523,8 +523,19 @@ pub(super) fn exact_scale_operation(
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
     stream_types: &HashMap<u64, (&str, u32)>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Option<DesignScaleOperation>, cadmpeg_core::CodecError> {
-    (|| {
+    let reference_count = scope.reference_members().len();
+    let payload_form = matches!(
+        (parameter_scope_payload_length(scope), reference_count),
+        (Some(297 | 299), 5) | (Some(308), 6)
+    );
+    let english_frame_form = matches!(
+        (scope.frame_length(), reference_count),
+        (307 | 309, 5) | (318, 6)
+    );
+    let mut read_by_english_frame = false;
+    let operation = (|| -> Option<Result<DesignScaleOperation, cadmpeg_core::CodecError>> {
         if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::Scale) {
             return None;
         }
@@ -561,14 +572,26 @@ pub(super) fn exact_scale_operation(
                     center,
                 )
             } else if scope.kind() == scope::DesignFeatureKind::Scale
-                && matches!(
-                    (
-                        parameter_scope_payload_length(scope),
-                        scope.reference_members().len()
-                    ),
-                    (Some(297 | 299), 5) | (Some(308), 6)
-                )
+                && (payload_form || english_frame_form)
             {
+                read_by_english_frame = !payload_form;
+                if read_by_english_frame && scope.frame_length() == 309 {
+                    let (guid, _) = crate::bytes::lp_utf16_bounded_view(
+                        bytes,
+                        start.checked_add(75)?,
+                        36..=36,
+                    )?;
+                    if !guid.eq_str("00000000-0000-0000-0000-000000000000")
+                        || View::u24_le_at(bytes, start.checked_add(151)?)? != 0
+                        || scope.reference_count_offset() != scope.byte_offset().checked_add(154)?
+                        || scope.kind_offset() != scope.byte_offset().checked_add(221)?
+                        || scope.feature_ordinal_offset() != scope.byte_offset().checked_add(231)?
+                        || scope.previous_history_state_id_offset()
+                            != scope.byte_offset().checked_add(262)
+                    {
+                        return None;
+                    }
+                }
                 if parameter_scope_payload_length(scope) == Some(299) {
                     let (guid, _) = crate::bytes::lp_utf16_bounded_view(
                         bytes,
@@ -632,7 +655,18 @@ pub(super) fn exact_scale_operation(
             uniform_factor_offset: u64_from_index(uniform_factor_offset),
         }))
     })()
-    .transpose()
+    .transpose()?;
+    if operation.is_some() && read_by_english_frame {
+        losses.push(
+            crate::loss::F3dLossCode::FeatureScaleFrameLengthFormAssumed.note(format!(
+                "{} reads the legacy Scale form of its {}-byte frame; its {}-byte payload matches no form.",
+                scope.id,
+                scope.frame_length(),
+                parameter_scope_payload_length(scope).unwrap_or_default()
+            )),
+        );
+    }
+    Ok(operation)
 }
 
 #[cfg(test)]

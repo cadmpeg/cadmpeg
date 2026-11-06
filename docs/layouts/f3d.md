@@ -899,11 +899,11 @@ Unstated regions:
 - `11..16` (5 B): The legacy fixed operation prefix retains five bytes before the zero run at offsets 16 through 20.
 - `16..21` (5 B): Primary-header offsets 16 through 20 are zero.
 
-## `scale_legacy_uniform_309`
+## `scale_legacy_uniform_head`
 
-Spec §3.1 · layout: byte offsets · size: 309 B
+Spec §3.1 · layout: byte offsets · size: 221 B
 
-The 299-byte-payload form with the five-code-unit kind `Scale`. Offsets are relative to the primary indexed header; another kind spelling moves every offset from 231 on by its UTF-16 byte length minus the ten bytes of `Scale`, and `scale_legacy_uniform_tail` gives the tail offsets for any spelling. The paired same-index header is outside this frame.
+Offsets are relative to the primary indexed header. The LP-UTF16 kind code units start at offset 221, and `scale_legacy_uniform_tail` gives the offsets after them.
 
 Parsed by:
 - `crates/cadmpeg-codec-f3d/src/design/decode/scopes/direct_face.rs`
@@ -918,15 +918,7 @@ Parsed by:
 | 154 | 4 | `reference_count` | `u32` | little | spec | The five-entry ordered reference table starts at offset 154 · value `5` |
 | 158 | 55 | `references` | `bytes[55]` | little | derived | Five eleven-byte references follow the four-byte count. |
 | 213 | 4 | `history_state_id` | `u32` | little | spec | The current history-state identity is at offset 213 |
-| 217 | 4 | `kind_code_unit_count` | `u32` | little | spec | the kind code-unit count is at offset 217 · value `5` |
-| 221 | 10 | `kind` | `bytes[10]` | little | spec | the kind code units occupy offsets 221 through 230 |
-| 231 | 4 | `feature_ordinal` | `u32` | little | spec | the feature ordinal is at offset 231 |
-| 262 | 4 | `previous_history_state_id` | `u32` | little | spec | the preceding history-state identity is at offset 262 |
-
-Unstated regions:
-
-- `235..262` (27 B): Common fixed-tail fields between the ordinal and preceding history state.
-- `266..309` (43 B): Common fixed-tail fields up to the paired header at offset 309.
+| 217 | 4 | `kind_code_unit_count` | `u32` | little | spec | the kind code-unit count is at offset 217 |
 
 ## `scale_legacy_uniform_tail`
 

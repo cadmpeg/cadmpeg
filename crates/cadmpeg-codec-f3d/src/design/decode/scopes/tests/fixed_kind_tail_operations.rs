@@ -45,7 +45,24 @@ fn tested_surface_offset_operation(
     records: &crate::design::decode::sketch::IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Option<DesignSurfaceOffsetOperation> {
-    exact_surface_offset_operation(bytes, records, scope).unwrap()
+    surface_offset_operation_and_losses(bytes, records, scope).0
+}
+
+/// The decoded Offset Surface operation and the loss codes its reading adds.
+fn surface_offset_operation_and_losses(
+    bytes: &[u8],
+    records: &crate::design::decode::sketch::IndexedRecordOffsets,
+    scope: &DesignParameterScope,
+) -> (
+    Option<DesignSurfaceOffsetOperation>,
+    Vec<cadmpeg_ir::report::loss::LossKind>,
+) {
+    let mut losses = Vec::new();
+    let operation = exact_surface_offset_operation(bytes, records, scope, &mut losses).unwrap();
+    (
+        operation,
+        losses.into_iter().map(|loss| loss.code).collect(),
+    )
 }
 
 pub(super) fn fixed_kind_tail_operations(
@@ -217,7 +234,14 @@ pub(super) fn fixed_kind_tail_operations(
     scale_scope.source_kind = Some("Maßstab".to_owned());
     let scale_records = crate::design::test_support::indexed_record_offsets_for_test(&bytes);
     assert_eq!(
-        exact_scale_operation(&bytes, &scale_records, &scale_scope, &HashMap::new()).unwrap(),
+        exact_scale_operation(
+            &bytes,
+            &scale_records,
+            &scale_scope,
+            &HashMap::new(),
+            &mut Vec::new()
+        )
+        .unwrap(),
         Some(DesignScaleOperation {
             body_group_record_index: 102,
             center_record_index: 105,
@@ -1412,6 +1436,33 @@ pub(super) fn fixed_kind_tail_operations(
             },
         }
     );
+    let mut support_group = bytes.clone();
+    for ordinal_at in [35, 47] {
+        let at = extend_boundary_at + extend_boundary_tail + ordinal_at;
+        support_group[at..at + 4].copy_from_slice(&252u32.to_le_bytes());
+    }
+    assert_eq!(
+        tested_surface_offset_operation(
+            &support_group,
+            &crate::design::test_support::indexed_record_offsets_for_test(&support_group),
+            &extend_scope,
+        )
+        .map(|operation| operation.support),
+        Some(DesignSurfaceOffsetSupport::FaceGroups {
+            group_record_indices: vec![extend_boundary_record_index],
+        })
+    );
+    let mut zero_tolerance = bytes.clone();
+    let tolerance_at = extend_boundary_at + extend_boundary_tail + 39;
+    zero_tolerance[tolerance_at..tolerance_at + 8].copy_from_slice(&0f64.to_le_bytes());
+    assert_eq!(
+        tested_surface_offset_operation(
+            &zero_tolerance,
+            &crate::design::test_support::indexed_record_offsets_for_test(&zero_tolerance),
+            &extend_scope,
+        ),
+        None
+    );
     if let crate::records::feature::scope::DesignScopePayloadMut::SurfaceOffset(slot) =
         extend_scope.payload_mut()
     {
@@ -1541,7 +1592,7 @@ pub(super) fn fixed_kind_tail_operations(
             .unwrap();
         scope
     };
-    for (second_ordinal, admitted) in [(252u32, true), (260, false)] {
+    for (second_ordinal, assumed) in [(252u32, false), (260, true)] {
         let mut second = grouped.clone();
         second[7..11].copy_from_slice(&second_group_record_index.to_le_bytes());
         second[26..30].copy_from_slice(&second_member_record_index.to_le_bytes());
@@ -1554,16 +1605,25 @@ pub(super) fn fixed_kind_tail_operations(
         second[paired_at..].copy_from_slice(&second_group_record_index.to_le_bytes());
         let mut two_groups = bytes.clone();
         two_groups.extend_from_slice(&second);
-        let operation = tested_surface_offset_operation(
+        let (operation, losses) = surface_offset_operation_and_losses(
             &two_groups,
             &crate::design::test_support::indexed_record_offsets_for_test(&two_groups),
             &two_group_scope,
         );
         assert_eq!(
             operation.map(|operation| operation.support),
-            admitted.then(|| DesignSurfaceOffsetSupport::FaceGroups {
+            Some(DesignSurfaceOffsetSupport::FaceGroups {
                 group_record_indices: vec![grouped_record_index, second_group_record_index],
             }),
+            "{second_ordinal}"
+        );
+        assert_eq!(
+            losses,
+            if assumed {
+                vec![crate::loss::F3dLossCode::FeatureSurfaceOffsetGroupOrdinalsAssumed.kind()]
+            } else {
+                Vec::new()
+            },
             "{second_ordinal}"
         );
     }
