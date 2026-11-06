@@ -1214,6 +1214,10 @@ fn product_kind(kind: &str) -> Option<ProductKind> {
     }
 }
 
+pub(crate) fn is_product_type(kind: &str) -> bool {
+    product_kind(kind).is_some()
+}
+
 fn metadata_string(
     ctx: &crate::property_reader::PropertyReader<'_, '_>,
     properties: &[&PropertyRecord],
