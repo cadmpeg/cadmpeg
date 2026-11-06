@@ -393,7 +393,8 @@ pub(crate) fn decode_parameter_scopes(
                 }
             }
             {
-                let construction = exact_surface_offset_operation(bytes, &records, &scope)?;
+                let construction =
+                    exact_surface_offset_operation(bytes, &records, &scope, recipes)?;
                 if let scope::DesignScopePayloadMut::SurfaceOffset(slot) = scope.payload_mut() {
                     *slot = construction;
                 }
