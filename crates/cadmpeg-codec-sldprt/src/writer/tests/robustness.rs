@@ -207,14 +207,14 @@ fn feature_name_capacity_reaches_the_encoder() {
         .iter_mut()
         .find(|feature| feature.native_ref.as_deref() == Some(id.as_str()))
         .expect("native feature has a neutral projection")
-        .name = Some("😀".repeat(128));
+        .name = Some("😀".repeat(32_768));
     for fidelity in [None, Some(decoded.source_fidelity())] {
         let error = SldprtCodec
             .plan(EncodeInput::new(&ir, fidelity), request())
             .expect_err("feature name exceeds target width");
         assert!(matches!(error,
             cadmpeg_ir::codec::write::EncodeError::TargetCapacity {
-                field, limit: 255, value: 256,
+                field, limit: 65_535, value: 65_536,
             } if field.field == "feature_input.name_length"
         ));
     }
@@ -298,13 +298,13 @@ fn capacity_helpers_follow_their_rows() {
         field, limit: 255, value: 256
     } if field.field == "document.unit_name_byte_length")
     );
-    assert_eq!(crate::writer::feature_input_name_len(255).unwrap(), 255);
-    let error: cadmpeg_ir::codec::write::EncodeError = crate::writer::feature_input_name_len(256)
+    assert_eq!(crate::writer::feature_input_name_len(65_535).unwrap(), 65_535);
+    let error: cadmpeg_ir::codec::write::EncodeError = crate::writer::feature_input_name_len(65_536)
         .unwrap_err()
         .into();
     assert!(
         matches!(error, cadmpeg_ir::codec::write::EncodeError::TargetCapacity {
-        field, limit: 255, value: 256
+        field, limit: 65_535, value: 65_536
     } if field.field == "feature_input.name_length")
     );
     let name = "n".repeat(usize::try_from(crate::writer::CAPACITY_FIELDS[0].limit).expect("capacity fits usize"));

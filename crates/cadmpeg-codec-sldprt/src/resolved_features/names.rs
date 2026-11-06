@@ -121,10 +121,12 @@ pub(crate) fn record_name_end(payload: &[u8], name: &FeatureInputName) -> Option
         .checked_add(units.checked_mul(2)?)
 }
 
-pub(crate) fn append_name_length(payload: &mut Vec<u8>, length: u8) {
-    payload.push(length);
-    if length == u8::MAX {
-        payload.extend_from_slice(&u16::from(length).to_le_bytes());
+pub(crate) fn append_name_length(payload: &mut Vec<u8>, length: u16) {
+    if length < u16::from(u8::MAX) {
+        payload.push(length.to_le_bytes()[0]);
+    } else {
+        payload.push(u8::MAX);
+        payload.extend_from_slice(&length.to_le_bytes());
     }
 }
 

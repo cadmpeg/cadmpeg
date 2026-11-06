@@ -43,10 +43,15 @@ fn object_names_accept_the_name_length_field() {
     payload.extend_from_slice(CLASS_MARKER);
     payload.extend_from_slice(&18u16.to_le_bytes());
     payload.extend_from_slice(b"moFavoriteFolder_c");
-    let expected = ["A".repeat(129), "B".repeat(254), "C".repeat(255)];
+    let expected = [
+        "A".repeat(129),
+        "B".repeat(254),
+        "C".repeat(255),
+        "D".repeat(256),
+    ];
     for name in &expected {
         payload.extend_from_slice(&[0x87, 0x80, 0xff, 0xfe, 0xff]);
-        super::append_name_length(&mut payload, u8::try_from(name.len()).unwrap());
+        super::append_name_length(&mut payload, u16::try_from(name.len()).unwrap());
         for unit in name.encode_utf16() {
             payload.extend_from_slice(&unit.to_le_bytes());
         }
