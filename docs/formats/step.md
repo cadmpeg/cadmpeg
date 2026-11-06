@@ -691,6 +691,9 @@ attribute keeps the writer option. An attribute whose value the header does
 not carry back keeps its `attribute.source-record-not-written` loss. A
 document attribute whose value is not one string keeps that loss too.
 
+`FILE_DESCRIPTION` description strings transfer in order as document
+attributes named `start`. Each string occupies one attribute.
+
 CADIR decision: the reader locates header records by name. Missing, duplicate,
 reordered, or invalid descriptive metadata produces a loss and does not prevent
 DATA admission. In Part 21, a unique `FILE_SCHEMA` record must contain at least one
