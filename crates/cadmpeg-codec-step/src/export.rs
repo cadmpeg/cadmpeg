@@ -1080,6 +1080,45 @@ impl<'a> Builder<'a> {
         let context = self.emit_context();
 
         let mut emitted_items = self.emit_shape_items(context);
+        let retained_surfaces: BTreeSet<_> = self
+            .ir
+            .model
+            .faces
+            .iter()
+            .filter(|face| self.face_step_refs.contains_key(face.id.as_str()))
+            .map(|face| face.surface.as_str())
+            .collect();
+        let lost_surfaces: BTreeSet<_> = self
+            .ir
+            .model
+            .faces
+            .iter()
+            .filter(|face| !self.face_step_refs.contains_key(face.id.as_str()))
+            .map(|face| face.surface.as_str())
+            .filter(|surface| !retained_surfaces.contains(surface))
+            .filter(|surface| {
+                !self.construction_supports.contains(*surface)
+                    || self.surfaces.get(*surface).is_some_and(|surface| {
+                        ownership::is_independent(surface.source_object.as_ref())
+                    })
+            })
+            .map(str::to_owned)
+            .collect();
+        let mut supports = Vec::new();
+        for surface in lost_surfaces {
+            if let Some(reference) = self
+                .emit_surface(&surface)
+                .filter(|reference| !emitted_items.contains(reference))
+            {
+                supports.push(reference);
+            }
+        }
+        if !supports.is_empty() {
+            self.emitter.emit(
+                "REPRESENTATION",
+                &format!("'',{},{context}", refs(&supports)),
+            );
+        }
         let bodies_written = !self.body_step_refs.is_empty();
         if self.ir.model.product_definitions.is_empty() {
             let product_def_shape = self.emit_product_structure();
