@@ -112,12 +112,91 @@ pub(super) fn encode(
             .collect::<Vec<_>>();
         let mut relations = Vec::new();
         let mut relation_members = Vec::new();
+        let mut reserved_members = std::collections::BTreeMap::<usize, u32>::new();
         for relation in target
             .model
             .sketch_constraints
             .iter()
             .filter(|row| row.sketch == sketch.id)
         {
+            if relation.name.is_some()
+                || relation.driving.is_some()
+                || relation.active.is_some()
+                || relation.virtual_space.is_some()
+                || relation.visible.is_some()
+                || relation.orientation.is_some()
+                || relation.label_distance.is_some()
+                || relation.label_position.is_some()
+                || relation.metadata.is_some()
+            {
+                continue;
+            }
+            if let SketchConstraintDefinitionInput::Native {
+                native_kind,
+                native_state: Some(mask),
+                native_flags: None,
+                native_properties,
+                entities,
+                parameter: None,
+                operands,
+            } = relation.definition.kind()
+            {
+                if !matches!(
+                    (native_kind.as_str(), *mask),
+                    ("parallel", 0x10) | ("concentric", 0x4)
+                ) || !native_properties.is_empty()
+                    || entities.len() != 4
+                    || operands.len() != 4
+                {
+                    continue;
+                }
+                let mut requested = reserved_members.clone();
+                let mut indices = Vec::new();
+                let mut valid = true;
+                for (ordinal, (entity, operand)) in entities.iter().zip(operands).enumerate() {
+                    let Some(member) = members.iter().position(|member| member.id() == entity)
+                    else {
+                        valid = false;
+                        break;
+                    };
+                    let Some(index) = operand.object_index.filter(|index| *index != 0) else {
+                        valid = false;
+                        break;
+                    };
+                    let field = if ordinal < 2 { "member" } else { "return" };
+                    if !matches!(
+                        members[member].geometry.definition(),
+                        SketchGeometryDefinition::Point { .. }
+                    ) || operand.native_kind.as_str() != "point"
+                        || operand.native_ref.is_some()
+                        || !operand.field.as_ref().is_some_and(|value| {
+                            value.name.as_str() == field && value.role.is_none()
+                        })
+                        || requested
+                            .get(&member)
+                            .is_some_and(|existing| *existing != index)
+                        || requested
+                            .iter()
+                            .any(|(other, existing)| *other != member && *existing == index)
+                        || (occupied.contains(&index) && requested.get(&member) != Some(&index))
+                    {
+                        valid = false;
+                        break;
+                    }
+                    requested.insert(member, index);
+                    indices.push(member);
+                }
+                if !valid {
+                    continue;
+                }
+                for index in requested.values() {
+                    occupied.insert(*index);
+                }
+                reserved_members = requested;
+                relations.push(relation);
+                relation_members.push((indices[..2].to_vec(), indices[2..].to_vec(), *mask));
+                continue;
+            }
             let (entities, mask, family): (Vec<_>, u64, RelationFamily) =
                 match relation.definition.kind() {
                     SketchConstraintDefinitionInput::Horizontal { entity } => {
@@ -149,18 +228,6 @@ pub(super) fn encode(
                     }
                     _ => continue,
                 };
-            if relation.name.is_some()
-                || relation.driving.is_some()
-                || relation.active.is_some()
-                || relation.virtual_space.is_some()
-                || relation.visible.is_some()
-                || relation.orientation.is_some()
-                || relation.label_distance.is_some()
-                || relation.label_position.is_some()
-                || relation.metadata.is_some()
-            {
-                continue;
-            }
             let indices = entities
                 .iter()
                 .map(|entity| members.iter().position(|member| member.id() == *entity))
@@ -197,7 +264,7 @@ pub(super) fn encode(
                 continue;
             }
             relations.push(relation);
-            relation_members.push((indices, mask));
+            relation_members.push((indices.clone(), indices, mask));
         }
         let count = u32::try_from(members.len())
             .map_err(|_| CodecError::InvalidInput("F3D sketch member count exceeds u32".into()))?;
@@ -205,8 +272,12 @@ pub(super) fn encode(
             break;
         };
         let mut member_indices = Vec::new();
-        for _ in &members {
-            let Some(point) = allocate(&mut occupied, &mut next) else {
+        for member in 0..members.len() {
+            let Some(point) = reserved_members
+                .get(&member)
+                .copied()
+                .or_else(|| allocate(&mut occupied, &mut next))
+            else {
                 break;
             };
             let Some(companion) = allocate(&mut occupied, &mut next) else {
@@ -390,7 +461,7 @@ pub(super) fn encode(
             entities.push(member.id().clone());
         }
         let mut relation_ordinals = std::collections::BTreeMap::<u32, u32>::new();
-        for ((relation, (member, mask)), index) in relations
+        for ((relation, (member, returned, mask)), index) in relations
             .iter()
             .zip(relation_members)
             .zip(allocated_relations)
@@ -401,6 +472,13 @@ pub(super) fn encode(
                 .collect::<Vec<_>>();
             let count = u32::try_from(entities.len())
                 .map_err(|_| CodecError::InvalidInput("too many F3D relation members".into()))?;
+            let returned = returned
+                .into_iter()
+                .map(|member| member_indices[member].0)
+                .collect::<Vec<_>>();
+            let returned_count = u32::try_from(returned.len()).map_err(|_| {
+                CodecError::InvalidInput("too many F3D relation return members".into())
+            })?;
             mark(ctx, &mut primary, index, bulk.len())?;
             header(&mut bulk, "263", index)?;
             bulk.extend_from_slice(&[0; 8]);
@@ -417,8 +495,8 @@ pub(super) fn encode(
             bulk.push(0);
             reference(&mut bulk, container);
             bulk.extend_from_slice(&mask.to_le_bytes());
-            bulk.extend_from_slice(&count.to_le_bytes());
-            for entity in entities {
+            bulk.extend_from_slice(&returned_count.to_le_bytes());
+            for entity in returned {
                 reference(&mut bulk, entity);
             }
             bulk.push(0);

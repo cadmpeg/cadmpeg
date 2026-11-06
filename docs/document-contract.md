@@ -34,7 +34,7 @@ Wire version 11 requires a `scope` object with one boolean per arena class:
 
 `scope[C] = true` declares that the document holds class C. Its arenas are meaningful; empty arenas mean none was found or authored. `false` means the class is not held, and every neutral arena in that class is empty. Serialization, deserialization, `DecodeResult::new`, and `CadIr::set_scope` enforce that a populated class is held. `ScopeViolation { class, arena }` identifies the first violation. `CadIr::empty()` has full scope.
 
-`SourceFidelity.unrepresented` is the union of the `untyped` marks of the retained records. A decoder marks a record where it retains the record without decoding it, with `RetainedSourceRecord::with_untyped` or `SourceFidelity::mark_untyped`. A decoder that decodes a record into typed fields does not mark it. The set is never derived from a loss or from scope. A nonempty set makes patch and replay ineligible: the wrapper withholds fidelity from the backend and the export carries `SynthesisCause::SourceUnrepresented { classes }`. Synthesis consumes no retained bytes. Retained bytes select layout and identities; they never supply content.
+`SourceFidelity.unrepresented` is the union of the `untyped` marks of the retained records. A decoder marks a record where it retains the record without decoding it, with `RetainedSourceRecord::with_untyped` or `SourceFidelity::mark_untyped`. A decoder that decodes a record into typed fields does not mark it. The set is never derived from a loss or from scope. A nonempty set makes patch and replay ineligible. A writer with either path selects synthesis and reports `SynthesisCause::SourceUnrepresented { classes }`. Synthesis consumes no retained bytes. Retained bytes select layout and identities; they never supply content.
 
 ## Partial decode
 
@@ -70,7 +70,7 @@ A synthesized record carries document content authored from neutral and typed na
 
 ## Patch rule
 
-Patch and replay require empty `unrepresented`. Replay requires an unedited document. A patch that cannot express the edit selects synthesis and records `SynthesisCause::PatchDeclined { reason }`. The patch and replay test writes an unedited decode with fidelity, decodes the output, and checks agreement in both directions with zero export losses.
+Patch and replay require empty `unrepresented`. Replay requires an unedited document. A patch that cannot express the edit selects synthesis and records `SynthesisCause::PatchDeclined { reason }`. Patched and synthesized output from the same document have the same content on the arenas synthesis writes. The content-equality test compares the re-decodes of an unedited document written by both paths. A separate test checks that an unedited write with fidelity re-decodes with no export loss.
 
 ## New codecs, writers, classes, parts
 
@@ -82,7 +82,7 @@ Adding an arena class changes the wire contract and requires a wire bump. Adding
 
 ## Worked example
 
-A dimension is a literal or a binding: `Dimension<Length>::Literal(Length::new(10.0))` holds its own value, while `Dimension<Length>::Parameter(id)` names the `DesignParameter` whose cached `value` supplies it. `CadIr::dimension_value(&dimension)` resolves either form against the parameter arena. `set_dimension(&feature, "/profile/depth", Length::new(12.0))` edits the bound parameter through the feature definition path; on a driven parameter it returns `DrivenParameter` with the drivers instead of overwriting the value.
+A dimension is a literal or a binding: `Dimension<Length>::Literal(Length::new(10.0).unwrap())` holds its own value, while `Dimension<Length>::Parameter(id)` names the `DesignParameter` whose cached `value` supplies it. `CadIr::dimension_value(&dimension)` resolves either form against the parameter arena. For a path from the feature definition’s `dimension_paths()`, `set_dimension(&feature, &path, Length::new(12.0).unwrap())` edits the bound parameter; on a driven parameter it returns `DrivenParameter` with the drivers instead of overwriting the value.
 
 ## Version policy
 

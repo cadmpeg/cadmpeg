@@ -306,7 +306,10 @@ impl MaterialPlan {
         Ok(plan)
     }
 
-    pub(in crate::writer) fn encode(&self, ir: &CadIr) -> Result<Vec<Vec<u8>>, CodecError> {
+    pub(in crate::writer) fn encode(
+        &self,
+        ir: &CadIr,
+    ) -> Result<Vec<Vec<u8>>, crate::writer::WriteError> {
         self.entries
             .iter()
             .enumerate()
