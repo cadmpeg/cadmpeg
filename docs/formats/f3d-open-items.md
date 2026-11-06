@@ -476,6 +476,18 @@ travel.
 
 **Need.** Controlled saves of one `SplitFace` before and after an edit that creates the reference, with the record that carries the referenced index.
 
+### DR-280. Body-recipe serialization form above one
+
+**Question.** What tail layout does a body-recipe serialization form above `1` select?
+
+**Known.** `f3d.md` §3.1 "A class-365 whole-body member starts after its indexed header" states that forms `0` and `1` store the standard tail layout. The decoder reads the standard tail layout for every form value, keeps the form bytes in the native operand, and emits `body-recipe.serialization-form-assumed` for each operand with a form above `1`.
+
+**Need.** A document that stores a body-recipe operand with a form above `1`, and the tail layout of that operand.
+
+**Conflict.** None.
+
+**Note.** DR-257 records the serialization form of nested entity-selection members.
+
 ## 2. External references
 
 ### DR-111. Component-path poses of nested occurrences

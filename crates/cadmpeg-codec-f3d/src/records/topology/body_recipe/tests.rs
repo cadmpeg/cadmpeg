@@ -95,28 +95,30 @@ fn body_recipe_serialization_form_is_independent_of_class_tag() {
         "recipe_id": "recipe", "next_record_index": 6, "next_byte_offset": 240
     });
     for class_tag in ["365", "367", "387"] {
-        for (form, encoded, admitted) in [
-            (0u32, "00000000", true),
-            (1, "01000000", true),
-            (2, "02000000", false),
+        for (form, encoded) in [
+            (0u32, "00000000"),
+            (1, "01000000"),
+            (2, "02000000"),
+            (7, "07000000"),
         ] {
             let mut candidate = wire.clone();
             candidate["class_tag"] = class_tag.into();
             candidate["selector_tail"] = encoded.into();
-            assert_eq!(
-                serde_json::from_value::<DesignBodyRecipeOperand>(candidate).is_ok(),
-                admitted,
-                "class {class_tag}, form {form}"
-            );
-            let mut draft = serde_json::from_value::<DesignBodyRecipeOperand>(wire.clone())
-                .unwrap()
-                .into_draft();
+            let operand = serde_json::from_value::<DesignBodyRecipeOperand>(candidate)
+                .unwrap_or_else(|error| panic!("class {class_tag}, form {form}: {error}"));
+            assert_eq!(operand.serialization_form(), Some(form));
+            let mut draft = operand.into_draft();
             draft.class_tag = class_tag.to_owned().try_into().unwrap();
             draft.selector_tail = Some(crate::records::identity::Located {
                 value: form.to_le_bytes(),
                 offset: 220,
             });
-            assert_eq!(DesignBodyRecipeOperand::try_new(draft).is_ok(), admitted);
+            assert_eq!(
+                DesignBodyRecipeOperand::try_new(draft)
+                    .unwrap()
+                    .serialization_form(),
+                Some(form)
+            );
         }
     }
 }

@@ -89,13 +89,11 @@ impl Clone for DesignBodyRecipeOperand {
 }
 
 impl DesignBodyRecipeOperand {
+    pub(crate) fn serialization_form(&self) -> Option<u32> {
+        cadmpeg_core::decode::View::u32_le_at(&self.selector_tail?.value.into_inner(), 0)
+    }
+
     pub(crate) fn try_new(draft: DesignBodyRecipeOperandDraft) -> Result<Self, String> {
-        if draft
-            .selector_tail
-            .is_some_and(|tail| !matches!(tail.value, [0 | 1, 0, 0, 0]))
-        {
-            return Err("selector_tail serialization form must be 0 or 1".into());
-        }
         if draft.context_id_offset <= draft.asset_id_offset
             || draft.context_id_offset >= draft.next_byte_offset
             || draft.next_byte_offset <= draft.nested_record_index_offset

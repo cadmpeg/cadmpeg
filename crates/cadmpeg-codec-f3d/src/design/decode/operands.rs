@@ -4424,6 +4424,16 @@ pub(super) fn parse_entity_selection_frame_with(
     })
 }
 
+pub(crate) fn body_recipe_serialization_form_losses(
+    operands: &[DesignBodyRecipeOperand],
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    operands.iter().filter_map(|operand| operand.serialization_form().filter(|form| *form > 1).map(|form| {
+        crate::loss::F3dLossCode::BodyRecipeSerializationFormAssumed.note(format!(
+            "body recipe operand {} stores serialization form {form}; its reference runs decode with the layout of forms 0 and 1", operand.id
+        ))
+    })).collect()
+}
+
 /// Decode whole-body construction operands that contain one persistent body recipe.
 pub(crate) fn decode_body_recipe_operands(
     scan: &ContainerScan,
@@ -4832,7 +4842,6 @@ fn parse_body_recipe_operand_frame_with_index(
     if !is_guid_relaxed(&asset_id)
         || !is_guid_relaxed(&context_id)
         || View::u32_le_at(bytes, after_context_id)? != 2
-        || View::u32_le_at(bytes, selector_tail_at)? > 1
         || nested_record_index != u64::from(header.record_index.checked_add(3)?)
     {
         return None;

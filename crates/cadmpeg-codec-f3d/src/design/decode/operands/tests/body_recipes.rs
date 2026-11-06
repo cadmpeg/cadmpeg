@@ -448,18 +448,22 @@ fn class_367_body_recipe_operand_decodes_scale_member_frame() {
     for class_tag in ["365", "367", "387"] {
         bytes[4..7].copy_from_slice(class_tag.as_bytes());
         record.class_tag = class_tag.to_owned().try_into().unwrap();
-        for form in 0u32..=2 {
+        for form in [0u32, 1, 2, 7] {
             bytes[208..212].copy_from_slice(&form.to_le_bytes());
-            let decoded = parse_body_recipe_operand(&bytes, &group, 0, &record, &recipe);
-            if form < 2 {
-                assert_eq!(
-                    decoded.unwrap().into_draft().selector_tail.unwrap().value,
-                    form.to_le_bytes(),
-                    "class {class_tag}, form {form}"
-                );
+            let decoded = parse_body_recipe_operand(&bytes, &group, 0, &record, &recipe)
+                .unwrap_or_else(|| panic!("class {class_tag}, form {form}"));
+            assert_eq!(decoded.serialization_form(), Some(form));
+            assert_eq!(decoded.references()[0].design_reference, 301);
+            assert_eq!(decoded.nested_record_index(), 103);
+            let losses =
+                super::super::body_recipe_serialization_form_losses(std::slice::from_ref(&decoded));
+            let codes: Vec<_> = losses.iter().map(|loss| loss.code.local_code()).collect();
+            let expected: &[&str] = if form > 1 {
+                &["body-recipe.serialization-form-assumed"]
             } else {
-                assert!(decoded.is_none(), "class {class_tag}, form {form}");
-            }
+                &[]
+            };
+            assert_eq!(codes, expected, "class {class_tag}, form {form}");
         }
     }
 }
