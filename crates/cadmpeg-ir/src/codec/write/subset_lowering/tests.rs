@@ -27,6 +27,14 @@ fn id(name: &str) -> CurveId {
     CurveId::mint(format!("test:model:curve#{name}")).unwrap()
 }
 
+fn curve<'a>(ir: &'a CadIr, name: &str) -> &'a Curve {
+    ir.model
+        .curves
+        .iter()
+        .find(|curve| curve.id == id(name))
+        .unwrap()
+}
+
 /// Attach a subset of `source` as curve `name`, with its local cache when
 /// `cached`.
 fn add_subset(
@@ -216,6 +224,7 @@ fn a_model_without_a_selected_subset_is_borrowed() {
 #[test]
 fn a_cyclic_subset_chain_is_left_for_writer_admission() {
     let mut ir = nested(true, true, false);
+    add_subset(&mut ir, "other", &id("root"), [0.0, 1.0], true, false);
     let inner = ProceduralCurveId::mint("test:model:construction#inner").unwrap();
     let construction = ir
         .model
@@ -230,10 +239,95 @@ fn a_cyclic_subset_chain_is_left_for_writer_admission() {
         ),
     );
 
+    let lowered = super::lower_subset_curves(&ir, |_| true).unwrap();
+    assert_eq!(curve(&lowered, "inner"), curve(&ir, "inner"));
+    assert_eq!(curve(&lowered, "outer"), curve(&ir, "outer"));
+    assert!(curve(&lowered, "other").geometry.solved().is_some());
+}
+
+#[test]
+fn a_subset_with_an_overflowing_span_is_left_unchanged() {
+    let mut ir = crate::examples::unit_cube().unwrap();
+    ir.model.curves.push(Curve {
+        native_ref: None,
+        id: id("root"),
+        geometry: CurveGeometry::Solved(line()),
+        parameter_range: None,
+        source_object: None,
+    });
+    add_subset(
+        &mut ir,
+        "outer",
+        &id("root"),
+        [-1.0e308, 1.0e308],
+        true,
+        false,
+    );
+
     assert!(matches!(
         super::lower_subset_curves(&ir, |_| true).unwrap(),
         std::borrow::Cow::Borrowed(_)
     ));
+}
+
+#[test]
+fn an_overflowing_edge_range_keeps_its_subset_and_lowers_an_independent_one() {
+    let mut ir = crate::examples::unit_cube().unwrap();
+    ir.model.curves.push(Curve {
+        native_ref: None,
+        id: id("root"),
+        geometry: CurveGeometry::Solved(line()),
+        parameter_range: None,
+        source_object: None,
+    });
+    add_subset(&mut ir, "other", &id("root"), [0.0, 1.0], true, false);
+    add_subset(
+        &mut ir,
+        "outer",
+        &id("root"),
+        [1.0e308, 1.0e308 + 2.0e292],
+        true,
+        false,
+    );
+    let edge = &mut ir.model.edges[0];
+    edge.set_curve(Some(id("outer"))).unwrap();
+    edge.set_param_range(Some(ParameterInterval::new([1.0e308, 1.0e308]).unwrap()));
+
+    let lowered = super::lower_subset_curves(&ir, |_| true).unwrap();
+    assert_eq!(curve(&lowered, "outer"), curve(&ir, "outer"));
+    assert_eq!(lowered.model.edges[0], ir.model.edges[0]);
+    assert!(curve(&lowered, "other").geometry.solved().is_some());
+}
+
+#[test]
+fn an_unlowerable_subset_keeps_its_source_parameterization() {
+    let mut ir = crate::examples::unit_cube().unwrap();
+    ir.model.curves.push(Curve {
+        native_ref: None,
+        id: id("root"),
+        geometry: CurveGeometry::Solved(line()),
+        parameter_range: None,
+        source_object: None,
+    });
+    add_subset(&mut ir, "other", &id("root"), [0.0, 1.0], true, false);
+    add_subset(
+        &mut ir,
+        "inner",
+        &id("root"),
+        [1.0e308, 1.0e308 + 2.0e292],
+        true,
+        false,
+    );
+    add_subset(&mut ir, "outer", &id("inner"), [0.0, 1.0], true, false);
+    let edge = &mut ir.model.edges[0];
+    edge.set_curve(Some(id("outer"))).unwrap();
+    edge.set_param_range(Some(ParameterInterval::new([1.0e308, 1.0e308]).unwrap()));
+
+    let lowered = super::lower_subset_curves(&ir, |_| true).unwrap();
+    assert_eq!(curve(&lowered, "inner"), curve(&ir, "inner"));
+    assert_eq!(curve(&lowered, "outer"), curve(&ir, "outer"));
+    assert_eq!(lowered.model.edges[0], ir.model.edges[0]);
+    assert!(curve(&lowered, "other").geometry.solved().is_some());
 }
 
 #[test]
