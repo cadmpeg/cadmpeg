@@ -236,7 +236,18 @@ fn pairwise_feature_ordinals<'a>(
         object_by_feature.insert(feature_id(object)?, object.id().as_str());
     }
     let mut emitted = BTreeSet::new();
-    let mut ordinals = HashMap::new();
+    let mut source = design_objects.clone();
+    source.sort_by_key(|object| object.order);
+    let ordinals = source
+        .iter()
+        .enumerate()
+        .map(|(rank, object)| {
+            (
+                object.id().as_str(),
+                cadmpeg_core::decode::u64_from_index(rank),
+            )
+        })
+        .collect();
     let mut cycle_affected = BTreeSet::new();
     while emitted.len() < design_objects.len() {
         let ready = |object: &&ObjectRecord| {
@@ -296,9 +307,7 @@ fn pairwise_feature_ordinals<'a>(
                 .min_by_key(|object| object.order)
                 .ok_or_else(|| CodecError::malformed("lost an un-emitted object"))?
         };
-        let ordinal = cadmpeg_core::decode::u64_from_index(ordinals.len());
         emitted.insert(next.id().as_str());
-        ordinals.insert(next.id().as_str(), ordinal);
     }
     Ok((ordinals, cycle_affected))
 }
@@ -396,10 +405,7 @@ fn design_object_ordering_is_linear_in_a_reverse_dependency_chain() {
     source_ordinals.sort_unstable();
     assert!(cycle_affected.is_empty());
     for (index, object) in graph.objects.iter().enumerate() {
-        assert_eq!(
-            ordinals[object.id().as_str()],
-            source_ordinals[OBJECTS - 1 - index]
-        );
+        assert_eq!(ordinals[object.id().as_str()], source_ordinals[index]);
     }
 }
 

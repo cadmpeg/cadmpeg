@@ -26,7 +26,7 @@ Policy stays with the caller. The CLI writes empty geometry output with an `expo
 
 ## Scope and unrepresented
 
-Wire version 10 requires a `scope` object with one boolean per arena class:
+Wire version 11 requires a `scope` object with one boolean per arena class:
 
 ```json
 {"scope":{"model":true,"design":false}}
@@ -86,4 +86,4 @@ A dimension is a literal or a binding: `Dimension<Length>::Literal(Length::new(1
 
 ## Version policy
 
-Readers accept exactly version 10. Earlier documents are refused with a message that names the change to `scope` and the report transfer change. There is no migration path in the reader.
+Readers accept exactly version 11. Earlier documents are refused with a message that names the change to `scope` and the report transfer change. There is no migration path in the reader.
