@@ -66,7 +66,7 @@ pub(in crate::writer) fn retain_line(ir: &CadIr, id: &CurveId, entity: &mut Enti
     }
 }
 
-fn retain_directory(ir: &CadIr, source_id: &str, entity: &mut Entity) {
+pub(in crate::writer) fn retain_directory(ir: &CadIr, source_id: &str, entity: &mut Entity) {
     let Some(native) = ir
         .native
         .namespace("iges")
