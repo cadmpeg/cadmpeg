@@ -46,7 +46,7 @@ pub(super) fn supported<'a>(
 ) -> Option<(&'a SurfaceId, &'a PcurveNurbs, Option<[f64; 2]>)> {
     let CurveGeometry::Procedural {
         construction,
-        cache: Some(_),
+        cache,
     } = &curve.geometry
     else {
         return None;
@@ -63,7 +63,8 @@ pub(super) fn supported<'a>(
     else {
         return None;
     };
-    if tail.as_ref() != canonical_tail().as_ref()
+    if (cache.is_some() && tail.as_ref() != canonical_tail().as_ref())
+        || (cache.is_none() && tail.is_some())
         || context
             .discontinuities()
             .iter()
@@ -91,7 +92,11 @@ pub(super) fn supported<'a>(
             .get(nurbs.knots().len().checked_sub(degree.checked_add(1)?)?)?,
     ];
     let interval = context.parameter_range().endpoints();
-    if domain[0] >= domain[1] || interval[0] < domain[0] || interval[1] > domain[1] {
+    if domain[0] >= domain[1]
+        || interval[0] < domain[0]
+        || interval[1] > domain[1]
+        || (cache.is_none() && interval != domain)
+    {
         return None;
     }
     if ir
@@ -101,7 +106,7 @@ pub(super) fn supported<'a>(
         .filter(|edge| edge.curve() == Some(&curve.id))
         .any(|edge| {
             edge.param_range()
-                .is_some_and(|range| range.get() != interval)
+                .is_some_and(|range| cache.is_none() || range.get() != interval)
         })
     {
         return None;

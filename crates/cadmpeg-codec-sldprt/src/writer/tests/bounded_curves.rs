@@ -163,6 +163,86 @@ fn surface_curve_construction_survives_source_less_synthesis() {
 }
 
 #[test]
+fn surface_curve_without_cache_preserves_its_construction() {
+    use crate::test_support::parasolid::{
+        edge_use, planar_b_curve, sp_curve_records, triangle_body,
+    };
+    use cadmpeg_ir::geometry::{CurveGeometry, ProceduralCurveDefinition, SurfaceCurveFamily};
+
+    let mut body = triangle_body();
+    let old = edge_use(40, 0);
+    let at = body
+        .windows(old.len())
+        .position(|window| window == old)
+        .unwrap();
+    body.splice(at..at + old.len(), edge_use(40, 70));
+    body.extend(planar_b_curve([0.0, 0.0], [1.0, 0.0], false));
+    body.extend(sp_curve_records(100, [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]));
+    let input = crate::SldprtCodec
+        .decode(
+            &mut Cursor::new(crate::test_support::container::sldprt_with_body(&body)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut ir = input.ir().clone();
+    let curve = ir
+        .model
+        .curves
+        .iter_mut()
+        .find(|curve| matches!(curve.geometry, CurveGeometry::Procedural { .. }))
+        .unwrap();
+    let id = curve.id.clone();
+    let CurveGeometry::Procedural {
+        construction,
+        cache,
+    } = &mut curve.geometry
+    else {
+        unreachable!()
+    };
+    *cache = None;
+    let construction = construction.clone();
+    ir.model
+        .procedural_curves
+        .iter_mut()
+        .find(|curve| curve.id == construction)
+        .unwrap()
+        .edit_definition(|definition| {
+            let ProceduralCurveDefinition::SurfaceCurve {
+                family: SurfaceCurveFamily::Parametric { tail, .. },
+            } = definition
+            else {
+                panic!("parametric surface curve")
+            };
+            *tail = None;
+        });
+    let plan = crate::SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(!plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(id.as_str())
+            && loss.code.local_code() == "writer.procedural-reduced"));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = crate::SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(output
+        .ir()
+        .model
+        .procedural_curves
+        .iter()
+        .any(|curve| matches!(
+            curve.definition(),
+            ProceduralCurveDefinition::SurfaceCurve {
+                family: SurfaceCurveFamily::Parametric { .. }
+            }
+        )));
+}
+
+#[test]
 fn bounded_surface_curve_preserves_its_interval_and_construction() {
     use crate::test_support::parasolid::{
         edge_use, planar_b_curve, sp_curve_records, triangle_body,
