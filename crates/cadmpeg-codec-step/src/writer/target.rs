@@ -226,6 +226,7 @@ fn report_reductions(coverage: &mut ArenaDispositions, losses: &[LossNote]) {
     }
     if has(&[
         StepLossCode::ProceduralReducedToCarrier,
+        StepLossCode::ProceduralCacheToleranceOmitted,
         StepLossCode::ProceduralDefinitionNotWritten,
     ]) {
         coverage.procedural_curves = Reported;
