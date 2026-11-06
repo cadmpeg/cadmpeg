@@ -702,8 +702,11 @@ pub(crate) fn design_primary_frames<'a>(
     bytes: &[u8],
     meta: &'a crate::metastream::MetaStream,
 ) -> Result<Vec<DesignPrimaryFrame<'a>>, CodecError> {
-    let (frames, _) = partition_primary_frames(bytes, meta)?;
-    Ok(frames)
+    match partition_primary_frames(bytes, meta) {
+        Ok((frames, _)) => Ok(frames),
+        Err(error @ (CodecError::ResourceLimit(_) | CodecError::Io(_))) => Err(error),
+        Err(_) => Ok(Vec::new()),
+    }
 }
 
 /// One primary `BulkStream` frame selected through a registered Design type.
