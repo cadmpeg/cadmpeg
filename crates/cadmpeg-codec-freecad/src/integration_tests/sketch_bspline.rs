@@ -5,8 +5,8 @@ use std::{io::Cursor, path::Path};
 use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::{
     features::{
-        BooleanOp, ExtrudeExtent, FeatureDefinition, FeatureOperation, LinearTermination,
-        PlanarProfileRef, ProfileRef,
+        BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrusionDirectionSource, FeatureDefinition,
+        FeatureOperation, FeatureTreeNodeRole, LinearTermination, PlanarProfileRef, ProfileRef,
     },
     sketches::{SketchConstraintDefinitionInput, SketchGeometryDefinition},
     Codec, DecodeOptions,
@@ -19,6 +19,18 @@ const POINT_TOLERANCE: f64 = 1.0e-12;
 const VOLUME_TOLERANCE: f64 = 0.01;
 const AREA_TOLERANCE: f64 = 0.01;
 const BOX_TOLERANCE: f64 = 1.0e-6;
+
+fn source_sketch_property<'a>(
+    properties: &'a [crate::native::PropertyRecord],
+    name: &str,
+    label: &str,
+) -> &'a crate::native::PropertyRecord {
+    let owner = crate::native::native_id("object", "Sketch");
+    properties
+        .iter()
+        .find(|property| property.owner == owner && property.name == name)
+        .unwrap_or_else(|| panic!("{label}: missing source Sketch.{name}"))
+}
 
 #[test]
 fn recipe_sketch_bspline_knots_and_points() {
@@ -37,6 +49,97 @@ fn recipe_sketch_bspline_knots_and_points() {
                 panic!("{label}: expected one sketch")
             };
             assert_eq!(entities[0].sketch, sketch.id, "{label}");
+            let features = &decoded.ir().model.features;
+            let pad = features
+                .iter()
+                .find(|feature| feature.name.as_deref() == Some("Pad"))
+                .unwrap();
+            let body_feature = features
+                .iter()
+                .find(|feature| feature.name.as_deref() == Some("Body"))
+                .unwrap();
+            let sketch_feature = features
+                .iter()
+                .find(|feature| feature.name.as_deref() == Some("Sketch"))
+                .unwrap();
+            let FeatureDefinition::Operation(FeatureOperation::TreeNode {
+                role: FeatureTreeNodeRole::SolidBodies,
+                children,
+            }) = body_feature.evaluation.definition()
+            else {
+                panic!("{label}: expected Body membership node")
+            };
+            assert_eq!(
+                &**children,
+                &[sketch_feature.id.clone(), pad.id.clone()],
+                "{label}: Body.Group source order"
+            );
+            assert_eq!(
+                children.active_child().as_ref(),
+                Some(&pad.id),
+                "{label}: Body.Tip"
+            );
+
+            let (origin, normal, u_axis) = sketch.resolved_placement().unwrap_or_else(|| {
+                panic!("{label}: expected the attached sketch plane to resolve")
+            });
+            assert_eq!([origin.x, origin.y, origin.z], [0.0, 0.0, 0.0], "{label}");
+            assert_eq!([normal.x, normal.y, normal.z], [0.0, 0.0, 1.0], "{label}");
+            assert_eq!([u_axis.x, u_axis.y, u_axis.z], [1.0, 0.0, 0.0], "{label}");
+
+            let source_properties = decoded
+                .ir()
+                .native
+                .namespace("fcstd")
+                .unwrap()
+                .arena_as::<crate::native::PropertyRecord>("properties")
+                .unwrap();
+            let support_name = if version == "0.21.2" {
+                "Support"
+            } else {
+                "AttachmentSupport"
+            };
+            let support = source_sketch_property(&source_properties, support_name, &label);
+            assert_eq!(support.type_name, "App::PropertyLinkSubList", "{label}");
+            let [Some(support_link)] = support.links() else {
+                panic!("{label}: expected one sketch support link")
+            };
+            assert_eq!(
+                support_link.object(),
+                Some(crate::native::native_id("object", "XY_Plane").as_str()),
+                "{label}"
+            );
+            assert_eq!(support_link.subelements(), [""], "{label}");
+
+            let map_mode = source_sketch_property(&source_properties, "MapMode", &label);
+            let [map_mode_value] = map_mode.values() else {
+                panic!("{label}: expected one sketch MapMode value")
+            };
+            assert_eq!(map_mode_value.tag, "Integer", "{label}");
+            assert_eq!(
+                map_mode_value.attributes.get("value").map(String::as_str),
+                Some("5"),
+                "{label}: FlatFace map mode"
+            );
+
+            let offset = source_sketch_property(&source_properties, "AttachmentOffset", &label);
+            assert_eq!(offset.type_name, "App::PropertyPlacement", "{label}");
+            let [offset_value] = offset.values() else {
+                panic!("{label}: expected one attachment offset placement")
+            };
+            assert_eq!(offset_value.tag, "PropertyPlacement", "{label}");
+            for (field, expected) in [
+                ("Px", 0.0),
+                ("Py", 0.0),
+                ("Pz", 0.0),
+                ("Q0", 0.0),
+                ("Q1", 0.0),
+                ("Q2", 0.0),
+                ("Q3", 1.0),
+            ] {
+                let actual = offset_value.attributes[field].parse::<f64>().unwrap();
+                assert_eq!(actual, expected, "{label}: AttachmentOffset.{field}");
+            }
             let [constraint] = decoded.ir().model.sketch_constraints.as_slice() else {
                 panic!("{label}: expected one fixed constraint")
             };
@@ -44,26 +147,39 @@ fn recipe_sketch_bspline_knots_and_points() {
                 matches!(constraint.definition.kind(), SketchConstraintDefinitionInput::Fixed { entity } if entity == entities[0].id()),
                 "{label}"
             );
-            let pad = decoded
-                .ir()
-                .model
-                .features
-                .iter()
-                .find(|feature| feature.name.as_deref() == Some("Pad"))
-                .unwrap();
             let expected_length = if variant == "b" { 6.0 } else { 5.0 };
-            let (FeatureDefinition::Operation(operation)
-            | FeatureDefinition::PostProcess { operation, .. }) = pad.evaluation.definition();
+            let FeatureDefinition::PostProcess {
+                operation, refine, ..
+            } = pad.evaluation.definition()
+            else {
+                panic!("{label}: expected the authored Pad refine flag")
+            };
+            assert_eq!(*refine, version != "0.21.2", "{label}: Pad.Refine");
             let FeatureOperation::Extrude {
                 profile: ProfileRef::Planar(PlanarProfileRef::Sketch(profile)),
+                direction,
                 extent: ExtrudeExtent::OneSided { side },
                 op: BooleanOp::Join,
+                length_along_profile_normal: Some(true),
+                allow_multi_profile_faces: Some(true),
                 ..
             } = operation
             else {
                 panic!("{label}: expected extrusion")
             };
             assert_eq!(profile, &sketch.id, "{label}");
+            let ExtrudeDirection::Explicit {
+                vector,
+                source: Some(ExtrusionDirectionSource::ProfileNormal {}),
+            } = direction
+            else {
+                panic!("{label}: expected the attached sketch normal as Pad direction")
+            };
+            assert_eq!(
+                [vector.get().x, vector.get().y, vector.get().z],
+                [0.0, 0.0, 1.0],
+                "{label}: Pad.Reversed and profile direction"
+            );
             let LinearTermination::Blind { length } = side.termination else {
                 panic!("{label}: expected blind pad")
             };
@@ -71,6 +187,7 @@ fn recipe_sketch_bspline_knots_and_points() {
                 (length.get() - expected_length).abs() < POINT_TOLERANCE,
                 "{label}"
             );
+            assert_eq!(side.draft, None, "{label}: zero Pad.TaperAngle");
             assert_eq!(pad.evaluation.outputs().len(), 1, "{label}");
             let SketchGeometryDefinition::Nurbs { curve } = entities[0].geometry.definition()
             else {
