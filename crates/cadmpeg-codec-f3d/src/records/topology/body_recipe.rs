@@ -32,10 +32,7 @@ pub(crate) struct DesignBodyRecipeOperand {
     pub(crate) context_id: DesignRelaxedGuidText,
     /// Byte offset of the context UUID's UTF-16LE code units.
     context_id_offset: u64,
-    /// Raw four-byte selector-tail member after the fixed `u32 2`.
-    ///
-    /// Class `365` varies this member without a settled neutral meaning;
-    /// class `367` stores `01 00 00 00`.
+    /// Serialization form after the fixed `u32 2`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     selector_tail: Option<Located<NativeBytes<[u8; 4]>>>,
     /// Counted persistent Design references carried by this operand.
@@ -93,6 +90,12 @@ impl Clone for DesignBodyRecipeOperand {
 
 impl DesignBodyRecipeOperand {
     pub(crate) fn try_new(draft: DesignBodyRecipeOperandDraft) -> Result<Self, String> {
+        if draft
+            .selector_tail
+            .is_some_and(|tail| !matches!(tail.value, [0 | 1, 0, 0, 0]))
+        {
+            return Err("selector_tail serialization form must be 0 or 1".into());
+        }
         if draft.context_id_offset <= draft.asset_id_offset
             || draft.context_id_offset >= draft.next_byte_offset
             || draft.next_byte_offset <= draft.nested_record_index_offset

@@ -4729,17 +4729,10 @@ fn parse_body_recipe_operand_frame_with_index(
         .get(selector_tail_at..selector_tail_at.checked_add(4)?)?
         .try_into()
         .ok()?;
-    let selector_tail_is_valid = match header.class_tag.as_str() {
-        // The class-365 member is a four-byte generation-dependent value.
-        // Retain it until DR-24 identifies its neutral meaning.
-        "365" => true,
-        "367" => selector_tail == [1, 0, 0, 0],
-        _ => selector_tail == [0; 4],
-    };
     if !is_guid_relaxed(&asset_id)
         || !is_guid_relaxed(&context_id)
         || View::u32_le_at(bytes, after_context_id)? != 2
-        || !selector_tail_is_valid
+        || View::u32_le_at(bytes, selector_tail_at)? > 1
         || nested_record_index != u64::from(header.record_index.checked_add(3)?)
     {
         return None;
