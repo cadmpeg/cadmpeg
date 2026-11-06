@@ -136,6 +136,14 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Conflict.** The specification's stated offsets and the decoder's read offsets disagree, and no open item tracked the native truth.
 
+### GC-49. Signs of the cone half-angle fields
+
+**Question.** Can a cone store a negative `sin` or `cos` half-angle field, and what surface does it then describe?
+
+**Known.** `sldprt.md` §7.1 "The line direction is unit length." gives each field in the open interval (0, 1), the cone identity within `1e-9`, and the half-angle `atan2(sin, cos)`. `siemens_nx.md` §6.1 gives the same rule. The SLDPRT decoder omits a CONE node with a negative field and reports `geometry.cone-half-angle-sign-unresolved`; the NX decoder reports `carrier.cone-half-angle-sign-unresolved`.
+
+**Need.** We must know whether a signed half-angle is a valid cone or a different surface before a negative field can transfer as exact geometry.
+
 ## 3. Container metadata
 
 ### CM-01. Cache-cell prefix

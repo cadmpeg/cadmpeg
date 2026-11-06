@@ -2449,7 +2449,6 @@ fn scan_site(
             .flatten()
             .and_then(|records| {
                 let tables = topology::nodes::tables(&records, payload, header.body_offset)?;
-                let analytic = super::carrier_nodes::analytic(&records, header.body_offset);
                 let mut lane_refusals = Vec::new();
                 let splines = super::spline::nodes::carriers(
                     &records,
@@ -2459,6 +2458,11 @@ fn scan_site(
                 if splines.is_none() {
                     lane_refusals.clear();
                 }
+                let analytic = super::carrier_nodes::analytic(
+                    &records,
+                    header.body_offset,
+                    &mut lane_refusals,
+                );
                 let sp_curves = splines.as_ref().and_then(|splines| {
                     super::sp_curve::from_nodes(&records, header.body_offset, &splines.pcurves)
                 });
@@ -2502,8 +2506,10 @@ fn scan_site(
                 let sp_curves = splines.as_ref().and_then(|splines| {
                     super::sp_curve::from_nodes_of(&nodes, offset, &splines.pcurves)
                 });
+                let analytic =
+                    super::carrier_nodes::analytic_of(&nodes, offset, &mut lane_refusals);
                 let carriers = NodeCarriers {
-                    analytic: super::carrier_nodes::analytic_of(&nodes, offset),
+                    analytic,
                     splines,
                     offsets: super::offset::from_nodes_of(&nodes, offset),
                     blends: None,

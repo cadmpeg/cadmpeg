@@ -138,6 +138,11 @@ pub(crate) enum SldprtLossCode {
     GeometrySurfaceSolverWorkCapped,
     /// A spline carrier's pole and weight lanes do not pair.
     GeometrySplineLanesUnpaired,
+    /// A CONE node stores a negative sine or cosine of its half-angle, whose
+    /// surface is unresolved (`GC-49`).
+    GeometryConeHalfAngleSignUnresolved,
+    /// A CONE node's stored sine and cosine break the unit identity.
+    GeometryConeHalfAngleIdentityRefused,
     /// The stream's INTERSECTION declaration states no node layout that
     /// frames, so its intersection curves are not read.
     GeometryIntersectionLayoutUnknown,
@@ -322,6 +327,8 @@ impl SldprtLossCode {
         Self::GeometryPcurveAmbiguous,
         Self::GeometrySurfaceSolverWorkCapped,
         Self::GeometrySplineLanesUnpaired,
+        Self::GeometryConeHalfAngleSignUnresolved,
+        Self::GeometryConeHalfAngleIdentityRefused,
         Self::GeometryIntersectionLayoutUnknown,
         Self::AppearanceFaceColorUnresolved,
         Self::AppearanceAssignmentUnresolved,
@@ -423,6 +430,10 @@ impl SldprtLossCode {
             Self::GeometryPcurveAmbiguous => "geometry.pcurve-ambiguous",
             Self::GeometrySurfaceSolverWorkCapped => "geometry.surface-solver-work-capped",
             Self::GeometrySplineLanesUnpaired => "geometry.spline-lanes-unpaired",
+            Self::GeometryConeHalfAngleSignUnresolved => "geometry.cone-half-angle-sign-unresolved",
+            Self::GeometryConeHalfAngleIdentityRefused => {
+                "geometry.cone-half-angle-identity-refused"
+            }
             Self::GeometryIntersectionLayoutUnknown => "geometry.intersection-layout-unknown",
             Self::AppearanceFaceColorUnresolved => "appearance.face-color-unresolved",
             Self::AppearanceAssignmentUnresolved => "appearance.assignment-unresolved",
@@ -562,6 +573,8 @@ impl SldprtLossCode {
             | Self::GeometryPcurveAmbiguous
             | Self::GeometrySurfaceSolverWorkCapped
             | Self::GeometrySplineLanesUnpaired
+            | Self::GeometryConeHalfAngleSignUnresolved
+            | Self::GeometryConeHalfAngleIdentityRefused
             | Self::GeometryIntersectionLayoutUnknown
             | Self::AppearanceFaceColorUnresolved
             | Self::AppearanceAssignmentUnresolved
@@ -672,6 +685,8 @@ impl SldprtLossCode {
             | Self::GeometryPointRecordAmbiguous
             | Self::GeometryCurveMarkerConflict
             | Self::GeometrySplineLanesUnpaired
+            | Self::GeometryConeHalfAngleSignUnresolved
+            | Self::GeometryConeHalfAngleIdentityRefused
             | Self::GeometryIntersectionLayoutUnknown
             | Self::GeometryParasolidNotTransferred
             | Self::ContainerAuxiliaryParasolidRefused
@@ -918,6 +933,8 @@ mod tests {
                 "geometry.pcurve-ambiguous",
                 "geometry.surface-solver-work-capped",
                 "geometry.spline-lanes-unpaired",
+                "geometry.cone-half-angle-sign-unresolved",
+                "geometry.cone-half-angle-identity-refused",
                 "geometry.intersection-layout-unknown",
                 "appearance.face-color-unresolved",
                 "appearance.assignment-unresolved",
