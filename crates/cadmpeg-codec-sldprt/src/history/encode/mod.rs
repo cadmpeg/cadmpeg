@@ -109,8 +109,8 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
                 extent,
                 ..
             }) => self.encode_cosmetic_thread(face, diameter.as_ref(), extent.as_ref()),
-            FeatureDefinition::Operation(FeatureOperation::SketchBlockDefinition { sketch }) => {
-                self.encode_sketch_block_definition(sketch.as_ref())
+            FeatureDefinition::Operation(FeatureOperation::SketchBlockDefinition { .. }) => {
+                Ok(self.encode_sketch_block_definition())
             }
             FeatureDefinition::Operation(FeatureOperation::SketchBlockInstance {
                 block,
