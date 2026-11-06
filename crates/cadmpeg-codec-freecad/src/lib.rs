@@ -36,6 +36,7 @@ mod layout;
 mod loss;
 mod mutation;
 mod native;
+mod numeric_list;
 mod parameter_names;
 mod persistence;
 mod placement;
@@ -43,6 +44,7 @@ mod product;
 mod property_policy;
 mod property_reader;
 mod source_archive;
+mod source_payloads;
 mod topology_transfer;
 mod writer;
 mod xml_recovery;
@@ -117,6 +119,9 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
         };
     }
     let objects = arena!(namespace.arena_as_for_decode::<native::ObjectRecord>(ctx, "objects"));
+    let orphan_object_data = arena!(
+        namespace.arena_as_for_decode::<native::OrphanObjectData>(ctx, "orphan_object_data")
+    );
     let properties =
         arena!(namespace.arena_as_for_decode::<native::PropertyRecord>(ctx, "properties"));
     let extensions =
@@ -234,6 +239,23 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
         .iter()
         .map(|record| record.id().as_str())
         .collect::<HashSet<_>>();
+    let orphan_data_ids = orphan_object_data
+        .iter()
+        .map(|record| record.id.as_str())
+        .collect::<HashSet<_>>();
+    for record in &orphan_object_data {
+        if !unknown_ids.contains(record.owner.as_str()) {
+            findings.push(finding(
+                Check::ReferentialIntegrity,
+                format!(
+                    "{} has missing declaration-section stub {}",
+                    record.id, record.owner
+                ),
+                Some(record.id.clone()),
+            ));
+        }
+    }
+
     let entry_names = entries
         .iter()
         .map(crate::native::EntryRecord::name)
@@ -247,6 +269,7 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
         .map(|record| record.id.as_str())
         .collect::<HashSet<_>>();
     if object_ids.len() != objects.len()
+        || orphan_data_ids.len() != orphan_object_data.len()
         || property_ids.len() != properties.len()
         || extension_ids.len() != extensions.len()
     {
@@ -556,6 +579,7 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
     for extension in &extensions {
         if !object_ids.contains(extension.owner.as_str())
             && !unknown_ids.contains(extension.owner.as_str())
+            && !orphan_data_ids.contains(extension.owner.as_str())
         {
             findings.push(finding(
                 Check::ReferentialIntegrity,
@@ -589,6 +613,7 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
             && !object_ids.contains(property.owner.as_str())
             && !extension_ids.contains(property.owner.as_str())
             && !unknown_ids.contains(property.owner.as_str())
+            && !orphan_data_ids.contains(property.owner.as_str())
         {
             findings.push(finding(
                 Check::ReferentialIntegrity,
@@ -602,7 +627,10 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
             .flatten()
             .filter_map(crate::native::LinkTarget::object)
         {
-            if target.starts_with("fcstd:native:object#") && !object_ids.contains(target) {
+            if (target.starts_with("fcstd:native:object#") && !object_ids.contains(target))
+                || (target.starts_with("fcstd:native:object-data#")
+                    && !orphan_data_ids.contains(target))
+            {
                 findings.push(finding(
                     Check::ReferentialIntegrity,
                     format!("{} has missing link target {target}", property.id),
@@ -908,6 +936,7 @@ impl CodecBackend for FcstdCodec {
         }
         let mut part_losses = Vec::new();
 
+        let mut failed_sidecars = std::collections::BTreeSet::new();
         let decode_document = !ctx.container_only();
         if decode_document {
             let document_xml = &scan.document_xml;
@@ -929,7 +958,34 @@ impl CodecBackend for FcstdCodec {
                 scan.object_declarations.as_ref(),
                 Some(stages),
             )?;
-            persistence::give_up_missing_geometry(
+            let mut failed_member_classes = std::collections::BTreeMap::new();
+            for property in &graph.properties {
+                for name in property.side_entries() {
+                    if scan.failed_retained.contains_key(name) {
+                        failed_member_classes
+                            .entry(name.clone())
+                            .or_insert_with(cadmpeg_ir::ArenaClasses::new)
+                            .insert(fidelity::property_class(&graph.objects, property));
+                    }
+                }
+            }
+            if let Some(gui) = &gui_source {
+                gui.mark_failed_members(&scan.failed_retained, &mut failed_member_classes);
+            }
+            for node in document_xml.descendants().filter(|node| {
+                node.has_tag_name("StringHasher") || node.has_tag_name("StringHasher2")
+            }) {
+                if let Some(name) = node
+                    .attribute("file")
+                    .filter(|name| scan.failed_retained.contains_key(*name))
+                {
+                    failed_member_classes
+                        .entry(name.to_owned())
+                        .or_insert_with(cadmpeg_ir::ArenaClasses::new)
+                        .insert(cadmpeg_ir::ArenaClass::Model);
+                }
+            }
+            failed_sidecars = persistence::give_up_unreadable_side_values(
                 ctx,
                 &mut parts,
                 document_view,
@@ -949,28 +1005,19 @@ impl CodecBackend for FcstdCodec {
                 &graph.property_sources,
             );
             for property in &graph.properties {
-                if let Some(class) = fidelity::property(
+                fidelity::property(
                     &property_reader,
                     &mut source_fidelity,
                     property,
                     &graph.objects,
-                )? {
-                    let code = match class {
-                        cadmpeg_ir::ArenaClass::Model => {
-                            FreecadLossCode::SourceModelPayloadUnrepresented
-                        }
-                        cadmpeg_ir::ArenaClass::Design => {
-                            FreecadLossCode::SourceDesignPayloadUnrepresented
-                        }
-                    };
-                    scan.losses.push(code.note(format!("property {} Python payload has no decoded value; opaque encoding retained only in fidelity", property.id)));
-                }
+                )?;
             }
             let mut entry_records = container::entry_records(
                 &scan,
                 &graph.objects,
                 &graph.properties,
                 &scan.failed_retained,
+                &failed_member_classes,
                 &mut source_fidelity,
             )?;
             let shape_payloads = brep::parse_payloads(
@@ -984,14 +1031,27 @@ impl CodecBackend for FcstdCodec {
                 document_xml,
                 scan.document.file_version.value(),
                 &graph.properties,
-                entry_sources::ArchiveEntries {
-                    records: &entry_records,
-                    sources: &entry_sources,
-                },
+                (
+                    entry_sources::ArchiveEntries {
+                        records: &entry_records,
+                        sources: &entry_sources,
+                    },
+                    &scan.failed_members,
+                ),
                 &mut scan.losses,
                 Some(&mut source_fidelity),
             )?;
+            element_map::link_unreadable_table_fields(
+                document_xml,
+                &string_tables,
+                &scan.failed_retained,
+                &source_fidelity,
+                &mut part_losses,
+            );
             namespace.set_arena(ctx, "objects", &graph.objects)?;
+            if !graph.orphan_object_data.is_empty() {
+                namespace.set_arena(ctx, "orphan_object_data", &graph.orphan_object_data)?;
+            }
             namespace.set_arena(ctx, "extensions", &graph.extensions)?;
             namespace.set_arena(ctx, "properties", &graph.properties)?;
             namespace.set_arena(ctx, "shape_payloads", &shape_payloads.payloads)?;
@@ -1216,6 +1276,12 @@ impl CodecBackend for FcstdCodec {
             } else {
                 gui::Graph::default()
             };
+            for entry in &mut entry_records {
+                if gui_graph.failed_sidecars.contains(entry.name()) {
+                    entry.discard_payload();
+                }
+            }
+            failed_sidecars.extend(gui_graph.failed_sidecars.iter().cloned());
             if gui_graph.untyped {
                 let source = *scan.data.get("GuiDocument.xml").ok_or_else(|| {
                     CodecError::malformed("untyped GUI document has no actual source")
@@ -1302,13 +1368,14 @@ impl CodecBackend for FcstdCodec {
                 .map(|namespace| namespace.arena_as::<native::PropertyRecord>("properties"))
                 .transpose()?
                 .unwrap_or_default();
-            transfer_losses.extend(attributes::transfer_with_document_properties(
+            attributes::transfer_with_document_properties(
                 ctx,
                 &mut ir,
                 &objects,
                 &properties,
                 scan.document_properties.as_ref(),
-            )?);
+                &scan.data,
+            )?;
         }
         let mut losses = if ctx.container_only() {
             Vec::new()
@@ -1322,12 +1389,52 @@ impl CodecBackend for FcstdCodec {
         losses.extend(scan.losses);
         let dialect_losses = dialect::FcstdDialect::dialect_loss(dialects.primary());
         losses.extend(dialect_losses);
+        if !scan.data.contains_key("GuiDocument.xml") {
+            if let Some(retained) = scan
+                .recovery_part
+                .as_ref()
+                .and_then(|id| source_fidelity.retained_record(id.as_str()))
+            {
+                if let Some(loss) = part_losses.iter_mut().find(|loss| {
+                    loss.code.local_code() == "record.unreadable"
+                        && loss.provenance.as_ref().is_some_and(|source| {
+                            source.offset == retained.offset()
+                                && source.stream_name().unwrap_or("") == retained.stream()
+                                && source.byte_len().unwrap_or(0) == retained.byte_len()
+                        })
+                }) {
+                    // A missing directory or unframed tail cannot establish
+                    // whether a later GUI member supplies body visibility.
+                    // Name only body fields that this prefix did not read.
+                    for body in ir.model.bodies.iter().filter(|body| body.visible.is_none()) {
+                        loss.dropped_fields
+                            .push(cadmpeg_ir::report::loss::DroppedField {
+                                record: body.id.as_str().to_owned(),
+                                field: "visible".to_owned(),
+                            });
+                    }
+                }
+            }
+        }
         losses.extend(part_losses);
-        losses.extend(loss::payloads::decode_losses(
+        for opaque in source_payloads::retain_untyped(
             &ir,
             &entry_sources,
             &mut source_fidelity,
-        )?);
+            &failed_sidecars,
+        )? {
+            for class in opaque.classes {
+                let code = match class {
+                    cadmpeg_ir::ArenaClass::Model => {
+                        FreecadLossCode::SourceModelPayloadUnrepresented
+                    }
+                    cadmpeg_ir::ArenaClass::Design => {
+                        FreecadLossCode::SourceDesignPayloadUnrepresented
+                    }
+                };
+                losses.push(code.note(format!("opaque payload {} survives only as source bytes; its {class:?} content has no typed representation", opaque.name)));
+            }
+        }
         // The decode wrapper stamps the source digest from its root view.
         ctx.admit_entities(
             cadmpeg_core::decode::u64_from_index(ir.model.entity_count()),

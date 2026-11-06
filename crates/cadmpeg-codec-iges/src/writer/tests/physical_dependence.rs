@@ -126,6 +126,7 @@ fn pointers(entity: &WrittenEntity) -> Vec<u32> {
         }
         120 => indices.extend([1, 2]),
         122 => indices.push(1),
+        140 => indices.push(5),
         142 => indices.extend([2, 3, 4]),
         143 => {
             indices.push(2);
@@ -406,6 +407,12 @@ fn pointers(entity: &WrittenEntity) -> Vec<u32> {
         514 => {
             let count = usize::try_from(token(1)).expect("count");
             indices.extend((0..count).map(|face| 2 + 2 * face));
+        }
+        130 => {
+            indices.push(1);
+            if token(2) == 3 {
+                indices.push(3);
+            }
         }
         108 => {
             if token(5) != 0 {

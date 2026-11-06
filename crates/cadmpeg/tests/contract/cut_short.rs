@@ -4,7 +4,7 @@
 //! every held record agrees with the uncut decode under
 //! `Allowances::given_up`.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use cadmpeg_test_support::comparison::Allowances;
 
@@ -72,21 +72,114 @@ fn refers_to_removed(value: &serde_json::Value, removed: &BTreeSet<String>) -> b
 
 /// Drop every list entry that refers to a removed record, mirroring the
 /// comparison's pruning of the allowance set.
-fn filter_lists(value: &mut serde_json::Value, removed: &BTreeSet<String>) {
+fn filter_lists(
+    value: &mut serde_json::Value,
+    peer: Option<&serde_json::Value>,
+    removed: &BTreeSet<String>,
+    removed_entries: &BTreeSet<String>,
+) {
+    // A resolved topology selection carries the same native link used when its
+    // target faces or edges have all been given up. Only remove the resolution when
+    // every target was actually lost and the link itself agrees (#209 §4.5).
+    if let (Some(source), Some(peer)) = (
+        value.as_object(),
+        peer.and_then(serde_json::Value::as_object),
+    ) {
+        if source.get("kind").and_then(serde_json::Value::as_str) == Some("resolved")
+            && peer.get("kind").and_then(serde_json::Value::as_str) == Some("native")
+        {
+            if let Some(resolved) = source.get("value").and_then(serde_json::Value::as_object) {
+                let targets = resolved
+                    .get("faces")
+                    .or_else(|| resolved.get("edges"))
+                    .and_then(serde_json::Value::as_array);
+                if resolved.len() == 2
+                    && resolved
+                        .get("native")
+                        .is_some_and(|native| peer.get("value") == Some(native))
+                    && targets.is_some_and(|targets| {
+                        !targets.is_empty()
+                            && targets.iter().all(|target| {
+                                target.as_str().is_some_and(|id| removed.contains(id))
+                            })
+                    })
+                {
+                    *value = serde_json::Value::Object(peer.clone());
+                    return;
+                }
+            }
+        }
+    }
     match value {
         serde_json::Value::Array(values) => {
             values.retain(|value| !refers_to_removed(value, removed));
-            for value in values {
-                filter_lists(value, removed);
+            let peers = peer.and_then(serde_json::Value::as_array);
+            for (index, value) in values.iter_mut().enumerate() {
+                filter_lists(
+                    value,
+                    peers.and_then(|peers| peers.get(index)),
+                    removed,
+                    removed_entries,
+                );
             }
         }
         serde_json::Value::Object(fields) => {
-            for value in fields.values_mut() {
-                filter_lists(value, removed);
-            }
+            let peers = peer.and_then(serde_json::Value::as_object);
+            fields.retain(|key, value| {
+                let before = value.as_array().map(Vec::len);
+                if key == "side_entries" {
+                    if let Some(entries) = value.as_array_mut() {
+                        entries.retain(|entry| {
+                            entry
+                                .as_str()
+                                .is_none_or(|name| !removed_entries.contains(name))
+                        });
+                    }
+                }
+                let peer = peers.and_then(|peers| peers.get(key));
+                filter_lists(value, peer, removed, removed_entries);
+                // The source record serialized a nonempty list, but rule 2
+                // removed every entry and the cut record omits its empty
+                // optional field. Preserve all other omissions as failures.
+                !(before.is_some_and(|len| len > 0)
+                    && value.as_array().is_some_and(Vec::is_empty)
+                    && peer.is_none())
+            });
         }
         _ => {}
     }
+}
+
+fn records_by_id(document: &serde_json::Value) -> BTreeMap<&str, &serde_json::Value> {
+    let mut result = BTreeMap::new();
+    if let Some(model) = document.get("model").and_then(serde_json::Value::as_object) {
+        for row in model
+            .values()
+            .filter_map(serde_json::Value::as_array)
+            .flatten()
+        {
+            if let Some(id) = row.get("id").and_then(serde_json::Value::as_str) {
+                result.insert(id, row);
+            }
+        }
+    }
+    if let Some(native) = document
+        .get("native")
+        .and_then(serde_json::Value::as_object)
+    {
+        for namespace in native.values().filter_map(serde_json::Value::as_object) {
+            for row in namespace
+                .values()
+                .filter_map(serde_json::Value::as_array)
+                .flatten()
+            {
+                if let Some(id) = row.get("id").and_then(serde_json::Value::as_str) {
+                    result.insert(id, row);
+                }
+            }
+        }
+    }
+    result
 }
 
 /// The uncut document restricted to the records the cut decode holds, with
@@ -94,10 +187,33 @@ fn filter_lists(value: &mut serde_json::Value, removed: &BTreeSet<String>) {
 /// held records compare under the rule 2 list loss alone.
 fn restrict_to_held(
     uncut: &serde_json::Value,
+    cut: &serde_json::Value,
     held: &BTreeSet<String>,
     missing: &BTreeSet<String>,
 ) -> serde_json::Value {
     let mut restricted = uncut.clone();
+    let peers = records_by_id(cut);
+    // FreeCAD native side-entry links use the archive member name as their
+    // target. Resolve those names through the uncut entry arena before applying
+    // rule 2; a coincidentally equal string elsewhere is not a link.
+    let removed_entries: BTreeSet<String> = uncut
+        .pointer("/native/fcstd/entries")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|entry| {
+            entry
+                .get("id")
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|id| missing.contains(id))
+        })
+        .filter_map(|entry| {
+            entry
+                .get("name")
+                .and_then(serde_json::Value::as_str)
+                .map(str::to_owned)
+        })
+        .collect();
     let mut restrict_rows = |rows: &mut serde_json::Value| {
         if let Some(rows) = rows.as_array_mut() {
             rows.retain(|row| {
@@ -106,7 +222,12 @@ fn restrict_to_held(
                     .is_some_and(|id| held.contains(id))
             });
             for row in rows.iter_mut() {
-                filter_lists(row, missing);
+                let peer = row
+                    .get("id")
+                    .and_then(serde_json::Value::as_str)
+                    .and_then(|id| peers.get(id))
+                    .copied();
+                filter_lists(row, peer, missing, &removed_entries);
             }
         }
     };
@@ -232,7 +353,8 @@ fn check_format(format: &str) {
                     // The record comparison below covers held records only;
                     // scope is judged above, so it is not compared twice.
                     let comparable: BTreeSet<String> = held.difference(&stubs).cloned().collect();
-                    let mut restricted = restrict_to_held(&uncut_document, &comparable, &missing);
+                    let mut restricted =
+                        restrict_to_held(&uncut_document, &document, &comparable, &missing);
                     // #209 §1.1 with the #224 ruling 1: a cut decode derives
                     // scope from the cut bytes, not by copying the uncut
                     // decode. The cut scope is a subset of the uncut scope,
@@ -325,4 +447,105 @@ cut_short! {
     inventor_cut_short => "inventor", inventor_cut_short_files_decode_their_prefix_or_are_truncated;
     sat_cut_short => "sat", sat_cut_short_files_decode_their_prefix_or_are_truncated;
     nx_cut_short => "nx", nx_cut_short_files_decode_their_prefix_or_are_truncated;
+}
+
+#[test]
+fn pruned_optional_list_matches_its_omitted_empty_serialization() {
+    let uncut = serde_json::json!({"model": {"features": [{
+        "id": "feature", "outputs": ["missing"], "kept": ["still here"]
+    }], "bodies": [{"id": "missing"}]}, "native": {}});
+    let cut = serde_json::json!({"model": {"features": [{
+        "id": "feature", "kept": ["still here"]
+    }], "bodies": []}, "native": {}});
+    let held = BTreeSet::from(["feature".to_owned()]);
+    let missing = BTreeSet::from(["missing".to_owned()]);
+    assert_eq!(restrict_to_held(&uncut, &cut, &held, &missing), cut);
+    let mut omitted = cut.clone();
+    omitted["model"]["features"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("kept");
+    assert_ne!(restrict_to_held(&uncut, &omitted, &held, &missing), omitted);
+}
+
+#[test]
+fn lost_face_resolution_falls_back_only_to_the_same_native_link() {
+    let source =
+        serde_json::json!({"kind": "resolved", "value": {"faces": ["face"], "native": "link"}});
+    let peer = serde_json::json!({"kind": "native", "value": "link"});
+    let mut restricted = source.clone();
+    filter_lists(
+        &mut restricted,
+        Some(&peer),
+        &BTreeSet::from(["face".to_owned()]),
+        &BTreeSet::new(),
+    );
+    assert_eq!(restricted, peer);
+    let mut retained_face = source.clone();
+    filter_lists(
+        &mut retained_face,
+        Some(&peer),
+        &BTreeSet::new(),
+        &BTreeSet::new(),
+    );
+    assert_ne!(retained_face, peer);
+    let other = serde_json::json!({"kind": "native", "value": "other"});
+    let mut changed_link = source;
+    filter_lists(
+        &mut changed_link,
+        Some(&other),
+        &BTreeSet::from(["face".to_owned()]),
+        &BTreeSet::new(),
+    );
+    assert_ne!(changed_link, other);
+}
+
+#[test]
+fn lost_edge_resolution_falls_back_only_to_the_same_native_link() {
+    let source =
+        serde_json::json!({"kind": "resolved", "value": {"edges": ["edge"], "native": "link"}});
+    let peer = serde_json::json!({"kind": "native", "value": "link"});
+    let mut restricted = source.clone();
+    filter_lists(
+        &mut restricted,
+        Some(&peer),
+        &BTreeSet::from(["edge".to_owned()]),
+        &BTreeSet::new(),
+    );
+    assert_eq!(restricted, peer);
+    let mut retained_edge = source.clone();
+    filter_lists(
+        &mut retained_edge,
+        Some(&peer),
+        &BTreeSet::new(),
+        &BTreeSet::new(),
+    );
+    assert_ne!(retained_edge, peer);
+    let other = serde_json::json!({"kind": "native", "value": "other"});
+    let mut changed_link = source;
+    filter_lists(
+        &mut changed_link,
+        Some(&other),
+        &BTreeSet::from(["edge".to_owned()]),
+        &BTreeSet::new(),
+    );
+    assert_ne!(changed_link, other);
+}
+
+#[test]
+fn missing_native_entry_prunes_only_its_side_entry_reference() {
+    let uncut = serde_json::json!({"model": {}, "native": {"fcstd": {
+        "entries": [{"id": "entry", "name": "data.bin"}],
+        "properties": [{"id": "property", "side_entries": ["data.bin", "other.bin"], "values": ["data.bin"]}]
+    }}});
+    let cut = serde_json::json!({"model": {}, "native": {"fcstd": {
+        "entries": [],
+        "properties": [{"id": "property", "side_entries": ["other.bin"], "values": ["data.bin"]}]
+    }}});
+    let held = BTreeSet::from(["property".to_owned()]);
+    let missing = BTreeSet::from(["entry".to_owned()]);
+    assert_eq!(restrict_to_held(&uncut, &cut, &held, &missing), cut);
+    let mut wrong = cut.clone();
+    wrong["native"]["fcstd"]["properties"][0]["side_entries"] = serde_json::json!([]);
+    assert_ne!(restrict_to_held(&uncut, &wrong, &held, &missing), wrong);
 }

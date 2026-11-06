@@ -27,6 +27,7 @@ use std::num::NonZeroU64;
 pub(crate) const ARENAS: &[&str] = &[
     "document",
     "objects",
+    "orphan_object_data",
     "extensions",
     "properties",
     "shape_payloads",
@@ -49,6 +50,17 @@ pub(crate) const ARENAS: &[&str] = &[
     "element_maps",
     "unknowns",
 ];
+
+/// Readable object data whose declaration section could not be read.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct OrphanObjectData {
+    /// Stable native identity for this data element.
+    pub(crate) id: String,
+    /// Original object-data name.
+    pub(crate) name: String,
+    /// Unreadable declaration-section stub.
+    pub(crate) owner: String,
+}
 
 pub(crate) fn native_id(kind: &str, key: impl AsRef<str>) -> String {
     format!(
@@ -2195,6 +2207,9 @@ impl EntryRecord {
     }
     pub(crate) fn retain_payload(&mut self, bytes: Vec<u8>) {
         self.payload = Some(cadmpeg_ir::native::bytes::NativeBytes::new(bytes));
+    }
+    pub(crate) fn discard_payload(&mut self) {
+        self.payload = None;
     }
     pub(crate) fn add_reference(&mut self, owner: &str) -> Result<(), CodecError> {
         if !cadmpeg_ir::ids::is_valid_identity(owner) {

@@ -971,13 +971,16 @@ fn parse(
         &admitted_xml,
         file_version,
         &records,
-        crate::entry_sources::ArchiveEntries {
-            records: &entries
-                .iter()
-                .map(|entry| entry.record.clone())
-                .collect::<Vec<_>>(),
-            sources: entry_sources,
-        },
+        (
+            crate::entry_sources::ArchiveEntries {
+                records: &entries
+                    .iter()
+                    .map(|entry| entry.record.clone())
+                    .collect::<Vec<_>>(),
+                sources: entry_sources,
+            },
+            &std::collections::BTreeSet::new(),
+        ),
         losses,
         None,
     )
