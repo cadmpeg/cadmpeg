@@ -1842,9 +1842,6 @@ fn rescope_native_reference_fields(
         "design_edge_treatment_vertex_operands" => {
             scope_named_fields(ctx, fields, &["recipe_id"], occurrence)?;
         }
-        "design_mesh_features" => {
-            scope_named_fields(ctx, fields, &["tessellation_id"], occurrence)?;
-        }
         "xref_references" => {
             scope_named_fields(ctx, fields, &["stream"], occurrence)?;
         }

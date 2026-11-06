@@ -101,8 +101,6 @@ impl Serialize for BodyRef<'_> {
             guid_entry_reference_offset: u64,
             scene_state_reference_offset: u64,
             scene_auxiliary_reference_offset: u64,
-            #[serde(skip_serializing_if = "Option::is_none")]
-            tessellation_id: Option<&'a String>,
         }
         let body = self.0;
         let node_record = match &body.scene_node.form {
@@ -147,7 +145,6 @@ impl Serialize for BodyRef<'_> {
             guid_entry_reference_offset: body.guid.entry_reference_offset(),
             scene_state_reference_offset: body.scene_node.state_reference_offset(),
             scene_auxiliary_reference_offset: body.scene_node.auxiliary_reference_offset(),
-            tessellation_id: body.tessellation_id.as_ref(),
         }
         .serialize(serializer)
     }

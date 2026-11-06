@@ -76,7 +76,8 @@ pub(crate) const MESH_FEATURE_SCOPE_TYPE_GUID: &str = "99F6967E-ED35-4222-B906-5
 pub(crate) const MESH_FEATURE_SCOPE_BASE_TYPE_GUID: &str = "2FCB0587-233E-449B-9724-9AAE5AA23647";
 pub(crate) const MESH_FEATURE_SCOPE_TYPE_VERSION: u32 = 0;
 pub(crate) const MESH_SCOPE_BASE_RECORD_TYPE_GUID: &str = "CB844AB6-240D-4FC9-9C9F-3679DC896D6F";
-pub(crate) const MESH_SCOPE_BASE_RECORD_BASE_TYPE_GUID: &str = "98542EB9-A4F2-4137-A808-DBB5B3CD6159";
+pub(crate) const MESH_SCOPE_BASE_RECORD_BASE_TYPE_GUID: &str =
+    "98542EB9-A4F2-4137-A808-DBB5B3CD6159";
 pub(crate) const MESH_SCOPE_BASE_RECORD_TYPE_VERSION: u32 = 1;
 pub(crate) const MESH_SCENE_STATE_TYPE_GUID: &str = "F85F2E62-7627-4922-A16D-53E1275D2AAC";
 pub(crate) const MESH_SCENE_STATE_BASE_TYPE_GUID: &str = "D0EDEF7C-5879-45A4-9651-900659CC4FDD";
@@ -88,10 +89,12 @@ pub(crate) const SCENE_AUXILIARY_TYPE_GUID: &str = "2343B7AB-A2E0-4C66-8B74-99A0
 pub(crate) const SCENE_AUXILIARY_BASE_TYPE_GUID: &str = "74D7FEF9-44E9-494D-A25D-81EC33D2841E";
 pub(crate) const SCENE_AUXILIARY_TYPE_VERSION: u32 = 1;
 pub(crate) const MESH_TEXTURE_FILENAME_TYPE_GUID: &str = "830A2A2B-0AA9-4D6A-ACA1-F7A2B2A06573";
-pub(crate) const MESH_TEXTURE_FILENAME_BASE_TYPE_GUID: &str = "98542EB9-A4F2-4137-A808-DBB5B3CD6159";
+pub(crate) const MESH_TEXTURE_FILENAME_BASE_TYPE_GUID: &str =
+    "98542EB9-A4F2-4137-A808-DBB5B3CD6159";
 pub(crate) const MESH_TEXTURE_FILENAME_TYPE_VERSION: u32 = 0;
 pub(crate) const MESH_COLLECTION_OWNER_TYPE_GUID: &str = "E03784ED-5E19-4E14-B9F2-3B07017018CD";
-pub(crate) const MESH_COLLECTION_OWNER_BASE_TYPE_GUID: &str = "42054630-20A0-40E1-B969-CFE9E742F5C9";
+pub(crate) const MESH_COLLECTION_OWNER_BASE_TYPE_GUID: &str =
+    "42054630-20A0-40E1-B969-CFE9E742F5C9";
 pub(crate) const MESH_COLLECTION_OWNER_TYPE_VERSIONS: [u32; 3] = [15, 17, 23];
 pub(crate) const MESH_BODY_OWNER_TYPE_GUID: &str = "CD57BC48-50EC-47DC-975A-FB6DEA72F4DA";
 pub(crate) const MESH_BODY_OWNER_BASE_TYPE_GUID: &str = "A7AEA631-985B-4DD1-8CE2-DE2C-14B54081";
@@ -196,6 +199,7 @@ pub(crate) enum MeshContainerOutcome {
 pub(crate) struct MeshDecode {
     pub(crate) outcomes: Vec<MeshContainerOutcome>,
     pub(crate) features: Vec<DesignMeshFeature>,
+    pub(crate) joins: Vec<(String, u32, String)>,
     pub(crate) parts: cadmpeg_ir::source_fidelity::parts::PartOutput,
 }
 
@@ -1595,7 +1599,6 @@ where
                 scene_auxiliary_record: scene_auxiliary,
                 owner_record: body_owner,
                 container_mesh_uuid: None,
-                tessellation_id: None,
             });
         }
         let scope_offset = usize::try_from(scope.scope.record().byte_offset()).map_err(|_| {
@@ -1695,7 +1698,7 @@ fn resolve_mesh_body(
     for (design_ordinal, design) in records.iter().enumerate() {
         for (feature_ordinal, feature) in design.iter().enumerate() {
             for (body_ordinal, body) in feature.bodies().iter().enumerate() {
-                if body.tessellation_id.is_none()
+                if body.container_mesh_uuid.is_none()
                     && body.entry.name() == entry_name
                     && body.guid.value().eq_ignore_ascii_case(fusion_uuid)
                 {
@@ -1729,6 +1732,7 @@ pub(crate) fn decode_mesh_bodies(
     }
     let mut design_records = decode_mesh_design_records(scan)?;
     let mut outcomes = Vec::new();
+    let mut joins = Vec::new();
     let mut parts = PartOutput::new(cadmpeg_ir::CodecFormat::F3d, ctx);
     for entry in scan
         .entries
@@ -1792,17 +1796,20 @@ pub(crate) fn decode_mesh_bodies(
                 continue;
             }
         };
-        design_records[design_ordinal][feature_ordinal].bodies_mut()[body_ordinal]
-            .container_mesh_uuid = Some(uuid);
-        design_records[design_ordinal][feature_ordinal].bodies_mut()[body_ordinal]
-            .tessellation_id = Some(projected.id.clone());
+        let feature = &mut design_records[design_ordinal][feature_ordinal];
+        let record_index = feature.bodies()[body_ordinal]
+            .placement
+            .record()
+            .record_index();
+        joins.push((feature.id.clone(), record_index, projected.id.clone()));
+        feature.bodies_mut()[body_ordinal].container_mesh_uuid = Some(uuid);
         outcomes.push(MeshContainerOutcome::Joined(projected));
     }
     for body in design_records
         .iter()
         .flatten()
         .flat_map(crate::records::mesh::DesignMeshFeature::bodies)
-        .filter(|body| body.tessellation_id.is_none())
+        .filter(|body| body.container_mesh_uuid.is_none())
         .filter(|body| {
             !scan.entries.iter().any(|entry| {
                 scan.is_design_asset_entry(entry, ContainerRole::Paramesh)
@@ -1818,6 +1825,7 @@ pub(crate) fn decode_mesh_bodies(
     Ok(MeshDecode {
         outcomes,
         features,
+        joins,
         parts,
     })
 }
@@ -1827,9 +1835,15 @@ mod tests {
     use cadmpeg_core::decode::u64_from_index;
 
     mod placement;
-    use super::{parse_mesh_collection_owner_record, parse_mesh_scene_state_record, parse_mesh_texture_table_record, parse_mesh_wrapper_record, parse_scene_node_record, resolve_mesh_body, MeshBody, MESH_COLLECTION_OWNER_TYPE_GUID, MESH_COLLECTION_OWNER_TYPE_VERSIONS, MESH_COLLECTION_TYPE_GUID, MESH_FEATURE_SCOPE_TYPE_GUID, MESH_SCENE_STATE_TYPE_GUID, MESH_TEXTURE_TABLE_TYPE_GUID, SCENE_NODE_TYPE_GUID};
+    use super::{
+        parse_mesh_collection_owner_record, parse_mesh_scene_state_record,
+        parse_mesh_texture_table_record, parse_mesh_wrapper_record, parse_scene_node_record,
+        resolve_mesh_body, MeshBody, MESH_COLLECTION_OWNER_TYPE_GUID,
+        MESH_COLLECTION_OWNER_TYPE_VERSIONS, MESH_COLLECTION_TYPE_GUID,
+        MESH_FEATURE_SCOPE_TYPE_GUID, MESH_SCENE_STATE_TYPE_GUID, MESH_TEXTURE_TABLE_TYPE_GUID,
+        SCENE_NODE_TYPE_GUID,
+    };
     use crate::design::decode::meta::{typed_primary_frames, TypedPrimaryFrame};
-    use crate::test_support::mesh_fixture::{no_texture_asset, push_indexed_header, put_reference, push_reference, mesh_texture_table_record, mesh_wrapper_record, placed_mesh_scene_node_record, synthetic_mesh_graph_with_body_count, synthetic_mesh_graph_with_collection, synthetic_mesh_graph, CollectionForm, SyntheticMeshGraph};
     use crate::layout::{
         paramesh_collection_owner_backlink_prefix as collection_owner,
         paramesh_collection_owner_v17 as collection_owner_v17,
@@ -1839,6 +1853,12 @@ mod tests {
         paramesh_texture_table_prefix as texture_table,
     };
     use crate::paramesh::MeshContainer;
+    use crate::test_support::mesh_fixture::{
+        mesh_texture_table_record, mesh_wrapper_record, no_texture_asset,
+        placed_mesh_scene_node_record, push_indexed_header, push_reference, put_reference,
+        synthetic_mesh_graph, synthetic_mesh_graph_with_body_count,
+        synthetic_mesh_graph_with_collection, CollectionForm, SyntheticMeshGraph,
+    };
     use cadmpeg_core::CodecError;
     use cadmpeg_ir::features::FinitePoint3;
     use cadmpeg_ir::units::UnitVector3;
