@@ -16653,7 +16653,7 @@ name = "tail_discriminant"
 offset = 98
 type = "bytes[2]"
 source = "spec"
-anchor = "a two-byte discriminant"
+anchor = "the two-byte construction-group flag block"
 
 [[record.field]]
 name = "n_plus_1_reference"
