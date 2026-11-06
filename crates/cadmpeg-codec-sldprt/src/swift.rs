@@ -1279,7 +1279,9 @@ fn unresolved_implicit_diameter(entity: &Entity, annotation: &PmiAnnotation) -> 
         && matches!(
             &annotation.definition,
             PmiDefinition::Dimension(dimension)
-                if dimension.kind() == &DimensionKind::Diameter && dimension.nominal().is_none()
+                if (dimension.kind() == &DimensionKind::Diameter
+                    || dimension.kind() == &DimensionKind::SphericalDiameter)
+                    && dimension.nominal().is_none()
         )
 }
 
@@ -1467,7 +1469,7 @@ fn project_dimension(
         reference,
         entity,
     } = source;
-    let Some(dimension) = dimension_kind(short_class(&entity.class)) else {
+    let Some(dimension) = dimension_kind(short_class(&entity.class), entity, feature_index) else {
         return Ok(None);
     };
     let quantity = dimension_quantity(&dimension);
@@ -3633,15 +3635,35 @@ fn tolerance_kind(class: &str) -> Option<GeometricToleranceKind> {
     })
 }
 
-fn dimension_kind(class: &str) -> Option<DimensionKind> {
+fn dimension_kind(
+    class: &str,
+    entity: &Entity,
+    feature_index: &FeatureIndex<'_>,
+) -> Option<DimensionKind> {
     Some(match class {
+        "GdtDiameter" if has_direct_sphere_owner(entity, feature_index) => {
+            DimensionKind::SphericalDiameter
+        }
         "GdtDiameter" | "GdtCounterBore" | "GdtCounterSinkDiameter" => DimensionKind::Diameter,
+        "GdtRadius" if has_direct_sphere_owner(entity, feature_index) => {
+            DimensionKind::SphericalRadius
+        }
         "GdtRadius" => DimensionKind::Radius,
         "GdtAngle" | "GdtAngleBetween" | "GdtCounterSinkAngle" => DimensionKind::Angular,
         "GdtDistanceBetween" => DimensionKind::Location,
         "GdtWidth" | "GdtLength" | "GdtDepth" => DimensionKind::Size,
         _ => return None,
     })
+}
+
+fn has_direct_sphere_owner(entity: &Entity, feature_index: &FeatureIndex<'_>) -> bool {
+    let [reference] = entity.features.references.as_slice() else {
+        return false;
+    };
+    let Some(feature) = feature_index.get(&reference.id) else {
+        return false;
+    };
+    reference_matches_entity(reference, feature) && short_class(&feature.class) == "GdtSphere"
 }
 
 fn short_class(class: &str) -> &str {

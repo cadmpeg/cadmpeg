@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
-use cadmpeg_ir::pmi::{PmiDefinition, PmiTarget};
+use cadmpeg_ir::pmi::{DimensionKind, DimensionTolerance, PmiDefinition, PmiTarget};
 
 use super::{datum_names, specimen, MM_PER_INCH, VALUE_TOLERANCE};
 
@@ -252,4 +252,101 @@ fn ftc_06_positions_target_typed_cylinders_only() {
             "{name} cylinder axis direction"
         );
     }
+}
+
+#[test]
+fn ftc_06_diameter8_keeps_its_supported_sphere_target() {
+    let result = specimen("nist_ftc_06_asme1_rd_sw1802.SLDPRT");
+    let ir = result.ir();
+    let annotation = ir
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| annotation.name.as_deref() == Some("Diameter8"))
+        .expect("Diameter8 PMI");
+    let PmiDefinition::Dimension(dimension) = &annotation.definition else {
+        panic!("Diameter8 dimension")
+    };
+    assert_eq!(dimension.kind(), &DimensionKind::SphericalDiameter);
+    let nominal = dimension.nominal().expect("Diameter8 nominal");
+    assert!((nominal.value.get() - 1.250 * MM_PER_INCH).abs() < VALUE_TOLERANCE);
+    let Some(DimensionTolerance::PlusMinus { lower, upper }) = dimension.tolerance() else {
+        panic!("Diameter8 plus-minus tolerance")
+    };
+    assert!((lower.value.get() + 0.008 * MM_PER_INCH).abs() < VALUE_TOLERANCE);
+    assert!((upper.value.get() - 0.008 * MM_PER_INCH).abs() < VALUE_TOLERANCE);
+
+    assert!(
+        annotation.targets.iter().any(|target| {
+            let PmiTarget::Face { face: face_id } = target else {
+                return false;
+            };
+            let Some(face) = ir.model.faces.iter().find(|face| &face.id == face_id) else {
+                return false;
+            };
+            let Some(surface) = ir
+                .model
+                .surfaces
+                .iter()
+                .find(|surface| surface.id == face.surface)
+            else {
+                return false;
+            };
+            let Some(SolvedSurfaceGeometry::Sphere(sphere)) = surface.geometry.solved() else {
+                return false;
+            };
+            let center = sphere.center().get();
+            (sphere.radius().get() - 15.875).abs() < VALUE_TOLERANCE
+                && (center.x + 114.3).abs() < VALUE_TOLERANCE
+                && (center.y - 63.5).abs() < VALUE_TOLERANCE
+                && (center.z + 107.95).abs() < VALUE_TOLERANCE
+        }),
+        "Diameter8 must retain the supported sphere target"
+    );
+}
+
+#[test]
+fn ftc_06_diameter7_maps_to_its_spherical_radius_owner() {
+    let result = specimen("nist_ftc_06_asme1_rd_sw1802.SLDPRT");
+    let ir = result.ir();
+    let annotation = ir
+        .model
+        .pmi
+        .iter()
+        .find(|annotation| annotation.name.as_deref() == Some("Diameter7"))
+        .expect("Diameter7 PMI");
+    let PmiDefinition::Dimension(dimension) = &annotation.definition else {
+        panic!("Diameter7 dimension")
+    };
+    assert_eq!(dimension.kind(), &DimensionKind::SphericalRadius);
+    let nominal = dimension.nominal().expect("Diameter7 nominal");
+    assert!((nominal.value.get() - 0.5 * MM_PER_INCH).abs() < VALUE_TOLERANCE);
+
+    assert!(
+        annotation.targets.iter().any(|target| {
+            let PmiTarget::Face { face: face_id } = target else {
+                return false;
+            };
+            let Some(face) = ir.model.faces.iter().find(|face| &face.id == face_id) else {
+                return false;
+            };
+            let Some(surface) = ir
+                .model
+                .surfaces
+                .iter()
+                .find(|surface| surface.id == face.surface)
+            else {
+                return false;
+            };
+            let Some(SolvedSurfaceGeometry::Sphere(sphere)) = surface.geometry.solved() else {
+                return false;
+            };
+            let center = sphere.center().get();
+            (sphere.radius().get() - 12.7).abs() < VALUE_TOLERANCE
+                && center.x.abs() < VALUE_TOLERANCE
+                && (center.y - 97.79).abs() < VALUE_TOLERANCE
+                && (center.z + 15.875).abs() < VALUE_TOLERANCE
+        }),
+        "Diameter7 must retain the supported spherical-radius target"
+    );
 }
