@@ -220,6 +220,39 @@ Parsed by:
 | 30 | 1 | `reserved_30` | `u8` | little | spec | In the wide form, the nine bytes from offset 26 are · value `0` |
 | 31 | 4 | `comment_length` | `u32` | little | spec | In the wide form, the nine bytes from offset 26 are |
 
+## `design_parameter_comment_discriminated_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 30 B
+
+Offsets are relative to the indexed header of a comment discriminated parameter through the comment code-unit count. The comment code units follow, then the source ordinal and the owner form.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/parameters.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The comment discriminated form stores eleven zero bytes |
+| 11 | 11 | `zero_run_11` | `bytes[11]` | little | spec | The comment discriminated form stores eleven zero bytes |
+| 22 | 4 | `family_discriminator` | `u32` | little | spec | a u32 family discriminator at offset 22 |
+| 26 | 4 | `comment_length` | `u32` | little | spec | the u32 code-unit count of the LP-UTF16 parameter comment at offset 26 |
+
+## `design_parameter_comment_expression_trailer`
+
+Spec §3.1 · layout: byte offsets · size: 5 B
+
+This trailer is relative to the end of the variable LP-UTF16 expression of a comment discriminated parameter.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/parameters.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `driven` | `u8` | little | spec | The comment expression trailer is five bytes |
+| 1 | 1 | `reserved_1` | `u8` | little | spec | The comment expression trailer is five bytes · value `0` |
+| 2 | 1 | `favorite` | `u8` | little | spec | The comment expression trailer is five bytes |
+| 3 | 1 | `reserved_3` | `u8` | little | spec | The comment expression trailer is five bytes · value `0` |
+| 4 | 1 | `document` | `u8` | little | spec | The comment expression trailer is five bytes |
+
 ## `design_parameter_tail`
 
 Spec §3.1 · layout: byte offsets · size: 12 B
