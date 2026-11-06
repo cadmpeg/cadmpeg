@@ -1095,7 +1095,7 @@ The first closing reference run identifies a direct contained child by its local
 
 **Question.** Which of the three lists between the tool list and the target list does an operand-list `Combine` prologue omit when it stores only two?
 
-**Known.** `f3d.md` §3.1 gives the operand-list prologue: after the tool list, an empty list, a list that names the new component's browser node, the consumed-body list, and the target list. A prologue with a companion `RemoveBody` can store two empty lists between the tool list and the target list. A `Combine` with a companion consumes no tool in its own scope, so the reading of every stored field is the same for each omitted list. The decoder reads a two-list prologue when it has a companion.
+**Known.** `f3d.md` §3.1 gives the operand-list prologue: after the tool list, an empty list, a list that is empty or names the new component's browser node, the consumed-body list, and the target list. A prologue with a companion `RemoveBody` can store two empty lists between the tool list and the target list. A `Combine` with a companion consumes no tool in its own scope. With the new-component Boolean zero, the reading of every stored field is the same for each omitted list; with the Boolean one, only the omitted browser-node list is consistent. The decoder reads a two-list prologue with a companion and two empty lists, and reports `feature.combine-new-component-native` when the Boolean is one.
 
 **Need.** A two-list prologue whose `Combine` places its result in a new component or consumes a tool in its own scope, or the Fusion version that adds the third list.
 

@@ -434,7 +434,7 @@ fn stored_operand_lists<'a>(
 
 /// Check the fields of an operand-list frame whose lists name its operands.
 ///
-/// The second list after the tool list names one browser node when the
+/// The second list after the tool list holds one entry when the
 /// new-component Boolean is one. A prologue with a companion can store two
 /// empty lists between the tool list and the target list in place of three.
 /// Each companion is a distinct `RemoveBody` scope that stores the counted
@@ -462,9 +462,7 @@ fn operand_list_fields_hold(
         [first, second, consumed] => {
             first.is_empty() && second.len() == browser_nodes && consumed.len() == consumed_count
         }
-        [first, second] => {
-            has_companion && browser_nodes == 0 && first.is_empty() && second.is_empty()
-        }
+        [first, second] => has_companion && first.is_empty() && second.is_empty(),
         _ => false,
     };
     let mut companions = HashSet::new();

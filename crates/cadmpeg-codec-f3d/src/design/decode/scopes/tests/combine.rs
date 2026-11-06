@@ -1095,17 +1095,11 @@ fn a_frame_whose_lists_name_its_operands_stays_native_when_a_field_contradicts_i
     new_component_two.property_block = true;
     new_component_two.new_component = 2;
     new_component_two.middle_lists[1] = vec![194, 194];
-    let mut two_lists_new_component = OperandListFixture::new(0, 0).two_tools();
-    two_lists_new_component.property_block = true;
-    two_lists_new_component.companions = vec![500];
-    two_lists_new_component.omit_consumed = true;
-    two_lists_new_component.new_component = 1;
     for (name, fixture) in [
         ("keep-tools", invalid_keep_tools),
         ("consumed", unconsumed_tools),
         ("new component without a node", new_component_without_node),
         ("new component two", new_component_two),
-        ("two lists with a new component", two_lists_new_component),
     ] {
         let (operation, losses) = fixture.decode_with_losses();
         assert_eq!(operation, None, "{name}");
@@ -1124,7 +1118,16 @@ fn a_combine_that_places_its_result_in_a_new_component_stays_native_with_a_loss(
     companion.companions = vec![500];
     companion.new_component = 1;
     companion.middle_lists[1] = vec![196];
-    for (name, fixture) in [("kept tools", kept_tools), ("companion", companion)] {
+    let mut two_lists = OperandListFixture::new(0, 0).two_tools();
+    two_lists.property_block = true;
+    two_lists.companions = vec![500];
+    two_lists.omit_consumed = true;
+    two_lists.new_component = 1;
+    for (name, fixture) in [
+        ("kept tools", kept_tools),
+        ("companion", companion),
+        ("two lists", two_lists),
+    ] {
         let (operation, losses) = fixture.decode_with_losses();
         assert_eq!(operation, None, "{name}");
         assert_eq!(
