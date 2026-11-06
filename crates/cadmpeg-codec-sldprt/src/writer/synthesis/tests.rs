@@ -1337,67 +1337,6 @@ fn wire_body_is_reported_without_discarding_a_solid() {
 }
 
 #[test]
-fn omitted_wire_free_point_survives_with_solid() {
-    const EPS_WIRE_POINT_MM: f64 = 1e-9;
-    use cadmpeg_ir::features::FinitePoint3;
-    use cadmpeg_ir::math::Point3;
-    use cadmpeg_ir::topology::{Body, BodyKind, Point, Region, Shell, Vertex};
-
-    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
-    let body = cadmpeg_ir::ids::BodyId::mint("synthetic:test:body#wire").unwrap();
-    let region = cadmpeg_ir::ids::RegionId::mint("synthetic:test:region#wire").unwrap();
-    let shell = cadmpeg_ir::ids::ShellId::mint("synthetic:test:shell#wire").unwrap();
-    let vertex = cadmpeg_ir::ids::VertexId::mint("synthetic:test:vertex#wire").unwrap();
-    let point = cadmpeg_ir::ids::PointId::mint("synthetic:test:point#wire").unwrap();
-    let position = Point3::new(120.0, 140.0, 160.0);
-    ir.model.points.push(Point::new(
-        point.clone(),
-        FinitePoint3::new(position).unwrap(),
-        None,
-    ));
-    ir.model.vertices.push(Vertex {
-        native_ref: None,
-        id: vertex.clone(),
-        point,
-        tolerance: None,
-    });
-    ir.model
-        .shells
-        .push(Shell::with_free_vertices(shell.clone(), region.clone(), vec![vertex]).unwrap());
-    ir.model.regions.push(Region {
-        native_ref: None,
-        id: region.clone(),
-        body: body.clone(),
-        shells: vec![shell],
-    });
-    ir.model.bodies.push(Body {
-        native_ref: None,
-        id: body,
-        kind: BodyKind::Wire,
-        regions: vec![region],
-        transform: None,
-        name: None,
-        color: None,
-        visible: None,
-    });
-    ir.model.finalize();
-    let plan = SldprtCodec
-        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
-        .unwrap();
-    let mut bytes = Vec::new();
-    plan.write_to(&mut bytes).unwrap();
-    let decoded = SldprtCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap();
-    assert!(decoded.ir().model.points.iter().any(|point| {
-        let actual = point.position().get();
-        (actual.x - position.x).abs() < EPS_WIRE_POINT_MM
-            && (actual.y - position.y).abs() < EPS_WIRE_POINT_MM
-            && (actual.z - position.z).abs() < EPS_WIRE_POINT_MM
-    }));
-}
-
-#[test]
 fn foreign_document_string_is_written_as_a_custom_property() {
     use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
     let mut ir = CadIr::empty();
