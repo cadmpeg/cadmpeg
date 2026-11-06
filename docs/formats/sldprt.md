@@ -1944,6 +1944,8 @@ A `moSweepThread_c` thread feature (in files of `swVersion` 16000) writes a feat
 The bytes of an extrusion after its end specification, the bounding-box forms of other lengths, and the ICE forms that write a body chooser by value are open item EV-17.
 
 
+An `moAbsolutePoint_c` body stores its x, y, and z coordinates as three consecutive little-endian f64 values in metres.
+
 The table lists the classes whose bodies this specification describes, the stream that declares them, and whether they are named. *Either* means that a configuration declares the class in one of the two streams. *Varies* means that the class's objects are named in some bodies and not in others.
 
 | Class | Declared in | Named | Body |

@@ -1573,24 +1573,27 @@ fn sketch_block_record_origin(payload: &[u8], start: usize, end: usize) -> Optio
     const ABSOLUTE_POINT_CLASS: &[u8] = b"moAbsolutePoint_c";
     const NATIVE_TO_IR: f64 = 1000.0;
 
+    let payload = payload.get(..end)?;
     let (_, identity) = sketch_block_record_identity(payload, start, end)?;
     let body = identity.checked_add(44)?;
     let class_len = u16::try_from(ABSOLUTE_POINT_CLASS.len())
         .ok()?
         .to_le_bytes();
-    if payload.get(body..body + CLASS_MARKER.len()) == Some(CLASS_MARKER)
+    let coordinates = if payload.get(body..body + CLASS_MARKER.len()) == Some(CLASS_MARKER)
         && payload.get(body + 4..body + 6) == Some(&class_len)
         && payload.get(body + 6..body + 6 + ABSOLUTE_POINT_CLASS.len())
             == Some(ABSOLUTE_POINT_CLASS)
     {
-        return Some(Point3::new(0.0, 0.0, 0.0));
-    }
-    let point_token = View::u16_le_at(payload, body)?;
-    if !is_class_token(point_token) {
-        return None;
-    }
+        body + 6 + ABSOLUTE_POINT_CLASS.len()
+    } else {
+        let point_token = View::u16_le_at(payload, body)?;
+        if !is_class_token(point_token) {
+            return None;
+        }
+        body + 2
+    };
     let scalar = |relative: usize| {
-        let value = View::f64_le_at(payload, body + 2 + relative)? * NATIVE_TO_IR;
+        let value = View::f64_le_at(payload, coordinates + relative)? * NATIVE_TO_IR;
         (value.is_finite() && value.abs() <= 1.0e9).then_some(value)
     };
     Some(Point3::new(scalar(0)?, scalar(8)?, scalar(16)?))

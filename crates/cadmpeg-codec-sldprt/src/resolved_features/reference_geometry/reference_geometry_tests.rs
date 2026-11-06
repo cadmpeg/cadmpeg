@@ -182,6 +182,7 @@ fn solved_reference_point_requires_one_complete_layout() {
 
 #[test]
 fn sketch_block_terminal_identity_carries_its_origin() {
+    const EPS_BLOCK_ORIGIN_MM: f64 = 1e-12;
     let mut payload = vec![0; 100];
     payload[8..12].copy_from_slice(&[0xff; 4]);
     payload[20..26].copy_from_slice(&[0x02, 0, 0, 0, 0, 0]);
@@ -205,6 +206,15 @@ fn sketch_block_terminal_identity_carries_its_origin() {
         sketch_block_record_origin(&payload, 0, payload.len()),
         Some(Point3::new(0.0, 0.0, 0.0))
     );
+    for (index, value) in [0.125_f64, -0.25, 0.375].into_iter().enumerate() {
+        let start = 75 + index * 8;
+        payload[start..start + 8].copy_from_slice(&value.to_le_bytes());
+    }
+    let point = sketch_block_record_origin(&payload, 0, payload.len()).unwrap();
+    assert!((point.x - 125.0).abs() < EPS_BLOCK_ORIGIN_MM);
+    assert!((point.y + 250.0).abs() < EPS_BLOCK_ORIGIN_MM);
+    assert!((point.z - 375.0).abs() < EPS_BLOCK_ORIGIN_MM);
+    assert!(sketch_block_record_origin(&payload, 0, 98).is_none());
 }
 
 #[test]
