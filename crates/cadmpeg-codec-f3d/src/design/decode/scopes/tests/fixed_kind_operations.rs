@@ -1533,6 +1533,7 @@ fn fixed_kind_edge_and_revolve_operations(
         id: "f3d:Design/BulkStream.dat:indexed-axis-curve".into(),
         record_index: 905,
         owner_reference: Some(100),
+        geometry_group: None,
         class_tag: crate::records::references::DesignClassTag::try_from("450".to_owned()).unwrap(),
         byte_offset: 0,
         geometry_offset: 0,

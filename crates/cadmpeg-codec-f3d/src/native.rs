@@ -53,7 +53,9 @@ use crate::records::{
     placement_construction::DesignPlacementConstruction,
     recipes::{ConstructionRecipe, CreationTimestamp, DesignComponentNamingSpace},
     references::{DesignMaterialAssignment, LostEdgeReference, PersistentReference},
-    sketch_geometry::{SketchCurveIdentity, SketchPoint, SketchSurface, SketchText},
+    sketch_geometry::{
+        SketchCurveIdentity, SketchGeometryGroup, SketchPoint, SketchSurface, SketchText,
+    },
     sketch_links::{PersistentDesignLink, PersistentSubentityTag, SketchCurveLink},
     sketch_placement::DesignSketchPlacement,
     sketch_relations::{SketchRelation, SketchRelationSerde},
@@ -183,6 +185,7 @@ pub(crate) const F3D_ARENA_NAMES: &[&str] = &[
     "persistent_subentity_tags",
     "sketch_curve_identities",
     "sketch_curve_links",
+    "sketch_geometry_groups",
     "sketch_points",
     "sketch_relations",
     "sketch_surfaces",
@@ -1028,6 +1031,16 @@ const F3D_FAMILIES: &[F3dFamilyRow] = &[
         counts_toward_emptiness: true,
     },
     F3dFamilyRow {
+        arena: "sketch_geometry_groups",
+        exactness: (),
+        phase: Phase::ArenaOnly,
+        emit: |ctx, model, row, namespace| {
+            namespace.set_arena(ctx, row.arena, &model.sketch_geometry_groups)
+        },
+        len: |model| model.sketch_geometry_groups.len(),
+        counts_toward_emptiness: true,
+    },
+    F3dFamilyRow {
         arena: "sketch_points",
         exactness: (),
         phase: Phase::ArenaOnly,
@@ -1474,6 +1487,8 @@ pub(crate) struct F3dNative {
     /// Persistent tensor-product surfaces owned by spatial sketches.
     #[serde(default)]
     pub(crate) sketch_surfaces: Vec<SketchSurface>,
+    #[serde(default)]
+    pub(crate) sketch_geometry_groups: Vec<SketchGeometryGroup>,
     /// Persistent text entities owned by planar sketches.
     #[serde(default)]
     pub(crate) sketch_texts: Vec<SketchText>,
@@ -1673,6 +1688,7 @@ impl F3dNative {
             sketch_points: read_arena!("sketch_points"),
             sketch_curve_identities: read_arena!("sketch_curve_identities"),
             sketch_surfaces: read_arena!("sketch_surfaces"),
+            sketch_geometry_groups: read_arena!("sketch_geometry_groups"),
             sketch_texts: read_arena!("sketch_texts"),
             lost_edge_references: read_arena!("lost_edge_references"),
             mesh_surface_sentinels: read_arena!("mesh_surface_sentinels"),

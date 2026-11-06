@@ -233,11 +233,11 @@ source = "spec"
 anchor = "u32 at member offset 30"
 
 [[record.field]]
-name = "reserved_zero"
+name = "sketch_flag"
 offset = 34
 type = "u8"
 source = "spec"
-anchor = "Byte 34 is zero"
+anchor = "Byte 34 is a one-byte flag"
 
 [[record.field]]
 name = "visible"
@@ -257,6 +257,110 @@ anchor = "byte 36 is `01`"
 path = "crates/cadmpeg-codec-f3d/src/design/decode/sketch.rs"
 contains = "const SKETCH_CONTAINER_MEMBER_TYPE_GUID: &str = \"37AD519C-AFB3-4CE2-9E6D-E3269FC6CDB9\";"
 note = "The decoder selects the member by this type GUID before reading this prefix."
+
+
+[[record]]
+name = "sketch_geometry_group_prefix"
+kind = "byte"
+section = "3.1"
+anchor = "A sketch geometry group has type GUID"
+size = 75
+note = "Offsets are relative to the group's primary indexed header. The member reference run, four zero bytes and the owning sketch container reference follow."
+
+[[record.field]]
+name = "indexed_header"
+offset = 0
+type = "bytes[11]"
+source = "spec"
+anchor = "Its primary frame stores the indexed header"
+
+[[record.field]]
+name = "zero_run"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "ten zero bytes, a u32 ordinal at offset 21"
+
+[[record.field]]
+name = "ordinal"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "a u32 ordinal at offset 21"
+
+[[record.field]]
+name = "constant_one"
+offset = 25
+type = "u32"
+value = 1
+source = "spec"
+anchor = "u32 `1` at offset 25"
+
+[[record.field]]
+name = "zero_byte"
+offset = 29
+type = "u8"
+value = 0
+source = "spec"
+anchor = "a zero byte at offset 29"
+
+[[record.field]]
+name = "nested_header"
+offset = 30
+type = "bytes[11]"
+source = "spec"
+anchor = "A nested indexed header with the same record index starts at offset 30"
+
+[[record.field]]
+name = "nested_zero_run"
+offset = 41
+type = "bytes[8]"
+source = "spec"
+anchor = "eight zero bytes at offsets 41 through 48"
+
+[[record.field]]
+name = "marker"
+offset = 49
+type = "u8"
+value = 1
+source = "spec"
+anchor = "`01` at offset 49"
+
+[[record.field]]
+name = "nested_zero_run_2"
+offset = 50
+type = "bytes[12]"
+source = "spec"
+anchor = "twelve zero bytes at offsets 50 through 61"
+
+[[record.field]]
+name = "scale_a"
+offset = 62
+type = "f32"
+source = "spec"
+anchor = "f32 `1.0` at offsets 62 and 66"
+
+[[record.field]]
+name = "scale_b"
+offset = 66
+type = "f32"
+source = "spec"
+anchor = "f32 `1.0` at offsets 62 and 66"
+
+[[record.field]]
+name = "zero_byte_2"
+offset = 70
+type = "u8"
+value = 0
+source = "spec"
+anchor = "a zero byte at offset 70"
+
+[[record.field]]
+name = "member_count"
+offset = 71
+type = "u32"
+source = "spec"
+anchor = "A u32 member count `N` at offset 71"
 
 [[record]]
 name = "design_decal_scope_prefix"

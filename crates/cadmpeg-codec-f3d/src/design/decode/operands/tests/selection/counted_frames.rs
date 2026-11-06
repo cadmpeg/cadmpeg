@@ -420,6 +420,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
             id: "f3d:Design/BulkStream.dat:sketch-curve#400".into(),
             record_index: 400,
             owner_reference: Some(172),
+            geometry_group: None,
             class_tag: crate::records::references::DesignClassTag::try_from("270".to_owned())
                 .unwrap(),
             byte_offset: 4000,
@@ -485,6 +486,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
             id: "f3d:Design/BulkStream.dat:sketch-point#500".into(),
             record_index: 500,
             owner_reference: None,
+            geometry_group: None,
             class_tag: crate::records::references::DesignClassTag::try_from("256".to_owned())
                 .unwrap(),
             byte_offset: 5000,
@@ -525,6 +527,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                 id: "f3d:Design/BulkStream.dat:sketch-point#501".into(),
                 record_index: 501,
                 owner_reference: Some(172),
+                geometry_group: None,
                 class_tag: crate::records::references::DesignClassTag::try_from("256".to_owned())
                     .unwrap(),
                 byte_offset: 5100,
