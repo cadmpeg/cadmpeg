@@ -285,6 +285,23 @@ fn tessellation_geometry_sets_transfer_flag_and_invalid_pnindex_is_rejected() {
 }
 
 #[test]
+fn standalone_surface_set_in_representation_is_declared_without_a_body() {
+    let result = decode_inline(
+        "#1=COORDINATES_LIST('',3,((0.,0.,0.),(1.,0.,0.),(0.,1.,0.)));
+#2=TRIANGULATED_SURFACE_SET('',#1,3,$,(1,2,3),((1,2,3)));
+#3=(GEOMETRIC_REPRESENTATION_CONTEXT(3) REPRESENTATION_CONTEXT('',''));
+#4=TESSELLATED_SHAPE_REPRESENTATION('',(#2),#3);",
+    );
+    let mesh = result.ir().model.tessellations.first().expect("mesh");
+    assert!(mesh.body.is_none());
+    assert_eq!(mesh.triangles(), [[0, 1, 2]]);
+    assert!(!result.report().losses.iter().any(|loss| {
+        loss.code == StepLossCode::TessellationItemUndeclared.kind()
+            || loss.code == StepLossCode::TessellationItemBodyUnresolved.kind()
+    }));
+}
+
+#[test]
 fn product_linked_bodyless_tessellated_representation_declares_mesh() {
     let source = String::from_utf8(
         include_bytes!("../../../tests/fixtures/ap242_tessellation.p21").to_vec(),
