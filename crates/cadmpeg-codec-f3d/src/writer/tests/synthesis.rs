@@ -109,9 +109,13 @@ fn source_less_primitive_feature_survives_synthesis() {
         .expect("decode source-less feature");
     let mut named = ir.clone();
     named.model.features[0].name = Some("Mounting boss".into());
-    let (named_output, named_report) = super::source_less_analytic::synthesize_document(&named, None);
+    let (named_output, named_report) =
+        super::source_less_analytic::synthesize_document(&named, None);
     assert_eq!(named_output.ir().model.features.len(), 1);
-    assert!(named_report.losses.iter().any(|loss| loss.message.contains(named.model.features[0].id.as_str()) && loss.message.contains("name")));
+    assert!(named_report.losses.iter().any(|loss| loss
+        .message
+        .contains(named.model.features[0].id.as_str())
+        && loss.message.contains("name")));
     assert_eq!(decoded.ir().model.features.len(), 1);
     let FeatureDefinition::Operation(FeatureOperation::Primitive {
         solid,
@@ -380,12 +384,22 @@ fn a_document_parameter_is_authored_without_native_records_and_keeps_supported_s
 #[test]
 fn non_driving_document_parameter_reduction_is_named() {
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("cube");
-    let mut value = parameter("width", 0, ParameterValue::Length(cadmpeg_ir::scalar::Length::new(42.0).unwrap()));
+    let mut value = parameter(
+        "width",
+        0,
+        ParameterValue::Length(cadmpeg_ir::scalar::Length::new(42.0).unwrap()),
+    );
     value.driving = false;
     ir.model.parameters.push(value);
     let (output, report) = super::source_less_analytic::synthesize_document(&ir, None);
-    assert_eq!(output.ir().model.parameters[0].value, ir.model.parameters[0].value);
-    assert!(report.losses.iter().any(|loss| loss.message.contains(ir.model.parameters[0].id.as_str()) && loss.message.contains("non-driving")));
+    assert_eq!(
+        output.ir().model.parameters[0].value,
+        ir.model.parameters[0].value
+    );
+    assert!(report.losses.iter().any(|loss| loss
+        .message
+        .contains(ir.model.parameters[0].id.as_str())
+        && loss.message.contains("non-driving")));
 }
 
 #[test]
@@ -1066,18 +1080,26 @@ fn independent_native_streams_may_reuse_local_registry_and_recipe_identities() {
                         version: 1,
                         version_offset: Some(0),
                         module: "Vendor".into(),
-                        entities: ReferenceRun::unlocated(vec![]),
+                        entities: ReferenceRun::unlocated(vec![500]),
                     },
                 )
                 .expect("typed registration"),
             );
+            native
+                .design_record_headers
+                .push(crate::records::decal::DesignRecordHeader {
+                    id: format!("f3d:{stream}/BulkStream.dat:design-record-header#0"),
+                    record_index: 500,
+                    class_tag: "256".to_owned().try_into().unwrap(),
+                    byte_offset: Some(0),
+                });
             native.construction_recipes.push(ConstructionRecipe {
                 id: format!("f3d:{stream}/BulkStream.dat:recipe#0"),
                 byte_offset: Some(0),
                 kind: ConstructionRecipeKind::Body,
                 design: Some(ConstructionRecipeDesign {
                     id: RecordedValue {
-                        value: "256".into(),
+                        value: "333".into(),
                         offset: Some(0),
                     },
                     selector: None,

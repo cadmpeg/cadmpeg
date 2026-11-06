@@ -45,6 +45,7 @@ pub(super) struct Generated {
     pub(super) coverage: ArenaDispositions,
     pub(super) losses: Vec<LossNote>,
     pub(super) regenerated_parameters: BTreeSet<String>,
+    pub(super) written_recipes: BTreeSet<String>,
 }
 
 #[cfg(test)]
@@ -249,7 +250,11 @@ pub(super) fn write_with_limits(
             .map(|source| source.object_id.as_str())
             .filter(|name| {
                 name.strip_prefix(&prefix).is_some_and(|base| {
-                    !base.is_empty() && !base.contains(['/', '\\']) && base.rsplit_once('.').is_some_and(|(_, extension)| extension == "tsm")
+                    !base.is_empty()
+                        && !base.contains(['/', '\\'])
+                        && base
+                            .rsplit_once('.')
+                            .is_some_and(|(_, extension)| extension == "tsm")
                 })
             })
             .unwrap_or(&fallback);
@@ -439,9 +444,10 @@ pub(super) fn write_with_limits(
             )));
         }
         for id in &sketches.renamed_sketches {
-            residual_losses.push(crate::loss::F3dLossCode::WriterDesignRecordsOmitted.note(format!(
-                "sketch {id} uses a generated Design entity name"
-            )));
+            residual_losses.push(
+                crate::loss::F3dLossCode::WriterDesignRecordsOmitted
+                    .note(format!("sketch {id} uses a generated Design entity name")),
+            );
         }
         for id in &sketches.text_entities {
             residual_losses.push(ExportLossCode::RecordResidualUnavailable.note(format!(
@@ -568,11 +574,20 @@ pub(super) fn write_with_limits(
                 partial = true;
             }
             let kind = match feature.evaluation.definition() {
-                cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Primitive { .. }) => Some("CylinderPrimitive"),
-                cadmpeg_ir::features::FeatureDefinition::Operation(cadmpeg_ir::features::FeatureOperation::Block { .. }) => Some("BoxPrimitive"),
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::Primitive { .. },
+                ) => Some("CylinderPrimitive"),
+                cadmpeg_ir::features::FeatureDefinition::Operation(
+                    cadmpeg_ir::features::FeatureOperation::Block { .. },
+                ) => Some("BoxPrimitive"),
                 _ => None,
             };
-            if kind.is_some_and(|kind| feature.name.as_ref().is_some_and(|name| name != &format!("{kind} {}", feature.ordinal + 1))) {
+            if kind.is_some_and(|kind| {
+                feature
+                    .name
+                    .as_ref()
+                    .is_some_and(|name| name != &format!("{kind} {}", feature.ordinal + 1))
+            }) {
                 partial = true;
                 residual_losses.push(crate::loss::F3dLossCode::WriterDesignRecordsOmitted.note(
                     format!("feature {} uses a generated Design name", feature.id),
@@ -619,6 +634,7 @@ pub(super) fn write_with_limits(
         coverage: dispositions,
         losses: residual_losses,
         regenerated_parameters,
+        written_recipes: design_bulk.map_or_else(BTreeSet::new, |bulk| bulk.written_recipes),
     })
 }
 
@@ -637,7 +653,9 @@ fn source_brep_name(native: &crate::native::F3dNative, requires_body_map: bool) 
         return "BREP.generated.smbh";
     };
     if (!requires_body_map || first.starts_with("BREP."))
-        && first.rsplit_once('.').is_some_and(|(_, extension)| extension == "smbh")
+        && first
+            .rsplit_once('.')
+            .is_some_and(|(_, extension)| extension == "smbh")
         && !first.contains(['/', '\\'])
         && first != "."
         && first != ".."

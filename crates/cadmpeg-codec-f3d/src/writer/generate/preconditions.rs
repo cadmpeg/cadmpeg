@@ -530,10 +530,6 @@ pub(in crate::writer) fn validate_source_less_sketch_graph(
             )));
         }
     }
-    let mut reachable_headers = root_indices;
-    for relation in &native.sketch_relations {
-        reachable_headers.extend(relation.all_member_indices());
-    }
     let mut explicit_headers = BTreeSet::new();
     let typed_tags = typed_records
         .iter()
@@ -557,12 +553,6 @@ pub(in crate::writer) fn validate_source_less_sketch_graph(
                     header.id
                 )));
             }
-        }
-        if !reachable_headers.contains(&header.record_index) {
-            return Err(CodecError::UnsupportedContent(format!(
-                "F3D Design record header {} is unreachable from the sketch graph",
-                header.id
-            )));
         }
     }
     Ok(())
@@ -1225,7 +1215,11 @@ pub(super) fn validate_source_less_design_links(
             .edges()
             .iter()
             .map(cadmpeg_asm::brep::records::identity::NativeRowId::as_str)
-            .chain(wire.members.free_vertex().map(cadmpeg_asm::brep::records::identity::NativeRowId::as_str))
+            .chain(
+                wire.members
+                    .free_vertex()
+                    .map(cadmpeg_asm::brep::records::identity::NativeRowId::as_str),
+            )
             .filter_map(|member| owners.get(member).copied())
             .collect::<Vec<_>>();
         let shell = target
