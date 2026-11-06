@@ -803,6 +803,7 @@ mod tests {
     fn mapped_dimension_fields_are_not_reported_as_an_omitted_arena() {
         use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
         use cadmpeg_ir::semantic_annotations::DimensionKind;
+        use cadmpeg_ir::{Codec, DecodeOptions};
 
         let mut ir = CadIr::empty();
         let mut annotation = SemanticAnnotation::new(
@@ -828,7 +829,6 @@ mod tests {
         assert!(!plan.report().losses.iter().any(|loss| loss.code
             == FreecadLossCode::ExportArenaNotTransferred.note("").code
             && loss.message.contains(id.as_str())));
-        use cadmpeg_ir::{Codec, DecodeOptions};
         let mut bytes = Vec::new();
         plan.write_to(&mut bytes).unwrap();
         let output = crate::FcstdCodec
