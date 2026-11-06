@@ -10,7 +10,7 @@ pub struct TextReplacements<'ctx> {
 }
 
 impl<'ctx> TextReplacements<'ctx> {
-    #[doc = "Build a lookup from unique keys in byte order."]
+    /// Build a lookup from unique keys in byte order.
     pub fn build<K: AsRef<str> + 'ctx>(
         replacements: impl ExactSizeIterator<Item = (&'ctx K, &'ctx String)>,
     ) -> Result<Self, CodecError> {
