@@ -265,6 +265,8 @@ pub(crate) enum F3dLossCode {
     HistoricalFilletEdgeAmbiguous,
     /// Historical body bounding geometry could not be computed from point carriers.
     HistoricalBodyBoundsUnresolved,
+    /// A `SplitBody` feature takes its split plane from result faces and body geometry.
+    HistoricalSplitPlaneInferred,
     /// Sketch relations retain native operands; no unique neutral relation.
     SketchRelationNativeRetained,
     /// Sketch dimensions retain native operands; no unique neutral dimension.
@@ -324,6 +326,9 @@ pub(crate) enum F3dLossCode {
     FeatureProfileCapOutlineAssumed,
     /// Extrude profile selections read a cap edge carrier from its samples alone.
     FeatureProfileCapCarrierAssumed,
+    /// Extrude profile selections assume that a supported hole boundary of an inserted region
+    /// identifies the selected profile.
+    FeatureProfileHoleBoundaryInferred,
     /// Feature path selections retain native identities; no unique path.
     FeaturePathSelectionNative,
     /// Feature face selections retain native candidates; no unique face.
@@ -669,6 +674,7 @@ impl F3dLossCode {
         Self::HistoricalEdgeSelectionInferred,
         Self::HistoricalFilletEdgeAmbiguous,
         Self::HistoricalBodyBoundsUnresolved,
+        Self::HistoricalSplitPlaneInferred,
         Self::SketchRelationNativeRetained,
         Self::SketchDimensionNativeRetained,
         Self::SketchPlacementUnprojected,
@@ -699,6 +705,7 @@ impl F3dLossCode {
         Self::FeatureProfileCutRegionsAssumed,
         Self::FeatureProfileCapOutlineAssumed,
         Self::FeatureProfileCapCarrierAssumed,
+        Self::FeatureProfileHoleBoundaryInferred,
         Self::FeaturePathSelectionNative,
         Self::FeatureFaceSelectionNative,
         Self::FeatureFaceSelectionActiveSubstituted,
@@ -934,6 +941,7 @@ impl F3dLossCode {
             Self::HistoricalEdgeSelectionInferred => "history.edge-selection-inferred",
             Self::HistoricalFilletEdgeAmbiguous => "history.fillet-edge-ambiguous",
             Self::HistoricalBodyBoundsUnresolved => "history.body-bounds-unresolved",
+            Self::HistoricalSplitPlaneInferred => "history.split-plane-inferred",
             Self::HistoryDependencyAmbiguous => "history.dependency-ambiguous",
             Self::SketchRelationNativeRetained => "sketch.relation-native",
             Self::SketchDimensionNativeRetained => "sketch.dimension-native",
@@ -975,6 +983,7 @@ impl F3dLossCode {
             Self::FeatureProfileCutRegionsAssumed => "feature.profile-cut-regions-assumed",
             Self::FeatureProfileCapOutlineAssumed => "feature.profile-cap-outline-assumed",
             Self::FeatureProfileCapCarrierAssumed => "feature.profile-cap-carrier-assumed",
+            Self::FeatureProfileHoleBoundaryInferred => "feature.profile-hole-boundary-inferred",
             Self::FeaturePathSelectionNative => "feature.path-selection-native",
             Self::FeatureFaceSelectionNative => "feature.face-selection-native",
             Self::FeatureFaceSelectionActiveSubstituted => {
@@ -1241,6 +1250,7 @@ impl F3dLossCode {
             | Self::BodyRecipeSerializationFormAssumed
             | Self::HistoricalFilletEdgeAmbiguous
             | Self::HistoricalBodyBoundsUnresolved
+            | Self::HistoricalSplitPlaneInferred
             | Self::SketchRelationNativeRetained
             | Self::SketchDimensionNativeRetained
             | Self::SketchPlacementUnprojected
@@ -1270,6 +1280,7 @@ impl F3dLossCode {
             | Self::FeatureProfileCutRegionsAssumed
             | Self::FeatureProfileCapOutlineAssumed
             | Self::FeatureProfileCapCarrierAssumed
+            | Self::FeatureProfileHoleBoundaryInferred
             | Self::FeaturePathSelectionNative
             | Self::FeatureFaceSelectionNative
             | Self::FeatureFaceSelectionActiveSubstituted
@@ -1454,6 +1465,7 @@ impl F3dLossCode {
             | Self::BodyRecipeSerializationFormAssumed
             | Self::HistoricalFilletEdgeAmbiguous
             | Self::HistoricalBodyBoundsUnresolved
+            | Self::HistoricalSplitPlaneInferred
             | Self::SketchRelationNativeRetained
             | Self::SketchDimensionNativeRetained
             | Self::SketchPlacementUnprojected
@@ -1483,6 +1495,7 @@ impl F3dLossCode {
             | Self::FeatureProfileCutRegionsAssumed
             | Self::FeatureProfileCapOutlineAssumed
             | Self::FeatureProfileCapCarrierAssumed
+            | Self::FeatureProfileHoleBoundaryInferred
             | Self::FeaturePathSelectionNative
             | Self::FeatureFaceSelectionNative
             | Self::FeatureFaceSelectionActiveSubstituted
@@ -1762,6 +1775,7 @@ mod tests {
                 "history.edge-selection-inferred",
                 "history.fillet-edge-ambiguous",
                 "history.body-bounds-unresolved",
+                "history.split-plane-inferred",
                 "sketch.relation-native",
                 "sketch.dimension-native",
                 "sketch.placement-unprojected",
@@ -1792,6 +1806,7 @@ mod tests {
                 "feature.profile-cut-regions-assumed",
                 "feature.profile-cap-outline-assumed",
                 "feature.profile-cap-carrier-assumed",
+                "feature.profile-hole-boundary-inferred",
                 "feature.path-selection-native",
                 "feature.face-selection-native",
                 "feature.face-selection-active-substituted",

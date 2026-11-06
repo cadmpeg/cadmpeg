@@ -61,20 +61,25 @@ fn transition_profile_prefers_consistent_side_loops_and_combines_cap_boundaries(
         profiles: cadmpeg_ir::sketches::SketchProfiles::try_from(profiles).unwrap(),
         native_ref: None,
     };
-    let transition_selection =
+    let transition_selection_with_losses =
         |selections: Vec<Option<crate::design::profile_select::ResolvedProfileSelection>>| {
-            crate::test_support::with_decode_context(|decode_ctx| {
+            let work = crate::design::geometry::ProfileGeometryWork::new();
+            let result = crate::test_support::with_decode_context(|decode_ctx| {
                 crate::design::profile_select::transition_inserted_profile_selection(
                     &sketch,
                     &entities,
                     EPS_TRANSITION_PROFILE,
                     selections,
-                    &crate::design::geometry::ProfileGeometryWork::new(),
+                    &work,
                     decode_ctx,
                 )
             })
-            .unwrap()
+            .unwrap();
+            (result, work.losses())
         };
+    let transition_selection = |selections: Vec<
+        Option<crate::design::profile_select::ResolvedProfileSelection>,
+    >| { transition_selection_with_losses(selections).0 };
 
     assert_eq!(
         crate::design::profile_select::unique_resolved_selection([Some(3), Some(3), Some(3)]),
@@ -99,14 +104,25 @@ fn transition_profile_prefers_consistent_side_loops_and_combines_cap_boundaries(
     let region = crate::design::profile_select::ResolvedProfileSelection::Regions(vec![
         SketchProfileRegion::loops(0, vec![1]).unwrap(),
     ]);
+    let (resolved_outer_and_hole, outer_losses) = transition_selection_with_losses(vec![
+        Some(region.clone()),
+        Some(crate::design::profile_select::ResolvedProfileSelection::Loops(vec![1])),
+        Some(crate::design::profile_select::ResolvedProfileSelection::Loops(vec![0, 1])),
+    ]);
+    assert_eq!(resolved_outer_and_hole, Some(region.clone()));
+    assert!(outer_losses.is_empty());
+
+    let (resolved_hole_only, hole_losses) = transition_selection_with_losses(vec![
+        Some(region.clone()),
+        Some(crate::design::profile_select::ResolvedProfileSelection::Loops(vec![1])),
+    ]);
     assert_eq!(
-        transition_selection(vec![
-            Some(region.clone()),
-            Some(crate::design::profile_select::ResolvedProfileSelection::Loops(vec![1])),
-            Some(crate::design::profile_select::ResolvedProfileSelection::Loops(vec![0, 1])),
-        ]),
-        Some(region.clone())
+        resolved_hole_only,
+        Some(crate::design::profile_select::ResolvedProfileSelection::Loops(vec![1]))
     );
+    assert!(hole_losses.iter().any(|loss| {
+        loss.code == crate::loss::F3dLossCode::FeatureProfileHoleBoundaryInferred.kind()
+    }));
     assert_eq!(
         transition_selection(vec![
             Some(region.clone()),

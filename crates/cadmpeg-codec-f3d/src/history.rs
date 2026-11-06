@@ -1687,7 +1687,7 @@ pub(crate) fn bind_feature_outputs(
                 let solid_outputs = state_solid_outputs.get(&cur_key).map(Vec::as_slice);
                 let after_solid = state_solid_bodies.get(&cur_key)?;
                 let before_solid = state_solid_bodies.get(&prev_key).or(prev_feat_solid);
-                resolve_split_result_plane(&SplitResultPlaneContext {
+                let plane = resolve_split_result_plane(&SplitResultPlaneContext {
                     candidates,
                     centers,
                     vertices,
@@ -1695,7 +1695,14 @@ pub(crate) fn bind_feature_outputs(
                     before_solid,
                     after_solid,
                     targets,
-                })
+                })?;
+                losses.push(
+                    crate::loss::F3dLossCode::HistoricalSplitPlaneInferred.note(format!(
+                        "SplitBody feature {} assumes its split_plane from result faces and body geometry in state {state_id}",
+                        feature.id
+                    )),
+                );
+                Some(plane)
             })
         } else {
             None

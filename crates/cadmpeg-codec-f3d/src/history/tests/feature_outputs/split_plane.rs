@@ -404,9 +404,9 @@ fn split_plane_only_emitted_for_split_body() {
         None
     );
 
-    // With a resolved face tool, split_plane is emitted for SplitBody.
+    // With a resolved face tool, split_plane is emitted for SplitBody without inference loss.
     let mut feature_split = split_body_with_face_tool(&scope.id, &[10]);
-    bind_feature_outputs(
+    let face_tool_losses = bind_feature_outputs(
         std::slice::from_mut(&mut feature_split),
         std::slice::from_ref(&scope),
         &mut [history.clone()],
@@ -421,6 +421,9 @@ fn split_plane_only_emitted_for_split_body() {
             .get(&cadmpeg_core::nonblank_literal!("split_plane")),
         Some(&"1,2,3;0,0,1".to_string())
     );
+    assert!(face_tool_losses.iter().all(|loss| {
+        loss.code != crate::loss::F3dLossCode::HistoricalSplitPlaneInferred.kind()
+    }));
 
     // With a resolved DatumPlane feature tool, split_plane is emitted for SplitBody.
     let datum_id = FeatureId::mint("test:model:feature#datum").unwrap();
@@ -457,7 +460,7 @@ fn split_plane_only_emitted_for_split_body() {
             tool: SplitBodyTool::Plane { plane: datum_id },
         }));
     let mut features = [datum_feature, feature_datum_split];
-    bind_feature_outputs(
+    let datum_tool_losses = bind_feature_outputs(
         &mut features,
         std::slice::from_ref(&scope),
         &mut [history.clone()],
@@ -472,6 +475,9 @@ fn split_plane_only_emitted_for_split_body() {
             .get(&cadmpeg_core::nonblank_literal!("split_plane")),
         Some(&"4,5,6;0,1,0".to_string())
     );
+    assert!(datum_tool_losses.iter().all(|loss| {
+        loss.code != crate::loss::F3dLossCode::HistoricalSplitPlaneInferred.kind()
+    }));
 
     // Non-SplitBody operations do not emit split_plane.
     let mut feature_extrude = Feature {
@@ -668,7 +674,7 @@ fn split_plane_separates_body_centers_when_bodies_exist() {
         ],
     );
     let mut feature_split = split_body_test_feature(&scope.id);
-    bind_feature_outputs(
+    let sep_losses = bind_feature_outputs(
         std::slice::from_mut(&mut feature_split),
         std::slice::from_ref(&scope),
         &mut [history_sep],
@@ -683,6 +689,9 @@ fn split_plane_separates_body_centers_when_bodies_exist() {
             .get(&cadmpeg_core::nonblank_literal!("split_plane")),
         Some(&"0,0,1.5;0,0,1".to_string())
     );
+    assert!(sep_losses.iter().any(|loss| {
+        loss.code == crate::loss::F3dLossCode::HistoricalSplitPlaneInferred.kind()
+    }));
 
     let topo_non_separating = two_solid_boxes_with_planes(
         1,
@@ -708,7 +717,7 @@ fn split_plane_separates_body_centers_when_bodies_exist() {
         ],
     );
     let mut feature_split2 = split_body_test_feature(&scope.id);
-    bind_feature_outputs(
+    let non_sep_losses = bind_feature_outputs(
         std::slice::from_mut(&mut feature_split2),
         std::slice::from_ref(&scope),
         &mut [history_non_sep],
@@ -723,6 +732,9 @@ fn split_plane_separates_body_centers_when_bodies_exist() {
             .get(&cadmpeg_core::nonblank_literal!("split_plane")),
         None
     );
+    assert!(non_sep_losses.iter().all(|loss| {
+        loss.code != crate::loss::F3dLossCode::HistoricalSplitPlaneInferred.kind()
+    }));
 }
 
 #[test]

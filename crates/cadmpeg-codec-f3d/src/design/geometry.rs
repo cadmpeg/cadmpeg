@@ -60,6 +60,7 @@ pub(crate) struct ProfileGeometryWork {
     cap_outline_assumed_selections: Cell<usize>,
     cap_carrier_assumed: Cell<bool>,
     cap_carrier_assumed_selections: Cell<usize>,
+    hole_boundary_inferred_selections: Cell<usize>,
 }
 
 impl ProfileGeometryWork {
@@ -84,7 +85,21 @@ impl ProfileGeometryWork {
             cap_outline_assumed_selections: Cell::new(0),
             cap_carrier_assumed: Cell::new(false),
             cap_carrier_assumed_selections: Cell::new(0),
+            hole_boundary_inferred_selections: Cell::new(0),
         }
+    }
+
+    pub(crate) fn record_hole_boundary_profile_inferred(&self) {
+        self.hole_boundary_inferred_selections
+            .set(self.hole_boundary_inferred_selections.get() + 1);
+    }
+
+    pub(crate) fn hole_boundary_inferred_count(&self) -> usize {
+        self.hole_boundary_inferred_selections.get()
+    }
+
+    pub(crate) fn set_hole_boundary_inferred_count(&self, count: usize) {
+        self.hole_boundary_inferred_selections.set(count);
     }
 
     /// Close one profile selection. Count it against each cap that skipped a
@@ -193,6 +208,12 @@ impl ProfileGeometryWork {
         if cap_carrier != 0 {
             losses.push(F3dLossCode::FeatureProfileCapCarrierAssumed.note(format!(
                 "{cap_carrier} extrude profile selection(s) were read from an end cap with an edge whose carrier is not proven. The reading assumes, from the edge's end points and interior sample, that the edge is the straight line between its ends, or the circular arc through its ends and the sample."
+            )));
+        }
+        let hole_inferred = self.hole_boundary_inferred_selections.get();
+        if hole_inferred != 0 {
+            losses.push(F3dLossCode::FeatureProfileHoleBoundaryInferred.note(format!(
+                "{hole_inferred} extrude profile selection(s) assume that the supported hole boundary of an inserted region identifies the selected profile."
             )));
         }
         losses

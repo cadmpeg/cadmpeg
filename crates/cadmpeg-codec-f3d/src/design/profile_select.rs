@@ -756,6 +756,8 @@ pub(crate) fn bind_extrude_profile_selections(
                         }
                     }
                     if !matching_groups.is_empty() {
+                        let hole_inferred_before =
+                            scoped_resolution.profile_work.hole_boundary_inferred_count();
                         let mut selections = Vec::new();
                         for group in &matching_groups {
                             let selection = resolved_extrude_profile_selection(
@@ -826,6 +828,9 @@ pub(crate) fn bind_extrude_profile_selections(
                                 break 'feature_edit;
                             }
                         }
+                        scoped_resolution
+                            .profile_work
+                            .set_hole_boundary_inferred_count(hole_inferred_before);
                     }
                     if let Some(profiles) = explicit_profiles {
                         let sketch_id = sketch_id.clone();
@@ -843,6 +848,8 @@ pub(crate) fn bind_extrude_profile_selections(
                                 scope.history_state_id(),
                                 effective_previous_history_state_id,
                             ) {
+                                let hole_inferred_before =
+                                    scoped_resolution.profile_work.hole_boundary_inferred_count();
                                 if let Some(sel) = transition_profile_selection(
                                     sketch,
                                     scoped_resolution,
@@ -879,6 +886,9 @@ pub(crate) fn bind_extrude_profile_selections(
                                         break 'feature_edit;
                                     }
                                 }
+                                scoped_resolution
+                                    .profile_work
+                                    .set_hole_boundary_inferred_count(hole_inferred_before);
                             }
                         }
                         *profile = ProfileRef::Planar(
@@ -1768,6 +1778,7 @@ pub(in crate::design) fn resolve_historical_faces_to_sketch(
     }
 
     let mut best_match: Option<(f64, Option<f64>, &cadmpeg_ir::sketches::Sketch, Vec<u32>)> = None;
+    let mut best_match_hole_inferred = false;
     for candidate_sketch in sketches.iter().rev() {
         let Some((sk_origin, sk_normal, sk_u)) = candidate_sketch.resolved_placement() else {
             continue;
@@ -1908,7 +1919,9 @@ pub(in crate::design) fn resolve_historical_faces_to_sketch(
                 }
             }
         }
+        let mut candidate_hole_inferred = false;
         if matched_loops.is_empty() {
+            let before = resolution.profile_work.hole_boundary_inferred_count();
             if let Ok(Some(ResolvedProfileSelection::Loops(loops))) = transition_profile_selection(
                 candidate_sketch,
                 resolution,
@@ -1916,7 +1929,12 @@ pub(in crate::design) fn resolve_historical_faces_to_sketch(
                 previous_state_id,
             ) {
                 matched_loops = loops;
+                candidate_hole_inferred =
+                    resolution.profile_work.hole_boundary_inferred_count() > before;
             }
+            resolution
+                .profile_work
+                .set_hole_boundary_inferred_count(before);
         }
         if !matched_loops.is_empty() {
             matched_loops.sort_unstable();
@@ -1931,10 +1949,16 @@ pub(in crate::design) fn resolve_historical_faces_to_sketch(
                     candidate_sketch,
                     matched_loops,
                 ));
+                best_match_hole_inferred = candidate_hole_inferred;
             }
         }
     }
     if let Some((_, signed_plane_offset, candidate_sketch, matched_loops)) = best_match {
+        if best_match_hole_inferred {
+            resolution
+                .profile_work
+                .record_hole_boundary_profile_inferred();
+        }
         let prof_str = matched_loops
             .iter()
             .map(u32::to_string)
@@ -2146,20 +2170,28 @@ pub(in crate::design) fn transition_profile_selection(
     if chain.last().map(|(_, p)| *p) != Some(previous_state_id) {
         return Ok(None);
     }
+    let hole_inferred_before = resolution.profile_work.hole_boundary_inferred_count();
     let step_selections = chain
         .iter()
         .map(|(step_state, step_prev_id)| {
-            transition_profile_selection_step(
+            let before_step = resolution.profile_work.hole_boundary_inferred_count();
+            let sel = transition_profile_selection_step(
                 sketch,
                 resolution,
                 history,
                 step_state,
                 *step_prev_id,
-            )
+            )?;
+            let step_inferred =
+                resolution.profile_work.hole_boundary_inferred_count() > before_step;
+            resolution
+                .profile_work
+                .set_hole_boundary_inferred_count(before_step);
+            Ok((sel, step_inferred))
         })
-        .collect::<Result<Vec<_>, _>>()?;
+        .collect::<Result<Vec<_>, CodecError>>()?;
 
-    for (i, sel_opt) in step_selections.iter().enumerate() {
+    for (i, (sel_opt, step_inferred)) in step_selections.iter().enumerate() {
         let Some(sel) = sel_opt.as_ref() else {
             continue;
         };
@@ -2168,7 +2200,7 @@ pub(in crate::design) fn transition_profile_selection(
                 .iter()
                 .zip(&step_selections)
                 .enumerate()
-                .all(|(j, ((s, _), other_sel))| {
+                .all(|(j, ((s, _), (other_sel, _)))| {
                     if j == i || other_sel.as_ref() == Some(sel) {
                         true
                     } else if let Some(t) = s.transition.as_ref() {
@@ -2179,9 +2211,17 @@ pub(in crate::design) fn transition_profile_selection(
                     }
                 });
         if others_agree_or_preserve {
+            if *step_inferred {
+                resolution
+                    .profile_work
+                    .record_hole_boundary_profile_inferred();
+            }
             return Ok(Some(sel.clone()));
         }
     }
+    resolution
+        .profile_work
+        .set_hole_boundary_inferred_count(hole_inferred_before);
     Ok(None)
 }
 
@@ -2941,6 +2981,23 @@ pub(in crate::design) fn transition_inserted_profile_selection(
             return Ok(selections.into_iter().flatten().next());
         }
     }
+    let single_holed_region = {
+        let mut regions = selections
+            .iter()
+            .flatten()
+            .filter_map(|selection| match selection {
+                ResolvedProfileSelection::Regions(regions) => match regions.as_slice() {
+                    [SketchProfileRegion::Loops { loops }] if !loops.holes().is_empty() => {
+                        Some((loops.outer(), loops.holes()))
+                    }
+                    _ => None,
+                },
+                ResolvedProfileSelection::Loops(_) => None,
+            });
+        regions
+            .next()
+            .filter(|&first_reg| regions.all(|candidate| candidate == first_reg))
+    };
     let mut loop_selections = selections
         .iter()
         .flatten()
@@ -2949,7 +3006,25 @@ pub(in crate::design) fn transition_inserted_profile_selection(
             _ => None,
         });
     if let Some(first) = loop_selections.next() {
-        if loop_selections.all(|candidate| candidate == first) {
+        let defer_to_holed_region = single_holed_region.is_some_and(|(outer, holes)| {
+            selections
+                .iter()
+                .flatten()
+                .all(|selection| match selection {
+                    ResolvedProfileSelection::Regions(regions) => matches!(
+                        regions.as_slice(),
+                        [SketchProfileRegion::Loops { loops }]
+                            if loops.outer() == outer && loops.holes() == holes
+                    ),
+                    ResolvedProfileSelection::Loops(loops) => {
+                        !loops.is_empty()
+                            && loops
+                                .iter()
+                                .all(|profile| *profile == outer || holes.contains(profile))
+                    }
+                })
+        });
+        if !defer_to_holed_region && loop_selections.all(|candidate| candidate == first) {
             return Ok(selections.into_iter().flatten().find(|selection| {
                 matches!(selection, ResolvedProfileSelection::Loops(loops) if !loops.is_empty())
             }));
@@ -3050,6 +3125,7 @@ pub(in crate::design) fn transition_inserted_profile_selection(
     }
     if !has_outer_support {
         if !supported_holes.is_empty() {
+            profile_work.record_hole_boundary_profile_inferred();
             return Ok(Some(ResolvedProfileSelection::Loops(supported_holes)));
         }
         return Ok(None);
