@@ -6,6 +6,7 @@ mod authored_assembly;
 mod authored_binary_shape;
 mod authored_constraints;
 mod authored_drawing;
+mod authored_gui;
 mod authored_history;
 mod authored_operations;
 mod geometry_topology;
