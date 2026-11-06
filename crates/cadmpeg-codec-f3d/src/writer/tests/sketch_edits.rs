@@ -13,8 +13,8 @@
 
 use std::io::Cursor;
 
-use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder, SynthesisCause};
+use cadmpeg_ir::codec::{Codec, DecodeOptions};
 
 use crate::test_support::native_test::{f3d_native, update_f3d_native};
 use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
@@ -23,7 +23,9 @@ use crate::F3dCodec;
 
 #[test]
 fn generated_f3d_rewrites_native_sketch_point_coordinates() {
-    let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
+    let source = crate::test_support::zip_test::with_untyped_act(&f3d_with_smbh_and_protein(
+        &synthetic_geometry_smbh(),
+    ));
     let decoded = F3dCodec
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .expect("generated F3D decode");
@@ -227,7 +229,9 @@ fn generated_f3d_rewrites_native_sketch_constraint_mask() {
 
 #[test]
 fn generated_f3d_rewrites_native_sketch_nurbs_values() {
-    let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
+    let source = crate::test_support::zip_test::with_untyped_act(&f3d_with_smbh_and_protein(
+        &synthetic_geometry_smbh(),
+    ));
     let decoded = F3dCodec
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .expect("generated F3D decode");

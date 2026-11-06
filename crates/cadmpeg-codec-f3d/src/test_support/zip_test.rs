@@ -221,6 +221,28 @@ pub(crate) fn f3d_with_smbh_and_protein(smbh: &[u8]) -> Vec<u8> {
     f3d_with_smbh_and_protein_guids(smbh, &["11111111-2222-3333-4444-555555555555"])
 }
 
+pub(crate) fn with_untyped_act(bytes: &[u8]) -> Vec<u8> {
+    let mut input = zip::ZipArchive::new(Cursor::new(bytes)).unwrap();
+    let mut output = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let options = crate::zip_write::file_options(zip::CompressionMethod::Stored);
+    let (bulk, records) = generated_act_bulkstream();
+    let meta = generated_act_metastream(&records);
+    for index in 0..input.len() {
+        let mut entry = input.by_index(index).unwrap();
+        let name = entry.name().unwrap().into_owned();
+        let mut data = Vec::new();
+        std::io::Read::read_to_end(&mut entry, &mut data).unwrap();
+        if name == "FusionAssetName[Active]/FusionACTSegmentType1/BulkStream.dat" {
+            data.clone_from(&bulk);
+        } else if name == "FusionAssetName[Active]/FusionACTSegmentType1/MetaStream.dat" {
+            data.clone_from(&meta);
+        }
+        output.start_file(name, options).unwrap();
+        output.write_all(&data).unwrap();
+    }
+    output.finish().unwrap().into_inner()
+}
+
 /// An archive whose first protein asset keeps one flipped byte under a
 /// valid container, so that asset framing fails and the entry is given
 /// up as a `zip.entry` part while later assets still decode.
@@ -953,7 +975,12 @@ fn f3d_with_smbh_and_instance_properties_and_design_with_metastream_and_entries(
 ) -> Vec<u8> {
     let act = crate::test_support::act_stream_test::generated_single_entity_act_bulkstream();
     f3d_with_smbh_and_instance_properties_and_design_with_act(
-        smbh, properties, design_bulk, design_metastream, extra_entries, &act,
+        smbh,
+        properties,
+        design_bulk,
+        design_metastream,
+        extra_entries,
+        &act,
     )
 }
 

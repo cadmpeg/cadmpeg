@@ -317,7 +317,10 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
             .map(|field| field.value.as_str()),
         Some("Prism-002")
     );
-    assert_eq!(round_trip.ir().model.appearances[0].name.as_deref(), Some("Prism-002"));
+    assert_eq!(
+        round_trip.ir().model.appearances[0].name.as_deref(),
+        Some("Prism-002")
+    );
     assert_eq!(
         round_trip.ir().model.appearances[0]
             .physical_token
@@ -349,7 +352,9 @@ fn recipe_identity_overlapping_indexed_class_declines_patch() {
     use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder, SynthesisCause};
     use cadmpeg_ir::report::export::WritePath;
 
-    let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
+    let source = crate::test_support::zip_test::with_untyped_act(&f3d_with_smbh_and_protein(
+        &synthetic_geometry_smbh(),
+    ));
     let decoded = F3dCodec
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .unwrap();
@@ -406,7 +411,9 @@ fn recipe_identity_overlapping_indexed_class_declines_patch() {
 fn lost_edge_index_edit_declines_patch() {
     use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder, SynthesisCause};
     use cadmpeg_ir::report::export::WritePath;
-    let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
+    let source = crate::test_support::zip_test::with_untyped_act(&f3d_with_smbh_and_protein(
+        &synthetic_geometry_smbh(),
+    ));
     let decoded = F3dCodec
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .unwrap();
