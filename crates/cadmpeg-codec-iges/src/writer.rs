@@ -146,6 +146,7 @@ mod admission;
 mod brep_order;
 use brep_order::{brep_sense, edge_use_positions, edge_use_sense, pole_use_order};
 mod appearance;
+mod arc_curve;
 mod attributes;
 mod copious_curve;
 mod degrade;
@@ -642,10 +643,16 @@ fn synthesize_with_admission(
     let (admitted, admission_losses) = admission::edge_carriers(pcurves.as_ref())?;
     let (stripped, strip_losses) = admission::strip_unusable_face_topology(admitted.as_ref());
     let ir = stripped.as_ref().unwrap_or(admitted.as_ref());
-    let mut graph = match synthesis_graph(ctx, ir, version) {
-        Ok(graph) => graph,
-        Err(CodecError::UnsupportedContent(reason)) => degrade::graph(ctx, ir, version, &reason)?,
-        Err(error) => return Err(error.into()),
+    let mut graph = if degrade::has_dangling_body_region(ir) {
+        degrade::graph(ctx, ir, version, "a body references a missing region")?
+    } else {
+        match synthesis_graph(ctx, ir, version) {
+            Ok(graph) => graph,
+            Err(CodecError::UnsupportedContent(reason)) => {
+                degrade::graph(ctx, ir, version, &reason)?
+            }
+            Err(error) => return Err(error.into()),
+        }
     };
     let pcurves_adapted = !pcurve_losses.is_empty();
     graph.losses.extend(pole_losses);
@@ -711,6 +718,7 @@ fn synthesize_with_admission(
         .iter()
         .flat_map(|entity| entity.source_targets.iter())
         .collect::<BTreeSet<_>>();
+    copious_curve::clear_written_parameter_losses(ir, &graph.entities, &mut graph.losses);
     let mut emitted_procedurals = 0;
     for procedural in &ir.model.procedural_curves {
         let Some(owner) = ir.model.procedural_curve_owner(&procedural.id) else {
@@ -4560,19 +4568,27 @@ fn curve_on_surface_entity(
             EntityStatus::ParameterCurve,
         )?)
     };
+    let (source_targets, label, preference) = copious_curve::boundary_properties(
+        ir,
+        boundary,
+        pcurve_indices,
+        entities,
+        model_curve,
+        &parameter_curve,
+    );
     Ok(Entity {
         structure: None,
         property_links: Vec::new(),
         association_links: Vec::new(),
         line_font: None,
-        source_targets: Vec::new(),
+        source_targets,
         type_code: 142,
         form: 0,
-        label: String::new(),
+        label,
         status: EntityStatus::PhysicallyDependent,
         subscript: 0,
         parameter_body: format!(
-            "{CURVE_ON_SURFACE_CREATION_UNSPECIFIED},{},{},{},{CURVE_ON_SURFACE_PREFERENCE_MODEL_CURVE};",
+            "{CURVE_ON_SURFACE_CREATION_UNSPECIFIED},{},{},{},{preference};",
             reference_marker(surface_index),
             parameter_curve,
             reference_marker(model_curve)
@@ -5169,6 +5185,9 @@ fn pcurve_entity(ir: &CadIr, pcurve: &Pcurve) -> Result<Entity, CodecError> {
     let curve = nurbs
         .lift(|point| Point3::new(point.u, point.v, 0.0))
         .map_err(|error| CodecError::malformed(format_args!("pcurve {}: {error}", pcurve.id)))?;
+    if let Some(entity) = copious_curve::parameter_curve(ir, &pcurve, &curve, range) {
+        return Ok(entity);
+    }
     encode_nurbs(&curve, range, "PCURVE")
 }
 
@@ -6108,6 +6127,7 @@ fn append_free_point_entity(
             status
         },
     );
+    support_records::retain_point_parameters(ir, point, &mut entity);
     entity.source_targets.push(point.id.to_string());
     let index = entities.len();
     entities.push(entity);
@@ -7506,6 +7526,10 @@ impl CurveEntityEmitter<'_> {
                         oriented_curve_entity(geometry, span, Sense::Reversed, self.version)?
                     }
                 };
+                if sense == Sense::Forward {
+                    arc_curve::retain(self.ir, curve_id, geometry, span, &mut entity);
+                    native_records::numeric::retain_line(self.ir, curve_id, &mut entity);
+                }
                 entity.status = status;
                 let index = self.entities.len();
                 self.entities.push(entity);

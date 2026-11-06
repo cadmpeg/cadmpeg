@@ -54,3 +54,118 @@ fn enumeration_projects_selected_index_and_preserves_native_choices() {
         "an unexpected root Enum is not grammar metadata"
     );
 }
+
+#[test]
+fn empty_lists_project_as_empty_attributes_only_when_their_grammar_matches() {
+    for (kind, tag, key, held) in [
+        ("App::PropertyStringList", "StringList", "count", "0"),
+        (
+            "TechDraw::PropertyCenterLineList",
+            "CenterLineList",
+            "count",
+            "0",
+        ),
+        ("App::PropertyBoolList", "BoolList", "value", ""),
+    ] {
+        let mut property = PropertyRecord {
+            dynamic: None,
+            id: "source:empty".into(),
+            owner: "source:owner".into(),
+            name: "empty".into(),
+            type_name: kind.into(),
+            family: PropertyFamily::List,
+            status: None,
+            order: 0,
+            body: Some(PropertyBody::Persisted {
+                values: vec![ValueRecord {
+                    tag: tag.into(),
+                    parent: None,
+                    order: 0,
+                    attributes: BTreeMap::from([(key.into(), held.into())]),
+                    decoded_json: None,
+                    text: None,
+                }],
+                links: Vec::new(),
+                side_entries: Vec::new(),
+            }),
+        };
+        assert_eq!(values(&property), Some(Vec::new()));
+        if kind == "App::PropertyBoolList" {
+            let Some(PropertyBody::Persisted { values: rows, .. }) = &mut property.body else {
+                unreachable!()
+            };
+            rows[0].attributes.insert("value".into(), "01".into());
+            assert_eq!(
+                values(&property),
+                Some(vec![
+                    Some(AttributeValue::Boolean(false)),
+                    Some(AttributeValue::Boolean(true))
+                ])
+            );
+            let Some(PropertyBody::Persisted { values: rows, .. }) = &mut property.body else {
+                unreachable!()
+            };
+            rows[0].attributes.insert("value".into(), "2".into());
+            assert_eq!(values(&property), None);
+        }
+        property.type_name = "Vendor::Other".into();
+        assert_eq!(values(&property), None);
+    }
+}
+
+#[test]
+fn unconsumed_expression_engine_projects_each_authored_expression() {
+    let row = |tag: &str, parent, attributes: &[(&str, &str)]| ValueRecord {
+        tag: tag.into(),
+        parent,
+        order: usize::from(parent.is_some()),
+        attributes: attributes
+            .iter()
+            .map(|(k, v)| ((*k).into(), (*v).into()))
+            .collect(),
+        decoded_json: None,
+        text: None,
+    };
+    let mut property = PropertyRecord {
+        dynamic: None,
+        id: "source:engine".into(),
+        owner: "source:owner".into(),
+        name: "ExpressionEngine".into(),
+        type_name: "App::PropertyExpressionEngine".into(),
+        family: PropertyFamily::Expression,
+        status: None,
+        order: 0,
+        body: Some(PropertyBody::Persisted {
+            values: vec![
+                row("ExpressionEngine", None, &[("count", "1")]),
+                row(
+                    "Expression",
+                    Some(0),
+                    &[
+                        ("path", "Length"),
+                        ("expression", "Sheet.Width * 2"),
+                        ("comment", "note"),
+                    ],
+                ),
+            ],
+            links: Vec::new(),
+            side_entries: Vec::new(),
+        }),
+    };
+    let Some(Some(AttributeValue::Expression(expression))) =
+        values(&property).and_then(|mut rows| rows.pop())
+    else {
+        panic!("expression row must project")
+    };
+    assert_eq!(expression.path, "Length");
+    assert_eq!(
+        expression.expression,
+        cadmpeg_ir::features::Expression::text("Sheet.Width * 2")
+    );
+    assert_eq!(expression.comment.as_deref(), Some("note"));
+    let Some(PropertyBody::Persisted { values: rows, .. }) = &mut property.body else {
+        unreachable!()
+    };
+    rows[0].attributes.insert("count".into(), "2".into());
+    assert_eq!(values(&property), None);
+}

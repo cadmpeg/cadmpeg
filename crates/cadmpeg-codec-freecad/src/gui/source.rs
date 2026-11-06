@@ -35,9 +35,11 @@ pub(crate) fn parse<'a>(
         ctx,
         parts,
         source,
-        "GuiDocument.xml",
-        "recover FreeCAD GUI elements",
-        "FreeCAD XML tree",
+        crate::xml_recovery::XmlSource {
+            member: "GuiDocument.xml",
+            scan_operation: "recover FreeCAD GUI elements",
+            parse_operation: "FreeCAD XML tree",
+        },
         &|name, ancestors| {
             if name == b"ViewProvider" {
                 part("freecad.gui_view_provider")
@@ -67,6 +69,37 @@ pub(crate) fn parse<'a>(
 }
 
 impl<'a> Source<'a> {
+    /// Classify failed GUI side members from their declared references.
+    pub(crate) fn mark_failed_members(
+        &self,
+        failed: &std::collections::BTreeMap<String, Vec<cadmpeg_ir::ids::UnknownId>>,
+        classes: &mut std::collections::BTreeMap<String, cadmpeg_ir::ArenaClasses>,
+    ) {
+        let Parsed::Admitted(xml) = &self.parsed else {
+            return;
+        };
+        for node in xml.descendants().filter(roxmltree::Node::is_element) {
+            if node
+                .ancestors()
+                .find(|ancestor| ancestor.has_tag_name("Property"))
+                .and_then(|property| property.attribute("type"))
+                .is_some_and(crate::persistence::is_xlink_type)
+            {
+                continue;
+            }
+            if let Some(name) = node
+                .attribute("file")
+                .or_else(|| node.attribute("File"))
+                .filter(|name| failed.contains_key(*name))
+            {
+                classes
+                    .entry(name.to_owned())
+                    .or_default()
+                    .insert(cadmpeg_ir::ArenaClass::Model);
+            }
+        }
+    }
+
     /// Consume the same DOM after the application objects and topology exist.
     pub(crate) fn transfer(
         self,

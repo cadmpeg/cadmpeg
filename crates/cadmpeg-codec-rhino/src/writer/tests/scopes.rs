@@ -1047,29 +1047,18 @@ fn reversed_trimmed_line_pcurve_keeps_its_basis_parametrization() {
     );
 }
 
-
 #[test]
 fn traversal_broken_loop_is_pruned_with_a_loss() {
     use super::super::scopes::prune_open_loops;
-    use cadmpeg_ir::topology::{Coedge, Edge, EdgeCarrier, Loop, LoopBoundary, LoopRing, Sense};
     use cadmpeg_ir::ids::{CoedgeId, EdgeId, FaceId, LoopId, VertexId};
+    use cadmpeg_ir::topology::{Coedge, Edge, EdgeCarrier, Loop, LoopBoundary, LoopRing, Sense};
     use cadmpeg_ir::CadIr;
     let mut ir = CadIr::empty();
-    let vertex = |id: &str| -> VertexId {
-        id.try_into().expect("identity grammar")
-    };
-    let edge_id = |id: &str| -> EdgeId {
-        id.try_into().expect("identity grammar")
-    };
-    let coedge_id = |id: &str| -> CoedgeId {
-        id.try_into().expect("identity grammar")
-    };
-    let loop_id = |id: &str| -> LoopId {
-        id.try_into().expect("identity grammar")
-    };
-    let face_id = |id: &str| -> FaceId {
-        id.try_into().expect("identity grammar")
-    };
+    let vertex = |id: &str| -> VertexId { id.try_into().expect("identity grammar") };
+    let edge_id = |id: &str| -> EdgeId { id.try_into().expect("identity grammar") };
+    let coedge_id = |id: &str| -> CoedgeId { id.try_into().expect("identity grammar") };
+    let loop_id = |id: &str| -> LoopId { id.try_into().expect("identity grammar") };
+    let face_id = |id: &str| -> FaceId { id.try_into().expect("identity grammar") };
     // A closed two-coedge ring stays.
     ir.model.edges.push(Edge {
         native_ref: None,
@@ -1088,8 +1077,16 @@ fn traversal_broken_loop_is_pruned_with_a_loss() {
         tolerance: None,
     });
     for (id, edge, sense) in [
-        ("cadir:model:coedge#closed.0", "cadir:model:edge#closed", Sense::Forward),
-        ("cadir:model:coedge#closed.1", "cadir:model:edge#closed-back", Sense::Forward),
+        (
+            "cadir:model:coedge#closed.0",
+            "cadir:model:edge#closed",
+            Sense::Forward,
+        ),
+        (
+            "cadir:model:coedge#closed.1",
+            "cadir:model:edge#closed-back",
+            Sense::Forward,
+        ),
     ] {
         ir.model.coedges.push(Coedge {
             native_ref: None,
@@ -1145,12 +1142,9 @@ fn traversal_broken_loop_is_pruned_with_a_loss() {
         ),
     });
     let mut losses = Vec::new();
-    prune_open_loops(
-        &mut ir,
-        &mut |arena: &str, id: &str, reason: String| {
-            losses.push(format!("{arena} {id} {reason}"));
-        },
-    );
+    prune_open_loops(&mut ir, &mut |arena: &str, id: &str, reason: String| {
+        losses.push(format!("{arena} {id} {reason}"));
+    });
     assert!(
         ir.model
             .loops
@@ -1182,9 +1176,21 @@ fn orphaned_edge_is_pruned_with_a_loss_while_used_and_wire_edges_stay() {
     let mut ir = CadIr::empty();
     let edge_id = |id: &str| -> EdgeId { id.try_into().expect("identity grammar") };
     for (id, start, end) in [
-        ("cadir:model:edge#used", "cadir:model:vertex#a", "cadir:model:vertex#b"),
-        ("cadir:model:edge#orphan", "cadir:model:vertex#c", "cadir:model:vertex#d"),
-        ("cadir:model:edge#wire", "cadir:model:vertex#e", "cadir:model:vertex#f"),
+        (
+            "cadir:model:edge#used",
+            "cadir:model:vertex#a",
+            "cadir:model:vertex#b",
+        ),
+        (
+            "cadir:model:edge#orphan",
+            "cadir:model:vertex#c",
+            "cadir:model:vertex#d",
+        ),
+        (
+            "cadir:model:edge#wire",
+            "cadir:model:vertex#e",
+            "cadir:model:vertex#f",
+        ),
     ] {
         ir.model.edges.push(Edge {
             native_ref: None,
@@ -1215,19 +1221,30 @@ fn orphaned_edge_is_pruned_with_a_loss_while_used_and_wire_edges_stay() {
         losses.push(format!("{arena} {id} {reason}"));
     });
     assert!(
-        ir.model.edges.iter().any(|row| row.id.as_str() == "cadir:model:edge#used"),
+        ir.model
+            .edges
+            .iter()
+            .any(|row| row.id.as_str() == "cadir:model:edge#used"),
         "a used edge stays"
     );
     assert!(
-        ir.model.edges.iter().any(|row| row.id.as_str() == "cadir:model:edge#wire"),
+        ir.model
+            .edges
+            .iter()
+            .any(|row| row.id.as_str() == "cadir:model:edge#wire"),
         "a wire edge stays"
     );
     assert!(
-        ir.model.edges.iter().all(|row| row.id.as_str() != "cadir:model:edge#orphan"),
+        ir.model
+            .edges
+            .iter()
+            .all(|row| row.id.as_str() != "cadir:model:edge#orphan"),
         "an orphaned edge is pruned"
     );
     assert!(
-        losses.iter().any(|loss| loss.contains("cadir:model:edge#orphan")),
+        losses
+            .iter()
+            .any(|loss| loss.contains("cadir:model:edge#orphan")),
         "{losses:?}"
     );
 }

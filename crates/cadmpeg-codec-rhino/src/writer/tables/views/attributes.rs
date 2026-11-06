@@ -4,7 +4,7 @@
 use super::super::super::WriteError;
 use super::{
     anonymous, crc_chunk_with_direct, flag, integer, object, scalar, text, utf16, vector,
-    wire_index, CodecError, Map, Value,
+    wire_index, Map, Value,
 };
 
 fn optional_real(fields: &Map<String, Value>, name: &str, output: &mut Vec<u8>) {
@@ -189,7 +189,7 @@ pub(super) fn encode(
         );
     }
     let ranges = crate::chunks::direct_checksum_ranges(&(0..body.len()), &children)
-        .map_err(|error| WriteError::Fail(CodecError::malformed(error)))?;
+        .map_err(|error| WriteError::Omit(error.to_string()))?;
     let direct = (&ranges)
         .into_iter()
         .flat_map(|range| body[range].iter().copied())

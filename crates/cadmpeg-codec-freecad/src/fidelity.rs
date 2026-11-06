@@ -61,23 +61,34 @@ pub(crate) fn evidence(
         .map_err(CodecError::malformed)
 }
 
+/// Content with no admitted value grammar remains source-only.
+pub(crate) fn opaque_property_payload(property: &crate::native::PropertyRecord) -> bool {
+    crate::persistence::opaque_python_payload(property)
+        || (matches!(
+            property.body,
+            Some(crate::native::PropertyBody::Persisted { .. })
+        ) && property.family == crate::native::PropertyFamily::Unknown
+            && !crate::attributes::stays_native(property)
+            && crate::attributes::values(property).is_none())
+}
+
 pub(crate) fn property(
     ctx: &crate::property_reader::PropertyReader<'_, '_>,
     fidelity: &mut SourceFidelity,
     property: &crate::native::PropertyRecord,
     objects: &[crate::native::ObjectRecord],
-) -> Result<Option<cadmpeg_ir::ArenaClass>, CodecError> {
+) -> Result<(), CodecError> {
     if property.body.is_none() {
-        return Ok(None);
+        return Ok(());
     }
-    let opaque = crate::persistence::opaque_python_payload(property);
+    let opaque = opaque_property_payload(property);
     let mut classes = ArenaClasses::new();
     let class = if property.type_name == "Part::PropertyPartShape" {
         cadmpeg_ir::ArenaClass::Model
     } else if property.owner == crate::native::native_id("document", "0")
         || objects.iter().any(|object| {
             object.id().as_str() == property.owner
-                && crate::design::is_design_kind(&object.type_name)
+                && crate::design::is_design_object(&object.type_name)
         })
     {
         cadmpeg_ir::ArenaClass::Design
@@ -100,7 +111,7 @@ pub(crate) fn property(
             classes,
         )?;
     }
-    Ok(opaque.then_some(class))
+    Ok(())
 }
 
 /// Mark `class` untyped on the record `id` retained, or on the archive image
@@ -121,7 +132,7 @@ pub(crate) fn mark_untyped(
 }
 
 /// The classes a failed property value can hold. Document properties and
-/// VarSet controls can project to model attributes as well as design records.
+/// `VarSet` controls can project to model attributes as well as design records.
 pub(crate) fn property_value_classes(
     objects: &[crate::native::ObjectRecord],
     owner: &str,
@@ -138,7 +149,7 @@ pub(crate) fn property_value_classes(
         .iter()
         .find(|object| object.id().as_str() == owner)
         .map(|object| {
-            if crate::design::is_design_kind(&object.type_name) {
+            if crate::design::is_design_object(&object.type_name) {
                 ArenaClasses::from([ArenaClass::Design])
             } else if object.type_name == "App::VarSet" {
                 ArenaClasses::from([ArenaClass::Model, ArenaClass::Design])
@@ -160,7 +171,7 @@ pub(crate) fn property_class(
     } else if property.owner == crate::native::native_id("document", "0")
         || objects.iter().any(|object| {
             object.id().as_str() == property.owner
-                && crate::design::is_design_kind(&object.type_name)
+                && crate::design::is_design_object(&object.type_name)
         })
     {
         ArenaClass::Design
@@ -190,7 +201,7 @@ pub(crate) fn property_source(node: roxmltree::Node<'_, '_>) -> ValueSourceRange
     let mut values = node.children().filter(roxmltree::Node::is_element);
     let value = values.next().map(|first| {
         let start = first.range().start;
-        let end = values.last().unwrap_or(first).range().end;
+        let end = values.next_back().unwrap_or(first).range().end;
         start..end
     });
     ValueSourceRanges {

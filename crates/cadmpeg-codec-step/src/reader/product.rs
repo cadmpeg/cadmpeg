@@ -28,6 +28,11 @@ use super::StageOutcome;
 
 mod bodies;
 
+enum ChildPrototype {
+    Local(ProductDefinitionId),
+    External(ExternalPrototype, UsedAsset),
+}
+
 /// Occurrences that product expansion may add to the model. Expansion stops
 /// at the limit and reports one loss.
 const MAX_OCCURRENCES: usize = 100_000;
@@ -180,11 +185,6 @@ fn join_product_references(ids: impl IntoIterator<Item = u64>) -> String {
         .map(|id| format!("#{id}"))
         .collect::<Vec<_>>()
         .join(", ")
-}
-
-enum ChildPrototype {
-    Local(ProductDefinitionId),
-    External(ExternalPrototype, UsedAsset),
 }
 
 pub(super) fn decode(

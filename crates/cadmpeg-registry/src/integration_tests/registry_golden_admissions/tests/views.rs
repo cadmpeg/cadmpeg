@@ -216,6 +216,11 @@ fn real_decode_and_inspect_damaged_fixtures_are_valid_views() {
             .unwrap_or_else(|error| panic!("cannot read {}: {error}", path.display()));
         let value: serde_json::Value = serde_json::from_slice(&bytes)
             .unwrap_or_else(|error| panic!("cannot parse {}: {error}", path.display()));
-        assert_eq!(validate(&value, &registry), Ok(layer_sets), "{}", path.display());
+        assert_eq!(
+            validate(&value, &registry),
+            Ok(layer_sets),
+            "{}",
+            path.display()
+        );
     }
 }

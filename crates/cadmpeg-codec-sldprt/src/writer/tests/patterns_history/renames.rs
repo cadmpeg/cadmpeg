@@ -30,9 +30,11 @@ fn feature_input_rename_reports_utf16_capacity() {
     )
     .unwrap_err()
     .into();
-    assert!(matches!(error, cadmpeg_ir::codec::write::EncodeError::TargetCapacity {
+    assert!(
+        matches!(error, cadmpeg_ir::codec::write::EncodeError::TargetCapacity {
         field, limit: 65_535, value: 65_536
-    } if field.field == "feature_input.name_length"));
+    } if field.field == "feature_input.name_length")
+    );
 }
 
 #[test]

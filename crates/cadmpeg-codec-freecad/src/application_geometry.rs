@@ -634,6 +634,7 @@ pub(crate) mod tests {
             )
             .expect("application geometry");
         assert_eq!(result.ir().model.tessellations.len(), 1);
+        assert!(result.ir().model.features.is_empty());
         let mesh = &result.ir().model.tessellations[0];
         assert_eq!(mesh.triangles(), [[0, 1, 2]]);
         assert_eq!(

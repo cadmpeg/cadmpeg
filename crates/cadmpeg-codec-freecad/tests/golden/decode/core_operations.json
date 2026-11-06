@@ -46500,7 +46500,7 @@
       "__arena_sha256": {
         "fcstd": {
           "annotations": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-          "applications": "e28e7ce18e37a8d9dbdfc62bec39338a2cc1e817f64f05734de73e98de345593",
+          "applications": "8e75664892c7c4b85520b39a3357abb00f6575829c2f7c50e5608ded238af9c8",
           "carrier_census": "466b31dca1f5b06255772124a515911fff621a125581541b1fc9df9758528a3c",
           "design_census": "cc1eb00388e220377cdaf0f67e7a0a89f209c86eff1c685b3d883ba2ca8407f0",
           "document": "4957b9e1a0b0a6f69e08efc28381f177685047658ba846d3d129c54a33b7d8c6",
@@ -50080,6 +50080,26 @@
         },
         "message": "opaque payload Edges1 survives only as source bytes; its Design content has no typed representation",
         "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "source.design-payload-unrepresented",
+          "kind": "record_not_typed",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "opaque payload inline property fcstd:native:property#PartChamfer:Edges survives only as source bytes; its Design content has no typed representation",
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "source.design-payload-unrepresented",
+          "kind": "record_not_typed",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "opaque payload inline property fcstd:native:property#PartFillet:Edges survives only as source bytes; its Design content has no typed representation",
+        "severity": "warning"
       }
     ],
     "notes": [
@@ -50122,6 +50142,30 @@
         },
         "offset": 0,
         "stream": "Edges1",
+        "untyped": [
+          "design"
+        ]
+      },
+      "fcstd:native:property#PartChamfer:Edges": {
+        "bytes": {
+          "byte_len": 133,
+          "retention": "digest",
+          "sha256": "2eb731d1158db562a38dbd81e39f559e645cf532d7f8a5ad79c5c294633ccf8c"
+        },
+        "offset": 51776,
+        "stream": "Document.xml",
+        "untyped": [
+          "design"
+        ]
+      },
+      "fcstd:native:property#PartFillet:Edges": {
+        "bytes": {
+          "byte_len": 132,
+          "retention": "digest",
+          "sha256": "ed40e17123f31cf7947cde006744dcccef69b236cf1519978f144d1a54502a60"
+        },
+        "offset": 47583,
+        "stream": "Document.xml",
         "untyped": [
           "design"
         ]

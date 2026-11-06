@@ -26,7 +26,8 @@ pub(crate) fn plan_fixture_with_native_envelope(
     input: EncodeInput<'_>,
     request: TargetRequest<'_>,
 ) -> Result<cadmpeg_ir::codec::write::ExportPlan, EncodeError> {
-    let (ir, fidelity) = fixture_native_envelope_context(input).expect("valid fixture native envelope");
+    let (ir, fidelity) =
+        fixture_native_envelope_context(input).expect("valid fixture native envelope");
     SldprtCodec.plan(EncodeInput::new(&ir, Some(&fidelity)), request)
 }
 

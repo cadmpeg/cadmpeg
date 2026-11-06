@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Neutral ownership of properties not consumed by a typed operation.
 
-use crate::loss::FreecadLossCode;
 use crate::native::{ObjectRecord, PropertyBody, PropertyRecord, ValueRecord};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
 use cadmpeg_ir::features::FeatureOperation;
 use cadmpeg_ir::ids::AttributeId;
-use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::CadIr;
 
 /// Attributes belong to Model even when their target is a typed design object.
@@ -282,11 +280,10 @@ fn json_tree(value: &serde_json::Value) -> Option<cadmpeg_ir::attributes::Attrib
             if let Some(value) = value.as_i64() {
                 Some(AttributeJson::Integer(value))
             } else if let Some(value) = value.as_u64() {
-                if value > i64::MAX as u64 {
-                    Some(AttributeJson::Unsigned(value))
-                } else {
-                    Some(AttributeJson::Integer(value as i64))
-                }
+                Some(
+                    i64::try_from(value)
+                        .map_or(AttributeJson::Unsigned(value), AttributeJson::Integer),
+                )
             } else if let Some(value) = value.as_f64() {
                 cadmpeg_ir::scalar::FiniteReal::new(value).map(AttributeJson::Float)
             } else {
@@ -359,15 +356,90 @@ pub(crate) fn values(property: &PropertyRecord) -> Option<Vec<Option<AttributeVa
     if property.type_name == "App::PropertyMap" {
         return map_values(values);
     }
+    if property.type_name == "App::PropertyExpressionEngine" {
+        let (root, rows) = values.split_first()?;
+        if root.tag != "ExpressionEngine" || root.parent.is_some() {
+            return None;
+        }
+        let count = root.attributes.get("count")?.parse::<usize>().ok()?;
+        if count != rows.len() {
+            return None;
+        }
+        return rows
+            .iter()
+            .map(|row| {
+                if row.tag != "Expression" || row.parent != Some(0) {
+                    return None;
+                }
+                Some(Some(AttributeValue::Expression(
+                    cadmpeg_ir::attributes::AttributeExpression {
+                        path: row.attributes.get("path")?.clone(),
+                        expression: cadmpeg_ir::features::Expression::text(
+                            row.attributes.get("expression")?.clone(),
+                        ),
+                        comment: row.attributes.get("comment").cloned(),
+                    },
+                )))
+            })
+            .collect();
+    }
+    if let [value] = values.as_slice() {
+        if value.parent.is_none() {
+            let keys: Vec<String> = match (property.type_name.as_str(), value.tag.as_str()) {
+                ("App::PropertyRotation", "PropertyRotation") => ["A", "Ox", "Oy", "Oz"]
+                    .into_iter()
+                    .map(str::to_owned)
+                    .collect(),
+                ("App::PropertyMatrix", "PropertyMatrix") => (1..=4)
+                    .flat_map(|row| (1..=4).map(move |column| format!("a{row}{column}")))
+                    .collect(),
+                _ => Vec::new(),
+            };
+            if !keys.is_empty() {
+                let components = keys
+                    .iter()
+                    .map(|key| value.attributes.get(key)?.parse::<f64>().ok())
+                    .collect::<Option<Vec<_>>>()?;
+                return Some(vec![Some(AttributeValue::vector(components)?)]);
+            }
+        }
+        if property.type_name == "App::PropertyBoolList"
+            && value.tag == "BoolList"
+            && value.parent.is_none()
+        {
+            let encoded = value.attributes.get("value")?;
+            return encoded
+                .bytes()
+                .map(|bit| match bit {
+                    b'0' => Some(Some(AttributeValue::Boolean(false))),
+                    b'1' => Some(Some(AttributeValue::Boolean(true))),
+                    _ => None,
+                })
+                .collect();
+        }
+        let empty_count = value
+            .attributes
+            .get("count")
+            .is_some_and(|count| count == "0")
+            && matches!(
+                (property.type_name.as_str(), value.tag.as_str()),
+                ("App::PropertyStringList", "StringList")
+                    | ("TechDraw::PropertyCenterLineList", "CenterLineList")
+                    | ("TechDraw::PropertyCosmeticEdgeList", "CosmeticEdgeList")
+                    | ("TechDraw::PropertyCosmeticVertexList", "CosmeticVertexList")
+                    | ("TechDraw::PropertyGeomFormatList", "GeomFormatList")
+            );
+        if value.parent.is_none() && empty_count {
+            return Some(Vec::new());
+        }
+    }
     let mut projected = Vec::new();
     for value in values {
         let attributes = &value.attributes;
         if let Some(decoded) = value.decoded_json.as_ref() {
             // A decoded JSON-mode Python value projects as a typed JSON
             // tree; an undecodable one stays native without an attribute.
-            let Some(tree) = json_tree(&decoded.value) else {
-                return None;
-            };
+            let tree = json_tree(&decoded.value)?;
             projected.push(AttributeValue::Json(tree));
             continue;
         }
@@ -385,7 +457,9 @@ pub(crate) fn values(property: &PropertyRecord) -> Option<Vec<Option<AttributeVa
         }
         let scalar = attributes.get("value").or_else(|| attributes.get("Value"));
         let item = match value.tag.as_str() {
-            "String" | "Unicode" | "Uuid" => {
+            "String" | "Unicode" | "Uuid" | "Path"
+                if value.tag != "Path" || property.type_name == "App::PropertyPath" =>
+            {
                 scalar.map(|value| AttributeValue::String(value.clone()))
             }
             "PropertyColor" => scalar
@@ -453,6 +527,92 @@ pub(crate) fn values(property: &PropertyRecord) -> Option<Vec<Option<AttributeVa
         return None;
     }
     Some(projected.into_iter().map(Some).collect())
+}
+
+/// Decode an embedded vector-list member into ordered neutral vectors.
+fn binary_vector_values(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    property: &PropertyRecord,
+    sources: Option<&std::collections::BTreeMap<String, cadmpeg_core::decode::View<'_>>>,
+) -> Result<Option<Vec<Option<AttributeValue>>>, CodecError> {
+    if property.type_name == "App::PropertyFloatList" {
+        let [root] = property.values() else {
+            return Ok(None);
+        };
+        if root.tag != "FloatList" || root.parent.is_some() {
+            return Ok(None);
+        }
+        if root.attributes.get("file").is_some_and(String::is_empty)
+            && property.side_entries().is_empty()
+        {
+            return Ok(Some(Vec::new()));
+        }
+        let [source_name] = property.side_entries() else {
+            return Ok(None);
+        };
+        let Some(mut view) = sources
+            .and_then(|sources| sources.get(source_name))
+            .copied()
+        else {
+            return Ok(None);
+        };
+        let Some(count) = view.u32_le().and_then(|n| usize::try_from(n).ok()) else {
+            return Ok(None);
+        };
+        if view
+            .counted(cadmpeg_core::decode::u64_from_index(count), 8)
+            .is_none()
+        {
+            return Ok(None);
+        }
+        let mut result = Vec::new();
+        ctx.reserve_working(&mut result, count, "FreeCAD float-list attributes")?;
+        for _ in 0..count {
+            let Some(value) = view.f64_le().and_then(AttributeValue::float) else {
+                return Ok(None);
+            };
+            result.push(Some(value));
+        }
+        return Ok(view.is_empty().then_some(result));
+    }
+    if property.type_name != "App::PropertyVectorList" {
+        return Ok(None);
+    }
+    let [source_name] = property.side_entries() else {
+        return Ok(None);
+    };
+    let [root] = property.values() else {
+        return Ok(None);
+    };
+    if root.tag != "VectorList" || root.parent.is_some() {
+        return Ok(None);
+    }
+    let Some(view) = sources
+        .and_then(|sources| sources.get(source_name))
+        .copied()
+    else {
+        return Ok(None);
+    };
+    let Ok(positions) = crate::numeric_list::list_layout::<3>(view, "VectorList") else {
+        return Ok(None);
+    };
+    let mut values = Vec::new();
+    ctx.reserve_working(
+        &mut values,
+        positions.len(),
+        "FreeCAD vector-list attributes",
+    )?;
+    for position in positions {
+        let [x, y, z] = position.map(crate::numeric_list::read_real);
+        let (Ok(x), Ok(y), Ok(z)) = (x, y, z) else {
+            return Ok(None);
+        };
+        let Some(vector) = AttributeValue::vector([x, y, z]) else {
+            return Ok(None);
+        };
+        values.push(Some(vector));
+    }
+    Ok(Some(values))
 }
 
 /// Canonical semantic text for legacy string-valued parameter maps. This is
@@ -527,8 +687,8 @@ pub(crate) fn transfer(
     ir: &mut CadIr,
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
-) -> Result<Vec<LossNote>, CodecError> {
-    transfer_impl(ctx, ir, objects, properties, None)
+) -> Result<(), CodecError> {
+    transfer_impl(ctx, ir, objects, properties, None, None)
 }
 
 pub(crate) fn transfer_with_document_properties(
@@ -537,11 +697,9 @@ pub(crate) fn transfer_with_document_properties(
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
     strings: Option<&crate::persistence::document_properties::RootProperties>,
-) -> Result<Vec<LossNote>, CodecError> {
-    if strings.is_none() {
-        return transfer(ctx, ir, objects, properties);
-    }
-    transfer_impl(ctx, ir, objects, properties, strings)
+    sources: &std::collections::BTreeMap<String, cadmpeg_core::decode::View<'_>>,
+) -> Result<(), CodecError> {
+    transfer_impl(ctx, ir, objects, properties, strings, Some(sources))
 }
 
 fn transfer_impl(
@@ -550,9 +708,9 @@ fn transfer_impl(
     objects: &[ObjectRecord],
     properties: &[PropertyRecord],
     strings: Option<&crate::persistence::document_properties::RootProperties>,
-) -> Result<Vec<LossNote>, CodecError> {
+    sources: Option<&std::collections::BTreeMap<String, cadmpeg_core::decode::View<'_>>>,
+) -> Result<(), CodecError> {
     let mut attributes = Vec::new();
-    let mut losses = Vec::new();
     for property in properties {
         if strings.is_some_and(|strings| strings.sources.contains_key(&property.id)) {
             continue;
@@ -574,7 +732,11 @@ fn transfer_impl(
         if stays_native(property) {
             continue;
         }
-        if let Some(values) = values(property) {
+        let projected = match values(property) {
+            Some(values) => Some(values),
+            None => binary_vector_values(ctx, property, sources)?,
+        };
+        if let Some(values) = projected {
             let Some(target) = target(ir, &property.owner) else {
                 continue;
             };
@@ -591,12 +753,10 @@ fn transfer_impl(
                 property.name.clone(),
                 values,
             )?);
-        } else {
-            losses.push(FreecadLossCode::AttributePropertyUnprojected.note(format!("property {} ({}) has no neutral attribute encoding; its admitted typed native values remain held",property.id,property.type_name)));
         }
     }
     ir.model.attributes.extend(attributes);
-    Ok(losses)
+    Ok(())
 }
 
 #[cfg(test)]
