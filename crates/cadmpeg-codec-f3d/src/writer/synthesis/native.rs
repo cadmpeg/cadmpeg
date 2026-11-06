@@ -198,24 +198,6 @@ pub(super) fn reconcile(
     native
         .design_types
         .sort_by(|left, right| left.id().cmp(right.id()));
-    native.construction_recipes.retain(|recipe| {
-        recipe.record_index.is_some()
-            && recipe.design.as_ref().is_none_or(|design| {
-                design.id.value.len() == 3
-                    && design.id.value.bytes().all(|byte| byte.is_ascii_digit())
-            })
-    });
-    let mut recipe_ordinals = std::collections::HashMap::new();
-    for recipe in &mut native.construction_recipes {
-        let ordinal = recipe_ordinals
-            .entry((
-                recipe.kind,
-                recipe.design.as_ref().map(|design| design.id.value.clone()),
-            ))
-            .or_insert(0);
-        recipe.recipe_index = *ordinal;
-        *ordinal += 1;
-    }
     // The sort above reorders the type table the retained dynamic class tags
     // name. Point every retained sketch record at the position of the type
     // that registers it; a record no remaining type registers is dropped
