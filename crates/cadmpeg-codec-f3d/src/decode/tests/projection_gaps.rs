@@ -1065,3 +1065,52 @@ fn fixture_pattern_states_have_a_distinct_native_retention_loss_count() {
         );
     }
 }
+
+#[test]
+fn pattern_seed_plane_and_path_selections_count_as_retained_selections() {
+    let mut ir = cadmpeg_ir::document::CadIr::empty();
+    for (ordinal, (seeds, pattern)) in [
+        (
+            serde_json::json!([{"kind": "faces", "value": {"kind": "native", "value": "native:seed-faces"}}]),
+            serde_json::json!({"kind": "unresolved", "form": "curve_driven"}),
+        ),
+        (
+            serde_json::json!([{"kind": "faces", "value": {"kind": "unresolved"}}]),
+            serde_json::json!({"kind": "unresolved", "form": "linear"}),
+        ),
+        (
+            serde_json::json!([{"kind": "bodies", "value": {"kind": "native", "value": "native:seed-bodies"}}]),
+            serde_json::json!({"kind": "unresolved", "form": "circular"}),
+        ),
+        (
+            serde_json::json!([{"kind": "feature", "value": "test:model:feature#seed"}]),
+            serde_json::json!({"kind": "mirror_reference", "plane": {"kind": "native", "value": "native:plane"}}),
+        ),
+        (
+            serde_json::json!([{"kind": "feature", "value": "test:model:feature#seed"}]),
+            serde_json::json!({"kind": "curve_driven", "path": {"kind": "native", "value": "native:path"}, "spacing": 25.0, "count": 4}),
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        ir.model.features.push(
+            serde_json::from_value(serde_json::json!({
+                "id": format!("test:model:feature#pattern-{ordinal}"),
+                "ordinal": ordinal,
+                "suppressed": null,
+                "definition": {
+                    "definition": "pattern",
+                    "seeds": seeds,
+                    "pattern": pattern
+                }
+            }))
+            .expect("Pattern feature"),
+        );
+    }
+
+    let gaps = design_projection_gaps(&ir, &F3dNative::default());
+    assert_eq!(gaps.face_selections, 3);
+    assert_eq!(gaps.body_selections, 1);
+    assert_eq!(gaps.path_selections, 1);
+}
