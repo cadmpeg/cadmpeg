@@ -595,7 +595,7 @@ fn write_archive_prefix(
         )?;
         if typecode == TCODE_LINETYPE_TABLE {
             output.append(
-                &table(ctx, TCODE_LAYER_TABLE, &tables::layers(ir)?)?,
+                &table(ctx, TCODE_LAYER_TABLE, &tables::layers(ir, materials)?)?,
                 "retain Rhino archive bytes",
             )?;
         }
@@ -603,6 +603,7 @@ fn write_archive_prefix(
     let mut losses = documents.losses;
     losses.extend(setting_losses);
     losses.extend(tables::layer_linetype_losses(ir)?);
+    losses.extend(tables::layer_material_losses(ir, materials));
     losses.extend(linetype_losses);
     for record in records_in(ir, "object_presentation") {
         if let Some(source) = record
@@ -1449,6 +1450,7 @@ fn native_dispositions(
         crate::native_registry::ARENAS,
         NativeDisposition::Dropped,
     );
+    let materials = MaterialPlan::new(ir)?;
     if let Some(records) = ir
         .native
         .namespace("rhino")
@@ -1459,7 +1461,9 @@ fn native_dispositions(
             for value in &ir.model.presentation_layers {
                 if value.native_ref.as_deref() == Some(record.id()) && value.description.is_none() {
                     let (source, target) = tables::layer_linetype(ir, value)?;
-                    unchanged |= source == target;
+                    let (material_source, material_target) =
+                        tables::layer_material(ir, value, &materials);
+                    unchanged |= source == target && material_source == material_target;
                 }
             }
             if unchanged && tables::native_layer_complete(record) {
@@ -1606,7 +1610,6 @@ fn native_dispositions(
         }
     }
     let mut setting_losses = Vec::new();
-    let materials = MaterialPlan::new(ir)?;
     let document_settings = tables::document::settings(ir, &materials, &mut setting_losses)?;
     for record in records_in(ir, "document_settings") {
         if document_settings.regenerated.contains(record.id()) {

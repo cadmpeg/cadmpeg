@@ -1095,6 +1095,55 @@ fn a_mixed_severity_native_decode_is_rejected_below_blocking() {
     }
 }
 
+#[cfg(feature = "fcstd")]
+#[test]
+fn info_only_export_passes_at_warning_floor() {
+    let dir = tempdir().unwrap();
+    let mut ir = unit_cube().unwrap();
+    let definition = serde_json::from_value(serde_json::json!({
+        "id": "authored:model:product_definition#part",
+        "kind": "part",
+        "source_name": "part with spaces"
+    }))
+    .unwrap();
+    ir.model.product_definitions.push(definition);
+    let input = fixture(dir.path(), "info.cadir.json", &ir);
+    let report = dir.path().join("info-report.json");
+    let output = dir.path().join("info.FCStd");
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            input.to_str().unwrap(),
+            "-o",
+            output.to_str().unwrap(),
+            "--reject-lossy=export",
+            "--reject-lossy-floor",
+            "warning",
+            "--report",
+            report.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    let report: serde_json::Value = serde_json::from_slice(&fs::read(report).unwrap()).unwrap();
+    let losses = report["export"]["losses"].as_array().unwrap();
+    assert!(!losses.is_empty());
+    assert!(losses.iter().all(|loss| loss["severity"] == "info"));
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            input.to_str().unwrap(),
+            "-o",
+            dir.path().join("rejected.FCStd").to_str().unwrap(),
+            "--reject-lossy=export",
+            "--reject-lossy-floor",
+            "info",
+        ])
+        .assert()
+        .code(1);
+}
+
 #[test]
 fn empty_cadir_writes_warning_and_export_floor_applies_before_emission() {
     let dir = tempdir().unwrap();

@@ -12,9 +12,11 @@ use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::declared_measures::{DeclaredQuantity, DeclaredTarget};
 use cadmpeg_ir::eval::helix_nurbs::{helix_nurbs, helix_surface_nurbs};
 use cadmpeg_ir::geometry::{
-    analytic::TorusSurface, pcurve::Pcurve, Curve, CurveGeometry, HelixCurveConstruction,
-    HelixSurfaceConstruction, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
-    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+    analytic::TorusSurface,
+    pcurve::{Pcurve, PcurveGeometry},
+    Curve, CurveGeometry, HelixCurveConstruction, HelixSurfaceConstruction, ProceduralCurve,
+    ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, Surface,
 };
 use cadmpeg_ir::ids::{
     AppearanceBindingId, AppearanceId, AttributeId, BodyId, EdgeId, LoopId, OccurrenceId,
@@ -203,11 +205,17 @@ fn write_header(
     let implementation = if edition_three_sections { "4;2" } else { "2;1" };
     writeln!(w, "ISO-10303-21;")?;
     writeln!(w, "HEADER;")?;
-    writeln!(
-        w,
-        "FILE_DESCRIPTION(({}),'{implementation}');",
-        string("CAD model exported by cadmpeg")
-    )?;
+    let descriptions = fields.descriptions.as_deref().map_or_else(
+        || string("CAD model exported by cadmpeg"),
+        |items| {
+            items
+                .iter()
+                .map(|item| string(item))
+                .collect::<Vec<_>>()
+                .join(",")
+        },
+    );
+    writeln!(w, "FILE_DESCRIPTION(({descriptions}),'{implementation}');")?;
     let name = fields.name.as_deref().unwrap_or(&opts.product_name);
     let authors = fields
         .authors
@@ -503,6 +511,7 @@ pub(crate) struct Builder<'a> {
 /// attributes writes byte-identical output to before.
 #[derive(Clone, Default)]
 struct FileNameFields {
+    descriptions: Option<Vec<String>>,
     name: Option<String>,
     authors: Option<Vec<String>>,
     organizations: Option<Vec<String>>,
@@ -585,6 +594,10 @@ impl FileNameFields {
                 .map(|(id, _)| id.clone())
                 .collect()
         }
+        let descriptions: Vec<_> = Self::held(ir, &["start"])
+            .into_iter()
+            .filter(|(_, value)| value.chars().count() <= 256)
+            .collect();
         let label = Self::held(ir, Self::LABEL);
         let author = Self::held(ir, Self::AUTHOR);
         let organization = Self::held(ir, Self::ORGANIZATION);
@@ -620,7 +633,11 @@ impl FileNameFields {
         // empty fold still writes one empty entry, which carries every held
         // empty alias back.
         let empty_entry = vec![String::new()];
-        let mut consumed_ids = consumed(&label, &name.clone().into_iter().collect::<Vec<_>>());
+        let mut consumed_ids: Vec<_> = descriptions.iter().map(|(id, _)| id.clone()).collect();
+        consumed_ids.extend(consumed(
+            &label,
+            &name.clone().into_iter().collect::<Vec<_>>(),
+        ));
         consumed_ids.extend(consumed(
             &author,
             if authors.is_empty() {
@@ -644,6 +661,8 @@ impl FileNameFields {
             &system.clone().into_iter().collect::<Vec<_>>(),
         ));
         Self {
+            descriptions: (!descriptions.is_empty())
+                .then(|| descriptions.into_iter().map(|(_, value)| value).collect()),
             name,
             authors: (!author.is_empty()).then_some(authors),
             organizations,
@@ -2295,6 +2314,13 @@ impl<'a> Builder<'a> {
         let Some(parts) = self.retained_context_partials() else {
             return;
         };
+        if self.ir.tolerances.linear.is_none()
+            && parts
+                .iter()
+                .any(|part| part == "GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT")
+        {
+            return;
+        }
         if parts.iter().any(|part| {
             !matches!(
                 part.as_str(),
@@ -2574,27 +2600,43 @@ impl<'a> Builder<'a> {
         context: Ref,
     ) {
         let scalar_items = !matches!(self.schema, StepSchema::Ap203Edition1 | StepSchema::Ap214);
-        let (kind, value) = match attribute.values.as_slice() {
-            [Some(AttributeValue::String(value))] => {
-                ("DESCRIPTIVE_REPRESENTATION_ITEM", string(value))
-            }
-            [Some(AttributeValue::Integer(value))] if scalar_items => {
-                ("INTEGER_REPRESENTATION_ITEM", value.to_string())
-            }
-            [Some(AttributeValue::Float(value))] if scalar_items => {
-                ("REAL_REPRESENTATION_ITEM", self.emitter.real(value.get()))
-            }
-            [Some(AttributeValue::Boolean(value))] if scalar_items => (
-                "BOOLEAN_REPRESENTATION_ITEM",
-                if *value { ".T." } else { ".F." }.to_owned(),
-            ),
-            _ => return,
-        };
+        let mut values = Vec::new();
+        for value in &attribute.values {
+            let item = match value {
+                Some(AttributeValue::String(value)) => {
+                    ("DESCRIPTIVE_REPRESENTATION_ITEM", string(value))
+                }
+                Some(AttributeValue::Integer(value)) if scalar_items => {
+                    ("INTEGER_REPRESENTATION_ITEM", value.to_string())
+                }
+                Some(AttributeValue::Float(value)) if scalar_items => {
+                    ("REAL_REPRESENTATION_ITEM", self.emitter.real(value.get()))
+                }
+                Some(AttributeValue::Boolean(value)) if scalar_items => (
+                    "BOOLEAN_REPRESENTATION_ITEM",
+                    if *value { ".T." } else { ".F." }.to_owned(),
+                ),
+                _ => return,
+            };
+            values.push(item);
+        }
+        if values.is_empty() || (values.len() > 1 && !scalar_items) {
+            return;
+        }
         let property = self.emitter.emit(
             "PROPERTY_DEFINITION",
             &format!("{},'',{owner}", string(&attribute.name)),
         );
-        let item = self.emitter.emit(kind, &format!("'',{value}"));
+        let items: Vec<_> = values
+            .into_iter()
+            .map(|(kind, value)| self.emitter.emit(kind, &format!("'',{value}")))
+            .collect();
+        let item = if let [item] = items.as_slice() {
+            *item
+        } else {
+            self.emitter
+                .emit("ROW_REPRESENTATION_ITEM", &format!("'',{}", refs(&items)))
+        };
         let representation = self
             .emitter
             .emit("REPRESENTATION", &format!("'',({item}),{context}"));
@@ -2616,15 +2658,18 @@ impl<'a> Builder<'a> {
         let ir = self.ir;
         for attribute in &ir.model.attributes {
             if self.attribute_is_written(attribute)
-                || !matches!(
-                    attribute.values.as_slice(),
-                    [Some(
-                        AttributeValue::String(_)
-                            | AttributeValue::Integer(_)
-                            | AttributeValue::Float(_)
-                            | AttributeValue::Boolean(_)
-                    )]
-                )
+                || attribute.values.is_empty()
+                || !attribute.values.iter().all(|value| {
+                    matches!(
+                        value,
+                        Some(
+                            AttributeValue::String(_)
+                                | AttributeValue::Integer(_)
+                                | AttributeValue::Float(_)
+                                | AttributeValue::Boolean(_)
+                        )
+                    )
+                })
             {
                 continue;
             }
@@ -3239,22 +3284,9 @@ impl<'a> Builder<'a> {
                         parts.push("GEOMETRIC_REPRESENTATION_CONTEXT(3)".to_string());
                     }
                     "GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT" => {
-                        let unc = self.emitter.emit(
-                            "UNCERTAINTY_MEASURE_WITH_UNIT",
-                            &format!(
-                                "LENGTH_MEASURE({}),{len},{},{}",
-                                self.emitter.real(
-                                    self.ir
-                                        .tolerances
-                                        .linear
-                                        .expect("stated linear tolerance")
-                                        .get()
-                                ),
-                                string("distance_accuracy_value"),
-                                string("maximum model space distance")
-                            ),
-                        );
-                        parts.push(format!("GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT(({unc}))"));
+                        if let Some(unc) = self.emit_linear_uncertainty(len) {
+                            parts.push(format!("GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT(({unc}))"));
+                        }
                     }
                     "GLOBAL_UNIT_ASSIGNED_CONTEXT" => {
                         parts.push(format!(
@@ -3303,30 +3335,31 @@ impl<'a> Builder<'a> {
     }
 
     fn emit_default_context(&mut self, len: Ref, angle: Ref, solid: Ref) -> Ref {
-        let unc = self.emitter.emit(
-            "UNCERTAINTY_MEASURE_WITH_UNIT",
-            &format!(
-                "LENGTH_MEASURE({}),{len},{},{}",
-                self.emitter.real(
-                    self.ir
-                        .tolerances
-                        .linear
-                        .expect("stated linear tolerance")
-                        .get()
-                ),
-                string("distance_accuracy_value"),
-                string("maximum model space distance")
-            ),
-        );
+        let uncertainty = self
+            .emit_linear_uncertainty(len)
+            .map(|unc| format!("GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT(({unc})) "))
+            .unwrap_or_default();
         self.emitter.emit_raw(
             "GEOMETRIC_REPRESENTATION_CONTEXT",
             &format!(
                 "( GEOMETRIC_REPRESENTATION_CONTEXT(3) \
-                 GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT(({unc})) \
-                 GLOBAL_UNIT_ASSIGNED_CONTEXT(({len},{angle},{solid})) \
+                 {uncertainty}GLOBAL_UNIT_ASSIGNED_CONTEXT(({len},{angle},{solid})) \
                  REPRESENTATION_CONTEXT('Context','3D') )"
             ),
         )
+    }
+
+    fn emit_linear_uncertainty(&mut self, len: Ref) -> Option<Ref> {
+        let tolerance = self.ir.tolerances.linear?;
+        Some(self.emitter.emit(
+            "UNCERTAINTY_MEASURE_WITH_UNIT",
+            &format!(
+                "LENGTH_MEASURE({}),{len},{},{}",
+                self.emitter.real(tolerance.get()),
+                string("distance_accuracy_value"),
+                string("maximum model space distance")
+            ),
+        ))
     }
 
     fn emit_length_unit(&mut self) -> Ref {
@@ -4393,14 +4426,32 @@ impl<'a> Builder<'a> {
         if pcurve.parameter_range.is_some() {
             return None;
         }
-        let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } = &pcurve.geometry else {
-            return None;
+        let range = match &pcurve.geometry {
+            PcurveGeometry::Nurbs { nurbs } => {
+                let degree = usize::try_from(nurbs.degree()).ok()?;
+                [
+                    *nurbs.knots().get(degree)?,
+                    *nurbs.knots().get(nurbs.pole_rows().count())?,
+                ]
+            }
+            PcurveGeometry::Circle(circle) => {
+                let x = circle.x_axis().get();
+                let y = circle.y_axis().get();
+                if x.u.hypot(x.v) != 1.0 || y.u != -x.v || y.v != x.u {
+                    return None;
+                }
+                [0.0, std::f64::consts::TAU]
+            }
+            PcurveGeometry::Ellipse(ellipse) => {
+                let x = ellipse.x_axis().get();
+                let y = ellipse.y_axis().get();
+                if x.u.hypot(x.v) != 1.0 || y.u != -x.v || y.v != x.u {
+                    return None;
+                }
+                [0.0, std::f64::consts::TAU]
+            }
+            _ => return None,
         };
-        let degree = usize::try_from(nurbs.degree()).ok()?;
-        let range = [
-            *nurbs.knots().get(degree)?,
-            *nurbs.knots().get(nurbs.pole_rows().count())?,
-        ];
         if range != context.parameter_range().endpoints() {
             return None;
         }
@@ -5188,13 +5239,7 @@ impl<'a> Builder<'a> {
         let tolerance = edge
             .tolerance
             .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get)
-            .max(
-                self.ir
-                    .tolerances
-                    .linear
-                    .expect("stated linear tolerance")
-                    .get(),
-            );
+            .max(self.ir.tolerances.linear_or_default().get());
         if coedge.pcurves.is_empty() {
             return Ok(false);
         }
@@ -5931,17 +5976,15 @@ impl<'a> Builder<'a> {
                 if self.failed_helix_fits.contains_key(id) {
                     return None;
                 }
-                let fitted = match helix_surface_nurbs(
-                    helix,
-                    self.ir.tolerances.linear.expect("stated linear tolerance"),
-                ) {
-                    Ok(fitted) => fitted,
-                    Err(error) => {
-                        self.failed_helix_fits
-                            .insert(id.to_owned(), helix_fit_failure(&error));
-                        return None;
-                    }
-                };
+                let fitted =
+                    match helix_surface_nurbs(helix, self.ir.tolerances.linear_or_default()) {
+                        Ok(fitted) => fitted,
+                        Err(error) => {
+                            self.failed_helix_fits
+                                .insert(id.to_owned(), helix_fit_failure(&error));
+                            return None;
+                        }
+                    };
                 let reference = geometry::surface(
                     &mut self.emitter,
                     &name,
@@ -6301,10 +6344,7 @@ impl<'a> Builder<'a> {
                 if self.failed_helix_fits.contains_key(id) {
                     return None;
                 }
-                let fitted = match helix_nurbs(
-                    helix,
-                    self.ir.tolerances.linear.expect("stated linear tolerance"),
-                ) {
+                let fitted = match helix_nurbs(helix, self.ir.tolerances.linear_or_default()) {
                     Ok(fitted) => fitted,
                     Err(error) => {
                         self.failed_helix_fits
@@ -8927,8 +8967,16 @@ impl<'a> Builder<'a> {
                 .map(|(owner, _)| format!("'{owner}'"))
                 .collect::<Vec<_>>()
                 .join(", ");
+            let tolerance = if self.ir.tolerances.linear.is_some() {
+                "the linear tolerance".to_owned()
+            } else {
+                format!(
+                    "a computational linear tolerance of {} mm",
+                    self.ir.tolerances.linear_or_default().get()
+                )
+            };
             let mut message = format!(
-                "{} helix curve definition(s) and {} helix surface definition(s) without a solved carrier were written as B-splines within the linear tolerance: {fitted}",
+                "{} helix curve definition(s) and {} helix surface definition(s) without a solved carrier were written as B-splines within {tolerance}: {fitted}",
                 self.fitted_helix_curves.len(),
                 self.fitted_helix_surfaces.len()
             );
