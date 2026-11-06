@@ -118,8 +118,13 @@ fn detached_plane_is_authored_in_the_partition() {
 
 #[test]
 fn detached_carriers_are_authored_without_a_body() {
+    const EPS_STANDALONE_POINT_MM: f64 = 1e-9;
+
     use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use cadmpeg_ir::features::FinitePoint3;
+    use cadmpeg_ir::math::Point3;
+    use cadmpeg_ir::topology::Point;
     let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
     let surface = ir.model.surfaces[0].clone();
     let curve = ir.model.curves[0].clone();
@@ -132,6 +137,12 @@ fn detached_carriers_are_authored_without_a_body() {
     ir.model.edges.clear();
     ir.model.vertices.clear();
     ir.model.points.clear();
+    let point = Point::new(
+        cadmpeg_ir::ids::PointId::mint("synthetic:test:point#standalone").unwrap(),
+        FinitePoint3::new(Point3::new(1000.0, 2000.0, 3000.0)).unwrap(),
+        None,
+    );
+    ir.model.points.push(point.clone());
     ir.model.surfaces = vec![surface.clone()];
     ir.model.curves = vec![curve.clone()];
     ir.model.finalize();
@@ -167,6 +178,14 @@ fn detached_carriers_are_authored_without_a_body() {
         .curves
         .iter()
         .any(|item| item.geometry == curve.geometry));
+    assert!(decoded
+        .ir()
+        .model
+        .points
+        .iter()
+        .any(|item| {
+            item.position().get().distance(point.position().get()) < EPS_STANDALONE_POINT_MM
+        }));
 }
 
 #[test]
