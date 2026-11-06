@@ -629,7 +629,7 @@ pub(crate) fn decode_with_body_bindings<'a>(
         };
         let stream_name =
             StreamName::try_from(entry.name.clone()).map_err(CodecError::malformed)?;
-        let spec = PartSpec::new("f3d.protein_record")
+        let spec = PartSpec::new("zip.entry")
             .holding([cadmpeg_ir::document::ArenaClass::Model])
             .in_stream(stream_name);
         // One damaged protein asset gives up only its own part; later
@@ -638,17 +638,24 @@ pub(crate) fn decode_with_body_bindings<'a>(
             let Some(instance) = instance_properties(ctx, protein)? else {
                 return Ok(None);
             };
-            let record_frames = cadmpeg_protein::framing::record_frames(instance.window())?;
-            let catalog = definition_catalog(ctx, protein)?;
+            let instance_stream = StreamName::try_from(format!(
+                "{}/AssetData/InstanceProperties.bin",
+                entry.name
+            ))
+            .map_err(CodecError::malformed)?;
+            let instance_spec = PartSpec::new("zip.entry")
+                .holding([cadmpeg_ir::document::ArenaClass::Model])
+                .in_stream(instance_stream.clone());
+            let Some(record_frames) = ctx.decode_part(stage, instance, instance_spec, |_| {
+                cadmpeg_protein::framing::record_frames(instance.window())
+            })? else {
+                return Ok(None);
+            };
+            let catalog = definition_catalog(ctx, protein, &entry.name, stage)?;
             let schema_catalog = cadmpeg_protein::SchemaCatalog::load(ctx, protein)?;
             let appearances = if let Some(mut schema_catalog) = schema_catalog {
                 let mut records = Vec::new();
                 let mut accepted_frames = Vec::new();
-                let stream = StreamName::try_from(format!(
-                    "{}/AssetData/InstanceProperties.bin",
-                    entry.name
-                ))
-                .map_err(CodecError::malformed)?;
                 for (ordinal, frame) in record_frames.iter().enumerate() {
                     let range = frame.source_range();
                     let start = instance
@@ -664,7 +671,7 @@ pub(crate) fn decode_with_body_bindings<'a>(
                     })?;
                     let spec = PartSpec::new("protein.record")
                         .holding([cadmpeg_ir::document::ArenaClass::Model])
-                        .in_stream(stream.clone());
+                        .in_stream(instance_stream.clone());
                     let record = ctx.decode_part(stage, extent, spec, |_| {
                         cadmpeg_protein::decode_frame(
                             ctx,
@@ -1988,16 +1995,47 @@ fn instance_properties<'a>(
 fn definition_catalog<'a>(
     ctx: &DecodeContext<'a>,
     protein: View<'a>,
+    asset_name: &str,
+    output: &mut PartOutput,
 ) -> Result<std::collections::HashMap<(String, String), Option<String>>, CodecError> {
     let Some(entry) = nested_entry(ctx, protein, "AssetData/DefinitionIteratorProperties.bin")?
     else {
         return Ok(std::collections::HashMap::new());
     };
-    let frames = cadmpeg_protein::framing::record_frames(entry.window())?;
+    let stream = StreamName::try_from(format!(
+        "{asset_name}/AssetData/DefinitionIteratorProperties.bin"
+    ))
+    .map_err(CodecError::malformed)?;
+    let spec = PartSpec::new("zip.entry")
+        .holding([cadmpeg_ir::document::ArenaClass::Model])
+        .in_stream(stream.clone());
+    let Some(frames) = ctx.decode_part(output, entry, spec, |_| {
+        cadmpeg_protein::framing::record_frames(entry.window())
+    })? else {
+        return Ok(std::collections::HashMap::new());
+    };
     let mut definitions = std::collections::HashMap::new();
     for frame in &frames {
-        let definition = decode_definition_catalog_record(frame.bytes())?;
-        merge_definition_catalog_record(&mut definitions, definition);
+        let range = frame.source_range();
+        let start = entry
+            .start()
+            .checked_add(range.start)
+            .ok_or_else(|| CodecError::malformed("Protein definition start overflows"))?;
+        let end = entry
+            .start()
+            .checked_add(range.end)
+            .ok_or_else(|| CodecError::malformed("Protein definition end overflows"))?;
+        let extent = entry
+            .child(start, end)
+            .ok_or_else(|| CodecError::malformed("Protein definition exceeds its stream"))?;
+        let spec = PartSpec::new("protein.record")
+            .holding([cadmpeg_ir::document::ArenaClass::Model])
+            .in_stream(stream.clone());
+        if let Some(definition) = ctx.decode_part(output, extent, spec, |_| {
+            decode_definition_catalog_record(frame.bytes())
+        })? {
+            merge_definition_catalog_record(&mut definitions, definition);
+        }
     }
 
     let mut catalog = std::collections::HashMap::new();

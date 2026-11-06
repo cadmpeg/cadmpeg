@@ -223,7 +223,7 @@ pub(crate) fn f3d_with_smbh_and_protein(smbh: &[u8]) -> Vec<u8> {
 
 /// An archive whose first protein asset keeps one flipped byte under a
 /// valid container, so that asset framing fails and the entry is given
-/// up as a `f3d.protein_record` part while later assets still decode.
+/// up as a `zip.entry` part while later assets still decode.
 pub(crate) fn f3d_with_damaged_protein_asset(smbh: &[u8]) -> Vec<u8> {
     let bytes = f3d_with_smbh_and_protein_guids(
         smbh,
