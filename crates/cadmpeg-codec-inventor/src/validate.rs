@@ -2465,6 +2465,35 @@ fn validate_features(
                 Some(feature.id.as_str().to_owned()),
             ));
         }
+        if matches!(family, crate::feature::FeatureFamily::Motion)
+            && !crate::feature::face_selection::valid(
+                feature,
+                raw_feature,
+                &ir.model.feature_input_topologies,
+                |id| {
+                    let mut candidates = data
+                        .pm_dc_feature_properties
+                        .iter()
+                        .filter(|p| p.id() == id);
+                    let property = candidates.next()?;
+                    candidates.next().is_none().then_some(property)
+                },
+                |reference| {
+                    properties_by_record
+                        .get(&(
+                            raw_feature.identity.segment_token.as_str(),
+                            reference.record_ordinal()?,
+                        ))
+                        .copied()
+                },
+            )
+        {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor neutral face selection differs from its PmDc face operands".into(),
+                Some(feature.id.as_str().to_owned()),
+            ));
+        }
         if matches!(family, crate::feature::FeatureFamily::Combine)
             && crate::feature::combine::definition(raw_feature, |reference| {
                 let ordinal = reference.checked_sub(1)?;

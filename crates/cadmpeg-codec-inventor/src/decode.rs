@@ -935,6 +935,9 @@ fn decode_container<'a>(
             &feature_inventory,
             &ir.model.features,
         ));
+        losses.extend(crate::feature::face_selection::native_losses(
+            &ir.model.features,
+        ));
         losses.extend(crate::feature::sheet_metal::retained_control_losses(
             ir.model.features.iter(),
         ));
