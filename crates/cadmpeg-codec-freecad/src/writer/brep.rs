@@ -11,6 +11,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Write as _;
 
 use super::geometry;
+use crate::loss::FreecadLossCode;
 mod reachable;
 use reachable::Reach;
 
@@ -1223,29 +1224,25 @@ fn serialize_geometry_inner(
         }
         let mut regions = Vec::new();
         for region_id in &body.regions {
-            let region = ir
-                .model
-                .regions
-                .iter()
-                .find(|value| value.id == *region_id)
-                .ok_or_else(|| {
-                    CodecError::malformed(format_args!("body {} references absent region", body.id))
-                })?;
+            let Some(region) = ir.model.regions.iter().find(|value| value.id == *region_id) else {
+                losses.push(FreecadLossCode::ExportGeometryNotTransferred.note(format!(
+                    "body {} references absent region {region_id}, which is omitted",
+                    body.id
+                )));
+                continue;
+            };
             let mut shells = Vec::new();
             let mut degraded = false;
             for shell_id in &region.shells {
                 let mut shell_degraded = false;
-                let shell = ir
-                    .model
-                    .shells
-                    .iter()
-                    .find(|value| value.id == *shell_id)
-                    .ok_or_else(|| {
-                        CodecError::malformed(format_args!(
-                            "region {} references absent shell",
-                            region.id
-                        ))
-                    })?;
+                let Some(shell) = ir.model.shells.iter().find(|value| value.id == *shell_id) else {
+                    degraded = true;
+                    losses.push(FreecadLossCode::ExportGeometryNotTransferred.note(format!(
+                        "region {} references absent shell {shell_id}, which is omitted",
+                        region.id
+                    )));
+                    continue;
+                };
                 let mut children = Vec::new();
                 for face_id in shell.faces() {
                     let Some(index) = indices.get(face_id.as_str()) else {
