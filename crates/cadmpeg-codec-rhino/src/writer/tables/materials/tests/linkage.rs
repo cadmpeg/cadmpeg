@@ -450,7 +450,9 @@ fn incomplete_texture_omits_only_the_texture_channel() {
         .arenas_mut()
         .insert("materials".into(), vec![invalid]);
     let plan = MaterialPlan::new(&ir).unwrap();
-    assert!(plan.losses().iter().any(|loss| loss.message.contains(&id)));
+    assert!(plan.losses().iter().any(|loss| loss.code
+        == crate::loss::RhinoLossCode::WriterMaterialTextureOmitted.kind()
+        && loss.message.contains(&id)));
     let encoded = plan.encode(&ir).unwrap();
     let output = read(&encoded, false);
     assert_eq!(native(&output).field("texture_count"), Some(json!(0)));
@@ -472,7 +474,9 @@ fn unlinked_material_with_incomplete_texture_keeps_writable_material() {
         .arenas_mut()
         .insert("materials".into(), vec![record]);
     let plan = MaterialPlan::new(&ir).unwrap();
-    assert!(plan.losses().iter().any(|loss| loss.message.contains(&id)));
+    assert!(plan.losses().iter().any(|loss| loss.code
+        == crate::loss::RhinoLossCode::WriterMaterialTextureOmitted.kind()
+        && loss.message.contains(&id)));
     let output = read(&plan.encode(&ir).unwrap(), false);
     assert_eq!(
         native(&output).field("name"),
