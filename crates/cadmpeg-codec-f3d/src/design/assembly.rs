@@ -911,7 +911,6 @@ pub(crate) fn legacy_as_built_421_generation(
 /// Assembly joints and the losses of the joint scopes that do not project.
 #[derive(Debug, Default)]
 pub(crate) struct AssemblyJointProjection {
-    pub(crate) untyped: bool,
     pub(crate) joints: Vec<AssemblyJoint>,
     pub(crate) losses: Vec<LossNote>,
 }
@@ -1087,7 +1086,6 @@ pub(crate) fn project_assembly_joints_with_paths(
         )));
     }
     AssemblyJointProjection {
-        untyped: unprojected != 0,
         joints: joints.into_values().collect(),
         losses,
     }

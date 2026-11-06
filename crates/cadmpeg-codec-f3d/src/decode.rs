@@ -3059,9 +3059,6 @@ impl<'a> F3dDecodeSession<'a> {
             .model
             .occurrences
             .extend(unresolved_component_inserts);
-        if component_inserts.has_untyped_occurrences() {
-            self.untyped.insert(cadmpeg_ir::document::ArenaClass::Model);
-        }
         self.report.losses.extend(component_inserts.losses());
         let joints = crate::design::assembly::project_assembly_joints_with_paths(
             &prereqs.design_parameter_scopes,
@@ -3076,9 +3073,6 @@ impl<'a> F3dDecodeSession<'a> {
                 &self.ir.model.occurrences,
             ),
         );
-        if joints.untyped {
-            self.untyped.insert(cadmpeg_ir::document::ArenaClass::Model);
-        }
         self.ir.model.assembly_joints = joints.joints;
         self.report.losses.extend(joints.losses);
         projections::standalone_product(&mut self.ir, &self.native);
