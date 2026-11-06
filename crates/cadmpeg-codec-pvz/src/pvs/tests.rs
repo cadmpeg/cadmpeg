@@ -18,7 +18,9 @@ use crate::test_support::{assembly_structure, SCALED_TURN};
 
 fn decode(bytes: &[u8]) -> Result<Structure, CodecError> {
     let ctx = cadmpeg_test_support::service_decode_context();
-    read(&ctx, View::over_retained(bytes))
+    let mut parts =
+        cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::Pvz, &ctx);
+    read(&ctx, View::over_retained(bytes), "test.pvs", &mut parts)
 }
 
 fn loss_codes(structure: &Structure) -> Vec<cadmpeg_ir::report::loss::LossKind> {
@@ -418,6 +420,16 @@ fn a_second_geometry_element_is_refused() {
         ],
     )]);
     assert!(decode(&member("PV-PVS0301", &[(2, "", stream)])).is_err());
+}
+
+#[test]
+fn damaged_xml_component_preserves_source_indices() {
+    let xml = br#"<PV_FILE type="PVS" version="0302"><section_structure><component name="First"><component_instance index="1"/><component_instance index="2"/></component><component name="Broken" name="duplicate"/><component name="Last"/></section_structure><section_properties><property_component_ref index_offset="3"><property name="key" value="last"/></property_component_ref></section_properties></PV_FILE>"#;
+    let structure = decode(xml).expect("recover readable components");
+    assert_eq!(structure.definitions.len(), 2);
+    assert_eq!(structure.definitions[0].occurrences.len(), 1);
+    assert_eq!(structure.definitions[0].occurrences[0].definition, 1);
+    assert_eq!(&*structure.definitions[1].properties[0].value, "last");
 }
 
 #[test]

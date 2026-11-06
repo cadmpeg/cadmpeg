@@ -6,8 +6,9 @@
 
 use std::rc::Rc;
 
-use cadmpeg_core::decode::DecodeContext;
+use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
+use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput, PartSpec};
 use roxmltree::Node;
 
 use super::{ChildOccurrence, Definition, DefinitionRole, Placement, Property, Residue, Structure};
@@ -71,10 +72,49 @@ pub(super) fn declared_version(bytes: &[u8]) -> Option<&[u8]> {
 }
 
 /// Decodes an XML structure member.
-pub(super) fn read(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Structure, CodecError> {
-    let text = std::str::from_utf8(bytes)
-        .map_err(|_| CodecError::malformed("XML structure member is not valid UTF-8"))?;
-    let document = ctx.parse_xml(text, "PVZ XML structure member")?;
+pub(super) fn read<'a>(
+    ctx: &DecodeContext<'a>,
+    member: View<'a>,
+    stream: &str,
+    parts: &mut PartOutput,
+) -> Result<Structure, CodecError> {
+    let mut damaged = Vec::new();
+    let (_, document) = cadmpeg_core::decode::parse_xml_recovering(
+        ctx,
+        member,
+        "PVZ XML structure member",
+        "scan PVZ XML elements",
+        "PVZ XML structure member",
+        &CodecError::malformed,
+        |extent, name, ancestors, _| {
+            let component = name == b"component"
+                && ancestors
+                    .first()
+                    .is_some_and(|parent| parent == b"section_structure");
+            damaged.push((
+                extent,
+                String::from_utf8_lossy(name).into_owned(),
+                component,
+            ));
+            Ok(())
+        },
+    )?;
+    let mut positions: Vec<(usize, Option<usize>)> = damaged
+        .iter()
+        .filter(|(_, _, component)| *component)
+        .map(|(extent, _, _)| (extent.start() - member.start(), None))
+        .collect();
+    for (extent, name, _) in damaged {
+        let mut spec = PartSpec::new("pvz.xml_element").holding([cadmpeg_ir::ArenaClass::Model]);
+        if let Some(stream) = cadmpeg_ir::StreamName::member(stream) {
+            spec = spec.in_stream(stream);
+        }
+        ctx.decode_part(parts, extent, spec, |_| {
+            Err::<(), _>(CodecError::malformed(format_args!(
+                "damaged XML element <{name}>"
+            )))
+        })?;
+    }
     let root = document.root_element();
     if root.tag_name().name() != ROOT || root.attribute("type") != Some("PVS") {
         return Err(CodecError::malformed(
@@ -91,6 +131,7 @@ pub(super) fn read(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Structure, C
             SECTION_STRUCTURE => {
                 for component in section.children().filter(Node::is_element) {
                     if component.tag_name().name() == COMPONENT {
+                        positions.push((component.range().start, Some(definitions.len())));
                         definitions.push(component_definition(component, &mut residue)?);
                     } else {
                         residue.xml_element(component.tag_name().name());
@@ -109,7 +150,9 @@ pub(super) fn read(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Structure, C
             other => residue.xml_element(other),
         }
     }
-    let count = definitions.len();
+    positions.sort_unstable_by_key(|position| position.0);
+    let indices: Vec<_> = positions.into_iter().map(|(_, index)| index).collect();
+    let count = indices.len();
     if let Some(occurrence) = definitions
         .iter()
         .flat_map(|definition| &definition.occurrences)
@@ -119,6 +162,16 @@ pub(super) fn read(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Structure, C
             "XML component_instance places component {} of {count}",
             occurrence.definition
         )));
+    }
+    for definition in &mut definitions {
+        definition.occurrences.retain_mut(|occurrence| {
+            if let Some(index) = indices[occurrence.definition] {
+                occurrence.definition = index;
+                true
+            } else {
+                false
+            }
+        });
     }
     let mut cursor = 0_usize;
     for set in property_sets {
@@ -137,7 +190,9 @@ pub(super) fn read(ctx: &DecodeContext<'_>, bytes: &[u8]) -> Result<Structure, C
                 residue.xml_element(property.tag_name().name());
                 continue;
             }
-            if let Some(definition) = definitions.get_mut(cursor - 1) {
+            if let Some(definition) =
+                indices[cursor - 1].and_then(|index| definitions.get_mut(index))
+            {
                 definition.properties.push(Property {
                     stream: Rc::clone(&general),
                     name: required(property, "name")?.into(),
