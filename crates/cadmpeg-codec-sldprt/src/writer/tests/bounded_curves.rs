@@ -163,6 +163,59 @@ fn surface_curve_construction_survives_source_less_synthesis() {
 }
 
 #[test]
+fn bounded_surface_curve_preserves_its_interval_and_construction() {
+    use crate::test_support::parasolid::{
+        edge_use, planar_b_curve, sp_curve_records, triangle_body,
+    };
+    use cadmpeg_ir::geometry::{ProceduralCurveDefinition, SurfaceCurveFamily};
+
+    let mut body = triangle_body();
+    let old = edge_use(40, 0);
+    let at = body
+        .windows(old.len())
+        .position(|window| window == old)
+        .unwrap();
+    body.splice(at..at + old.len(), edge_use(40, 75));
+    body.extend(planar_b_curve([-1.0, 0.0], [3.0, 0.0], false));
+    let mut curves = sp_curve_records(100, [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]);
+    let end = curves.len();
+    curves[end - 16..end - 8].copy_from_slice(&0.25_f64.to_be_bytes());
+    curves[end - 8..].copy_from_slice(&0.5_f64.to_be_bytes());
+    body.extend(curves);
+    let input = crate::SldprtCodec
+        .decode(
+            &mut Cursor::new(crate::test_support::container::sldprt_with_body(&body)),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let interval = |ir: &cadmpeg_ir::CadIr| {
+        ir.model.procedural_curves.iter().find_map(|curve| {
+            let ProceduralCurveDefinition::SurfaceCurve {
+                family: SurfaceCurveFamily::Parametric { context, .. },
+            } = curve.definition()
+            else {
+                return None;
+            };
+            Some(context.parameter_range().endpoints())
+        })
+    };
+    let expected = interval(input.ir()).expect("input surface curve");
+    assert!((expected[0] - 0.25).abs() < PARAMETER_TOLERANCE);
+    assert!((expected[1] - 0.5).abs() < PARAMETER_TOLERANCE);
+    let plan = crate::SldprtCodec
+        .plan(EncodeInput::new(input.ir(), None), TargetRequest::Inherit)
+        .unwrap();
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = crate::SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let actual = interval(output.ir()).expect("written surface curve");
+    assert!((actual[0] - expected[0]).abs() < PARAMETER_TOLERANCE);
+    assert!((actual[1] - expected[1]).abs() < PARAMETER_TOLERANCE);
+}
+
+#[test]
 fn linear_edge_parameter_range_is_authored_as_a_bounded_curve() {
     let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
     for edge in &mut ir.model.edges[1..] {

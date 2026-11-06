@@ -43,7 +43,7 @@ fn canonical_tail() -> Option<
 pub(super) fn supported<'a>(
     ir: &'a CadIr,
     curve: &'a Curve,
-) -> Option<(&'a SurfaceId, &'a PcurveNurbs)> {
+) -> Option<(&'a SurfaceId, &'a PcurveNurbs, Option<[f64; 2]>)> {
     let CurveGeometry::Procedural {
         construction,
         cache: Some(_),
@@ -90,7 +90,8 @@ pub(super) fn supported<'a>(
             .knots()
             .get(nurbs.knots().len().checked_sub(degree.checked_add(1)?)?)?,
     ];
-    if domain != context.parameter_range().endpoints() || domain[0] >= domain[1] {
+    let interval = context.parameter_range().endpoints();
+    if domain[0] >= domain[1] || interval[0] < domain[0] || interval[1] > domain[1] {
         return None;
     }
     if ir
@@ -100,7 +101,7 @@ pub(super) fn supported<'a>(
         .filter(|edge| edge.curve() == Some(&curve.id))
         .any(|edge| {
             edge.param_range()
-                .is_some_and(|range| range.get() != domain)
+                .is_some_and(|range| range.get() != interval)
         })
     {
         return None;
@@ -113,7 +114,16 @@ pub(super) fn supported<'a>(
         .geometry
         .solved()?;
     parameter_scales(geometry)?;
-    Some((surface, nurbs))
+    Some((surface, nurbs, (interval != domain).then_some(interval)))
+}
+
+pub(super) fn bounded_interval(ir: &CadIr, edge: &cadmpeg_ir::topology::Edge) -> Option<[f64; 2]> {
+    let curve = ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| Some(&curve.id) == edge.curve())?;
+    supported(ir, curve)?.2
 }
 
 fn parameter_scales(surface: &SolvedSurfaceGeometry) -> Option<[f64; 2]> {
@@ -137,7 +147,7 @@ pub(super) fn write(
     surfaces: &HashMap<SurfaceId, u32>,
     next: &mut u32,
 ) -> Result<(), WriteError> {
-    let (surface, nurbs) = supported(ir, curve).ok_or_else(|| {
+    let (surface, nurbs, _) = supported(ir, curve).ok_or_else(|| {
         CodecError::UnsupportedContent(
             "surface-curve construction has no supported native form".into(),
         )
