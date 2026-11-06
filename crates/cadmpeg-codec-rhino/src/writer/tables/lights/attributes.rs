@@ -125,13 +125,6 @@ pub(super) fn encode(value: &Value) -> Result<Vec<u8>, WriteError> {
     for (name, expected) in [
         ("clipping_proof", Value::Bool(false)),
         ("hatch_pattern_index", Value::from(-1)),
-        ("section_hatch_scale", Value::from(1.0)),
-        ("section_hatch_rotation", Value::from(0.0)),
-        ("linetype_pattern_scale", Value::from(1.0)),
-        ("hatch_background", Value::from("00000000")),
-        ("hatch_boundary_visible", Value::Bool(false)),
-        ("section_fill_rule", Value::from(0)),
-        ("clipping_plane_label_style", Value::from(0)),
     ] {
         if fields.get(name).is_some_and(|value| value != &expected) {
             return Err(WriteError::Omit(format!(
@@ -140,7 +133,6 @@ pub(super) fn encode(value: &Value) -> Result<Vec<u8>, WriteError> {
         }
     }
     for name in [
-        "detail_background_visible",
         "casts_shadows",
         "receives_shadows",
         "advanced_texture_preview",
@@ -155,7 +147,7 @@ pub(super) fn encode(value: &Value) -> Result<Vec<u8>, WriteError> {
     }
     let id = crate::presentation::parse_uuid_text(string(fields, "source_uuid")?)
         .ok_or_else(|| WriteError::Omit("light attribute source_uuid is invalid".into()))?;
-    let mut body = vec![0x21];
+    let mut body = vec![0x2d];
     body.extend(id.to_wire());
     body.extend((-1_i32).to_le_bytes());
     for (tag, name) in [(1, "name"), (2, "url")] {
@@ -204,6 +196,51 @@ pub(super) fn encode(value: &Value) -> Result<Vec<u8>, WriteError> {
     }
     body.push(22);
     body.extend(integer(fields, "display_order")?.to_le_bytes());
+    for (tag, name) in [
+        (31, "section_hatch_scale"),
+        (32, "section_hatch_rotation"),
+        (33, "linetype_pattern_scale"),
+    ] {
+        if let Some(value) = fields.get(name) {
+            let value = value
+                .as_f64()
+                .filter(|value| value.is_finite())
+                .ok_or_else(|| {
+                    WriteError::Omit(format!("light attribute {name} must be finite"))
+                })?;
+            body.push(tag);
+            body.extend(value.to_le_bytes());
+        }
+    }
+    if fields.contains_key("hatch_background") {
+        body.push(34);
+        body.extend(color(fields, "hatch_background")?);
+    }
+    if let Some(value) = fields.get("hatch_boundary_visible") {
+        let value = value.as_bool().ok_or_else(|| {
+            WriteError::Omit("light attribute hatch_boundary_visible must be boolean".into())
+        })?;
+        body.extend([35, u8::from(value)]);
+    }
+    for (tag, name) in [
+        (37, "section_fill_rule"),
+        (40, "clipping_plane_label_style"),
+    ] {
+        if fields.contains_key(name) {
+            body.extend([tag, byte(fields, name)?]);
+        }
+    }
+    if let Some(value) = fields
+        .get("detail_background_visible")
+        .filter(|value| !value.is_null())
+    {
+        if value != &Value::Bool(true) {
+            return Err(WriteError::Omit(
+                "light attribute detail_background_visible must be true when present".into(),
+            ));
+        }
+        body.extend([42, 1]);
+    }
     body.push(0);
     Ok(body)
 }
