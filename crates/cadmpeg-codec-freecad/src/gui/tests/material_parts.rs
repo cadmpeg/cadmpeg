@@ -21,7 +21,10 @@ fn property() -> crate::native::GuiPropertyRecord {
 
 /// Build a version-3 member: count, fixed records, then length-prefixed strings.
 fn member(records: &[([u32; 4], [f32; 2])], strings: &[&str]) -> Vec<u8> {
-    let mut bytes = (records.len() as u32).to_le_bytes().to_vec();
+    let mut bytes = u32::try_from(records.len())
+        .expect("fixture record count")
+        .to_le_bytes()
+        .to_vec();
     for (colors, scalars) in records {
         for color in *colors {
             bytes.extend_from_slice(&color.to_le_bytes());
@@ -31,7 +34,11 @@ fn member(records: &[([u32; 4], [f32; 2])], strings: &[&str]) -> Vec<u8> {
         }
     }
     for string in strings {
-        bytes.extend_from_slice(&(string.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(
+            &u32::try_from(string.len())
+                .expect("fixture string length")
+                .to_le_bytes(),
+        );
         bytes.extend_from_slice(string.as_bytes());
     }
     bytes
