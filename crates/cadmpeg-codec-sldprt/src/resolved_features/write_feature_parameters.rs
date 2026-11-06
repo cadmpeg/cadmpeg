@@ -142,6 +142,14 @@ pub(crate) fn synthesize_configuration_operations(
             let Some(object_id) = record.source_value() else {
                 continue;
             };
+            if matches!(operation, ConfigurationOperation::Extrusion(_))
+                && !matches!(
+                    record.input_class.as_deref(),
+                    Some("moExtrusion_c" | "moICE_c")
+                )
+            {
+                continue;
+            }
             if matches!(operation, ConfigurationOperation::Revolution(_))
                 && record
                     .input_class
@@ -204,6 +212,118 @@ pub(crate) fn synthesize_configuration_operations(
                 || !lane.id.starts_with("sldprt:generated:")
         });
         native.feature_input_lanes.push(lane);
+    }
+    if let Some(active) = ir
+        .model
+        .configurations
+        .iter()
+        .find(|configuration| configuration.active)
+    {
+        let slot = crate::history::write::configurations::configuration_slot(
+            &active.properties,
+            active.ordinal,
+        )
+        .to_string();
+        let ids = written.iter().map(|(_, id)| id).collect::<HashSet<_>>();
+        let mut payload = native
+            .feature_input_lanes
+            .iter()
+            .filter(|lane| {
+                lane.configuration.as_deref() == Some(&slot)
+                    && lane.id.starts_with("sldprt:generated:")
+            })
+            .flat_map(|lane| lane.native_payload.iter().copied())
+            .collect::<Vec<_>>();
+        let mut appended = false;
+        for feature in ir
+            .model
+            .features
+            .iter()
+            .filter(|feature| ids.contains(&feature.id))
+        {
+            let FeatureDefinition::Operation(FeatureOperation::Extrude { op, .. }) =
+                feature.evaluation.definition()
+            else {
+                continue;
+            };
+            let Some(family) = extrusion_family(*op) else {
+                continue;
+            };
+            let Some(record) = native
+                .feature_histories
+                .iter()
+                .flat_map(|history| &history.features)
+                .find(|record| {
+                    feature.native_ref.as_deref() == Some(record.id.as_str())
+                        || (feature.native_ref.is_none()
+                            && record.id
+                                == crate::history::write::features::generated_feature_record_id(
+                                    &feature.id,
+                                ))
+                })
+            else {
+                continue;
+            };
+            let Some(class @ ("moExtrusion_c" | "moICE_c")) = record.input_class.as_deref() else {
+                continue;
+            };
+            let Some(object_id) = record.source_value() else {
+                continue;
+            };
+            append_named_object(&mut payload, class, &record.name, object_id)?;
+            append_extrusion_operation(&mut payload, family);
+            appended = true;
+        }
+        if appended {
+            let lane = super::write_prepare::generated_configuration_lane(
+                &native.feature_histories,
+                &slot,
+                payload,
+            )?;
+            native.feature_input_lanes.retain(|lane| {
+                lane.configuration.as_deref() != Some(&slot)
+                    || !lane.id.starts_with("sldprt:generated:")
+            });
+            native.feature_input_lanes.push(lane);
+        }
+    }
+    for (_, feature_id) in &written {
+        let Some(feature) = ir
+            .model
+            .features
+            .iter()
+            .find(|feature| &feature.id == feature_id)
+        else {
+            continue;
+        };
+        if !matches!(
+            feature.evaluation.definition(),
+            FeatureDefinition::Operation(FeatureOperation::Extrude { .. })
+        ) {
+            continue;
+        }
+        let Some(record) = native
+            .feature_histories
+            .iter_mut()
+            .flat_map(|history| &mut history.features)
+            .find(|record| {
+                feature.native_ref.as_deref() == Some(record.id.as_str())
+                    || (feature.native_ref.is_none()
+                        && record.id
+                            == crate::history::write::features::generated_feature_record_id(
+                                feature_id,
+                            ))
+            })
+        else {
+            continue;
+        };
+        if matches!(
+            record.input_class.as_deref(),
+            Some("moExtrusion_c" | "moICE_c")
+        ) {
+            record.kind = "Extrusion".into();
+            record.properties.remove("Operation");
+        }
     }
     Ok(written)
 }
