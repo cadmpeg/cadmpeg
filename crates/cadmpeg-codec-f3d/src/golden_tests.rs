@@ -884,6 +884,8 @@ fn fixtures_synthesize_without_source_bytes() {
 
 #[test]
 fn source_less_dimension_keeps_its_non_driving_state() {
+    const EPS_DIMENSION_ROUNDTRIP: f64 = 1.0e-12;
+
     let input = read_fixture("design_sketch_constraints").expect("dimension fixture");
     let decoded = decode_result(&input).expect("decode dimension fixture");
     let dimension = decoded
@@ -913,8 +915,25 @@ fn source_less_dimension_keeps_its_non_driving_state() {
     else {
         panic!("dimension retains its length value");
     };
-    const EPS_DIMENSION_ROUNDTRIP: f64 = 1.0e-12;
     assert!((actual.get() - expected.get()).abs() < EPS_DIMENSION_ROUNDTRIP);
+}
+
+#[test]
+fn source_less_synthesis_obeys_the_entity_limit() {
+    let input = read_fixture("design_sketch_constraints").expect("dimension fixture");
+    let decoded = decode_result(&input).expect("decode dimension fixture");
+    let mut encode_input = EncodeInput::new(decoded.ir(), None);
+    encode_input.limits.max_entities = 0;
+    let error = F3dCodec
+        .plan(encode_input, TargetRequest::Inherit)
+        .err()
+        .expect("a zero entity ceiling rejects generated records");
+    assert!(matches!(
+        error,
+        cadmpeg_ir::codec::write::EncodeError::ResourceLimit(limit)
+            if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities
+                && limit.limit == 0
+    ));
 }
 
 /// How far the mutation lane moves a point, in millimetres.
