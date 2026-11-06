@@ -63,11 +63,10 @@ fn write_3dm(ir: &CadIr, path: &str) -> Result<(), Box<dyn std::error::Error>> {
 ```
 
 `RhinoCodec` selects the target archive version explicitly. Writing is
-source-less semantic regeneration from a narrowly writable IR. `fidelity` is
-ignored and resolves to `NotConsumed`. Writable families are points and point
-clouds, circles, canonical NURBS curves and surfaces, planes, restricted
-planar and NURBS sheet and solid Breps, and triangle meshes. Unsupported
-arenas and retained non-writer namespaces are refused. Generated archives
+source-less semantic regeneration. `fidelity` is ignored and resolves to
+`NotConsumed`. Writable families include points and point clouds, circles,
+NURBS curves and surfaces, planes, sheet and solid Breps, and triangle meshes.
+Unsupported content is reduced or omitted with a loss. Generated archives
 declare millimetre units. The CLI accepts the same archive-version choice:
 
 ```sh

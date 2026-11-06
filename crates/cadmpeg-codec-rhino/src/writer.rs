@@ -536,6 +536,7 @@ fn write_archive_prefix(
     let mut dimstyle_losses = Vec::new();
     let mut texture_losses = Vec::new();
     let mut light_losses = Vec::new();
+    let mut linetype_losses = Vec::new();
     let mut hatch_losses = Vec::new();
     for typecode in [
         TCODE_BITMAP_TABLE,
@@ -571,7 +572,11 @@ fn write_archive_prefix(
             }
             TCODE_MATERIAL_TABLE => materials.encode(ir)?,
             TCODE_GROUP_TABLE => tables::native::groups(ir)?,
-            TCODE_LINETYPE_TABLE => tables::native::linetypes(ir)?,
+            TCODE_LINETYPE_TABLE => {
+                let exported = tables::native::linetypes(ir)?;
+                linetype_losses.extend(exported.losses);
+                exported.records
+            }
             TCODE_DIMSTYLE_TABLE => {
                 let exported = tables::dimstyles::styles(ir, version)?;
                 dimstyle_losses.extend(exported.losses);
@@ -597,6 +602,29 @@ fn write_archive_prefix(
     }
     let mut losses = documents.losses;
     losses.extend(setting_losses);
+    losses.extend(tables::layer_linetype_losses(ir)?);
+    losses.extend(linetype_losses);
+    for record in records_in(ir, "object_presentation") {
+        if let Some(source) = record
+            .field("linetype_index")
+            .and_then(|value| value.as_i64())
+        {
+            if source >= 0 {
+                let written = i32::try_from(source)
+                    .ok()
+                    .map(|source| tables::native::linetype_index(ir, source))
+                    .transpose()?
+                    .flatten();
+                if written.map(i64::from) != Some(source) {
+                    losses.push(RhinoLossCode::WriterLinetypeReduced.note(format!(
+                        "object presentation {} linetype index {source} is written as {}",
+                        record.id(),
+                        written.map_or_else(|| "absent".to_owned(), |value| value.to_string())
+                    )));
+                }
+            }
+        }
+    }
     losses.extend(views.losses);
     losses.extend(image_losses);
     losses.extend(dimstyle_losses);
@@ -1427,10 +1455,14 @@ fn native_dispositions(
         .and_then(|namespace| namespace.arenas().get("layers"))
     {
         for record in records {
-            if ir.model.presentation_layers.iter().any(|value| {
-                value.native_ref.as_deref() == Some(record.id()) && value.description.is_none()
-            }) && tables::native_layer_complete(record)
-            {
+            let mut unchanged = false;
+            for value in &ir.model.presentation_layers {
+                if value.native_ref.as_deref() == Some(record.id()) && value.description.is_none() {
+                    let (source, target) = tables::layer_linetype(ir, value)?;
+                    unchanged |= source == target;
+                }
+            }
+            if unchanged && tables::native_layer_complete(record) {
                 dispositions.set_record(
                     "rhino",
                     "layers",
@@ -1440,6 +1472,7 @@ fn native_dispositions(
             }
         }
     }
+    let emitted_linetypes = tables::native::linetypes(ir)?;
     if let Some(namespace) = ir.native.namespace("rhino") {
         for arena in ["groups", "linetypes", "materials", "text_styles"] {
             for record in namespace.arenas().get(arena).into_iter().flatten() {
@@ -1447,7 +1480,19 @@ fn native_dispositions(
                     "groups" if tables::native::group_resolves(ir, record) => {
                         NativeDisposition::Written
                     }
-                    "linetypes" => NativeDisposition::Written,
+                    "linetypes"
+                        if emitted_linetypes
+                            .indices
+                            .get(record.id())
+                            .is_some_and(|index| {
+                                record
+                                    .field("archive_index")
+                                    .and_then(|value| value.as_i64())
+                                    .is_none_or(|source| source == i64::from(*index))
+                            }) =>
+                    {
+                        NativeDisposition::Written
+                    }
                     "text_styles" if tables::fonts::complete(record) => NativeDisposition::Written,
                     "materials"
                         if ir.model.appearances.iter().any(|appearance| {
@@ -2819,6 +2864,10 @@ fn native_i32_count(value: usize, message: String) -> Result<i32, CodecError> {
     i32::try_from(value).map_err(|_| CodecError::InvalidInput(message))
 }
 
+fn writable_i32_count(value: usize, message: String) -> Result<i32, WriteError> {
+    i32::try_from(value).map_err(|_| WriteError::Omit(message))
+}
+
 fn archive_body_len(value: u64) -> Result<i64, cadmpeg_ir::codec::write::EncodeError> {
     let field = &target::CAPACITY_FIELDS[0];
     if value > field.limit {
@@ -2939,14 +2988,14 @@ fn check_nurbs_surface(
     let u_count = surface.u_count();
     let v_count = surface.v_count();
     let count_error = || format!("surface {id} cannot be represented by Rhino NURBS counts");
-    let pole_count = native_i32_count(surface.poles().len(), count_error())?;
+    let pole_count = writable_i32_count(surface.poles().len(), count_error())?;
     if u_order < 2 || v_order < 2 {
         return Err(WriteError::Omit(count_error()));
     }
-    native_i32_count(u_order, count_error())?;
-    native_i32_count(v_order, count_error())?;
-    native_i32_count(u_count, count_error())?;
-    native_i32_count(v_count, count_error())?;
+    writable_i32_count(u_order, count_error())?;
+    writable_i32_count(v_order, count_error())?;
+    writable_i32_count(u_count, count_error())?;
+    writable_i32_count(v_count, count_error())?;
     check_knot_roundtrip(
         id,
         "surface U",
@@ -2978,8 +3027,8 @@ fn check_nurbs_curve(
     if order < 2 {
         return Err(WriteError::Omit(count_error()));
     }
-    native_i32_count(order, count_error())?;
-    native_i32_count(count, count_error())?;
+    writable_i32_count(order, count_error())?;
+    writable_i32_count(count, count_error())?;
     check_knot_roundtrip(id, "curve", curve.knots(), order, count, curve.periodic())?;
     Ok(())
 }
@@ -4378,26 +4427,21 @@ fn object_attributes_payload(
         payload.extend(utf16(name)?);
     }
     let native = tables::own_object(ir, identity);
+    let mut has_native_linetype = false;
     if let Some(index) = native
         .as_ref()
         .and_then(|fields| fields.get("linetype_index"))
         .and_then(serde_json::Value::as_i64)
     {
-        if let Some(index) = ir
-            .native
-            .namespace("rhino")
-            .and_then(|namespace| namespace.arenas().get("linetypes"))
-            .and_then(|records| {
-                records.iter().position(|record| {
-                    record
-                        .field("archive_index")
-                        .and_then(|value| value.as_i64())
-                        == Some(index)
-                })
-            })
+        if let Some(index) = i32::try_from(index)
+            .ok()
+            .map(|source| tables::native::linetype_index(ir, source))
+            .transpose()?
+            .flatten()
         {
             payload.push(3);
-            payload.extend(wire_index(index)?.to_le_bytes());
+            payload.extend(index.to_le_bytes());
+            has_native_linetype = index >= 0;
         }
     }
     if let Some(material) = material {
@@ -4434,12 +4478,7 @@ fn object_attributes_payload(
     if material.is_some() {
         payload.extend([16, 1]);
     }
-    if native
-        .as_ref()
-        .and_then(|fields| fields.get("linetype_index"))
-        .and_then(serde_json::Value::as_i64)
-        .is_some_and(|index| index >= 0)
-    {
+    if has_native_linetype {
         payload.extend([17, 1]);
     }
     let groups = tables::native::group_indices(ir, identity)?;

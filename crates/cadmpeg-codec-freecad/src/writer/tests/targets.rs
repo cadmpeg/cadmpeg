@@ -423,7 +423,7 @@ fn a_source_without_a_recorded_dialect_remains_an_unresolvable_target() {
     assert_eq!(target(&explicit), "fcstd:schema-4");
 }
 #[test]
-fn neutral_edits_and_unrepresented_source_never_reach_the_patch_path() {
+fn neutral_edits_and_unrepresented_classes_never_reach_the_patch_path() {
     let decoded = decode(CORE_DESIGN_PRODUCT);
     let control = bytes(inherited(&decoded));
     let mut edited = decoded.ir().clone();

@@ -26,7 +26,7 @@ Policy stays with the caller. The CLI writes empty geometry output with an `expo
 
 ## Scope and unrepresented
 
-Wire version 10 requires a `scope` object with one boolean per arena class:
+Wire version 11 requires a `scope` object with one boolean per arena class:
 
 ```json
 {"scope":{"model":true,"design":false}}
@@ -45,8 +45,6 @@ Each given-up part has one home in every decoder: the helper creates one `unknow
 A record that contains a given-up part keeps the fields it read. A field whose bytes lie in the part is absent; in a positional list its entry is `null`, so later entries keep their positions. Records that need a dropped record are dropped transitively; records that list one lose only that entry.
 
 Whole-file refusals are `WrongFormat`, `UnsupportedDialect`, a session-scope `ResourceLimit`, `Io`, and `Malformed` or `Truncated` when the decoder finds no part at all. A strict-mode rejection is the caller's rejection of a completed decode and is not a codec refusal.
-
-Diagnostic records that restate a part give-up or unread bytes predate this home. Their removal belongs to the decoder units that own them (#222 IGES, #223 Rhino, #224 FreeCAD, #225 F3D, #227 Inventor, #229 Creo, #230 NX). The arena inventories name what the tree holds today.
 
 ## Out-of-scope classes
 
@@ -68,11 +66,11 @@ Rule E stores evaluation staleness as `Feature.needs_recompute` on the wire. The
 
 ## Residual bytes
 
-A synthesized record carries document content authored from neutral and typed native records. Retained source bytes travel with the `unknowns` stub for their part and do not enter synthesized records. The per-record residual accounting of #232 §3.3 belongs to the writer units that own it (#233 STEP, #234 IGES, #235 Rhino, #236 F3D, #237 SLDPRT, #238 FreeCAD).
+A synthesized record carries document content authored from neutral and typed native records. Retained source bytes travel with the `unknowns` stub for their part and do not enter synthesized records. For positions the decoder does not read, the writer uses the value stated in the format specification. When the specification gives no value, the writer charges `export:record.residual-unavailable` (Warning), naming the record. A test checks the authored values and the loss.
 
 ## Patch rule
 
-Patch and replay are eligible with empty `unrepresented` and an unedited document. A patch that cannot express the edit selects synthesis and records `SynthesisCause::PatchDeclined { reason }`. The content-equality gate of #232 E1 and its test belong to the writer units that own them.
+Patch and replay require empty `unrepresented`. Replay requires an unedited document. A patch that cannot express the edit selects synthesis and records `SynthesisCause::PatchDeclined { reason }`. The patch and replay test writes an unedited decode with fidelity, decodes the output, and checks agreement in both directions with zero export losses.
 
 ## New codecs, writers, classes, parts
 
@@ -88,4 +86,4 @@ A dimension is a literal or a binding: `Dimension<Length>::Literal(Length::new(1
 
 ## Version policy
 
-Readers accept exactly version 10. Earlier documents are refused with a message that names the change to `scope` and the report transfer change. There is no migration path in the reader.
+Readers accept exactly version 11. Earlier documents are refused with a message that names the change to `scope` and the report transfer change. There is no migration path in the reader.

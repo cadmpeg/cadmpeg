@@ -136,6 +136,30 @@ fn integer(fields: Option<&Map<String, Value>>, name: &str, default: i32) -> i32
         .unwrap_or(default)
 }
 
+pub(super) fn layer_linetype(
+    ir: &CadIr,
+    layer: &PresentationLayer,
+) -> Result<(i32, i32), CodecError> {
+    let native = own_layer(ir, layer);
+    let source = integer(native.as_ref(), "linetype_index", -1);
+    Ok((source, native::linetype_index(ir, source)?.unwrap_or(-1)))
+}
+
+pub(super) fn layer_linetype_losses(ir: &CadIr) -> Result<Vec<LossNote>, CodecError> {
+    let mut losses = Vec::new();
+    for layer in &ir.model.presentation_layers {
+        let (source, target) = layer_linetype(ir, layer)?;
+        if source != target {
+            losses.push(RhinoLossCode::WriterLayerLinetypeReduced.note(format!(
+                "layer {} native {} linetype index {source} is written as {target}",
+                layer.id,
+                layer.native_ref.as_deref().unwrap_or("unlinked")
+            )));
+        }
+    }
+    Ok(losses)
+}
+
 fn color(fields: Option<&Map<String, Value>>, name: &str) -> Result<[u8; 4], CodecError> {
     let Some(value) = fields
         .and_then(|fields| fields.get(name))
@@ -247,7 +271,7 @@ pub(super) fn layers(ir: &CadIr) -> Result<Vec<Vec<u8>>, CodecError> {
         payload.extend(1.0_f64.to_le_bytes());
         payload.extend(utf16(&layer.name)?);
         payload.push(u8::from(layer.visible.unwrap_or(true)));
-        payload.extend(integer(fields, "linetype_index", -1).to_le_bytes());
+        payload.extend(layer_linetype(ir, layer)?.1.to_le_bytes());
         payload.extend(color(fields, "plot_color")?);
         payload.extend(
             fields
