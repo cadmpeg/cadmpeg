@@ -392,6 +392,10 @@ impl MergeSession<'_, '_> {
                             self.scan,
                             reference.relative_path.as_str(),
                             &error.to_string(),
+                            [
+                                cadmpeg_ir::document::ArenaClass::Model,
+                                cadmpeg_ir::document::ArenaClass::Design,
+                            ],
                             &mut part,
                         )?;
                         let (_, mut native, fidelity, losses) = part.into_parts();
