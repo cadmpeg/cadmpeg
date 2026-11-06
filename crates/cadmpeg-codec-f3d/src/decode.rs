@@ -4265,7 +4265,8 @@ fn bind_mesh_feature_definitions(
         }
         let mut copies = Vec::new();
         for tessellation in tessellations {
-            let copy = tessellation.to_owned();
+            let copy = cadmpeg_ir::tessellation::TessellationId::mint(tessellation.to_owned())
+                .map_err(cadmpeg_core::CodecError::malformed)?;
             copies.push(copy);
         }
         feature
