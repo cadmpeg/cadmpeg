@@ -234,7 +234,7 @@ fn retained_f3d_round_trips_user_knot_edits_and_extension_removal() {
         .unwrap();
     assert!(matches!(
         plan.report().synthesis_cause(),
-        Some(SynthesisCause::SourceUnrepresented { .. })
+        Some(SynthesisCause::PatchDeclined { .. })
     ));
 
     edited.model.subds[0]

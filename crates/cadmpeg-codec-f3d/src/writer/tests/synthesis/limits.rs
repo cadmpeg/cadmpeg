@@ -58,6 +58,44 @@ fn source_less_empty_brep_charges_its_two_records() {
 }
 
 #[test]
+fn source_less_points_are_written_as_brep_carriers() {
+    use cadmpeg_asm::{kernel_header::RefWidth, sab::Token};
+    use cadmpeg_ir::{features::FinitePoint3, math::Point3, topology::Point};
+    use std::io::Read;
+
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model.points.push(Point::new(
+        "authored:model:point#1".try_into().unwrap(),
+        FinitePoint3::new(Point3::new(10.0, 20.0, 30.0)).unwrap(),
+        None,
+    ));
+    let mut bytes = Vec::new();
+    F3dCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap()
+        .write_to(&mut bytes)
+        .unwrap();
+    let mut archive = zip::ZipArchive::new(Cursor::new(bytes)).unwrap();
+    let name = archive
+        .file_names()
+        .map(|name| name.unwrap())
+        .find(|name| name.ends_with(".smbh"))
+        .unwrap()
+        .into_owned();
+    let mut smbh = Vec::new();
+    archive.by_name(&name).unwrap().read_to_end(&mut smbh).unwrap();
+    let start = cadmpeg_asm::asm_header::record_stream_start(&smbh).unwrap();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let ctx = cadmpeg_core::decode::DecodeContext::for_encode(&arena, &policy);
+    let records = cadmpeg_asm::sab::frame(&ctx, &smbh, start, smbh.len(), RefWidth::Eight, None)
+        .unwrap();
+    let point = records.iter().find(|record| record.head() == "point").unwrap();
+    assert!(point.tokens.iter().any(|token| matches!(token, Token::Position([x, y, z])
+        if (x - 1.0).abs() < 1e-12 && (y - 2.0).abs() < 1e-12 && (z - 3.0).abs() < 1e-12)));
+}
+
+#[test]
 fn source_less_brep_budget_matches_framed_records() {
     use cadmpeg_asm::kernel_header::RefWidth;
     use std::io::Read;
