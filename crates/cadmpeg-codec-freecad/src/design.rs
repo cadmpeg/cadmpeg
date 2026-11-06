@@ -8843,13 +8843,13 @@ fn should_project_feature(
     products: &[crate::native::ProductNodeRecord],
     joints: &[crate::native::joint::JointRecord],
 ) -> bool {
-    if !is_design_object(&object.type_name)
-        && !matches!(
+    if !(is_design_object(&object.type_name)
+        || matches!(
             object.type_name.as_str(),
             "Mesh::Feature" | "Points::Feature"
         )
-        && !(is_design_kind(&object.type_name)
-            && crate::product::is_product_type(&object.type_name))
+        || (is_design_kind(&object.type_name)
+            && crate::product::is_product_type(&object.type_name)))
     {
         return false;
     }
