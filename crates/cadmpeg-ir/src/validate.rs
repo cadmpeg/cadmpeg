@@ -135,7 +135,7 @@ fn validate_model_with_index<'ir>(
 
     // The identity walk enumerates every entity id in the product document;
     // native links resolve against that set.
-    check_identity_and_order(ids, &mut findings)?;
+    check_identity_and_order(ids, &mut findings);
     check_tolerances(ir, &mut findings);
     check_references(ctx, ir, ids, &mut findings)?;
     attributes::check_values(ctx, ir, ids, &mut findings)?;
@@ -144,7 +144,7 @@ fn validate_model_with_index<'ir>(
     check_pmi(ir, &mut findings);
     design_dimensions::check(ctx, ir, &mut findings)?;
     design_caches::check(ctx, ir, &mut findings)?;
-    check_coedge_pairing(ir, &mut findings)?;
+    check_coedge_pairing(ir, &mut findings);
     check_shell_connectivity(ir, &mut findings);
     check_wire_topology(ir, &mut findings);
     if ir.fragment {

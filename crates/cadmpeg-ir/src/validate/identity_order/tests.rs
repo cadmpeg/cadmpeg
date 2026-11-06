@@ -52,7 +52,7 @@ fn native_order_groups_preserve_combined_name_and_finding_order() {
     }
     let ctx = cadmpeg_test_support::service_decode_context();
     let mut findings = Vec::new();
-    super::check_identity_and_order(&crate::index::ModelIndex::build(&ir), &mut findings).unwrap();
+    super::check_identity_and_order(&crate::index::ModelIndex::build(&ir), &mut findings);
     assert_eq!(
         findings
             .iter()
@@ -105,7 +105,7 @@ fn duplicate_identity_findings_keep_model_then_native_visit_order() {
     }
     let ctx = cadmpeg_test_support::service_decode_context();
     let mut findings = Vec::new();
-    super::check_identity_and_order(&crate::index::ModelIndex::build(&ir), &mut findings).unwrap();
+    super::check_identity_and_order(&crate::index::ModelIndex::build(&ir), &mut findings);
     assert_eq!(
         findings
             .iter()

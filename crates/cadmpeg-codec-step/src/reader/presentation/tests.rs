@@ -54,6 +54,19 @@ use crate::test_support::exchange::{decode_inline, export};
 use crate::{StepCodec, StepSchema, StepWriteOptions};
 
 #[test]
+fn unattached_colour_is_an_unbound_appearance() {
+    let result = decode_inline("#1=COLOUR_RGB('independent',0.125,0.25,0.5);");
+    let appearances = &result.ir().model.appearances;
+    assert_eq!(appearances.len(), 1);
+    assert_eq!(appearances[0].name.as_deref(), Some("independent"));
+    assert_eq!(
+        appearances[0].base_color,
+        cadmpeg_ir::topology::Color::new(0.125, 0.25, 0.5, 1.0)
+    );
+    assert!(result.ir().model.appearance_bindings.is_empty());
+}
+
+#[test]
 fn presentation_layer_expands_all_product_definition_views() {
     use cadmpeg_ir::presentation::PresentationItem;
 

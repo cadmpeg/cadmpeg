@@ -872,8 +872,12 @@ fn compact_custom_shape(attribute: &cadmpeg_ir::attributes::SourceAttribute) -> 
             Some(Some(AttributeValue::Reference(_)))
         )
         && attribute.values[1..].iter().all(|value| match value {
-            Some(AttributeValue::String(_) | AttributeValue::Integer(_)
-                | AttributeValue::Float(_) | AttributeValue::Boolean(_)) => true,
+            Some(
+                AttributeValue::String(_)
+                | AttributeValue::Integer(_)
+                | AttributeValue::Float(_)
+                | AttributeValue::Boolean(_),
+            ) => true,
             Some(AttributeValue::Vector(values)) => matches!(values.len(), 2 | 3),
             Some(AttributeValue::Reference(value)) => value == "f3d:brep:entity#-1",
             _ => false,
@@ -1052,11 +1056,15 @@ fn native_compact_custom(
     native_ref(records, next);
     for value in &attribute.values[1..] {
         match value {
-            Some(AttributeValue::String(value)) => native_string(records, value)?,
+            Some(AttributeValue::String(value)) => native_string(records, value),
             Some(AttributeValue::Integer(value)) => native_i64(records, *value),
             Some(AttributeValue::Float(value)) => native_f64(records, value.get()),
-            Some(AttributeValue::Boolean(value)) => records.push(crate::writer::primitives::native_bool(*value)),
-            Some(AttributeValue::Reference(value)) if value == "f3d:brep:entity#-1" => native_ref(records, -1),
+            Some(AttributeValue::Boolean(value)) => {
+                records.push(crate::writer::primitives::native_bool(*value));
+            }
+            Some(AttributeValue::Reference(value)) if value == "f3d:brep:entity#-1" => {
+                native_ref(records, -1);
+            }
             Some(AttributeValue::Vector(values)) if matches!(values.len(), 2 | 3) => {
                 records.push(if values.len() == 2 { 0x16 } else { 0x14 });
                 for value in values {
@@ -1084,11 +1092,11 @@ fn native_persistent_design_attribute(
     native_subident(records, "ATTRIB_CUSTOM")?;
     native_ident(records, "attrib")?;
     native_attribute_base(records, next, previous, owner);
-    native_string(records, "generic_tag_attrib_def")?;
+    native_string(records, "generic_tag_attrib_def");
     for value in [kind, kind, -1] {
         native_i64(records, value);
     }
-    native_string(records, "generic_tag_attrib_def ")?;
+    native_string(records, "generic_tag_attrib_def ");
     native_i64(
         records,
         i64::try_from(links.len())
@@ -1096,7 +1104,7 @@ fn native_persistent_design_attribute(
     );
     for link in links {
         native_i64(records, kind);
-        native_string(records, link.design_id.as_str())?;
+        native_string(records, link.design_id.as_str());
         for value in [link.design_reference, 0, 0] {
             native_i64(records, value);
         }
@@ -1114,11 +1122,11 @@ fn native_persistent_subentity_attribute(
     native_subident(records, "ATTRIB_CUSTOM")?;
     native_ident(records, "attrib")?;
     native_attribute_base(records, next, previous, owner);
-    native_string(records, "generic_tag_attrib_def")?;
+    native_string(records, "generic_tag_attrib_def");
     for value in [3, 3, -1] {
         native_i64(records, value);
     }
-    native_string(records, "generic_tag_attrib_def ")?;
+    native_string(records, "generic_tag_attrib_def ");
     native_i64(
         records,
         i64::try_from(tags.len())
@@ -1126,7 +1134,7 @@ fn native_persistent_subentity_attribute(
     );
     for tag in tags {
         native_i64(records, tag.selector);
-        native_string(records, tag.token.as_str())?;
+        native_string(records, tag.token.as_str());
         native_i64(records, 0);
         native_i64(
             records,
@@ -1151,7 +1159,7 @@ fn native_sketch_link_attribute(
     native_subident(records, "ATTRIB_CUSTOM")?;
     native_ident(records, "attrib")?;
     native_attribute_base(records, next, -1, owner);
-    native_string(records, "sketch_attrib_def")?;
+    native_string(records, "sketch_attrib_def");
     for value in [1, 1, 3] {
         native_i64(records, value);
     }
@@ -1166,7 +1174,8 @@ fn native_sketch_link_attribute(
             link.role,
             link.closure
         ),
-    )
+    );
+    Ok(())
 }
 
 pub(super) fn encode_source_less_attributes(
@@ -1253,7 +1262,12 @@ pub(super) fn encode_source_less_attributes(
             reference
         } else {
             timestamp_attribute_ref(target, index, &owner_target, attribute_start)?
-                .or(extra_attribute_ref(target, index, &owner_target, attribute_start)?)
+                .or(extra_attribute_ref(
+                    target,
+                    index,
+                    &owner_target,
+                    attribute_start,
+                )?)
                 .unwrap_or(-1)
         };
         output.charge_entities(1, "F3D BREP record")?;
@@ -1287,7 +1301,12 @@ pub(super) fn encode_source_less_attributes(
             reference
         } else {
             timestamp_attribute_ref(target, index, &owner_target, attribute_start)?
-                .or(extra_attribute_ref(target, index, &owner_target, attribute_start)?)
+                .or(extra_attribute_ref(
+                    target,
+                    index,
+                    &owner_target,
+                    attribute_start,
+                )?)
                 .unwrap_or(-1)
         };
         output.charge_entities(1, "F3D BREP record")?;
@@ -1319,7 +1338,12 @@ pub(super) fn encode_source_less_attributes(
             reference
         } else {
             timestamp_attribute_ref(target, index, &owner_target, attribute_start)?
-                .or(extra_attribute_ref(target, index, &owner_target, attribute_start)?)
+                .or(extra_attribute_ref(
+                    target,
+                    index,
+                    &owner_target,
+                    attribute_start,
+                )?)
                 .unwrap_or(-1)
         };
         let previous = if body.color.is_none() {
@@ -1354,7 +1378,12 @@ pub(super) fn encode_source_less_attributes(
             reference
         } else {
             timestamp_attribute_ref(target, index, &owner_target, attribute_start)?
-                .or(extra_attribute_ref(target, index, &owner_target, attribute_start)?)
+                .or(extra_attribute_ref(
+                    target,
+                    index,
+                    &owner_target,
+                    attribute_start,
+                )?)
                 .unwrap_or(-1)
         };
         let previous = if face.color.is_none() {
@@ -1557,7 +1586,7 @@ pub(super) fn encode_source_less_attributes(
                 previous,
                 native_record_index(owner_start, owner_ordinal)?,
             );
-            native_string(records, "Timestamp_attrib_def")?;
+            native_string(records, "Timestamp_attrib_def");
             native_i64(records, 1);
             native_f64(records, timestamp.unix_microseconds.get());
         }
@@ -1586,8 +1615,9 @@ fn native_name_attribute(
     for flag in [1, 1, 1, 1] {
         native_i64(records, flag);
     }
-    native_string(records, "name")?;
-    native_string(records, name)
+    native_string(records, "name");
+    native_string(records, name);
+    Ok(())
 }
 
 fn retained_color_values(

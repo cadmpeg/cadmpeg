@@ -43,17 +43,15 @@ pub(super) fn native_surface_base(bytes: &mut Vec<u8>, kind: &str) -> Result<(),
     Ok(())
 }
 
-pub(super) fn native_string(bytes: &mut Vec<u8>, value: &str) -> Result<(), CodecError> {
-    native_text(bytes, 0x07, value)
-}
-
-pub(super) fn native_u16_string(bytes: &mut Vec<u8>, value: &str) -> Result<(), CodecError> {
-    let length = u16::try_from(value.len())
-        .map_err(|_| CodecError::InvalidInput("F3D native text exceeds u16".into()))?;
-    bytes.push(0x08);
-    bytes.extend_from_slice(&length.to_le_bytes());
+pub(super) fn native_u16_string(bytes: &mut Vec<u8>, value: &str) {
+    if let Ok(length) = u16::try_from(value.len()) {
+        bytes.push(0x08);
+        bytes.extend_from_slice(&length.to_le_bytes());
+    } else {
+        bytes.push(0x09);
+        bytes.extend_from_slice(&u64_from_index(value.len()).to_le_bytes());
+    }
     bytes.extend_from_slice(value.as_bytes());
-    Ok(())
 }
 
 /// Emit a native string using the minimal length-prefix width: `0x07` (u8) for
@@ -61,7 +59,7 @@ pub(super) fn native_u16_string(bytes: &mut Vec<u8>, value: &str) -> Result<(), 
 /// ref-width (8-byte in generated `BinaryFile8` streams) length prefix.
 /// The serializer stores law-formula names this way, so the width follows the
 /// text length rather than a fixed tag.
-pub(super) fn native_length_prefixed_string(bytes: &mut Vec<u8>, value: &str) {
+pub(super) fn native_string(bytes: &mut Vec<u8>, value: &str) {
     if let Ok(length) = u8::try_from(value.len()) {
         bytes.extend_from_slice(&[0x07, length]);
     } else if let Ok(length) = u16::try_from(value.len()) {
@@ -294,11 +292,32 @@ pub(super) fn native_history_tail(
 #[cfg(test)]
 mod tests {
     #[test]
+    fn u16_strings_use_a_wider_prefix_when_needed() {
+        for length in [65535, 65536] {
+            let value = "a".repeat(length);
+            let mut bytes = vec![0x0d, 1, b'x'];
+            super::native_u16_string(&mut bytes, &value);
+            bytes.push(0x11);
+            let records = cadmpeg_asm::test_support::sab::frame(
+                &bytes,
+                0,
+                bytes.len(),
+                cadmpeg_asm::kernel_header::RefWidth::Eight,
+            )
+            .unwrap();
+            assert_eq!(
+                records[0].chunk(0),
+                Some(&cadmpeg_asm::sab::Token::Str(value))
+            );
+        }
+    }
+
+    #[test]
     fn length_prefixed_strings_round_trip_at_width_boundaries() {
         for length in [255, 256, 65535, 65536] {
             let value = "a".repeat(length);
             let mut bytes = vec![0x0d, 1, b'x'];
-            super::native_length_prefixed_string(&mut bytes, &value);
+            super::native_string(&mut bytes, &value);
             bytes.push(0x11);
             let records = cadmpeg_asm::test_support::sab::frame(
                 &bytes,
