@@ -14,8 +14,6 @@
 //! axis is parallel to the cap normal. A cap with any other edge proves
 //! nothing.
 
-use std::collections::HashMap;
-
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use std::f64::consts::TAU;
@@ -390,19 +388,24 @@ fn far_caps(
     tolerance: f64,
 ) -> Option<Vec<Cap>> {
     let normal = frame.normal;
-    let surfaces: HashMap<i64, i64> = topology
-        .face_surfaces
-        .iter()
-        .map(|binding| (binding.entity, binding.carrier))
-        .collect();
     let mut caps: Vec<(f64, Cap)> = Vec::new();
     for face in inserted {
-        let Some(plane) = surfaces.get(face).and_then(|surface| {
+        let surface = sole(
+            topology
+                .face_surfaces
+                .iter()
+                .filter(|binding| binding.entity == *face),
+        )
+        .ok()??
+        .carrier;
+        let Some(plane) = sole(
             topology
                 .surface_planes
                 .iter()
-                .find(|plane| plane.surface == *surface)
-        }) else {
+                .filter(|plane| plane.surface == surface),
+        )
+        .ok()?
+        else {
             continue;
         };
         if (plane.normal.dot(normal).abs() - 1.0).abs() > PARALLEL_CAP {
@@ -554,21 +557,24 @@ fn edge_piece(
     let normal = frame.normal;
     let start = frame.project(from);
     let end = frame.project(to);
-    let interior = topology
-        .edge_samples
-        .iter()
-        .find(|row| row.edge == edge)
+    let interior = sole(topology.edge_samples.iter().filter(|row| row.edge == edge))
+        .ok()?
         .map(|row| row.interior);
     let closed = distance(start, end) <= tolerance;
-    let curve = topology
-        .edge_curves
-        .iter()
-        .find(|binding| binding.entity == edge)
-        .and_then(|binding| binding.carrier);
+    let curve = sole(
+        topology
+            .edge_curves
+            .iter()
+            .filter(|binding| binding.entity == edge),
+    )
+    .ok()?
+    .and_then(|binding| binding.carrier);
+    let axis = match curve {
+        Some(curve) => sole(topology.curve_axes.iter().filter(|row| row.curve == curve)).ok()?,
+        None => None,
+    };
     if !closed {
-        if let Some(axis) =
-            curve.and_then(|curve| topology.curve_axes.iter().find(|row| row.curve == curve))
-        {
+        if let Some(axis) = axis {
             let chord = to.vector_from(from);
             let direction = axis.direction;
             let off_line = |point: Point3| {
@@ -585,26 +591,36 @@ fn edge_piece(
             }
         }
     }
-    let surfaces: Vec<i64> = topology
+    let mut surfaces = Vec::new();
+    for row in topology
         .coedge_topology
         .iter()
         .filter(|row| row.edge == edge)
-        .filter_map(|row| {
+    {
+        let Some(owner) = sole(
             topology
                 .face_loops
                 .iter()
-                .find(|relation| relation.member_refs.contains(&row.owner_loop))
-                .map(|relation| relation.owner_ref)
-        })
-        .filter(|owner| *owner != face)
-        .filter_map(|owner| {
+                .filter(|relation| relation.member_refs.contains(&row.owner_loop)),
+        )
+        .ok()?
+        .map(|relation| relation.owner_ref) else {
+            continue;
+        };
+        if owner == face {
+            continue;
+        }
+        if let Some(binding) = sole(
             topology
                 .face_surfaces
                 .iter()
-                .find(|binding| binding.entity == owner)
-                .map(|binding| binding.carrier)
-        })
-        .collect();
+                .filter(|binding| binding.entity == owner),
+        )
+        .ok()?
+        {
+            surfaces.push(binding.carrier);
+        }
+    }
     let mut cylinders = topology.surface_cylinders.iter().filter(|cylinder| {
         surfaces.contains(&cylinder.surface)
             && (cylinder.axis.dot(normal).abs() / cylinder.axis.norm() - 1.0).abs() <= PARALLEL_CAP
@@ -648,6 +664,19 @@ fn edge_piece(
         start: first,
         sweep,
     })
+}
+
+/// Several rows where at most one may occur.
+struct Several;
+
+/// The item of `items` when it holds at most one.
+fn sole<T>(mut items: impl Iterator<Item = T>) -> Result<Option<T>, Several> {
+    let first = items.next();
+    if first.is_some() && items.next().is_some() {
+        Err(Several)
+    } else {
+        Ok(first)
+    }
 }
 
 pub(super) fn relation(

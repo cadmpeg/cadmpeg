@@ -165,6 +165,23 @@ fn an_edge_without_a_proven_carrier_proves_no_cap() {
 }
 
 #[test]
+fn an_edge_with_two_rows_of_one_kind_proves_no_cap() {
+    let corners = unit_square_corners();
+    let edges = [(0, 1), (1, 2), (2, 3), (3, 0)];
+    let mut topology = loop_topology(&corners, &edges);
+    straight_carriers(&mut topology);
+    let axis = topology.curve_axes[2].clone();
+    topology.curve_axes.push(axis);
+    assert!(face_cap(&xy_frame(), &topology, CAP, TOLERANCE).is_none());
+
+    let mut topology = loop_topology(&corners, &edges);
+    straight_carriers(&mut topology);
+    let curve = topology.edge_curves[2].clone();
+    topology.edge_curves.push(curve);
+    assert!(face_cap(&xy_frame(), &topology, CAP, TOLERANCE).is_none());
+}
+
+#[test]
 fn a_closed_edge_is_a_circle_only_on_a_cylinder_about_the_cap_normal() {
     // One closed edge on a circle of radius 2 about (1, 1).
     let circle_topology = |axis: Vector3| {

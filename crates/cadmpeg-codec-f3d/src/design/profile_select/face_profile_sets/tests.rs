@@ -25,15 +25,47 @@ use crate::records::topology::{
 
 use super::{
     bind_extrude_face_profile_sets, bind_one, cap_profile_faces, deleted_profile_faces,
-    member_order, CapReading, CapSearch, FaceProfileSetResolution, SearchLimits,
+    face_vertex_rings, member_order, reaches_a_cap, CapReading, CapSearch, DeletedFaces,
+    FaceProfileSetResolution, PassedOver, SearchLimits,
 };
+use crate::design::profile_select::cap_regions::{face_cap, PlaneFrame};
 
 const TOLERANCE: f64 = 1e-6;
 const LIMITS: SearchLimits = SearchLimits {
     pool_faces: 256,
     outline_points: 4096,
     face_edges: 4096,
+    cap_faces: 256,
 };
+
+/// A cap reading without its passed-over candidates and dispute reason.
+#[derive(Debug, PartialEq)]
+enum Reading {
+    Selected(Vec<i64>),
+    Disputed,
+    Absent,
+    Capped,
+}
+
+fn read(search: &CapSearch<'_>) -> Reading {
+    match cap_profile_faces(search) {
+        CapReading::Selected(faces, _) => Reading::Selected(faces),
+        CapReading::Disputed(_) => Reading::Disputed,
+        CapReading::Absent => Reading::Absent,
+        CapReading::Capped => Reading::Capped,
+    }
+}
+
+/// The faces of the deleted-face reading when the transition updates none.
+fn deleted(
+    preceding: &AsmHistoricalTopology,
+    faces: &[i64],
+    members: usize,
+    resolved: &[i64],
+) -> Option<Vec<i64>> {
+    deleted_profile_faces(preceding, (faces, &[]), members, resolved, TOLERANCE)
+        .map(|deleted| deleted.faces)
+}
 
 fn caps(
     preceding: &AsmHistoricalTopology,
@@ -42,7 +74,7 @@ fn caps(
     length: f64,
     members: usize,
     resolved: &[i64],
-) -> CapReading {
+) -> Reading {
     caps_within(
         preceding, topology, inserted, length, members, resolved, LIMITS,
     )
@@ -56,9 +88,9 @@ fn caps_within(
     members: usize,
     resolved: &[i64],
     limits: SearchLimits,
-) -> CapReading {
+) -> Reading {
     let changed: HashSet<i64> = preceding.faces.iter().copied().collect();
-    cap_profile_faces(&CapSearch {
+    read(&CapSearch {
         preceding,
         topology,
         inserted,
@@ -81,8 +113,8 @@ fn caps_given(
     changed: &HashSet<i64>,
     new_body: bool,
     limits: SearchLimits,
-) -> CapReading {
-    cap_profile_faces(&CapSearch {
+) -> Reading {
+    read(&CapSearch {
         preceding,
         topology,
         inserted,
@@ -103,8 +135,8 @@ fn caps_resolved(
     (inserted, length, members): (&[i64], f64, usize),
     resolved: &[i64],
     changed: &HashSet<i64>,
-) -> CapReading {
-    cap_profile_faces(&CapSearch {
+) -> Reading {
+    read(&CapSearch {
         preceding,
         topology,
         inserted,
@@ -253,11 +285,11 @@ fn a_cap_proves_the_coplanar_faces_it_repeats() {
     let cap = capped(2.0);
     assert_eq!(
         caps(&preceding, &cap, &[10], 2.0, 2, &[]),
-        CapReading::Selected(vec![1, 2])
+        Reading::Selected(vec![1, 2])
     );
     assert_eq!(
         caps(&preceding, &cap, &[10], 2.0, 2, &[2]),
-        CapReading::Selected(vec![1, 2])
+        Reading::Selected(vec![1, 2])
     );
 }
 
@@ -267,15 +299,15 @@ fn a_cap_proves_nothing_against_another_member_count_or_resolved_face() {
     let cap = capped(2.0);
     assert_eq!(
         caps(&preceding, &cap, &[10], 2.0, 3, &[]),
-        CapReading::Disputed
+        Reading::Disputed
     );
     assert_eq!(
         caps(&preceding, &cap, &[10], 2.0, 2, &[3]),
-        CapReading::Disputed
+        Reading::Disputed
     );
     assert_eq!(
         caps(&preceding, &cap, &[10], 3.0, 2, &[]),
-        CapReading::Disputed
+        Reading::Disputed
     );
 }
 
@@ -285,7 +317,7 @@ fn a_cap_that_cuts_through_a_face_proves_nothing() {
     let cap = capped(1.25);
     assert_eq!(
         caps(&preceding, &cap, &[10], 2.0, 1, &[]),
-        CapReading::Disputed
+        Reading::Disputed
     );
 }
 
@@ -298,19 +330,19 @@ fn a_cap_that_two_planes_repeat_proves_only_the_plane_of_a_resolved_or_changed_f
     let cap = capped(1.0);
     assert_eq!(
         caps(&preceding, &cap, &[10], 2.0, 1, &[]),
-        CapReading::Disputed
+        Reading::Disputed
     );
     assert_eq!(
         caps(&preceding, &cap, &[10], 2.0, 1, &[1]),
-        CapReading::Disputed
+        Reading::Disputed
     );
     let one = HashSet::from([1]);
     let given = |changed: &HashSet<i64>, new_body| {
         caps_given(&preceding, &cap, (&[10], 2.0, 1), changed, new_body, LIMITS)
     };
-    assert_eq!(given(&one, false), CapReading::Selected(vec![1]));
-    assert_eq!(given(&one, true), CapReading::Disputed);
-    assert_eq!(given(&HashSet::new(), false), CapReading::Absent);
+    assert_eq!(given(&one, false), Reading::Selected(vec![1]));
+    assert_eq!(given(&one, true), Reading::Disputed);
+    assert_eq!(given(&HashSet::new(), false), Reading::Absent);
 }
 
 #[test]
@@ -320,46 +352,25 @@ fn an_unreadable_cap_voids_the_cap_proof() {
     cap.edge_curves.clear();
     assert_eq!(
         caps(&preceding, &cap, &[10], 2.0, 2, &[]),
-        CapReading::Disputed
+        Reading::Disputed
     );
 }
 
 #[test]
 fn deleted_faces_on_the_resolved_plane_are_the_profile() {
     let preceding = preceding();
-    assert_eq!(
-        deleted_profile_faces(&preceding, &[2, 1], 2, &[1], TOLERANCE),
-        Some(vec![1, 2])
-    );
+    assert_eq!(deleted(&preceding, &[2, 1], 2, &[1]), Some(vec![1, 2]));
 }
 
 #[test]
 fn deleted_faces_prove_nothing_off_the_plane_without_a_resolved_face_or_by_count() {
     let preceding = preceding();
-    assert_eq!(
-        deleted_profile_faces(&preceding, &[1, 4], 2, &[1], TOLERANCE),
-        None
-    );
-    assert_eq!(
-        deleted_profile_faces(&preceding, &[1, 2], 2, &[], TOLERANCE),
-        None
-    );
-    assert_eq!(
-        deleted_profile_faces(&preceding, &[1, 2], 3, &[1], TOLERANCE),
-        None
-    );
-    assert_eq!(
-        deleted_profile_faces(&preceding, &[1, 2], 2, &[3], TOLERANCE),
-        None
-    );
-    assert_eq!(
-        deleted_profile_faces(&preceding, &[1, 1], 2, &[1], TOLERANCE),
-        None
-    );
-    assert_eq!(
-        deleted_profile_faces(&preceding, &[1, 1, 2], 2, &[1], TOLERANCE),
-        None
-    );
+    assert_eq!(deleted(&preceding, &[1, 4], 2, &[1]), None);
+    assert_eq!(deleted(&preceding, &[1, 2], 2, &[]), None);
+    assert_eq!(deleted(&preceding, &[1, 2], 3, &[1]), None);
+    assert_eq!(deleted(&preceding, &[1, 2], 2, &[3]), None);
+    assert_eq!(deleted(&preceding, &[1, 1], 2, &[1]), None);
+    assert_eq!(deleted(&preceding, &[1, 1, 2], 2, &[1]), None);
 }
 
 #[test]
@@ -387,18 +398,18 @@ fn one_unreadable_cap_voids_the_caps_beside_it() {
         .topology;
     assert_eq!(
         caps(&preceding, &cap_faces, &[10, 11], 2.0, 3, &[]),
-        CapReading::Selected(vec![1, 2, 3])
+        Reading::Selected(vec![1, 2, 3])
     );
     cap_faces
         .edge_curves
         .retain(|row| row.entity <= last_readable);
     assert_eq!(
         caps(&preceding, &cap_faces, &[10], 2.0, 2, &[]),
-        CapReading::Selected(vec![1, 2])
+        Reading::Selected(vec![1, 2])
     );
     assert_eq!(
         caps(&preceding, &cap_faces, &[10, 11], 2.0, 2, &[]),
-        CapReading::Disputed
+        Reading::Disputed
     );
 }
 
@@ -411,7 +422,7 @@ fn caps_at_another_height_belong_to_another_plane() {
         .topology;
     assert_eq!(
         caps(&preceding, &cap_faces, &[10, 11], 2.0, 2, &[]),
-        CapReading::Selected(vec![1, 2])
+        Reading::Selected(vec![1, 2])
     );
 }
 
@@ -430,12 +441,9 @@ fn a_face_with_two_surface_bindings_is_on_no_plane() {
     let cap = capped(2.0);
     assert_eq!(
         caps(&preceding, &cap, &[10], 2.0, 2, &[]),
-        CapReading::Disputed
+        Reading::Disputed
     );
-    assert_eq!(
-        deleted_profile_faces(&preceding, &[1, 2], 2, &[2], TOLERANCE),
-        None
-    );
+    assert_eq!(deleted(&preceding, &[1, 2], 2, &[2]), None);
 }
 
 #[test]
@@ -459,7 +467,7 @@ fn faces_that_miss_a_cap_corner_prove_nothing() {
     let cap = capped(2.0);
     assert_eq!(
         caps(&preceding, &cap, &[10], 2.0, 2, &[]),
-        CapReading::Disputed
+        Reading::Disputed
     );
 }
 
@@ -486,7 +494,7 @@ fn a_dent_off_the_cap_boundary_proves_nothing() {
     let cap = capped(2.0);
     assert_eq!(
         caps(&preceding, &cap, &[10], 2.0, 2, &[]),
-        CapReading::Disputed
+        Reading::Disputed
     );
 }
 
@@ -508,11 +516,11 @@ fn an_unreadable_face_that_reaches_into_a_cap_voids_the_cap_proof() {
     let cap = capped(1.0);
     assert_eq!(
         caps(&with_unreadable(0.5), &cap, &[10], 2.0, 1, &[]),
-        CapReading::Disputed
+        Reading::Disputed
     );
     assert_eq!(
         caps(&with_unreadable(1.5), &cap, &[10], 2.0, 1, &[]),
-        CapReading::Selected(vec![1])
+        Reading::Selected(vec![1])
     );
 }
 
@@ -529,7 +537,7 @@ fn an_unreadable_face_around_a_cap_voids_the_cap_proof() {
         .retain(|row| row.entity <= last_readable);
     assert_eq!(
         caps(&preceding, &capped(1.0), &[10], 2.0, 1, &[]),
-        CapReading::Disputed
+        Reading::Disputed
     );
 }
 
@@ -553,13 +561,10 @@ fn a_failing_selection_disputes_only_when_it_could_be_the_profile() {
     };
     assert_eq!(
         given(&HashSet::from([1, 2]), false),
-        CapReading::Selected(vec![1, 2])
+        Reading::Selected(vec![1, 2])
     );
-    assert_eq!(
-        given(&HashSet::from([1, 2, 4]), false),
-        CapReading::Disputed
-    );
-    assert_eq!(given(&HashSet::from([1, 2]), true), CapReading::Disputed);
+    assert_eq!(given(&HashSet::from([1, 2, 4]), false), Reading::Disputed);
+    assert_eq!(given(&HashSet::from([1, 2]), true), Reading::Disputed);
 }
 
 #[test]
@@ -569,12 +574,12 @@ fn an_unreadable_face_in_a_cap_disputes_a_selection_that_can_be_the_profile() {
         caps_given(preceding, &cap, (&[10], 2.0, 1), changed, false, LIMITS)
     };
     let inside = with_unreadable(0.5);
-    assert_eq!(given(&inside, &HashSet::from([1])), CapReading::Disputed);
-    assert_eq!(given(&inside, &HashSet::from([1, 2])), CapReading::Disputed);
-    assert_eq!(given(&inside, &HashSet::new()), CapReading::Absent);
+    assert_eq!(given(&inside, &HashSet::from([1])), Reading::Disputed);
+    assert_eq!(given(&inside, &HashSet::from([1, 2])), Reading::Disputed);
+    assert_eq!(given(&inside, &HashSet::new()), Reading::Absent);
     assert_eq!(
         given(&with_unreadable(1.5), &HashSet::from([1])),
-        CapReading::Selected(vec![1])
+        Reading::Selected(vec![1])
     );
 }
 
@@ -596,7 +601,7 @@ fn a_coincident_unreadable_face_disputes_the_selection() {
             false,
             LIMITS
         ),
-        CapReading::Disputed
+        Reading::Disputed
     );
 }
 
@@ -620,9 +625,9 @@ fn an_oversized_face_on_the_plane_caps_a_selection_that_can_be_the_profile() {
     let given = |changed: &HashSet<i64>| {
         caps_given(&preceding, &cap, (&[10], 2.0, 2), changed, false, limits)
     };
-    assert_eq!(given(&HashSet::from([1, 2])), CapReading::Capped);
-    assert_eq!(given(&HashSet::from([1, 2, 3])), CapReading::Capped);
-    assert_eq!(given(&HashSet::new()), CapReading::Absent);
+    assert_eq!(given(&HashSet::from([1, 2])), Reading::Capped);
+    assert_eq!(given(&HashSet::from([1, 2, 3])), Reading::Capped);
+    assert_eq!(given(&HashSet::new()), Reading::Absent);
     let small = SearchLimits {
         face_edges: 3,
         ..LIMITS
@@ -636,7 +641,7 @@ fn an_oversized_face_on_the_plane_caps_a_selection_that_can_be_the_profile() {
             false,
             small
         ),
-        CapReading::Capped
+        Reading::Capped
     );
 }
 
@@ -650,8 +655,8 @@ fn a_face_of_short_loops_reaches_every_cap() {
     let given = |changed: &HashSet<i64>| {
         caps_given(&preceding, &cap, (&[10], 2.0, 1), changed, false, LIMITS)
     };
-    assert_eq!(given(&HashSet::from([1])), CapReading::Disputed);
-    assert_eq!(given(&HashSet::new()), CapReading::Absent);
+    assert_eq!(given(&HashSet::from([1])), Reading::Disputed);
+    assert_eq!(given(&HashSet::new()), Reading::Absent);
 }
 
 #[test]
@@ -677,7 +682,7 @@ fn a_short_hole_leaves_the_reach_to_the_outer_loop() {
             false,
             LIMITS
         ),
-        CapReading::Selected(vec![1])
+        Reading::Selected(vec![1])
     );
 }
 
@@ -693,7 +698,7 @@ fn a_new_body_profile_proves_from_its_caps() {
             true,
             LIMITS
         ),
-        CapReading::Selected(vec![1, 2])
+        Reading::Selected(vec![1, 2])
     );
 }
 
@@ -727,7 +732,7 @@ fn an_unreadable_face_around_a_cap_in_its_hole_does_not_reach_it() {
             false,
             LIMITS
         ),
-        CapReading::Selected(vec![1])
+        Reading::Selected(vec![1])
     );
 }
 
@@ -742,7 +747,7 @@ fn a_face_on_a_plane_at_an_angle_is_in_no_pool() {
     }
     assert_eq!(
         caps(&preceding, &capped(2.0), &[10], 2.0, 2, &[]),
-        CapReading::Disputed
+        Reading::Disputed
     );
 }
 
@@ -757,7 +762,7 @@ fn a_resolved_face_alone_lets_a_selection_be_the_profile() {
             &[1],
             &HashSet::new()
         ),
-        CapReading::Selected(vec![1, 2])
+        Reading::Selected(vec![1, 2])
     );
 }
 
@@ -769,7 +774,7 @@ fn coincident_readable_faces_double_the_area() {
         .topology;
     assert_eq!(
         caps(&preceding, &capped(1.0), &[10], 2.0, 2, &[]),
-        CapReading::Disputed
+        Reading::Disputed
     );
 }
 
@@ -790,11 +795,11 @@ fn an_oversized_cap_caps_the_search() {
     };
     assert_eq!(
         caps_within(&preceding, &cap, &[10], 2.0, 2, &[], limits),
-        CapReading::Capped
+        Reading::Capped
     );
     assert_eq!(
         caps_within(&preceding, &cap, &[10], 2.0, 2, &[], LIMITS),
-        CapReading::Selected(vec![1, 2])
+        Reading::Selected(vec![1, 2])
     );
 }
 
@@ -824,7 +829,7 @@ fn an_unchanged_oversized_face_beside_a_skipped_selection_caps_nothing() {
             false,
             limits
         ),
-        CapReading::Absent
+        Reading::Absent
     );
 }
 
@@ -850,8 +855,8 @@ fn a_face_whose_loops_cannot_be_read_reaches_every_cap() {
             LIMITS,
         )
     };
-    assert_eq!(given(&HashSet::from([1, 2])), CapReading::Disputed);
-    assert_eq!(given(&HashSet::from([1])), CapReading::Disputed);
+    assert_eq!(given(&HashSet::from([1, 2])), Reading::Disputed);
+    assert_eq!(given(&HashSet::from([1])), Reading::Disputed);
 }
 
 #[test]
@@ -866,7 +871,7 @@ fn an_unreadable_face_that_can_be_the_profile_disputes_an_unchanged_selection() 
             false,
             LIMITS
         ),
-        CapReading::Disputed
+        Reading::Disputed
     );
 }
 
@@ -884,7 +889,7 @@ fn an_unreadable_cap_over_faces_that_cannot_be_the_profile_disputes_nothing() {
             false,
             LIMITS
         ),
-        CapReading::Absent
+        Reading::Absent
     );
 }
 
@@ -914,7 +919,7 @@ fn a_new_body_skips_planes_and_selections_without_faces_in_its_caps() {
             true,
             LIMITS
         ),
-        CapReading::Selected(vec![1, 2])
+        Reading::Selected(vec![1, 2])
     );
 }
 
@@ -941,7 +946,7 @@ fn a_selection_that_cannot_be_the_profile_beside_a_changed_face_disputes_nothing
             false,
             LIMITS
         ),
-        CapReading::Selected(vec![1, 2])
+        Reading::Selected(vec![1, 2])
     );
 }
 
@@ -966,7 +971,7 @@ fn an_unreadable_face_over_a_cap_corner_reaches_it() {
             false,
             LIMITS
         ),
-        CapReading::Disputed
+        Reading::Disputed
     );
 }
 
@@ -987,7 +992,7 @@ fn an_unreadable_neighbour_that_shares_a_cap_edge_does_not_reach_it() {
             false,
             LIMITS
         ),
-        CapReading::Selected(vec![1])
+        Reading::Selected(vec![1])
     );
 }
 
@@ -1003,7 +1008,7 @@ fn a_sliver_face_on_the_cap_voids_the_cap_proof() {
         .topology;
     assert_eq!(
         caps(&preceding, &cap, &[10], 2.0, 2, &[]),
-        CapReading::Disputed
+        Reading::Disputed
     );
 }
 
@@ -1011,7 +1016,7 @@ fn a_sliver_face_on_the_cap_voids_the_cap_proof() {
 fn a_search_past_its_local_caps_states_capped() {
     let preceding = preceding();
     let cap = capped(2.0);
-    let within = |pool_faces, outline_points| {
+    let within = |pool_faces, outline_points, cap_faces| {
         caps_within(
             &preceding,
             &cap,
@@ -1023,12 +1028,14 @@ fn a_search_past_its_local_caps_states_capped() {
                 pool_faces,
                 outline_points,
                 face_edges: 4096,
+                cap_faces,
             },
         )
     };
-    assert_eq!(within(2, 4096), CapReading::Capped);
-    assert_eq!(within(3, 7), CapReading::Capped);
-    assert_eq!(within(3, 8), CapReading::Selected(vec![1, 2]));
+    assert_eq!(within(2, 4096, 1), Reading::Capped);
+    assert_eq!(within(3, 7, 1), Reading::Capped);
+    assert_eq!(within(3, 8, 0), Reading::Capped);
+    assert_eq!(within(3, 8, 1), Reading::Selected(vec![1, 2]));
 }
 
 #[test]
@@ -1046,22 +1053,16 @@ fn a_surface_with_two_plane_rows_is_no_plane() {
     let cap = capped(2.0);
     assert_eq!(
         caps(&preceding, &cap, &[10], 2.0, 2, &[]),
-        CapReading::Disputed
+        Reading::Disputed
     );
-    assert_eq!(
-        deleted_profile_faces(&preceding, &[1, 2], 2, &[2], TOLERANCE),
-        None
-    );
+    assert_eq!(deleted(&preceding, &[1, 2], 2, &[2]), None);
 }
 
 #[test]
 fn deleted_faces_outside_the_preceding_faces_prove_nothing() {
     let mut preceding = preceding();
     preceding.faces.retain(|face| *face != 2);
-    assert_eq!(
-        deleted_profile_faces(&preceding, &[1, 2], 2, &[1], TOLERANCE),
-        None
-    );
+    assert_eq!(deleted(&preceding, &[1, 2], 2, &[1]), None);
 }
 
 const GROUP: &str = "f3d:Design/BulkStream.dat:design-construction-operand-group#100";
@@ -1539,7 +1540,7 @@ fn only_the_transition_from_the_previous_state_proves_a_profile() {
 }
 
 #[test]
-fn a_selecting_cap_takes_precedence_over_the_deleted_faces() {
+fn a_cap_set_that_the_deleted_faces_contradict_stays_native() {
     // The cap repeats faces 1 and 2; the transition deletes faces 1 and 3.
     let mut current = capped(2.0);
     current.faces.extend([2, 4]);
@@ -1550,15 +1551,16 @@ fn a_selecting_cap_takes_precedence_over_the_deleted_faces() {
         &mut features,
         &[operand(110, 0, vec![]), operand(111, 1, vec![1])],
     );
-    assert_eq!(profile_faces(&features[0]), Some(input_faces(&[2, 1])));
+    assert_eq!(profile_faces(&features[0]), None);
     assert_eq!(
         loss_codes(&losses),
-        [F3dLossCode::FeatureExtrudeProfileCapFacesInferred.kind()]
+        [F3dLossCode::FeatureExtrudeProfileFaceSetDisputed.kind()]
     );
+    assert!(losses[0].message.contains("[1, 3]"));
 }
 
 #[test]
-fn a_disputed_cap_keeps_the_deleted_faces_from_proving() {
+fn a_disputed_cap_keeps_the_deleted_faces_from_proving_with_a_loss() {
     // The cap repeats faces 1, 2 and 3 for two members; the transition
     // deletes faces 1 and 2.
     let mut current = capped(3.0);
@@ -1571,7 +1573,11 @@ fn a_disputed_cap_keeps_the_deleted_faces_from_proving() {
         &[operand(110, 0, vec![]), operand(111, 1, vec![1])],
     );
     assert_eq!(profile_faces(&features[0]), None);
-    assert!(losses.is_empty());
+    assert_eq!(
+        loss_codes(&losses),
+        [F3dLossCode::FeatureExtrudeProfileFaceSetDisputed.kind()]
+    );
+    assert!(losses[0].message.contains(GROUP));
 }
 
 #[test]
@@ -1581,9 +1587,9 @@ fn a_capped_search_keeps_the_profile_native_with_a_loss() {
     let scope_histories = HashMap::from([(scope.id.clone(), history.id.clone())]);
     let operands = [operand(110, 0, vec![]), operand(111, 1, vec![])];
     let mut feature = extrude(blind());
-    let mut outcome = None;
+    let mut losses = Vec::new();
     feature.evaluation.edit(|definition, _| {
-        outcome = crate::test_support::with_decode_context(|ctx| {
+        losses = crate::test_support::with_decode_context(|ctx| {
             bind_one(
                 definition,
                 &scope,
@@ -1600,12 +1606,12 @@ fn a_capped_search_keeps_the_profile_native_with_a_loss() {
                     pool_faces: 1,
                     outline_points: 4096,
                     face_edges: 4096,
+                    cap_faces: 4096,
                 },
             )
         })
         .unwrap();
     });
-    let losses = outcome.expect("capped loss");
     assert_eq!(
         loss_codes(&losses),
         [F3dLossCode::FeatureExtrudeProfileFaceSearchCapped.kind()]
@@ -1641,4 +1647,126 @@ fn a_member_with_an_active_face_stays_native() {
     let losses = bind(&mut features, &[active, operand(111, 1, vec![])]);
     assert_eq!(profile_faces(&features[0]), None);
     assert!(losses.is_empty());
+}
+
+#[test]
+fn a_cap_or_preceding_face_without_one_plane_carrier_disputes() {
+    let preceding = preceding();
+    let mut cap = capped(2.0);
+    let surface = cap.face_surfaces[0].carrier;
+    cap.surface_planes.push(AsmHistoricalPlane {
+        surface,
+        origin: Point3::new(0.0, 0.0, -2.0),
+        normal: Vector3::new(0.0, 0.0, 1.0),
+    });
+    assert_eq!(
+        caps(&preceding, &cap, &[10], 2.0, 2, &[]),
+        Reading::Disputed
+    );
+    // Face 4 lies below the caps' reach, and its plane cannot be read.
+    let mut twice = preceding.clone();
+    let surface = twice.face_surfaces[3].carrier;
+    twice.surface_planes.push(AsmHistoricalPlane {
+        surface,
+        origin: Point3::new(0.0, 0.0, -5.0),
+        normal: Vector3::new(0.0, 0.0, 1.0),
+    });
+    assert_eq!(
+        caps(&twice, &capped(2.0), &[10], 2.0, 2, &[]),
+        Reading::Disputed
+    );
+    let mut unbound = preceding;
+    unbound.face_surfaces.retain(|binding| binding.entity != 4);
+    assert_eq!(
+        caps(&unbound, &capped(2.0), &[10], 2.0, 2, &[]),
+        Reading::Disputed
+    );
+}
+
+#[test]
+fn a_cap_edge_with_two_axis_rows_disputes() {
+    let mut cap = capped(2.0);
+    let row = cap.curve_axes[0].clone();
+    cap.curve_axes.push(AsmHistoricalCurveAxis {
+        direction: Vector3::new(0.0, 0.0, 1.0),
+        ..row
+    });
+    assert_eq!(
+        caps(&preceding(), &cap, &[10], 2.0, 2, &[]),
+        Reading::Disputed
+    );
+}
+
+#[test]
+fn a_cap_selection_names_the_faces_it_passes_over() {
+    let preceding = preceding();
+    let cap = capped(2.0);
+    let changed: HashSet<i64> = preceding.faces.iter().copied().collect();
+    assert_eq!(
+        cap_profile_faces(&CapSearch {
+            preceding: &preceding,
+            topology: &cap,
+            inserted: &[10],
+            length: 2.0,
+            members: 2,
+            resolved: &[],
+            changed: &changed,
+            new_body: false,
+            tolerance: TOLERANCE,
+            limits: LIMITS,
+        }),
+        CapReading::Selected(
+            vec![1, 2],
+            PassedOver {
+                outside: vec![3],
+                clear: Vec::new(),
+                skipped: 0,
+            }
+        )
+    );
+}
+
+#[test]
+fn the_deleted_faces_name_the_coplanar_faces_they_pass_over() {
+    let preceding = preceding();
+    assert_eq!(
+        deleted_profile_faces(&preceding, (&[2, 1], &[3]), 2, &[1], TOLERANCE),
+        Some(DeletedFaces {
+            faces: vec![1, 2],
+            updated: vec![3],
+            kept: Vec::new(),
+        })
+    );
+    assert_eq!(
+        deleted_profile_faces(&preceding, (&[2, 1], &[]), 2, &[1], TOLERANCE),
+        Some(DeletedFaces {
+            faces: vec![1, 2],
+            updated: Vec::new(),
+            kept: vec![3],
+        })
+    );
+}
+
+#[test]
+fn an_unreadable_face_with_a_caps_concave_outline_reaches_it() {
+    // An L face with the outline of an L cap, and a square beside the cap.
+    let l_shape = [
+        (0.0, 0.0),
+        (2.0, 0.0),
+        (2.0, 1.0),
+        (1.0, 1.0),
+        (1.0, 2.0),
+        (0.0, 2.0),
+    ];
+    let topology = Faces::new()
+        .polygon(10, &l_shape, 0.0)
+        .polygon(11, &l_shape, 0.0)
+        .rectangle(12, (3.0, 0.0), (4.0, 1.0), 0.0)
+        .topology;
+    let frame =
+        PlaneFrame::of_plane(Point3::new(0.0, 0.0, 0.0), Vector3::new(0.0, 0.0, 1.0)).unwrap();
+    let caps = [face_cap(&frame, &topology, 10, TOLERANCE).unwrap()];
+    let rings = |face| face_vertex_rings(&frame, &topology, face).unwrap();
+    assert!(reaches_a_cap(&rings(11), &caps, TOLERANCE));
+    assert!(!reaches_a_cap(&rings(12), &caps, TOLERANCE));
 }

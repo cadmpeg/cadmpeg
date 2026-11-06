@@ -10,10 +10,12 @@
 //! outline on the caps' boundary through every cap vertex, and when no other
 //! plane, side or face that could be the profile contradicts that set. A
 //! face could be the profile when it is resolved, when the transition
-//! deletes or updates it, or when the Extrude makes a new body. Only when no
-//! cap reaches such a face, a transition that deletes as many faces as the
-//! group has members, every one on the plane of the resolved members and the
-//! resolved faces among them, deletes the profile.
+//! deletes or updates it, or when the Extrude makes a new body. When no cap
+//! selects such a face, the faces that the transition deletes are the profile
+//! when they are as many as the group's members, lie on the plane of the
+//! resolved members and include the resolved faces. When both rules give a
+//! set, the two sets agree or the profile stays native. A face without one
+//! plane carrier keeps the profile native.
 //!
 //! Resolved members keep their faces at their member positions. The other
 //! faces fill the remaining positions in face-slot order.
@@ -57,12 +59,15 @@ struct SearchLimits {
     outline_points: usize,
     /// Most loop edges of one cap or preceding face.
     face_edges: usize,
+    /// Most inserted cap faces on one candidate plane.
+    cap_faces: usize,
 }
 
 const SEARCH_LIMITS: SearchLimits = SearchLimits {
     pool_faces: 256,
     outline_points: 4096,
     face_edges: CAP_EDGES,
+    cap_faces: 256,
 };
 
 /// The arenas that infer Extrude face profiles.
@@ -95,16 +100,39 @@ struct CapSearch<'a> {
 /// What the inserted caps state about the profile faces.
 #[derive(Debug, PartialEq)]
 enum CapReading {
-    /// One face set, sorted by slot.
-    Selected(Vec<i64>),
-    /// A selection that could be the profile fails its checks, two such
-    /// sets differ, or a cap over such faces or such a face that reaches
-    /// into a cap is unreadable.
-    Disputed,
-    /// No cap reaches a preceding face that could be the profile.
+    /// One face set, sorted by slot, and the candidates it passes over.
+    Selected(Vec<i64>, PassedOver),
+    /// Why no face set holds: a face has no single plane carrier, an
+    /// inserted planar face has no unit normal, a selection that could be
+    /// the profile fails its checks, two such sets differ, or a cap over such
+    /// faces or such a face that reaches into a cap is unreadable.
+    Disputed(&'static str),
+    /// No cap selects a preceding face set that could be the profile.
     Absent,
     /// The search passed a local work cap.
     Capped,
+}
+
+/// The candidates that a cap selection passes over.
+#[derive(Debug, Default, PartialEq)]
+struct PassedOver {
+    /// Readable faces on the selection's plane whose interior lies outside
+    /// the caps.
+    outside: Vec<i64>,
+    /// Faces on the selection's plane that cannot be read and stay clear of
+    /// the caps.
+    clear: Vec<i64>,
+    /// Cap planes and sides whose faces or selection cannot be the profile.
+    skipped: usize,
+}
+
+/// The faces that a transition deletes on the plane of the resolved faces,
+/// with the coplanar preceding faces that it updates and keeps.
+#[derive(Debug, PartialEq)]
+struct DeletedFaces {
+    faces: Vec<i64>,
+    updated: Vec<i64>,
+    kept: Vec<i64>,
 }
 
 /// The rule that infers a face set.
@@ -121,18 +149,12 @@ impl SetRule {
             Self::DeletedFaces => "deleted faces",
         }
     }
+}
 
-    /// The loss that names this rule's inference of `faces` for `group`.
-    fn inference(self, group: &str, faces: &[i64], resolved: &[i64]) -> LossNote {
-        match self {
-            Self::EndCaps => F3dLossCode::FeatureExtrudeProfileCapFacesInferred.note(format!(
-                "Extrude profile group {group} takes faces {faces:?}: the transition's end caps at the blind length cover these preceding faces, and no other plane or side holds a selection that can be the profile.",
-            )),
-            Self::DeletedFaces => F3dLossCode::FeatureExtrudeProfileDeletedFacesInferred.note(format!(
-                "Extrude profile group {group} takes faces {faces:?}: the transition deletes these faces, one per member, on the plane of the resolved faces {resolved:?}, and no end cap reaches a face that can be the profile.",
-            )),
-        }
-    }
+fn disputed(group: &str, reason: &str) -> LossNote {
+    F3dLossCode::FeatureExtrudeProfileFaceSetDisputed.note(format!(
+        "Extrude profile group {group} stays native: {reason}."
+    ))
 }
 
 /// Replace each native single-group Extrude face profile whose set its own
@@ -252,18 +274,25 @@ fn bind_one(
         return Ok(Vec::new());
     };
     let tolerance = resolution.linear_tolerance;
-    let faces = &transition.topology.faces;
-    let changed: HashSet<i64> = faces
+    let changes = &transition.topology.faces;
+    let changed: HashSet<i64> = changes
         .deleted
         .iter()
-        .chain(&faces.updated)
+        .chain(&changes.updated)
         .copied()
         .collect();
     let group = root.id.clone();
-    let inferred = match cap_profile_faces(&CapSearch {
+    let deleted = deleted_profile_faces(
+        preceding,
+        (&changes.deleted, &changes.updated),
+        members.len(),
+        &resolved,
+        tolerance,
+    );
+    let (rule, faces, inference) = match cap_profile_faces(&CapSearch {
         preceding,
         topology,
-        inserted: &faces.inserted,
+        inserted: &changes.inserted,
         length: length.abs().get(),
         members: members.len(),
         resolved: &resolved,
@@ -272,34 +301,45 @@ fn bind_one(
         tolerance,
         limits,
     }) {
-        CapReading::Selected(faces) => (SetRule::EndCaps, faces),
+        CapReading::Selected(faces, passed) => {
+            if let Some(other) = deleted.filter(|other| other.faces != faces) {
+                return Ok(vec![disputed(
+                    &group,
+                    &format!(
+                        "the faces {:?} that its transition deletes differ from the faces {faces:?} that its end caps cover",
+                        other.faces
+                    ),
+                )]);
+            }
+            let note = F3dLossCode::FeatureExtrudeProfileCapFacesInferred.note(format!(
+                "Extrude profile group {group} takes faces {faces:?}: the transition's end caps at the blind length cover these preceding faces. It passes over faces {:?} on the cap plane outside the caps, unreadable faces {:?} clear of the caps, and {} cap planes or sides whose faces cannot be the profile.",
+                passed.outside, passed.clear, passed.skipped,
+            ));
+            (SetRule::EndCaps, faces, note)
+        }
         CapReading::Absent => {
-            let Some(faces) = deleted_profile_faces(
-                preceding,
-                &faces.deleted,
-                members.len(),
-                &resolved,
-                tolerance,
-            ) else {
+            let Some(deleted) = deleted else {
                 return Ok(Vec::new());
             };
-            (SetRule::DeletedFaces, faces)
+            let note = F3dLossCode::FeatureExtrudeProfileDeletedFacesInferred.note(format!(
+                "Extrude profile group {group} takes faces {:?}: no end cap selects a face set that can be the profile, and the transition deletes these faces, one per member, on the plane of the resolved faces {resolved:?}. It passes over the coplanar faces {:?} that the transition updates and {:?} that it keeps.",
+                deleted.faces, deleted.updated, deleted.kept,
+            ));
+            (SetRule::DeletedFaces, deleted.faces, note)
         }
-        CapReading::Disputed => return Ok(Vec::new()),
+        CapReading::Disputed(reason) => return Ok(vec![disputed(&group, reason)]),
         CapReading::Capped => {
             return Ok(vec![F3dLossCode::FeatureExtrudeProfileFaceSearchCapped.note(
                 format!(
-                    "Extrude profile group {group} stays native: its end-cap search passed a local cap of {} faces on one plane, {} outline points, or {} edges on one face.",
-                    limits.pool_faces, limits.outline_points, limits.face_edges,
+                    "Extrude profile group {group} stays native: its end-cap search passed a local cap of {} faces or {} caps on one plane, {} outline points, or {} edges on one face.",
+                    limits.pool_faces, limits.cap_faces, limits.outline_points, limits.face_edges,
                 ),
             )]);
         }
     };
-    let (rule, faces) = inferred;
     let Some(ordered) = member_order(&members, &faces) else {
         return Ok(Vec::new());
     };
-    let inference = rule.inference(&group, &ordered, &resolved);
     let Some(FaceSelection::Historical {
         state,
         faces,
@@ -346,8 +386,13 @@ fn member_order(members: &[Option<i64>], faces: &[i64]) -> Option<Vec<i64>> {
 }
 
 /// The plane carrier of each face of one topology that has exactly one
-/// surface binding to a surface with exactly one plane row.
-struct FacePlanes<'a>(HashMap<i64, &'a AsmHistoricalPlane>);
+/// surface binding to a surface with exactly one plane row, and the faces
+/// whose plane carrier cannot be read: several surface bindings, a surface
+/// with several plane rows, or no surface binding.
+struct FacePlanes<'a> {
+    planes: HashMap<i64, &'a AsmHistoricalPlane>,
+    unreadable: HashSet<i64>,
+}
 
 impl<'a> FacePlanes<'a> {
     fn of(topology: &'a AsmHistoricalTopology) -> Self {
@@ -365,16 +410,36 @@ impl<'a> FacePlanes<'a> {
                 .and_modify(|surface| *surface = None)
                 .or_insert(Some(binding.carrier));
         }
-        Self(
-            surfaces
-                .into_iter()
-                .filter_map(|(face, surface)| Some((face, (*planes.get(&surface?)?)?)))
-                .collect(),
-        )
+        let mut unreadable: HashSet<i64> = topology
+            .faces
+            .iter()
+            .copied()
+            .filter(|face| !surfaces.contains_key(face))
+            .collect();
+        let mut face_planes = HashMap::new();
+        for (face, surface) in surfaces {
+            match surface.map(|surface| planes.get(&surface)) {
+                Some(None) => {}
+                Some(Some(Some(plane))) => {
+                    face_planes.insert(face, *plane);
+                }
+                None | Some(Some(None)) => {
+                    unreadable.insert(face);
+                }
+            }
+        }
+        Self {
+            planes: face_planes,
+            unreadable,
+        }
     }
 
     fn get(&self, face: i64) -> Option<&'a AsmHistoricalPlane> {
-        self.0.get(&face).copied()
+        self.planes.get(&face).copied()
+    }
+
+    fn unreadable(&self, face: i64) -> bool {
+        self.unreadable.contains(&face)
     }
 }
 
@@ -410,19 +475,30 @@ fn cap_profile_faces(search: &CapSearch<'_>) -> CapReading {
     };
     let preceding_planes = FacePlanes::of(preceding);
     let current_planes = FacePlanes::of(topology);
+    if inserted.iter().any(|face| current_planes.unreadable(*face))
+        || preceding
+            .faces
+            .iter()
+            .any(|face| preceding_planes.unreadable(*face))
+    {
+        return CapReading::Disputed(
+            "a face has several surface bindings, a surface with several plane rows, or no surface binding",
+        );
+    }
     let planar: Vec<(i64, &AsmHistoricalPlane)> = inserted
         .iter()
         .filter_map(|face| current_planes.get(*face).map(|plane| (*face, plane)))
         .collect();
     let mut grouped = vec![false; planar.len()];
-    let mut selections: Vec<Vec<i64>> = Vec::new();
+    let mut selections: Vec<(Vec<i64>, Vec<i64>, Vec<i64>)> = Vec::new();
+    let mut skipped = 0;
     for first in 0..planar.len() {
         if grouped[first] {
             continue;
         }
         let Some(frame) = PlaneFrame::of_plane(planar[first].1.origin, planar[first].1.normal)
         else {
-            return CapReading::Disputed;
+            return CapReading::Disputed("an inserted planar face has no unit normal");
         };
         let mut cap_faces = Vec::new();
         for (index, (face, plane)) in planar.iter().enumerate() {
@@ -446,10 +522,15 @@ fn cap_profile_faces(search: &CapSearch<'_>) -> CapReading {
                     })
                 })
                 .collect();
-            if pool.is_empty() || !could_be_profile(&pool) {
+            if pool.is_empty() {
+                continue;
+            }
+            if !could_be_profile(&pool) {
+                skipped += 1;
                 continue;
             }
             if pool.len() > limits.pool_faces
+                || cap_faces.len() > limits.cap_faces
                 || cap_faces.iter().any(|face| oversized(topology, *face))
             {
                 return CapReading::Capped;
@@ -459,9 +540,13 @@ fn cap_profile_faces(search: &CapSearch<'_>) -> CapReading {
                 .map(|face| face_cap(&frame, topology, *face, tolerance))
                 .collect::<Option<Vec<Cap>>>()
             else {
-                return CapReading::Disputed;
+                return CapReading::Disputed(
+                    "a cap over faces that can be the profile cannot be read",
+                );
             };
             let mut selected = Vec::new();
+            let mut outside = Vec::new();
+            let mut clear = Vec::new();
             let mut outlines = Vec::new();
             let mut unread_in_cap = false;
             let mut unread_oversized = false;
@@ -482,6 +567,8 @@ fn cap_profile_faces(search: &CapSearch<'_>) -> CapReading {
                         if caps.iter().any(|cap| cap.contains(point)) {
                             selected.push(face);
                             outlines.extend(outline);
+                        } else {
+                            outside.push(face);
                         }
                     }
                     None => {
@@ -491,21 +578,31 @@ fn cap_profile_faces(search: &CapSearch<'_>) -> CapReading {
                         };
                         if rings.is_none_or(|rings| reaches_a_cap(&rings, &caps, tolerance)) {
                             if could_be_profile(&[face]) {
-                                return CapReading::Disputed;
+                                return CapReading::Disputed(
+                                    "a face that can be the profile cannot be read and reaches into a cap",
+                                );
                             }
                             unread_in_cap = true;
+                        } else {
+                            clear.push(face);
                         }
                     }
                 }
             }
-            if selected.is_empty() || !could_be_profile(&selected) {
+            if selected.is_empty() {
+                continue;
+            }
+            if !could_be_profile(&selected) {
+                skipped += 1;
                 continue;
             }
             if unread_oversized {
                 return CapReading::Capped;
             }
             if unread_in_cap {
-                return CapReading::Disputed;
+                return CapReading::Disputed(
+                    "a face that cannot be read reaches into the caps of a selection that can be the profile",
+                );
             }
             let points: usize = outlines
                 .iter()
@@ -522,31 +619,44 @@ fn cap_profile_faces(search: &CapSearch<'_>) -> CapReading {
                 || (selected_area - cap_area).abs() > AREA_AGREEMENT * cap_area.max(1.0)
                 || !outlines_agree(&caps, &outlines, tolerance)
             {
-                return CapReading::Disputed;
+                return CapReading::Disputed(
+                    "a selection that can be the profile fails the member count, resolved face, area or outline check",
+                );
             }
             selected.sort_unstable();
-            if !selections.contains(&selected) {
-                selections.push(selected);
+            if !selections.iter().any(|(faces, ..)| *faces == selected) {
+                outside.sort_unstable();
+                clear.sort_unstable();
+                selections.push((selected, outside, clear));
             }
         }
     }
-    match <[Vec<i64>; 1]>::try_from(selections) {
-        Ok([selection]) => CapReading::Selected(selection),
-        Err(selections) if selections.is_empty() => CapReading::Absent,
-        Err(_) => CapReading::Disputed,
+    let mut selections = selections.into_iter();
+    match (selections.next(), selections.next()) {
+        (Some((faces, outside, clear)), None) => CapReading::Selected(
+            faces,
+            PassedOver {
+                outside,
+                clear,
+                skipped,
+            },
+        ),
+        (None, _) => CapReading::Absent,
+        (Some(_), Some(_)) => CapReading::Disputed("two selections that can be the profile differ"),
     }
 }
 
 /// The deleted faces, sorted by slot, when they are as many as the members,
 /// are preceding faces, hold every resolved face, and all lie on the
-/// resolved faces' plane.
+/// resolved faces' plane, with the other preceding faces on that plane that
+/// the transition updates and keeps.
 fn deleted_profile_faces(
     preceding: &AsmHistoricalTopology,
-    deleted: &[i64],
+    (deleted, updated): (&[i64], &[i64]),
     members: usize,
     resolved: &[i64],
     tolerance: f64,
-) -> Option<Vec<i64>> {
+) -> Option<DeletedFaces> {
     let mut faces = deleted.to_vec();
     faces.sort_unstable();
     faces.dedup();
@@ -560,14 +670,27 @@ fn deleted_profile_faces(
     let planes = FacePlanes::of(preceding);
     let plane = planes.get(*resolved.first()?)?;
     let frame = PlaneFrame::of_plane(plane.origin, plane.normal)?;
-    faces
-        .iter()
-        .all(|face| {
-            planes.get(*face).is_some_and(|plane| {
-                parallel(plane.normal, &frame) && frame.height(plane.origin).abs() <= tolerance
-            })
+    let on_plane = |face: i64| {
+        planes.get(face).is_some_and(|plane| {
+            parallel(plane.normal, &frame) && frame.height(plane.origin).abs() <= tolerance
         })
-        .then_some(faces)
+    };
+    if !faces.iter().all(|face| on_plane(*face)) {
+        return None;
+    }
+    let (mut changed, mut kept): (Vec<i64>, Vec<i64>) = preceding
+        .faces
+        .iter()
+        .copied()
+        .filter(|face| !faces.contains(face) && on_plane(*face))
+        .partition(|face| updated.contains(face));
+    changed.sort_unstable();
+    kept.sort_unstable();
+    Some(DeletedFaces {
+        faces,
+        updated: changed,
+        kept,
+    })
 }
 
 /// The vertex positions of each loop of `face` in `frame`, in loop order.
@@ -598,10 +721,11 @@ fn edge_count(topology: &AsmHistoricalTopology, face: i64) -> Option<usize> {
         })
 }
 
-/// Whether a face drawn by its vertex rings reaches into a cap: no ring has
-/// three vertices, a ring vertex lies inside a cap away from its boundary, a
-/// cap vertex lies inside the rings away from them, or the mean of the
-/// largest ring's vertices lies inside both.
+/// Whether a face drawn by its rings reaches into a cap: no ring has three
+/// points, a ring point lies inside a cap away from its boundary, a cap
+/// vertex lies inside the rings away from them, or the mean of the largest
+/// ring's points or a point of a grid over the rings' bounds lies inside
+/// both, away from their boundaries.
 fn reaches_a_cap(rings: &[Vec<Point2>], caps: &[Cap], tolerance: f64) -> bool {
     let inside_a_cap = |point: Point2| {
         caps.iter()
@@ -637,7 +761,18 @@ fn reaches_a_cap(rings: &[Vec<Point2>], caps: &[Cap], tolerance: f64) -> bool {
             .fold(f64::INFINITY, f64::min);
         parity && clearance > tolerance
     };
-    (inside_the_face(mean) && inside_a_cap(mean))
+    let (low, high) = bounds(rings.iter().flatten());
+    let grid = (1..FACE_SAMPLE_GRID).flat_map(|i| {
+        (1..FACE_SAMPLE_GRID).map(move |j| {
+            Point2::new(
+                low.u + (high.u - low.u) * f64::from(i) / f64::from(FACE_SAMPLE_GRID),
+                low.v + (high.v - low.v) * f64::from(j) / f64::from(FACE_SAMPLE_GRID),
+            )
+        })
+    });
+    std::iter::once(mean)
+        .chain(grid)
+        .any(|point| inside_the_face(point) && inside_a_cap(point))
         || rings.iter().flatten().any(|point| inside_a_cap(*point))
         || caps
             .iter()
@@ -645,17 +780,26 @@ fn reaches_a_cap(rings: &[Vec<Point2>], caps: &[Cap], tolerance: f64) -> bool {
             .any(|corner| inside_the_face(*corner))
 }
 
+/// The lower and upper corners of the bounds of `points`.
+fn bounds<'a>(points: impl Iterator<Item = &'a Point2>) -> (Point2, Point2) {
+    points.fold(
+        (
+            Point2::new(f64::INFINITY, f64::INFINITY),
+            Point2::new(f64::NEG_INFINITY, f64::NEG_INFINITY),
+        ),
+        |(low, high), point| {
+            (
+                Point2::new(low.u.min(point.u), low.v.min(point.v)),
+                Point2::new(high.u.max(point.u), high.v.max(point.v)),
+            )
+        },
+    )
+}
+
 /// A point inside `face`, outside its holes, farthest from its boundary on a
 /// grid over its loops' bounds.
 fn interior_point(face: &Cap, tolerance: f64) -> Option<Point2> {
-    let (mut low, mut high) = (
-        Point2::new(f64::INFINITY, f64::INFINITY),
-        Point2::new(f64::NEG_INFINITY, f64::NEG_INFINITY),
-    );
-    for point in face.loops.iter().flatten() {
-        low = Point2::new(low.u.min(point.u), low.v.min(point.v));
-        high = Point2::new(high.u.max(point.u), high.v.max(point.v));
-    }
+    let (low, high) = bounds(face.loops.iter().flatten());
     let mut best: Option<(Point2, f64)> = None;
     for i in 1..FACE_SAMPLE_GRID {
         for j in 1..FACE_SAMPLE_GRID {
