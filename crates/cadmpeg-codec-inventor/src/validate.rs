@@ -679,6 +679,12 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
                     add_list(list);
                 }
             }
+            PmDcSketchEntityKind::MemberCurve { data } => {
+                add_list(&data.points);
+                for list in &data.auxiliary {
+                    add_list(list);
+                }
+            }
             PmDcSketchEntityKind::Line {
                 points, auxiliary, ..
             } => {

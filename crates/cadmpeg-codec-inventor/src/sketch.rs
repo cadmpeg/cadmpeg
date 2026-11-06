@@ -102,6 +102,7 @@ const EPS_SKETCH_BLOCK_PLACEMENT_RIGID: f64 = 1.0e-9;
 const CIRCLE_STATE_ARC: u8 = 0;
 const CIRCLE_STATE_FULL: u8 = 1;
 
+pub(crate) mod member_curve;
 pub(crate) mod spline;
 
 const SKETCH_TYPE: [u8; 16] = inventor_id(0x9087_4d11);
@@ -459,12 +460,16 @@ pub(crate) enum PmDcSketchEntityKind {
         instances: PmDcReferenceList,
         member: PmDcReference,
     },
+    MemberCurve {
+        data: Box<member_curve::MemberCurveRecord>,
+    },
 }
 
 impl PmDcSketchEntityKind {
     pub(crate) fn record_type_id(&self) -> [u8; 16] {
         match self {
             Self::Spline { .. } => spline::TYPE,
+            Self::MemberCurve { .. } => member_curve::TYPE,
             Self::Point { .. } => POINT_TYPE,
             Self::Line { .. } => LINE_TYPE,
             Self::Circle { .. } => CIRCLE_TYPE,
@@ -734,6 +739,21 @@ pub(crate) fn inventory(
                     Err(CodecError::NotImplemented(_)) => continue,
                     Err(error) => Err(error),
                 },
+                SketchRecordTag::MemberCurve => {
+                    match member_curve::parse(ctx, record.payload, version) {
+                        Ok(value) => push_record(
+                            ctx,
+                            &mut inventory.entities,
+                            value,
+                            record.type_id,
+                            segment.pair.token.key(),
+                            record.ordinal,
+                            "admit Inventor PmDc rational curve record",
+                        ),
+                        Err(CodecError::NotImplemented(_)) => continue,
+                        Err(error) => Err(error),
+                    }
+                }
                 SketchRecordTag::Entity(entity) => parse_entity(entity, record.payload, version)
                     .and_then(|value| {
                         push_record(
@@ -924,6 +944,7 @@ impl SketchConstraintTag {
 #[derive(Clone, Copy)]
 enum SketchRecordTag {
     Spline,
+    MemberCurve,
     Sketch,
     Transform,
     Direction,
@@ -935,6 +956,7 @@ impl SketchRecordTag {
     fn from_type_id(type_id: [u8; 16]) -> Option<Self> {
         match type_id {
             spline::TYPE => Some(Self::Spline),
+            member_curve::TYPE => Some(Self::MemberCurve),
             SKETCH_TYPE => Some(Self::Sketch),
             TRANSFORM_TYPE => Some(Self::Transform),
             DIRECTION_TYPE => Some(Self::Direction),
@@ -2553,6 +2575,9 @@ fn project_placed_geometry(
                 .ok()?;
             Some(SketchGeometry::nurbs(curve))
         }
+        PmDcSketchEntityKind::MemberCurve { .. } => Some(SketchGeometry::native(
+            cadmpeg_core::nonblank_literal!("member_curve"),
+        )),
         PmDcSketchEntityKind::Point { position, .. } => Some(
             SketchGeometry::try_from(SketchGeometryDefinition::Point {
                 position: neutral_point(placement.point(*position)?),
@@ -5218,6 +5243,7 @@ mod tests {
 
     mod axis_distance;
     mod construction_flags;
+    mod member_curve;
     mod non_geometric;
     mod point_tail_projection;
     mod serialization;
