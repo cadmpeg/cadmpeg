@@ -887,24 +887,26 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
             spatial_sketch_entities: &model.spatial_sketch_entities,
         },
     );
-    crate::design::profile_select::bind_loft_and_revolve_sketch_selections(
-        scan,
-        &design.design_construction_operand_groups,
-        &design.design_record_headers,
-        &crate::design::profile_select::SketchProfileResolution {
-            entities: &prereqs.design_entity_headers,
-            entity_selection_operands: &design.design_entity_selection_operands,
-            placements: &design.design_sketch_placements,
-            curve_identities: &design.sketch_curve_identities,
-            sketches: &model.sketches,
-            sketch_entities: &model.sketch_entities,
-            spatial_sketches: &model.spatial_sketches,
-            spatial_sketch_entities: &model.spatial_sketch_entities,
-            linear_tolerance: geometry.tolerances.linear.get(),
-            angular_tolerance: geometry.tolerances.angular.get(),
-        },
-        &mut model.features,
-    )?;
+    losses.extend(
+        crate::design::profile_select::bind_loft_and_revolve_sketch_selections(
+            scan,
+            &mut design.design_construction_operand_groups,
+            &design.design_record_headers,
+            &crate::design::profile_select::SketchProfileResolution {
+                entities: &prereqs.design_entity_headers,
+                entity_selection_operands: &design.design_entity_selection_operands,
+                placements: &design.design_sketch_placements,
+                curve_identities: &design.sketch_curve_identities,
+                sketches: &model.sketches,
+                sketch_entities: &model.sketch_entities,
+                spatial_sketches: &model.spatial_sketches,
+                spatial_sketch_entities: &model.spatial_sketch_entities,
+                linear_tolerance: geometry.tolerances.linear.get(),
+                angular_tolerance: geometry.tolerances.angular.get(),
+            },
+            &mut model.features,
+        )?,
+    );
     crate::design::feature_project::orient_revolve_axes(
         &mut model.features,
         &design.design_parameter_scopes,

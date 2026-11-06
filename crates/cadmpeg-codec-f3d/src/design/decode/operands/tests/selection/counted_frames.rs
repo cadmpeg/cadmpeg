@@ -405,6 +405,7 @@ fn extrude_selection_group_and_members_have_exact_counted_frames() {
                         )
                         .expect("valid entity identity"),
                         entity_reference_offset: 3120,
+                        compact_tail_flags: None,
                         region_selection: None,
                         paired_class_tag: crate::records::references::DesignClassTag::try_from(
                             "259".to_owned(),
