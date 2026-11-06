@@ -91,6 +91,10 @@ fn retained_untyped_act_record_marks_its_content_classes() {
     let retained = decoded.source_fidelity().retained_record(unknowns[0].id.as_str()).unwrap();
     let end = usize::try_from(records[1].1).unwrap();
     assert_eq!(retained.data(), Some(&bulk[..end]));
+    assert!(retained.untyped().contains(&ArenaClass::Model));
+    assert!(retained.untyped().contains(&ArenaClass::Design));
+    let image = decoded.source_fidelity().retained_record("f3d:file:source-image#0").unwrap();
+    assert!(image.untyped().is_empty());
     let unrepresented = decoded.source_fidelity().unrepresented();
     assert!(unrepresented.contains(&ArenaClass::Model));
     assert!(unrepresented.contains(&ArenaClass::Design));
