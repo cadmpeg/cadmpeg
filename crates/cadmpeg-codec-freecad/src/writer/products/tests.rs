@@ -360,3 +360,61 @@ fn unknown_ancestor_keeps_descendants_and_local_joint_frames() {
 }
 
 mod object_dependencies;
+
+#[test]
+fn occurrence_with_missing_product_links_does_not_refuse_other_occurrences() {
+    use crate::FcstdCodec;
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    use cadmpeg_ir::{Codec, DecodeOptions};
+    use std::io::Cursor;
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    let definition: cadmpeg_ir::products::ProductDefinition =
+        serde_json::from_value(serde_json::json!({
+            "id": "authored:model:product#prototype", "kind": "part", "source_name": "Prototype"
+        }))
+        .unwrap();
+    for (name, parent, prototype) in [
+        (
+            "MissingPrototype",
+            serde_json::json!({"kind":"root"}),
+            serde_json::json!({"scope":"local","definition":"authored:model:product#missing"}),
+        ),
+        (
+            "MissingParent",
+            serde_json::json!({"kind":"occurrence","occurrence":"authored:model:occurrence#missing"}),
+            serde_json::json!({"scope":"local","definition":definition.id}),
+        ),
+    ] {
+        let mut occurrence: cadmpeg_ir::products::Occurrence = serde_json::from_value(serde_json::json!({
+            "id":format!("authored:model:occurrence#{name}"),"name":name,"ordinal":0,"parent":parent,"prototype":prototype
+        })).unwrap();
+        if name == "MissingPrototype" {
+            occurrence.linked_prototype = Some(cadmpeg_ir::transform::Transform::identity());
+        }
+        ir.model.occurrences.push(occurrence);
+    }
+    ir.model.product_definitions.push(definition);
+    let plan = FcstdCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    for id in [
+        "authored:model:occurrence#MissingPrototype",
+        "authored:model:occurrence#MissingParent",
+    ] {
+        assert!(plan
+            .report()
+            .losses
+            .iter()
+            .any(|loss| loss.message.contains(id)));
+    }
+    assert!(plan.report().losses.iter().any(|loss| loss.code
+        == crate::loss::FreecadLossCode::ProductLinkedPlacementFolded
+            .note("")
+            .code));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let output = FcstdCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert_eq!(output.ir().model.occurrences.len(), 2);
+}

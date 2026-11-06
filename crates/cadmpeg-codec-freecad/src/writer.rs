@@ -138,7 +138,10 @@ enum PatchError {
 
 impl From<CodecError> for PatchError {
     fn from(error: CodecError) -> Self {
-        Self::Codec(error)
+        match error {
+            CodecError::UnsupportedContent(reason) => Self::Declined(reason),
+            error => Self::Codec(error),
+        }
     }
 }
 
