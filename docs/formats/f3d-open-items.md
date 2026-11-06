@@ -101,7 +101,7 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Note.** None.
 
-### DR-268. Scale frame whose payload length matches no form
+### DR-273. Scale frame whose payload length matches no form
 
 **Question.** Which form does a legacy `Scale` scope store when its payload length matches none of the 297-, 299- and 308-byte forms?
 
