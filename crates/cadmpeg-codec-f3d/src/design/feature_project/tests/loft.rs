@@ -217,8 +217,6 @@ fn loft_point_sources() -> (
     let operand =
         crate::records::topology::entity_selection::DesignEntitySelectionOperand::try_new(
             crate::records::topology::entity_selection::DesignEntitySelectionOperandDraft {
-                serialization_form:
-                    crate::records::topology::entity_selection::SelectionSerializationForm::Zero,
                 id: format!("{LOFT_STREAM}:design-entity-selection-operand#201"),
                 scope_record_index: 12,
                 group_record_index: 101,
