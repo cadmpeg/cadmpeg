@@ -234,6 +234,7 @@ fn regions_of_the_caps_area_must_also_share_its_outline() {
             .iter()
             .map(|(u, v)| Point2::new(u + du, *v))
             .collect(),
+        encloses_island: false,
     };
     let same = square(0.0);
     assert!(outlines_agree(&cap, &sampled(&same), &[0], TOLERANCE));

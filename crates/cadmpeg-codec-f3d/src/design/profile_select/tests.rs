@@ -42,6 +42,7 @@ use cadmpeg_ir::sketches::{
 };
 use std::collections::{HashMap, HashSet};
 
+mod crossing_loops;
 mod resolution_rules;
 mod spatial_transition;
 mod typed_regions;
