@@ -36,6 +36,23 @@ pub(crate) struct DecodedAct {
     pub(crate) table_references: Vec<ActTableReference>,
 }
 
+impl DecodedAct {
+    pub(crate) fn append(&mut self, mut other: Self) {
+        #[cfg(test)]
+        {
+            self.untyped_records += other.untyped_records;
+        }
+        self.untyped_spans.append(&mut other.untyped_spans);
+        self.tables.append(&mut other.tables);
+        self.types.append(&mut other.types);
+        self.entities.append(&mut other.entities);
+        self.guids.append(&mut other.guids);
+        self.registry_channels.append(&mut other.registry_channels);
+        self.component_links.append(&mut other.component_links);
+        self.table_references.append(&mut other.table_references);
+    }
+}
+
 pub(crate) struct UnreadableActFrame {
     pub(crate) stream: String,
     pub(crate) extent: std::ops::Range<usize>,
@@ -63,7 +80,11 @@ fn decode_record_frames(
             "F3D ACT MetaStream has no primary record index: {stream}"
         )));
     }
-    if meta.records.windows(2).any(|pair| pair[0].bulk_offset >= pair[1].bulk_offset) {
+    if meta
+        .records
+        .windows(2)
+        .any(|pair| pair[0].bulk_offset >= pair[1].bulk_offset)
+    {
         return Err(CodecError::malformed(format_args!(
             "F3D ACT primary record offsets are not strictly increasing: {stream}"
         )));
@@ -74,7 +95,9 @@ fn decode_record_frames(
     for (ordinal, record) in meta.records.iter().enumerate() {
         let start = usize::try_from(record.bulk_offset)
             .map_err(|_| CodecError::malformed("F3D ACT record offset exceeds usize"))?;
-        let end = meta.records.get(ordinal + 1)
+        let end = meta
+            .records
+            .get(ordinal + 1)
             .map(|next| usize::try_from(next.bulk_offset))
             .transpose()
             .map_err(|_| CodecError::malformed("F3D ACT record offset exceeds usize"))?
@@ -86,37 +109,58 @@ fn decode_record_frames(
         }
         if !indices.insert(record.entity_id) {
             return Err(CodecError::malformed(format_args!(
-                "duplicate F3D ACT primary record index {}: {stream}", record.entity_id
+                "duplicate F3D ACT primary record index {}: {stream}",
+                record.entity_id
             )));
         }
         let parsed = (|| -> Result<RecordFrame, CodecError> {
             let expected = u32::try_from(record.entity_id)
                 .map_err(|_| CodecError::malformed("F3D ACT record index exceeds u32"))?;
             let (tag, after_tag) = lp_ascii_strict(bytes, start, 3..=3)
-                .and_then(|(tag, after)| DesignClassTag::try_from(tag.to_owned()).ok().map(|tag| (tag, after)))
+                .and_then(|(tag, after)| {
+                    DesignClassTag::try_from(tag.to_owned())
+                        .ok()
+                        .map(|tag| (tag, after))
+                })
                 .ok_or_else(|| CodecError::malformed("F3D ACT record lacks a dynamic class tag"))?;
-            let payload_offset = after_tag.checked_add(4)
+            let payload_offset = after_tag
+                .checked_add(4)
                 .ok_or_else(|| CodecError::malformed("F3D ACT record header overflows"))?;
             if payload_offset > end || View::u32_le_at(bytes, after_tag) != Some(expected) {
-                return Err(CodecError::malformed("F3D ACT record header conflicts with its MetaStream index"));
+                return Err(CodecError::malformed(
+                    "F3D ACT record header conflicts with its MetaStream index",
+                ));
             }
-            let class_index = tag.dynamic_ordinal()
-                .ok_or_else(|| CodecError::malformed("F3D ACT class tag is outside the dynamic registry"))?;
+            let class_index = tag.dynamic_ordinal().ok_or_else(|| {
+                CodecError::malformed("F3D ACT class tag is outside the dynamic registry")
+            })?;
             if !meta.types.get(class_index).is_some_and(|record_type| {
-                record_type.entities.values().any(|registered| *registered == record.entity_id)
+                record_type
+                    .entities
+                    .values()
+                    .any(|registered| *registered == record.entity_id)
             }) {
-                return Err(CodecError::malformed("F3D ACT class tag conflicts with its MetaStream type"));
+                return Err(CodecError::malformed(
+                    "F3D ACT class tag conflicts with its MetaStream type",
+                ));
             }
             Ok(RecordFrame {
-                start, end, record_index: expected, record_index_offset: after_tag,
-                payload_offset, class_tag: tag,
+                start,
+                end,
+                record_index: expected,
+                record_index_offset: after_tag,
+                payload_offset,
+                class_tag: tag,
             })
         })();
         match parsed {
             Ok(frame) => frames.push(frame),
             Err(error) => unreadable.push(UnreadableActFrame {
-                stream: stream.to_owned(), extent: start..end,
-                record_index: record.entity_id, error, dropped: Vec::new(),
+                stream: stream.to_owned(),
+                extent: start..end,
+                record_index: record.entity_id,
+                error,
+                dropped: Vec::new(),
             }),
         }
     }
@@ -128,7 +172,22 @@ fn sibling_meta_name(stream: &str) -> Option<String> {
     Some(format!("{prefix}MetaStream.dat"))
 }
 
+#[cfg(test)]
 pub(crate) fn decode(scan: &ContainerScan<'_>) -> Result<DecodedAct, CodecError> {
+    decode_selected(scan, None)
+}
+
+pub(crate) fn decode_stream(
+    scan: &ContainerScan<'_>,
+    stream: &str,
+) -> Result<DecodedAct, CodecError> {
+    decode_selected(scan, Some(stream))
+}
+
+fn decode_selected(
+    scan: &ContainerScan<'_>,
+    stream: Option<&str>,
+) -> Result<DecodedAct, CodecError> {
     let mut untyped_records = Vec::new();
     let mut tables = Vec::new();
     let mut types = Vec::new();
@@ -140,7 +199,7 @@ pub(crate) fn decode(scan: &ContainerScan<'_>) -> Result<DecodedAct, CodecError>
     for entry in scan
         .entries
         .iter()
-        .filter(|entry| scan.is_act_stream(entry))
+        .filter(|entry| scan.is_act_stream(entry) && stream.is_none_or(|name| entry.name == name))
     {
         let bytes = scan.entry_bytes(&entry.name)?;
         let meta_name = sibling_meta_name(&entry.name).ok_or_else(|| {
@@ -180,13 +239,21 @@ pub(crate) fn decode(scan: &ContainerScan<'_>) -> Result<DecodedAct, CodecError>
             .iter()
             .filter_map(|frame| table_payload_offset(bytes, frame).map(|payload| (frame, payload)))
             .collect::<Vec<_>>();
-        let damaged_tables: Vec<_> = damaged.iter().enumerate().filter_map(|(index, fault)| {
-            let payload = fault.extent.start.checked_add(crate::layout::indexed_design_record_header::LEN)?;
-            table_payload_at(bytes, payload, fault.extent.end).map(|_| index)
-        }).collect();
+        let damaged_tables: Vec<_> = damaged
+            .iter()
+            .enumerate()
+            .filter_map(|(index, fault)| {
+                let payload = fault
+                    .extent
+                    .start
+                    .checked_add(crate::layout::indexed_design_record_header::LEN)?;
+                table_payload_at(bytes, payload, fault.extent.end).map(|_| index)
+            })
+            .collect();
         let (table_index, table_data) = match (table_frames.as_slice(), damaged_tables.as_slice()) {
             ([(table_frame, table_payload)], []) => {
-                let table_id = crate::ids::native_scoped_id(&entry.name, "act-table", table_frame.start);
+                let table_id =
+                    crate::ids::native_scoped_id(&entry.name, "act-table", table_frame.start);
                 let result = match decode_table(bytes, table_frame, *table_payload, &entry.name) {
                     Ok(table) => {
                         tables.push(crate::records::act_table::ActTable {
@@ -198,9 +265,10 @@ pub(crate) fn decode(scan: &ContainerScan<'_>) -> Result<DecodedAct, CodecError>
                     }
                     Err(error @ CodecError::Io(_)) => return Err(error),
                     Err(CodecError::ResourceLimit(limit))
-                        if limit.scope == cadmpeg_core::decode::LimitScope::Session => {
-                            return Err(CodecError::ResourceLimit(limit));
-                        }
+                        if limit.scope == cadmpeg_core::decode::LimitScope::Session =>
+                    {
+                        return Err(CodecError::ResourceLimit(limit));
+                    }
                     Err(error) => {
                         damaged.push(UnreadableActFrame {
                             stream: entry.name.clone(),
@@ -217,13 +285,18 @@ pub(crate) fn decode(scan: &ContainerScan<'_>) -> Result<DecodedAct, CodecError>
             ([], [index]) => {
                 let fault = &mut damaged[*index];
                 fault.dropped.push(crate::ids::native_scoped_id(
-                    &entry.name, "act-table", fault.extent.start,
+                    &entry.name,
+                    "act-table",
+                    fault.extent.start,
                 ));
                 (fault.record_index, None)
             }
-            _ => return Err(CodecError::malformed(format_args!(
-                "F3D ACT segment must have exactly one indexed ACTTable record: {}", entry.name
-            ))),
+            _ => {
+                return Err(CodecError::malformed(format_args!(
+                    "F3D ACT segment must have exactly one indexed ACTTable record: {}",
+                    entry.name
+                )))
+            }
         };
         let table_unreadable = table_data.is_none();
         let DecodedTable {
@@ -234,7 +307,9 @@ pub(crate) fn decode(scan: &ContainerScan<'_>) -> Result<DecodedAct, CodecError>
         } = table_data.unwrap_or_default();
         let mut groups = Vec::new();
         for frame in &frames {
-            let selected = table.iter().any(|row| row.record_index == frame.record_index);
+            let selected = table
+                .iter()
+                .any(|row| row.record_index == frame.record_index);
             let error = match decode_channel_group(bytes, frame, &entry.name) {
                 Ok(Some(group)) => {
                     groups.push(group);
@@ -244,9 +319,10 @@ pub(crate) fn decode(scan: &ContainerScan<'_>) -> Result<DecodedAct, CodecError>
                 Ok(None) => CodecError::malformed("ACT table group matches no channel grammar"),
                 Err(error @ CodecError::Io(_)) => return Err(error),
                 Err(CodecError::ResourceLimit(limit))
-                    if limit.scope == cadmpeg_core::decode::LimitScope::Session => {
-                        return Err(CodecError::ResourceLimit(limit));
-                    }
+                    if limit.scope == cadmpeg_core::decode::LimitScope::Session =>
+                {
+                    return Err(CodecError::ResourceLimit(limit));
+                }
                 Err(error) if !selected => return Err(error),
                 Err(error) => error,
             };
@@ -258,17 +334,23 @@ pub(crate) fn decode(scan: &ContainerScan<'_>) -> Result<DecodedAct, CodecError>
                 dropped: Vec::new(),
             });
         }
-        let frame_indices: BTreeSet<_> = frames.iter()
-            .filter(|frame| !damaged.iter().any(|fault| fault.record_index == u64::from(frame.record_index)))
+        let frame_indices: BTreeSet<_> = frames
+            .iter()
+            .filter(|frame| {
+                !damaged
+                    .iter()
+                    .any(|fault| fault.record_index == u64::from(frame.record_index))
+            })
             .map(|frame| frame.record_index)
             .collect();
         for reference in &stream_table_references {
             if frame_indices.contains(&reference.target_record) {
                 continue;
             }
-            let Some(fault) = damaged.iter_mut().find(|fault| {
-                fault.record_index == u64::from(reference.target_record)
-            }) else {
+            let Some(fault) = damaged
+                .iter_mut()
+                .find(|fault| fault.record_index == u64::from(reference.target_record))
+            else {
                 return Err(CodecError::malformed(format_args!(
                     "F3D ACTTable reference targets absent record {}: {}",
                     reference.target_record, entry.name
@@ -276,19 +358,26 @@ pub(crate) fn decode(scan: &ContainerScan<'_>) -> Result<DecodedAct, CodecError>
             };
             fault.dropped.push(reference.id().clone());
         }
-        stream_table_references.retain(|reference| frame_indices.contains(&reference.target_record));
+        stream_table_references
+            .retain(|reference| frame_indices.contains(&reference.target_record));
         table.retain(|entry_row| {
-            let Some(fault) = damaged.iter_mut().find(|fault| {
-                fault.record_index == u64::from(entry_row.record_index)
-            }) else {
+            let Some(fault) = damaged
+                .iter_mut()
+                .find(|fault| fault.record_index == u64::from(entry_row.record_index))
+            else {
                 return true;
             };
             fault.dropped.push(crate::ids::native_scoped_id(
-                &entry.name, "act-entity", entry_row.record_index,
+                &entry.name,
+                "act-entity",
+                entry_row.record_index,
             ));
             false
         });
-        for frame in frames.iter().filter(|frame| frame_indices.contains(&frame.record_index)) {
+        for frame in frames
+            .iter()
+            .filter(|frame| frame_indices.contains(&frame.record_index))
+        {
             if let Some(link) = decode_component_link(bytes, frame, &entry.name)? {
                 component_links.push(link);
             }
@@ -296,14 +385,17 @@ pub(crate) fn decode(scan: &ContainerScan<'_>) -> Result<DecodedAct, CodecError>
 
         let mut represented_groups = BTreeSet::new();
         let stream_entities = if table_unreadable {
-            let fault = damaged.iter_mut()
+            let fault = damaged
+                .iter_mut()
                 .find(|fault| fault.record_index == table_index)
                 .ok_or_else(|| CodecError::malformed("ACT table failure has no part"))?;
             for group in groups {
                 represented_groups.insert(group.record_index);
                 if group.entity_id.is_some() {
                     fault.dropped.push(crate::ids::native_scoped_id(
-                        &entry.name, "act-entity", group.record_index,
+                        &entry.name,
+                        "act-entity",
+                        group.record_index,
                     ));
                 }
             }
@@ -319,7 +411,11 @@ pub(crate) fn decode(scan: &ContainerScan<'_>) -> Result<DecodedAct, CodecError>
             represented.insert(index);
         }
         represented.extend(represented_groups);
-        represented.extend(damaged.iter().filter_map(|fault| u32::try_from(fault.record_index).ok()));
+        represented.extend(
+            damaged
+                .iter()
+                .filter_map(|fault| u32::try_from(fault.record_index).ok()),
+        );
         let scope = crate::ids::native_scope(&entry.name);
         represented.extend(
             component_links

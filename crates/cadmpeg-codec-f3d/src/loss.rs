@@ -58,8 +58,6 @@ pub(crate) enum F3dLossCode {
     ConfigurationFeatureSuppressionUnbound,
     /// ACT component links have no resolved neutral product role.
     ActComponentLinkUnresolved,
-    /// ACT records whose semantic payload could not be decoded.
-    ActRecordUntyped,
     /// Local component occurrences whose container or definition the source does not settle.
     LocalOccurrenceUnplaced,
     /// A local occurrence owner joins no unique component definition.
@@ -597,7 +595,6 @@ impl F3dLossCode {
         Self::KernelHeaderMetadataUnresolved,
         Self::ManifestMetadataUnresolved,
         Self::DesignIntentUndecoded,
-        Self::ActRecordUntyped,
         Self::RecipePrefixUntyped,
         Self::WriterNativeRecordsOmitted,
         Self::WriterDesignRecordsOmitted,
@@ -639,7 +636,6 @@ impl F3dLossCode {
                 "configuration.feature-suppression-unbound"
             }
             Self::ActComponentLinkUnresolved => "assembly.act-component-link-unresolved",
-            Self::ActRecordUntyped => "act.record-untyped",
             Self::LocalOccurrenceUnplaced => "assembly.local-occurrence-unplaced",
             Self::LocalOccurrenceOwnerUnbound => "assembly.local-occurrence-owner-unbound",
             Self::ComponentBodyOwnerFallback => "assembly.component-body-owner-fallback",
@@ -890,7 +886,6 @@ impl F3dLossCode {
             | Self::ConfigurationParameterOverrideUnbound
             | Self::ConfigurationFeatureSuppressionUnbound
             | Self::ActComponentLinkUnresolved
-            | Self::ActRecordUntyped
             | Self::ComponentBodyOwnerUnresolved
             | Self::ComponentBodyOwnerFallback
             | Self::LocalOccurrenceOwnerUnbound
@@ -1069,8 +1064,7 @@ impl F3dLossCode {
             | Self::XrefOwnedPose
             | Self::XrefOwnedPoseDisagrees
             | Self::XrefOwnedPoseNative
-            | Self::XrefTableUndecoded
-            | Self::ActRecordUntyped => LossTaxonomy::MetadataNotTransferred,
+            | Self::XrefTableUndecoded => LossTaxonomy::MetadataNotTransferred,
             Self::ActComponentLinkUnresolved
             | Self::AssemblyComponentsExternal
             | Self::XrefCycle
