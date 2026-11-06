@@ -166,12 +166,16 @@ bodies. Keep an unestablished edge selection unresolved. This includes repeated 
 **Conflict.** First or last BODY blocks, XMT 3, monotonic bounds, physical
 pairing, and repeated carrier spellings cannot select an aggregate change.
 In the NIST CTC-03 delta stream, four GROUP instances share XMT 2437 and
-type 90 across separate PMARK and map sections. A lookup by stream, XMT,
+type 90 across separate PMARK and map sections. They share node ID 6712 and
+first member 2511, while their chain links differ. A lookup by stream, XMT,
 and type merges those revisions. The current PMARK 5892 has delta key 2481
 and names PMARK 5898 as its predecessor; that PMARK has delta key 2429. The
 map after PMARK 5898 names GROUP 2562.
-That GROUP instance precedes the PMARK section. The map key leaves the
-instance revision and the action on its members unresolved.
+That GROUP instance precedes the PMARK section. If each FACE map entry uses
+the latest matching instance before the map, the resulting 34 FACE node IDs
+equal the primary GROUP's members. The later map after PMARK 6089 names GROUP
+2437 and carries no instance offset to select one of its four revisions. The
+action on the members remains unresolved.
 The counts of map entries and typed PMARK-section instances can differ from
 the adjacent PMARK's new-node and deleted-node counts in closed sections.
 
@@ -871,7 +875,20 @@ member as a neutral suppression or visibility state.
 
 **Need.** Identify the child occurrence and how the placement translations obtain their unit. Compare inch and metric models against independently matching geometry.
 
-**Conflict.** Repeated UUIDs identify groups of placement records. They do not select a distinct repeated child occurrence. In the NIST MTC assembly, 34 of 36 candidate FastLoad endpoint values resolve to placement owners. Pairing those endpoint rows with FastLoad occurrences by position matches 25 of 36 UUIDs; two endpoint values address other object records. The five-byte trailer has no established instance or unit role.
+**Conflict.** Repeated UUIDs identify groups of placement records. They do not select a distinct repeated child occurrence. In the NIST MTC assembly, 34 of 36 candidate FastLoad endpoint values resolve to placement owners. Pairing those endpoint rows with FastLoad occurrences by position matches 25 of 36 UUIDs; two endpoint values address other object records. The first trailer byte descends from `0x3f` to `0x1c` in placement-record order. The third trailer byte is constant within each UUID group.
+
+Within a UUID group, trailer keys and prototype indices can interleave in
+different orders. A positional join then assigns different keys to one
+prototype. Equal-sized key groups admit multiple prototype assignments.
+
+The MTC STEP assembly declares millimetres. Pairwise distances within its
+14-screw placement group match the NX placement distances at scale 1. The
+root mean square distance error at scales 25.4 and 1/25.4 is approximately
+1971 mm and 77.6 mm, respectively. The 14 NX translations use millimetres.
+The serialized unit selector remains unresolved.
+Five FastLoad occurrences of that screw type carry marker `0x31`. The STEP
+assembly includes all 14 occurrences of that type. Treating `0x31` as a
+suppression marker would exclude five occurrences present in the STEP model.
 
 ### AM-06. Assembly pattern dimensions
 
