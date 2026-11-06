@@ -289,7 +289,13 @@ fn unreadable_protein_entry_has_one_loss_for_the_entry() {
         .report()
         .losses
         .iter()
-        .filter(|loss| !baseline.report().losses.iter().any(|old| old.code == loss.code))
+        .filter(|loss| {
+            !baseline
+                .report()
+                .losses
+                .iter()
+                .any(|old| old.code == loss.code)
+        })
         .collect();
     let [loss] = new_losses.as_slice() else {
         panic!("expected one new loss for the unreadable entry");
@@ -301,4 +307,25 @@ fn unreadable_protein_entry_has_one_loss_for_the_entry() {
             .code
     );
     assert!(loss.message.contains(name));
+}
+
+#[test]
+fn textured_mesh_assets_have_no_native_back_links() {
+    let input = crate::test_support::mesh_fixture::archive_with_textures(
+        &crate::test_support::paramesh::triangle(),
+        Some(&synthetic_geometry_smbh()),
+        true,
+    );
+    let decoded = super::decode(input);
+    assert_eq!(decoded.ir().model.assets.len(), 2);
+    assert_eq!(decoded.ir().model.tessellations.len(), 1);
+    super::assert_valid(&decoded);
+    let findings = <F3dCodec as CodecBackend>::validate_native(
+        &cadmpeg_test_support::service_decode_context(),
+        decoded.ir(),
+        None,
+    )
+    .unwrap();
+    assert!(findings.is_empty(), "{findings:#?}");
+    cadmpeg_test_support::native_linkage::assert_native_linkage(decoded.ir());
 }

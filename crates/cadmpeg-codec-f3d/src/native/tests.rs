@@ -1519,7 +1519,7 @@ fn nested_protein_decode_gives_up_oversized_expansion() {
         .losses
         .iter()
         .any(|loss| loss.code.local_code() == "record.unreadable"
-            && loss.message.contains("f3d.protein_record")));
+            && loss.message.contains("zip.entry")));
     assert_eq!(decoded.ir().native_unknowns("f3d").unwrap().len(), 1);
 }
 
@@ -1564,7 +1564,7 @@ fn nested_protein_decode_honors_operator_per_expand_ceiling() {
         .losses
         .iter()
         .any(|loss| loss.code.local_code() == "record.unreadable"
-            && loss.message.contains("f3d.protein_record")));
+            && loss.message.contains("zip.entry")));
     assert_eq!(decoded.ir().native_unknowns("f3d").unwrap().len(), 1);
 
     let mut session_options = DecodeOptions::default();

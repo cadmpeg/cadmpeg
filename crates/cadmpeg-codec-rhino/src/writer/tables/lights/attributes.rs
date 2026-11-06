@@ -230,6 +230,66 @@ fn rendering_material(value: &Value) -> Result<Vec<u8>, WriteError> {
     Ok(super::super::anonymous(1, minor, &body)?)
 }
 
+fn rendering_mapping(value: &Value) -> Result<Vec<u8>, WriteError> {
+    let fields = value
+        .as_object()
+        .ok_or_else(|| WriteError::Omit("light rendering mapping must be an object".into()))?;
+    let id = crate::presentation::parse_uuid_text(string(fields, "plugin_uuid")?)
+        .ok_or_else(|| WriteError::Omit("light rendering mapping plugin UUID is invalid".into()))?;
+    let channels = field(fields, "channels")?.as_array().ok_or_else(|| {
+        WriteError::Omit("light rendering mapping channels must be a list".into())
+    })?;
+    let mut body = id.to_wire().to_vec();
+    body.extend(super::wire_index(channels.len())?.to_le_bytes());
+    let mut children = Vec::new();
+    for value in channels {
+        let channel = value.as_object().ok_or_else(|| {
+            WriteError::Omit("light rendering mapping channel must be an object".into())
+        })?;
+        let mut payload = integer(channel, "mapping_channel_id")?
+            .to_le_bytes()
+            .to_vec();
+        let id = crate::presentation::parse_uuid_text(string(channel, "mapping_uuid")?)
+            .ok_or_else(|| WriteError::Omit("light rendering mapping UUID is invalid".into()))?;
+        payload.extend(id.to_wire());
+        let minor = if let Some(transform) =
+            channel.get("object_transform").filter(|v| !v.is_null())
+        {
+            let rows = transform
+                .as_array()
+                .filter(|v| v.len() == 4)
+                .ok_or_else(|| {
+                    WriteError::Omit("light mapping transform needs four rows".into())
+                })?;
+            for row in rows {
+                let values = row.as_array().filter(|v| v.len() == 4).ok_or_else(|| {
+                    WriteError::Omit("light mapping transform needs four columns".into())
+                })?;
+                for value in values {
+                    payload.extend(
+                        value
+                            .as_f64()
+                            .filter(|v| v.is_finite())
+                            .ok_or_else(|| {
+                                WriteError::Omit("light mapping transform must be finite".into())
+                            })?
+                            .to_le_bytes(),
+                    );
+                }
+            }
+            1
+        } else {
+            0
+        };
+        let start = body.len();
+        body.extend(super::super::anonymous(1, minor, &payload)?);
+        children.push(start..body.len());
+    }
+    Ok(super::super::anonymous_with_children(
+        1, 0, &body, &children,
+    )?)
+}
+
 pub(super) struct EncodedAttributes {
     pub(super) body: Vec<u8>,
     pub(super) direct: Vec<u8>,
@@ -294,11 +354,7 @@ pub(super) fn encode(
             "light attribute {name} has no encoder"
         )));
     }
-    for name in [
-        "rendering_mappings",
-        "user_strings",
-        "attribute_user_strings",
-    ] {
+    for name in ["user_strings", "attribute_user_strings"] {
         if fields
             .get(name)
             .is_some_and(|value| !absent_or_empty(value))
@@ -354,8 +410,17 @@ pub(super) fn encode(
     let material_refs = field(fields, "rendering_materials")?
         .as_array()
         .ok_or_else(|| WriteError::Omit("light rendering_materials must be a list".into()))?;
+    let mappings = fields
+        .get("rendering_mappings")
+        .map_or(Ok(&[][..]), |value| {
+            value
+                .as_array()
+                .map(Vec::as_slice)
+                .ok_or_else(|| WriteError::Omit("light rendering_mappings must be a list".into()))
+        })?;
     let mut rendering_child = None;
     if !material_refs.is_empty()
+        || !mappings.is_empty()
         || [
             "casts_shadows",
             "receives_shadows",
@@ -389,7 +454,12 @@ pub(super) fn encode(
             rendering.extend(rendering_material(material)?);
             children.push(start..rendering.len());
         }
-        rendering.extend(0_i32.to_le_bytes());
+        rendering.extend(super::wire_index(mappings.len())?.to_le_bytes());
+        for mapping in mappings {
+            let start = rendering.len();
+            rendering.extend(rendering_mapping(mapping)?);
+            children.push(start..rendering.len());
+        }
         rendering.extend([u8::from(casts), u8::from(receives), u8::from(preview)]);
         body.push(5);
         let start = body.len();

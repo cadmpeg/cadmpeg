@@ -392,6 +392,50 @@ fn generated_source_less_face_lowers_line_pcurve_exactly() {
 }
 
 #[test]
+fn generated_line_pcurve_uses_its_declared_parameter_range() {
+    use cadmpeg_ir::geometry::pcurve::{LinePcurve, PcurveGeometry, PcurveMetadata};
+    use cadmpeg_ir::math::Point2;
+
+    let source = f3d_with_smbh(&synthetic_geometry_with_pcurve_smbh());
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let (mut ir, _, _) = decoded.into_parts();
+    ir.source = None;
+    ir.set_native_unknowns(&cadmpeg_test_support::service_decode_context(), "f3d", &[])
+        .unwrap();
+    let pcurve = &mut ir.model.pcurves[0];
+    pcurve.geometry = PcurveGeometry::Line(
+        LinePcurve::try_new(Point2::new(2.0, -1.0), Point2::new(0.5, 2.0)).unwrap(),
+    );
+    pcurve.metadata =
+        PcurveMetadata::general(None, cadmpeg_ir::units::FiniteVector::new([2.0, 5.0]), None);
+
+    let mut encoded = Vec::new();
+    F3dCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut encoded))
+        .unwrap();
+    let decoded = F3dCodec
+        .decode(&mut Cursor::new(encoded), &DecodeOptions::default())
+        .unwrap();
+    let expected = PcurveGeometry::Nurbs {
+        nurbs: cadmpeg_ir::geometry::pcurve::PcurveNurbs::from_lanes(
+            1,
+            vec![2.0, 2.0, 5.0, 5.0],
+            vec![Point2::new(3.0, 3.0), Point2::new(4.5, 9.0)],
+            None,
+            false,
+        )
+        .unwrap(),
+    };
+    crate::test_support::smbh_pcurves_test::assert_pcurve_geometry_close(
+        &decoded.ir().model.pcurves[0].geometry,
+        &expected,
+    );
+}
+
+#[test]
 fn generated_source_less_face_writes_rational_nurbs_pcurve() {
     let source = f3d_with_smbh(&synthetic_geometry_with_rational_pcurve_smbh());
     let decoded = F3dCodec
