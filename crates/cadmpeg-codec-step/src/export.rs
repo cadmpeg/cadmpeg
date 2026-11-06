@@ -4370,9 +4370,9 @@ impl<'a> Builder<'a> {
         {
             return None;
         }
-        let side = if !exact_construction && first == second {
-            first
-        } else if exact_construction && second.surface.is_none() && second.pcurve.is_none() {
+        let side = if (!exact_construction && first == second)
+            || (exact_construction && second.surface.is_none() && second.pcurve.is_none())
+        {
             first
         } else if exact_construction && first.surface.is_none() && first.pcurve.is_none() {
             second
