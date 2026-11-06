@@ -298,9 +298,12 @@ pub(super) fn complete(ir: &CadIr, losses: &mut Vec<LossNote>) -> ArenaDispositi
         }
     }
     for annotation in &ir.model.semantic_annotations {
+        let dimension =
+            annotation.kind == cadmpeg_ir::semantic_annotations::SemanticAnnotationKind::Dimension;
         if !matches!(
             annotation.kind,
             cadmpeg_ir::semantic_annotations::SemanticAnnotationKind::Text
+                | cadmpeg_ir::semantic_annotations::SemanticAnnotationKind::Dimension
                 | cadmpeg_ir::semantic_annotations::SemanticAnnotationKind::Balloon
                 | cadmpeg_ir::semantic_annotations::SemanticAnnotationKind::Symbol
         ) || (annotation.runtime_type.starts_with("TechDraw::")
@@ -311,20 +314,27 @@ pub(super) fn complete(ir: &CadIr, losses: &mut Vec<LossNote>) -> ArenaDispositi
                     | "TechDraw::DrawRichAnno"
                     | "TechDraw::DrawRichAnnoPython"
                     | "TechDraw::DrawViewBalloon"
+                    | "TechDraw::DrawViewDimension"
+                    | "TechDraw::DrawViewDimExtent"
+                    | "TechDraw::LandmarkDimension"
                     | "TechDraw::DrawViewSymbol"
                     | "TechDraw::DrawViewSymbolPython"
                     | "TechDraw::DrawWeldSymbol"
                     | "TechDraw::DrawWeldSymbolPython"
             ))
-            || !annotation.references.is_empty()
+            || annotation.references.keys().any(|role| {
+                !dimension || !matches!(role.as_str(), "References2D" | "References3D" | "Source3d")
+            })
             || annotation.value.is_some()
             || !annotation.reference_anchors.is_empty()
-            || !annotation.text_style.is_empty()
-            || annotation.format.is_some()
-            || annotation.dimension_kind.is_some()
-            || annotation.text_override.is_some()
-            || annotation.upper_tolerance.is_some()
-            || annotation.lower_tolerance.is_some()
+            || (!annotation.text_style.is_empty()
+                && !annotation.runtime_type.starts_with("TechDraw::"))
+            || (!dimension
+                && (annotation.format.is_some()
+                    || annotation.dimension_kind.is_some()
+                    || annotation.text_override.is_some()
+                    || annotation.upper_tolerance.is_some()
+                    || annotation.lower_tolerance.is_some()))
             || !annotation.parameters.is_empty()
             || !annotation.assets.is_empty()
         {
