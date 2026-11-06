@@ -258,7 +258,7 @@ fn ranges_fit(ir: &CadIr, lowering: &Lowering) -> bool {
         .edges
         .iter()
         .filter(|edge| edge.curve() == Some(&lowering.curve))
-        .filter_map(|edge| edge.param_range())
+        .filter_map(crate::topology::Edge::param_range)
         .all(|range| lowering.map.interval(range.get()).is_some())
         && ir
             .model
