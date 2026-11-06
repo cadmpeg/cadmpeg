@@ -502,3 +502,53 @@ fn counted_duplicate_members_select_the_region_around_a_circle_island() {
         None
     );
 }
+
+#[test]
+fn a_counted_member_of_a_coincident_edge_matches_in_either_direction() {
+    // A 10 x 5 rectangle drawn against its counterclockwise walk, whose
+    // bottom side also lies on an earlier, longer line drawn the other way.
+    // The longer line supplies the bottom edge.
+    let id = SketchId::mint("synthetic:test:id#coincident-bottom").unwrap();
+    let entities = vec![
+        line_entity(&id, "top", (0.0, 5.0), (10.0, 5.0)),
+        line_entity(&id, "right", (10.0, 5.0), (10.0, 0.0)),
+        line_entity(&id, "left", (0.0, 0.0), (0.0, 5.0)),
+        line_entity(&id, "long", (-5.0, 0.0), (15.0, 0.0)),
+        line_entity(&id, "bottom", (10.0, 0.0), (0.0, 0.0)),
+    ];
+    let [top, right, left, long, bottom] = [0, 1, 2, 3, 4].map(|index| &entities[index]);
+    let sketch = sketch_with_loops(
+        id,
+        &[&[top.clone(), right.clone(), left.clone(), bottom.clone()]],
+    );
+
+    for long_reversed in [true, false] {
+        let (exterior, holes) = single_region(
+            &sketch,
+            &entities,
+            &[vec![
+                (top, true),
+                (right, true),
+                (left, true),
+                (bottom, true),
+                (long, long_reversed),
+            ]],
+        );
+        assert!(holes.is_empty());
+        assert_eq!(exterior.len(), 4);
+    }
+    assert_eq!(
+        member_regions(
+            &sketch,
+            &entities,
+            &[vec![
+                (top, false),
+                (right, true),
+                (left, true),
+                (bottom, true),
+                (long, true),
+            ]],
+        ),
+        None
+    );
+}

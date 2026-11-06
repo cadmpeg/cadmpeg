@@ -114,31 +114,39 @@ struct SketchArrangementEdge {
     coincident: Vec<cadmpeg_ir::sketches::SketchEntityId>,
 }
 
+/// One stored fragment of a ring: consecutive edges of one curve that meet
+/// at a synthetic circle split node are one fragment.
+#[derive(Clone)]
+struct ArrangementFragment {
+    /// The fragment's curve and traversal direction.
+    curve: cadmpeg_ir::sketches::SketchEntityUse,
+    /// Entities of coincident edges merged into the fragment's edges.
+    coincident: Vec<cadmpeg_ir::sketches::SketchEntityId>,
+}
+
 /// One closed boundary walk of an arrangement.
 #[derive(Clone)]
 struct ArrangementRing {
     boundary: Vec<cadmpeg_ir::features::SketchProfileBoundaryUse>,
-    /// Boundary curves in walk order with their traversal directions, one
-    /// per stored fragment: consecutive fragments of one curve that meet at
-    /// a synthetic circle split node are one fragment.
-    fragments: Vec<cadmpeg_ir::sketches::SketchEntityUse>,
-    /// Entities of coincident edges merged into the boundary edges.
-    coincident: Vec<cadmpeg_ir::sketches::SketchEntityId>,
+    /// Boundary fragments in walk order.
+    fragments: Vec<ArrangementFragment>,
 }
 
 impl ArrangementRing {
     /// Whether `members` name the ring's fragment and coincident curves with
-    /// their multiplicities, and each fragment with its traversal direction.
+    /// their multiplicities, and each fragment without a coincident curve
+    /// with its traversal direction.
     fn matches_members(&self, members: &[cadmpeg_ir::sketches::SketchEntityUse]) -> bool {
-        if self.fragments.len() + self.coincident.len() != members.len() {
-            return false;
-        }
         let mut curves = self
             .fragments
             .iter()
-            .map(|use_| &use_.entity)
-            .chain(&self.coincident)
+            .flat_map(|fragment| {
+                std::iter::once(&fragment.curve.entity).chain(&fragment.coincident)
+            })
             .collect::<Vec<_>>();
+        if curves.len() != members.len() {
+            return false;
+        }
         curves.sort_unstable();
         let mut named = members.iter().map(|use_| &use_.entity).collect::<Vec<_>>();
         named.sort_unstable();
@@ -146,13 +154,16 @@ impl ArrangementRing {
             return false;
         }
         let mut directed = members.iter().collect::<Vec<_>>();
-        self.fragments.iter().all(|fragment| {
-            directed
-                .iter()
-                .position(|member| *member == fragment)
-                .map(|index| directed.swap_remove(index))
-                .is_some()
-        })
+        self.fragments
+            .iter()
+            .filter(|fragment| fragment.coincident.is_empty())
+            .all(|fragment| {
+                directed
+                    .iter()
+                    .position(|member| **member == fragment.curve)
+                    .map(|index| directed.swap_remove(index))
+                    .is_some()
+            })
     }
 }
 
@@ -804,10 +815,7 @@ fn sketch_arrangement_faces_with_nodes(
             let start = (edge_index, reversed);
             let mut current = start;
             let mut boundary = Vec::new();
-            let mut runs = Vec::<(
-                cadmpeg_ir::sketches::SketchEntityUse,
-                Vec<cadmpeg_ir::sketches::SketchEntityId>,
-            )>::new();
+            let mut runs = Vec::<ArrangementFragment>::new();
             let mut polyline = Vec::new();
             loop {
                 let (index, reverse) = current;
@@ -825,22 +833,22 @@ fn sketch_arrangement_faces_with_nodes(
                 }
                 let joint = edge.nodes[usize::from(reverse)];
                 match runs.last_mut() {
-                    Some((run, coincident))
-                        if synthetic_nodes.contains(&joint) && run.entity == use_.entity =>
+                    Some(run)
+                        if synthetic_nodes.contains(&joint) && run.curve.entity == use_.entity =>
                     {
                         for other in &edge.coincident {
-                            if !coincident.contains(other) {
-                                coincident.push(other.clone());
+                            if !run.coincident.contains(other) {
+                                run.coincident.push(other.clone());
                             }
                         }
                     }
-                    _ => runs.push((
-                        cadmpeg_ir::sketches::SketchEntityUse {
+                    _ => runs.push(ArrangementFragment {
+                        curve: cadmpeg_ir::sketches::SketchEntityUse {
                             entity: use_.entity.clone(),
                             reversed: use_.reversed,
                         },
-                        edge.coincident.clone(),
-                    )),
+                        coincident: edge.coincident.clone(),
+                    }),
                 }
                 boundary.push(use_);
                 if reverse {
@@ -861,23 +869,21 @@ fn sketch_arrangement_faces_with_nodes(
                 current = (next.0, next.1);
             }
             if runs.len() > 1
-                && runs.first().map(|run| &run.0.entity) == runs.last().map(|run| &run.0.entity)
+                && runs.first().map(|run| &run.curve.entity)
+                    == runs.last().map(|run| &run.curve.entity)
                 && synthetic_nodes.contains(&edges[edge_index].nodes[usize::from(reversed)])
             {
-                if let Some((_, coincident)) = runs.pop() {
-                    for other in coincident {
-                        if !runs[0].1.contains(&other) {
-                            runs[0].1.push(other);
+                if let Some(last) = runs.pop() {
+                    for other in last.coincident {
+                        if !runs[0].coincident.contains(&other) {
+                            runs[0].coincident.push(other);
                         }
                     }
                 }
             }
-            let fragments = runs.iter().map(|run| run.0.clone()).collect();
-            let coincident = runs.into_iter().flat_map(|run| run.1).collect();
             let ring = ArrangementRing {
                 boundary,
-                fragments,
-                coincident,
+                fragments: runs,
             };
             if polyline.len() < 3 {
                 continue;
