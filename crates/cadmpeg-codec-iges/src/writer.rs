@@ -289,6 +289,22 @@ fn vertex_list_source(ir: &CadIr, points: &[String]) -> Option<String> {
     Some(id)
 }
 
+fn vertex_label_group(ir: &CadIr, point: &cadmpeg_ir::ids::PointId) -> Option<String> {
+    use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
+    let mut labels = ir.model.attributes.iter().filter(|attribute| {
+        matches!(&attribute.target, AttributeTarget::Point(id) if id == point)
+            && matches!(attribute.name.as_str(), "name" | "iges.directory_label")
+    });
+    let label = labels.next()?;
+    if labels.next().is_some() {
+        return None;
+    }
+    let [Some(AttributeValue::String(value))] = label.values.as_slice() else {
+        return None;
+    };
+    attributes::labels::short_label(value).then(|| value.clone())
+}
+
 fn counts_for_ir(ir: &CadIr) -> BTreeMap<String, usize> {
     let mut counts = BTreeMap::new();
     if let Some(namespace) = ir.native.namespace("iges") {
@@ -2621,11 +2637,7 @@ fn brep_entities(
 
         let mut vertex_ids = body_vertex_ids.into_iter().collect::<Vec<_>>();
         vertex_ids.sort_by(Ord::cmp);
-        let mut vertex_indices = BTreeMap::new();
-        for (index, vertex_id) in vertex_ids.iter().enumerate() {
-            vertex_indices.insert(vertex_id.clone(), index);
-        }
-        let mut parameters = vertex_ids.len().to_string();
+        let mut vertex_groups = BTreeMap::<(Option<String>, Option<String>), Vec<String>>::new();
         for vertex_id in &vertex_ids {
             let vertex = ir
                 .model
@@ -2637,41 +2649,60 @@ fn brep_entities(
                         "IGES B-rep references missing vertex {vertex_id}"
                     ))
                 })?;
-            for value in point_position(ir, &vertex.point)?.coordinates() {
-                parameters.push(',');
-                parameters.push_str(&number(value));
+            let source = vertex_list_source(ir, &[vertex.point.to_string()]);
+            let label = vertex_label_group(ir, &vertex.point);
+            vertex_groups
+                .entry((source, label))
+                .or_default()
+                .push(vertex_id.clone());
+        }
+        let mut vertex_indices = BTreeMap::new();
+        let mut source_counts = BTreeMap::<String, usize>::new();
+        for (source, _) in vertex_groups.keys() {
+            if let Some(source) = source {
+                *source_counts.entry(source.clone()).or_default() += 1;
             }
         }
-        parameters.push(';');
-        let point_targets = vertex_ids
-            .iter()
-            .filter_map(|id| {
-                ir.model
+        for ((source, _), group) in vertex_groups {
+            let list_index = entities.len();
+            let mut parameters = group.len().to_string();
+            let mut point_targets = Vec::with_capacity(group.len());
+            for (index, vertex_id) in group.iter().enumerate() {
+                let vertex = ir
+                    .model
                     .vertices
                     .iter()
-                    .find(|vertex| vertex.id.as_str() == id)
-                    .map(|vertex| vertex.point.to_string())
-            })
-            .collect::<Vec<_>>();
-        let source = vertex_list_source(ir, &point_targets);
-        let mut source_targets = point_targets;
-        source_targets.extend(source);
-        let vertex_list_index = entities.len();
-        entities.push(Entity {
-            structure: None,
-            property_links: Vec::new(),
-            association_links: Vec::new(),
-            line_font: None,
-            source_targets,
-            type_code: 502,
-            form: 1,
-            label: String::new(),
-            status: EntityStatus::PhysicallyDependent,
-            subscript: 0,
-            parameter_body: parameters.into_bytes(),
-            transform: None,
-            transform_link: None,
-        });
+                    .find(|vertex| vertex.id.as_str() == vertex_id)
+                    .ok_or_else(|| {
+                        CodecError::malformed(format_args!(
+                            "IGES B-rep references missing vertex {vertex_id}"
+                        ))
+                    })?;
+                for value in point_position(ir, &vertex.point)?.coordinates() {
+                    parameters.push(',');
+                    parameters.push_str(&number(value));
+                }
+                point_targets.push(vertex.point.to_string());
+                vertex_indices.insert(vertex_id.clone(), (list_index, index));
+            }
+            parameters.push(';');
+            point_targets.extend(source.filter(|source| source_counts.get(source) == Some(&1)));
+            entities.push(Entity {
+                structure: None,
+                property_links: Vec::new(),
+                association_links: Vec::new(),
+                line_font: None,
+                source_targets: point_targets,
+                type_code: 502,
+                form: 1,
+                label: String::new(),
+                status: EntityStatus::PhysicallyDependent,
+                subscript: 0,
+                parameter_body: parameters.into_bytes(),
+                transform: None,
+                transform_link: None,
+            });
+        }
 
         let mut edge_ids = body_edge_ids.into_iter().collect::<Vec<_>>();
         edge_ids.sort_by(Ord::cmp);
@@ -2693,15 +2724,15 @@ fn brep_entities(
                         CodecError::malformed(format_args!("IGES B-rep edge {edge_id} is missing"))
                     })?;
                 let curve_index = edge_curve_indices[edge_id];
-                let start_index = vertex_indices[edge.start.as_str()];
-                let end_index = vertex_indices[edge.end.as_str()];
+                let (start_list, start_index) = vertex_indices[edge.start.as_str()];
+                let (end_list, end_index) = vertex_indices[edge.end.as_str()];
                 write!(
                     parameters,
                     ",{},{},{},{},{}",
                     reference_marker(curve_index),
-                    reference_marker(vertex_list_index),
+                    reference_marker(start_list),
                     start_index + 1,
-                    reference_marker(vertex_list_index),
+                    reference_marker(end_list),
                     end_index + 1
                 )
                 .map_err(CodecError::malformed)?;
@@ -2815,7 +2846,8 @@ fn brep_entities(
                     following.reverse();
                 }
                 for vertex_use in following {
-                    let vertex_index = vertex_indices[vertex_use.vertex.as_str()];
+                    let (vertex_list_index, vertex_index) =
+                        vertex_indices[vertex_use.vertex.as_str()];
                     write!(
                         parameters,
                         ",1,{},{},{},{}",
@@ -2837,7 +2869,7 @@ fn brep_entities(
                 }
             }
             if let Some((vertex, pcurves)) = loop_.singular_vertex() {
-                let vertex_index = vertex_indices[vertex.as_str()];
+                let (vertex_list_index, vertex_index) = vertex_indices[vertex.as_str()];
                 write!(
                     parameters,
                     ",1,{},{},{},{}",

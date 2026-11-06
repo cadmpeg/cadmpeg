@@ -1099,6 +1099,7 @@ impl<'a> Builder<'a> {
         self.emit_visibility();
         self.emit_tessellations(context);
         self.emit_geometry_attributes(context);
+        self.emit_occurrence_attributes(context);
         if !has_model_items && self.tessellation_step_refs.is_empty() {
             self.loss(
                 StepLossCode::NoExportableSolids,
@@ -2549,6 +2550,14 @@ impl<'a> Builder<'a> {
                 continue;
             }
             let item = match &attribute.target {
+                AttributeTarget::Body(id) => {
+                    self.body_step_item_refs.get(id.as_str()).and_then(|items| {
+                        match items.as_slice() {
+                            [item] => Some(*item),
+                            _ => None,
+                        }
+                    })
+                }
                 AttributeTarget::Face(id) => self.face_step_refs.get(id.as_str()).copied(),
                 AttributeTarget::Edge(id) if !self.split_edges.contains(id.as_str()) => {
                     self.edge_refs.get(id.as_str()).copied()
@@ -2562,6 +2571,14 @@ impl<'a> Builder<'a> {
                 AttributeTarget::Point(id) => self.point_refs.get(id.as_str()).copied(),
                 AttributeTarget::Tessellation(id) => self.tessellation_step_refs.get(id).copied(),
                 AttributeTarget::Record { arena, id } => match arena.as_str() {
+                    "bodies" => {
+                        self.body_step_item_refs
+                            .get(id)
+                            .and_then(|items| match items.as_slice() {
+                                [item] => Some(*item),
+                                _ => None,
+                            })
+                    }
                     "faces" => self.face_step_refs.get(id).copied(),
                     "edges" if !self.split_edges.contains(id.as_str()) => {
                         self.edge_refs.get(id).copied()
@@ -2586,6 +2603,22 @@ impl<'a> Builder<'a> {
                 &format!("'','',{item},{representation}"),
             );
             self.emit_scalar_attribute(attribute, owner, context);
+        }
+    }
+
+    fn emit_occurrence_attributes(&mut self, context: Ref) {
+        let ir = self.ir;
+        for attribute in &ir.model.attributes {
+            let occurrence = match &attribute.target {
+                AttributeTarget::Occurrence(id) => self.occurrence_step_refs.get(id.as_str()),
+                AttributeTarget::Record { arena, id } if arena.as_str() == "occurrences" => {
+                    self.occurrence_step_refs.get(id)
+                }
+                _ => None,
+            };
+            if let Some(usage) = occurrence.copied() {
+                self.emit_scalar_attribute(attribute, usage, context);
+            }
         }
     }
 
