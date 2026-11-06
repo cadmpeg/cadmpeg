@@ -2706,6 +2706,24 @@ pub(crate) mod timeline_body_owner_marked_prefix {
     pub(crate) const BODY_COUNT: usize = 25;
 }
 
+/// Byte offsets for the `timeline_owned_paste_source_pairs` record.
+///
+/// Spec §3.1. Record length 9 B.
+///
+/// ```text
+/// Offsets are relative to the byte after the two parallel 15-byte body runs. The GUID pairs start at the end of this prefix.
+/// ```
+pub(crate) mod timeline_owned_paste_source_pairs {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 9;
+    /// Offset of `marker` (`u8`). Spec §3.1.
+    pub(crate) const MARKER: usize = 0;
+    /// Offset of `zero_run_4` (`bytes[4]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_4: usize = 1;
+    /// Offset of `pair_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const PAIR_COUNT: usize = 5;
+}
+
 /// Byte offsets for the `base_feature_wide_zero_body` record.
 ///
 /// Spec §3.1. Record length 63 B.
