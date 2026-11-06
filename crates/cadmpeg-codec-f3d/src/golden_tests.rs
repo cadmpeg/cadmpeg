@@ -1012,7 +1012,7 @@ fn rekey_ephemeral_brep_ids(value: &mut serde_json::Value) {
         match value {
             serde_json::Value::String(text) => {
                 if ephemeral_id(text) && !mapping.contains_key(text.as_str()) {
-                    let kind = text.rsplit_once('#').map(|(kind, _)| kind).unwrap_or(text);
+                    let kind = text.rsplit_once('#').map_or(text.as_str(), |(kind, _)| kind);
                     kinds
                         .entry(kind.to_owned())
                         .or_default()
@@ -1129,7 +1129,7 @@ fn rekey_ephemeral_brep_ids(value: &mut serde_json::Value) {
                             {
                                 if let Some(position) = coedges
                                     .iter()
-                                    .map(|coedge| coedge.to_string())
+                                    .map(std::string::ToString::to_string)
                                     .enumerate()
                                     .min_by(|(_, left), (_, right)| left.cmp(right))
                                     .map(|(position, _)| position)
@@ -1207,7 +1207,7 @@ fn an_edit_survives_native_writer_fallback() {
                         if let Some(carrier) = extra.pointer_mut("/declared/carrier") {
                             if carrier
                                 .as_str()
-                                .is_some_and(|carrier| carrier.ends_with(".smbh"))
+                                .is_some_and(|carrier| carrier.as_bytes().ends_with(b".smbh"))
                             {
                                 *carrier =
                                     serde_json::Value::String("neutralized-carrier.smbh".into());
