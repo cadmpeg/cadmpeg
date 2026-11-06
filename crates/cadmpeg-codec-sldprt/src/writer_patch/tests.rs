@@ -376,7 +376,7 @@ fn untyped_surface_content_cannot_reenter_through_a_point_patch() {
 }
 
 #[test]
-fn unrepresented_source_synthesizes_without_patch_provenance() {
+fn unrepresented_classes_synthesizes_without_patch_provenance() {
     let mut body = Vec::new();
     body.extend(bridge(10, 20, 999));
     body.extend(loop_head(20, 30, 10));
@@ -818,7 +818,7 @@ fn deltas_stream_whose_header_overruns_its_payload() -> Vec<u8> {
 }
 
 #[test]
-fn unrepresented_source_does_not_redecode_retained_bytes_for_content() {
+fn unrepresented_classes_does_not_redecode_retained_bytes_for_content() {
     let mut body = Vec::new();
     body.extend(bridge(10, 20, 999));
     body.extend(loop_head(20, 30, 10));
