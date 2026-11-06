@@ -3,6 +3,40 @@
 use super::*;
 
 #[test]
+fn injected_topology_errors_write_with_named_losses() {
+    for smbh in [
+        crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
+        crate::test_support::smbh_geometry_test::synthetic_wire_body_smbh(),
+    ] {
+        let source = crate::test_support::zip_test::f3d_with_smbh(&smbh);
+        let decoded = F3dCodec.decode(&mut Cursor::new(source), &DecodeOptions::default()).unwrap();
+        let findings = cadmpeg_test_support::robustness::injected_error_findings(
+            decoded.ir(), &F3dCodec, TargetRequest::Inherit,
+            &cadmpeg_test_support::robustness::standard_injections(),
+        );
+        assert!(findings.is_empty(), "{findings:?}");
+    }
+}
+
+#[test]
+fn dangling_body_region_keeps_uniquely_owned_geometry() {
+    for smbh in [
+        crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
+        crate::test_support::smbh_geometry_test::synthetic_wire_body_smbh(),
+    ] {
+        let source = crate::test_support::zip_test::f3d_with_smbh(&smbh);
+        let decoded = F3dCodec.decode(&mut Cursor::new(source), &DecodeOptions::default()).unwrap();
+        let mut edited = decoded.ir().clone();
+        let id = edited.model.bodies[0].id.clone();
+        edited.model.bodies[0].regions[0] = "injected:missing:record#0".try_into().unwrap();
+        let (output, report) = super::super::source_less_analytic::synthesize_document(&edited, None);
+        assert_eq!(output.ir().model.bodies.len(), decoded.ir().model.bodies.len());
+        assert_eq!(output.ir().model.edges.len(), decoded.ir().model.edges.len());
+        assert!(report.losses.iter().any(|loss| loss.code == crate::loss::F3dLossCode::WriterGeometryOmitted.kind() && loss.message.contains(id.as_str())));
+    }
+}
+
+#[test]
 fn recipe_without_indexed_carrier_is_reported_as_dropped() {
     use crate::records::identity::RecordedValue;
     use crate::records::recipes::{ConstructionRecipe, ConstructionRecipeKind};

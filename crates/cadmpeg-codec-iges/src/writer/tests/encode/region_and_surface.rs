@@ -21,6 +21,52 @@ use cadmpeg_ir::Codec;
 use std::io::Cursor;
 
 #[test]
+fn trimmed_sheet_preserves_boundary_point_name() {
+    use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(trimmed_plane_file()),
+            &DecodeOptions::default(),
+        )
+        .expect("trimmed sheet decodes");
+    let name = decoded
+        .ir()
+        .model
+        .attributes
+        .iter()
+        .find(|attribute| {
+            matches!(attribute.target, AttributeTarget::Point(_))
+                && attribute.values == [Some(AttributeValue::String("TRIMMED".into()))]
+        })
+        .expect("boundary point name");
+    let plan = IgesCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), None),
+            TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+        )
+        .expect("trimmed sheet synthesizes");
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .all(|loss| !loss.message.contains(name.id.as_str())));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("trimmed sheet writes");
+    let output = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("trimmed sheet re-decodes");
+    assert!(output
+        .ir()
+        .model
+        .attributes
+        .iter()
+        .any(
+            |attribute| matches!(attribute.target, AttributeTarget::Point(_))
+                && attribute.values == [Some(AttributeValue::String("TRIMMED".into()))]
+        ));
+}
+
+#[test]
 fn bounded_sheet_preserves_shared_boundary_point_labels() {
     use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
 
