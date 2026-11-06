@@ -496,7 +496,7 @@ fn unreadable_index_is_given_up_before_recipe_and_timeline_selection() {
 
     use zip::CompressionMethod;
 
-    use crate::design::decode::{meta, parameters};
+    use crate::design::decode::{decal, meta, parameters};
     use crate::test_support::manifest_test::write_synthetic_manifests;
     use crate::test_support::streams_test::design_metastream_with_records;
     use crate::test_support::zip_test::with_scan;
@@ -536,6 +536,9 @@ fn unreadable_index_is_given_up_before_recipe_and_timeline_selection() {
             .unwrap()
             .is_empty());
         assert!(parameters::decode_recipes(&ctx, &mut parts, scan)
+            .unwrap()
+            .is_empty());
+        assert!(decal::decode_decal_images(&ctx, &mut parts, scan, &[])
             .unwrap()
             .is_empty());
         assert!(parts.into_parts().3.is_empty());
