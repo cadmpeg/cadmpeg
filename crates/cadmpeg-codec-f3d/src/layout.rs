@@ -3865,20 +3865,52 @@ pub(crate) mod coil_compact_placement_matrix_frame {
     pub(crate) const MATRIX: usize = 66;
 }
 
-/// Byte offsets for the `class_403_revolve_scope_frame` record.
+/// Byte offsets for the `unmarked_u32_one_revolve_scope_frame` record.
 ///
-/// Spec §3.1. Record length 387 B.
+/// Spec §3.1. Record length 45 B.
 ///
 /// ```text
-/// Offsets are relative to the primary indexed header. The frame has eight ordered references; its fixed operation prefix and angle-owner reference are typed, and the remaining marked references retain their source envelope.
+/// Offsets are relative to the primary indexed header through the trailing field of the marked angle-owner reference.
 /// ```
-pub(crate) mod class_403_revolve_scope_frame {
+pub(crate) mod unmarked_u32_one_revolve_scope_frame {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 45;
+    /// Offset of `zero_run_10` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_10: usize = 11;
     /// Offset of `operation` (`u32`, little-endian). Spec §3.1.
     pub(crate) const OPERATION: usize = 21;
     /// Offset of `extent_kind` (`u32`, little-endian). Spec §3.1.
     pub(crate) const EXTENT_KIND: usize = 25;
     /// Offset of `direction_kind` (`u8`). Spec §3.1.
     pub(crate) const DIRECTION_KIND: usize = 29;
+    /// Offset of `u32_one` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const U32_ONE: usize = 30;
+    /// Offset of `angle_reference_marker` (`u8`). Spec §3.1.
+    pub(crate) const ANGLE_REFERENCE_MARKER: usize = 34;
+    /// Offset of `angle_record_index` (`u64`, little-endian). Spec §3.1.
+    pub(crate) const ANGLE_RECORD_INDEX: usize = 35;
+    /// Offset of `trailing_zero` (`bytes[2]`). Spec §3.1.
+    pub(crate) const TRAILING_ZERO: usize = 43;
+}
+
+/// Byte offsets for the `direction_pair_revolve_scope_frame` record.
+///
+/// Spec §3.1. Record length 387 B.
+///
+/// ```text
+/// Offsets are relative to the primary indexed header. The frame has eight ordered references; its fixed operation prefix and angle-owner reference are typed, and the remaining marked references retain their source envelope.
+/// ```
+pub(crate) mod direction_pair_revolve_scope_frame {
+    /// Offset of `zero_run_10` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_10: usize = 11;
+    /// Offset of `operation` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const OPERATION: usize = 21;
+    /// Offset of `extent_kind` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const EXTENT_KIND: usize = 25;
+    /// Offset of `direction_kind` (`u8`). Spec §3.1.
+    pub(crate) const DIRECTION_KIND: usize = 29;
+    /// Offset of `zero_run_3` (`bytes[3]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_3: usize = 31;
     /// Offset of `angle_reference_marker` (`u8`). Spec §3.1.
     pub(crate) const ANGLE_REFERENCE_MARKER: usize = 34;
 }
@@ -3888,7 +3920,7 @@ pub(crate) mod class_403_revolve_scope_frame {
 /// Spec §3.1. Record length 38 B.
 ///
 /// ```text
-/// Offsets are relative to the Revolve primary indexed header. Every marker-one class pair uses the same fixed prologue.
+/// Offsets are relative to the Revolve primary indexed header. Every marker-one frame length uses the same fixed prologue.
 /// ```
 pub(crate) mod marker_one_revolve_prologue {
     /// Offset of `marker` (`u8`). Spec §3.1.

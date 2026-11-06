@@ -1341,10 +1341,20 @@ when the operation transition carries no candidate for the group members?
 
 **Question.** Which Loft setting selects a non-null construction-operand group reference at standard `Loft` scope offset 33?
 
-**Known.** `f3d.md` §3.1 "The standard `Loft` scope has nine zero bytes" gives the reference. In each scope with a non-null reference, the scope has one role-`0x0000000500000000` rail group and the reference names it. Scopes with rail groups or a centerline group also store a null reference.
+**Known.** `f3d.md` §3.1 "The compact fixed-prefix `Loft` scope has ten zero bytes" gives the reference. In each scope with a non-null reference, the scope has one role-`0x0000000500000000` rail group and the reference names it. Scopes with rail groups or a centerline group also store a null reference.
 
 **Need.** Saves of one railed `Loft` that change one rail or guide setting at a time, each recording byte 33.
 
 **Conflict.** None.
+
+**Note.** None.
+
+### DR-269. Marker-one Revolve frames of other lengths
+
+**Question.** Which field layout does a `Revolve` scope use when it has the marker-one prologue and a token-independent frame length other than 345, 355, 367, 351, or 373?
+
+**Known.** `f3d.md` §3.1 gives the marker-one form a 345-, 355-, or 367-byte token-independent frame, and the referenced-angle form, which shares the marker-one prologue through offset 33, a 351- or 373-byte frame. The decoder reads a frame of another length with the marker-one field offsets and records `feature.revolve-layout-assumed`.
+
+**Need.** A Design stream with a marker-one `Revolve` scope of another token-independent length and the feature's parameters as the application shows them.
 
 **Note.** None.
