@@ -3618,7 +3618,7 @@ pub(crate) mod work_plane_legacy_class_400_matrix_frame {
 /// Spec §3.1. Record length 352 B.
 ///
 /// ```text
-/// Offsets are relative to the primary indexed placement header (class 293 paired with class 261, or class 316 paired with class 260). The two-byte lane at offset 62 is opaque.
+/// Offsets are relative to the primary indexed placement header. The two-byte lane at offset 62 is opaque.
 /// ```
 pub(crate) mod work_plane_direct_352_matrix_frame {
     /// Record length in bytes. Spec §3.1.
@@ -3642,7 +3642,7 @@ pub(crate) mod work_plane_direct_352_matrix_frame {
 /// Spec §3.1. Record length 363 B.
 ///
 /// ```text
-/// Offsets are relative to the class-289 primary indexed placement header paired with class 258. The two-byte lane at offset 62 is opaque.
+/// Offsets are relative to the primary indexed placement header. The two-byte lane at offset 62 is opaque.
 /// ```
 pub(crate) mod work_plane_direct_363_matrix_frame {
     /// Record length in bytes. Spec §3.1.
@@ -3654,7 +3654,7 @@ pub(crate) mod work_plane_direct_363_matrix_frame {
 /// Spec §3.1. Record length 374 B.
 ///
 /// ```text
-/// Offsets are relative to the class-267 primary indexed placement header paired with class 258. The two-byte lane at offset 62 is opaque.
+/// Offsets are relative to the primary indexed placement header. The two-byte lane at offset 62 is opaque.
 /// ```
 pub(crate) mod work_plane_direct_374_matrix_frame {
     /// Record length in bytes. Spec §3.1.
@@ -8106,6 +8106,38 @@ pub(crate) mod dimension_annotation_metadata_header {
     pub(crate) const ENTRY_COUNT: usize = 1;
 }
 
+/// Byte offsets for the `dimension_annotation_payload_points` record.
+///
+/// Spec §3.1. Record length 48 B.
+///
+/// ```text
+/// Offsets are relative to the start of the annotation byte payload of a two-point Linear Dimension frame whose payload holds at least 48 bytes. The rest of the payload follows the two points.
+/// ```
+pub(crate) mod dimension_annotation_payload_points {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 48;
+    /// Offset of `first_point` (`f64[3]`, little-endian). Spec §3.1.
+    pub(crate) const FIRST_POINT: usize = 0;
+    /// Offset of `second_point` (`f64[3]`, little-endian). Spec §3.1.
+    pub(crate) const SECOND_POINT: usize = 24;
+}
+
+/// Byte offsets for the `dimension_annotation_absent_metadata` record.
+///
+/// Spec §3.1. Record length 1 B.
+///
+/// ```text
+/// Starts immediately after the annotation operand run. The annotation byte payload follows it.
+/// ```
+pub(crate) mod dimension_annotation_absent_metadata {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 1;
+    /// Offset of `present` (`u8`). Spec §3.1.
+    pub(crate) const PRESENT: usize = 0;
+    /// Stated value of `present` (`u8`). Spec §3.1.
+    pub(crate) const PRESENT_VALUE: u8 = 0;
+}
+
 /// Byte offsets for the `dimension_annotation_genesis_metadata` record.
 ///
 /// Spec §3.1. Record length 57 B.
@@ -8163,6 +8195,19 @@ pub(crate) mod assembly_version_three_prefix {
     /// Stated value of `zero_run` (`bytes[9]`). Spec §Assembly operands.
     pub(crate) const ZERO_RUN_VALUE: [u8; 9] =
         [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
+}
+
+/// Byte offsets for the `assembly_version_four_prologue` record.
+///
+/// Spec §Assembly operands. Record length 32 B.
+///
+/// ```text
+/// Offsets are relative to the primary indexed scope header of a compact version-4 Assemble scope. The first connector reference follows the prologue.
+/// ```
+pub(crate) mod assembly_version_four_prologue {
+    /// Stated value of `prologue_zeros` (`bytes[8]`). Spec §Assembly operands.
+    pub(crate) const PROLOGUE_ZEROS_VALUE: [u8; 8] =
+        [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
 }
 
 /// Byte offsets for the `assembly_version_five_scope` record.

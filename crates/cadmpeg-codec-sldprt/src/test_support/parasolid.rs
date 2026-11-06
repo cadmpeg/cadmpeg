@@ -223,7 +223,9 @@ pub(crate) fn line_carrier(attr: u16, point: [f64; 3], dir: [f64; 3]) -> Vec<u8>
     b
 }
 
-fn prefixed_line_carrier(attr: u16, point: [f64; 3], dir: [f64; 3]) -> Vec<u8> {
+/// A compact analytic line carrier in Deltas framing: each reference is
+/// followed by a `01` status byte.
+pub(crate) fn prefixed_line_carrier(attr: u16, point: [f64; 3], dir: [f64; 3]) -> Vec<u8> {
     let mut b = vec![0x00, 0x1e];
     be16(&mut b, attr);
     be32(&mut b, 0);
@@ -1078,7 +1080,7 @@ fn prefixed_edge_use(attr: u16, curve_attr: u16) -> Vec<u8> {
     b
 }
 
-fn suffix_prefixed_edge_use(attr: u16, curve_attr: u16) -> Vec<u8> {
+pub(crate) fn suffix_prefixed_edge_use(attr: u16, curve_attr: u16) -> Vec<u8> {
     let mut b = vec![0x00, 0x10];
     be16(&mut b, attr);
     be32(&mut b, 0);

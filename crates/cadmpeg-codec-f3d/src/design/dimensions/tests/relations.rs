@@ -910,6 +910,7 @@ fn single_curve_annotation_projects_parameterized_offset() {
                 },
             ],
             entity_genesis: Some(0x80),
+            metadata_absent: false,
             annotation_bytes: Vec::new(),
             annotation_byte_offset: 111,
             governing_owner_record_index: 13,

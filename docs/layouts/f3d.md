@@ -3528,7 +3528,7 @@ Unstated regions:
 
 Spec §3.1 · layout: byte offsets · size: 352 B
 
-Offsets are relative to the primary indexed placement header (class 293 paired with class 261, or class 316 paired with class 260). The two-byte lane at offset 62 is opaque.
+Offsets are relative to the primary indexed placement header. The two-byte lane at offset 62 is opaque.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -3548,7 +3548,7 @@ Unstated regions:
 
 Spec §3.1 · layout: byte offsets · size: 363 B
 
-Offsets are relative to the class-289 primary indexed placement header paired with class 258. The two-byte lane at offset 62 is opaque.
+Offsets are relative to the primary indexed placement header. The two-byte lane at offset 62 is opaque.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -3568,7 +3568,7 @@ Unstated regions:
 
 Spec §3.1 · layout: byte offsets · size: 374 B
 
-Offsets are relative to the class-267 primary indexed placement header paired with class 258. The two-byte lane at offset 62 is opaque.
+Offsets are relative to the primary indexed placement header. The two-byte lane at offset 62 is opaque.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -8432,6 +8432,33 @@ Parsed by:
 | 0 | 1 | `present` | `u8` | little | spec | The metadata header stores `u8 1` and a u32 entry count. · value `1` |
 | 1 | 4 | `entry_count` | `u32` | little | spec | The metadata header stores `u8 1` and a u32 entry count. |
 
+## `dimension_annotation_payload_points`
+
+Spec §3.1 · layout: byte offsets · size: 48 B
+
+Offsets are relative to the start of the annotation byte payload of a two-point Linear Dimension frame whose payload holds at least 48 bytes. The rest of the payload follows the two points.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/dimensions.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 24 | `first_point` | `f64[3]` | little | spec | it [begins with two xyz f64 points](../layouts/f3d.md) |
+| 24 | 24 | `second_point` | `f64[3]` | little | spec | it [begins with two xyz f64 points](../layouts/f3d.md) |
+
+## `dimension_annotation_absent_metadata`
+
+Spec §3.1 · layout: byte offsets · size: 1 B
+
+Starts immediately after the annotation operand run. The annotation byte payload follows it.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/dimension_frames.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 1 | `present` | `u8` | little | spec | A frame without a metadata block stores `u8 0` alone · value `0` |
+
 ## `dimension_annotation_genesis_metadata`
 
 Spec §3.1 · layout: byte offsets · size: 57 B
@@ -8493,6 +8520,21 @@ Parsed by:
 | 0 | 11 | `header` | `bytes[11]` | little | spec | eleven-byte indexed header, nine zero bytes, and an expansion byte |
 | 11 | 9 | `zero_run` | `bytes[9]` | little | spec | eleven-byte indexed header, nine zero bytes, and an expansion byte · value `[0, 0, 0, 0, 0, 0, 0, 0, 0]` |
 | 20 | 1 | `expanded` | `u8` | little | spec | an expansion byte `E` |
+
+## `assembly_version_four_prologue`
+
+Spec §Assembly operands · layout: byte offsets · size: 32 B
+
+Offsets are relative to the primary indexed scope header of a compact version-4 Assemble scope. The first connector reference follows the prologue.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `header` | `bytes[11]` | little | spec | Version 4 uses the version-5 extensions with these differences. |
+| 11 | 9 | `zero_run` | `bytes[9]` | little | spec | Version 4 uses the version-5 extensions with these differences. · value `[0, 0, 0, 0, 0, 0, 0, 0, 0]` |
+| 20 | 1 | `expanded` | `u8` | little | spec | Version 4 uses the version-5 extensions with these differences. · value `0` |
+| 21 | 1 | `facing` | `u8` | little | spec | follow the facing byte's two zero bytes |
+| 22 | 2 | `facing_zeros` | `bytes[2]` | little | spec | follow the facing byte's two zero bytes · value `[0, 0]` |
+| 24 | 8 | `prologue_zeros` | `bytes[8]` | little | spec | follow the facing byte's two zero bytes · value `[0, 0, 0, 0, 0, 0, 0, 0]` |
 
 ## `assembly_version_five_scope`
 

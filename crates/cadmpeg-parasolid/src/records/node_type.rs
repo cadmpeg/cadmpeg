@@ -61,6 +61,24 @@ pub const ATTRIB_DEF: u16 = 80;
 pub const ATTRIBUTE: u16 = 81;
 /// Integer attribute values, `INT_VALUES`.
 pub const INT_VALUES: u16 = 82;
+/// Real attribute values, `REAL_VALUES`.
+pub const REAL_VALUES: u16 = 83;
+/// Character attribute values, `CHAR_VALUES`.
+pub const CHAR_VALUES: u16 = 84;
+/// Point attribute values, `POINT_VALUES`.
+pub const POINT_VALUES: u16 = 85;
+/// Vector attribute values, `VECTOR_VALUES`.
+pub const VECTOR_VALUES: u16 = 86;
+/// Axis attribute values, `AXIS_VALUES`.
+pub const AXIS_VALUES: u16 = 87;
+/// Tag attribute values, `TAG_VALUES`.
+pub const TAG_VALUES: u16 = 88;
+/// Direction attribute values, `DIRECTION_VALUES`.
+pub const DIRECTION_VALUES: u16 = 89;
+/// Unicode attribute values, `UNICODE_VALUES`.
+pub const UNICODE_VALUES: u16 = 98;
+/// The field names of an attribute definition, `FIELD_NAMES`.
+pub const FIELD_NAMES: u16 = 99;
 /// A B-spline surface, `B_SURFACE`.
 pub const B_SURFACE: u16 = 124;
 /// The NURBS definition of a B-spline surface, `NURBS_SURF`.
