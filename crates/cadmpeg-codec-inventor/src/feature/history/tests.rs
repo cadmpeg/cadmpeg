@@ -66,7 +66,7 @@ fn design() -> DesignInventory {
             },
         ],
         issues: Vec::new(),
-        opaque_base_units: std::collections::HashSet::default(),
+        opaque_base_units: std::collections::HashMap::default(),
     }
 }
 

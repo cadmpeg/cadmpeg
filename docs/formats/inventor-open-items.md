@@ -294,7 +294,7 @@ Tagging slot 0 requires its input and result body revisions, its topology-naming
 
 **Known.** The record has the 22-byte base-unit layout with magnitude 1 and factor 1. Unit definitions name it as their sole numerator, and value expressions that use those definitions store internal-centimetre values.
 
-**Need.** A stored scale, a stored symbol, or a displayed-text form of a literal in this unit.
+**Need.** A stored scale, a stored symbol, or a displayed-text form of a literal in this unit. Other record types with the same layout need their dimension and scale.
 
 ## 5. Adjacent envelopes
 
