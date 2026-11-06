@@ -1169,6 +1169,19 @@ fn prune_pass(
         .map(|row| (row.id.clone(), row.face.clone()))
         .collect::<std::collections::BTreeMap<_, _>>();
     scoped.model.faces.retain_mut(|row| {
+        if !scoped
+            .model
+            .shells
+            .iter()
+            .any(|shell| shell.id == row.shell && shell.faces().contains(&row.id))
+        {
+            pruned(
+                "face",
+                row.id.as_str(),
+                format!("shell {} does not own this face", row.shell),
+            );
+            return false;
+        }
         if !surfaces.contains(row.surface.as_str()) {
             pruned(
                 "face",
@@ -1207,11 +1220,30 @@ fn prune_pass(
         };
         true
     });
+    let face_owners = scoped
+        .model
+        .faces
+        .iter()
+        .map(|row| (row.id.clone(), row.shell.clone()))
+        .collect::<std::collections::BTreeMap<_, _>>();
     scoped.model.shells.retain_mut(|row| {
+        if !scoped
+            .model
+            .regions
+            .iter()
+            .any(|region| region.id == row.region && region.shells.contains(&row.id))
+        {
+            pruned(
+                "shell",
+                row.id.as_str(),
+                format!("region {} does not own this shell", row.region),
+            );
+            return false;
+        }
         let faces = row
             .faces()
             .iter()
-            .filter(|id| existing!(faces).contains(id.as_str()))
+            .filter(|id| face_owners.get(*id) == Some(&row.id))
             .cloned()
             .collect::<Vec<_>>();
         let wires = row
@@ -1227,8 +1259,12 @@ fn prune_pass(
             .cloned()
             .collect::<Vec<_>>();
         for id in row.faces() {
-            if !existing!(faces).contains(id.as_str()) {
-                pruned("shell", row.id.as_str(), format!("face {id} is missing"));
+            if face_owners.get(id) != Some(&row.id) {
+                pruned(
+                    "shell",
+                    row.id.as_str(),
+                    format!("face {id} is missing or belongs to another shell"),
+                );
             }
         }
         for id in row.wire_edges() {
@@ -1267,27 +1303,60 @@ fn prune_pass(
             }
         }
     });
-    let shells = existing!(shells);
+    let shell_owners = scoped
+        .model
+        .shells
+        .iter()
+        .map(|row| (row.id.clone(), row.region.clone()))
+        .collect::<std::collections::BTreeMap<_, _>>();
     scoped.model.regions.retain_mut(|row| {
+        if !scoped
+            .model
+            .bodies
+            .iter()
+            .any(|body| body.id == row.body && body.regions.contains(&row.id))
+        {
+            pruned(
+                "region",
+                row.id.as_str(),
+                format!("body {} does not own this region", row.body),
+            );
+            return false;
+        }
         for id in row.shells.clone() {
-            if !shells.contains(id.as_str()) {
-                pruned("region", row.id.as_str(), format!("shell {id} is missing"));
+            if shell_owners.get(&id) != Some(&row.id) {
+                pruned(
+                    "region",
+                    row.id.as_str(),
+                    format!("shell {id} is missing or belongs to another region"),
+                );
             }
         }
-        row.shells.retain(|id| shells.contains(id.as_str()));
+        row.shells
+            .retain(|id| shell_owners.get(id) == Some(&row.id));
         if row.shells.is_empty() {
             pruned("region", row.id.as_str(), "no shells remain".to_owned());
             return false;
         }
         true
     });
-    let regions = existing!(regions);
+    let region_owners = scoped
+        .model
+        .regions
+        .iter()
+        .map(|row| (row.id.clone(), row.body.clone()))
+        .collect::<std::collections::BTreeMap<_, _>>();
     for body in &mut scoped.model.bodies {
         for id in body.regions.clone() {
-            if !regions.contains(id.as_str()) {
-                pruned("body", body.id.as_str(), format!("region {id} is missing"));
+            if region_owners.get(&id) != Some(&body.id) {
+                pruned(
+                    "body",
+                    body.id.as_str(),
+                    format!("region {id} is missing or belongs to another body"),
+                );
             }
         }
-        body.regions.retain(|id| regions.contains(id.as_str()));
+        body.regions
+            .retain(|id| region_owners.get(id) == Some(&body.id));
     }
 }

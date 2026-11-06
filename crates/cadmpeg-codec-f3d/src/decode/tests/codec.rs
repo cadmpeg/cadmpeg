@@ -1272,6 +1272,13 @@ fn truncated_mesh_entry_names_its_dependent_tessellation() {
                     .code
         })
         .unwrap();
-    assert_eq!(loss.dropped, [mesh_id]);
+    let feature_id = full.ir().model.features[0].id.as_str();
+    let native = crate::test_support::native_test::f3d_native(full.ir());
+    let native_id = native.design_mesh_features[0].id.as_str();
+    let mut expected = vec![mesh_id, feature_id, native_id];
+    expected.sort_unstable();
+    assert_eq!(loss.dropped, expected);
     assert!(loss.message.contains(mesh_id));
+    assert!(loss.message.contains(feature_id));
+    assert!(loss.message.contains(native_id));
 }

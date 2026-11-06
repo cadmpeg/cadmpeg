@@ -703,6 +703,7 @@ fn synthesize_with_admission(
     }
 
     append_name_properties(&mut graph.entities, &graph.presentations)?;
+    native_records::attach_unowned_directions(&mut graph.entities)?;
     graph
         .losses
         .extend(placement_entities::materialize(&mut graph.entities)?);

@@ -126,6 +126,75 @@ fn writer_names_loop_with_inconsistent_face() {
     assert!(!bytes.is_empty());
 }
 
+#[test]
+fn writer_names_shell_with_foreign_face() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    let mut ir = adjacent_quad_sheet();
+    let foreign = ir.model.faces[0].id.clone();
+    let shell_id = "cadir:model:shell#foreign".try_into().unwrap();
+    let shell = cadmpeg_ir::topology::Shell::with_face(
+        shell_id,
+        ir.model.regions[0].id.clone(),
+        foreign.clone(),
+    );
+    let id = shell.id.clone();
+    ir.model.regions[0].shells.push(id.clone());
+    ir.model.shells.push(shell);
+    let mut bytes = Vec::new();
+    let report = crate::RhinoCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .unwrap();
+    assert!(report.losses.iter().any(|loss| loss.code
+        == RhinoLossCode::WriterEntityOmitted.kind()
+        && loss.message.contains(id.as_str())
+        && loss.message.contains(foreign.as_str())));
+    assert!(!bytes.is_empty());
+}
+
+#[test]
+fn writer_names_region_with_foreign_shell() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    let mut ir = adjacent_quad_sheet();
+    let foreign = ir.model.shells[0].id.clone();
+    let mut region = ir.model.regions[0].clone();
+    region.id = "cadir:model:region#foreign".try_into().unwrap();
+    let id = region.id.clone();
+    ir.model.bodies[0].regions.push(id.clone());
+    ir.model.regions.push(region);
+    let mut bytes = Vec::new();
+    let report = crate::RhinoCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .unwrap();
+    assert!(report.losses.iter().any(|loss| loss.code
+        == RhinoLossCode::WriterEntityOmitted.kind()
+        && loss.message.contains(id.as_str())
+        && loss.message.contains(foreign.as_str())));
+    assert!(!bytes.is_empty());
+}
+
+#[test]
+fn writer_names_body_with_foreign_region() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    let mut ir = adjacent_quad_sheet();
+    let foreign = ir.model.regions[0].id.clone();
+    let mut body = ir.model.bodies[0].clone();
+    body.id = "cadir:model:body#foreign".try_into().unwrap();
+    let id = body.id.clone();
+    ir.model.bodies.push(body);
+    let mut bytes = Vec::new();
+    let report = crate::RhinoCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .unwrap();
+    assert!(report.losses.iter().any(|loss| loss.code
+        == RhinoLossCode::WriterEntityOmitted.kind()
+        && loss.message.contains(id.as_str())
+        && loss.message.contains(foreign.as_str())));
+    assert!(!bytes.is_empty());
+}
+
 const UNREPRESENTABLE_NATIVE_TOLERANCE: f64 = 1.0e-12;
 
 fn admit(ir: &CadIr) -> Result<(), WriteError> {
