@@ -44,28 +44,8 @@ fn absent_or_empty(value: &Value) -> bool {
 }
 
 fn linetype_index(ir: &cadmpeg_ir::CadIr, source: i32) -> Result<i32, WriteError> {
-    if source < 0 {
-        return Ok(source);
-    }
-    let mut matches = super::records(ir, "linetypes")
-        .iter()
-        .enumerate()
-        .filter(|(_, record)| {
-            record
-                .field("archive_index")
-                .and_then(|value| value.as_i64())
-                == Some(i64::from(source))
-        });
-    let index = matches
-        .next()
-        .map(|(index, _)| index)
-        .ok_or_else(|| WriteError::Omit(format!("light linetype index {source} is unresolved")))?;
-    if matches.next().is_some() {
-        return Err(WriteError::Omit(format!(
-            "light linetype index {source} is ambiguous"
-        )));
-    }
-    Ok(super::wire_index(index)?)
+    super::super::native::linetype_index(ir, source)?
+        .ok_or_else(|| WriteError::Omit(format!("light linetype index {source} is unresolved")))
 }
 
 fn layer_index(ir: &cadmpeg_ir::CadIr, source: i32) -> Result<i32, WriteError> {
