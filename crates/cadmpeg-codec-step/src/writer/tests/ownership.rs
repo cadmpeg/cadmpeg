@@ -203,6 +203,82 @@ fn failed_face_retains_its_surface_without_a_shape_root() {
 }
 
 #[test]
+fn failed_face_supports_do_not_gain_a_shared_representation() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use cadmpeg_ir::geometry::analytic::PlaneSurface;
+    use std::io::Cursor;
+
+    let mut ir = face_with_unbounded_support();
+    let mut surface = ir.model.surfaces[0].clone();
+    surface.id = "test:model:surface#second".try_into().unwrap();
+    surface.source_object.as_mut().unwrap().object_id =
+        cadmpeg_core::nonblank_literal!("second-support-surface");
+    surface.geometry = cadmpeg_ir::geometry::SurfaceGeometry::Solved(
+        cadmpeg_ir::geometry::SolvedSurfaceGeometry::Plane(
+            PlaneSurface::try_new(
+                Point3::new(0.0, 0.0, 5.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        ),
+    );
+    let mut face = ir.model.faces[0].clone();
+    face.id = "test:model:face#second".try_into().unwrap();
+    face.surface = surface.id.clone();
+    face.shell = "test:model:shell#second".try_into().unwrap();
+    let shell = cadmpeg_ir::topology::Shell::with_face(
+        face.shell.clone(),
+        "test:model:region#second".try_into().unwrap(),
+        face.id.clone(),
+    );
+    let mut region = ir.model.regions[0].clone();
+    region.id = shell.region.clone();
+    region.body = "test:model:body#second".try_into().unwrap();
+    region.shells = vec![shell.id.clone()];
+    let mut body = ir.model.bodies[0].clone();
+    body.id = region.body.clone();
+    body.regions = vec![region.id.clone()];
+    ir.model.faces.push(face);
+    ir.model.surfaces.push(surface);
+    ir.model.shells.push(shell);
+    ir.model.regions.push(region);
+    ir.model.bodies.push(body);
+    let mut bytes = Vec::new();
+    write_step(
+        &ir,
+        &mut bytes,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .unwrap();
+    let (exchange, _) =
+        crate::test_support::with_service_context(&bytes, crate::parse::parse_inner).unwrap();
+    let members = exchange
+        .records()
+        .values()
+        .flat_map(|record| &record.partials)
+        .filter(|partial| partial.name == "REPRESENTATION")
+        .map(|partial| match &partial.parameters[1] {
+            crate::parse::Value::List(members) => members.len(),
+            _ => panic!("representation items"),
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(members, vec![1, 1]);
+    let decoded = crate::StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    for surface in &ir.model.surfaces {
+        assert!(decoded
+            .ir()
+            .model
+            .surfaces
+            .iter()
+            .any(|actual| actual.geometry == surface.geometry));
+    }
+}
+
+#[test]
 fn failed_face_does_not_promote_a_written_construction_support() {
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
     use cadmpeg_ir::geometry::{
