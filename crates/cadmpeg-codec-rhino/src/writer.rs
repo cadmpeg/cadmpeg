@@ -536,6 +536,7 @@ fn write_archive_prefix(
     let mut dimstyle_losses = Vec::new();
     let mut texture_losses = Vec::new();
     let mut light_losses = Vec::new();
+    let mut hatch_losses = Vec::new();
     for typecode in [
         TCODE_BITMAP_TABLE,
         TCODE_TEXTURE_MAPPING_TABLE,
@@ -560,7 +561,11 @@ fn write_archive_prefix(
                 exported.records
             }
             TCODE_FONT_TABLE => tables::fonts::styles(ir)?,
-            TCODE_HATCH_PATTERN_TABLE => tables::hatches::patterns(ir)?,
+            TCODE_HATCH_PATTERN_TABLE => {
+                let exported = tables::hatches::patterns(ir)?;
+                hatch_losses.extend(exported.losses);
+                exported.records
+            }
             TCODE_INSTANCE_DEFINITION_TABLE => {
                 tables::products::definitions(ir, written_bodies, version)?
             }
@@ -597,6 +602,7 @@ fn write_archive_prefix(
     losses.extend(dimstyle_losses);
     losses.extend(texture_losses);
     losses.extend(light_losses);
+    losses.extend(hatch_losses);
     losses.extend(tables::unwritten::losses(ir));
     Ok(losses)
 }
@@ -1574,13 +1580,16 @@ fn native_dispositions(
             dispositions.set_record("rhino", "lights", record.id(), NativeDisposition::Written);
         }
     }
+    let emitted_hatches = tables::hatches::patterns(ir)?;
     for record in records_in(ir, "hatch_patterns") {
-        dispositions.set_record(
-            "rhino",
-            "hatch_patterns",
-            record.id(),
-            NativeDisposition::Written,
-        );
+        if emitted_hatches.written.contains(record.id()) {
+            dispositions.set_record(
+                "rhino",
+                "hatch_patterns",
+                record.id(),
+                NativeDisposition::Written,
+            );
+        }
     }
     let table_settings = tables::document::table_settings(ir, version)?;
     for arena in ["annotation_settings", "grid_defaults", "render_settings"] {
