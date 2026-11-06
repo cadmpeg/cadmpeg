@@ -425,6 +425,7 @@ pub(super) struct WritableCoedge<'a> {
     radial_next: usize,
     pub(super) c2: ([u8; 16], Vec<u8>),
     pub(super) explicit_pcurve: Option<&'a Pcurve>,
+    c2_reversed: bool,
     pub(super) fit_tolerance: f64,
 }
 
@@ -467,6 +468,9 @@ fn unify_shared_line_pcurves(coedges: &mut [WritableCoedge<'_>], edges: &[Writab
     }
     for (_, (line, domain, uses)) in groups {
         if uses.len() < 2 {
+            continue;
+        }
+        if uses.iter().any(|index| coedges[*index].c2_reversed) {
             continue;
         }
         let origin = line.origin().as_raw();
@@ -1556,6 +1560,7 @@ impl<'a> WritableModel<'a> {
                     .and_then(|pcurve| pcurve.source.fit_tolerance())
                     .map_or(0.0, cadmpeg_ir::geometry::FitTolerance::get);
                 let face = &faces[loops[owner_loop].face];
+                let mut c2_reversed = false;
                 let c2 = if matches!(edges[edge].curve, WritableEdgeCurve::Singular) {
                     pcurve
                         .ok_or_else(|| {
@@ -1582,7 +1587,7 @@ impl<'a> WritableModel<'a> {
                                 normal.cross(u_axis),
                             )?,
                             Some(pcurve) => {
-                                super::trims::validate_plane_trim(
+                                c2_reversed = super::trims::validate_plane_trim(
                                     origin,
                                     u_axis,
                                     normal.cross(u_axis),
@@ -1595,7 +1600,11 @@ impl<'a> WritableModel<'a> {
                                     coedge.sense,
                                     &pcurve,
                                 )?;
-                                pcurve.payload
+                                if c2_reversed {
+                                    super::reversed_pcurve_payload(&edges[edge], &pcurve)?
+                                } else {
+                                    pcurve.payload
+                                }
                             }
                         },
                         WritableFaceSurface::Nurbs { surface, .. } => {
@@ -1610,14 +1619,18 @@ impl<'a> WritableModel<'a> {
                                 ir,
                                 face.source.id.as_str(),
                             )?;
-                            validate_nurbs_trim(
+                            c2_reversed = validate_nurbs_trim(
                                 surface,
                                 face_tolerance,
                                 &edges[edge],
                                 coedge.sense,
                                 &pcurve,
                             )?;
-                            pcurve.payload
+                            if c2_reversed {
+                                super::reversed_pcurve_payload(&edges[edge], &pcurve)?
+                            } else {
+                                pcurve.payload
+                            }
                         }
                         WritableFaceSurface::Revolution { surface, usage, .. } => {
                             let pcurve = pcurve.ok_or_else(|| {
@@ -1631,7 +1644,7 @@ impl<'a> WritableModel<'a> {
                                 ir,
                                 face.source.id.as_str(),
                             )?;
-                            super::trims::validate_analytic_trim(
+                            c2_reversed = super::trims::validate_analytic_trim(
                                 &surface.geometry,
                                 usage,
                                 face_tolerance,
@@ -1639,7 +1652,11 @@ impl<'a> WritableModel<'a> {
                                 coedge.sense,
                                 &pcurve,
                             )?;
-                            pcurve.payload
+                            if c2_reversed {
+                                super::reversed_pcurve_payload(&edges[edge], &pcurve)?
+                            } else {
+                                pcurve.payload
+                            }
                         }
                     }
                 };
@@ -1650,6 +1667,7 @@ impl<'a> WritableModel<'a> {
                     radial_next: resolve(&coedge_positions, coedge.radial_next.as_str())?,
                     c2,
                     explicit_pcurve,
+                    c2_reversed,
                     fit_tolerance,
                 })
             })
@@ -1664,8 +1682,12 @@ impl<'a> WritableModel<'a> {
         let mut expanded_pcurves = BTreeSet::new();
         let mut restricted_pcurves = BTreeSet::new();
         let mut defaulted_pcurves = BTreeSet::new();
+        let mut reversed_pcurves = BTreeSet::new();
         for coedge in &coedges {
             if let Some(pcurve) = coedge.explicit_pcurve {
+                if coedge.c2_reversed {
+                    reversed_pcurves.insert(pcurve.id.as_str());
+                }
                 if pcurve.wrapper_reversed().is_none() {
                     defaulted_pcurves.insert(pcurve.id.as_str());
                 }
@@ -1683,6 +1705,11 @@ impl<'a> WritableModel<'a> {
                     }
                 }
             }
+        }
+        for id in reversed_pcurves {
+            edge_conversions.push(RhinoLossCode::WriterCarrierResolved.note(format!(
+                "pcurve {id} is reparameterized to follow its 3DM trim direction"
+            )));
         }
         for id in defaulted_pcurves {
             edge_conversions.push(RhinoLossCode::WriterPcurveReversalDefaulted.note(format!(
@@ -1913,11 +1940,11 @@ impl<'a> WritableModel<'a> {
                 && result.faces.iter().any(|face| face.surface == index)
             {
                 let domain = super::plane_domain::domain(&result, index)?;
-                let WritableFaceSurface::Plane { domain: target, .. } = &mut result.surfaces[index]
-                else {
-                    unreachable!("the surface was checked as a plane")
-                };
-                *target = domain;
+                if let WritableFaceSurface::Plane { domain: target, .. } =
+                    &mut result.surfaces[index]
+                {
+                    *target = domain;
+                }
             }
         }
         Ok(result)

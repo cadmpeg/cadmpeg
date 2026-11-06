@@ -1567,6 +1567,22 @@ fn remap_written_geometry_references(
             .evaluation
             .set_definition(serde_json::from_value(value).map_err(CodecError::malformed)?);
     }
+    let lane_owned_operations = native.as_ref().map_or_else(HashSet::new, |native| {
+        native
+            .feature_histories
+            .iter()
+            .flat_map(|history| &history.features)
+            .filter(|feature| {
+                feature.kind.eq_ignore_ascii_case("Extrusion")
+                    && !feature.properties.contains_key("Operation")
+                    && matches!(
+                        feature.input_class.as_deref(),
+                        Some("moExtrusion_c" | "moICE_c")
+                    )
+            })
+            .map(|feature| feature.id.clone())
+            .collect::<HashSet<_>>()
+    });
     let (_, written_classes) = crate::history::write::features::synthesize_neutral_features(
         &model,
         &model.parameters,
@@ -1574,6 +1590,18 @@ fn remap_written_geometry_references(
         native,
         &std::collections::HashSet::new(),
     )?;
+    if let Some(native) = native.as_mut() {
+        for feature in native
+            .feature_histories
+            .iter_mut()
+            .flat_map(|history| &mut history.features)
+        {
+            if lane_owned_operations.contains(&feature.id) {
+                feature.kind = "Extrusion".into();
+                feature.properties.remove("Operation");
+            }
+        }
+    }
     let mut projected = ir.clone();
     projected.model = model;
     crate::history::write::parameters::synchronize_parameter_records(&projected, native)?;

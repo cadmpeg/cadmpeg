@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Unjoined ParaMesh data remain typed in container coordinates.
+//! Unjoined `ParaMesh` data remain typed in container coordinates.
 
 use std::io::{Cursor, Write};
 
