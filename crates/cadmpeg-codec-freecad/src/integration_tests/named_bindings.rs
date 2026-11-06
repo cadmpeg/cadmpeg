@@ -86,7 +86,7 @@ fn named_constraint_recipe_bindings() {
                             stack.extend(fields.values().cloned());
                         }
                         serde_json::Value::Array(items) => {
-                            stack.extend(items.into_iter());
+                            stack.extend(items);
                         }
                         _ => {}
                     }
