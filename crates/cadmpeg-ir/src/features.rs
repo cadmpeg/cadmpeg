@@ -2699,7 +2699,7 @@ pub enum FeatureOperation {
     MeshImport {
         /// Tessellation identities supplied by the mesh-body records.
         #[serde(deserialize_with = "deserialize_local_tessellations")]
-        tessellations: SelectionMembers<String>,
+        tessellations: SelectionMembers<crate::tessellation::TessellationId>,
     },
     /// Independent bodies introduced by a copy-and-paste operation. The copies
     /// are the feature's outputs, so the selection carries only its native

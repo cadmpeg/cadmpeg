@@ -49,6 +49,109 @@ fn writer_names_invalid_radial_uses_and_keeps_writable_geometry() {
     assert!(!decoded.ir().model.curves.is_empty() || !decoded.ir().model.surfaces.is_empty());
 }
 
+#[test]
+fn writer_names_coedge_with_inconsistent_owner() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    let mut ir = adjacent_quad_sheet();
+    let id = ir.model.coedges[0].id.clone();
+    let other = ir
+        .model
+        .loops
+        .iter()
+        .find(|row| row.id != ir.model.coedges[0].owner_loop)
+        .unwrap()
+        .id
+        .clone();
+    ir.model.coedges[0].owner_loop = other;
+    let mut bytes = Vec::new();
+    let report = crate::RhinoCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .unwrap();
+    assert!(report.losses.iter().any(|loss| loss.code
+        == RhinoLossCode::WriterEntityOmitted.kind()
+        && loss.message.contains(id.as_str())));
+    assert!(!bytes.is_empty());
+}
+
+#[test]
+fn writer_names_loop_with_foreign_coedge() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    let mut ir = adjacent_quad_sheet();
+    let id = ir.model.loops[0].id.clone();
+    let foreign = ir
+        .model
+        .coedges
+        .iter()
+        .find(|row| row.owner_loop != id)
+        .unwrap()
+        .id
+        .clone();
+    let mut ring = ir.model.loops[0].coedges().to_vec();
+    ring.push(foreign.clone());
+    ir.model.loops[0].replace_ring(ring, Vec::new()).unwrap();
+    let mut bytes = Vec::new();
+    let report = crate::RhinoCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .unwrap();
+    assert!(report.losses.iter().any(|loss| loss.code
+        == RhinoLossCode::WriterEntityOmitted.kind()
+        && loss.message.contains(id.as_str())
+        && loss.message.contains(foreign.as_str())));
+    assert!(!bytes.is_empty());
+}
+
+#[test]
+fn writer_names_loop_with_inconsistent_face() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    let mut ir = adjacent_quad_sheet();
+    let id = ir.model.loops[0].id.clone();
+    ir.model.loops[0].face = ir
+        .model
+        .faces
+        .iter()
+        .find(|row| row.id != ir.model.loops[0].face)
+        .unwrap()
+        .id
+        .clone();
+    let mut bytes = Vec::new();
+    let report = crate::RhinoCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .unwrap();
+    assert!(report.losses.iter().any(|loss| loss.code
+        == RhinoLossCode::WriterEntityOmitted.kind()
+        && loss.message.contains(id.as_str())));
+    assert!(!bytes.is_empty());
+}
+
+#[test]
+fn writer_names_shell_with_foreign_face() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    let mut ir = adjacent_quad_sheet();
+    let foreign = ir.model.faces[0].id.clone();
+    let shell_id = "cadir:model:shell#foreign".try_into().unwrap();
+    let shell = cadmpeg_ir::topology::Shell::with_face(
+        shell_id,
+        ir.model.regions[0].id.clone(),
+        foreign.clone(),
+    );
+    let id = shell.id.clone();
+    ir.model.regions[0].shells.push(id.clone());
+    ir.model.shells.push(shell);
+    let mut bytes = Vec::new();
+    let report = crate::RhinoCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .unwrap();
+    assert!(report.losses.iter().any(|loss| loss.code
+        == RhinoLossCode::WriterEntityOmitted.kind()
+        && loss.message.contains(id.as_str())
+        && loss.message.contains(foreign.as_str())));
+    assert!(!bytes.is_empty());
+}
+
 const UNREPRESENTABLE_NATIVE_TOLERANCE: f64 = 1.0e-12;
 
 fn admit(ir: &CadIr) -> Result<(), WriteError> {

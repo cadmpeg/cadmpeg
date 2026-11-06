@@ -392,6 +392,10 @@ impl MergeSession<'_, '_> {
                             self.scan,
                             reference.relative_path.as_str(),
                             &error.to_string(),
+                            [
+                                cadmpeg_ir::document::ArenaClass::Model,
+                                cadmpeg_ir::document::ArenaClass::Design,
+                            ],
                             &mut part,
                         )?;
                         let (_, mut native, fidelity, losses) = part.into_parts();
@@ -1841,9 +1845,6 @@ fn rescope_native_reference_fields(
         }
         "design_edge_treatment_vertex_operands" => {
             scope_named_fields(ctx, fields, &["recipe_id"], occurrence)?;
-        }
-        "design_mesh_features" => {
-            scope_named_fields(ctx, fields, &["tessellation_id"], occurrence)?;
         }
         "xref_references" => {
             scope_named_fields(ctx, fields, &["stream"], occurrence)?;

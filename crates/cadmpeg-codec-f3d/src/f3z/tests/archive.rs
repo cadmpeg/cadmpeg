@@ -299,17 +299,59 @@ fn f3z_drawing_root_decodes_its_unambiguous_derived_model() {
     .unwrap();
 
     assert!(decoded.report().geometry_transferred());
-    assert!(decoded
+    let losses = decoded
         .report()
         .losses
         .iter()
-        .any(|loss| loss.code == F3dLossCode::DrawingDocumentOmitted.kind()));
+        .filter(|loss| {
+            loss.code
+                == cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable
+                    .note("")
+                    .code
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].provenance.is_some());
+    assert_eq!(decoded.ir().native_unknowns("f3d").unwrap().len(), 1);
+    assert!(decoded
+        .source_fidelity()
+        .unrepresented()
+        .contains(&cadmpeg_ir::document::ArenaClass::Model));
     assert!(decoded
         .source_fidelity()
         .retained_record(crate::ids::FILE_SOURCE_IMAGE_ID)
         .unwrap()
         .untyped()
-        .contains(&cadmpeg_ir::document::ArenaClass::Model));
+        .is_empty());
+}
+
+#[test]
+fn f3z_missing_drawing_root_keeps_the_derived_model() {
+    let model = f3d_with_smbh(&synthetic_geometry_smbh());
+    let description = br#"{"designDescription":{"designGraphs":[{"rootIds":[10],"designObjects":[{"id":10,"relativePath":"drawing.f2d","contentType":"f2d","references":[{"type":"DERIVED","ids":[11]}]},{"id":11,"relativePath":"model.f3d","contentType":"f3d","references":[]}]}]}}"#;
+    let archive = f3z_archive_with_design_description(
+        "drawing.f2d",
+        &[("model.f3d", model.as_slice())],
+        description,
+    );
+    let decoded = crate::test_support::archive_session::decode(
+        &mut Cursor::new(archive),
+        &DecodeOptions::default(),
+    )
+    .unwrap();
+    assert!(decoded.report().geometry_transferred());
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == F3dLossCode::DrawingDocumentOmitted.kind()));
+    assert!(decoded.ir().native_unknowns("f3d").unwrap().is_empty());
+    assert!(decoded
+        .source_fidelity()
+        .retained_record(crate::ids::FILE_SOURCE_IMAGE_ID)
+        .unwrap()
+        .untyped()
+        .is_empty());
 }
 
 #[test]
@@ -873,4 +915,75 @@ fn f3z_merges_unjoined_mesh_container_in_its_source_frame() {
     assert!(mesh
         .id
         .starts_with(&format!("f3d:xref/role-{XREF_ROLE}/reference-0/")));
+}
+
+#[test]
+fn f3z_scopes_joined_mesh_native_references() {
+    let component = crate::test_support::mesh_fixture::archive_with_textures(
+        &crate::test_support::paramesh::triangle(),
+        Some(&synthetic_geometry_smbh()),
+        true,
+    );
+    let root = f3d_without_brep("assembly-design", "root.f3d", &[("comp.f3d", XREF_ROLE)]);
+    let archive = f3z_archive("root.f3d", &[("root.f3d", &root), ("comp.f3d", &component)]);
+    let decoded = crate::test_support::archive_session::decode(
+        &mut Cursor::new(archive),
+        &DecodeOptions::default(),
+    )
+    .unwrap();
+    assert_eq!(decoded.ir().model.tessellations.len(), 1);
+    assert_eq!(decoded.ir().model.assets.len(), 2);
+    cadmpeg_test_support::native_linkage::assert_native_linkage(decoded.ir());
+    let findings = crate::validate::validate_native(
+        &cadmpeg_test_support::service_decode_context(),
+        decoded.ir(),
+    )
+    .unwrap();
+    assert!(
+        findings
+            .iter()
+            .all(|finding| finding.severity < cadmpeg_ir::report::Severity::Error),
+        "{findings:#?}"
+    );
+}
+
+#[test]
+fn f3z_keeps_textured_mesh_assets_in_each_occurrence() {
+    let component = crate::test_support::mesh_fixture::archive_with_textures(
+        &crate::test_support::paramesh::triangle(),
+        Some(&synthetic_geometry_smbh()),
+        true,
+    );
+    let root = f3d_without_brep(
+        "assembly-design",
+        "root.f3d",
+        &[("first.f3d", XREF_ROLE), ("second.f3d", XREF_ROLE)],
+    );
+    let archive = f3z_archive(
+        "root.f3d",
+        &[
+            ("root.f3d", &root),
+            ("first.f3d", &component),
+            ("second.f3d", &component),
+        ],
+    );
+    let decoded = crate::test_support::archive_session::decode(
+        &mut Cursor::new(archive),
+        &DecodeOptions::default(),
+    )
+    .unwrap();
+    assert_eq!(decoded.ir().model.tessellations.len(), 2);
+    assert_eq!(decoded.ir().model.assets.len(), 4);
+    cadmpeg_test_support::native_linkage::assert_native_linkage(decoded.ir());
+    let findings = crate::validate::validate_native(
+        &cadmpeg_test_support::service_decode_context(),
+        decoded.ir(),
+    )
+    .unwrap();
+    assert!(
+        findings
+            .iter()
+            .all(|finding| finding.severity < cadmpeg_ir::report::Severity::Error),
+        "{findings:#?}"
+    );
 }

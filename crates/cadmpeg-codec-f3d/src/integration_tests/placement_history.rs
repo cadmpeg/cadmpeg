@@ -623,3 +623,37 @@ fn history_only_consumed_member_keeps_the_inserted_design_body() {
         .any(|loss| loss.code == F3dLossCode::ComponentBodyOwnerFallback.kind()));
     super::assert_valid(&result);
 }
+
+#[test]
+fn retained_component_insert_loss_does_not_mark_source_image_untyped() {
+    let envelope = ComponentInsertEnvelope {
+        translation_cm: [f64::MAX, 0.0, 0.0],
+        ..HISTORY_BOUND
+    };
+    let (bulk, meta) = component_insert_design(&[envelope]);
+    let archive = f3d_with_breps_and_design(
+        &[(
+            "BREP.synthetic.smbh",
+            &crate::test_support::smbh_geometry_test::synthetic_geometry_smbh(),
+        )],
+        &bulk,
+        &meta,
+    );
+    let result = decode(&archive, DecodePolicy::desktop().limits.max_retained_bytes)
+        .unwrap()
+        .result;
+    assert!(result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| { loss.code == F3dLossCode::ComponentInsertUnplaced.kind() }));
+    assert!(!crate::test_support::native_test::f3d_native(result.ir())
+        .design_parameter_scopes
+        .is_empty());
+    assert!(result
+        .source_fidelity()
+        .retained_record(crate::ids::FILE_SOURCE_IMAGE_ID)
+        .unwrap()
+        .untyped()
+        .is_empty());
+}

@@ -10,6 +10,8 @@ use crate::FcstdCodec;
 use cadmpeg_ir::{Codec, DecodeOptions};
 use std::io::Cursor;
 
+mod color;
+
 #[test]
 fn conflicting_producer_alias_keeps_canonical_transparency_interpretation() {
     let gui = br#"<Document SchemaVersion="1"><ViewProviderData Count="1"><ViewProvider name="A"><Properties Count="1"><Property name="ShapeColor" type="App::PropertyColor"><PropertyColor value="287453952"/></Property></Properties></ViewProvider></ViewProviderData><Camera settings=""/></Document>"#;
