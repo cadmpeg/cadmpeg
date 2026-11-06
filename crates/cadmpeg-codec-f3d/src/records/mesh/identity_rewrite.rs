@@ -12,7 +12,7 @@ use super::{
 
 rewrite_native_record!(DesignGuidText, []; (field0));
 rewrite_native_record!(DesignOccurrenceKey, []; (field0));
-rewrite_native_record!(DesignMeshBody, []; {placement, entry, guid, wrapper_record, scene_state, scene_node, scene_auxiliary_record, owner_record, container_mesh_uuid, tessellation_id});
+rewrite_native_record!(DesignMeshBody, []; {placement, entry, guid, wrapper_record, scene_state, scene_node, scene_auxiliary_record, owner_record, container_mesh_uuid});
 rewrite_native_record!(DesignMeshCollection, []; {record, base_class_tag});
 rewrite_native_scalar!(DesignMeshCollectionBacklink);
 rewrite_native_record!(DesignMeshCollectionOwner, []; {record, backlink});
@@ -57,7 +57,7 @@ rewrite_native_enum!(DesignMeshSceneNodeForm, []; {
 rewrite_native_record!(DesignMeshSceneState, []; {record, bounds});
 rewrite_native_record!(DesignMeshScope, []; {record, base_class_tag, owner_record_index});
 rewrite_native_record!(DesignMeshTextureFile, []; {record, archive_entry_name});
-rewrite_native_record!(DesignMeshTextureResource, []; {ordinal, resource_guid, flags, filename_ordinal, file, asset});
+rewrite_native_record!(DesignMeshTextureResource, []; {ordinal, resource_guid, flags, filename_ordinal, file});
 rewrite_native_record!(DesignMeshTextureTable, []; {record, resources});
 rewrite_native_record!(DesignMeshUuid, []; (field0));
 rewrite_native_record!(DesignRelaxedGuidText, []; (field0));

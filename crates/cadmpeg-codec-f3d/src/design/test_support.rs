@@ -127,7 +127,7 @@ pub(super) fn identity_matrix() -> [[f64; 4]; 4] {
     ]
 }
 
-pub(super) fn design_type(
+pub(crate) fn design_type(
     class_tag: u32,
     type_guid: &str,
     base_type_guid: Option<&str>,
@@ -157,7 +157,7 @@ pub(super) fn design_type(
     }
 }
 
-pub(super) fn primary_record(
+pub(crate) fn primary_record(
     entity_id: u64,
     bulk_offset: usize,
 ) -> crate::metastream::RecordIndexEntry {
