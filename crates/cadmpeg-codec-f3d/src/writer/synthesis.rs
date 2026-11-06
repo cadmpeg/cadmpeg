@@ -33,11 +33,11 @@ pub(super) fn write(
 ) -> Result<Synthesized, CodecError> {
     let mut prepared = target.clone();
     let mut losses = Vec::new();
-    topology::omit_unresolved_coedge_faces(&mut prepared, &mut losses)?;
+    topology::omit_unresolved_coedge_faces(&mut prepared, &mut losses, limits)?;
     prepare::auxiliary(&mut prepared, &mut losses, limits)?;
     let original = super::primitives::f3d_native(&prepared)?.unwrap_or_default();
     appearance::prepare(&mut prepared, &original, &mut losses);
-    native::reconcile(&mut prepared, original, &mut losses)?;
+    native::reconcile(&mut prepared, original, &mut losses, limits)?;
     let mut bytes = Vec::new();
     let mut regenerated_parameters = std::collections::BTreeSet::new();
     let coverage = match super::generate::write_with_limits(&prepared, &mut bytes, limits) {
@@ -48,7 +48,7 @@ pub(super) fn write(
         }
         Err(error) if declines(&error) => {
             prepare::solved_carriers(&mut prepared, &mut losses)?;
-            prepare::unreferenced_composite_curves(&mut prepared, &mut losses)?;
+            prepare::unreferenced_composite_curves(&mut prepared, &mut losses, limits)?;
             prepare::pcurves(&mut prepared, &mut losses)?;
             bytes.clear();
             match super::generate::write_with_limits(&prepared, &mut bytes, limits) {
@@ -59,7 +59,7 @@ pub(super) fn write(
                 }
                 Err(error) if declines(&error) => {
                     prepared = topology::admit_bodies(&prepared, &mut losses, limits)?;
-                    native::repair_keys(&mut prepared)?;
+                    native::repair_keys(&mut prepared, limits)?;
                     bytes.clear();
                     match super::generate::write_with_limits(&prepared, &mut bytes, limits) {
                         Ok(generated) => {
@@ -72,7 +72,7 @@ pub(super) fn write(
                             // localize is still not a refusal. Shed the
                             // native design the generator cannot express
                             // and retry; every omission is reported.
-                            native::shed_design(&mut prepared)?;
+                            native::shed_design(&mut prepared, limits)?;
                             bytes.clear();
                             match super::generate::write_with_limits(&prepared, &mut bytes, limits)
                             {

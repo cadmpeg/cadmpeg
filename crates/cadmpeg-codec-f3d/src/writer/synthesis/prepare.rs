@@ -89,7 +89,11 @@ pub(super) fn pcurves(
         .pcurves
         .retain(|pcurve| !omitted.contains(&pcurve.id));
     if !omitted.is_empty() {
-        let identities = omitted.iter().map(cadmpeg_ir::ids::PcurveId::as_str).collect::<Vec<_>>().join(", ");
+        let identities = omitted
+            .iter()
+            .map(cadmpeg_ir::ids::PcurveId::as_str)
+            .collect::<Vec<_>>()
+            .join(", ");
         losses.push(F3dLossCode::WriterPcurveOmitted.note(format!(
             "{} unsupported parameter-space curves are omitted: {identities}; spatial edge carriers remain",
             omitted.len(),
@@ -109,7 +113,8 @@ pub(super) fn auxiliary(
             true
         } else {
             losses.push(F3dLossCode::WriterAuxiliaryOmitted.note(format!(
-                "attribute {} has a duplicate identity and is omitted", attribute.id
+                "attribute {} has a duplicate identity and is omitted",
+                attribute.id
             )));
             false
         }
@@ -126,19 +131,30 @@ pub(super) fn auxiliary(
         let mut symmetries = Vec::new();
         for (index, symmetry) in cage.symmetries().iter().enumerate() {
             if super::super::generate::subd::encode_symmetry(
-                &ctx, false, &mut String::new(), symmetry, cage.faces().len(), cage.edges().len(), cage.vertices().len(),
+                &ctx,
+                false,
+                &mut String::new(),
+                symmetry,
+                cage.faces().len(),
+                cage.edges().len(),
+                cage.vertices().len(),
             )? {
                 symmetries.push(symmetry.clone());
             } else {
                 losses.push(F3dLossCode::WriterSubdOmitted.note(format!(
-                    "subd {} symmetry {index} has unsupported T-spline controls", surface.id
+                    "subd {} symmetry {index} has unsupported T-spline controls",
+                    surface.id
                 )));
             }
         }
         if symmetries.len() != cage.symmetries().len() {
             surface.cage = cadmpeg_ir::subd::SubdCage::new(
-                cage.vertices().to_vec(), cage.edges().to_vec(), cage.faces().to_vec(), symmetries,
-            ).map_err(cadmpeg_core::CodecError::malformed)?;
+                cage.vertices().to_vec(),
+                cage.edges().to_vec(),
+                cage.faces().to_vec(),
+                symmetries,
+            )
+            .map_err(cadmpeg_core::CodecError::malformed)?;
         }
         if super::super::generate::subd::encode(&ctx, &surface, false)?.is_some() {
             retained.push(surface);
@@ -337,6 +353,7 @@ pub(super) fn solved_carriers(
 pub(super) fn unreferenced_composite_curves(
     target: &mut CadIr,
     losses: &mut Vec<LossNote>,
+    limits: cadmpeg_core::decode::ResourceLimits,
 ) -> Result<(), cadmpeg_core::CodecError> {
     use cadmpeg_ir::geometry::SolvedCurveGeometry;
     let candidates: std::collections::BTreeSet<String> = target
@@ -387,7 +404,7 @@ pub(super) fn unreferenced_composite_curves(
             )));
         }
     }
-    let needs = super::design::with_context(|ctx| target.neutral_needs(ctx))?;
+    let needs = super::design::with_context(limits, |ctx| target.neutral_needs(ctx))?;
     let mut retained = std::collections::BTreeSet::new();
     let mut pending: Vec<String> = needs
         .iter()
