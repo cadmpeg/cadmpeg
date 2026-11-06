@@ -571,6 +571,63 @@ pub(super) fn decode(
         }
         typed.insert(color_id);
     }
+    let mut referenced = BTreeSet::new();
+    for record in exchange
+        .records()
+        .values()
+        .chain(exchange.dead_records().values())
+    {
+        for parameter in record
+            .partials
+            .iter()
+            .flat_map(|partial| &partial.parameters)
+        {
+            for reference in references(parameter, ctx) {
+                referenced.insert(reference?);
+            }
+        }
+    }
+    for (&id, record) in exchange.records() {
+        if referenced.contains(&id) || record.partial("COLOUR_RGB").is_none() {
+            continue;
+        }
+        let mut active = BTreeSet::new();
+        let mut cache = ColorCache::default();
+        let mut invalid_surface_sides = BTreeSet::new();
+        let Some(ColorResolution::Candidate(candidate)) = find_color(
+            id,
+            exchange,
+            StyleDomain::Any,
+            ColorSearchState {
+                active: &mut active,
+                cache: &mut cache,
+                losses: &mut losses,
+                invalid_surface_sides: &mut invalid_surface_sides,
+            },
+            ctx,
+        )?
+        else {
+            continue;
+        };
+        ir.model.appearances.push(Appearance {
+            native_ref: None,
+            id: AppearanceId::from(ids::presentation(
+                kind!("appearance"),
+                IdentityKey::from(id),
+            )),
+            name: candidate.name,
+            asset_guid: None,
+            library_id: None,
+            visual_guid: None,
+            physical_token: None,
+            schema: Some("step_surface_style".into()),
+            category: None,
+            base_color: Some(candidate.color),
+            textures: Vec::new(),
+            properties: BTreeMap::new(),
+        });
+        typed.insert(id);
+    }
     for (invisibility_id, (mut supported, style_targets, layer_targets)) in deferred_invisibility {
         for style_id in style_targets {
             let mut matched = false;
