@@ -532,7 +532,7 @@ fn omitted_solid_face_keeps_remaining_geometry_as_an_open_surface_model() {
 
 #[test]
 fn step_declares_its_cone_chart_normalization_and_no_capacity_fields() {
-    assert_eq!(crate::writer::REDUCED_FIELDS.len(), 2);
+    assert_eq!(crate::writer::REDUCED_FIELDS.len(), 3);
     assert_eq!(
         crate::writer::REDUCED_FIELDS[0].path,
         "model.surfaces[].geometry"

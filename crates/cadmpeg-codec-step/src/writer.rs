@@ -32,6 +32,12 @@ pub(crate) const REDUCED_FIELDS: &[cadmpeg_ir::codec::write::ReducedField] = &[
             loss: "step/attribute.timestamp-normalized",
         },
     },
+    cadmpeg_ir::codec::write::ReducedField {
+        path: "model.procedural_curves[].definition",
+        storage: cadmpeg_ir::codec::write::ReducedStorage::Normalized {
+            loss: "step/geometry.procedural-cache-tolerance-omitted",
+        },
+    },
 ];
 
 /// A STEP instance name such as `#42`.

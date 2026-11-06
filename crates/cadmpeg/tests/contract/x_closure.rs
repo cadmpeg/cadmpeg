@@ -345,6 +345,9 @@ fn run_step_other_format(format: &str, observed: &StepObserved) -> Vec<String> {
                 cadmpeg_ir::codec::write::ReducedStorage::Normalized {
                     loss: "step/attribute.timestamp-normalized",
                 } => Some(cadmpeg_test_support::reduced::step_timestamp_attribute),
+                cadmpeg_ir::codec::write::ReducedStorage::Normalized {
+                    loss: "step/geometry.procedural-cache-tolerance-omitted",
+                } => Some(cadmpeg_test_support::reduced::step_trimmed_curve_cache),
                 cadmpeg_ir::codec::write::ReducedStorage::Normalized { loss } => {
                     panic!("unknown STEP normalization {loss}")
                 }

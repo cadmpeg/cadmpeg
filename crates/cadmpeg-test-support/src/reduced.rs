@@ -57,6 +57,26 @@ pub fn step_surface_chart(value: &Value) -> Value {
     geometry
 }
 
+/// Apply STEP's exact derived cache to a trimmed-curve construction.
+#[must_use]
+pub fn step_trimmed_curve_cache(value: &Value) -> Value {
+    let mut definition = value.clone();
+    if definition.get("kind").and_then(Value::as_str) != Some("subset") {
+        return definition;
+    }
+    let Some(cache) = definition.get_mut("cache").and_then(Value::as_object_mut) else {
+        return definition;
+    };
+    if cache
+        .get("fit_tolerance")
+        .and_then(Value::as_f64)
+        .is_some_and(|tolerance| tolerance > 0.0)
+    {
+        cache.insert("fit_tolerance".to_owned(), Value::from(0.0));
+    }
+    definition
+}
+
 /// Apply STEP's extended timestamp syntax to a document date attribute.
 #[must_use]
 pub fn step_timestamp_attribute(value: &Value) -> Value {
@@ -324,4 +344,22 @@ fn probe_target(document: &Value, path: &str) -> Option<(String, usize, String)>
                 })
         })
         .next()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::step_trimmed_curve_cache;
+    use serde_json::json;
+
+    #[test]
+    fn step_cache_normalization_changes_only_positive_subset_fit() {
+        let source = json!({"kind":"subset", "source":"curve#1", "cache":{"fit_tolerance":0.01}});
+        let expected = json!({"kind":"subset", "source":"curve#1", "cache":{"fit_tolerance":0.0}});
+        assert_eq!(step_trimmed_curve_cache(&source), expected);
+        assert_eq!(step_trimmed_curve_cache(&expected), expected);
+        let other = json!({"kind":"offset", "cache":{"fit_tolerance":0.01}});
+        assert_eq!(step_trimmed_curve_cache(&other), other);
+        let no_cache = json!({"kind":"subset", "source":"curve#1"});
+        assert_eq!(step_trimmed_curve_cache(&no_cache), no_cache);
+    }
 }

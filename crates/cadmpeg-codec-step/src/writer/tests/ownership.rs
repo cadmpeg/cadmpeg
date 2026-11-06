@@ -469,6 +469,12 @@ fn subset_curve_reports_its_unwritten_cache_fit_tolerance() {
     let mut ir = standalone_subset_curve(Some(LegacyCache::try_new(0.01).unwrap()));
     let validation = cadmpeg_ir::validate_neutral(&ir, Vec::new()).unwrap();
     assert!(validation.is_ok(), "{:?}", validation.findings);
+    let row = &crate::writer::REDUCED_FIELDS[2];
+    assert_eq!(row.path, "model.procedural_curves[].definition");
+    let original = serde_json::to_value(ir.model.procedural_curves[0].definition()).unwrap();
+    let normalized = cadmpeg_test_support::reduced::step_trimmed_curve_cache(&original);
+    assert_ne!(original, normalized);
+    assert_eq!(normalized["cache"]["fit_tolerance"], 0.0);
     let mut bytes = Vec::new();
     let report = write_step(
         &ir,
