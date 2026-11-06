@@ -1283,9 +1283,10 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
         vec![parameter.clone()],
     );
     assert!(owners.is_empty());
-    assert!(retained.is_empty());
+    assert_eq!(retained.len(), 1);
+    assert_eq!(retained[0].id, parameter.id);
     assert_eq!(losses.len(), 1);
-    assert!(losses[0].dropped.contains(&parameter.id));
+    assert!(!losses[0].dropped.contains(&parameter.id));
 
     let supported_at = u64::try_from(extended.len()).unwrap();
     let mut supported_frame = parameter_owner_frame();
@@ -1315,10 +1316,10 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
         vec![parameter.clone(), supported_parameter.clone()],
     );
     assert_eq!(losses.len(), 1);
-    assert!(losses[0].dropped.contains(&parameter.id));
-    assert_eq!(retained.len(), 1);
-    assert_eq!(retained[0].record_index, 55);
-    assert_eq!(retained[0].id, supported_parameter.id);
+    assert!(!losses[0].dropped.contains(&parameter.id));
+    assert_eq!(retained.len(), 2);
+    assert!(retained.iter().any(|record| record.id == parameter.id));
+    assert!(retained.iter().any(|record| record.id == supported_parameter.id && record.record_index == 55));
     assert_eq!(owners.len(), 1);
     assert_eq!(owners[0].record_index(), 54);
     assert_eq!(owners[0].parameter_record_index(), 55);
