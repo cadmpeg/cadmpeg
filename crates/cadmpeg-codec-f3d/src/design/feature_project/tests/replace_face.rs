@@ -333,84 +333,141 @@ fn replace_face_projects_role_order_and_historical_inputs() {
     .is_none());
 }
 
+fn trim_body_draft(
+    group_record_index: u32,
+    group_member_ordinal: u32,
+    record_index: u32,
+) -> crate::records::topology::body_recipe::DesignBodyRecipeOperandDraft {
+    crate::records::topology::body_recipe::DesignBodyRecipeOperandDraft {
+        id: format!("f3d:Design/BulkStream.dat:body-recipe#{record_index}"),
+        scope_record_index: 1200,
+        owner: DesignOperandOwner::Group {
+            group_record_index,
+            group_member_ordinal,
+        },
+        record_index,
+        byte_offset: 0,
+        class_tag: crate::records::references::DesignClassTag::try_from("316".to_owned()).unwrap(),
+        asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
+            "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
+        )
+        .unwrap(),
+        asset_id_offset: 56,
+        context_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
+            "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
+        )
+        .unwrap(),
+        context_id_offset: 132,
+        selector_tail: None,
+
+        references: vec![DesignBodyRecipeReference {
+            design_reference: 326,
+            design_reference_offset: 25,
+            form: 33,
+            form_offset: 33,
+            candidate_faces: Vec::new(),
+            preceding_candidate_faces: Vec::new(),
+            preceding_body_slots: Vec::new(),
+        }],
+        nested_record_index: record_index + 3,
+        nested_record_index_offset: 38,
+        recipe_id: format!("f3d:Design/BulkStream.dat:recipe#{}", record_index + 4),
+        resolved_face_slot: None,
+        resolved_body_state_id: None,
+        resolved_body_slot: None,
+        resolved_body_face_slots: Vec::new(),
+        next_record_index: record_index + 4,
+        next_byte_offset: 256,
+    }
+}
+
+fn trim_body(
+    group_record_index: u32,
+    group_member_ordinal: u32,
+    record_index: u32,
+) -> DesignBodyRecipeOperand {
+    DesignBodyRecipeOperand::try_new(trim_body_draft(
+        group_record_index,
+        group_member_ordinal,
+        record_index,
+    ))
+    .unwrap()
+}
+
+fn trim_curves(
+    group_record_index: u32,
+    group_member_ordinal: u32,
+    record_index: u32,
+) -> crate::records::topology::entity_selection::DesignEntitySelectionOperand {
+    crate::records::topology::entity_selection::DesignEntitySelectionOperand::try_new(
+        crate::records::topology::entity_selection::DesignEntitySelectionOperandDraft {
+            id: format!("f3d:Design/BulkStream.dat:entity-selection#{record_index}"),
+            scope_record_index: 1200,
+            group_record_index,
+            group_member_ordinal,
+            record_index,
+            byte_offset: 0,
+            class_tag: "372".to_owned().try_into().unwrap(),
+            asset_id: "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+                .to_owned()
+                .try_into()
+                .unwrap(),
+            asset_id_offset: 0,
+            context_id: "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e"
+                .to_owned()
+                .try_into()
+                .unwrap(),
+            context_id_offset: 0,
+            serialization_form:
+                crate::records::topology::entity_selection::SelectionSerializationForm::Zero,
+            identity_record_index: record_index + 3,
+            identity_record_offset: 0,
+            primary_identity: 178,
+            primary_identity_offset: 21,
+            secondary: None,
+            historical_edge_candidates: Vec::new(),
+            historical_face_candidates: Vec::new(),
+            resolved_edge_slot: None,
+            next_record_index: record_index + 4,
+            next_byte_offset: 29,
+        },
+    )
+    .unwrap()
+}
+
 fn surface_trim_fixture() -> (
     DesignParameterScope,
     DesignConstructionOperandGroup,
     DesignConstructionOperandGroup,
     DesignBodyRecipeOperand,
+    crate::records::topology::entity_selection::DesignEntitySelectionOperand,
 ) {
-    let mut scope = DesignParameterScope::empty(
-        "f3d:Design/BulkStream.dat:scope#1200",
-        crate::records::feature::scope::DesignFeatureKind::SurfaceTrim,
-        1200,
-    );
-    scope
-        .try_edit(|draft| {
-            draft.reference_members =
-                crate::records::identity::ReferenceRun::unlocated(vec![1201, 1202, 1203, 1204]);
-            draft.layout_fixture_references();
-            draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
-            draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
-            draft.layout_fixture_tail();
-        })
-        .unwrap();
+    let scope = surface_trim_scope(vec![1201, 1202, 1203, 1204]);
     let target_group = group(1200, 0, 1201, 1202, DesignOperandRole::BODIES_A);
     let tool_group = group(1200, 2, 1203, 1204, DesignOperandRole::ROLE_0X21);
-    let body = DesignBodyRecipeOperand::try_new(
-        crate::records::topology::body_recipe::DesignBodyRecipeOperandDraft {
-            id: "f3d:Design/BulkStream.dat:body-recipe#1202".into(),
-            scope_record_index: 1200,
-            owner: DesignOperandOwner::Group {
-                group_record_index: 1201,
-                group_member_ordinal: 0,
-            },
-            record_index: 1202,
-            byte_offset: 0,
-            class_tag: crate::records::references::DesignClassTag::try_from("316".to_owned())
-                .unwrap(),
-            asset_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
-                "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d".to_owned(),
-            )
-            .unwrap(),
-            asset_id_offset: 56,
-            context_id: crate::records::mesh::DesignRelaxedGuidText::try_from(
-                "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e".to_owned(),
-            )
-            .unwrap(),
-            context_id_offset: 132,
-            selector_tail: None,
-
-            references: vec![DesignBodyRecipeReference {
-                design_reference: 326,
-                design_reference_offset: 25,
-                form: 33,
-                form_offset: 33,
-                candidate_faces: Vec::new(),
-                preceding_candidate_faces: Vec::new(),
-                preceding_body_slots: Vec::new(),
-            }],
-            nested_record_index: 1205,
-            nested_record_index_offset: 38,
-            recipe_id: "f3d:Design/BulkStream.dat:recipe#1206".into(),
-            resolved_face_slot: Some(20),
-            resolved_body_state_id: Some(254),
-            resolved_body_slot: Some(3),
-            resolved_body_face_slots: vec![20],
-            next_record_index: 1206,
-            next_byte_offset: 256,
-        },
+    let mut body = trim_body_draft(1201, 0, 1202);
+    body.resolved_face_slot = Some(20);
+    body.resolved_body_state_id = Some(254);
+    body.resolved_body_slot = Some(3);
+    body.resolved_body_face_slots = vec![20];
+    let body = DesignBodyRecipeOperand::try_new(body).unwrap();
+    (
+        scope,
+        target_group,
+        tool_group,
+        body,
+        trim_curves(1203, 0, 1204),
     )
-    .unwrap();
-    (scope, target_group, tool_group, body)
 }
 
 #[test]
 fn surface_trim_projects_body_target_and_curve_tool() {
-    let (scope, target_group, tool_group, body) = surface_trim_fixture();
+    let (scope, target_group, tool_group, body, curves) = surface_trim_fixture();
     let definition = project_surface_trim(
         &scope,
         &[target_group.clone(), tool_group.clone()],
         std::slice::from_ref(&body),
+        std::slice::from_ref(&curves),
     )
     .expect("typed SurfaceTrim");
     assert!(matches!(
@@ -445,9 +502,14 @@ fn surface_trim_scope(references: Vec<u32>) -> DesignParameterScope {
 
 #[test]
 fn surface_trim_keeps_native_target_when_its_body_is_unresolved() {
-    let (scope, target_group, tool_group, _) = surface_trim_fixture();
-    let definition = project_surface_trim(&scope, &[target_group.clone(), tool_group.clone()], &[])
-        .expect("typed SurfaceTrim");
+    let (scope, target_group, tool_group, _, curves) = surface_trim_fixture();
+    let definition = project_surface_trim(
+        &scope,
+        &[target_group.clone(), tool_group.clone()],
+        &[trim_body(1201, 0, 1202)],
+        std::slice::from_ref(&curves),
+    )
+    .expect("typed SurfaceTrim");
     assert!(matches!(
         definition,
         FeatureDefinition::Operation(FeatureOperation::TrimSurface {
@@ -470,8 +532,17 @@ fn surface_trim_projects_multi_member_target_and_tool_groups() {
         &[1205, 1206, 1207],
         DesignOperandRole::ROLE_0X21,
     );
-    let definition = project_surface_trim(&scope, &[tool_group.clone(), target_group.clone()], &[])
-        .expect("typed SurfaceTrim");
+    let definition = project_surface_trim(
+        &scope,
+        &[tool_group.clone(), target_group.clone()],
+        &[
+            trim_body(1201, 0, 1202),
+            trim_body(1201, 1, 1203),
+            trim_body(1204, 1, 1206),
+        ],
+        &[trim_curves(1204, 0, 1205), trim_curves(1204, 2, 1207)],
+    )
+    .expect("typed SurfaceTrim");
     assert!(matches!(
         definition,
         FeatureDefinition::Operation(FeatureOperation::TrimSurface {
@@ -487,8 +558,15 @@ fn surface_trim_requires_groups_that_partition_the_references() {
     let scope = surface_trim_scope(vec![1201, 1202, 1203, 1204, 1205, 1206, 1207]);
     let target_group =
         group_with_members(1200, 0, 1201, &[1202, 1203], DesignOperandRole::BODIES_A);
+    let bodies = [trim_body(1201, 0, 1202), trim_body(1201, 1, 1203)];
     let short_tool = group_with_members(1200, 3, 1204, &[1205, 1206], DesignOperandRole::ROLE_0X21);
-    assert!(project_surface_trim(&scope, &[target_group.clone(), short_tool], &[]).is_none());
+    assert!(project_surface_trim(
+        &scope,
+        &[target_group.clone(), short_tool],
+        &bodies,
+        &[trim_curves(1204, 0, 1205), trim_curves(1204, 1, 1206)],
+    )
+    .is_none());
     let misplaced_tool = group_with_members(
         1200,
         2,
@@ -496,7 +574,49 @@ fn surface_trim_requires_groups_that_partition_the_references() {
         &[1204, 1205, 1206, 1207],
         DesignOperandRole::ROLE_0X21,
     );
-    assert!(project_surface_trim(&scope, &[target_group, misplaced_tool], &[]).is_none());
+    assert!(project_surface_trim(
+        &scope,
+        &[target_group, misplaced_tool],
+        &bodies,
+        &[
+            trim_curves(1203, 0, 1204),
+            trim_curves(1203, 1, 1205),
+            trim_curves(1203, 2, 1206),
+            trim_curves(1203, 3, 1207),
+        ],
+    )
+    .is_none());
+}
+
+#[test]
+fn surface_trim_requires_typed_target_and_tool_members() {
+    let (scope, target_group, tool_group, body, curves) = surface_trim_fixture();
+    let groups = [target_group, tool_group.clone()];
+    assert!(project_surface_trim(&scope, &groups, &[], std::slice::from_ref(&curves)).is_none());
+    assert!(project_surface_trim(
+        &scope,
+        &groups,
+        &[],
+        &[trim_curves(1201, 0, 1202), curves.clone()],
+    )
+    .is_none());
+    assert!(project_surface_trim(&scope, &groups, std::slice::from_ref(&body), &[]).is_none());
+    assert!(project_surface_trim(
+        &scope,
+        &groups,
+        std::slice::from_ref(&body),
+        &[trim_curves(1203, 1, 1204)],
+    )
+    .is_none());
+    let definition = project_surface_trim(&scope, &groups, &[body, trim_body(1203, 0, 1204)], &[])
+        .expect("typed SurfaceTrim");
+    assert!(matches!(
+        definition,
+        FeatureDefinition::Operation(FeatureOperation::TrimSurface {
+            tool: cadmpeg_ir::features::PathRef::Native(ref tool),
+            ..
+        }) if tool == &tool_group.id
+    ));
 }
 
 fn assert_native_cells(ordinals: &[u64], trailing_value: u32) {

@@ -903,15 +903,18 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     ctx,
                 )?
                 .map_or_else(|| native_scope_definition(scope, &parameters), Ok)?,
-                Some(DesignFeatureFamily::SurfaceTrim) => {
-                    project_surface_trim(scope, construction_groups, body_recipe_operands)
-                        .unwrap_or_else(|| {
-                            FeatureDefinition::Operation(FeatureOperation::Native {
-                                kind: scope.kind_name().into(),
-                                parameters: BTreeMap::new(),
-                            })
-                        })
-                }
+                Some(DesignFeatureFamily::SurfaceTrim) => project_surface_trim(
+                    scope,
+                    construction_groups,
+                    body_recipe_operands,
+                    entity_selection_operands,
+                )
+                .unwrap_or_else(|| {
+                    FeatureDefinition::Operation(FeatureOperation::Native {
+                        kind: scope.kind_name().into(),
+                        parameters: BTreeMap::new(),
+                    })
+                }),
                 Some(DesignFeatureFamily::BoundaryFill) => {
                     project_boundary_fill(scope, construction_groups).unwrap_or_else(|| {
                         FeatureDefinition::Operation(FeatureOperation::Native {
@@ -8347,13 +8350,15 @@ fn project_replace_face(
 /// Project the source selections of a `SurfaceTrim` scope.
 ///
 /// Fusion stores the surface targets as a role-`0x04` body-recipe group and
-/// the trimming tools as a role-`0x21` group. The cell table that selects the
-/// cells to remove is decoded separately and bound to the projected operation
-/// after the source selections have been resolved.
+/// the trimming tools as a role-`0x21` group of entity-selection or
+/// body-recipe operands. The cell table that selects the cells to remove is
+/// decoded separately and bound to the projected operation after the source
+/// selections have been resolved.
 fn project_surface_trim(
     scope: &DesignParameterScope,
     construction_groups: &[DesignConstructionOperandGroup],
     body_recipe_operands: &[DesignBodyRecipeOperand],
+    entity_selection_operands: &[crate::records::topology::entity_selection::DesignEntitySelectionOperand],
 ) -> Option<cadmpeg_ir::features::FeatureDefinition> {
     use cadmpeg_ir::features::{
         FaceSelection, FeatureDefinition, FeatureOperation, PathRef, TrimRegion,
@@ -8403,6 +8408,32 @@ fn project_surface_trim(
     {
         return None;
     }
+    let body_recipe_member = |group: &DesignConstructionOperandGroup, ordinal, record_index| {
+        body_recipe_operands.iter().any(|operand| {
+            native_stream(&operand.id) == Some(stream)
+                && operand.scope_record_index == scope.record_index
+                && operand.owner.group() == Some((group.record_index, ordinal))
+                && operand.record_index() == record_index
+        })
+    };
+    let entity_selection_member =
+        |group: &DesignConstructionOperandGroup, ordinal, record_index| {
+            entity_selection_operands.iter().any(|operand| {
+                native_stream(&operand.id) == Some(stream)
+                    && operand.scope_record_index == scope.record_index
+                    && operand.group_record_index == group.record_index
+                    && operand.group_member_ordinal == ordinal
+                    && operand.record_index() == record_index
+            })
+        };
+    if !every_group_member(target_group, body_recipe_member)
+        || !every_group_member(tool_group, |group, ordinal, record_index| {
+            entity_selection_member(group, ordinal, record_index)
+                || body_recipe_member(group, ordinal, record_index)
+        })
+    {
+        return None;
+    }
     let faces = resolved_body_recipe_selection(scope, target_group, body_recipe_operands)
         .unwrap_or_else(|| FaceSelection::Native(target_group.id.clone()));
     Some(FeatureDefinition::Operation(
@@ -8412,6 +8443,15 @@ fn project_surface_trim(
             keep: TrimRegion::Unresolved,
         },
     ))
+}
+
+fn every_group_member(
+    group: &DesignConstructionOperandGroup,
+    typed: impl Fn(&DesignConstructionOperandGroup, u32, u32) -> bool,
+) -> bool {
+    group.members().iter().enumerate().all(|(ordinal, member)| {
+        u32::try_from(ordinal).is_ok_and(|ordinal| typed(group, ordinal, member.value))
+    })
 }
 
 /// Bind the exact removed-cell set retained by a decoded `SurfaceTrim`.
