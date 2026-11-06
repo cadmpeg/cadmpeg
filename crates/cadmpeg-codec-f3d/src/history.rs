@@ -58,6 +58,7 @@ use crate::history_records::{
 use crate::records::topology::{
     body_recipe::AsmHistoricalEntityKind, extrude_selection::DesignOperandRole,
 };
+use cadmpeg_asm::history::{walk_bulletin_boards, BulletinBoardItem, EntityChange};
 use cadmpeg_asm::kernel_header::RefWidth;
 use cadmpeg_ir::geometry::SolvedSurfaceGeometry;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
@@ -9369,88 +9370,15 @@ pub(crate) fn materialize_record_table(
     versions: &BTreeMap<i64, i64>,
     archive: &HistoricalRecordArchive,
 ) -> Option<Vec<cadmpeg_asm::sab::Record>> {
-    if versions.is_empty() {
-        return None;
-    }
-    let mut records = Vec::new();
-    for (&entity_ref, record_ref) in versions {
-        let record = archive.get(record_ref)?;
-        if i64::try_from(record.index).ok() != Some(entity_ref) {
-            return None;
-        }
-        for token in record.tokens.iter() {
-            let cadmpeg_asm::sab::Token::Ref(reference) = token else {
-                continue;
-            };
-            if *reference >= 0 && !versions.contains_key(reference) {
-                return None;
-            }
-        }
-        records.push(clone_historical_record(record));
-    }
-    records.sort_unstable_by_key(|a| a.index);
-    Some(records)
+    cadmpeg_asm::history::materialize_record_table(versions, |revision| archive.get(&revision))
 }
 
-/// One framed item of a `BulletinBoard` chain, in stream order.
-enum BulletinBoardItem {
-    Board {
-        offset: usize,
-        owner_ref: i64,
-        number: i64,
-    },
-    /// A change of the most recent board.
-    Change {
-        offset: usize,
-        kind: AsmEntityChangeKind,
-    },
-}
-
-/// Walk the `BulletinBoard` chain at `position` and return the offset after
-/// it, or `None` when the chain is malformed.
-fn walk_bulletin_boards(
-    bytes: &[u8],
-    mut position: usize,
-    width: RefWidth,
-    mut visit: impl FnMut(BulletinBoardItem),
-) -> Option<usize> {
-    if bytes.get(position) == Some(&0x11) {
-        return Some(position);
+fn entity_change_kind(kind: EntityChange) -> AsmEntityChangeKind {
+    match kind {
+        EntityChange::Insert { new } => AsmEntityChangeKind::Insert { new },
+        EntityChange::Delete { old } => AsmEntityChangeKind::Delete { old },
+        EntityChange::Update { old, new } => AsmEntityChangeKind::Update { old, new },
     }
-    loop {
-        let board_offset = position;
-        let present = take_int(bytes, &mut position, 0x04, width)?;
-        if present == 0 {
-            break;
-        }
-        let owner_ref = take_int(bytes, &mut position, 0x0c, width)?;
-        let number = take_int(bytes, &mut position, 0x04, width)?;
-        visit(BulletinBoardItem::Board {
-            offset: board_offset,
-            owner_ref,
-            number,
-        });
-        loop {
-            let change_offset = position;
-            let present = take_int(bytes, &mut position, 0x04, width)?;
-            if present == 0 {
-                break;
-            }
-            let old = take_int(bytes, &mut position, 0x0c, width)?;
-            let new = take_int(bytes, &mut position, 0x0c, width)?;
-            let kind = match (old >= 0, new >= 0) {
-                (false, true) => AsmEntityChangeKind::Insert { new },
-                (true, false) => AsmEntityChangeKind::Delete { old },
-                (true, true) => AsmEntityChangeKind::Update { old, new },
-                (false, false) => return None,
-            };
-            visit(BulletinBoardItem::Change {
-                offset: change_offset,
-                kind,
-            });
-        }
-    }
-    Some(position)
 }
 
 fn decode_bulletin_boards(
@@ -9497,7 +9425,7 @@ fn decode_bulletin_boards(
                 id,
                 parent,
                 byte_offset: u64_from_index(offset),
-                kind,
+                kind: entity_change_kind(kind),
             });
         }
     })?;
