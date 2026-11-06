@@ -180,8 +180,8 @@ def render(root: Path) -> str:
         output = 'W1 for records without neutral counterparts; W2 for records with neutral counterparts; W3 reports the result.' if registry.writer else 'Decode only; no native encoder is registered.'
         if registry.namespace == 'f3d':
             output = ('Replay re-emits retained source records for an unedited document with empty '
-                      '`unrepresented`; synthesis regenerates from neutral with W1/W2 per-record '
-                      'rules and W3 per-arena reports.')
+                      '`unrepresented`; synthesis writes supported typed records and regenerates from neutral; '
+                      'remaining records are dropped, with per-record dispositions in the report.')
         lines.append(f'| `{registry.namespace}` | {arenas} | {output} |')
     lines += ['', '## Registry sources', '',
               '| Namespace | Arena count | Authoritative production declaration |',
