@@ -1281,8 +1281,6 @@ impl<'a> Builder<'a> {
             }
         }
         for face in &ir.model.faces {
-            // Only an explicit face display colour or face material overrides
-            // its body's display colour. Inherited style is handled below.
             let target = AppearanceTarget::Face(face.id.clone());
             if face.color.is_some() || face_colors.contains_key(face.id.as_str()) {
                 if let Some(color) = ir.effective_display_color(&target) {
@@ -1306,22 +1304,6 @@ impl<'a> Builder<'a> {
             }
         }
 
-        let mut face_body: HashMap<&str, &str> = HashMap::new();
-        for region in &ir.model.regions {
-            let body = region.body.as_str();
-            for shell_id in &region.shells {
-                let Some(shell) = self.shells.get(shell_id.as_str()).copied() else {
-                    continue;
-                };
-                for face in shell.faces() {
-                    face_body.insert(face.as_str(), body);
-                }
-            }
-        }
-
-        // Face-level STYLED_ITEM only: OCCT/VTK viewers read colors from
-        // ADVANCED_FACE and ignore MANIFOLD_SOLID_BREP. Bodies with no face use
-        // the shape carrier for whole-body color.
         let mut style_refs: HashMap<String, Ref> = HashMap::new();
         let mut styled = Vec::new();
         let mut faces: Vec<(String, Ref)> = self
@@ -1335,28 +1317,16 @@ impl<'a> Builder<'a> {
             if conflicting_face_targets.contains(face_id) {
                 continue;
             }
-            let own = face_colors.get(face_id.as_str()).copied();
-            let body = face_body.get(face_id.as_str()).copied();
-            let inherited = body.and_then(|b| body_colors.get(b).copied());
-            let Some(spec) = own.or(inherited) else {
+            let Some(spec) = face_colors.get(face_id.as_str()).copied() else {
                 continue;
             };
-            // The body color is only counted as represented when a face without
-            // its own override receives it.
-            if own.is_none() {
-                if let Some(b) = body {
-                    styled_bodies.insert(b);
-                }
-            }
-            if own.is_some() {
-                if let Some(binding_ids) = face_candidates.get(face_id.as_str()) {
-                    self.written_appearance_bindings.extend(
-                        binding_ids
-                            .iter()
-                            .filter(|(candidate, _)| candidate.color == spec.color)
-                            .map(|(_, id)| (*id).clone()),
-                    );
-                }
+            if let Some(binding_ids) = face_candidates.get(face_id.as_str()) {
+                self.written_appearance_bindings.extend(
+                    binding_ids
+                        .iter()
+                        .filter(|(candidate, _)| candidate.color == spec.color)
+                        .map(|(_, id)| (*id).clone()),
+                );
             }
             let name = spec
                 .appearance
@@ -1504,9 +1474,6 @@ impl<'a> Builder<'a> {
                 .filter(|(candidate, _)| equivalent_style_spec(*spec, *candidate))
                 .map(|(_, id)| (*id).clone())
                 .collect();
-            if styled_bodies.contains(body_id) && matching_bindings.is_empty() {
-                continue;
-            }
             let mut targets = self
                 .body_item_refs
                 .get(body_id)
@@ -1556,10 +1523,6 @@ impl<'a> Builder<'a> {
             }
             styled_bodies.insert(body_id);
         }
-        // A color is unrepresented when no emitted ADVANCED_FACE could carry it:
-        // a face override whose face was skipped, or a body whose faces were all
-        // skipped (hidden bodies or faces without an explicit STEP surface),
-        // and no whole-body carrier was emitted.
         let emitted: BTreeSet<&str> = self.face_step_refs.keys().map(String::as_str).collect();
         let mut unstyled_targets = face_colors
             .keys()

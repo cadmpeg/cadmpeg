@@ -780,33 +780,33 @@ fn admit_topology_locations(
     locations: &mut Locations,
 ) -> Result<(), LocationIdentityError> {
     for root in tables.roots {
-        let root_location = locations.source(&tables, root.location)?;
+        let root_location = locations.source(tables, root.location)?;
         let mut visited = HashSet::new();
         let mut stack = vec![(root.shape, Located::identity())];
         while let Some((shape_index, local)) = stack.pop() {
             if !locations.visit(ctx, &mut visited, shape_index, local)? {
                 continue;
             }
-            locations.admit(ctx, &tables, root_location, local)?;
+            locations.admit(ctx, tables, root_location, local)?;
             let shape = tables.tshapes.resolve(shape_index)?;
             match &shape.geometry {
                 TextTShapeGeometry::Face { location, .. } => {
-                    let support = locations.source(&tables, *location)?;
-                    locations.admit(ctx, &tables, local, support)?;
+                    let support = locations.source(tables, *location)?;
+                    locations.admit(ctx, tables, local, support)?;
                 }
                 TextTShapeGeometry::Edge {
                     representations, ..
                 } => {
                     for representation in representations {
-                        let carrier = locations.source(&tables, representation.location())?;
-                        locations.admit(ctx, &tables, local, carrier)?;
+                        let carrier = locations.source(tables, representation.location())?;
+                        locations.admit(ctx, tables, local, carrier)?;
                     }
                 }
                 _ => {}
             }
             for child in &shape.children {
-                let child_location = locations.source(&tables, child.location)?;
-                let child_location = locations.admit(ctx, &tables, local, child_location)?;
+                let child_location = locations.source(tables, child.location)?;
+                let child_location = locations.admit(ctx, tables, local, child_location)?;
                 stack
                     .try_reserve(1)
                     .map_err(|_| locations::allocation_failed(ctx))?;
@@ -824,7 +824,7 @@ impl<'ctx, 'input> Inventory<'ctx, 'input> {
         tables: &Tables<'_>,
         locations: &mut Locations,
     ) -> Result<Self, LocationIdentityError> {
-        let plan = Plan::discover(ctx, &tables, locations)?;
+        let plan = Plan::discover(ctx, tables, locations)?;
         Self::materialize(ctx, owner, plan)
     }
 

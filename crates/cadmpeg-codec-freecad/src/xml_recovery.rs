@@ -17,6 +17,9 @@ use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput, PartSpec};
 /// A damaged element's name and its ancestor names, parent first.
 pub(crate) type KindMapper = dyn Fn(&[u8], &[&[u8]]) -> PartSpec;
 
+/// A framed damaged span and the element and ancestor names it covers.
+type DamagedSpan = (usize, usize, Vec<u8>, Vec<Vec<u8>>);
+
 /// Element kinds and ancestors removed by the scanner.
 pub(crate) type Damage = Vec<(
     Vec<u8>,
@@ -24,6 +27,14 @@ pub(crate) type Damage = Vec<(
     Option<String>,
     cadmpeg_ir::ids::UnknownId,
 )>;
+
+/// The source member and operations used for its XML recovery.
+#[derive(Clone, Copy)]
+pub(crate) struct XmlSource {
+    pub(crate) member: &'static str,
+    pub(crate) scan_operation: &'static str,
+    pub(crate) parse_operation: &'static str,
+}
 
 /// Admit one XML member, recovering readable elements around damaged ones.
 ///
@@ -37,16 +48,19 @@ pub(crate) fn admit_recovering<'s>(
     ctx: &DecodeContext<'s>,
     stage: &mut PartOutput,
     view: View<'s>,
-    member: &'static str,
-    operation: &'static str,
-    parse_operation: &'static str,
+    source: XmlSource,
     map_kind: &KindMapper,
     shape_error: &dyn Fn(String) -> CodecError,
 ) -> Result<(View<'s>, roxmltree::Document<'s>, Damage), CodecError> {
-    let parse = |text: &'s str| match ctx.parse_xml(text, parse_operation) {
+    let XmlSource {
+        member,
+        scan_operation: operation,
+        parse_operation,
+    } = source;
+    let parse = |text: &'s str| match ctx.parse_xml_located(text, parse_operation) {
         Ok(xml) => Ok(xml),
-        Err(CodecError::Malformed(detail)) => Err(shape_error(detail)),
-        Err(error) => Err(error),
+        Err((CodecError::Malformed(detail), position)) => Err((shape_error(detail), position)),
+        Err((error, position)) => Err((error, position)),
     };
     let scan = ctx.scan_xml_elements(view, XmlEncoding::Utf8, operation)?;
     let text = std::str::from_utf8(view.window())
@@ -62,10 +76,19 @@ pub(crate) fn admit_recovering<'s>(
             .map_err(|_| CodecError::malformed(format_args!("{member} is not UTF-8")))?;
         match parse(text) {
             Ok(xml) => return Ok((current, xml, damage)),
-            Err(error) => {
-                let fresh = damaged_elements(&scan, &blanked);
-                if fresh.is_empty() {
+            Err((error, position)) => {
+                if matches!(error, CodecError::ResourceLimit(_)) {
                     return Err(error);
+                }
+                let mut fresh = damaged_elements(&scan, &blanked);
+                if fresh.is_empty() {
+                    if let Some(element) = position
+                        .and_then(|position| syntax_damage(&scan, view, text, position, &blanked))
+                    {
+                        fresh.push(element);
+                    } else {
+                        return Err(error);
+                    }
                 }
                 let mut merged = blanked.clone();
                 for (start, end, name, ancestors) in &fresh {
@@ -95,7 +118,7 @@ pub(crate) fn admit_recovering<'s>(
                             .find(|element| element.extent().start() == *start);
                         let opening_end = element
                             .and_then(|element| element.framing().nth(1))
-                            .map(|suffix| suffix.start());
+                            .map(cadmpeg_core::decode::View::start);
                         if let Some(prefix) = opening_end.and_then(|end| view.child(*start, end)) {
                             let header = ctx.concat_views(&[prefix, View::over_retained(b"/>")])?;
                             match std::str::from_utf8(header.window()) {
@@ -193,6 +216,56 @@ fn reassemble<'s>(
     ctx.concat_views(&ordered)
 }
 
+/// Locate a syntax fault inside the innermost framed element. A root fault
+/// has no containing element to preserve, so it remains a document failure.
+fn syntax_damage(
+    scan: &cadmpeg_core::decode::XmlElementScan<'_>,
+    view: View<'_>,
+    text: &str,
+    position: roxmltree::TextPos,
+    blanked: &[(usize, usize)],
+) -> Option<DamagedSpan> {
+    let row = usize::try_from(position.row).ok()?.checked_sub(1)?;
+    let column = usize::try_from(position.col).ok()?.checked_sub(1)?;
+    let mut offset = 0;
+    let line = text
+        .split_inclusive('\n')
+        .enumerate()
+        .find_map(|(index, line)| {
+            if index == row {
+                Some(line)
+            } else {
+                offset += line.len();
+                None
+            }
+        })?;
+    let character = line
+        .char_indices()
+        .nth(column)
+        .map_or(line.len(), |(index, _)| index);
+    let at = view.start().checked_add(offset)?.checked_add(character)?;
+    let elements = scan.elements();
+    let (index, element) = elements
+        .iter()
+        .enumerate()
+        .filter(|(_, element)| {
+            let extent = element.extent();
+            extent.start() <= at
+                && at < extent.end()
+                && !blanked
+                    .iter()
+                    .any(|(start, end)| *start <= extent.start() && extent.end() <= *end)
+        })
+        .min_by_key(|(_, element)| element.extent().end() - element.extent().start())?;
+    element.parent()?;
+    Some((
+        element.extent().start(),
+        element.extent().end(),
+        element_name(element),
+        ancestors(elements, index),
+    ))
+}
+
 /// Select the damaged elements one recovering pass blanks.
 ///
 /// Every fault is charged to its innermost containing element, so a damaged
@@ -203,7 +276,7 @@ fn reassemble<'s>(
 fn damaged_elements(
     scan: &cadmpeg_core::decode::XmlElementScan<'_>,
     blanked: &[(usize, usize)],
-) -> Vec<(usize, usize, Vec<u8>, Vec<Vec<u8>>)> {
+) -> Vec<DamagedSpan> {
     let elements = scan.elements();
     let contains =
         |span: (usize, usize), inner: (usize, usize)| span.0 <= inner.0 && inner.1 <= span.1;
@@ -297,7 +370,7 @@ fn damaged_elements(
             }
         }
     }
-    let mut fresh: Vec<(usize, usize, Vec<u8>, Vec<Vec<u8>>)> = Vec::new();
+    let mut fresh: Vec<DamagedSpan> = Vec::new();
     for index in selected {
         let own = (
             elements[index].extent().start(),
@@ -309,7 +382,7 @@ fn damaged_elements(
         fresh.push((
             own.0,
             own.1,
-            element_name(elements[index]),
+            element_name(&elements[index]),
             ancestors(elements, index),
         ));
     }
@@ -331,7 +404,7 @@ fn damaged_elements(
 }
 
 /// The element's tag name without any namespace prefix.
-fn element_name(element: cadmpeg_core::decode::XmlElement<'_>) -> Vec<u8> {
+fn element_name(element: &cadmpeg_core::decode::XmlElement<'_>) -> Vec<u8> {
     let name = element.name().window();
     name.rsplit(|byte| *byte == b':')
         .next()
@@ -347,7 +420,7 @@ fn ancestors(elements: &[cadmpeg_core::decode::XmlElement<'_>], index: usize) ->
         let Some(element) = elements.get(current) else {
             break;
         };
-        names.push(element_name(*element));
+        names.push(element_name(element));
         parent = element.parent();
     }
     names

@@ -38,6 +38,7 @@ pub(crate) struct Graph {
     pub(crate) property_sources: BTreeMap<String, crate::fidelity::ValueSourceRanges>,
     pub(crate) properties: Vec<GuiPropertyRecord>,
     pub(crate) losses: Vec<LossNote>,
+    pub(crate) failed_sidecars: std::collections::BTreeSet<String>,
     /// The GUI stream was not admitted into typed records.
     pub(crate) untyped: bool,
 }
@@ -48,50 +49,24 @@ struct AppearancePlan {
     body_visibility_owners: HashSet<String>,
     appearances: Vec<Appearance>,
     bindings: Vec<AppearanceBinding>,
-    remove_appearances: HashSet<AppearanceId>,
     presentation_documents: Vec<PresentationDocument>,
     view_presentations: Vec<ViewPresentation>,
 }
 
 struct BodyUpdate {
     id: cadmpeg_ir::ids::BodyId,
-    visible: Assignment<Option<bool>>,
-    color: Option<Color>,
-}
-
-fn push_body_update(
-    plan: &mut AppearancePlan,
-    id: &cadmpeg_ir::ids::BodyId,
-    visible: Assignment<Option<bool>>,
-    color: Result<Option<Color>, CodecError>,
-) -> Result<(), CodecError> {
-    let id = id.clone();
-    let color = color?;
-    plan.body_updates.push(BodyUpdate { id, visible, color });
-    Ok(())
-}
-
-enum Assignment<T> {
-    Keep,
-    Set(T),
+    visible: Option<bool>,
 }
 
 impl AppearancePlan {
     fn apply(self, ir: &mut CadIr) {
         for update in self.body_updates {
             if let Some(body) = ir.model.bodies.iter_mut().find(|body| body.id == update.id) {
-                if let Assignment::Set(visible) = update.visible {
-                    body.visible = visible;
+                if let Some(visible) = update.visible {
+                    body.visible = Some(visible);
                 }
-                body.color = update.color;
             }
         }
-        ir.model
-            .appearance_bindings
-            .retain(|binding| !self.remove_appearances.contains(&binding.appearance));
-        ir.model
-            .appearances
-            .retain(|appearance| !self.remove_appearances.contains(&appearance.id));
         ir.model.appearances.extend(self.appearances);
         ir.model.appearance_bindings.extend(self.bindings);
         ir.model
@@ -293,13 +268,11 @@ fn transfer_document(
             }
             None => schema_declaration.clone(),
         };
-        let neutral_schema_version = schema::classify(selected.as_deref()).neutral_schema_version();
         transfer_schema_one(
             ctx,
             ir,
             xml,
             selected.as_deref(),
-            neutral_schema_version,
             sources,
             origins,
             stage.as_deref_mut(),
@@ -333,14 +306,14 @@ fn transfer_schema_one(
     ir: &CadIr,
     xml: &roxmltree::Document<'_>,
     schema_declaration: Option<&str>,
-    neutral_schema_version: Option<u32>,
     sources: &GuiSources<'_, '_>,
     origins: GuiOrigins<'_>,
-    stage: Option<&mut PartOutput>,
+    mut stage: Option<&mut PartOutput>,
 ) -> Result<(Graph, AppearancePlan), CodecError> {
     if let Some(refusal) = ctx.resource_refusal() {
         return Err(refusal.into());
     }
+    let neutral_schema_version = schema::classify(schema_declaration).neutral_schema_version();
     let entries = sources.entries;
     let objects = sources.objects;
     let properties = sources.properties;
@@ -377,6 +350,8 @@ fn transfer_schema_one(
     let mut native_providers = Vec::new();
     let mut property_sources = BTreeMap::new();
     let mut native_properties = Vec::new();
+    let mut material_lists = HashMap::new();
+    let mut failed_sidecars = std::collections::BTreeSet::new();
     let mut losses = Vec::new();
     // Absence declares no camera state; it does not omit a source record.
     if camera_count > 1 {
@@ -442,25 +417,31 @@ fn transfer_schema_one(
             ));
         }
         let provider_key = provider_identity_key(name);
-        let Some(object_id) = objects_by_name.get(name).copied() else {
-            append_native_provider(
-                provider,
-                provider_order,
-                None,
-                &mut native_providers,
-                &mut native_properties,
-                &mut property_sources,
-            )?;
-            continue;
-        };
+        let object_id = objects_by_name.get(name).copied();
+        let property_start = native_properties.len();
         append_native_provider(
             provider,
             provider_order,
-            Some(object_id),
+            object_id,
             &mut native_providers,
             &mut native_properties,
             &mut property_sources,
+            GuiPropertyRecovery {
+                ctx,
+                stage: stage.as_deref_mut(),
+                source: entries.get("GuiDocument.xml").copied(),
+            },
         )?;
+        material_lists.extend(validate_gui_list_payloads(
+            ctx,
+            stage.as_deref_mut(),
+            &mut native_properties[property_start..],
+            &property_sources,
+            entries,
+            (requires_alpha_conversion, object_id.is_some()),
+            &mut failed_sidecars,
+        )?);
+        let Some(object_id) = object_id else { continue };
         let native_provider = native_providers
             .last()
             .ok_or_else(|| CodecError::malformed("admitted GUI provider is absent"))?;
@@ -479,11 +460,14 @@ fn transfer_schema_one(
                 .iter()
                 .copied()
                 .enumerate()
-                .filter(|(_, property)| {
+                .filter(|(order, property)| {
                     property
                         .attribute("name")
                         .and_then(presentation_property_type)
                         .is_some_and(|expected| property.attribute("type") == Some(expected))
+                        && native_properties[property_start..]
+                            .iter()
+                            .any(|native| native.order == *order && !native.values.is_empty())
                 })
         {
             if let (Some(name), Some(value)) = (
@@ -537,26 +521,22 @@ fn transfer_schema_one(
         let body_ids = lookups
             .topology
             .bodies_under(ir, shape_payloads.iter().copied());
-        if !body_ids.is_empty() {
-            plan.body_visibility_owners.insert(object_id.to_owned());
-        }
         let color = packed_color
             .map(|packed| decode_color(packed, transparency))
             .transpose()?;
-        // `ShapeColor` and `Transparency` are the independent body style's
-        // native home; the object colour feeds the neutral appearance
-        // separately below, so one fact is never stored twice (#238 §5.5).
+        if !body_ids.is_empty() {
+            plan.body_visibility_owners.insert(object_id.to_owned());
+        }
         for body_id in &body_ids {
-            push_body_update(
-                &mut plan,
-                body_id,
-                visibility.map_or(Assignment::Keep, |visible| Assignment::Set(Some(visible))),
-                Ok(color),
-            )?;
+            plan.body_updates.push(BodyUpdate {
+                id: body_id.clone(),
+                visible: visibility,
+            });
         }
         if let Some(file) = values
             .get("DiffuseColor")
             .and_then(|value| value.attribute("file"))
+            .filter(|file| entries.contains_key(*file))
         {
             transfer_topology_colors(
                 ctx,
@@ -619,6 +599,7 @@ fn transfer_schema_one(
         if let Some(file) = values
             .get("LineColorArray")
             .and_then(|value| value.attribute("file"))
+            .filter(|file| entries.contains_key(*file))
         {
             transfer_topology_colors(
                 ctx,
@@ -681,6 +662,7 @@ fn transfer_schema_one(
         if let Some(file) = values
             .get("PointColorArray")
             .and_then(|value| value.attribute("file"))
+            .filter(|file| entries.contains_key(*file))
         {
             transfer_topology_colors(
                 ctx,
@@ -706,6 +688,26 @@ fn transfer_schema_one(
                 &lookups,
                 &mut losses,
             )?;
+        }
+        // An unavailable override may replace the uniform primitive color.
+        // Its bytes do not establish which targets keep the default binding.
+        for (property, appearance) in [
+            ("LineColorArray", edge_appearance_id(&provider_key)?),
+            ("PointColorArray", vertex_appearance_id(&provider_key)?),
+        ] {
+            if values
+                .get(property)
+                .and_then(|value| value.attribute("file"))
+                .is_some_and(|file| !entries.contains_key(file))
+                || native_properties[property_start..].iter().any(|native| {
+                    native.name == property
+                        && native.type_name == "App::PropertyColorList"
+                        && native.values.is_empty()
+                })
+            {
+                plan.bindings
+                    .retain(|binding| binding.appearance != appearance);
+            }
         }
         // The object colour feeds the neutral appearance and its binding,
         // with the ShapeMaterial values when present. It is not also a
@@ -744,6 +746,45 @@ fn transfer_schema_one(
         let mut material_properties = BTreeMap::new();
         if let Some(material) = material {
             for (source, target) in [
+                (
+                    "ambientColor",
+                    cadmpeg_core::nonblank_literal!("ambient_packed"),
+                ),
+                (
+                    "specularColor",
+                    cadmpeg_core::nonblank_literal!("specular_packed"),
+                ),
+                (
+                    "emissiveColor",
+                    cadmpeg_core::nonblank_literal!("emissive_packed"),
+                ),
+            ] {
+                if let Some(value) = material
+                    .attribute(source)
+                    .and_then(|value| value.parse::<u32>().ok())
+                {
+                    let packed = convert_packed_alpha(value, requires_alpha_conversion);
+                    material_properties.insert(
+                        target,
+                        cadmpeg_ir::scalar::FiniteReal::new(f64::from(packed))
+                            .ok_or_else(|| CodecError::malformed("packed color is not finite"))?,
+                    );
+                }
+            }
+            if color.is_some() {
+                if let Some(value) = material
+                    .attribute("diffuseColor")
+                    .and_then(|value| value.parse::<u32>().ok())
+                {
+                    let packed = convert_packed_alpha(value, requires_alpha_conversion);
+                    material_properties.insert(
+                        cadmpeg_core::nonblank_literal!("diffuse_packed"),
+                        cadmpeg_ir::scalar::FiniteReal::new(f64::from(packed))
+                            .ok_or_else(|| CodecError::malformed("packed color is not finite"))?,
+                    );
+                }
+            }
+            for (source, target) in [
                 ("shininess", cadmpeg_core::nonblank_literal!("shininess")),
                 (
                     "transparency",
@@ -769,7 +810,7 @@ fn transfer_schema_one(
             physical_token: None,
             schema: Some("FCStd ViewProvider ShapeMaterial".into()),
             category: None,
-            base_color: material_color.or(color),
+            base_color: color.or(material_color),
             textures: Vec::new(),
             properties: material_properties,
         });
@@ -794,15 +835,9 @@ fn transfer_schema_one(
         property_sources,
         properties: native_properties,
         losses,
+        failed_sidecars,
         untyped: false,
     };
-    let material_lists = validate_gui_list_payloads(
-        ctx,
-        stage,
-        &graph.properties,
-        entries,
-        requires_alpha_conversion,
-    )?;
     let mut material_losses = Vec::new();
     transfer_shape_appearances(
         ctx,
@@ -1570,6 +1605,12 @@ fn unique_child<'a, 'input>(
     Ok(Some(first))
 }
 
+struct GuiPropertyRecovery<'a, 'source> {
+    ctx: &'a DecodeContext<'source>,
+    stage: Option<&'a mut PartOutput>,
+    source: Option<View<'source>>,
+}
+
 fn append_native_provider(
     provider: roxmltree::Node<'_, '_>,
     order: usize,
@@ -1577,6 +1618,7 @@ fn append_native_provider(
     providers: &mut Vec<GuiViewProviderRecord>,
     properties: &mut Vec<GuiPropertyRecord>,
     property_sources: &mut BTreeMap<String, crate::fidelity::ValueSourceRanges>,
+    mut recovery: GuiPropertyRecovery<'_, '_>,
 ) -> Result<(), CodecError> {
     let name = provider
         .attribute("name")
@@ -1623,25 +1665,100 @@ fn append_native_provider(
         )));
     }
     for (property_order, property) in property_nodes.into_iter().enumerate() {
-        let property_name = property.attribute("name").ok_or_else(|| {
-            CodecError::malformed(format_args!("ViewProvider {name} property has no name"))
-        })?;
-        if properties
-            .iter()
-            .rev()
-            .take(property_order)
-            .any(|record| record.owner == id && record.name == property_name)
-        {
-            return Err(CodecError::Malformed(
-                "ViewProvider has duplicate property names".into(),
-            ));
-        }
-        let type_name = property.attribute("type").ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "ViewProvider {name}.{property_name} has no type"
+        let property_name = property.attribute("name");
+        let type_name = property.attribute("type");
+        let duplicate = property_name.is_some_and(|property_name| {
+            properties
+                .iter()
+                .rev()
+                .take(property_order)
+                .any(|record| record.owner == id && record.name == property_name)
+        });
+        let header_error = if property_name.is_none() {
+            Some(CodecError::malformed(format_args!(
+                "ViewProvider {name} property has no name"
+            )))
+        } else if type_name.is_none() {
+            Some(CodecError::malformed(format_args!(
+                "ViewProvider {name} property has no type"
+            )))
+        } else if duplicate {
+            Some(CodecError::malformed(
+                "ViewProvider has duplicate property names",
             ))
-        })?;
-        validate_gui_property(property, property_name, type_name)?;
+        } else {
+            None
+        };
+        if let Some(error) = header_error {
+            let (Some(stage), Some(source)) = (recovery.stage.as_deref_mut(), recovery.source)
+            else {
+                return Err(error);
+            };
+            let extent = crate::fidelity::relative_xml_extent(source, property.range())?;
+            let owner =
+                cadmpeg_ir::ids::Identity::try_from(id.as_str()).map_err(CodecError::malformed)?;
+            let provider = providers
+                .last()
+                .ok_or_else(|| CodecError::malformed("GUI provider is absent"))?;
+            stage.insert_native(recovery.ctx, "gui_view_providers", provider.clone())?;
+            let spec = cadmpeg_ir::source_fidelity::parts::PartSpec::new("freecad.gui_property")
+                .in_stream(cadmpeg_ir::stream_name!("GuiDocument.xml"))
+                .holding([cadmpeg_ir::ArenaClass::Model])
+                .contained_in(owner);
+            recovery
+                .ctx
+                .decode_part(stage, extent, spec, |_| Err::<(), _>(error))?;
+            continue;
+        }
+        let (Some(property_name), Some(type_name)) = (property_name, type_name) else {
+            return Err(CodecError::malformed("GUI property identity is absent"));
+        };
+        if let Err(error) = validate_gui_property(property, property_name, type_name) {
+            let (Some(stage), Some(source)) = (recovery.stage.as_deref_mut(), recovery.source)
+            else {
+                return Err(error);
+            };
+            let ranges = crate::fidelity::property_source(property);
+            let extent = if let Some(range) = ranges.value_range() {
+                crate::fidelity::relative_xml_extent(source, range)?
+            } else {
+                let end = source
+                    .start()
+                    .checked_add(property.range().end)
+                    .ok_or_else(|| CodecError::malformed("GUI property extent overflows"))?;
+                source.child(end, end).ok_or_else(|| {
+                    CodecError::malformed("GUI property extent escapes its source")
+                })?
+            };
+            let record = GuiPropertyRecord {
+                id: crate::native::native_child_id("gui-property", &id, property_name),
+                owner: id.clone(),
+                name: property_name.to_owned(),
+                type_name: type_name.to_owned(),
+                status: property
+                    .attribute("status")
+                    .and_then(|value| value.parse().ok()),
+                order: property_order,
+                values: Vec::new(),
+                side_entries: Vec::new(),
+            };
+            stage.insert_native(recovery.ctx, "gui_properties", record.clone())?;
+            let owner = cadmpeg_ir::ids::Identity::try_from(record.id.as_str())
+                .map_err(CodecError::malformed)?;
+            let spec =
+                cadmpeg_ir::source_fidelity::parts::PartSpec::new("freecad.gui_property_value")
+                    .in_stream(cadmpeg_ir::stream_name!("GuiDocument.xml"))
+                    .holding([cadmpeg_ir::ArenaClass::Model])
+                    .contained_in(owner)
+                    .absent_field("values")
+                    .absent_field("side_entries");
+            recovery
+                .ctx
+                .decode_part(stage, extent, spec, |_| Err::<(), _>(error))?;
+            property_sources.insert(record.id.clone(), ranges);
+            properties.push(record);
+            continue;
+        }
         let mut values = Vec::new();
         let mut value_indices = HashMap::new();
         for (value_order, value) in property
@@ -3731,24 +3848,76 @@ pub(crate) struct GuiMaterial {
     pub(crate) emissive: u32,
     pub(crate) shininess: FiniteBinary32,
     pub(crate) transparency: FiniteBinary32,
-    pub(crate) image: String,
-    pub(crate) image_path: String,
-    pub(crate) uuid: String,
+    pub(crate) image: Option<String>,
+    pub(crate) image_path: Option<String>,
+    pub(crate) uuid: Option<String>,
+}
+
+struct GuiMaterialList {
+    declared: usize,
+    slots: Vec<Option<GuiMaterial>>,
 }
 
 fn validate_gui_list_payloads(
     ctx: &DecodeContext<'_>,
     mut stage: Option<&mut PartOutput>,
-    properties: &[GuiPropertyRecord],
+    properties: &mut [GuiPropertyRecord],
+    property_sources: &BTreeMap<String, crate::fidelity::ValueSourceRanges>,
     entries: &BTreeMap<String, View<'_>>,
-    requires_alpha_conversion: bool,
-) -> Result<HashMap<String, Vec<GuiMaterial>>, CodecError> {
+    projection: (bool, bool),
+    failed_sidecars: &mut std::collections::BTreeSet<String>,
+) -> Result<HashMap<String, GuiMaterialList>, CodecError> {
+    let (requires_alpha_conversion, material_projects) = projection;
     let mut material_lists = HashMap::new();
     for property in properties {
-        if property.side_entries.is_empty() {
+        if property.side_entries.is_empty()
+            || !has_registered_property_grammar(&property.name, &property.type_name)
+        {
             continue;
         }
-        if !has_registered_property_grammar(&property.name, &property.type_name) {
+        if property.type_name != "Part::PropertyTopoShapeList" && property.side_entries.len() != 1 {
+            return Err(CodecError::malformed(format_args!(
+                "GUI property {} references more than one side entry",
+                property.id
+            )));
+        }
+        if let Some(missing) = property
+            .side_entries
+            .iter()
+            .find(|name| !entries.contains_key(*name))
+            .cloned()
+        {
+            let Some(stage) = stage.as_deref_mut() else {
+                return Err(CodecError::malformed(format_args!(
+                    "GUI property {} references missing side entry {missing}",
+                    property.id
+                )));
+            };
+            let source = *entries
+                .get("GuiDocument.xml")
+                .ok_or_else(|| CodecError::malformed("GUI property has no source member"))?;
+            let range = property_sources
+                .get(&property.id)
+                .and_then(crate::fidelity::ValueSourceRanges::value_range)
+                .ok_or_else(|| CodecError::malformed("GUI property has no value source range"))?;
+            let extent = crate::fidelity::relative_xml_extent(source, range)?;
+            property.values.clear();
+            property.side_entries.clear();
+            stage.insert_native(ctx, "gui_properties", property.clone())?;
+            let owner = cadmpeg_ir::ids::Identity::try_from(property.id.as_str())
+                .map_err(CodecError::malformed)?;
+            let spec =
+                cadmpeg_ir::source_fidelity::parts::PartSpec::new("freecad.gui_property_value")
+                    .in_stream(cadmpeg_ir::stream_name!("GuiDocument.xml"))
+                    .holding([cadmpeg_ir::ArenaClass::Model])
+                    .contained_in(owner)
+                    .absent_field("values")
+                    .absent_field("side_entries");
+            ctx.decode_part(stage, extent, spec, |_| {
+                Err::<(), _>(CodecError::malformed(format_args!(
+                    "GUI property references missing side entry {missing}"
+                )))
+            })?;
             continue;
         }
         if property.type_name == "Part::PropertyTopoShapeList" {
@@ -3762,34 +3931,25 @@ fn validate_gui_list_payloads(
             }
             continue;
         }
-        let entry_name = property.side_entries.first().ok_or_else(|| {
+        let entry_name = property.side_entries.first().cloned().ok_or_else(|| {
             CodecError::malformed(format_args!(
                 "GUI property {} has no side entry",
                 property.id
             ))
         })?;
-        if property.side_entries.len() != 1 {
-            return Err(CodecError::malformed(format_args!(
-                "GUI property {} references more than one side entry",
-                property.id
-            )));
-        }
-        let view = *entries.get(entry_name).ok_or_else(|| {
+        let view = *entries.get(&entry_name).ok_or_else(|| {
             CodecError::malformed(format_args!(
                 "GUI property {} references missing side entry {entry_name}",
                 property.id
             ))
         })?;
-        match property.type_name.as_str() {
+        let parsed: Result<Option<GuiMaterialList>, CodecError> = match property.type_name.as_str()
+        {
             "App::PropertyColorList" => {
-                parse_color_list(view, entry_name, requires_alpha_conversion)?;
+                parse_color_list(view, &entry_name, requires_alpha_conversion).map(|_| None)
             }
-            "App::PropertyFloatList" => {
-                parse_float_list(view, entry_name)?;
-            }
-            "Part::PropertyFilletEdges" => {
-                parse_fillet_edges(view, entry_name)?;
-            }
+            "App::PropertyFloatList" => parse_float_list(view, &entry_name).map(|()| None),
+            "Part::PropertyFilletEdges" => parse_fillet_edges(view, &entry_name).map(|()| None),
             "App::PropertyMaterialList" => {
                 let version = property
                     .values
@@ -3806,32 +3966,64 @@ fn validate_gui_list_payloads(
                     })
                     .transpose()?
                     .unwrap_or(0);
-                // Version 3 carries per-material strings after the fixed
-                // records; each record and each string is its own part so
-                // one damaged string costs only its field (#224). Without a
-                // stage the whole list parses at once, as before.
-                let materials = match (version, stage.as_deref_mut()) {
-                    (3, Some(stage)) => decode_material_v3(
-                        ctx,
-                        stage,
-                        view,
-                        entry_name,
-                        &property.id,
-                        requires_alpha_conversion,
-                    )?,
-                    _ => {
-                        parse_material_list(view, version, &property.id, requires_alpha_conversion)?
+                match (version, stage.as_deref_mut()) {
+                    (3, Some(stage)) => {
+                        let previous = stage.losses().len();
+                        let result = decode_material_v3(
+                            ctx,
+                            stage,
+                            view,
+                            &entry_name,
+                            property,
+                            requires_alpha_conversion,
+                            material_projects,
+                        );
+                        if stage.losses().len() != previous {
+                            failed_sidecars.insert(entry_name.clone());
+                        }
+                        result.map(Some)
                     }
-                };
+                    _ => {
+                        parse_material_list(view, version, &property.id, requires_alpha_conversion)
+                            .map(|materials| {
+                                Some(GuiMaterialList {
+                                    declared: materials.len(),
+                                    slots: materials.into_iter().map(Some).collect(),
+                                })
+                            })
+                    }
+                }
+            }
+            "App::PropertyPlacementList" => parse_placement_list(view, &entry_name).map(|()| None),
+            "App::PropertyVectorList" => parse_vector_list(view, &entry_name).map(|()| None),
+            _ => Ok(None),
+        };
+        match parsed {
+            Ok(Some(materials)) => {
                 material_lists.insert(property.id.clone(), materials);
             }
-            "App::PropertyPlacementList" => {
-                parse_placement_list(view, entry_name)?;
+            Ok(None) => {}
+            Err(error) => {
+                let Some(stage) = stage.as_deref_mut() else {
+                    return Err(error);
+                };
+                let stream = cadmpeg_ir::StreamName::member(&entry_name)
+                    .ok_or_else(|| CodecError::malformed("GUI value member has no stream name"))?;
+                property.values.clear();
+                property.side_entries.clear();
+                stage.insert_native(ctx, "gui_properties", property.clone())?;
+                let owner = cadmpeg_ir::ids::Identity::try_from(property.id.as_str())
+                    .map_err(CodecError::malformed)?;
+                let spec =
+                    cadmpeg_ir::source_fidelity::parts::PartSpec::new("freecad.gui_property_value")
+                        .in_stream(stream)
+                        .holding([cadmpeg_ir::ArenaClass::Model])
+                        .contained_in(owner)
+                        .absent_field("values")
+                        .absent_field("side_entries");
+                ctx.decode_part(stage, view, spec, |_| Err::<(), _>(error))?;
+                failed_sidecars.insert(entry_name);
             }
-            "App::PropertyVectorList" => {
-                parse_vector_list(view, entry_name)?;
-            }
-            _ => {}
         }
     }
     Ok(material_lists)
@@ -4001,7 +4193,13 @@ fn material_part(
 /// when the fixed section itself is truncated: later offsets are unknowable.
 struct FramedMaterial {
     fixed: (usize, usize),
-    strings: Option<[(usize, usize); 3]>,
+    strings: [Option<(usize, usize)>; 3],
+}
+
+struct MaterialFrames {
+    declared: usize,
+    records: Vec<FramedMaterial>,
+    cut: Option<(usize, &'static str, String)>,
 }
 
 /// Frame a version-3 material list member without reading values: the u32
@@ -4009,27 +4207,13 @@ struct FramedMaterial {
 /// strings. Returns the framed materials with the cut offset where a length
 /// word runs past the member, if any. The caller gives up the cut tail as
 /// its own part while earlier materials still decode (#209 §4.5).
-fn frame_material_v3(
-    view: View<'_>,
-    property_id: &str,
-) -> Result<(Vec<FramedMaterial>, Option<(usize, String)>), CodecError> {
+fn frame_material_v3(view: View<'_>, property_id: &str) -> Result<MaterialFrames, CodecError> {
     let bytes = view.window();
     let count = View::u32_le_at(bytes, 0).ok_or_else(|| {
         CodecError::malformed(format_args!("GUI material list {property_id} is truncated"))
     })?;
-    let count = view
-        .counted(count.into(), 24)
-        .ok_or_else(|| {
-            CodecError::malformed(format_args!(
-                "GUI material list {property_id} count exceeds its payload"
-            ))
-        })?
-        .get();
-    let count = usize::try_from(count).map_err(|_| {
-        CodecError::malformed(format_args!(
-            "GUI material list {property_id} count exceeds its payload"
-        ))
-    })?;
+    let count = usize::try_from(count)
+        .map_err(|_| CodecError::malformed("GUI material count is not addressable"))?;
     let mut framed = Vec::new();
     let mut cursor = 4_usize;
     // Split layout: all count fixed records first, then all 3 × count
@@ -4043,7 +4227,10 @@ fn frame_material_v3(
         })?)
         .filter(|end| *end <= bytes.len());
     let whole = fixed_end.is_some();
-    for _ in 0..count {
+    let complete_records = bytes.len().checked_sub(4).ok_or_else(|| {
+        CodecError::malformed(format_args!("GUI material list {property_id} is truncated"))
+    })? / 24;
+    for _ in 0..count.min(complete_records) {
         let fixed = (
             cursor,
             cursor.checked_add(24).ok_or_else(|| {
@@ -4057,53 +4244,71 @@ fn frame_material_v3(
         }
         framed.push(FramedMaterial {
             fixed,
-            strings: whole.then_some([(0_usize, 0_usize); 3]),
+            strings: [None; 3],
         });
         cursor = fixed.1;
     }
     if !whole {
-        return Ok((
-            framed,
-            Some((
+        return Ok(MaterialFrames {
+            declared: count,
+            records: framed,
+            cut: Some((
                 cursor,
+                "freecad.material_list_material",
                 format!("GUI material list {property_id} count exceeds its payload"),
             )),
-        ));
+        });
     }
-    for material in framed.iter_mut() {
-        let Some(strings) = material.strings.as_mut() else {
-            continue;
-        };
-        for slot in strings.iter_mut() {
-            let length = View::u32_le_at(bytes, cursor).ok_or_else(|| {
-                CodecError::malformed(format_args!("GUI material list {property_id} is truncated"))
-            })?;
+    for material in &mut framed {
+        for slot in &mut material.strings {
+            let Some(length) = View::u32_le_at(bytes, cursor) else {
+                return Ok(MaterialFrames {
+                    declared: count,
+                    records: framed,
+                    cut: Some((
+                        cursor,
+                        "freecad.material_list_string",
+                        format!("GUI material list {property_id} is truncated"),
+                    )),
+                });
+            };
             let end = cursor
                 .checked_add(4)
-                .and_then(|start| start.checked_add(length as usize))
+                .and_then(|start| {
+                    usize::try_from(length)
+                        .ok()
+                        .and_then(|length| start.checked_add(length))
+                })
                 .filter(|end| *end <= bytes.len());
             let Some(end) = end else {
-                return Ok((
-                    framed,
-                    Some((
+                return Ok(MaterialFrames {
+                    declared: count,
+                    records: framed,
+                    cut: Some((
                         cursor,
+                        "freecad.material_list_string",
                         format!("GUI material list {property_id} string exceeds its payload"),
                     )),
-                ));
+                });
             };
-            *slot = (cursor, end);
+            *slot = Some((cursor, end));
             cursor = end;
         }
     }
-    let cut = if cursor != bytes.len() {
+    let cut = if cursor == bytes.len() {
+        None
+    } else {
         Some((
             cursor,
+            "freecad.material_list_string",
             format!("GUI material list {property_id} has trailing bytes"),
         ))
-    } else {
-        None
     };
-    Ok((framed, cut))
+    Ok(MaterialFrames {
+        declared: count,
+        records: framed,
+        cut,
+    })
 }
 
 /// Parse one 24-byte fixed material record: four packed colors and two
@@ -4136,28 +4341,30 @@ fn parse_material_record(
         emissive: colors[3],
         shininess: FiniteBinary32::new(shininess).ok_or_else(invalid)?,
         transparency: FiniteBinary32::new(transparency).ok_or_else(invalid)?,
-        image: String::new(),
-        image_path: String::new(),
-        uuid: String::new(),
+        image: None,
+        image_path: None,
+        uuid: None,
     })
 }
 
 /// Decode a version-3 material list member record by record: each fixed
 /// record and each string is its own part. A given-up string leaves that
 /// one field of that one material absent while later strings still decode
-/// when their length words are intact. A given-up record keeps its material
-/// slot with default values so later materials stay aligned with their
-/// faces; the part loss names it.
+/// when their length words are intact. A given-up record leaves its material
+/// slot empty so later materials stay aligned with their faces.
 fn decode_material_v3(
     ctx: &DecodeContext<'_>,
     stage: &mut PartOutput,
     view: View<'_>,
     entry_name: &str,
-    property_id: &str,
+    property: &GuiPropertyRecord,
     requires_alpha_conversion: bool,
-) -> Result<Vec<GuiMaterial>, CodecError> {
+    material_projects: bool,
+) -> Result<GuiMaterialList, CodecError> {
     let base = view.start();
     let end = view.end();
+    let property_id = property.id.as_str();
+    let owner = cadmpeg_ir::ids::Identity::try_from(property_id).map_err(CodecError::malformed)?;
     let extent = |span: (usize, usize)| {
         view.child(base + span.0, base + span.1).ok_or_else(|| {
             CodecError::malformed(format_args!(
@@ -4165,13 +4372,27 @@ fn decode_material_v3(
             ))
         })
     };
-    let (framed, cut) = frame_material_v3(view, property_id)?;
-    let mut materials = Vec::new();
-    for framed_material in &framed {
-        let record = ctx.decode_part(
+    let appearance = |index: usize| {
+        cadmpeg_ir::ids::Identity::new(format!(
+            "fcstd:appearance:shape-material#{}:{}",
+            crate::native::id_key(&property.owner),
+            index + 1,
+        ))
+        .map_err(CodecError::malformed)
+    };
+    let MaterialFrames {
+        declared,
+        records,
+        cut,
+    } = frame_material_v3(view, property_id)?;
+    let mut slots = Vec::new();
+    for (material_index, framed_material) in records.iter().enumerate() {
+        let record = ctx.decode_part_with_failure_parent(
             stage,
             extent(framed_material.fixed)?,
-            material_part("freecad.material_list_material", entry_name)?,
+            material_part("freecad.material_list_material", entry_name)?
+                .contained_in(owner.clone()),
+            |output| output.insert_native(ctx, "gui_properties", property.clone()),
             |_| {
                 let mut sub = extent(framed_material.fixed)?;
                 let material =
@@ -4184,31 +4405,21 @@ fn decode_material_v3(
                 Ok(material)
             },
         )?;
-        let mut material = record.unwrap_or(GuiMaterial {
-            ambient: 0,
-            diffuse: 0,
-            specular: 0,
-            emissive: 0,
-            shininess: FiniteBinary32::ZERO,
-            transparency: FiniteBinary32::ZERO,
-            image: String::new(),
-            image_path: String::new(),
-            uuid: String::new(),
-        });
-        for (index, slot) in framed_material
-            .strings
-            .as_ref()
-            .map(|strings| strings.as_slice())
-            .unwrap_or(&[])
-            .iter()
-            .enumerate()
-        {
-            let value: Option<String> = ctx.decode_part(
+        let mut material = record;
+        for (index, slot) in framed_material.strings.iter().enumerate() {
+            let Some(slot) = *slot else { continue };
+            let mut spec = material_part("freecad.material_list_string", entry_name)?
+                .contained_in(owner.clone());
+            if index == 2 && material_projects && property.name == "ShapeAppearance" {
+                spec = spec.affected_field(appearance(material_index)?, "asset_guid");
+            }
+            let value = ctx.decode_part_with_failure_parent(
                 stage,
-                extent(*slot)?,
-                material_part("freecad.material_list_string", entry_name)?,
+                extent(slot)?,
+                spec,
+                |output| output.insert_native(ctx, "gui_properties", property.clone()),
                 |_| {
-                    let mut sub = extent(*slot)?;
+                    let mut sub = extent(slot)?;
                     let value = read_material_string(&mut sub, property_id)?;
                     if !sub.is_empty() {
                         return Err(CodecError::malformed(format_args!(
@@ -4218,7 +4429,7 @@ fn decode_material_v3(
                     Ok(value)
                 },
             )?;
-            if let Some(value) = value {
+            if let Some(material) = material.as_mut() {
                 match index {
                     0 => material.image = value,
                     1 => material.image_path = value,
@@ -4226,17 +4437,26 @@ fn decode_material_v3(
                 }
             }
         }
-        materials.push(material);
+        slots.push(material);
     }
-    if let Some((cut_at, detail)) = cut {
-        ctx.decode_part(
+    if let Some((cut_at, kind, detail)) = cut {
+        let mut spec = material_part(kind, entry_name)?.contained_in(owner);
+        if material_projects && property.name == "ShapeAppearance" {
+            for (index, record) in records.iter().enumerate() {
+                if record.strings[2].is_none() {
+                    spec = spec.affected_field(appearance(index)?, "asset_guid");
+                }
+            }
+        }
+        ctx.decode_part_with_failure_parent(
             stage,
             extent((cut_at, end - base))?,
-            material_part("freecad.material_list_string", entry_name)?,
+            spec,
+            |output| output.insert_native(ctx, "gui_properties", property.clone()),
             |_| Err::<(), _>(CodecError::malformed(detail)),
         )?;
     }
-    Ok(materials)
+    Ok(GuiMaterialList { declared, slots })
 }
 
 fn parse_material_list(
@@ -4313,9 +4533,9 @@ fn parse_material_list(
             emissive,
             shininess: FiniteBinary32::new(shininess).ok_or_else(invalid)?,
             transparency: FiniteBinary32::new(transparency).ok_or_else(invalid)?,
-            image: String::new(),
-            image_path: String::new(),
-            uuid: String::new(),
+            image: None,
+            image_path: None,
+            uuid: None,
         });
     }
     if requires_alpha_conversion {
@@ -4328,9 +4548,9 @@ fn parse_material_list(
     }
     if has_strings {
         for material in &mut materials {
-            material.image = read_material_string(&mut view, property_id)?;
-            material.image_path = read_material_string(&mut view, property_id)?;
-            material.uuid = read_material_string(&mut view, property_id)?;
+            material.image = Some(read_material_string(&mut view, property_id)?);
+            material.image_path = Some(read_material_string(&mut view, property_id)?);
+            material.uuid = Some(read_material_string(&mut view, property_id)?);
         }
     }
     if !view.is_empty() {
@@ -4372,7 +4592,7 @@ fn transfer_shape_appearances(
     ir: &CadIr,
     plan: &mut AppearancePlan,
     graph: &Graph,
-    material_lists: &HashMap<String, Vec<GuiMaterial>>,
+    material_lists: &HashMap<String, GuiMaterialList>,
     lookups: &GuiLookups<'_, '_>,
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
@@ -4408,35 +4628,27 @@ fn transfer_shape_appearances(
         };
         let group = displayed_shape_topology(object_id, &lookups.shapes, "Face")?;
         let mapped_count = group.len();
-        if materials.len() == 1 {
-            let legacy_id = object_appearance_id(&provider_key)?;
-            plan.bindings
-                .retain(|binding| binding.appearance != legacy_id);
-            plan.appearances
-                .retain(|appearance| appearance.id != legacy_id);
-            plan.remove_appearances.insert(legacy_id);
+        let mismatch = if materials.declared == 1 {
+            body_ids.is_empty()
         } else {
-            if mapped_count == 0 {
-                continue;
-            }
-            if materials.len() != mapped_count {
-                push_gui_appearance_loss(losses, FreecadLossCode::AppearanceTopologyColorCountMismatch, format_args!(
-                        "FCStd provider {} ShapeAppearance material count {} does not match {} mapped Face subelements; native material list retained and neutral face override withheld",
-                        provider.name, materials.len(), mapped_count
-                    ), SourceProvenance::in_stream(
-                        "fcstd",
-                        cadmpeg_ir::stream_name!("GuiDocument.xml"),
-                        cadmpeg_core::decode::u64_from_index(
-                            graph.property_sources.get(&property.id).ok_or_else(|| {
-                                CodecError::malformed("GUI property has no original source range")
-                            })?.record_range().start,
-                        ),
-                    )
-                    .with_tag(property.id.clone()));
-                continue;
-            }
+            mapped_count == 0 || materials.declared != mapped_count
+        };
+        if mismatch {
+            push_gui_appearance_loss(losses, FreecadLossCode::AppearanceTopologyColorCountMismatch, format_args!(
+                "FCStd provider {} ShapeAppearance material count {} has no matching shape or {} mapped Face subelements; appearances are retained without face bindings",
+                provider.name, materials.declared, mapped_count
+            ), SourceProvenance::in_stream(
+                "fcstd",
+                cadmpeg_ir::stream_name!("GuiDocument.xml"),
+                cadmpeg_core::decode::u64_from_index(
+                    graph.property_sources.get(&property.id).ok_or_else(|| {
+                        CodecError::malformed("GUI property has no original source range")
+                    })?.record_range().start,
+                ),
+            ).with_tag(property.id.clone()));
         }
-        for (index, material) in materials.iter().enumerate() {
+        for (index, material) in materials.slots.iter().enumerate() {
+            let Some(material) = material else { continue };
             let appearance_id = shape_material_appearance_id(&provider_key, index)?;
             plan.appearances.push(material_appearance(
                 ctx,
@@ -4446,10 +4658,9 @@ fn transfer_shape_appearances(
                 index,
                 material,
             )?);
-            if materials.len() == 1 {
+            if materials.declared == 1 {
                 for (body_index, body) in body_ids.iter().enumerate() {
-                    push_body_update(plan, body, Assignment::Keep, Ok(None))?;
-                    plan.bindings.push(AppearanceBinding {
+                    let binding = AppearanceBinding {
                         native_ref: projection_native_ref(ctx, Some(native_origin))?,
                         id: binding_id(format_args!(
                             "fcstd:appearance:binding#shape-material:{provider_key}:{body_index}"
@@ -4459,10 +4670,15 @@ fn transfer_shape_appearances(
                         source_entity_id: Some(object_id.to_owned()),
                         object_type: Some("ViewProvider ShapeAppearance".into()),
                         visible: None,
-                        channels: BTreeMap::new(),
-                    });
+                        channels: [(
+                            cadmpeg_core::nonblank_literal!("precedence"),
+                            "shape_over_object".into(),
+                        )]
+                        .into(),
+                    };
+                    plan.bindings.push(binding);
                 }
-            } else {
+            } else if !mismatch {
                 bind_material_faces(
                     ctx,
                     ir,
@@ -4695,7 +4911,11 @@ fn material_appearance(
         native_ref: projection_native_ref(ctx, Some(origin))?,
         id,
         name: Some(format!("{provider_name} face {} material", index + 1)),
-        asset_guid: (!material.uuid.is_empty()).then(|| material.uuid.clone()),
+        asset_guid: material
+            .uuid
+            .as_ref()
+            .filter(|uuid| !uuid.is_empty())
+            .cloned(),
         library_id: None,
         visual_guid: None,
         physical_token: None,
@@ -4858,15 +5078,12 @@ fn transfer_topology_colors(
     }
     let group = displayed_shape_topology(object_id, &lookups.shapes, kind.name())?;
     let mapped_count = group.len();
-    if mapped_count == 0 {
-        return Ok(());
-    }
-    if count != 1 && mapped_count != count {
+    let can_bind = mapped_count != 0 && (count == 1 || mapped_count == count);
+    if !can_bind {
         push_gui_appearance_loss(losses, FreecadLossCode::AppearanceTopologyColorCountMismatch, format_args!(
-                "FCStd provider {provider_name} {} color count {count} does not match {mapped_count} mapped subelements; native color list retained and neutral override withheld",
-                kind.name()
-            ), provenance);
-        return Ok(());
+            "FCStd provider {provider_name} {} color count {count} does not match {mapped_count} mapped subelements; appearances are retained without topology bindings",
+            kind.name()
+        ), provenance);
     }
     let default_appearance = match kind {
         TopologyColorKind::Face => None,
@@ -4882,7 +5099,7 @@ fn transfer_topology_colors(
         })
         .map(|appearance| appearance.properties.clone())
         .unwrap_or_default();
-    if let Some(default_appearance) = default_appearance {
+    if let Some(default_appearance) = default_appearance.filter(|_| can_bind) {
         let overridden = group.iter().flatten().copied().collect::<HashSet<_>>();
         plan.bindings.retain(|binding| {
             if binding.appearance != default_appearance {
@@ -4898,17 +5115,46 @@ fn transfer_topology_colors(
     }
     for (index, packed) in colors.into_iter().enumerate() {
         let appearance_id = topology_appearance_id(kind, provider_key, index)?;
-        let uniform_names = (count == 1)
-            .then_some(&group)
-            .into_iter()
-            .flat_map(|groups| groups.iter().flatten());
-        let indexed_names = (count != 1)
-            .then_some(&group[index])
-            .into_iter()
-            .flat_map(|names| names.iter());
-        let mut emitted_appearance = false;
+        plan.appearances.push(Appearance {
+            native_ref: projection_native_ref(ctx, Some(native_origin))?,
+            id: appearance_id.clone(),
+            name: Some(format!(
+                "{provider_name} {}{} appearance",
+                kind.name(),
+                index + 1
+            )),
+            asset_guid: None,
+            library_id: None,
+            visual_guid: None,
+            physical_token: None,
+            schema: Some(kind.schema().into()),
+            category: None,
+            base_color: Some(Color::from_rgba8(
+                u8::try_from((packed >> 24) & 0xff).map_err(|_| {
+                    CodecError::Malformed("GUI color channel exceeds byte range".into())
+                })?,
+                u8::try_from((packed >> 16) & 0xff).map_err(|_| {
+                    CodecError::Malformed("GUI color channel exceeds byte range".into())
+                })?,
+                u8::try_from((packed >> 8) & 0xff).map_err(|_| {
+                    CodecError::Malformed("GUI color channel exceeds byte range".into())
+                })?,
+                u8::try_from(packed & 0xff).map_err(|_| {
+                    CodecError::Malformed("GUI color channel exceeds byte range".into())
+                })?,
+            )),
+            textures: Vec::new(),
+            properties: inherited_properties.clone(),
+        });
+        let groups = if !can_bind {
+            &[][..]
+        } else if count == 1 {
+            group.as_slice()
+        } else {
+            &group[index..=index]
+        };
         let mut bound_topology = HashSet::new();
-        for &topology_id in uniform_names.chain(indexed_names) {
+        for &topology_id in groups.iter().flatten() {
             if !bound_topology.insert(topology_id) {
                 continue;
             }
@@ -4932,40 +5178,6 @@ fn transfer_topology_colors(
             let Some(target) = target else {
                 continue;
             };
-            if !emitted_appearance {
-                plan.appearances.push(Appearance {
-                    native_ref: projection_native_ref(ctx, Some(native_origin))?,
-                    id: appearance_id.clone(),
-                    name: Some(format!(
-                        "{provider_name} {}{} appearance",
-                        kind.name(),
-                        index + 1
-                    )),
-                    asset_guid: None,
-                    library_id: None,
-                    visual_guid: None,
-                    physical_token: None,
-                    schema: Some(kind.schema().into()),
-                    category: None,
-                    base_color: Some(Color::from_rgba8(
-                        u8::try_from((packed >> 24) & 0xff).map_err(|_| {
-                            CodecError::Malformed("GUI color channel exceeds byte range".into())
-                        })?,
-                        u8::try_from((packed >> 16) & 0xff).map_err(|_| {
-                            CodecError::Malformed("GUI color channel exceeds byte range".into())
-                        })?,
-                        u8::try_from((packed >> 8) & 0xff).map_err(|_| {
-                            CodecError::Malformed("GUI color channel exceeds byte range".into())
-                        })?,
-                        u8::try_from(packed & 0xff).map_err(|_| {
-                            CodecError::Malformed("GUI color channel exceeds byte range".into())
-                        })?,
-                    )),
-                    textures: Vec::new(),
-                    properties: inherited_properties.clone(),
-                });
-                emitted_appearance = true;
-            }
             let topology_key = crate::native::id_key(topology_id);
             let kind_key = topology_binding_kind(kind);
             plan.bindings.push(AppearanceBinding {

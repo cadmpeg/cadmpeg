@@ -440,13 +440,6 @@ pub(super) fn write(
             )));
             continue;
         }
-        let Some(expression) = render_expression(ir, parameter, names) else {
-            losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
-                "parameter {} has a dangling expression reference or an unencodable owner label",
-                parameter.id
-            )));
-            continue;
-        };
         if ir.model.spreadsheets.iter().any(|sheet| {
             sheet
                 .cells()
@@ -455,10 +448,17 @@ pub(super) fn write(
         }) {
             continue;
         }
+        let expression = render_expression(ir, parameter, names);
+        if expression.is_none() {
+            losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
+                "parameter {} expression has a dangling reference or an unencodable owner label and is omitted",
+                parameter.id
+            )));
+        }
         if let Some((sketch, path)) = constraints.get(parameter.id.as_str()) {
             if is_literal_binding(parameter) {
                 report_literal_normalization(parameter, losses);
-            } else if let Some(name) = names.get(*sketch) {
+            } else if let (Some(name), Some(expression)) = (names.get(*sketch), &expression) {
                 expressions
                     .entry(name.clone())
                     .or_default()
@@ -505,29 +505,20 @@ pub(super) fn write(
                 continue;
             }
         };
-        let owner = parameter
-            .owner
-            .as_ref()
-            .and_then(|owner| names.get(owner.as_str()))
-            .cloned();
-        let name = match owner {
-            Some(name) if objects.iter().any(|object| object.name == name) => name,
-            Some(_) => {
-                losses.push(
-                    FreecadLossCode::ExportFeatureNotTransferred
-                        .note(format!("parameter {} has an omitted owner", parameter.id)),
-                );
-                continue;
-            }
-            None => names
-                .get(&format!("parameter-owner:{}", parameter.id))
-                .cloned()
-                .ok_or_else(|| CodecError::malformed("global parameter owner was not prepared"))?,
+        let owner = match &parameter.owner {
+            Some(owner) => names.get(owner.as_str()),
+            None => names.get(&format!("parameter-owner:{}", parameter.id)),
         };
-        let object = objects
-            .iter_mut()
-            .find(|object| object.name == name)
-            .ok_or_else(|| CodecError::malformed("parameter owner is absent"))?;
+        let Some(object) =
+            owner.and_then(|name| objects.iter_mut().find(|object| object.name == *name))
+        else {
+            losses.push(
+                FreecadLossCode::ExportFeatureNotTransferred
+                    .note(format!("parameter {} has an omitted owner", parameter.id)),
+            );
+            continue;
+        };
+        let name = object.name.clone();
         // Dynamic metadata distinguishes authored scalar parameters from
         // application controls. A literal restates its value lane, so only a
         // formula needs an explicit binding.
@@ -562,7 +553,7 @@ pub(super) fn write(
         object.set(property_name, property);
         if is_literal_binding(parameter) {
             report_literal_normalization(parameter, losses);
-        } else {
+        } else if let Some(expression) = expression {
             expressions.entry(name).or_default().push(xml::element(
                 "Expression",
                 &[
