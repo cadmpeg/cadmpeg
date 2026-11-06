@@ -5275,12 +5275,13 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                 None if scope.kind()
                     == crate::records::feature::scope::DesignFeatureKind::PathPattern =>
                 {
-                    matches!(
+                    let seed = matches!(
                         group.role(),
-                        DesignOperandRole::BODIES_B
-                            | DesignOperandRole::ROLE_0X10
-                            | DesignOperandRole::ROLE_0X5
-                    ) && group.extrude_role().is_none()
+                        DesignOperandRole::BODIES_B | DesignOperandRole::ROLE_0X10
+                    ) && group.scope_reference_ordinal == 1;
+                    let path = group.role() == DesignOperandRole::ROLE_0X5
+                        && group.scope_reference_ordinal > 1;
+                    (seed || path) && group.extrude_role().is_none()
                 }
                 None if scope.kind()
                     == crate::records::feature::scope::DesignFeatureKind::Decal =>

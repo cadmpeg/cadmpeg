@@ -312,6 +312,8 @@ pub(crate) enum F3dLossCode {
     FeaturePathPatternSpacingAssumed,
     /// A `PathPattern` local-ordinal 0 owner is read as the instance count.
     FeaturePathPatternCountAssumed,
+    /// A `PathPattern` is placed from the seed along the stored path direction.
+    FeaturePathPatternPlacementAssumed,
     /// Feature face operands stay unresolved inside historical selections.
     FeatureFaceOperandUnresolved,
     /// Edge-treatment selections retain native recipes; no historical edge.
@@ -627,6 +629,7 @@ impl F3dLossCode {
         Self::FeatureRevolveLayoutAssumed,
         Self::FeaturePathPatternSpacingAssumed,
         Self::FeaturePathPatternCountAssumed,
+        Self::FeaturePathPatternPlacementAssumed,
         Self::FeatureFaceOperandUnresolved,
         Self::FeatureEdgeSelectionNative,
         Self::FeatureEdgeOperandUnresolved,
@@ -862,6 +865,7 @@ impl F3dLossCode {
             Self::FeatureRevolveLayoutAssumed => "feature.revolve-layout-assumed",
             Self::FeaturePathPatternSpacingAssumed => "feature.path-pattern-spacing-assumed",
             Self::FeaturePathPatternCountAssumed => "feature.path-pattern-count-assumed",
+            Self::FeaturePathPatternPlacementAssumed => "feature.path-pattern-placement-assumed",
             Self::FeatureFaceOperandUnresolved => "feature.face-operand-unresolved",
             Self::FeatureEdgeSelectionNative => "feature.edge-selection-native",
             Self::FeatureEdgeOperandUnresolved => "feature.edge-operand-unresolved",
@@ -1116,6 +1120,7 @@ impl F3dLossCode {
             | Self::FeatureRevolveLayoutAssumed
             | Self::FeaturePathPatternSpacingAssumed
             | Self::FeaturePathPatternCountAssumed
+            | Self::FeaturePathPatternPlacementAssumed
             | Self::FeatureFaceOperandUnresolved
             | Self::FeatureEdgeSelectionNative
             | Self::FeatureEdgeOperandUnresolved
@@ -1304,6 +1309,7 @@ impl F3dLossCode {
             | Self::FeatureRevolveLayoutAssumed
             | Self::FeaturePathPatternSpacingAssumed
             | Self::FeaturePathPatternCountAssumed
+            | Self::FeaturePathPatternPlacementAssumed
             | Self::FeatureFaceOperandUnresolved
             | Self::FeatureEdgeSelectionNative
             | Self::FeatureEdgeOperandUnresolved
@@ -1576,6 +1582,7 @@ mod tests {
                 "feature.revolve-layout-assumed",
                 "feature.path-pattern-spacing-assumed",
                 "feature.path-pattern-count-assumed",
+                "feature.path-pattern-placement-assumed",
                 "feature.face-operand-unresolved",
                 "feature.edge-selection-native",
                 "feature.edge-operand-unresolved",

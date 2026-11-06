@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use crate::design::decode::parameters::parse_parameter_owner;
-use crate::design::feature_project::project_path_pattern;
-use crate::design::test_support::parameter_owner_frame;
+use crate::design::decode::parameters::parse_design_parameter_record;
+use crate::design::feature_project::path_pattern::project_path_pattern;
+use crate::design::test_support::parameter_record;
 use crate::records::{
     feature::scope::{DesignFeatureKind, DesignParameterScope},
     identity::{Located, ReferenceRun},
-    parameters::{DesignParameterOwner, DesignParameterOwnerWire},
+    parameters::DesignParameter,
     topology::{
         construction::{
             DesignConstructionOperandGroup, DesignConstructionOperandGroupDraft,
@@ -67,9 +67,10 @@ fn group(
         class_tag: crate::records::references::DesignClassTag::try_from("310".to_owned()).unwrap(),
         members: members
             .iter()
-            .map(|value| Located {
+            .zip((26..).step_by(11))
+            .map(|(value, offset)| Located {
                 value: *value,
-                offset: 0,
+                offset,
             })
             .collect(),
         lost_edge_references: Vec::new(),
@@ -100,17 +101,24 @@ fn group(
     .unwrap()
 }
 
-fn owner(record_index: u32, local_ordinal: u32, value: f64) -> DesignParameterOwner {
-    let owner = parse_parameter_owner(&parameter_owner_frame())
-        .expect("generated parameter owner is canonical")
-        .into_record("Design/BulkStream.dat", 0)
-        .unwrap();
-    let mut wire = DesignParameterOwnerWire::from(owner);
-    wire.id = format!("{STREAM}:design-parameter-owner#{record_index}");
-    wire.scope_record_index = SCOPE;
-    wire.local_ordinal = local_ordinal;
-    wire.evaluated_value = value;
-    DesignParameterOwner::try_from(wire).unwrap()
+fn parameter(source_kind: &str, unit: Option<&str>, value: f64) -> DesignParameter {
+    parse_design_parameter_record(&parameter_record(
+        Some(331),
+        "4",
+        source_kind,
+        unit,
+        "d3",
+        value,
+    ))
+    .unwrap()
+}
+
+fn count(value: f64) -> DesignParameter {
+    parameter("countU", None, value)
+}
+
+fn distance(value: f64) -> DesignParameter {
+    parameter("PathPatternDelta", Some("mm"), value)
 }
 
 fn groups(seed_role: DesignOperandRole) -> Vec<DesignConstructionOperandGroup> {
@@ -130,7 +138,8 @@ fn pattern(definition: FeatureDefinition) -> (Vec<PatternSeed>, PatternTransform
 
 #[test]
 fn path_pattern_reads_seed_path_count_and_spacing() {
-    let owners = [owner(331, 0, 3.0), owner(341, 1, 3.0)];
+    let (count, distance) = (count(4.0), distance(2.5));
+    let parameters = [(0, &count), (1, &distance)];
     for (role, seed) in [
         (
             DesignOperandRole::BODIES_B,
@@ -146,8 +155,19 @@ fn path_pattern_reads_seed_path_count_and_spacing() {
         ),
     ] {
         let projected =
-            project_path_pattern(&scope(), &groups(role), &owners).expect("path pattern");
-        assert!(projected.scalars_assumed);
+            project_path_pattern(&scope(), &groups(role), &parameters).expect("path pattern");
+        assert_eq!(
+            projected
+                .losses
+                .iter()
+                .map(|loss| loss.code.clone())
+                .collect::<Vec<_>>(),
+            [
+                crate::loss::F3dLossCode::FeaturePathPatternCountAssumed.kind(),
+                crate::loss::F3dLossCode::FeaturePathPatternSpacingAssumed.kind(),
+                crate::loss::F3dLossCode::FeaturePathPatternPlacementAssumed.kind(),
+            ]
+        );
         let (seeds, transform) = pattern(projected.definition);
         assert_eq!(seeds, vec![seed]);
         let PatternTransform::CurveDriven {
@@ -164,23 +184,35 @@ fn path_pattern_reads_seed_path_count_and_spacing() {
                 "{STREAM}:design-construction-operand-group#{PATH_GROUP}"
             )))
         );
-        assert!((spacing.get() - 30.0).abs() <= 1.0e-12);
-        assert_eq!(count, 3);
+        assert!((spacing.get() - 25.0).abs() <= 1.0e-12);
+        assert_eq!(count, 4);
     }
 }
 
 #[test]
-fn path_pattern_without_usable_owners_keeps_an_unresolved_curve_driven_form() {
-    for owners in [
-        vec![owner(341, 1, 3.0)],
-        vec![owner(331, 0, 2.5), owner(341, 1, 3.0)],
-        vec![owner(331, 0, 3.0), owner(341, 1, 0.0)],
-        vec![owner(331, 0, 3.0), owner(332, 0, 3.0), owner(341, 1, 3.0)],
+fn path_pattern_without_usable_parameters_keeps_an_unresolved_curve_driven_form() {
+    let valid_count = count(4.0);
+    let valid_distance = distance(2.5);
+    let fractional = count(2.5);
+    let zero = count(0.0);
+    let measured_count = parameter("countU", Some("mm"), 4.0);
+    let unitless_distance = parameter("PathPatternDelta", None, 2.5);
+    let other_kind = parameter("Radius", Some("mm"), 2.5);
+    for parameters in [
+        vec![(1, &valid_distance)],
+        vec![(0, &valid_count)],
+        vec![(1, &valid_count), (0, &valid_distance)],
+        vec![(0, &fractional), (1, &valid_distance)],
+        vec![(0, &zero), (1, &valid_distance)],
+        vec![(0, &measured_count), (1, &valid_distance)],
+        vec![(0, &valid_count), (1, &unitless_distance)],
+        vec![(0, &valid_count), (1, &other_kind)],
+        vec![(0, &valid_count), (0, &valid_count), (1, &valid_distance)],
     ] {
         let projected =
-            project_path_pattern(&scope(), &groups(DesignOperandRole::BODIES_B), &owners)
+            project_path_pattern(&scope(), &groups(DesignOperandRole::BODIES_B), &parameters)
                 .expect("path pattern");
-        assert!(!projected.scalars_assumed);
+        assert!(projected.losses.is_empty());
         let (seeds, transform) = pattern(projected.definition);
         assert_eq!(seeds.len(), 1);
         assert!(matches!(
@@ -194,7 +226,8 @@ fn path_pattern_without_usable_owners_keeps_an_unresolved_curve_driven_form() {
 
 #[test]
 fn path_pattern_rejects_groups_outside_its_form() {
-    let owners = [owner(331, 0, 3.0), owner(341, 1, 3.0)];
+    let (count, distance) = (count(4.0), distance(2.5));
+    let parameters = [(0, &count), (1, &distance)];
     for groups in [
         vec![group(SEED_GROUP, 1, DesignOperandRole::BODIES_B, &[326])],
         vec![
@@ -213,7 +246,26 @@ fn path_pattern_rejects_groups_outside_its_form() {
             group(SEED_GROUP, 2, DesignOperandRole::BODIES_B, &[326]),
             group(PATH_GROUP, 4, DesignOperandRole::ROLE_0X5, &[336]),
         ],
+        vec![
+            group(SEED_GROUP, 1, DesignOperandRole::BODIES_B, &[326]),
+            group(PATH_GROUP, 4, DesignOperandRole::ROLE_0X5, &[]),
+        ],
+        vec![
+            group(SEED_GROUP, 1, DesignOperandRole::BODIES_B, &[326, 331]),
+            group(331, 3, DesignOperandRole::ROLE_0X5, &[336]),
+        ],
+        vec![
+            group(SEED_GROUP, 1, DesignOperandRole::BODIES_B, &[326]),
+            group(PATH_GROUP, 4, DesignOperandRole::ROLE_0X5, &[336]),
+            group(343, 7, DesignOperandRole::ROLE_0X5, &[346]),
+        ],
     ] {
-        assert!(project_path_pattern(&scope(), &groups, &owners).is_none());
+        assert!(project_path_pattern(&scope(), &groups, &parameters).is_none());
     }
+    let mut unclosed = scope();
+    unclosed.unclosed_construction_operand_groups = vec![343];
+    assert!(
+        project_path_pattern(&unclosed, &groups(DesignOperandRole::BODIES_B), &parameters)
+            .is_none()
+    );
 }
