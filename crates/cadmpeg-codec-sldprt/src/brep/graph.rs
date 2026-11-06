@@ -2596,7 +2596,12 @@ fn scan_site(
     let evidence = SiteEvidence::of(&entity_streams, &typed_streams);
     // A Deltas blend enters only when the current faces, edges, and carriers
     // reach it, directly or through reached Deltas carriers.
-    let mut seeds: Vec<u32> = evidence.typed.faces.iter().map(|face| face.refs[4]).collect();
+    let mut seeds: Vec<u32> = evidence
+        .typed
+        .faces
+        .iter()
+        .map(|face| face.refs[4])
+        .collect();
     let mut deltas_edges = HashMap::<u32, Vec<u32>>::new();
     let mut deltas_bridges = Vec::new();
     let mut partition_bridges = 0;
@@ -2637,14 +2642,16 @@ fn scan_site(
             carriers.blends = Some(blends.reached_from(&referenced));
         }
     }
-    for (stream_order, (((((payload, header), stream_typed_facts), node_tables), attributes), index)) in
-        ordered
-            .into_iter()
-            .zip(typed_streams)
-            .zip(node_tables)
-            .zip(node_attributes)
-            .zip(order)
-            .enumerate()
+    for (
+        stream_order,
+        (((((payload, header), stream_typed_facts), node_tables), attributes), index),
+    ) in ordered
+        .into_iter()
+        .zip(typed_streams)
+        .zip(node_tables)
+        .zip(node_attributes)
+        .zip(order)
+        .enumerate()
     {
         let body = header_body(payload, header)?;
         let is_deltas = is_deltas_stream(header);
@@ -2671,7 +2678,12 @@ fn scan_site(
             &tables,
             exclude,
         );
-        observe(StreamTopology { index, body, from_nodes, tables: &scanned_tables });
+        observe(StreamTopology {
+            index,
+            body,
+            from_nodes,
+            tables: &scanned_tables,
+        });
         let (attributes, entities) = attributes;
         let attributes = attributes.unwrap_or_else(|| attrib::Records::scan(body));
         let mut scanned_facts = entity::metadata(body, is_deltas, &attributes, entities);

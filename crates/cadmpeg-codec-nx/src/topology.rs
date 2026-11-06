@@ -1026,7 +1026,7 @@ impl Graph {
     ) -> FixedRecordSelection {
         let mut candidates = Vec::new();
         let mut ownership_candidates = Vec::new();
-        let mut admit = |pos: usize| {
+        let mut admit = |pos: usize, end: Option<usize>| {
             if stream.get(pos) != Some(&0) {
                 return;
             }
@@ -1040,7 +1040,9 @@ impl Graph {
                 .into_iter()
                 .flatten()
             {
-                if frames.is_some_and(|frames| frames.exclude(&candidate)) {
+                if end.is_some_and(|end| candidate.end() > end)
+                    || frames.is_some_and(|frames| frames.exclude(&candidate))
+                {
                     continue;
                 }
                 if matches!(kind, NodeKind::Body | NodeKind::Region) {
