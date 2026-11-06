@@ -834,8 +834,21 @@ fn unused_composite_is_written_as_its_segments() {
     use cadmpeg_ir::ids::CurveId;
 
     let mut ir = crate::test_support::ir::source_less_cube();
-    let first = ir.model.curves[0].clone();
-    let second = ir.model.curves[1].clone();
+    let mut first = ir.model.curves[0].clone();
+    let mut second = ir.model.curves[1].clone();
+    first.id = CurveId::mint("sldprt:brep:curve#free-first").unwrap();
+    second.id = CurveId::mint("sldprt:brep:curve#free-second").unwrap();
+    for (curve, offset) in [(&mut first, 100.0), (&mut second, 200.0)] {
+        let CurveGeometry::Solved(SolvedCurveGeometry::Line(line)) = &mut curve.geometry else {
+            panic!("cube fixture uses lines");
+        };
+        let mut origin = line.origin().get();
+        origin.x += offset;
+        *line = cadmpeg_ir::geometry::analytic::LineCurve::new(
+            cadmpeg_ir::features::FinitePoint3::new(origin).unwrap(),
+            line.direction(),
+        );
+    }
     let id = CurveId::mint("sldprt:brep:curve#composite-unused").unwrap();
     let mut composite = first.clone();
     composite.id = id.clone();
@@ -852,7 +865,10 @@ fn unused_composite_is_written_as_its_segments() {
             .unwrap(),
         self_intersect: Some(false),
     });
-    ir.model.curves.push(composite);
+    ir.model
+        .curves
+        .extend([first.clone(), second.clone(), composite]);
+    ir.model.finalize();
     let plan = SldprtCodec
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
         .unwrap();
@@ -863,6 +879,22 @@ fn unused_composite_is_written_as_its_segments() {
         .any(|loss| loss.message.contains(id.as_str())));
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).unwrap();
+    let scan = crate::test_support::container::scan(&bytes);
+    let partition = crate::container::select_active_parasolid_site(&scan)
+        .unwrap()
+        .section
+        .payload();
+    let native_curves = (0..partition.len())
+        .filter_map(
+            |offset| match crate::brep::parse_carrier(partition, offset) {
+                Some(crate::brep::Carrier::Curve(curve)) => Some(curve.geometry),
+                _ => None,
+            },
+        )
+        .collect::<Vec<_>>();
+    for segment in [&first, &second] {
+        assert!(native_curves.contains(&segment.geometry));
+    }
     let decoded = SldprtCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();

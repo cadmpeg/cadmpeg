@@ -2421,7 +2421,28 @@ pub(crate) fn decode_bodies(
             append_entity_facts(&mut facts, scanned_facts);
         }
     }
-    decode_graph(ctx, &mut carriers, &tables, facts, &typed_facts, stream)
+    let mut decoded = decode_graph(ctx, &mut carriers, &tables, facts, &typed_facts, stream)?;
+    if let (false, [(payload, header)]) = (decoded.bodies.is_empty(), bodies) {
+        if let Some(mut prefix) =
+            standalone::decode_prefix(ctx, header_body(payload, header)?, stream)?
+        {
+            let existing = decoded
+                .curves
+                .iter()
+                .map(|curve| curve.id.clone())
+                .collect::<HashSet<_>>();
+            prefix.curves.retain(|curve| !existing.contains(&curve.id));
+            let added = prefix
+                .curves
+                .iter()
+                .map(|curve| curve.id.as_str())
+                .collect::<HashSet<_>>();
+            prefix.annotations.retain_provenance(|id| added.contains(id));
+            decoded.annotations.append(prefix.annotations)?;
+            decoded.curves.append(&mut prefix.curves);
+        }
+    }
+    Ok(decoded)
 }
 
 fn decode_body(

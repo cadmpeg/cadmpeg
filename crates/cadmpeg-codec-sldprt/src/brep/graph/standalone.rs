@@ -87,6 +87,29 @@ fn has_top_level_spline(body: &[u8]) -> bool {
     false
 }
 
+pub(super) fn decode_prefix(
+    ctx: &DecodeContext<'_>,
+    body: &[u8],
+    stream: &cadmpeg_ir::StreamName,
+) -> Result<Option<Brep>, cadmpeg_core::CodecError> {
+    let arrays = if has_top_level_spline(body) {
+        spline::referenced_array_attrs(body)
+    } else {
+        HashSet::new()
+    };
+    let mut end = 0;
+    while let Some(carrier) = record(body, end, &arrays) {
+        end = carrier.end();
+        if end == body.len() {
+            break;
+        }
+    }
+    if end == 0 || end == body.len() {
+        return Ok(None);
+    }
+    decode(ctx, &body[..end], stream)
+}
+
 pub(super) fn decode(
     ctx: &DecodeContext<'_>,
     body: &[u8],
