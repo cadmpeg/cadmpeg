@@ -178,7 +178,8 @@ fn invalid_linetype_is_named_and_valid_sibling_remains_linked() {
         .and_then(|plan| plan.write_to(&mut bytes))
         .unwrap();
     assert!(report.losses.iter().any(|loss| loss.code
-        == crate::loss::RhinoLossCode::WriterLinetypeReduced.kind()
+        == crate::loss::RhinoLossCode::WriterLinetypeOmitted.kind()
+        && loss.severity == cadmpeg_ir::report::Severity::Error
         && loss.message.contains("rhino:presentation:linetype#invalid")));
     assert_eq!(
         report.native_dispositions.record_disposition(
