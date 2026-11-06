@@ -30,6 +30,21 @@ fn authored_core_operations_keep_feature_operands_and_parameters() {
             feature(name).evaluation.definition();
         serde_json::to_value(op).unwrap()
     };
+    let native_properties = decoded
+        .ir()
+        .native
+        .namespace("fcstd")
+        .unwrap()
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .unwrap();
+    let native_property = |owner: &str, name: &str| {
+        native_properties
+            .iter()
+            .find(|property| {
+                property.owner == crate::native::native_id("object", owner) && property.name == name
+            })
+            .unwrap_or_else(|| panic!("{owner}.{name}: native property"))
+    };
     for (name, kind, owners) in [
         ("Revolution", "revolve", &["RevolutionProfile"][..]),
         ("SymmetricExtrusion", "extrude", &["ExtrusionProfile"][..]),
@@ -63,6 +78,88 @@ fn authored_core_operations_keep_feature_operands_and_parameters() {
             );
         }
     }
+    let extrusion_base = native_property("SymmetricExtrusion", "Base");
+    let extrusion_base_id = extrusion_base.id.as_str();
+    assert_eq!(
+        operation("SymmetricExtrusion")["profile"]["value"].as_str(),
+        Some(extrusion_base_id),
+        "extrusion profile uses the authored Base property"
+    );
+    let [Some(extrusion_profile)] = extrusion_base.links() else {
+        panic!("SymmetricExtrusion.Base link")
+    };
+    let extrusion_profile_id = crate::native::native_id("object", "ExtrusionProfile");
+    assert_eq!(
+        extrusion_profile.object(),
+        Some(extrusion_profile_id.as_str()),
+        "extrusion Base points to its authored profile"
+    );
+
+    let loft_sections = native_property("Loft", "Sections");
+    let loft_section_links = loft_sections.links();
+    assert_eq!(loft_section_links.len(), 2, "Loft.Sections count");
+    let expected_loft_sections = ["LoftSectionA", "LoftSectionB"];
+    let loft_operation = operation("Loft");
+    let actual_loft_sections = loft_operation["sections"].as_array().unwrap();
+    assert_eq!(actual_loft_sections.len(), expected_loft_sections.len());
+    for ((section, link), expected) in actual_loft_sections
+        .iter()
+        .zip(loft_section_links)
+        .zip(expected_loft_sections)
+    {
+        assert_eq!(section["kind"].as_str(), Some("native"));
+        assert_eq!(
+            section["value"].as_str(),
+            link.as_ref().and_then(|link| link.object()),
+            "Loft section native reference"
+        );
+        let expected_section_id = crate::native::native_id("object", expected);
+        assert_eq!(
+            link.as_ref().and_then(|link| link.object()),
+            Some(expected_section_id.as_str()),
+            "Loft section order"
+        );
+    }
+
+    let sweep = operation("Sweep");
+    let sweep_section_id = crate::native::native_id("object", "SweepSection");
+    assert_eq!(
+        sweep["shape"]["section"]["value"]["value"].as_str(),
+        Some(sweep_section_id.as_str()),
+        "Sweep profile"
+    );
+    let sweep_spine = native_property("Sweep", "Spine");
+    assert_eq!(
+        sweep["path"]["value"].as_str(),
+        Some(sweep_spine.id.as_str()),
+        "Sweep path property"
+    );
+    let [Some(sweep_path)] = sweep_spine.links() else {
+        panic!("Sweep.Spine link")
+    };
+    let sweep_spine_id = crate::native::native_id("object", "SweepSpine");
+    assert_eq!(
+        sweep_path.object(),
+        Some(sweep_spine_id.as_str()),
+        "Sweep spine carrier"
+    );
+    assert_eq!(sweep_path.subelements(), ["Edge1", "Edge2"]);
+
+    let mirror_source = native_property("Mirror", "Source");
+    assert_eq!(
+        operation("Mirror")["source"]["value"].as_str(),
+        Some(mirror_source.id.as_str()),
+        "Mirror source property"
+    );
+    let [Some(mirror_source_link)] = mirror_source.links() else {
+        panic!("Mirror.Source link")
+    };
+    let mirror_base_id = crate::native::native_id("object", "MirrorBase");
+    assert_eq!(
+        mirror_source_link.object(),
+        Some(mirror_base_id.as_str()),
+        "Mirror source carrier"
+    );
     for (name, pointer, expected, tolerance) in [
         (
             "Revolution",
