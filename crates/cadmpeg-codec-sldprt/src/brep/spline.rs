@@ -1001,6 +1001,14 @@ pub(crate) fn scan_curve_carriers(
     bytes: &[u8],
     refusals: &mut Vec<LossNote>,
 ) -> HashMap<u32, CurveCarrier> {
+    scan_curve_carriers_at(bytes, refusals, |_| true)
+}
+
+pub(super) fn scan_curve_carriers_at(
+    bytes: &[u8],
+    refusals: &mut Vec<LossNote>,
+    admitted: impl Fn(usize) -> bool,
+) -> HashMap<u32, CurveCarrier> {
     let descriptors = scan_curve_descriptors(bytes, CurveDescriptor::spatial);
     let referenced_attrs = descriptors
         .values()
@@ -1015,7 +1023,7 @@ pub(crate) fn scan_curve_carriers(
     let arrays = scan_arrays(bytes, Some(&referenced_attrs), None);
     let mut out = HashMap::new();
     for off in 0..bytes.len().checked_sub(6).map_or(0, |end| end) {
-        if bytes.get(off..off + 2) != Some(&[0x00, 0x86]) {
+        if bytes.get(off..off + 2) != Some(&[0x00, 0x86]) || !admitted(off) {
             continue;
         }
         let Some(p) = wrapper_start(bytes, off, 134, &descriptors) else {
