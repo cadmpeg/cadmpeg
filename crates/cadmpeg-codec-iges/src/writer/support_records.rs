@@ -202,59 +202,7 @@ fn retain_surface_numbers(entity: &mut Entity, surface: &Surface, parameters: &[
     entity.parameter_body = format!("{};", output.join(",")).into_bytes();
 }
 
-fn matching_direction<'a>(
-    ir: &CadIr,
-    entity: &Entity,
-    records: &'a [NativeRecord],
-) -> Option<&'a NativeRecord> {
-    if ir.model.surfaces.len() != 1 || entity.type_code != 123 {
-        return None;
-    }
-    let text = std::str::from_utf8(&entity.parameter_body)
-        .ok()?
-        .strip_suffix(';')?;
-    let values = text
-        .split(',')
-        .map(|value| value.replace(['D', 'd'], "E").parse::<f64>())
-        .collect::<Result<Vec<_>, _>>()
-        .ok()?;
-    if values.len() != 3 {
-        return None;
-    }
-    let mut candidates = records.iter().filter(|record| {
-        if record.field("entity_type").and_then(|value| value.as_i64()) != Some(123)
-            || record.field("form").and_then(|value| value.as_i64()) != Some(0)
-            || record.field("transform").and_then(|value| value.as_i64()) != Some(0)
-            || record
-                .field("subordinate_status")
-                .and_then(|value| value.as_i64())
-                != Some(1)
-            || record.field("use_flag").and_then(|value| value.as_i64()) != Some(0)
-        {
-            return false;
-        }
-        let Some(parameters) = record.field("parameters") else {
-            return false;
-        };
-        let Some(parameters) = parameters.as_array() else {
-            return false;
-        };
-        parameters.len() == 4
-            && values
-                .iter()
-                .enumerate()
-                .all(|(index, value)| number_at(parameters, index + 1) == Some(*value))
-    });
-    let candidate = candidates.next()?;
-    candidates.next().is_none().then_some(candidate)
-}
-
-pub(super) fn retain(
-    ir: &CadIr,
-    surface: &Surface,
-    entities: &mut [Entity],
-    version: crate::IgesVersion,
-) {
+pub(super) fn retain(ir: &CadIr, surface: &Surface, entities: &mut [Entity]) {
     if entities.len() != 4 {
         return;
     }
@@ -304,33 +252,11 @@ pub(super) fn retain(
     let Some(parameters) = parameters.as_array() else {
         return;
     };
-    if kind == 192
-        && parent.field("form").and_then(|value| value.as_i64()) == Some(0)
-        && matches!(
-            version,
-            crate::IgesVersion::V5_1 | crate::IgesVersion::V5_2 | crate::IgesVersion::V5_3
-        )
-        && matches!(surface.geometry.solved(), Some(cadmpeg_ir::geometry::SolvedSurfaceGeometry::Cylinder(cylinder)) if cylinder.frame().axis().derived_reference() == *cylinder.frame().reference())
-        && matching_direction(ir, &entities[2], records).is_some()
-    {
-        if let Ok(text) = std::str::from_utf8(&entities[3].parameter_body) {
-            if let Some((body, _)) = text
-                .strip_suffix(';')
-                .and_then(|body| body.rsplit_once(','))
-            {
-                entities[3].parameter_body = format!("{body};").into_bytes();
-                entities[3].form = 0;
-            }
-        }
-    }
     retain_surface_numbers(&mut entities[3], surface, parameters);
     for (entity, index) in entities.iter_mut().take(3).zip([1, 2, last]) {
-        let record = sequence_at(parameters, index).and_then(find).or_else(|| {
-            (index == last && parent.field("form").and_then(|value| value.as_i64()) == Some(0))
-                .then(|| matching_direction(ir, entity, records))
-                .flatten()
-        });
-        let Some(record) = record else { continue };
+        let Some(record) = sequence_at(parameters, index).and_then(find) else {
+            continue;
+        };
         if record.field("entity_type").and_then(|v| v.as_u64()) != Some(u64::from(entity.type_code))
         {
             continue;
