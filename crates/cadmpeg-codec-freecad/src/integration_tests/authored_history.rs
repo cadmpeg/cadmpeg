@@ -136,13 +136,26 @@ fn authored_design_history_keeps_sketches_constraints_and_operations() {
     let measures =
         cadmpeg_measure::test_support::round_trip::measured("design_history", decoded.ir())
             .unwrap();
-    for (name, expected) in [
-        ("Pad", 24.0 * 16.0 * 10.0),
+    for (name, expected_volume, expected_area, bounds) in [
+        (
+            "Pad",
+            24.0 * 16.0 * 10.0,
+            2.0 * (24.0 * 16.0 + 24.0 * 10.0 + 16.0 * 10.0),
+            [0.0, 0.0, 0.0, 24.0, 16.0, 10.0],
+        ),
         (
             "Pocket",
             24.0 * 16.0 * 10.0 - std::f64::consts::PI * 3.0 * 3.0 * 6.0,
+            2.0 * (24.0 * 16.0 + 24.0 * 10.0 + 16.0 * 10.0)
+                + 2.0 * std::f64::consts::PI * 3.0 * 6.0,
+            [0.0, 0.0, 0.0, 24.0, 16.0, 10.0],
         ),
-        ("Fillet", 3830.0 - 103.0 * std::f64::consts::PI / 2.0),
+        (
+            "Fillet",
+            3830.0 - 103.0 * std::f64::consts::PI / 2.0,
+            1546.0 + 83.0 * std::f64::consts::PI / 2.0,
+            [0.0, 0.0, 0.0, 24.0, 16.0, 10.0],
+        ),
     ] {
         let feature = model
             .features
@@ -170,9 +183,35 @@ fn authored_design_history_keeps_sketches_constraints_and_operations() {
             .value
             .get();
         assert!(
-            (volume - expected).abs() < VOLUME_TOLERANCE,
+            (volume - expected_volume).abs() < VOLUME_TOLERANCE,
             "{name}: volume {volume}"
         );
+        let area = body
+            .area()
+            .as_ref()
+            .unwrap()
+            .measured()
+            .unwrap()
+            .value()
+            .value
+            .get();
+        assert!(
+            (area - expected_area).abs() < AREA_TOLERANCE,
+            "{name}: area {area}"
+        );
+        let bbox = body.bbox().measured().unwrap().value();
+        for (actual, expected) in bbox
+            .min
+            .coordinates()
+            .into_iter()
+            .chain(bbox.max.coordinates())
+            .zip(bounds)
+        {
+            assert!(
+                (actual.get() - expected).abs() < BOUNDS_TOLERANCE,
+                "{name}: bounding box"
+            );
+        }
     }
     assert!(
         matches!(operation("Fillet"), FeatureOperation::Fillet { groups } if matches!(groups.as_slice(), [group] if matches!(group.radius, RadiusSpec::Constant { radius } if (radius.get() - 1.0).abs() < LENGTH_TOLERANCE)))
