@@ -2483,7 +2483,7 @@ fn native_law_formula(
     // variant is a compile error here, not a silently written token.
     let (name, variables) = match formula {
         cadmpeg_ir::geometry::LawFormula::Null {} => {
-            native_length_prefixed_string(bytes, NULL_LAW_TOKEN)?;
+            native_length_prefixed_string(bytes, NULL_LAW_TOKEN);
             return Ok(());
         }
         cadmpeg_ir::geometry::LawFormula::Named { name, variables } => (name, variables),
@@ -2494,7 +2494,7 @@ fn native_law_formula(
              the null law is stated by the variant, not by a name"
         )));
     }
-    native_length_prefixed_string(bytes, name.as_str())?;
+    native_length_prefixed_string(bytes, name.as_str());
     native_i64(
         bytes,
         i64::try_from(variables.len())
