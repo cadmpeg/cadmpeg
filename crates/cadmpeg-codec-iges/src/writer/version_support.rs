@@ -130,7 +130,8 @@ impl crate::IgesVersion {
                     100 | 102 | 108 | 110 | 116 | 120 | 122 | 123 | 124 | 126 | 128 | 141 | 142
                     | 143 | 144 | 186 | 314 => entity.form == 0,
                     104 => matches!(entity.form, 0 | 2 | 3),
-                    190 | 192 | 194 | 196 | 198 => entity.form == 1,
+                    190 => matches!(entity.form, 0 | 1),
+                    192 | 194 | 196 | 198 => entity.form == 1,
                     502 | 504 | 508 | 510 => entity.form == 1,
                     406 => entity.form == 15,
                     134 | 136 | 138 | 418 => entity.form == 0,

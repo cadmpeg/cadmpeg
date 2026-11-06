@@ -198,7 +198,7 @@ fn validate_native(ctx: &DecodeContext<'_>, ir: &CadIr) -> Result<Vec<Finding>, 
     let derived_census = ir
         .scope
         .design
-        .then(|| design::census(&objects, &ir.model.features));
+        .then(|| design::census(&objects, &ir.model, &product_nodes, &joints));
     match derived_census {
         None => {}
         Some(Ok(expected)) if design_census == expected => {}
@@ -1154,6 +1154,8 @@ impl CodecBackend for FcstdCodec {
                     design::DesignObjects {
                         objects: &graph.objects,
                         extensions: &graph.extensions,
+                        products: &product_nodes,
+                        joints: &joint_records,
                     },
                     &graph.properties,
                     &shape_payloads,
@@ -1238,7 +1240,8 @@ impl CodecBackend for FcstdCodec {
                 "admit FCStd entities",
             )?;
             if ctx.depth() == DecodeDepth::Full {
-                let design_census = design::census(&graph.objects, &ir.model.features)?;
+                let design_census =
+                    design::census(&graph.objects, &ir.model, &product_nodes, &joint_records)?;
                 ir.native
                     .namespace_mut("fcstd")
                     .set_arena(ctx, "design_census", &design_census)?;

@@ -19,13 +19,26 @@ pub(crate) mod target;
 pub(crate) const CAPACITY_FIELDS: &[cadmpeg_ir::codec::write::CapacityField] = &[];
 
 /// Target-imposed changes to written CADIR fields (#232 §5.2).
-pub(crate) const REDUCED_FIELDS: &[cadmpeg_ir::codec::write::ReducedField] =
-    &[cadmpeg_ir::codec::write::ReducedField {
+pub(crate) const REDUCED_FIELDS: &[cadmpeg_ir::codec::write::ReducedField] = &[
+    cadmpeg_ir::codec::write::ReducedField {
         path: "model.surfaces[].geometry",
         storage: cadmpeg_ir::codec::write::ReducedStorage::Normalized {
             loss: "step/geometry.analytic-surface-normalized",
         },
-    }];
+    },
+    cadmpeg_ir::codec::write::ReducedField {
+        path: "model.attributes[]",
+        storage: cadmpeg_ir::codec::write::ReducedStorage::Normalized {
+            loss: "step/attribute.timestamp-normalized",
+        },
+    },
+    cadmpeg_ir::codec::write::ReducedField {
+        path: "model.procedural_curves[].definition",
+        storage: cadmpeg_ir::codec::write::ReducedStorage::Normalized {
+            loss: "step/geometry.procedural-curve-cache-tolerance-omitted",
+        },
+    },
+];
 
 /// A STEP instance name such as `#42`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

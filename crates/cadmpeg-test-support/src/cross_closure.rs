@@ -927,7 +927,7 @@ mod tests {
             storage: ReducedStorage::Normalized {
                 loss: "step/geometry.analytic-surface-normalized",
             },
-            normalize: Some(crate::reduced::step_cone_chart),
+            normalize: Some(crate::reduced::step_surface_chart),
         }];
         let source = json!({"model":{"surfaces":[{"geometry":{
             "kind":"cone", "half_angle":-0.5, "axis":{"x":0.0,"y":0.0,"z":-1.0}, "radius":2.0
@@ -949,6 +949,78 @@ mod tests {
             apply_reduced(&source, &rows, false),
             apply_reduced(&target, &rows, false)
         );
+    }
+
+    #[test]
+    fn subset_cache_normalization_preserves_the_construction() {
+        let rows = [ReducedProbe {
+            path: "model.procedural_curves[].definition",
+            storage: ReducedStorage::Normalized {
+                loss: "step/geometry.procedural-curve-cache-tolerance-omitted",
+            },
+            normalize: Some(crate::reduced::step_trimmed_curve_cache),
+        }];
+        let source = json!({"model":{"procedural_curves":[{"id":"curve#1", "definition":{
+            "kind":"subset", "source":"curve#base", "parameter_range":[2.0,3.0],
+            "sense":true, "cache":{"fit_tolerance":0.01}
+        }}]}});
+        let mut target = source.clone();
+        target["model"]["procedural_curves"][0]["definition"]["cache"]["fit_tolerance"] =
+            json!(0.0);
+        let mut wrong = target.clone();
+        wrong["model"]["procedural_curves"][0]["definition"]["parameter_range"][0] = json!(1.0);
+        assert_eq!(
+            apply_reduced(&source, &rows, true),
+            apply_reduced(&target, &rows, false)
+        );
+        assert_ne!(
+            apply_reduced(&source, &rows, true),
+            apply_reduced(&wrong, &rows, false)
+        );
+        assert_ne!(
+            apply_reduced(&source, &rows, false),
+            apply_reduced(&target, &rows, false)
+        );
+    }
+
+    #[test]
+    fn step_radius_normalization_keeps_other_surface_fields() {
+        let normalize = crate::reduced::step_surface_chart;
+        for (source, expected) in [
+            (
+                json!({"kind":"sphere", "radius":-4.0, "center":{"x":1.0,"y":2.0,"z":3.0}}),
+                json!({"kind":"sphere", "radius":4.0, "center":{"x":1.0,"y":2.0,"z":3.0}}),
+            ),
+            (
+                json!({"kind":"torus", "minor_radius":-2.0, "major_radius":5.0}),
+                json!({"kind":"torus", "minor_radius":2.0, "major_radius":5.0}),
+            ),
+        ] {
+            assert_eq!(normalize(&source), expected);
+            assert_eq!(normalize(&expected), expected);
+        }
+        let unrelated = json!({"kind":"cylinder", "radius":-4.0});
+        assert_eq!(normalize(&unrelated), unrelated);
+    }
+
+    #[test]
+    fn step_timestamp_normalization_keeps_the_attribute_owner_and_name() {
+        let normalize = crate::reduced::step_timestamp_attribute;
+        let source = json!({"id":"a", "target":{"kind":"document"}, "name":"generation_date",
+            "values":[{"kind":"string", "value":"20260714.000000"}]});
+        let expected = json!({"id":"a", "target":{"kind":"document"}, "name":"generation_date",
+            "values":[{"kind":"string", "value":"2026-07-14T00:00:00"}]});
+        assert_eq!(normalize(&source), expected);
+        assert_eq!(normalize(&expected), expected);
+        let mut invalid = source.clone();
+        invalid["values"][0]["value"] = json!("20260230.000000");
+        assert_eq!(normalize(&invalid), invalid);
+        let mut other_owner = source.clone();
+        other_owner["target"]["kind"] = json!("body");
+        assert_eq!(normalize(&other_owner), other_owner);
+        let mut other_name = source;
+        other_name["name"] = json!("Comment");
+        assert_eq!(normalize(&other_name), other_name);
     }
 
     #[test]
