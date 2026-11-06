@@ -515,6 +515,73 @@ fn subset_curve_reports_its_unwritten_cache_fit_tolerance() {
 }
 
 #[test]
+fn subset_surface_reports_its_unwritten_cache_fit_tolerance() {
+    use cadmpeg_ir::geometry::{
+        surface_payloads::SubsetSurfaceConstruction, LegacyCache, ProceduralSurface,
+        ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+    };
+    let mut ir = CadIr::empty();
+    let support = edgeless_doc().model.surfaces.remove(0);
+    let solved = support.geometry.solved().unwrap().clone();
+    let construction = ProceduralSurface::new(
+        "test:model:procedural_surface#subset".try_into().unwrap(),
+        ProceduralSurfaceDefinition::Subset(
+            SubsetSurfaceConstruction::try_new(
+                support.id.clone(),
+                [[0.0, 1.0], [0.0, 1.0]],
+                Some(true),
+                Some(true),
+                Some(LegacyCache::try_new(0.01).unwrap()),
+            )
+            .unwrap(),
+        ),
+        None,
+    );
+    ir.model.surfaces.push(support);
+    ir.model.surfaces.push(Surface {
+        native_ref: None,
+        id: "test:model:surface#subset".try_into().unwrap(),
+        geometry: SurfaceGeometry::Procedural {
+            construction: construction.id.clone(),
+            cache: Some(solved),
+        },
+        source_object: Some(cadmpeg_ir::SourceObjectAssociation {
+            format: cadmpeg_ir::CodecFormat::Step,
+            geometry_role: Some(cadmpeg_ir::SourceGeometryRole::Independent),
+            object_id: cadmpeg_core::nonblank_literal!("authored-surface"),
+            instance_path: Vec::new(),
+        }),
+    });
+    ir.model.procedural_surfaces.push(construction);
+    let validation = cadmpeg_ir::validate_neutral(&ir, Vec::new()).unwrap();
+    assert!(validation.is_ok(), "{:?}", validation.findings);
+    let mut bytes = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut bytes,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .unwrap();
+    assert_eq!(
+        report
+            .losses
+            .iter()
+            .filter(|loss| {
+                loss.code == StepLossCode::ProceduralCacheToleranceOmitted.kind()
+                    && loss
+                        .message
+                        .contains("test:model:procedural_surface#subset")
+            })
+            .count(),
+        1
+    );
+    assert!(std::str::from_utf8(&bytes)
+        .unwrap()
+        .contains("RECTANGULAR_TRIMMED_SURFACE("));
+}
+
+#[test]
 fn failed_composite_curve_does_not_export_its_children_as_roots() {
     use cadmpeg_ir::geometry::{
         CompositeCurveSegment, CompositeCurveSegments, CompositeCurveTransition,
