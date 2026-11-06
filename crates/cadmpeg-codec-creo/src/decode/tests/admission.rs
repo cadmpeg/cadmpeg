@@ -755,11 +755,17 @@ fn full_decode_projects_thumbnail_as_asset_with_native_ref() {
     assert_eq!(result.ir().model.assets.len(), 1);
     let asset = &result.ir().model.assets[0];
     assert_eq!(
-        asset.name.as_ref().map(|name| name.as_str()),
+        asset
+            .name
+            .as_ref()
+            .map(cadmpeg_core::text::NonBlankString::as_str),
         Some("THMB_IMG_MAIN")
     );
     assert_eq!(
-        asset.media_type.as_ref().map(|media| media.as_str()),
+        asset
+            .media_type
+            .as_ref()
+            .map(cadmpeg_core::text::NonBlankString::as_str),
         Some("image/jpeg")
     );
     let cadmpeg_ir::assets::AssetContent::Embedded { data } = &asset.content else {
