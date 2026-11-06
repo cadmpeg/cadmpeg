@@ -1367,6 +1367,31 @@ suffix of each missing successor target in its owning namespace. Join those
 rows by their stored identities and prove complete same-face cycles before
 admitting the face.
 
+### TP-22. Lifecycle of explicitly unowned feature faces
+
+**Question.** Which feature and loop-history records distinguish an auxiliary
+face from a historical result when its surface row names no body or quilt?
+
+**Known.** Four 25 mm hole features have a 50 mm blind extent. Each feature
+references a disk at its entry plane. Each disk's surface row has a null body
+and quilt owner. Body-owned cylinder walls join circular loops on both plate
+faces, 50 mm apart. Each disk uses a separate edge pair. The opposite-side
+successor references resolve to non-visible rows with null successors. The
+hole features' local loop rosters have no established join to the current
+face-side loops. The closed body-owned shell and the four detached disks form
+separate shells in the decoded model.
+
+**Need.** Resolve feature-local loop identities and history states to their
+current model-boundary uses. Determine whether the unowned disks belong to the
+final material boundary. Preserve their source topology until that join
+identifies their lifecycle.
+
+**Conflict.** A bottom-at-entry interpretation places the flat bottom at
+`z=0`, while the directed blind extent ends at `z=-50`. Treating the disk rim
+as the body rim competes with the existing closed body rim. A null surface
+owner identifies no material body; the feature reference alone does not
+establish whether the disk is historical or auxiliary.
+
 ## 5. Packed persistence data
 
 ### PP-01. Hybrid visibility geometry and scalar values
