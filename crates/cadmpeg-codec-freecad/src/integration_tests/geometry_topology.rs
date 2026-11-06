@@ -26,18 +26,18 @@ fn authored_geometry_topology_keeps_source_objects_body_topology_and_curves() {
     let mut features = model.features.iter().collect::<Vec<_>>();
     features.sort_by_key(|feature| feature.ordinal);
     let source_shapes = [
-        ("Solid", BodyKind::Solid, 1),
-        ("Void", BodyKind::Solid, 1),
-        ("Seam", BodyKind::Solid, 1),
-        ("Degenerate", BodyKind::Solid, 1),
-        ("Sheet", BodyKind::Sheet, 1),
-        ("Wire", BodyKind::Wire, 1),
-        ("Compound", BodyKind::Solid, 2),
-        ("MultiShell", BodyKind::Sheet, 2),
-        ("CurveCarriers", BodyKind::Wire, 5),
-        ("FreeformSurface", BodyKind::Sheet, 1),
-        ("Revolved", BodyKind::Solid, 1),
-        ("Swept", BodyKind::Solid, 1),
+        ("Solid", BodyKind::Solid, 1, 1, 6, 12, 8),
+        ("Void", BodyKind::Solid, 1, 2, 12, 24, 16),
+        ("Seam", BodyKind::Solid, 1, 1, 3, 3, 2),
+        ("Degenerate", BodyKind::Solid, 1, 1, 2, 3, 2),
+        ("Sheet", BodyKind::Sheet, 1, 1, 1, 4, 4),
+        ("Wire", BodyKind::Wire, 1, 1, 0, 2, 3),
+        ("Compound", BodyKind::Solid, 2, 2, 2, 5, 3),
+        ("MultiShell", BodyKind::Sheet, 2, 2, 12, 24, 16),
+        ("CurveCarriers", BodyKind::Wire, 5, 5, 0, 5, 8),
+        ("FreeformSurface", BodyKind::Sheet, 1, 1, 1, 4, 4),
+        ("Revolved", BodyKind::Solid, 1, 1, 6, 12, 8),
+        ("Swept", BodyKind::Solid, 1, 1, 3, 3, 2),
     ];
     assert_eq!(features.len(), source_shapes.len());
     assert_eq!(model.bodies.len(), source_shapes.len());
@@ -49,8 +49,21 @@ fn authored_geometry_topology_keeps_source_objects_body_topology_and_curves() {
         .arena_as::<crate::native::ObjectRecord>("objects")
         .unwrap();
     let mut output_ids = BTreeSet::new();
-    for (ordinal, (feature, (name, expected_kind, expected_regions))) in
-        features.iter().zip(source_shapes).enumerate()
+    for (
+        ordinal,
+        (
+            feature,
+            (
+                name,
+                expected_kind,
+                expected_regions,
+                expected_shells,
+                expected_faces,
+                expected_edges,
+                expected_vertices,
+            ),
+        ),
+    ) in features.iter().zip(source_shapes).enumerate()
     {
         assert_eq!(
             feature.ordinal,
@@ -89,6 +102,15 @@ fn authored_geometry_topology_keeps_source_objects_body_topology_and_curves() {
             .unwrap_or_else(|| panic!("{name}: output body resolves"));
         assert_eq!(body.kind, expected_kind, "{name}: body kind");
         assert_eq!(body.regions.len(), expected_regions, "{name}: regions");
+        assert_body_topology(
+            model,
+            body,
+            expected_shells,
+            expected_faces,
+            expected_edges,
+            expected_vertices,
+            name,
+        );
 
         for region_id in &body.regions {
             let region = model
@@ -451,6 +473,101 @@ fn body_for_feature<'a>(model: &'a Model, name: &str) -> &'a Body {
         .iter()
         .find(|body| &body.id == body_id)
         .unwrap_or_else(|| panic!("{name}: output body resolves"))
+}
+
+fn assert_body_topology(
+    model: &Model,
+    body: &Body,
+    expected_shells: usize,
+    expected_faces: usize,
+    expected_edges: usize,
+    expected_vertices: usize,
+    name: &str,
+) {
+    let regions = body
+        .regions
+        .iter()
+        .map(|region_id| {
+            model
+                .regions
+                .iter()
+                .find(|region| &region.id == region_id)
+                .unwrap_or_else(|| panic!("{name}: region resolves"))
+        })
+        .collect::<Vec<_>>();
+    let shells = regions
+        .iter()
+        .flat_map(|region| region.shells.iter())
+        .map(|shell_id| shell_for_id(model, shell_id.as_str()))
+        .collect::<Vec<_>>();
+    let faces = shells
+        .iter()
+        .flat_map(|shell| shell.faces())
+        .map(|face_id| {
+            model
+                .faces
+                .iter()
+                .find(|face| &face.id == face_id)
+                .unwrap_or_else(|| panic!("{name}: face resolves"))
+        })
+        .collect::<Vec<_>>();
+    let mut edge_ids = shells
+        .iter()
+        .flat_map(|shell| {
+            shell
+                .wire_edges()
+                .iter()
+                .map(cadmpeg_ir::ids::EdgeId::as_str)
+        })
+        .collect::<BTreeSet<_>>();
+    let mut vertex_ids = shells
+        .iter()
+        .flat_map(|shell| {
+            shell
+                .free_vertices()
+                .iter()
+                .map(cadmpeg_ir::ids::VertexId::as_str)
+        })
+        .collect::<BTreeSet<_>>();
+
+    for face in &faces {
+        for loop_id in &face.loops {
+            let loop_ = model
+                .loops
+                .iter()
+                .find(|loop_| &loop_.id == loop_id)
+                .unwrap_or_else(|| panic!("{name}: loop resolves"));
+            let LoopBoundary::Ring(ring) = &loop_.boundary else {
+                panic!("{name}: authored shape loops are coedge rings")
+            };
+            for coedge_id in ring.coedges() {
+                let coedge = model
+                    .coedges
+                    .iter()
+                    .find(|coedge| &coedge.id == coedge_id)
+                    .unwrap_or_else(|| panic!("{name}: coedge resolves"));
+                edge_ids.insert(coedge.edge.as_str());
+            }
+        }
+    }
+    for edge_id in &edge_ids {
+        let edge = model
+            .edges
+            .iter()
+            .find(|edge| edge.id.as_str() == *edge_id)
+            .unwrap_or_else(|| panic!("{name}: edge resolves"));
+        vertex_ids.insert(edge.start.as_str());
+        vertex_ids.insert(edge.end.as_str());
+    }
+
+    assert_eq!(shells.len(), expected_shells, "{name}: source shells");
+    assert_eq!(faces.len(), expected_faces, "{name}: source faces");
+    assert_eq!(edge_ids.len(), expected_edges, "{name}: source edges");
+    assert_eq!(
+        vertex_ids.len(),
+        expected_vertices,
+        "{name}: source vertices"
+    );
 }
 
 fn shell_for_id<'a>(model: &'a Model, shell_id: &str) -> &'a Shell {
