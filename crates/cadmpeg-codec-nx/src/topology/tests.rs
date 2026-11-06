@@ -369,7 +369,7 @@ fn topology_rejects_nonreciprocal_fin_ring() {
         .expect("fin record");
     put_ref(&mut stream, fin + 8, 99);
     let graph = crate::topology::Graph::parse(&stream);
-    assert!(graph.face_loop_rings(4).is_err());
+    assert!(graph.face_loops(4).is_err());
 
     let mut input = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec
@@ -386,7 +386,7 @@ fn topology_rejects_nonreciprocal_fin_ring() {
         .expect("fin record");
     put_ref(&mut broken_partner, fin + 14, 99);
     let graph = Graph::parse(&broken_partner);
-    assert!(graph.face_loop_rings(4).is_err());
+    assert!(graph.face_loops(4).is_err());
 }
 
 #[test]
@@ -399,7 +399,7 @@ fn unresolved_fin_edge_records_face_boundary_loss() {
     put_ref(&mut stream, fin + 16, 99);
     let graph = Graph::parse(&stream);
     assert!(matches!(
-        graph.face_loop_rings(4),
+        graph.face_loops(4),
         Err(FaceLoopFailure::UnresolvedFinEdge {
             loop_xmt: 5,
             fin_xmt: 7,
@@ -427,7 +427,7 @@ fn admitted_loop_records_loss_when_its_edge_cannot_emit() {
     let vertex = graph.get(NodeKind::Vertex, 10).expect("vertex");
     put_ref(&mut stream, vertex.pos() + 16, 99);
     let graph = Graph::parse(&stream);
-    assert!(graph.face_loop_rings(4).is_ok());
+    assert!(graph.face_loops(4).is_ok());
 
     let mut input = Cursor::new(prt_with_partition(&stream));
     let result = NxCodec
@@ -464,8 +464,8 @@ fn linked_fin_ring_order_is_emitted() {
     stream.extend(third_fin);
     let graph = Graph::parse(&stream);
     assert_eq!(
-        graph.face_loop_rings(4).expect("source ring")[0].1,
-        vec![13, 7, 6]
+        graph.face_loops(4).expect("source ring")[0].1,
+        crate::topology::FaceLoop::Ring(vec![13, 7, 6])
     );
 
     let mut input = Cursor::new(prt_with_partition(&stream));
@@ -495,7 +495,7 @@ fn face_loop_chain_order_is_emitted() {
     put_ref(&mut stream, second_loop.pos + 14, 5);
     put_ref(&mut stream, first_loop.pos + 14, 1);
     let graph = Graph::parse(&stream);
-    let source = graph.face_loop_rings(4).expect("linked loop chain");
+    let source = graph.face_loops(4).expect("linked loop chain");
     assert_eq!(
         source.iter().map(|(xmt, _)| *xmt).collect::<Vec<_>>(),
         vec![21, 5]
@@ -536,7 +536,7 @@ fn topology_accepts_fixed_record_envelope_escape() {
             .attribute_field_offset(),
         Some(fin + 5)
     );
-    assert_eq!(graph.face_loop_rings(4).unwrap().len(), 1);
+    assert_eq!(graph.face_loops(4).unwrap().len(), 1);
 }
 
 #[test]
@@ -1242,4 +1242,138 @@ fn edge_endpoint_witness_uses_partner_and_only_null_falls_back() {
             }
         });
     }
+}
+
+/// Append LOOP `loop_xmt` of FACE `face`, whose single FIN `fin_xmt` is a
+/// vertex-loop FIN at VERTEX `vertex`.
+fn push_vertex_loop(stream: &mut Vec<u8>, loop_xmt: u16, fin_xmt: u16, face: u16, vertex: u16) {
+    let mut loop_ = record(15, 16);
+    put_ref(&mut loop_, 2, loop_xmt);
+    put_ref(&mut loop_, 8, 1);
+    put_ref(&mut loop_, 10, fin_xmt);
+    put_ref(&mut loop_, 12, face);
+    put_ref(&mut loop_, 14, 1);
+    stream.extend(loop_);
+    let mut fin = record(17, 23);
+    put_ref(&mut fin, 2, fin_xmt);
+    put_ref(&mut fin, 4, 1);
+    put_ref(&mut fin, 6, loop_xmt);
+    put_ref(&mut fin, 8, fin_xmt);
+    put_ref(&mut fin, 10, fin_xmt);
+    put_ref(&mut fin, 12, vertex);
+    put_ref(&mut fin, 14, 1);
+    put_ref(&mut fin, 16, 1);
+    put_ref(&mut fin, 18, 1);
+    put_ref(&mut fin, 20, 1);
+    fin[22] = b'?';
+    stream.extend(fin);
+}
+
+#[test]
+fn vertex_loop_fin_emits_a_vertex_boundary_beside_the_ring_loop() {
+    let mut stream = topology_partition_stream();
+    let graph = Graph::parse(&stream);
+    let ring_loop = graph.get(NodeKind::Loop, 5).expect("ring loop");
+    put_ref(&mut stream, ring_loop.pos() + 14, 21);
+    push_vertex_loop(&mut stream, 21, 22, 4, 40);
+    let mut apex = record(18, 28);
+    put_ref(&mut apex, 2, 40);
+    put_ref(&mut apex, 16, 41);
+    put_f64(&mut apex, 18, 0.000_1);
+    stream.extend(apex);
+    let mut apex_point = record(29, 40);
+    put_ref(&mut apex_point, 2, 41);
+    put_vec3(&mut apex_point, 16, [0.0, 0.0, 0.0]);
+    stream.extend(apex_point);
+    let graph = Graph::parse(&stream);
+    assert_eq!(
+        graph.face_loops(4).expect("face loops"),
+        vec![
+            (5, crate::topology::FaceLoop::Ring(vec![7])),
+            (
+                21,
+                crate::topology::FaceLoop::Vertex {
+                    fin_xmt: 22,
+                    vertex: cadmpeg_parasolid::xmt::XmtTarget::from_wire(40),
+                }
+            ),
+        ]
+    );
+    assert!(graph.has_complete_body_topology());
+
+    let mut input = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec
+        .decode(&mut input, &DecodeOptions::default())
+        .expect("decode");
+    let model = &result.ir().model;
+    assert_eq!(model.faces.len(), 1);
+    let loops = model.faces[0]
+        .loops
+        .iter()
+        .map(cadmpeg_ir::ids::LoopId::as_str)
+        .collect::<Vec<_>>();
+    assert!(
+        loops.len() == 2 && loops[0].ends_with("#5") && loops[1].ends_with("#21"),
+        "{loops:?}"
+    );
+    let vertex_loop = model
+        .loops
+        .iter()
+        .find(|loop_| loop_.id.as_str().ends_with("#21"))
+        .expect("vertex loop");
+    let (vertex, pcurves) = vertex_loop.singular_vertex().expect("vertex boundary");
+    assert!(vertex.as_str().ends_with("#40"), "{vertex:?}");
+    assert!(pcurves.is_empty());
+    assert!(model.vertices.iter().any(|kept| &kept.id == vertex));
+    assert!(!result
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == NxLossCode::TopologyVertexLoopWithheld.kind()));
+    let validation = cadmpeg_ir::validate::validate_neutral(result.ir(), Vec::new())
+        .expect("validate the neutral model");
+    assert!(validation.is_ok(), "findings: {:?}", validation.findings);
+}
+
+#[test]
+fn face_with_an_unresolved_vertex_loop_vertex_is_withheld() {
+    let mut stream = topology_partition_stream();
+    let graph = Graph::parse(&stream);
+    let face = graph.get(NodeKind::Face, 4).expect("first face");
+    put_ref(&mut stream, face.pos() + 18, 30);
+    let mut second_face = record(14, 39);
+    put_ref(&mut second_face, 2, 30);
+    put_ref(&mut second_face, 8, 1);
+    put_f64(&mut second_face, 10, 0.000_2);
+    put_ref(&mut second_face, 18, 1);
+    put_ref(&mut second_face, 20, 4);
+    put_ref(&mut second_face, 22, 31);
+    put_ref(&mut second_face, 24, 3);
+    put_ref(&mut second_face, 26, 6);
+    second_face[28] = b'+';
+    stream.extend(second_face);
+    push_vertex_loop(&mut stream, 31, 32, 30, 99);
+    let graph = Graph::parse(&stream);
+    assert!(graph.face_loops(30).is_ok());
+
+    let mut input = Cursor::new(prt_with_partition(&stream));
+    let result = NxCodec
+        .decode(&mut input, &DecodeOptions::default())
+        .expect("decode");
+    let model = &result.ir().model;
+    let faces = model
+        .faces
+        .iter()
+        .map(|face| face.id.as_str())
+        .collect::<Vec<_>>();
+    assert!(faces.len() == 1 && faces[0].ends_with("#4"), "{faces:?}");
+    assert!(model
+        .loops
+        .iter()
+        .all(|loop_| loop_.singular_vertex().is_none()));
+    assert!(result.report().losses.iter().any(|loss| {
+        loss.code == NxLossCode::TopologyVertexLoopWithheld.kind()
+            && loss.message.contains("FACE 30")
+            && loss.message.contains("VERTEX 99")
+    }));
 }

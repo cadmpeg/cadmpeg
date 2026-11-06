@@ -17,7 +17,7 @@ use crate::decode::ids::IdScope;
 use crate::framing::node_kind::NodeKind;
 use crate::native::substrate::ParsedStreams;
 use crate::parasolid::{Stream, StreamKind};
-use crate::topology::{FaceLoopFailure, Graph, Node};
+use crate::topology::{FaceLoop, FaceLoopFailure, Graph, Node, VertexFields};
 use cadmpeg_core::bytes::assemble_u32_be;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::dialect::DialectLayers;
@@ -123,22 +123,58 @@ pub(super) fn emit_topology(
             }
         }
     }
-    let mut face_loop_rings: BTreeMap<u32, Vec<(u32, Vec<u32>)>> = BTreeMap::new();
+    let mut face_boundaries: BTreeMap<u32, Vec<(u32, FaceLoop)>> = BTreeMap::new();
     let mut face_loop_failures: BTreeMap<u32, FaceLoopFailure> = BTreeMap::new();
     for face_xmt in &valid_face_xmts {
-        match graph.face_loop_rings(*face_xmt) {
-            Ok(rings) => {
-                face_loop_rings.insert(*face_xmt, rings);
+        match graph.face_loops(*face_xmt) {
+            Ok(loops) => {
+                face_boundaries.insert(*face_xmt, loops);
             }
             Err(failure) => {
                 face_loop_failures.insert(*face_xmt, failure);
             }
         }
     }
+    let mut point_positions: BTreeMap<PointId, Point3> = BTreeMap::new();
+    for point in &ir.model.points {
+        if !point_positions.contains_key(&point.id) {
+            point_positions.insert(point.id.clone(), point.position().get());
+        }
+    }
+    let vertex_point =
+        |vertex_xmt: u32| resolved_vertex_point(graph, points, &point_positions, vertex_xmt);
+    let mut withheld_faces = Vec::new();
+    for (face_xmt, loops) in &face_boundaries {
+        for (loop_xmt, face_loop) in loops {
+            let FaceLoop::Vertex { fin_xmt, vertex } = face_loop else {
+                continue;
+            };
+            let vertex_xmt = vertex.map(u32::from);
+            if vertex_xmt.and_then(vertex_point).is_none() {
+                topology_losses.push(crate::loss::NxLossCode::TopologyVertexLoopWithheld.note(
+                    format!("parasolid#{stream_index} FACE {face_xmt} is withheld: vertex-loop FIN {fin_xmt} of LOOP {loop_xmt} names VERTEX {} without a resolved POINT", vertex_xmt.map_or_else(|| "null".to_owned(), |xmt| xmt.to_string())),
+                ));
+                withheld_faces.push(*face_xmt);
+                break;
+            }
+        }
+    }
+    for face_xmt in withheld_faces {
+        face_boundaries.remove(&face_xmt);
+        valid_face_xmts.remove(&face_xmt);
+    }
     let mut valid_loop_rings: BTreeMap<u32, &[u32]> = BTreeMap::new();
-    for rings in face_loop_rings.values() {
-        for (loop_xmt, ring) in rings {
-            valid_loop_rings.insert(*loop_xmt, ring.as_slice());
+    let mut vertex_loop_vertices = BTreeSet::new();
+    for loops in face_boundaries.values() {
+        for (loop_xmt, face_loop) in loops {
+            match face_loop {
+                FaceLoop::Ring(ring) => {
+                    valid_loop_rings.insert(*loop_xmt, ring.as_slice());
+                }
+                FaceLoop::Vertex { vertex, .. } => {
+                    vertex_loop_vertices.extend(vertex.map(u32::from));
+                }
+            }
         }
     }
     let mut valid_fin_xmts = BTreeSet::new();
@@ -148,7 +184,7 @@ pub(super) fn emit_topology(
         }
     }
     let mut valid_edge_xmts = BTreeSet::new();
-    let mut valid_vertex_xmts = BTreeSet::new();
+    let mut valid_vertex_xmts = vertex_loop_vertices;
     for xmt in &valid_fin_xmts {
         if let Some(edge) = graph
             .get(NodeKind::Fin, *xmt)
@@ -319,28 +355,13 @@ pub(super) fn emit_topology(
         }
         shells.insert(node.xmt(), shell_id);
     }
-    let mut point_positions: BTreeMap<PointId, Point3> = BTreeMap::new();
-    for point in &ir.model.points {
-        if !point_positions.contains_key(&point.id) {
-            point_positions.insert(point.id.clone(), point.position().get());
-        }
-    }
     let mut vertices: BTreeMap<u32, VertexId> = BTreeMap::new();
     let mut vertex_positions: BTreeMap<VertexId, (Point3, Option<f64>)> = BTreeMap::new();
     for node in graph
         .of_kind(NodeKind::Vertex)
         .filter(|node| valid_vertex_xmts.contains(&node.xmt()))
     {
-        let Some(fields) = node.vertex_fields() else {
-            continue;
-        };
-        let Some(point_ref) = fields
-            .point
-            .and_then(|target| points.get(&u32::from(target)))
-        else {
-            continue;
-        };
-        let Some(point_position) = point_positions.get(point_ref).copied() else {
+        let Some((fields, point_ref, point_position)) = vertex_point(node.xmt()) else {
             continue;
         };
         let tolerance = decoded_tolerance(fields.tolerance());
@@ -1065,8 +1086,33 @@ pub(super) fn emit_topology(
         });
     }
     let mut face_loops: BTreeMap<FaceId, Vec<LoopId>> = BTreeMap::new();
-    for rings in face_loop_rings.values() {
-        for (loop_xmt, fin_xmts) in rings {
+    for (face_xmt, boundary) in &face_boundaries {
+        for (loop_xmt, face_loop) in boundary {
+            let fin_xmts = match face_loop {
+                FaceLoop::Ring(fin_xmts) => fin_xmts,
+                FaceLoop::Vertex { vertex, .. } => {
+                    let (Some(face), Some(vertex), Some(node)) = (
+                        faces.get(face_xmt),
+                        vertex.and_then(|target| vertices.get(&u32::from(target))),
+                        graph.get(NodeKind::Loop, *loop_xmt),
+                    ) else {
+                        continue;
+                    };
+                    let id: LoopId = scope
+                        .id_from_display(&cadmpeg_ir::identity_component!("loop"), *loop_xmt)?;
+                    annotate_node(annotations, id.as_str(), source_stream, node, "LOOP");
+                    ir.model.loops.push(Loop {
+                        id: id.clone(),
+                        face: face.clone(),
+                        boundary: cadmpeg_ir::topology::LoopBoundary::Vertex {
+                            vertex: vertex.clone(),
+                            pcurves: Vec::new(),
+                        },
+                    });
+                    face_loops.entry(face.clone()).or_default().push(id);
+                    continue;
+                }
+            };
             let Some((id, face)) = loop_specs.get(loop_xmt) else {
                 continue;
             };
@@ -1177,11 +1223,27 @@ pub(super) fn emit_topology(
             retained_vertices.insert(vertex.clone());
         }
     }
+    for loop_ in &ir.model.loops {
+        retained_vertices.extend(loop_.singular_vertex().map(|(vertex, _)| vertex.clone()));
+    }
     let scope_prefix = scope.prefix();
     ir.model.vertices.retain(|vertex| {
         !vertex.id.as_str().starts_with(&scope_prefix) || retained_vertices.contains(&vertex.id)
     });
     Ok(endpoint_witnesses)
+}
+
+/// The fields, POINT, and position of a VERTEX whose point resolves.
+fn resolved_vertex_point<'points>(
+    graph: &Graph,
+    points: &'points BTreeMap<u32, PointId>,
+    point_positions: &BTreeMap<PointId, Point3>,
+    vertex_xmt: u32,
+) -> Option<(VertexFields, &'points PointId, Point3)> {
+    let fields = graph.get(NodeKind::Vertex, vertex_xmt)?.vertex_fields()?;
+    let point_ref = points.get(&u32::from(fields.point?))?;
+    let position = point_positions.get(point_ref).copied()?;
+    Some((fields, point_ref, position))
 }
 
 pub(super) struct UnresolvedTopologyStream<'inputs> {

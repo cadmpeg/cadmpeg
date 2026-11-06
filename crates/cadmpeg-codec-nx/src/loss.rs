@@ -139,6 +139,8 @@ loss_codes! {
     TopologyLoopRingUnresolved => ("topology.loop-ring-unresolved", Warning, TopologyNotTransferred),
     /// A face's linked loop boundary cannot be admitted and is omitted.
     TopologyFaceLoopUnresolved => ("topology.face-loop-unresolved", Warning, TopologyNotTransferred),
+    /// A face with a vertex loop whose vertex does not resolve is withheld.
+    TopologyVertexLoopWithheld => ("topology.vertex-loop-withheld", Warning, TopologyNotTransferred),
     /// A semantic annotation order is past the stated annotation order width.
     SemanticAnnotationOrderUnstatable => ("annotation.semantic-order-unstatable", Warning, MetadataNotTransferred),
     /// A record search reached its local work bound and skipped the records
@@ -248,6 +250,7 @@ mod tests {
                 "geometry.not-transferred",
                 "topology.loop-ring-unresolved",
                 "topology.face-loop-unresolved",
+                "topology.vertex-loop-withheld",
                 "annotation.semantic-order-unstatable",
                 "source.scan-bounded",
                 "native.record-identity-bounded",
