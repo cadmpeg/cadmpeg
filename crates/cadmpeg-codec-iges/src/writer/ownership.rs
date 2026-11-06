@@ -7,6 +7,13 @@ use cadmpeg_ir::ids::SurfaceId;
 use cadmpeg_ir::{CadIr, CodecFormat, SourceGeometryRole, SourceObjectAssociation};
 use std::collections::{BTreeMap, BTreeSet};
 
+pub(super) fn report_unowned_support(losses: &mut Vec<super::LossNote>, id: &str) {
+    let code = super::IgesLossCode::WriterSupportGeometryNotRepresented;
+    losses.push(code.note(format!(
+        "1 support geometry record ({id}) has no exported owner and was withheld"
+    )));
+}
+
 /// Every Directory sequence a native record names, so a referenced carrier
 /// writes under its owner instead of withholding as unowned support.
 fn collect_directory_sequences(
