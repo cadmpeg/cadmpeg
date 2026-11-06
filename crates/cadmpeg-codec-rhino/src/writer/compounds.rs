@@ -9,7 +9,7 @@ use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::CadIr;
 
 use super::{
-    class_wrapper_with_direct, native_i32_count, ClassPayload, WritableObjectCurve, WriteError,
+    class_wrapper_with_direct, writable_i32_count, ClassPayload, WritableObjectCurve, WriteError,
 };
 
 /// A curve class body and the bytes written directly at its own chunk level.
@@ -269,7 +269,7 @@ fn compound_payload(
     }
     let mut data = vec![0x10];
     data.extend(
-        native_i32_count(
+        writable_i32_count(
             components.len(),
             "polycurve child count exceeds the native field".into(),
         )?
@@ -279,7 +279,7 @@ fn compound_payload(
     data.extend(0_i32.to_le_bytes());
     data.extend([0_u8; 48]);
     data.extend(
-        native_i32_count(
+        writable_i32_count(
             parameters.len(),
             "polycurve parameter count exceeds the native field".into(),
         )?

@@ -12,9 +12,11 @@ use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::declared_measures::{DeclaredQuantity, DeclaredTarget};
 use cadmpeg_ir::eval::helix_nurbs::{helix_nurbs, helix_surface_nurbs};
 use cadmpeg_ir::geometry::{
-    analytic::TorusSurface, pcurve::Pcurve, Curve, CurveGeometry, HelixCurveConstruction,
-    HelixSurfaceConstruction, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
-    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+    analytic::TorusSurface,
+    pcurve::{Pcurve, PcurveGeometry},
+    Curve, CurveGeometry, HelixCurveConstruction, HelixSurfaceConstruction, ProceduralCurve,
+    ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, Surface,
 };
 use cadmpeg_ir::ids::{
     AppearanceBindingId, AppearanceId, AttributeId, BodyId, EdgeId, LoopId, OccurrenceId,
@@ -2295,6 +2297,13 @@ impl<'a> Builder<'a> {
         let Some(parts) = self.retained_context_partials() else {
             return;
         };
+        if self.ir.tolerances.linear.is_none()
+            && parts
+                .iter()
+                .any(|part| part == "GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT")
+        {
+            return;
+        }
         if parts.iter().any(|part| {
             !matches!(
                 part.as_str(),
@@ -2574,27 +2583,43 @@ impl<'a> Builder<'a> {
         context: Ref,
     ) {
         let scalar_items = !matches!(self.schema, StepSchema::Ap203Edition1 | StepSchema::Ap214);
-        let (kind, value) = match attribute.values.as_slice() {
-            [Some(AttributeValue::String(value))] => {
-                ("DESCRIPTIVE_REPRESENTATION_ITEM", string(value))
-            }
-            [Some(AttributeValue::Integer(value))] if scalar_items => {
-                ("INTEGER_REPRESENTATION_ITEM", value.to_string())
-            }
-            [Some(AttributeValue::Float(value))] if scalar_items => {
-                ("REAL_REPRESENTATION_ITEM", self.emitter.real(value.get()))
-            }
-            [Some(AttributeValue::Boolean(value))] if scalar_items => (
-                "BOOLEAN_REPRESENTATION_ITEM",
-                if *value { ".T." } else { ".F." }.to_owned(),
-            ),
-            _ => return,
-        };
+        let mut values = Vec::new();
+        for value in &attribute.values {
+            let item = match value {
+                Some(AttributeValue::String(value)) => {
+                    ("DESCRIPTIVE_REPRESENTATION_ITEM", string(value))
+                }
+                Some(AttributeValue::Integer(value)) if scalar_items => {
+                    ("INTEGER_REPRESENTATION_ITEM", value.to_string())
+                }
+                Some(AttributeValue::Float(value)) if scalar_items => {
+                    ("REAL_REPRESENTATION_ITEM", self.emitter.real(value.get()))
+                }
+                Some(AttributeValue::Boolean(value)) if scalar_items => (
+                    "BOOLEAN_REPRESENTATION_ITEM",
+                    if *value { ".T." } else { ".F." }.to_owned(),
+                ),
+                _ => return,
+            };
+            values.push(item);
+        }
+        if values.is_empty() || (values.len() > 1 && !scalar_items) {
+            return;
+        }
         let property = self.emitter.emit(
             "PROPERTY_DEFINITION",
             &format!("{},'',{owner}", string(&attribute.name)),
         );
-        let item = self.emitter.emit(kind, &format!("'',{value}"));
+        let items: Vec<_> = values
+            .into_iter()
+            .map(|(kind, value)| self.emitter.emit(kind, &format!("'',{value}")))
+            .collect();
+        let item = if let [item] = items.as_slice() {
+            *item
+        } else {
+            self.emitter
+                .emit("ROW_REPRESENTATION_ITEM", &format!("'',{}", refs(&items)))
+        };
         let representation = self
             .emitter
             .emit("REPRESENTATION", &format!("'',({item}),{context}"));
@@ -2616,15 +2641,18 @@ impl<'a> Builder<'a> {
         let ir = self.ir;
         for attribute in &ir.model.attributes {
             if self.attribute_is_written(attribute)
-                || !matches!(
-                    attribute.values.as_slice(),
-                    [Some(
-                        AttributeValue::String(_)
-                            | AttributeValue::Integer(_)
-                            | AttributeValue::Float(_)
-                            | AttributeValue::Boolean(_)
-                    )]
-                )
+                || attribute.values.is_empty()
+                || !attribute.values.iter().all(|value| {
+                    matches!(
+                        value,
+                        Some(
+                            AttributeValue::String(_)
+                                | AttributeValue::Integer(_)
+                                | AttributeValue::Float(_)
+                                | AttributeValue::Boolean(_)
+                        )
+                    )
+                })
             {
                 continue;
             }
@@ -3239,22 +3267,9 @@ impl<'a> Builder<'a> {
                         parts.push("GEOMETRIC_REPRESENTATION_CONTEXT(3)".to_string());
                     }
                     "GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT" => {
-                        let unc = self.emitter.emit(
-                            "UNCERTAINTY_MEASURE_WITH_UNIT",
-                            &format!(
-                                "LENGTH_MEASURE({}),{len},{},{}",
-                                self.emitter.real(
-                                    self.ir
-                                        .tolerances
-                                        .linear
-                                        .expect("stated linear tolerance")
-                                        .get()
-                                ),
-                                string("distance_accuracy_value"),
-                                string("maximum model space distance")
-                            ),
-                        );
-                        parts.push(format!("GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT(({unc}))"));
+                        if let Some(unc) = self.emit_linear_uncertainty(len) {
+                            parts.push(format!("GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT(({unc}))"));
+                        }
                     }
                     "GLOBAL_UNIT_ASSIGNED_CONTEXT" => {
                         parts.push(format!(
@@ -3303,30 +3318,31 @@ impl<'a> Builder<'a> {
     }
 
     fn emit_default_context(&mut self, len: Ref, angle: Ref, solid: Ref) -> Ref {
-        let unc = self.emitter.emit(
-            "UNCERTAINTY_MEASURE_WITH_UNIT",
-            &format!(
-                "LENGTH_MEASURE({}),{len},{},{}",
-                self.emitter.real(
-                    self.ir
-                        .tolerances
-                        .linear
-                        .expect("stated linear tolerance")
-                        .get()
-                ),
-                string("distance_accuracy_value"),
-                string("maximum model space distance")
-            ),
-        );
+        let uncertainty = self
+            .emit_linear_uncertainty(len)
+            .map(|unc| format!("GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT(({unc})) "))
+            .unwrap_or_default();
         self.emitter.emit_raw(
             "GEOMETRIC_REPRESENTATION_CONTEXT",
             &format!(
                 "( GEOMETRIC_REPRESENTATION_CONTEXT(3) \
-                 GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT(({unc})) \
-                 GLOBAL_UNIT_ASSIGNED_CONTEXT(({len},{angle},{solid})) \
+                 {uncertainty}GLOBAL_UNIT_ASSIGNED_CONTEXT(({len},{angle},{solid})) \
                  REPRESENTATION_CONTEXT('Context','3D') )"
             ),
         )
+    }
+
+    fn emit_linear_uncertainty(&mut self, len: Ref) -> Option<Ref> {
+        let tolerance = self.ir.tolerances.linear?;
+        Some(self.emitter.emit(
+            "UNCERTAINTY_MEASURE_WITH_UNIT",
+            &format!(
+                "LENGTH_MEASURE({}),{len},{},{}",
+                self.emitter.real(tolerance.get()),
+                string("distance_accuracy_value"),
+                string("maximum model space distance")
+            ),
+        ))
     }
 
     fn emit_length_unit(&mut self) -> Ref {
@@ -4294,7 +4310,7 @@ impl<'a> Builder<'a> {
             .collect::<Vec<_>>();
         for curve_id in curve_ids {
             if let Some(reference) = self
-                .emit_standalone_intersection_pcurve(&curve_id)
+                .emit_standalone_support_pcurve(&curve_id)
                 .or_else(|| self.emit_curve(&curve_id))
             {
                 let name = Self::carrier_name(&self.carrier_names, &curve_id).to_owned();
@@ -4339,17 +4355,48 @@ impl<'a> Builder<'a> {
         (members, standalone_pcurves, has_surfaces)
     }
 
-    fn emit_standalone_intersection_pcurve(&mut self, curve_id: &str) -> Option<Ref> {
-        let procedural = self.procedural_curves.get(curve_id)?;
-        let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
-        else {
-            return None;
-        };
-        let [first, second] = context.sides();
-        if first != second {
+    fn emit_standalone_support_pcurve(&mut self, curve_id: &str) -> Option<Ref> {
+        if self
+            .curves
+            .get(curve_id)?
+            .geometry
+            .solved()
+            .is_some_and(|geometry| !matches!(geometry, SolvedCurveGeometry::Unknown { .. }))
+        {
             return None;
         }
-        let surface_id = first.surface.as_ref()?.to_string();
+        let procedural = self.procedural_curves.get(curve_id)?;
+        let (context, exact_construction) = match procedural.definition() {
+            ProceduralCurveDefinition::Intersection { context, .. } => (context, false),
+            ProceduralCurveDefinition::SurfaceCurve {
+                family:
+                    cadmpeg_ir::geometry::SurfaceCurveFamily::Parametric {
+                        context,
+                        tail: None,
+                    },
+            } => (context, true),
+            _ => return None,
+        };
+        let [first, second] = context.sides();
+        if exact_construction
+            && context
+                .discontinuities()
+                .iter()
+                .any(|items| !items.is_empty())
+        {
+            return None;
+        }
+        let side = if (!exact_construction && first == second)
+            || (exact_construction && second.surface.is_none() && second.pcurve.is_none())
+        {
+            first
+        } else if exact_construction && first.surface.is_none() && first.pcurve.is_none() {
+            second
+        } else {
+            return None;
+        };
+        let construction_id = procedural.id.to_string();
+        let surface_id = side.surface.as_ref()?.to_string();
         if self.procedural_surfaces.contains_key(surface_id.as_str())
             || !matches!(
                 self.surfaces.get(surface_id.as_str())?.geometry.solved(),
@@ -4358,18 +4405,36 @@ impl<'a> Builder<'a> {
         {
             return None;
         }
-        let pcurve = first.pcurve.as_ref()?;
+        let pcurve = side.pcurve.as_ref()?;
         if pcurve.parameter_range.is_some() {
             return None;
         }
-        let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } = &pcurve.geometry else {
-            return None;
+        let range = match &pcurve.geometry {
+            PcurveGeometry::Nurbs { nurbs } => {
+                let degree = usize::try_from(nurbs.degree()).ok()?;
+                [
+                    *nurbs.knots().get(degree)?,
+                    *nurbs.knots().get(nurbs.pole_rows().count())?,
+                ]
+            }
+            PcurveGeometry::Circle(circle) => {
+                let x = circle.x_axis().get();
+                let y = circle.y_axis().get();
+                if x.u.hypot(x.v) != 1.0 || y.u != -x.v || y.v != x.u {
+                    return None;
+                }
+                [0.0, std::f64::consts::TAU]
+            }
+            PcurveGeometry::Ellipse(ellipse) => {
+                let x = ellipse.x_axis().get();
+                let y = ellipse.y_axis().get();
+                if x.u.hypot(x.v) != 1.0 || y.u != -x.v || y.v != x.u {
+                    return None;
+                }
+                [0.0, std::f64::consts::TAU]
+            }
+            _ => return None,
         };
-        let degree = usize::try_from(nurbs.degree()).ok()?;
-        let range = [
-            *nurbs.knots().get(degree)?,
-            *nurbs.knots().get(nurbs.pole_rows().count())?,
-        ];
         if range != context.parameter_range().endpoints() {
             return None;
         }
@@ -4390,6 +4455,9 @@ impl<'a> Builder<'a> {
             &format!("{},{surface},{representation}", string(name)),
         );
         self.curve_refs.insert(curve_id.to_owned(), reference);
+        if exact_construction {
+            self.written_procedural_curves.insert(construction_id);
+        }
         Some(reference)
     }
 
@@ -5154,13 +5222,7 @@ impl<'a> Builder<'a> {
         let tolerance = edge
             .tolerance
             .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get)
-            .max(
-                self.ir
-                    .tolerances
-                    .linear
-                    .expect("stated linear tolerance")
-                    .get(),
-            );
+            .max(self.ir.tolerances.linear_or_default().get());
         if coedge.pcurves.is_empty() {
             return Ok(false);
         }
@@ -5897,17 +5959,15 @@ impl<'a> Builder<'a> {
                 if self.failed_helix_fits.contains_key(id) {
                     return None;
                 }
-                let fitted = match helix_surface_nurbs(
-                    helix,
-                    self.ir.tolerances.linear.expect("stated linear tolerance"),
-                ) {
-                    Ok(fitted) => fitted,
-                    Err(error) => {
-                        self.failed_helix_fits
-                            .insert(id.to_owned(), helix_fit_failure(&error));
-                        return None;
-                    }
-                };
+                let fitted =
+                    match helix_surface_nurbs(helix, self.ir.tolerances.linear_or_default()) {
+                        Ok(fitted) => fitted,
+                        Err(error) => {
+                            self.failed_helix_fits
+                                .insert(id.to_owned(), helix_fit_failure(&error));
+                            return None;
+                        }
+                    };
                 let reference = geometry::surface(
                     &mut self.emitter,
                     &name,
@@ -6267,10 +6327,7 @@ impl<'a> Builder<'a> {
                 if self.failed_helix_fits.contains_key(id) {
                     return None;
                 }
-                let fitted = match helix_nurbs(
-                    helix,
-                    self.ir.tolerances.linear.expect("stated linear tolerance"),
-                ) {
+                let fitted = match helix_nurbs(helix, self.ir.tolerances.linear_or_default()) {
                     Ok(fitted) => fitted,
                     Err(error) => {
                         self.failed_helix_fits
@@ -8893,8 +8950,16 @@ impl<'a> Builder<'a> {
                 .map(|(owner, _)| format!("'{owner}'"))
                 .collect::<Vec<_>>()
                 .join(", ");
+            let tolerance = if self.ir.tolerances.linear.is_some() {
+                "the linear tolerance".to_owned()
+            } else {
+                format!(
+                    "a computational linear tolerance of {} mm",
+                    self.ir.tolerances.linear_or_default().get()
+                )
+            };
             let mut message = format!(
-                "{} helix curve definition(s) and {} helix surface definition(s) without a solved carrier were written as B-splines within the linear tolerance: {fitted}",
+                "{} helix curve definition(s) and {} helix surface definition(s) without a solved carrier were written as B-splines within {tolerance}: {fitted}",
                 self.fitted_helix_curves.len(),
                 self.fitted_helix_surfaces.len()
             );

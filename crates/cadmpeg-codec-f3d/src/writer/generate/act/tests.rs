@@ -16,8 +16,8 @@ fn current_typed_act_records_reemit_without_source_frames_or_locations() {
     let original =
         crate::test_support::zip_test::with_scan(&source, |scan| crate::act::decode(scan).unwrap());
     assert_eq!(
-        original.untyped_records, 1,
-        "the synthetic decoy is source-only"
+        original.untyped_records, 0,
+        "the unindexed decoy is outside the ACT records"
     );
     let mut native = F3dNative {
         act_tables: original.tables.into_iter().map(document_record).collect(),

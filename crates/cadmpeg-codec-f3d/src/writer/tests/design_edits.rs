@@ -374,7 +374,7 @@ fn recipe_identity_overlapping_indexed_class_declines_patch() {
     ));
     assert!(matches!(
         plan.report().synthesis_cause(),
-        Some(SynthesisCause::SourceUnrepresented { .. })
+        Some(SynthesisCause::PatchDeclined { .. })
     ));
     let error = crate::writer::patch::write_semantic(
         &edited,
@@ -426,7 +426,7 @@ fn lost_edge_index_edit_declines_patch() {
     ));
     assert!(matches!(
         plan.report().synthesis_cause(),
-        Some(SynthesisCause::SourceUnrepresented { .. })
+        Some(SynthesisCause::PatchDeclined { .. })
     ));
     let error = crate::writer::patch::write_semantic(
         &edited,
