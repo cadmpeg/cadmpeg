@@ -2,33 +2,88 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 137114,
-      "payload_sha256": "0940c8b369c88715dbe279ad78b5d23a1f46a0d249dd82a6381b017b110af034"
+      "payload_len": 112350,
+      "payload_sha256": "fe98b108af531e2344a8b9b4191aa5a741df74e8ab80bad96f0fbb99f6f15fc8"
     },
     {
-      "name": "Cadmpeg.StringHasher.0.txt",
-      "payload_len": 1167,
-      "payload_sha256": "a39736b361e9e0f5862abe7b606c2861c8152fdc37031250af99e8832db5ba1b"
+      "name": "ExtrusionProfile.Shape.brp",
+      "payload_len": 652,
+      "payload_sha256": "d1a6923fd812846bb35cff9b64dc97b59da3c757cde821785a8ff2590c9cfe05"
     },
     {
-      "name": "ChamferBase.brp",
+      "name": "LoftSectionA.Shape.brp",
+      "payload_len": 428,
+      "payload_sha256": "f7568d638a5a342e991ec474f8ca57f4059204bbb28b89bec3f64e32db767721"
+    },
+    {
+      "name": "LoftSectionB.Shape.brp",
+      "payload_len": 431,
+      "payload_sha256": "6768236f4b4237ea0e2009442d3b0030bb4c8819539225e74eb88a1da2988c0e"
+    },
+    {
+      "name": "SweepSection.Shape.brp",
+      "payload_len": 347,
+      "payload_sha256": "fdce324f0570eb80d4728d6a7e8edea4073459d5a9d946a07e24897ecdf7ca3c"
+    },
+    {
+      "name": "SweepSpine.Shape.brp",
+      "payload_len": 514,
+      "payload_sha256": "c6e4839945fae5c12fd58c9d36d44419bd323aa5975b91c5adf39fd58162acd2"
+    },
+    {
+      "name": "DressupBase.Shape.brp",
+      "payload_len": 2561,
+      "payload_sha256": "1331fb7af1f23e8868f7ae827492a64a0093e7a98d77b7c8067d84240b5787e4"
+    },
+    {
+      "name": "ChamferBase.Shape.brp",
       "payload_len": 2536,
       "payload_sha256": "d68507702ef431aa59ced78f99e257c67f662ea7974eebaa99494fef3436c5ca"
     },
     {
-      "name": "DatumCoordinateSystem.brp",
-      "payload_len": 238,
-      "payload_sha256": "743dff21d422bf3cb17159e50ddf0dc07f57d83b6a86a7d0c5320edbf24e8203"
+      "name": "ThicknessBase.Shape.brp",
+      "payload_len": 2536,
+      "payload_sha256": "154561227b39b7698fa375dca87f5e8971a9642fba3a2173be8b6c4d96e9bb67"
     },
     {
-      "name": "DatumPlane.brp",
+      "name": "Thickness.Shape.brp",
+      "payload_len": 5459,
+      "payload_sha256": "09555eddbde74295fe9fdcbae61eccb434739bb25435dae2cdcf4032cc13e349"
+    },
+    {
+      "name": "MirrorBase.Shape.brp",
+      "payload_len": 1094,
+      "payload_sha256": "d77139c2c7b13a31b0782b0ac58aac3b01e46ad318499bf4a6a9986ab2ee3ea6"
+    },
+    {
+      "name": "DatumPlane.Shape.brp",
       "payload_len": 238,
       "payload_sha256": "09580cbfe6289d3dd8ed4fb22b3e1dd3086e6452814560aff8cf2905b64c2ba1"
     },
     {
-      "name": "DatumPoint.brp",
+      "name": "DatumPoint.Shape.brp",
       "payload_len": 255,
       "payload_sha256": "375f9aaebef443078e53397eec3e32ac40e756419aef204e5589790e88878a9d"
+    },
+    {
+      "name": "DatumCoordinateSystem.Shape.brp",
+      "payload_len": 238,
+      "payload_sha256": "743dff21d422bf3cb17159e50ddf0dc07f57d83b6a86a7d0c5320edbf24e8203"
+    },
+    {
+      "name": "DraftBase.Shape.brp",
+      "payload_len": 2561,
+      "payload_sha256": "32a28957914841cabc4b1d7c6715ecc276795030d66c9870ff2fcb26a005eda7"
+    },
+    {
+      "name": "HoleBase.Shape.brp",
+      "payload_len": 2561,
+      "payload_sha256": "a348c02b4bf9aa87e8a9c915ac37aecea1173dffd80528447031dcce6fdca89a"
+    },
+    {
+      "name": "PatternBase.Shape.brp",
+      "payload_len": 4864,
+      "payload_sha256": "67f3c1a1bb12e89f8beb48833d33f96ab2b2a17055728462896d853c7002ef87"
     },
     {
       "name": "Draft.brp",
@@ -36,24 +91,9 @@
       "payload_sha256": "7a0bc8e684301e7f32744e4d13eb69e2cb446bf8b9864a6ad381b5c7e3795521"
     },
     {
-      "name": "DraftBase.brp",
-      "payload_len": 2561,
-      "payload_sha256": "32a28957914841cabc4b1d7c6715ecc276795030d66c9870ff2fcb26a005eda7"
-    },
-    {
       "name": "DraftBody.brp",
       "payload_len": 2907,
       "payload_sha256": "38ed562ee913c95ed9298b22a9ba46069d0775fee5fded7697adbe23edd4d986"
-    },
-    {
-      "name": "DressupBase.brp",
-      "payload_len": 2561,
-      "payload_sha256": "1331fb7af1f23e8868f7ae827492a64a0093e7a98d77b7c8067d84240b5787e4"
-    },
-    {
-      "name": "ExtrusionProfile.brp",
-      "payload_len": 652,
-      "payload_sha256": "d1a6923fd812846bb35cff9b64dc97b59da3c757cde821785a8ff2590c9cfe05"
     },
     {
       "name": "FreeGeometry.brp",
@@ -69,11 +109,6 @@
       "name": "Hole.brp",
       "payload_len": 6668,
       "payload_sha256": "95542a739f43e4642e00a4e76fc332537c10a0a9a8f6cc98290e5ae3c042b0e8"
-    },
-    {
-      "name": "HoleBase.brp",
-      "payload_len": 2561,
-      "payload_sha256": "a348c02b4bf9aa87e8a9c915ac37aecea1173dffd80528447031dcce6fdca89a"
     },
     {
       "name": "HoleBody.brp",
@@ -96,39 +131,19 @@
       "payload_sha256": "e48a34d7f36e8b7bf2415574ac4c661378cde20832da7890558c0d20d6b15f6d"
     },
     {
-      "name": "LoftSectionA.brp",
-      "payload_len": 428,
-      "payload_sha256": "f7568d638a5a342e991ec474f8ca57f4059204bbb28b89bec3f64e32db767721"
-    },
-    {
-      "name": "LoftSectionB.brp",
-      "payload_len": 431,
-      "payload_sha256": "6768236f4b4237ea0e2009442d3b0030bb4c8819539225e74eb88a1da2988c0e"
-    },
-    {
       "name": "Mirror.brp",
       "payload_len": 1037,
       "payload_sha256": "cdd4a0e1d7103ed47951712b7f5bfa7c4cedcfba27d79b0dcc092d54e236eaa2"
     },
     {
-      "name": "MirrorBase.brp",
-      "payload_len": 1094,
-      "payload_sha256": "d77139c2c7b13a31b0782b0ac58aac3b01e46ad318499bf4a6a9986ab2ee3ea6"
-    },
-    {
       "name": "PartChamfer.brp",
-      "payload_len": 3879,
-      "payload_sha256": "f0772218153c3b6b88f4b47bac9564054f0070e35065b79cf92bd7fb7f96f3cd"
+      "payload_len": 3915,
+      "payload_sha256": "9ee058aeaa9021daa9b14d2b91e9b578f3a37d87902496ba926bcbb0605a2868"
     },
     {
       "name": "PartFillet.brp",
-      "payload_len": 3849,
-      "payload_sha256": "bf55bcfed5bb69aacd2515a389a1bbd5d476b5ecfe6f7dec31fa748894c17d41"
-    },
-    {
-      "name": "PatternBase.brp",
-      "payload_len": 4864,
-      "payload_sha256": "67f3c1a1bb12e89f8beb48833d33f96ab2b2a17055728462896d853c7002ef87"
+      "payload_len": 3877,
+      "payload_sha256": "e7557e4e315ab24086581f8bd59d366d190fa77174f2ccffac36816a2ef3da4f"
     },
     {
       "name": "PatternBody.brp",
@@ -146,34 +161,19 @@
       "payload_sha256": "36f0e9b35ef14e64f1d157cca7ad4350305a759e6b27b57f070b5081f5245622"
     },
     {
+      "name": "StringHasher0.txt",
+      "payload_len": 1167,
+      "payload_sha256": "a39736b361e9e0f5862abe7b606c2861c8152fdc37031250af99e8832db5ba1b"
+    },
+    {
       "name": "Sweep.brp",
       "payload_len": 1759,
       "payload_sha256": "3ba0f43dea659a6083102cd85f09ac97d3707df9d9b48f22e4ef724d88078826"
     },
     {
-      "name": "SweepSection.brp",
-      "payload_len": 347,
-      "payload_sha256": "fdce324f0570eb80d4728d6a7e8edea4073459d5a9d946a07e24897ecdf7ca3c"
-    },
-    {
-      "name": "SweepSpine.brp",
-      "payload_len": 514,
-      "payload_sha256": "c6e4839945fae5c12fd58c9d36d44419bd323aa5975b91c5adf39fd58162acd2"
-    },
-    {
       "name": "SymmetricExtrusion.brp",
       "payload_len": 5183,
       "payload_sha256": "1a74051bd2205f5a74cf9bbcefb52cee99e26f237cdb7e959ee42f2ad36c254a"
-    },
-    {
-      "name": "Thickness.brp",
-      "payload_len": 5459,
-      "payload_sha256": "09555eddbde74295fe9fdcbae61eccb434739bb25435dae2cdcf4032cc13e349"
-    },
-    {
-      "name": "ThicknessBase.brp",
-      "payload_len": 2536,
-      "payload_sha256": "154561227b39b7698fa375dca87f5e8971a9642fba3a2173be8b6c4d96e9bb67"
     }
   ],
   "report": {
@@ -259,7 +259,7 @@
         "configurations": "dropped",
         "curves": "written",
         "declared_measures": "omitted",
-        "drawings": "dropped",
+        "drawings": "reported",
         "edges": "written",
         "faces": "written",
         "feature_input_topologies": "dropped",
@@ -281,7 +281,7 @@
         "product_definitions": "written",
         "regions": "written",
         "rigid_bodies": "omitted",
-        "semantic_annotations": "dropped",
+        "semantic_annotations": "reported",
         "shells": "written",
         "sketch_constraints": "written",
         "sketch_entities": "written",
@@ -293,7 +293,7 @@
         "spreadsheets": "written",
         "subds": "dropped",
         "surfaces": "written",
-        "tessellations": "dropped",
+        "tessellations": "reported",
         "vertices": "written",
         "view_presentations": "reported"
       },
@@ -304,6 +304,36 @@
       "target": "fcstd:schema-4"
     },
     "losses": [
+      {
+        "code": {
+          "code": "feature.source-tag-not-transferred",
+          "kind": "feature_history_retained",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "feature fcstd:design:feature#PartChamfer source tag Part::Chamfer is written as PartDesign::Chamfer",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "feature.source-tag-not-transferred",
+          "kind": "feature_history_retained",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "feature fcstd:design:feature#PartFillet source tag Part::Fillet is written as PartDesign::Fillet",
+        "severity": "info"
+      },
+      {
+        "code": {
+          "code": "feature.source-tag-not-transferred",
+          "kind": "feature_history_retained",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "feature fcstd:design:feature#Thickness source tag Part::Thickness is written as PartDesign::Thickness",
+        "severity": "info"
+      },
       {
         "code": {
           "code": "attribute.not-transferred",
@@ -351,7 +381,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 65 native record(s) from `fcstd.entries`: fcstd:native:entry#ChamferBase.Shape.brp, fcstd:native:entry#DatumAxis.Shape.brp, fcstd:native:entry#DatumCoordinateSystem.Shape.brp, fcstd:native:entry#DatumPlane.Shape.brp, fcstd:native:entry#DatumPoint.Shape.brp, fcstd:native:entry#Draft.AddSubShape.brp, fcstd:native:entry#Draft.Shape.Map.txt, fcstd:native:entry#Draft.Shape.brp, fcstd:native:entry#Draft.SuppressedShape.brp, fcstd:native:entry#DraftBase.Shape.brp, fcstd:native:entry#DraftBase.SuppressedShape.brp, fcstd:native:entry#DraftBody.Shape.Map.txt, fcstd:native:entry#DraftBody.Shape.brp, fcstd:native:entry#DressupBase.Shape.brp, fcstd:native:entry#Edges, fcstd:native:entry#Edges1, fcstd:native:entry#ExtrusionProfile.Shape.brp, fcstd:native:entry#Hole.AddSubShape.Map.txt, fcstd:native:entry#Hole.AddSubShape.brp, fcstd:native:entry#Hole.Shape.Map.txt, fcstd:native:entry#Hole.Shape.brp, fcstd:native:entry#Hole.SuppressedShape.brp, fcstd:native:entry#HoleBase.Shape.brp, fcstd:native:entry#HoleBase.SuppressedShape.brp, fcstd:native:entry#HoleBody.Shape.Map.txt, fcstd:native:entry#HoleBody.Shape.brp, fcstd:native:entry#HoleProfile.InternalShape.brp, fcstd:native:entry#HoleProfile.Shape.Map.txt, fcstd:native:entry#HoleProfile.Shape.brp, fcstd:native:entry#LinearPattern.Shape.Map.txt, fcstd:native:entry#LinearPattern.Shape.brp, fcstd:native:entry#LinearPattern.SuppressedShape.brp, fcstd:native:entry#Loft.Shape.Map.txt, fcstd:native:entry#Loft.Shape.brp, fcstd:native:entry#LoftSectionA.Shape.brp, fcstd:native:entry#LoftSectionB.Shape.brp, fcstd:native:entry#Mirror.Shape.Map.txt, fcstd:native:entry#Mirror.Shape.brp, fcstd:native:entry#MirrorBase.Shape.brp, fcstd:native:entry#PartChamfer.Shape.Map.txt, fcstd:native:entry#PartChamfer.Shape.brp, fcstd:native:entry#PartFillet.Shape.Map.txt, fcstd:native:entry#PartFillet.Shape.brp, fcstd:native:entry#PatternBase.AddSubShape.brp, fcstd:native:entry#PatternBase.Shape.brp, fcstd:native:entry#PatternBase.SuppressedShape.brp, fcstd:native:entry#PatternBody.Shape.Map.txt, fcstd:native:entry#PatternBody.Shape.brp, fcstd:native:entry#Revolution.Shape.Map.txt, fcstd:native:entry#Revolution.Shape.brp, fcstd:native:entry#RevolutionProfile.InternalShape.brp, fcstd:native:entry#RevolutionProfile.Shape.Map.txt, fcstd:native:entry#RevolutionProfile.Shape.brp, fcstd:native:entry#SpacingPattern, fcstd:native:entry#SpacingPattern2, fcstd:native:entry#Spacings, fcstd:native:entry#StringHasher.Table.txt, fcstd:native:entry#Sweep.Shape.Map.txt, fcstd:native:entry#Sweep.Shape.brp, fcstd:native:entry#SweepSection.Shape.brp, fcstd:native:entry#SweepSpine.Shape.brp, fcstd:native:entry#SymmetricExtrusion.Shape.Map.txt, fcstd:native:entry#SymmetricExtrusion.Shape.brp, fcstd:native:entry#Thickness.Shape.brp, fcstd:native:entry#ThicknessBase.Shape.brp",
+        "message": "the fcstd write omits 49 native record(s) from `fcstd.entries`: fcstd:native:entry#DatumAxis.Shape.brp, fcstd:native:entry#Draft.AddSubShape.brp, fcstd:native:entry#Draft.Shape.Map.txt, fcstd:native:entry#Draft.Shape.brp, fcstd:native:entry#Draft.SuppressedShape.brp, fcstd:native:entry#DraftBase.SuppressedShape.brp, fcstd:native:entry#DraftBody.Shape.Map.txt, fcstd:native:entry#DraftBody.Shape.brp, fcstd:native:entry#Edges, fcstd:native:entry#Edges1, fcstd:native:entry#Hole.AddSubShape.Map.txt, fcstd:native:entry#Hole.AddSubShape.brp, fcstd:native:entry#Hole.Shape.Map.txt, fcstd:native:entry#Hole.Shape.brp, fcstd:native:entry#Hole.SuppressedShape.brp, fcstd:native:entry#HoleBase.SuppressedShape.brp, fcstd:native:entry#HoleBody.Shape.Map.txt, fcstd:native:entry#HoleBody.Shape.brp, fcstd:native:entry#HoleProfile.InternalShape.brp, fcstd:native:entry#HoleProfile.Shape.Map.txt, fcstd:native:entry#HoleProfile.Shape.brp, fcstd:native:entry#LinearPattern.Shape.Map.txt, fcstd:native:entry#LinearPattern.Shape.brp, fcstd:native:entry#LinearPattern.SuppressedShape.brp, fcstd:native:entry#Loft.Shape.Map.txt, fcstd:native:entry#Loft.Shape.brp, fcstd:native:entry#Mirror.Shape.Map.txt, fcstd:native:entry#Mirror.Shape.brp, fcstd:native:entry#PartChamfer.Shape.Map.txt, fcstd:native:entry#PartChamfer.Shape.brp, fcstd:native:entry#PartFillet.Shape.Map.txt, fcstd:native:entry#PartFillet.Shape.brp, fcstd:native:entry#PatternBase.AddSubShape.brp, fcstd:native:entry#PatternBase.SuppressedShape.brp, fcstd:native:entry#PatternBody.Shape.Map.txt, fcstd:native:entry#PatternBody.Shape.brp, fcstd:native:entry#Revolution.Shape.Map.txt, fcstd:native:entry#Revolution.Shape.brp, fcstd:native:entry#RevolutionProfile.InternalShape.brp, fcstd:native:entry#RevolutionProfile.Shape.Map.txt, fcstd:native:entry#RevolutionProfile.Shape.brp, fcstd:native:entry#SpacingPattern, fcstd:native:entry#SpacingPattern2, fcstd:native:entry#Spacings, fcstd:native:entry#StringHasher.Table.txt, fcstd:native:entry#Sweep.Shape.Map.txt, fcstd:native:entry#Sweep.Shape.brp, fcstd:native:entry#SymmetricExtrusion.Shape.Map.txt, fcstd:native:entry#SymmetricExtrusion.Shape.brp",
         "severity": "info"
       },
       {
@@ -361,7 +391,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 143 native record(s) from `fcstd.properties`: fcstd:native:property#ChamferBase:ExpressionEngine, fcstd:native:property#ChamferBase:Placement, fcstd:native:property#CorpusMetadata:ExpressionEngine, fcstd:native:property#DatumAxis:ExpressionEngine, fcstd:native:property#DatumAxis:Shape, fcstd:native:property#DatumCoordinateSystem:ExpressionEngine, fcstd:native:property#DatumPlane:ExpressionEngine, fcstd:native:property#DatumPoint:ExpressionEngine, fcstd:native:property#Draft:AddSubShape, fcstd:native:property#Draft:BaseFeature, fcstd:native:property#Draft:ExpressionEngine, fcstd:native:property#Draft:Placement, fcstd:native:property#Draft:PreviewShape, fcstd:native:property#Draft:PullDirection, fcstd:native:property#Draft:SuppressedShape, fcstd:native:property#DraftBase:BaseFeature, fcstd:native:property#DraftBase:ExpressionEngine, fcstd:native:property#DraftBase:Placement, fcstd:native:property#DraftBase:PreviewShape, fcstd:native:property#DraftBase:SuppressedShape, fcstd:native:property#DraftBody:BaseFeature, fcstd:native:property#DraftBody:ExpressionEngine, fcstd:native:property#DraftBody:Placement, fcstd:native:property#DressupBase:ExpressionEngine, fcstd:native:property#DressupBase:Placement, fcstd:native:property#ExtrusionProfile:ExpressionEngine, fcstd:native:property#ExtrusionProfile:Placement, fcstd:native:property#Hole:AddSubShape, fcstd:native:property#Hole:BaseFeature, fcstd:native:property#Hole:ExpressionEngine, fcstd:native:property#Hole:Midplane, fcstd:native:property#Hole:ModelThread, fcstd:native:property#Hole:Placement, fcstd:native:property#Hole:PreviewShape, fcstd:native:property#Hole:Reversed, fcstd:native:property#Hole:SuppressedShape, fcstd:native:property#Hole:ThreadClass, fcstd:native:property#Hole:ThreadDepthType, fcstd:native:property#Hole:ThreadDirection, fcstd:native:property#Hole:ThreadFit, fcstd:native:property#Hole:ThreadSize, fcstd:native:property#Hole:Threaded, fcstd:native:property#Hole:UpToFace, fcstd:native:property#Hole:UpToFace2, fcstd:native:property#Hole:UseCustomThreadClearance, fcstd:native:property#HoleBase:BaseFeature, fcstd:native:property#HoleBase:ExpressionEngine, fcstd:native:property#HoleBase:Placement, fcstd:native:property#HoleBase:PreviewShape, fcstd:native:property#HoleBase:SuppressedShape, fcstd:native:property#HoleBody:BaseFeature, fcstd:native:property#HoleBody:ExpressionEngine, fcstd:native:property#HoleBody:Placement, fcstd:native:property#HoleProfile:ExpressionEngine, fcstd:native:property#HoleProfile:ExternalGeo, fcstd:native:property#HoleProfile:ExternalGeometry, fcstd:native:property#HoleProfile:InternalShape, fcstd:native:property#LinearPattern:BaseFeature, fcstd:native:property#LinearPattern:ExpressionEngine, fcstd:native:property#LinearPattern:Mode2, fcstd:native:property#LinearPattern:Placement, fcstd:native:property#LinearPattern:PreviewShape, fcstd:native:property#LinearPattern:Reversed, fcstd:native:property#LinearPattern:SpacingPattern, fcstd:native:property#LinearPattern:SpacingPattern2, fcstd:native:property#LinearPattern:Spacings, fcstd:native:property#LinearPattern:Spacings2, fcstd:native:property#LinearPattern:SuppressedShape, fcstd:native:property#Loft:ExpressionEngine, fcstd:native:property#Loft:Placement, fcstd:native:property#LoftSectionA:ExpressionEngine, fcstd:native:property#LoftSectionA:Placement, fcstd:native:property#LoftSectionB:ExpressionEngine, fcstd:native:property#LoftSectionB:Placement, fcstd:native:property#Mirror:ExpressionEngine, fcstd:native:property#Mirror:MirrorPlane, fcstd:native:property#Mirror:Placement, fcstd:native:property#MirrorBase:ExpressionEngine, fcstd:native:property#MirrorBase:Placement, fcstd:native:property#Origin001:ExpressionEngine, fcstd:native:property#Origin002:ExpressionEngine, fcstd:native:property#Origin003:ExpressionEngine, fcstd:native:property#Origin004:ExpressionEngine, fcstd:native:property#Origin005:ExpressionEngine, fcstd:native:property#Origin:ExpressionEngine, fcstd:native:property#PartChamfer:Edges, fcstd:native:property#PartChamfer:ExpressionEngine, fcstd:native:property#PartChamfer:Placement, fcstd:native:property#PartFillet:Edges, fcstd:native:property#PartFillet:ExpressionEngine, fcstd:native:property#PartFillet:Placement, fcstd:native:property#PatternBase:AddSubShape, fcstd:native:property#PatternBase:BaseFeature, fcstd:native:property#PatternBase:ExpressionEngine, fcstd:native:property#PatternBase:PreviewShape, fcstd:native:property#PatternBase:SuppressedShape, fcstd:native:property#PatternBody:BaseFeature, fcstd:native:property#PatternBody:ExpressionEngine, fcstd:native:property#PatternBody:Placement, fcstd:native:property#Revolution:AxisLink, fcstd:native:property#Revolution:ExpressionEngine, fcstd:native:property#Revolution:FaceMakerClass, fcstd:native:property#Revolution:Placement, fcstd:native:property#Revolution:Source, fcstd:native:property#RevolutionProfile:ExpressionEngine, fcstd:native:property#RevolutionProfile:ExternalGeo, fcstd:native:property#RevolutionProfile:ExternalGeometry, fcstd:native:property#RevolutionProfile:InternalShape, fcstd:native:property#Sweep:ExpressionEngine, fcstd:native:property#Sweep:Placement, fcstd:native:property#SweepSection:ExpressionEngine, fcstd:native:property#SweepSection:Placement, fcstd:native:property#SweepSpine:ExpressionEngine, fcstd:native:property#SweepSpine:Placement, fcstd:native:property#SymmetricExtrusion:DirLink, fcstd:native:property#SymmetricExtrusion:ExpressionEngine, fcstd:native:property#SymmetricExtrusion:FaceMakerClass, fcstd:native:property#SymmetricExtrusion:FaceMakerMode, fcstd:native:property#SymmetricExtrusion:Placement, fcstd:native:property#SymmetricExtrusion:Reversed, fcstd:native:property#SymmetricExtrusion:TaperAngleRev, fcstd:native:property#Thickness:ExpressionEngine, fcstd:native:property#Thickness:Placement, fcstd:native:property#ThicknessBase:ExpressionEngine, fcstd:native:property#ThicknessBase:Placement, fcstd:native:property#XY_Plane001:ExpressionEngine, fcstd:native:property#XY_Plane002:ExpressionEngine, fcstd:native:property#XY_Plane:ExpressionEngine, fcstd:native:property#XZ_Plane001:ExpressionEngine, fcstd:native:property#XZ_Plane002:ExpressionEngine, fcstd:native:property#XZ_Plane:ExpressionEngine, fcstd:native:property#X_Axis001:ExpressionEngine, fcstd:native:property#X_Axis002:ExpressionEngine, fcstd:native:property#X_Axis:ExpressionEngine, fcstd:native:property#YZ_Plane001:ExpressionEngine, fcstd:native:property#YZ_Plane002:ExpressionEngine, fcstd:native:property#YZ_Plane:ExpressionEngine, fcstd:native:property#Y_Axis001:ExpressionEngine, fcstd:native:property#Y_Axis002:ExpressionEngine, fcstd:native:property#Y_Axis:ExpressionEngine, fcstd:native:property#Z_Axis001:ExpressionEngine, fcstd:native:property#Z_Axis002:ExpressionEngine, fcstd:native:property#Z_Axis:ExpressionEngine",
+        "message": "the fcstd write omits 94 native record(s) from `fcstd.properties`: fcstd:native:property#DatumAxis:ExpressionEngine, fcstd:native:property#DatumAxis:Shape, fcstd:native:property#DatumCoordinateSystem:ExpressionEngine, fcstd:native:property#DatumPlane:ExpressionEngine, fcstd:native:property#DatumPoint:ExpressionEngine, fcstd:native:property#Draft:AddSubShape, fcstd:native:property#Draft:BaseFeature, fcstd:native:property#Draft:ExpressionEngine, fcstd:native:property#Draft:Placement, fcstd:native:property#Draft:PreviewShape, fcstd:native:property#Draft:PullDirection, fcstd:native:property#Draft:SuppressedShape, fcstd:native:property#DraftBase:PreviewShape, fcstd:native:property#DraftBase:SuppressedShape, fcstd:native:property#DraftBody:BaseFeature, fcstd:native:property#DraftBody:ExpressionEngine, fcstd:native:property#DraftBody:Placement, fcstd:native:property#Hole:AddSubShape, fcstd:native:property#Hole:BaseFeature, fcstd:native:property#Hole:ExpressionEngine, fcstd:native:property#Hole:Midplane, fcstd:native:property#Hole:ModelThread, fcstd:native:property#Hole:Placement, fcstd:native:property#Hole:PreviewShape, fcstd:native:property#Hole:Reversed, fcstd:native:property#Hole:SuppressedShape, fcstd:native:property#Hole:ThreadClass, fcstd:native:property#Hole:ThreadDepthType, fcstd:native:property#Hole:ThreadDirection, fcstd:native:property#Hole:ThreadFit, fcstd:native:property#Hole:ThreadSize, fcstd:native:property#Hole:Threaded, fcstd:native:property#Hole:UpToFace, fcstd:native:property#Hole:UpToFace2, fcstd:native:property#Hole:UseCustomThreadClearance, fcstd:native:property#HoleBase:PreviewShape, fcstd:native:property#HoleBase:SuppressedShape, fcstd:native:property#HoleBody:BaseFeature, fcstd:native:property#HoleBody:ExpressionEngine, fcstd:native:property#HoleBody:Placement, fcstd:native:property#HoleProfile:ExpressionEngine, fcstd:native:property#HoleProfile:ExternalGeo, fcstd:native:property#HoleProfile:ExternalGeometry, fcstd:native:property#HoleProfile:InternalShape, fcstd:native:property#LinearPattern:BaseFeature, fcstd:native:property#LinearPattern:ExpressionEngine, fcstd:native:property#LinearPattern:Mode2, fcstd:native:property#LinearPattern:Placement, fcstd:native:property#LinearPattern:PreviewShape, fcstd:native:property#LinearPattern:Reversed, fcstd:native:property#LinearPattern:SpacingPattern, fcstd:native:property#LinearPattern:SpacingPattern2, fcstd:native:property#LinearPattern:Spacings, fcstd:native:property#LinearPattern:Spacings2, fcstd:native:property#LinearPattern:SuppressedShape, fcstd:native:property#Loft:ExpressionEngine, fcstd:native:property#Loft:Placement, fcstd:native:property#Mirror:ExpressionEngine, fcstd:native:property#Mirror:MirrorPlane, fcstd:native:property#Mirror:Placement, fcstd:native:property#PartChamfer:Edges, fcstd:native:property#PartChamfer:ExpressionEngine, fcstd:native:property#PartChamfer:Placement, fcstd:native:property#PartFillet:Edges, fcstd:native:property#PartFillet:ExpressionEngine, fcstd:native:property#PartFillet:Placement, fcstd:native:property#PatternBase:AddSubShape, fcstd:native:property#PatternBase:BaseFeature, fcstd:native:property#PatternBase:ExpressionEngine, fcstd:native:property#PatternBase:PreviewShape, fcstd:native:property#PatternBase:SuppressedShape, fcstd:native:property#PatternBody:BaseFeature, fcstd:native:property#PatternBody:ExpressionEngine, fcstd:native:property#PatternBody:Placement, fcstd:native:property#Revolution:AxisLink, fcstd:native:property#Revolution:ExpressionEngine, fcstd:native:property#Revolution:FaceMakerClass, fcstd:native:property#Revolution:Placement, fcstd:native:property#Revolution:Source, fcstd:native:property#RevolutionProfile:ExpressionEngine, fcstd:native:property#RevolutionProfile:ExternalGeo, fcstd:native:property#RevolutionProfile:ExternalGeometry, fcstd:native:property#RevolutionProfile:InternalShape, fcstd:native:property#Sweep:ExpressionEngine, fcstd:native:property#Sweep:Placement, fcstd:native:property#SymmetricExtrusion:DirLink, fcstd:native:property#SymmetricExtrusion:ExpressionEngine, fcstd:native:property#SymmetricExtrusion:FaceMakerClass, fcstd:native:property#SymmetricExtrusion:FaceMakerMode, fcstd:native:property#SymmetricExtrusion:Placement, fcstd:native:property#SymmetricExtrusion:Reversed, fcstd:native:property#SymmetricExtrusion:TaperAngleRev, fcstd:native:property#Thickness:ExpressionEngine, fcstd:native:property#Thickness:Placement",
         "severity": "info"
       },
       {
@@ -623,7 +653,23 @@
             "entries": {
               "disposition": "dropped",
               "records": {
-                "fcstd:native:entry#Document.xml": "regenerated"
+                "fcstd:native:entry#ChamferBase.Shape.brp": "regenerated",
+                "fcstd:native:entry#DatumCoordinateSystem.Shape.brp": "regenerated",
+                "fcstd:native:entry#DatumPlane.Shape.brp": "regenerated",
+                "fcstd:native:entry#DatumPoint.Shape.brp": "regenerated",
+                "fcstd:native:entry#Document.xml": "regenerated",
+                "fcstd:native:entry#DraftBase.Shape.brp": "regenerated",
+                "fcstd:native:entry#DressupBase.Shape.brp": "regenerated",
+                "fcstd:native:entry#ExtrusionProfile.Shape.brp": "regenerated",
+                "fcstd:native:entry#HoleBase.Shape.brp": "regenerated",
+                "fcstd:native:entry#LoftSectionA.Shape.brp": "regenerated",
+                "fcstd:native:entry#LoftSectionB.Shape.brp": "regenerated",
+                "fcstd:native:entry#MirrorBase.Shape.brp": "regenerated",
+                "fcstd:native:entry#PatternBase.Shape.brp": "regenerated",
+                "fcstd:native:entry#SweepSection.Shape.brp": "regenerated",
+                "fcstd:native:entry#SweepSpine.Shape.brp": "regenerated",
+                "fcstd:native:entry#Thickness.Shape.brp": "regenerated",
+                "fcstd:native:entry#ThicknessBase.Shape.brp": "regenerated"
               }
             },
             "extensions": {
@@ -730,6 +776,15 @@
                 "fcstd:native:object#Z_Axis002": "written"
               }
             },
+            "orphan_object_data": {
+              "disposition": "dropped"
+            },
+            "polygons3d": {
+              "disposition": "dropped"
+            },
+            "polygons_on_triangulations": {
+              "disposition": "dropped"
+            },
             "product_nodes": {
               "disposition": "dropped"
             },
@@ -756,12 +811,15 @@
                 "fcstd:native:property#0:Uid": "regenerated",
                 "fcstd:native:property#0:UnitSystem": "regenerated",
                 "fcstd:native:property#0:UseHasher": "regenerated",
+                "fcstd:native:property#ChamferBase:ExpressionEngine": "regenerated",
                 "fcstd:native:property#ChamferBase:Label": "regenerated",
                 "fcstd:native:property#ChamferBase:Label2": "regenerated",
+                "fcstd:native:property#ChamferBase:Placement": "regenerated",
                 "fcstd:native:property#ChamferBase:Shape": "regenerated",
                 "fcstd:native:property#ChamferBase:ShapeMaterial": "written",
                 "fcstd:native:property#ChamferBase:Visibility": "regenerated",
                 "fcstd:native:property#ChamferBase:_ElementMapVersion": "written",
+                "fcstd:native:property#CorpusMetadata:ExpressionEngine": "written",
                 "fcstd:native:property#CorpusMetadata:InertValue": "written",
                 "fcstd:native:property#CorpusMetadata:Label": "written",
                 "fcstd:native:property#CorpusMetadata:Label2": "written",
@@ -843,8 +901,11 @@
                 "fcstd:native:property#Draft:Visibility": "regenerated",
                 "fcstd:native:property#Draft:_Body": "written",
                 "fcstd:native:property#Draft:_ElementMapVersion": "written",
+                "fcstd:native:property#DraftBase:BaseFeature": "regenerated",
+                "fcstd:native:property#DraftBase:ExpressionEngine": "regenerated",
                 "fcstd:native:property#DraftBase:Label": "regenerated",
                 "fcstd:native:property#DraftBase:Label2": "regenerated",
+                "fcstd:native:property#DraftBase:Placement": "regenerated",
                 "fcstd:native:property#DraftBase:Shape": "regenerated",
                 "fcstd:native:property#DraftBase:ShapeMaterial": "written",
                 "fcstd:native:property#DraftBase:Suppressed": "regenerated",
@@ -862,14 +923,18 @@
                 "fcstd:native:property#DraftBody:Visibility": "regenerated",
                 "fcstd:native:property#DraftBody:_ElementMapVersion": "written",
                 "fcstd:native:property#DraftBody:_GroupTouched": "written",
+                "fcstd:native:property#DressupBase:ExpressionEngine": "regenerated",
                 "fcstd:native:property#DressupBase:Label": "regenerated",
                 "fcstd:native:property#DressupBase:Label2": "regenerated",
+                "fcstd:native:property#DressupBase:Placement": "regenerated",
                 "fcstd:native:property#DressupBase:Shape": "regenerated",
                 "fcstd:native:property#DressupBase:ShapeMaterial": "written",
                 "fcstd:native:property#DressupBase:Visibility": "regenerated",
                 "fcstd:native:property#DressupBase:_ElementMapVersion": "written",
+                "fcstd:native:property#ExtrusionProfile:ExpressionEngine": "regenerated",
                 "fcstd:native:property#ExtrusionProfile:Label": "regenerated",
                 "fcstd:native:property#ExtrusionProfile:Label2": "regenerated",
+                "fcstd:native:property#ExtrusionProfile:Placement": "regenerated",
                 "fcstd:native:property#ExtrusionProfile:Shape": "regenerated",
                 "fcstd:native:property#ExtrusionProfile:ShapeMaterial": "written",
                 "fcstd:native:property#ExtrusionProfile:Visibility": "regenerated",
@@ -905,8 +970,11 @@
                 "fcstd:native:property#Hole:Visibility": "regenerated",
                 "fcstd:native:property#Hole:_Body": "written",
                 "fcstd:native:property#Hole:_ElementMapVersion": "written",
+                "fcstd:native:property#HoleBase:BaseFeature": "regenerated",
+                "fcstd:native:property#HoleBase:ExpressionEngine": "regenerated",
                 "fcstd:native:property#HoleBase:Label": "regenerated",
                 "fcstd:native:property#HoleBase:Label2": "regenerated",
+                "fcstd:native:property#HoleBase:Placement": "regenerated",
                 "fcstd:native:property#HoleBase:Shape": "regenerated",
                 "fcstd:native:property#HoleBase:ShapeMaterial": "written",
                 "fcstd:native:property#HoleBase:Suppressed": "regenerated",
@@ -979,14 +1047,18 @@
                 "fcstd:native:property#Loft:Solid": "regenerated",
                 "fcstd:native:property#Loft:Visibility": "regenerated",
                 "fcstd:native:property#Loft:_ElementMapVersion": "written",
+                "fcstd:native:property#LoftSectionA:ExpressionEngine": "regenerated",
                 "fcstd:native:property#LoftSectionA:Label": "regenerated",
                 "fcstd:native:property#LoftSectionA:Label2": "regenerated",
+                "fcstd:native:property#LoftSectionA:Placement": "regenerated",
                 "fcstd:native:property#LoftSectionA:Shape": "regenerated",
                 "fcstd:native:property#LoftSectionA:ShapeMaterial": "written",
                 "fcstd:native:property#LoftSectionA:Visibility": "regenerated",
                 "fcstd:native:property#LoftSectionA:_ElementMapVersion": "written",
+                "fcstd:native:property#LoftSectionB:ExpressionEngine": "regenerated",
                 "fcstd:native:property#LoftSectionB:Label": "regenerated",
                 "fcstd:native:property#LoftSectionB:Label2": "regenerated",
+                "fcstd:native:property#LoftSectionB:Placement": "regenerated",
                 "fcstd:native:property#LoftSectionB:Shape": "regenerated",
                 "fcstd:native:property#LoftSectionB:ShapeMaterial": "written",
                 "fcstd:native:property#LoftSectionB:Visibility": "regenerated",
@@ -1000,18 +1072,22 @@
                 "fcstd:native:property#Mirror:Source": "regenerated",
                 "fcstd:native:property#Mirror:Visibility": "regenerated",
                 "fcstd:native:property#Mirror:_ElementMapVersion": "written",
+                "fcstd:native:property#MirrorBase:ExpressionEngine": "regenerated",
                 "fcstd:native:property#MirrorBase:Label": "regenerated",
                 "fcstd:native:property#MirrorBase:Label2": "regenerated",
+                "fcstd:native:property#MirrorBase:Placement": "regenerated",
                 "fcstd:native:property#MirrorBase:Shape": "regenerated",
                 "fcstd:native:property#MirrorBase:ShapeMaterial": "written",
                 "fcstd:native:property#MirrorBase:Visibility": "regenerated",
                 "fcstd:native:property#MirrorBase:_ElementMapVersion": "written",
+                "fcstd:native:property#Origin001:ExpressionEngine": "written",
                 "fcstd:native:property#Origin001:Label": "written",
                 "fcstd:native:property#Origin001:Label2": "written",
                 "fcstd:native:property#Origin001:Placement": "regenerated",
                 "fcstd:native:property#Origin001:Role": "written",
                 "fcstd:native:property#Origin001:Visibility": "written",
                 "fcstd:native:property#Origin001:_ElementMapVersion": "written",
+                "fcstd:native:property#Origin002:ExpressionEngine": "written",
                 "fcstd:native:property#Origin002:Group": "written",
                 "fcstd:native:property#Origin002:Label": "written",
                 "fcstd:native:property#Origin002:Label2": "written",
@@ -1020,12 +1096,14 @@
                 "fcstd:native:property#Origin002:Visibility": "written",
                 "fcstd:native:property#Origin002:_ElementMapVersion": "written",
                 "fcstd:native:property#Origin002:_GroupTouched": "written",
+                "fcstd:native:property#Origin003:ExpressionEngine": "written",
                 "fcstd:native:property#Origin003:Label": "written",
                 "fcstd:native:property#Origin003:Label2": "written",
                 "fcstd:native:property#Origin003:Placement": "regenerated",
                 "fcstd:native:property#Origin003:Role": "written",
                 "fcstd:native:property#Origin003:Visibility": "written",
                 "fcstd:native:property#Origin003:_ElementMapVersion": "written",
+                "fcstd:native:property#Origin004:ExpressionEngine": "written",
                 "fcstd:native:property#Origin004:Group": "written",
                 "fcstd:native:property#Origin004:Label": "written",
                 "fcstd:native:property#Origin004:Label2": "written",
@@ -1034,12 +1112,14 @@
                 "fcstd:native:property#Origin004:Visibility": "written",
                 "fcstd:native:property#Origin004:_ElementMapVersion": "written",
                 "fcstd:native:property#Origin004:_GroupTouched": "written",
+                "fcstd:native:property#Origin005:ExpressionEngine": "written",
                 "fcstd:native:property#Origin005:Label": "written",
                 "fcstd:native:property#Origin005:Label2": "written",
                 "fcstd:native:property#Origin005:Placement": "regenerated",
                 "fcstd:native:property#Origin005:Role": "written",
                 "fcstd:native:property#Origin005:Visibility": "written",
                 "fcstd:native:property#Origin005:_ElementMapVersion": "written",
+                "fcstd:native:property#Origin:ExpressionEngine": "written",
                 "fcstd:native:property#Origin:Group": "written",
                 "fcstd:native:property#Origin:Label": "written",
                 "fcstd:native:property#Origin:Label2": "written",
@@ -1140,14 +1220,18 @@
                 "fcstd:native:property#Sweep:Transition": "regenerated",
                 "fcstd:native:property#Sweep:Visibility": "regenerated",
                 "fcstd:native:property#Sweep:_ElementMapVersion": "written",
+                "fcstd:native:property#SweepSection:ExpressionEngine": "regenerated",
                 "fcstd:native:property#SweepSection:Label": "regenerated",
                 "fcstd:native:property#SweepSection:Label2": "regenerated",
+                "fcstd:native:property#SweepSection:Placement": "regenerated",
                 "fcstd:native:property#SweepSection:Shape": "regenerated",
                 "fcstd:native:property#SweepSection:ShapeMaterial": "written",
                 "fcstd:native:property#SweepSection:Visibility": "regenerated",
                 "fcstd:native:property#SweepSection:_ElementMapVersion": "written",
+                "fcstd:native:property#SweepSpine:ExpressionEngine": "regenerated",
                 "fcstd:native:property#SweepSpine:Label": "regenerated",
                 "fcstd:native:property#SweepSpine:Label2": "regenerated",
+                "fcstd:native:property#SweepSpine:Placement": "regenerated",
                 "fcstd:native:property#SweepSpine:Shape": "regenerated",
                 "fcstd:native:property#SweepSpine:ShapeMaterial": "written",
                 "fcstd:native:property#SweepSpine:Visibility": "regenerated",
@@ -1179,114 +1263,134 @@
                 "fcstd:native:property#Thickness:Value": "regenerated",
                 "fcstd:native:property#Thickness:Visibility": "regenerated",
                 "fcstd:native:property#Thickness:_ElementMapVersion": "written",
+                "fcstd:native:property#ThicknessBase:ExpressionEngine": "regenerated",
                 "fcstd:native:property#ThicknessBase:Label": "regenerated",
                 "fcstd:native:property#ThicknessBase:Label2": "regenerated",
+                "fcstd:native:property#ThicknessBase:Placement": "regenerated",
                 "fcstd:native:property#ThicknessBase:Shape": "regenerated",
                 "fcstd:native:property#ThicknessBase:ShapeMaterial": "written",
                 "fcstd:native:property#ThicknessBase:Visibility": "regenerated",
                 "fcstd:native:property#ThicknessBase:_ElementMapVersion": "written",
+                "fcstd:native:property#XY_Plane001:ExpressionEngine": "written",
                 "fcstd:native:property#XY_Plane001:Label": "written",
                 "fcstd:native:property#XY_Plane001:Label2": "written",
                 "fcstd:native:property#XY_Plane001:Placement": "regenerated",
                 "fcstd:native:property#XY_Plane001:Role": "written",
                 "fcstd:native:property#XY_Plane001:Visibility": "written",
                 "fcstd:native:property#XY_Plane001:_ElementMapVersion": "written",
+                "fcstd:native:property#XY_Plane002:ExpressionEngine": "written",
                 "fcstd:native:property#XY_Plane002:Label": "written",
                 "fcstd:native:property#XY_Plane002:Label2": "written",
                 "fcstd:native:property#XY_Plane002:Placement": "regenerated",
                 "fcstd:native:property#XY_Plane002:Role": "written",
                 "fcstd:native:property#XY_Plane002:Visibility": "written",
                 "fcstd:native:property#XY_Plane002:_ElementMapVersion": "written",
+                "fcstd:native:property#XY_Plane:ExpressionEngine": "written",
                 "fcstd:native:property#XY_Plane:Label": "written",
                 "fcstd:native:property#XY_Plane:Label2": "written",
                 "fcstd:native:property#XY_Plane:Placement": "regenerated",
                 "fcstd:native:property#XY_Plane:Role": "written",
                 "fcstd:native:property#XY_Plane:Visibility": "written",
                 "fcstd:native:property#XY_Plane:_ElementMapVersion": "written",
+                "fcstd:native:property#XZ_Plane001:ExpressionEngine": "written",
                 "fcstd:native:property#XZ_Plane001:Label": "written",
                 "fcstd:native:property#XZ_Plane001:Label2": "written",
                 "fcstd:native:property#XZ_Plane001:Placement": "regenerated",
                 "fcstd:native:property#XZ_Plane001:Role": "written",
                 "fcstd:native:property#XZ_Plane001:Visibility": "written",
                 "fcstd:native:property#XZ_Plane001:_ElementMapVersion": "written",
+                "fcstd:native:property#XZ_Plane002:ExpressionEngine": "written",
                 "fcstd:native:property#XZ_Plane002:Label": "written",
                 "fcstd:native:property#XZ_Plane002:Label2": "written",
                 "fcstd:native:property#XZ_Plane002:Placement": "regenerated",
                 "fcstd:native:property#XZ_Plane002:Role": "written",
                 "fcstd:native:property#XZ_Plane002:Visibility": "written",
                 "fcstd:native:property#XZ_Plane002:_ElementMapVersion": "written",
+                "fcstd:native:property#XZ_Plane:ExpressionEngine": "written",
                 "fcstd:native:property#XZ_Plane:Label": "written",
                 "fcstd:native:property#XZ_Plane:Label2": "written",
                 "fcstd:native:property#XZ_Plane:Placement": "regenerated",
                 "fcstd:native:property#XZ_Plane:Role": "written",
                 "fcstd:native:property#XZ_Plane:Visibility": "written",
                 "fcstd:native:property#XZ_Plane:_ElementMapVersion": "written",
+                "fcstd:native:property#X_Axis001:ExpressionEngine": "written",
                 "fcstd:native:property#X_Axis001:Label": "written",
                 "fcstd:native:property#X_Axis001:Label2": "written",
                 "fcstd:native:property#X_Axis001:Placement": "regenerated",
                 "fcstd:native:property#X_Axis001:Role": "written",
                 "fcstd:native:property#X_Axis001:Visibility": "written",
                 "fcstd:native:property#X_Axis001:_ElementMapVersion": "written",
+                "fcstd:native:property#X_Axis002:ExpressionEngine": "written",
                 "fcstd:native:property#X_Axis002:Label": "written",
                 "fcstd:native:property#X_Axis002:Label2": "written",
                 "fcstd:native:property#X_Axis002:Placement": "regenerated",
                 "fcstd:native:property#X_Axis002:Role": "written",
                 "fcstd:native:property#X_Axis002:Visibility": "written",
                 "fcstd:native:property#X_Axis002:_ElementMapVersion": "written",
+                "fcstd:native:property#X_Axis:ExpressionEngine": "written",
                 "fcstd:native:property#X_Axis:Label": "written",
                 "fcstd:native:property#X_Axis:Label2": "written",
                 "fcstd:native:property#X_Axis:Placement": "regenerated",
                 "fcstd:native:property#X_Axis:Role": "written",
                 "fcstd:native:property#X_Axis:Visibility": "written",
                 "fcstd:native:property#X_Axis:_ElementMapVersion": "written",
+                "fcstd:native:property#YZ_Plane001:ExpressionEngine": "written",
                 "fcstd:native:property#YZ_Plane001:Label": "written",
                 "fcstd:native:property#YZ_Plane001:Label2": "written",
                 "fcstd:native:property#YZ_Plane001:Placement": "regenerated",
                 "fcstd:native:property#YZ_Plane001:Role": "written",
                 "fcstd:native:property#YZ_Plane001:Visibility": "written",
                 "fcstd:native:property#YZ_Plane001:_ElementMapVersion": "written",
+                "fcstd:native:property#YZ_Plane002:ExpressionEngine": "written",
                 "fcstd:native:property#YZ_Plane002:Label": "written",
                 "fcstd:native:property#YZ_Plane002:Label2": "written",
                 "fcstd:native:property#YZ_Plane002:Placement": "regenerated",
                 "fcstd:native:property#YZ_Plane002:Role": "written",
                 "fcstd:native:property#YZ_Plane002:Visibility": "written",
                 "fcstd:native:property#YZ_Plane002:_ElementMapVersion": "written",
+                "fcstd:native:property#YZ_Plane:ExpressionEngine": "written",
                 "fcstd:native:property#YZ_Plane:Label": "written",
                 "fcstd:native:property#YZ_Plane:Label2": "written",
                 "fcstd:native:property#YZ_Plane:Placement": "regenerated",
                 "fcstd:native:property#YZ_Plane:Role": "written",
                 "fcstd:native:property#YZ_Plane:Visibility": "written",
                 "fcstd:native:property#YZ_Plane:_ElementMapVersion": "written",
+                "fcstd:native:property#Y_Axis001:ExpressionEngine": "written",
                 "fcstd:native:property#Y_Axis001:Label": "written",
                 "fcstd:native:property#Y_Axis001:Label2": "written",
                 "fcstd:native:property#Y_Axis001:Placement": "regenerated",
                 "fcstd:native:property#Y_Axis001:Role": "written",
                 "fcstd:native:property#Y_Axis001:Visibility": "written",
                 "fcstd:native:property#Y_Axis001:_ElementMapVersion": "written",
+                "fcstd:native:property#Y_Axis002:ExpressionEngine": "written",
                 "fcstd:native:property#Y_Axis002:Label": "written",
                 "fcstd:native:property#Y_Axis002:Label2": "written",
                 "fcstd:native:property#Y_Axis002:Placement": "regenerated",
                 "fcstd:native:property#Y_Axis002:Role": "written",
                 "fcstd:native:property#Y_Axis002:Visibility": "written",
                 "fcstd:native:property#Y_Axis002:_ElementMapVersion": "written",
+                "fcstd:native:property#Y_Axis:ExpressionEngine": "written",
                 "fcstd:native:property#Y_Axis:Label": "written",
                 "fcstd:native:property#Y_Axis:Label2": "written",
                 "fcstd:native:property#Y_Axis:Placement": "regenerated",
                 "fcstd:native:property#Y_Axis:Role": "written",
                 "fcstd:native:property#Y_Axis:Visibility": "written",
                 "fcstd:native:property#Y_Axis:_ElementMapVersion": "written",
+                "fcstd:native:property#Z_Axis001:ExpressionEngine": "written",
                 "fcstd:native:property#Z_Axis001:Label": "written",
                 "fcstd:native:property#Z_Axis001:Label2": "written",
                 "fcstd:native:property#Z_Axis001:Placement": "regenerated",
                 "fcstd:native:property#Z_Axis001:Role": "written",
                 "fcstd:native:property#Z_Axis001:Visibility": "written",
                 "fcstd:native:property#Z_Axis001:_ElementMapVersion": "written",
+                "fcstd:native:property#Z_Axis002:ExpressionEngine": "written",
                 "fcstd:native:property#Z_Axis002:Label": "written",
                 "fcstd:native:property#Z_Axis002:Label2": "written",
                 "fcstd:native:property#Z_Axis002:Placement": "regenerated",
                 "fcstd:native:property#Z_Axis002:Role": "written",
                 "fcstd:native:property#Z_Axis002:Visibility": "written",
                 "fcstd:native:property#Z_Axis002:_ElementMapVersion": "written",
+                "fcstd:native:property#Z_Axis:ExpressionEngine": "written",
                 "fcstd:native:property#Z_Axis:Label": "written",
                 "fcstd:native:property#Z_Axis:Label2": "written",
                 "fcstd:native:property#Z_Axis:Placement": "regenerated",

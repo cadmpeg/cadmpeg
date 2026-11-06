@@ -75,7 +75,7 @@
         "articulations": 0,
         "assembly_joints": 2,
         "assets": 0,
-        "attributes": 153,
+        "attributes": 159,
         "bodies": 2,
         "coedges": 30,
         "colliders": 0,
@@ -191,6 +191,15 @@
               "disposition": "written"
             },
             "objects": {
+              "disposition": "written"
+            },
+            "orphan_object_data": {
+              "disposition": "written"
+            },
+            "polygons3d": {
+              "disposition": "written"
+            },
+            "polygons_on_triangulations": {
               "disposition": "written"
             },
             "product_nodes": {

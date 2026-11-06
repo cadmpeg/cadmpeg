@@ -6,7 +6,7 @@ use super::construction::axis_placement;
 use super::properties::{
     angle, enumeration, length, link_names, number, selection, tag, unsupported, vector,
 };
-use cadmpeg_core::CodecError;
+use super::FeatureError;
 use serde_json::Value;
 use std::collections::HashMap;
 
@@ -17,7 +17,7 @@ pub(super) fn pattern(
     extras: &mut Vec<Object>,
     entries: &mut Vec<(String, Vec<u8>)>,
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Result<(), CodecError> {
+) -> Result<(), FeatureError> {
     let count = value["count"].as_u64().unwrap_or(2);
     match tag(value) {
         "linear" | "linear_offsets" => {
@@ -45,7 +45,7 @@ pub(super) fn pattern(
                     let second = &value["second"];
                     vector(object, "Direction2", &second["direction"])?;
                     let count = second["count"].as_u64().ok_or_else(|| {
-                        CodecError::UnsupportedContent("second pattern count absent".into())
+                        FeatureError::Unsupported("second pattern count absent".into())
                     })?;
                     let distance = &second["distance"];
                     let span = tag(distance) == "span";
@@ -104,7 +104,7 @@ pub(super) fn pattern(
                         return unsupported("a periodic pattern has no instances");
                     }
                     let count = u32::try_from(count).map_err(|_| {
-                        CodecError::InvalidInput("(O-capacity) pattern count exceeds u32".into())
+                        FeatureError::Unsupported("(O-capacity) pattern count exceeds u32".into())
                     })?;
                     losses.push(crate::loss::FreecadLossCode::ExportFeatureNotTransferred.note(
                         format!("pattern {} periodic total-span control is encoded as an adjacent-angle control",object.name),
@@ -162,7 +162,7 @@ pub(super) fn pattern(
         "composite" => {
             object.kind = "PartDesign::MultiTransform".into();
             let stages = value["stages"].as_array().ok_or_else(|| {
-                CodecError::UnsupportedContent("composite pattern stages absent".into())
+                FeatureError::Unsupported("composite pattern stages absent".into())
             })?;
             let mut targets = Vec::new();
             for (index, stage) in stages.iter().enumerate() {
@@ -191,10 +191,10 @@ pub(super) fn pattern_offsets(
     object: &mut Object,
     angular: bool,
     entries: &mut Vec<(String, Vec<u8>)>,
-) -> Result<(), CodecError> {
+) -> Result<(), FeatureError> {
     let values = value[key]
         .as_array()
-        .ok_or_else(|| CodecError::UnsupportedContent("pattern offsets absent".into()))?;
+        .ok_or_else(|| FeatureError::Unsupported("pattern offsets absent".into()))?;
     if values.is_empty() {
         return unsupported("pattern offset list empty");
     }
@@ -216,10 +216,10 @@ pub(super) fn pattern_offsets(
         offsets
             .len()
             .checked_sub(1)
-            .ok_or_else(|| CodecError::malformed("pattern has no offsets"))?,
+            .ok_or_else(|| FeatureError::Unsupported("pattern has no offsets".into()))?,
     )
     .map_err(|_| {
-        CodecError::InvalidInput("(O-capacity) pattern spacing count exceeds u32".into())
+        FeatureError::Unsupported("(O-capacity) pattern spacing count exceeds u32".into())
     })?;
     let mut bytes = count.to_le_bytes().to_vec();
     for pair in offsets.windows(2) {
@@ -266,7 +266,7 @@ pub(super) fn auxiliary(
     direction: &Value,
     names: &HashMap<String, String>,
     extras: &mut Vec<Object>,
-) -> Result<String, CodecError> {
+) -> Result<String, FeatureError> {
     let name = unique_name(&format!("{}_{suffix}", owner.name), names, extras);
     let mut object = Object::new(name.clone(), kind, &name);
     axis_placement(&mut object, origin, direction)?;

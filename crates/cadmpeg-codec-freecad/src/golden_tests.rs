@@ -683,7 +683,7 @@ fn geometry_depth_agrees_with_full_depth() {
                         cadmpeg_ir::document::ArenaClass::Model
                     } else if objects.iter().any(|object| {
                         object.id().as_str() == property.owner
-                            && crate::design::is_design_kind(&object.type_name)
+                            && crate::design::is_design_object(&object.type_name)
                     }) || property.owner == crate::native::native_id("document", "0")
                     {
                         cadmpeg_ir::document::ArenaClass::Design

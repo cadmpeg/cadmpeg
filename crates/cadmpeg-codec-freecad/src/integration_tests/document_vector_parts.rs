@@ -130,7 +130,7 @@ fn nameless_vector_is_given_up_without_changing_any_readable_vector_or_scalar_pe
 }
 
 #[test]
-fn incomplete_nonfinite_text_and_dynamic_fallback_vectors_keep_the_generic_native_record() {
+fn invalid_vectors_give_up_the_value_and_valid_fallback_vectors_stay_native() {
     for (value, dynamic, projected) in [
         ("<PropertyVector valueX='1' valueY='2'/>", "", false),
         (
@@ -162,8 +162,7 @@ fn incomplete_nonfinite_text_and_dynamic_fallback_vectors_keep_the_generic_nativ
         );
         let dom = roxmltree::Document::parse(&xml).unwrap();
         let pure =
-            crate::persistence::parse_document(&dom, crate::persistence::Vocabulary::Objects)
-                .unwrap();
+            crate::persistence::parse_document(&dom, crate::persistence::Vocabulary::Objects);
         let decoded = crate::FcstdCodec
             .decode(&mut Cursor::new(archive(&xml)), &DecodeOptions::default())
             .unwrap();
@@ -174,15 +173,16 @@ fn incomplete_nonfinite_text_and_dynamic_fallback_vectors_keep_the_generic_nativ
             .unwrap()
             .arena_as::<crate::native::PropertyRecord>("properties")
             .unwrap();
-        assert_eq!(properties, pure.properties);
-        assert!(matches!(
-            properties[0].body,
-            Some(crate::native::PropertyBody::Persisted { .. })
-        ));
-        assert!(
-            crate::test_support::source_fidelity::given_up(decoded.source_fidelity()).is_empty()
-        );
         if projected {
+            assert_eq!(properties, pure.unwrap().properties);
+            assert!(matches!(
+                properties[0].body,
+                Some(crate::native::PropertyBody::Persisted { .. })
+            ));
+            assert!(
+                crate::test_support::source_fidelity::given_up(decoded.source_fidelity())
+                    .is_empty()
+            );
             assert_eq!(
                 decoded
                     .ir()
@@ -195,23 +195,23 @@ fn incomplete_nonfinite_text_and_dynamic_fallback_vectors_keep_the_generic_nativ
                 [Some(AttributeValue::vector([1.0, 2.0, 3.0]).unwrap())]
             );
         } else {
+            assert!(pure.is_err());
+            assert!(properties[0].body.is_none());
             assert!(!decoded
                 .ir()
                 .model
                 .attributes
                 .iter()
                 .any(|attribute| attribute.name == "Vector"));
+            let parts = crate::test_support::source_fidelity::given_up(decoded.source_fidelity());
+            assert_eq!(parts.len(), 1);
+            assert_eq!(parts[0].1.data(), Some(value.as_bytes()));
             assert!(decoded
                 .report()
                 .losses
                 .iter()
-                .any(|loss| loss.code.local_code() == "attribute.property-unprojected"));
+                .any(|loss| loss.code.local_code() == "record.unreadable"));
         }
-        assert!(!decoded
-            .report()
-            .losses
-            .iter()
-            .any(|loss| loss.code.local_code() == "record.unreadable"));
     }
 }
 
@@ -275,4 +275,130 @@ fn a_failed_sibling_entry_keeps_already_born_vector_fields_and_capture() {
         u64::try_from(bytes.len() - header).unwrap()
     );
     assert_eq!(retained.data(), Some(&bytes[header..]));
+}
+
+#[test]
+fn embedded_vector_list_projects_its_ordered_numeric_values() {
+    let xml = document("<Property name='Vectors' type='App::PropertyVectorList'><VectorList file='vectors.bin'/></Property>", 1);
+    let mut vectors = 2_u32.to_le_bytes().to_vec();
+    for value in [1.0_f64, 2.0, 3.0, -4.0, 5.5, 6.0] {
+        vectors.extend_from_slice(&value.to_le_bytes());
+    }
+    let source = zip_fixture::archive(&[
+        RawEntry::stored("Document.xml", xml.as_bytes()),
+        RawEntry::stored("vectors.bin", &vectors),
+    ]);
+    let decoded = crate::FcstdCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let attribute = decoded
+        .ir()
+        .model
+        .attributes
+        .iter()
+        .find(|attribute| attribute.name == "Vectors")
+        .expect("vector list attribute");
+    assert_eq!(
+        attribute.values,
+        [
+            Some(AttributeValue::vector([1.0, 2.0, 3.0]).unwrap()),
+            Some(AttributeValue::vector([-4.0, 5.5, 6.0]).unwrap()),
+        ]
+    );
+    assert!(decoded.source_fidelity().unrepresented().is_empty());
+}
+
+#[test]
+fn unreadable_vector_list_gives_up_its_side_member_and_keeps_the_header() {
+    let xml = document("<Property name='Vectors' type='App::PropertyVectorList'><VectorList file='vectors.bin'/></Property><Property name='Peer' type='App::PropertyString'><String value='held'/></Property>", 2);
+    let bad = [2_u8, 0, 0, 0, 1, 2, 3];
+    let source = zip_fixture::archive(&[
+        RawEntry::stored("Document.xml", xml.as_bytes()),
+        RawEntry::stored("vectors.bin", &bad),
+    ]);
+    let decoded = crate::FcstdCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let properties = decoded
+        .ir()
+        .native
+        .namespace("fcstd")
+        .unwrap()
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .unwrap();
+    let property = properties
+        .iter()
+        .find(|property| property.name == "Vectors")
+        .unwrap();
+    assert_eq!(property.type_name, "App::PropertyVectorList");
+    assert!(property.body.is_none());
+    assert!(decoded
+        .ir()
+        .model
+        .attributes
+        .iter()
+        .any(|attribute| attribute.name == "Peer"));
+    let parts = crate::test_support::source_fidelity::given_up(decoded.source_fidelity());
+    let [(stub, bytes)] = parts.as_slice() else {
+        panic!("one unreadable side member")
+    };
+    assert_eq!(bytes.data(), Some(bad.as_slice()));
+    let unknowns = decoded
+        .ir()
+        .native
+        .namespace("fcstd")
+        .unwrap()
+        .arena_as::<cadmpeg_ir::NativeUnknownRecord>("unknowns")
+        .unwrap();
+    let unknown = unknowns
+        .iter()
+        .find(|unknown| unknown.id.as_str() == *stub)
+        .unwrap();
+    assert!(unknown
+        .links
+        .iter()
+        .any(|link| link.as_str() == property.id));
+}
+
+#[test]
+fn missing_template_member_reports_the_derived_drawing_fields() {
+    let xml = "<Document SchemaVersion='4' FileVersion='1'><Properties Count='0'/><Objects Count='1'><Object name='Template' type='TechDraw::DrawSVGTemplate'/></Objects><ObjectData Count='1'><Object name='Template'><Properties Count='2'><Property name='PageResult' type='App::PropertyFileIncluded'><FileIncluded file='missing.svg'/></Property><Property name='Label' type='App::PropertyString'><String value='A template'/></Property></Properties></Object></ObjectData></Document>";
+    let source = zip_fixture::archive(&[RawEntry::stored("Document.xml", xml.as_bytes())]);
+    let decoded = crate::FcstdCodec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .unwrap();
+    let drawing = decoded
+        .ir()
+        .model
+        .drawings
+        .iter()
+        .find(|drawing| drawing.kind == cadmpeg_ir::drawings::DrawingKind::Template)
+        .unwrap();
+    assert!(drawing.sheet.is_none());
+    assert!(drawing.template_geometry.is_none());
+    let properties = decoded
+        .ir()
+        .native
+        .namespace("fcstd")
+        .unwrap()
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .unwrap();
+    assert!(properties
+        .iter()
+        .find(|property| property.name == "PageResult")
+        .unwrap()
+        .body
+        .is_none());
+    let fields = decoded
+        .report()
+        .losses
+        .iter()
+        .flat_map(|loss| &loss.dropped_fields)
+        .filter(|field| field.record == drawing.id.as_str())
+        .map(|field| field.field.as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        fields,
+        std::collections::BTreeSet::from(["sheet", "template_geometry"])
+    );
 }

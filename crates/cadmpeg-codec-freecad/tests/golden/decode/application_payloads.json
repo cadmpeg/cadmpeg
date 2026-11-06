@@ -433,6 +433,32 @@
           ]
         },
         {
+          "id": "fcstd:model:attribute#TemperatureConstraint:Normals:property",
+          "name": "Normals",
+          "native_ref": "fcstd:native:property#TemperatureConstraint:Normals",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#TemperatureConstraint"
+            },
+            "kind": "record"
+          },
+          "values": []
+        },
+        {
+          "id": "fcstd:model:attribute#TemperatureConstraint:Points:property",
+          "name": "Points",
+          "native_ref": "fcstd:native:property#TemperatureConstraint:Points",
+          "target": {
+            "id": {
+              "arena": "features",
+              "id": "fcstd:design:feature#TemperatureConstraint"
+            },
+            "kind": "record"
+          },
+          "values": []
+        },
+        {
           "id": "fcstd:model:attribute#TemperatureConstraint:References:property",
           "name": "References",
           "native_ref": "fcstd:native:property#TemperatureConstraint:References",
@@ -714,6 +740,8 @@
           "gui_view_providers": 0,
           "joints": 0,
           "objects": 7,
+          "polygons3d": 0,
+          "polygons_on_triangulations": 0,
           "product_nodes": 0,
           "properties": 80,
           "shape_payloads": 0,
@@ -724,19 +752,21 @@
       "__arena_sha256": {
         "fcstd": {
           "annotations": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-          "applications": "de484123d908f0a095c74e2fc19072c83c5656992c0ae88c69f2d313c8005029",
+          "applications": "163aec97a1984c1f0472ba26874851e977313c23ced7ae972494bd9dd62a353b",
           "carrier_census": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "design_census": "919a39d48f433022be1a09a9b166ca3df071188be74a19d4863959be18c039be",
           "document": "d93178e2ae60a752308667e099e054b0413f4e1d2aca58c574989f415af65261",
           "drawings": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "element_maps": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-          "entries": "8171ee0b9133354c2697808b6d3cffeb483a232e1bfcacdad05b34ccd07a0d69",
+          "entries": "0a436601b7986b12fc9219bcc74ee0b4b336e86e059cff1917ccf4a2b179288e",
           "extensions": "838944162c9aa7dd92b5f11c68155697179dce1ec54400eeff6bc6479a93228f",
           "gui_documents": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "gui_properties": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "gui_view_providers": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "joints": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "objects": "c360910dafb6d125232dcb9b3de9958f3d5200d6111ed1a530c41482a7fa906e",
+          "polygons3d": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "polygons_on_triangulations": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "product_nodes": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "properties": "e33d72f4e7264737114102252a404f0b600a5691c305e768fb672f2e71032c78",
           "shape_payloads": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
@@ -983,66 +1013,6 @@
     "losses": [
       {
         "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#ExtensionPayload:Payload (App::PropertyFileIncluded) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#TemperatureConstraint:Normals (App::PropertyVectorList) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#TemperatureConstraint:Points (App::PropertyVectorList) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#Toolpath:Path (Path::PropertyPath) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "source.design-payload-unrepresented",
-          "kind": "record_not_typed",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "opaque payload Normals survives only as source bytes; its Design content has no typed representation",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "source.design-payload-unrepresented",
-          "kind": "record_not_typed",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "opaque payload Points survives only as source bytes; its Design content has no typed representation",
-        "severity": "warning"
-      },
-      {
-        "code": {
           "code": "source.design-payload-unrepresented",
           "kind": "record_not_typed",
           "namespace": "fcstd",
@@ -1082,30 +1052,6 @@
     "annotations": {},
     "decode_digest": "410af2e9ed55011039ee065b20e7614037482d382e75e173d78c9a008522de75",
     "retained_records": {
-      "fcstd:native:entry#Normals": {
-        "bytes": {
-          "byte_len": 4,
-          "retention": "digest",
-          "sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
-        },
-        "offset": 0,
-        "stream": "Normals",
-        "untyped": [
-          "design"
-        ]
-      },
-      "fcstd:native:entry#Points": {
-        "bytes": {
-          "byte_len": 4,
-          "retention": "digest",
-          "sha256": "df3f619804a92fdb4057192dc43dd748ea778adc52bc498ce80524c014b81119"
-        },
-        "offset": 0,
-        "stream": "Points",
-        "untyped": [
-          "design"
-        ]
-      },
       "fcstd:native:entry#Toolpath.nc": {
         "bytes": {
           "byte_len": 114,

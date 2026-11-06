@@ -397,6 +397,9 @@
         },
         {
           "appearance": "fcstd:appearance:shape-material#Body:1",
+          "channels": {
+            "precedence": "shape_over_object"
+          },
           "id": "fcstd:appearance:binding#shape-material:Body:0",
           "native_ref": "fcstd:native:gui-property#Body:ShapeAppearance",
           "object_type": "ViewProvider ShapeAppearance",
@@ -408,6 +411,9 @@
         },
         {
           "appearance": "fcstd:appearance:shape-material#Pad:1",
+          "channels": {
+            "precedence": "shape_over_object"
+          },
           "id": "fcstd:appearance:binding#shape-material:Pad:0",
           "native_ref": "fcstd:native:gui-property#Pad:ShapeAppearance",
           "object_type": "ViewProvider ShapeAppearance",
@@ -4589,7 +4595,7 @@
           },
           "id": "fcstd:design:parameter#Pad:Length",
           "name": "Length",
-          "native_ref": "fcstd:native:property#Pad:Length",
+          "native_ref": "fcstd:native:property#Pad:ExpressionEngine",
           "ordinal": 0,
           "owner": "fcstd:design:feature#Pad",
           "value": {
@@ -6553,6 +6559,8 @@
           "gui_view_providers": 12,
           "joints": 0,
           "objects": 12,
+          "polygons3d": 0,
+          "polygons_on_triangulations": 0,
           "product_nodes": 0,
           "properties": 162,
           "shape_payloads": 6,
@@ -6563,21 +6571,23 @@
       "__arena_sha256": {
         "fcstd": {
           "annotations": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-          "applications": "3479afc76520897ba7b55fa49d33dbe42479bef95acddca7edc59df7c2d9c31e",
+          "applications": "4bd55b07db79edc8adae84051aa97baf4af99c84afd0a41d9f925f94287ae70c",
           "carrier_census": "40b842fa017f509a88a02d3128a97d06d9abd372a0f525974976e455bd21dcb4",
           "design_census": "f7bc3bff5b9f58859814ffc4f6a95dedd16dda673c6e0e66044dc9a2bd494681",
           "document": "1804e710054cd1b35ceacb34af36f2fedeb204103c92dc5f087f1da68a916648",
           "drawings": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "element_maps": "6c802f484a5c7fa8251f73cfe89865c181306c90511829b420aad98e4627630f",
-          "entries": "4df5aff1169f4e8d1f51a8c993b15fa0e7ec18b63a6d748ef3e4c5e41af219d3",
+          "entries": "2f0abe312fd589d1808c67cf218e0fddc892a400b332d6066590390afa2e7a9f",
           "extensions": "c5fbc249e421d2c86c91a6b0d820afa280bc8178a71d3e2b07a56e99e908393a",
           "gui_documents": "9c8e4f860a900df0d1e6516c3a715f418bd8d39c2012b5e3bae8d3cc91617f2d",
           "gui_properties": "e35769b79120cd6fe51c56c73c837a58d6e669bb0d138b0d8b6a1b60827c90c2",
           "gui_view_providers": "885dfa8f76c29dd95f6828b724a18b7fe7293775339889311aa0027acf68eb69",
           "joints": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "objects": "5685d8f3b72e3d9686624efb8d9a83521de4f5abf4f1c1d26915b73ad958a844",
+          "polygons3d": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "polygons_on_triangulations": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "product_nodes": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-          "properties": "a3d04ad0a9ef680666c6f2a6422c9926b4cde5ded235c1eeeabed4006fc01fdc",
+          "properties": "652117fd19bacea44b4e922866f60b30e31f903b1c5fcb0266f195974c4bac7c",
           "shape_payloads": "a1cc3ca1f7e7337b7f2b2e8d807e5c19c92ea39425475a1d1a6a897d56483f03",
           "string_tables": "e247690bc428a83878ef7ce8fa1a57c2bbe3354af0d01cda3db7ed8319e75c7f",
           "topology_uses": "f9f60b1d38758c49c0f555775508d65062f54606809c818d3a319d6eef3d7704"
@@ -7325,7 +7335,120 @@
         }
       }
     },
-    "losses": [],
+    "losses": [
+      {
+        "code": {
+          "code": "appearance.topology-color-count-mismatch",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "FCStd provider XZ_Plane ShapeAppearance material count 1 has no matching shape or 0 mapped Face subelements; appearances are retained without face bindings",
+        "provenance": {
+          "format": "fcstd",
+          "offset": 1136,
+          "stream": "GuiDocument.xml",
+          "tag": "fcstd:native:gui-property#XZ_Plane:ShapeAppearance"
+        },
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.topology-color-count-mismatch",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "FCStd provider Origin001 ShapeAppearance material count 1 has no matching shape or 0 mapped Face subelements; appearances are retained without face bindings",
+        "provenance": {
+          "format": "fcstd",
+          "offset": 3171,
+          "stream": "GuiDocument.xml",
+          "tag": "fcstd:native:gui-property#Origin001:ShapeAppearance"
+        },
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.topology-color-count-mismatch",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "FCStd provider Z_Axis ShapeAppearance material count 1 has no matching shape or 0 mapped Face subelements; appearances are retained without face bindings",
+        "provenance": {
+          "format": "fcstd",
+          "offset": 5204,
+          "stream": "GuiDocument.xml",
+          "tag": "fcstd:native:gui-property#Z_Axis:ShapeAppearance"
+        },
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.topology-color-count-mismatch",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "FCStd provider YZ_Plane ShapeAppearance material count 1 has no matching shape or 0 mapped Face subelements; appearances are retained without face bindings",
+        "provenance": {
+          "format": "fcstd",
+          "offset": 7239,
+          "stream": "GuiDocument.xml",
+          "tag": "fcstd:native:gui-property#YZ_Plane:ShapeAppearance"
+        },
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.topology-color-count-mismatch",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "FCStd provider XY_Plane ShapeAppearance material count 1 has no matching shape or 0 mapped Face subelements; appearances are retained without face bindings",
+        "provenance": {
+          "format": "fcstd",
+          "offset": 9274,
+          "stream": "GuiDocument.xml",
+          "tag": "fcstd:native:gui-property#XY_Plane:ShapeAppearance"
+        },
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.topology-color-count-mismatch",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "FCStd provider X_Axis ShapeAppearance material count 1 has no matching shape or 0 mapped Face subelements; appearances are retained without face bindings",
+        "provenance": {
+          "format": "fcstd",
+          "offset": 16574,
+          "stream": "GuiDocument.xml",
+          "tag": "fcstd:native:gui-property#X_Axis:ShapeAppearance"
+        },
+        "severity": "warning"
+      },
+      {
+        "code": {
+          "code": "appearance.topology-color-count-mismatch",
+          "kind": "material_not_transferred",
+          "namespace": "fcstd",
+          "scope": "namespaced"
+        },
+        "message": "FCStd provider Y_Axis ShapeAppearance material count 1 has no matching shape or 0 mapped Face subelements; appearances are retained without face bindings",
+        "provenance": {
+          "format": "fcstd",
+          "offset": 24850,
+          "stream": "GuiDocument.xml",
+          "tag": "fcstd:native:gui-property#Y_Axis:ShapeAppearance"
+        },
+        "severity": "warning"
+      }
+    ],
     "notes": [
       "SchemaVersion=4",
       "FileVersion=1",

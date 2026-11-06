@@ -146,6 +146,7 @@ mod admission;
 mod brep_order;
 use brep_order::{brep_sense, edge_use_positions, edge_use_sense, pole_use_order};
 mod appearance;
+mod arc_curve;
 mod attributes;
 mod copious_curve;
 mod degrade;
@@ -155,6 +156,8 @@ mod feature_order;
 mod levels;
 mod native_plane;
 mod native_records;
+mod offset_curve;
+mod offset_surface;
 mod pcurve_admission;
 mod placement_entities;
 pub(crate) mod target;
@@ -640,10 +643,16 @@ fn synthesize_with_admission(
     let (admitted, admission_losses) = admission::edge_carriers(pcurves.as_ref())?;
     let (stripped, strip_losses) = admission::strip_unusable_face_topology(admitted.as_ref());
     let ir = stripped.as_ref().unwrap_or(admitted.as_ref());
-    let mut graph = match synthesis_graph(ctx, ir, version) {
-        Ok(graph) => graph,
-        Err(CodecError::UnsupportedContent(reason)) => degrade::graph(ctx, ir, version, &reason)?,
-        Err(error) => return Err(error.into()),
+    let mut graph = if degrade::has_dangling_body_region(ir) {
+        degrade::graph(ctx, ir, version, "a body references a missing region")?
+    } else {
+        match synthesis_graph(ctx, ir, version) {
+            Ok(graph) => graph,
+            Err(CodecError::UnsupportedContent(reason)) => {
+                degrade::graph(ctx, ir, version, &reason)?
+            }
+            Err(error) => return Err(error.into()),
+        }
     };
     let pcurves_adapted = !pcurve_losses.is_empty();
     graph.losses.extend(pole_losses);
@@ -709,22 +718,40 @@ fn synthesize_with_admission(
         .iter()
         .flat_map(|entity| entity.source_targets.iter())
         .collect::<BTreeSet<_>>();
-    let mut emitted_compounds = 0;
+    copious_curve::clear_written_parameter_losses(ir, &graph.entities, &mut graph.losses);
+    let mut emitted_procedurals = 0;
     for procedural in &ir.model.procedural_curves {
         let Some(owner) = ir.model.procedural_curve_owner(&procedural.id) else {
             continue;
         };
-        if compound::geometry(ir, owner).is_some()
-            && graph.entities.iter().any(|entity| {
-                entity.type_code == 102
-                    && matches!(entity.status, EntityStatus::Independent)
-                    && entity
-                        .source_targets
-                        .iter()
-                        .any(|target| target == owner.as_str())
-            })
-        {
-            emitted_compounds += 1;
+        let compound = compound::geometry(ir, owner).is_some();
+        if graph.entities.iter().any(|entity| {
+            ((compound && entity.type_code == 102) || entity.type_code == 130)
+                && matches!(entity.status, EntityStatus::Independent)
+                && entity
+                    .source_targets
+                    .iter()
+                    .any(|target| target == owner.as_str())
+        }) {
+            emitted_procedurals += 1;
+            let previous = format!(
+                "IGES procedural definition {} was reduced to a solved carrier",
+                procedural.id
+            );
+            graph.losses.retain(|loss| loss.message != previous);
+        }
+    }
+    for procedural in &ir.model.procedural_surfaces {
+        let Some(owner) = ir.model.procedural_surface_owner(&procedural.id) else {
+            continue;
+        };
+        if graph.entities.iter().any(|entity| {
+            entity.type_code == 140
+                && entity
+                    .source_targets
+                    .iter()
+                    .any(|target| target == owner.as_str())
+        }) {
             let previous = format!(
                 "IGES procedural definition {} was reduced to a solved carrier",
                 procedural.id
@@ -882,7 +909,7 @@ fn synthesize_with_admission(
         coverage.coedges = ArenaDisposition::Reported;
         coverage.pcurves = ArenaDisposition::Reported;
     }
-    if emitted_compounds > 0 {
+    if emitted_procedurals > 0 {
         coverage.procedural_curves = ArenaDisposition::Reported;
     }
     if emitted_products > 0 {
@@ -4541,19 +4568,27 @@ fn curve_on_surface_entity(
             EntityStatus::ParameterCurve,
         )?)
     };
+    let (source_targets, label, preference) = copious_curve::boundary_properties(
+        ir,
+        boundary,
+        pcurve_indices,
+        entities,
+        model_curve,
+        &parameter_curve,
+    );
     Ok(Entity {
         structure: None,
         property_links: Vec::new(),
         association_links: Vec::new(),
         line_font: None,
-        source_targets: Vec::new(),
+        source_targets,
         type_code: 142,
         form: 0,
-        label: String::new(),
+        label,
         status: EntityStatus::PhysicallyDependent,
         subscript: 0,
         parameter_body: format!(
-            "{CURVE_ON_SURFACE_CREATION_UNSPECIFIED},{},{},{},{CURVE_ON_SURFACE_PREFERENCE_MODEL_CURVE};",
+            "{CURVE_ON_SURFACE_CREATION_UNSPECIFIED},{},{},{},{preference};",
             reference_marker(surface_index),
             parameter_curve,
             reference_marker(model_curve)
@@ -5150,6 +5185,9 @@ fn pcurve_entity(ir: &CadIr, pcurve: &Pcurve) -> Result<Entity, CodecError> {
     let curve = nurbs
         .lift(|point| Point3::new(point.u, point.v, 0.0))
         .map_err(|error| CodecError::malformed(format_args!("pcurve {}: {error}", pcurve.id)))?;
+    if let Some(entity) = copious_curve::parameter_curve(ir, &pcurve, &curve, range) {
+        return Ok(entity);
+    }
     encode_nurbs(&curve, range, "PCURVE")
 }
 
@@ -5707,6 +5745,8 @@ fn entity_counts(entities: &[Entity]) -> BTreeMap<String, usize> {
             123 => "123_direction",
             126 => "126_nurbs_curve",
             128 => "128_nurbs_surface",
+            130 => "130_offset_curve",
+            140 => "140_offset_surface",
             124 => "124_transformation",
             106 => "106_copious_data",
             102 => "102_composite_curve",
@@ -6087,6 +6127,7 @@ fn append_free_point_entity(
             status
         },
     );
+    support_records::retain_point_parameters(ir, point, &mut entity);
     entity.source_targets.push(point.id.to_string());
     let index = entities.len();
     entities.push(entity);
@@ -6220,6 +6261,9 @@ fn append_surface_entities(
 ) -> Result<Option<usize>, CodecError> {
     let (ir, version) = input;
     let Some(status) = ownership.surface_status(surface) else {
+        if offset_surface::consumed_support(ir, surface, version) {
+            return Ok(None);
+        }
         report_unowned_support(losses, surface.id.as_str());
         return Ok(None);
     };
@@ -6463,6 +6507,9 @@ fn surface_entities_for_ir(
     version: crate::IgesVersion,
 ) -> Result<Vec<Entity>, CodecError> {
     let geometry = &surface.geometry;
+    if let Some(entities) = offset_surface::entities(ir, surface, base_index, version) {
+        return Ok(entities);
+    }
     if let Some(entity) = native_plane::regenerate(ir, surface) {
         return Ok(vec![entity]);
     }
@@ -7432,6 +7479,17 @@ impl CurveEntityEmitter<'_> {
                 "IGES composite curve graph contains a cycle at {curve_id}"
             )));
         }
+        if sense == Sense::Forward {
+            if let Some(index) =
+                self.append_uniform_circle_offset(curve_id, geometry, span, status)?
+            {
+                self.active.remove(curve_id);
+                self.entities[index]
+                    .source_targets
+                    .push(curve_id.to_string());
+                return Ok(index);
+            }
+        }
         let result = match geometry {
             CurveGeometry::Solved(SolvedCurveGeometry::Composite { segments, .. }) => {
                 let children = self.append_composite_constituents(segments, sense)?;
@@ -7468,6 +7526,10 @@ impl CurveEntityEmitter<'_> {
                         oriented_curve_entity(geometry, span, Sense::Reversed, self.version)?
                     }
                 };
+                if sense == Sense::Forward {
+                    arc_curve::retain(self.ir, curve_id, geometry, span, &mut entity);
+                    native_records::numeric::retain_line(self.ir, curve_id, &mut entity);
+                }
                 entity.status = status;
                 let index = self.entities.len();
                 self.entities.push(entity);
@@ -8081,6 +8143,25 @@ fn append_unowned_curves(
             );
         }
         mark_curve_descendants(ir, &curve.id, consumed, &mut BTreeSet::new())?;
+    }
+    for procedural in &ir.model.procedural_curves {
+        let cadmpeg_ir::geometry::ProceduralCurveDefinition::Offset(offset) =
+            procedural.definition()
+        else {
+            continue;
+        };
+        let Some(owner) = ir.model.procedural_curve_owner(&procedural.id) else {
+            continue;
+        };
+        if entities.iter().any(|entity| {
+            entity.type_code == 130
+                && entity
+                    .source_targets
+                    .iter()
+                    .any(|target| target == owner.as_str())
+        }) {
+            consumed.insert(offset.source().to_string());
+        }
     }
     for (curve, status) in dependent {
         if consumed.contains(curve.id.as_str()) {

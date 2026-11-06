@@ -2,13 +2,23 @@
   "entries": [
     {
       "name": "Document.xml",
-      "payload_len": 6282,
-      "payload_sha256": "f48293fe3c99d3e37ccabab8d886d935fbcd484b94d441c42575f336308acb73"
+      "payload_len": 5880,
+      "payload_sha256": "ac9b9b37104fbb404bdcd96f4394a517089948e1fb6f642d6836cf6a4ec3d48c"
     },
     {
-      "name": "Cadmpeg.StringHasher.0.txt",
-      "payload_len": 22,
-      "payload_sha256": "fb6584f9f9e27a1800242afb8012578f820f423a4ae7fda4be20731580cbe0a1"
+      "name": "ColoredModel.Shape.brp",
+      "payload_len": 3388,
+      "payload_sha256": "579898e983b17ae52298dabd38ce23203a7e9f24e384b3ccf3edd9963627b26c"
+    },
+    {
+      "name": "GuiDocument.xml",
+      "payload_len": 2877,
+      "payload_sha256": "b59139aae808a2bd17a0bc01f520c22d1cdf0f4b3ae115ec94c36842e7d78dc7"
+    },
+    {
+      "name": "thumbnails/Thumbnail.png",
+      "payload_len": 955,
+      "payload_sha256": "83cb29ad45a443e670854bb0d968c43e873160ca0e9dc345948bf5b26b158560"
     },
     {
       "name": "ColoredModel.DiffuseColor",
@@ -24,16 +34,6 @@
       "name": "ColoredModel.PointColorArray",
       "payload_len": 44,
       "payload_sha256": "58d687c5c2aff017e7d39d10b2166dd57828892f8e6397174591cb4f7119dd03"
-    },
-    {
-      "name": "ColoredModel.brp",
-      "payload_len": 3388,
-      "payload_sha256": "579898e983b17ae52298dabd38ce23203a7e9f24e384b3ccf3edd9963627b26c"
-    },
-    {
-      "name": "GuiDocument.xml",
-      "payload_len": 2877,
-      "payload_sha256": "b59139aae808a2bd17a0bc01f520c22d1cdf0f4b3ae115ec94c36842e7d78dc7"
     }
   ],
   "report": {
@@ -121,7 +121,7 @@
         "configurations": "dropped",
         "curves": "written",
         "declared_measures": "omitted",
-        "drawings": "dropped",
+        "drawings": "reported",
         "edges": "written",
         "faces": "written",
         "feature_input_topologies": "dropped",
@@ -143,7 +143,7 @@
         "product_definitions": "written",
         "regions": "written",
         "rigid_bodies": "omitted",
-        "semantic_annotations": "dropped",
+        "semantic_annotations": "reported",
         "shells": "written",
         "sketch_constraints": "written",
         "sketch_entities": "written",
@@ -155,7 +155,7 @@
         "spreadsheets": "written",
         "subds": "dropped",
         "surfaces": "written",
-        "tessellations": "dropped",
+        "tessellations": "reported",
         "vertices": "written",
         "view_presentations": "written"
       },
@@ -1193,7 +1193,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 5 native record(s) from `fcstd.entries`: fcstd:native:entry#ColoredModel.Shape.brp, fcstd:native:entry#LineColorArray, fcstd:native:entry#PointColorArray, fcstd:native:entry#ShapeAppearance, fcstd:native:entry#thumbnails/Thumbnail.png",
+        "message": "the fcstd write omits 3 native record(s) from `fcstd.entries`: fcstd:native:entry#LineColorArray, fcstd:native:entry#PointColorArray, fcstd:native:entry#ShapeAppearance",
         "severity": "info"
       },
       {
@@ -1213,7 +1213,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the fcstd write omits 3 native record(s) from `fcstd.properties`: fcstd:native:property#ColoredModel:ExpressionEngine, fcstd:native:property#ColoredModel:Placement, fcstd:native:property#CorpusMetadata:ExpressionEngine",
+        "message": "the fcstd write omits 1 native record(s) from `fcstd.string_tables`: fcstd:native:string-table#0",
         "severity": "info"
       }
     ],
@@ -1264,8 +1264,10 @@
             "entries": {
               "disposition": "dropped",
               "records": {
+                "fcstd:native:entry#ColoredModel.Shape.brp": "regenerated",
                 "fcstd:native:entry#Document.xml": "regenerated",
-                "fcstd:native:entry#GuiDocument.xml": "regenerated"
+                "fcstd:native:entry#GuiDocument.xml": "regenerated",
+                "fcstd:native:entry#thumbnails/Thumbnail.png": "regenerated"
               }
             },
             "extensions": {
@@ -1312,6 +1314,15 @@
                 "fcstd:native:object#CorpusMetadata": "written"
               }
             },
+            "orphan_object_data": {
+              "disposition": "dropped"
+            },
+            "polygons3d": {
+              "disposition": "dropped"
+            },
+            "polygons_on_triangulations": {
+              "disposition": "dropped"
+            },
             "product_nodes": {
               "disposition": "dropped"
             },
@@ -1338,12 +1349,15 @@
                 "fcstd:native:property#0:Uid": "regenerated",
                 "fcstd:native:property#0:UnitSystem": "regenerated",
                 "fcstd:native:property#0:UseHasher": "regenerated",
+                "fcstd:native:property#ColoredModel:ExpressionEngine": "regenerated",
                 "fcstd:native:property#ColoredModel:Label": "regenerated",
                 "fcstd:native:property#ColoredModel:Label2": "regenerated",
+                "fcstd:native:property#ColoredModel:Placement": "regenerated",
                 "fcstd:native:property#ColoredModel:Shape": "regenerated",
                 "fcstd:native:property#ColoredModel:ShapeMaterial": "written",
                 "fcstd:native:property#ColoredModel:Visibility": "regenerated",
                 "fcstd:native:property#ColoredModel:_ElementMapVersion": "written",
+                "fcstd:native:property#CorpusMetadata:ExpressionEngine": "written",
                 "fcstd:native:property#CorpusMetadata:InertValue": "written",
                 "fcstd:native:property#CorpusMetadata:Label": "written",
                 "fcstd:native:property#CorpusMetadata:Label2": "written",
@@ -1360,10 +1374,7 @@
               }
             },
             "string_tables": {
-              "disposition": "dropped",
-              "records": {
-                "fcstd:native:string-table#0": "written"
-              }
+              "disposition": "dropped"
             },
             "topology_uses": {
               "disposition": "dropped",

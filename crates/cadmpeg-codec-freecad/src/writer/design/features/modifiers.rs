@@ -6,7 +6,7 @@ use super::properties::{
     angle, boolean, enumeration, length, link, number, references, selection, selector, tag,
     unsupported,
 };
-use cadmpeg_core::CodecError;
+use super::FeatureError;
 use serde_json::Value;
 use std::collections::HashMap;
 
@@ -14,10 +14,10 @@ pub(super) fn dress_up(
     value: &Value,
     object: &mut Object,
     names: &HashMap<String, String>,
-) -> Result<(), CodecError> {
+) -> Result<(), FeatureError> {
     let groups = value["groups"]
         .as_array()
-        .ok_or_else(|| CodecError::UnsupportedContent("edge treatment groups absent".into()))?;
+        .ok_or_else(|| FeatureError::Unsupported("edge treatment groups absent".into()))?;
     if groups.len() != 1 {
         return unsupported("FreeCAD edge treatment requires one uniform edge group");
     }
@@ -32,7 +32,7 @@ pub(super) fn dress_up(
     if tag(&group["edges"]) == "all" {
         boolean(object, "UseAllEdges", true);
         let source = object.dependencies.last().cloned().ok_or_else(|| {
-            CodecError::UnsupportedContent("all-edge treatment has no predecessor".into())
+            FeatureError::Unsupported("all-edge treatment has no predecessor".into())
         })?;
         object.set(
             "Base",
@@ -99,7 +99,7 @@ pub(super) fn shell(
     value: &Value,
     object: &mut Object,
     names: &HashMap<String, String>,
-) -> Result<(), CodecError> {
+) -> Result<(), FeatureError> {
     if tag(value) == "shell" {
         object.kind = "PartDesign::Thickness".into();
         selection(object, "Base", &value["removed_faces"], names)?;
@@ -159,7 +159,7 @@ pub(super) fn binder(
     value: &Value,
     object: &mut Object,
     names: &HashMap<String, String>,
-) -> Result<(), CodecError> {
+) -> Result<(), FeatureError> {
     let construction = &value["construction"];
     object.kind = if tag(construction) == "shape" {
         "PartDesign::ShapeBinder"
@@ -169,7 +169,7 @@ pub(super) fn binder(
     .into();
     let sources = value["sources"]
         .as_array()
-        .ok_or_else(|| CodecError::UnsupportedContent("binder sources absent".into()))?;
+        .ok_or_else(|| FeatureError::Unsupported("binder sources absent".into()))?;
     let mut content = format!("<LinkSubList count=\"{}\">", sources.len());
     for source in sources {
         let targets = references(&source["target"], names)?;

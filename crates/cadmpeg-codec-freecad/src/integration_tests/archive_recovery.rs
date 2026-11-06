@@ -295,3 +295,31 @@ fn the_public_nonzero_archive_decode_keeps_source_coordinates_for_bounded_failur
     assert_eq!(failed.byte_len(), baseline_failed.byte_len());
     assert_eq!(failed.data(), baseline_failed.data());
 }
+
+#[test]
+fn missing_central_directory_is_a_given_up_structural_part() {
+    let xml = b"<Document SchemaVersion='4'><Objects Count='0'/><ObjectData Count='0'/></Document>";
+    let full = zip_fixture::archive(&[RawEntry::stored("Document.xml", xml)]);
+    let directory = full
+        .windows(4)
+        .position(|window| window == b"PK\x01\x02")
+        .unwrap();
+    let decoded = crate::FcstdCodec
+        .decode(
+            &mut Cursor::new(&full[..directory]),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let losses: Vec<_> = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "record.unreadable")
+        .collect();
+    assert_eq!(losses.len(), 1);
+    assert!(losses[0].message.contains("zip.central_directory"));
+    let retained = crate::test_support::source_fidelity::given_up(decoded.source_fidelity());
+    assert_eq!(retained.len(), 1);
+    assert_eq!(retained[0].1.byte_len(), 0);
+    assert!(retained[0].1.untyped().is_empty());
+}

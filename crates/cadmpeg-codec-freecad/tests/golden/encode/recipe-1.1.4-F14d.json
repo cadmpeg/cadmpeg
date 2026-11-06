@@ -177,6 +177,15 @@
             "objects": {
               "disposition": "written"
             },
+            "orphan_object_data": {
+              "disposition": "written"
+            },
+            "polygons3d": {
+              "disposition": "written"
+            },
+            "polygons_on_triangulations": {
+              "disposition": "written"
+            },
             "product_nodes": {
               "disposition": "written"
             },

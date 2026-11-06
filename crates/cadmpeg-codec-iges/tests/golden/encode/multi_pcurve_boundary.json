@@ -1,11 +1,12 @@
 {
-  "output": "original fixture                                                        S      1\n1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,32,38,6,308,17,7HprodG      1\nuct,1.0,2,2HMM,1,1.0,15HYYYYMMDD.HHMMSS,1.0000000000000000D-3,0,6HauthorG      2\n,3Horg,11,0,0H,0H;                                                      G      3\n     108       1       0       0       0       0       0       000010000D      1\n     108       0       0       1       0                   PLANE       0D      2\n     126       2       0       0       0       0       0       000010000D      3\n     126       0       0       7       0                   MODEL       0D      4\n     126       9       0       0       0       0       0       000010500D      5\n     126       0       0       4       0                               0D      6\n     126      13       0       0       0       0       0       000010500D      7\n     126       0       0       3       0                               0D      8\n     141      16       0       0       0       0       0       000010000D      9\n     141       0       0       1       0                               0D     10\n     143      17       0       0       0       0       0       000000000D     11\n     143       0       0       1       0                               0D     12\n108,0,0,1,0,0,0,0,0,0;                                                 1P      1\n126,4,1,1,1,1,0,0,0,1.0000000000000000D0,2.0000000000000000D0,         3P      2\n3.0000000000000000D0,4.0000000000000000D0,4.0000000000000000D0,        3P      3\n1.0000000000000000D0,1.0000000000000000D0,1.0000000000000000D0,        3P      4\n1.0000000000000000D0,1.0000000000000000D0,0,0,0,                       3P      5\n1.0000000000000000D0,0,0,1.0000000000000000D0,                         3P      6\n1.0000000000000000D0,0,0,1.0000000000000000D0,0,0,0,0,0,               3P      7\n4.0000000000000000D0,0,0,1.0000000000000000D0;                         3P      8\n126,1,1,0,0,1,0,0,0,1.0000000000000000D0,1.0000000000000000D0,         5P      9\n1.0000000000000000D0,1.0000000000000000D0,0,0,0,                       5P     10\n1.0000000000000000D0,1.0000000000000000D0,0,0,                         5P     11\n1.0000000000000000D0,0,0,0;                                            5P     12\n126,1,1,0,0,1,0,0,0,1.0000000000000000D0,1.0000000000000000D0,         7P     13\n1.0000000000000000D0,1.0000000000000000D0,1.0000000000000000D0,        7P     14\n1.0000000000000000D0,0,0,0,0,0,1.0000000000000000D0,0,0,0;             7P     15\n141,1,1,1,1,3,1,2,5,7;                                                 9P     16\n143,1,1,1,9;                                                          11P     17\nS0000001G0000003D0000012P0000017                                        T      1\n",
+  "output": "original fixture                                                        S      1\n1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,32,38,6,308,17,7HprodG      1\nuct,1.0,2,2HMM,1,1.0,15HYYYYMMDD.HHMMSS,1.0000000000000000D-3,0,6HauthorG      2\n,3Horg,11,0,0H,0H;                                                      G      3\n     108       1       0       0       0       0       0       000010000D      1\n     108       0       0       1       0                   PLANE       0D      2\n     106       2       0       0       0       0       0       000010000D      3\n     106       0       0       2      63                   MODEL       0D      4\n     126       4       0       0       0       0       0       000010500D      5\n     126       0       0       4       0                               0D      6\n     126       8       0       0       0       0       0       000010500D      7\n     126       0       0       3       0                               0D      8\n     141      11       0       0       0       0       0       000010000D      9\n     141       0       0       1       0                               0D     10\n     143      12       0       0       0       0       0       000000000D     11\n     143       0       0       1       0                 BOUNDED       0D     12\n108,0,0,1,0,0,0,0,0,0;                                                 1P      1\n106,1,5,0,0,0,1.0000000000000000D0,0,1.0000000000000000D0,             3P      2\n1.0000000000000000D0,0,1.0000000000000000D0,0,0;                       3P      3\n126,1,1,0,0,1,0,0,0,1.0000000000000000D0,1.0000000000000000D0,         5P      4\n1.0000000000000000D0,1.0000000000000000D0,0,0,0,                       5P      5\n1.0000000000000000D0,1.0000000000000000D0,0,0,                         5P      6\n1.0000000000000000D0,0,0,0;                                            5P      7\n126,1,1,0,0,1,0,0,0,1.0000000000000000D0,1.0000000000000000D0,         7P      8\n1.0000000000000000D0,1.0000000000000000D0,1.0000000000000000D0,        7P      9\n1.0000000000000000D0,0,0,0,0,0,1.0000000000000000D0,0,0,0;             7P     10\n141,1,1,1,1,3,1,2,5,7;                                                 9P     11\n143,1,1,1,9;                                                          11P     12\nS0000001G0000003D0000012P0000012                                        T      1\n",
   "report": {
     "census": {
       "basis": "target_records",
       "counts": {
+        "106_copious_data": 1,
         "108_plane": 1,
-        "126_nurbs_curve": 3,
+        "126_nurbs_curve": 2,
         "141_boundary": 1,
         "143_bounded_surface": 1
       }
@@ -108,16 +109,6 @@
           "namespace": "iges",
           "scope": "namespaced"
         },
-        "message": "IGES attribute iges:application:attribute#D11:0:0 is omitted: its current owner has no emitted entity",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "writer.attribute-omitted",
-          "kind": "metadata_not_transferred",
-          "namespace": "iges",
-          "scope": "namespaced"
-        },
         "message": "IGES attribute iges:application:attribute#D5:0:0 is omitted: its current owner has no emitted entity",
         "severity": "warning"
       },
@@ -168,16 +159,6 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 1 native record(s) from `iges.copious_data`: iges:native:copious-data#D3",
-        "severity": "info"
-      },
-      {
-        "code": {
-          "code": "native.records-omitted",
-          "kind": "record_not_typed",
-          "namespace": "export",
-          "scope": "namespaced"
-        },
         "message": "the iges write omits 4 native record(s) from `iges.display_attributes`: iges:presentation:display-attributes#D11, iges:presentation:display-attributes#D5, iges:presentation:display-attributes#D7, iges:presentation:display-attributes#D9",
         "severity": "info"
       },
@@ -188,7 +169,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 5 native record(s) from `iges.entities`: iges:entity:directory#11, iges:entity:directory#3, iges:entity:directory#5, iges:entity:directory#7, iges:entity:directory#9",
+        "message": "the iges write omits 4 native record(s) from `iges.entities`: iges:entity:directory#3, iges:entity:directory#5, iges:entity:directory#7, iges:entity:directory#9",
         "severity": "info"
       },
       {
@@ -258,7 +239,10 @@
               "disposition": "dropped"
             },
             "copious_data": {
-              "disposition": "dropped"
+              "disposition": "dropped",
+              "records": {
+                "iges:native:copious-data#D3": "regenerated"
+              }
             },
             "definition_levels": {
               "disposition": "dropped"
@@ -279,7 +263,8 @@
             "entities": {
               "disposition": "dropped",
               "records": {
-                "iges:entity:directory#1": "written"
+                "iges:entity:directory#1": "written",
+                "iges:entity:directory#11": "written"
               }
             },
             "external_references": {
