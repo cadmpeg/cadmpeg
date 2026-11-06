@@ -67,3 +67,6 @@ pub(super) fn same_component_paste_copy(
         copy_bodies,
     ))
 }
+
+#[cfg(test)]
+mod tests;
