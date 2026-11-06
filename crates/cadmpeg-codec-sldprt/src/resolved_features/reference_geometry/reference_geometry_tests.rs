@@ -231,8 +231,12 @@ fn synthetic_block_instance_archive_has_a_declared_placement() {
             bytes.extend_from_slice(&unit.to_le_bytes());
         }
     }
-    fn named(bytes: &mut Vec<u8>, name: &str, id: u32) {
-        class(bytes, "moNodeName_c");
+    fn named(bytes: &mut Vec<u8>, name: &str, id: u32, declare: bool) {
+        if declare {
+            class(bytes, "moNodeName_c");
+        } else {
+            bytes.extend_from_slice(&0x8003_u16.to_le_bytes());
+        }
         string(bytes, name);
         bytes.extend_from_slice(&[0; 8]);
         bytes.extend_from_slice(&id.to_le_bytes());
@@ -258,11 +262,11 @@ fn synthetic_block_instance_archive_has_a_declared_placement() {
 
     let mut payload = Vec::new();
     class(&mut payload, "moSketchBlockInst_c");
-    named(&mut payload, "Use", 102);
+    named(&mut payload, "Use", 102, true);
     payload.extend_from_slice(&[0; 6]);
     payload.extend_from_slice(&1_u16.to_le_bytes());
     class(&mut payload, "moSketchBlockDef_c");
-    named(&mut payload, "Block", 101);
+    named(&mut payload, "Block", 101, false);
     payload.extend_from_slice(&[0; 8]);
     block_tail(&mut payload, 0);
     payload.extend_from_slice(&[0; 10]);
