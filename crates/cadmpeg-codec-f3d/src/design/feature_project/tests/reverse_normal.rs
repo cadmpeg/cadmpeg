@@ -120,12 +120,10 @@ fn project(
     (definition, losses)
 }
 
-fn reversal(group: &DesignConstructionOperandGroup) -> Option<FeatureDefinition> {
-    Some(FeatureDefinition::Operation(
-        FeatureOperation::ReverseShape {
-            source: BodySelection::Native(group.id.clone()),
-        },
-    ))
+fn reversal(group: &DesignConstructionOperandGroup) -> FeatureDefinition {
+    FeatureDefinition::Operation(FeatureOperation::ReverseShape {
+        source: BodySelection::Native(group.id.clone()),
+    })
 }
 
 #[test]
@@ -136,7 +134,7 @@ fn whole_body_members_project_a_shape_reversal() {
         std::slice::from_ref(&group),
         &[type_row(WHOLE_BODY_GUID, 1, 10, &BODIES)],
     );
-    assert_eq!(definition, reversal(&group));
+    assert_eq!(definition, Some(reversal(&group)));
     assert!(losses.is_empty());
 }
 
@@ -156,7 +154,7 @@ fn members_without_the_whole_body_type_keep_the_reversal_with_a_loss() {
     ] {
         let (definition, losses) =
             project(&scope(Some(GROUP)), std::slice::from_ref(&group), &types);
-        assert_eq!(definition, reversal(&group));
+        assert_eq!(definition, Some(reversal(&group)));
         let [loss] = losses.as_slice() else {
             panic!("expected one loss, got {losses:?}");
         };
