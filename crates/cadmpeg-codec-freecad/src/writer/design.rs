@@ -116,16 +116,25 @@ pub(super) fn spreadsheets(
         names.insert(sheet.id.as_str().to_owned(), name);
         let object = &mut objects[index];
         object.kind = "Spreadsheet::Sheet".into();
-        let mut content = format!("<Cells Count=\"{}\">", sheet.cells().len());
+        let mut content = String::new();
+        let mut count = 0;
         for cell in sheet.cells() {
-            let parameter = ir
+            let Some(parameter) = ir
                 .model
                 .parameters
                 .iter()
                 .find(|parameter| parameter.id == cell.parameter)
-                .ok_or_else(|| {
-                    CodecError::malformed("spreadsheet cell references absent parameter")
-                })?;
+            else {
+                losses.push(
+                    crate::loss::FreecadLossCode::ExportFeatureNotTransferred.note(format!(
+                        "spreadsheet {} cell {} references absent parameter {} and is omitted",
+                        sheet.id,
+                        cell.address.a1(),
+                        cell.parameter
+                    )),
+                );
+                continue;
+            };
             let cell_content = spreadsheet_expression(ir, parameter, names);
             super::parameters::report_cell_normalization(parameter, &cell_content, losses);
             let mut attributes: Vec<(&str, String)> = parameter
@@ -155,11 +164,15 @@ pub(super) fn spreadsheets(
                 ));
             }
             content.push_str(&xml::element("Cell", &attributes));
+            count += 1;
         }
-        content.push_str("</Cells>");
         object.set(
             "cells",
-            xml::property("cells", "Spreadsheet::PropertySheet", &content),
+            xml::property(
+                "cells",
+                "Spreadsheet::PropertySheet",
+                &format!("<Cells Count=\"{count}\">{content}</Cells>"),
+            ),
         );
         for (name, kind, container, element, dimension, pixels) in [
             (
