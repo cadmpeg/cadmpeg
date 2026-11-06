@@ -1096,6 +1096,18 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** Such a group retains its native identity and reports `feature.face-selection-native`.
 
+### DR-304. Fallback faces of Extrude bounded-face operands
+
+**Question.** Which faces does an `Extrude` bounded-face operand select when its recipe nodes have no unique topology binding?
+
+**Known.** The decoder then selects faces with the candidate and support rules of `f3d.md` §3.1 that follow the alternate-selector proof, and tests the selection when the grouped Design-reference intersection keeps it. The face-recipe nodes name faces around the boundary of the selected face. For the test, each prefix operand of the face-recipe ordinal namespace supplies the preceding-topology faces that its references with a nonnegative Design reference name through their candidate faces, or through their alternate-selector faces when the candidate faces are empty. The selection fails when every selected face has a rebuilt boundary and the selection shares no boundary vertex with one prefix operand that supplies faces, all with rebuilt boundaries. A failing selection is withdrawn, and the operand stays unresolved.
+
+**Need.** The node grammar and the empty-lane binding of DR-170, so that each recipe binds its own face.
+
+**Conflict.** None.
+
+**Note.** A withdrawn selection reports `feature.face-operand-fallback-contradicted`.
+
 ### DR-171. Sketch support identity
 
 **Question.** Which placement references join a Sketch to its supporting plane or historical face and the feature that produces that support?

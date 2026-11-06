@@ -24,6 +24,7 @@ mod delete_face;
 pub(crate) mod edge_flange;
 pub(crate) mod face_admission;
 mod face_recipe;
+mod fallback_face;
 pub(crate) mod fillet_blends;
 mod hole_support;
 mod loop_index;
@@ -5240,9 +5241,9 @@ pub(crate) fn bind_face_operand_history_candidates(
     recipes: &[crate::records::recipes::ConstructionRecipe],
     mut histories: BindingHistories<'_>,
     scope_histories: &HashMap<String, String>,
-) -> Result<(), cadmpeg_core::CodecError> {
+) -> Result<Vec<cadmpeg_ir::report::loss::LossNote>, cadmpeg_core::CodecError> {
     if projection_was_finalized(histories.get()) {
-        return Ok(());
+        return Ok(Vec::new());
     }
     let recipe_record_indices = recipes
         .iter()
@@ -5310,6 +5311,7 @@ pub(crate) fn bind_face_operand_history_candidates(
         ));
     }
     let mut first_error = None;
+    let mut losses = Vec::new();
     visit_state_groups_oldest_first(
         histories.reborrow(),
         jobs,
@@ -5346,6 +5348,7 @@ pub(crate) fn bind_face_operand_history_candidates(
                     operand_groups,
                     &recipe_record_indices,
                     &mut caches,
+                    &mut losses,
                 ) {
                     keep_first_error(&mut first_error, position, error);
                 }
@@ -5363,7 +5366,7 @@ pub(crate) fn bind_face_operand_history_candidates(
         histories.get(),
         scope_histories,
     )?;
-    Ok(())
+    Ok(losses)
 }
 
 /// One face operand's scope and state pair with the previous-state topology.
@@ -5393,6 +5396,7 @@ fn bind_historical_face_operand<'a>(
     operand_groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
     recipe_record_indices: &HashMap<&str, i32>,
     caches: &mut FaceOperandCaches<'a>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     bind_historical_face_operand_candidates(
         operand,
@@ -5400,6 +5404,7 @@ fn bind_historical_face_operand<'a>(
         operand_groups,
         recipe_record_indices,
         caches,
+        losses,
     )?;
     if matches!(
         transition.scope.kind(),
@@ -5423,6 +5428,7 @@ fn bind_historical_face_operand_candidates<'a>(
     operand_groups: &[crate::records::topology::construction::DesignConstructionOperandGroup],
     recipe_record_indices: &HashMap<&str, i32>,
     caches: &mut FaceOperandCaches<'a>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<(), cadmpeg_core::CodecError> {
     let &FaceOperandTransition {
         scope,
@@ -5660,6 +5666,7 @@ fn bind_historical_face_operand_candidates<'a>(
             }
         }
     };
+    let fallback_slots = operand.resolved_face_slots.clone();
     if let Some(candidates) = &thread_face_candidates {
         // Thread's first prefix reference is its exclusive selection lane.
         // An unresolved lane must not fall back to construction context.
@@ -5745,6 +5752,15 @@ fn bind_historical_face_operand_candidates<'a>(
         // Every recipe node matches one boundary edge of this face and the
         // face fans around both of its ends.
         operand.resolved_face_slots = vec![face];
+    } else if feature_family == Some(crate::design::DesignFeatureFamily::Extrude)
+        && operand.recipe_kind == crate::records::recipes::ConstructionRecipeKind::BoundedFace
+        && operand.resolved_face_slots == fallback_slots
+    {
+        losses.extend(fallback_face::check_fallback_faces(
+            operand,
+            topology,
+            topology_queries,
+        ));
     }
     Ok(())
 }
