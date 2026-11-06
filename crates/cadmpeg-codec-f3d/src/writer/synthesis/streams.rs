@@ -38,8 +38,7 @@ fn scopes(native: &F3dNative) -> BTreeSet<String> {
 
 pub(super) fn validate(native: &F3dNative) -> Result<(), CodecError> {
     use crate::writer::generate::preconditions::{
-        validate_source_less_design_ownership, validate_source_less_recipes,
-        validate_source_less_sketch_graph,
+        validate_source_less_design_ownership, validate_source_less_sketch_graph,
     };
     for stream in scopes(native) {
         let mut local = F3dNative::default();
@@ -75,7 +74,6 @@ pub(super) fn validate(native: &F3dNative) -> Result<(), CodecError> {
         for result in [
             validate_source_less_design_ownership(&local),
             validate_source_less_sketch_graph(&local),
-            validate_source_less_recipes(&local),
         ] {
             match result {
                 Err(error) if super::declines(&error) => {}

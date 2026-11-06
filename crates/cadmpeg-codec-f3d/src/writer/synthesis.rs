@@ -33,6 +33,8 @@ pub(super) fn write(
 ) -> Result<Synthesized, CodecError> {
     let mut prepared = target.clone();
     let mut losses = Vec::new();
+    topology::repair_body_regions(&mut prepared, &mut losses, limits)?;
+    topology::omit_ambiguous_points(&mut prepared, &mut losses)?;
     topology::omit_unresolved_coedge_faces(&mut prepared, &mut losses, limits)?;
     prepare::auxiliary(&mut prepared, &mut losses, limits)?;
     let original = super::primitives::f3d_native(&prepared)?.unwrap_or_default();
@@ -40,10 +42,12 @@ pub(super) fn write(
     native::reconcile(&mut prepared, original, &mut losses, limits)?;
     let mut bytes = Vec::new();
     let mut regenerated_parameters = std::collections::BTreeSet::new();
+    let mut written_recipes = std::collections::BTreeSet::new();
     let coverage = match super::generate::write_with_limits(&prepared, &mut bytes, limits) {
         Ok(generated) => {
             losses.extend(generated.losses);
             regenerated_parameters = generated.regenerated_parameters;
+            written_recipes = generated.written_recipes;
             generated.coverage
         }
         Err(error) if declines(&error) => {
@@ -55,6 +59,7 @@ pub(super) fn write(
                 Ok(generated) => {
                     losses.extend(generated.losses);
                     regenerated_parameters = generated.regenerated_parameters;
+                    written_recipes = generated.written_recipes;
                     generated.coverage
                 }
                 Err(error) if declines(&error) => {
@@ -65,6 +70,7 @@ pub(super) fn write(
                         Ok(generated) => {
                             losses.extend(generated.losses);
                             regenerated_parameters = generated.regenerated_parameters;
+                            written_recipes = generated.written_recipes;
                             generated.coverage
                         }
                         Err(error) if declines(&error) => {
@@ -79,6 +85,7 @@ pub(super) fn write(
                                 Ok(generated) => {
                                     losses.extend(generated.losses);
                                     regenerated_parameters = generated.regenerated_parameters;
+                                    written_recipes = generated.written_recipes;
                                     generated.coverage
                                 }
                                 Err(error) if declines(&error) => {
@@ -94,6 +101,7 @@ pub(super) fn write(
                                             losses.extend(generated.losses);
                                             regenerated_parameters =
                                                 generated.regenerated_parameters;
+                                            written_recipes = generated.written_recipes;
                                             generated.coverage
                                         }
                                         // Terminal §5.0 reduction: even the empty
@@ -169,6 +177,7 @@ pub(super) fn write(
         &prepared,
         &invalidated_timestamps,
         &regenerated_parameters,
+        &written_recipes,
     );
     let coverage = prepare::dispositions(target, &prepared, coverage, &attributes, &mut losses);
     if prepared.model.bodies.is_empty() {

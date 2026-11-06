@@ -173,6 +173,9 @@
         },
         {
           "appearance": "fcstd:appearance:shape-material#Box:1",
+          "channels": {
+            "precedence": "shape_over_object"
+          },
           "id": "fcstd:appearance:binding#shape-material:Box:0",
           "native_ref": "fcstd:native:gui-property#Box:ShapeAppearance",
           "object_type": "ViewProvider ShapeAppearance",
@@ -2648,7 +2651,7 @@
       "__arena_sha256": {
         "fcstd": {
           "annotations": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-          "applications": "9cfb2f206df3b7fd24f47fc52f459e2970cde231c311dbfc92643a66ea96a3dd",
+          "applications": "43ad2323e95b71dc1785bbdd36680680b819b607ab675a6a9cbd8e77d5528a52",
           "carrier_census": "7d06a4bde9c8713ac37f69996b4d2a2c142332c4c992b6e3560336e3c18383f4",
           "design_census": "1961a5c15d2724ec1030af411ad60a63238714bf4591a16d796ad6763560af89",
           "document": "689be6223f2071bd468491f31da684c0167e1edc74d88f753f58f0bcb216051d",

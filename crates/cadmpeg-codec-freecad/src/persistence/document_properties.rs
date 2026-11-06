@@ -183,9 +183,7 @@ pub(crate) fn decode_owned<'source>(
                     properties_stage,
                     extent,
                     super::document_part("freecad.property"),
-                    |stage| {
-                        value_parts::decode(ctx, view, &source, node, owner, order, stage, objects)
-                    },
+                    |stage| value_parts::decode(ctx, &source, node, owner, order, stage, objects),
                 )? {
                     result
                         .sources

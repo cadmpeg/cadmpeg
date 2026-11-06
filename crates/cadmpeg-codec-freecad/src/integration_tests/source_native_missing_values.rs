@@ -255,3 +255,68 @@ fn source_free_partial_box_keeps_its_native_dependency_and_only_omits_the_unheld
     assert_eq!(decoded.ir().model, before.model);
     assert_eq!(decoded.ir().native, before.native);
 }
+
+#[test]
+fn unknown_extension_property_stays_typed_native_without_a_projection_loss() {
+    let xml = "<Document SchemaVersion='4' FileVersion='1'><Properties Count='0'/><Objects Count='1'><Object name='Carrier' type='App::FeaturePython'/></Objects><ObjectData Count='1'><Object name='Carrier'><Properties Count='1'><Property name='ExtensionData' type='Vendor::PropertyUnknown'><VendorData kind='custom' value='payload'/></Property></Properties></Object></ObjectData></Document>";
+    let decoded = decode(archive(xml));
+    let native = decoded.ir().native.namespace("fcstd").unwrap();
+    let properties = native
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .unwrap();
+    let property = properties
+        .iter()
+        .find(|property| property.name == "ExtensionData")
+        .unwrap();
+    assert_eq!(property.type_name, "Vendor::PropertyUnknown");
+    assert_eq!(property.values()[0].attributes["value"], "payload");
+    assert!(decoded
+        .source_fidelity()
+        .unrepresented()
+        .contains(&cadmpeg_ir::ArenaClass::Model));
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .all(|loss| loss.code.local_code() != "attribute.property-unprojected"));
+}
+
+#[test]
+fn unreadable_string_table_member_names_only_the_fields_it_supplies() {
+    use cadmpeg_test_support::zip_fixture::{self, RawEntry};
+    let xml = b"<Document SchemaVersion='4' FileVersion='1'><StringHasher saveall='0' threshold='0' count='0' new='1'/><StringHasher2 file='table.bin'/><Objects Count='0'/><ObjectData Count='0'/></Document>";
+    let bytes = zip_fixture::archive(&[
+        RawEntry::stored("Document.xml", xml),
+        RawEntry::compressed("table.bin", 12, b"bad", b"bad"),
+    ]);
+    let decoded = decode(bytes);
+    let tables = decoded
+        .ir()
+        .native
+        .namespace("fcstd")
+        .unwrap()
+        .arena_as::<crate::native::StringTableRecord>("string_tables")
+        .unwrap();
+    assert_eq!(tables.len(), 1);
+    assert!(tables[0].entries().is_none());
+    assert_eq!(tables[0].save_all, Some(false));
+    assert_eq!(tables[0].threshold, Some(0));
+    assert!(decoded
+        .report()
+        .losses
+        .iter()
+        .all(|loss| loss.code.local_code() != "element-map.metadata-unresolved"));
+    let fields = decoded
+        .report()
+        .losses
+        .iter()
+        .filter(|loss| loss.code.local_code() == "record.unreadable")
+        .flat_map(|loss| &loss.dropped_fields)
+        .filter(|field| field.record == tables[0].id())
+        .map(|field| field.field.as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        fields,
+        std::collections::BTreeSet::from(["declared_count", "entries", "source_entry"])
+    );
+}

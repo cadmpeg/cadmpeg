@@ -199,24 +199,6 @@ pub(super) fn reconcile(
     native
         .design_types
         .sort_by(|left, right| left.id().cmp(right.id()));
-    native.construction_recipes.retain(|recipe| {
-        recipe.record_index.is_some()
-            && recipe.design.as_ref().is_none_or(|design| {
-                design.id.value.len() == 3
-                    && design.id.value.bytes().all(|byte| byte.is_ascii_digit())
-            })
-    });
-    let mut recipe_ordinals = std::collections::HashMap::new();
-    for recipe in &mut native.construction_recipes {
-        let ordinal = recipe_ordinals
-            .entry((
-                recipe.kind,
-                recipe.design.as_ref().map(|design| design.id.value.clone()),
-            ))
-            .or_insert(0);
-        recipe.recipe_index = *ordinal;
-        *ordinal += 1;
-    }
     // The sort above reorders the type table the retained dynamic class tags
     // name. Point every retained sketch record at the position of the type
     // that registers it; a record no remaining type registers is dropped
@@ -594,9 +576,10 @@ pub(super) fn reconcile(
         .filter(|header| header.in_sketch_module())
         .flat_map(|header| header.reference_values().copied())
         .collect::<std::collections::BTreeSet<_>>();
-    native
-        .design_record_headers
-        .retain(|header| reachable.contains(&header.record_index));
+    native.design_record_headers.retain(|header| {
+        !omitted_sketch_records.contains(&header.record_index)
+            || reachable.contains(&header.record_index)
+    });
     // These native lanes select identities or add native-only display facts.
     // Geometry and visibility values are always authored from the neutral model.
     super::design::reconcile_body_tags(target, &mut native);
@@ -623,6 +606,11 @@ pub(super) fn reconcile(
             return false;
         };
         assignment.asm_body_key = key;
+        assignment.visual_preset = target.model.appearances.iter()
+            .find(|appearance| appearance.id == binding.appearance)
+            .and_then(|appearance| appearance.name.as_ref())
+            .filter(|name| name.starts_with("Prism-"))
+            .map(|name| crate::records::identity::RecordedValue { value: name.clone(), offset: None });
         true
     });
     native.body_native_keys.retain(|record| {
@@ -962,6 +950,7 @@ pub(super) fn coverage(
     written: &CadIr,
     invalidated_timestamps: &std::collections::BTreeSet<String>,
     regenerated_parameters: &std::collections::BTreeSet<String>,
+    written_recipes: &std::collections::BTreeSet<String>,
 ) -> NativeDispositions {
     let mut result = NativeDispositions::for_namespace(
         "f3d",
@@ -978,6 +967,12 @@ pub(super) fn coverage(
                 .namespace("f3d")
                 .and_then(|namespace| namespace.arenas().get(arena));
             for record in before {
+                if arena.as_str() == "construction_recipes"
+                    && !written_recipes.contains(record.id())
+                {
+                    result.set_record("f3d", arena, record.id(), NativeDisposition::Dropped);
+                    continue;
+                }
                 let regenerated_document_parameter = arena.as_str() == "design_parameters"
                     && original.model.parameters.iter().any(|parameter| {
                         parameter.owner.is_none()
