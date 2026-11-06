@@ -120,6 +120,7 @@ pub(super) fn write_with_limits(
             let mut primary = Vec::new();
             let mut indices = Vec::new();
             for parameter in &native.design_parameters {
+                output_ctx.charge_entities(1, "F3D parameter record")?;
                 primary.push(crate::metastream::RecordIndexEntry {
                     entity_id: u64::from(parameter.record_index),
                     bulk_offset: u64::try_from(parameter_bytes.len()).map_err(|_| {
@@ -132,6 +133,7 @@ pub(super) fn write_with_limits(
                     collection_index,
                 )?);
             }
+            output_ctx.charge_entities(1, "F3D parameter record")?;
             primary.push(crate::metastream::RecordIndexEntry {
                 entity_id: u64::from(collection_index),
                 bulk_offset: u64::try_from(parameter_bytes.len()).map_err(|_| {
@@ -329,9 +331,6 @@ pub(super) fn write_with_limits(
         }
     }
     if !parameter_bytes.is_empty() {
-        for _ in 0..=native.design_parameters.len() {
-            output_ctx.charge_entities(1, "F3D parameter record")?;
-        }
         archive
             .start_file(
                 format!("{DESIGN_FOLDER}/FusionDesignSegmentType2/BulkStream.dat"),
@@ -367,12 +366,15 @@ pub(super) fn write_with_limits(
     }
     // The parameter segment owns its independent dynamic class tags. Browser
     // and geometry metadata use the main Design segment's generated registry.
-    let design_bulk =
-        encode_design_bulkstream(target, &native, &design_registry, Vec::new(), brep_name)?;
+    let design_bulk = encode_design_bulkstream(
+        &output_ctx,
+        target,
+        &native,
+        &design_registry,
+        Vec::new(),
+        brep_name,
+    )?;
     if let Some(bulk_stream) = &design_bulk {
-        for _ in &bulk_stream.primary_records {
-            output_ctx.charge_entities(1, "F3D Design record")?;
-        }
         residual_losses.extend(bulk_stream.losses.iter().cloned());
         archive
             .start_file(format!("{DESIGN_FOLDER}/Design1/BulkStream.dat"), options)
@@ -479,6 +481,7 @@ pub(super) fn write_with_limits(
     archive.finish().map_err(|error| {
         CodecError::malformed(format_args!("cannot finish F3D archive: {error}"))
     })?;
+    output_ctx.finish_session()?;
     staged.seek(SeekFrom::Start(0))?;
     std::io::copy(&mut staged, writer)?;
     let mut dispositions = coverage(has_native, target, &native);

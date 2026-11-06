@@ -103,28 +103,7 @@ pub(super) fn classify(
                     })?;
                 Carrier::nurbs(&lifted, |point| [point.x, point.y])?
             }
-            PcurveGeometry::Circle(_) => {
-                use cadmpeg_ir::eval::admission::EvaluationAdmission;
-                let [start, end] = FiniteReal::raw_array(coedge.trim_domain(edge));
-                let mut points = [[0.0; 2]; 2];
-                for (point, parameter) in points.iter_mut().zip([start, end]) {
-                    let uv = match cadmpeg_ir::eval::decode::pcurve_uv(
-                        EvaluationAdmission::Standard,
-                        &pcurve.geometry,
-                        parameter,
-                    ) {
-                        Ok(uv) => uv.get(),
-                        Err(failure) => failure.non_finite()?.ok_or_else(|| {
-                            WriteError::Omit(format!(
-                                "coedge {} trim circle has no finite endpoint",
-                                coedge.source.id
-                            ))
-                        })?,
-                    };
-                    *point = [uv.u, uv.v];
-                }
-                Carrier::line(points[0], points[1])
-            }
+            PcurveGeometry::Circle(_) => return Ok(0),
             _ => {
                 return Err(WriteError::Omit(format!(
                     "coedge {} trim has no line, circle, or NURBS carrier",
@@ -160,35 +139,7 @@ pub(super) fn classify(
                 project(model.vertices[edge.start].point),
                 project(model.vertices[edge.end].point),
             ),
-            WritableEdgeCurve::Circle(_) => {
-                // Classify the generated arc's projection instead of refusing
-                // the admitted trim.
-                let [start, end] = FiniteReal::raw_array(edge.domain);
-                let mut points = Vec::with_capacity(9);
-                for step in 0..=8 {
-                    let at = start + (end - start) * f64::from(step) / 8.0;
-                    let parameter = FiniteReal::new(at).ok_or_else(|| {
-                        WriteError::Omit(format!(
-                            "coedge {} trim circle sample is non-finite",
-                            coedge.source.id
-                        ))
-                    })?;
-                    let point = match edge.curve.point(parameter) {
-                        Ok(point) => point.get(),
-                        Err(failure) => failure.non_finite()?.ok_or_else(|| {
-                            WriteError::Omit(format!(
-                                "coedge {} trim circle sample is non-finite",
-                                coedge.source.id
-                            ))
-                        })?,
-                    };
-                    points.push(project(point));
-                }
-                Carrier {
-                    points,
-                    clamped: true,
-                }
-            }
+            WritableEdgeCurve::Circle(_) => return Ok(0),
             WritableEdgeCurve::Nurbs(curve) => Carrier::nurbs(curve, project)?,
             WritableEdgeCurve::NurbsOwned(curve) => Carrier::nurbs(curve, project)?,
         }
