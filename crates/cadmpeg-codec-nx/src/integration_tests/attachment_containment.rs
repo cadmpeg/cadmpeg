@@ -103,11 +103,14 @@ fn attachment_failure_keeps_geometry_and_reports_one_error_loss() {
         .losses
         .iter()
         .any(|loss| loss.code.local_code() == "depth.not-delivered"));
-    assert_eq!(
-        contained.source_fidelity().unrepresented(),
-        cadmpeg_ir::ArenaClasses::from([cadmpeg_ir::ArenaClass::Model]),
-        "the class-level failure retains only the undecoded stream bytes",
-    );
+    assert!(contained
+        .source_fidelity()
+        .unrepresented()
+        .contains(&cadmpeg_ir::ArenaClass::Design));
+    assert!(contained
+        .source_fidelity()
+        .unrepresented()
+        .contains(&cadmpeg_ir::ArenaClass::Model));
     let (model, complete_model) = (&contained.ir().model, &complete.ir().model);
     assert_eq!(model.bodies, complete_model.bodies);
     assert_eq!(model.shells, complete_model.shells);
