@@ -556,20 +556,13 @@ pub(crate) fn annotations(
     scan: &ContainerScan<'_>,
     annotations: &mut Annotations,
     topology: Option<&TopologyIdentityIndex>,
-    pattern_hole_nominals: Option<&BTreeMap<String, PositiveReal>>,
     losses: &mut Vec<LossNote>,
 ) -> Result<Vec<PmiAnnotation>, CodecError> {
     let Some((stream, root, rendered_dimensions)) = scan_root(ctx, scan)? else {
         return Ok(Vec::new());
     };
-    let projection = project_with_topology(
-        ctx,
-        &root,
-        topology,
-        &rendered_dimensions,
-        pattern_hole_nominals,
-    )?;
-    losses.extend(projection.walk_caps.losses(projection.walk_work_limit));
+    let projection = project_with_topology(ctx, &root, topology, &rendered_dimensions)?;
+    projection.append_losses(losses);
     let projected = projection.annotations;
     let positions_by_prefix =
         positions_by_id_prefix(projected.iter().map(|annotation| annotation.id.as_str()));
@@ -616,97 +609,6 @@ fn positions_by_id_prefix<'a>(ids: impl Iterator<Item = &'a str>) -> HashMap<&'a
     positions
 }
 
-/// Build the native-history join used when a SWIFT hole-pattern graph omits all
-/// applied members and CAD identifiers. The map is keyed by the SWIFT object
-/// name (`Hole PatternN`) and is populated only by one unambiguous native
-/// `LPatternN` whose sole seed is consumed by exactly one later Hole feature.
-pub(crate) fn pattern_hole_nominal_context(
-    features: &[cadmpeg_ir::features::Feature],
-) -> BTreeMap<String, PositiveReal> {
-    let mut first_ordinals = HashMap::<&cadmpeg_ir::features::FeatureId, u64>::new();
-    let mut native_holes = HashMap::<_, Vec<_>>::new();
-    for feature in features {
-        first_ordinals
-            .entry(&feature.id)
-            .and_modify(|ordinal| *ordinal = (*ordinal).min(feature.ordinal))
-            .or_insert(feature.ordinal);
-        if !feature
-            .native_ref
-            .as_deref()
-            .is_some_and(|native| native.starts_with("sldprt:history:feature#"))
-        {
-            continue;
-        }
-        let cadmpeg_ir::features::FeatureDefinition::Operation(
-            cadmpeg_ir::features::FeatureOperation::Hole { shape, .. },
-        ) = feature.evaluation.definition()
-        else {
-            continue;
-        };
-        let diameter = shape.diameter().map(PositiveReal::from_assigned_length);
-        for dependency in &feature.dependencies {
-            native_holes
-                .entry(dependency)
-                .or_default()
-                .push((feature.ordinal, diameter));
-        }
-    }
-    let mut candidates = BTreeMap::<String, Option<PositiveReal>>::new();
-    for pattern in features {
-        let Some(name) = pattern.name.as_deref() else {
-            continue;
-        };
-        let Some(suffix) = name.strip_prefix("LPattern").filter(|suffix| {
-            !suffix.is_empty() && suffix.chars().all(|character| character.is_ascii_digit())
-        }) else {
-            continue;
-        };
-        if !pattern
-            .native_ref
-            .as_deref()
-            .is_some_and(|native| native.starts_with("sldprt:history:feature#"))
-        {
-            continue;
-        }
-        let cadmpeg_ir::features::FeatureDefinition::Operation(
-            cadmpeg_ir::features::FeatureOperation::Pattern { seeds, .. },
-        ) = pattern.evaluation.definition()
-        else {
-            continue;
-        };
-        let [cadmpeg_ir::features::patterns::PatternSeed::Feature(seed)] = seeds.as_slice() else {
-            continue;
-        };
-        if first_ordinals
-            .get(seed)
-            .is_none_or(|&ordinal| ordinal >= pattern.ordinal)
-        {
-            continue;
-        }
-        let mut later_holes = native_holes
-            .get(seed)
-            .into_iter()
-            .flatten()
-            .filter(|(ordinal, _)| *ordinal > pattern.ordinal);
-        let (Some(&(_, Some(diameter))), None) = (later_holes.next(), later_holes.next()) else {
-            continue;
-        };
-        let semantic_name = format!("Hole Pattern{suffix}");
-        if let Some(value) = candidates.get_mut(&semantic_name) {
-            *value = None;
-        } else {
-            candidates.insert(semantic_name, Some(diameter));
-        }
-    }
-    let mut nominals = BTreeMap::new();
-    for (name, value) in candidates {
-        if let Some(value) = value {
-            nominals.insert(name, value);
-        }
-    }
-    nominals
-}
-
 pub(crate) fn unsupported_annotation_classes(
     ctx: &DecodeContext<'_>,
     scan: &ContainerScan<'_>,
@@ -729,7 +631,7 @@ pub(crate) fn unsupported_annotation_classes(
         );
         return Ok(classes);
     }
-    Ok(project_with_topology(ctx, &root, None, &rendered, None)?.unsupported)
+    Ok(project_with_topology(ctx, &root, None, &rendered)?.unsupported)
 }
 
 fn has_root_marker(scan: &ContainerScan<'_>) -> bool {
@@ -1049,7 +951,7 @@ fn project(root: &Entity) -> Vec<PmiAnnotation> {
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service())
             .expect("empty root fits test policy");
-    project_with_topology(&ctx, root, None, &[], None)
+    project_with_topology(&ctx, root, None, &[])
         .expect("test projection fits policy")
         .annotations
 }
@@ -1059,13 +961,12 @@ fn enrich_implicit_nominals(
     root: &Entity,
     rendered: &[RenderedDimension],
     annotations: &mut Vec<PmiAnnotation>,
-    pattern_hole_nominals: Option<&BTreeMap<String, PositiveReal>>,
 ) {
     let arena = cadmpeg_core::decode::DecodeArena::new();
     let (ctx, _) =
         DecodeContext::from_root_bytes(&[], &arena, &cadmpeg_core::decode::DecodePolicy::service())
             .expect("empty root fits test policy");
-    *annotations = project_with_topology(&ctx, root, None, rendered, pattern_hole_nominals)
+    *annotations = project_with_topology(&ctx, root, None, rendered)
         .expect("test projection fits policy")
         .annotations;
 }
@@ -1076,6 +977,31 @@ struct AnnotationProjection {
     unsupported: BTreeMap<String, usize>,
     walk_caps: WalkCaps,
     walk_work_limit: usize,
+    unresolved_implicit_nominals: usize,
+    unresolved_position_targets: usize,
+}
+
+impl AnnotationProjection {
+    fn append_losses(&self, losses: &mut Vec<LossNote>) {
+        losses.extend(self.walk_caps.losses(self.walk_work_limit));
+        if self.unresolved_implicit_nominals > 0 {
+            losses.push(
+                crate::loss::SldprtLossCode::PmiSwiftImplicitNominalUnresolved.note(format!(
+                    "{} SWIFT diameter dimensions have unresolved implicit nominal values.",
+                    self.unresolved_implicit_nominals
+                )),
+            );
+        }
+        if self.unresolved_position_targets > 0 {
+            losses.push(
+                crate::loss::SldprtLossCode::PmiSwiftPositionTargetUnresolved.note(format!(
+                    "Target ownership is unresolved for {} SWIFT position \
+                     annotation(s); source ShapeAspect targets were retained.",
+                    self.unresolved_position_targets
+                )),
+            );
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -1146,12 +1072,21 @@ fn project_with_topology(
     root: &Entity,
     topology: Option<&TopologyIdentityIndex>,
     rendered: &[RenderedDimension],
-    pattern_hole_nominals: Option<&BTreeMap<String, PositiveReal>>,
 ) -> Result<AnnotationProjection, CodecError> {
     if root.annotations.references.len() != root.annotations.entities.len() {
         return Ok(AnnotationProjection::default());
     }
     let feature_index = feature_index(root);
+    project_with_feature_index(ctx, root, topology, rendered, &feature_index)
+}
+
+fn project_with_feature_index(
+    ctx: &DecodeContext<'_>,
+    root: &Entity,
+    topology: Option<&TopologyIdentityIndex>,
+    rendered: &[RenderedDimension],
+    feature_index: &FeatureIndex<'_>,
+) -> Result<AnnotationProjection, CodecError> {
     let mut datum_ids = BTreeMap::new();
     for (reference, entity) in root
         .annotations
@@ -1175,6 +1110,8 @@ fn project_with_topology(
     }
     let mut projected = Vec::new();
     let mut unsupported = BTreeMap::new();
+    let mut unresolved_implicit_nominals = 0usize;
+    let mut unresolved_position_targets = 0usize;
     for (reference, entity) in root
         .annotations
         .references
@@ -1189,7 +1126,7 @@ fn project_with_topology(
         } else if pmi_id(&reference.id).is_none() {
             AnnotationDisposition::Unsupported
         } else if let Some(annotation) =
-            project_datum(ctx, reference, entity, &feature_index, topology)?
+            project_datum(ctx, reference, entity, feature_index, topology)?
         {
             projected.push(annotation);
             AnnotationDisposition::Projected
@@ -1198,7 +1135,7 @@ fn project_with_topology(
         };
         record_projection(&mut unsupported, reference, entity, disposition)?;
     }
-    let counterbores = Counterbores::new(root, &feature_index);
+    let counterbores = Counterbores::new(root, feature_index);
     let mut datum_systems = BTreeMap::<_, PmiId>::new();
     for (reference, entity) in root
         .annotations
@@ -1227,8 +1164,15 @@ fn project_with_topology(
             )?;
             continue;
         };
+        let mut unresolved_position_target = false;
         let disposition = if let Some(tolerance) = project_tolerance(entity, &datum_ids)? {
-            let Some(targets) = targets(ctx, entity, &feature_index, topology)? else {
+            let target_selection = if short_class(&entity.class) == "GdtPosition" {
+                position_targets(ctx, entity, feature_index, topology)?
+                    .map(|selection| (selection.targets, selection.unresolved))
+            } else {
+                targets(ctx, entity, feature_index, topology)?.map(|targets| (targets, false))
+            };
+            let Some((targets, unresolved)) = target_selection else {
                 record_projection(
                     &mut unsupported,
                     reference,
@@ -1237,6 +1181,7 @@ fn project_with_topology(
                 )?;
                 continue;
             };
+            unresolved_position_target = unresolved;
             let datum_system = if tolerance.references.as_slice().is_empty() {
                 None
             } else {
@@ -1280,7 +1225,7 @@ fn project_with_topology(
             });
             if short_class(&entity.class) == "GdtCompositeSurfaceProfile" {
                 if let Some(lower_tier) =
-                    project_lower_profile_tier(ctx, reference, entity, &feature_index, topology)?
+                    project_lower_profile_tier(ctx, reference, entity, feature_index, topology)?
                 {
                     projected.push(lower_tier);
                 }
@@ -1293,24 +1238,50 @@ fn project_with_topology(
                 reference,
                 entity,
             },
-            &feature_index,
+            feature_index,
             topology,
             rendered,
-            pattern_hole_nominals,
         )? {
+            if unresolved_implicit_diameter(entity, &annotation) {
+                unresolved_implicit_nominals =
+                    unresolved_implicit_nominals.checked_add(1).ok_or_else(|| {
+                        CodecError::malformed("SWIFT unresolved nominal count overflows")
+                    })?;
+            }
             projected.push(annotation);
             AnnotationDisposition::Projected
         } else {
             missing_projection(entity)
         };
         record_projection(&mut unsupported, reference, entity, disposition)?;
+        if unresolved_position_target && matches!(disposition, AnnotationDisposition::Projected) {
+            record_unresolved_position_target(&mut unresolved_position_targets)?;
+        }
     }
     Ok(AnnotationProjection {
         annotations: projected,
         unsupported,
         walk_caps: feature_index.caps(),
         walk_work_limit: feature_index.work_limit,
+        unresolved_implicit_nominals,
+        unresolved_position_targets,
     })
+}
+
+fn record_unresolved_position_target(count: &mut usize) -> Result<(), CodecError> {
+    *count = count.checked_add(1).ok_or_else(|| {
+        CodecError::malformed("SWIFT unresolved compound-hole target count overflows")
+    })?;
+    Ok(())
+}
+
+fn unresolved_implicit_diameter(entity: &Entity, annotation: &PmiAnnotation) -> bool {
+    short_class(&entity.class) == "GdtDiameter"
+        && matches!(
+            &annotation.definition,
+            PmiDefinition::Dimension(dimension)
+                if dimension.kind() == &DimensionKind::Diameter && dimension.nominal().is_none()
+        )
 }
 
 /// The equality of `references`, as an ordered key.
@@ -1492,7 +1463,6 @@ fn project_dimension(
     feature_index: &FeatureIndex<'_>,
     topology: Option<&TopologyIdentityIndex>,
     rendered: &[RenderedDimension],
-    pattern_hole_nominals: Option<&BTreeMap<String, PositiveReal>>,
 ) -> Result<Option<PmiAnnotation>, CodecError> {
     let DimensionSource {
         counterbores,
@@ -1519,14 +1489,7 @@ fn project_dimension(
                 .is_some_and(|dimension| *dimension != 0)
     });
     let implicit_nominal = if explicit_nominal.is_none() {
-        implicit_dimension_nominal(
-            ctx,
-            counterbores,
-            entity,
-            feature_index,
-            rendered,
-            pattern_hole_nominals,
-        )?
+        implicit_dimension_nominal(ctx, counterbores, entity, feature_index, rendered)?
     } else {
         None
     };
@@ -1569,17 +1532,10 @@ fn implicit_dimension_nominal(
     entity: &Entity,
     feature_index: &FeatureIndex<'_>,
     rendered: &[RenderedDimension],
-    pattern_hole_nominals: Option<&BTreeMap<String, PositiveReal>>,
 ) -> Result<Option<FiniteReal>, CodecError> {
     let source =
         match short_class(&entity.class) {
-            "GdtDiameter" => diameter_nominal(
-                ctx,
-                counterbores,
-                entity,
-                feature_index,
-                pattern_hole_nominals,
-            )?,
+            "GdtDiameter" => diameter_nominal(ctx, counterbores, entity, feature_index)?,
             "GdtDepth" => depth_nominal(ctx, counterbores, entity, feature_index)?,
             "GdtWidth" => {
                 width_from_applied_geometry(ctx, entity, feature_index)?.map(ImplicitNominal::Exact)
@@ -1998,7 +1954,6 @@ fn diameter_nominal(
     counterbores: &Counterbores<'_>,
     annotation: &Entity,
     feature_index: &FeatureIndex<'_>,
-    pattern_hole_nominals: Option<&BTreeMap<String, PositiveReal>>,
 ) -> Result<Option<ImplicitNominal>, CodecError> {
     let direct = diameter_from_applied_geometry(ctx, annotation, feature_index)?;
     let geometry = if direct.is_some() {
@@ -2013,58 +1968,7 @@ fn diameter_nominal(
             exact: geometry,
         }));
     }
-    Ok(
-        empty_pattern_hole_nominal(ctx, annotation, feature_index, pattern_hole_nominals)?.map(
-            |geometry| ImplicitNominal::RenderedOrExact {
-                kind: RenderedDimensionKind::Diameter,
-                geometry,
-                exact: geometry,
-            },
-        ),
-    )
-}
-
-fn empty_pattern_hole_nominal(
-    ctx: &DecodeContext<'_>,
-    annotation: &Entity,
-    feature_index: &FeatureIndex<'_>,
-    pattern_hole_nominals: Option<&BTreeMap<String, PositiveReal>>,
-) -> Result<Option<PositiveReal>, CodecError> {
-    let [reference] = annotation.features.references.as_slice() else {
-        return Ok(None);
-    };
-    let Some(pattern) = feature_index.get(reference.id.as_str()) else {
-        return Ok(None);
-    };
-    if short_class(&pattern.class) != "GdtPattern" || !pattern.features.references.is_empty() {
-        return Ok(None);
-    }
-    let Some(collection) = unique_related(pattern, "SubFeatures") else {
-        return Ok(None);
-    };
-    if short_class(&collection.class) != "GdtAppliedFeatureCollection"
-        || !collection.entity.related.is_empty()
-    {
-        return Ok(None);
-    }
-    let mut has_identifier = false;
-    let mut has_nonempty_identifier = false;
-    visit_cad_identifiers(ctx, pattern, &mut |identifier| {
-        has_identifier = true;
-        has_nonempty_identifier |= !identifier.is_empty();
-        Ok(())
-    })?;
-    if !has_identifier || has_nonempty_identifier {
-        return Ok(None);
-    }
-    let Some(name) = pattern
-        .strings
-        .get("ObjectName")
-        .filter(|name| !name.is_empty())
-    else {
-        return Ok(None);
-    };
-    Ok(pattern_hole_nominals.and_then(|nominals| nominals.get(name).copied()))
+    Ok(None)
 }
 
 fn hole_diameter_excluding_counterbore(
@@ -2749,7 +2653,12 @@ fn child_feature_ids(feature: &Entity) -> impl Iterator<Item = &str> {
         .references
         .iter()
         .map(|reference| reference.id.as_str())
-        .chain(direct_subfeature_ids(feature).into_iter().flatten())
+        .chain(
+            direct_subfeature_references(feature)
+                .into_iter()
+                .flatten()
+                .map(|reference| reference.id.as_str()),
+        )
 }
 
 fn nominal_radius(feature: &Entity, name: &str) -> Option<PositiveReal> {
@@ -2950,39 +2859,201 @@ fn feature_index(root: &Entity) -> FeatureIndex<'_> {
     FeatureIndex::with_work_limit(index, swift_feature_walk_work_limit(rows))
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum CompoundHoleChildKind {
+    Cylinder,
+    Cone,
+    Plane,
+}
+
+impl CompoundHoleChildKind {
+    fn from_entity(entity: &Entity) -> Option<Self> {
+        match short_class(&entity.class) {
+            "GdtCylinder" => Some(Self::Cylinder),
+            "GdtCone" => Some(Self::Cone),
+            "GdtPlane" => Some(Self::Plane),
+            _ => None,
+        }
+    }
+}
+
+struct CompoundHoleChild {
+    identity: String,
+    kind: CompoundHoleChildKind,
+    identifiers: Vec<String>,
+}
+
+#[derive(Default)]
+struct CompoundHoleChildren {
+    ordered: Vec<CompoundHoleChild>,
+    by_identity: BTreeMap<String, usize>,
+}
+
+impl CompoundHoleChildren {
+    fn index(&self, identity: &str) -> Option<usize> {
+        self.by_identity.get(identity).copied()
+    }
+
+    fn insert(
+        &mut self,
+        identity: &str,
+        kind: CompoundHoleChildKind,
+        identifiers: Vec<String>,
+    ) -> Option<usize> {
+        if let Some(index) = self.index(identity) {
+            return (self.ordered.get(index)?.kind == kind).then_some(index);
+        }
+        let index = self.ordered.len();
+        self.ordered.push(CompoundHoleChild {
+            identity: identity.to_owned(),
+            kind,
+            identifiers,
+        });
+        self.by_identity.insert(identity.to_owned(), index);
+        Some(index)
+    }
+
+    fn get(&self, index: usize) -> Option<&CompoundHoleChild> {
+        self.ordered.get(index)
+    }
+
+    fn iter(&self) -> impl Iterator<Item = (usize, &CompoundHoleChild)> {
+        self.ordered.iter().enumerate()
+    }
+}
+
+struct PositionTargetSelection {
+    targets: Vec<PmiTarget>,
+    unresolved: bool,
+}
+
+#[derive(PartialEq, Eq, PartialOrd, Ord)]
+enum PmiTargetKey {
+    Body(String),
+    Face(String),
+    Edge(String),
+    Vertex(String),
+    Point(String),
+    Curve(String),
+    Product(String),
+    Occurrence(String),
+    ShapeAspect(String),
+}
+
+impl PmiTargetKey {
+    fn from_target(target: &PmiTarget) -> Self {
+        match target {
+            PmiTarget::Body { body } => Self::Body(body.as_str().to_owned()),
+            PmiTarget::Face { face } => Self::Face(face.as_str().to_owned()),
+            PmiTarget::Edge { edge } => Self::Edge(edge.as_str().to_owned()),
+            PmiTarget::Vertex { vertex } => Self::Vertex(vertex.as_str().to_owned()),
+            PmiTarget::Point { point } => Self::Point(point.as_str().to_owned()),
+            PmiTarget::Curve { curve } => Self::Curve(curve.as_str().to_owned()),
+            PmiTarget::Product { product } => Self::Product(product.as_str().to_owned()),
+            PmiTarget::Occurrence { occurrence } => {
+                Self::Occurrence(occurrence.as_str().to_owned())
+            }
+            PmiTarget::ShapeAspect { source_id } => {
+                Self::ShapeAspect(source_id.as_str().to_owned())
+            }
+        }
+    }
+}
+
 fn targets(
     ctx: &DecodeContext<'_>,
     entity: &Entity,
     feature_index: &FeatureIndex<'_>,
     topology: Option<&TopologyIdentityIndex>,
 ) -> Result<Option<Vec<PmiTarget>>, CodecError> {
+    Ok(
+        target_walk(ctx, entity, feature_index, topology, false)?
+            .map(|selection| selection.targets),
+    )
+}
+
+fn position_targets(
+    ctx: &DecodeContext<'_>,
+    entity: &Entity,
+    feature_index: &FeatureIndex<'_>,
+    topology: Option<&TopologyIdentityIndex>,
+) -> Result<Option<PositionTargetSelection>, CodecError> {
+    target_walk(ctx, entity, feature_index, topology, true)
+}
+
+fn target_walk(
+    ctx: &DecodeContext<'_>,
+    entity: &Entity,
+    feature_index: &FeatureIndex<'_>,
+    topology: Option<&TopologyIdentityIndex>,
+    position_mode: bool,
+) -> Result<Option<PositionTargetSelection>, CodecError> {
     let mut seen = BTreeSet::new();
     let mut depths = WalkDepths::default();
     let mut targets = Vec::new();
+    let mut unresolved = false;
     for reference in &entity.features.references {
+        let work_caps_at_start = feature_index.work_capped.get();
         let valid = visit_expanded_feature_ids(
             ctx,
-            &reference.id,
+            reference,
             feature_index,
             &mut depths,
             0,
-            &mut |source_id| {
-                if !seen.insert(source_id) {
-                    return Ok(true);
-                }
+            position_mode,
+            &mut |reference, unresolved_reference| {
+                let source_id = reference.id.as_str();
                 if !source_id
                     .chars()
                     .any(|character| !character.is_whitespace())
                 {
                     return Ok(false);
                 }
+                if unresolved_reference {
+                    if !seen.insert(source_id) {
+                        return Ok(true);
+                    }
+                    unresolved = true;
+                    targets.push(shape_aspect_target(source_id)?);
+                    return Ok(true);
+                }
                 let Some(feature) = feature_index.get(source_id) else {
+                    if !seen.insert(source_id) {
+                        return Ok(true);
+                    }
                     targets.push(shape_aspect_target(source_id)?);
                     return Ok(true);
                 };
+                if position_mode && !reference_matches_entity(reference, feature) {
+                    if !seen.insert(source_id) {
+                        return Ok(true);
+                    }
+                    unresolved = true;
+                    targets.push(shape_aspect_target(source_id)?);
+                    return Ok(true);
+                }
+                if !seen.insert(source_id) {
+                    return Ok(true);
+                }
+                if position_mode
+                    && short_class(&entity.class) == "GdtPosition"
+                    && short_class(&feature.class) == "GdtCompoundHole"
+                {
+                    let Some(selection) =
+                        compound_hole_position_targets(ctx, feature, feature_index, topology)?
+                    else {
+                        unresolved = true;
+                        targets.push(shape_aspect_target(source_id)?);
+                        return Ok(true);
+                    };
+                    unresolved |= selection.unresolved;
+                    targets.extend(selection.targets);
+                    return Ok(true);
+                }
                 let first_target = targets.len();
                 let mut had_identifier = false;
                 let mut unresolved_identifier = false;
+                let mut feature_target_keys = BTreeSet::new();
                 visit_cad_identifiers(ctx, feature, &mut |identifier| {
                     had_identifier = true;
                     let Some(topology) = topology else {
@@ -2990,11 +3061,7 @@ fn targets(
                         return Ok(());
                     };
                     if let Some(target) = topology.resolve(identifier) {
-                        if !targets
-                            .iter()
-                            .skip(first_target)
-                            .any(|existing| existing == target)
-                        {
+                        if feature_target_keys.insert(PmiTargetKey::from_target(target)) {
                             targets.push(target.clone());
                         }
                     } else {
@@ -3012,7 +3079,9 @@ fn targets(
             Some(true) => {}
             Some(false) => return Ok(None),
             None => {
-                feature_index.record_cap();
+                if feature_index.work_capped.get() == work_caps_at_start {
+                    feature_index.record_cap();
+                }
                 return Ok(None);
             }
         }
@@ -3021,7 +3090,285 @@ fn targets(
         feature_index.record_cap();
         return Ok(None);
     }
-    Ok(Some(targets))
+    Ok(Some(PositionTargetSelection {
+        targets,
+        unresolved,
+    }))
+}
+
+fn push_target_once(
+    targets: &mut Vec<PmiTarget>,
+    keys: &mut BTreeSet<PmiTargetKey>,
+    target: PmiTarget,
+) {
+    if keys.insert(PmiTargetKey::from_target(&target)) {
+        targets.push(target);
+    }
+}
+
+fn unique_related_bounded<'a>(
+    entity: &'a Entity,
+    name: &str,
+    feature_index: &FeatureIndex<'_>,
+) -> Option<&'a RelatedObject> {
+    let mut found = None;
+    for related in &entity.related {
+        if !feature_index.work.charge() {
+            return None;
+        }
+        if related.name == name {
+            if found.is_some() {
+                return None;
+            }
+            found = Some(related);
+        }
+    }
+    found
+}
+
+fn compound_hole_position_targets(
+    ctx: &DecodeContext<'_>,
+    compound: &Entity,
+    feature_index: &FeatureIndex<'_>,
+    topology: Option<&TopologyIdentityIndex>,
+) -> Result<Option<PositionTargetSelection>, CodecError> {
+    let Some(subfeatures) = unique_related_bounded(compound, "SubFeatures", feature_index) else {
+        if feature_index.work.exhausted() {
+            feature_index.record_cap();
+        }
+        return Ok(None);
+    };
+    if !related_class_matches(subfeatures, "GdtAppliedFeatureCollection")
+        || subfeatures.entity.related.is_empty()
+    {
+        return Ok(None);
+    }
+    let Some(aggregate_identifiers) = cad_identifiers(ctx, compound, feature_index)? else {
+        return Ok(None);
+    };
+
+    let mut children = CompoundHoleChildren::default();
+    let mut cylinder_child_indices = Vec::new();
+    let mut seen_cylinders = BTreeSet::new();
+
+    for reference in &compound.features.references {
+        if !feature_index.work.charge() {
+            feature_index.record_cap();
+            return Ok(None);
+        }
+        let Some(child) = feature_index.get(&reference.id) else {
+            return Ok(None);
+        };
+        if !reference_matches_entity(reference, child) {
+            return Ok(None);
+        }
+        let Some(kind) = CompoundHoleChildKind::from_entity(child) else {
+            return Ok(None);
+        };
+        if kind == CompoundHoleChildKind::Cylinder {
+            return Ok(None);
+        }
+        if let Some(index) = children.index(&reference.id) {
+            if children
+                .get(index)
+                .is_none_or(|existing| existing.kind != kind)
+            {
+                return Ok(None);
+            }
+        } else {
+            let Some(identifiers) = cad_identifiers(ctx, child, feature_index)? else {
+                return Ok(None);
+            };
+            if children.insert(&reference.id, kind, identifiers).is_none() {
+                return Ok(None);
+            }
+        }
+    }
+
+    let mut applied_names = BTreeSet::new();
+    for applied in &subfeatures.entity.related {
+        if !feature_index.work.charge() {
+            feature_index.record_cap();
+            return Ok(None);
+        }
+        if !related_class_matches(applied, "GdtAppliedFeature")
+            || !applied_names.insert(applied.name.as_str())
+        {
+            return Ok(None);
+        }
+        let [reference] = applied.entity.features.references.as_slice() else {
+            return Ok(None);
+        };
+        let Some(child) = feature_index.get(&reference.id) else {
+            return Ok(None);
+        };
+        if !reference_matches_entity(reference, child) {
+            return Ok(None);
+        }
+        let Some(kind) = CompoundHoleChildKind::from_entity(child) else {
+            return Ok(None);
+        };
+        let child_index = if let Some(index) = children.index(&reference.id) {
+            if children
+                .get(index)
+                .is_none_or(|existing| existing.kind != kind)
+            {
+                return Ok(None);
+            }
+            index
+        } else {
+            let Some(identifiers) = cad_identifiers(ctx, child, feature_index)? else {
+                return Ok(None);
+            };
+            let Some(index) = children.insert(&reference.id, kind, identifiers) else {
+                return Ok(None);
+            };
+            index
+        };
+        if kind == CompoundHoleChildKind::Cylinder && seen_cylinders.insert(child_index) {
+            cylinder_child_indices.push(child_index);
+        }
+    }
+    if cylinder_child_indices.is_empty() {
+        return Ok(None);
+    }
+
+    let mut owners = BTreeMap::<String, BTreeSet<usize>>::new();
+    for (child_index, child) in children.iter() {
+        for identifier in &child.identifiers {
+            if !feature_index.work.charge() {
+                feature_index.record_cap();
+                return Ok(None);
+            }
+            owners
+                .entry(identifier.clone())
+                .or_default()
+                .insert(child_index);
+        }
+    }
+
+    let mut targets = Vec::new();
+    let mut position_target_keys = BTreeSet::new();
+    let mut unresolved = false;
+    for child_index in cylinder_child_indices {
+        let Some(child) = children.get(child_index) else {
+            return Ok(None);
+        };
+        if child.identifiers.is_empty() {
+            push_target_once(
+                &mut targets,
+                &mut position_target_keys,
+                shape_aspect_target(&child.identity)?,
+            );
+            unresolved = true;
+            continue;
+        }
+        for identifier in &child.identifiers {
+            if !feature_index.work.charge() {
+                feature_index.record_cap();
+                return Ok(None);
+            }
+            match topology.and_then(|topology| topology.resolve(identifier)) {
+                Some(target) if matches!(target, PmiTarget::Face { .. }) => {
+                    push_target_once(&mut targets, &mut position_target_keys, target.clone());
+                }
+                _ => {
+                    push_target_once(
+                        &mut targets,
+                        &mut position_target_keys,
+                        shape_aspect_target(identifier)?,
+                    );
+                    unresolved = true;
+                }
+            }
+            if owners
+                .get(identifier)
+                .is_some_and(|child_indices| child_indices.len() > 1)
+            {
+                push_target_once(
+                    &mut targets,
+                    &mut position_target_keys,
+                    shape_aspect_target(identifier)?,
+                );
+                unresolved = true;
+            }
+        }
+    }
+
+    for identifier in aggregate_identifiers {
+        if !feature_index.work.charge() {
+            feature_index.record_cap();
+            return Ok(None);
+        }
+        if !owners.contains_key(&identifier) {
+            push_target_once(
+                &mut targets,
+                &mut position_target_keys,
+                shape_aspect_target(&identifier)?,
+            );
+            unresolved = true;
+        }
+    }
+    Ok(Some(PositionTargetSelection {
+        targets,
+        unresolved,
+    }))
+}
+
+fn cad_identifiers(
+    ctx: &DecodeContext<'_>,
+    feature: &Entity,
+    feature_index: &FeatureIndex<'_>,
+) -> Result<Option<Vec<String>>, CodecError> {
+    let mut collection = None;
+    for related in &feature.related {
+        if !feature_index.work.charge() {
+            feature_index.record_cap();
+            return Ok(None);
+        }
+        if related.name == "CadReferences" {
+            if collection.is_some() {
+                return Ok(None);
+            }
+            collection = Some(related);
+        }
+    }
+    let Some(collection) = collection else {
+        return Ok(Some(Vec::new()));
+    };
+    if !related_class_matches(collection, "CadRefCollection") {
+        return Ok(None);
+    }
+
+    let mut identifiers = Vec::new();
+    let mut names = BTreeSet::new();
+    for cad_ref in &collection.entity.related {
+        if !feature_index.work.charge() {
+            feature_index.record_cap();
+            return Ok(None);
+        }
+        let _depth = ctx.enter_nested("read SWIFT child CAD identifiers")?;
+        if !related_class_matches(cad_ref, "CadRef") || !names.insert(cad_ref.name.as_str()) {
+            return Ok(None);
+        }
+        if let Some(identifier) = cad_ref
+            .entity
+            .strings
+            .get("CadIdentifier")
+            .filter(|identifier| !identifier.trim().is_empty())
+        {
+            identifiers.push(identifier.clone());
+        }
+    }
+    Ok(Some(identifiers))
+}
+
+fn related_class_matches(related: &RelatedObject, expected: &str) -> bool {
+    let declared_class = related
+        .class
+        .split_once(',')
+        .map_or(related.class.as_str(), |(class, _)| class);
+    declared_class == related.entity.class && short_class(declared_class) == expected
 }
 
 fn shape_aspect_target(source_id: &str) -> Result<PmiTarget, CodecError> {
@@ -3059,24 +3406,42 @@ fn visit_cad_identifiers(
 /// `None` when the walk work ran out.
 fn visit_expanded_feature_ids<'a>(
     ctx: &DecodeContext<'_>,
-    id: &'a str,
+    reference: &'a Reference,
     feature_index: &FeatureIndex<'a>,
     depths: &mut WalkDepths<'a>,
     depth: usize,
-    visit: &mut impl FnMut(&'a str) -> Result<bool, CodecError>,
+    position_mode: bool,
+    visit: &mut impl FnMut(&'a Reference, bool) -> Result<bool, CodecError>,
 ) -> Result<Option<bool>, CodecError> {
     if !feature_index.work.charge() {
         return Ok(None);
     }
     let _depth = ctx.enter_nested("expand SWIFT target features")?;
+    let id = reference.id.as_str();
     let Some(feature) = feature_index.get(id).copied() else {
-        return visit(id).map(Some);
+        let class = reference
+            .class
+            .split_once(',')
+            .map_or(reference.class.as_str(), |(class, _)| class);
+        let unresolved_compound = position_mode && short_class(class) == "GdtCompoundHole";
+        return visit(reference, unresolved_compound).map(Some);
     };
-    if short_class(&feature.class) != "GdtPattern" {
-        return visit(id).map(Some);
+    if position_mode && !reference_matches_entity(reference, feature) {
+        return visit(reference, true).map(Some);
     }
-    let Some(subfeatures) = direct_subfeature_ids(feature) else {
-        return visit(id).map(Some);
+    if short_class(&feature.class) != "GdtPattern" {
+        return visit(reference, false).map(Some);
+    }
+    let subfeatures = if position_mode {
+        direct_subfeature_references_bounded(feature, feature_index)
+    } else {
+        direct_subfeature_references(feature).map(Iterator::collect::<Vec<_>>)
+    };
+    let Some(subfeatures) = subfeatures else {
+        if position_mode && feature_index.work.exhausted() {
+            return Ok(None);
+        }
+        return visit(reference, position_mode).map(Some);
     };
     let Some(child_depth) = depths.enter(id, depth) else {
         return Ok(Some(true));
@@ -3088,6 +3453,7 @@ fn visit_expanded_feature_ids<'a>(
             feature_index,
             depths,
             child_depth,
+            position_mode,
             visit,
         )? {
             Some(true) => {}
@@ -3097,7 +3463,41 @@ fn visit_expanded_feature_ids<'a>(
     Ok(Some(true))
 }
 
-fn direct_subfeature_ids(feature: &Entity) -> Option<impl Iterator<Item = &str>> {
+fn direct_subfeature_references_bounded<'a>(
+    feature: &'a Entity,
+    feature_index: &FeatureIndex<'a>,
+) -> Option<Vec<&'a Reference>> {
+    let collection = unique_related_bounded(feature, "SubFeatures", feature_index)?;
+    if !related_class_matches(collection, "GdtAppliedFeatureCollection") {
+        return None;
+    }
+    if collection.entity.related.is_empty() {
+        return None;
+    }
+    let mut ids = Vec::new();
+    let mut names = BTreeSet::new();
+    for applied in &collection.entity.related {
+        if !feature_index.work.charge() {
+            return None;
+        }
+        if !related_class_matches(applied, "GdtAppliedFeature")
+            || !names.insert(applied.name.as_str())
+        {
+            return None;
+        }
+        let [reference] = applied.entity.features.references.as_slice() else {
+            return None;
+        };
+        let child = feature_index.get(&reference.id)?;
+        if !reference_matches_entity(reference, child) {
+            return None;
+        }
+        ids.push(reference);
+    }
+    Some(ids)
+}
+
+fn direct_subfeature_references(feature: &Entity) -> Option<impl Iterator<Item = &Reference>> {
     let collection = unique_related(feature, "SubFeatures")?;
     if collection.entity.related.is_empty() {
         return None;
@@ -3110,14 +3510,13 @@ fn direct_subfeature_ids(feature: &Entity) -> Option<impl Iterator<Item = &str>>
             return None;
         };
     }
-    Some(collection.entity.related.iter().filter_map(|applied| {
-        applied
+    Some(
+        collection
             .entity
-            .features
-            .references
-            .first()
-            .map(|reference| reference.id.as_str())
-    }))
+            .related
+            .iter()
+            .filter_map(|applied| applied.entity.features.references.first()),
+    )
 }
 
 fn tolerance_modifiers(entity: &Entity) -> Vec<String> {
