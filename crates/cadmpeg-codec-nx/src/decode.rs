@@ -215,7 +215,10 @@ fn is_design_native_arena(name: &str) -> bool {
 
 /// Whether one container entry can hold model content.
 fn entry_holds_model(content: crate::container::EntryContent) -> bool {
-    use crate::container::EntryContent::*;
+    use crate::container::EntryContent::{
+        ActiveBodyIndex, AssetCatalog, DisplayJt, ExternalReferences, FastLoadJt,
+        FastLoadStructure, MaterialTexture, NamedOpaqueStream, PartAttributes,
+    };
     matches!(
         content,
         ActiveBodyIndex
@@ -232,7 +235,7 @@ fn entry_holds_model(content: crate::container::EntryContent) -> bool {
 
 /// Whether one container entry can hold design content.
 fn entry_holds_design(content: crate::container::EntryContent) -> bool {
-    use crate::container::EntryContent::*;
+    use crate::container::EntryContent::{Arrangements, NamedOpaqueStream, PartPayload};
     matches!(content, PartPayload | Arrangements | NamedOpaqueStream)
 }
 
@@ -431,20 +434,19 @@ impl Counts {
     }
 }
 
+type MetadataIr = (
+    CadIr,
+    cadmpeg_ir::Annotations,
+    Vec<UnknownRecord>,
+    Vec<LossNote>,
+    RouteOutcome,
+);
+
 fn build_metadata_ir(
     ctx: &DecodeContext<'_>,
     scan: &Scan,
     dialects: &DialectLayers,
-) -> Result<
-    (
-        CadIr,
-        cadmpeg_ir::Annotations,
-        Vec<UnknownRecord>,
-        Vec<LossNote>,
-        RouteOutcome,
-    ),
-    CodecError,
-> {
+) -> Result<MetadataIr, CodecError> {
     let mut unknowns = Vec::new();
     let mut ir = CadIr::decoded(source_meta(scan, dialects, None)?);
     let mut annotations = AnnotationBuilder::new();
@@ -486,14 +488,16 @@ fn build_metadata_ir(
                 &mut parsed,
                 None,
             )?;
-            let held = crate::native::attach_annotations(
+            let held = crate::native::attach::attach(
                 ctx,
                 &mut ir,
                 &model,
                 scan,
-                &mut annotations,
-                &mut unknowns,
-                &mut losses,
+                crate::native::attach::AttachOutputs {
+                    annotations: &mut annotations,
+                    unknowns: &mut unknowns,
+                    losses: &mut losses,
+                },
                 &mut parts,
             )?;
             crate::native::retain_deltas_gaps(ctx, scan, &model, &mut unknowns)?;

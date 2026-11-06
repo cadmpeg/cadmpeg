@@ -28,6 +28,8 @@ pub(super) fn class(operation: &FeatureOperation) -> Option<&'static str> {
             sketch: SketchFeatureBinding::Planar(Some(_)),
         } => "moProfileFeature_c",
         FeatureOperation::SpatialSketch { sketch: Some(_) } => "mo3DProfileFeature_c",
+        FeatureOperation::SketchBlockDefinition { .. } => "moSketchBlockDef_c",
+        FeatureOperation::SketchBlockInstance { .. } => "moSketchBlockInst_c",
         FeatureOperation::StoredGeometry {} => "moBaseBody_c",
         FeatureOperation::Shell { .. } => "moShell_c",
         FeatureOperation::Thicken { .. } => "moThicken_c",

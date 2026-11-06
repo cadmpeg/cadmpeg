@@ -118,9 +118,11 @@ pub(crate) fn assemble(
                         owned,
                         lines,
                         global,
-                        &mut source_parts,
-                        &mut field_stubs,
-                        &mut clipped_comments,
+                        FieldRecovery {
+                            source_parts: &mut source_parts,
+                            field_stubs: &mut field_stubs,
+                            clipped: &mut clipped_comments,
+                        },
                     )?;
                     // A failed record stage is dropped with its field stubs,
                     // so only a formed record reports covering stubs (#215).
@@ -161,6 +163,12 @@ struct SectionSource<'a> {
     points: Option<&'a crate::entities::geometry::point::SourcePointProjector<'a>>,
 }
 
+struct FieldRecovery<'a> {
+    source_parts: &'a mut ConflictParts,
+    field_stubs: &'a mut Vec<String>,
+    clipped: &'a mut BTreeSet<u32>,
+}
+
 fn parse_owned(
     ctx: &DecodeContext<'_>,
     section: SectionSource<'_>,
@@ -168,10 +176,13 @@ fn parse_owned(
     owned: &Ownership<'_>,
     lines: &BTreeMap<u32, &PhysicalLine>,
     global: &ResolvedGlobal,
-    source_parts: &mut ConflictParts,
-    field_stubs: &mut Vec<String>,
-    clipped: &mut BTreeSet<u32>,
+    recovery: FieldRecovery<'_>,
 ) -> Result<ParsedOwned, CodecError> {
+    let FieldRecovery {
+        source_parts,
+        field_stubs,
+        clipped,
+    } = recovery;
     let SectionSource {
         view: source,
         points: source_points,

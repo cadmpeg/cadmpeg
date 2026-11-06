@@ -13250,3 +13250,147 @@ type = "bytes[4]"
 source = "spec"
 anchor = "then four bytes, then the handle cells"
 value = [0, 0, 0, 0]
+[[record]]
+name = "current_direct_92_profile_line"
+kind = "byte"
+section = "2"
+anchor = "A current-prefix 92-byte direct profile line"
+size = 92
+endianness = "little"
+note = "The endpoint fields are nonzero point-object identifiers."
+parsed_by = "crates/cadmpeg-codec-sldprt/src/resolved_features/endpoints.rs"
+
+[[record.field]]
+name = "marker"
+offset = 0
+type = "bytes[5]"
+source = "spec"
+anchor = "sketch entities begin with"
+value = [255, 255, 31, 0, 3]
+
+[[record.field]]
+name = "header"
+offset = 5
+type = "bytes[12]"
+source = "spec"
+anchor = "A coordinate-bearing marker has the 12-byte prefix"
+value = [255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 128, 191]
+
+[[record.field]]
+name = "native_kind"
+offset = 17
+type = "u32"
+source = "spec"
+anchor = "A current-prefix 92-byte direct profile line has value u32 `2`"
+value = 2
+
+[[record.gap]]
+offset = 21
+size = 2
+note = "The profile locus begins at marker +23."
+
+[[record.field]]
+name = "profile_locus"
+offset = 23
+type = "bytes[4]"
+source = "spec"
+anchor = "profile locus `04 00 02 00`"
+value = [4, 0, 2, 0]
+
+[[record.field]]
+name = "role"
+offset = 27
+type = "u16"
+source = "spec"
+anchor = "role and state u16 values `1` at marker +27 and +29"
+value = 1
+
+[[record.field]]
+name = "state"
+offset = 29
+type = "u16"
+source = "spec"
+anchor = "role and state u16 values `1` at marker +27 and +29"
+value = 1
+
+[[record.field]]
+name = "selector"
+offset = 31
+type = "bytes[8]"
+source = "spec"
+anchor = "`00 00 80 bf 00 00 04 00` at marker +31"
+value = [0, 0, 128, 191, 0, 0, 4, 0]
+
+[[record.gap]]
+offset = 39
+size = 9
+note = "The state scalar begins at marker +48."
+
+[[record.field]]
+name = "state_scalar"
+offset = 48
+type = "f64"
+source = "spec"
+anchor = "f64 `1` at marker +48"
+value = 1.0
+
+[[record.field]]
+name = "zero_endpoint_prefix"
+offset = 56
+type = "bytes[8]"
+source = "spec"
+anchor = "eight zero bytes at marker +56"
+value = [0, 0, 0, 0, 0, 0, 0, 0]
+
+[[record.field]]
+name = "endpoint_first"
+offset = 64
+type = "u16"
+source = "spec"
+anchor = "Marker +64 and marker +66 store distinct nonzero point-object identifiers"
+
+[[record.field]]
+name = "endpoint_second"
+offset = 66
+type = "u16"
+source = "spec"
+anchor = "Marker +64 and marker +66 store distinct nonzero point-object identifiers"
+
+[[record.field]]
+name = "endpoint_selector"
+offset = 68
+type = "u32"
+source = "spec"
+anchor = "marker +68 stores u32 `1`"
+value = 1
+
+[[record.field]]
+name = "signed_selector"
+offset = 72
+type = "f64"
+source = "spec"
+anchor = "marker +72 stores f64 `-1`"
+value = -1.0
+
+[[record.field]]
+name = "zero_tail"
+offset = 80
+type = "u32"
+source = "spec"
+anchor = "marker +80 is zero u32"
+value = 0
+
+[[record.field]]
+name = "identity_selector"
+offset = 84
+type = "u32"
+source = "spec"
+anchor = "marker +84 stores u32 `1`"
+value = 1
+
+[[record.field]]
+name = "identity"
+offset = 88
+type = "u32"
+source = "spec"
+anchor = "marker +88 stores a nonzero, non-null identity"

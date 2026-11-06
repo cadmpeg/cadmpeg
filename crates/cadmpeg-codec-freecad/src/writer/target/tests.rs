@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Retained-layout eligibility borrows the source-free encode caller throughout.
 
-use super::admit_unedited;
 use cadmpeg_core::decode::{
     DecodeArena, DecodeContext, DecodePolicy, LimitScope, ResourceDimension, ResourceFailure,
 };
@@ -9,6 +8,33 @@ use cadmpeg_core::encode::EncodeSession;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::{CadIr, Codec, DecodeOptions, SourceFidelity};
 use std::io::Cursor;
+
+fn source_matches(
+    ctx: &DecodeContext<'_>,
+    ir: &CadIr,
+    fidelity: &SourceFidelity,
+) -> Result<bool, CodecError> {
+    cadmpeg_ir::hash::retained_source_matches(
+        ctx,
+        ir,
+        fidelity,
+        "fcstd",
+        crate::fidelity::SOURCE_IMAGE,
+        |fresh_ctx, root| {
+            let fresh = crate::FcstdCodec
+                .decode_with_context(fresh_ctx, root)
+                .ok()?;
+            cadmpeg_ir::hash::document_local_sha256(
+                fresh_ctx,
+                fresh.ir(),
+                fresh.ir().source.as_ref(),
+                "fcstd",
+                crate::fidelity::SOURCE_IMAGE,
+            )
+            .ok()
+        },
+    )
+}
 
 #[test]
 fn retained_layout_decode_uses_the_caller_input_ceiling() {
@@ -23,7 +49,7 @@ fn retained_layout_decode_uses_the_caller_input_ceiling() {
     policy.limits.max_input_bytes = 0;
     let ctx = DecodeContext::for_encode(&arena, &policy);
     assert!(matches!(
-        admit_unedited(&ctx, decoded.ir(), decoded.source_fidelity()),
+        source_matches(&ctx, decoded.ir(), decoded.source_fidelity()),
         Err(CodecError::ResourceLimit(limit))
             if limit.dimension == ResourceDimension::InputBytes
     ));
@@ -48,7 +74,7 @@ fn inherited_caller_refusal_precedes_retained_layout_admission() {
         panic!("working capacity overflow must latch a resource refusal")
     };
     assert!(matches!(
-        admit_unedited(
+        source_matches(
             &ctx,
             &ir,
             &fidelity
@@ -105,7 +131,7 @@ fn represented_layout_admission_uses_the_actual_source_free_encode_context() {
     assert_eq!(output.capacity(), 0);
     assert_eq!(ctx.resource_refusal(), Some(refusal));
     assert!(matches!(
-        admit_unedited(
+        source_matches(
             &ctx,
             decoded.ir(),
             &fidelity

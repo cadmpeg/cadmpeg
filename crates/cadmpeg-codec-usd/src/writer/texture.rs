@@ -178,10 +178,10 @@ impl<'ir> Writer<'ir> {
                 self.prim_head("def Shader", &reader, &[]);
                 self.out.open();
                 self.out
-                    .line("uniform token info:id = \"UsdPrimvarReader_float2\"");
+                    .property("uniform token info:id = \"UsdPrimvarReader_float2\"");
                 self.out
-                    .line(&format!("string inputs:varname = {}", quoted(&coordinates)));
-                self.out.line("float2 outputs:result");
+                    .property(&format!("string inputs:varname = {}", quoted(&coordinates)));
+                self.out.property("float2 outputs:result");
                 self.out.close();
             }
             let mut st = format!("{path}/{reader}.outputs:result");
@@ -191,56 +191,61 @@ impl<'ir> Writer<'ir> {
                 let name = format!("Transform_{input}");
                 self.prim_head("def Shader", &name, &[]);
                 self.out.open();
-                self.out.line("uniform token info:id = \"UsdTransform2d\"");
-                self.out.line(&format!("float2 inputs:in.connect = <{st}>"));
-                self.out.line(&format!(
+                self.out
+                    .property("uniform token info:id = \"UsdTransform2d\"");
+                self.out
+                    .property(&format!("float2 inputs:in.connect = <{st}>"));
+                self.out.property(&format!(
                     "float2 inputs:scale = {}",
                     float2([mapping.u_scale.get(), mapping.v_scale.get()])
                 ));
-                self.out.line(&format!(
+                self.out.property(&format!(
                     "float inputs:rotation = {}",
                     real32(crate::text::value::round_f32(
                         mapping.rotation.get().to_degrees()
                     ))
                 ));
-                self.out.line(&format!(
+                self.out.property(&format!(
                     "float2 inputs:translation = {}",
                     float2([mapping.u_offset.get(), mapping.v_offset.get()])
                 ));
-                self.out.line("float2 outputs:result");
+                self.out.property("float2 outputs:result");
                 self.out.close();
                 st = format!("{path}/{name}.outputs:result");
             }
             let name = format!("Texture_{input}");
             self.prim_head("def Shader", &name, &[]);
             self.out.open();
-            self.out.line("uniform token info:id = \"UsdUVTexture\"");
             self.out
-                .line(&format!("asset inputs:file = {}", asset(&texture.file)));
-            self.out.line(&format!("float2 inputs:st.connect = <{st}>"));
-            self.out.line(&format!(
+                .property("uniform token info:id = \"UsdUVTexture\"");
+            self.out
+                .property(&format!("asset inputs:file = {}", asset(&texture.file)));
+            self.out
+                .property(&format!("float2 inputs:st.connect = <{st}>"));
+            self.out.property(&format!(
                 "token inputs:wrapS = {}",
                 quoted(wrap(texture.texture.mapping.repeat_u))
             ));
-            self.out.line(&format!(
+            self.out.property(&format!(
                 "token inputs:wrapT = {}",
                 quoted(wrap(texture.texture.mapping.repeat_v))
             ));
             let (kind, output) = match texture.slot.kind {
                 SlotKind::Color => ("color3f", "rgb".to_owned()),
                 SlotKind::Normal => {
-                    self.out.line("token inputs:sourceColorSpace = \"raw\"");
-                    self.out.line("float4 inputs:scale = (2, 2, 2, 1)");
-                    self.out.line("float4 inputs:bias = (-1, -1, -1, 0)");
+                    self.out.property("token inputs:sourceColorSpace = \"raw\"");
+                    self.out.property("float4 inputs:scale = (2, 2, 2, 1)");
+                    self.out.property("float4 inputs:bias = (-1, -1, -1, 0)");
                     ("normal3f", "rgb".to_owned())
                 }
                 SlotKind::Scalar => {
-                    self.out.line("token inputs:sourceColorSpace = \"raw\"");
+                    self.out.property("token inputs:sourceColorSpace = \"raw\"");
                     ("float", texture.channel.to_string())
                 }
             };
             let output_type = if output == "rgb" { "float3" } else { "float" };
-            self.out.line(&format!("{output_type} outputs:{output}"));
+            self.out
+                .property(&format!("{output_type} outputs:{output}"));
             self.out.close();
             connections.push((
                 kind.to_owned(),
@@ -273,12 +278,12 @@ impl<'ir> Writer<'ir> {
                 self.prim_head("def Shader", &reader, &[]);
                 self.out.open();
                 self.out
-                    .line("uniform token info:id = \"ND_geompropvalue_vector2\"");
-                self.out.line(&format!(
+                    .property("uniform token info:id = \"ND_geompropvalue_vector2\"");
+                self.out.property(&format!(
                     "string inputs:geomprop = {}",
                     quoted(&coordinates)
                 ));
-                self.out.line("float2 outputs:out");
+                self.out.property("float2 outputs:out");
                 self.out.close();
             }
             let (image_type, out_type) = match (texture.slot.kind, texture.channel) {
@@ -297,34 +302,34 @@ impl<'ir> Writer<'ir> {
             self.prim_head("def Shader", &image, &[]);
             self.out.open();
             let node = if tiled { "tiledimage" } else { "image" };
-            self.out.line(&format!(
+            self.out.property(&format!(
                 "uniform token info:id = \"ND_{node}_{image_type}\""
             ));
             self.out
-                .line(&format!("asset inputs:file = {}", asset(&texture.file)));
-            self.out.line(&format!(
+                .property(&format!("asset inputs:file = {}", asset(&texture.file)));
+            self.out.property(&format!(
                 "float2 inputs:texcoord.connect = <{path}/{reader}.outputs:out>"
             ));
             if tiled {
-                self.out.line(&format!(
+                self.out.property(&format!(
                     "float2 inputs:uvtiling = {}",
                     float2([mapping.u_scale.get(), mapping.v_scale.get()])
                 ));
-                self.out.line(&format!(
+                self.out.property(&format!(
                     "float2 inputs:uvoffset = {}",
                     float2([mapping.u_offset.get(), mapping.v_offset.get()])
                 ));
             } else {
-                self.out.line(&format!(
+                self.out.property(&format!(
                     "string inputs:uaddressmode = {}",
                     quoted(address(mapping.repeat_u))
                 ));
-                self.out.line(&format!(
+                self.out.property(&format!(
                     "string inputs:vaddressmode = {}",
                     quoted(address(mapping.repeat_v))
                 ));
             }
-            self.out.line(&format!("{out_type} outputs:out"));
+            self.out.property(&format!("{out_type} outputs:out"));
             self.out.close();
             let mut source = format!("{path}/{image}.outputs:out");
             let kind = match texture.slot.kind {
@@ -334,10 +339,10 @@ impl<'ir> Writer<'ir> {
                     self.prim_head("def Shader", &name, &[]);
                     self.out.open();
                     self.out
-                        .line("uniform token info:id = \"ND_normalmap_vector2\"");
+                        .property("uniform token info:id = \"ND_normalmap_vector2\"");
                     self.out
-                        .line(&format!("vector3f inputs:in.connect = <{source}>"));
-                    self.out.line("vector3f outputs:out");
+                        .property(&format!("vector3f inputs:in.connect = <{source}>"));
+                    self.out.property("vector3f outputs:out");
                     self.out.close();
                     source = format!("{path}/{name}.outputs:out");
                     "vector3f"
@@ -353,11 +358,11 @@ impl<'ir> Writer<'ir> {
                         self.prim_head("def Shader", &name, &[]);
                         self.out.open();
                         self.out
-                            .line("uniform token info:id = \"ND_extract_color4\"");
+                            .property("uniform token info:id = \"ND_extract_color4\"");
                         self.out
-                            .line(&format!("color4f inputs:in.connect = <{source}>"));
-                        self.out.line(&format!("int inputs:index = {index}"));
-                        self.out.line("float outputs:out");
+                            .property(&format!("color4f inputs:in.connect = <{source}>"));
+                        self.out.property(&format!("int inputs:index = {index}"));
+                        self.out.property("float outputs:out");
                         self.out.close();
                         source = format!("{path}/{name}.outputs:out");
                     }

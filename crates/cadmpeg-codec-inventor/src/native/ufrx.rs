@@ -1352,27 +1352,25 @@ mod tests {
 
     #[test]
     fn nonparsed_states_reject_incompatible_fields() {
-        for record in [UfrxRecord::Absent {
+        let record = UfrxRecord::Absent {
             id: "inventor:ufrx:state#root".into(),
-        }] {
-            let mut namespace = NativeNamespace::default();
+        };
+        let mut namespace = NativeNamespace::default();
+        record
+            .install(&crate::native::test_ctx(), &mut namespace)
+            .expect("valid test fixture");
+        assert_eq!(
+            UfrxRecord::read(&crate::native::test_ctx(), &namespace).expect("valid test fixture"),
             record
-                .install(&crate::native::test_ctx(), &mut namespace)
-                .expect("valid test fixture");
-            assert_eq!(
-                UfrxRecord::read(&crate::native::test_ctx(), &namespace)
-                    .expect("valid test fixture"),
-                record
-            );
-            let mut wire = namespace
-                .arena_as::<serde_json::Value>("ufrx")
-                .expect("valid test fixture");
-            wire[0]["caption"] = serde_json::json!("orphan");
-            namespace
-                .set_arena(&crate::native::test_ctx(), "ufrx", &wire)
-                .expect("valid test fixture");
-            assert!(UfrxRecord::read(&crate::native::test_ctx(), &namespace).is_err());
-        }
+        );
+        let mut wire = namespace
+            .arena_as::<serde_json::Value>("ufrx")
+            .expect("valid test fixture");
+        wire[0]["caption"] = serde_json::json!("orphan");
+        namespace
+            .set_arena(&crate::native::test_ctx(), "ufrx", &wire)
+            .expect("valid test fixture");
+        assert!(UfrxRecord::read(&crate::native::test_ctx(), &namespace).is_err());
     }
 
     /// A top-level optional key on a UFRX record names itself in its refusal.

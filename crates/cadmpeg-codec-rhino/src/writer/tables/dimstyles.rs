@@ -707,13 +707,10 @@ pub(in crate::writer) fn styles(
             })
         };
         match written {
-            Ok(payload) => match payload {
-                Ok(record_bytes) => {
-                    output.records.push(record_bytes);
-                    output.written.insert(record.id().to_owned());
-                }
-                Err(error) => return Err(error),
-            },
+            Ok(payload) => {
+                output.records.push(payload?);
+                output.written.insert(record.id().to_owned());
+            }
             Err(WriteError::Omit(reason)) => output.losses.push(
                 RhinoLossCode::WriterAttributesOmitted.note(format!("{}: {reason}", record.id())),
             ),

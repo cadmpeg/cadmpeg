@@ -89,7 +89,7 @@ pub(super) fn pcurves(
         .pcurves
         .retain(|pcurve| !omitted.contains(&pcurve.id));
     if !omitted.is_empty() {
-        let identities = omitted.iter().map(|id| id.as_str()).collect::<Vec<_>>().join(", ");
+        let identities = omitted.iter().map(cadmpeg_ir::ids::PcurveId::as_str).collect::<Vec<_>>().join(", ");
         losses.push(F3dLossCode::WriterPcurveOmitted.note(format!(
             "{} unsupported parameter-space curves are omitted: {identities}; spatial edge carriers remain",
             omitted.len(),

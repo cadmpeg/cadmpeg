@@ -2,7 +2,6 @@
 //! Sketch, spatial-sketch, sketch-block, and wrap write encoders.
 
 use super::super::literals::format_length_mm;
-use super::super::project::sketch::sketch_block_placement;
 use super::support::{face_selection_value, planar_profile_source, require_same_family};
 use super::{NeutralFeatureEncoder, NeutralFeatureEncoding};
 use crate::classification::NativeClassKind;
@@ -27,16 +26,13 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
             let record = existing.filter(|record| {
                 feature_input_class(record, NativeClassKind::SketchBlockDefinition)
             });
-            let Some(record) = record else {
-                return Err(CodecError::UnsupportedContent(format!(
-                    "SLDPRT feature {} requires a retained sketch-block definition",
-                    feature.id
-                )));
-            };
             NeutralFeatureEncoding {
-                kind: record.kind.clone(),
+                kind: record.map_or_else(
+                    || "SketchBlockDefinition".into(),
+                    |record| record.kind.clone(),
+                ),
                 parameters: self.base_parameters(),
-                properties: record.properties.clone(),
+                properties: self.base_properties(),
             }
         })
     }
@@ -46,34 +42,25 @@ impl NeutralFeatureEncoder<'_, '_, '_> {
         block: Option<&FeatureId>,
         placement: Option<&cadmpeg_ir::transform::Transform>,
     ) -> Result<NeutralFeatureEncoding, CodecError> {
-        let feature = self.feature;
-        let existing = self.existing;
-        let feature_sources = self.feature_sources;
-        Ok({
-            let retained_source = existing
-                .and_then(|record| record.properties.get("BlockDefinition"))
-                .map(String::as_str);
-            let block_source = block.and_then(|block| feature_sources.get(block).copied());
-            let retained_placement = existing.and_then(sketch_block_placement);
-            if retained_source != block_source || retained_placement.as_ref() != placement {
-                return Err(CodecError::UnsupportedContent(format!(
-                    "SLDPRT feature {} changes sketch-block instance semantics",
-                    feature.id
-                )));
-            }
-            let record = existing
-                .filter(|record| feature_input_class(record, NativeClassKind::SketchBlockInstance));
-            let Some(record) = record else {
-                return Err(CodecError::UnsupportedContent(format!(
-                    "SLDPRT feature {} requires a retained sketch-block instance",
-                    feature.id
-                )));
-            };
-            NeutralFeatureEncoding {
-                kind: record.kind.clone(),
-                parameters: self.base_parameters(),
-                properties: record.properties.clone(),
-            }
+        if block.is_some() || placement.is_some() {
+            return Err(CodecError::UnsupportedContent(format!(
+                "SLDPRT feature {} requires a native sketch-block instance record",
+                self.feature.id
+            )));
+        }
+        let record = self
+            .existing
+            .filter(|record| feature_input_class(record, NativeClassKind::SketchBlockInstance));
+        let mut properties = self.base_properties();
+        properties.remove("BlockDefinition");
+        properties.remove("BlockOrigin");
+        Ok(NeutralFeatureEncoding {
+            kind: record.map_or_else(
+                || "SketchBlockInstance".into(),
+                |record| record.kind.clone(),
+            ),
+            parameters: self.base_parameters(),
+            properties,
         })
     }
 

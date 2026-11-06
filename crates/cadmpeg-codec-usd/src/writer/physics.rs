@@ -505,11 +505,11 @@ impl Writer<'_> {
 
     fn frame_lines(&mut self, side: usize, frame: &Transform) {
         let [r0, r1, r2] = frame.affine_rows();
-        self.out.line(&format!(
+        self.out.property(&format!(
             "point3f physics:localPos{side} = {}",
             floats(&[r0[3], r1[3], r2[3]].map(|value| value / MILLIMETRES_PER_UNIT))
         ));
-        self.out.line(&format!(
+        self.out.property(&format!(
             "quatf physics:localRot{side} = {}",
             floats(&quaternion(frame))
         ));
@@ -648,16 +648,17 @@ impl Writer<'_> {
             self.target_paths.insert(key, self.out.path());
         }
         for line in &settings_lines {
-            self.out.line(line);
+            self.out.deferred_property(line);
         }
         for (side, (body, frame)) in sides.iter().enumerate() {
             if let Some(body) = body {
-                self.out.line(&format!("rel physics:body{side} = <{body}>"));
+                self.out
+                    .property(&format!("rel physics:body{side} = <{body}>"));
             }
             self.frame_lines(side, frame);
         }
         if joint.suppressed {
-            self.out.line("bool physics:jointEnabled = 0");
+            self.out.property("bool physics:jointEnabled = 0");
         }
         self.coupling_lines(joint);
         let limit =
@@ -690,29 +691,29 @@ impl Writer<'_> {
             JointOperands::Grounded { .. } => ([None, None], None),
         };
         if matches!(joint_type, "PhysicsRevoluteJoint" | "PhysicsPrismaticJoint") {
-            self.out.line("uniform token physics:axis = \"Z\"");
+            self.out.property("uniform token physics:axis = \"Z\"");
             if let Some(lower) = axis_limits[0] {
                 self.out
-                    .line(&format!("float physics:lowerLimit = {}", float(lower)));
+                    .property(&format!("float physics:lowerLimit = {}", float(lower)));
             }
             if let Some(upper) = axis_limits[1] {
                 self.out
-                    .line(&format!("float physics:upperLimit = {}", float(upper)));
+                    .property(&format!("float physics:upperLimit = {}", float(upper)));
             }
         }
         if let Some(distance) = distance {
             let value = float(distance.get() / MILLIMETRES_PER_UNIT);
             self.out
-                .line(&format!("float physics:minDistance = {value}"));
+                .property(&format!("float physics:minDistance = {value}"));
             self.out
-                .line(&format!("float physics:maxDistance = {value}"));
+                .property(&format!("float physics:maxDistance = {value}"));
         }
         for axis in limit_axes {
             // A low limit above the high limit locks the degree of freedom.
             self.out
-                .line(&format!("float limit:{axis}:physics:low = 1"));
+                .property(&format!("float limit:{axis}:physics:low = 1"));
             self.out
-                .line(&format!("float limit:{axis}:physics:high = -1"));
+                .property(&format!("float limit:{axis}:physics:high = -1"));
         }
         for (instance, drive) in drives {
             let rotation = matches!(drive.axis, DriveAxis::Rotation { .. });
@@ -730,7 +731,7 @@ impl Writer<'_> {
             };
             let name = |field: &str| format!("drive:{instance}:physics:{field}");
             if drive.mode == DriveMode::Acceleration {
-                self.out.line(&format!(
+                self.out.property(&format!(
                     "uniform token {} = \"acceleration\"",
                     name("type")
                 ));
@@ -769,7 +770,7 @@ impl Writer<'_> {
                 ),
             ] {
                 if let Some(value) = value {
-                    self.out.line(&format!(
+                    self.out.property(&format!(
                         "float {} = {}",
                         name(field),
                         float(value * factor)
@@ -813,18 +814,19 @@ impl Writer<'_> {
             _ => return,
         };
         // A coupling between joints of an articulation runs outside it.
-        self.out.line("bool physics:excludeFromArticulation = 1");
+        self.out
+            .property("bool physics:excludeFromArticulation = 1");
         match ratio {
             Some(ratio) => self
                 .out
-                .line(&format!("float {} = {}", names[0], float(ratio))),
+                .property(&format!("float {} = {}", names[0], float(ratio))),
             None => self.unwritten.joint_properties += 1,
         }
         for (name, coupled) in names[1..].iter().zip(coupled) {
             if let Some(key) = super::physx::placeholder(&SolverTarget::Joint {
                 joint: coupled.clone(),
             }) {
-                self.out.line(&format!("rel {name} = <{key}>"));
+                self.out.deferred_property(&format!("rel {name} = <{key}>"));
             }
         }
     }
@@ -854,19 +856,19 @@ impl Writer<'_> {
             self.out.open();
             if let Some(direction) = scene.gravity_direction {
                 let direction = cadmpeg_ir::math::Vector3::from(direction);
-                self.out.line(&format!(
+                self.out.property(&format!(
                     "vector3f physics:gravityDirection = {}",
                     floats(&[direction.x, direction.y, direction.z])
                 ));
             }
             if let Some(magnitude) = scene.gravity_magnitude {
-                self.out.line(&format!(
+                self.out.property(&format!(
                     "float physics:gravityMagnitude = {}",
                     float(magnitude.get() / MILLIMETRES_PER_UNIT)
                 ));
             }
             for line in &settings_lines {
-                self.out.line(line);
+                self.out.deferred_property(line);
             }
             self.out.close();
         }
@@ -889,7 +891,7 @@ impl Writer<'_> {
             self.prim_head("def Material", &name, &metadata);
             self.out.open();
             for line in &settings_lines {
-                self.out.line(line);
+                self.out.deferred_property(line);
             }
             for (field, value) in [
                 (
@@ -917,7 +919,7 @@ impl Writer<'_> {
             ] {
                 if let Some(value) = value {
                     self.out
-                        .line(&format!("float physics:{field} = {}", float(value)));
+                        .property(&format!("float physics:{field} = {}", float(value)));
                 }
             }
             self.out.close();

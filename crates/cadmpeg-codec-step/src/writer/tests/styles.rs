@@ -186,3 +186,121 @@ fn whole_body_styles_follow_body_arena_order() {
         assert_eq!(write(), text);
     }
 }
+
+#[test]
+fn body_appearance_keeps_its_owner_when_faces_inherit_its_color() {
+    use cadmpeg_ir::appearance::{Appearance, AppearanceBinding, AppearanceTarget};
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use cadmpeg_ir::ids::AppearanceId;
+    use cadmpeg_ir::topology::Color;
+    use std::io::Cursor;
+
+    let mut ir = unit_cube().expect("unit cube");
+    let body = ir.model.bodies[0].id.clone();
+    let appearance = AppearanceId::mint("test:model:appearance#body").expect("appearance id");
+    let color = Color::new(0.125, 0.25, 0.5, 1.0).expect("color");
+    ir.model.appearances.push(Appearance {
+        id: appearance.clone(),
+        native_ref: None,
+        name: Some("body material".into()),
+        asset_guid: None,
+        library_id: None,
+        visual_guid: None,
+        physical_token: None,
+        schema: None,
+        category: None,
+        base_color: Some(color),
+        properties: Default::default(),
+        textures: Vec::new(),
+    });
+    let binding = "test:model:appearance-binding#body";
+    ir.model.appearance_bindings.push(AppearanceBinding {
+        id: binding.try_into().expect("binding id"),
+        native_ref: None,
+        target: AppearanceTarget::Body(body),
+        appearance,
+        source_entity_id: None,
+        object_type: None,
+        visible: None,
+        channels: Default::default(),
+    });
+    let mut bytes = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut bytes,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .expect("write body appearance");
+    let text = String::from_utf8_lossy(&bytes);
+    let solid = text
+        .lines()
+        .find(|line| line.contains("MANIFOLD_SOLID_BREP("))
+        .expect("solid")
+        .split_once(" = ")
+        .unwrap()
+        .0;
+    assert!(text
+        .lines()
+        .any(|line| line.contains("STYLED_ITEM(") && line.ends_with(&format!(",{solid});"))));
+    assert!(!report.losses.iter().any(|loss| loss.code
+        == crate::loss::StepLossCode::AppearanceBindingBodyFallback.kind()
+        && loss.message.contains(binding)));
+    let decoded = crate::StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode styles");
+    let output_body = &decoded.ir().model.bodies[0].id;
+    let output_binding = decoded
+        .ir()
+        .model
+        .appearance_bindings
+        .iter()
+        .find(|record| matches!(&record.target, AppearanceTarget::Body(id) if id == output_body))
+        .expect("body binding");
+    let material = decoded
+        .ir()
+        .model
+        .appearances
+        .iter()
+        .find(|record| record.id == output_binding.appearance)
+        .expect("bound material");
+    assert_eq!(material.base_color, Some(color));
+}
+
+#[test]
+fn unbound_appearance_does_not_style_an_unrelated_carrier() {
+    use cadmpeg_ir::appearance::Appearance;
+    use cadmpeg_ir::ids::AppearanceId;
+    use cadmpeg_ir::topology::Color;
+
+    let mut ir = unit_cube().expect("unit cube");
+    let id = AppearanceId::mint("test:model:appearance#unbound").expect("appearance id");
+    ir.model.appearances.push(Appearance {
+        id: id.clone(),
+        native_ref: None,
+        name: Some("unbound".into()),
+        asset_guid: None,
+        library_id: None,
+        visual_guid: None,
+        physical_token: None,
+        schema: None,
+        category: None,
+        base_color: Some(Color::new(0.125, 0.25, 0.5, 0.75).expect("color")),
+        properties: Default::default(),
+        textures: Vec::new(),
+    });
+    let mut bytes = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut bytes,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .expect("write unbound color");
+    let text = String::from_utf8(bytes).expect("STEP text");
+    assert!(text.contains("COLOUR_RGB('unbound',0.125,0.25,0.5)"));
+    assert!(!text.contains("STYLED_ITEM("));
+    assert!(report.losses.iter().any(|loss| loss.code
+        == crate::loss::StepLossCode::AppearanceReducedToBaseColor.kind()
+        && loss.message.contains(id.as_str())));
+}
