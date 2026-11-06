@@ -345,6 +345,7 @@ struct DesignProjectionGaps {
     unprojected_sketch_text_styles: usize,
     unprojected_sketch_relations: usize,
     unprojected_sketch_pattern_states: usize,
+    unprojected_sketch_flags: usize,
     unprojected_dimensions: usize,
     profile_selections: usize,
     path_selections: usize,
@@ -1442,6 +1443,15 @@ fn design_projection_gaps(
             !projected_constraint_refs.contains(relation.id.as_str())
                 && crate::design::decode::sketch::sketch_pattern_neutral_state(relation) == Some(false)
         }).count(),
+        unprojected_sketch_flags: native
+            .design_sketch_placements
+            .iter()
+            .filter(|placement| {
+                placement
+                    .visibility
+                    .is_some_and(|visibility| visibility.sketch_flag)
+            })
+            .count(),
         unprojected_dimensions: {
             let container_only = container_only_dimension_parameters(native);
             let relation_bearing_companions = native.design_parameter_companions
@@ -2210,6 +2220,14 @@ fn report_design_projection_gaps(
         format_args!(
             "{} sketch pattern(s) retain unsupported symmetry, suppression or flag state.",
             gaps.unprojected_sketch_pattern_states
+        ),
+    )?;
+    push(
+        F3dLossCode::SketchGeometryFlagUnprojected,
+        gaps.unprojected_sketch_flags,
+        format_args!(
+            "{} sketch Geometry member(s) set the byte-34 flag; the native sketch visibility keeps it as sketch_flag.",
+            gaps.unprojected_sketch_flags
         ),
     )?;
     push(
@@ -4646,6 +4664,9 @@ fn populate_annotations(
         }
         for entity in &native.sketch_surfaces {
             note!(&entity.id, "sketch_surface");
+        }
+        for entity in &native.sketch_geometry_groups {
+            note!(&entity.id, "sketch_geometry_group");
         }
         for entity in &native.sketch_curve_links {
             note!(&entity.id, "sketch_curve_link");
