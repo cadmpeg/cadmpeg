@@ -483,7 +483,8 @@ impl<'a> ProfileIndex<'a> {
                                 PmDcSketchEntityKind::Line { .. }
                                 | PmDcSketchEntityKind::Circle { .. }
                                 | PmDcSketchEntityKind::Ellipse { .. }
-                                | PmDcSketchEntityKind::Spline { .. } => {
+                                | PmDcSketchEntityKind::Spline { .. }
+                                | PmDcSketchEntityKind::MemberCurve { .. } => {
                                     has_curves = true;
                                     crate::sketch::marks_construction(member)
                                         || crate::sketch::block_curve_id(entity, member)

@@ -64,6 +64,8 @@ pub(crate) enum InventorLossCode {
     SketchCurveNative,
     /// A listed sketch member has unresolved record and curve semantics.
     SketchMemberNative,
+    /// A planar curve member has no resolved curve rule; it stays native.
+    SketchMemberCurveNative,
     /// A polygon control relation names two different vertex references; the
     /// repeated-vertex reading does not apply and both references stay native.
     SketchPolygonControlVerticesDiffer,
@@ -263,6 +265,7 @@ impl InventorLossCode {
         Self::SketchPairedAssociationUnprojected,
         Self::SketchCurveNative,
         Self::SketchMemberNative,
+        Self::SketchMemberCurveNative,
         Self::SketchPolygonControlVerticesDiffer,
         Self::SketchSplinePointNative,
         Self::SketchSplineCurveNative,
@@ -374,6 +377,7 @@ impl InventorLossCode {
             Self::SketchPairedAssociationUnprojected => "sketch.paired-association-unprojected",
             Self::SketchCurveNative => "sketch.curve-native",
             Self::SketchMemberNative => "sketch.member-native",
+            Self::SketchMemberCurveNative => "sketch.member-curve-native",
             Self::SketchPolygonControlVerticesDiffer => "sketch.polygon-control-vertices-differ",
             Self::SketchSplinePointNative => "sketch.spline-point-native",
             Self::SketchSplineCurveNative => "sketch.spline-curve-native",
@@ -561,6 +565,7 @@ impl InventorLossCode {
             | Self::SketchPairedAssociationUnprojected
             | Self::SketchCurveNative
             | Self::SketchMemberNative
+            | Self::SketchMemberCurveNative
             | Self::SketchPolygonControlVerticesDiffer
             | Self::SketchSplinePointNative
             | Self::SketchSplineCurveNative
@@ -651,6 +656,7 @@ mod tests {
                 "sketch.paired-association-unprojected",
                 "sketch.curve-native",
                 "sketch.member-native",
+                "sketch.member-curve-native",
                 "sketch.polygon-control-vertices-differ",
                 "sketch.spline-point-native",
                 "sketch.spline-curve-native",
