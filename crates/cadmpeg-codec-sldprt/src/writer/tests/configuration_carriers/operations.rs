@@ -5,6 +5,87 @@ use crate::writer::tests::extrusion_authoring::source_less_extrusion;
 use cadmpeg_ir::features::{BooleanOp, FeatureDefinition, FeatureOperation};
 
 #[test]
+fn inactive_literal_expression_override_reaches_the_output() {
+    use cadmpeg_ir::features::{ConfigurationId, DesignConfiguration, Expression, ParameterValue};
+    use cadmpeg_ir::scalar::Length;
+
+    let mut ir = source_less_extrusion();
+    let parameter = ir
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "D1")
+        .unwrap();
+    let parameter_id = parameter.id.clone();
+    assert!(matches!(parameter.value, Some(ParameterValue::Length(_))));
+    let bodies = cadmpeg_ir::features::DistinctMembers::try_from(
+        ir.model
+            .bodies
+            .iter()
+            .map(|body| body.id.clone())
+            .collect::<Vec<_>>(),
+    )
+    .unwrap();
+    ir.model.configurations = (0..2)
+        .map(|index| DesignConfiguration {
+            id: ConfigurationId::mint(format!("synthetic:test:configuration#{index}")).unwrap(),
+            ordinal: index,
+            active: index == 0,
+            source_index: Some(index),
+            name: Some(format!("Config {index}")),
+            material: None,
+            properties: std::collections::BTreeMap::default(),
+            parameter_overrides: std::collections::BTreeMap::default(),
+            bodies: Some(bodies.clone()),
+            parameter_values: std::collections::BTreeMap::default(),
+            feature_states: std::collections::BTreeMap::default(),
+            native_ref: None,
+        })
+        .collect();
+    let expression = Expression::text("50mm");
+    ir.model.configurations[1]
+        .parameter_overrides
+        .insert(parameter_id.clone(), expression.clone());
+    ir.model.finalize();
+    let plan = SldprtCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert!(!plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(parameter_id.as_str())
+            && loss.message.contains("expression override omitted")));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let result = SldprtCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let parameter = result
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "D1")
+        .unwrap();
+    let configuration = result
+        .ir()
+        .model
+        .configurations
+        .iter()
+        .find(|configuration| configuration.name.as_deref() == Some("Config 1"))
+        .unwrap();
+    assert_eq!(
+        configuration.parameter_overrides.get(&parameter.id),
+        Some(&expression)
+    );
+    assert_eq!(
+        configuration.parameter_values.get(&parameter.id),
+        Some(&ParameterValue::Length(Length::new(50.0).unwrap()))
+    );
+}
+
+#[test]
 fn inactive_extrusion_operation_reaches_the_output() {
     use cadmpeg_ir::features::{ConfigurationFeatureState, ConfigurationId, DesignConfiguration};
 
