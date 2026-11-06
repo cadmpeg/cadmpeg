@@ -781,6 +781,137 @@ struct OwnedBodyComponents {
     owned_curves: BTreeSet<u32>,
 }
 
+fn explicit_unowned_faces(scan: &ContainerScan, face_ids: &BTreeSet<u32>) -> BTreeSet<u32> {
+    use crate::surface::owners::SurfaceOwner;
+
+    let mut surface_rows = BTreeMap::<u32, Vec<usize>>::new();
+    for row in &scan.surfaces.rows {
+        surface_rows.entry(row.id).or_default().push(row.offset);
+    }
+    let mut owners = BTreeMap::<(u32, usize), Vec<SurfaceOwner>>::new();
+    for row in &scan.surfaces.row_owners {
+        owners
+            .entry((row.surface_id, row.offset))
+            .or_default()
+            .push(row.owner);
+    }
+    face_ids
+        .iter()
+        .copied()
+        .filter(|face_id| {
+            let Some([offset]) = surface_rows.get(face_id).map(Vec::as_slice) else {
+                return false;
+            };
+            owners
+                .get(&(*face_id, *offset))
+                .is_some_and(|found| found.as_slice() == [SurfaceOwner::Unowned])
+        })
+        .collect()
+}
+
+fn exclude_explicit_unowned_faces(
+    scan: &ContainerScan,
+    eligible_faces: &mut BTreeMap<u32, Vec<&crate::topology::Loop>>,
+    face_regions: &mut BTreeMap<u32, Vec<Vec<&crate::topology::Loop>>>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+) -> (BTreeSet<u32>, BTreeSet<u32>, BTreeSet<u32>) {
+    let face_ids: BTreeSet<_> = eligible_faces.keys().copied().collect();
+    let unowned_faces = explicit_unowned_faces(scan, &face_ids);
+    let mut unowned_loop_curves = BTreeSet::new();
+    let mut body_loop_curves = BTreeSet::new();
+    for (face_id, loops) in eligible_faces.iter() {
+        let curve_ids = if unowned_faces.contains(face_id) {
+            &mut unowned_loop_curves
+        } else {
+            &mut body_loop_curves
+        };
+        curve_ids.extend(
+            loops
+                .iter()
+                .flat_map(|lp| lp.half_edges().iter().map(|half_edge| half_edge.curve_id)),
+        );
+    }
+    eligible_faces.retain(|face_id, _| !unowned_faces.contains(face_id));
+    face_regions.retain(|face_id, _| !unowned_faces.contains(face_id));
+    losses.extend(unowned_faces.iter().map(|face_id| {
+        crate::loss::CreoLossCode::TopologyExplicitUnownedSurface.note(format!(
+            "source face {face_id} has no body or quilt owner; its topology remains native"
+        ))
+    }));
+    (unowned_faces, unowned_loop_curves, body_loop_curves)
+}
+
+fn curve_belongs_to_material_body(
+    curve_id: u32,
+    curve_faces: &BTreeMap<u32, [u32; 2]>,
+    unowned_loop_curves: &BTreeSet<u32>,
+    body_loop_curves: &BTreeSet<u32>,
+    unowned_faces: &BTreeSet<u32>,
+) -> bool {
+    if body_loop_curves.contains(&curve_id) {
+        return true;
+    }
+    let unowned_loop = unowned_loop_curves.contains(&curve_id);
+    let unowned_owner = curve_faces.get(&curve_id).is_some_and(|faces| {
+        let mut bounded = faces.iter().copied().filter(|face_id| *face_id != 0);
+        bounded
+            .next()
+            .is_some_and(|first| unowned_faces.contains(&first))
+            && bounded.all(|face_id| unowned_faces.contains(&face_id))
+    });
+    !(unowned_loop || unowned_owner)
+}
+
+fn retain_body_topology(
+    admitted_components: &mut Vec<&crate::topology::FaceComponent>,
+    body_components: &mut Vec<NeutralShellSpec>,
+    neutral_edge_curves: &mut BTreeSet<u32>,
+    curve_faces: &BTreeMap<u32, [u32; 2]>,
+    unowned_loop_curves: &BTreeSet<u32>,
+    body_loop_curves: &BTreeSet<u32>,
+    unowned_faces: &BTreeSet<u32>,
+) {
+    for component in body_components.iter_mut() {
+        component.wire_curves.retain(|curve_id| {
+            curve_belongs_to_material_body(
+                *curve_id,
+                curve_faces,
+                unowned_loop_curves,
+                body_loop_curves,
+                unowned_faces,
+            )
+        });
+    }
+    neutral_edge_curves.retain(|curve_id| {
+        curve_belongs_to_material_body(
+            *curve_id,
+            curve_faces,
+            unowned_loop_curves,
+            body_loop_curves,
+            unowned_faces,
+        )
+    });
+    let mut kept_components = Vec::with_capacity(admitted_components.len());
+    let mut kept_specs = Vec::with_capacity(body_components.len());
+    for (component, spec) in admitted_components
+        .iter()
+        .copied()
+        .zip(body_components.drain(..))
+    {
+        let explicitly_unowned = component
+            .face_ids()
+            .iter()
+            .all(|face_id| unowned_faces.contains(face_id));
+        if explicitly_unowned && spec.faces.is_empty() && spec.wire_curves.is_empty() {
+            continue;
+        }
+        kept_components.push(component);
+        kept_specs.push(spec);
+    }
+    *admitted_components = kept_components;
+    *body_components = kept_specs;
+}
+
 /// Groups admitted components by owning body.
 ///
 /// Every face of an owned component has one visible row, and every such row
@@ -792,6 +923,7 @@ fn surface_owned_body_components(
     admitted_components: &[&crate::topology::FaceComponent],
     body_components: &[NeutralShellSpec],
     selected_body_count: Option<usize>,
+    unowned_face_ids: &BTreeSet<u32>,
 ) -> Option<OwnedBodyComponents> {
     use crate::surface::owners::SurfaceOwner;
     let mut visible_row_counts = BTreeMap::<u32, usize>::new();
@@ -823,6 +955,9 @@ fn surface_owned_body_components(
         }
         let mut body = None;
         for face in faces {
+            if unowned_face_ids.contains(face) {
+                continue;
+            }
             let (Some(1), Some(Some(SurfaceOwner::Body(id)))) = (
                 visible_row_counts.get(face).copied(),
                 owners.get(face).copied(),
@@ -2753,6 +2888,8 @@ pub(in super::super) fn transfer_native_brep(
         losses,
     );
     report_incomplete_compact_frame_components(scan, &eligible_faces, losses);
+    let (unowned_face_ids, unowned_loop_curves, body_loop_curves) =
+        exclude_explicit_unowned_faces(scan, &mut eligible_faces, &mut face_regions, losses);
     diagnostics.admitted_face_count = eligible_faces.len();
     let BrepEligibleFaceIndexes {
         emitted_half_edges,
@@ -2762,7 +2899,7 @@ pub(in super::super) fn transfer_native_brep(
         curve_faces,
         eligible_face_ids,
     } = BrepEligibleFaceIndexes::from_faces(&eligible_faces, &scan.curves.topology_rows);
-    let admitted_components = admitted_face_components(scan, &eligible_face_ids);
+    let mut admitted_components = admitted_face_components(scan, &eligible_face_ids);
     let mut eligible_regions = BTreeMap::new();
     for (face_id, loops) in &eligible_faces {
         if let Some(regions) = face_regions.remove(face_id) {
@@ -2784,7 +2921,7 @@ pub(in super::super) fn transfer_native_brep(
     }
     let BrepBodyIndexes {
         mut neutral_edge_curves,
-        body_components,
+        mut body_components,
     } = BrepBodyIndexes::from_components(
         scan,
         &admitted_components,
@@ -2792,6 +2929,15 @@ pub(in super::super) fn transfer_native_brep(
         &eligible_regions,
         &eligible_face_ids,
         &curve_faces,
+    );
+    retain_body_topology(
+        &mut admitted_components,
+        &mut body_components,
+        &mut neutral_edge_curves,
+        &curve_faces,
+        &unowned_loop_curves,
+        &body_loop_curves,
+        &unowned_face_ids,
     );
     let selected_body_count = crate::topology::selected_body_count(
         scan.framing.declared_body_count,
@@ -2808,13 +2954,15 @@ pub(in super::super) fn transfer_native_brep(
         scan.framing.layout,
         crate::container::Layout::LegacyAscii(_)
     ) && (empty_component_count != 0
-        || selected_body_count != Some(body_components.len())))
+        || selected_body_count != Some(body_components.len())
+        || !unowned_face_ids.is_empty()))
     .then(|| {
         surface_owned_body_components(
             scan,
             &admitted_components,
             &body_components,
             selected_body_count,
+            &unowned_face_ids,
         )
     })
     .flatten();

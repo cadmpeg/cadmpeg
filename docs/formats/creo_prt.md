@@ -673,8 +673,9 @@ a null `srf_flip_dat`, then `list_id` as a compact integer, a three-byte
 row's owner and `list_id` is the owner's identifier. `list_type = 62` is the
 `type` of a `body_array` entry, and `list_id` is its `body_id`.
 `list_type = 39` is the `data_type` of a `qlt_array` entry, and `list_id` is
-its `quilt_id`. A null `list_id` with `list_type = f6` names no owner. Any other
-tail leaves the row's owner unresolved.
+its `quilt_id`. A null `list_id` with `list_type = f6` names no owner; the
+surface does not bound a body's material region. Any other tail leaves the
+row's owner unresolved.
 A `geom_type = 22`, `boundary_type = 01`, `next_geom_ptr = 0` row is an
 unbounded feature plane. When it is the unique plane row carrying its
 `feat_id`, its placed carrier is the datum-plane definition for that feature.
@@ -3304,12 +3305,14 @@ an admitted face loop remain wire topology. Components without admitted faces
 or solved edges remain Native. Body cardinality and the independently proved
 grouping must agree before neutral body/region ownership is assigned.
 
-In an ND layout, the surface-row owners give the body grouping when the
-selected count does not equal the admitted component count or a component has
-no admitted face or solved edge. A component is owned by a body when each of
-its faces has one visible row and every such row names that body. A component
-is unowned when none of its faces has a visible row; it is not a body, and its
-references remain native. Owned components that name one body form that body.
+In an ND layout, faces whose surface rows have a null owner are outside material
+body boundaries. The remaining surface-row owners give the body grouping when
+the selected count does not equal the admitted component count or a component
+has no admitted face or solved edge. A component is owned by a body when each
+of its remaining faces has one visible row and every such row names that body.
+A component is unowned when none of its faces has a visible row; it is not a
+body, and its references remain native. Owned components that name one body
+form that body.
 The grouping requires at least one owning body, no more owning bodies than the
 selected count, and an admitted face or solved edge in each body. A component
 that is neither owned nor unowned leaves body ownership unresolved.
