@@ -382,7 +382,7 @@ fn a_document_parameter_is_authored_without_native_records_and_keeps_supported_s
 }
 
 #[test]
-fn non_driving_document_parameter_reduction_is_named() {
+fn non_driving_document_parameter_survives_synthesis() {
     let mut ir = cadmpeg_ir::examples::unit_cube().expect("cube");
     let mut value = parameter(
         "width",
@@ -391,15 +391,12 @@ fn non_driving_document_parameter_reduction_is_named() {
     );
     value.driving = false;
     ir.model.parameters.push(value);
-    let (output, report) = super::source_less_analytic::synthesize_document(&ir, None);
+    let (output, _) = super::source_less_analytic::synthesize_document(&ir, None);
     assert_eq!(
         output.ir().model.parameters[0].value,
         ir.model.parameters[0].value
     );
-    assert!(report.losses.iter().any(|loss| loss
-        .message
-        .contains(ir.model.parameters[0].id.as_str())
-        && loss.message.contains("non-driving")));
+    assert!(!output.ir().model.parameters[0].driving);
 }
 
 #[test]
