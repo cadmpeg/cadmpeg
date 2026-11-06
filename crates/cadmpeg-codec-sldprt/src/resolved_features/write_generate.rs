@@ -922,12 +922,6 @@ pub(crate) fn append_generated_object_name(
 ) -> Result<(), crate::writer::write_error::WriteError> {
     let units = name.encode_utf16().collect::<Vec<_>>();
     let length = crate::writer::feature_input_name_len(units.len())?;
-    if length == 0 {
-        return Err(cadmpeg_core::CodecError::Malformed(
-            "SLDPRT generated feature name must not be empty".into(),
-        )
-        .into());
-    }
     payload.extend_from_slice(NAME_MARKER);
     super::names::append_name_length(payload, length);
     for unit in units {

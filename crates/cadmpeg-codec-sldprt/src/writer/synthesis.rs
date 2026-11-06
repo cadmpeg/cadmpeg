@@ -249,9 +249,6 @@ pub(super) fn plan(
     );
     repair_duplicate_configuration_indices(&mut projected.model.configurations, &mut losses);
     repair_configuration_names(&mut projected.model.configurations, &mut losses);
-    // Native lane and history records require names; default blank feature
-    // names to their identity as configurations do (#237).
-    normalize_feature_names(&mut projected.model.features, &mut losses);
     // A native reference that names no record any retained namespace holds
     // cannot be re-emitted or regenerated from. Clear such references and
     // write the neutral content without its native link (#237).
@@ -934,27 +931,6 @@ fn repair_duplicate_configuration_indices(
             losses.push(SldprtLossCode::WriterFieldsOmitted.note(format!(
                 "configuration {}: duplicate source index {index} was cleared",
                 configuration.id
-            )));
-        }
-    }
-}
-
-/// Native lane and history records require names. A feature without one
-/// cannot be authored; the identity stands in and the loss names it (#237).
-fn normalize_feature_names(
-    features: &mut [cadmpeg_ir::features::Feature],
-    losses: &mut Vec<LossNote>,
-) {
-    for feature in features {
-        if feature
-            .name
-            .as_deref()
-            .is_none_or(|name| name.trim().is_empty())
-        {
-            feature.name = Some(feature.id.as_str().into());
-            losses.push(SldprtLossCode::WriterFieldsOmitted.note(format!(
-                "feature {} uses its identity as the required native name",
-                feature.id
             )));
         }
     }

@@ -1349,12 +1349,7 @@ pub(crate) fn synthesize_feature_classes(
         payload.extend_from_slice(super::CLASS_MARKER);
         payload.extend_from_slice(&length.to_le_bytes());
         payload.extend_from_slice(class.as_bytes());
-        let name = if feature.name.is_empty() {
-            format!("Feature{object_id}")
-        } else {
-            feature.name.clone()
-        };
-        append_generated_object_name(&mut payload, &name, object_id)?;
+        append_generated_object_name(&mut payload, &feature.name, object_id)?;
     }
     if payload.is_empty() {
         return Ok(std::collections::BTreeSet::new());
@@ -1388,11 +1383,7 @@ fn source_less_lanes(
             let object_id = generated_sketch_owner_id(owner_record, sketch.id.as_str())?;
             append_generated_object_name(
                 &mut payload,
-                if owner_record.name.is_empty() {
-                    sketch.name.as_deref().unwrap_or(sketch.id.as_str())
-                } else {
-                    owner_record.name.as_str()
-                },
+                owner_record.name.as_str(),
                 object_id,
             )?;
         }
@@ -1437,11 +1428,7 @@ fn source_less_lanes(
         let mut payload = Vec::new();
         append_generated_object_name(
             &mut payload,
-            if owner_record.name.is_empty() {
-                sketch.name.as_deref().unwrap_or(sketch.id.as_str())
-            } else {
-                owner_record.name.as_str()
-            },
+            owner_record.name.as_str(),
             object_id,
         )?;
         let entities = ir
