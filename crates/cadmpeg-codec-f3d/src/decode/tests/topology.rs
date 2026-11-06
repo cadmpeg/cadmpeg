@@ -756,7 +756,7 @@ fn generated_source_less_writes_two_independent_wire_bodies() {
         let offset = source_less
             .native
             .namespace("f3d")
-            .map(|namespace| {
+            .map_or(0, |namespace| {
                 crate::native::F3dNative::load(namespace)
                     .expect("decoded wire native")
                     .wire_topologies
@@ -764,8 +764,7 @@ fn generated_source_less_writes_two_independent_wire_bodies() {
                     .map(|wire| wire.record_index)
                     .max()
                     .map_or(1, |max| max + 1)
-            })
-            .unwrap_or(0);
+            });
         let mut companion = crate::native::F3dNative::load(
             second.native.namespace("f3d").expect("renamed wire native"),
         )
