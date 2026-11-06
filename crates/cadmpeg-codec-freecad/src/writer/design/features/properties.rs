@@ -2,12 +2,12 @@
 //! Typed scalar and object-selection properties for feature construction.
 
 use super::super::super::xml::{self, Object};
-use cadmpeg_core::CodecError;
+use super::FeatureError;
 use serde_json::Value;
 use std::collections::HashMap;
 
-pub(super) fn unsupported<T>(message: impl Into<String>) -> Result<T, CodecError> {
-    Err(CodecError::UnsupportedContent(message.into()))
+pub(super) fn unsupported<T>(message: impl Into<String>) -> Result<T, FeatureError> {
+    Err(FeatureError::Unsupported(message.into()))
 }
 pub(super) fn tag(value: &Value) -> &str {
     value
@@ -16,20 +16,20 @@ pub(super) fn tag(value: &Value) -> &str {
         .or_else(|| value.get("kind").and_then(Value::as_str))
         .unwrap_or("")
 }
-pub(super) fn number(value: &Value, field: &str) -> Result<f64, CodecError> {
+pub(super) fn number(value: &Value, field: &str) -> Result<f64, FeatureError> {
     value
         .as_f64()
         .filter(|number| number.is_finite())
-        .ok_or_else(|| CodecError::UnsupportedContent(format!("feature lacks finite {field}")))
+        .ok_or_else(|| FeatureError::Unsupported(format!("feature lacks finite {field}")))
 }
-pub(super) fn text<'a>(value: &'a Value, field: &str) -> Result<&'a str, CodecError> {
+pub(super) fn text<'a>(value: &'a Value, field: &str) -> Result<&'a str, FeatureError> {
     value
         .as_str()
-        .ok_or_else(|| CodecError::UnsupportedContent(format!("feature lacks {field}")))
+        .ok_or_else(|| FeatureError::Unsupported(format!("feature lacks {field}")))
 }
-pub(super) fn name(id: &str, names: &HashMap<String, String>) -> Result<String, CodecError> {
+pub(super) fn name(id: &str, names: &HashMap<String, String>) -> Result<String, FeatureError> {
     names.get(id).cloned().ok_or_else(|| {
-        CodecError::UnsupportedContent(format!("feature reference `{id}` has no emitted object"))
+        FeatureError::Unsupported(format!("feature reference `{id}` has no emitted object"))
     })
 }
 pub(super) fn length(object: &mut Object, field: &str, value: f64) {
@@ -56,18 +56,18 @@ pub(super) fn enumeration(object: &mut Object, field: &str, value: usize) {
         xml::scalar(field, "App::PropertyEnumeration", "Integer", value),
     );
 }
-pub(super) fn selector(value: &Value, variants: &[&str]) -> Result<usize, CodecError> {
+pub(super) fn selector(value: &Value, variants: &[&str]) -> Result<usize, FeatureError> {
     let value = text(value, "enumeration")?;
     variants
         .iter()
         .position(|variant| *variant == value)
         .ok_or_else(|| {
-            CodecError::UnsupportedContent(format!(
+            FeatureError::Unsupported(format!(
                 "feature enumeration `{value}` has no FreeCAD encoding"
             ))
         })
 }
-pub(super) fn vector(object: &mut Object, field: &str, value: &Value) -> Result<(), CodecError> {
+pub(super) fn vector(object: &mut Object, field: &str, value: &Value) -> Result<(), FeatureError> {
     let attributes = [("x", "valueX"), ("y", "valueY"), ("z", "valueZ")].map(|(key, attribute)| {
         number(&value[key], key).map(|value| (attribute, value.to_string()))
     });
@@ -86,7 +86,7 @@ pub(super) fn vector(object: &mut Object, field: &str, value: &Value) -> Result<
 pub(super) fn references(
     value: &Value,
     names: &HashMap<String, String>,
-) -> Result<Vec<String>, CodecError> {
+) -> Result<Vec<String>, FeatureError> {
     match value {
         Value::Null => Ok(Vec::new()),
         Value::String(id) => {
@@ -96,10 +96,14 @@ pub(super) fn references(
             let mut targets = Vec::new();
             let (base, range) = if let Some((base, range)) = id.rsplit_once(":links:") {
                 let (first, end) = range.split_once("..").ok_or_else(|| {
-                    CodecError::UnsupportedContent("native selection range is invalid".into())
+                    FeatureError::Unsupported("native selection range is invalid".into())
                 })?;
-                let first = first.parse::<usize>().map_err(CodecError::malformed)?;
-                let end = end.parse::<usize>().map_err(CodecError::malformed)?;
+                let first = first
+                    .parse::<usize>()
+                    .map_err(|error| FeatureError::Unsupported(error.to_string()))?;
+                let end = end
+                    .parse::<usize>()
+                    .map_err(|error| FeatureError::Unsupported(error.to_string()))?;
                 (base, first..end)
             } else {
                 (id.as_str(), 0..names.len())
@@ -152,7 +156,7 @@ pub(super) fn link(
     field: &str,
     value: &Value,
     names: &HashMap<String, String>,
-) -> Result<(), CodecError> {
+) -> Result<(), FeatureError> {
     let targets = references(value, names)?;
     if targets.len() != 1 {
         return unsupported(format!("{field} needs exactly one feature target"));
@@ -168,7 +172,7 @@ pub(super) fn links(
     field: &str,
     value: &Value,
     names: &HashMap<String, String>,
-) -> Result<(), CodecError> {
+) -> Result<(), FeatureError> {
     let targets = references(value, names)?;
     link_names(object, field, &targets);
     Ok(())
@@ -189,7 +193,7 @@ pub(super) fn selection(
     field: &str,
     value: &Value,
     names: &HashMap<String, String>,
-) -> Result<(), CodecError> {
+) -> Result<(), FeatureError> {
     let targets = references(value, names)?;
     let mut ids = Vec::new();
     selection_ids(value, &mut ids);

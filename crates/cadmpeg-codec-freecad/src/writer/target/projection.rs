@@ -7,10 +7,6 @@ use crate::native;
 use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 
-fn decline<T>(reason: &str) -> Result<T, CodecError> {
-    Err(CodecError::UnsupportedContent(reason.to_owned()))
-}
-
 pub(in crate::writer) struct RenderedGui {
     pub(in crate::writer) xml: String,
     pub(in crate::writer) origins: crate::gui::RenderedGuiOrigins,
@@ -48,7 +44,7 @@ pub(in crate::writer) fn gui_xml_lossy(
         origins: crate::gui::RenderedGuiOrigins::default(),
     };
     Ok(
-        gui_xml_impl(namespace, Some(losses), &mut observer)?.map(|xml| RenderedGui {
+        gui_xml_impl(namespace, losses, &mut observer)?.map(|xml| RenderedGui {
             xml,
             origins: observer.origins,
         }),
@@ -57,7 +53,7 @@ pub(in crate::writer) fn gui_xml_lossy(
 
 fn gui_xml_impl(
     namespace: &cadmpeg_ir::native::NativeNamespace,
-    mut losses: Option<&mut Vec<cadmpeg_ir::report::loss::LossNote>>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
     observer: &mut impl GuiOriginObserver,
 ) -> Result<Option<String>, CodecError> {
     use crate::writer::xml;
@@ -68,11 +64,7 @@ fn gui_xml_impl(
         return Ok(None);
     };
     if documents.len() != 1 {
-        if let Some(losses) = losses.as_deref_mut() {
-            losses.push(crate::loss::FreecadLossCode::ExportArenaNotTransferred.note("multiple native GUI documents share one target document; additional GUI roots are omitted"));
-        } else {
-            return decline("multiple typed GUI documents require synthesis");
-        }
+        losses.push(crate::loss::FreecadLossCode::ExportArenaNotTransferred.note("multiple native GUI documents share one target document; additional GUI roots are omitted"));
     }
     let mut output = format!(
         "<Document SchemaVersion=\"{}\"><ViewProviderData Count=\"{}\">",
@@ -87,18 +79,13 @@ fn gui_xml_impl(
             .filter(|property| property.owner == provider.id)
         {
             let Some(value) = xml::native_gui(property)? else {
-                if let Some(losses) = losses.as_deref_mut() {
-                    losses.push(
-                        crate::loss::FreecadLossCode::ExportNativePropertyNotTransferred.note(
-                            format!(
-                                "GUI property {} has no independent typed projection",
-                                property.id
-                            ),
-                        ),
-                    );
-                    continue;
-                }
-                return decline("GUI property needs source-only payload");
+                losses.push(
+                    crate::loss::FreecadLossCode::ExportNativePropertyNotTransferred.note(format!(
+                        "GUI property {} has no independent typed projection",
+                        property.id
+                    )),
+                );
+                continue;
             };
             observer.property(&property.id)?;
             encoded_properties.push(value);
@@ -122,16 +109,13 @@ fn gui_xml_impl(
     output.push_str("</ViewProviderData>");
     for state in &document.states {
         if !state.values.is_empty() || !state.side_entries.is_empty() {
-            if let Some(losses) = losses.as_deref_mut() {
-                losses.push(
-                    crate::loss::FreecadLossCode::ExportNativePropertyNotTransferred.note(format!(
-                        "GUI state {} has no independent neutral projection",
-                        state.id
-                    )),
-                );
-                continue;
-            }
-            return decline("nested GUI state needs an independent typed projection");
+            losses.push(
+                crate::loss::FreecadLossCode::ExportNativePropertyNotTransferred.note(format!(
+                    "GUI state {} has no independent neutral projection",
+                    state.id
+                )),
+            );
+            continue;
         }
         let attributes = state
             .attributes
@@ -179,7 +163,7 @@ mod tests {
         let ir = gui_document();
         let namespace = ir.native.namespace("fcstd").unwrap();
         let mut original_losses = Vec::new();
-        let original = gui_xml_impl(namespace, Some(&mut original_losses), &mut IgnoreOrigins)
+        let original = gui_xml_impl(namespace, &mut original_losses, &mut IgnoreOrigins)
             .unwrap()
             .unwrap();
         let ctx = cadmpeg_test_support::service_decode_context();
