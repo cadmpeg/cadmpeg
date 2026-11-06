@@ -1,7 +1,13 @@
 # Autodesk Fusion 360 `.f3d`: CADIR writing
 
-Writer and export contract for F3D. Decode semantics live in
-`../formats/f3d.md`.
+Decode and export contract for F3D. The format grammar is in
+[f3d.md](../formats/f3d.md).
+
+Design operands project to feature input topology; sketch points, curve
+identities, and relations project to sketch records. Canvas and decal images
+project to assets, and mesh features to tessellations. Parameter `source_kind`,
+`owner_record_index`, `unit`, and `evaluated_scalar` stay in typed native
+records. Decoded features have `needs_recompute = false`.
 
 Writers author the document's neutral content first. Scalar document parameters and configuration tables are regenerated from neutral values, expressions and overrides. Supported native-only metadata supplies its own typed fields. A native projection that disagrees with a neutral record is regenerated or omitted. Synthesized archives consume no retained source bytes, including raw historical and sketch-text payloads. Replay and patch require empty `unrepresented`. An unsupported edit selects synthesis and reports `PatchDeclined`.
 
