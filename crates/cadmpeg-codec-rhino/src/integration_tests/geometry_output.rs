@@ -56,6 +56,9 @@ fn a_written_instance_record_cannot_hide_the_omission_of_its_definition_geometry
                 ir.tolerances.angular.get(),
             )
             .unwrap();
+            ir.model.curves.clear();
+            ir.model.surfaces.clear();
+            ir.model.points.clear();
         }
         let plan = RhinoCodec
             .plan(
@@ -102,6 +105,38 @@ fn a_written_instance_record_cannot_hide_the_omission_of_its_definition_geometry
         assert_eq!(ir.model.occurrences, original.model.occurrences);
         assert_eq!(ir.model.bodies, original.model.bodies);
     }
+}
+
+#[test]
+fn reduced_definition_body_keeps_its_writable_carriers() {
+    let mut ir = cube_product();
+    ir.tolerances = cadmpeg_ir::units::Tolerances::new(
+        FINER_THAN_RHINO_WRITE_TOLERANCE,
+        ir.tolerances.angular.get(),
+    )
+    .unwrap();
+    let plan = RhinoCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit("rhino:archive-80"),
+        )
+        .unwrap();
+    assert!(plan.report().losses.iter().any(|loss| {
+        loss.code == RhinoLossCode::WriterBodyReduced.kind()
+            && loss.message.contains(ir.model.bodies[0].id.as_str())
+    }));
+    assert!(!plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code == RhinoLossCode::NoExportableSolids.kind()));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    let scan = crate::container::scan_owned(bytes).unwrap();
+    assert!(scan
+        .objects
+        .iter()
+        .any(|record| { !matches!(record.framed().unwrap().object_type, 0x1000) }));
 }
 
 fn text_dot_document() -> CadIr {
