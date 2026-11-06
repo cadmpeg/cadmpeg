@@ -7399,7 +7399,19 @@ pub(super) fn project_fixed_sweep(
         };
         let expected_group_count =
             profiles.len() + paths.len() + bodies.len() + guide_surfaces.len();
+        let first_ordinal = groups
+            .iter()
+            .map(|group| group.scope_reference_ordinal)
+            .min();
+        let body_leads = bodies.iter().all(|body| {
+            let ordinal = match body.role() {
+                DesignOperandRole::BODIES_A => 0,
+                _ => 7,
+            };
+            body.scope_reference_ordinal == ordinal && first_ordinal == Some(ordinal)
+        });
         if bodies.len() > 1
+            || !body_leads
             || groups.len() != expected_group_count
             || (*operation == DesignExtrudeOperation::NewBody && !bodies.is_empty())
             || (guide_surface_form && paths.len() != 1)

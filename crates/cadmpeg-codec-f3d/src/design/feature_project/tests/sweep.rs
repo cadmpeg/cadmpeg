@@ -73,7 +73,7 @@ fn sweep_with_body_group_is_not_projected() {
 }
 
 #[test]
-fn boolean_sweep_takes_one_body_group_of_either_role() {
+fn boolean_sweep_takes_a_leading_body_group_of_its_ordinal_role() {
     let (mut scope, [profile, path]) = sweep_input();
     let set_operation = |scope: &mut crate::records::feature::scope::DesignParameterScope,
                          operation: DesignExtrudeOperation| {
@@ -89,13 +89,24 @@ fn boolean_sweep_takes_one_body_group_of_either_role() {
         body.operand_role = DesignConstructionOperandRole::Other(role);
         body
     };
+    let after = |ordinal: u32| {
+        let mut profile = profile.clone();
+        let mut path = path.clone();
+        profile.scope_reference_ordinal = ordinal + 2;
+        path.scope_reference_ordinal = ordinal + 4;
+        [profile, path]
+    };
     let projected = |scope: &crate::records::feature::scope::DesignParameterScope,
                      groups: &[crate::records::topology::construction::DesignConstructionOperandGroup]| {
         crate::test_support::with_decode_context(|decode_ctx| project(decode_ctx, scope, groups))
             .unwrap()
     };
-    for role in [DesignOperandRole::BODIES_A, DesignOperandRole::BODIES_B] {
-        let groups = [profile.clone(), path.clone(), body(102, 2, role)];
+    for (role, ordinal) in [
+        (DesignOperandRole::BODIES_A, 0),
+        (DesignOperandRole::BODIES_B, 7),
+    ] {
+        let [profile, path] = after(ordinal);
+        let groups = [body(102, ordinal, role), profile, path];
         assert!(
             matches!(
                 projected(&scope, &groups),
@@ -104,15 +115,33 @@ fn boolean_sweep_takes_one_body_group_of_either_role() {
             "{role:?}"
         );
     }
+    for (role, ordinal) in [
+        (DesignOperandRole::BODIES_A, 7),
+        (DesignOperandRole::BODIES_B, 0),
+    ] {
+        let [profile, path] = after(ordinal);
+        let groups = [body(102, ordinal, role), profile, path];
+        assert!(
+            projected(&scope, &groups).is_none(),
+            "{role:?} at {ordinal}"
+        );
+    }
+    let [profile_7, path_7] = after(7);
+    let trailing_body = [
+        profile_7.clone(),
+        path_7.clone(),
+        body(102, 13, DesignOperandRole::BODIES_B),
+    ];
+    assert!(projected(&scope, &trailing_body).is_none());
     let two_bodies = [
-        profile.clone(),
-        path.clone(),
-        body(102, 2, DesignOperandRole::BODIES_A),
-        body(103, 3, DesignOperandRole::BODIES_B),
+        body(102, 7, DesignOperandRole::BODIES_B),
+        body(103, 8, DesignOperandRole::BODIES_B),
+        profile_7.clone(),
+        path_7.clone(),
     ];
     assert!(projected(&scope, &two_bodies).is_none());
     set_operation(&mut scope, DesignExtrudeOperation::NewBody);
-    let groups = [profile, path, body(102, 2, DesignOperandRole::BODIES_B)];
+    let groups = [body(102, 7, DesignOperandRole::BODIES_B), profile_7, path_7];
     assert!(projected(&scope, &groups).is_none());
 }
 
