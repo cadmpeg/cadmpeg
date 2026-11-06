@@ -837,6 +837,8 @@ The positional two-section solid-loft form has 14 property slots in a type-2 ref
 
 Each section in this form has `value = 0`, `map_value = 0`, and `source_value = 1`. Its condition has enumeration type 2 and value 0. Its option is null or false. The first numeric parameter is dimensionless, with nominal and model values 0. The second numeric parameter is angular, with nominal and model values π/2 radians.
 
+A surface loft uses the same 14-slot vector. Slot 1 selects a part-operation enumeration with type 5 and value 5. Slots 2 and 9 select false Boolean records. Slot 6 selects the result surface-body wrapper, and slot 13 is null. A surface loft has two sections. One section selects a keyed wire whose edges are the curves of a consumed planar sketch; its `source_value` is 1. The other section selects a face loop: its `source_value` equals its own content-header `source_index`, and its keyed wire has edges with associative names 1 to n that name no sketch curve. A face-loop section has a participant of type `7ca882b3f445b9fffe4a7486104813a4` in the feature label. That participant lists type `82695c37d111516b0008a1ba32a3dc09` edge items and refers to a record of type `b57049dacb41e69bd669c1ab1ec89af8` that lists one face item and the same edge items. Either section can be first. The result is a sheet body whose side faces carry `NMx_Loft_Surface_Brep_tag` attributes.
+
 Sweep property slots are:
 
 | Slot | Operand | Record type |
