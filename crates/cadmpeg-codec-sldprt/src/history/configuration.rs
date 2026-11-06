@@ -1577,6 +1577,18 @@ pub(crate) fn align_configuration_parameter_kinds(ir: &mut cadmpeg_ir::CadIr) {
                         .then_some(ParameterValue::Integer(integer))
                 })
             }
+            (ParameterValue::Boolean(_), ParameterValue::Integer(0)) => {
+                Some(ParameterValue::Boolean(false))
+            }
+            (ParameterValue::Boolean(_), ParameterValue::Integer(1)) => {
+                Some(ParameterValue::Boolean(true))
+            }
+            (ParameterValue::Boolean(_), ParameterValue::Real(real)) if real.get() == 0.0 => {
+                Some(ParameterValue::Boolean(false))
+            }
+            (ParameterValue::Boolean(_), ParameterValue::Real(real)) if real.get() == 1.0 => {
+                Some(ParameterValue::Boolean(true))
+            }
             // Configuration lanes can provisionally classify an untyped scalar
             // as a length. The canonical integer wins only when the values agree.
             (ParameterValue::Integer(expected), ParameterValue::Length(candidate)) => {
@@ -1597,6 +1609,21 @@ pub(crate) fn align_configuration_parameter_kinds(ir: &mut cadmpeg_ir::CadIr) {
         }
     }
     for configuration in &mut ir.model.configurations {
+        for (parameter, expression) in &mut configuration.parameter_overrides {
+            let Some(ParameterValue::Boolean(value)) =
+                configuration.parameter_values.get(parameter)
+            else {
+                continue;
+            };
+            if matches!(
+                parameter_kinds.get(parameter),
+                Some(ParameterValue::Boolean(_))
+            ) && *expression
+                == cadmpeg_ir::features::Expression::text(if *value { "1" } else { "0" })
+            {
+                *expression = cadmpeg_ir::features::Expression::text(value.to_string());
+            }
+        }
         configuration.parameter_values.retain(|parameter, value| {
             let Some(canonical) = parameter_kinds.get(parameter) else {
                 return true;
