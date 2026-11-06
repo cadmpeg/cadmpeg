@@ -200,13 +200,13 @@ fn light(
     let mut attribute_change = None;
     if let Some(value) = fields.get("attributes").filter(|value| !value.is_null()) {
         match attributes::encode(value, ir, materials) {
-            Ok((attributes, change)) => {
+            Ok(attributes) => {
                 body.extend(crc_chunk_with_direct(
                     0x0200_8061,
-                    &attributes,
-                    &attributes,
+                    &attributes.body,
+                    &attributes.direct,
                 )?);
-                attribute_change = change;
+                attribute_change = attributes.change;
             }
             Err(WriteError::Omit(reason)) => {
                 attribute_loss = Some(format!("attributes omitted: {reason}"));
@@ -292,7 +292,8 @@ mod tests {
             "clipping_plane_uuids":["55555555-5555-5555-5555-555555555555","66666666-6666-6666-6666-666666666666"],
             "hatch_pattern_index":-1, "section_hatch_scale":2.0, "section_hatch_rotation":0.5,
             "linetype_pattern_scale":1.5, "hatch_background":"090a0b0c", "hatch_boundary_visible":true,
-            "section_fill_rule":1, "clipping_plane_label_style":2, "detail_background_visible":true, "rendering_materials":[]
+            "section_fill_rule":1, "clipping_plane_label_style":2, "detail_background_visible":true, "rendering_materials":[],
+            "casts_shadows":false, "receives_shadows":false, "advanced_texture_preview":true
         });
         let expected_attributes = attributed["attributes"].clone();
         let mut reindexed = attributed.clone();
