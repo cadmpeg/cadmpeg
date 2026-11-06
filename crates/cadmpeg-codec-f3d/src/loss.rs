@@ -46,6 +46,7 @@ pub(crate) enum F3dLossCode {
     DimensionCompanionUntyped,
     /// A whole-body reference tail has no admitted standard reference-run frame.
     BodyReferenceTailUntyped,
+    BodyRecipeSerializationFormAssumed,
     /// A placement construction has no unambiguous registered member layout.
     PlacementConstructionUntyped,
     /// A work plane has no unique checked solved placement.
@@ -54,6 +55,7 @@ pub(crate) enum F3dLossCode {
     CylinderPlacementUnbound,
     /// A construction tracking path has no matching indexed type registration.
     ConstructionTrackingPathUntyped,
+    ConstructionClosingFlagAssumed,
     /// Design configuration JSON members have no assigned neutral semantics.
     ConfigurationMemberUnassigned,
     /// Design configuration rules have no unambiguous activation target.
@@ -294,6 +296,10 @@ pub(crate) enum F3dLossCode {
     FeatureProfileArrangementCapped,
     /// Extrude profile selections skipped a certified profile test at a local cap.
     FeatureProfileDensificationCapped,
+    /// Extrude profile selections skipped a self-crossing loop split at a local cap.
+    FeatureProfileCrossingLoopCapped,
+    /// Extrude profile selections split a self-crossing loop by curve-use counts alone.
+    FeatureProfileCrossingLoopAssumed,
     /// Feature path selections retain native identities; no unique path.
     FeaturePathSelectionNative,
     /// Feature face selections retain native candidates; no unique face.
@@ -499,10 +505,12 @@ impl F3dLossCode {
         Self::OperationPoseNative,
         Self::DimensionCompanionUntyped,
         Self::BodyReferenceTailUntyped,
+        Self::BodyRecipeSerializationFormAssumed,
         Self::PlacementConstructionUntyped,
         Self::WorkPlaneFrameUnbound,
         Self::CylinderPlacementUnbound,
         Self::ConstructionTrackingPathUntyped,
+        Self::ConstructionClosingFlagAssumed,
         Self::ConfigurationMemberUnassigned,
         Self::ConfigurationRuleUnbound,
         Self::ConfigurationParameterOverrideUnbound,
@@ -615,6 +623,8 @@ impl F3dLossCode {
         Self::FeatureExtrudeProfileDeletedFacesInferred,
         Self::FeatureProfileArrangementCapped,
         Self::FeatureProfileDensificationCapped,
+        Self::FeatureProfileCrossingLoopCapped,
+        Self::FeatureProfileCrossingLoopAssumed,
         Self::FeaturePathSelectionNative,
         Self::FeatureFaceSelectionNative,
         Self::FeatureFaceSelectionActiveSubstituted,
@@ -716,10 +726,12 @@ impl F3dLossCode {
             Self::OperationPoseNative => "assembly.operation-table-pose-native",
             Self::DimensionCompanionUntyped => "dimension.companion-untyped",
             Self::BodyReferenceTailUntyped => "body-reference.tail-untyped",
+            Self::BodyRecipeSerializationFormAssumed => "body-recipe.serialization-form-assumed",
             Self::PlacementConstructionUntyped => "placement.construction-untyped",
             Self::WorkPlaneFrameUnbound => "work-plane.frame-unbound",
             Self::CylinderPlacementUnbound => "feature.cylinder-placement-unbound",
             Self::ConstructionTrackingPathUntyped => "feature.tracking-path-untyped",
+            Self::ConstructionClosingFlagAssumed => "feature.construction-closing-flag-assumed",
             Self::ConfigurationMemberUnassigned => "configuration.member-unassigned",
             Self::ConfigurationRuleUnbound => "configuration.rule-unbound",
             Self::ConfigurationParameterOverrideUnbound => {
@@ -854,6 +866,8 @@ impl F3dLossCode {
             Self::FeatureProfileSelectionNative => "feature.profile-selection-native",
             Self::FeatureProfileArrangementCapped => "feature.profile-arrangement-capped",
             Self::FeatureProfileDensificationCapped => "feature.profile-densification-capped",
+            Self::FeatureProfileCrossingLoopCapped => "feature.profile-crossing-loop-capped",
+            Self::FeatureProfileCrossingLoopAssumed => "feature.profile-crossing-loop-assumed",
             Self::FeaturePathSelectionNative => "feature.path-selection-native",
             Self::FeatureFaceSelectionNative => "feature.face-selection-native",
             Self::FeatureFaceSelectionActiveSubstituted => {
@@ -1003,6 +1017,7 @@ impl F3dLossCode {
             | Self::CylinderPlacementUnbound
             | Self::PlacementConstructionUntyped
             | Self::ConstructionTrackingPathUntyped
+            | Self::ConstructionClosingFlagAssumed
             | Self::ConfigurationMemberUnassigned
             | Self::ConfigurationRuleUnbound
             | Self::ConfigurationParameterOverrideUnbound
@@ -1085,6 +1100,7 @@ impl F3dLossCode {
             | Self::HistoricalFaceSelectionUnbound
             | Self::HistoricalEdgeMidpointsUnresolved
             | Self::HistoricalFilletEdgeInferred
+            | Self::BodyRecipeSerializationFormAssumed
             | Self::HistoricalFilletEdgeAmbiguous
             | Self::HistoricalBodyBoundsUnresolved
             | Self::SketchRelationNativeRetained
@@ -1108,6 +1124,8 @@ impl F3dLossCode {
             | Self::FeatureExtrudeProfileDeletedFacesInferred
             | Self::FeatureProfileArrangementCapped
             | Self::FeatureProfileDensificationCapped
+            | Self::FeatureProfileCrossingLoopCapped
+            | Self::FeatureProfileCrossingLoopAssumed
             | Self::FeaturePathSelectionNative
             | Self::FeatureFaceSelectionNative
             | Self::FeatureFaceSelectionActiveSubstituted
@@ -1191,6 +1209,7 @@ impl F3dLossCode {
             | Self::KernelCarrierUnparseable
             | Self::TsplineRecordUntyped => LossTaxonomy::RecordNotTyped,
             Self::ScopeOwnerUnresolved
+            | Self::ConstructionClosingFlagAssumed
             | Self::OperationPoseApplied
             | Self::OperationPoseDisagrees
             | Self::OperationPoseNative
@@ -1271,6 +1290,7 @@ impl F3dLossCode {
             | Self::HistoricalFaceSelectionUnbound
             | Self::HistoricalEdgeMidpointsUnresolved
             | Self::HistoricalFilletEdgeInferred
+            | Self::BodyRecipeSerializationFormAssumed
             | Self::HistoricalFilletEdgeAmbiguous
             | Self::HistoricalBodyBoundsUnresolved
             | Self::SketchRelationNativeRetained
@@ -1294,6 +1314,8 @@ impl F3dLossCode {
             | Self::FeatureExtrudeProfileDeletedFacesInferred
             | Self::FeatureProfileArrangementCapped
             | Self::FeatureProfileDensificationCapped
+            | Self::FeatureProfileCrossingLoopCapped
+            | Self::FeatureProfileCrossingLoopAssumed
             | Self::FeaturePathSelectionNative
             | Self::FeatureFaceSelectionNative
             | Self::FeatureFaceSelectionActiveSubstituted
@@ -1448,10 +1470,12 @@ mod tests {
                 "assembly.operation-table-pose-native",
                 "dimension.companion-untyped",
                 "body-reference.tail-untyped",
+                "body-recipe.serialization-form-assumed",
                 "placement.construction-untyped",
                 "work-plane.frame-unbound",
                 "feature.cylinder-placement-unbound",
                 "feature.tracking-path-untyped",
+                "feature.construction-closing-flag-assumed",
                 "configuration.member-unassigned",
                 "configuration.rule-unbound",
                 "configuration.parameter-override-unbound",
@@ -1564,6 +1588,8 @@ mod tests {
                 "feature.extrude-profile-deleted-faces-inferred",
                 "feature.profile-arrangement-capped",
                 "feature.profile-densification-capped",
+                "feature.profile-crossing-loop-capped",
+                "feature.profile-crossing-loop-assumed",
                 "feature.path-selection-native",
                 "feature.face-selection-native",
                 "feature.face-selection-active-substituted",
