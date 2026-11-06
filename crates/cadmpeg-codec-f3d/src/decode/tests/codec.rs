@@ -135,32 +135,43 @@ fn damaged_act_group_drops_its_table_entity() {
         generated_act_metastream, generated_complete_act_bulkstream,
     };
     const STREAM: &str = "FusionAssetName[Active]/FusionACTSegmentType1/BulkStream.dat";
-    let (mut bulk, records) = generated_complete_act_bulkstream();
-    let group = usize::try_from(records.iter().find(|(id, _)| *id == 7).unwrap().1).unwrap();
-    bulk[group + 4..group + 7].copy_from_slice(b"bad");
-    let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
-    crate::test_support::manifest_test::write_synthetic_manifests(&mut archive, stored);
-    archive.start_file(STREAM, stored).unwrap();
-    archive.write_all(&bulk).unwrap();
-    archive.start_file("FusionAssetName[Active]/FusionACTSegmentType1/MetaStream.dat", stored).unwrap();
-    archive.write_all(&generated_act_metastream(&records)).unwrap();
-    let decoded = F3dCodec.decode(
-        &mut Cursor::new(archive.finish().unwrap().into_inner()),
-        &DecodeOptions::default(),
-    ).unwrap();
-    let native = crate::test_support::native_test::f3d_native(decoded.ir());
-    assert_eq!(native.act_tables.len(), 1);
-    assert_eq!(native.act_entities.len(), 1);
-    assert_eq!(native.act_entities[0].record_index(), 2);
-    let loss = decoded.report().losses.iter().find(|loss| {
-        loss.code == cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable.note("").code
-    }).expect("unreadable group");
-    assert_eq!(loss.dropped, [crate::ids::native_scoped_id(STREAM, "act-entity", 7)]);
-    let unknowns = decoded.ir().native_unknowns("f3d").unwrap();
-    assert_eq!(unknowns.len(), 1);
-    let retained = decoded.source_fidelity().retained_record(unknowns[0].id.as_str()).unwrap();
-    assert_eq!(retained.data(), Some(&bulk[group..]));
+    for damage_header in [true, false] {
+        let (mut bulk, records) = generated_complete_act_bulkstream();
+        let group = usize::try_from(records.iter().find(|(id, _)| *id == 7).unwrap().1).unwrap();
+        if damage_header {
+            bulk[group + 4..group + 7].copy_from_slice(b"bad");
+        } else {
+            let mut prefix = Vec::new();
+            crate::test_support::indexed_header(&mut prefix, *b"261", 7);
+            prefix.extend_from_slice(&[0; 10]);
+            assert_eq!(&bulk[group..group + prefix.len()], prefix);
+            let count_offset = group + prefix.len();
+            bulk[count_offset..count_offset + 4].copy_from_slice(&0u32.to_le_bytes());
+        }
+        let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+        crate::test_support::manifest_test::write_synthetic_manifests(&mut archive, stored);
+        archive.start_file(STREAM, stored).unwrap();
+        archive.write_all(&bulk).unwrap();
+        archive.start_file("FusionAssetName[Active]/FusionACTSegmentType1/MetaStream.dat", stored).unwrap();
+        archive.write_all(&generated_act_metastream(&records)).unwrap();
+        let decoded = F3dCodec.decode(
+            &mut Cursor::new(archive.finish().unwrap().into_inner()),
+            &DecodeOptions::default(),
+        ).unwrap();
+        let native = crate::test_support::native_test::f3d_native(decoded.ir());
+        assert_eq!(native.act_tables.len(), 1);
+        assert_eq!(native.act_entities.len(), 1);
+        assert_eq!(native.act_entities[0].record_index(), 2);
+        let loss = decoded.report().losses.iter().find(|loss| {
+            loss.code == cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable.note("").code
+        }).expect("unreadable group");
+        assert_eq!(loss.dropped, [crate::ids::native_scoped_id(STREAM, "act-entity", 7)]);
+        let unknowns = decoded.ir().native_unknowns("f3d").unwrap();
+        assert_eq!(unknowns.len(), 1);
+        let retained = decoded.source_fidelity().retained_record(unknowns[0].id.as_str()).unwrap();
+        assert_eq!(retained.data(), Some(&bulk[group..]));
+    }
 }
 
 #[test]
