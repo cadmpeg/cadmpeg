@@ -1050,7 +1050,12 @@ fn prune_pass(
         }
         true
     });
-    let coedges = existing!(coedges);
+    let coedge_owners = scoped
+        .model
+        .coedges
+        .iter()
+        .map(|coedge| (coedge.id.clone(), coedge.owner_loop.clone()))
+        .collect::<std::collections::BTreeMap<_, _>>();
     prune_orphaned_edges(scoped, pruned);
     let faces = existing!(faces);
     scoped.model.loops.retain_mut(|row| {
@@ -1092,12 +1097,16 @@ fn prune_pass(
                 let kept = row
                     .coedges()
                     .iter()
-                    .filter(|id| coedges.contains(id.as_str()))
+                    .filter(|id| coedge_owners.get(*id) == Some(&row.id))
                     .cloned()
                     .collect::<Vec<_>>();
                 for id in row.coedges() {
-                    if !coedges.contains(id.as_str()) {
-                        pruned("loop", row.id.as_str(), format!("coedge {id} is missing"));
+                    if coedge_owners.get(id) != Some(&row.id) {
+                        pruned(
+                            "loop",
+                            row.id.as_str(),
+                            format!("coedge {id} is missing or belongs to another loop"),
+                        );
                     }
                 }
                 let mut kept_uses = Vec::new();
