@@ -244,7 +244,7 @@ mod tests {
                 "carrier.cone-half-angle-sign-unresolved",
                 "carrier.cone-half-angle-identity-refused",
                 "carrier.torus-negative-major-unresolved",
-            "carrier.controls-unresolved",
+                "carrier.controls-unresolved",
                 "geometry.not-transferred",
                 "topology.loop-ring-unresolved",
                 "topology.face-loop-unresolved",
