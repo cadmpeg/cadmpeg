@@ -64,6 +64,28 @@ fn object_names_accept_the_name_length_field() {
 }
 
 #[test]
+fn class_declarations_accept_the_class_length_field() {
+    let class = "C".repeat(129);
+    let mut payload = Vec::new();
+    payload.extend_from_slice(CLASS_MARKER);
+    payload.extend_from_slice(&u16::try_from(class.len()).unwrap().to_le_bytes());
+    payload.extend_from_slice(class.as_bytes());
+    payload.extend_from_slice(&[0x87, 0x80, 0xff, 0xfe, 0xff, 1, b'N', 0]);
+    payload.extend_from_slice(&[0; 12]);
+    assert_eq!(
+        super::payload_classes(&payload).collect::<Vec<_>>(),
+        [(0, class.as_str())]
+    );
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
+    let names = object_names(&ctx, &payload, "lane").unwrap();
+    assert_eq!(names.len(), 1);
+    assert_eq!(names[0].value, "N");
+}
+
+#[test]
 fn operand_kind_names_preserve_wire_spelling() {
     use crate::records::FeatureInputOperandKind;
     for (kind, expected) in [

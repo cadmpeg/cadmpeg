@@ -97,7 +97,7 @@ pub(super) fn payload_classes(payload: &[u8]) -> impl Iterator<Item = (usize, &s
         .filter_map(|(offset, marker)| (marker == CLASS_MARKER).then_some(offset))
         .filter_map(|offset| {
             let length = usize::from(View::u16_le_at(payload, offset + 4)?);
-            if !(1..=128).contains(&length) {
+            if length == 0 {
                 return None;
             }
             let bytes = payload.get(offset + 6..offset + 6 + length)?;
@@ -123,7 +123,7 @@ fn name_class_token(payload: &[u8]) -> Option<u16> {
         .filter(|(_, window)| *window == CLASS_MARKER)
         .find_map(|(offset, _)| {
             let length = usize::from(View::u16_le_at(payload, offset + 4)?);
-            if !(1..=128).contains(&length) {
+            if length == 0 {
                 return None;
             }
             let name = payload.get(offset + 6..offset + 6 + length)?;
