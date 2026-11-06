@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use crate::design::feature_project::reverse_normal::project_reverse_normal;
+use crate::loss::F3dLossCode;
+use crate::records::entity_header::{BaseTypeGuid, SegmentType, SegmentTypeData};
 use crate::records::feature::body_ops::DesignReverseNormalOperation;
 use crate::records::feature::scope::{
     DesignFeatureKind, DesignParameterScope, DesignScopePayloadMut,
@@ -15,11 +17,14 @@ use crate::records::topology::construction::{
 use crate::records::topology::extrude_selection::DesignOperandRole;
 use cadmpeg_core::decode::u64_from_index;
 use cadmpeg_ir::features::{BodySelection, FeatureDefinition, FeatureOperation};
+use cadmpeg_ir::report::loss::LossNote;
 
 const STREAM: &str = "f3d:native/BulkStream.dat";
 const SCOPE: u32 = 700;
 const GROUP: u32 = 704;
 const BODIES: [u32; 2] = [707, 711];
+const WHOLE_BODY_GUID: &str = "9716F783-676D-42E0-93F9-EBF273E7C035";
+const OTHER_GUID: &str = "5A1BF548-241F-46FD-9FB5-E4B05126EB9D";
 
 fn scope(body_group: Option<u32>) -> DesignParameterScope {
     let mut scope = DesignParameterScope::empty(
@@ -88,39 +93,96 @@ fn group(scope_reference_ordinal: u32, members: &[u32]) -> DesignConstructionOpe
     .unwrap()
 }
 
+fn type_row(guid: &str, version: u32, byte_offset: u64, members: &[u32]) -> SegmentType {
+    SegmentType::try_new(
+        format!("f3d:native/MetaStream.dat:design-type#{byte_offset}"),
+        SegmentTypeData {
+            byte_offset,
+            type_guid: guid.to_owned().try_into().unwrap(),
+            type_guid_offset: 0,
+            base_type_guid: BaseTypeGuid::Absent,
+            version,
+            version_offset: 0,
+            module: "Fusion".to_owned(),
+            entities: ReferenceRun::unlocated(members.iter().copied().map(u64::from).collect()),
+        },
+    )
+    .unwrap()
+}
+
+fn project(
+    scope: &DesignParameterScope,
+    groups: &[DesignConstructionOperandGroup],
+    types: &[SegmentType],
+) -> (Option<FeatureDefinition>, Vec<LossNote>) {
+    let mut losses = Vec::new();
+    let definition = project_reverse_normal(scope, groups, types, &mut losses);
+    (definition, losses)
+}
+
+fn reversal(group: &DesignConstructionOperandGroup) -> Option<FeatureDefinition> {
+    Some(FeatureDefinition::Operation(
+        FeatureOperation::ReverseShape {
+            source: BodySelection::Native(group.id.clone()),
+        },
+    ))
+}
+
 #[test]
-fn body_group_at_the_first_reference_projects_a_shape_reversal() {
+fn whole_body_members_project_a_shape_reversal() {
     let group = group(0, &BODIES);
-    assert_eq!(
-        project_reverse_normal(&scope(Some(GROUP)), std::slice::from_ref(&group)),
-        Some(FeatureDefinition::Operation(
-            FeatureOperation::ReverseShape {
-                source: BodySelection::Native(group.id.clone()),
-            }
-        ))
+    let (definition, losses) = project(
+        &scope(Some(GROUP)),
+        std::slice::from_ref(&group),
+        &[type_row(WHOLE_BODY_GUID, 1, 10, &BODIES)],
     );
+    assert_eq!(definition, reversal(&group));
+    assert!(losses.is_empty());
+}
+
+#[test]
+fn members_without_the_whole_body_type_keep_the_reversal_with_a_loss() {
+    let group = group(0, &BODIES);
+    for types in [
+        vec![
+            type_row(WHOLE_BODY_GUID, 1, 10, &BODIES[..1]),
+            type_row(OTHER_GUID, 1, 20, &BODIES[1..]),
+        ],
+        vec![
+            type_row(WHOLE_BODY_GUID, 1, 10, &BODIES[..1]),
+            type_row(WHOLE_BODY_GUID, 2, 20, &BODIES[1..]),
+        ],
+        vec![type_row(WHOLE_BODY_GUID, 1, 10, &BODIES[..1])],
+    ] {
+        let (definition, losses) =
+            project(&scope(Some(GROUP)), std::slice::from_ref(&group), &types);
+        assert_eq!(definition, reversal(&group));
+        let [loss] = losses.as_slice() else {
+            panic!("expected one loss, got {losses:?}");
+        };
+        assert_eq!(
+            loss.code,
+            F3dLossCode::FeatureReverseNormalBodyUnverified.kind()
+        );
+        assert_eq!(
+            loss.message,
+            "Reverse Normal f3d:native/BulkStream.dat:design-parameter-scope#700 reverses body-group members [711] as whole bodies; the type table registers no whole-body record type 9716F783-676D-42E0-93F9-EBF273E7C035 version 1 for them."
+        );
+    }
 }
 
 #[test]
 fn body_group_outside_the_prefix_and_reference_table_stays_native() {
-    assert_eq!(
-        project_reverse_normal(&scope(None), &[group(0, &BODIES)]),
-        None
-    );
-    assert_eq!(
-        project_reverse_normal(&scope(Some(BODIES[0])), &[group(0, &BODIES)]),
-        None
-    );
-    assert_eq!(
-        project_reverse_normal(&scope(Some(GROUP)), &[group(1, &BODIES)]),
-        None
-    );
-    assert_eq!(
-        project_reverse_normal(&scope(Some(GROUP)), &[group(0, &[BODIES[1], BODIES[0]])]),
-        None
-    );
-    assert_eq!(
-        project_reverse_normal(&scope(Some(GROUP)), &[group(0, &BODIES[..1])]),
-        None
-    );
+    let types = [type_row(WHOLE_BODY_GUID, 1, 10, &BODIES)];
+    for (scope, group) in [
+        (scope(None), group(0, &BODIES)),
+        (scope(Some(BODIES[0])), group(0, &BODIES)),
+        (scope(Some(GROUP)), group(1, &BODIES)),
+        (scope(Some(GROUP)), group(0, &[BODIES[1], BODIES[0]])),
+        (scope(Some(GROUP)), group(0, &BODIES[..1])),
+    ] {
+        let (definition, losses) = project(&scope, &[group], &types);
+        assert_eq!(definition, None);
+        assert!(losses.is_empty());
+    }
 }

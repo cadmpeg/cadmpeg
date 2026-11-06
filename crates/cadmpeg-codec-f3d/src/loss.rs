@@ -308,6 +308,8 @@ pub(crate) enum F3dLossCode {
     FeatureFaceSelectionActiveSubstituted,
     /// Feature body selections retain native identities; no unique body.
     FeatureBodySelectionNative,
+    /// Reverse Normal body-group members lack the whole-body record type.
+    FeatureReverseNormalBodyUnverified,
     /// Combine body refinement violates operand arity or disjoint membership.
     FeatureCombineSelectionNative,
     /// Fixed Fillet scalar lanes have no complete group assignment.
@@ -634,6 +636,7 @@ impl F3dLossCode {
         Self::FeatureFaceSelectionNative,
         Self::FeatureFaceSelectionActiveSubstituted,
         Self::FeatureBodySelectionNative,
+        Self::FeatureReverseNormalBodyUnverified,
         Self::FeatureCombineSelectionNative,
         Self::FeatureFixedFilletAssignmentNative,
         Self::FeatureExtrudeExtentNative,
@@ -876,6 +879,7 @@ impl F3dLossCode {
                 "feature.face-selection-active-substituted"
             }
             Self::FeatureBodySelectionNative => "feature.body-selection-native",
+            Self::FeatureReverseNormalBodyUnverified => "feature.reverse-normal-body-unverified",
             Self::FeatureCombineSelectionNative => "feature.combine-selection-native",
             Self::FeatureFixedFilletAssignmentNative => "feature.fixed-fillet-assignment-native",
             Self::FeatureExtrudeExtentNative => "feature.extrude-extent-native",
@@ -1135,6 +1139,7 @@ impl F3dLossCode {
             | Self::FeatureFaceSelectionNative
             | Self::FeatureFaceSelectionActiveSubstituted
             | Self::FeatureBodySelectionNative
+            | Self::FeatureReverseNormalBodyUnverified
             | Self::FeatureCombineSelectionNative
             | Self::FeatureFixedFilletAssignmentNative
             | Self::FeatureExtrudeExtentNative
@@ -1326,6 +1331,7 @@ impl F3dLossCode {
             | Self::FeatureFaceSelectionNative
             | Self::FeatureFaceSelectionActiveSubstituted
             | Self::FeatureBodySelectionNative
+            | Self::FeatureReverseNormalBodyUnverified
             | Self::FeatureCombineSelectionNative
             | Self::FeatureFixedFilletAssignmentNative
             | Self::FeatureExtrudeExtentNative
@@ -1605,6 +1611,7 @@ mod tests {
                 "feature.face-selection-native",
                 "feature.face-selection-active-substituted",
                 "feature.body-selection-native",
+                "feature.reverse-normal-body-unverified",
                 "feature.combine-selection-native",
                 "feature.fixed-fillet-assignment-native",
                 "feature.extrude-extent-native",
