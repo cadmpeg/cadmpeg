@@ -62,11 +62,31 @@ fn parse(
 
 #[test]
 fn group_tail_keeps_its_closing_flag() {
-    for flags in [&[1, 0][..], &[1, 1], &[1, 1, 0], &[1, 1, 1]] {
+    for (flags, closing_flag) in [
+        (&[1, 0][..], false),
+        (&[1, 1][..], true),
+        (&[1, 1, 0][..], false),
+        (&[1, 1, 1][..], true),
+    ] {
         let group = parse(flags).expect("the group closes");
         assert_eq!(group.role(), DesignOperandRole::BODIES_B);
         assert!(group.frame.variant);
-        assert_eq!(group.frame.closing_flag, flags[flags.len() - 1] == 1);
+        assert_eq!(group.frame.closing_flag, closing_flag);
+        let losses = crate::design::decode::operands::construction_closing_flag_losses(
+            std::slice::from_ref(&group),
+        );
+        if group.frame.closing_flag {
+            assert_eq!(losses.len(), 1);
+            assert_eq!(
+                losses[0].code,
+                crate::loss::F3dLossCode::ConstructionClosingFlagAssumed.kind()
+            );
+            assert!(losses[0]
+                .message
+                .contains("assumes the flag does not change operation semantics"));
+        } else {
+            assert!(losses.is_empty());
+        }
         assert_eq!(
             group
                 .members()

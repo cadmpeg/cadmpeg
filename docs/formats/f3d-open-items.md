@@ -406,6 +406,18 @@ travel.
 
 **Note.** The fixed native occurrence record retains the discriminator value without a component-path binding.
 
+### DR-282. Legacy body-group flag blocks
+
+**Question.** Do the primary and paired class tags determine the frame and flag block of a legacy body group?
+
+**Known.** The group parser accepts both Boolean values for the variant and closing flag and closes the frame by record index.
+
+**Need.** Controlled files that vary each flag for each class pair.
+
+**Conflict.** None.
+
+**Note.** The flag block is retained in the native group frame.
+
 ### DR-130. Construction-operand group closing flag
 
 **Question.** What does closing flag `1` in the tail flag block of a construction-operand group select?

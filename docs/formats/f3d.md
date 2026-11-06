@@ -1105,26 +1105,8 @@ In a uniform Scale, the dimensionless factor `s` applies to all three model axes
 
 A `RemoveBody` scope references exactly one nonempty construction-operand group with role `0x0000000400000000`. The group members are the whole bodies deleted by the operation. Both features use the legacy body-group grammar below.
 
-The legacy body-group frame is keyed by its primary and paired class tags. `byte_offset` anchors the primary indexed header, and the paired header is outside the frame. The common prefix after the payload prologue is `u32 member_count`, the member reference run, two nullable references, `u32 trailing_count`, the trailing reference run, a u64 role with low word zero, ten zero bytes, `u32 opaque_ordinal`, and one finite f64 opaque scalar. The body-group tail then stores a second copy of `opaque_ordinal`, a reference to `N+2`, the two-byte construction-group flag block of variant byte and closing flag, a reference to `N+1`, byte `0`, a reference to the owning scope, and the same-index paired header. A same-segment reference is `u8 1`, a u64 target whose high word is zero, and two zero bytes; a null optional reference is one zero byte. The ordinary one-member, two-null-auxiliary, one-trailing-reference envelope is 123 bytes. Its primary/paired class pairs are 257/262, 323/262, 328/263, 338/261, 282/262, and 302/258. Classes 257, 323, and 338 use flag block `01 01`; classes 328, 282, and 302 use `00 01`. The class-328 `Move` form is a separate 123-byte variant:
+In the legacy body-group frame, `byte_offset` anchors the primary indexed header, and the paired header is outside the frame. The common prefix after the payload prologue is `u32 member_count`, the member reference run, two nullable references, `u32 trailing_count`, the trailing reference run, a u64 role with low word zero, ten zero bytes, `u32 opaque_ordinal`, and one finite f64 opaque scalar. The body-group tail then stores a second copy of `opaque_ordinal`, a reference to `N+2`, the two-byte construction-group flag block of variant byte and closing flag, a reference to `N+1`, byte `0`, a reference to the owning scope, and the same-index paired header. A same-segment reference is `u8 1`, a u64 target whose high word is zero, and two zero bytes; a null optional reference is one zero byte. The ordinary one-member, two-null-auxiliary, one-trailing-reference envelope is 123 bytes.
 
-| Primary/paired class and scope | Relative offset | Type | Value |
-| --- | ---: | --- | --- |
-| `328`/`263`, `Move` | `+36` | u8 | null auxiliary reference |
-| `328`/`263`, `Move` | `+37` | `u8 1 + u64 + bytes[2]` | present auxiliary reference to `N+13` |
-| `328`/`263`, `Move` | `+48` | u32 | trailing count `0` |
-| `328`/`263`, `Move` | `+52` | u8 | retained null trailing-slot byte `0` |
-| `328`/`263`, `Move` | `+53` | u64 | role; low word zero |
-
-The class-328 `Move` form has no counted trailing-reference run; its paired class is 263.
-
-| Primary class | Paired class | Frame length | Tail discriminant | `variant` |
-| ---: | ---: | ---: | --- | --- |
-| `257` | `262` | 123 | `01 01` | `true` |
-| `323` | `262` | 123 | `01 01` | `true` |
-| `338` | `261` | 123 | `01 01` | `true` |
-| `328` | `263` | 123 | `00 01` | `false` |
-| `282` | `262` | 123 | `00 01` | `false` |
-| `302` | `258` | 123 | `00 01` | `false` |
 
 In the one-member envelope, the primary-header-relative fixed fields are `+11..+20: zero`, `+21: u32 member_count`, `+25: member reference marker`, `+26: member reference value`, `+53: u64 role`, `+71: u32 opaque_ordinal`, `+75: f64 opaque scalar`, `+83: repeated ordinal`, `+87: reference to N+2`, `+98: two-byte tail discriminant`, `+100: reference to N+1`, `+111: zero`, `+112: owning-scope reference`, and `+123: paired header`. Member, auxiliary, and trailing reference counts extend the variable runs; the paired-header index closes the frame.
 
