@@ -779,6 +779,18 @@ fn coincident_fragments_take_distinct_members_in_any_member_order() {
     ]
     .concat();
     assert_eq!(member_regions(&sketch, &entities, &[ring]), None);
+    let ring = [
+        [
+            (bottom, false),
+            (bottom, true),
+            (first_half, false),
+            (second_half, false),
+        ]
+        .as_slice(),
+        sides.as_slice(),
+    ]
+    .concat();
+    assert_eq!(member_regions(&sketch, &entities, &[ring]), None);
 }
 
 #[test]

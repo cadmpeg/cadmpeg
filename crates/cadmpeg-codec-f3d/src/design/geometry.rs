@@ -364,7 +364,7 @@ pub(super) fn arrangement_regions_matching_member_rings(
     work: &ProfileGeometryWork,
     ctx: &DecodeContext<'_>,
 ) -> Result<Option<Vec<cadmpeg_ir::features::SketchProfileRegion>>, CodecError> {
-    if rings.is_empty() || rings.iter().any(Vec::is_empty) {
+    if rings.is_empty() {
         return Ok(None);
     }
     let faces = geometric!(curve_arrangement_faces(
