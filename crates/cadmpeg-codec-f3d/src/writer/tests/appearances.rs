@@ -125,6 +125,8 @@ fn neutral_body_material_authors_design_registry() {
     assert_eq!(assignment_output.ir().model.appearance_bindings.len(), 1);
     assert_eq!(assignment_output.ir().model.appearances.len(), 1);
     assert_eq!(assignment_output.ir().model.appearances[0].base_color, None);
+    assert_eq!(assignment_output.ir().model.appearances[0].visual_guid, assignment_only.model.appearances[0].visual_guid);
+    assert_eq!(assignment_output.ir().model.appearances[0].name, assignment_only.model.appearances[0].name);
     assert_eq!(assignment_output.ir().model.appearances[0].physical_token, assignment_only.model.appearances[0].physical_token);
     let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
     let decoded = F3dCodec.decode(&mut Cursor::new(source), &DecodeOptions::default()).unwrap();
