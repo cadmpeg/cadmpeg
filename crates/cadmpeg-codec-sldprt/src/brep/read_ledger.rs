@@ -190,7 +190,7 @@ fn admitted<N: cadmpeg_parasolid::records::NodeFields>(
         keep.extend(indices.into_iter().map(|index| (kind, index)));
     }
     let mut spans = Vec::new();
-    let analytic = super::carrier_nodes::analytic_of(nodes, body_offset);
+    let analytic = super::carrier_nodes::analytic_of(nodes, body_offset, &mut Vec::new());
     let analytic_attrs: std::collections::HashSet<u32> = match &analytic {
         Some(carriers) => carriers
             .iter()
