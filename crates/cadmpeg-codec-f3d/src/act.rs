@@ -197,10 +197,31 @@ pub(crate) fn decode(scan: &ContainerScan<'_>) -> Result<DecodedAct, CodecError>
             references: mut stream_table_references,
             registry_channels: stream_registry_channels,
         } = decode_table(bytes, table_frame, *table_payload, &entry.name)?;
-        let mut frame_indices = BTreeSet::new();
+        let mut groups = Vec::new();
         for frame in &frames {
-            frame_indices.insert(frame.record_index);
+            let selected = table.iter().any(|row| row.record_index == frame.record_index);
+            let reason = match decode_channel_group(bytes, frame, &entry.name) {
+                Ok(Some(group)) => {
+                    groups.push(group);
+                    continue;
+                }
+                Ok(None) if !selected => continue,
+                Ok(None) => "ACT table group matches no channel grammar".to_owned(),
+                Err(error) if !selected => return Err(error),
+                Err(error) => error.to_string(),
+            };
+            damaged.push(UnreadableActFrame {
+                stream: entry.name.clone(),
+                extent: frame.start..frame.end,
+                record_index: u64::from(frame.record_index),
+                reason,
+                dropped: Vec::new(),
+            });
         }
+        let frame_indices: BTreeSet<_> = frames.iter()
+            .filter(|frame| !damaged.iter().any(|fault| fault.record_index == u64::from(frame.record_index)))
+            .map(|frame| frame.record_index)
+            .collect();
         for reference in &stream_table_references {
             if frame_indices.contains(&reference.target_record) {
                 continue;
@@ -227,13 +248,7 @@ pub(crate) fn decode(scan: &ContainerScan<'_>) -> Result<DecodedAct, CodecError>
             ));
             false
         });
-        let mut groups = Vec::new();
-        for frame in &frames {
-            if let Some(group) = decode_channel_group(bytes, frame, &entry.name)? {
-                groups.push(group);
-            }
-        }
-        for frame in &frames {
+        for frame in frames.iter().filter(|frame| frame_indices.contains(&frame.record_index)) {
             if let Some(link) = decode_component_link(bytes, frame, &entry.name)? {
                 component_links.push(link);
             }
@@ -245,6 +260,7 @@ pub(crate) fn decode(scan: &ContainerScan<'_>) -> Result<DecodedAct, CodecError>
             .map(ActEntity::record_index)
             .collect::<BTreeSet<_>>();
         represented.insert(table_frame.record_index);
+        represented.extend(damaged.iter().filter_map(|fault| u32::try_from(fault.record_index).ok()));
         let scope = crate::ids::native_scope(&entry.name);
         represented.extend(
             component_links
