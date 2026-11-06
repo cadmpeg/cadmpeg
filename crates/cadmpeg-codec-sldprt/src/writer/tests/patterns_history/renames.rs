@@ -9,8 +9,23 @@ use std::io::Cursor;
 
 #[test]
 fn feature_input_rename_preserves_a_declared_name_class() {
-    let mut payload = vec![0xff, 0xff, 1, 0, 12, 0];
-    payload.extend_from_slice(b"moNodeName_c");
+    let prefix = [b"\xff\xff\x01\x00\x0c\x00".as_slice(), b"moNodeName_c"].concat();
+    check_name_class_rename(prefix);
+}
+
+#[test]
+fn feature_input_rename_preserves_a_name_class_token() {
+    let prefix = [
+        b"\xff\xff\x01\x00\x13\x00".as_slice(),
+        b"moSketchBlockInst_c",
+        &[3, 0x80],
+    ]
+    .concat();
+    check_name_class_rename(prefix);
+}
+
+fn check_name_class_rename(prefix: Vec<u8>) {
+    let mut payload = prefix.clone();
     payload.extend_from_slice(&[0xff, 0xfe, 0xff, 3]);
     for unit in "Use".encode_utf16() {
         payload.extend_from_slice(&unit.to_le_bytes());
@@ -37,7 +52,7 @@ fn feature_input_rename_preserves_a_declared_name_class() {
     )
     .unwrap()
     .0;
-    assert!(output.starts_with(&[0xff, 0xff, 1, 0, 12, 0]));
+    assert!(output.starts_with(&prefix));
     let names = decoded_object_names(&output, &lane.id);
     assert_eq!(names[0].value, "Renamed");
     assert_eq!(names[0].object_id, lane.names[0].object_id);
