@@ -31,9 +31,7 @@ use crate::records::{
         },
         fixed_parameters::DesignFixedExtrudeDistance,
         scope::DesignParameterScope,
-        surface_ops::{
-            DesignSurfaceOffsetOperation, DesignSurfaceOffsetSupport, DesignSurfaceTrimOperation,
-        },
+        surface_ops::DesignSurfaceTrimOperation,
         work_geometry::DesignEdgeTreatmentVertexOperand,
     },
     parameters::{DesignParameter, DesignParameterKind, DesignParameterOwner},
@@ -57,6 +55,7 @@ use std::hash::Hash;
 pub(crate) mod form_cages;
 mod paste_copy;
 mod pattern_seeds;
+mod surface_offset;
 
 /// Millimetres per Design length unit (the Design stream stores centimetres).
 const DESIGN_LENGTH_TO_MILLIMETRE: f64 = 10.0;
@@ -880,7 +879,13 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                 Some(DesignFeatureFamily::SurfaceOffset) => scope
                     .surface_offset_operation()
                     .map(|operation| {
-                        project_surface_offset(scope, operation, construction_groups, face_operands)
+                        surface_offset::project_surface_offset(
+                            scope,
+                            operation,
+                            construction_groups,
+                            face_operands,
+                            histories,
+                        )
                     })
                     .transpose()?
                     .flatten()
@@ -3400,82 +3405,6 @@ pub(crate) fn bind_hole_sketch_point_profiles(
             *profile_filter = Some(HoleProfileFilter::Points);
         });
     }
-}
-
-fn project_surface_offset(
-    scope: &DesignParameterScope,
-    operation: &DesignSurfaceOffsetOperation,
-    groups: &[DesignConstructionOperandGroup],
-    face_operands: &[DesignFaceOperand],
-) -> Result<Option<cadmpeg_ir::features::FeatureDefinition>, CodecError> {
-    use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
-
-    let Some(stream) = native_stream(&scope.id) else {
-        return Ok(None);
-    };
-    let Some(distance) = cadmpeg_ir::scalar::Length::new(operation.distance.get() * 10.0) else {
-        return Ok(None);
-    };
-    let DesignSurfaceOffsetSupport::FaceGroups {
-        group_record_indices,
-    } = &operation.support
-    else {
-        let DesignSurfaceOffsetSupport::BoundaryCarrier {
-            boundary_record_index,
-            ..
-        } = &operation.support
-        else {
-            return Ok(None);
-        };
-        return Ok(Some(FeatureDefinition::Operation(
-            FeatureOperation::OffsetSurface {
-                faces: FaceSelection::Native(format!(
-                    "{}{}{}",
-                    stream,
-                    ":design-record#",
-                    u64::from(*boundary_record_index)
-                )),
-                distance: Some(distance),
-            },
-        )));
-    };
-    let mut faces = Vec::new();
-    for group_record_index in group_record_indices {
-        let mut matching_groups = groups.iter().filter(|group| {
-            native_stream(&group.id) == Some(stream)
-                && group.scope_record_index == scope.record_index
-                && group.record_index == *group_record_index
-                && group.role() == DesignOperandRole::PROFILE
-                && !group.members().is_empty()
-        });
-        let Some(group) = matching_groups.next() else {
-            return Ok(None);
-        };
-        if matching_groups.next().is_some() {
-            return Ok(None);
-        }
-        let Some(FaceSelection::Resolved {
-            faces: group_faces, ..
-        }) = resolved_face_group(group, face_operands)?
-        else {
-            return Ok(None);
-        };
-        for face in &group_faces {
-            if !faces.contains(face) {
-                faces.push(face.clone());
-            }
-        }
-    }
-    if faces.is_empty() {
-        return Ok(None);
-    }
-    let native = scope.id.clone();
-    Ok(Some(FeatureDefinition::Operation(
-        FeatureOperation::OffsetSurface {
-            faces: FaceSelection::Resolved { faces, native },
-            distance: Some(distance),
-        },
-    )))
 }
 
 /// Derive the neutral material-side flag from F3D's signed Draft angle.
