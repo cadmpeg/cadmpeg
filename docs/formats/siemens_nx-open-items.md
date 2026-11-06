@@ -880,6 +880,9 @@ member as a neutral suppression or visibility state.
 Within a UUID group, trailer keys and prototype indices can interleave in
 different orders. A positional join then assigns different keys to one
 prototype. Equal-sized key groups admit multiple prototype assignments.
+With aligned prototype origins, pairwise placement distances distinguish some
+assignments. Sorting the keys and prototype indices gives incorrect assignments
+for those groups. A singleton has no within-group distance to compare.
 
 The MTC STEP assembly declares millimetres. Pairwise distances within its
 14-screw placement group match the NX placement distances at scale 1. The
