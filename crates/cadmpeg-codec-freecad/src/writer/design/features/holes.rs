@@ -3,7 +3,7 @@
 
 use super::super::super::xml::{self, Object};
 use super::properties::{angle, boolean, enumeration, length, link, number, tag, unsupported};
-use cadmpeg_core::CodecError;
+use super::FeatureError;
 use serde_json::Value;
 use std::collections::HashMap;
 
@@ -11,7 +11,7 @@ pub(super) fn hole(
     value: &Value,
     object: &mut Object,
     names: &HashMap<String, String>,
-) -> Result<(), CodecError> {
+) -> Result<(), FeatureError> {
     object.kind = "PartDesign::Hole".into();
     link(object, "Profile", &value["profile"], names)?;
     let shape = &value["shape"];
@@ -115,7 +115,7 @@ pub(super) fn hole(
     let filter = filters
         .iter()
         .position(|item| *item == filter)
-        .ok_or_else(|| CodecError::UnsupportedContent("hole profile filter unsupported".into()))?
+        .ok_or_else(|| FeatureError::Unsupported("hole profile filter unsupported".into()))?
         + 1;
     object.set(
         "BaseProfileType",
@@ -127,14 +127,14 @@ pub(super) fn hole(
     Ok(())
 }
 
-fn specification(value: &Value, object: &mut Object) -> Result<(), CodecError> {
+fn specification(value: &Value, object: &mut Object) -> Result<(), FeatureError> {
     if value.is_null() {
         enumeration(object, "ThreadType", 0);
         return Ok(());
     }
     let standard = value["standard"]
         .as_str()
-        .ok_or_else(|| CodecError::UnsupportedContent("thread standard absent".into()))?;
+        .ok_or_else(|| FeatureError::Unsupported("thread standard absent".into()))?;
     let standards = [
         "None",
         "ISO metric",
@@ -152,7 +152,7 @@ fn specification(value: &Value, object: &mut Object) -> Result<(), CodecError> {
         .iter()
         .position(|item| *item == standard)
         .ok_or_else(|| {
-            CodecError::UnsupportedContent(format!(
+            FeatureError::Unsupported(format!(
                 "thread standard `{standard}` has no FreeCAD enumeration"
             ))
         })?;

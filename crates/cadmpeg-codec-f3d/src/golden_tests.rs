@@ -910,11 +910,17 @@ fn an_edit_survives_the_patch_writer() {
     let mut skipped: Vec<&str> = Vec::new();
     for (name, _) in fixtures() {
         let input = read_fixture(name).expect("committed fixture");
+        let decoded = decode_result(&input).expect("fixture decodes");
+        let expected_path = if decoded.source_fidelity().unrepresented().is_empty() {
+            ExpectedWritePath::Patched
+        } else {
+            ExpectedWritePath::Synthesized
+        };
         let ran = mutation_roundtrip(
             &F3dCodec,
             name,
             &input,
-            ExpectedWritePath::Patched,
+            expected_path,
             |ir| {
                 let Some(point) = ir.model.points.first_mut() else {
                     return false;
@@ -942,13 +948,28 @@ fn an_edit_survives_the_patch_writer() {
                         "fixture `{name}`: the patch writer produced a container that round-trips, but the \
                          edited coordinate came back as {returned} rather than {moved}; the edit was dropped"
                     );
-                    if let Err(mismatch) = snapshots_agree(
-                        &neutral_document(edited),
-                        &neutral_document(round_trip.ir()),
-                    ) {
-                        panic!(
-                            "fixture `{name}`: the patched container decodes to a different document: {mismatch}"
+                    if expected_path == ExpectedWritePath::Patched {
+                        if let Err(mismatch) = snapshots_agree(
+                            &neutral_document(edited),
+                            &neutral_document(round_trip.ir()),
+                        ) {
+                            panic!(
+                                "fixture `{name}`: the patched container decodes to a different document: {mismatch}"
+                            );
+                        }
+                    } else {
+                        let plan = F3dCodec.plan(
+                            EncodeInput::new(edited, Some(decoded.source_fidelity())),
+                            TargetRequest::Inherit,
+                        ).expect("synthesis plan");
+                        assert!(matches!(plan.report().synthesis_cause(),
+                            Some(cadmpeg_ir::codec::write::SynthesisCause::SourceUnrepresented { .. })));
+                        let mut complete = plan.report().clone();
+                        complete.coverage = cadmpeg_ir::codec::write::ArenaCoverage::Complete;
+                        cadmpeg_test_support::contract::assert_written_arenas_agree(
+                            &complete, edited, round_trip.ir(),
                         );
+                        assert_eq!(edited.tolerances, round_trip.ir().tolerances);
                     }
                     if measures_decide(name, edited).expect("the fixture is measured") {
                         measures_agree(name, edited, round_trip.ir())

@@ -11,6 +11,21 @@ use cadmpeg_ir::document::CadIr;
 use crate::loss::F3dLossCode;
 use crate::{ids, F3dCodec, PreservedWritePath};
 
+pub(crate) const REDUCED_FIELDS: &[cadmpeg_ir::codec::write::ReducedField] = &[
+    cadmpeg_ir::codec::write::ReducedField {
+        path: "model.bodies[].color.a",
+        storage: cadmpeg_ir::codec::write::ReducedStorage::Normalized {
+            loss: "f3d/writer.appearance-properties-omitted",
+        },
+    },
+    cadmpeg_ir::codec::write::ReducedField {
+        path: "model.faces[].color.a",
+        storage: cadmpeg_ir::codec::write::ReducedStorage::Normalized {
+            loss: "f3d/writer.appearance-properties-omitted",
+        },
+    },
+];
+
 /// Preserve an eligible source dialect, or synthesize the selected catalog target.
 pub(crate) fn plan(
     input: EncodeInput<'_>,

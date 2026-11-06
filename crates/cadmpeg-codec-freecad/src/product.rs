@@ -8,12 +8,12 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::num::{NonZeroU64, NonZeroUsize};
 
 use crate::brep::ShapePayloadRecord;
-use crate::layout::link_array_side_entry_header as link_array;
 use crate::native::{
     malformed, parse_bool, sole_named_property, ContainerNode,
     CopyOnChangePolicy as NativeCopyOnChangePolicy, LinkArrayCardinality, LinkOccurrence,
     ObjectRecord, ProductNode, ProductNodeRecord, PropertyRecord,
 };
+use crate::numeric_list::{list_layout, read_real};
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::ids::{OccurrenceId, ProductDefinitionId};
@@ -711,7 +711,9 @@ pub(crate) fn transfer_neutral(
         // definition: an occurrence needs an explicit Placement, membership
         // in a parent Group, a nonempty owned Group, owned bodies, or a
         // joint reference (#238 §5.5).
-        let owned = record.map(|record| record.members()).unwrap_or_default();
+        let owned = record
+            .map(crate::native::ProductNodeRecord::members)
+            .unwrap_or_default();
         let has_bodies = bodies_by_owner
             .get(object)
             .is_some_and(|bodies| !bodies.is_empty());
@@ -1010,6 +1012,9 @@ fn parse_placement_list(
     let Some(property) = sole_named_property("product", properties, "PlacementList")? else {
         return Ok(Vec::new());
     };
+    if property.body.is_none() {
+        return Ok(Vec::new());
+    }
     let Some(view) = side_bytes(
         property,
         "App::PropertyPlacementList",
@@ -1038,6 +1043,9 @@ fn parse_vector_list(
     let Some(property) = sole_named_property("product", properties, "ScaleList")? else {
         return Ok(Vec::new());
     };
+    if property.body.is_none() {
+        return Ok(Vec::new());
+    }
     let Some(view) = side_bytes(property, "App::PropertyVectorList", "VectorList", entries)? else {
         return Ok(Vec::new());
     };
@@ -1183,83 +1191,6 @@ fn selected_placement<'a>(
         (Some(link_placement), None) => Ok(Some(link_placement)),
         (None, Some(placement)) => Ok(Some(placement)),
         (None, None) => Ok(None),
-    }
-}
-
-#[derive(Clone, Copy)]
-enum RealWidth {
-    Single,
-    Double,
-}
-
-impl RealWidth {
-    fn bytes(self) -> usize {
-        match self {
-            Self::Single => 4,
-            Self::Double => 8,
-        }
-    }
-}
-
-#[derive(Clone, Copy)]
-struct RealPosition<'a> {
-    view: View<'a>,
-    offset: usize,
-    width: RealWidth,
-}
-
-fn list_layout<'a, const N: usize>(
-    view: View<'a>,
-    name: &str,
-) -> Result<impl ExactSizeIterator<Item = [RealPosition<'a>; N]>, CodecError> {
-    let len = view.end() - view.start();
-    if len < link_array::LEN {
-        return Err(CodecError::malformed(format_args!("{name} is truncated")));
-    }
-    let mut head = view;
-    head.seek(view.start())
-        .ok_or_else(|| CodecError::malformed(format_args!("{name} header is out of bounds")))?;
-    let count = usize::try_from(
-        head.req_u32_le()
-            .map_err(|error| CodecError::malformed(format_args!("link-array count: {error:?}")))?,
-    )
-    .map_err(CodecError::malformed)?;
-    let encoded_len = |width: RealWidth| {
-        count
-            .checked_mul(N)
-            .and_then(|count| count.checked_mul(width.bytes()))
-            .and_then(|bytes| link_array::LEN.checked_add(bytes))
-    };
-    let width = if encoded_len(RealWidth::Double) == Some(len) {
-        RealWidth::Double
-    } else if encoded_len(RealWidth::Single) == Some(len) {
-        RealWidth::Single
-    } else {
-        return Err(CodecError::malformed(format_args!(
-            "{name} count {count} does not match {len} bytes"
-        )));
-    };
-    Ok((0..count).map(move |index| {
-        std::array::from_fn(|component| RealPosition {
-            view,
-            offset: view.start() + link_array::LEN + (index * N + component) * width.bytes(),
-            width,
-        })
-    }))
-}
-
-fn read_real(position: RealPosition<'_>) -> Result<f64, CodecError> {
-    let mut cursor = position.view;
-    cursor
-        .seek(position.offset)
-        .ok_or_else(|| CodecError::malformed("real position is out of bounds"))?;
-    match position.width {
-        RealWidth::Double => cursor.req_f64_le().map_err(|error| {
-            CodecError::malformed(format_args!("link-array component: {error:?}"))
-        }),
-        RealWidth::Single => cursor.req_f32_le().map(f64::from).map_err(|error| {
-            CodecError::malformed(format_args!("link-array component: {error:?}"))
-        }),
     }
 }
 

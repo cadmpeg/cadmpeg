@@ -24,6 +24,13 @@ impl<'source> Source<'source> {
         Ok(Self { view })
     }
 
+    pub(super) fn extent(
+        &self,
+        range: std::ops::Range<usize>,
+    ) -> Result<View<'source>, CodecError> {
+        crate::fidelity::relative_xml_extent(self.view, range)
+    }
+
     pub(crate) fn required_attribute(
         &self,
         node: roxmltree::Node<'_, '_>,

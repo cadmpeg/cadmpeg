@@ -1022,10 +1022,12 @@ impl Builder<'_, '_, '_, '_> {
         let Some((path, layer)) = &surface.module else {
             return Ok(None);
         };
-        Ok(Some(match self.layers.module_identity(self.ctx, *layer, path)? {
-            Resource::Located(id) => id,
-            Resource::Embedded { .. } | Resource::Unlocated => path.clone(),
-        }))
+        Ok(Some(
+            match self.layers.module_identity(self.ctx, *layer, path)? {
+                Resource::Located(id) => id,
+                Resource::Embedded { .. } | Resource::Unlocated => path.clone(),
+            },
+        ))
     }
 
     /// The texture references of `surface`, with an asset for each image
@@ -1036,9 +1038,7 @@ impl Builder<'_, '_, '_, '_> {
         let mut out = Vec::new();
         for slot in &surface.textures {
             let texture = &slot.texture;
-            let resource = self
-                .layers
-                .image(self.ctx, texture.layer, &texture.file)?;
+            let resource = self.layers.image(self.ctx, texture.layer, &texture.file)?;
             let (identity, content) = match resource {
                 Resource::Embedded { id, bytes } => (
                     id,

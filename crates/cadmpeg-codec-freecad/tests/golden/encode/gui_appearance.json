@@ -1314,6 +1314,9 @@
                 "fcstd:native:object#CorpusMetadata": "written"
               }
             },
+            "orphan_object_data": {
+              "disposition": "dropped"
+            },
             "polygons3d": {
               "disposition": "dropped"
             },

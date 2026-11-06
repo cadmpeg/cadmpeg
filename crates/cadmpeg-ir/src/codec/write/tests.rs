@@ -9,6 +9,7 @@ use super::{
     Encoder, EncoderBackend, ExportBody, PatchConsumption, WritePath,
 };
 use crate::codec::write::test_support::CATALOG_WRITE_TARGETS;
+use crate::codec::write::EncodeError;
 use crate::codec::FormatId;
 use crate::examples::{directed_subd_sum, unit_cube};
 use crate::report::check::{Check, Finding, ValidationReport};
@@ -19,7 +20,6 @@ use crate::source_fidelity::SourceFidelity;
 use crate::validate::validate_neutral;
 use crate::CadIr;
 use cadmpeg_core::decode::DecodeDepth;
-use crate::codec::write::EncodeError;
 
 #[test]
 fn cadir_encoder_streams_the_canonical_json_shape() {

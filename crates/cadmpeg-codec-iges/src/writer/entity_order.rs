@@ -32,7 +32,6 @@ pub(super) fn source_order(
         };
         if record.field("entity_type").and_then(|value| value.as_u64())
             != Some(u64::from(entity.type_code))
-            || record.field("form").and_then(|value| value.as_i64()) != Some(entity.form)
         {
             continue;
         }

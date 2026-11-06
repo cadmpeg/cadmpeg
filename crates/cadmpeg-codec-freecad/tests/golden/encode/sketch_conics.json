@@ -147,6 +147,9 @@
             "objects": {
               "disposition": "written"
             },
+            "orphan_object_data": {
+              "disposition": "written"
+            },
             "polygons3d": {
               "disposition": "written"
             },
