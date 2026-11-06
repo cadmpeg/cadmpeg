@@ -24,6 +24,7 @@ fn loft_input(
             draft.payload = DesignScopePayload::Loft(Some(DesignLoftConstruction {
                 operation: DesignExtrudeOperation::NewBody,
                 operation_offset: 128,
+                reference_target: None,
             }));
         })
         .unwrap();
@@ -259,6 +260,7 @@ fn loft_point_sources() -> (
             id: format!("{LOFT_STREAM}:sketch-point#300"),
             record_index: 300,
             owner_reference: Some(265),
+            geometry_group: None,
             class_tag: "256".to_owned().try_into().unwrap(),
             byte_offset: 300,
             coordinate_offset: 141,

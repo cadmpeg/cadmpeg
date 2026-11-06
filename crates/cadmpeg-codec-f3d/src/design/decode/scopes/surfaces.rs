@@ -14,6 +14,7 @@ use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::decode::text::fixed_relaxed_guid_text;
 use crate::design::design_feature_family;
 use crate::design::DesignFeatureFamily;
+use crate::ids::native_stream;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::feature::surface_ops::DesignRuledSurfaceCorner;
 use crate::records::feature::surface_ops::DesignRuledSurfaceMethod;
@@ -23,6 +24,8 @@ use crate::records::feature::surface_ops::DesignSurfaceExtendOperation;
 use crate::records::feature::surface_ops::DesignSurfaceOffsetOperation;
 use crate::records::feature::surface_ops::DesignSurfaceOffsetSupport;
 use crate::records::feature::surface_ops::DesignSurfaceStitchOperation;
+use crate::records::recipes::ConstructionRecipe;
+use crate::records::recipes::ConstructionRecipeKind;
 use crate::records::topology::extrude_selection::DesignOperandRole;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
@@ -71,20 +74,12 @@ pub(super) fn exact_surface_offset_operation(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
+    recipes: &[ConstructionRecipe],
     losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
 ) -> Result<Option<DesignSurfaceOffsetOperation>, CodecError> {
-    let Some(operation) = exact_surface_boundary_operation(
-        bytes,
-        records,
-        scope,
-        DesignFeatureFamily::SurfaceOffset,
-        65,
-    )
-    .filter(|operation| operation.mode == 1) else {
-        let Some((operation, ordinals)) = exact_surface_offset_face_groups(bytes, records, scope)?
-        else {
-            return Ok(None);
-        };
+    if let Some((operation, ordinals)) =
+        exact_surface_offset_face_groups(bytes, records, scope, recipes)?
+    {
         if ordinals.iter().any(|ordinal| *ordinal != ordinals[0]) {
             losses.push(
                 crate::loss::F3dLossCode::FeatureSurfaceOffsetGroupOrdinalsAssumed.note(format!(
@@ -99,20 +94,31 @@ pub(super) fn exact_surface_offset_operation(
             );
         }
         return Ok(Some(operation));
+    }
+    let Some(operation) = exact_surface_boundary_operation(
+        bytes,
+        records,
+        scope,
+        DesignFeatureFamily::SurfaceOffset,
+        65,
+    ) else {
+        return Ok(None);
     };
-    Ok(Some(DesignSurfaceOffsetOperation {
-        distance: operation.distance,
-        distance_offset: operation.distance_offset,
-        distance_record_index: operation.distance_record_index,
-        support: DesignSurfaceOffsetSupport::BoundaryCarrier {
-            boundary_record_index: operation.boundary_record_index,
-            boundary_reference_record_index: operation.boundary_reference_record_index,
-            boundary_reference_offset: operation.boundary_reference_offset,
-            edge_record_indices: operation.edge_record_indices,
-            tolerance: operation.tolerance,
-            tolerance_offset: operation.tolerance_offset,
-        },
-    }))
+    Ok(
+        (operation.mode == 1).then_some(DesignSurfaceOffsetOperation {
+            distance: operation.distance,
+            distance_offset: operation.distance_offset,
+            distance_record_index: operation.distance_record_index,
+            support: DesignSurfaceOffsetSupport::BoundaryCarrier {
+                boundary_record_index: operation.boundary_record_index,
+                boundary_reference_record_index: operation.boundary_reference_record_index,
+                boundary_reference_offset: operation.boundary_reference_offset,
+                edge_record_indices: operation.edge_record_indices,
+                tolerance: operation.tolerance,
+                tolerance_offset: operation.tolerance_offset,
+            },
+        }),
+    )
 }
 
 /// The grouped support form and the ordinal of each of its groups.
@@ -120,11 +126,13 @@ fn exact_surface_offset_face_groups(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
+    recipes: &[ConstructionRecipe],
 ) -> Result<Option<(DesignSurfaceOffsetOperation, Vec<std::num::NonZeroU32>)>, CodecError> {
     let parsed = (|| {
         if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::SurfaceOffset) {
             return None;
         }
+        let stream = native_stream(&scope.id)?;
         let distance_record_index = scope.reference_members().values().next()?;
         let support_reference_count = scope.reference_members().len() - 1;
         if support_reference_count == 0 {
@@ -161,7 +169,6 @@ fn exact_surface_offset_face_groups(
             };
             if group.role() != DesignOperandRole::PROFILE
                 || group.members().is_empty()
-                || group.frame.opaque_index.get() == BOUNDARY_CARRIER_ORDINAL
                 || covered_references.contains(&group.record_index)
             {
                 return None;
@@ -176,6 +183,7 @@ fn exact_surface_offset_face_groups(
                         .skip(1)
                         .any(|value| value == member)
                     || covered_references.contains(member)
+                    || !bounded_face_member(records, recipes, stream, *member)
                 {
                     return None;
                 }
@@ -203,6 +211,38 @@ fn exact_surface_offset_face_groups(
         )))
     })();
     parsed.transpose()
+}
+
+fn bounded_face_member(
+    records: &IndexedRecordOffsets,
+    recipes: &[ConstructionRecipe],
+    stream: &str,
+    member: u32,
+) -> bool {
+    let Some(recipe_start) = (0..4).try_fold(0, |position, delta| {
+        records
+            .first_at_or_after(position, member.checked_add(delta)?)
+            .and_then(|offset| offset.checked_add(11))
+    }) else {
+        return false;
+    };
+    let recipe_end = member
+        .checked_add(4)
+        .and_then(|next| records.first_at_or_after(recipe_start, next))
+        .map(u64::try_from);
+    let Ok(recipe_start) = u64::try_from(recipe_start) else {
+        return false;
+    };
+    recipes
+        .iter()
+        .filter(|recipe| {
+            native_stream(&recipe.id) == Some(stream) && recipe.byte_offset >= recipe_start
+        })
+        .min_by_key(|recipe| recipe.byte_offset)
+        .is_some_and(|recipe| {
+            recipe.kind == ConstructionRecipeKind::BoundedFace
+                && recipe_end.is_none_or(|end| end.is_ok_and(|end| recipe.byte_offset < end))
+        })
 }
 
 fn exact_construction_operand_group(

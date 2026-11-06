@@ -1261,6 +1261,7 @@
           }
         ],
         "sketch_curve_links": [],
+        "sketch_geometry_groups": [],
         "sketch_points": [
           {
             "id": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:sketch-point#1006",

@@ -1496,6 +1496,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
             entity_id: crate::records::identity::DesignEntityId::try_from("0_10".to_owned())
                 .expect("valid entity identity"),
             entity_reference_offset: 250,
+            compact_tail_flags: None,
             region_selection: None,
             paired_class_tag: crate::records::references::DesignClassTag::try_from(
                 "260".to_owned(),
