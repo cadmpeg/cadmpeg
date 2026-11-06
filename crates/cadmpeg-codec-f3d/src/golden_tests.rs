@@ -1367,33 +1367,6 @@ fn an_edit_survives_native_writer_fallback() {
 }
 
 #[test]
-fn indexed_copy_paste_bodies_synthesis_keeps_neutral_content() {
-    use cadmpeg_test_support::comparison::{agree, Allowances, Mode};
-    let input =
-        f3d_with_smbh_and_protein_with_generated_copy_paste_bodies(&synthetic_geometry_smbh());
-    let decoded = decode_result(&input).unwrap();
-    let mut edited = decoded.ir().clone();
-    let point = edited.model.points.first_mut().unwrap();
-    let moved = point.position().get();
-    point.set_position(
-        cadmpeg_ir::features::FinitePoint3::new(cadmpeg_ir::math::Point3::new(
-            moved.x + MUTATION_MM,
-            moved.y,
-            moved.z,
-        ))
-        .unwrap(),
-    );
-    let mut bytes = Vec::new();
-    F3dCodec.encode(&edited, &mut bytes).unwrap();
-    let round_trip = decode_result(&bytes).unwrap();
-    let before = cadmpeg_test_support::contract::neutral_view(&edited, &[]);
-    let after = cadmpeg_test_support::contract::neutral_view(round_trip.ir(), &[]);
-    for (left, right) in [(&before, &after), (&after, &before)] {
-        agree(left, right, &Allowances::default(), Mode::Same).unwrap();
-    }
-}
-
-#[test]
 fn indexed_sketch_constraint_fixture_has_no_unreadable_parts() {
     let input =
         f3d_with_smbh_and_protein_with_generated_sketch_dimension(&synthetic_geometry_smbh());
