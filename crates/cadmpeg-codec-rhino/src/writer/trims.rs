@@ -24,6 +24,7 @@ pub(super) fn map_parameter(
         .ok_or_else(|| WriteError::Omit("trim parameter mapping is non-finite".into()))
 }
 
+/// Return whether the accepted trim needs its parameter direction reversed.
 pub(super) fn validate_plane_trim(
     origin: Point3,
     u_axis: Vector3,
@@ -32,21 +33,15 @@ pub(super) fn validate_plane_trim(
     edge: &WritableEdge<'_>,
     sense: Sense,
     explicit: &WritablePcurve<'_>,
-) -> Result<(), WriteError> {
-    // A reversed coedge's explicit trim follows either the traversal
-    // convention Rhino authors (the edge parameter reflected across its
-    // domain, as `singular_seam.3dm` slot-3 shows) or the edge convention
-    // other kernels write (the shared edge parametrization, as FreeCAD
-    // solids show). Both describe the same directed 3D curve, and the
-    // writer keeps the authored carrier either way, so either agreement
-    // admits the trim.
+) -> Result<bool, WriteError> {
     let reflected = sense == Sense::Reversed;
     match check_plane_trim(origin, u_axis, v_axis, tolerance, edge, reflected, explicit) {
-        Ok(()) => Ok(()),
+        Ok(()) => Ok(false),
         Err(WriteError::Omit(first)) if reflected => {
             match check_plane_trim(origin, u_axis, v_axis, tolerance, edge, false, explicit) {
                 Err(WriteError::Omit(_)) => Err(WriteError::Omit(first)),
-                result => result,
+                Ok(()) => Ok(true),
+                Err(error) => Err(error),
             }
         }
         Err(error) => Err(error),
@@ -187,7 +182,7 @@ pub(super) fn samples(
 /// `usage` is the used parameter range the revolution payload spans, so the
 /// domain test runs against the written carrier, not the unbounded analytic
 /// surface. Either parameter convention admits the trim; see
-/// [`validate_plane_trim`].
+/// [`validate_plane_trim`]. Return whether the accepted trim needs reversal.
 pub(super) fn validate_analytic_trim(
     surface: &cadmpeg_ir::geometry::SurfaceGeometry,
     usage: [[f64; 2]; 2],
@@ -195,14 +190,15 @@ pub(super) fn validate_analytic_trim(
     edge: &WritableEdge<'_>,
     sense: Sense,
     explicit: &WritablePcurve<'_>,
-) -> Result<(), WriteError> {
+) -> Result<bool, WriteError> {
     let reflected = sense == Sense::Reversed;
     match check_analytic_trim(surface, usage, face_tolerance, edge, reflected, explicit) {
-        Ok(()) => Ok(()),
+        Ok(()) => Ok(false),
         Err(WriteError::Omit(first)) if reflected => {
             match check_analytic_trim(surface, usage, face_tolerance, edge, false, explicit) {
                 Err(WriteError::Omit(_)) => Err(WriteError::Omit(first)),
-                result => result,
+                Ok(()) => Ok(true),
+                Err(error) => Err(error),
             }
         }
         Err(error) => Err(error),

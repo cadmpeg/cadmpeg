@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! STEP target resolution and export reporting.
 
+use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
 use cadmpeg_ir::codec::write::{
     target::ResolvedWrite, transitional_from_codec, ArenaCoverage, ArenaDisposition,
     ArenaDispositions, Consumption, EncodeError, EncodeInput, ExportBody, NativeDisposition,
@@ -24,7 +25,6 @@ pub(crate) fn plan(
         crate::writer::CAPACITY_FIELDS.is_empty(),
         "STEP declares no capacity rows"
     );
-    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy};
     let arena = DecodeArena::new();
     let policy = DecodePolicy {
         mode: cadmpeg_core::decode::DecodeMode::Salvage,

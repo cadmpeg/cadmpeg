@@ -687,8 +687,6 @@ mod tests {
         // Identity qualification rewrites F3D-form neutral ids. The shared
         // cube fixture carries synthetic ids, so the test re-ids its copy.
         fn f3d_model() -> cadmpeg_ir::document::Model {
-            let model = cadmpeg_ir::examples::unit_cube().unwrap().model;
-            let mut value = serde_json::to_value(&model).unwrap();
             fn remap(value: &mut serde_json::Value) {
                 match value {
                     serde_json::Value::String(text) => {
@@ -708,6 +706,9 @@ mod tests {
                     _ => {}
                 }
             }
+
+            let model = cadmpeg_ir::examples::unit_cube().unwrap().model;
+            let mut value = serde_json::to_value(&model).unwrap();
             remap(&mut value);
             serde_json::from_value(value).unwrap()
         }

@@ -67,7 +67,7 @@ pub(super) fn placement(transform: Transform) -> Result<String, CodecError> {
 }
 
 /// Render a spreadsheet cell's content: a string literal carries its
-/// FreeCAD text quote; every other value renders lossily so an unresolvable
+/// `FreeCAD` text quote; every other value renders lossily so an unresolvable
 /// reference arrives as text rather than refusing the write (#238).
 pub(in crate::writer) fn spreadsheet_expression(
     ir: &CadIr,
@@ -233,7 +233,7 @@ mod tests {
             display: None,
             value,
             driving: true,
-            properties: Default::default(),
+            properties: std::collections::BTreeMap::default(),
             pmi: None,
             native_ref: None,
         }

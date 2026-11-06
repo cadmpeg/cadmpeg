@@ -46,3 +46,23 @@ pub(super) fn card_sequence(sequence: u32) -> Result<u32, cadmpeg_ir::codec::wri
     }
     Ok(sequence)
 }
+
+#[cfg(test)]
+mod tests {
+    use cadmpeg_ir::codec::write::EncodeError;
+
+    #[test]
+    fn parameter_card_directory_pointer_obeys_sequence_capacity() {
+        assert!(super::super::parameter_card(b"116;", 9_999_999, 1).is_ok());
+        let error = super::super::parameter_card(b"116;", 10_000_000, 1)
+            .expect_err("directory sequence exceeds seven columns");
+        assert!(matches!(
+            error,
+            super::super::WriteError::Encode(EncodeError::TargetCapacity {
+                field,
+                limit: 9_999_999,
+                value: 10_000_000,
+            }) if field.field == "card.sequence"
+        ));
+    }
+}
