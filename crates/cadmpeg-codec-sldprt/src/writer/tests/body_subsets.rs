@@ -150,6 +150,11 @@ fn detached_carriers_are_authored_without_a_body() {
     let decoded = crate::SldprtCodec
         .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
         .unwrap();
+    assert!(!decoded
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.code.local_code() == "config.inferred-without-native"));
     assert!(decoded
         .ir()
         .model
