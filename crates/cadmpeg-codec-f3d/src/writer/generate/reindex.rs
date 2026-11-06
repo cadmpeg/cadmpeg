@@ -223,7 +223,7 @@ fn encode_record(out: &mut Vec<u8>, record: &Record, mapping: &[usize]) -> Resul
                 out.extend_from_slice(&value.to_le_bytes());
             }
             Token::Double(value) => native_f64(out, *value),
-            Token::Str(value) => native_length_prefixed_string(out, value)?,
+            Token::Str(value) => native_length_prefixed_string(out, value),
             Token::True => out.push(0x0a),
             Token::False => out.push(0x0b),
             Token::Ref(value) => {
