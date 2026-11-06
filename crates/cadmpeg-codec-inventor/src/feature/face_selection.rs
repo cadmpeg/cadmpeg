@@ -33,7 +33,7 @@ pub(super) const SELECTOR_TYPE: [u8; 16] = [
 ];
 
 /// Type of the surface-body wrapper that a selector names.
-const BODY_TYPE: [u8; 16] = crate::pmdc::inventor_id(0x9087_4d47);
+pub(super) const BODY_TYPE: [u8; 16] = crate::pmdc::inventor_id(0x9087_4d47);
 
 /// Type of the context record that a selector names.
 const CONTEXT_TYPE: [u8; 16] = [
@@ -48,6 +48,8 @@ pub(super) struct FaceSelector {
     pub(super) source: u32,
     generators: Vec<u32>,
     key: u32,
+    /// The `topology` and `naming_form` words, which are equal.
+    body_source: u32,
     body: PmDcReference,
     item: PmDcReference,
     context: PmDcReference,
@@ -77,10 +79,10 @@ pub(super) fn parse(
         return Ok(None);
     }
     let body = cursor.reference("face selector body")?;
-    if cursor.u32("face selector topology")? != 2
-        || (super::edge_selection::selector_has_qualifier(version)
-            && cursor.u32("face selector qualifier")? != 0)
-        || cursor.u32("face selector naming form")? != 2
+    let body_source = cursor.u32("face selector topology")?;
+    if (super::edge_selection::selector_has_qualifier(version)
+        && cursor.u32("face selector qualifier")? != 0)
+        || cursor.u32("face selector naming form")? != body_source
     {
         return Ok(None);
     }
@@ -123,6 +125,7 @@ pub(super) fn parse(
         source: header.source_index,
         generators: names,
         key,
+        body_source,
         body,
         item,
         context,
@@ -130,12 +133,18 @@ pub(super) fn parse(
 }
 
 /// Whether the selector names a surface body, a face item, and a context
-/// through qualified references to records of those types.
-pub(super) fn links(selector: &FaceSelector, type_at: impl Fn(u32) -> Option<[u8; 16]>) -> bool {
+/// through qualified references to records of those types, and its
+/// `topology` word equals the `source_index` of the body record.
+pub(super) fn links(
+    selector: &FaceSelector,
+    type_at: impl Fn(u32) -> Option<[u8; 16]>,
+    body_source_at: impl Fn(u32) -> Option<u32>,
+) -> bool {
     let target = |reference: PmDcReference, expected| {
         reference.qualified() && reference.record_ordinal().and_then(&type_at) == Some(expected)
     };
     target(selector.body, BODY_TYPE)
+        && selector.body.record_ordinal().and_then(&body_source_at) == Some(selector.body_source)
         && target(selector.item, super::FACE_ITEM_TYPE)
         && target(selector.context, CONTEXT_TYPE)
 }
@@ -163,14 +172,14 @@ pub(super) fn selected(
             .iter()
             .filter_map(|record| Some((i64::try_from(record.index).ok()?, record))),
     );
-    let mut matches = HashMap::<(u32, u32), Vec<(i64, i64)>>::new();
+    let mut matches = HashMap::<(u32, u32), HashSet<(i64, i64)>>::new();
     let mut generated = HashMap::<i64, HashSet<u32>>::new();
     for record in records {
         if let Some((source, key, owner, qualifier)) = matched_qualified(record, schema) {
             matches
                 .entry((source, key))
                 .or_default()
-                .push((owner, qualifier));
+                .insert((owner, qualifier));
         }
         if let Some((owner, sources)) = source_names(record, &values(record), schema) {
             generated.entry(owner).or_default().extend(sources);
@@ -182,9 +191,11 @@ pub(super) fn selected(
         let Some(owners) = matches.get(&(selector.source, selector.key)) else {
             continue;
         };
-        let [(owner, FACE_QUALIFIER)] = owners.as_slice() else {
+        let mut distinct = owners.iter();
+        let (Some(&(owner, FACE_QUALIFIER)), None) = (distinct.next(), distinct.next()) else {
             continue;
         };
+        let owner = &owner;
         let Some(Some(revision)) = by_index.get(owner) else {
             continue;
         };
@@ -229,7 +240,8 @@ fn face_id(token: &str, source: u32) -> Result<HistoricalFaceId, CodecError> {
 }
 
 /// The `(face item ordinal, selector source index)` operands of a face
-/// collection in source order, or `None` for another form.
+/// collection in source order, or `None` for another form or a collection
+/// that selects no face.
 pub(crate) fn selection_sources<'a>(
     collection: &PmDcFeatureProperty,
     property: impl Fn(PmDcReference) -> Option<&'a PmDcFeatureProperty>,
@@ -253,9 +265,7 @@ pub(crate) fn selection_sources<'a>(
         else {
             return None;
         };
-        if index_references.values().is_empty() {
-            return None;
-        }
+        // An item with an empty index list selects no face.
         for source in index_references.values() {
             if sources.iter().any(|(_, previous)| previous == source) {
                 return None;
@@ -263,8 +273,11 @@ pub(crate) fn selection_sources<'a>(
             sources.push((item.identity.record_ordinal, *source));
         }
     }
-    Some(sources)
+    (!sources.is_empty()).then_some(sources)
 }
+
+/// Source tag of a face-motion feature.
+const SOURCE_TAG: &str = "move_face";
 
 fn selections_mut(definition: &mut FeatureDefinition) -> Option<&mut FaceSelection> {
     match definition {
@@ -274,6 +287,9 @@ fn selections_mut(definition: &mut FeatureDefinition) -> Option<&mut FaceSelecti
 }
 
 fn selection(feature: &Feature) -> Option<&FaceSelection> {
+    if feature.source_tag.as_deref() != Some(SOURCE_TAG) {
+        return None;
+    }
     match feature.evaluation.definition() {
         FeatureDefinition::Operation(FeatureOperation::MoveFace { faces, .. }) => Some(faces),
         _ => None,

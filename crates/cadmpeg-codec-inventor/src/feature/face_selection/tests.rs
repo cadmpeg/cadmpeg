@@ -129,6 +129,32 @@ fn a_face_selector_stores_generators_a_key_entities_and_its_face_item() {
 }
 
 #[test]
+fn the_topology_words_equal_the_source_index_of_the_selected_body() {
+    for version in [19, 23, 29] {
+        let mut fields = Fields::new();
+        fields.topology = 74;
+        fields.naming = 74;
+        let selector = parse_bytes(&fields.bytes(version), version)
+            .expect("framed")
+            .expect("face selector");
+        let target = |ordinal| (ordinal == 9).then_some(BODY_TYPE);
+        let context = |ordinal| match ordinal {
+            9 => Some(BODY_TYPE),
+            7 => Some(crate::feature::FACE_ITEM_TYPE),
+            3 => Some(CONTEXT_TYPE),
+            _ => target(ordinal),
+        };
+        assert!(links(&selector, context, |ordinal| (ordinal == 9).then_some(74)));
+        assert!(!links(&selector, context, |ordinal| (ordinal == 9).then_some(2)));
+        // Unequal words never parse.
+        fields.naming = 2;
+        assert!(parse_bytes(&fields.bytes(version), version)
+            .expect("framed refusal")
+            .is_none());
+    }
+}
+
+#[test]
 fn face_selector_forms_that_differ_in_any_control_stay_unparsed() {
     type Edit = fn(&mut Fields);
     let edits: [(&str, Edit); 14] = [
@@ -167,7 +193,7 @@ fn face_selector_forms_that_differ_in_any_control_stay_unparsed() {
 #[test]
 fn face_selector_references_require_qualified_typed_targets() {
     let bytes = Fields::new().bytes(29);
-    for change in 0..7 {
+    for change in 0..8 {
         let mut selector = parse_bytes(&bytes, 29)
             .expect("framed")
             .expect("face selector");
@@ -183,7 +209,12 @@ fn face_selector_references_require_qualified_typed_targets() {
             3 if change != 6 => Some(CONTEXT_TYPE),
             _ => None,
         };
-        assert_eq!(links(&selector, target), change == 0, "change {change}");
+        let body_source = |ordinal| (ordinal == 9).then_some(if change == 7 { 3 } else { 2 });
+        assert_eq!(
+            links(&selector, target, body_source),
+            change == 0,
+            "change {change}"
+        );
     }
 }
 
@@ -280,6 +311,10 @@ fn a_matched_face_owner_with_the_face_qualifier_and_a_shared_generator_is_select
         let mut second = archive(schema);
         second[2] = generated(11, 1, schema, 37);
         assert!(run(&second, schema).is_some());
+        // Attribute copies of one face revision keep one owner.
+        let mut copies = archive(schema);
+        copies.push(matched(12, 1, schema, 9, 7, 1));
+        assert_eq!(run(&copies, schema).expect("selected").owner, 1);
         // A history snapshot of a face is a face revision.
         let mut snapshot = archive(schema);
         snapshot[0] = record(
@@ -313,6 +348,10 @@ fn a_face_join_refuses_other_owners_qualifiers_keys_names_and_schemas() {
         let mut disjoint = base.clone();
         disjoint[2] = generated(11, 1, schema, 99);
         cases.push(("disjoint generated name", disjoint));
+        // The same owner with two qualifiers is not one face match.
+        let mut mixed = base.clone();
+        mixed.push(matched(12, 1, schema, 9, 7, 0));
+        cases.push(("two qualifiers", mixed));
         let mut second = base.clone();
         second.insert(1, face(2));
         second.push(matched(12, 2, schema, 9, 7, 1));
@@ -401,6 +440,7 @@ fn fixture(
     ];
     let mut feature =
         crate::feature::native_feature(ctx, &source.identity, None, source.id()).expect("feature");
+    feature.source_tag = Some("move_face".into());
     feature.evaluation = FeatureEvaluation::from_definition(FeatureDefinition::Operation(
         FeatureOperation::MoveFace {
             faces: FaceSelection::Native(properties[0].id()),
@@ -537,9 +577,9 @@ fn faces_that_join_nothing_or_collide_stay_native_with_a_loss() {
                     face.item = 99;
                 }
             }
-            // A face item that lists no selector.
+            // Face items that list no selector.
             _ => {
-                let (other, _) = fixture(&ctx, [&[], &[43]]);
+                let (other, _) = fixture(&ctx, [&[], &[]]);
                 inventory.properties = other.properties;
             }
         }
@@ -619,5 +659,45 @@ fn a_stored_face_selection_must_re_derive_from_its_collection_and_state() {
         }
         // A duplicated row is rejected; a missing or edited one fails.
         assert!(!check(&inventory, &feature, &states), "change {change}");
+    }
+}
+
+#[test]
+fn an_empty_face_item_selects_no_face_and_an_all_empty_collection_stays_native() {
+    let ctx = context();
+    // An empty item beside a joined item leaves the joined face as the selection.
+    let (inventory, mut feature) = fixture(&ctx, [&[41], &[]]);
+    let states = project(&ctx, std::slice::from_mut(&mut feature), &inventory).expect("project");
+    assert_eq!(states.len(), 1);
+    let FaceSelection::Historical {
+        faces: selected, ..
+    } = faces(&feature)
+    else {
+        panic!("historical faces")
+    };
+    assert_eq!(selected.as_slice().len(), 1);
+    assert!(check(&inventory, &feature, &states));
+    // A collection of empty items selects no face.
+    let (inventory, mut feature) = fixture(&ctx, [&[], &[]]);
+    assert!(
+        project(&ctx, std::slice::from_mut(&mut feature), &inventory)
+            .expect("project")
+            .is_empty()
+    );
+    assert!(matches!(faces(&feature), FaceSelection::Native(_)));
+}
+
+#[test]
+fn only_face_motion_features_take_the_face_join() {
+    let ctx = context();
+    for tag in [None, Some("thicken")] {
+        let (inventory, mut feature) = fixture(&ctx, [&[41], &[43]]);
+        feature.source_tag = tag.map(str::to_owned);
+        assert!(
+            project(&ctx, std::slice::from_mut(&mut feature), &inventory)
+                .expect("project")
+                .is_empty()
+        );
+        assert!(native_losses(std::slice::from_ref(&feature)).is_empty());
     }
 }
