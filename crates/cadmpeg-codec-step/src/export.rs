@@ -1602,7 +1602,12 @@ impl<'a> Builder<'a> {
             });
         self.emit_unclaimed_body_representation(context, root_representation);
 
-        for (occurrence, &occurrence_name) in occurrences.iter().zip(&occurrence_names) {
+        let mut emission_order = occurrences
+            .iter()
+            .zip(&occurrence_names)
+            .collect::<Vec<_>>();
+        emission_order.sort_by_key(|(occurrence, _)| occurrence.ordinal);
+        for (occurrence, &occurrence_name) in emission_order {
             let parent = match (&occurrence.parent, assembly_root) {
                 (OccurrenceParent::Occurrence { occurrence: parent }, _) => {
                     let Some(parent_occurrence) = graph.occurrence(parent) else {
