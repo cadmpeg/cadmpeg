@@ -2,7 +2,7 @@
   "ir": {
     "ir_version": "10",
     "scope": {
-      "model": false,
+      "model": true,
       "design": true
     },
     "source": {
@@ -155,6 +155,7 @@
         "face_native_keys": [],
         "face_sidedness": [],
         "lost_edge_references": [],
+        "mesh_containers": [],
         "mesh_surface_sentinels": [],
         "persistent_design_links": [],
         "persistent_references": [],
@@ -208,7 +209,7 @@
     },
     "transfer": {
       "scope": {
-        "model": false,
+        "model": true,
         "design": true
       },
       "geometry_transferred": false
@@ -245,17 +246,6 @@
         },
         "severity": "warning",
         "message": "Materials/appearances (.protein assets, ACT/design assignments) were not transferred."
-      },
-      {
-        "code": {
-          "scope": "namespaced",
-          "namespace": "decode",
-          "code": "depth.not-delivered",
-          "kind": "geometry_not_transferred",
-          "strict_floor": "warning"
-        },
-        "severity": "error",
-        "message": "requested full depth but the f3d decoder did not deliver classes: model"
       }
     ],
     "notes": [

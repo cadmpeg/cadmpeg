@@ -321,7 +321,13 @@ pub(super) fn encode_design_bulkstream(
             || native
                 .sketch_relations
                 .iter()
-                .any(|record| record.record_index == header.record_index);
+                .any(|record| record.record_index == header.record_index)
+            || native.design_entity_headers.iter().any(|record| {
+                record.entity_id.suffix() == u64::from(header.record_index)
+            })
+            || primary_records
+                .iter()
+                .any(|record| record.entity_id == u64::from(header.record_index));
         if typed_record {
             continue;
         }

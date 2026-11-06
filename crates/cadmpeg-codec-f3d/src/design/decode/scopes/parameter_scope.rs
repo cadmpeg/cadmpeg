@@ -122,7 +122,9 @@ pub(crate) fn decode_parameter_scopes(
             continue;
         };
         let frames = crate::design::decode::meta::design_primary_frames(bytes, &meta)?;
-        let records = crate::design::decode::meta::primary_frame_extents(&frames);
+        let records = crate::design::decode::meta::primary_frame_extents_with_unindexed_pairs(
+            &frames, bytes, &meta,
+        );
         let stream_types = crate::design::decode::meta::stream_types_by_entity(types, &entry.name);
         let class_types =
             crate::design::decode::meta::stream_types_by_class_tag(types, &entry.name);
