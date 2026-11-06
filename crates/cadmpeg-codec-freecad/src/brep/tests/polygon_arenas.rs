@@ -59,9 +59,8 @@ fn missing_record_id_fails_table_resolution() {
         facts,
         version: TextTopologyVersion::V3,
     };
-    let error = match Tables::from_shape(&payload, "payload", &[], &[]) {
-        Ok(_) => panic!("absent record resolves"),
-        Err(error) => error,
+    let Err(error) = Tables::from_shape(&payload, "payload", &[], &[]) else {
+        panic!("absent record resolves")
     };
     assert!(
         error.to_string().contains("absent polygon record"),

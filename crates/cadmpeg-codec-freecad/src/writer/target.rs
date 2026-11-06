@@ -17,7 +17,7 @@ use cadmpeg_ir::document::CadIr;
 
 pub(super) mod projection;
 
-use super::write_seekable;
+use super::{write_seekable, PatchError};
 use crate::native::DocumentFacts;
 
 /// What resolving a [`cadmpeg_ir::codec::write::target::TargetRequest`] against the source decided.
@@ -126,9 +126,13 @@ pub(crate) fn plan(
                 },
             );
             let patch = match matches {
-                Ok(true) => {
-                    Some(allocation_context.run_part(|| finish(&allocation_context, &resolution))?)
-                }
+                Ok(true) => Some(allocation_context.run_part(|| {
+                    match finish(&allocation_context, &resolution) {
+                        Ok(body) => Ok(Ok(body)),
+                        Err(PatchError::Declined(reason)) => Ok(Err(reason)),
+                        Err(PatchError::Codec(error)) => Err(error),
+                    }
+                })?),
                 Ok(false) => {
                     reason =
                         Some("the current document no longer matches its retained image".into());
@@ -146,13 +150,13 @@ pub(crate) fn plan(
                 Err(error) => return Err(error),
             };
             match patch {
-                Some(Ok(body)) => return Ok(body),
+                Some(Ok(Ok(body))) => return Ok(body),
+                Some(Ok(Err(declined))) => reason = Some(declined),
                 Some(Err(
-                    error @ (CodecError::UnsupportedContent(_)
-                    | CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit {
+                    error @ CodecError::ResourceLimit(cadmpeg_core::decode::ResourceLimit {
                         scope: cadmpeg_core::decode::LimitScope::Part,
                         ..
-                    })),
+                    }),
                 )) => reason = Some(error.to_string()),
                 Some(Err(error)) => return Err(error),
                 None => {}
@@ -187,7 +191,7 @@ pub(crate) fn plan(
 
 /// Write the resolved retained layout using source images from fidelity.
 /// The shared source comparison selects layout only.
-fn finish(ctx: &DecodeContext<'_>, resolution: &Resolution<'_>) -> Result<ExportBody, CodecError> {
+fn finish(ctx: &DecodeContext<'_>, resolution: &Resolution<'_>) -> Result<ExportBody, PatchError> {
     let mut output = std::io::Cursor::new(Vec::new());
     let outcome = write_seekable(&mut output, resolution, ctx)?;
     let bytes = output.into_inner();

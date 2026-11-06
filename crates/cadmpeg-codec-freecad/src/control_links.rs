@@ -152,7 +152,6 @@ fn definition_sites(value: &serde_json::Value, diameter: bool, sites: &mut Sites
                     sites.feature_plain.insert(id.to_owned());
                 }
             }
-            return;
         }
         serde_json::Value::Object(fields) => {
             let diameter = diameter
@@ -177,7 +176,7 @@ fn definition_sites(value: &serde_json::Value, diameter: bool, sites: &mut Sites
 ///
 /// #209 D31: candidates come from the current `ExpressionEngine` rows
 /// alone, never from stored control-link rows, so the bridge applies to every
-/// FreeCAD file. The target, quantity, cache, and no-chaining checks stay.
+/// `FreeCAD` file. The target, quantity, cache, and no-chaining checks stay.
 pub(crate) fn apply(
     ir: &mut CadIr,
     properties: &[PropertyRecord],

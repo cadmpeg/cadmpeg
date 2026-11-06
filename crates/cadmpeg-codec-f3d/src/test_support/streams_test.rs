@@ -18,7 +18,7 @@ pub(crate) fn design_metastream(types: &[(&str, &str, u32, &str, &[u64])]) -> Ve
 
 /// Build one Design `MetaStream` segment holding `types`, each entry a
 /// `(type GUID, base type GUID, version, module, entity ids)` tuple, and the
-/// ordered primary `(entity id, `BulkStream` offset)` record index. An empty base
+/// ordered primary (entity id, `BulkStream` offset) record index. An empty base
 /// GUID marks a root type. The segment carries the modern header shape and
 /// closes on its own end.
 pub(crate) fn design_metastream_with_records(
@@ -88,7 +88,7 @@ pub(super) fn segment_metastream(
     out
 }
 
-/// Write one `(entity id, `BulkStream` offset)` record index.
+/// Write one (entity id, `BulkStream` offset) record index.
 fn write_record_index(out: &mut Vec<u8>, records: &[(u64, u64)]) {
     out.extend_from_slice(
         &(u32::try_from(records.len()).expect("fixture value fits u32")).to_le_bytes(),
@@ -100,7 +100,7 @@ fn write_record_index(out: &mut Vec<u8>, records: &[(u64, u64)]) {
 }
 
 /// Build one Design `MetaStream` segment holding `types` and the ordered
-/// primary `(entity id, `BulkStream` offset)` record index plus the ordered
+/// primary (entity id, `BulkStream` offset) record index plus the ordered
 /// secondary nested-header index.
 pub(crate) fn design_metastream_with_records_and_secondary(
     types: &[(&str, &str, u32, &str, &[u64])],

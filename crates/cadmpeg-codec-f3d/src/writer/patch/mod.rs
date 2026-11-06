@@ -428,6 +428,9 @@ fn write_with_context<'a>(
     if let (Some(mut supported), Some(target_native)) =
         (baseline_native.cloned(), target_native.as_ref())
     {
+        if let Some(document_native) = f3d_native(&baseline.ir)? {
+            supported.unknowns = document_native.unknowns;
+        }
         supported
             .body_native_keys
             .clone_from(&target_native.body_native_keys);

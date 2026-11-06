@@ -166,6 +166,7 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
         .value = "Prism-002".into();
     native.body_native_keys[0].asm_body_key = Some(84);
     edited.model.appearances[0].physical_token = Some("PrismMaterial-019".into());
+    edited.model.appearances[0].name = Some("Prism-002".into());
     edited.model.appearances[0].base_color =
         Some(cadmpeg_ir::topology::Color::new(0.8, 0.6, 0.4, 1.0).expect("valid color"));
     edited.model.appearances[0].properties.insert(
@@ -316,6 +317,7 @@ fn generated_f3d_rewrites_design_recipe_and_persistent_reference() {
             .map(|field| field.value.as_str()),
         Some("Prism-002")
     );
+    assert_eq!(round_trip.ir().model.appearances[0].name.as_deref(), Some("Prism-002"));
     assert_eq!(
         round_trip.ir().model.appearances[0]
             .physical_token

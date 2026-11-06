@@ -124,6 +124,7 @@ dependencies = [
  "cadmpeg-container",
  "cadmpeg-core",
  "cadmpeg-ir",
+ "indexmap",
  "roxmltree",
  "serde",
  "serde_json",

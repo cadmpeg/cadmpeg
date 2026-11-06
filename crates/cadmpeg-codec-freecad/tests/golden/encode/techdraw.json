@@ -367,6 +367,9 @@
                 "fcstd:native:object#Top": "written"
               }
             },
+            "orphan_object_data": {
+              "disposition": "dropped"
+            },
             "polygons3d": {
               "disposition": "dropped"
             },
@@ -453,7 +456,7 @@
                 "fcstd:native:property#Length:BoxCorners": "written",
                 "fcstd:native:property#Length:Caption": "regenerated",
                 "fcstd:native:property#Length:EqualTolerance": "regenerated",
-                "fcstd:native:property#Length:ExpressionEngine": "written",
+                "fcstd:native:property#Length:ExpressionEngine": "regenerated",
                 "fcstd:native:property#Length:ExtensionAngle": "regenerated",
                 "fcstd:native:property#Length:FormatSpec": "regenerated",
                 "fcstd:native:property#Length:FormatSpecOverTolerance": "regenerated",
@@ -480,7 +483,7 @@
                 "fcstd:native:property#Length:X": "regenerated",
                 "fcstd:native:property#Length:Y": "regenerated",
                 "fcstd:native:property#Note:Caption": "regenerated",
-                "fcstd:native:property#Note:ExpressionEngine": "written",
+                "fcstd:native:property#Note:ExpressionEngine": "regenerated",
                 "fcstd:native:property#Note:Font": "regenerated",
                 "fcstd:native:property#Note:Label": "regenerated",
                 "fcstd:native:property#Note:Label2": "regenerated",

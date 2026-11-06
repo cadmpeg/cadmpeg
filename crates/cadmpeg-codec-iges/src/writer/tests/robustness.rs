@@ -266,3 +266,134 @@ fn residual_specs(seed: &cadmpeg_ir::CadIr) -> Vec<ResidualSpec> {
     let _ = seed;
     Vec::new()
 }
+
+#[test]
+fn injected_errors_across_fixtures_name_the_record() {
+    let harness = cadmpeg_test_support::golden::Harness::new(
+        env!("CARGO_MANIFEST_DIR"),
+        "igs",
+        "UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-iges golden",
+    );
+    let injections = standard_injections();
+    let mut findings = Vec::new();
+    for (name, bytes) in harness.fixture_inputs() {
+        let options = DecodeOptions {
+            depth: IgesCodec.request(),
+            ..DecodeOptions::default()
+        };
+        let decoded = IgesCodec
+            .decode(&mut Cursor::new(bytes), &options)
+            .expect("fixture decodes");
+        findings.extend(
+            injected_error_findings(
+                decoded.ir(),
+                &IgesCodec,
+                cadmpeg_test_support::cross_closure::cross_request(&IgesCodec),
+                &injections,
+            )
+            .into_iter()
+            .map(|finding| format!("{name}: {finding}")),
+        );
+    }
+    assert!(
+        findings.is_empty(),
+        "injected-error findings:\n{}",
+        findings.join("\n")
+    );
+}
+
+#[test]
+fn point_synthesis_preserves_records_or_names_losses() {
+    use cadmpeg_test_support::writer_closure::{without_fidelity, Redecoded};
+    let harness = cadmpeg_test_support::golden::Harness::new(
+        env!("CARGO_MANIFEST_DIR"),
+        "igs",
+        "UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-iges golden",
+    );
+    let mut findings = Vec::new();
+    let (name, bytes) = harness
+        .fixture_inputs()
+        .into_iter()
+        .find(|(name, _)| name == "point")
+        .expect("point fixture");
+    {
+        let options = DecodeOptions {
+            depth: IgesCodec.request(),
+            ..DecodeOptions::default()
+        };
+        let input = IgesCodec
+            .decode(&mut Cursor::new(bytes), &options)
+            .expect("fixture decodes");
+        let redecode = |written: &[u8]| -> Result<Redecoded, String> {
+            let output = IgesCodec
+                .decode(&mut Cursor::new(written), &options)
+                .map_err(|error| error.to_string())?;
+            Ok(Redecoded {
+                ir: serde_json::to_value(output.ir()).map_err(|error| error.to_string())?,
+                loss_codes: output
+                    .report()
+                    .losses
+                    .iter()
+                    .map(|loss| loss.code.to_string())
+                    .collect(),
+                members: Vec::new(),
+            })
+        };
+        findings.extend(
+            without_fidelity(&input, &IgesCodec, &redecode)
+                .into_iter()
+                .map(|finding| format!("{name}: {finding}")),
+        );
+    }
+    assert!(
+        findings.is_empty(),
+        "fixture synthesis findings:\n{}",
+        findings.join("\n")
+    );
+}
+
+#[test]
+fn sphere_vertex_loop_synthesis_preserves_layer_order() {
+    let harness = cadmpeg_test_support::golden::Harness::new(
+        env!("CARGO_MANIFEST_DIR"),
+        "igs",
+        "UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-iges golden",
+    );
+    let (_, bytes) = harness
+        .fixture_inputs()
+        .into_iter()
+        .find(|(name, _)| name == "colored_explicit_vertex_loop")
+        .expect("vertex loop fixture");
+    let input = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("fixture decodes");
+    let plan = IgesCodec
+        .plan(EncodeInput::new(input.ir(), None), request())
+        .expect("fixture synthesizes");
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("fixture writes");
+    let output = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("fixture re-decodes");
+    let kinds = |ir: &cadmpeg_ir::CadIr| {
+        let layer = ir
+            .model
+            .presentation_layers
+            .iter()
+            .find(|layer| layer.name == "0")
+            .expect("level zero");
+        layer
+            .items
+            .iter()
+            .map(|item| match item {
+                cadmpeg_ir::presentation::PresentationItem::Surface { .. } => "surface",
+                cadmpeg_ir::presentation::PresentationItem::Point { .. } => "point",
+                cadmpeg_ir::presentation::PresentationItem::Face { .. } => "face",
+                cadmpeg_ir::presentation::PresentationItem::Body { .. } => "body",
+                _ => panic!("unexpected level member"),
+            })
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(kinds(input.ir()), ["surface", "point", "face", "body"]);
+    assert_eq!(kinds(output.ir()), kinds(input.ir()));
+}
