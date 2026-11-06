@@ -104,7 +104,7 @@ pub(super) fn emit_dead_style_appearances(
                 find_color(
                     *reference,
                     exchange,
-                    domain.clone(),
+                    domain,
                     ColorSearchState {
                         active: &mut active,
                         cache: &mut color_cache,

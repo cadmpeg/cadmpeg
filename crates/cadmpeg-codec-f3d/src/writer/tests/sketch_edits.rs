@@ -14,6 +14,7 @@
 use std::io::Cursor;
 
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
+use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder, SynthesisCause};
 
 use crate::test_support::native_test::{f3d_native, update_f3d_native};
 use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
@@ -51,7 +52,6 @@ fn generated_f3d_rewrites_native_sketch_point_coordinates() {
             .coordinates(),
         expected
     );
-    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder, SynthesisCause};
     let plan = F3dCodec
         .plan(
             EncodeInput::new(&edited, Some(&fidelity)),
@@ -285,7 +285,6 @@ fn generated_f3d_rewrites_native_sketch_nurbs_values() {
             .geometry,
         expected
     );
-    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder, SynthesisCause};
     let plan = F3dCodec
         .plan(
             EncodeInput::new(&edited, Some(&fidelity)),

@@ -161,7 +161,7 @@ fn an_uncarried_native_edit_declines_the_retained_layout() {
         .expect("native namespace")
         .arena_as::<DocumentFacts>("document")
         .expect("typed document facts")
-        .to_vec();
+        .clone();
     assert_eq!(
         documents.len(),
         1,

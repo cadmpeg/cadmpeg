@@ -236,10 +236,8 @@ pub(super) fn write(
     ir: &CadIr,
     properties: &[PropertyRecord],
     names: &HashMap<String, String>,
-    entry_names: &HashSet<String>,
-    retained: &HashMap<String, Vec<u8>>,
-    objects: &mut [Object],
-    entries: &mut BTreeMap<String, Vec<u8>>,
+    (entry_names, retained): (&HashSet<String>, &HashMap<String, Vec<u8>>),
+    (objects, entries): (&mut [Object], &mut BTreeMap<String, Vec<u8>>),
     losses: &mut Vec<LossNote>,
 ) -> Result<(), CodecError> {
     if !ir.scope.model {
