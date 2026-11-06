@@ -1243,3 +1243,35 @@ fn kernel_tolerance_invalid_values_keep_defaults_and_the_other_field() {
         default
     );
 }
+
+#[test]
+fn truncated_mesh_entry_names_its_dependent_tessellation() {
+    let bytes = crate::test_support::mesh_fixture::archive(
+        &crate::test_support::paramesh::triangle(),
+        Some(&crate::test_support::smbh_geometry_test::synthetic_geometry_smbh()),
+    );
+    let full = F3dCodec
+        .decode(&mut Cursor::new(&bytes), &DecodeOptions::default())
+        .unwrap();
+    let cut = F3dCodec
+        .decode(
+            &mut Cursor::new(&bytes[..bytes.len() * 90 / 100]),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mesh_id = full.ir().model.tessellations[0].id.as_str();
+    assert!(cut.ir().model.tessellations.is_empty());
+    let loss = cut
+        .report()
+        .losses
+        .iter()
+        .find(|loss| {
+            loss.code
+                == cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable
+                    .note("")
+                    .code
+        })
+        .unwrap();
+    assert_eq!(loss.dropped, [mesh_id]);
+    assert!(loss.message.contains(mesh_id));
+}

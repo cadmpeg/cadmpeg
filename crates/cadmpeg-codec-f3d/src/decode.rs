@@ -4776,6 +4776,50 @@ fn decode_result(
     }
     let entry_parts = give_up_unreadable_entries(ctx, scan)?;
     let (_, mut entry_native, entry_fidelity, mut entry_losses) = entry_parts.into_parts();
+    if let Some(native) = &retained.native_layout {
+        for (part, loss) in scan.unreadable_entries.iter().zip(&mut entry_losses) {
+            if crate::container::classify(&part.name) != ContainerRole::Paramesh
+                || !scan.belongs_to_design_asset(&part.name)
+            {
+                continue;
+            }
+            let name = part.name.rsplit('/').next().unwrap_or(&part.name);
+            if scan
+                .entries
+                .iter()
+                .filter(|entry| {
+                    scan.is_design_asset_entry(entry, ContainerRole::Paramesh)
+                        && entry.name.rsplit('/').next() == Some(name)
+                })
+                .count()
+                != 1
+            {
+                continue;
+            }
+            for body in native
+                .design_mesh_features
+                .iter()
+                .flat_map(|feature| feature.bodies())
+            {
+                if body.entry.name() == name && body.container_mesh_uuid.is_none() {
+                    let id = format!(
+                        "{}:mesh-body#{}",
+                        crate::ids::native_scope(&part.name),
+                        body.placement.record().byte_offset()
+                    );
+                    loss.dropped.push(id);
+                }
+            }
+            loss.dropped.sort();
+            loss.dropped.dedup();
+            if !loss.dropped.is_empty() {
+                loss.message = loss.message.replace(
+                    "dropped=[]",
+                    &format!("dropped=[{}]", loss.dropped.join(", ")),
+                );
+            }
+        }
+    }
     if container::design_breps(scan).next().is_none()
         && container::text_brep_names(scan).next().is_none()
         && scan
