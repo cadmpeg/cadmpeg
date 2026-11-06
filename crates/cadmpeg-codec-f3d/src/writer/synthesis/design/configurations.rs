@@ -95,7 +95,11 @@ pub(super) fn regenerate(
                 .and_then(|parameters| parameters.get(name))
                 .filter(|value| match value {
                     Value::String(value) => value == text,
-                    Value::Null | Value::Bool(_) | Value::Number(_) => value.to_string() == text,
+                    Value::Null => text == "null",
+                    Value::Bool(value) => text.parse::<bool>() == Ok(*value),
+                    Value::Number(value) => text
+                        .parse::<serde_json::Number>()
+                        .is_ok_and(|parsed| &parsed == value),
                     Value::Array(_) | Value::Object(_) => false,
                 })
                 .cloned()
