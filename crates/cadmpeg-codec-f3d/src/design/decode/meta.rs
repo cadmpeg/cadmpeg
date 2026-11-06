@@ -566,6 +566,36 @@ pub(in crate::design) fn primary_frame_extents(
         .collect()
 }
 
+pub(in crate::design) fn primary_frame_extents_with_unindexed_pairs(
+    frames: &[DesignPrimaryFrame<'_>],
+    bytes: &[u8],
+    meta: &crate::metastream::MetaStream,
+) -> Vec<crate::metastream::PrimaryRecordFrame> {
+    let mut extents = primary_frame_extents(frames);
+    for frame in &mut extents {
+        if frame.member_end != frame.end {
+            continue;
+        }
+        let Some(first) = frame.start.checked_add(crate::layout::indexed_design_record_header::LEN) else {
+            continue;
+        };
+        let Some(last) = frame.end.checked_sub(crate::layout::indexed_design_record_header::LEN) else {
+            continue;
+        };
+        let mut matches = (first..=last).filter(|&at| {
+            record_header_class_tag(bytes, at, frame.end, frame.entity_id)
+                .is_some_and(|class| dynamic_type(meta, &class).is_some())
+        });
+        let Some(at) = matches.next() else {
+            continue;
+        };
+        if matches.next().is_none() {
+            frame.member_end = at;
+        }
+    }
+    extents
+}
+
 pub(in crate::design) fn cached_borrowed_primary_frames<'a, 's>(
     cache: &'a mut HashMap<&'s str, Vec<crate::metastream::PrimaryRecordFrame>>,
     stream: &'s str,
@@ -702,8 +732,11 @@ pub(crate) fn design_primary_frames<'a>(
     bytes: &[u8],
     meta: &'a crate::metastream::MetaStream,
 ) -> Result<Vec<DesignPrimaryFrame<'a>>, CodecError> {
-    let (frames, _) = partition_primary_frames(bytes, meta)?;
-    Ok(frames)
+    match partition_primary_frames(bytes, meta) {
+        Ok((frames, _)) => Ok(frames),
+        Err(error @ (CodecError::ResourceLimit(_) | CodecError::Io(_))) => Err(error),
+        Err(_) => Ok(Vec::new()),
+    }
 }
 
 /// One primary `BulkStream` frame selected through a registered Design type.
@@ -1145,7 +1178,11 @@ pub(crate) fn decode_feature_timeline_parts(
             .entry_view(bulk_name)
             .ok_or_else(|| CodecError::malformed("Design timeline source View is missing"))?;
         let bytes = source.window();
-        let (frames, _) = partition_primary_frames(bytes, &meta)?;
+        let (frames, _) = match partition_primary_frames(bytes, &meta) {
+            Ok(frames) => frames,
+            Err(error @ (CodecError::ResourceLimit(_) | CodecError::Io(_))) => return Err(error),
+            Err(_) => continue,
+        };
         for frame in frames.into_iter().filter(|frame| {
             frame
                 .design_type

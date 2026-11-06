@@ -300,7 +300,16 @@ pub(in crate::writer) fn link_drawing_properties(
             .get("name_property")
             .and_then(serde_json::Value::as_str)
         {
-            match targets.get(property).map(Vec::as_slice) {
+            let indices = targets.get(property).or_else(|| {
+                let source = namespace
+                    .arenas()
+                    .get("product_properties")?
+                    .iter()
+                    .find(|record| record.id() == property)?
+                    .field("source_entity")?;
+                targets.get(source.as_str()?)
+            });
+            match indices.map(Vec::as_slice) {
                 Some([index]) => property_links.push(*index),
                 _ => {
                     if let Some(body) = name_body(record_fields.get("name")) {
@@ -312,21 +321,124 @@ pub(in crate::writer) fn link_drawing_properties(
         }
         if let Some(body) = size_body(record_fields.get("size")) {
             property_links.push(entities.len() + synthesized.len());
-            synthesized.push(unit_property(406, 16, body));
+            synthesized.push(drawing_property(namespace, record, 16, body));
         }
         if let Some(body) = units_body(
             record_fields.get("units_flag"),
             record_fields.get("units_name"),
         ) {
             property_links.push(entities.len() + synthesized.len());
-            synthesized.push(unit_property(406, 17, body));
+            synthesized.push(drawing_property(namespace, record, 17, body));
         }
         links.push((entity_index, property_links));
     }
     for (entity_index, property_links) in links {
-        entities[entity_index].property_links.extend(property_links);
+        for property in property_links {
+            if !entities[entity_index].property_links.contains(&property) {
+                entities[entity_index].property_links.push(property);
+            }
+        }
     }
     entities.extend(synthesized);
+    let targets = super::super::attributes::targets(ir, entities);
+    for record in drawings {
+        let Some([drawing]) = targets.get(record.id()).map(Vec::as_slice) else {
+            continue;
+        };
+        let Some(source) = record
+            .field("source_entity")
+            .and_then(|v| v.as_str().map(str::to_owned))
+        else {
+            continue;
+        };
+        let Some(directory) = namespace
+            .arenas()
+            .get("entities")
+            .and_then(|rows| rows.iter().find(|row| row.id() == source))
+        else {
+            continue;
+        };
+        let Some(order) = directory.field("property_links") else {
+            continue;
+        };
+        let Some(order) = order.as_array() else {
+            continue;
+        };
+        let indices = order
+            .iter()
+            .filter_map(serde_json::Value::as_str)
+            .filter_map(|id| targets.get(id))
+            .filter_map(|indices| match indices.as_slice() {
+                [index] => Some(*index),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        entities[*drawing].property_links.sort_by_key(|index| {
+            let position = indices.iter().position(|other| other == index);
+            (position.is_none(), position)
+        });
+    }
+}
+
+fn drawing_property(
+    namespace: &cadmpeg_ir::native::NativeNamespace,
+    drawing: &super::NativeRecord,
+    form: i64,
+    body: Vec<u8>,
+) -> super::Entity {
+    let mut entity = unit_property(406, form, body);
+    let Some(source) = drawing
+        .field("source_entity")
+        .and_then(|value| value.as_str().map(str::to_owned))
+    else {
+        return entity;
+    };
+    let Some(records) = namespace.arenas().get("entities") else {
+        return entity;
+    };
+    let Some(directory) = records.iter().find(|row| row.id() == source) else {
+        return entity;
+    };
+    let Some(links) = directory.field("property_links") else {
+        return entity;
+    };
+    let Some(links) = links.as_array() else {
+        return entity;
+    };
+    let mut matching = links
+        .iter()
+        .filter_map(serde_json::Value::as_str)
+        .filter_map(|id| records.iter().find(|row| row.id() == id))
+        .filter(|row| {
+            row.field("entity_type").and_then(|v| v.as_i64()) == Some(406)
+                && row.field("form").and_then(|v| v.as_i64()) == Some(form)
+        });
+    let Some(property) = matching.next() else {
+        return entity;
+    };
+    if matching.next().is_some() {
+        return entity;
+    }
+    super::numeric::retain_record(property, &mut entity);
+    entity.source_targets.push(property.id().to_owned());
+    if property
+        .field("subordinate_status")
+        .and_then(|v| v.as_i64())
+        == Some(1)
+    {
+        entity.status = super::EntityStatus::PhysicallyDependent;
+    }
+    if let Some(label) = property
+        .field("label")
+        .and_then(|v| serde_json::from_value::<cadmpeg_ir::native::bytes::NativeBytes>(v).ok())
+        .and_then(|bytes| String::from_utf8(bytes.as_ref().to_vec()).ok())
+        .filter(|label| {
+            label.len() <= 8 && label.bytes().all(|b| b.is_ascii_graphic() || b == b' ')
+        })
+    {
+        label.trim().clone_into(&mut entity.label);
+    }
+    entity
 }
 
 fn unit_property(type_code: u32, form: i64, parameter_body: Vec<u8>) -> super::Entity {

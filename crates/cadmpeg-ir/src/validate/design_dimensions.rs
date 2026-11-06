@@ -6,13 +6,31 @@ use std::collections::BTreeMap;
 use cadmpeg_core::{decode::DecodeContext, CodecError};
 use serde::{de::DeserializeOwned, Serialize};
 
-use crate::features::DimensionResolutionError;
+use crate::features::{DimensionResolutionError, ParameterValue};
 use crate::report::{
     check::{Check, Finding},
     Severity,
 };
 use crate::schema::rewrite::typed::RewriteIdentities;
 use crate::CadIr;
+
+fn parameter_values_agree(left: &ParameterValue, right: &ParameterValue) -> bool {
+    match (left, right) {
+        (ParameterValue::Length(left), ParameterValue::Length(right)) => {
+            crate::compare::floats_agree(left.get(), right.get())
+        }
+        (ParameterValue::Angle(left), ParameterValue::Angle(right)) => {
+            crate::compare::floats_agree(left.get(), right.get())
+        }
+        (ParameterValue::Real(left), ParameterValue::Real(right)) => {
+            crate::compare::floats_agree(left.get(), right.get())
+        }
+        (ParameterValue::Integer(left), ParameterValue::Integer(right)) => left == right,
+        (ParameterValue::Boolean(left), ParameterValue::Boolean(right)) => left == right,
+        (ParameterValue::String(left), ParameterValue::String(right)) => left == right,
+        _ => false,
+    }
+}
 
 pub(super) fn check(
     ctx: &DecodeContext<'_>,
@@ -22,19 +40,7 @@ pub(super) fn check(
     for parameter in &ir.model.parameters {
         if let Some(value) = &parameter.value {
             if let Some(literal) = parameter.expression.literal_value_as(value) {
-                let agrees = match (&literal, value) {
-                    (
-                        crate::features::ParameterValue::String(left),
-                        crate::features::ParameterValue::String(right),
-                    ) => left == right,
-                    _ => crate::compare::values_agree(
-                        &serde_json::to_value(&literal)
-                            .map_err(|error| CodecError::malformed(error.to_string()))?,
-                        &serde_json::to_value(value)
-                            .map_err(|error| CodecError::malformed(error.to_string()))?,
-                    )
-                    .is_ok(),
-                };
+                let agrees = parameter_values_agree(&literal, value);
                 let stale = parameter.owner.as_ref().is_some_and(|owner| {
                     ir.model
                         .features
@@ -258,19 +264,7 @@ pub(super) fn check(
             if let Some(literal) =
                 expression.and_then(|expression| expression.literal_value_as(value))
             {
-                let agrees = match (&literal, value) {
-                    (
-                        crate::features::ParameterValue::String(first),
-                        crate::features::ParameterValue::String(second),
-                    ) => first == second,
-                    _ => crate::compare::values_agree(
-                        &serde_json::to_value(&literal)
-                            .map_err(|error| CodecError::malformed(error.to_string()))?,
-                        &serde_json::to_value(value)
-                            .map_err(|error| CodecError::malformed(error.to_string()))?,
-                    )
-                    .is_ok(),
-                };
+                let agrees = parameter_values_agree(&literal, value);
                 let stale = parameter
                     .and_then(|parameter| parameter.owner.as_ref())
                     .is_some_and(|owner| {

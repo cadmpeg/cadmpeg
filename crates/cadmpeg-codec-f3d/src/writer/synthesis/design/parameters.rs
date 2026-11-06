@@ -16,6 +16,7 @@ pub(super) fn regenerate(
     target: &mut CadIr,
     native: &mut F3dNative,
     losses: &mut Vec<LossNote>,
+    limits: cadmpeg_core::decode::ResourceLimits,
 ) -> Result<
     Vec<(
         cadmpeg_ir::features::ParameterId,
@@ -135,7 +136,7 @@ pub(super) fn regenerate(
                 .map(|native_ref| (native_ref.clone(), body.id.clone()))
         })
         .collect::<std::collections::BTreeMap<_, _>>();
-    target.model.parameters = super::with_context(|ctx| {
+    target.model.parameters = super::with_context(limits, |ctx| {
         Ok(
             crate::design::feature_project::project_parameter_design_with_edge_identities(
                 ctx,

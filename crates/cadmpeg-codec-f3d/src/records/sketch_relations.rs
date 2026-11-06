@@ -1215,12 +1215,13 @@ impl SketchRelation {
                 .ok_or_else(|| {
                     CodecError::malformed("sketch relation has no source stream identity")
                 })?;
-            let untyped = if self.definition.state() & !SKETCH_CONSTRAINT_MASK != 0 {
-                [cadmpeg_ir::document::ArenaClass::Design].into()
-            } else {
-                cadmpeg_ir::ArenaClasses::default()
-            };
-            frame.retain(fidelity, &self.id, stream, self.byte_offset, untyped)?;
+            frame.retain(
+                fidelity,
+                &self.id,
+                stream,
+                self.byte_offset,
+                cadmpeg_ir::ArenaClasses::default(),
+            )?;
         }
         Ok(())
     }

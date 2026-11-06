@@ -856,6 +856,7 @@ fn prune_dangling_topology(scoped: &mut CadIr, losses: &mut Vec<LossNote>) {
             scoped.model.shells.len(),
             scoped.model.regions.len(),
         );
+        prune_invalid_radials(scoped, &mut pruned);
         prune_pass(scoped, &mut pruned, &points, &surfaces, &curves, &pcurves);
         prune_open_loops(scoped, &mut pruned);
         let after = (
@@ -871,6 +872,50 @@ fn prune_dangling_topology(scoped: &mut CadIr, losses: &mut Vec<LossNote>) {
             break;
         }
     }
+}
+
+fn prune_invalid_radials(scoped: &mut CadIr, pruned: &mut impl FnMut(&str, &str, String)) {
+    use std::collections::{BTreeMap, BTreeSet};
+
+    let mut groups = BTreeMap::<_, Vec<usize>>::new();
+    for (index, coedge) in scoped.model.coedges.iter().enumerate() {
+        groups.entry(coedge.edge.clone()).or_default().push(index);
+    }
+    let mut dropped = BTreeSet::new();
+    for (edge, indices) in groups {
+        let by_id: BTreeMap<_, _> = indices
+            .iter()
+            .map(|&index| {
+                let coedge = &scoped.model.coedges[index];
+                (coedge.id.clone(), coedge.radial_next.clone())
+            })
+            .collect();
+        let start = scoped.model.coedges[indices[0]].id.clone();
+        let mut current = start.clone();
+        let mut visited = BTreeSet::new();
+        while visited.insert(current.clone()) {
+            let Some(next) = by_id.get(&current) else {
+                break;
+            };
+            current = next.clone();
+        }
+        if current == start && visited.len() == indices.len() {
+            continue;
+        }
+        for index in indices {
+            let coedge = &scoped.model.coedges[index];
+            pruned(
+                "coedge",
+                coedge.id.as_str(),
+                format!("edge {edge} has an invalid radial cycle"),
+            );
+            dropped.insert(coedge.id.clone());
+        }
+    }
+    scoped
+        .model
+        .coedges
+        .retain(|coedge| !dropped.contains(&coedge.id));
 }
 
 /// Drop edges no surviving coedge uses and no shell lists as a wire edge,
@@ -960,7 +1005,6 @@ fn prune_pass(
     });
     let edges = existing!(edges);
     let loops = existing!(loops);
-    let coedges = existing!(coedges);
     for coedge in &mut scoped.model.coedges {
         coedge.pcurves.retain(|use_| {
             let keep = pcurves.contains(use_.pcurve.as_str());
@@ -987,23 +1031,31 @@ fn prune_pass(
         }
     }
     scoped.model.coedges.retain(|coedge| {
-        let missing = (!edges.contains(coedge.edge.as_str()))
-            .then(|| format!("edge {} is missing", coedge.edge))
-            .or_else(|| {
-                (!loops.contains(coedge.owner_loop.as_str()))
-                    .then(|| format!("loop {} is missing", coedge.owner_loop))
-            })
-            .or_else(|| {
-                (!coedges.contains(coedge.radial_next.as_str()))
-                    .then(|| format!("coedge {} is missing", coedge.radial_next))
-            });
+        let missing =
+            (!edges.contains(coedge.edge.as_str()))
+                .then(|| format!("edge {} is missing", coedge.edge))
+                .or_else(|| {
+                    (!loops.contains(coedge.owner_loop.as_str()))
+                        .then(|| format!("loop {} is missing", coedge.owner_loop))
+                })
+                .or_else(|| {
+                    (!scoped.model.loops.iter().any(|row| {
+                        row.id == coedge.owner_loop && row.coedges().contains(&coedge.id)
+                    }))
+                    .then(|| format!("loop {} does not own this coedge", coedge.owner_loop))
+                });
         if let Some(missing) = missing {
             pruned("coedge", coedge.id.as_str(), missing);
             return false;
         }
         true
     });
-    let coedges = existing!(coedges);
+    let coedge_owners = scoped
+        .model
+        .coedges
+        .iter()
+        .map(|coedge| (coedge.id.clone(), coedge.owner_loop.clone()))
+        .collect::<std::collections::BTreeMap<_, _>>();
     prune_orphaned_edges(scoped, pruned);
     let faces = existing!(faces);
     scoped.model.loops.retain_mut(|row| {
@@ -1045,12 +1097,16 @@ fn prune_pass(
                 let kept = row
                     .coedges()
                     .iter()
-                    .filter(|id| coedges.contains(id.as_str()))
+                    .filter(|id| coedge_owners.get(*id) == Some(&row.id))
                     .cloned()
                     .collect::<Vec<_>>();
                 for id in row.coedges() {
-                    if !coedges.contains(id.as_str()) {
-                        pruned("loop", row.id.as_str(), format!("coedge {id} is missing"));
+                    if coedge_owners.get(id) != Some(&row.id) {
+                        pruned(
+                            "loop",
+                            row.id.as_str(),
+                            format!("coedge {id} is missing or belongs to another loop"),
+                        );
                     }
                 }
                 let mut kept_uses = Vec::new();

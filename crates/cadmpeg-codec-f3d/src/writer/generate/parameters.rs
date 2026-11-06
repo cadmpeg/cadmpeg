@@ -1,34 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Parameter frames authored from semantic values, without retained envelopes.
 
-use std::collections::BTreeSet;
-
 use cadmpeg_core::CodecError;
 
 use crate::records::parameters::DesignParameter;
 
 use super::records::{native_lp_ascii, native_lp_utf16};
 
-pub(super) fn encode_document_parameters(
-    parameters: &[DesignParameter],
-    collection_index: u32,
-) -> Result<Vec<u8>, CodecError> {
-    let mut out = Vec::new();
-    let mut indices = BTreeSet::new();
-    let mut ordinals = BTreeSet::new();
-    for parameter in parameters {
-        if !indices.insert(parameter.record_index) || !ordinals.insert(parameter.source_ordinal) {
-            return Err(CodecError::malformed(format_args!(
-                "F3D Design parameter {} duplicates a record index or source ordinal",
-                parameter.id,
-            )));
-        }
-        encode(&mut out, parameter, collection_index)?;
-    }
-    Ok(out)
-}
-
-fn encode(
+pub(super) fn encode_document_parameter(
     out: &mut Vec<u8>,
     parameter: &DesignParameter,
     collection_index: u32,
@@ -65,18 +44,21 @@ fn encode(
             }
             None => out.push(0),
         }
-    } else {
-        let owner = owner.ok_or_else(|| CodecError::malformed("compact parameter has no owner"))?;
+    } else if let Some(owner) = owner {
         out.extend_from_slice(&[0; 4]);
         out.extend_from_slice(&parameter.source_ordinal.to_le_bytes());
         out.push(1);
         out.extend_from_slice(&owner.to_le_bytes());
         out.extend_from_slice(&[0; 6]);
+    } else {
+        debug_assert!(owner.is_some(), "compact parameters have an owner");
     }
     native_lp_utf16(out, parameter.expression())?;
     if discriminator.is_some() {
         out.extend_from_slice(&[0; 8]);
-        out.push(u8::from(parameter.source_kind_str() == "User Parameter"));
+        out.push(u8::from(
+            parameter.kind() == crate::records::parameters::DesignParameterKind::User,
+        ));
     } else {
         out.extend_from_slice(&[0; 5]);
     }

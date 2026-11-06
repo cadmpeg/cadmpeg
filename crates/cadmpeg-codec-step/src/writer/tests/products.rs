@@ -467,6 +467,45 @@ fn writer_folds_document_attributes_into_file_name() {
     assert_eq!(held("LastModifiedBy"), ["beth"]);
     assert_eq!(held("Company"), ["acme"]);
 }
+
+#[test]
+fn iges_document_timestamp_uses_step_syntax_and_names_the_normalization() {
+    let mut ir = unit_cube().expect("unit cube");
+    let id = "test:model:attribute#date";
+    ir.model
+        .attributes
+        .push(document_attribute(id, "generation_date", "20260714.000000"));
+    let mut bytes = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut bytes,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .expect("write date");
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == crate::loss::StepLossCode::TimestampNormalized.kind()
+            && loss.message.contains(id)
+    }));
+    assert!(!report.losses.iter().any(|loss| {
+        loss.code == crate::loss::StepLossCode::SourceAttributeNotWritten.kind()
+            && loss.message.contains(id)
+    }));
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode date");
+    let date = decoded
+        .ir()
+        .model
+        .attributes
+        .iter()
+        .find(|attribute| attribute.name == "generation_date")
+        .expect("document date");
+    assert_eq!(
+        date.values.as_slice(),
+        [Some(AttributeValue::String("2026-07-14T00:00:00".into()))]
+    );
+}
 #[test]
 fn omitted_occurrence_link_metadata_names_each_occurrence() {
     let mut ir = unit_cube().expect("cube");
@@ -592,6 +631,29 @@ fn product_scalar_attributes_are_step_properties_of_their_owner() {
         &StepWriteOptions::default(),
     )
     .unwrap();
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(&output), &DecodeOptions::default())
+        .expect("decode product properties");
+    for (name, expected) in [
+        ("Finish", AttributeValue::String("brushed".into())),
+        ("Material", AttributeValue::String("steel".into())),
+        ("Count", AttributeValue::Integer(7)),
+        ("Enabled", AttributeValue::Boolean(true)),
+    ] {
+        assert!(
+            decoded.ir().model.attributes.iter().any(|attribute| {
+                attribute.name == name
+                    && matches!(attribute.target, AttributeTarget::ProductDefinition(_))
+                    && attribute.values == [Some(expected.clone())]
+            }),
+            "missing product property {name}"
+        );
+    }
+    assert!(decoded.ir().model.attributes.iter().any(|attribute| {
+        attribute.name == "Ratio"
+            && matches!(attribute.target, AttributeTarget::ProductDefinition(_))
+            && matches!(attribute.values.as_slice(), [Some(AttributeValue::Float(value))] if (value.get() - 1.25).abs() < 1.0e-12)
+    }));
     let text = String::from_utf8(output).unwrap();
     for (name, item_text, product) in [
         (

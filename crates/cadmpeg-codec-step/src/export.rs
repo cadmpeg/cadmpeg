@@ -509,6 +509,33 @@ struct FileNameFields {
     timestamp: Option<String>,
     system: Option<String>,
     consumed: Vec<String>,
+    normalized_timestamps: Vec<String>,
+}
+
+fn file_name_timestamp(value: &str) -> Option<String> {
+    if crate::parse::valid_file_name_timestamp(value) {
+        return Some(value.to_owned());
+    }
+    let (date, time) = value.split_once('.')?;
+    if date.len() != 8
+        || time.len() != 6
+        || !date
+            .bytes()
+            .chain(time.bytes())
+            .all(|byte| byte.is_ascii_digit())
+    {
+        return None;
+    }
+    let timestamp = format!(
+        "{}-{}-{}T{}:{}:{}",
+        &date[0..4],
+        &date[4..6],
+        &date[6..8],
+        &time[0..2],
+        &time[2..4],
+        &time[4..6]
+    );
+    crate::parse::valid_file_name_timestamp(&timestamp).then_some(timestamp)
 }
 
 impl FileNameFields {
@@ -572,18 +599,21 @@ impl FileNameFields {
         }
         let organizations =
             (!organization.is_empty()).then(|| vec![Self::first_non_empty(&organization)]);
-        // A non-conforming held date string (such as an IGES global date)
-        // folds to empty: folding it would author a header the decoder
-        // flags, and normalizing it would break pairing.
         let timestamp = (!stamps.is_empty()).then(|| {
             stamps
                 .iter()
-                .find_map(|(_, value)| {
-                    (!value.is_empty() && crate::parse::valid_file_name_timestamp(value))
-                        .then(|| value.clone())
-                })
+                .filter(|(_, value)| !value.is_empty())
+                .find_map(|(_, value)| file_name_timestamp(value))
                 .unwrap_or_default()
         });
+        let normalized_timestamps = stamps
+            .iter()
+            .filter_map(|(id, value)| {
+                let normalized = file_name_timestamp(value)?;
+                (normalized != *value && timestamp.as_ref() == Some(&normalized))
+                    .then(|| id.clone())
+            })
+            .collect();
         let system = (!sys.is_empty()).then(|| Self::first_non_empty(&sys));
         // An alias is consumed only when the header carries its value back:
         // any other held alias keeps its drop loss, which names it. An
@@ -603,10 +633,12 @@ impl FileNameFields {
             &organization,
             &organizations.clone().unwrap_or_default(),
         ));
-        consumed_ids.extend(consumed(
-            &stamps,
-            &timestamp.clone().into_iter().collect::<Vec<_>>(),
-        ));
+        consumed_ids.extend(
+            stamps
+                .iter()
+                .filter(|(_, value)| file_name_timestamp(value).as_ref() == timestamp.as_ref())
+                .map(|(id, _)| id.clone()),
+        );
         consumed_ids.extend(consumed(
             &sys,
             &system.clone().into_iter().collect::<Vec<_>>(),
@@ -618,6 +650,7 @@ impl FileNameFields {
             timestamp,
             system,
             consumed: consumed_ids,
+            normalized_timestamps,
         }
     }
 }
@@ -903,6 +936,12 @@ impl<'a> Builder<'a> {
         builder
             .consumed_attribute_ids
             .extend(builder.file_name_fields.consumed.iter().cloned());
+        for id in builder.file_name_fields.normalized_timestamps.clone() {
+            builder.loss(
+                StepLossCode::TimestampNormalized,
+                format!("document attribute '{id}' uses STEP's extended timestamp syntax"),
+            );
+        }
         builder.pcurve_period_shifts = builder.loop_pcurve_period_shifts()?;
         builder.implicit_outer_bounds = builder.implicit_outer_bounds()?;
         builder.seam_rings = builder.seam_rings()?;
@@ -1041,6 +1080,41 @@ impl<'a> Builder<'a> {
         let context = self.emit_context();
 
         let mut emitted_items = self.emit_shape_items(context);
+        let retained_surfaces: BTreeSet<_> = self
+            .ir
+            .model
+            .faces
+            .iter()
+            .filter(|face| self.face_step_refs.contains_key(face.id.as_str()))
+            .map(|face| face.surface.as_str())
+            .collect();
+        let lost_surfaces: BTreeSet<_> = self
+            .ir
+            .model
+            .faces
+            .iter()
+            .filter(|face| !self.face_step_refs.contains_key(face.id.as_str()))
+            .map(|face| face.surface.as_str())
+            .filter(|surface| !retained_surfaces.contains(surface))
+            .filter(|surface| {
+                !self.construction_supports.contains(*surface)
+                    || self.surfaces.get(*surface).is_some_and(|surface| {
+                        ownership::is_independent(surface.source_object.as_ref())
+                    })
+            })
+            .map(str::to_owned)
+            .collect();
+        let mut recovered_surface = false;
+        for surface in lost_surfaces {
+            if let Some(reference) = self
+                .emit_surface(&surface)
+                .filter(|reference| !emitted_items.contains(reference))
+            {
+                self.emitter
+                    .emit("REPRESENTATION", &format!("'',({reference}),{context}"));
+                recovered_surface = true;
+            }
+        }
         let bodies_written = !self.body_step_refs.is_empty();
         if self.ir.model.product_definitions.is_empty() {
             let product_def_shape = self.emit_product_structure();
@@ -1094,7 +1168,7 @@ impl<'a> Builder<'a> {
                 );
             }
         }
-        let has_model_items = !emitted_items.is_empty();
+        let has_model_items = recovered_surface || !emitted_items.is_empty();
 
         self.emit_visibility();
         self.emit_tessellations(context);
@@ -2077,6 +2151,48 @@ impl<'a> Builder<'a> {
                         ),
                     ));
                 }
+            }
+        }
+        if drawing.kind == cadmpeg_ir::drawings::DrawingKind::View {
+            let mut items = Vec::new();
+            let mut omitted = Vec::new();
+            for selection in drawing.relationships.get("items").into_iter().flatten() {
+                let reference = selection.local_target().and_then(|id| {
+                    self.point_refs
+                        .get(id)
+                        .copied()
+                        .or_else(|| self.curve_refs.get(id).copied())
+                        .or_else(|| self.surface_refs.get(id).map(|surface| surface.reference))
+                });
+                let reference = reference.or_else(|| self.resolve_drawing_item(selection));
+                if let Some(reference) = reference {
+                    items.push(reference);
+                } else {
+                    omitted.push(selection.local_target().unwrap_or("external target"));
+                }
+            }
+            if !items.is_empty() {
+                if !omitted.is_empty() {
+                    self.loss(
+                        StepLossCode::DrawingPresentationRecordsOmitted,
+                        format!(
+                            "drawing {} has unwritten items: {}",
+                            drawing.id,
+                            omitted.join(", ")
+                        ),
+                    );
+                }
+                self.note_drawing_omissions(
+                    drawing,
+                    &["source_type", "name"],
+                    &["items", "presentation_context"],
+                );
+                self.mark_drawing_context(drawing);
+                let name = drawing.parameters.get("name").map_or("", String::as_str);
+                return Some(self.emitter.emit(
+                    "PRESENTATION_VIEW",
+                    &format!("{},{},{context}", string(name), refs(&items)),
+                ));
             }
         }
         let supported = drawing
@@ -4177,7 +4293,10 @@ impl<'a> Builder<'a> {
             .map(|curve| curve.id.as_str().to_owned())
             .collect::<Vec<_>>();
         for curve_id in curve_ids {
-            if let Some(reference) = self.emit_curve(&curve_id) {
+            if let Some(reference) = self
+                .emit_standalone_intersection_pcurve(&curve_id)
+                .or_else(|| self.emit_curve(&curve_id))
+            {
                 let name = Self::carrier_name(&self.carrier_names, &curve_id).to_owned();
                 let reference = if let Some(range) = self
                     .curves
@@ -4218,6 +4337,60 @@ impl<'a> Builder<'a> {
             members.push(reference);
         }
         (members, standalone_pcurves, has_surfaces)
+    }
+
+    fn emit_standalone_intersection_pcurve(&mut self, curve_id: &str) -> Option<Ref> {
+        let procedural = self.procedural_curves.get(curve_id)?;
+        let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
+        else {
+            return None;
+        };
+        let [first, second] = context.sides();
+        if first != second {
+            return None;
+        }
+        let surface_id = first.surface.as_ref()?.to_string();
+        if self.procedural_surfaces.contains_key(surface_id.as_str())
+            || !matches!(
+                self.surfaces.get(surface_id.as_str())?.geometry.solved(),
+                Some(SolvedSurfaceGeometry::Plane(_) | SolvedSurfaceGeometry::Cylinder(_))
+            )
+        {
+            return None;
+        }
+        let pcurve = first.pcurve.as_ref()?;
+        if pcurve.parameter_range.is_some() {
+            return None;
+        }
+        let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } = &pcurve.geometry else {
+            return None;
+        };
+        let degree = usize::try_from(nurbs.degree()).ok()?;
+        let range = [
+            *nurbs.knots().get(degree)?,
+            *nurbs.knots().get(nurbs.pole_rows().count())?,
+        ];
+        if range != context.parameter_range().endpoints() {
+            return None;
+        }
+        let geometry = pcurve.geometry.clone();
+        let surface = self.emit_surface(&surface_id)?;
+        let curve = match self.surface_chart(&surface_id) {
+            Some(chart) => geometry::pcurve_in_chart(&mut self.emitter, chart, &geometry),
+            None => geometry::pcurve(&mut self.emitter, &geometry),
+        }?;
+        let context = self.pcurve_context();
+        let representation = self.emitter.emit(
+            "DEFINITIONAL_REPRESENTATION",
+            &format!("'',({curve}),{context}"),
+        );
+        let name = Self::carrier_name(&self.carrier_names, curve_id);
+        let reference = self.emitter.emit(
+            "PCURVE",
+            &format!("{},{surface},{representation}", string(name)),
+        );
+        self.curve_refs.insert(curve_id.to_owned(), reference);
+        Some(reference)
     }
 
     /// Unowned carriers wrapped for a bound representation: surfaces need a
@@ -5754,6 +5927,21 @@ impl<'a> Builder<'a> {
                     self.loss(
                         StepLossCode::AnalyticSurfaceNormalized,
                         format!("surface '{surface_id}' uses a reversed axis and positive cone semi-angle in STEP"),
+                    );
+                }
+                if matches!(basis, SolvedSurfaceGeometry::Sphere(sphere) if sphere.radius().get() < 0.0)
+                    || matches!(basis, SolvedSurfaceGeometry::Torus(torus) if torus.minor_radius().get() < 0.0)
+                {
+                    self.loss(
+                        StepLossCode::AnalyticSurfaceNormalized,
+                        format!("surface '{surface_id}' uses a positive radius and an adjusted parameter chart in STEP"),
+                    );
+                }
+                if matches!(basis, SolvedSurfaceGeometry::Cone(cone) if cone.ratio().get() != 1.0 && cone.half_angle().get() != 0.0)
+                {
+                    self.loss(
+                        StepLossCode::EllipticalConeReduced,
+                        format!("surface '{surface_id}' elliptical cone was reduced to a circular STEP CONICAL_SURFACE"),
                     );
                 }
                 self.written_analytic_surfaces
@@ -7467,25 +7655,6 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
-        let elliptical_cones = self
-            .written_analytic_surfaces
-            .iter()
-            .filter(|written| {
-                matches!(written, WrittenAnalyticSurface::Carrier(SolvedSurfaceGeometry::Cone(cone_surface))
-                if {
-                    let ratio = cone_surface.ratio().get();
-                    ratio != 1.0 && cone_surface.half_angle().get() != 0.0
-                })
-            })
-            .count();
-        if elliptical_cones > 0 {
-            self.loss(
-                StepLossCode::EllipticalConeReduced,
-                format!(
-                    "{elliptical_cones} elliptical cone surface(s) were reduced to circular STEP CONICAL_SURFACE carriers"
-                ),
-            );
-        }
         if !self.curveless_edges.is_empty() {
             let edges = self
                 .curveless_edges
@@ -8567,6 +8736,48 @@ impl<'a> Builder<'a> {
             let message = format!("{}", AttributeOmission(attribute));
             self.loss(StepLossCode::SourceAttributeNotWritten, message);
         }
+        let cache_tolerances = self
+            .ir
+            .model
+            .procedural_curves
+            .iter()
+            .filter(|curve| self.written_procedural_curves.contains(curve.id.as_str()))
+            .filter(|curve| {
+                curve
+                    .cache_fit_tolerance()
+                    .is_some_and(|value| value.get() > 0.0)
+            })
+            .map(|curve| {
+                (
+                    StepLossCode::ProceduralCurveCacheToleranceOmitted,
+                    curve.id.to_string(),
+                )
+            })
+            .chain(
+                self.ir
+                    .model
+                    .procedural_surfaces
+                    .iter()
+                    .filter(|surface| {
+                        self.written_procedural_surfaces
+                            .contains(surface.id.as_str())
+                    })
+                    .filter(|surface| {
+                        surface
+                            .cache_fit_tolerance()
+                            .is_some_and(|value| value.get() > 0.0)
+                    })
+                    .map(|surface| {
+                        (
+                            StepLossCode::ProceduralSurfaceCacheToleranceOmitted,
+                            surface.id.to_string(),
+                        )
+                    }),
+            )
+            .collect::<Vec<_>>();
+        for (code, id) in cache_tolerances {
+            self.loss(code, format!("procedural construction {id} has a solved-cache fit tolerance that STEP does not retain"));
+        }
         let normalized_extrusions: Vec<_> = self
             .ir
             .model
@@ -8658,7 +8869,7 @@ impl<'a> Builder<'a> {
             self.loss(
                 StepLossCode::ProceduralReducedToCarrier,
                 format!(
-                    "{procedural_surface_count} procedural surface definition(s) and {procedural_curve_count} procedural curve definition(s) were reduced to their solved STEP carriers: {reduced}"
+                    "{procedural_surface_count} procedural surface definition(s) and {procedural_curve_count} procedural curve definition(s) were reduced to their STEP carriers: {reduced}"
                 ),
             );
         }

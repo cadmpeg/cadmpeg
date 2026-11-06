@@ -301,8 +301,14 @@ pub(crate) enum StepLossCode {
     AppearanceBindingBodyFallback,
     /// Source attribute records were not written.
     SourceAttributeNotWritten,
-    /// Procedural definitions were reduced to solved STEP carriers.
+    /// A document timestamp uses STEP's extended syntax.
+    TimestampNormalized,
+    /// Procedural definitions were reduced to STEP carriers.
     ProceduralReducedToCarrier,
+    /// A procedural curve's solved-cache fit tolerance was not represented.
+    ProceduralCurveCacheToleranceOmitted,
+    /// A procedural surface's solved-cache fit tolerance was not represented.
+    ProceduralSurfaceCacheToleranceOmitted,
     /// Extrusion constructions were written as linear sweeps.
     ProceduralExtrusionNormalized,
     /// Helix definitions without a solved carrier were written as fitted
@@ -550,7 +556,10 @@ impl StepLossCode {
         Self::AppearanceBindingMetadataReduced,
         Self::AppearanceBindingBodyFallback,
         Self::SourceAttributeNotWritten,
+        Self::TimestampNormalized,
         Self::ProceduralReducedToCarrier,
+        Self::ProceduralCurveCacheToleranceOmitted,
+        Self::ProceduralSurfaceCacheToleranceOmitted,
         Self::ProceduralExtrusionNormalized,
         Self::HelixFittedToBspline,
         Self::ProceduralSampledToBspline,
@@ -757,7 +766,14 @@ impl StepLossCode {
             Self::AppearanceBindingMetadataReduced => "appearance.binding-metadata-reduced",
             Self::AppearanceBindingBodyFallback => "appearance.binding-body-fallback",
             Self::SourceAttributeNotWritten => "attribute.source-record-not-written",
+            Self::TimestampNormalized => "attribute.timestamp-normalized",
             Self::ProceduralReducedToCarrier => "geometry.procedural-reduced-to-carrier",
+            Self::ProceduralCurveCacheToleranceOmitted => {
+                "geometry.procedural-curve-cache-tolerance-omitted"
+            }
+            Self::ProceduralSurfaceCacheToleranceOmitted => {
+                "geometry.procedural-surface-cache-tolerance-omitted"
+            }
             Self::ProceduralExtrusionNormalized => "geometry.procedural-extrusion-normalized",
             Self::HelixFittedToBspline => "geometry.helix-fitted-to-bspline",
             Self::ProceduralSampledToBspline => "geometry.procedural-sampled-to-bspline",
@@ -876,7 +892,10 @@ impl StepLossCode {
             | Self::AppearanceBindingMetadataReduced
             | Self::AppearanceBindingBodyFallback
             | Self::SourceAttributeNotWritten
+            | Self::TimestampNormalized
             | Self::ProceduralReducedToCarrier
+            | Self::ProceduralCurveCacheToleranceOmitted
+            | Self::ProceduralSurfaceCacheToleranceOmitted
             | Self::ProceduralExtrusionNormalized
             | Self::HelixFittedToBspline
             | Self::ProceduralSampledToBspline
@@ -942,7 +961,8 @@ impl StepLossCode {
             | Self::TopologyMetadataNotRepresented
             | Self::DrawingPresentationRecordsOmitted
             | Self::DisplayColorUnstyled
-            | Self::SourceAttributeNotWritten => LossTaxonomy::AttributesNotTransferred,
+            | Self::SourceAttributeNotWritten
+            | Self::TimestampNormalized => LossTaxonomy::AttributesNotTransferred,
             Self::PlacementReferenceInferred => LossTaxonomy::CarrierAxisInferred,
             Self::ConflictingRepresentationUnits
             | Self::UncertaintyLengthAmbiguous
@@ -1069,6 +1089,8 @@ impl StepLossCode {
             }
             Self::AppearanceBindingBodyFallback => LossTaxonomy::AppearanceReduced,
             Self::ProceduralReducedToCarrier
+            | Self::ProceduralCurveCacheToleranceOmitted
+            | Self::ProceduralSurfaceCacheToleranceOmitted
             | Self::ProceduralExtrusionNormalized
             | Self::HelixFittedToBspline
             | Self::ProceduralSampledToBspline => LossTaxonomy::ProceduralReduced,
@@ -1239,7 +1261,10 @@ mod tests {
                 "appearance.binding-metadata-reduced",
                 "appearance.binding-body-fallback",
                 "attribute.source-record-not-written",
+                "attribute.timestamp-normalized",
                 "geometry.procedural-reduced-to-carrier",
+                "geometry.procedural-curve-cache-tolerance-omitted",
+                "geometry.procedural-surface-cache-tolerance-omitted",
                 "geometry.procedural-extrusion-normalized",
                 "geometry.helix-fitted-to-bspline",
                 "geometry.procedural-sampled-to-bspline",

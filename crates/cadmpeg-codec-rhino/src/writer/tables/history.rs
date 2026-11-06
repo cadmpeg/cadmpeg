@@ -12,7 +12,7 @@
 
 use super::{
     anonymous, class_wrapper, crc_chunk_with_direct, neutral_object_uuid, records as held, CadIr,
-    CodecError, Value,
+    Value,
 };
 use crate::loss::RhinoLossCode;
 use crate::writer::WriteError;
@@ -162,9 +162,7 @@ fn bit_list(text: &str, record: &str, name: &str) -> Result<Vec<u8>, WriteError>
 
 fn uuid_anon(uuids: &[[u8; 16]]) -> Result<Vec<u8>, WriteError> {
     let mut body = i32::try_from(uuids.len())
-        .map_err(|_| {
-            WriteError::Fail(CodecError::malformed("Rhino history UUID list exceeds i32"))
-        })?
+        .map_err(|_| WriteError::Omit("Rhino history UUID list exceeds i32".into()))?
         .to_le_bytes()
         .to_vec();
     for uuid in uuids {
@@ -358,22 +356,27 @@ fn parse_reference(
 
 fn encode_reference(reference: &ParsedReference) -> Result<Vec<u8>, WriteError> {
     let mut minor = 0;
+    if reference.evaluation.intervals[0].is_some() != reference.evaluation.intervals[1].is_some() {
+        return Err(WriteError::Omit(
+            "Rhino history evaluation needs both intervals 0 and 1".into(),
+        ));
+    }
     if reference.evaluation.intervals[0].is_some() && reference.evaluation.intervals[1].is_some() {
         minor = 1;
     }
     if reference.evaluation.intervals[2].is_some() {
         if minor < 1 {
-            return Err(WriteError::Fail(CodecError::malformed(
-                "Rhino history interval 2 needs intervals 0 and 1",
-            )));
+            return Err(WriteError::Omit(
+                "Rhino history interval 2 needs intervals 0 and 1".into(),
+            ));
         }
         minor = 2;
     }
     if reference.osnap_mode != 0 {
         if minor < 1 {
-            return Err(WriteError::Fail(CodecError::malformed(
-                "Rhino history nonzero osnap needs evaluation intervals",
-            )));
+            return Err(WriteError::Omit(
+                "Rhino history nonzero osnap needs evaluation intervals".into(),
+            ));
         }
         minor = 3;
     }
@@ -389,11 +392,7 @@ fn encode_reference(reference: &ParsedReference) -> Result<Vec<u8>, WriteError> 
     encode_evaluation(&mut body, &reference.evaluation, 0);
     body.extend(
         i32::try_from(reference.instances.len())
-            .map_err(|_| {
-                WriteError::Fail(CodecError::malformed(
-                    "Rhino history instance path exceeds i32",
-                ))
-            })?
+            .map_err(|_| WriteError::Omit("Rhino history instance path exceeds i32".into()))?
             .to_le_bytes(),
     );
     for instance in &reference.instances {
@@ -488,9 +487,7 @@ fn encode_references(props: &Props<'_>, group: &str, record: &str) -> Result<Vec
     let mut body = Vec::new();
     body.extend(
         i32::try_from(indices.len())
-            .map_err(|_| {
-                WriteError::Fail(CodecError::malformed("Rhino history count exceeds i32"))
-            })?
+            .map_err(|_| WriteError::Omit("Rhino history count exceeds i32".into()))?
             .to_le_bytes(),
     );
     for index in indices {
@@ -511,9 +508,7 @@ fn encode_polyedges(props: &Props<'_>, group: &str, record: &str) -> Result<Vec<
     let mut body = Vec::new();
     body.extend(
         i32::try_from(indices.len())
-            .map_err(|_| {
-                WriteError::Fail(CodecError::malformed("Rhino history count exceeds i32"))
-            })?
+            .map_err(|_| WriteError::Omit("Rhino history count exceeds i32".into()))?
             .to_le_bytes(),
     );
     for index in indices {
@@ -577,11 +572,7 @@ fn encode_polyedges(props: &Props<'_>, group: &str, record: &str) -> Result<Vec<
         let mut edge_body = Vec::new();
         edge_body.extend(
             i32::try_from(segments.len())
-                .map_err(|_| {
-                    WriteError::Fail(CodecError::malformed(
-                        "Rhino history segment count exceeds i32",
-                    ))
-                })?
+                .map_err(|_| WriteError::Omit("Rhino history segment count exceeds i32".into()))?
                 .to_le_bytes(),
         );
         for segment in &segments {
@@ -595,9 +586,7 @@ fn encode_polyedges(props: &Props<'_>, group: &str, record: &str) -> Result<Vec<
         )?;
         edge_body.extend(
             i32::try_from(parameters.len())
-                .map_err(|_| {
-                    WriteError::Fail(CodecError::malformed("Rhino history parameters exceed i32"))
-                })?
+                .map_err(|_| WriteError::Omit("Rhino history parameters exceed i32".into()))?
                 .to_le_bytes(),
         );
         for value in &parameters {
@@ -620,9 +609,7 @@ fn encode_chains(props: &Props<'_>, group: &str, record: &str) -> Result<Vec<u8>
     let mut body = Vec::new();
     body.extend(
         i32::try_from(indices.len())
-            .map_err(|_| {
-                WriteError::Fail(CodecError::malformed("Rhino history count exceeds i32"))
-            })?
+            .map_err(|_| WriteError::Omit("Rhino history count exceeds i32".into()))?
             .to_le_bytes(),
     );
     for index in indices {
@@ -651,11 +638,7 @@ fn encode_chains(props: &Props<'_>, group: &str, record: &str) -> Result<Vec<u8>
         )?);
         chain_body.extend(
             i32::try_from(edge_ids.len())
-                .map_err(|_| {
-                    WriteError::Fail(CodecError::malformed(
-                        "Rhino history edge count exceeds i32",
-                    ))
-                })?
+                .map_err(|_| WriteError::Omit("Rhino history edge count exceeds i32".into()))?
                 .to_le_bytes(),
         );
         for id in &edge_ids {
@@ -834,11 +817,7 @@ fn history_record(ir: &CadIr, feature: &Feature) -> Result<Vec<u8>, WriteError> 
         values.push(encode_value(&properties, &group, id, kind, record)?);
     }
     let mut values_body = i32::try_from(values.len())
-        .map_err(|_| {
-            WriteError::Fail(CodecError::malformed(
-                "Rhino history value count exceeds i32",
-            ))
-        })?
+        .map_err(|_| WriteError::Omit("Rhino history value count exceeds i32".into()))?
         .to_le_bytes()
         .to_vec();
     for value in &values {
@@ -883,9 +862,10 @@ pub(in crate::writer) fn records(ir: &CadIr) -> Result<HistoryExport, WriteError
                     output.written.insert(native.to_owned());
                 }
             }
-            Err(WriteError::Omit(reason)) => output
-                .losses
-                .push(RhinoLossCode::WriterAttributesOmitted.note(format!("{record}: {reason}"))),
+            Err(WriteError::Omit(reason)) => output.losses.push(
+                RhinoLossCode::WriterAttributesOmitted
+                    .note(format!("feature {} history {record}: {reason}", feature.id)),
+            ),
             Err(error) => return Err(error),
         }
     }

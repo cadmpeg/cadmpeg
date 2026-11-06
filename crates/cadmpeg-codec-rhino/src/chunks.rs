@@ -191,7 +191,7 @@ impl fmt::Display for FramingError {
                 write!(f, "range {offset}..{end} exceeds bound {bound}")
             }
             Self::MissingEof => f.write_str("missing end-of-file chunk"),
-            Self::Resource(limit) => cadmpeg_core::CodecError::ResourceLimit(*limit).fmt(f),
+            Self::Resource(limit) => limit.fmt(f),
         }
     }
 }
