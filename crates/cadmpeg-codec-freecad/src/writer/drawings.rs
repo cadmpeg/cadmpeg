@@ -57,11 +57,12 @@ pub(super) fn parameters(
         let Some(crate::native::PropertyBody::Persisted { values, .. }) = &mut property.body else {
             continue;
         };
-        let mut roots = values.iter_mut().filter(|entry| entry.parent.is_none());
+        let mut roots = values.iter_mut().filter(|entry| {
+            entry.parent.is_none()
+                && matches!(entry.tag.as_str(), "String" | "Integer" | "Float" | "Bool")
+        });
         let Some(entry) = roots.next() else { continue };
-        if roots.next().is_some()
-            || !matches!(entry.tag.as_str(), "String" | "Integer" | "Float" | "Bool")
-        {
+        if roots.next().is_some() {
             continue;
         }
         let emitted = if entry.tag == "Bool" {
@@ -847,7 +848,7 @@ mod tests {
         use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
         use cadmpeg_ir::{Codec, DecodeOptions};
 
-        let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="TechDraw::DrawViewPart" name="View"/></Objects><ObjectData Count="1"><Object name="View"><Properties Count="3"><Property name="Caption" type="App::PropertyString"><String value="before"/></Property><Property name="ScaleType" type="App::PropertyEnumeration"><Integer value="0"/></Property><Property name="LockPosition" type="App::PropertyBool"><Bool value="0"/></Property></Properties></Object></ObjectData></Document>"#;
+        let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="TechDraw::DrawViewPart" name="View"/></Objects><ObjectData Count="1"><Object name="View"><Properties Count="3"><Property name="Caption" type="App::PropertyString"><String value="before"/></Property><Property name="ScaleType" type="App::PropertyEnumeration"><Integer value="0"/><CustomEnumList count="2"><Enum value="Page"/><Enum value="Custom"/></CustomEnumList></Property><Property name="LockPosition" type="App::PropertyBool"><Bool value="0"/></Property></Properties></Object></ObjectData></Document>"#;
         let source = crate::test_support::test_archive::archive(xml);
         let input = crate::FcstdCodec
             .decode(&mut std::io::Cursor::new(source), &DecodeOptions::default())
