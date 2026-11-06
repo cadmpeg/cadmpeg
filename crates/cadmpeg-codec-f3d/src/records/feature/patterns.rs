@@ -1364,10 +1364,14 @@ pub(crate) const PATH_PATTERN_START_TYPE: (&str, u32) = ("69EE2FA7-BCC7-449E-9CA
 
 /// Fixed settings of a `PathPattern` scope, from its settings record and its
 /// path-start record.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignPathPatternSettings {
     /// Settings record named by the scope prefix.
     pub(crate) settings_record_index: u32,
+    /// Dynamic class tag of the settings record header.
+    pub(crate) settings_class_tag: crate::records::references::DesignClassTag,
+    /// Byte offset of the settings record header.
+    pub(crate) settings_byte_offset: u64,
     /// The distance parameter is the total extent; otherwise it is the
     /// spacing between adjacent instances.
     pub(crate) total_extent: Located<bool>,

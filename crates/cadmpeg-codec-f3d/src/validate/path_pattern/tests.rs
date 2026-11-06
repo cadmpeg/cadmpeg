@@ -9,6 +9,8 @@ use crate::records::identity::Located;
 fn settings() -> DesignPathPatternSettings {
     DesignPathPatternSettings {
         settings_record_index: 322,
+        settings_class_tag: "256".to_owned().try_into().unwrap(),
+        settings_byte_offset: 1_000,
         total_extent: Located {
             value: false,
             offset: 1_156,
@@ -80,17 +82,21 @@ fn native(
                 .unwrap()
             })
             .collect(),
-        design_record_headers: [(322, "256", 1_000), (319, "257", 2_000)]
-            .into_iter()
-            .map(|(record_index, class_tag, byte_offset)| {
-                crate::records::decal::DesignRecordHeader {
-                    id: format!("f3d:Design1/BulkStream.dat:design-record-header#{byte_offset}"),
-                    record_index,
-                    class_tag: class_tag.to_owned().try_into().unwrap(),
-                    byte_offset,
-                }
-            })
-            .collect(),
+        design_record_headers: [
+            (322, "256", 1_000),
+            (319, "257", 2_000),
+            (319, "258", 2_197),
+        ]
+        .into_iter()
+        .map(
+            |(record_index, class_tag, byte_offset)| crate::records::decal::DesignRecordHeader {
+                id: format!("f3d:Design1/BulkStream.dat:design-record-header#{byte_offset}"),
+                record_index,
+                class_tag: class_tag.to_owned().try_into().unwrap(),
+                byte_offset,
+            },
+        )
+        .collect(),
         design_parameter_scopes: vec![scope],
         ..Default::default()
     }
@@ -118,4 +124,7 @@ fn path_pattern_settings_link_their_typed_records_and_offsets() {
     assert_eq!(finding_count(&native(settings(), vec![333], 3)), 1);
     assert_eq!(finding_count(&native(settings(), vec![319], 3)), 1);
     assert_eq!(finding_count(&native(settings(), vec![319, 333], 4)), 1);
+    let mut wrong_class = settings();
+    wrong_class.settings_class_tag = "257".to_owned().try_into().unwrap();
+    assert_eq!(finding_count(&native(wrong_class, vec![319, 333], 3)), 1);
 }

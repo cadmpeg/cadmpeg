@@ -1128,8 +1128,16 @@ pub(super) fn exact_path_pattern_settings(
     )?;
     let start_parameter_at = start_record_at.checked_add(start_layout::START_PARAMETER)?;
     let [start_parameter] = finite_reals_at::<1>(bytes, start_parameter_at)?;
+    let settings_class_tag = crate::records::references::DesignClassTag::try_from(
+        std::str::from_utf8(bytes.get(settings_at + 4..settings_at + 7)?)
+            .ok()?
+            .to_owned(),
+    )
+    .ok()?;
     Some(patterns::DesignPathPatternSettings {
         settings_record_index,
+        settings_class_tag,
+        settings_byte_offset: u64_from_index(settings_at),
         total_extent,
         flipped,
         path_oriented,

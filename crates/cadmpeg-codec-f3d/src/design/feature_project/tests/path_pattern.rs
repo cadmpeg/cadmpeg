@@ -34,6 +34,8 @@ fn settings(
 ) -> crate::records::feature::patterns::DesignPathPatternSettings {
     crate::records::feature::patterns::DesignPathPatternSettings {
         settings_record_index: 322,
+        settings_class_tag: "256".to_owned().try_into().unwrap(),
+        settings_byte_offset: 1_000,
         total_extent: Located {
             value: total_extent,
             offset: 0,
