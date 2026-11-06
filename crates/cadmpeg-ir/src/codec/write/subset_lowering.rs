@@ -70,13 +70,13 @@ impl RootMap {
         Some(spline)
     }
 
-    fn interval(self, [start, end]: [f64; 2]) -> Result<ParameterInterval, CodecError> {
+    fn interval(self, [start, end]: [f64; 2]) -> Option<ParameterInterval> {
         let mapped = if self.forward {
             [self.offset + start, self.offset + end]
         } else {
             [self.offset - end, self.offset - start]
         };
-        ParameterInterval::new(mapped).map_err(CodecError::malformed)
+        ParameterInterval::new(mapped).ok()
     }
 }
 
@@ -90,24 +90,73 @@ struct Lowering {
 }
 
 /// `ir` with every subset curve that `lower` selects restated on its first
-/// source that `lower` does not select. A subset whose chain ends at a source
-/// with no solved geometry is kept.
+/// source that `lower` does not select. A subset whose chain cannot be lowered
+/// is kept for the writer's admission pass.
 pub fn lower_subset_curves(
     ir: &CadIr,
     lower: impl Fn(&Curve) -> bool,
 ) -> Result<Cow<'_, CadIr>, CodecError> {
-    let lowerings = ir
-        .model
-        .procedural_curves
-        .iter()
-        .filter_map(|procedural| lowering(ir, procedural, &lower).transpose())
-        .collect::<Result<Vec<_>, _>>()?;
+    let mut lowerings = Vec::new();
+    for procedural in &ir.model.procedural_curves {
+        let Some((curve, subset)) = subset_owner(ir, procedural) else {
+            continue;
+        };
+        if !lower(curve) {
+            continue;
+        }
+        if ir
+            .model
+            .curves
+            .iter()
+            .filter(|item| item.id == curve.id)
+            .count()
+            != 1
+        {
+            continue;
+        }
+        if let Some(lowering) = lowering(ir, procedural, curve, subset, &lower)
+            .filter(|lowering| ranges_fit(ir, lowering))
+        {
+            lowerings.push(lowering);
+        }
+    }
+    let planned: BTreeSet<_> = lowerings.iter().map(|item| &item.curve).collect();
+    let mut retained = BTreeSet::new();
+    for procedural in &ir.model.procedural_curves {
+        let ProceduralCurveDefinition::Subset(subset) = procedural.definition() else {
+            continue;
+        };
+        if ir
+            .model
+            .procedural_curve_owner(&procedural.id)
+            .is_some_and(|owner| planned.contains(owner))
+        {
+            continue;
+        }
+        let mut source = subset.source();
+        while planned.contains(source) && retained.insert(source.clone()) {
+            let Some((_, parent)) = ir
+                .model
+                .procedural_curves
+                .iter()
+                .filter_map(|record| subset_owner(ir, record))
+                .find(|(owner, _)| &owner.id == source)
+            else {
+                break;
+            };
+            source = parent.source();
+        }
+    }
+    drop(planned);
+    lowerings.retain(|item| !retained.contains(&item.curve));
     if lowerings.is_empty() {
         return Ok(Cow::Borrowed(ir));
     }
     let mut lowered = ir.clone();
     for lowering in lowerings {
-        apply(&mut lowered, lowering)?;
+        if !apply(&mut lowered, lowering) {
+            return Ok(Cow::Borrowed(ir));
+        }
     }
     Ok(Cow::Owned(lowered))
 }
@@ -129,24 +178,18 @@ fn subset_owner<'ir>(
 fn lowering(
     ir: &CadIr,
     procedural: &ProceduralCurve,
+    curve: &Curve,
+    subset: &SubsetCurveConstruction,
     lower: &impl Fn(&Curve) -> bool,
-) -> Result<Option<Lowering>, CodecError> {
-    let Some((curve, subset)) = subset_owner(ir, procedural) else {
-        return Ok(None);
-    };
-    if !lower(curve) {
-        return Ok(None);
-    }
+) -> Option<Lowering> {
     let [first, last] = subset.parameter_range().endpoints();
     let mut map = RootMap::IDENTITY.then([first, last], *subset.sense());
     let mut visited = BTreeSet::from([&curve.id]);
     let mut source = subset.source();
     let root = loop {
-        let Some(candidate) = ir.model.curves.iter().find(|item| item.id == *source) else {
-            return Ok(None);
-        };
+        let candidate = ir.model.curves.iter().find(|item| item.id == *source)?;
         if !visited.insert(&candidate.id) {
-            return Ok(None);
+            return None;
         }
         let inner = candidate
             .geometry
@@ -169,31 +212,72 @@ fn lowering(
         Some(SolvedCurveGeometry::Nurbs(cache)) => map.spline(cache),
         _ => None,
     };
-    let Some(geometry) = spline
+    let geometry = spline
         .map(SolvedCurveGeometry::Nurbs)
-        .or_else(|| root.geometry.solved().cloned())
-    else {
-        return Ok(None);
-    };
+        .or_else(|| root.geometry.solved().cloned())?;
     let span = last - first;
+    let root_interval = map.interval([0.0, span])?;
     let definition = SubsetCurveConstruction::try_new(
         root.id.clone(),
-        map.interval([0.0, span])?.endpoints(),
+        root_interval.endpoints(),
         map.forward,
         subset.legacy_cache(),
     )
-    .map_err(|error| CodecError::malformed(format_args!("subset curve {}: {error}", curve.id)))?;
-    Ok(Some(Lowering {
+    .ok()?;
+    Some(Lowering {
         curve: curve.id.clone(),
         construction: procedural.id.clone(),
         geometry,
         span,
         map,
         definition,
-    }))
+    })
 }
 
-fn apply(ir: &mut CadIr, lowering: Lowering) -> Result<(), CodecError> {
+fn ranges_fit(ir: &CadIr, lowering: &Lowering) -> bool {
+    let Some(carrier) = ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| curve.id == lowering.curve)
+    else {
+        return false;
+    };
+    let range = carrier
+        .parameter_range
+        .map_or([0.0, lowering.span], IncreasingParameterInterval::endpoints);
+    if lowering
+        .map
+        .interval(range)
+        .and_then(|range| IncreasingParameterInterval::new(range.endpoints()))
+        .is_none()
+    {
+        return false;
+    }
+    ir.model
+        .edges
+        .iter()
+        .filter(|edge| edge.curve() == Some(&lowering.curve))
+        .filter_map(crate::topology::Edge::param_range)
+        .all(|range| lowering.map.interval(range.get()).is_some())
+        && ir
+            .model
+            .coedges
+            .iter()
+            .filter_map(|coedge| coedge.use_curve.as_ref())
+            .filter(|value| value.curve == lowering.curve)
+            .all(|value| {
+                lowering
+                    .map
+                    .interval(value.parameter_range.endpoints())
+                    .is_some()
+            })
+}
+
+fn apply(ir: &mut CadIr, lowering: Lowering) -> bool {
+    if !ranges_fit(ir, &lowering) {
+        return false;
+    }
     let Lowering {
         curve,
         construction,
@@ -202,6 +286,20 @@ fn apply(ir: &mut CadIr, lowering: Lowering) -> Result<(), CodecError> {
         map,
         definition,
     } = lowering;
+    let carrier = ir.model.curves.iter().find(|carrier| carrier.id == curve);
+    debug_assert!(
+        carrier.is_some(),
+        "lowered curves remain in the cloned document"
+    );
+    let Some(carrier) = carrier else {
+        return false;
+    };
+    let range = carrier
+        .parameter_range
+        .map_or([0.0, span], IncreasingParameterInterval::endpoints);
+    let Some(carrier_range) = map.interval(range) else {
+        return false;
+    };
     let carrier = ir
         .model
         .curves
@@ -212,15 +310,12 @@ fn apply(ir: &mut CadIr, lowering: Lowering) -> Result<(), CodecError> {
         "lowered curves remain in the cloned document"
     );
     let Some(carrier) = carrier else {
-        return Ok(());
+        return false;
     };
     if let CurveGeometry::Procedural { cache, .. } = &mut carrier.geometry {
         *cache = Some(geometry);
     }
-    let range = carrier
-        .parameter_range
-        .map_or([0.0, span], IncreasingParameterInterval::endpoints);
-    carrier.parameter_range = IncreasingParameterInterval::new(map.interval(range)?.endpoints());
+    carrier.parameter_range = IncreasingParameterInterval::new(carrier_range.endpoints());
     for procedural in &mut ir.model.procedural_curves {
         if procedural.id == construction {
             *procedural = ProceduralCurve::new(
@@ -235,7 +330,11 @@ fn apply(ir: &mut CadIr, lowering: Lowering) -> Result<(), CodecError> {
             continue;
         }
         if let Some(range) = edge.param_range() {
-            edge.set_param_range(Some(map.interval(range.get())?));
+            let mapped = map.interval(range.get());
+            debug_assert!(mapped.is_some(), "each edge range was preflighted");
+            if let Some(mapped) = mapped {
+                edge.set_param_range(Some(mapped));
+            }
         }
         if !map.forward {
             std::mem::swap(&mut edge.start, &mut edge.end);
@@ -254,7 +353,11 @@ fn apply(ir: &mut CadIr, lowering: Lowering) -> Result<(), CodecError> {
             .as_mut()
             .filter(|use_curve| use_curve.curve == curve)
         {
-            use_curve.parameter_range = map.interval(use_curve.parameter_range.endpoints())?;
+            let mapped = map.interval(use_curve.parameter_range.endpoints());
+            debug_assert!(mapped.is_some(), "each coedge range was preflighted");
+            if let Some(mapped) = mapped {
+                use_curve.parameter_range = mapped;
+            }
         }
     }
     if !map.forward {
@@ -272,7 +375,7 @@ fn apply(ir: &mut CadIr, lowering: Lowering) -> Result<(), CodecError> {
             }
         }
     }
-    Ok(())
+    true
 }
 
 #[cfg(test)]
