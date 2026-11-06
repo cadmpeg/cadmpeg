@@ -181,6 +181,15 @@ pub(crate) fn generated_act_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
     (out, records)
 }
 
+pub(crate) fn generated_single_entity_act_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
+    let (bulk, records) = generated_act_bulkstream();
+    let start = usize::try_from(records[1].1).unwrap();
+    let records = records.into_iter().skip(1)
+        .map(|(id, offset)| (id, offset - u64_from_index(start)))
+        .collect();
+    (bulk[start..].to_vec(), records)
+}
+
 /// A complete ACT segment with a second independently indexed channel group.
 pub(crate) fn generated_complete_act_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
     let (mut bulk, mut records) = generated_act_bulkstream();

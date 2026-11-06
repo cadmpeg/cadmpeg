@@ -951,7 +951,7 @@ fn f3d_with_smbh_and_instance_properties_and_design_with_metastream_and_entries(
     design_metastream: &[u8],
     extra_entries: &[(&str, &[u8])],
 ) -> Vec<u8> {
-    let act = crate::test_support::act_stream_test::generated_complete_act_bulkstream();
+    let act = crate::test_support::act_stream_test::generated_single_entity_act_bulkstream();
     f3d_with_smbh_and_instance_properties_and_design_with_act(
         smbh, properties, design_bulk, design_metastream, extra_entries, &act,
     )
