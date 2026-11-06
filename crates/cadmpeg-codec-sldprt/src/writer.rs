@@ -4042,7 +4042,7 @@ pub(crate) fn brep_body(
     let (ctx, _) = DecodeContext::from_root_bytes(&[], &arena, &DecodePolicy::desktop())?;
     let mut bounded_curves = HashMap::new();
     for edge in &ir.model.edges {
-        if edge.param_range().is_none() {
+        if edge.param_range().is_none() && surface_curve::bounded_interval(ir, edge).is_none() {
             continue;
         }
         if bounded_curve::derived_sphere_seam(ir, edge) {

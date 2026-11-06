@@ -38,7 +38,11 @@ pub(super) fn from_edge(
     edge: &Edge,
     length_scale: f64,
 ) -> Result<Option<BoundedCurve>, CodecError> {
-    let Some(range) = edge.param_range().map(cadmpeg_ir::units::FiniteVector::get) else {
+    let Some(range) = edge
+        .param_range()
+        .map(cadmpeg_ir::units::FiniteVector::get)
+        .or_else(|| super::surface_curve::bounded_interval(ir, edge))
+    else {
         return Ok(None);
     };
     let Some(id) = edge.curve() else {
