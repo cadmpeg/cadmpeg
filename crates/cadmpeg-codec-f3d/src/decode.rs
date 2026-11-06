@@ -327,8 +327,6 @@ struct DesignProjectionGaps {
     unresolved_parameter_owners: usize,
     untyped_parameter_units: usize,
     unresolved_expression_dependencies: usize,
-    unprojected_history_dependencies: usize,
-    ambiguous_history_dependencies: usize,
     native_dimensions: usize,
     unprojected_sketch_placements: usize,
     unprojected_sketch_surfaces: usize,
@@ -1168,48 +1166,6 @@ fn design_projection_gaps(
         .iter()
         .filter_map(|parameter| parameter.native_ref.as_deref())
         .collect::<std::collections::HashSet<_>>();
-    let projected_features = ir
-        .model
-        .features
-        .iter()
-        .filter_map(|feature| Some((feature.native_ref.as_deref()?, feature)))
-        .collect::<std::collections::HashMap<_, _>>();
-    let mut unprojected_history_dependencies = 0;
-    let mut ambiguous_history_dependencies = 0;
-    let scope_history = crate::design::feature_project::ScopeHistoryGraph::new(
-        &native.design_parameter_scopes,
-        &native.design_body_bindings,
-        &native.design_body_recipe_operands,
-        &native.design_component_naming_spaces,
-        &native.asm_histories,
-    );
-    for scope in &native.design_parameter_scopes {
-        let Some(feature) = projected_features.get(scope.id.as_str()) else {
-            continue;
-        };
-        let predecessor_scope = match scope_history.predecessor(scope, |candidate| {
-            projected_features.contains_key(candidate.id.as_str())
-        }) {
-            Ok(crate::design::feature_project::ScopeHistoryPredecessor::Scope(predecessor)) => {
-                predecessor
-            }
-            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
-            Ok(crate::design::feature_project::ScopeHistoryPredecessor::Ambiguous) | Err(_) => {
-                ambiguous_history_dependencies += 1;
-                continue;
-            }
-            Ok(crate::design::feature_project::ScopeHistoryPredecessor::None) => {
-                continue;
-            }
-        };
-        let Some(predecessor) = projected_features.get(predecessor_scope.id.as_str()) else {
-            unprojected_history_dependencies += 1;
-            continue;
-        };
-        if predecessor.id != feature.id && !feature.dependencies.contains(&predecessor.id) {
-            unprojected_history_dependencies += 1;
-        }
-    }
     let projected_dimension_parameters = ir
         .model
         .sketch_constraints
@@ -1279,8 +1235,6 @@ fn design_projection_gaps(
             .iter()
             .filter(|binding| binding.history_only)
             .count(),
-        unprojected_history_dependencies,
-        ambiguous_history_dependencies,
         unprojected_feature_scopes: projection_records::missing_feature_scopes(ir, native)?.len(),
         unprojected_parameters: native
             .design_parameters
@@ -2023,22 +1977,6 @@ fn report_design_projection_gaps(
         push(F3dLossCode::ParameterExpressionUnbound, count,
             format_args!("parameter {parameter}: {count} unresolved expression identifier(s) remain literal text"))?;
     }
-    push(
-        F3dLossCode::HistoryDependencyUnprojected,
-        gaps.unprojected_history_dependencies,
-        format_args!(
-            "{} feature history-state dependency link(s) were not projected into neutral construction history.",
-            gaps.unprojected_history_dependencies
-        ),
-    )?;
-    push(
-        F3dLossCode::HistoryDependencyAmbiguous,
-        gaps.ambiguous_history_dependencies,
-        format_args!(
-            "{} feature history-state dependency link(s) have multiple source scopes for the preceding state identity.",
-            gaps.ambiguous_history_dependencies
-        ),
-    )?;
     push(
         F3dLossCode::SketchDimensionNativeRetained,
         gaps.native_dimensions,
