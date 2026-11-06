@@ -111,6 +111,14 @@ pub(super) fn decode(
                 .iter()
                 .any(|item| product_representation_items.contains(item));
         if bodies.is_empty() && !product_linked {
+            for item in &items {
+                if exchange.records().get(item).is_some_and(|record| {
+                    has_entity(record, "TRIANGULATED_SURFACE_SET")
+                        || has_entity(record, "COMPLEX_TRIANGULATED_SURFACE_SET")
+                }) {
+                    declared_items.insert(*item);
+                }
+            }
             continue;
         }
         let mut associator = TessellationItemAssociator {

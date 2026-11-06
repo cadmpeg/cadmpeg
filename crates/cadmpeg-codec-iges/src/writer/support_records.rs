@@ -202,7 +202,7 @@ fn retain_surface_numbers(entity: &mut Entity, surface: &Surface, parameters: &[
     entity.parameter_body = format!("{};", output.join(",")).into_bytes();
 }
 
-pub(super) fn retain(ir: &CadIr, surface: &Surface, entities: &mut [Entity]) {
+pub(super) fn retain(ir: &CadIr, surface: &Surface, entities: &mut Vec<Entity>, base: usize) {
     if entities.len() != 4 {
         return;
     }
@@ -267,6 +267,57 @@ pub(super) fn retain(ir: &CadIr, surface: &Surface, entities: &mut [Entity]) {
         entity.source_targets.push(record.id().to_owned());
         retain_numeric_tokens(entity, record);
     }
+    implicit_plane(ir, surface, entities, base);
+}
+
+fn implicit_plane(ir: &CadIr, surface: &Surface, entities: &mut Vec<Entity>, base: usize) {
+    let Some(cadmpeg_ir::geometry::SolvedSurfaceGeometry::Plane(plane)) = surface.geometry.solved()
+    else {
+        return;
+    };
+    if entities.len() != 4 || *plane.frame().reference() != plane.frame().axis().derived_reference()
+    {
+        return;
+    }
+    let Some(source) = surface
+        .source_object
+        .as_ref()
+        .filter(|source| source.format == CodecFormat::Iges)
+    else {
+        return;
+    };
+    let Some(sequence) = source.object_id.as_str().strip_prefix('D') else {
+        return;
+    };
+    let id = format!("iges:entity:directory#{sequence}");
+    let Some(record) = ir
+        .native
+        .namespace("iges")
+        .and_then(|ns| ns.arenas().get("entities"))
+        .and_then(|records| records.iter().find(|record| record.id() == id))
+    else {
+        return;
+    };
+    if record.field("entity_type").and_then(|v| v.as_i64()) != Some(190)
+        || record.field("form").and_then(|v| v.as_i64()) != Some(0)
+        || record.field("transform").and_then(|v| v.as_i64()) != Some(0)
+    {
+        return;
+    }
+    let Some(axis) = base.checked_add(1) else {
+        return;
+    };
+    entities.remove(2);
+    let Some(entity) = entities.last_mut() else {
+        return;
+    };
+    entity.form = 0;
+    entity.parameter_body = format!(
+        "{},{};",
+        super::reference_marker(base),
+        super::reference_marker(axis)
+    )
+    .into_bytes();
 }
 
 #[cfg(test)]

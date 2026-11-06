@@ -1555,8 +1555,8 @@ fn elliptical_cone_reduction_is_reported() {
     .unwrap();
 
     assert!(report.losses.iter().any(|loss| {
-        loss.code.category() == cadmpeg_ir::report::loss::LossCategory::Geometry
-            && loss.message.contains("elliptical cone surface(s)")
+        loss.code == StepLossCode::EllipticalConeReduced.kind()
+            && loss.message.contains(ir.model.surfaces[0].id.as_str())
     }));
 }
 

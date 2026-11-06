@@ -104,10 +104,104 @@ fn layer_index(ir: &cadmpeg_ir::CadIr, source: i32) -> Result<i32, WriteError> {
     Ok(super::wire_index(index)?)
 }
 
+fn material_index(
+    ir: &cadmpeg_ir::CadIr,
+    materials: &super::super::materials::MaterialPlan,
+    source: i32,
+) -> Result<i32, WriteError> {
+    if source < 0 {
+        return Ok(source);
+    }
+    let mut records = super::records(ir, "materials").iter().filter(|record| {
+        record
+            .field("archive_index")
+            .and_then(|value| value.as_i64())
+            == Some(i64::from(source))
+    });
+    let record = records
+        .next()
+        .ok_or_else(|| WriteError::Omit(format!("light material index {source} is unresolved")))?;
+    if records.next().is_some() {
+        return Err(WriteError::Omit(format!(
+            "light material index {source} is ambiguous"
+        )));
+    }
+    match materials.native_targets(record.id()) {
+        [index] => Ok(*index),
+        [] => Err(WriteError::Omit(format!(
+            "light material index {source} is not emitted"
+        ))),
+        _ => Err(WriteError::Omit(format!(
+            "light material index {source} has multiple outputs"
+        ))),
+    }
+}
+
+fn group_index(ir: &cadmpeg_ir::CadIr, source: i32) -> Result<i32, WriteError> {
+    let records = super::records(ir, "groups");
+    let mut matching = records.iter().filter(|record| {
+        record
+            .field("archive_index")
+            .and_then(|value| value.as_i64())
+            == Some(i64::from(source))
+    });
+    let record = matching
+        .next()
+        .ok_or_else(|| WriteError::Omit(format!("light group index {source} is unresolved")))?;
+    if matching.next().is_some() {
+        return Err(WriteError::Omit(format!(
+            "light group index {source} is ambiguous"
+        )));
+    }
+    let index = records
+        .iter()
+        .filter(|record| super::super::native::group_resolves(ir, record))
+        .position(|candidate| candidate.id() == record.id())
+        .ok_or_else(|| WriteError::Omit(format!("light group index {source} is not emitted")))?;
+    Ok(super::wire_index(index)?)
+}
+
+fn hatch_index(ir: &cadmpeg_ir::CadIr, source: i32) -> Result<i32, WriteError> {
+    if source < 0 {
+        return Ok(source);
+    }
+    let records = super::records(ir, "hatch_patterns");
+    let mut matching = records.iter().filter(|record| {
+        record
+            .field("archive_index")
+            .and_then(|value| value.as_i64())
+            == Some(i64::from(source))
+    });
+    let record = matching.next().ok_or_else(|| {
+        WriteError::Omit(format!("light hatch pattern index {source} is unresolved"))
+    })?;
+    if matching.next().is_some() {
+        return Err(WriteError::Omit(format!(
+            "light hatch pattern index {source} is ambiguous"
+        )));
+    }
+    let export = super::super::hatches::patterns(ir)?;
+    let index = records
+        .iter()
+        .filter(|record| export.written.contains(record.id()))
+        .position(|candidate| candidate.id() == record.id())
+        .ok_or_else(|| {
+            WriteError::Omit(format!("light hatch pattern index {source} is not emitted"))
+        })?;
+    Ok(super::wire_index(index)?)
+}
+
+pub(super) struct EncodedAttributes {
+    pub(super) body: Vec<u8>,
+    pub(super) direct: Vec<u8>,
+    pub(super) change: Option<String>,
+}
+
 pub(super) fn encode(
     value: &Value,
     ir: &cadmpeg_ir::CadIr,
-) -> Result<(Vec<u8>, Option<String>), WriteError> {
+    materials: &super::super::materials::MaterialPlan,
+) -> Result<EncodedAttributes, WriteError> {
     const FIELDS: &[&str] = &[
         "source_uuid",
         "name",
@@ -161,13 +255,7 @@ pub(super) fn encode(
             "light attribute {name} has no encoder"
         )));
     }
-    if integer(fields, "material_index")? != -1 {
-        return Err(WriteError::Omit(
-            "light attribute material_index needs table-index remapping".into(),
-        ));
-    }
     for name in [
-        "group_indexes",
         "rendering_materials",
         "rendering_mappings",
         "user_strings",
@@ -182,21 +270,7 @@ pub(super) fn encode(
             )));
         }
     }
-    if fields
-        .get("hatch_pattern_index")
-        .is_some_and(|value| value != &Value::from(-1))
-    {
-        return Err(WriteError::Omit(
-            "light attribute hatch_pattern_index needs table-index remapping".into(),
-        ));
-    }
-    for name in [
-        "casts_shadows",
-        "receives_shadows",
-        "advanced_texture_preview",
-        "custom_render_mesh",
-        "mesh_modifiers",
-    ] {
+    for name in ["custom_render_mesh", "mesh_modifiers"] {
         if fields.get(name).is_some_and(|value| !value.is_null()) {
             return Err(WriteError::Omit(format!(
                 "light attribute {name} is not writable yet"
@@ -207,8 +281,27 @@ pub(super) fn encode(
         .ok_or_else(|| WriteError::Omit("light attribute source_uuid is invalid".into()))?;
     let source_layer = integer(fields, "layer_index")?;
     let written_layer = layer_index(ir, source_layer)?;
+    let source_material = integer(fields, "material_index")?;
+    let written_material = material_index(ir, materials, source_material)?;
+    let source_hatch = integer(fields, "hatch_pattern_index")?;
+    let written_hatch = hatch_index(ir, source_hatch)?;
     let source_linetype = integer(fields, "linetype_index")?;
     let written_linetype = linetype_index(ir, source_linetype)?;
+    let source_groups = field(fields, "group_indexes")?
+        .as_array()
+        .ok_or_else(|| WriteError::Omit("light attribute group_indexes must be a list".into()))?
+        .iter()
+        .map(|value| {
+            value
+                .as_i64()
+                .and_then(|value| i32::try_from(value).ok())
+                .ok_or_else(|| WriteError::Omit("light group index must fit i32".into()))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let written_groups = source_groups
+        .iter()
+        .map(|index| group_index(ir, *index))
+        .collect::<Result<Vec<_>, _>>()?;
     let mut body = vec![0x2d];
     body.extend(id.to_wire());
     body.extend(written_layer.to_le_bytes());
@@ -219,7 +312,40 @@ pub(super) fn encode(
     body.push(3);
     body.extend(written_linetype.to_le_bytes());
     body.push(4);
-    body.extend(integer(fields, "material_index")?.to_le_bytes());
+    body.extend(written_material.to_le_bytes());
+    let mut rendering_child = None;
+    if [
+        "casts_shadows",
+        "receives_shadows",
+        "advanced_texture_preview",
+    ]
+    .iter()
+    .any(|name| fields.get(*name).is_some_and(|value| !value.is_null()))
+    {
+        let flag = |name: &str, default: bool| -> Result<bool, WriteError> {
+            match fields.get(name) {
+                None | Some(Value::Null) => Ok(default),
+                Some(value) => value
+                    .as_bool()
+                    .filter(|value| *value != default)
+                    .ok_or_else(|| {
+                        WriteError::Omit(format!(
+                            "light attribute {name} must use its non-default boolean"
+                        ))
+                    }),
+            }
+        };
+        let casts = flag("casts_shadows", true)?;
+        let receives = flag("receives_shadows", true)?;
+        let preview = flag("advanced_texture_preview", false)?;
+        let mut rendering = 0_i32.to_le_bytes().to_vec();
+        rendering.extend(0_i32.to_le_bytes());
+        rendering.extend([u8::from(casts), u8::from(receives), u8::from(preview)]);
+        body.push(5);
+        let start = body.len();
+        body.extend(super::super::anonymous(1, 3, &rendering)?);
+        rendering_child = Some(start..body.len());
+    }
     for (tag, name) in [(6, "color"), (7, "plot_color")] {
         body.push(tag);
         body.extend(color(fields, name)?);
@@ -244,10 +370,17 @@ pub(super) fn encode(
         (15, "plot_weight_source"),
         (16, "material_source"),
         (17, "linetype_source"),
-        (19, "active_space"),
     ] {
         body.extend([tag, byte(fields, name)?]);
     }
+    if !written_groups.is_empty() {
+        body.push(18);
+        body.extend(super::wire_index(written_groups.len())?.to_le_bytes());
+        for index in &written_groups {
+            body.extend(index.to_le_bytes());
+        }
+    }
+    body.extend([19, byte(fields, "active_space")?]);
     if let Some(value) = fields.get("viewport_uuid").filter(|value| !value.is_null()) {
         let id = value
             .as_str()
@@ -312,6 +445,8 @@ pub(super) fn encode(
         body.extend([28, u8::from(proof)]);
         body.extend(super::super::anonymous(1, 0, &list)?);
     }
+    body.push(30);
+    body.extend(written_hatch.to_le_bytes());
     for (tag, name) in [
         (31, "section_hatch_scale"),
         (32, "section_hatch_rotation"),
@@ -364,11 +499,37 @@ pub(super) fn encode(
             "layer index {source_layer} is written as {written_layer}"
         ));
     }
+    if source_material != written_material {
+        changes.push(format!(
+            "material index {source_material} is written as {written_material}"
+        ));
+    }
     if source_linetype != written_linetype {
         changes.push(format!(
             "linetype index {source_linetype} is written as {written_linetype}"
         ));
     }
+    if source_hatch != written_hatch {
+        changes.push(format!(
+            "hatch pattern index {source_hatch} is written as {written_hatch}"
+        ));
+    }
+    for (source, written) in source_groups.iter().zip(&written_groups) {
+        if source != written {
+            changes.push(format!("group index {source} is written as {written}"));
+        }
+    }
     let change = (!changes.is_empty()).then(|| changes.join(", "));
-    Ok((body, change))
+    let direct = if let Some(child) = rendering_child {
+        let mut direct = body[..child.start].to_vec();
+        direct.extend(&body[child.end..]);
+        direct
+    } else {
+        body.clone()
+    };
+    Ok(EncodedAttributes {
+        body,
+        direct,
+        change,
+    })
 }

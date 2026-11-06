@@ -1546,9 +1546,6 @@ pub(crate) fn generated_design_canvas_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>)
     let scope_tag = tag(base_rows, 3);
     let paired_scope_tag = tag(base_rows, 4);
 
-
-
-
     let (mut out, mut records) = generated_design_bulkstream();
     let run_at = u64::try_from(out.len()).expect("synthetic Canvas run offset");
 

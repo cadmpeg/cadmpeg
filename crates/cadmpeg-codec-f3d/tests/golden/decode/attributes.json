@@ -357,6 +357,7 @@
         },
         {
           "id": "f3d:brep:attribute#20",
+          "native_ref": "f3d:design:creation-timestamp#20",
           "target": {
             "kind": "body",
             "id": "f3d:brep:entity#1"
@@ -520,6 +521,7 @@
           }
         ],
         "lost_edge_references": [],
+        "mesh_containers": [],
         "mesh_surface_sentinels": [],
         "persistent_design_links": [
           {
@@ -551,6 +553,7 @@
         "tolerant_edge_tails": [],
         "tolerant_vertex_tails": [],
         "transform_hints": [],
+        "unknowns": [],
         "vertex_ownerships": [
           {
             "id": "f3d:asm:vertex-ownership#13",
