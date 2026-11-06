@@ -236,9 +236,9 @@ each other. Winding numbers use each loop's parameter-plane polyline,
 sampled until the deviation of each chord midpoint is at most `1e-3` of the
 loop's parameter-plane box diagonal.
 
-On a cylinder or a cone, a loop with zero net shift in `u` is contractible,
-and a loop that goes around the axis once is not. With `m` loops that go
-around the axis:
+On a cylinder, cone, or extrusion with a periodic directrix, a loop with zero
+net shift in `u` is contractible, and a loop that goes around the period once
+is not. With `m` loops that go around the period:
 
 | `m` | Region |
 | --- | --- |
@@ -377,11 +377,20 @@ as candidates.
 ### Procedural carriers
 
 A curve-bounded construction takes the canonical kind and chart of its
-support. An exact construction is measured on its solved cache. Another
-construction is measured on its solved cache when the cache states its fit
-tolerance, which enters the model uncertainty; its kind stays
-`procedural`. Every other procedural carrier is
-`carrier.procedural-unevaluated`.
+support. An extrusion of a solved NURBS directrix is evaluated from its
+construction when it has no separate carrier or directrix parameter
+interval and no revision form. Its chart maps `(u, v)` to the directrix
+point at `u` plus `v` times the extrusion vector. The directrix supplies
+the period when it is periodic. Bounded faces use the planar or periodic
+region rules, and area and flux use boundary quadrature on the evaluated
+point and partial derivatives. Numeric error and model uncertainty follow
+the rules for those integrals and their boundaries. The kind remains
+`procedural`; an unknown cache is not used as a solved carrier.
+
+An exact construction is measured on its solved cache. Another construction
+is measured on its solved cache when the cache states its fit tolerance,
+which enters the model uncertainty; its kind stays `procedural`. Every other
+procedural carrier is `carrier.procedural-unevaluated`.
 
 ## Extents
 
@@ -424,6 +433,8 @@ A face box is the box of the boundary pieces joined with the carrier's
 interior critical points that lie in the region. A plane or a cylinder has no
 interior critical point, and its box has the method `boundary_extremum`. On a
 cone the apex is the only one, and the box has the method `critical_points`.
+An extrusion is linear in `v`, so the box of a bounded face is the box of
+its boundary pieces, with the method `boundary_extremum`.
 On a sphere the candidates are the six points at the radius along the
 model axes; on a ring torus, the points where a model coordinate is
 stationary, four per axis. A candidate at a sphere pole is a member when the

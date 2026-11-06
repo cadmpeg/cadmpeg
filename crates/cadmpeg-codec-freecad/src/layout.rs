@@ -45,3 +45,15 @@ pub(crate) mod link_array_side_entry_header {
     /// Record length in bytes. Spec §9.
     pub(crate) const LEN: usize = 4;
 }
+
+/// Byte offsets for the `fillet_edge_item` record.
+///
+/// Spec §11. Record length 20 B.
+///
+/// ```text
+/// The stride follows from one 32-bit index and two 64-bit values.
+/// ```
+pub(crate) mod fillet_edge_item {
+    /// Record length in bytes. Spec §11.
+    pub(crate) const LEN: usize = 20;
+}

@@ -10,6 +10,7 @@ mod cones;
 mod cube;
 mod cylinders;
 mod declared;
+mod extrusion;
 mod findings;
 mod mass;
 mod nurbs;

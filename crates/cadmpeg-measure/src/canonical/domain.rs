@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Procedural carriers: a curve-bounded construction is measured on its
-//! support, whose domain bounds it; an exact construction on its solved
-//! cache; another construction on its solved cache when the cache states its
-//! fit tolerance.
+//! Procedural carriers: bounded supports, directly evaluated extrusions,
+//! and solved caches with an admitted fit tolerance.
 
 use cadmpeg_ir::geometry::{
-    ProceduralSurface, ProceduralSurfaceDefinition, Surface, SurfaceGeometry,
+    CurveGeometry, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry, Surface,
+    SurfaceGeometry,
 };
 
 use super::placement::Placement;
-use super::Carrier;
+use super::surface::{Chart, ExtrusionChart};
+use super::{Carrier, Shape};
 use crate::failure::{Measure, MeasureFailure};
 use crate::owners::Owners;
 use crate::reason::UnavailableReason;
@@ -67,6 +67,30 @@ impl<'ir> Carrier<'ir> {
             carrier.face_surface = surface;
             carrier.implicit_outer = *implicit_outer;
             return Ok(carrier);
+        }
+        if let Some(ProceduralSurfaceDefinition::Extrusion(extrusion)) = definition {
+            if extrusion.parameter_interval().is_none()
+                && procedural.is_some_and(|item| item.record_bounds().is_none())
+                && extrusion.revision_form().is_none()
+            {
+                if let Some(curve) = owners.curve(extrusion.directrix().as_str()) {
+                    if let CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(directrix)) =
+                        &curve.geometry
+                    {
+                        if cadmpeg_ir::eval::nurbs_curve_parameter_domain(directrix).is_some() {
+                            let mut carrier = Self::resolve(surface, body)?;
+                            carrier.chain.push("extrusion".to_owned());
+                            carrier.shape =
+                                Shape::Charted(Box::new(Chart::Extrusion(ExtrusionChart {
+                                    surface: &surface.id,
+                                    directrix,
+                                    placement: body,
+                                })));
+                            return Ok(carrier);
+                        }
+                    }
+                }
+            }
         }
         let fit = match definition {
             Some(ProceduralSurfaceDefinition::Exact(_)) => Some(0.0),
