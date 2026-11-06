@@ -3,6 +3,37 @@
 use super::*;
 
 #[test]
+fn recipe_without_indexed_carrier_is_reported_as_dropped() {
+    use crate::records::identity::RecordedValue;
+    use crate::records::recipes::{ConstructionRecipe, ConstructionRecipeKind};
+    use cadmpeg_ir::codec::write::NativeDisposition;
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let id = "f3d:generated/Design1/BulkStream.dat:construction-recipe#10";
+    crate::test_support::native_test::f3d_native_mut(&mut ir)
+        .construction_recipes
+        .push(ConstructionRecipe {
+            id: id.into(),
+            byte_offset: Some(10),
+            kind: ConstructionRecipeKind::Body,
+            design: None,
+            recipe_index: 0,
+            record_index: Some(RecordedValue {
+                value: 1,
+                offset: None,
+            }),
+        });
+    let (output, report) = super::super::source_less_analytic::synthesize_document(&ir, None);
+    assert_eq!(output.ir().model.bodies.len(), 1);
+    assert_eq!(
+        report
+            .native_dispositions
+            .record_disposition("f3d", "construction_recipes", id),
+        NativeDisposition::Dropped
+    );
+    assert!(report.losses.iter().any(|loss| loss.message.contains(id)));
+}
+
+#[test]
 fn dangling_coedge_is_reduced_with_a_named_loss() {
     use crate::test_support::smbh_geometry_test::synthetic_geometry_smbh;
     use crate::test_support::zip_test::f3d_with_smbh;
