@@ -837,6 +837,7 @@ fn construction_operand_groups_have_exact_counted_and_direct_frames() {
             FaceId::mint(crate::ids::brep_entity_id(7)).expect("identity grammar")
         ],
         alternate_selector_edges: Vec::new(),
+        operand_offset: None,
     }];
     assert!(matches!(
         project_split(&historical_split_scope, &[], &split_groups, &[], std::slice::from_ref(&historical_split_tool)).unwrap(),

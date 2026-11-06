@@ -819,7 +819,11 @@ pub(crate) fn prefix_operand_ordinals(references: &[DesignRecipeReference]) -> O
     let mut ordinals = Vec::new();
     let mut operand_count = 0;
     for reference in references {
-        let field = (reference.selector_offset, reference.token_offset);
+        // The names of one counted operand share its ordinal.
+        let field = reference.operand_offset.map_or(
+            (reference.selector_offset, reference.token_offset),
+            |offset| (offset, offset),
+        );
         let ordinal = if let Some((_, ordinal)) = fields.iter().find(|(other, _)| *other == field) {
             *ordinal
         } else {
