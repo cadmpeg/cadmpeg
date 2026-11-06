@@ -1,12 +1,11 @@
 {
-  "output": "original fixture                                                        S      1\n1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,32,38,6,308,17,7HprodG      1\nuct,1.0,2,2HMM,1,1.0,15HYYYYMMDD.HHMMSS,1.0000000000000000D-3,0,6HauthorG      2\n,3Horg,11,0,0H,0H;                                                      G      3\n     108       1       0       0       0       0       0       000010000D      1\n     108       0       0       1       0                   PLANE       0D      2\n     106       2       0       0       0       0       0       000010000D      3\n     106       0       0       1      63                OUTMODEL       0D      4\n     106       3       0       0       0       0       0       000010000D      5\n     106       0       0       5      63                 INMODEL       0D      6\n     126       8       0       0       0       0       0       000010500D      7\n     126       0       0       7       0                               0D      8\n     126      15       0       0       0       0       0       000010500D      9\n     126       0       0      10       0                               0D     10\n     142      25       0       0       0       0       0       000010000D     11\n     142       0       0       1       0                               0D     12\n     142      26       0       0       0       0       0       000010000D     13\n     142       0       0       1       0                               0D     14\n     144      27       0       0       0       0       0       000000000D     15\n     144       0       0       1       0                 ANNULUS       0D     16\n108,0,0,1,0,0,0,0,0,0;                                                 1P      1\n106,1,5,0,0,0,1,0,1,1,0,1,0,0;                                         3P      2\n106,1,5,0,2.5000000000000000D-1,2.5000000000000000D-1,                 5P      3\n7.5000000000000000D-1,2.5000000000000000D-1,                           5P      4\n7.5000000000000000D-1,7.5000000000000000D-1,                           5P      5\n2.5000000000000000D-1,7.5000000000000000D-1,                           5P      6\n2.5000000000000000D-1,2.5000000000000000D-1;                           5P      7\n126,4,1,1,1,1,0,0,0,1.0000000000000000D0,2.0000000000000000D0,         7P      8\n3.0000000000000000D0,4.0000000000000000D0,4.0000000000000000D0,        7P      9\n1.0000000000000000D0,1.0000000000000000D0,1.0000000000000000D0,        7P     10\n1.0000000000000000D0,1.0000000000000000D0,0,0,0,                       7P     11\n1.0000000000000000D0,0,0,1.0000000000000000D0,                         7P     12\n1.0000000000000000D0,0,0,1.0000000000000000D0,0,0,0,0,0,               7P     13\n4.0000000000000000D0,0,0,1.0000000000000000D0;                         7P     14\n126,4,1,1,1,1,0,0,0,1.0000000000000000D0,2.0000000000000000D0,         9P     15\n3.0000000000000000D0,4.0000000000000000D0,4.0000000000000000D0,        9P     16\n1.0000000000000000D0,1.0000000000000000D0,1.0000000000000000D0,        9P     17\n1.0000000000000000D0,1.0000000000000000D0,2.5000000000000000D-1,       9P     18\n2.5000000000000000D-1,0,7.5000000000000000D-1,                         9P     19\n2.5000000000000000D-1,0,7.5000000000000000D-1,                         9P     20\n7.5000000000000000D-1,0,2.5000000000000000D-1,                         9P     21\n7.5000000000000000D-1,0,2.5000000000000000D-1,                         9P     22\n2.5000000000000000D-1,0,0,4.0000000000000000D0,0,0,                    9P     23\n1.0000000000000000D0;                                                  9P     24\n142,0,1,7,3,2;                                                        11P     25\n142,0,1,9,5,2;                                                        13P     26\n144,1,1,1,11,13;                                                      15P     27\nS0000001G0000003D0000016P0000027                                        T      1\n",
+  "output": "original fixture                                                        S      1\n1H,,1H;,7Hcadmpeg,13Hgenerated.igs,7Hcadmpeg,3H0.1,32,38,6,308,17,7HprodG      1\nuct,1.0,2,2HMM,1,1.0,15HYYYYMMDD.HHMMSS,1.0000000000000000D-3,0,6HauthorG      2\n,3Horg,11,0,0H,0H;                                                      G      3\n     108       1       0       0       0       0       0       000010000D      1\n     108       0       0       1       0                   PLANE       0D      2\n     106       2       0       0       0       0       0       000010000D      3\n     106       0       0       1      63                OUTMODEL       0D      4\n     106       3       0       0       0       0       0       000010500D      5\n     106       0       0       1      63                OUTPCURV       0D      6\n     142       4       0       0       0       0       0       000010000D      7\n     142       0       0       1       0                OUTBOUND       0D      8\n     106       5       0       0       0       0       0       000010000D      9\n     106       0       0       1      63                 INMODEL       0D     10\n     106       6       0       0       0       0       0       000010500D     11\n     106       0       0       1      63                INPCURVE       0D     12\n     142       7       0       0       0       0       0       000010000D     13\n     142       0       0       1       0                 INBOUND       0D     14\n     144       8       0       0       0       0       0       000000000D     15\n     144       0       0       1       0                 ANNULUS       0D     16\n108,0,0,1,0,0,0,0,0,0;                                                 1P      1\n106,1,5,0,0,0,1,0,1,1,0,1,0,0;                                         3P      2\n106,1,5,0,0,0,1,0,1,1,0,1,0,0;                                         5P      3\n142,0,1,5,3,3;                                                         7P      4\n106,1,5,0,0.25,0.25,0.75,0.25,0.75,0.75,0.25,0.75,0.25,0.25;           9P      5\n106,1,5,0,0.25,0.25,0.75,0.25,0.75,0.75,0.25,0.75,0.25,0.25;          11P      6\n142,0,1,11,9,3;                                                       13P      7\n144,1,1,1,7,13;                                                       15P      8\nS0000001G0000003D0000016P0000008                                        T      1\n",
   "report": {
     "census": {
       "basis": "target_records",
       "counts": {
-        "106_copious_data": 2,
+        "106_copious_data": 4,
         "108_plane": 1,
-        "126_nurbs_curve": 2,
         "142_curve_on_parametric_surface": 2,
         "144_trimmed_surface": 1
       }
@@ -18,7 +17,7 @@
         "articulations": "omitted",
         "assembly_joints": "dropped",
         "assets": "dropped",
-        "attributes": "reported",
+        "attributes": "written",
         "bodies": "written",
         "coedges": "written",
         "colliders": "omitted",
@@ -41,7 +40,7 @@
         "pmi": "dropped",
         "points": "reported",
         "presentation_documents": "dropped",
-        "presentation_layers": "dropped",
+        "presentation_layers": "written",
         "procedural_curves": "dropped",
         "procedural_surfaces": "reported",
         "product_definitions": "dropped",
@@ -82,58 +81,6 @@
       },
       {
         "code": {
-          "code": "writer.support-geometry-not-represented",
-          "kind": "geometry_not_transferred",
-          "namespace": "iges",
-          "scope": "namespaced",
-          "strict_floor": "warning"
-        },
-        "message": "1 support geometry record (iges:model:curve#D11) was withheld because its parameter-space carrier has no exported owner",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "writer.support-geometry-not-represented",
-          "kind": "geometry_not_transferred",
-          "namespace": "iges",
-          "scope": "namespaced",
-          "strict_floor": "warning"
-        },
-        "message": "1 support geometry record (iges:model:curve#D5) was withheld because its parameter-space carrier has no exported owner",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "writer.attribute-omitted",
-          "kind": "metadata_not_transferred",
-          "namespace": "iges",
-          "scope": "namespaced"
-        },
-        "message": "IGES attribute iges:application:attribute#D11:0:0 is omitted: its current owner has no emitted entity",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "writer.attribute-omitted",
-          "kind": "metadata_not_transferred",
-          "namespace": "iges",
-          "scope": "namespaced"
-        },
-        "message": "IGES attribute iges:application:attribute#D5:0:0 is omitted: its current owner has no emitted entity",
-        "severity": "warning"
-      },
-      {
-        "code": {
-          "code": "writer.arena-omitted",
-          "kind": "passthrough_record_omitted",
-          "namespace": "iges",
-          "scope": "namespaced"
-        },
-        "message": "IGES cannot fully encode presentation layers: iges:presentation:level#0",
-        "severity": "warning"
-      },
-      {
-        "code": {
           "code": "native.records-omitted",
           "kind": "record_not_typed",
           "namespace": "export",
@@ -159,27 +106,7 @@
           "namespace": "export",
           "scope": "namespaced"
         },
-        "message": "the iges write omits 2 native record(s) from `iges.copious_data`: iges:native:copious-data#D11, iges:native:copious-data#D5",
-        "severity": "info"
-      },
-      {
-        "code": {
-          "code": "native.records-omitted",
-          "kind": "record_not_typed",
-          "namespace": "export",
-          "scope": "namespaced"
-        },
-        "message": "the iges write omits 5 native record(s) from `iges.display_attributes`: iges:presentation:display-attributes#D11, iges:presentation:display-attributes#D13, iges:presentation:display-attributes#D15, iges:presentation:display-attributes#D5, iges:presentation:display-attributes#D7",
-        "severity": "info"
-      },
-      {
-        "code": {
-          "code": "native.records-omitted",
-          "kind": "record_not_typed",
-          "namespace": "export",
-          "scope": "namespaced"
-        },
-        "message": "the iges write omits 6 native record(s) from `iges.entities`: iges:entity:directory#11, iges:entity:directory#13, iges:entity:directory#15, iges:entity:directory#5, iges:entity:directory#7, iges:entity:directory#9",
+        "message": "the iges write omits 1 native record(s) from `iges.display_attributes`: iges:presentation:display-attributes#D15",
         "severity": "info"
       },
       {
@@ -257,7 +184,9 @@
             "copious_data": {
               "disposition": "dropped",
               "records": {
+                "iges:native:copious-data#D11": "regenerated",
                 "iges:native:copious-data#D3": "regenerated",
+                "iges:native:copious-data#D5": "regenerated",
                 "iges:native:copious-data#D9": "regenerated"
               }
             },
@@ -271,7 +200,11 @@
               "disposition": "dropped",
               "records": {
                 "iges:presentation:display-attributes#D1": "regenerated",
+                "iges:presentation:display-attributes#D11": "regenerated",
+                "iges:presentation:display-attributes#D13": "regenerated",
                 "iges:presentation:display-attributes#D3": "regenerated",
+                "iges:presentation:display-attributes#D5": "regenerated",
+                "iges:presentation:display-attributes#D7": "regenerated",
                 "iges:presentation:display-attributes#D9": "regenerated"
               }
             },
@@ -282,7 +215,13 @@
               "disposition": "dropped",
               "records": {
                 "iges:entity:directory#1": "written",
-                "iges:entity:directory#3": "written"
+                "iges:entity:directory#11": "written",
+                "iges:entity:directory#13": "written",
+                "iges:entity:directory#15": "written",
+                "iges:entity:directory#3": "written",
+                "iges:entity:directory#5": "written",
+                "iges:entity:directory#7": "written",
+                "iges:entity:directory#9": "written"
               }
             },
             "external_references": {

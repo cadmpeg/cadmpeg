@@ -20,6 +20,74 @@ fn configuration_semantics(
     configurations
 }
 
+#[test]
+fn synthesized_configuration_keeps_empty_native_collections() {
+    let name = "FusionAssetName[Active]/DesignConfigurationTable.empty.dsgcfg";
+    let payload = br#"{"configurations":{"First":{"parameters":{},"suppressed":[]},"Second":{}},"active":"First"}"#;
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_configuration(
+                &synthetic_geometry_smbh(),
+                name,
+                payload,
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut edited = decoded.ir().clone();
+    edited
+        .model
+        .configurations
+        .iter_mut()
+        .find(|configuration| configuration.name.as_deref() == Some("Second"))
+        .unwrap()
+        .name = Some("Renamed".into());
+    let (written, _) = synthesize_document(&edited, None);
+    let entry = &f3d_native(written.ir()).design_configurations[0];
+    assert_eq!(
+        entry.payload()["configurations"]["First"]["parameters"],
+        serde_json::json!({})
+    );
+    assert_eq!(
+        entry.payload()["configurations"]["First"]["suppressed"],
+        serde_json::json!([])
+    );
+    assert!(entry.payload()["configurations"].get("Renamed").is_some());
+}
+
+#[test]
+fn synthesized_configuration_keeps_unchanged_scalar_types() {
+    let name = "FusionAssetName[Active]/DesignConfigurationTable.scalars.dsgcfg";
+    let payload = br#"{"configurations":{"Base":{},"Variant":{"parameters":{"count":3,"enabled":true,"unset":null,"label":"original"}}},"active":"Base"}"#;
+    let decoded = F3dCodec
+        .decode(
+            &mut Cursor::new(f3d_with_configuration(
+                &synthetic_geometry_smbh(),
+                name,
+                payload,
+            )),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    let mut edited = decoded.ir().clone();
+    let variant = edited
+        .model
+        .configurations
+        .iter_mut()
+        .find(|configuration| configuration.name.as_deref() == Some("Variant"))
+        .unwrap();
+    variant.properties.insert(
+        cadmpeg_core::text::NonBlankString::new("parameter:label").unwrap(),
+        "edited".into(),
+    );
+    let (written, _) = synthesize_document(&edited, None);
+    let entry = &f3d_native(written.ir()).design_configurations[0];
+    assert_eq!(
+        entry.payload()["configurations"]["Variant"]["parameters"],
+        serde_json::json!({"count": 3, "enabled": true, "unset": null, "label": "edited"})
+    );
+}
+
 /// An invalid configuration payload drops design intent and keeps geometry.
 /// Strict mode still refuses the document with the parser's message.
 fn assert_invalid_configuration_is_contained(name: &str, payload: &[u8], expected: &str) {

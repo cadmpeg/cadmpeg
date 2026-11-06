@@ -2,7 +2,6 @@
 //! Preserve native numeric token kinds when their current values agree.
 
 use super::{CadIr, Entity, NativeRecord};
-use cadmpeg_ir::scalar::FiniteReal;
 use serde_json::Value;
 
 fn fields(body: &[u8]) -> Option<Vec<&[u8]>> {
@@ -99,7 +98,16 @@ pub(in crate::writer) fn retain(ir: &CadIr, source: &NativeRecord, entity: &mut 
                     .get("value")
                     .and_then(Value::as_i64)
                     .map(|value| value.to_string()),
-                Some("real") => value.and_then(FiniteReal::new).map(super::number),
+                Some("real") => value.map(|value| {
+                    let mut text = value.to_string();
+                    if text.len() > 24 {
+                        text = format!("{value:e}");
+                    }
+                    if !text.contains(['.', 'e', 'E']) {
+                        text.push_str(".0");
+                    }
+                    text
+                }),
                 _ => None,
             }
         } else {
