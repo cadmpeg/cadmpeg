@@ -60,7 +60,14 @@ fn scope_face_findings(
     operand_length: u64,
     recipe_byte_offset: u64,
 ) -> Vec<cadmpeg_ir::report::check::Finding> {
-    operand_findings(scope_kind, kind, operand_length, recipe_byte_offset, None)
+    operand_findings(
+        scope_kind,
+        kind,
+        operand_length,
+        recipe_byte_offset,
+        None,
+        None,
+    )
 }
 
 /// A construction-operand group with record index 1 and sole member 100.
@@ -115,12 +122,15 @@ fn face_operand_group(
 
 /// With `group_role`, the operand is the sole member of a group of that role at
 /// scope reference zero. Without it, the operand is direct scope reference two.
+/// With `next_reference_at`, the operand is scope reference one and the header
+/// of scope reference two, record 2, starts at that offset.
 fn operand_findings(
     scope_kind: crate::records::feature::scope::DesignFeatureKind,
     kind: crate::records::recipes::ConstructionRecipeKind,
     operand_length: u64,
     recipe_byte_offset: u64,
     group_role: Option<crate::records::topology::extrude_selection::DesignOperandRole>,
+    next_reference_at: Option<u64>,
 ) -> Vec<cadmpeg_ir::report::check::Finding> {
     use crate::records::{
         decal::DesignRecordHeader,
@@ -145,7 +155,11 @@ fn operand_findings(
     scope
         .try_edit(|draft| {
             draft.reference_members =
-                crate::records::identity::ReferenceRun::unlocated(vec![1, 2, 100]);
+                crate::records::identity::ReferenceRun::unlocated(if next_reference_at.is_some() {
+                    vec![1, 100, 2]
+                } else {
+                    vec![1, 2, 100]
+                });
             draft.layout_fixture_references();
             draft.paired_byte_offset = draft.paired_byte_offset.max(draft.kind_offset + 96);
             draft.frame_length = draft.paired_byte_offset - draft.byte_offset;
@@ -195,9 +209,17 @@ fn operand_findings(
         native.design_record_headers = vec![DesignRecordHeader {
             id: format!("{stream}:design-record-header#100"),
             record_index: 100,
-            class_tag,
+            class_tag: class_tag.clone(),
             byte_offset: recipe_byte_offset - 47,
         }];
+        native
+            .design_record_headers
+            .extend(next_reference_at.map(|byte_offset| DesignRecordHeader {
+                id: format!("{stream}:design-record-header#2"),
+                record_index: 2,
+                class_tag,
+                byte_offset,
+            }));
         native.construction_recipes = vec![ConstructionRecipe {
             id: recipe_id.clone(),
             byte_offset: recipe_byte_offset,
@@ -264,7 +286,14 @@ fn move_face_operand_requires_a_bounded_face_member_of_its_face_group() {
 
     let scope_kind = DesignFeatureKind::MoveFace;
     let findings = |kind, operand_length, group_role| {
-        operand_findings(scope_kind.clone(), kind, operand_length, 1_047, group_role)
+        operand_findings(
+            scope_kind.clone(),
+            kind,
+            operand_length,
+            1_047,
+            group_role,
+            None,
+        )
     };
     let bounded = ConstructionRecipeKind::BoundedFace;
     let admitted = findings(bounded, 24, Some(DesignOperandRole::ROLE_0X10));
@@ -303,4 +332,30 @@ fn face_operand_rejects_overflowed_program_extent() {
         u64::MAX - 20,
     );
     assert_eq!(findings.len(), 1);
+}
+
+/// The header of the scope reference after a group's final face member bounds
+/// that member's frame.
+#[test]
+fn a_final_group_member_frame_ends_at_the_next_scope_reference() {
+    use crate::records::feature::scope::DesignFeatureKind;
+    use crate::records::recipes::ConstructionRecipeKind;
+    use crate::records::topology::extrude_selection::DesignOperandRole;
+
+    let findings = |next_reference_at| {
+        operand_findings(
+            DesignFeatureKind::SplitFace,
+            ConstructionRecipeKind::BoundedFace,
+            24,
+            1_047,
+            Some(DesignOperandRole::ROLE_0X10),
+            Some(next_reference_at),
+        )
+    };
+    let frame_end = 1_047 + 24 + 8;
+    let closed = findings(frame_end);
+    assert!(closed.is_empty(), "{closed:#?}");
+    assert_eq!(findings(frame_end - 1).len(), 1);
+    let earlier = findings(900);
+    assert!(earlier.is_empty(), "{earlier:#?}");
 }
