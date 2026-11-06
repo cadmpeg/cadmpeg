@@ -88,6 +88,18 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 **Need.** Controlled evaluation and save pairs must distinguish the scalar unit, ordinal allocation event, and ordinary variant meaning. A compact-`false` control must separate invalid, default, identity, and inactive interpretations. Independent occurrence and local-geometry edits must distinguish the dual slots. Auxiliary-path forms without an admitted rigid placement need complete typed grammar before they define a relative-placement equation. Preserve these fields and forms until those distinctions are established.
 
+
+### DR-261. Different construction-group ordinals in one SurfaceOffset scope
+
+**Question.** What do different construction-group ordinals mean when the support groups of one grouped `SurfaceOffset` scope carry them?
+
+**Known.** `f3d.md` §3.1 gives the construction-group payload and its `ordinal`, and the grouped support form of `SurfaceOffset`. The groups of one feature scope carry one ordinal; a grouped `SurfaceOffset` scope stores 252 in one document and 260 in another. DR-19 records that the ordinal's allocation event is unsettled. The decoder reads groups with different ordinals as one support-face selection.
+
+**Need.** A save of one `SurfaceOffset` whose support faces come from two selections made at different times, with the face set that Fusion shows for it.
+
+**Conflict.** None.
+
+**Note.** The decoder reports `feature.surface-offset-group-ordinals-assumed`.
 ### DR-25. Base Feature six-byte fields
 
 **Question.** What do the six-byte fields after the Base Feature body suffixes and after the Base Feature record references hold?
