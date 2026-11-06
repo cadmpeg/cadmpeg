@@ -16,6 +16,9 @@ use crate::layout::direction_pair_revolve_scope_frame as direction_pair_revolve;
 use crate::layout::marked_to_object_revolve_prologue as marked_to_object;
 use crate::layout::marker_one_revolve_prologue as revolve;
 use crate::layout::referenced_angle_revolve_prologue as referenced_revolve;
+use crate::layout::standard_loft_operation_prefix as standard_loft;
+use crate::layout::three_flag_compact_loft_operation_prefix as three_flag_compact_loft;
+use crate::layout::three_flag_standard_loft_operation_prefix as three_flag_standard_loft;
 use crate::layout::two_sided_revolve_prologue as two_sided_revolve;
 use crate::layout::unmarked_referenced_angle_revolve_prologue as unmarked_revolve;
 use crate::layout::unmarked_to_object_revolve_prologue as unmarked_to_object;
@@ -354,6 +357,38 @@ pub(super) fn marker_one_revolve_assumed_length(
     }
 }
 
+pub(super) fn loft_reference_loss(
+    scope: &DesignParameterScope,
+    construction: &path_features::DesignLoftConstruction,
+) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    let target = construction.reference_target?;
+    Some(crate::loss::F3dLossCode::FeatureLoftReferenceUnresolved.note(format!(
+        "Loft scope {} stores a non-null marked reference with target {target} at prefix offset 33; the target and the Loft setting it selects are unresolved (DR-268), and a Loft projected from the scope uses closed false, solid true, ruled false, and linearize false.",
+        scope.id
+    )))
+}
+
+pub(super) fn three_flag_loft_settings_loss(
+    bytes: &[u8],
+    scope: &DesignParameterScope,
+    construction: &path_features::DesignLoftConstruction,
+) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    let start = usize::try_from(scope.byte_offset()).ok()?;
+    let operation_offset = usize::try_from(construction.operation_offset).ok()?;
+    let (form, flags) = match operation_offset.checked_sub(start)? {
+        three_flag_compact_loft::OPERATION => ("compact", three_flag_compact_loft::FLAGS),
+        three_flag_standard_loft::OPERATION => ("standard", three_flag_standard_loft::FLAGS),
+        _ => return None,
+    };
+    let [first, second, third] = bytes.get(start + flags..start + flags + 3)? else {
+        return None;
+    };
+    Some(crate::loss::F3dLossCode::FeatureLoftSettingsAssumed.note(format!(
+        "Loft scope {} stores the three-flag {form} prefix with flag bytes {first:02x} {second:02x} {third:02x} at prefix offset {flags}; the Loft settings these flags select are unresolved (DR-294), and a Loft projected from the scope uses closed false, solid true, ruled false, and linearize false.",
+        scope.id
+    )))
+}
+
 pub(super) fn exact_path_feature_construction(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
@@ -531,32 +566,79 @@ pub(super) fn exact_path_feature_construction(
                 },
             ))
         }
-        DesignFeatureFamily::Loft
-            if bytes.get(start + compact_loft::ZERO_RUN_10..start + compact_loft::ONE_RUN_4)
+        DesignFeatureFamily::Loft => {
+            let compact = bytes
+                .get(start + compact_loft::ZERO_RUN_10..start + compact_loft::ONE_RUN_4)
                 == Some(&[0; 10])
                 && bytes.get(start + compact_loft::ONE_RUN_4..start + compact_loft::OPERATION)
                     == Some(&[1; 4])
                 && bytes.get(start + compact_loft::ZERO_FLAG) == Some(&0)
                 && View::u32_le_at(bytes, start + compact_loft::ALL_ONES) == Some(u32::MAX)
                 && bytes.get(start + compact_loft::ZERO_RUN_11..start + compact_loft::LEN)
-                    == Some(&[0; 11]) =>
-        {
-            Some(DesignPathFeatureConstruction::Loft(
-                path_features::DesignLoftConstruction {
-                    operation: operation(start + compact_loft::OPERATION)?,
-                    operation_offset: u64::try_from(start + compact_loft::OPERATION).ok()?,
-                },
-            ))
-        }
-        DesignFeatureFamily::Loft
-            if parameter_scope_payload_length(scope).is_some_and(|length| length >= 368) =>
-        {
-            Some(DesignPathFeatureConstruction::Loft(
-                path_features::DesignLoftConstruction {
-                    operation: operation(start + 29)?,
-                    operation_offset: u64::try_from(start + 29).ok()?,
-                },
-            ))
+                    == Some(&[0; 11]);
+            let compact_three = bytes.get(
+                start + three_flag_compact_loft::ZERO_RUN_10
+                    ..start + three_flag_compact_loft::FLAGS,
+            ) == Some(&[0; 10])
+                && matches!(
+                    bytes.get(
+                        start + three_flag_compact_loft::FLAGS
+                            ..start + three_flag_compact_loft::OPERATION
+                    ),
+                    Some([1, 1, 0 | 1])
+                )
+                && bytes.get(start + three_flag_compact_loft::ZERO_FLAG) == Some(&0)
+                && View::u32_le_at(bytes, start + three_flag_compact_loft::ALL_ONES)
+                    == Some(u32::MAX)
+                && bytes.get(
+                    start + three_flag_compact_loft::ZERO_RUN_11
+                        ..start + three_flag_compact_loft::LEN,
+                ) == Some(&[0; 11]);
+            let standard_prefix = bytes
+                .get(start + standard_loft::ZERO_RUN_9..start + standard_loft::PRESENCE)
+                == Some(&[0; 9])
+                && bytes.get(start + standard_loft::PRESENCE) == Some(&1)
+                && bytes.get(start + standard_loft::ZERO_RUN_4..start + standard_loft::FLAGS)
+                    == Some(&[0; 4]);
+            let reference = start + standard_loft::MARKED_REFERENCE;
+            let standard = standard_prefix
+                .then(|| match bytes.get(reference) {
+                    Some(0) => Some(None),
+                    Some(1) => View::u64_le_at(bytes, reference + 1)
+                        .filter(|&target| {
+                            target != 0 && bytes.get(reference + 9..reference + 11) == Some(&[0, 0])
+                        })
+                        .map(Some),
+                    _ => None,
+                })
+                .flatten();
+            let standard_three = bytes.get(
+                start + three_flag_standard_loft::ZERO_RUN_9
+                    ..start + three_flag_standard_loft::PRESENCE,
+            ) == Some(&[0; 9])
+                && bytes.get(start + three_flag_standard_loft::PRESENCE) == Some(&1)
+                && bytes.get(
+                    start + three_flag_standard_loft::ZERO_RUN_4
+                        ..start + three_flag_standard_loft::FLAGS,
+                ) == Some(&[0; 4])
+                && bytes.get(start + three_flag_standard_loft::NULL_REFERENCE) == Some(&0);
+            [
+                compact.then_some((compact_loft::OPERATION, None)),
+                compact_three.then_some((three_flag_compact_loft::OPERATION, None)),
+                standard.map(|target| (standard_loft::OPERATION, target)),
+                standard_three.then_some((three_flag_standard_loft::OPERATION, None)),
+            ]
+            .into_iter()
+            .flatten()
+            .find_map(|(offset, reference_target)| {
+                Some(DesignPathFeatureConstruction::Loft(
+                    path_features::DesignLoftConstruction {
+                        operation: operation(start + offset)?,
+                        operation_offset: u64::try_from(start + offset).ok()?,
+                        reference_target,
+                    },
+                ))
+            })
         }
         DesignFeatureFamily::Sweep => {
             let candidate_lanes: Vec<_> = scope

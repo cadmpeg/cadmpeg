@@ -881,6 +881,7 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
             id: format!("{stream}:sketch-point#{record_index}"),
             record_index,
             owner_reference: Some(100),
+            geometry_group: None,
             class_tag: crate::records::references::DesignClassTag::try_from("300".to_owned())
                 .unwrap(),
             byte_offset: 0,
@@ -1051,6 +1052,7 @@ fn exact_pair_suppresses_counted_frames_in_its_containing_companion() {
         id: format!("{stream}:sketch-curve#42"),
         record_index: 42,
         owner_reference: Some(100),
+        geometry_group: None,
         class_tag: crate::records::references::DesignClassTag::try_from("300".to_owned()).unwrap(),
         byte_offset: 0,
         geometry_offset: 0,
@@ -1608,6 +1610,7 @@ fn diagonal_annotation_dimension_projects_only_distinct_point_loci() {
                 id: format!("{stream}:sketch-point#{record_index}"),
                 record_index,
                 owner_reference: Some(100),
+                geometry_group: None,
                 class_tag: crate::records::references::DesignClassTag::try_from("300".to_owned())
                     .unwrap(),
                 byte_offset: 0,

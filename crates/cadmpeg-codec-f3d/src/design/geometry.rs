@@ -56,6 +56,8 @@ pub(crate) struct ProfileGeometryWork {
     crossing_loop_assumed_selections: Cell<usize>,
     coincident_direction_assumed: Cell<bool>,
     coincident_direction_assumed_selections: Cell<usize>,
+    cut_regions_assumed: Cell<bool>,
+    cut_regions_assumed_selections: Cell<usize>,
 }
 
 impl ProfileGeometryWork {
@@ -76,6 +78,8 @@ impl ProfileGeometryWork {
             crossing_loop_assumed_selections: Cell::new(0),
             coincident_direction_assumed: Cell::new(false),
             coincident_direction_assumed_selections: Cell::new(0),
+            cut_regions_assumed: Cell::new(false),
+            cut_regions_assumed_selections: Cell::new(0),
         }
     }
 
@@ -103,6 +107,10 @@ impl ProfileGeometryWork {
                 &self.coincident_direction_assumed,
                 &self.coincident_direction_assumed_selections,
             ),
+            (
+                &self.cut_regions_assumed,
+                &self.cut_regions_assumed_selections,
+            ),
         ] {
             if skipped.take() {
                 selections.set(selections.get() + 1);
@@ -120,6 +128,12 @@ impl ProfileGeometryWork {
     /// a counted member ring of the open selection.
     pub(crate) fn note_coincident_direction_assumed(&self) {
         self.coincident_direction_assumed.set(true);
+    }
+
+    /// Record that the open selection took regions from the faces a cut
+    /// changed.
+    pub(crate) fn note_cut_regions_assumed(&self) {
+        self.cut_regions_assumed.set(true);
     }
 
     /// One loss for each cap that made a closed selection skip a search.
@@ -153,6 +167,12 @@ impl ProfileGeometryWork {
         if coincident != 0 {
             losses.push(F3dLossCode::FeatureProfileCoincidentDirectionAssumed.note(format!(
                 "{coincident} extrude profile selection(s) depended on the member flags of an edge of coincident curves: a selected ring has such an edge, or a ring with such an edge has the curves of a member list. The reading accepts such an edge when one distinct member that names one of its curves has that curve's traversal direction, and it checks no flag of the edge's other members; which curve's direction sets the flag is open (DR-124)."
+            )));
+        }
+        let cut_assumed = self.cut_regions_assumed_selections.get();
+        if cut_assumed != 0 {
+            losses.push(F3dLossCode::FeatureProfileCutRegionsAssumed.note(format!(
+                "{cut_assumed} extrude profile selection(s) took atomic regions bounded by the stored profile's curves from the faces the cut changed on planes parallel to the Sketch: a region is selected when one interior point lay on such a face before the cut and on none after it. The region boundaries were not compared with the face boundaries."
             )));
         }
         losses
