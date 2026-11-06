@@ -305,6 +305,8 @@ pub(crate) enum StepLossCode {
     TimestampNormalized,
     /// Procedural definitions were reduced to solved STEP carriers.
     ProceduralReducedToCarrier,
+    /// A procedural solved-cache fit tolerance was not represented.
+    ProceduralCacheToleranceOmitted,
     /// Extrusion constructions were written as linear sweeps.
     ProceduralExtrusionNormalized,
     /// Helix definitions without a solved carrier were written as fitted
@@ -554,6 +556,7 @@ impl StepLossCode {
         Self::SourceAttributeNotWritten,
         Self::TimestampNormalized,
         Self::ProceduralReducedToCarrier,
+        Self::ProceduralCacheToleranceOmitted,
         Self::ProceduralExtrusionNormalized,
         Self::HelixFittedToBspline,
         Self::ProceduralSampledToBspline,
@@ -762,6 +765,7 @@ impl StepLossCode {
             Self::SourceAttributeNotWritten => "attribute.source-record-not-written",
             Self::TimestampNormalized => "attribute.timestamp-normalized",
             Self::ProceduralReducedToCarrier => "geometry.procedural-reduced-to-carrier",
+            Self::ProceduralCacheToleranceOmitted => "geometry.procedural-cache-tolerance-omitted",
             Self::ProceduralExtrusionNormalized => "geometry.procedural-extrusion-normalized",
             Self::HelixFittedToBspline => "geometry.helix-fitted-to-bspline",
             Self::ProceduralSampledToBspline => "geometry.procedural-sampled-to-bspline",
@@ -882,6 +886,7 @@ impl StepLossCode {
             | Self::SourceAttributeNotWritten
             | Self::TimestampNormalized
             | Self::ProceduralReducedToCarrier
+            | Self::ProceduralCacheToleranceOmitted
             | Self::ProceduralExtrusionNormalized
             | Self::HelixFittedToBspline
             | Self::ProceduralSampledToBspline
@@ -1075,6 +1080,7 @@ impl StepLossCode {
             }
             Self::AppearanceBindingBodyFallback => LossTaxonomy::AppearanceReduced,
             Self::ProceduralReducedToCarrier
+            | Self::ProceduralCacheToleranceOmitted
             | Self::ProceduralExtrusionNormalized
             | Self::HelixFittedToBspline
             | Self::ProceduralSampledToBspline => LossTaxonomy::ProceduralReduced,
@@ -1247,6 +1253,7 @@ mod tests {
                 "attribute.source-record-not-written",
                 "attribute.timestamp-normalized",
                 "geometry.procedural-reduced-to-carrier",
+                "geometry.procedural-cache-tolerance-omitted",
                 "geometry.procedural-extrusion-normalized",
                 "geometry.helix-fitted-to-bspline",
                 "geometry.procedural-sampled-to-bspline",

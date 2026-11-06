@@ -388,8 +388,7 @@ fn procedural_support_is_not_an_export_root_even_when_construction_fails() {
     }
 }
 
-#[test]
-fn standalone_subset_curve_does_not_export_its_untrimmed_basis_as_a_root() {
+fn standalone_subset_curve(cache: Option<cadmpeg_ir::geometry::LegacyCache>) -> CadIr {
     use cadmpeg_ir::geometry::{
         curve_payloads::SubsetCurveConstruction, ProceduralCurve, ProceduralCurveDefinition,
     };
@@ -398,7 +397,7 @@ fn standalone_subset_curve_does_not_export_its_untrimmed_basis_as_a_root() {
     let construction = ProceduralCurve::new(
         "test:model:procedural_curve#subset".try_into().unwrap(),
         ProceduralCurveDefinition::Subset(
-            SubsetCurveConstruction::try_new(basis.clone(), [2.0, 3.0], true, None).unwrap(),
+            SubsetCurveConstruction::try_new(basis.clone(), [2.0, 3.0], true, cache).unwrap(),
         ),
     );
     ir.model.curves.push(Curve {
@@ -413,6 +412,7 @@ fn standalone_subset_curve_does_not_export_its_untrimmed_basis_as_a_root() {
             ),
         )),
     });
+    let solved = ir.model.curves[0].geometry.solved().unwrap().clone();
     ir.model.curves.push(Curve {
         native_ref: None,
         id: "test:model:curve#subset".try_into().unwrap(),
@@ -420,10 +420,16 @@ fn standalone_subset_curve_does_not_export_its_untrimmed_basis_as_a_root() {
         source_object: None,
         geometry: CurveGeometry::Procedural {
             construction: construction.id.clone(),
-            cache: None,
+            cache: cache.map(|_| solved),
         },
     });
     ir.model.procedural_curves.push(construction);
+    ir
+}
+
+#[test]
+fn standalone_subset_curve_does_not_export_its_untrimmed_basis_as_a_root() {
+    let ir = standalone_subset_curve(None);
     let mut bytes = Vec::new();
     let report = write_step(
         &ir,
@@ -452,6 +458,60 @@ fn standalone_subset_curve_does_not_export_its_untrimmed_basis_as_a_root() {
         .losses
         .iter()
         .any(|loss| loss.code == StepLossCode::GeometryCarrierNotWritten.kind()));
+}
+
+#[test]
+fn subset_curve_reports_its_unwritten_cache_fit_tolerance() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use cadmpeg_ir::geometry::{LegacyCache, ProceduralCurve};
+    use std::io::Cursor;
+
+    let mut ir = standalone_subset_curve(Some(LegacyCache::try_new(0.01).unwrap()));
+    let validation = cadmpeg_ir::validate_neutral(&ir, Vec::new()).unwrap();
+    assert!(validation.is_ok(), "{:?}", validation.findings);
+    let mut bytes = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut bytes,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .unwrap();
+    let losses = report
+        .losses
+        .iter()
+        .filter(|loss| {
+            loss.code == StepLossCode::ProceduralCacheToleranceOmitted.kind()
+                && loss.message.contains("test:model:procedural_curve#subset")
+        })
+        .count();
+    assert_eq!(losses, 1);
+    let decoded = crate::StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let fit = decoded
+        .ir()
+        .model
+        .procedural_curves
+        .iter()
+        .find_map(ProceduralCurve::cache_fit_tolerance)
+        .unwrap();
+    assert_eq!(fit.get(), 0.0);
+    ir.model.procedural_curves[0]
+        .set_cache_fit_tolerance(Some(0.0))
+        .unwrap();
+    let mut exact_bytes = Vec::new();
+    let exact_report = write_step(
+        &ir,
+        &mut exact_bytes,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .unwrap();
+    assert!(!exact_report
+        .losses
+        .iter()
+        .any(|loss| { loss.code == StepLossCode::ProceduralCacheToleranceOmitted.kind() }));
 }
 
 #[test]

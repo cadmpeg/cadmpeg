@@ -8614,6 +8614,39 @@ impl<'a> Builder<'a> {
             let message = format!("{}", AttributeOmission(attribute));
             self.loss(StepLossCode::SourceAttributeNotWritten, message);
         }
+        let cache_tolerances = self
+            .ir
+            .model
+            .procedural_curves
+            .iter()
+            .filter(|curve| self.written_procedural_curves.contains(curve.id.as_str()))
+            .filter(|curve| {
+                curve
+                    .cache_fit_tolerance()
+                    .is_some_and(|value| value.get() > 0.0)
+            })
+            .map(|curve| curve.id.to_string())
+            .chain(
+                self.ir
+                    .model
+                    .procedural_surfaces
+                    .iter()
+                    .filter(|surface| {
+                        self.written_procedural_surfaces
+                            .contains(surface.id.as_str())
+                    })
+                    .filter(|surface| {
+                        surface
+                            .cache_fit_tolerance()
+                            .is_some_and(|value| value.get() > 0.0)
+                    })
+                    .map(|surface| surface.id.to_string()),
+            )
+            .collect::<Vec<_>>();
+        for id in cache_tolerances {
+            self.loss(StepLossCode::ProceduralCacheToleranceOmitted,
+                format!("procedural construction {id} has a solved-cache fit tolerance that STEP does not retain"));
+        }
         let normalized_extrusions: Vec<_> = self
             .ir
             .model
