@@ -328,6 +328,25 @@ fn authored_core_product_keeps_primitive_dimensions_and_results() {
         operation("DesignedFeature"),
         FeatureOperation::StoredGeometry {}
     ));
+    let properties = decoded
+        .ir()
+        .native
+        .namespace("fcstd")
+        .unwrap()
+        .arena_as::<crate::native::PropertyRecord>("properties")
+        .unwrap();
+    let length = properties
+        .iter()
+        .find(|property| {
+            property.owner == crate::native::native_id("object", "DesignedFeature")
+                && property.name == "Length"
+        })
+        .unwrap();
+    let [value] = length.values() else {
+        panic!("one authored feature length")
+    };
+    let length = value.attributes["value"].parse::<f64>().unwrap();
+    assert!((length - 5.0).abs() < LENGTH_TOLERANCE);
     let [profile] = model.sketches.as_slice() else {
         panic!("expected one profile sketch");
     };
@@ -399,6 +418,24 @@ fn authored_core_product_keeps_primitive_dimensions_and_results() {
         cadmpeg_ir::products::PrototypeReference::Local { definition }
             if definition == &product.id
     ));
+    for (ordinal, name) in ["Box", "Cylinder", "Cut", "Profile", "DesignedFeature"]
+        .into_iter()
+        .enumerate()
+    {
+        let child = model
+            .occurrences
+            .iter()
+            .find(|occurrence| {
+                occurrence.native_ref.as_deref()
+                    == Some(crate::native::native_id("object", name).as_str())
+            })
+            .unwrap();
+        assert!(matches!(
+            &child.parent,
+            OccurrenceParent::Occurrence { occurrence } if occurrence == &product_occurrence.id
+        ));
+        assert_eq!(child.ordinal, u32::try_from(ordinal).unwrap());
+    }
     let cylinder_occurrence = model
         .occurrences
         .iter()
