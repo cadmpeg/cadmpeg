@@ -746,14 +746,16 @@ fn free_curve_duplicating_a_written_parameter_curve_has_an_export_loss() {
 
 #[test]
 fn parameter_space_carriers_are_not_exported_as_unowned_model_curves() {
-    for (file, expected_pcurves) in [
+    for (file, expected_pcurves, retained_copious) in [
         (
             crate::test_support::test_surface_fixtures::trimmed_plane_file(),
+            1,
             1,
         ),
         (
             crate::test_support::test_drawing_and_trimming::multi_pcurve_boundary_file(),
             2,
+            0,
         ),
     ] {
         let decoded = IgesCodec
@@ -765,8 +767,16 @@ fn parameter_space_carriers_are_not_exported_as_unowned_model_curves() {
             .chunks_exact(81)
             .filter(|card| card[72] == b'D' && card[..8].trim_ascii() == b"126")
             .collect();
-        // One model-space boundary carrier and one entity per boundary pcurve.
-        assert_eq!(curve_entries.len(), (1 + expected_pcurves) * 2);
+        let copious_entries = generated
+            .bytes
+            .chunks_exact(81)
+            .filter(|card| card[72] == b'D' && card[..8].trim_ascii() == b"106")
+            .count();
+        assert_eq!(
+            curve_entries.len(),
+            (1 + expected_pcurves - retained_copious) * 2
+        );
+        assert_eq!(copious_entries, retained_copious * 2);
         assert_eq!(
             generated
                 .losses
@@ -774,7 +784,7 @@ fn parameter_space_carriers_are_not_exported_as_unowned_model_curves() {
                 .filter(|loss| loss.code
                     == crate::loss::IgesLossCode::WriterSupportGeometryNotRepresented.kind())
                 .count(),
-            expected_pcurves
+            expected_pcurves - retained_copious
         );
         let result = IgesCodec
             .decode(&mut Cursor::new(generated.bytes), &DecodeOptions::default())
