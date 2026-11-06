@@ -394,34 +394,28 @@ pub(super) fn plan(
         }
     }
     macro_rules! report_omitted_owners {
-        ($records:ident, $owners:ident, $owner:ident) => {{
+        ($records:ident, $owner:ident) => {{
             let records = projected
                 .model
                 .$records
                 .iter()
                 .map(|record| &record.id)
                 .collect::<std::collections::HashSet<_>>();
-            let owners = projected
-                .model
-                .$owners
-                .iter()
-                .map(|record| &record.id)
-                .collect::<std::collections::HashSet<_>>();
             for record in &before_subset.model.$records {
-                if !records.contains(&record.id) && !owners.contains(&record.$owner) {
+                if !records.contains(&record.id) {
                     losses.push(SldprtLossCode::WriterEntityOmitted.note(format!(
-                        "record {} dropped because its owner {} was omitted",
+                        "record {} omitted from the selected topology of owner {}",
                         record.id, record.$owner
                     )));
                 }
             }
         }};
     }
-    report_omitted_owners!(regions, bodies, body);
-    report_omitted_owners!(shells, regions, region);
-    report_omitted_owners!(faces, shells, shell);
-    report_omitted_owners!(loops, faces, face);
-    report_omitted_owners!(coedges, loops, owner_loop);
+    report_omitted_owners!(regions, body);
+    report_omitted_owners!(shells, region);
+    report_omitted_owners!(faces, shell);
+    report_omitted_owners!(loops, face);
+    report_omitted_owners!(coedges, owner_loop);
     let wire_bodies = before_subset
         .model
         .bodies

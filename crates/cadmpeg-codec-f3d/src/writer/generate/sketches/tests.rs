@@ -17,7 +17,7 @@ fn sketch_records_share_the_existing_output_allowance() {
             Vector3::new(1.0, 0.0, 0.0),
         )
         .unwrap(),
-        profiles: Default::default(),
+        profiles: cadmpeg_ir::sketches::SketchProfiles::default(),
         native_ref: None,
     });
     let arena = cadmpeg_core::decode::DecodeArena::new();
