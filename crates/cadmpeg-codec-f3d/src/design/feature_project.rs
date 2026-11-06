@@ -8642,6 +8642,29 @@ pub(super) fn project_split(
     )))
 }
 
+fn face_scope_frame(scope: &DesignParameterScope) -> Option<(u64, u64)> {
+    let count_offset = scope
+        .reference_count_offset()
+        .checked_sub(scope.byte_offset())?;
+    let reference_bytes = u64::try_from(scope.reference_members().len())
+        .ok()?
+        .checked_mul(11)?;
+    let kind_offset = scope
+        .reference_count_offset()
+        .checked_add(12)?
+        .checked_add(reference_bytes)?;
+    if scope.kind_offset() != kind_offset {
+        return None;
+    }
+    let kind_bytes = u64::try_from(scope.source_kind_name().encode_utf16().count())
+        .ok()?
+        .checked_mul(2)?;
+    let tail_length = scope
+        .paired_byte_offset()
+        .checked_sub(kind_offset.checked_add(kind_bytes)?)?;
+    Some((count_offset, tail_length))
+}
+
 fn project_split_face(
     scope: &DesignParameterScope,
     scopes: &[DesignParameterScope],
@@ -8660,16 +8683,8 @@ fn project_split_face(
     {
         return Ok(None);
     }
-    let reference_tail_length = or_none!(11_u64.checked_mul(or_none!(u64::try_from(or_none!(
-        reference_count.checked_sub(1)
-    ))
-    .ok())));
-    let frame_base = or_none!(scope.frame_length().checked_sub(reference_tail_length));
-    let compact = matches!(
-        (scope.class_tag.as_str(), scope.paired_class_tag.as_str()),
-        ("418", "266") | ("277", "258")
-    );
-    if !(matches!(frame_base, 290 | 291) || compact && frame_base == 286) {
+    let (count_offset, tail_length) = or_none!(face_scope_frame(scope));
+    if !matches!(count_offset, 168 | 172 | 176) || !matches!(tail_length, 77 | 78 | 87) {
         return Ok(None);
     }
     let stream = or_none!(native_stream(&scope.id));
@@ -8801,49 +8816,15 @@ fn project_delete_face(
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
 
     let reference_count = scope.reference_members().len();
-    let reference_bytes =
-        or_none!(11_u64.checked_mul(or_none!(u64::try_from(reference_count).ok())));
-    let base_frame_length = or_none!(scope.frame_length().checked_sub(reference_bytes));
-    let base_kind_offset = or_none!(scope
-        .kind_offset()
-        .checked_sub(scope.byte_offset())
-        .and_then(|offset| offset.checked_sub(reference_bytes)));
+    let (count_offset, tail_length) = or_none!(face_scope_frame(scope));
     let heal = match scope.kind_name() {
-        // The compact frame's fixed scope tail is 77 or 78 bytes. The legacy
-        // frame is the compact frame without its four-byte marker-one field;
-        // its class tags vary between files and do not select it.
-        "DeleteFace" => match (base_frame_length, base_kind_offset) {
-            (236 | 237, 139) | (241, 143) | (232, 135) => true,
-            _ => return Ok(None),
-        },
-        "SurfaceDeleteFace" => {
-            let common_layout = matches!(
-                (base_frame_length, base_kind_offset),
-                (250, 140) | (251, 139)
-            );
-            let class_layout = matches!(
-                (
-                    scope.class_tag.as_str(),
-                    scope.paired_class_tag.as_str(),
-                    base_frame_length,
-                    base_kind_offset,
-                ),
-                ("287", "270", 245, 135)
-                    | ("287", "270", 256, 146)
-                    | ("327" | "545", "257", 250, 139)
-                    | ("414", "263", 250, 140)
-                    | ("497", "259", 257, 146)
-                    | ("545", "257", 246, 135)
-                    | ("545", "257", 257, 146)
-            );
-            if common_layout || class_layout {
-                false
-            } else {
-                return Ok(None);
-            }
-        }
+        "DeleteFace" if matches!(count_offset, 123 | 127 | 131) => true,
+        "SurfaceDeleteFace" if matches!(count_offset, 123 | 127 | 131 | 134 | 138 | 142) => false,
         _ => return Ok(None),
     };
+    if !matches!(tail_length, 77 | 78) {
+        return Ok(None);
+    }
     if reference_count < 2 {
         return Ok(None);
     }

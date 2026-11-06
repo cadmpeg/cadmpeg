@@ -3045,9 +3045,9 @@ fn validate_parameter_scopes(ctx: &Ctx, findings: &mut Vec<Finding>) -> Result<(
                     }
                     (frame_length, paired, Some(matrix)) => {
                         let scope_delta = match (frame_length, paired) {
-                            (399, "259") => Some(50),
-                            (381, "261") => Some(49),
-                            (395, "258") => Some(46),
+                            (399, _) => Some(50),
+                            (381, _) => Some(49),
+                            (395, _) => Some(46),
                             (389, "264") if scope.class_tag.as_str() == "414" => Some(50),
                             _ => None,
                         };
