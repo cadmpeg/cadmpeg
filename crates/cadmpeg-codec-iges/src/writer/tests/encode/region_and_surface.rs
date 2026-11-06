@@ -152,6 +152,93 @@ fn incomplete_boundary_level_membership_is_reported() {
         .any(|loss| loss.message.contains(&layer_id)));
 }
 
+#[test]
+fn solid_void_shell_preserves_distinct_vertex_list_labels() {
+    use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
+
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_void_solid_file().0),
+            &DecodeOptions::default(),
+        )
+        .expect("solid with a void shell decodes");
+    let plan = IgesCodec
+        .plan(
+            EncodeInput::new(decoded.ir(), None),
+            TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+        )
+        .expect("solid synthesizes");
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("solid writes");
+    let output = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("written solid decodes");
+    for name in ["OUTVERT", "VOIDVERT"] {
+        let count = |ir: &CadIr| {
+            ir.model
+                .attributes
+                .iter()
+                .filter(|attribute| {
+                    attribute.name == "name"
+                        && matches!(attribute.target, AttributeTarget::Point(_))
+                        && attribute.values == [Some(AttributeValue::String(name.into()))]
+                })
+                .count()
+        };
+        assert_eq!(count(decoded.ir()), 4, "source {name}");
+        assert_eq!(count(output.ir()), 4, "written {name}");
+    }
+}
+
+#[test]
+fn editing_one_vertex_list_label_preserves_the_other_points() {
+    use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
+
+    let decoded = IgesCodec
+        .decode(
+            &mut Cursor::new(explicit_void_solid_file().0),
+            &DecodeOptions::default(),
+        )
+        .expect("solid with a void shell decodes");
+    let mut ir = decoded.ir().clone();
+    let edited = ir
+        .model
+        .attributes
+        .iter_mut()
+        .find(|attribute| {
+            attribute.name == "name"
+                && matches!(attribute.target, AttributeTarget::Point(_))
+                && attribute.values == [Some(AttributeValue::String("OUTVERT".into()))]
+        })
+        .expect("outer vertex has a name");
+    edited.values = vec![Some(AttributeValue::String("ONE".into()))];
+    let plan = IgesCodec
+        .plan(
+            EncodeInput::new(&ir, None),
+            TargetRequest::Explicit(IgesVersion::V5_3.descriptor().id.as_str()),
+        )
+        .expect("solid synthesizes");
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).expect("solid writes");
+    let output = IgesCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("written solid decodes");
+    for (name, expected) in [("ONE", 1), ("OUTVERT", 3), ("VOIDVERT", 4)] {
+        let count = output
+            .ir()
+            .model
+            .attributes
+            .iter()
+            .filter(|attribute| {
+                attribute.name == "name"
+                    && matches!(attribute.target, AttributeTarget::Point(_))
+                    && attribute.values == [Some(AttributeValue::String(name.into()))]
+            })
+            .count();
+        assert_eq!(count, expected, "written {name}");
+    }
+}
+
 fn display_color(
     ir: &CadIr,
     body: &cadmpeg_ir::topology::Body,

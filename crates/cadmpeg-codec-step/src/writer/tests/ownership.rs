@@ -643,8 +643,26 @@ fn a_surface_shell_in_a_mixed_body_is_not_reported_as_an_omitted_wire_shell() {
 fn scalar_attributes_characterize_their_step_geometry_items() {
     use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue, SourceAttribute};
     let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let body = ir.model.bodies[0].id.clone();
     let face = ir.model.faces[0].id.clone();
     let surface = ir.model.faces[0].surface.clone();
+    ir.model.attributes.push(SourceAttribute {
+        id: "test:model:attribute#body-grade".try_into().unwrap(),
+        native_ref: None,
+        target: AttributeTarget::Body(body.clone()),
+        name: "Body grade".into(),
+        values: vec![Some(AttributeValue::Integer(5))],
+    });
+    ir.model.attributes.push(SourceAttribute {
+        id: "test:model:attribute#body-label".try_into().unwrap(),
+        native_ref: None,
+        target: AttributeTarget::Record {
+            arena: cadmpeg_ir::document::ArenaName::parse("bodies").unwrap(),
+            id: body.as_str().into(),
+        },
+        name: "Body label".into(),
+        values: vec![Some(AttributeValue::String("cast".into()))],
+    });
     ir.model.attributes.push(SourceAttribute {
         id: "test:model:attribute#face-finish".try_into().unwrap(),
         native_ref: None,
@@ -672,6 +690,18 @@ fn scalar_attributes_characterize_their_step_geometry_items() {
     .unwrap();
     let text = String::from_utf8(bytes).unwrap();
     for (name, expected_type, expected_value, attribute_id) in [
+        (
+            "Body grade",
+            "MANIFOLD_SOLID_BREP",
+            "INTEGER_REPRESENTATION_ITEM('',5)",
+            "test:model:attribute#body-grade",
+        ),
+        (
+            "Body label",
+            "MANIFOLD_SOLID_BREP",
+            "DESCRIPTIVE_REPRESENTATION_ITEM('','cast')",
+            "test:model:attribute#body-label",
+        ),
         (
             "Finish",
             "ADVANCED_FACE",

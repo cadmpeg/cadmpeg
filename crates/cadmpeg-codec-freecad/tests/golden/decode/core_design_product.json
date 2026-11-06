@@ -5442,9 +5442,9 @@
               0.0
             ]
           ],
-          "name": "fcstd:native:object#Occurrence",
+          "name": "Occurrence",
           "native_ref": "fcstd:native:object#Occurrence",
-          "ordinal": 0,
+          "ordinal": 1,
           "parent": {
             "kind": "root"
           },
@@ -5477,7 +5477,7 @@
           "id": "fcstd:model:occurrence#Product:container",
           "name": "fcstd:native:object#Product",
           "native_ref": "fcstd:native:object#Product",
-          "ordinal": 1,
+          "ordinal": 0,
           "parent": {
             "kind": "root"
           },
@@ -9474,6 +9474,8 @@
           "gui_view_providers": 0,
           "joints": 0,
           "objects": 17,
+          "polygons3d": 0,
+          "polygons_on_triangulations": 0,
           "product_nodes": 2,
           "properties": 225,
           "shape_payloads": 7,
@@ -9490,13 +9492,15 @@
           "document": "d671abfaf20571f2882fb809aa48fac69e620d89bfd32c5afd50f495a5f44738",
           "drawings": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "element_maps": "f1b12ca7c251acc3f0a3aba2d6f33717d65499347372d89d45d8416fb4166247",
-          "entries": "cc6d81cf30fe2ad7e09faf713ffc51a0236c2bcc176b754589b748ce3c7a39d5",
+          "entries": "aba131bbecbdc6437964740211c65aaaf5f4ba9c1acc620f32e52a54dcb8f1cf",
           "extensions": "bb16eda97954b55f8e07d281566c39275141ce899125e06ea8484e0ff9e3da0c",
           "gui_documents": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "gui_properties": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "gui_view_providers": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "joints": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "objects": "0278a990c8df041f18854332092c769f30beee91adecb4f6c7cbf62f7a47898a",
+          "polygons3d": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "polygons_on_triangulations": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "properties": "96a2c21d3c36a99a619227486ece64ad3069ef3af610e27ee500f18b7be7a37c",
           "shape_payloads": "c9c7e9b3a94127ca2e8f72dbccb97a3e4173c2793ca04cd87fc3cd531f4b5433",
           "string_tables": "4f6f6cceca6ea119f3668ff3a172117f84c610a3266dc4414d3070969caa5c4f",
@@ -10633,16 +10637,6 @@
       }
     },
     "losses": [
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#Occurrence:ScaleList (App::PropertyVectorList) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      },
       {
         "code": {
           "code": "attribute.property-unprojected",

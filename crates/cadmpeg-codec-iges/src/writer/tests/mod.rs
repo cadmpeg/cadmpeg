@@ -69,6 +69,7 @@ mod coverage;
 mod degradation;
 mod encode;
 mod extrusion_directrix;
+mod offset;
 mod ownership;
 mod pcurve_orientation;
 mod physical_dependence;
