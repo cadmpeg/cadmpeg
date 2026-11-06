@@ -543,7 +543,7 @@ fn reject_lossy_scopes_select_which_losses_refuse() {
         .assert()
         .code(1)
         .stderr(
-            predicate::str::contains("export planning reported 2 loss(es)")
+            predicate::str::contains("export planning reported 3 loss(es)")
                 .and(predicate::str::contains("decode reported").not()),
         );
     let report: serde_json::Value =
@@ -552,7 +552,7 @@ fn reject_lossy_scopes_select_which_losses_refuse() {
     assert!(report["export"].is_object());
     assert_eq!(report["export"]["identity"]["payload"], "native");
     let losses = report["export"]["losses"].as_array().unwrap();
-    assert_eq!(losses.len(), 2);
+    assert_eq!(losses.len(), 3);
     assert!(losses.iter().any(|loss| {
         loss["code"]["namespace"] == "export"
             && loss["code"]["code"] == "output.empty"
@@ -561,6 +561,13 @@ fn reject_lossy_scopes_select_which_losses_refuse() {
     assert!(losses
         .iter()
         .any(|loss| loss["code"]["code"] == "export.no-exportable-solids"));
+    assert!(losses.iter().any(|loss| {
+        loss["code"]["namespace"] == "export"
+            && loss["code"]["code"] == "native.records-omitted"
+            && loss["message"]
+                .as_str()
+                .is_some_and(|message| message.contains("creo.unknowns"))
+    }));
 
     let lossless = fixture(
         dir.path(),
