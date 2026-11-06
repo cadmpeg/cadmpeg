@@ -63,11 +63,8 @@ pub(super) fn regenerate(
     })?;
     let form = record.field("form")?.as_i64()?;
     let interpretation = record.field("interpretation")?.as_i64()?;
-    if !matches!((form, interpretation), (11, 1) | (12, 2) | (13, 3))
-        && !(parameter_curve
-            && form == 63
-            && interpretation == 1
-            && points.first() == points.last())
+    if !(matches!((form, interpretation), (11, 1) | (12, 2) | (13, 3))
+        || parameter_curve && form == 63 && interpretation == 1 && points.first() == points.last())
     {
         return None;
     }
