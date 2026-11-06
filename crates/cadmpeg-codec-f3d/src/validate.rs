@@ -7774,8 +7774,25 @@ fn validate_face_operands<'a>(
         .map(|operand| (operand.id.as_str(), operand))
         .collect::<std::collections::HashMap<_, _>>();
     let mut face_operand_records = HashSet::new();
+    let mut stream_types_by_stream = std::collections::HashMap::new();
     for operand in &native.design_face_operands {
         let native_stream = design_stream(&operand.id);
+        let stream_types = stream_types_by_stream
+            .entry(native_stream)
+            .or_insert_with(|| {
+                native_stream
+                    .strip_prefix("f3d:")
+                    .and_then(ids::decode_identity_key_component)
+                    .map(|entry| {
+                        design::decode::meta::stream_types_by_entity(&native.design_types, &entry)
+                    })
+                    .unwrap_or_default()
+            });
+        let topology_recipe_member = stream_types
+            .get(&u64::from(operand.record_index()))
+            .is_some_and(|(guid, _)| {
+                guid.eq_ignore_ascii_case(records::feature::path_features::pipe::RECIPE_GUID)
+            });
         let scope = scopes_by_index.get(&(native_stream, operand.scope_record_index));
         let header = records_by_index.get(&(native_stream, operand.record_index()));
         let recipe = recipes_by_id.get(operand.recipe_id.as_str());
@@ -7980,9 +7997,12 @@ fn validate_face_operands<'a>(
                                     == records::recipes::ConstructionRecipeKind::BoundedFace
                             }
                             Some(design::DesignFeatureFamily::Sweep) => {
-                                group.is_some_and(|group| group.role() == DesignOperandRole::FACES)
-                                    && operand.recipe_kind
-                                        == records::recipes::ConstructionRecipeKind::BoundedFace
+                                group.is_some_and(|group| match group.role() {
+                                    DesignOperandRole::FACES => true,
+                                    DesignOperandRole::PROFILE => topology_recipe_member,
+                                    _ => false,
+                                }) && operand.recipe_kind
+                                    == records::recipes::ConstructionRecipeKind::BoundedFace
                             }
                             Some(design::DesignFeatureFamily::SurfaceOffset) => {
                                 group

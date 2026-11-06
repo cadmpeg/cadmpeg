@@ -120,6 +120,24 @@ fn face_operand_group(
     .unwrap()
 }
 
+/// The type registration of operand record 100 under `guid`.
+fn operand_record_type(guid: &str) -> crate::records::entity_header::SegmentType {
+    crate::records::entity_header::SegmentType::try_new(
+        "f3d:Design/MetaStream.dat:design-type#0".to_owned(),
+        crate::records::entity_header::SegmentTypeData {
+            byte_offset: 0,
+            type_guid: guid.to_owned().try_into().unwrap(),
+            type_guid_offset: 0,
+            base_type_guid: crate::records::entity_header::BaseTypeGuid::Absent,
+            version: 3,
+            version_offset: 0,
+            module: "Fusion".into(),
+            entities: crate::records::identity::ReferenceRun::unlocated(vec![100]),
+        },
+    )
+    .unwrap()
+}
+
 /// With `group_role`, the operand is the sole member of a group of that role at
 /// scope reference zero. Without it, the operand is direct scope reference two.
 /// With `next_reference_at`, the operand is scope reference one and the header
@@ -131,6 +149,27 @@ fn operand_findings(
     recipe_byte_offset: u64,
     group_role: Option<crate::records::topology::extrude_selection::DesignOperandRole>,
     next_reference_at: Option<u64>,
+) -> Vec<cadmpeg_ir::report::check::Finding> {
+    typed_operand_findings(
+        scope_kind,
+        kind,
+        operand_length,
+        recipe_byte_offset,
+        group_role,
+        next_reference_at,
+        None,
+    )
+}
+
+/// `operand_findings` with the operand record registered under `member_type`.
+fn typed_operand_findings(
+    scope_kind: crate::records::feature::scope::DesignFeatureKind,
+    kind: crate::records::recipes::ConstructionRecipeKind,
+    operand_length: u64,
+    recipe_byte_offset: u64,
+    group_role: Option<crate::records::topology::extrude_selection::DesignOperandRole>,
+    next_reference_at: Option<u64>,
+    member_type: Option<&str>,
 ) -> Vec<cadmpeg_ir::report::check::Finding> {
     use crate::records::{
         decal::DesignRecordHeader,
@@ -231,6 +270,7 @@ fn operand_findings(
         native.design_face_operands = vec![operand];
         native.design_construction_operand_groups =
             group_role.map(face_operand_group).into_iter().collect();
+        native.design_types = member_type.map(operand_record_type).into_iter().collect();
     }
     crate::test_support::with_decode_context(|ctx| {
         crate::validate::validate_native(ctx, &ir).expect("validate the native namespace")
@@ -358,4 +398,34 @@ fn a_final_group_member_frame_ends_at_the_next_scope_reference() {
     assert_eq!(findings(frame_end - 1).len(), 1);
     let earlier = findings(900);
     assert!(earlier.is_empty(), "{earlier:#?}");
+}
+
+/// A `Sweep` profile-group face operand is a bounded-face member whose record
+/// is a topology-recipe selection.
+#[test]
+fn sweep_profile_face_operand_requires_a_topology_recipe_member() {
+    use crate::records::feature::scope::DesignFeatureKind;
+    use crate::records::recipes::ConstructionRecipeKind;
+    use crate::records::topology::extrude_selection::DesignOperandRole;
+
+    let findings = |member_type| {
+        typed_operand_findings(
+            DesignFeatureKind::Sweep,
+            ConstructionRecipeKind::BoundedFace,
+            24,
+            1_047,
+            Some(DesignOperandRole::PROFILE),
+            None,
+            member_type,
+        )
+    };
+    let admitted = findings(Some(
+        crate::records::feature::path_features::pipe::RECIPE_GUID,
+    ));
+    assert!(admitted.is_empty(), "{admitted:#?}");
+    assert_eq!(
+        findings(Some("4BD53E5A-0B3E-45E5-AE8B-02044306485A")).len(),
+        1
+    );
+    assert_eq!(findings(None).len(), 1);
 }
