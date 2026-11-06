@@ -13,12 +13,15 @@ use crate::ids::{self, kind};
 use crate::loss::StepLossCode;
 use crate::parse::{Exchange, Value};
 
+use super::groups::NonemptyGroup;
 use super::index::CarrierIndex;
+use super::topology::TopologyData;
 use super::{decode_text, representation, RecordExt, StageOutcome, ValueExt};
 
 pub(super) fn decode(
     exchange: &Exchange,
     index: &CarrierIndex,
+    topology: &TopologyData,
     ir: &mut CadIr,
     ctx: &DecodeContext<'_>,
 ) -> Result<StageOutcome<()>, CodecError> {
@@ -79,6 +82,14 @@ pub(super) fn decode(
             AttributeTarget::Curve(ir.model.curves[curve.0].id.clone())
         } else if let Some(surface) = index.surfaces.get(&item_id) {
             AttributeTarget::Surface(ir.model.surfaces[surface.0].id.clone())
+        } else if let Some([body]) = topology.body_by_root.get(&item_id).map(Vec::as_slice) {
+            AttributeTarget::Body(body.clone())
+        } else if let Some(face) = topology.faces_by_source.get(&item_id).and_then(single) {
+            AttributeTarget::Face(face.clone())
+        } else if let Some(edge) = topology.edges_by_source.get(&item_id).and_then(single) {
+            AttributeTarget::Edge(edge.clone())
+        } else if let Some(vertex) = topology.vertices_by_source.get(&item_id).and_then(single) {
+            AttributeTarget::Vertex(vertex.clone())
         } else {
             continue;
         };
@@ -181,6 +192,12 @@ pub(super) fn decode(
     })
 }
 
+fn single<T>(group: &NonemptyGroup<T>) -> Option<&T> {
+    let mut items = group.iter();
+    let first = items.next()?;
+    items.next().is_none().then_some(first)
+}
+
 fn empty_or_omitted(value: &Value) -> bool {
     matches!(value, Value::Omitted) || matches!(value, Value::String(bytes) if bytes.is_empty())
 }
@@ -221,6 +238,62 @@ mod tests {
                 && attribute.values == [Some(AttributeValue::Integer(7))]
                 && matches!(attribute.target, AttributeTarget::Point(_))
         }));
+    }
+
+    #[test]
+    fn writer_round_trips_topology_properties() {
+        use cadmpeg_ir::attributes::SourceAttribute;
+        use cadmpeg_ir::codec::{Codec, DecodeOptions};
+        use std::io::Cursor;
+
+        let mut ir = cadmpeg_ir::examples::unit_cube().expect("cube");
+        let targets = [
+            ("body", AttributeTarget::Body(ir.model.bodies[0].id.clone())),
+            ("face", AttributeTarget::Face(ir.model.faces[0].id.clone())),
+            ("edge", AttributeTarget::Edge(ir.model.edges[0].id.clone())),
+            (
+                "vertex",
+                AttributeTarget::Vertex(ir.model.vertices[0].id.clone()),
+            ),
+        ];
+        for (name, target) in targets {
+            ir.model.attributes.push(SourceAttribute {
+                id: format!("test:model:attribute#{name}")
+                    .try_into()
+                    .expect("attribute id"),
+                native_ref: None,
+                target,
+                name: name.into(),
+                values: vec![Some(AttributeValue::Integer(7))],
+            });
+        }
+        let mut bytes = Vec::new();
+        crate::export::write_step(
+            &ir,
+            &mut bytes,
+            crate::StepSchema::Ap242Edition3,
+            &crate::StepWriteOptions::default(),
+        )
+        .expect("write properties");
+        let decoded = crate::StepCodec::default()
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("decode properties");
+        for name in ["body", "face", "edge", "vertex"] {
+            assert!(
+                decoded.ir().model.attributes.iter().any(|attribute| {
+                    attribute.name == name
+                        && matches!(
+                            (name, &attribute.target),
+                            ("body", AttributeTarget::Body(_))
+                                | ("face", AttributeTarget::Face(_))
+                                | ("edge", AttributeTarget::Edge(_))
+                                | ("vertex", AttributeTarget::Vertex(_))
+                        )
+                        && attribute.values == [Some(AttributeValue::Integer(7))]
+                }),
+                "missing {name} property"
+            );
+        }
     }
 
     #[test]
