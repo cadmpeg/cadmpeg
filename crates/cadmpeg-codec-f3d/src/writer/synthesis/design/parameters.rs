@@ -9,7 +9,8 @@ use cadmpeg_ir::report::loss::LossNote;
 use crate::loss::F3dLossCode;
 use crate::native::F3dNative;
 use crate::records::parameters::{
-    DesignParameter, DesignParameterContent, DesignParameterDiscriminator, DesignParameterSource,
+    DesignParameter, DesignParameterContent, DesignParameterDiscriminator, DesignParameterKind,
+    DesignParameterSource,
 };
 
 pub(super) fn regenerate(
@@ -92,13 +93,17 @@ pub(super) fn regenerate(
         let record_index = index.checked_add(1).ok_or_else(|| {
             CodecError::InvalidInput("F3D document parameter index exceeds u32::MAX".into())
         })?;
+        let dimension_source = native_record
+            .filter(|record| !parameter.driving && record.kind() == DesignParameterKind::Dimension);
         let generated = DesignParameter::authored(DesignParameterContent {
             id: format!("f3d:design:design-parameter#{record_index}"),
             class_tag: "256".to_owned().try_into().map_err(CodecError::Malformed)?,
             record_index,
             source_ordinal: parameter.ordinal,
             source: DesignParameterSource::authored(
-                "User Parameter".into(),
+                dimension_source
+                    .map_or("User Parameter", DesignParameter::source_kind_str)
+                    .into(),
                 None,
                 Some(DesignParameterDiscriminator::Code0),
             )
@@ -111,7 +116,7 @@ pub(super) fn regenerate(
         .map_err(CodecError::Malformed)?;
         native.design_parameters.push(generated);
         authored.push((parameter.id.clone(), native.design_parameters.len() - 1));
-        if !parameter.driving {
+        if !parameter.driving && dimension_source.is_none() {
             losses.push(F3dLossCode::WriterDesignRecordsOmitted.note(format!(
                 "parameter {} retains its value and expression; its non-driving state is not encoded",
                 parameter.id,
