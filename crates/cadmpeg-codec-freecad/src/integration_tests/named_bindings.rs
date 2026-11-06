@@ -260,7 +260,8 @@ fn named_constraint_path_grammar_and_ambiguity() {
 #[test]
 fn named_constraint_recipe_profiles_constraints_and_body_measures() {
     use cadmpeg_ir::features::{
-        BooleanOp, ExtrudeExtent, FeatureDefinition, FeatureOperation, LinearTermination,
+        BooleanOp, ExtrudeDirection, ExtrudeExtent, ExtrudeStart, ExtrusionDirectionSource,
+        FeatureDefinition, FeatureOperation, FeatureTreeNodeRole, LinearTermination,
         ParameterValue, PlanarProfileRef, ProfileRef,
     };
     use cadmpeg_ir::sketches::{
@@ -499,22 +500,129 @@ fn named_constraint_recipe_profiles_constraints_and_body_measures() {
                 .iter()
                 .find(|feature| feature.name.as_deref() == Some("Pad"))
                 .unwrap();
-            let (FeatureDefinition::Operation(operation)
-            | FeatureDefinition::PostProcess { operation, .. }) = pad.evaluation.definition();
+            let expected_refine = version != "0.21.2";
+            let (operation, refine) = match pad.evaluation.definition() {
+                FeatureDefinition::Operation(operation) => (operation, None),
+                FeatureDefinition::PostProcess {
+                    operation, refine, ..
+                } => (operation, Some(*refine)),
+            };
+            assert_eq!(refine, Some(expected_refine), "{label}: Pad.Refine");
             let FeatureOperation::Extrude {
                 profile: ProfileRef::Planar(PlanarProfileRef::Sketch(profile)),
+                direction,
+                start,
                 extent: ExtrudeExtent::OneSided { side },
                 op: BooleanOp::Join,
-                ..
+                solid,
+                length_along_profile_normal,
+                allow_multi_profile_faces,
+                face_maker: _,
+                inner_wire_taper: _,
             } = operation
             else {
                 panic!("{label}: expected extrusion")
             };
             assert_eq!(profile, &sketch.id, "{label}");
+            assert!(
+                matches!(
+                    direction,
+                    ExtrudeDirection::Explicit {
+                        vector,
+                        source: Some(ExtrusionDirectionSource::ProfileNormal {})
+                    } if vector.get().x == 0.0 && vector.get().y == 0.0 && vector.get().z == 1.0
+                ),
+                "{label}: Pad.Direction and AlongSketchNormal"
+            );
+            assert!(
+                matches!(start, ExtrudeStart::ProfilePlane {}),
+                "{label}: Pad start"
+            );
+            assert_eq!(*solid, Some(true), "{label}: Pad solid output");
+            assert_eq!(
+                *length_along_profile_normal,
+                Some(true),
+                "{label}: Pad length basis"
+            );
+            assert_eq!(
+                *allow_multi_profile_faces,
+                Some(true),
+                "{label}: Pad.AllowMultiFace"
+            );
             let LinearTermination::Blind { length } = side.termination else {
                 panic!("{label}: expected blind pad")
             };
             assert!((length.get() - depth).abs() < LENGTH_TOLERANCE, "{label}");
+
+            let body = model
+                .features
+                .iter()
+                .find(|feature| feature.name.as_deref() == Some("Body"))
+                .expect("authored PartDesign Body");
+            let sketch_feature = model
+                .features
+                .iter()
+                .find(|feature| feature.name.as_deref() == Some("Sketch"))
+                .expect("authored Sketch feature");
+            let FeatureDefinition::Operation(FeatureOperation::TreeNode {
+                role: FeatureTreeNodeRole::SolidBodies,
+                children,
+            }) = body.evaluation.definition()
+            else {
+                panic!("{label}: expected Body membership node")
+            };
+            assert_eq!(
+                &**children,
+                &[sketch_feature.id.clone(), pad.id.clone()],
+                "{label}: Body.Group"
+            );
+            assert_eq!(
+                children.active_child().as_ref(),
+                Some(&pad.id),
+                "{label}: Body.Tip"
+            );
+
+            let pad_length_expression = match recipe {
+                "P12a" => Some("Parameters.plate_w / 2"),
+                "N10a" => Some("Sketch.Constraints.width / 2"),
+                "N11a" => None,
+                _ => unreachable!(),
+            };
+            if let Some(expression) = pad_length_expression {
+                let length_parameter = model
+                    .parameters
+                    .iter()
+                    .find(|parameter| {
+                        parameter.name == "Length"
+                            && parameter
+                                .properties
+                                .get("expression_native_ref")
+                                .is_some_and(|native_ref| {
+                                    native_ref == "fcstd:native:property#Pad:ExpressionEngine"
+                                })
+                    })
+                    .expect("authored Pad.Length expression parameter");
+                assert_eq!(length_parameter.expression, expression, "{label}");
+                assert_eq!(length_parameter.dependencies.len(), 1, "{label}");
+                let ParameterValue::Length(value) = length_parameter.value.as_ref().unwrap() else {
+                    panic!("{label}: Pad.Length expression value")
+                };
+                assert!((value.get() - depth).abs() < LENGTH_TOLERANCE, "{label}");
+                let dependency = model
+                    .parameters
+                    .iter()
+                    .find(|parameter| parameter.id == length_parameter.dependencies[0])
+                    .expect("Pad.Length expression target");
+                if recipe == "P12a" {
+                    assert_eq!(dependency.name, "plate_w", "{label}");
+                } else {
+                    assert_eq!(
+                        dependency.properties.get("source_name").map(String::as_str),
+                        Some("width"),
+                        "{label}"
+                    );
+                }
+            }
             let [body_id] = pad.evaluation.outputs().as_slice() else {
                 panic!("{label}: expected one pad result")
             };
