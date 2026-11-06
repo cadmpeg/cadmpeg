@@ -1903,6 +1903,10 @@ fn container_ordinals_follow_source_member_order() {
             )
             .unwrap();
         let occurrences = &decoded.ir().model.occurrences;
+        let parent = occurrences
+            .iter()
+            .find(|item| item.id.as_str().ends_with("#Group:container"))
+            .unwrap();
         for (name, ordinal) in [("Second", 0), ("First", 1)] {
             let suffix = format!("#{name}:instance");
             let item = occurrences
@@ -1910,6 +1914,11 @@ fn container_ordinals_follow_source_member_order() {
                 .find(|item| item.id.as_str().ends_with(&suffix))
                 .unwrap();
             assert_eq!(item.ordinal, ordinal, "{runtime}: {name}");
+            assert!(matches!(
+                &item.parent,
+                cadmpeg_ir::products::OccurrenceParent::Occurrence { occurrence }
+                    if occurrence == &parent.id
+            ));
         }
         assert_valid_document(decoded.ir());
     }
@@ -1931,6 +1940,13 @@ fn container_ordinals_keep_array_elements_together_in_source_order() {
             &DecodeOptions::default(),
         )
         .unwrap();
+    let parent = decoded
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .find(|item| item.id.as_str().ends_with("#Group:container"))
+        .unwrap();
     for (suffix, ordinal) in [("#Array:0", 0), ("#Array:1", 1), ("#First:instance", 2)] {
         let item = decoded
             .ir()
@@ -1940,6 +1956,11 @@ fn container_ordinals_keep_array_elements_together_in_source_order() {
             .find(|item| item.id.as_str().ends_with(suffix))
             .unwrap();
         assert_eq!(item.ordinal, ordinal, "{suffix}");
+        assert!(matches!(
+            &item.parent,
+            cadmpeg_ir::products::OccurrenceParent::Occurrence { occurrence }
+                if occurrence == &parent.id
+        ));
     }
     assert_valid_document(decoded.ir());
 }
