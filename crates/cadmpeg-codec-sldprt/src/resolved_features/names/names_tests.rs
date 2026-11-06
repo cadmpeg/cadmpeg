@@ -38,6 +38,32 @@ fn object_names_follow_the_lane_name_class_token() {
 }
 
 #[test]
+fn object_names_accept_the_name_length_field() {
+    let mut payload = Vec::new();
+    payload.extend_from_slice(CLASS_MARKER);
+    payload.extend_from_slice(&18u16.to_le_bytes());
+    payload.extend_from_slice(b"moFavoriteFolder_c");
+    let expected = ["A".repeat(129), "B".repeat(254)];
+    for name in &expected {
+        payload.extend_from_slice(&[0x87, 0x80, 0xff, 0xfe, 0xff]);
+        payload.push(u8::try_from(name.len()).unwrap());
+        for unit in name.encode_utf16() {
+            payload.extend_from_slice(&unit.to_le_bytes());
+        }
+        payload.extend_from_slice(&[0; 12]);
+    }
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::service();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
+    let names = object_names(&ctx, &payload, "lane").unwrap();
+    assert_eq!(
+        names.iter().map(|name| &name.value).collect::<Vec<_>>(),
+        expected.iter().collect::<Vec<_>>()
+    );
+}
+
+#[test]
 fn operand_kind_names_preserve_wire_spelling() {
     use crate::records::FeatureInputOperandKind;
     for (kind, expected) in [
