@@ -50,7 +50,8 @@ fn native_layer_fields_follow_the_current_neutral_link_and_edits() {
     assert_eq!(fields["description"], "Source description");
     assert_eq!(fields["visible"], true);
     let archive = crate::chunks::ArchiveVersion::V8;
-    let layer_records = super::layers(&ir).expect("write current layer");
+    let materials = super::materials::MaterialPlan::new(&ir).unwrap();
+    let layer_records = super::layers(&ir, &materials).expect("write current layer");
     let source = crate::test_support::test_dump::minimal_document(
         "80",
         &[
@@ -152,6 +153,64 @@ fn layer_linetype_resolves_source_archive_index() {
         .unwrap();
     let records = &decoded.ir().native.namespace("rhino").unwrap().arenas()["layers"];
     assert_eq!(records[0].field("linetype_index"), Some(json!(0)));
+}
+
+#[test]
+fn layer_material_reference_follows_emitted_table_and_names_missing_material() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    let mut ir = CadIr::empty();
+    ir.model
+        .presentation_layers
+        .push(layer("cadir:model:layer#edited", "layer", Some(NATIVE)));
+    ir.native.namespace_mut("rhino").arenas_mut().insert(
+        "layers".into(),
+        vec![native(
+            NATIVE,
+            json!({"archive_index":0,"name":"layer","material_index":7}),
+        )],
+    );
+    let color = NativeBytes::from([0_u8, 0, 0, 0]);
+    let material_id = "rhino:presentation:material#source";
+    ir.native.namespace_mut("rhino").arenas_mut().insert("materials".into(), vec![native(material_id, json!({
+        "archive_index":7,"name":"material","source_uuid":null,"plugin_uuid":"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        "ambient":color,"diffuse":color,"emission":color,"specular":color,"reflection":color,"transparent":color,
+        "index_of_refraction":1.0,"reflectivity":0.0,"shine":0.0,"transparency":0.0,
+        "reflection_glossiness":0.0,"refraction_glossiness":0.0,"fresnel_index_of_refraction":1.0,
+        "shareable":false,"disable_lighting":false,"fresnel_reflections":false,
+        "diffuse_texture_alpha_transparency":false,"rdk_instance_uuid":null,"texture_count":0,"textures":[]
+    }))]);
+    let mut bytes = Vec::new();
+    let report = crate::RhinoCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .unwrap();
+    assert!(report.losses.iter().any(|loss| loss.code
+        == crate::loss::RhinoLossCode::WriterLayerMaterialReduced.kind()
+        && loss.message.contains(NATIVE)
+        && loss.message.contains("material index 7 is written as 0")));
+    assert_eq!(
+        report
+            .native_dispositions
+            .record_disposition("rhino", "layers", NATIVE),
+        NativeDisposition::Dropped
+    );
+    let decoded = crate::RhinoCodec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    let records = &decoded.ir().native.namespace("rhino").unwrap().arenas()["layers"];
+    assert_eq!(records[0].field("material_index"), Some(json!(0)));
+    ir.native
+        .namespace_mut("rhino")
+        .arenas_mut()
+        .remove("materials");
+    let materials = super::materials::MaterialPlan::new(&ir).unwrap();
+    assert_eq!(
+        super::layer_material(&ir, &ir.model.presentation_layers[0], &materials),
+        (7, -1)
+    );
+    assert!(super::layer_material_losses(&ir, &materials)
+        .iter()
+        .any(|loss| loss.message.contains(NATIVE)));
 }
 
 #[test]

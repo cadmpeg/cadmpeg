@@ -802,8 +802,48 @@ fn history_record(ir: &CadIr, feature: &Feature) -> Result<Vec<u8>, WriteError> 
         "antecedent_objects",
     )?;
     body.extend(uuid_anon(&antecedents)?);
+    let groups = value_groups(&properties);
+    if let cadmpeg_ir::features::FeatureDefinition::Operation(FeatureOperation::Native {
+        parameters,
+        ..
+    }) = feature.evaluation.definition()
+    {
+        for (name, parameter) in parameters {
+            let kind = groups.iter().find_map(|(id, occurrence, kind)| {
+                let group = if *occurrence == 0 {
+                    format!("value_{id}")
+                } else {
+                    format!("value_{id}_{occurrence}")
+                };
+                (name.as_str() == group).then_some(*kind).flatten()
+            });
+            if kind != Some(9) {
+                return Err(WriteError::Omit(format!(
+                    "history {record} parameter {name} has no reconstructible wire type"
+                )));
+            }
+            let mut references = Vec::new();
+            for index in indexed(&properties, name.as_str()) {
+                let reference = parse_reference(&properties, &format!("{name}.{index}"), record)?;
+                let object_id = crate::wire::Uuid::from_wire(reference.object_id);
+                references.push(format!(
+                    "{object_id}@{}:{}",
+                    reference.component[0], reference.component[1]
+                ));
+            }
+            let expected = references.join(",");
+            let value = parameter
+                .literal()
+                .and_then(cadmpeg_ir::features::Expression::literal_text);
+            if value.as_deref() != Some(expected.as_str()) {
+                return Err(WriteError::Omit(format!(
+                    "history {record} parameter {name} conflicts with its structured object references"
+                )));
+            }
+        }
+    }
     let mut values = Vec::new();
-    for (id, occ, kind) in value_groups(&properties) {
+    for (id, occ, kind) in groups {
         let group = if occ == 0 {
             format!("value_{id}")
         } else {
