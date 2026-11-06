@@ -57,7 +57,7 @@ rewrite_native_enum!(DesignMeshSceneNodeForm, []; {
 rewrite_native_record!(DesignMeshSceneState, []; {record, bounds});
 rewrite_native_record!(DesignMeshScope, []; {record, base_class_tag, owner_record_index});
 rewrite_native_record!(DesignMeshTextureFile, []; {record, archive_entry_name});
-rewrite_native_record!(DesignMeshTextureResource, []; {ordinal, resource_guid, flags, filename_ordinal, file, asset});
+rewrite_native_record!(DesignMeshTextureResource, []; {ordinal, resource_guid, flags, filename_ordinal, file});
 rewrite_native_record!(DesignMeshTextureTable, []; {record, resources});
 rewrite_native_record!(DesignMeshUuid, []; (field0));
 rewrite_native_record!(DesignRelaxedGuidText, []; (field0));

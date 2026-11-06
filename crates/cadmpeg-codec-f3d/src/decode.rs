@@ -3883,11 +3883,7 @@ fn mesh_texture_asset(
             data: cadmpeg_ir::assets::AssetData::new(bytes.to_vec())
                 .ok_or_else(|| CodecError::Malformed("asset data must not be empty".into()))?,
         },
-        Some(crate::ids::native_scoped_id(
-            file.archive_entry_name(),
-            "mesh-texture",
-            0,
-        )),
+        None,
     )
     .map_err(CodecError::Malformed)
 }
@@ -3938,21 +3934,17 @@ fn project_mesh_bodies(
         .iter()
         .flat_map(|feature| feature.texture_table.resources())
     {
+        let texture_id = crate::ids::neutral_asset_id(texture.file.archive_entry_name());
         if ir
             .model
             .assets
             .iter()
             .chain(&texture_assets)
-            .any(|asset: &cadmpeg_ir::assets::Asset| asset.id == texture.asset)
+            .any(|asset: &cadmpeg_ir::assets::Asset| asset.id == texture_id)
         {
             continue;
         }
-        texture_assets.push(mesh_texture_asset(
-            ctx,
-            scan,
-            &texture.file,
-            &texture.asset,
-        )?);
+        texture_assets.push(mesh_texture_asset(ctx, scan, &texture.file, &texture_id)?);
     }
     extend_unique_assets(&mut ir.model.assets, texture_assets)?;
     let mut texture_tables = std::collections::HashMap::new();
@@ -3960,7 +3952,7 @@ fn project_mesh_bodies(
         let mut texture_table = Vec::new();
         for texture in feature.texture_table.resources_in_flags_order() {
             let source_id = texture.resource_guid.as_str().to_owned();
-            let asset = texture.asset.clone();
+            let asset = crate::ids::neutral_asset_id(texture.file.archive_entry_name());
             texture_table.push((source_id, asset));
         }
         for body in feature.bodies() {

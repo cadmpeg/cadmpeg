@@ -1517,7 +1517,7 @@ where
                 })?;
             let (filename_record, filename) =
                 parse_mesh_texture_filename_record(bytes, filename_frame)?;
-            let (archive_entry_name, asset) = asset_for_filename(&filename)?;
+            let (archive_entry_name, _) = asset_for_filename(&filename)?;
             textures.push(DesignMeshTextureResource {
                 ordinal: flag.ordinal,
                 resource_guid: flag.resource_guid.clone(),
@@ -1529,7 +1529,6 @@ where
                     archive_entry_name,
                 )
                 .map_err(|message| malformed_mesh_graph(&stream, &message))?,
-                asset,
             });
         }
         if !filename_entries.is_empty() {
@@ -2194,7 +2193,10 @@ mod tests {
         let textures = design[0].texture_table.resources();
         assert_eq!(textures.len(), 2);
         assert_eq!(textures[0].file.record(), textures[1].file.record());
-        assert_eq!(textures[0].asset, textures[1].asset);
+        assert_eq!(
+            textures[0].file.archive_entry_name(),
+            textures[1].file.archive_entry_name()
+        );
     }
 
     #[test]

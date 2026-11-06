@@ -1344,7 +1344,10 @@ fn validate_mesh_features(ctx: &Ctx, findings: &mut Vec<Finding>) {
             filename_records
                 .entry(filename_key)
                 .or_insert(resource.file.record());
-            resources_valid = filename_record_consistent && asset_ids.contains(&resource.asset);
+            resources_valid = filename_record_consistent
+                && asset_ids.contains(&crate::ids::neutral_asset_id(
+                    resource.file.archive_entry_name(),
+                ));
             if !resources_valid {
                 break;
             }

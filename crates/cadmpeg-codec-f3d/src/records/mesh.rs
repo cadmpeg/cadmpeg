@@ -6,7 +6,6 @@ use cadmpeg_core::decode::u64_from_index;
 use super::identity::Located;
 use super::references::DesignClassTag;
 use cadmpeg_core::CodecError;
-use cadmpeg_ir::assets::AssetId;
 use cadmpeg_ir::features::FinitePoint3;
 use cadmpeg_ir::transform::Transform;
 use serde::{Deserialize, Serialize};
@@ -197,8 +196,6 @@ pub(crate) struct DesignMeshTextureResource {
     pub(crate) filename_ordinal: u32,
     /// Filename record joined to its archive entry.
     pub(crate) file: DesignMeshTextureFile,
-    /// Neutral embedded asset projected from the matching archive entry.
-    pub(crate) asset: AssetId,
 }
 
 /// A filename record and the archive entry with its exact basename.
@@ -278,8 +275,6 @@ struct DesignMeshTextureResourceWire {
     filename_offset: u64,
     /// Complete matching archive-entry name.
     archive_entry_name: String,
-    /// Neutral embedded asset projected from the matching archive entry.
-    asset: AssetId,
 }
 
 const MESH_TEXTURE_FLAGS_ENTRY_BYTES: u64 = 4 + 36 + 4;
@@ -415,7 +410,6 @@ impl DesignMeshTextureTable {
                 flags: row.flags,
                 filename_ordinal: row.filename_ordinal,
                 file,
-                asset: row.asset,
             });
         }
         let table = Self::new_inner(record, resources)?;
@@ -462,7 +456,6 @@ impl DesignMeshTextureTable {
                     filename_offset: value.file.filename_offset(),
                     filename_record: value.file.record,
                     archive_entry_name: value.file.archive_entry_name,
-                    asset: value.asset,
                 }
             })
             .collect();
