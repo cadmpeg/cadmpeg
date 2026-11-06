@@ -97,6 +97,17 @@ pub(crate) enum F3dLossCode {
     RootInstanceDefinitionUnbound,
     /// Alternate occurrence frames without a unique primary-indexed selection.
     LocalOccurrenceEnvelopeSuperseded,
+    /// A leading-flag occurrence frame whose record the occurrence-placement
+    /// type row does not register.
+    LocalOccurrenceTypeUnregistered,
+    /// An unregistered occurrence frame yields to a registered frame of the
+    /// same occurrence.
+    LocalOccurrenceYieldedToRegistered,
+    /// Two or more occurrence frames of one Design stream state one occurrence
+    /// key.
+    LocalOccurrenceKeyRepeated,
+    /// A class-256 occurrence frame stores a matrix at ordinal one.
+    LocalOccurrenceFirstMatrixRefused,
     /// An identity carrier has an unresolved later ordinal.
     LocalOccurrenceIdentityOrdinalUnresolved,
     /// An attributed occurrence whose source reference names no record of the occurrence source
@@ -118,6 +129,9 @@ pub(crate) enum F3dLossCode {
     /// enabled. The neutral joint carries no rest; the native record retains
     /// the valid rest or the malformed-rest mark.
     AssemblyJointRestUnprojected,
+    /// Projected Design assembly joints whose activation state is assumed
+    /// active because the scope-tail booleans' activation meaning is unknown.
+    AssemblyJointActivationAssumed,
     /// Rotation limits retained natively because the zero-lane freedom value is unsettled.
     AssemblyJointAngularLimitsNative,
     /// Projected Design assembly joints whose operand paths carry occurrence
@@ -161,6 +175,14 @@ pub(crate) enum F3dLossCode {
     FeatureStoredBodiesRecipeAbsent,
     /// A Base Feature has no complete unique body binding.
     FeatureStoredBodiesUnbound,
+    /// A paste keeps its bodies; its source pairs or a source node do not resolve.
+    FeaturePasteSourcesUnresolved,
+    /// Several timeline objects name one owned scope; the lowest readable record owns it.
+    FeatureTimelineOwnerCompeting,
+    /// A timeline owner has no same-index paired header; its copy form stays unread.
+    FeatureTimelineOwnerUnpaired,
+    /// A pasted copy is assumed to keep its source placement.
+    FeaturePasteCopyPlacementAssumed,
     /// A feature scope has no complete unique ASM output transition interval.
     FeatureOutputStateChainUnbound,
     /// An affected body slot has no unique active body in the selected BREP.
@@ -491,6 +513,10 @@ impl F3dLossCode {
         Self::ComponentNamingSpaceUnbound,
         Self::RootInstanceDefinitionUnbound,
         Self::LocalOccurrenceEnvelopeSuperseded,
+        Self::LocalOccurrenceTypeUnregistered,
+        Self::LocalOccurrenceYieldedToRegistered,
+        Self::LocalOccurrenceKeyRepeated,
+        Self::LocalOccurrenceFirstMatrixRefused,
         Self::LocalOccurrenceIdentityOrdinalUnresolved,
         Self::LocalOccurrenceSourceUnregistered,
         Self::SavedFreeEdgeBodyUnowned,
@@ -499,6 +525,7 @@ impl F3dLossCode {
         Self::AssemblyRigidGroupFrameUnparsed,
         Self::AssemblyJointMotionUndecoded,
         Self::AssemblyJointRestUnprojected,
+        Self::AssemblyJointActivationAssumed,
         Self::AssemblyJointAngularLimitsNative,
         Self::AssemblyOperandPathPairsNative,
         Self::AssemblyRootPathIdentitiesNative,
@@ -520,6 +547,10 @@ impl F3dLossCode {
         Self::FeatureStoredBodiesEmpty,
         Self::FeatureStoredBodiesRecipeAbsent,
         Self::FeatureStoredBodiesUnbound,
+        Self::FeaturePasteSourcesUnresolved,
+        Self::FeatureTimelineOwnerCompeting,
+        Self::FeatureTimelineOwnerUnpaired,
+        Self::FeaturePasteCopyPlacementAssumed,
         Self::FeatureOutputStateChainUnbound,
         Self::FeatureOutputBodyUnbound,
         Self::FeatureDerivedBaseUnresolved,
@@ -707,11 +738,20 @@ impl F3dLossCode {
             Self::LocalOccurrenceEnvelopeSuperseded => {
                 "assembly.local-occurrence-envelope-superseded"
             }
+            Self::LocalOccurrenceTypeUnregistered => "assembly.local-occurrence-type-unregistered",
+            Self::LocalOccurrenceYieldedToRegistered => {
+                "assembly.local-occurrence-yielded-to-registered"
+            }
+            Self::LocalOccurrenceKeyRepeated => "assembly.local-occurrence-key-repeated",
+            Self::LocalOccurrenceFirstMatrixRefused => {
+                "assembly.local-occurrence-first-matrix-refused"
+            }
             Self::AssemblyAlignmentPartial => "assembly.alignment-partial",
             Self::AssemblyJointUnprojected => "assembly.joint-unprojected",
             Self::AssemblyRigidGroupFrameUnparsed => "assembly.rigid-group-frame-unparsed",
             Self::AssemblyJointMotionUndecoded => "assembly.joint-motion-undecoded",
             Self::AssemblyJointRestUnprojected => "assembly.joint-rest-unprojected",
+            Self::AssemblyJointActivationAssumed => "assembly.joint-activation-assumed",
             Self::AssemblyJointAngularLimitsNative => "assembly.joint-angular-limits-native",
             Self::AssemblyOperandPathPairsNative => "assembly.operand-path-pairs-native",
             Self::AssemblyRootPathIdentitiesNative => "assembly.root-path-identities-native",
@@ -731,6 +771,10 @@ impl F3dLossCode {
             Self::FeatureStoredBodiesEmpty => "feature.stored-bodies-empty",
             Self::FeatureStoredBodiesRecipeAbsent => "feature.stored-bodies-recipe-absent",
             Self::FeatureStoredBodiesUnbound => "feature.stored-bodies-unbound",
+            Self::FeaturePasteSourcesUnresolved => "feature.paste-sources-unresolved",
+            Self::FeatureTimelineOwnerCompeting => "feature.timeline-owner-competing",
+            Self::FeatureTimelineOwnerUnpaired => "feature.timeline-owner-unpaired",
+            Self::FeaturePasteCopyPlacementAssumed => "feature.paste-copy-placement-assumed",
             Self::FeatureOutputStateChainUnbound => "feature.output-state-chain-unbound",
             Self::FeatureOutputBodyUnbound => "feature.output-body-unbound",
             Self::FeatureDerivedBaseUnresolved => "feature.derived-base-unresolved",
@@ -950,7 +994,11 @@ impl F3dLossCode {
             | Self::SavedFreeEdgeBodyUnowned
             | Self::LocalOccurrenceIdentityOrdinalUnresolved
             | Self::LocalOccurrenceSourceUnregistered
+            | Self::LocalOccurrenceKeyRepeated
+            | Self::LocalOccurrenceFirstMatrixRefused
             | Self::LocalOccurrenceEnvelopeSuperseded
+            | Self::LocalOccurrenceTypeUnregistered
+            | Self::LocalOccurrenceYieldedToRegistered
             | Self::RootInstanceDefinitionUnbound
             | Self::ComponentDefinitionRevised
             | Self::ComponentNamingSpaceUnbound
@@ -960,6 +1008,7 @@ impl F3dLossCode {
             | Self::AssemblyJointMotionUndecoded
             | Self::AssemblyJointAngularLimitsNative
             | Self::AssemblyJointRestUnprojected
+            | Self::AssemblyJointActivationAssumed
             | Self::AssemblyOperandPathPairsNative
             | Self::AssemblyOperandDescentUnresolved
             | Self::AssemblyOperandDescentAmbiguous
@@ -975,6 +1024,10 @@ impl F3dLossCode {
             | Self::FeatureOutputBodyUnbound
             | Self::FeatureOutputStateChainUnbound
             | Self::FeatureStoredBodiesUnbound
+            | Self::FeaturePasteSourcesUnresolved
+            | Self::FeatureTimelineOwnerCompeting
+            | Self::FeatureTimelineOwnerUnpaired
+            | Self::FeaturePasteCopyPlacementAssumed
             | Self::FeatureDerivedBaseUnresolved
             | Self::FeatureBoxPrimitiveUnresolved
             | Self::FeatureDefinitionIncomplete
@@ -1153,6 +1206,10 @@ impl F3dLossCode {
             | Self::FeatureOutputBodyUnbound
             | Self::FeatureOutputStateChainUnbound
             | Self::FeatureStoredBodiesUnbound
+            | Self::FeaturePasteSourcesUnresolved
+            | Self::FeatureTimelineOwnerCompeting
+            | Self::FeatureTimelineOwnerUnpaired
+            | Self::FeaturePasteCopyPlacementAssumed
             | Self::FeatureDerivedBaseUnresolved
             | Self::FeatureBoxPrimitiveUnresolved
             | Self::FeatureDefinitionIncomplete
@@ -1219,6 +1276,7 @@ impl F3dLossCode {
             | Self::AssemblyJointMotionUndecoded
             | Self::AssemblyJointAngularLimitsNative
             | Self::AssemblyJointRestUnprojected
+            | Self::AssemblyJointActivationAssumed
             | Self::AssemblyOperandPathPairsNative
             | Self::AssemblyOperandDescentUnresolved
             | Self::AssemblyOperandDescentAmbiguous
@@ -1238,6 +1296,9 @@ impl F3dLossCode {
             | Self::SavedFreeEdgeBodyUnowned
             | Self::LocalOccurrenceIdentityOrdinalUnresolved
             | Self::LocalOccurrenceSourceUnregistered
+            | Self::LocalOccurrenceTypeUnregistered
+            | Self::LocalOccurrenceKeyRepeated
+            | Self::LocalOccurrenceFirstMatrixRefused
             | Self::LocalOccurrenceEnvelopeSuperseded
             | Self::RootInstanceDefinitionUnbound
             | Self::ComponentDefinitionRevised
@@ -1260,6 +1321,7 @@ impl F3dLossCode {
             }
             Self::MeshContainerUndecoded
             | Self::DialectLayerCollision
+            | Self::LocalOccurrenceYieldedToRegistered
             | Self::DesignIntentUndecoded => LossTaxonomy::DecodeDiagnostic,
             Self::MeshVertexPrecisionReduced => LossTaxonomy::MeshVertexPrecision,
             Self::BodylessDesignCarrier
@@ -1372,6 +1434,10 @@ mod tests {
                 "assembly.component-naming-space-unbound",
                 "assembly.root-instance-definition-unbound",
                 "assembly.local-occurrence-envelope-superseded",
+                "assembly.local-occurrence-type-unregistered",
+                "assembly.local-occurrence-yielded-to-registered",
+                "assembly.local-occurrence-key-repeated",
+                "assembly.local-occurrence-first-matrix-refused",
                 "assembly.local-occurrence-identity-ordinal-unresolved",
                 "assembly.local-occurrence-source-unregistered",
                 "assembly.saved-free-edge-body-unowned",
@@ -1380,6 +1446,7 @@ mod tests {
                 "assembly.rigid-group-frame-unparsed",
                 "assembly.joint-motion-undecoded",
                 "assembly.joint-rest-unprojected",
+                "assembly.joint-activation-assumed",
                 "assembly.joint-angular-limits-native",
                 "assembly.operand-path-pairs-native",
                 "assembly.root-path-identities-native",
@@ -1401,6 +1468,10 @@ mod tests {
                 "feature.stored-bodies-empty",
                 "feature.stored-bodies-recipe-absent",
                 "feature.stored-bodies-unbound",
+                "feature.paste-sources-unresolved",
+                "feature.timeline-owner-competing",
+                "feature.timeline-owner-unpaired",
+                "feature.paste-copy-placement-assumed",
                 "feature.output-state-chain-unbound",
                 "feature.output-body-unbound",
                 "feature.derived-base-unresolved",
