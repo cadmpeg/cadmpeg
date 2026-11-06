@@ -411,6 +411,11 @@ fn authored_core_operation_bodies_match_source_dimensions() {
             [9.0, -3.0, 0.0, 15.0, 3.0, 10.0],
         ),
         (
+            "Mirror",
+            (pi * 3.0 * 3.0 * 10.0, 2.0 * pi * 3.0 * (3.0 + 10.0)),
+            [-15.0, -3.0, 0.0, -9.0, 3.0, 10.0],
+        ),
+        (
             "DraftBase",
             box_measures(20.0, 15.0, 10.0),
             [0.0, 0.0, 0.0, 20.0, 15.0, 10.0],
@@ -426,12 +431,20 @@ fn authored_core_operation_bodies_match_source_dimensions() {
             [0.0, 0.0, 0.0, 4.0, 4.0, 8.0],
         ),
         (
+            "LinearPattern",
+            (
+                4.0 * 4.0 * 32.0,
+                2.0 * (4.0 * 4.0 + 4.0 * 32.0 + 4.0 * 32.0),
+            ),
+            [0.0, 0.0, -24.0, 4.0, 4.0, 8.0],
+        ),
+        (
             "Loft",
             (pi * 4.0 * 4.0 * 14.0, 2.0 * pi * 4.0 * (4.0 + 14.0)),
             [-4.0, -4.0, 0.0, 4.0, 4.0, 14.0],
         ),
     ];
-    let bodies = rows
+    let mut bodies = rows
         .iter()
         .map(|(name, _, _)| {
             let [id] = feature(name).evaluation.outputs().as_slice() else {
@@ -440,6 +453,10 @@ fn authored_core_operation_bodies_match_source_dimensions() {
             id.clone()
         })
         .collect::<Vec<_>>();
+    let [revolution_body] = feature("Revolution").evaluation.outputs().as_slice() else {
+        panic!("Revolution: expected one surface body")
+    };
+    bodies.push(revolution_body.clone());
     let arena = DecodeArena::new();
     let policy = DecodePolicy::service();
     let ctx = DecodeContext::for_loaded_input(&arena, &policy, 0).unwrap();
@@ -459,7 +476,7 @@ fn authored_core_operation_bodies_match_source_dimensions() {
         },
     )
     .unwrap();
-    for ((name, (expected_volume, expected_area), bounds), id) in rows.into_iter().zip(bodies) {
+    for ((name, (expected_volume, expected_area), bounds), id) in rows.into_iter().zip(&bodies) {
         let body = report
             .bodies()
             .iter()
@@ -488,6 +505,43 @@ fn authored_core_operation_bodies_match_source_dimensions() {
                 "{name}: bbox"
             );
         }
+    }
+    let revolution = report
+        .bodies()
+        .iter()
+        .find(|body| body.body() == revolution_body.as_str())
+        .expect("Revolution body measures");
+    let cadmpeg_measure::value::Quantity::Unavailable(volume) =
+        revolution.volume().as_ref().expect("Revolution volume")
+    else {
+        panic!("Revolution: an open surface has no volume")
+    };
+    assert_eq!(
+        volume.reason(),
+        cadmpeg_measure::reason::UnavailableReason::VolumeShellOpen
+    );
+    assert_eq!(
+        volume.category(),
+        cadmpeg_measure::reason::Category::Undefined
+    );
+    let surface_area = revolution.area().as_ref().unwrap().measured().unwrap();
+    assert!(
+        (surface_area.value().value.get() - 30.0 * pi).abs() < AREA_TOLERANCE,
+        "Revolution: surface area"
+    );
+    let revolution_bbox = revolution.bbox().measured().unwrap().value();
+    let revolution_x_min = 8.0 * (5.0 * pi / 8.0).cos();
+    for (actual, expected) in revolution_bbox
+        .min
+        .coordinates()
+        .into_iter()
+        .chain(revolution_bbox.max.coordinates())
+        .zip([revolution_x_min, 0.0, -8.0, 8.0, 0.0, 8.0])
+    {
+        assert!(
+            (actual.get() - expected).abs() < BOX_TOLERANCE,
+            "Revolution: bbox"
+        );
     }
     ctx.finish_session().unwrap();
 }
