@@ -472,11 +472,11 @@ fn native_procedural_surface_definition(
             bytes.push(0x0f);
             let inline = construction.subtransform().inline();
             native_ident(bytes, "t_spl_subtrans_object")?;
-            native_u16_string(bytes, inline.program.as_str())?;
+            native_u16_string(bytes, inline.program.as_str());
             if let Some(separator) = inline.separator {
                 bytes.push(native_bool(separator));
             }
-            native_u16_string(bytes, inline.values.as_str())?;
+            native_u16_string(bytes, inline.values.as_str());
             bytes.push(0x10);
             native_i64(bytes, construction.trailing_value());
             bytes.push(0x10);
