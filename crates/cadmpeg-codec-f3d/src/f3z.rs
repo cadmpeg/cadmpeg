@@ -32,14 +32,12 @@ fn give_up_member(
     scan: &ContainerScan<'_>,
     path: &str,
     error: &str,
+    classes: impl IntoIterator<Item = cadmpeg_ir::document::ArenaClass>,
     output: &mut cadmpeg_ir::source_fidelity::parts::PartOutput,
 ) -> Result<(), CodecError> {
     use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartSpec};
     let source = scan.stored_entry_view(path)?;
-    let mut spec = PartSpec::new("zip.entry").holding([
-        cadmpeg_ir::document::ArenaClass::Model,
-        cadmpeg_ir::document::ArenaClass::Design,
-    ]);
+    let mut spec = PartSpec::new("zip.entry").holding(classes);
     if source.location().space != cadmpeg_core::decode::SpaceId::ROOT {
         spec = spec.in_stream(
             scan.source_stream
@@ -120,9 +118,6 @@ fn compose(
     }
     fidelity.retain_unknown_records("f3d", [crate::decode::preserve_source_image(scan)])?;
     let mut source_untyped = cadmpeg_ir::document::ArenaClasses::default();
-    if session.omitted_drawing_root.is_some() {
-        source_untyped.insert(cadmpeg_ir::document::ArenaClass::Model);
-    }
     if ctx.container_only() {
         for member in session.members() {
             match member.kind() {
@@ -154,7 +149,39 @@ fn compose(
         {
             continue;
         }
-        give_up_member(ctx, scan, path, error, &mut failed_parts)?;
+        give_up_member(
+            ctx,
+            scan,
+            path,
+            error,
+            [
+                cadmpeg_ir::document::ArenaClass::Model,
+                cadmpeg_ir::document::ArenaClass::Design,
+            ],
+            &mut failed_parts,
+        )?;
+    }
+    if !ctx.container_only() {
+        if let Some(drawing_root) = &session.omitted_drawing_root {
+            if scan.has_entry(drawing_root) {
+                give_up_member(
+                    ctx,
+                    scan,
+                    drawing_root,
+                    "unsupported drawing document",
+                    [cadmpeg_ir::document::ArenaClass::Model],
+                    &mut failed_parts,
+                )?;
+            } else if !scan
+                .unreadable_entries
+                .iter()
+                .any(|entry| &entry.name == drawing_root)
+            {
+                push_loss(&mut report.losses, F3dLossCode::DrawingDocumentOmitted, format_args!(
+                    "drawing root {drawing_root} is missing; decoded its unambiguous derived model {model_root}"
+                ));
+            }
+        }
     }
     let (_, mut entry_native, entry_fidelity, entry_losses) = failed_parts.into_parts();
     if let Some(stubs) = entry_native
@@ -171,11 +198,6 @@ fn compose(
     }
     fidelity.append(entry_fidelity)?;
     outer_losses.extend(entry_losses);
-    if let Some(drawing_root) = &session.omitted_drawing_root {
-        push_loss(&mut report.losses, F3dLossCode::DrawingDocumentOmitted, format_args!(
-            "drawing root {drawing_root} is omitted; decoded its unambiguous derived model {model_root}"
-        ));
-    }
     let member_count = scan
         .entries
         .iter()
