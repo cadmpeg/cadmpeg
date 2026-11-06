@@ -275,6 +275,7 @@
       "tessellations": [
         {
           "id": "f3d:FusionAssetName[Active]/ParaMeshGeometry.BlobParts/ParaMeshGeometry.11111111-2222-4333-8444-555555555555.paramesh:mesh-body#639",
+          "native_ref": "f3d:FusionAssetName[Active]/Design1/BulkStream.dat:design-mesh-feature#1239",
           "mesh": {
             "kind": "list",
             "vertices": [
@@ -443,7 +444,6 @@
                 },
                 "scene_state_reference_offset": 499,
                 "scope_reference_offset": 1147,
-                "tessellation_id": "f3d:FusionAssetName[Active]/ParaMeshGeometry.BlobParts/ParaMeshGeometry.11111111-2222-4333-8444-555555555555.paramesh:mesh-body#639",
                 "transform": [
                   [
                     1.0,

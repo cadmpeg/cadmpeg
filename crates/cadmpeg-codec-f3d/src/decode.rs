@@ -3964,7 +3964,11 @@ fn project_mesh_bodies(
             texture_table.push((source_id, asset));
         }
         for body in feature.bodies() {
-            if let Some(tessellation_id) = &body.tessellation_id {
+            if let Some((_, _, tessellation_id)) =
+                decoded.joins.iter().find(|(feature_id, index, _)| {
+                    feature_id == &feature.id && *index == body.placement.record().record_index()
+                })
+            {
                 insert_mesh_texture_table(&mut texture_tables, tessellation_id, &texture_table)?;
             }
         }
@@ -3996,6 +4000,12 @@ fn project_mesh_bodies(
         tessellations_by_scope: std::collections::HashMap::new(),
     };
     for mut body in bodies {
+        let feature_id = decoded
+            .joins
+            .iter()
+            .find(|(_, _, id)| id == &body.id)
+            .map(|(feature_id, _, _)| feature_id.clone())
+            .ok_or_else(|| CodecError::malformed("F3D joined mesh has no Design feature"))?;
         let texture_table = texture_tables.remove(&body.id).ok_or_else(|| {
             CodecError::Malformed("F3D joined mesh body has no owning texture table".into())
         })?;
@@ -4048,7 +4058,8 @@ fn project_mesh_bodies(
         .with_feature_edges(body.feature_edges)
         .and_then(|mesh| mesh.with_triangle_groups(triangle_groups))
         .and_then(|mesh| mesh.with_texture_assignments(texture_assignments))
-        .map_err(|err| CodecError::Malformed(err.to_string()))?;
+        .map_err(|err| CodecError::Malformed(err.to_string()))?
+        .with_native_ref(Some(feature_id));
         ir.model.tessellations.push(tessellation);
     }
     if !texture_tables.is_empty() {
@@ -4062,10 +4073,16 @@ fn project_mesh_bodies(
             &mut projection.tessellations_by_scope,
             stream,
             feature.scope().record().record_index(),
-            feature
-                .bodies()
-                .iter()
-                .filter_map(|body| body.tessellation_id.as_deref()),
+            feature.bodies().iter().filter_map(|body| {
+                decoded
+                    .joins
+                    .iter()
+                    .find(|(feature_id, index, _)| {
+                        feature_id == &feature.id
+                            && *index == body.placement.record().record_index()
+                    })
+                    .map(|(_, _, id)| id.as_str())
+            }),
         )?;
     }
     projection.untyped |= !unresolved.is_empty();
