@@ -3975,6 +3975,13 @@ fn write_nurbs_curve(
             "SLDPRT NURBS curve {entity} pole count exceeds the native u32 field"
         ))
     })?;
+    let unique = unique_knots(nurbs.knots(), entity)?;
+    let knot_count = u32::try_from(unique.len()).map_err(|_| {
+        CodecError::NotImplemented(format!(
+            "SLDPRT NURBS curve {entity} distinct-knot count exceeds the native u32 field"
+        ))
+    })?;
+    let rational = nurbs.weights().is_some();
     tag(out, 0x86);
     be16(out, wrapper);
     be16(out, descriptor);
@@ -3983,16 +3990,15 @@ fn write_nurbs_curve(
     be16(out, descriptor);
     be16(out, degree);
     be32(out, control_count);
-    be16(out, if nurbs.weights().is_some() { 4 } else { 3 });
-    be32(out, 2);
+    be16(out, if rational { 4 } else { 3 });
+    be32(out, knot_count);
     out.push(0);
-    be32(out, 0);
+    out.extend_from_slice(&[0, 0, u8::from(rational), 0]);
     for attr in [control, multiplicity, knots] {
         be16(out, attr);
     }
     let poles = homogeneous_poles(nurbs.pole_rows(), length_scale)?;
     f64_array(out, 0x2d, control, poles.into_iter(), entity)?;
-    let unique = unique_knots(nurbs.knots(), entity)?;
     u16_array(
         out,
         multiplicity,
@@ -4071,7 +4077,7 @@ fn write_nurbs_surface(
     be16(out, wrapper);
     be32(out, 1);
     out.extend_from_slice(&[0; 10]);
-    out.push(0x2b);
+    out.push(if nurbs.normal_reversed() { b'-' } else { b'+' });
     be16(out, descriptor);
     be16(out, 0);
     tag(out, 0x7e);

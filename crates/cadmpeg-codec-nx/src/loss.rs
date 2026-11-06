@@ -72,6 +72,9 @@ loss_codes! {
     TopologyGraphNotReconstructed => ("topology.graph-not-reconstructed", Blocking, TopologyNotTransferred),
     /// A complete primary EDGE has no admitted typed projection.
     PrimaryEdgeUnresolved => ("topology.primary-edge-unresolved", Warning, TopologyNotTransferred),
+    /// A complete primary node of a supported non-EDGE kind has no admitted
+    /// typed projection.
+    PrimaryNodeUnresolved => ("topology.primary-node-unresolved", Warning, TopologyNotTransferred),
     /// Surface-intersection records lack a validated chart and term-endpoint witness.
     IntersectionRecordsOpaque => ("intersection.records-opaque", Warning, ObjectRecordsUntransferred),
     /// Geometric completion reached a declared work bound before all
@@ -85,6 +88,8 @@ loss_codes! {
     SubBodyCompositionUnresolved => ("history.sub-body-composition-unresolved", Warning, FeatureHistoryRetained),
     /// A referenced Parasolid attribute value relation did not resolve.
     AttributeValueUnresolved => ("attribute.value-unresolved", Warning, AttributesNotTransferred),
+    /// A topology attribute list reaches an omitted type-81 record or an unresolved type-80 class.
+    AttributeListUnresolved => ("attribute.list-unresolved", Warning, AttributesNotTransferred),
     /// Feature-history suppression state remains unresolved.
     FeatureSuppressionUnresolved => ("feature.suppression-unresolved", Warning, FeatureHistoryRetained),
     /// Configuration activation, body membership, or evaluated state is incomplete.
@@ -113,6 +118,21 @@ loss_codes! {
     AssemblyComponentsExternal => ("assembly.components-external", Blocking, AssemblyComponentsExternal),
     /// A carrier record of the right family states lanes the IR carrier refuses.
     CarrierLanesUnpaired => ("carrier.lanes-unpaired", Warning, ObjectRecordsUntransferred),
+    /// A B-spline record stores a control-point weight that is zero or negative.
+    CarrierSplineWeightNonpositive => ("carrier.spline-weight-nonpositive", Warning, ObjectRecordsUntransferred),
+    /// A B-spline record's dimension, counts, or multiplicities contradict
+    /// each other or its arrays.
+    CarrierSplineFieldsInconsistent => ("carrier.spline-fields-inconsistent", Warning, ObjectRecordsUntransferred),
+    /// A CONE record stores a negative sine or cosine of its half-angle,
+    /// whose surface is unresolved.
+    CarrierConeHalfAngleSignUnresolved => ("carrier.cone-half-angle-sign-unresolved", Warning, ObjectRecordsUntransferred),
+    /// A CONE record's stored sine and cosine break the unit identity.
+    CarrierConeHalfAngleIdentityRefused => ("carrier.cone-half-angle-identity-refused", Warning, ObjectRecordsUntransferred),
+    /// A TORUS record stores a negative major radius, whose surface is
+    /// unresolved (`PS-43`).
+    CarrierTorusNegativeMajorUnresolved => ("carrier.torus-negative-major-unresolved", Warning, ObjectRecordsUntransferred),
+    /// A B-spline carrier's descriptor names no control values that resolve to it.
+    CarrierControlsUnresolved => ("carrier.controls-unresolved", Warning, ObjectRecordsUntransferred),
     /// No gate-passing analytic carrier was found in the Parasolid streams.
     GeometryNotTransferred => ("geometry.not-transferred", Blocking, GeometryNotTransferred),
     /// A face loop states no resolvable coedge ring and is omitted from its face.
@@ -197,12 +217,14 @@ mod tests {
                 "carrier.tessellation-census",
                 "topology.graph-not-reconstructed",
                 "topology.primary-edge-unresolved",
+                "topology.primary-node-unresolved",
                 "intersection.records-opaque",
                 "intersection.pcurve-completion-bounded",
                 "geometry.adaptive-work-bounded",
                 "deltas.selection-unresolved",
                 "history.sub-body-composition-unresolved",
                 "attribute.value-unresolved",
+                "attribute.list-unresolved",
                 "feature.suppression-unresolved",
                 "configuration.state-unresolved",
                 "expression.parameter-incomplete",
@@ -217,6 +239,12 @@ mod tests {
                 "stream.non-parasolid-omitted",
                 "assembly.components-external",
                 "carrier.lanes-unpaired",
+                "carrier.spline-weight-nonpositive",
+                "carrier.spline-fields-inconsistent",
+                "carrier.cone-half-angle-sign-unresolved",
+                "carrier.cone-half-angle-identity-refused",
+                "carrier.torus-negative-major-unresolved",
+                "carrier.controls-unresolved",
                 "geometry.not-transferred",
                 "topology.loop-ring-unresolved",
                 "topology.face-loop-unresolved",

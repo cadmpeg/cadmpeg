@@ -22,6 +22,7 @@ use crate::pmdc::{state_content_header, u32_list_with_context, Cursor, PmDcRefer
 pub(super) struct StoredSelector {
     pub(super) source: u32,
     pub(super) generators: Vec<u32>,
+    pub(super) secondary: Vec<u32>,
     pub(super) key: u32,
     body: PmDcReference,
     item: PmDcReference,
@@ -49,12 +50,17 @@ pub(super) fn parse(
         return Ok(None);
     }
     let generators = u32_list_with_context(ctx, &mut cursor, 8, "edge selector generators")?;
+    let secondary = u32_list_with_context(ctx, &mut cursor, 8, "edge selector secondary names")?;
+    let mut distinct = HashSet::new();
     if !matches!(generators.values().len(), 1 | 2)
         || generators.values().contains(&0)
         || generators.values().iter().collect::<HashSet<_>>().len() != generators.values().len()
-        || !u32_list_with_context(ctx, &mut cursor, 8, "edge selector secondary names")?
+        || secondary.values().contains(&0)
+        || !generators
             .values()
-            .is_empty()
+            .iter()
+            .chain(secondary.values())
+            .all(|value| distinct.insert(*value))
         || cursor.u8("edge selector suffix form")? != 0
     {
         return Ok(None);
@@ -69,14 +75,29 @@ pub(super) fn parse(
         "retain Inventor edge selector generators",
     )?;
     names.copy_from_slice(generators.values());
+    let mut secondary_names = ctx.alloc_filled(
+        secondary.values().len(),
+        0,
+        "retain Inventor edge selector secondary names",
+    )?;
+    secondary_names.copy_from_slice(secondary.values());
     Ok(Some(StoredSelector {
         source: header.source_index,
         generators: names,
+        secondary: secondary_names,
         key,
         body,
         item,
         context,
     }))
+}
+
+/// Whether every secondary name of the selector is a feature source index of its segment.
+pub(super) fn secondary_names_known(selector: &StoredSelector, features: &HashSet<u32>) -> bool {
+    selector
+        .secondary
+        .iter()
+        .all(|name| features.contains(name))
 }
 
 pub(super) fn source(payload: View<'_>, version: u8) -> Result<u32, CodecError> {
@@ -140,7 +161,7 @@ pub(super) fn selected(
             return None;
         }
         let owner = *owners.iter().next()?;
-        let geometry = super::geometry::line(by_index.get(&owner)?, &by_index)?;
+        let geometry = super::geometry::revision(by_index.get(&owner)?, &by_index)?;
         Some((
             selector.source,
             SelectedEdge {
