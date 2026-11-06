@@ -84,6 +84,7 @@ fn operand() -> DesignFaceOperand {
                 alternate_selector_faces: Vec::new(),
                 candidate_edges: Vec::new(),
                 alternate_selector_edges: Vec::new(),
+                operand_offset: None,
             });
     }
     for (other, fans) in [

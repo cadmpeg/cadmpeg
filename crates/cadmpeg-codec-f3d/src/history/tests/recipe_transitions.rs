@@ -301,6 +301,7 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         candidate_edges: Vec::new(),
         alternate_selector_faces: Vec::new(),
         alternate_selector_edges: Vec::new(),
+        operand_offset: None,
     };
     let operand =
         DesignFaceOperand::try_new(crate::records::topology::face::DesignFaceOperandDraft {

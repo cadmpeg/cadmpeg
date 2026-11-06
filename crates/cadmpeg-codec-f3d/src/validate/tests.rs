@@ -75,6 +75,7 @@ fn recipe_reference() -> crate::records::dimensions::DesignRecipeReference {
         candidate_edges: Vec::new(),
         alternate_selector_faces: Vec::new(),
         alternate_selector_edges: Vec::new(),
+        operand_offset: None,
     }
 }
 

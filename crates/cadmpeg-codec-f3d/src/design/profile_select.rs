@@ -32,6 +32,7 @@ use cadmpeg_core::CodecError;
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use std::collections::{HashMap, HashSet};
 
+mod cap_regions;
 mod region_members;
 
 /// Bind each Extrude's counted sketch selection to exact neutral profile loops
@@ -1387,6 +1388,18 @@ pub(super) fn resolved_extrude_profile_selection(
         {
             resolved_profiles =
                 transition_profile_selection(sketch, resolution, state_id, previous_state_id)?;
+        }
+    }
+    if let (Some(state_id), Some(previous_state_id)) = (history_state_id, previous_history_state_id)
+    {
+        if let Some(proven) = cap_regions::cap_profile_selection(
+            sketch,
+            resolution,
+            state_id,
+            previous_state_id,
+            resolved_profiles.as_ref(),
+        )? {
+            resolved_profiles = Some(proven);
         }
     }
     if resolved_profiles.is_none() && exact_member_run {

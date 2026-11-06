@@ -487,3 +487,96 @@ fn revolve_axis_edge_is_shared_by_the_first_recipe_side_faces() {
         );
     }
 }
+
+#[test]
+fn side_one_support_faces_select_an_edge_only_on_the_candidate_face_boundaries() {
+    use crate::history_records::{
+        AsmHistoricalCoedge, AsmHistoricalRelation, AsmHistoricalTopology,
+    };
+    use crate::records::dimensions::DesignRecipeReference;
+    use cadmpeg_ir::ids::FaceId;
+    let program = [
+        -1, -1, 2, 0, -1, 1, -1, 2, -1, 3, 1, -1, 0, -1, 2, -1, 0, 0, -1, 3, 0, -1, 0, -1, 0, -1,
+        0, 0, -1,
+    ];
+    let structure = crate::design::decode::operands::edge_recipe_structure(
+        &cadmpeg_test_support::service_decode_context(),
+        &program,
+    )
+    .unwrap()
+    .unwrap();
+    // Faces 10 and 20 share only edge 31.
+    let relation = |owner_ref, member_refs| AsmHistoricalRelation {
+        owner_ref,
+        member_refs,
+    };
+    let mut topology = AsmHistoricalTopology {
+        faces: vec![10, 20],
+        loops: vec![100, 200],
+        edges: vec![30, 31, 32],
+        coedges: vec![300, 301, 302, 303],
+        face_loops: vec![relation(10, vec![100]), relation(20, vec![200])],
+        loop_coedges: vec![relation(100, vec![300, 301]), relation(200, vec![302, 303])],
+        ..Default::default()
+    };
+    for (coedge, owner_loop, edge, neighbour, radial_next) in [
+        (300, 100, 30, 301, 300),
+        (301, 100, 31, 300, 302),
+        (302, 200, 31, 303, 301),
+        (303, 200, 32, 302, 303),
+    ] {
+        topology.coedge_topology.push(AsmHistoricalCoedge {
+            coedge,
+            owner_loop,
+            edge,
+            next: neighbour,
+            previous: neighbour,
+            radial_next,
+        });
+    }
+    let reference = |operand: u64, face: Option<i64>| DesignRecipeReference {
+        selector: 1,
+        selector_offset: operand * 100,
+        token: operand.to_string(),
+        token_offset: operand * 100 + 8,
+        design_reference: 50,
+        design_reference_offset: 0,
+        candidate_faces: face
+            .map(|face| FaceId::mint(crate::ids::brep_entity_id(face)).unwrap())
+            .into_iter()
+            .collect(),
+        candidate_edges: Vec::new(),
+        alternate_selector_faces: Vec::new(),
+        alternate_selector_edges: Vec::new(),
+        operand_offset: Some(operand * 100),
+    };
+    let resolve = |references: &[DesignRecipeReference], candidate_edges: &[i64]| {
+        let mut queries = crate::history::topology_cache::TopologyQueryCache::default();
+        crate::history::side_one_reference_face_edge(
+            Some(&structure),
+            references,
+            candidate_edges,
+            &topology,
+            &mut queries,
+        )
+    };
+    let both = [reference(1, Some(10)), reference(2, Some(20))];
+    assert_eq!(resolve(&both, &[31, 32]), Some(31));
+    // The candidate faces do not bound the support faces' common edge.
+    assert_eq!(resolve(&both, &[30, 32]), None);
+    assert_eq!(resolve(&both, &[]), None);
+    // An operand whose names supply two faces names no single face; one
+    // whose first name supplies none takes its face from a later name.
+    let lane = [
+        reference(1, Some(10)),
+        reference(2, Some(10)),
+        reference(2, Some(20)),
+    ];
+    assert_eq!(resolve(&lane, &[31]), None);
+    let lane = [
+        reference(1, Some(10)),
+        reference(2, None),
+        reference(2, Some(20)),
+    ];
+    assert_eq!(resolve(&lane, &[31]), Some(31));
+}
