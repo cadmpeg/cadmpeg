@@ -114,10 +114,7 @@ fn source_less_formula_without_marker_keeps_its_parameter_binding() {
         .find(|parameter| parameter.name == "Height")
         .unwrap();
     assert_eq!(
-        height
-            .expression
-            .dependencies()
-            .collect::<Vec<_>>(),
+        height.expression.dependencies().collect::<Vec<_>>(),
         [&width.id]
     );
 }
