@@ -73,7 +73,10 @@ fn payload_name_candidates(
     payload
         .windows(name_marker.len())
         .enumerate()
-        .filter_map(move |(offset, marker)| (marker == name_marker).then_some(offset))
+        .filter_map(move |(offset, marker)| {
+            (marker == name_marker || declared_name_length_at(payload, offset).is_some())
+                .then_some(offset)
+        })
         .filter_map(move |offset| {
             let (start, end) = name_span(payload, offset)?;
             let units = payload.get(start..end)?;
@@ -86,7 +89,8 @@ fn payload_name_candidates(
 }
 
 pub(crate) fn name_span(payload: &[u8], offset: usize) -> Option<(usize, usize)> {
-    let length_at = offset.checked_add(NAME_MARKER.len())?;
+    let length_at = declared_name_length_at(payload, offset)
+        .or_else(|| offset.checked_add(NAME_MARKER.len()))?;
     let first = *payload.get(length_at)?;
     let (length, start) = if first == u8::MAX {
         (
@@ -102,6 +106,20 @@ pub(crate) fn name_span(payload: &[u8], offset: usize) -> Option<(usize, usize)>
     let end = start.checked_add(length.checked_mul(2)?)?;
     payload.get(start..end)?;
     Some((start, end))
+}
+
+fn declared_name_length_at(payload: &[u8], offset: usize) -> Option<usize> {
+    const CLASS: &[u8] = b"moNodeName_c";
+    let end = offset.checked_add(CLASS_MARKER.len())?;
+    if payload.get(offset..end)? != CLASS_MARKER
+        || usize::from(View::u16_le_at(payload, end)?) != CLASS.len()
+        || payload.get(end + 2..end + 2 + CLASS.len())? != CLASS
+        || payload.get(end + 2 + CLASS.len()..end + 5 + CLASS.len())?
+            != &NAME_MARKER[2..]
+    {
+        return None;
+    }
+    Some(end + 5 + CLASS.len())
 }
 
 pub(crate) fn record_name_end(payload: &[u8], name: &FeatureInputName) -> Option<usize> {

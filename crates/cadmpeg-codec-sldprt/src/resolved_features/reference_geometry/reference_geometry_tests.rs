@@ -296,6 +296,11 @@ fn synthetic_block_instance_archive_has_a_declared_placement() {
     );
     reader.ptr(None).unwrap();
     assert_eq!(reader.p, payload.len());
+    let names = crate::resolved_features::names::object_names(&ctx, &payload, "test#lane")
+        .unwrap();
+    assert_eq!(names.len(), 2);
+    assert_eq!(names[0].value, "Use");
+    assert_eq!(names[1].value, "Block");
     let point = sketch_block_record_origin(&payload, 0, payload.len()).unwrap();
     const EPS_BLOCK_ORIGIN_MM: f64 = 1e-12;
     assert!((point.x - 10.0).abs() < EPS_BLOCK_ORIGIN_MM);
