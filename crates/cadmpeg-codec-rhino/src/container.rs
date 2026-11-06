@@ -1775,6 +1775,27 @@ fn scan_with_record_limit<'a>(
                         degraded_object_record(&record, &error)
                     }
                 };
+                if let Some(object) = descriptor.framed() {
+                    if object.attributes.parsed().is_some() {
+                        let spans = crate::mesh_modifiers::damaged_attribute_xml(
+                            ctx,
+                            data,
+                            &object.attributes_userdata,
+                        )
+                        .map_err(framing_error)?;
+                        for damage in spans {
+                            give_up(
+                                &mut give_ups,
+                                "rhino.xml_element",
+                                damage.range,
+                                data.len(),
+                                Some(TCODE_OBJECTS),
+                                Vec::new(),
+                                format_args!("damaged XML element <{}>", damage.name),
+                            );
+                        }
+                    }
+                }
                 let typecode = descriptor.framed().map_or(0, |object| object.object_type);
                 count_object_typecode(&mut object_typecodes, typecode);
                 all_objects.push(descriptor);

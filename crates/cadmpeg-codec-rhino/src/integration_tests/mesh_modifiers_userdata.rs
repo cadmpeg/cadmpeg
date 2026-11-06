@@ -102,6 +102,14 @@ fn xml_payload(version: i32, xml: &str) -> Vec<u8> {
     if version == 2 {
         payload.extend((i32::try_from(xml.len()).expect("fixture value fits i32")).to_le_bytes());
         payload.extend(xml.as_bytes());
+    } else if version == 1 {
+        let units: Vec<_> = xml.encode_utf16().chain(std::iter::once(0)).collect();
+        payload.extend(
+            u32::try_from(units.len())
+                .expect("fixture count fits u32")
+                .to_le_bytes(),
+        );
+        payload.extend(units.into_iter().flat_map(u16::to_le_bytes));
     }
     payload.extend([0xde, 0xad]);
     payload
@@ -183,6 +191,49 @@ fn future_mesh_modifier_xml_keeps_object_and_drops_only_modifier() {
                 && loss.message.contains("unsupported")
         }));
         assert_valid(&result);
+    }
+}
+
+#[test]
+fn malformed_modifier_element_keeps_readable_fields() {
+    let archive = ArchiveVersion::V5;
+    let xml = r#"<xml><edge-softening-object-data><on type="bool">true</on><note>猫😀</note><broken type="a" type="b"/><softening type="double">0.25</softening></edge-softening-object-data></xml>"#;
+    for version in [1, 2] {
+        let userdata = modifier_userdata(archive, "edge_softening", version, xml);
+        let record = object_record(archive, &userdata);
+        let result = decode(support::archive_writer(
+            "50",
+            202_608_010,
+            std::slice::from_ref(&record),
+        ));
+        assert_point_and_retention(&result, &record);
+        let modifiers = result.ir().native.namespace("rhino").unwrap().arenas()
+            ["object_presentation"][0]
+            .field("mesh_modifiers")
+            .unwrap();
+        let modifier = modifiers.get("edge_softening").unwrap();
+        assert_eq!(modifier.get("on"), Some(&serde_json::json!(true)));
+        assert_eq!(modifier.get("softening"), Some(&serde_json::json!(0.25)));
+        let losses: Vec<_> = result
+            .report()
+            .losses
+            .iter()
+            .filter(|loss| {
+                loss.code.local_code() == "record.unreadable" && loss.message.contains("<broken>")
+            })
+            .collect();
+        assert_eq!(losses.len(), 1);
+        let damaged = r#"<broken type="a" type="b"/>"#;
+        let expected: Vec<u8> = if version == 1 {
+            damaged.encode_utf16().flat_map(u16::to_le_bytes).collect()
+        } else {
+            damaged.as_bytes().to_vec()
+        };
+        assert!(result
+            .source_fidelity()
+            .retained_records()
+            .values()
+            .any(|record| record.data() == Some(expected.as_slice())));
     }
 }
 
