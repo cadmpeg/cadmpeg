@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Radial-ring, wire ownership and shell connectivity checks.
 
-use cadmpeg_core::CodecError;
-
 use crate::document::CadIr;
 use crate::index::identities::BorrowedIdentities;
 use crate::report::{
@@ -18,10 +16,7 @@ enum RadialStatus {
     CrossesEdge,
 }
 
-pub(in crate::validate) fn check_coedge_pairing(
-    ir: &CadIr,
-    findings: &mut Vec<Finding>,
-) -> Result<(), CodecError> {
+pub(in crate::validate) fn check_coedge_pairing(ir: &CadIr, findings: &mut Vec<Finding>) {
     let by_id = BorrowedIdentities::build(|add| {
         for coedge in &ir.model.coedges {
             add(coedge.id.as_str(), coedge);
@@ -84,10 +79,12 @@ pub(in crate::validate) fn check_coedge_pairing(
     }
     for coedge in &ir.model.coedges {
         let owner = Some(coedge.id.as_str());
-        let status = statuses
-            .get(coedge.id.as_str())
-            .copied()
-            .ok_or_else(|| CodecError::malformed("radial ring has no classified status"))?;
+        let status = statuses.get(coedge.id.as_str()).copied();
+        debug_assert!(
+            status.is_some(),
+            "every radial ring has a classified status"
+        );
+        let Some(status) = status else { continue };
         match status {
             RadialStatus::CrossesEdge => {
                 record_finding(
@@ -130,7 +127,6 @@ pub(in crate::validate) fn check_coedge_pairing(
             RadialStatus::Closed(_) => {}
         }
     }
-    Ok(())
 }
 
 pub(in crate::validate) fn check_wire_topology(ir: &CadIr, findings: &mut Vec<Finding>) {
