@@ -654,11 +654,14 @@ pub(crate) fn f3d_with_smbh_and_protein_with_generated_sketch_dimension(smbh: &[
     );
     let design_metastream =
         fixture_secondary_index(design_metastream, &design_bulk, &[584, 1100, 1400, 1600]);
-    f3d_with_smbh_and_instance_properties_and_design_with_metastream(
+    let act = crate::test_support::act_stream_test::generated_complete_act_bulkstream();
+    f3d_with_smbh_and_instance_properties_and_design_with_act(
         smbh,
         &properties,
         &design_bulk,
         &design_metastream,
+        &[],
+        &act,
     )
 }
 
@@ -940,6 +943,20 @@ fn f3d_with_smbh_and_instance_properties_and_design_with_metastream_and_entries(
     design_metastream: &[u8],
     extra_entries: &[(&str, &[u8])],
 ) -> Vec<u8> {
+    let act = generated_act_bulkstream();
+    f3d_with_smbh_and_instance_properties_and_design_with_act(
+        smbh, properties, design_bulk, design_metastream, extra_entries, &act,
+    )
+}
+
+fn f3d_with_smbh_and_instance_properties_and_design_with_act(
+    smbh: &[u8],
+    properties: &[Vec<u8>],
+    design_bulk: &[u8],
+    design_metastream: &[u8],
+    extra_entries: &[(&str, &[u8])],
+    act: &(Vec<u8>, Vec<(u64, u64)>),
+) -> Vec<u8> {
     let stored = crate::zip_write::file_options(CompressionMethod::Stored);
     let proteins = properties
         .iter()
@@ -985,19 +1002,19 @@ fn f3d_with_smbh_and_instance_properties_and_design_with_metastream_and_entries(
     zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
         .unwrap();
     zip.write_all(design_metastream).unwrap();
-    let (act_bulk, act_records) = generated_act_bulkstream();
+    let (act_bulk, act_records) = act;
     zip.start_file(
         "FusionAssetName[Active]/FusionACTSegmentType1/BulkStream.dat",
         stored,
     )
     .unwrap();
-    zip.write_all(&act_bulk).unwrap();
+    zip.write_all(act_bulk).unwrap();
     zip.start_file(
         "FusionAssetName[Active]/FusionACTSegmentType1/MetaStream.dat",
         stored,
     )
     .unwrap();
-    zip.write_all(&generated_act_metastream(&act_records))
+    zip.write_all(&generated_act_metastream(act_records))
         .unwrap();
     for (name, payload) in extra_entries {
         zip.start_file(*name, stored).unwrap();

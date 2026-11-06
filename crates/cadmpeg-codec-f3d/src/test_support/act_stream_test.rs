@@ -180,3 +180,25 @@ pub(crate) fn generated_act_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
     lp_utf16(&mut out, "0_985");
     (out, records)
 }
+
+/// A complete ACT segment with a second independently indexed channel group.
+pub(crate) fn generated_complete_act_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>) {
+    let (mut bulk, mut records) = generated_act_bulkstream();
+    let first_end = usize::try_from(records[1].1).unwrap();
+    let group_start = usize::try_from(records.iter().find(|(id, _)| *id == 7).unwrap().1).unwrap();
+    let mut group = bulk[group_start..].to_vec();
+    group[4..7].copy_from_slice(b"256");
+    group[7..11].copy_from_slice(&2u32.to_le_bytes());
+    let mut old_entity = Vec::new();
+    let mut new_entity = Vec::new();
+    lp_utf16(&mut old_entity, "0_985");
+    lp_utf16(&mut new_entity, "0_986");
+    let entity_at = group.windows(old_entity.len()).position(|window| window == old_entity).unwrap();
+    group[entity_at..entity_at + old_entity.len()].copy_from_slice(&new_entity);
+    let added = group.len() - first_end;
+    bulk.splice(..first_end, group);
+    for (_, offset) in records.iter_mut().skip(1) {
+        *offset += u64_from_index(added);
+    }
+    (bulk, records)
+}
