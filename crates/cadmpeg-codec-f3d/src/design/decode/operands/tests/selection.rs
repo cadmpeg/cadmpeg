@@ -1069,6 +1069,7 @@ fn a_compact_sketch_point_identity_round_trips_through_the_operand_record() {
         record_index: frame.record_index,
         byte_offset: frame.byte_offset,
         class_tag: "369".to_owned().try_into().unwrap(),
+        serialization_form: frame.serialization_form,
         asset_id: frame.asset_id.clone().try_into().unwrap(),
         asset_id_offset: frame.asset_id_offset,
         context_id: frame.context_id.clone().try_into().unwrap(),
@@ -1119,6 +1120,7 @@ fn a_sketch_point_frame_matches_no_curve_and_names_no_topology_identity() {
             record_index: 100,
             byte_offset: 0,
             class_tag: class_tag.to_owned().try_into().unwrap(),
+            serialization_form: Default::default(),
             asset_id: "7b3dec6f-f69c-4bfa-a537-9274f341c66e"
                 .to_owned()
                 .try_into()

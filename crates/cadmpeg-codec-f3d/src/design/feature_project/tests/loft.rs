@@ -224,6 +224,7 @@ fn loft_point_sources() -> (
                 record_index: 201,
                 byte_offset: 0,
                 class_tag: "369".to_owned().try_into().unwrap(),
+                serialization_form: Default::default(),
                 asset_id: "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
                     .to_owned()
                     .try_into()
@@ -445,7 +446,7 @@ fn a_loft_point_section_without_one_sketch_point_stays_native() {
 
 #[test]
 fn a_loft_point_section_needs_a_sketch_point_frame() {
-    use crate::layout::class_338_sketch_curve_identity as curve_identity;
+    use crate::layout::marked_sketch_curve_identity as curve_identity;
     use cadmpeg_ir::features::LoftPointSection;
     let (group, operand, point, sketch, entity) = loft_point_sources();
     let group_id = group.id.clone();
