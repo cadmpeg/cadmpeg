@@ -110,7 +110,7 @@ pub(super) fn write(
         .filter_map(|payload| {
             let property = native_properties
                 .iter()
-                .find(|property| property.id == payload.property && property.name != "Shape")?;
+                .find(|property| property.id == payload.property)?;
             let entry = native_entries
                 .iter()
                 .find(|entry| entry.id() == payload.entry)?;
@@ -325,7 +325,8 @@ pub(super) fn write(
             let neutral_owned = !native_names.contains(&object.name);
             if neutral_owned
                 && (object.properties.contains_key(&property.name)
-                    || crate::property_policy::has_neutral_form(&property.name))
+                    || (crate::property_policy::has_neutral_form(&property.name)
+                        && !empty_shapes.contains(&property.id)))
             {
                 continue;
             }
