@@ -96,6 +96,28 @@ fn caps_given(
     })
 }
 
+/// The cap reading for `resolved` faces when the transition changes `changed`.
+fn caps_resolved(
+    preceding: &AsmHistoricalTopology,
+    topology: &AsmHistoricalTopology,
+    (inserted, length, members): (&[i64], f64, usize),
+    resolved: &[i64],
+    changed: &HashSet<i64>,
+) -> CapReading {
+    cap_profile_faces(&CapSearch {
+        preceding,
+        topology,
+        inserted,
+        length,
+        members,
+        resolved,
+        changed,
+        new_body: false,
+        tolerance: TOLERANCE,
+        limits: LIMITS,
+    })
+}
+
 /// Polygonal planar faces normal to z with straight edges.
 struct Faces {
     topology: AsmHistoricalTopology,
@@ -702,6 +724,266 @@ fn an_unreadable_face_around_a_cap_in_its_hole_does_not_reach_it() {
             &cap,
             (&[10], 2.0, 1),
             &HashSet::from([1]),
+            false,
+            LIMITS
+        ),
+        CapReading::Proved(vec![1])
+    );
+}
+
+#[test]
+fn a_face_on_a_plane_at_an_angle_is_in_no_pool() {
+    let mut preceding = preceding();
+    let surface = preceding.face_surfaces[1].carrier;
+    for plane in &mut preceding.surface_planes {
+        if plane.surface == surface {
+            plane.normal = Vector3::new(1.0, 0.0, 1.0);
+        }
+    }
+    assert_eq!(
+        caps(&preceding, &capped(2.0), &[10], 2.0, 2, &[]),
+        CapReading::Disputed
+    );
+}
+
+#[test]
+fn a_resolved_face_alone_lets_a_selection_be_the_profile() {
+    let preceding = preceding();
+    assert_eq!(
+        caps_resolved(
+            &preceding,
+            &capped(2.0),
+            (&[10], 2.0, 2),
+            &[1],
+            &HashSet::new()
+        ),
+        CapReading::Proved(vec![1, 2])
+    );
+}
+
+#[test]
+fn coincident_readable_faces_double_the_area() {
+    let preceding = Faces::new()
+        .rectangle(1, (0.0, 0.0), (1.0, 1.0), 0.0)
+        .rectangle(2, (0.0, 0.0), (1.0, 1.0), 0.0)
+        .topology;
+    assert_eq!(
+        caps(&preceding, &capped(1.0), &[10], 2.0, 2, &[]),
+        CapReading::Disputed
+    );
+}
+
+#[test]
+fn an_oversized_cap_caps_the_search() {
+    // The cap has five edges against a limit of four; the faces have four.
+    let preceding = preceding();
+    let cap = Faces::new()
+        .polygon(
+            10,
+            &[(0.0, 0.0), (2.0, 0.0), (2.0, 1.0), (1.0, 1.0), (0.0, 1.0)],
+            -2.0,
+        )
+        .topology;
+    let limits = SearchLimits {
+        face_edges: 4,
+        ..LIMITS
+    };
+    assert_eq!(
+        caps_within(&preceding, &cap, &[10], 2.0, 2, &[], limits),
+        CapReading::Capped
+    );
+    assert_eq!(
+        caps_within(&preceding, &cap, &[10], 2.0, 2, &[], LIMITS),
+        CapReading::Proved(vec![1, 2])
+    );
+}
+
+#[test]
+fn an_unchanged_oversized_face_beside_a_skipped_selection_caps_nothing() {
+    // Face 2 is changed and outside the cap, face 1 is unchanged inside it,
+    // and face 3 has five edges against a limit of four.
+    let preceding = Faces::new()
+        .rectangle(1, (0.0, 0.0), (1.0, 1.0), 0.0)
+        .rectangle(2, (1.0, 0.0), (2.0, 1.0), 0.0)
+        .polygon(
+            3,
+            &[(2.0, 0.0), (3.0, 0.0), (3.0, 1.0), (2.5, 1.0), (2.0, 1.0)],
+            0.0,
+        )
+        .topology;
+    let limits = SearchLimits {
+        face_edges: 4,
+        ..LIMITS
+    };
+    assert_eq!(
+        caps_given(
+            &preceding,
+            &capped(1.0),
+            (&[10], 2.0, 1),
+            &HashSet::from([2]),
+            false,
+            limits
+        ),
+        CapReading::Absent
+    );
+}
+
+#[test]
+fn a_face_whose_loops_cannot_be_read_reaches_every_cap() {
+    let mut preceding = with_unreadable(1.5);
+    let loops: Vec<i64> = preceding
+        .face_loops
+        .iter()
+        .filter(|row| row.owner_ref == 2)
+        .flat_map(|row| row.member_refs.clone())
+        .collect();
+    preceding
+        .loop_coedges
+        .retain(|row| !loops.contains(&row.owner_ref));
+    let given = |changed: &HashSet<i64>| {
+        caps_given(
+            &preceding,
+            &capped(1.0),
+            (&[10], 2.0, 1),
+            changed,
+            false,
+            LIMITS,
+        )
+    };
+    assert_eq!(given(&HashSet::from([1, 2])), CapReading::Disputed);
+    assert_eq!(given(&HashSet::from([1])), CapReading::Disputed);
+}
+
+#[test]
+fn an_unreadable_face_that_can_be_the_profile_disputes_an_unchanged_selection() {
+    // Face 1 is selected and unchanged; face 2 reaches into the cap and is changed.
+    assert_eq!(
+        caps_given(
+            &with_unreadable(0.5),
+            &capped(1.0),
+            (&[10], 2.0, 1),
+            &HashSet::from([2]),
+            false,
+            LIMITS
+        ),
+        CapReading::Disputed
+    );
+}
+
+#[test]
+fn an_unreadable_cap_over_faces_that_cannot_be_the_profile_disputes_nothing() {
+    let preceding = preceding();
+    let mut cap = capped(2.0);
+    cap.edge_curves.clear();
+    assert_eq!(
+        caps_given(
+            &preceding,
+            &cap,
+            (&[10], 2.0, 2),
+            &HashSet::new(),
+            false,
+            LIMITS
+        ),
+        CapReading::Absent
+    );
+}
+
+#[test]
+fn a_new_body_skips_planes_and_selections_without_faces_in_its_caps() {
+    // Face 5 lies at the second side's height outside the cap; cap 11 is
+    // unreadable and has no faces at its heights.
+    let preceding = Faces::new()
+        .rectangle(1, (0.0, 0.0), (1.0, 1.0), 0.0)
+        .rectangle(2, (1.0, 0.0), (2.0, 1.0), 0.0)
+        .rectangle(5, (5.0, 0.0), (6.0, 1.0), -4.0)
+        .topology;
+    let readable = Faces::new().rectangle(10, (0.0, 0.0), (2.0, 1.0), -2.0);
+    let last_readable = readable.next;
+    let mut cap_faces = readable
+        .rectangle(11, (0.0, 0.0), (2.0, 1.0), -20.0)
+        .topology;
+    cap_faces
+        .edge_curves
+        .retain(|row| row.entity <= last_readable);
+    assert_eq!(
+        caps_given(
+            &preceding,
+            &cap_faces,
+            (&[10, 11], 2.0, 2),
+            &HashSet::new(),
+            true,
+            LIMITS
+        ),
+        CapReading::Proved(vec![1, 2])
+    );
+}
+
+#[test]
+fn a_selection_that_cannot_be_the_profile_beside_a_changed_face_disputes_nothing() {
+    // Cap 11 repeats unchanged face 4; changed face 6 shares its plane outside it.
+    let mut preceding = preceding();
+    preceding = Faces {
+        next: 5000,
+        topology: preceding,
+    }
+    .rectangle(6, (7.0, 0.0), (8.0, 1.0), -5.0)
+    .topology;
+    let cap_faces = Faces::new()
+        .rectangle(10, (0.0, 0.0), (2.0, 1.0), -2.0)
+        .rectangle(11, (0.0, 0.0), (3.0, 1.0), -7.0)
+        .topology;
+    assert_eq!(
+        caps_given(
+            &preceding,
+            &cap_faces,
+            (&[10, 11], 2.0, 2),
+            &HashSet::from([1, 2, 6]),
+            false,
+            LIMITS
+        ),
+        CapReading::Proved(vec![1, 2])
+    );
+}
+
+#[test]
+fn an_unreadable_face_over_a_cap_corner_reaches_it() {
+    // Face 2's vertices and vertex mean lie outside the cap; it holds the
+    // cap corners (0, 0) and (1, 0).
+    let readable = Faces::new().rectangle(1, (0.0, 0.0), (1.0, 1.0), 0.0);
+    let last_readable = readable.next;
+    let mut preceding = readable
+        .rectangle(2, (-0.5, -0.5), (5.0, 0.5), 0.0)
+        .topology;
+    preceding
+        .edge_curves
+        .retain(|row| row.entity <= last_readable);
+    assert_eq!(
+        caps_given(
+            &preceding,
+            &capped(1.0),
+            (&[10], 2.0, 1),
+            &HashSet::from([1, 2]),
+            false,
+            LIMITS
+        ),
+        CapReading::Disputed
+    );
+}
+
+#[test]
+fn an_unreadable_neighbour_that_shares_a_cap_edge_does_not_reach_it() {
+    let readable = Faces::new().rectangle(1, (0.0, 0.0), (1.0, 1.0), 0.0);
+    let last_readable = readable.next;
+    let mut preceding = readable.rectangle(2, (1.0, 0.0), (2.0, 1.0), 0.0).topology;
+    preceding
+        .edge_curves
+        .retain(|row| row.entity <= last_readable);
+    assert_eq!(
+        caps_given(
+            &preceding,
+            &capped(1.0),
+            (&[10], 2.0, 1),
+            &HashSet::from([1, 2]),
             false,
             LIMITS
         ),
