@@ -199,7 +199,7 @@ fn invalid_history_intervals_name_each_feature_and_keep_a_valid_sibling() {
         feature.id = format!("rhino:history:feature#invalid-{name}")
             .try_into()
             .unwrap();
-        feature.native_ref = None;
+        feature.native_ref = Some(format!("rhino:history:record#invalid-{name}"));
         feature.ordinal = u64::try_from(ordinal + 1).unwrap();
         for key in *removed {
             feature.source_properties.remove(*key);
@@ -210,10 +210,11 @@ fn invalid_history_intervals_name_each_feature_and_keep_a_valid_sibling() {
     assert_eq!(exported.records.len(), 1);
     for (name, _) in cases {
         let id = format!("rhino:history:feature#invalid-{name}");
+        let native = format!("rhino:history:record#invalid-{name}");
         assert!(exported
             .losses
             .iter()
-            .any(|loss| loss.message.contains(&id)));
+            .any(|loss| { loss.message.contains(&id) && loss.message.contains(&native) }));
         assert!(!exported.written_features.contains(&id));
     }
     assert_eq!(scan_history(&exported.records).len(), 1);
