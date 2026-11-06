@@ -743,6 +743,44 @@ fn version_four_grammar_reads_the_compact_extended_prologue_and_tail_marker() {
 }
 
 #[test]
+fn version_four_joint_with_a_zero_tail_projects_as_assumed_active() {
+    let (mut bytes, mut scope, owners, mut types) = versioned_fixture(4, 7, false, false, false, 0);
+    append_locator_paths(&mut bytes, &mut types, Some((false, 2)));
+    let decoded = alignment(
+        &bytes,
+        &IndexedRecordOffsets::build(&bytes),
+        &scope,
+        &owners,
+        &types,
+    )
+    .unwrap()
+    .unwrap();
+    assert!(matches!(
+        decoded.form,
+        Some(DesignAssemblyAlignmentForm::Qualified(_))
+    ));
+    if let DesignScopePayloadMut::Assemble(slot) = scope.payload_mut() {
+        *slot = Some(decoded);
+    }
+    let projected = crate::design::assembly::project_assembly_joints(
+        &[scope],
+        &[],
+        &crate::design::components::ComponentInserts::default(),
+        &[],
+    );
+    assert_eq!(projected.joints.len(), 1);
+    assert!(!projected.joints[0].suppressed);
+    let [activation] = projected.losses.as_slice() else {
+        panic!("one activation loss");
+    };
+    assert_eq!(
+        activation.code,
+        crate::loss::F3dLossCode::AssemblyJointActivationAssumed.kind()
+    );
+    assert!(activation.message.starts_with("1 projected"));
+}
+
+#[test]
 fn version_four_grammar_refuses_other_versions_markers_and_names() {
     let (bytes, scope, _, mut types) =
         named_fixture(4, 14, false, false, false, 0, "Zusammenfügen");
