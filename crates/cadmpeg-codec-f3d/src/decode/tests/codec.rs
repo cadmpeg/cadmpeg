@@ -101,6 +101,35 @@ fn retained_untyped_act_record_marks_its_content_classes() {
 }
 
 #[test]
+fn damaged_act_header_gives_up_one_indexed_frame() {
+    use crate::test_support::act_stream_test::{
+        generated_act_metastream, generated_complete_act_bulkstream,
+    };
+    let (mut bulk, records) = generated_complete_act_bulkstream();
+    bulk[4..7].copy_from_slice(b"bad");
+    let mut archive = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    crate::test_support::manifest_test::write_synthetic_manifests(&mut archive, stored);
+    archive.start_file("FusionAssetName[Active]/FusionACTSegmentType1/BulkStream.dat", stored).unwrap();
+    archive.write_all(&bulk).unwrap();
+    archive.start_file("FusionAssetName[Active]/FusionACTSegmentType1/MetaStream.dat", stored).unwrap();
+    archive.write_all(&generated_act_metastream(&records)).unwrap();
+    let bytes = archive.finish().unwrap().into_inner();
+    let decoded = F3dCodec.decode(&mut Cursor::new(bytes), &DecodeOptions::default()).unwrap();
+    let native = crate::test_support::native_test::f3d_native(decoded.ir());
+    assert_eq!(native.act_tables.len(), 1);
+    assert_eq!(native.act_entities.len(), 1);
+    let unknowns = decoded.ir().native_unknowns("f3d").unwrap();
+    assert_eq!(unknowns.len(), 1);
+    let retained = decoded.source_fidelity().retained_record(unknowns[0].id.as_str()).unwrap();
+    assert_eq!(retained.data(), Some(&bulk[..usize::try_from(records[1].1).unwrap()]));
+    let unreadable = decoded.report().losses.iter().filter(|loss| {
+        loss.code == cadmpeg_ir::codec::DecodeLossCode::RecordUnreadable.note("").code
+    }).count();
+    assert_eq!(unreadable, 1);
+}
+
+#[test]
 fn kernel_tolerance_floor_uses_millimetres() {
     let admitted = super::super::admit_kernel_tolerances(
         Some(ABOVE_FLOOR_RESABS_CM),
