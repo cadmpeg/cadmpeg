@@ -247,7 +247,7 @@ fn bounded_surface_curve_preserves_its_interval_and_construction() {
     use crate::test_support::parasolid::{
         edge_use, planar_b_curve, sp_curve_records, triangle_body,
     };
-    use cadmpeg_ir::geometry::{ProceduralCurveDefinition, SurfaceCurveFamily};
+    use cadmpeg_ir::geometry::{CurveGeometry, ProceduralCurveDefinition, SurfaceCurveFamily};
 
     let mut body = triangle_body();
     let old = edge_use(40, 0);
@@ -282,17 +282,51 @@ fn bounded_surface_curve_preserves_its_interval_and_construction() {
     let expected = interval(input.ir()).expect("input surface curve");
     assert!((expected[0] - 0.25).abs() < PARAMETER_TOLERANCE);
     assert!((expected[1] - 0.5).abs() < PARAMETER_TOLERANCE);
-    let plan = crate::SldprtCodec
-        .plan(EncodeInput::new(input.ir(), None), TargetRequest::Inherit)
-        .unwrap();
-    let mut bytes = Vec::new();
-    plan.write_to(&mut bytes).unwrap();
-    let output = crate::SldprtCodec
-        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-        .unwrap();
-    let actual = interval(output.ir()).expect("written surface curve");
-    assert!((actual[0] - expected[0]).abs() < PARAMETER_TOLERANCE);
-    assert!((actual[1] - expected[1]).abs() < PARAMETER_TOLERANCE);
+    for without_cache in [false, true] {
+        let mut ir = input.ir().clone();
+        if without_cache {
+            let curve = ir
+                .model
+                .curves
+                .iter_mut()
+                .find(|curve| matches!(curve.geometry, CurveGeometry::Procedural { .. }))
+                .unwrap();
+            let CurveGeometry::Procedural {
+                construction,
+                cache,
+            } = &mut curve.geometry
+            else {
+                unreachable!()
+            };
+            *cache = None;
+            let construction = construction.clone();
+            ir.model
+                .procedural_curves
+                .iter_mut()
+                .find(|curve| curve.id == construction)
+                .unwrap()
+                .edit_definition(|definition| {
+                    let ProceduralCurveDefinition::SurfaceCurve {
+                        family: SurfaceCurveFamily::Parametric { tail, .. },
+                    } = definition
+                    else {
+                        panic!("parametric surface curve")
+                    };
+                    *tail = None;
+                });
+        }
+        let plan = crate::SldprtCodec
+            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+            .unwrap();
+        let mut bytes = Vec::new();
+        plan.write_to(&mut bytes).unwrap();
+        let output = crate::SldprtCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        let actual = interval(output.ir()).expect("written surface curve");
+        assert!((actual[0] - expected[0]).abs() < PARAMETER_TOLERANCE);
+        assert!((actual[1] - expected[1]).abs() < PARAMETER_TOLERANCE);
+    }
 }
 
 #[test]

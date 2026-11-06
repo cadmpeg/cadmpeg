@@ -92,11 +92,7 @@ pub(super) fn supported<'a>(
             .get(nurbs.knots().len().checked_sub(degree.checked_add(1)?)?)?,
     ];
     let interval = context.parameter_range().endpoints();
-    if domain[0] >= domain[1]
-        || interval[0] < domain[0]
-        || interval[1] > domain[1]
-        || (cache.is_none() && interval != domain)
-    {
+    if domain[0] >= domain[1] || interval[0] < domain[0] || interval[1] > domain[1] {
         return None;
     }
     if ir
@@ -106,7 +102,7 @@ pub(super) fn supported<'a>(
         .filter(|edge| edge.curve() == Some(&curve.id))
         .any(|edge| {
             edge.param_range()
-                .is_some_and(|range| cache.is_none() || range.get() != interval)
+                .is_some_and(|range| range.get() != interval)
         })
     {
         return None;
@@ -129,6 +125,57 @@ pub(super) fn bounded_interval(ir: &CadIr, edge: &cadmpeg_ir::topology::Edge) ->
         .iter()
         .find(|curve| Some(&curve.id) == edge.curve())?;
     supported(ir, curve)?.2
+}
+
+pub(super) fn point_at(
+    ctx: &cadmpeg_core::decode::DecodeContext<'_>,
+    ir: &CadIr,
+    curve: &Curve,
+    parameter: f64,
+) -> Result<Option<cadmpeg_ir::math::Point3>, CodecError> {
+    let Some((surface, _, _)) = supported(ir, curve) else {
+        return Ok(None);
+    };
+    let CurveGeometry::Procedural { construction, .. } = &curve.geometry else {
+        return Ok(None);
+    };
+    let Some(ProceduralCurveDefinition::SurfaceCurve {
+        family: SurfaceCurveFamily::Parametric { context, .. },
+    }) = ir
+        .model
+        .procedural_curves
+        .iter()
+        .find(|item| &item.id == construction)
+        .map(|item| item.definition())
+    else {
+        return Ok(None);
+    };
+    let Some(pcurve) = context.sides()[0]
+        .pcurve
+        .as_ref()
+        .map(|pcurve| &pcurve.geometry)
+    else {
+        return Ok(None);
+    };
+    let Some(uv) = cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::pcurve_uv(
+        ctx, pcurve, parameter,
+    ))?
+    else {
+        return Ok(None);
+    };
+    let Some(surface) = ir.model.surfaces.iter().find(|item| &item.id == surface) else {
+        return Ok(None);
+    };
+    let uv = uv.get();
+    Ok(
+        cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::surface_point(
+            ctx,
+            &surface.geometry,
+            uv.u,
+            uv.v,
+        ))?
+        .map(cadmpeg_ir::features::FinitePoint3::get),
+    )
 }
 
 fn parameter_scales(surface: &SolvedSurfaceGeometry) -> Option<[f64; 2]> {
