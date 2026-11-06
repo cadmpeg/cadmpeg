@@ -556,7 +556,7 @@ fn write_archive_prefix(
                 exported.records
             }
             TCODE_LIGHT_TABLE => {
-                let exported = tables::lights::lights(ir)?;
+                let exported = tables::lights::lights(ir, materials)?;
                 light_losses.extend(exported.losses);
                 exported.records
             }
@@ -1580,7 +1580,7 @@ fn native_dispositions(
             );
         }
     }
-    let emitted_lights = tables::lights::lights(ir)?;
+    let emitted_lights = tables::lights::lights(ir, &materials)?;
     for record in records_in(ir, "lights") {
         if emitted_lights.written.contains(record.id()) {
             dispositions.set_record("rhino", "lights", record.id(), NativeDisposition::Written);

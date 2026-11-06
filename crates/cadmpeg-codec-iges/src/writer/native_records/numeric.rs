@@ -66,7 +66,7 @@ pub(in crate::writer) fn retain_line(ir: &CadIr, id: &CurveId, entity: &mut Enti
     }
 }
 
-fn retain_directory(ir: &CadIr, source_id: &str, entity: &mut Entity) {
+pub(in crate::writer) fn retain_directory(ir: &CadIr, source_id: &str, entity: &mut Entity) {
     let Some(native) = ir
         .native
         .namespace("iges")
@@ -75,6 +75,10 @@ fn retain_directory(ir: &CadIr, source_id: &str, entity: &mut Entity) {
     else {
         return;
     };
+    retain_record(native, entity);
+}
+
+pub(in crate::writer) fn retain_record(native: &NativeRecord, entity: &mut Entity) {
     if native.field("entity_type").and_then(|value| value.as_u64())
         != Some(u64::from(entity.type_code))
     {
@@ -89,7 +93,7 @@ fn retain_directory(ir: &CadIr, source_id: &str, entity: &mut Entity) {
     let Some(tokens) = fields(&entity.parameter_body) else {
         return;
     };
-    if parameters.len() != tokens.len() + 1 {
+    if parameters.len() < tokens.len() + 1 {
         return;
     }
     let mut output = Vec::new();

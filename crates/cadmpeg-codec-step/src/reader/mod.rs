@@ -37,6 +37,7 @@ pub(crate) mod parts;
 pub(crate) mod pmi;
 pub(crate) mod presentation;
 pub(crate) mod product;
+mod properties;
 mod reference;
 mod representation;
 pub(crate) mod tessellation;
@@ -486,6 +487,14 @@ fn decode_exchange_mode(
         &mut session.ir,
         session.ctx,
     )?;
+    session.charge_pending_ir_entities("step_property_decode")?;
+    let mut properties = properties::decode(
+        exchange,
+        &carrier_index,
+        &topology.value,
+        &mut session.ir,
+        session.ctx,
+    )?;
     if !session.ir.model.points.is_empty()
         || !session.ir.model.curves.is_empty()
         || !session.ir.model.surfaces.is_empty()
@@ -505,6 +514,7 @@ fn decode_exchange_mode(
     session.absorb(&mut geometry);
     session.absorb(&mut pmi);
     session.absorb(&mut validation);
+    session.absorb(&mut properties);
 
     // Rules 2 and 3 for damaged decodes: the stages above drop what they
     // cannot build. The ledger below names each given-up part's drops

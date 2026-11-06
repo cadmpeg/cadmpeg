@@ -146,7 +146,7 @@ fn curveless_faces_keep_their_source_vertices_as_points() {
             .as_array()
             .unwrap()
             .iter()
-            .any(|loss| loss["code"]["code"] == "topology.region-vertices-recovered"));
+            .any(|loss| loss["code"]["code"] == "topology.body-reduced-to-wire"));
         Command::cargo_bin("cadmpeg")
             .unwrap()
             .args([
@@ -217,9 +217,7 @@ fn pcurves_recover_edges_even_when_the_face_cannot_be_written() {
     }
 }
 
-/// Sphere poles, a cone apex, and Rhino singular trims are edges with no 3D
-/// curve whose pcurves stay at their one vertex. STEP writes every face of
-/// these sources without those edges and reports no loss for them.
+/// Sphere poles, a cone apex, and Rhino singular trims have no 3D curve.
 #[cfg(all(feature = "fcstd", feature = "rhino"))]
 #[test]
 fn step_conversion_leaves_collapsed_curveless_edges_out_without_a_loss() {
@@ -259,18 +257,45 @@ fn step_conversion_leaves_collapsed_curveless_edges_out_without_a_loss() {
             .success();
         let report: serde_json::Value =
             serde_json::from_slice(&fs::read(&report).unwrap()).unwrap();
-        let codes: Vec<&str> = report["export"]["losses"]
-            .as_array()
+        let source_path = dir.path().join(format!("{name}.source.json"));
+        Command::cargo_bin("cadmpeg")
             .unwrap()
+            .args([
+                "dump",
+                input.to_str().unwrap(),
+                "-o",
+                source_path.to_str().unwrap(),
+            ])
+            .assert()
+            .success();
+        let source: serde_json::Value =
+            serde_json::from_slice(&fs::read(source_path).unwrap()).unwrap();
+        let edges = source["model"]["edges"].as_array().unwrap();
+        let carrierless: Vec<&str> = edges
             .iter()
-            .map(|loss| loss["code"]["code"].as_str().unwrap())
+            .filter(|edge| edge["carrier"]["curve"].is_null())
+            .map(|edge| edge["id"].as_str().unwrap())
             .collect();
-        for code in [
-            "topology.edge-no-3d-curve",
-            "geometry.curveless-edge-omitted",
-        ] {
-            assert!(!codes.contains(&code), "{name}: {codes:?}");
+        assert!(!carrierless.is_empty(), "{name}");
+        let losses = report["export"]["losses"].as_array().unwrap();
+        for id in &carrierless {
+            assert_eq!(
+                losses
+                    .iter()
+                    .filter(|loss| {
+                        loss["code"]["code"] == "topology.edge-no-3d-curve"
+                            && loss["message"]
+                                .as_str()
+                                .is_some_and(|message| message.contains(id))
+                    })
+                    .count(),
+                1,
+                "{name}: {id}"
+            );
         }
+        assert!(!losses
+            .iter()
+            .any(|loss| loss["code"]["code"] == "geometry.curveless-edge-omitted"));
         let faces = report["check_report"]["entity_counts"]["faces"]
             .as_u64()
             .unwrap();

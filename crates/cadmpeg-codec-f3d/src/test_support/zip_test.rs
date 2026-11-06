@@ -523,7 +523,11 @@ pub(crate) fn original_design_fixture(bytes: Vec<u8>, remove_body: bool) -> Vec<
             header_offset,
             indexed_offsets,
             offset(600),
-            parsed.types.iter().any(|ty| ty.type_guid.as_str() == "c0a00000-0000-4000-8000-000000000001").then(|| (offset(10), offset(20), offset(30))),
+            parsed
+                .types
+                .iter()
+                .any(|ty| ty.type_guid.as_str() == "c0a00000-0000-4000-8000-000000000001")
+                .then(|| (offset(10), offset(20), offset(30))),
         )
     };
     let bulk = &mut entries[bulk_index].1;
@@ -593,8 +597,44 @@ pub(crate) fn f3d_with_smbh_and_protein_with_generated_sketch_dimension(smbh: &[
     let properties = vec![generated_instance_properties_for(
         "11111111-2222-3333-4444-555555555555",
     )];
-    let (design_bulk, design_records) = generated_design_sketch_dimension_bulkstream();
-    let design_metastream = sketch_dimension_metastream(&design_records, &[]);
+    let (design_bulk, mut design_records) = generated_design_sketch_dimension_bulkstream();
+    let mut recipe_header = Vec::new();
+    crate::test_support::indexed_header(&mut recipe_header, *b"275", 1305);
+    let recipe_offset = design_bulk
+        .windows(recipe_header.len())
+        .position(|window| window == recipe_header)
+        .expect("synthetic recipe header");
+    design_records.push((
+        1305,
+        u64::try_from(recipe_offset).expect("synthetic recipe offset"),
+    ));
+    design_records.sort_by_key(|(_, offset)| *offset);
+    let design_metastream = sketch_dimension_metastream(
+        &design_records,
+        &[
+            (
+                "00000000-0000-0000-0000-000000001303",
+                "",
+                1,
+                "Dimension",
+                &[],
+            ),
+            (
+                "00000000-0000-0000-0000-000000001304",
+                "",
+                1,
+                "Dimension",
+                &[1304],
+            ),
+            (
+                "00000000-0000-0000-0000-000000001305",
+                "",
+                1,
+                "Dimension",
+                &[1305],
+            ),
+        ],
+    );
     let design_metastream =
         fixture_secondary_index(design_metastream, &design_bulk, &[584, 1100, 1400, 1600]);
     f3d_with_smbh_and_instance_properties_and_design_with_metastream(

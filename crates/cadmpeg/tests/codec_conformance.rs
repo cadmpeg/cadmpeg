@@ -666,16 +666,62 @@ mod product_roundtrip {
 
     #[test]
     fn fcstd_trimmed_edges_round_trip_through_step_onto_their_vertices() {
+        use cadmpeg_ir::eval::admission::EvaluationAdmission;
+        use cadmpeg_ir::eval::decode::{pcurve_uv, surface_point};
+        use cadmpeg_ir::report::check::Check;
+
+        const EPS_COLLAPSED_VERTEX: f64 = 1.0e-7;
         let source = FcstdCodec
             .decode(&mut Cursor::new(CORE_OPERATIONS), &DecodeOptions::default())
             .expect("decode FCStd chamfer and fillet")
             .into_parts()
             .0;
         let mut step = Vec::new();
-        StepCodec::default()
+        let report = StepCodec::default()
             .plan(EncodeInput::new(&source, None), TargetRequest::Inherit)
             .and_then(|plan| plan.write_to(&mut step))
             .expect("write STEP");
+        let mut expected = Vec::new();
+        for edge in source
+            .model
+            .edges
+            .iter()
+            .filter(|edge| edge.curve().is_none())
+        {
+            let uses = source
+                .model
+                .coedges
+                .iter()
+                .filter(|coedge| coedge.edge == edge.id)
+                .flat_map(|coedge| &coedge.pcurves)
+                .count();
+            if uses == 0 {
+                continue;
+            }
+            assert_eq!(edge.start, edge.end);
+            assert!(report
+                .losses
+                .iter()
+                .any(|loss| loss.code.namespace() == "step"
+                    && loss.code.local_code() == "topology.edge-no-3d-curve"
+                    && loss.message.contains(edge.id.as_str())));
+            let vertex = source
+                .model
+                .vertices
+                .iter()
+                .find(|vertex| vertex.id == edge.start)
+                .unwrap();
+            let point = source
+                .model
+                .points
+                .iter()
+                .find(|point| point.id == vertex.point)
+                .unwrap()
+                .position()
+                .get();
+            expected.extend(std::iter::repeat_n(point, uses));
+        }
+        assert!(!expected.is_empty());
         let decoded = StepCodec::default()
             .decode(&mut Cursor::new(step), &DecodeOptions::default())
             .expect("decode STEP");
@@ -686,9 +732,42 @@ mod product_roundtrip {
             .findings
             .iter()
             .filter(|finding| finding.severity == cadmpeg_ir::report::Severity::Error)
-            .map(|finding| finding.message.as_str())
             .collect::<Vec<_>>();
-        assert!(errors.is_empty(), "{errors:#?}");
+        assert_eq!(errors.len(), expected.len(), "{errors:#?}");
+        for finding in errors {
+            assert_eq!(finding.check, Check::CarrierReachability);
+            assert_eq!(finding.message, "orphan pcurve carrier");
+            let pcurve = decoded
+                .ir()
+                .model
+                .pcurves
+                .iter()
+                .find(|pcurve| Some(pcurve.id.as_str()) == finding.entity.as_deref())
+                .unwrap();
+            let surface = decoded
+                .ir()
+                .model
+                .surfaces
+                .iter()
+                .find(|surface| Some(&surface.id) == pcurve.support_surface())
+                .unwrap();
+            let uv = pcurve_uv(EvaluationAdmission::Standard, &pcurve.geometry, 0.0)
+                .unwrap()
+                .get();
+            let point = surface_point(EvaluationAdmission::Standard, &surface.geometry, uv.u, uv.v)
+                .unwrap()
+                .get();
+            let index = expected
+                .iter()
+                .position(|source| {
+                    (source.x - point.x).abs() <= EPS_COLLAPSED_VERTEX
+                        && (source.y - point.y).abs() <= EPS_COLLAPSED_VERTEX
+                        && (source.z - point.z).abs() <= EPS_COLLAPSED_VERTEX
+                })
+                .expect("retained pcurve reaches a source collapsed vertex");
+            expected.swap_remove(index);
+        }
+        assert!(expected.is_empty());
     }
 }
 

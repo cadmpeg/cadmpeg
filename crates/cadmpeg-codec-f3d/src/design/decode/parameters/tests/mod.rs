@@ -1241,6 +1241,23 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
     assert_eq!(retained.len(), 1);
     assert!(losses.is_empty());
 
+    let (owners, _, losses) =
+        decode_owners(stream, &exact, &[(44, 0)], &[], vec![parameter.clone()]);
+    let [owner] = owners.as_slice() else {
+        panic!("expected the owner with an unindexed paired header");
+    };
+    assert_eq!(owner.frame_length(), Some(104));
+    assert!(losses.is_empty());
+
+    let mut wrong_pair = exact.clone();
+    let index_at = wrong_pair.len() - 4;
+    wrong_pair[index_at..].copy_from_slice(&45u32.to_le_bytes());
+    let (owners, retained, losses) =
+        decode_owners(stream, &wrong_pair, &[(44, 0)], &[], vec![parameter.clone()]);
+    assert!(owners.is_empty());
+    assert_eq!(retained.len(), 1);
+    assert_eq!(losses.len(), 1);
+
     let mut compact = without_variant_padding(parameter_owner_frame());
     compact[4..7].copy_from_slice(b"256");
     compact.extend_from_slice(&paired);
