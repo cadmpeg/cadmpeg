@@ -12,9 +12,11 @@ use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
 use cadmpeg_ir::declared_measures::{DeclaredQuantity, DeclaredTarget};
 use cadmpeg_ir::eval::helix_nurbs::{helix_nurbs, helix_surface_nurbs};
 use cadmpeg_ir::geometry::{
-    analytic::TorusSurface, pcurve::Pcurve, Curve, CurveGeometry, HelixCurveConstruction,
-    HelixSurfaceConstruction, ProceduralCurve, ProceduralCurveDefinition, ProceduralSurface,
-    ProceduralSurfaceDefinition, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface,
+    analytic::TorusSurface,
+    pcurve::{Pcurve, PcurveGeometry},
+    Curve, CurveGeometry, HelixCurveConstruction, HelixSurfaceConstruction, ProceduralCurve,
+    ProceduralCurveDefinition, ProceduralSurface, ProceduralSurfaceDefinition, SolvedCurveGeometry,
+    SolvedSurfaceGeometry, Surface,
 };
 use cadmpeg_ir::ids::{
     AppearanceBindingId, AppearanceId, AttributeId, BodyId, EdgeId, LoopId, OccurrenceId,
@@ -4393,7 +4395,6 @@ impl<'a> Builder<'a> {
         if pcurve.parameter_range.is_some() {
             return None;
         }
-        use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
         let range = match &pcurve.geometry {
             PcurveGeometry::Nurbs { nurbs } => {
                 let degree = usize::try_from(nurbs.degree()).ok()?;
