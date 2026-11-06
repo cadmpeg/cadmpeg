@@ -1346,3 +1346,15 @@ when the operation transition carries no candidate for the group members?
 **Need.** A Design stream with a marker-one `Revolve` scope of another token-independent length and the feature's parameters as the application shows them.
 
 **Note.** None.
+
+### DR-270. Curve order of a self-crossing stored profile loop
+
+**Question.** Does the listed curve order of a self-crossing stored profile loop identify which atomic sketch regions the loop selects?
+
+**Known.** No source file has been checked against this relation. The decoder takes as its hypothesis that a stored loop that matches no single arrangement face lists a curve identity for each boundary use of every selected region. When exactly one set of atomic faces uses only the listed curves, each as many times as the loop lists it, the decoder selects that set and does not read the order. A face that encloses an island is assumed not to be selected and is no candidate; at least two candidates are required. Two sets with equal counts and a curve that is not a line or circular arc leave the loop unresolved. The count rule does not distinguish selections whose faces share all curves.
+
+**Need.** Make controlled saves of a square sketch with both diagonals. In separate saves, one through-cut Extrude selects all four triangles, one selects two opposite triangles, and one selects two adjacent triangles. Compare the stored loop entry order and counts of each save with the face boundaries.
+
+**Conflict.** None.
+
+**Note.** The decoder reports `feature.profile-crossing-loop-assumed` for each selection that takes regions from this rule.
