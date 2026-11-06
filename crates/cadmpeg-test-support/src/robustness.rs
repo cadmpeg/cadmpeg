@@ -45,9 +45,13 @@ fn repoint_id_value(document: &mut Value, ids: &BTreeSet<String>) -> Option<Stri
                 {
                     return false;
                 }
-                for (key, child) in fields {
-                    if key != "id" && walk(child, ids, attribute_values) {
-                        return true;
+                for nested in [true, false] {
+                    for (key, child) in &mut *fields {
+                        let container = matches!(child, Value::Array(_) | Value::Object(_));
+                        if key != "id" && container == nested && walk(child, ids, attribute_values)
+                        {
+                            return true;
+                        }
                     }
                 }
                 false
@@ -72,12 +76,15 @@ fn repoint_id_value(document: &mut Value, ids: &BTreeSet<String>) -> Option<Stri
         for row in rows.as_array_mut()?.iter_mut() {
             let fields = row.as_object_mut()?;
             let id = fields.get("id")?.as_str()?.to_owned();
-            for (key, value) in fields {
-                if key == "id" {
-                    continue;
-                }
-                if walk(value, ids, arena == "attributes" && key == "values") {
-                    return Some(id);
+            for nested in [true, false] {
+                for (key, value) in &mut *fields {
+                    let container = matches!(value, Value::Array(_) | Value::Object(_));
+                    if key != "id"
+                        && container == nested
+                        && walk(value, ids, arena == "attributes" && key == "values")
+                    {
+                        return Some(id);
+                    }
                 }
             }
         }
@@ -430,6 +437,28 @@ mod tests {
         assert_eq!((dangling.inject)(&mut document), Some("body#0".into()));
         assert_eq!(
             document["model"]["bodies"][0]["regions"][0],
+            "injected:missing:record#0"
+        );
+    }
+
+    #[test]
+    fn dangling_injection_repoints_nested_curve_components() {
+        let mut document = json!({"model": {
+            "curves": [{"id": "curve#owner"}, {"id": "curve#part"}],
+            "procedural_curves": [{"id": "procedure#0", "curve": "curve#owner",
+                "definition": {"components": [{"component": "curve#part"}]}}]
+        }});
+        let dangling = standard_injections()
+            .into_iter()
+            .find(|injection| injection.name == "dangling-reference")
+            .expect("dangling-reference injection exists");
+        assert_eq!((dangling.inject)(&mut document), Some("procedure#0".into()));
+        assert_eq!(
+            document["model"]["procedural_curves"][0]["curve"],
+            "curve#owner"
+        );
+        assert_eq!(
+            document["model"]["procedural_curves"][0]["definition"]["components"][0]["component"],
             "injected:missing:record#0"
         );
     }
