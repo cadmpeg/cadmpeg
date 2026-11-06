@@ -34,7 +34,7 @@ use preconditions::{
     validate_source_less_auxiliary_geometry, validate_source_less_design_bindings,
     validate_source_less_design_links, validate_source_less_design_ownership,
     validate_source_less_face_keys, validate_source_less_history_graph,
-    validate_source_less_procedural_carriers, validate_source_less_recipes,
+    validate_source_less_procedural_carriers,
     validate_source_less_sketch_graph, validate_source_less_topology_tolerances,
 };
 use presentation::GeneratedDesignRegistry;
@@ -178,7 +178,6 @@ pub(super) fn write_with_limits(
         }
         validate_source_less_design_ownership(&native)?;
         validate_source_less_sketch_graph(&native)?;
-        validate_source_less_recipes(&native)?;
         validate_source_less_design_links(target, &native, &attributes)?;
     }
     let generated_features = features::encode(target, &output_ctx)?;

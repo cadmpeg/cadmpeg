@@ -196,39 +196,6 @@ pub(super) fn validate_source_less_auxiliary_geometry(target: &CadIr) -> Result<
     Ok(())
 }
 
-pub(in crate::writer) fn validate_source_less_recipes(
-    native: &F3dNative,
-) -> Result<(), CodecError> {
-    // Native arenas use identity order. Source indices choose wire layout and
-    // need not be monotonic in that order; explicit group ordinals are unique
-    // and contiguous independently of storage order.
-    let mut groups = HashMap::new();
-    for recipe in &native.construction_recipes {
-        groups
-            .entry((
-                recipe.kind,
-                recipe
-                    .design
-                    .as_ref()
-                    .map(|design| design.id.value.as_str()),
-            ))
-            .or_insert_with(Vec::new)
-            .push(recipe);
-    }
-    for group in groups.values_mut() {
-        group.sort_by_key(|recipe| recipe.recipe_index);
-        for (index, recipe) in group.iter().enumerate() {
-            if usize::try_from(recipe.recipe_index) != Ok(index) {
-                return Err(CodecError::InvalidInput(format!(
-                    "F3D construction recipe {} has noncontiguous group index {}",
-                    recipe.id, recipe.recipe_index,
-                )));
-            }
-        }
-    }
-    Ok(())
-}
-
 fn source_less_design_record_type<'a>(
     native: &'a F3dNative,
     class_tag: &crate::records::references::DesignClassTag,
