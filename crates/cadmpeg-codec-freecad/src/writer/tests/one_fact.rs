@@ -117,9 +117,8 @@ fn source_less_formula_without_marker_keeps_its_parameter_binding() {
         height
             .expression
             .dependencies()
-            .cloned()
             .collect::<Vec<_>>(),
-        [width.id.clone()]
+        [&width.id]
     );
 }
 
