@@ -52,6 +52,17 @@ fn transfers_application_saved_rotated_conics_and_profile_chain() {
         .expect("application-saved conic fixture");
     let entities = &result.ir().model.sketch_entities;
     assert_eq!(entities.len(), 7);
+    let [sketch] = result.ir().model.sketches.as_slice() else {
+        panic!("one authored conic sketch")
+    };
+    assert_eq!(sketch.name.as_deref(), Some("ConicWitness"));
+    assert!(entities.iter().all(|entity| entity.sketch == sketch.id));
+    let (origin, normal, u_axis) = sketch
+        .resolved_placement()
+        .expect("identity sketch placement");
+    assert_eq!(origin, cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0));
+    assert_eq!(normal, cadmpeg_ir::math::Vector3::new(0.0, 0.0, 1.0));
+    assert_eq!(u_axis, cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0));
     assert!(matches!(*entities[0].geometry.definition(),
         cadmpeg_ir::sketches::SketchGeometryDefinition::Arc {
             center,
