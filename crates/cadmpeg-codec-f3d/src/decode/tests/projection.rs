@@ -1374,10 +1374,7 @@ fn mesh_texture_bytes_refuse_one_byte_below_their_retained_ceiling() {
             if admitted {
                 let projected = result.unwrap();
                 assert_eq!(projected.id, asset);
-                assert_eq!(
-                    projected.native_ref.as_deref(),
-                    Some("f3d:FusionAssetName[Active]/Textures/a.png:mesh-texture#0")
-                );
+                assert!(projected.native_ref.is_none());
             } else {
                 assert!(matches!(
                     result,
