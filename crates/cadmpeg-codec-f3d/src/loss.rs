@@ -175,6 +175,14 @@ pub(crate) enum F3dLossCode {
     FeatureStoredBodiesRecipeAbsent,
     /// A Base Feature has no complete unique body binding.
     FeatureStoredBodiesUnbound,
+    /// A paste keeps its bodies; its source pairs or a source node do not resolve.
+    FeaturePasteSourcesUnresolved,
+    /// Several timeline objects name one owned scope; the lowest readable record owns it.
+    FeatureTimelineOwnerCompeting,
+    /// A timeline owner has no same-index paired header; its copy form stays unread.
+    FeatureTimelineOwnerUnpaired,
+    /// A pasted copy is assumed to keep its source placement.
+    FeaturePasteCopyPlacementAssumed,
     /// A feature scope has no complete unique ASM output transition interval.
     FeatureOutputStateChainUnbound,
     /// An affected body slot has no unique active body in the selected BREP.
@@ -236,6 +244,10 @@ pub(crate) enum F3dLossCode {
     HistoricalFaceSelectionUnbound,
     /// Historical edge midpoint geometry could not be resolved from feature selections.
     HistoricalEdgeMidpointsUnresolved,
+    /// A `Fillet` edge is inferred from blend geometry; no two supports share it.
+    HistoricalFilletEdgeInferred,
+    /// A `Fillet` edge is the best-ranked deleted one of several geometric candidates.
+    HistoricalFilletEdgeAmbiguous,
     /// Historical body bounding geometry could not be computed from point carriers.
     HistoricalBodyBoundsUnresolved,
     /// Sketch relations retain native operands; no unique neutral relation.
@@ -292,6 +304,8 @@ pub(crate) enum F3dLossCode {
     FeatureFixedFilletAssignmentNative,
     /// Extrude scope retains an unassigned extent payload.
     FeatureExtrudeExtentNative,
+    /// A marker-one `Revolve` scope has a token-independent frame length outside its documented set.
+    FeatureRevolveLayoutAssumed,
     /// Feature face operands stay unresolved inside historical selections.
     FeatureFaceOperandUnresolved,
     /// Edge-treatment selections retain native recipes; no historical edge.
@@ -539,6 +553,10 @@ impl F3dLossCode {
         Self::FeatureStoredBodiesEmpty,
         Self::FeatureStoredBodiesRecipeAbsent,
         Self::FeatureStoredBodiesUnbound,
+        Self::FeaturePasteSourcesUnresolved,
+        Self::FeatureTimelineOwnerCompeting,
+        Self::FeatureTimelineOwnerUnpaired,
+        Self::FeaturePasteCopyPlacementAssumed,
         Self::FeatureOutputStateChainUnbound,
         Self::FeatureOutputBodyUnbound,
         Self::FeatureDerivedBaseUnresolved,
@@ -568,6 +586,8 @@ impl F3dLossCode {
         Self::HistoryDependencyAmbiguous,
         Self::HistoricalFaceSelectionUnbound,
         Self::HistoricalEdgeMidpointsUnresolved,
+        Self::HistoricalFilletEdgeInferred,
+        Self::HistoricalFilletEdgeAmbiguous,
         Self::HistoricalBodyBoundsUnresolved,
         Self::SketchRelationNativeRetained,
         Self::SketchDimensionNativeRetained,
@@ -596,6 +616,7 @@ impl F3dLossCode {
         Self::FeatureCombineSelectionNative,
         Self::FeatureFixedFilletAssignmentNative,
         Self::FeatureExtrudeExtentNative,
+        Self::FeatureRevolveLayoutAssumed,
         Self::FeatureFaceOperandUnresolved,
         Self::FeatureEdgeSelectionNative,
         Self::FeatureEdgeOperandUnresolved,
@@ -759,6 +780,10 @@ impl F3dLossCode {
             Self::FeatureStoredBodiesEmpty => "feature.stored-bodies-empty",
             Self::FeatureStoredBodiesRecipeAbsent => "feature.stored-bodies-recipe-absent",
             Self::FeatureStoredBodiesUnbound => "feature.stored-bodies-unbound",
+            Self::FeaturePasteSourcesUnresolved => "feature.paste-sources-unresolved",
+            Self::FeatureTimelineOwnerCompeting => "feature.timeline-owner-competing",
+            Self::FeatureTimelineOwnerUnpaired => "feature.timeline-owner-unpaired",
+            Self::FeaturePasteCopyPlacementAssumed => "feature.paste-copy-placement-assumed",
             Self::FeatureOutputStateChainUnbound => "feature.output-state-chain-unbound",
             Self::FeatureOutputBodyUnbound => "feature.output-body-unbound",
             Self::FeatureDerivedBaseUnresolved => "feature.derived-base-unresolved",
@@ -789,6 +814,8 @@ impl F3dLossCode {
             Self::HistoryDependencyUnprojected => "history.dependency-unprojected",
             Self::HistoricalFaceSelectionUnbound => "history.face-selection-unbound",
             Self::HistoricalEdgeMidpointsUnresolved => "history.edge-midpoints-unresolved",
+            Self::HistoricalFilletEdgeInferred => "history.fillet-edge-inferred",
+            Self::HistoricalFilletEdgeAmbiguous => "history.fillet-edge-ambiguous",
             Self::HistoricalBodyBoundsUnresolved => "history.body-bounds-unresolved",
             Self::HistoryDependencyAmbiguous => "history.dependency-ambiguous",
             Self::SketchRelationNativeRetained => "sketch.relation-native",
@@ -824,6 +851,7 @@ impl F3dLossCode {
             Self::FeatureCombineSelectionNative => "feature.combine-selection-native",
             Self::FeatureFixedFilletAssignmentNative => "feature.fixed-fillet-assignment-native",
             Self::FeatureExtrudeExtentNative => "feature.extrude-extent-native",
+            Self::FeatureRevolveLayoutAssumed => "feature.revolve-layout-assumed",
             Self::FeatureFaceOperandUnresolved => "feature.face-operand-unresolved",
             Self::FeatureEdgeSelectionNative => "feature.edge-selection-native",
             Self::FeatureEdgeOperandUnresolved => "feature.edge-operand-unresolved",
@@ -1012,6 +1040,10 @@ impl F3dLossCode {
             | Self::FeatureOutputBodyUnbound
             | Self::FeatureOutputStateChainUnbound
             | Self::FeatureStoredBodiesUnbound
+            | Self::FeaturePasteSourcesUnresolved
+            | Self::FeatureTimelineOwnerCompeting
+            | Self::FeatureTimelineOwnerUnpaired
+            | Self::FeaturePasteCopyPlacementAssumed
             | Self::FeatureDerivedBaseUnresolved
             | Self::FeatureBoxPrimitiveUnresolved
             | Self::FeatureDefinitionIncomplete
@@ -1040,6 +1072,8 @@ impl F3dLossCode {
             | Self::HistoryDependencyAmbiguous
             | Self::HistoricalFaceSelectionUnbound
             | Self::HistoricalEdgeMidpointsUnresolved
+            | Self::HistoricalFilletEdgeInferred
+            | Self::HistoricalFilletEdgeAmbiguous
             | Self::HistoricalBodyBoundsUnresolved
             | Self::SketchRelationNativeRetained
             | Self::SketchDimensionNativeRetained
@@ -1067,6 +1101,7 @@ impl F3dLossCode {
             | Self::FeatureCombineSelectionNative
             | Self::FeatureFixedFilletAssignmentNative
             | Self::FeatureExtrudeExtentNative
+            | Self::FeatureRevolveLayoutAssumed
             | Self::FeatureFaceOperandUnresolved
             | Self::FeatureEdgeSelectionNative
             | Self::FeatureEdgeOperandUnresolved
@@ -1190,6 +1225,10 @@ impl F3dLossCode {
             | Self::FeatureOutputBodyUnbound
             | Self::FeatureOutputStateChainUnbound
             | Self::FeatureStoredBodiesUnbound
+            | Self::FeaturePasteSourcesUnresolved
+            | Self::FeatureTimelineOwnerCompeting
+            | Self::FeatureTimelineOwnerUnpaired
+            | Self::FeaturePasteCopyPlacementAssumed
             | Self::FeatureDerivedBaseUnresolved
             | Self::FeatureBoxPrimitiveUnresolved
             | Self::FeatureDefinitionIncomplete
@@ -1217,6 +1256,8 @@ impl F3dLossCode {
             | Self::HistoryDependencyAmbiguous
             | Self::HistoricalFaceSelectionUnbound
             | Self::HistoricalEdgeMidpointsUnresolved
+            | Self::HistoricalFilletEdgeInferred
+            | Self::HistoricalFilletEdgeAmbiguous
             | Self::HistoricalBodyBoundsUnresolved
             | Self::SketchRelationNativeRetained
             | Self::SketchDimensionNativeRetained
@@ -1244,6 +1285,7 @@ impl F3dLossCode {
             | Self::FeatureCombineSelectionNative
             | Self::FeatureFixedFilletAssignmentNative
             | Self::FeatureExtrudeExtentNative
+            | Self::FeatureRevolveLayoutAssumed
             | Self::FeatureFaceOperandUnresolved
             | Self::FeatureEdgeSelectionNative
             | Self::FeatureEdgeOperandUnresolved
@@ -1448,6 +1490,10 @@ mod tests {
                 "feature.stored-bodies-empty",
                 "feature.stored-bodies-recipe-absent",
                 "feature.stored-bodies-unbound",
+                "feature.paste-sources-unresolved",
+                "feature.timeline-owner-competing",
+                "feature.timeline-owner-unpaired",
+                "feature.paste-copy-placement-assumed",
                 "feature.output-state-chain-unbound",
                 "feature.output-body-unbound",
                 "feature.derived-base-unresolved",
@@ -1477,6 +1523,8 @@ mod tests {
                 "history.dependency-ambiguous",
                 "history.face-selection-unbound",
                 "history.edge-midpoints-unresolved",
+                "history.fillet-edge-inferred",
+                "history.fillet-edge-ambiguous",
                 "history.body-bounds-unresolved",
                 "sketch.relation-native",
                 "sketch.dimension-native",
@@ -1505,6 +1553,7 @@ mod tests {
                 "feature.combine-selection-native",
                 "feature.fixed-fillet-assignment-native",
                 "feature.extrude-extent-native",
+                "feature.revolve-layout-assumed",
                 "feature.face-operand-unresolved",
                 "feature.edge-selection-native",
                 "feature.edge-operand-unresolved",
