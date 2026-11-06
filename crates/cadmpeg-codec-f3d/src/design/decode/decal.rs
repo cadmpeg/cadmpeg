@@ -46,11 +46,7 @@ pub(crate) fn decode_decal_images(
             .entry_view(&entry.name)
             .ok_or_else(|| CodecError::malformed("Decal stream has no source view"))?;
         let bytes = source.window();
-        let frames = match super::meta::design_primary_frames(bytes, &meta) {
-            Ok(frames) => frames,
-            Err(error @ (CodecError::ResourceLimit(_) | CodecError::Io(_))) => return Err(error),
-            Err(_) => continue,
-        };
+        let frames = super::meta::design_primary_frames(bytes, &meta)?;
         let native_stream = ids::native_scope(&entry.name);
         let mut assets = std::collections::HashMap::new();
         for scope in scopes.iter().filter(|scope| {

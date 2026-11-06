@@ -528,6 +528,10 @@ fn unreadable_index_is_given_up_before_recipe_and_timeline_selection() {
         assert_eq!(give_ups.stubs.len(), 1);
         assert_eq!(give_ups.losses.len(), 1);
         assert_eq!(give_ups.losses[0].code.local_code(), "record.unreadable");
+        let metadata = scan
+            .parsed_metastream("FusionAssetName[Active]/Design1/MetaStream.dat")
+            .unwrap();
+        assert!(meta::design_primary_frames(bulk, &metadata).unwrap().is_empty());
         let mut parts = cadmpeg_ir::source_fidelity::parts::PartOutput::new(
             cadmpeg_ir::CodecFormat::F3d,
             &ctx,
