@@ -1040,7 +1040,7 @@ The first closing reference run identifies a direct contained child by its local
 
 **Question.** What do the members of a Mirror scope's role-`0x10` group select?
 
-**Known.** `f3d.md` §3.1 "A Design Mirror scope" lists the seed and plane groups. Mirror scopes in the public native-assembly drive-unit design also store a counted role-`0x10` group whose members are class-256 persistent selection records. The same scopes store a role-`0x5` plane group with one bounded-face recipe member. These scopes do not decode a mirror construction.
+**Known.** `f3d.md` §3.1 "A Design Mirror scope" lists the seed and plane groups. Mirror scopes in the public native-assembly drive-unit design also store a counted role-`0x10` group whose members are class-256 persistent selection records. The same scopes store a role-`0x5` plane group with one bounded-face recipe member. These scopes do not decode a mirror construction. The decoder reads a role-`0x10` group as a face seed group when it is at scope-reference ordinal one, the scope has no role-`0x4` or role-`0x8` group, and every member decodes as a bounded-face operand.
 
 **Need.** Mirror features with controlled changes to the selected objects, to find which seed kind the group carries and how it relates to the seed group.
 

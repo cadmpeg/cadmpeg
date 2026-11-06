@@ -924,6 +924,7 @@ pub(crate) fn decode_face_operands(
         let is_mirror_plane = design_feature_family(&scope.kind())
             == Some(DesignFeatureFamily::Mirror)
             && group.role() == DesignOperandRole::ROLE_0X5;
+        let is_pattern_face_seed = crate::design::is_pattern_face_seed_group(&scope.kind(), group);
         let is_split_face_operand = scope.kind()
             == crate::records::feature::scope::DesignFeatureKind::SplitFace
             && group.role() == DesignOperandRole::ROLE_0X10;
@@ -973,6 +974,7 @@ pub(crate) fn decode_face_operands(
             && !is_circular_pattern_seed
             && !is_mirror_seed
             && !is_mirror_plane
+            && !is_pattern_face_seed
             && !is_split_face_operand
             && !is_delete_face_operand
             && !is_emboss_face
@@ -1050,7 +1052,12 @@ pub(crate) fn decode_face_operands(
                 },
                 recipes,
             ) {
-                out.push(operand?);
+                let operand = operand?;
+                if !is_pattern_face_seed
+                    || operand.recipe_kind == ConstructionRecipeKind::BoundedFace
+                {
+                    out.push(operand);
+                }
             }
         }
     }
