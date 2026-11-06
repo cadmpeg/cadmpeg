@@ -192,10 +192,6 @@ pub(crate) enum F3dLossCode {
     FaceAppearanceAmbiguous,
     /// Parameter expression symbols name same-stream parameters without an edge.
     ParameterExpressionUnbound,
-    /// Feature history-state dependency links were not projected.
-    HistoryDependencyUnprojected,
-    /// Feature history-state dependency links have multiple source scopes.
-    HistoryDependencyAmbiguous,
     /// A historical face selection cannot bind uniquely to emitted input topology members.
     HistoricalFaceSelectionUnbound,
     /// Historical edge midpoint geometry could not be resolved from feature selections.
@@ -509,8 +505,6 @@ impl F3dLossCode {
         Self::MaterialDistanceUnitUntyped,
         Self::FaceAppearanceAmbiguous,
         Self::ParameterExpressionUnbound,
-        Self::HistoryDependencyUnprojected,
-        Self::HistoryDependencyAmbiguous,
         Self::HistoricalFaceSelectionUnbound,
         Self::HistoricalEdgeMidpointsUnresolved,
         Self::HistoricalBodyBoundsUnresolved,
@@ -711,11 +705,9 @@ impl F3dLossCode {
             Self::MaterialDistanceUnitUntyped => "material.distance-unit-untyped",
             Self::FaceAppearanceAmbiguous => "material.face-appearance-ambiguous",
             Self::ParameterExpressionUnbound => "parameter.expression-unbound",
-            Self::HistoryDependencyUnprojected => "history.dependency-unprojected",
             Self::HistoricalFaceSelectionUnbound => "history.face-selection-unbound",
             Self::HistoricalEdgeMidpointsUnresolved => "history.edge-midpoints-unresolved",
             Self::HistoricalBodyBoundsUnresolved => "history.body-bounds-unresolved",
-            Self::HistoryDependencyAmbiguous => "history.dependency-ambiguous",
             Self::SketchDimensionNativeRetained => "sketch.dimension-native",
             Self::SketchPlacementUnprojected => "sketch.placement-unprojected",
             Self::SketchSurfaceUnprojected => "sketch.surface-unprojected",
@@ -955,8 +947,6 @@ impl F3dLossCode {
             | Self::MaterialDistanceUnitUntyped
             | Self::FaceAppearanceAmbiguous
             | Self::ParameterExpressionUnbound
-            | Self::HistoryDependencyUnprojected
-            | Self::HistoryDependencyAmbiguous
             | Self::HistoricalFaceSelectionUnbound
             | Self::HistoricalEdgeMidpointsUnresolved
             | Self::HistoricalBodyBoundsUnresolved
@@ -1122,8 +1112,6 @@ impl F3dLossCode {
             | Self::ParameterOwnerUnrecognized
             | Self::ParameterUnitUntyped
             | Self::ParameterExpressionUnbound
-            | Self::HistoryDependencyUnprojected
-            | Self::HistoryDependencyAmbiguous
             | Self::HistoricalFaceSelectionUnbound
             | Self::HistoricalEdgeMidpointsUnresolved
             | Self::HistoricalBodyBoundsUnresolved
@@ -1345,8 +1333,6 @@ mod tests {
                 "material.distance-unit-untyped",
                 "material.face-appearance-ambiguous",
                 "parameter.expression-unbound",
-                "history.dependency-unprojected",
-                "history.dependency-ambiguous",
                 "history.face-selection-unbound",
                 "history.edge-midpoints-unresolved",
                 "history.body-bounds-unresolved",

@@ -474,8 +474,6 @@ fn design_projection_gaps_count_each_retained_selection_family() {
             unresolved_parameter_owners: 1,
             untyped_parameter_units: 1,
             unresolved_expression_dependencies: 0,
-            unprojected_history_dependencies: 0,
-            ambiguous_history_dependencies: 0,
             native_dimensions: 1,
             unprojected_sketch_placements: 1,
             unprojected_sketch_surfaces: 0,
@@ -617,7 +615,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
 }
 
 #[test]
-fn design_projection_gaps_require_unique_scope_state_dependencies() {
+fn design_projection_gaps_keep_history_state_independent_of_feature_dependencies() {
     let scope = |record_index, current, previous| {
         DesignParameterScope::try_new(
             crate::records::feature::scope::DesignParameterScopeDraft {
@@ -688,14 +686,14 @@ fn design_projection_gaps_require_unique_scope_state_dependencies() {
 
     let gaps = design_projection_gaps(&ir, &native);
     assert_eq!(gaps.unprojected_feature_scopes, 0);
-    assert_eq!(gaps.unprojected_history_dependencies, 1);
-    assert_eq!(gaps.ambiguous_history_dependencies, 1);
+    assert_eq!(native.design_parameter_scopes[1].previous_history_state_id(), Some(10));
+    assert!(ir.model.features[1].dependencies.is_empty());
 
     let predecessor = ir.model.features[0].id.clone();
     ir.model.features[1].dependencies.insert(predecessor);
     let gaps = design_projection_gaps(&ir, &native);
-    assert_eq!(gaps.unprojected_history_dependencies, 0);
-    assert_eq!(gaps.ambiguous_history_dependencies, 1);
+    assert_eq!(gaps.unprojected_feature_scopes, 0);
+    assert_eq!(native.design_parameter_scopes[4].previous_history_state_id(), Some(20));
 }
 
 #[test]
@@ -777,8 +775,8 @@ fn design_projection_gaps_accept_a_dependency_collapsed_through_an_internal_scop
 
     let gaps = design_projection_gaps(&ir, &native);
     assert_eq!(gaps.unprojected_feature_scopes, 0);
-    assert_eq!(gaps.unprojected_history_dependencies, 0);
-    assert_eq!(gaps.ambiguous_history_dependencies, 0);
+    assert!(ir.model.features.iter().all(|feature| feature.dependencies.is_empty()));
+    assert_eq!(native.design_parameter_scopes.len(), 3);
 }
 
 #[test]
