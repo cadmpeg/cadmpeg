@@ -8783,12 +8783,7 @@ pub(crate) fn is_design_kind(kind: &str) -> bool {
     let Some((namespace, _)) = kind.split_once("::") else {
         return false;
     };
-    // Unknown workbench namespaces can define construction features. Treat
-    // them conservatively as design until a model-only family is registered.
-    !matches!(
-        namespace,
-        "App" | "Assembly" | "TechDraw" | "Drawing" | "Mesh" | "Points" | "Image" | "Gui"
-    )
+    !matches!(namespace, "App" | "Gui")
 }
 
 pub(crate) fn is_design_object(kind: &str) -> bool {
@@ -8824,7 +8819,9 @@ pub(crate) fn is_design_object(kind: &str) -> bool {
         || kind == "PartDesign::FeatureBase"
         // Unknown construction types retain an attributable Native operation;
         // this does not dispatch them as any recognized built-in family.
-        || is_design_kind(kind)
+        || (is_design_kind(kind)
+            && !crate::drawing::is_registered_drawing_type(kind)
+            && !crate::annotation::is_annotation_type(kind))
 }
 
 /// Whether the design dispatch claims this object type for a typed neutral
