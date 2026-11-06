@@ -16,6 +16,23 @@ fn occurrence(
 }
 
 #[test]
+fn missing_link_component_keeps_other_link_state() {
+    let component =
+        cadmpeg_ir::ids::ProductDefinitionId::mint("authored:model:product#missing").unwrap();
+    let state =
+        cadmpeg_ir::products::LinkState::new(Vec::new(), Some(component.clone()), Some(true), None)
+            .unwrap();
+    let mut object = Object::new("Link".into(), "App::Link", "Link");
+    let mut losses = Vec::new();
+    link_state(&mut object, &state, &HashMap::new(), &mut losses);
+    assert!(object.properties["LinkClaimChild"].contains("value=\"1\""));
+    assert!(object.properties["ElementList"].contains("count=\"0\""));
+    assert!(losses
+        .iter()
+        .any(|loss| loss.message.contains(component.as_str())));
+}
+
+#[test]
 fn nested_membership_accumulates_siblings_in_neutral_order() {
     let mut ir = CadIr::empty();
     let definition = definition("Prototype");
