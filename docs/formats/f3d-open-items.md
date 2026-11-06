@@ -286,6 +286,18 @@ travel.
 
 **Need.** The value can count mesh bodies removed from the feature. A design in which mesh bodies are inserted and removed one at a time, saved after each step, fixes the value and shows whether a flagged collection keeps bodies.
 
+### DR-292. Mesh-GUID bytes 21 through 31
+
+**Question.** What do the eleven bytes at offsets 21 through 31 of a mesh-GUID record store?
+
+**Known.** `f3d.md` §3.1 "The direct join from a mesh geometry container" gives the record layout. The eleven bytes are zero in some records. Records in designs with flagged mesh collections (DR-85) store bytes that are not all zero, for example `82 8a 25 de 59 63 f1 c0 00 01 00`, `ed 26 6f 61 9f 3f cc 40 01 01 00`, `a0 20 d1 cd 5a 7c f2 bf 00 00 61`, and `fa 8a f5 c8 c9 44 28 c1 00 00 00`. Read as a little-endian f64, the first eight bytes of these examples are finite: -71221.6, 14463.2, -1.15536, and -795236.9. The decoder keeps nonzero bytes in the native mesh-GUID record and reports `mesh.guid-bytes-uninterpreted`.
+
+**Need.** A design whose mesh bodies are inserted, moved, and scaled one step at a time, saved after each step, shows which operation writes the bytes and whether the first eight bytes are one f64 and the last three are flags.
+
+**Conflict.** None.
+
+**Note.** None.
+
 ### DR-115. Mesh container decode-failure taxonomy
 
 **Question.** Which malformed or unsupported container states does `mesh.container-undecoded` cover, and does the retained error identify the failing stage?

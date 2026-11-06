@@ -571,21 +571,26 @@ fn parse_mesh_guid_record(
     let record = &bytes[frame.start..frame.end];
     let identity = record_identity(record, frame, "mesh-GUID")?;
     let parsed = (|| {
-        (record.get(guid_join::ZERO_RUN_21..guid_join::FUSION_UUID) == Some(&[0; 21]))
+        (record.get(guid_join::ZERO_RUN_10..guid_join::OPAQUE_RUN_11) == Some(&[0; 10]))
             .then_some(())?;
+        let opaque_run: [u8; 11] = record
+            .get(guid_join::OPAQUE_RUN_11..guid_join::FUSION_UUID)?
+            .try_into()
+            .ok()?;
+        let opaque_run = (opaque_run != [0; 11]).then_some(opaque_run);
         let (fusion_uuid, end) = lp_ascii_strict(record, guid_join::FUSION_UUID, 36..=36)?;
         (end == guid_join::ENTRY_NAME_BACKLINK).then_some(())?;
         crate::bytes::is_guid_hyphenated(fusion_uuid).then_some(())?;
         let entry_name_record_index =
             exact_local_record_index(record, guid_join::ENTRY_NAME_BACKLINK)?;
-        Some((fusion_uuid, entry_name_record_index))
+        Some((fusion_uuid, opaque_run, entry_name_record_index))
     })();
-    let (guid, entry_name_record_index) =
+    let (guid, opaque_run, entry_name_record_index) =
         parsed.ok_or_else(|| malformed_frame("mesh-GUID", frame.entity_id))?;
     let guid = DesignGuidText::try_from(guid.to_owned())
         .map_err(|_| malformed_frame("mesh-GUID", frame.entity_id))?;
     Ok(MeshGuidRecord {
-        guid: DesignMeshGuid::new(identity, guid)
+        guid: DesignMeshGuid::new(identity, guid, opaque_run)
             .map_err(|_| malformed_frame("mesh-GUID", frame.entity_id))?,
         entry_name_record_index,
     })
@@ -716,10 +721,7 @@ fn parse_mesh_collection_record(
             owner_at
         };
         // An empty collection can store a zero u32 before its owner reference.
-        let owner_at = if !flagged
-            && body_records.is_empty()
-            && View::u32_le_at(record, owner_at) == Some(0)
-        {
+        let owner_at = if body_records.is_empty() && View::u32_le_at(record, owner_at) == Some(0) {
             owner_at.checked_add(4)?
         } else {
             owner_at
@@ -1662,6 +1664,25 @@ fn mesh_image_asset(
         asset.name.clone(),
         crate::ids::neutral_asset_id(&asset.name),
     ))
+}
+
+pub(crate) fn mesh_guid_byte_losses(
+    features: &[DesignMeshFeature],
+) -> impl Iterator<Item = cadmpeg_ir::report::loss::LossNote> + '_ {
+    features
+        .iter()
+        .flat_map(DesignMeshFeature::bodies)
+        .filter_map(|body| {
+            let bytes = body.guid.opaque_run()?;
+            Some(
+                crate::loss::F3dLossCode::MeshGuidBytesUninterpreted.note(format!(
+                    "mesh-GUID record {} stores bytes 21 through 31 `{}` with no settled meaning; \
+                 the native mesh-GUID record keeps them",
+                    body.guid.record().record_index(),
+                    cadmpeg_ir::native::bytes::NativeBytes::from(&bytes[..]),
+                )),
+            )
+        })
 }
 
 fn flatten_mesh_features(design_records: Vec<Vec<DesignMeshFeature>>) -> Vec<DesignMeshFeature> {
@@ -2625,8 +2646,8 @@ mod tests {
     }
 
     /// An empty collection can store a flag byte and a u32 that move the rest
-    /// of its prefix by four bytes; a flagged collection with bodies is not a
-    /// collection.
+    /// of its prefix by four bytes; a flagged collection with a nonzero first
+    /// body count is not a collection.
     #[test]
     fn flagged_empty_mesh_collection_is_an_empty_registry() {
         let graph = synthetic_mesh_graph_with_collection(false, 0, CollectionForm::Flagged(1));
@@ -2730,6 +2751,120 @@ mod tests {
         let decoded: crate::records::mesh::DesignMeshFeature =
             serde_json::from_value(wire).unwrap();
         assert_eq!(decoded, *feature);
+    }
+
+    #[test]
+    fn empty_flagged_mesh_collection_with_a_zero_word_before_its_owner_is_an_empty_registry() {
+        let graph = synthetic_mesh_graph_with_collection(false, 0, CollectionForm::Flagged(1));
+        let mut frame = sole_typed_frame(&graph, MESH_COLLECTION_TYPE_GUID);
+        let stored = &graph.bytes[frame.start..frame.end];
+        assert_eq!((frame.start, stored.len()), (0, 77));
+        let mut record = stored[..11].to_vec();
+        record.extend_from_slice(&[0; 9]);
+        record.push(1);
+        record.extend_from_slice(&0_u32.to_le_bytes());
+        record.extend_from_slice(&1_u32.to_le_bytes());
+        record.extend_from_slice(&[1, 1]);
+        record.extend_from_slice(&stored[31..42]);
+        record.extend_from_slice(&stored[42..53]);
+        record.extend_from_slice(&[0; 9]);
+        record.extend_from_slice(&0_u32.to_le_bytes());
+        record.extend_from_slice(&0_u32.to_le_bytes());
+        record.extend_from_slice(&stored[66..77]);
+        assert_eq!(record.len(), 81);
+        frame.end = record.len();
+        assert!(
+            super::parse_mesh_collection_record(&record, &graph.meta, frame)
+                .expect("empty flagged registry")
+                .is_none()
+        );
+        record[66] = 1;
+        assert!(super::parse_mesh_collection_record(&record, &graph.meta, frame).is_err());
+    }
+
+    const MESH_GUID_BYTES_21_TO_31: [u8; 11] = [
+        0x82, 0x8a, 0x25, 0xde, 0x59, 0x63, 0xf1, 0xc0, 0x00, 0x01, 0x00,
+    ];
+
+    fn mesh_graph_with_guid_bytes(bytes: [u8; 11]) -> SyntheticMeshGraph {
+        let mut graph = synthetic_mesh_graph_with_body_count(false, 1);
+        let start = sole_typed_frame(&graph, MESH_GUID_TYPE_GUID).start;
+        graph.bytes[start + 21..start + 32].copy_from_slice(&bytes);
+        graph
+    }
+
+    #[test]
+    fn mesh_guid_record_keeps_nonzero_bytes_21_through_31_and_reports_them() {
+        let graph = mesh_graph_with_guid_bytes(MESH_GUID_BYTES_21_TO_31);
+        let frame = sole_typed_frame(&graph, MESH_GUID_TYPE_GUID);
+        let record = super::parse_mesh_guid_record(&graph.bytes, frame).expect("mesh-GUID record");
+        assert_eq!(record.guid.opaque_run(), Some(&MESH_GUID_BYTES_21_TO_31));
+        assert_eq!(record.guid.value(), "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE");
+        assert_eq!(record.entry_name_record_index, 102);
+
+        let features = parse_mesh_design_records(
+            &graph.bytes,
+            &graph.meta,
+            "Synthetic/BulkStream.dat",
+            &mut no_texture_asset,
+        )
+        .expect("mesh graph");
+        let [feature] = features.as_slice() else {
+            panic!("one mesh feature");
+        };
+        assert_eq!(
+            feature.bodies()[0].guid.opaque_run(),
+            Some(&MESH_GUID_BYTES_21_TO_31)
+        );
+        let wire = serde_json::to_value(feature).unwrap();
+        assert_eq!(
+            wire["bodies"][0]["guid_opaque_bytes"],
+            "828a25de5963f1c0000100"
+        );
+        let decoded: crate::records::mesh::DesignMeshFeature =
+            serde_json::from_value(wire).unwrap();
+        assert_eq!(decoded, *feature);
+
+        let losses: Vec<_> = super::mesh_guid_byte_losses(&features).collect();
+        let [loss] = losses.as_slice() else {
+            panic!("one mesh-GUID loss");
+        };
+        assert_eq!(
+            loss.code,
+            crate::loss::F3dLossCode::MeshGuidBytesUninterpreted.kind()
+        );
+        assert_eq!(loss.code.local_code(), "mesh.guid-bytes-uninterpreted");
+        assert_eq!(
+            loss.message,
+            "mesh-GUID record 103 stores bytes 21 through 31 `828a25de5963f1c0000100` with no \
+             settled meaning; the native mesh-GUID record keeps them"
+        );
+    }
+
+    #[test]
+    fn mesh_guid_record_with_zero_bytes_21_through_31_keeps_no_bytes_and_reports_nothing() {
+        let graph = mesh_graph_with_guid_bytes([0; 11]);
+        let features = parse_mesh_design_records(
+            &graph.bytes,
+            &graph.meta,
+            "Synthetic/BulkStream.dat",
+            &mut no_texture_asset,
+        )
+        .expect("mesh graph");
+        assert_eq!(features[0].bodies()[0].guid.opaque_run(), None);
+        let wire = serde_json::to_value(&features[0]).unwrap();
+        assert!(wire["bodies"][0].get("guid_opaque_bytes").is_none());
+        assert_eq!(super::mesh_guid_byte_losses(&features).count(), 0);
+    }
+
+    #[test]
+    fn mesh_guid_record_requires_zero_bytes_11_through_20() {
+        let mut graph = mesh_graph_with_guid_bytes(MESH_GUID_BYTES_21_TO_31);
+        let frame = sole_typed_frame(&graph, MESH_GUID_TYPE_GUID);
+        let start = frame.start;
+        graph.bytes[start + 20] = 1;
+        let frame = sole_typed_frame(&graph, MESH_GUID_TYPE_GUID);
+        assert!(super::parse_mesh_guid_record(&graph.bytes, frame).is_err());
     }
 
     #[test]

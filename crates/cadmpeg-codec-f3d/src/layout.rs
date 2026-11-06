@@ -809,8 +809,10 @@ pub(crate) mod paramesh_entry_name_prefix {
 pub(crate) mod paramesh_guid_join_prefix {
     /// Record length in bytes. Spec §3.1.
     pub(crate) const LEN: usize = 83;
-    /// Offset of `zero_run_21` (`bytes[21]`). Spec §3.1.
-    pub(crate) const ZERO_RUN_21: usize = 11;
+    /// Offset of `zero_run_10` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_10: usize = 11;
+    /// Offset of `opaque_run_11` (`bytes[11]`). Spec §3.1.
+    pub(crate) const OPAQUE_RUN_11: usize = 21;
     /// Offset of `fusion_uuid` (`bytes[40]`). Spec §3.1.
     pub(crate) const FUSION_UUID: usize = 32;
     /// Offset of `entry_name_backlink` (`bytes[11]`). Spec §3.1.

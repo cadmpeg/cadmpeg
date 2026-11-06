@@ -3222,7 +3222,7 @@ anchor = "a marked same-segment reference to the GUID record at offset 21"
 name = "paramesh_guid_join_prefix"
 kind = "byte"
 section = "3.1"
-anchor = "Its indexed header is followed by 21 zero bytes, the 36-byte LP-ASCII `fusion_uuid` at offset 32"
+anchor = "Its indexed header is followed by ten zero bytes, eleven bytes at offset 21, the 36-byte LP-ASCII `fusion_uuid` at offset 32"
 size = 83
 note = "Offsets are relative to the container-GUID record's indexed header. A type-specific tail can follow the fixed join prefix."
 
@@ -3231,14 +3231,21 @@ name = "indexed_header"
 offset = 0
 type = "bytes[11]"
 source = "spec"
-anchor = "Its indexed header is followed by 21 zero bytes"
+anchor = "Its indexed header is followed by ten zero bytes, eleven bytes at offset 21"
 
 [[record.field]]
-name = "zero_run_21"
+name = "zero_run_10"
 offset = 11
-type = "bytes[21]"
+type = "bytes[10]"
 source = "spec"
-anchor = "followed by 21 zero bytes"
+anchor = "Its indexed header is followed by ten zero bytes, eleven bytes at offset 21"
+
+[[record.field]]
+name = "opaque_run_11"
+offset = 21
+type = "bytes[11]"
+source = "spec"
+anchor = "eleven bytes at offset 21"
 
 [[record.field]]
 name = "fusion_uuid"
@@ -20848,7 +20855,7 @@ anchor = "The adjacent carrier has EntityTracking type GUID"
 name = "paramesh_flagged_mesh_collection_prefix"
 kind = "byte"
 section = "3.1"
-anchor = "An empty collection can instead store byte `01` at offset 20, in place of the last of the ten zero bytes, and a u32 at offset 25 after its first body count."
+anchor = "A collection can instead store byte `01` at offset 20, in place of the last of the ten zero bytes, and a u32 at offset 25 after its first body count."
 size = 42
 note = "Offsets are relative to the mesh-collection indexed header. The nested CommonData record starts at the end of this prefix."
 
@@ -20893,14 +20900,14 @@ name = "constant_01_01"
 offset = 29
 type = "bytes[2]"
 source = "spec"
-anchor = "Its bytes `01 01`, texture-table reference, and nested record then start at offsets 29, 31, and 42"
+anchor = "bytes `01 01`, the texture-table reference, and the nested record start at offsets 29, 31, and 42"
 
 [[record.field]]
 name = "texture_table_reference"
 offset = 31
 type = "bytes[11]"
 source = "spec"
-anchor = "Its bytes `01 01`, texture-table reference, and nested record then start at offsets 29, 31, and 42"
+anchor = "bytes `01 01`, the texture-table reference, and the nested record start at offsets 29, 31, and 42"
 
 [[record]]
 name = "referenced_angle_revolve_prologue"

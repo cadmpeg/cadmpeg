@@ -322,6 +322,8 @@ pub(crate) enum F3dLossCode {
     MeshContainerMissing,
     /// Mesh attribute channels have no settled stored-element layout.
     MeshAttributeNotTransferred,
+    /// A mesh-GUID record stores bytes 21 through 31 that have no settled meaning.
+    MeshGuidBytesUninterpreted,
     /// The external-reference table was present but not decoded.
     XrefTableUndecoded,
     /// A typed occurrence placement failed its frame grammar.
@@ -621,6 +623,7 @@ impl F3dLossCode {
         Self::MeshContainerUndecoded,
         Self::MeshContainerMissing,
         Self::MeshAttributeNotTransferred,
+        Self::MeshGuidBytesUninterpreted,
         Self::XrefTableUndecoded,
         Self::XrefPlacementUndecoded,
         Self::XrefOccurrenceUnplaced,
@@ -850,6 +853,7 @@ impl F3dLossCode {
             Self::MeshContainerUndecoded => "mesh.container-undecoded",
             Self::MeshContainerMissing => "mesh.container-missing",
             Self::MeshAttributeNotTransferred => "mesh.attribute-not-transferred",
+            Self::MeshGuidBytesUninterpreted => "mesh.guid-bytes-uninterpreted",
             Self::XrefTableUndecoded => "xref.table-undecoded",
             Self::XrefPlacementUndecoded => "xref.placement-undecoded",
             Self::XrefOccurrenceUnplaced => "xref.occurrence-unplaced",
@@ -954,6 +958,7 @@ impl F3dLossCode {
             | Self::NurbsSurfaceCarrier
             | Self::NurbsCurveCarrier
             | Self::MeshSurfaceSentinel
+            | Self::MeshGuidBytesUninterpreted
             | Self::SketchRegionBodyOmitted
             | Self::SketchCurveUnprofiledSelected
             | Self::ThreadLiveFaceUnproven => Severity::Info,
@@ -1189,6 +1194,7 @@ impl F3dLossCode {
             | Self::XrefOwnedPose
             | Self::XrefOwnedPoseDisagrees
             | Self::XrefOwnedPoseNative
+            | Self::MeshGuidBytesUninterpreted
             | Self::XrefTableUndecoded => LossTaxonomy::MetadataNotTransferred,
             Self::ActComponentLinkUnresolved
             | Self::AssemblyComponentsExternal
@@ -1546,6 +1552,7 @@ mod tests {
                 "mesh.container-undecoded",
                 "mesh.container-missing",
                 "mesh.attribute-not-transferred",
+                "mesh.guid-bytes-uninterpreted",
                 "xref.table-undecoded",
                 "xref.placement-undecoded",
                 "xref.occurrence-unplaced",

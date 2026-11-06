@@ -1009,8 +1009,9 @@ Offsets are relative to the container-GUID record's indexed header. A type-speci
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
-| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Its indexed header is followed by 21 zero bytes |
-| 11 | 21 | `zero_run_21` | `bytes[21]` | little | spec | followed by 21 zero bytes |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Its indexed header is followed by ten zero bytes, eleven bytes at offset 21 |
+| 11 | 10 | `zero_run_10` | `bytes[10]` | little | spec | Its indexed header is followed by ten zero bytes, eleven bytes at offset 21 |
+| 21 | 11 | `opaque_run_11` | `bytes[11]` | little | spec | eleven bytes at offset 21 |
 | 32 | 40 | `fusion_uuid` | `bytes[40]` | little | spec | the 36-byte LP-ASCII `fusion_uuid` at offset 32 |
 | 72 | 11 | `entry_name_backlink` | `bytes[11]` | little | spec | a marked same-segment backlink to the entry-name record at offset 72 |
 
@@ -6315,8 +6316,8 @@ Offsets are relative to the mesh-collection indexed header. The nested CommonDat
 | 20 | 1 | `flag` | `u8` | little | spec | store byte `01` at offset 20 · value `1` |
 | 21 | 4 | `body_count` | `u32` | little | spec | a u32 body count at offset 21 |
 | 25 | 4 | `flagged_word` | `u32` | little | spec | a u32 at offset 25 after its first body count |
-| 29 | 2 | `constant_01_01` | `bytes[2]` | little | spec | Its bytes `01 01`, texture-table reference, and nested record then start at offsets 29, 31, and 42 |
-| 31 | 11 | `texture_table_reference` | `bytes[11]` | little | spec | Its bytes `01 01`, texture-table reference, and nested record then start at offsets 29, 31, and 42 |
+| 29 | 2 | `constant_01_01` | `bytes[2]` | little | spec | bytes `01 01`, the texture-table reference, and the nested record start at offsets 29, 31, and 42 |
+| 31 | 11 | `texture_table_reference` | `bytes[11]` | little | spec | bytes `01 01`, the texture-table reference, and the nested record start at offsets 29, 31, and 42 |
 
 ## `referenced_angle_revolve_prologue`
 
