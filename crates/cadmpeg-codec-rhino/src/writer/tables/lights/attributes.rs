@@ -106,7 +106,6 @@ pub(super) fn encode(value: &Value) -> Result<Vec<u8>, WriteError> {
     }
     for name in [
         "group_indexes",
-        "display_materials",
         "rendering_materials",
         "rendering_mappings",
         "user_strings",
@@ -190,6 +189,34 @@ pub(super) fn encode(value: &Value) -> Result<Vec<u8>, WriteError> {
             .ok_or_else(|| WriteError::Omit("light attribute viewport_uuid is invalid".into()))?;
         body.push(20);
         body.extend(id.to_wire());
+    }
+    if let Some(value) = fields.get("display_materials") {
+        let pairs = value.as_array().ok_or_else(|| {
+            WriteError::Omit("light attribute display_materials must be a list".into())
+        })?;
+        if !pairs.is_empty() {
+            let count = i32::try_from(pairs.len())
+                .map_err(|_| WriteError::Omit("light display material count exceeds i32".into()))?;
+            body.push(21);
+            body.extend(count.to_le_bytes());
+            for pair in pairs {
+                let pair = pair
+                    .as_array()
+                    .filter(|pair| pair.len() == 2)
+                    .ok_or_else(|| {
+                        WriteError::Omit("light display material needs two UUIDs".into())
+                    })?;
+                for value in pair {
+                    let id = value
+                        .as_str()
+                        .and_then(crate::presentation::parse_uuid_text)
+                        .ok_or_else(|| {
+                            WriteError::Omit("light display material UUID is invalid".into())
+                        })?;
+                    body.extend(id.to_wire());
+                }
+            }
+        }
     }
     body.push(22);
     body.extend(integer(fields, "display_order")?.to_le_bytes());
