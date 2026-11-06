@@ -71,6 +71,8 @@ cargo build --workspace
 cargo test-fast
 ```
 
+To test one codec, build the `cadmpeg` package with `--no-default-features --features <codec>`, for example `cargo test -p cadmpeg --all-targets --no-default-features --features f3d`. A CLI test that needs a codec that is not built is compiled out.
+
 Lint levels live in `[workspace.lints]` in the root `Cargo.toml`, so `cargo clippy` needs no trailing lint flags. Do not add them back: trailing lint flags are part of the compilation fingerprint, so a flagged run and a bare run evict each other's cached artifacts, and an editor running bare `cargo check` or `cargo clippy` then re-checks the workspace on every alternation.
 
 Manifest levels apply to every cargo command, so a warning fails `cargo build` and `cargo test`, not only `cargo clippy`. Jobs on an unpinned toolchain set `RUSTFLAGS: -A warnings`, because lint sets differ between releases; the MSRV job is the only one.
@@ -122,6 +124,20 @@ The `static checks` job runs `python3 scripts/preflight_open_items.py` on the PR
 `spec-wording` warns on added format Markdown lines containing “not yet”, “do not yet”, “for now”, “currently”, or “TODO”, including open-items documents.
 
 The checks cover recurring review points, not all of them. A check is a `scripts/preflight_<name>.py` module with a `scripts/test_preflight_<name>.py` test.
+
+---
+
+## Windows
+
+The Python scripts under `scripts/` run on Windows with these steps:
+
+- Run them with `py -3` (for example `py -3 scripts/preflight.py`) or the full path of a real Python. A bare `python3` can resolve to the Microsoft Store stub, which prints "Python was not found" and fails. `scripts/preflight.py` starts its child checks with the interpreter that runs it.
+- Install the GitHub CLI (`winget install GitHub.cli`) and run `gh auth login`. The `open-prs` check needs it.
+- Set a git identity before a rebase: `git config user.name "NAME"` and `git config user.email "EMAIL"`.
+- Run the scripts from Git Bash, or from a shell where `git` and `cargo` are on `PATH`.
+- Set `git config --global core.autocrlf false` before you clone. Or clone with `git clone -c core.autocrlf=false <url>`, which sets it in the new repository before checkout. CRLF line endings change the bytes of fixtures and generated files, and the checks that compare them byte for byte then fail.
+
+The shell scripts (`*.sh`) need Git Bash and the commands that each script checks for at its start. For example, `scripts/verify-step-signatures.sh` needs `base64`, `fold`, `git`, `openssl`, `python3`, and `tr` on `PATH`. In that script `python3` must be a real interpreter, not the Store stub. Put a real Python first on `PATH` under that name, or run the script on Linux or macOS.
 
 ---
 

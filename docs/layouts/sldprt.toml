@@ -1832,6 +1832,13 @@ source = "spec"
 anchor = "dimension"
 
 [[record.field]]
+name = "knot_count"
+offset = 10
+type = "u32"
+source = "spec"
+anchor = "knot_count"
+
+[[record.field]]
 name = "periodic"
 offset = 15
 type = "u8"
@@ -1867,9 +1874,9 @@ source = "spec"
 anchor = "control/multiplicity/knot array attrs"
 
 [[record.gap]]
-offset = 10
-size = 5
-note = "`knot_count`, `subtype` and the flags before `periodic`; the reader takes no field here."
+offset = 14
+size = 1
+note = "`subtype`; the reader takes no field here."
 
 [[record.gap]]
 offset = 16

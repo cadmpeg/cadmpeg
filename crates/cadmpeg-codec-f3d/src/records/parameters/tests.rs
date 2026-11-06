@@ -78,7 +78,13 @@ fn parameter_comment_lies_before_the_expression_and_round_trips() {
             .with_comment(comment("note", offset))
             .is_err());
     }
-    assert!(parameter(true).with_comment(comment(" ", 130)).is_err());
+    assert!(parameter(true).with_comment(comment("", 130)).is_err());
+    let blank = parameter(true).with_comment(comment("  ", 130)).unwrap();
+    let blank_wire = serde_json::to_value(blank).unwrap();
+    assert_eq!(blank_wire["comment"], "  ");
+    assert_eq!(blank_wire["comment_offset"], 130);
+    let read: DesignParameter = serde_json::from_value(blank_wire).unwrap();
+    assert_eq!(read.comment(), Some("  "));
     let mut unpaired = wire;
     unpaired.as_object_mut().unwrap().remove("comment_offset");
     assert!(serde_json::from_value::<DesignParameter>(unpaired).is_err());

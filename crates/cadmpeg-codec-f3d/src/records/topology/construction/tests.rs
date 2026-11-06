@@ -90,6 +90,17 @@ fn construction_frame_rejects_invalid_scalars_offsets_and_trailing_arity() {
 }
 
 #[test]
+fn construction_frame_accepts_a_set_closing_flag() {
+    let mut wire = frame_wire();
+    wire.closing_flag = true;
+    let frame = DesignConstructionOperandGroupFrame::try_from(wire.clone()).unwrap();
+    assert!(frame.closing_flag);
+    let decoded: DesignConstructionOperandGroupFrame =
+        serde_json::from_value(serde_json::to_value(wire).unwrap()).unwrap();
+    assert!(decoded.closing_flag);
+}
+
+#[test]
 fn construction_frame_collections_reject_duplicates_and_keep_failed_edits_atomic() {
     let frame = DesignConstructionOperandGroupFrame::try_from(frame_wire()).unwrap();
     macro_rules! check_collection {

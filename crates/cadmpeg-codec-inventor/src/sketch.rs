@@ -85,6 +85,42 @@ pub(crate) fn marks_construction(entity: &PmDcSketchEntity) -> bool {
         && entity.entity_flags & LINE_CONSTRUCTION_FLAGS != 0
 }
 
+/// Whether the record is a construction line whose stored carrier and
+/// resolved endpoints disagree. Which of the two is authoritative is not
+/// known, so such a line projects no neutral geometry. A zero-length segment
+/// or a zero carrier direction is not a carrier conflict. `point` resolves a
+/// point reference of the entity's segment to its position.
+pub(crate) fn construction_carrier_conflict(
+    entity: &PmDcSketchEntity,
+    point: impl Fn(&str, u32) -> Option<[FiniteReal; 2]>,
+) -> bool {
+    let PmDcSketchEntityKind::Line {
+        points,
+        origin,
+        direction,
+        ..
+    } = &entity.kind
+    else {
+        return false;
+    };
+    if !marks_construction(entity) {
+        return false;
+    }
+    let [start, end, ..] = points.references() else {
+        return false;
+    };
+    let token = entity.identity.segment_token.as_str();
+    let (Some(start), Some(end)) = (point(token, start.index()), point(token, end.index())) else {
+        return false;
+    };
+    let [start, end] = [start, end].map(|point| point.map(FiniteReal::get));
+    let direction = direction.map(FiniteReal::get);
+    if start == end || direction == [0.0, 0.0] {
+        return false;
+    }
+    !line_carrier_matches(origin.map(FiniteReal::get), direction, start, end)
+}
+
 /// Whether the record is a curve whose entity flags carry a bit with an
 /// unresolved construction meaning.
 fn has_unresolved_flags(entity: &PmDcSketchEntity) -> bool {
@@ -102,6 +138,7 @@ const EPS_SKETCH_BLOCK_PLACEMENT_RIGID: f64 = 1.0e-9;
 const CIRCLE_STATE_ARC: u8 = 0;
 const CIRCLE_STATE_FULL: u8 = 1;
 
+pub(crate) mod member_curve;
 pub(crate) mod spline;
 
 const SKETCH_TYPE: [u8; 16] = inventor_id(0x9087_4d11);
@@ -376,6 +413,9 @@ pub(crate) struct SketchProjection {
     pub(crate) unresolved_construction: usize,
     /// Distance dimensions measured to an axis line; they stay native.
     pub(crate) native_axis_distances: usize,
+    /// Construction lines whose carrier and endpoints disagree; they stay
+    /// native.
+    pub(crate) native_carrier_conflicts: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -459,12 +499,16 @@ pub(crate) enum PmDcSketchEntityKind {
         instances: PmDcReferenceList,
         member: PmDcReference,
     },
+    MemberCurve {
+        data: Box<member_curve::MemberCurveRecord>,
+    },
 }
 
 impl PmDcSketchEntityKind {
     pub(crate) fn record_type_id(&self) -> [u8; 16] {
         match self {
             Self::Spline { .. } => spline::TYPE,
+            Self::MemberCurve { .. } => member_curve::TYPE,
             Self::Point { .. } => POINT_TYPE,
             Self::Line { .. } => LINE_TYPE,
             Self::Circle { .. } => CIRCLE_TYPE,
@@ -734,6 +778,21 @@ pub(crate) fn inventory(
                     Err(CodecError::NotImplemented(_)) => continue,
                     Err(error) => Err(error),
                 },
+                SketchRecordTag::MemberCurve => {
+                    match member_curve::parse(ctx, record.payload, version) {
+                        Ok(value) => push_record(
+                            ctx,
+                            &mut inventory.entities,
+                            value,
+                            record.type_id,
+                            segment.pair.token.key(),
+                            record.ordinal,
+                            "admit Inventor PmDc rational curve record",
+                        ),
+                        Err(CodecError::NotImplemented(_)) => continue,
+                        Err(error) => Err(error),
+                    }
+                }
                 SketchRecordTag::Entity(entity) => parse_entity(entity, record.payload, version)
                     .and_then(|value| {
                         push_record(
@@ -924,6 +983,7 @@ impl SketchConstraintTag {
 #[derive(Clone, Copy)]
 enum SketchRecordTag {
     Spline,
+    MemberCurve,
     Sketch,
     Transform,
     Direction,
@@ -935,6 +995,7 @@ impl SketchRecordTag {
     fn from_type_id(type_id: [u8; 16]) -> Option<Self> {
         match type_id {
             spline::TYPE => Some(Self::Spline),
+            member_curve::TYPE => Some(Self::MemberCurve),
             SKETCH_TYPE => Some(Self::Sketch),
             TRANSFORM_TYPE => Some(Self::Transform),
             DIRECTION_TYPE => Some(Self::Direction),
@@ -1538,6 +1599,21 @@ pub(crate) fn project(
             record,
         )
     }));
+    let conflicted_construction = inventory
+        .entities
+        .iter()
+        .filter(|entity| {
+            construction_carrier_conflict(entity, |token, reference| {
+                resolve_point(token, reference, &raw_entities)
+            })
+        })
+        .map(|entity| {
+            (
+                entity.identity.segment_token.as_str(),
+                entity.identity.record_ordinal,
+            )
+        })
+        .collect::<HashSet<_>>();
     let native_constraint_keys = raw_constraints
         .iter()
         .filter_map(|(key, source)| {
@@ -1549,7 +1625,13 @@ pub(crate) fn project(
                         raw_entities.get(&(source.identity.segment_token.as_str(), ordinal))
                     })
                     .and_then(Option::as_ref)
-                    .is_some_and(|entity| curve::is_non_geometric(entity))
+                    .is_some_and(|entity| {
+                        curve::is_non_geometric(entity)
+                            || conflicted_construction.contains(&(
+                                entity.identity.segment_token.as_str(),
+                                entity.identity.record_ordinal,
+                            ))
+                    })
             })
             .then_some(*key)
         })
@@ -1565,6 +1647,7 @@ pub(crate) fn project(
     let mut projected_entities = Vec::new();
     let mut block_curves = Vec::new();
     let mut unresolved_entities = 0usize;
+    let mut carrier_conflicts = Vec::new();
     for entity in &inventory.entities {
         let key = (
             entity.identity.segment_token.as_str(),
@@ -1606,6 +1689,14 @@ pub(crate) fn project(
                 if let Some(placed) = place_block_curves(entity, &id, inventory, &raw_entities) {
                     block_curves.push(placed);
                 }
+            }
+            continue;
+        }
+        if conflicted_construction.contains(&key) {
+            // The line stays native: no neutral geometry and no guessed line.
+            unresolved_entities += 1;
+            if let Some(id) = sketch_id(sketch) {
+                carrier_conflicts.push(id);
             }
             continue;
         }
@@ -1655,7 +1746,12 @@ pub(crate) fn project(
                     .and_then(Option::as_ref)
                     .copied()
             }) {
-                if !curve::is_non_geometric(raw) {
+                if !curve::is_non_geometric(raw)
+                    && !conflicted_construction.contains(&(
+                        raw.identity.segment_token.as_str(),
+                        raw.identity.record_ordinal,
+                    ))
+                {
                     raw_referenced_entities.push(raw);
                 }
             }
@@ -1835,6 +1931,7 @@ pub(crate) fn project(
                     .get(&key)
                     .and_then(Option::as_ref)
                     .is_some_and(|source| curve::is_non_geometric(source))
+                || conflicted_construction.contains(&key)
                 || native_constraint_keys.contains(&key)
         })
     });
@@ -1896,6 +1993,10 @@ pub(crate) fn project(
         previous_constraint_count,
         constraints.len(),
     )?;
+    let native_carrier_conflicts = carrier_conflicts
+        .iter()
+        .filter(|sketch| closed_sketch_ids.contains(sketch))
+        .count();
     let unresolved_construction = projected_entities
         .iter()
         .filter(|entity| {
@@ -1914,6 +2015,17 @@ pub(crate) fn project(
         unresolved_constraints,
         unresolved_construction,
         native_axis_distances,
+        native_carrier_conflicts,
+    })
+}
+
+/// The loss for construction lines whose stored carrier and endpoints
+/// disagree.
+pub(crate) fn carrier_conflict_loss(count: usize) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    (count != 0).then(|| {
+        crate::loss::InventorLossCode::SketchConstructionCarrierConflict.note(format!(
+            "Retained {count} Inventor construction line(s) natively: the stored carrier and the endpoint positions disagree, and neither is applied. Construction lines bound no profile."
+        ))
     })
 }
 
@@ -2553,6 +2665,9 @@ fn project_placed_geometry(
                 .ok()?;
             Some(SketchGeometry::nurbs(curve))
         }
+        PmDcSketchEntityKind::MemberCurve { .. } => Some(SketchGeometry::native(
+            cadmpeg_core::nonblank_literal!("member_curve"),
+        )),
         PmDcSketchEntityKind::Point { position, .. } => Some(
             SketchGeometry::try_from(SketchGeometryDefinition::Point {
                 position: neutral_point(placement.point(*position)?),
@@ -5217,7 +5332,9 @@ mod tests {
     }
 
     mod axis_distance;
+    mod carrier_conflict;
     mod construction_flags;
+    mod member_curve;
     mod non_geometric;
     mod point_tail_projection;
     mod serialization;

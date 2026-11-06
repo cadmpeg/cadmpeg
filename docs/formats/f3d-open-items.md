@@ -102,6 +102,30 @@ The class-290 primary paired with class-261 uses the same six-byte fields on its
 
 **Need.** We must know what the per-element u32 selects to write a Base Feature from a neutral model. It is `1` on one scope and `0` on every other, and it does not track the body count, so we cannot say what selects it.
 
+
+### DR-259. Owner of a scope that several timeline objects name
+
+**Question.** Which object owns a `Base Feature` scope that two or more paste or body-to-component objects name?
+
+**Known.** `f3d.md` §3.1 "A paste or body-to-component timeline object owns" gives the owner fields; each object stores its reference to the owned scope after its counted body references. The owned scope takes its owner's timeline position. The decoder gives the scope to the object with the lowest record index whose owned runs read and reads no copy sources for it.
+
+**Need.** A save in which two objects name one scope, with the timeline position and the body set that Fusion shows for that scope.
+
+**Conflict.** None.
+
+**Note.** The decoder reports `feature.timeline-owner-competing`.
+
+### DR-260. Placement of a pasted copy
+
+**Question.** Where does a pasted copy sit relative to its source body?
+
+**Known.** `f3d.md` §3.1 "In the scope that a paste object owns" gives the copy form. The object and scope frames store the copy bodies, their parameter-body records and the source GUID pairs. In the copy saves whose sources survive, each copy has its source's bounding box and volume. The decoder projects the copy as `MoveBody` with zero translation and no rotation.
+
+**Need.** A paste that places a copy at an offset or a rotation from its source, and the bytes that hold that placement.
+
+**Conflict.** None.
+
+**Note.** The decoder reports `feature.paste-copy-placement-assumed`.
 ### DR-26. Sketch-text fields
 
 **Question.** What do the residual `txt_tag` style bits and four-byte style payload, its second post-height Boolean, and the `textex_tag` orientation and auxiliary flags select?
@@ -382,13 +406,29 @@ travel.
 
 **Note.** The fixed native occurrence record retains the discriminator value without a component-path binding.
 
+### DR-282. Legacy body-group flag blocks
+
+**Question.** Do the primary and paired class tags determine the frame and flag block of a legacy body group?
+
+**Known.** Legacy body groups with primary/paired classes 257/262, 323/262, and 338/261 have flag block `01 01`; classes 328/263, 282/262, and 302/258 have flag block `00 01`. The group parser accepts both Boolean values for the variant and closing flag and closes the frame by record index.
+
+**Need.** Controlled files that vary each flag for each class pair.
+
+**Conflict.** None.
+
+**Note.** The flag block is retained in the native group frame.
+
 ### DR-130. Construction-operand group closing flag
 
 **Question.** What does closing flag `1` in the tail flag block of a construction-operand group select?
 
-**Known.** `f3d.md` §3.1 "Every `Extrude`, `Extrusion`, `Fillet`" defines the group tail. The flag block ends with the closing flag after `variant`. The closing flag is `0` or `1`, and both values occur in the three-byte block `[1, 1, closing_flag]` of existing-body groups in Extrude scopes. The role, members, and references of the group are the same for both values.
+**Known.** `f3d.md` §3.1 "Every `Extrude`, `Extrusion`, `Fillet`" defines the group tail. The flag block ends with the closing flag after `variant`. The closing flag is `0` or `1` in the two-byte and three-byte blocks. The role, members, and references of the group are the same for both values. The decoder reads both values with the same group semantics, keeps the flag in the native group frame, and reports `feature.construction-closing-flag-assumed` for each group with closing flag `1`.
 
 **Need.** A writer that generates a group must choose the closing flag, and a reader must know whether value `1` changes the group's operation semantics.
+
+**Conflict.** None.
+
+**Note.** Every legacy body group in DR-282 has closing flag `1` in the two-byte block.
 
 ### DR-104. ACT component-link root selection
 
@@ -435,6 +475,34 @@ travel.
 **Conflict.** None.
 
 **Note.** The decoder retains each profile operand in the native scope and emits `feature.extrude-profile-group-native` for each scope with multiple Sketch-profile operands.
+
+### DR-257. Entity-selection serialization form
+
+**Question.** What does the u32 serialization form after `u32 2` in a nested entity-selection member encode?
+
+**Known.** `f3d.md` §3.1 "A nested entity-selection member has primary indexed record `N`." states that the field is `0` or `1`. The field layout after it is the same for both values. Every member in one Design stream stores the same value. Value `1` occurs in documents whose product version is an ASM 231 or 232 Windows build; documents from the same builds also store value `0`. Members of both values resolve their identities to Sketch curves that close Extrude profile regions and to Revolve axis lines.
+
+**Need.** A pair of documents that differ only in the form value, and the Fusion setting or document generation that produces each value.
+
+### DR-258. Second marked reference of the 87-byte scope tail
+
+**Question.** What record does the marked reference at tail byte 30 of an 87-byte parameter-scope tail name, and does it change the operation of its scope?
+
+**Known.** `f3d.md` §3.1 "A parameter scope is one logical indexed record" states that tail byte 30 of the 87-byte tail is `0x01` when it begins a second marked reference, and that the preceding history-state identity is then at tail offset 41. In `SplitFace` scopes the reference names record index 42 or 56, and no indexed header in the stream carries that index. These `SplitFace` scopes have the same splitting-tool and target groups as the 77- and 78-byte forms, and the projection does not read the reference.
+
+**Need.** Controlled saves of one `SplitFace` before and after an edit that creates the reference, with the record that carries the referenced index.
+
+### DR-280. Body-recipe serialization form above one
+
+**Question.** What tail layout does a body-recipe serialization form above `1` select?
+
+**Known.** `f3d.md` §3.1 "A class-365 whole-body member starts after its indexed header" states that forms `0` and `1` store the standard tail layout. The decoder reads the standard tail layout for every form value, keeps the form bytes in the native operand, and emits `body-recipe.serialization-form-assumed` for each operand with a form above `1`.
+
+**Need.** A document that stores a body-recipe operand with a form above `1`, and the tail layout of that operand.
+
+**Conflict.** None.
+
+**Note.** DR-257 records the serialization form of nested entity-selection members.
 
 ## 2. External references
 
@@ -879,11 +947,11 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** A path selection retains its native selection and loss. The selected region can be the union of several atomic arrangement faces, which no single face proves.
 
-### DR-146. Later ordinal in a fixed identity occurrence
+### DR-146. Later ordinal in a fixed or leading-flag identity occurrence
 
-**Question.** What placement does a fixed untyped occurrence with identity flag `1` and ordinal greater than one select?
+**Question.** What placement does a fixed untyped or leading-flag occurrence with identity flag `1` and ordinal greater than one select?
 
-**Known.** Two standard 229-byte frames store ordinal `2` and identity flag `1`. Attributed identity frames retain later ordinals.
+**Known.** Two standard 229-byte frames store ordinal `2` and identity flag `1`. Attributed identity frames retain later ordinals. The leading-flag frame stores the same identity flag and one-based ordinal.
 
 **Need.** Independent files that vary the occurrence ordinal and placement separately.
 
@@ -1204,7 +1272,7 @@ when the operation transition carries no candidate for the group members?
 
 **Question.** Which saved assembly state selects the occurrence poses for an Assemble joint relation, and what activation state do the two scope-tail booleans encode?
 
-**Known.** The version-three connector equation uses scope frames, four referenced angle and XYZ lanes, and facing. Ordered occurrence keys select the innermost child within one insertion, including inserted documents. The corrected output has 383 new V1.8 joint instances: 5 have a consumer-pose residual above 0.1 mm, and 6 exceed that threshold under current carriers. RailCore v1 has 3 new instances and 0 consumer residuals above 0.1 mm. The 46 incomplete V1.8 bindings included 45 open relations and one closing relation. RailCore v1 records 3068 and 3232 and V1.8 record 4176 store `01 01` in the two tail booleans and retain native alignment. Record 4176 closes. The earlier version-three control has terminal bytes `00 00`; the six version-four controls have an extra preceding `01` marker followed by `00 00`. The neutral constructor supplies `suppressed = false` independently of these bytes.
+**Known.** The version-three connector equation uses scope frames, four referenced angle and XYZ lanes, and facing. Ordered occurrence keys select the innermost child within one insertion, including inserted documents. The corrected output has 383 new V1.8 joint instances: 5 have a consumer-pose residual above 0.1 mm, and 6 exceed that threshold under current carriers. RailCore v1 has 3 new instances and 0 consumer residuals above 0.1 mm. The 46 incomplete V1.8 bindings included 45 open relations and one closing relation. RailCore v1 records 3068 and 3232 and V1.8 record 4176 store `01 01` in the two tail booleans and retain native alignment. Record 4176 closes. The earlier version-three control has terminal bytes `00 00`; the six version-four controls have an extra preceding `01` marker followed by `00 00`. Projection assumes every projected Assemble joint is active, supplies `suppressed = false` independently of these bytes, and charges `assembly.joint-activation-assumed`.
 
 **Need.** A byte-level saved-state selector with links from joints to occurrence-pose carriers. Public states that change each tail boolean independently and establish the joint's activation state across independent designs.
 
@@ -1265,7 +1333,7 @@ when the operation transition carries no candidate for the group members?
 
 **Question.** What do the eight-byte word between the two identity-GUID pairs and the eight-byte tail after the final u32 `2` mean in a positive-count typed occurrence path, and how do they affect binding?
 
-**Known.** The admitted identity suffix in `f3d.md` §3.1 "A class-329 path begins with its indexed header" stores eight-byte value `2` between the two GUID pairs and an eight-byte zero tail. Twenty-six live version-4 paths of type `96CBEA21-17E0-4BCB-BA77-04EA87B47934`, in four documents, store `0x0000000100000002` and `1` at those positions. Each path has one occurrence key and four identity GUIDs. Each 425-byte path is bounded by its indexed wrapper. The paths belong to thirteen 806-byte Assemble scopes. The primary record index fixes their live offsets. Their scopes retain explicit connector matrices and the `assembly.joint-unprojected` loss.
+**Known.** The admitted identity suffix in `f3d.md` §3.1 "A class-329 path begins with its indexed header" stores eight-byte value `2` between the two GUID pairs and an eight-byte zero tail. Twenty-six live version-4 paths of type `96CBEA21-17E0-4BCB-BA77-04EA87B47934`, in four documents, store `0x0000000100000002` and `1` at those positions. Each path has one or two occurrence keys and four identity GUIDs. Each 425-byte path is bounded by its indexed wrapper. The paths belong to thirteen 806-byte Assemble scopes. The primary record index fixes their live offsets. Their scopes retain explicit connector matrices and the `assembly.joint-unprojected` loss. On all thirteen scopes the occurrence keys resolve, and the connector frames at the current occurrence poses, with the identity for an occurrence that stores no pose, satisfy the joint relation in "Assembly operands" in rotation and translation. These scopes do not separate the two word pairs, because no such scope stores `(2, 0)`.
 
 **Need.** Make controlled saves of one joint between two fixed component occurrences. Give each occurrence an identity-transform child with a coincident connector. In separate saves, change the first operand from its root connector to its child connector, then change the second operand in the same way. Hold both connector matrices fixed. In further independent saves, update only the first component revision, only the second component revision, and only the joint suppression state. Create two component configuration rows with equal geometry and equal connector matrices; switch each operand between those rows independently. Compare both identity words and all five GUID fields with the baseline. Obtain both word pairs `(2, 0)` and `(0x0000000100000002, 1)`. Establish which controlled changes affect each word and whether the words can vary independently before projection.
 
@@ -1284,3 +1352,37 @@ when the operation transition carries no candidate for the group members?
 **Conflict.** The specification gives mapping mode `0x60` and a whole-body recipe member. This scope stores mode `0` and a face-recipe entity selection.
 
 **Note.** None.
+
+### DR-256. Ordinal prefix of a leading-flag local component occurrence
+
+**Question.** What does the u16 ordinal prefix at offset 44 of a leading-flag local component occurrence state?
+
+**Known.** The prefix is `1` for the first new component of a Design and for a pasted second instance of that component, and `0` for a later new component. Its value is independent of the occurrence's grounded, light-bulb, visibility, active, and isolated states. The attributed frame stores two bytes after its attribute run, before its ordinal.
+
+**Need.** A Fusion control that changes the prefix of one occurrence with all other carrier fields equal.
+
+**Conflict.** None.
+
+**Note.** The decoder keeps the prefix in the native occurrence frame.
+
+### DR-269. Marker-one Revolve frames of other lengths
+
+**Question.** Which field layout does a `Revolve` scope use when it has the marker-one prologue and a token-independent frame length other than 345, 355, 367, 351, or 373?
+
+**Known.** `f3d.md` §3.1 gives the marker-one form a 345-, 355-, or 367-byte token-independent frame, and the referenced-angle form, which shares the marker-one prologue through offset 33, a 351- or 373-byte frame. The decoder reads a frame of another length with the marker-one field offsets and records `feature.revolve-layout-assumed`.
+
+**Need.** A Design stream with a marker-one `Revolve` scope of another token-independent length and the feature's parameters as the application shows them.
+
+**Note.** None.
+
+### DR-270. Curve order of a self-crossing stored profile loop
+
+**Question.** Does the listed curve order of a self-crossing stored profile loop identify which atomic sketch regions the loop selects?
+
+**Known.** No source file has been checked against this relation. The decoder takes as its hypothesis that a stored loop that matches no single arrangement face lists a curve identity for each boundary use of every selected region. When exactly one set of atomic faces uses only the listed curves, each as many times as the loop lists it, the decoder selects that set and does not read the order. A face that encloses an island is assumed not to be selected and is no candidate; at least two candidates are required. Two sets with equal counts and a curve that is not a line or circular arc leave the loop unresolved. The count rule does not distinguish selections whose faces share all curves.
+
+**Need.** Make controlled saves of a square sketch with both diagonals. In separate saves, one through-cut Extrude selects all four triangles, one selects two opposite triangles, and one selects two adjacent triangles. Compare the stored loop entry order and counts of each save with the face boundaries.
+
+**Conflict.** None.
+
+**Note.** The decoder reports `feature.profile-crossing-loop-assumed` for each selection that takes regions from this rule.

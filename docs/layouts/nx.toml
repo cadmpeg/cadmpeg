@@ -2557,9 +2557,9 @@ anchor = "An Int32 Compressed Data Packet Mk. 2 begins with `value_count:u32 LE`
 
 [[not_applicable]]
 area = "B_SURFACE and B_CURVE counted payload and reference tails (§6.2)"
-reason = "Types 125-128 and 135-136 carry counted arrays and variable-width reference tails whose element counts and XMT widths drive every later position. The fixed descriptor prefixes are tabulated above."
+reason = "Types 45, 125-128, and 135-136 carry counted arrays and variable-width reference tails whose element counts and XMT widths drive every later position. The fixed descriptor prefixes are tabulated above."
 section = "6.2"
-anchor = "Types 125, 126, 135, and 136 may place an `ff` envelope escape before their xmt."
+anchor = "Types 45, 125, 126, 135, and 136 may place an `ff` envelope escape before their"
 
 
 [[record]]

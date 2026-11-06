@@ -1,6 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Convert: destination rules, format selection, and write-back fidelity.
 
+#[cfg(any(
+    feature = "creo",
+    feature = "fcstd",
+    feature = "iges",
+    feature = "rhino",
+    feature = "step"
+))]
 use std::fs;
 #[cfg(feature = "rhino")]
 use std::io::Cursor;
@@ -9,12 +16,14 @@ use assert_cmd::Command;
 #[cfg(feature = "rhino")]
 use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use cadmpeg_ir::examples::unit_cube;
-use predicates::prelude::{predicate, PredicateBooleanExt};
+use predicates::prelude::predicate;
 use tempfile::tempdir;
 
+use crate::support::fixture;
+#[cfg(feature = "creo")]
+use crate::support::geometryless_creo;
 #[cfg(feature = "sldprt")]
 use crate::support::sldprt_cube;
-use crate::support::{fixture, geometryless_creo};
 
 #[cfg(feature = "fcstd")]
 #[test]
@@ -287,6 +296,7 @@ fn step_conversion_leaves_collapsed_curveless_edges_out_without_a_loss() {
 /// The decode report line names the depth the codec delivered. A codec with
 /// no geometry-depth cut delivers `full` for STEP's geometry request, with or
 /// without `--full-decode`, which excludes `--container-only`.
+#[cfg(all(feature = "creo", feature = "step"))]
 #[test]
 fn convert_reports_the_delivered_depth() {
     let dir = tempdir().unwrap();
@@ -320,7 +330,7 @@ fn convert_reports_the_delivered_depth() {
 
 /// A `FreeCAD` part converted to STEP decodes at geometry depth by default and
 /// writes the same bytes as a `--full-decode` conversion.
-#[cfg(feature = "fcstd")]
+#[cfg(all(feature = "fcstd", feature = "step"))]
 #[test]
 fn a_geometry_depth_step_conversion_writes_the_full_decode_bytes() {
     assert_geometry_depth_step_writes_the_full_decode_bytes(
@@ -331,7 +341,7 @@ fn a_geometry_depth_step_conversion_writes_the_full_decode_bytes() {
 
 /// An F3D design converted to STEP decodes at geometry depth by default and
 /// writes the same bytes as a `--full-decode` conversion.
-#[cfg(feature = "f3d")]
+#[cfg(all(feature = "f3d", feature = "step"))]
 #[test]
 fn an_f3d_geometry_depth_step_conversion_writes_the_full_decode_bytes() {
     assert_geometry_depth_step_writes_the_full_decode_bytes(
@@ -345,7 +355,7 @@ fn an_f3d_geometry_depth_step_conversion_writes_the_full_decode_bytes() {
 /// A loss policy judges the whole source, so every `--reject-lossy` scope
 /// decodes at full depth. A geometry-depth decode of this part holds none of
 /// its design history, so STEP export would report none of it lost.
-#[cfg(feature = "fcstd")]
+#[cfg(all(feature = "fcstd", feature = "step"))]
 #[test]
 fn reject_lossy_judges_the_design_history_a_geometry_decode_skips() {
     let dir = tempdir().unwrap();
@@ -376,7 +386,7 @@ fn reject_lossy_judges_the_design_history_a_geometry_decode_skips() {
     assert_eq!(report["decode_report"]["transfer"]["transfer"], "full");
 }
 
-#[cfg(any(feature = "fcstd", feature = "f3d"))]
+#[cfg(all(feature = "step", any(feature = "fcstd", feature = "f3d")))]
 fn assert_geometry_depth_step_writes_the_full_decode_bytes(name: &str, bytes: &[u8]) {
     let dir = tempdir().unwrap();
     let input = dir.path().join(name);
@@ -410,6 +420,7 @@ fn assert_geometry_depth_step_writes_the_full_decode_bytes(name: &str, bytes: &[
 /// `step:ap242-e3` is the registry id; `ap242e3` is the catalog alias. The
 /// alias is usable bare when the output extension names the format and after a
 /// format prefix. Every spelling must reach the same `FILE_SCHEMA`.
+#[cfg(feature = "step")]
 #[test]
 fn step_artifact_starts_with_step_header() {
     let dir = tempdir().unwrap();
@@ -536,6 +547,7 @@ fn source_less_ir_exports_to_decodable_rhino() {
 /// `rhino:archive-60` is the registry id, `3dm:archive-60` reaches the same row
 /// through the format alias. `60` is the catalog alias, usable bare because
 /// the output path names the format or after either format spelling.
+#[cfg(feature = "rhino")]
 #[test]
 fn rhino_output_version_is_selected_explicitly() {
     let dir = tempdir().unwrap();
@@ -584,6 +596,7 @@ fn rhino_output_version_is_selected_explicitly() {
     }
 }
 
+#[cfg(feature = "step")]
 #[test]
 fn check_blocks_conversion_unless_overridden() {
     let dir = tempdir().unwrap();
@@ -627,6 +640,7 @@ fn check_blocks_conversion_unless_overridden() {
     assert!(output.exists());
 }
 
+#[cfg(feature = "step")]
 #[test]
 fn output_cannot_replace_input_and_success_is_atomic() {
     let dir = tempdir().unwrap();
@@ -684,6 +698,7 @@ fn format_is_required_when_stdout_has_no_extension() {
         ));
 }
 
+#[cfg(feature = "step")]
 #[test]
 fn existing_output_requires_force() {
     let dir = tempdir().unwrap();
@@ -726,8 +741,10 @@ fn existing_output_requires_force() {
     assert!(fs::read(&output).unwrap().starts_with(b"ISO-10303-21"));
 }
 
+#[cfg(all(feature = "iges", feature = "step"))]
 #[test]
 fn existing_output_is_refused_before_decode() {
+    use predicates::prelude::PredicateBooleanExt;
     let dir = tempdir().unwrap();
     let input = dir.path().join("malformed.igs");
     let output = dir.path().join("existing.step");
@@ -753,6 +770,7 @@ fn existing_output_is_refused_before_decode() {
     assert_eq!(fs::read(output).unwrap(), b"keep");
 }
 
+#[cfg(feature = "step")]
 #[test]
 fn input_named_tmp_survives_convert_and_temp_names_do_not_collide() {
     let dir = tempdir().unwrap();
@@ -793,6 +811,7 @@ fn input_named_tmp_survives_convert_and_temp_names_do_not_collide() {
     );
 }
 
+#[cfg(feature = "creo")]
 #[test]
 fn cadir_extension_is_inferred_and_decode_output_matches_stdout() {
     let dir = tempdir().unwrap();
@@ -858,8 +877,10 @@ fn cadir_extension_is_inferred_and_decode_output_matches_stdout() {
     assert!(!neutral_sidecar.exists());
 }
 
+#[cfg(all(feature = "f3d", feature = "sldprt"))]
 #[test]
 fn fidelity_sidecar_replays_native_bytes_and_missing_sidecar_refuses_prewrite() {
+    use predicates::prelude::PredicateBooleanExt;
     let dir = tempdir().unwrap();
     for format in ["f3d", "sldprt"] {
         let native = dir.path().join(format!("source.{format}"));
@@ -957,6 +978,7 @@ fn cadir_format_name_and_json_alias_both_work() {
     }
 }
 
+#[cfg(feature = "step")]
 #[test]
 fn explicit_format_warns_when_known_extension_disagrees() {
     let dir = tempdir().unwrap();
@@ -983,8 +1005,10 @@ fn explicit_format_warns_when_known_extension_disagrees() {
         ));
 }
 
+#[cfg(all(feature = "rhino", feature = "sldprt", feature = "step"))]
 #[test]
 fn convert_refuses_binary_output_to_stdout() {
+    use predicates::prelude::PredicateBooleanExt;
     let dir = tempdir().unwrap();
     let ir = unit_cube().expect("unit cube fixture is admitted");
     let model = fixture(dir.path(), "cube.cadir.json", &ir);
@@ -1052,6 +1076,7 @@ fn convert_refuses_binary_output_to_stdout() {
         .stdout(predicate::str::starts_with("ISO-10303-21;"));
 }
 
+#[cfg(feature = "step")]
 #[test]
 fn from_and_to_aliases_match_input_format_and_format() {
     let dir = tempdir().unwrap();

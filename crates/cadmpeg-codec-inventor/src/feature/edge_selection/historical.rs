@@ -3,7 +3,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use cadmpeg_asm::sab::Record;
+use cadmpeg_asm::{nurbs::toks::SubtypeTable, sab::Record};
 use cadmpeg_core::{
     decode::{unique_index, DecodeContext, View},
     CodecError,
@@ -22,6 +22,7 @@ use crate::pmdc::{state_content_header, u32_list_with_context, Cursor, PmDcRefer
 pub(super) struct StoredSelector {
     pub(super) source: u32,
     pub(super) generators: Vec<u32>,
+    pub(super) secondary: Vec<u32>,
     pub(super) key: u32,
     body: PmDcReference,
     item: PmDcReference,
@@ -49,12 +50,17 @@ pub(super) fn parse(
         return Ok(None);
     }
     let generators = u32_list_with_context(ctx, &mut cursor, 8, "edge selector generators")?;
+    let secondary = u32_list_with_context(ctx, &mut cursor, 8, "edge selector secondary names")?;
+    let mut distinct = HashSet::new();
     if !matches!(generators.values().len(), 1 | 2)
         || generators.values().contains(&0)
         || generators.values().iter().collect::<HashSet<_>>().len() != generators.values().len()
-        || !u32_list_with_context(ctx, &mut cursor, 8, "edge selector secondary names")?
+        || secondary.values().contains(&0)
+        || !generators
             .values()
-            .is_empty()
+            .iter()
+            .chain(secondary.values())
+            .all(|value| distinct.insert(*value))
         || cursor.u8("edge selector suffix form")? != 0
     {
         return Ok(None);
@@ -69,14 +75,29 @@ pub(super) fn parse(
         "retain Inventor edge selector generators",
     )?;
     names.copy_from_slice(generators.values());
+    let mut secondary_names = ctx.alloc_filled(
+        secondary.values().len(),
+        0,
+        "retain Inventor edge selector secondary names",
+    )?;
+    secondary_names.copy_from_slice(secondary.values());
     Ok(Some(StoredSelector {
         source: header.source_index,
         generators: names,
+        secondary: secondary_names,
         key,
         body,
         item,
         context,
     }))
+}
+
+/// Whether every secondary name of the selector is a feature source index of its segment.
+pub(super) fn secondary_names_known(selector: &StoredSelector, features: &HashSet<u32>) -> bool {
+    selector
+        .secondary
+        .iter()
+        .all(|name| features.contains(name))
 }
 
 pub(super) fn source(payload: View<'_>, version: u8) -> Result<u32, CodecError> {
@@ -100,7 +121,10 @@ pub(super) fn links(selector: &StoredSelector, type_at: impl Fn(u32) -> Option<[
 
 #[derive(Debug)]
 pub(in crate::feature) struct SelectedEdge {
+    /// The matched owner with the lowest record index.
     pub(super) owner: i64,
+    /// Number of matched owners, all with the same geometry.
+    pub(super) owners: usize,
     pub(super) item: u32,
     pub(super) geometry: EdgeGeometry,
 }
@@ -110,12 +134,13 @@ pub(crate) const fn supported_schema(schema: u32) -> bool {
 }
 
 pub(super) fn selected(
+    ctx: &DecodeContext<'_>,
     records: &[Record],
     selectors: &[StoredSelector],
     schema: u32,
-) -> HashMap<u32, SelectedEdge> {
+) -> Result<HashMap<u32, SelectedEdge>, CodecError> {
     if !supported_schema(schema) {
-        return HashMap::new();
+        return Ok(HashMap::new());
     }
     let by_index = unique_index(
         records
@@ -126,6 +151,7 @@ pub(super) fn selected(
         .into_iter()
         .filter_map(|(index, record)| Some((index, record?)))
         .collect::<HashMap<_, _>>();
+    let subtypes = SubtypeTable::from_records(records);
     let mut matches = HashMap::<(u32, u32), HashSet<i64>>::new();
     for record in records {
         if let Some((source, key, owner)) = super::matched(record, schema) {
@@ -133,26 +159,61 @@ pub(super) fn selected(
         }
     }
     let selectors = unique_index(selectors.iter().map(|selector| (selector.source, selector)));
-    unique_index(selectors.values().filter_map(|selector| {
-        let selector = selector.as_ref()?;
-        let owners = matches.get(&(selector.source, selector.key))?;
-        if owners.len() != 1 {
-            return None;
+    let mut edges = Vec::new();
+    for selector in selectors.values() {
+        let Some(selector) = selector.as_ref() else {
+            continue;
+        };
+        let Some(owners) = matches.get(&(selector.source, selector.key)) else {
+            continue;
+        };
+        let Some(owner) = owners.iter().min().copied() else {
+            continue;
+        };
+        // The lowest-index owner supplies the baseline and the emitted
+        // geometry, whatever the order in which the owners were matched.
+        let mut ordered = owners.iter().copied().collect::<Vec<_>>();
+        ordered.sort_unstable();
+        let mut geometry = None::<super::geometry::EdgeGeometry>;
+        let mut agree = true;
+        for candidate in &ordered {
+            let Some(edge) = by_index.get(candidate) else {
+                agree = false;
+                break;
+            };
+            let Some(found) = super::geometry::revision(ctx, edge, &by_index, &subtypes)? else {
+                agree = false;
+                break;
+            };
+            match &geometry {
+                Some(first) if !first.same_as(&found) => {
+                    agree = false;
+                    break;
+                }
+                Some(_) => {}
+                None => geometry = Some(found),
+            }
         }
-        let owner = *owners.iter().next()?;
-        let geometry = super::geometry::line(by_index.get(&owner)?, &by_index)?;
-        Some((
+        let Some(geometry) = geometry.filter(|_| agree) else {
+            continue;
+        };
+        let Some(item) = selector.item.record_ordinal() else {
+            continue;
+        };
+        edges.push((
             selector.source,
             SelectedEdge {
                 owner,
-                item: selector.item.record_ordinal()?,
+                owners: owners.len(),
+                item,
                 geometry,
             },
-        ))
-    }))
-    .into_iter()
-    .filter_map(|(source, edge)| Some((source, edge?)))
-    .collect()
+        ));
+    }
+    Ok(unique_index(edges)
+        .into_iter()
+        .filter_map(|(source, edge)| Some((source, edge?)))
+        .collect())
 }
 
 fn controls<'a>(
@@ -472,6 +533,35 @@ pub(crate) fn valid<'a>(
                         == 1
             })
     })
+}
+
+/// One note counting the edge-treatment features that use a selected input
+/// edge with several matched owners of identical geometry.
+pub(super) fn ambiguous_owner_losses(
+    inventory: &crate::feature::FeatureInventory,
+    features: &[Feature],
+) -> Vec<cadmpeg_ir::report::loss::LossNote> {
+    let ambiguous = inventory
+        .edge_inputs
+        .historical
+        .iter()
+        .filter(|(_, edge)| edge.owners > 1)
+        .filter_map(|((token, source), _)| edge_id(token, *source).ok())
+        .collect::<HashSet<_>>();
+    let count = features
+        .iter()
+        .filter(|feature| {
+            selections(feature).iter().any(|selection| {
+                matches!(selection, EdgeSelection::Historical { edges, .. }
+                    if edges.iter().any(|edge| ambiguous.contains(edge)))
+            })
+        })
+        .count();
+    if count == 0 {
+        Vec::new()
+    } else {
+        vec![crate::loss::InventorLossCode::FeatureEdgeOwnerIdenticalGeometry.note(format!("{count} edge-treatment feature(s) select an input edge with several matched owner edges that agree at the start, end, interval midpoint, and midpoint tangent; agreement at these samples is taken as the same edge, the stored body state of the edge is not proven, and the owner with the lowest record index is used."))]
+    }
 }
 
 pub(super) fn native_losses(features: &[Feature]) -> Vec<cadmpeg_ir::report::loss::LossNote> {

@@ -301,6 +301,7 @@ fn thread_face_group_uses_first_reference_transition_candidates() {
         candidate_edges: Vec::new(),
         alternate_selector_faces: Vec::new(),
         alternate_selector_edges: Vec::new(),
+        operand_offset: None,
     };
     let operand =
         DesignFaceOperand::try_new(crate::records::topology::face::DesignFaceOperandDraft {
@@ -872,6 +873,8 @@ fn hole_case_with(
                     .try_into()
                     .unwrap(),
                 context_id_offset: 0,
+                serialization_form:
+                    crate::records::topology::entity_selection::SelectionSerializationForm::Zero,
                 identity_record_index: 103,
                 identity_record_offset: 0,
                 primary_identity: 18044,

@@ -11,6 +11,7 @@ use crate::support::{fixture, minimal_rhino_archive};
 ///
 /// Inventor, CATIA, Creo, NX, and SAT are read-only; a single column would
 /// have to lie about one half of every one of them.
+#[cfg(feature = "inventor")]
 #[test]
 fn formats_separates_reading_from_writing() {
     Command::cargo_bin("cadmpeg")
@@ -35,6 +36,7 @@ fn formats_separates_reading_from_writing() {
 /// `crates/cadmpeg-registry/docs/dialect-support.toml`, and the compiled `Encoder::targets()` catalog
 /// — so a row that reads correctly and writes correctly proves the join, not
 /// just the rendering.
+#[cfg(feature = "iges")]
 #[test]
 fn dialects_joins_identity_capability_and_the_compiled_catalog() {
     Command::cargo_bin("cadmpeg")

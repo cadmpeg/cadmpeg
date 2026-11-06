@@ -5,11 +5,16 @@ use std::fs;
 
 use assert_cmd::Command;
 use cadmpeg_ir::examples::unit_cube;
-use predicates::prelude::{predicate, PredicateBooleanExt};
+use predicates::prelude::predicate;
 use tempfile::tempdir;
 
-use crate::support::{fixture, geometryless_creo, minimal_rhino_archive};
+use crate::support::fixture;
+#[cfg(feature = "creo")]
+use crate::support::geometryless_creo;
+#[cfg(feature = "rhino")]
+use crate::support::minimal_rhino_archive;
 
+#[cfg(all(feature = "creo", feature = "step"))]
 #[test]
 fn artifact_reports_cover_success_with_and_without_geometry() {
     let dir = tempdir().unwrap();
@@ -74,6 +79,7 @@ fn artifact_reports_cover_success_with_and_without_geometry() {
     assert!(value["export"].is_object());
 }
 
+#[cfg(feature = "step")]
 #[test]
 fn convert_refuses_one_path_for_the_cad_file_and_command_report() {
     let dir = tempdir().unwrap();
@@ -104,8 +110,10 @@ fn convert_refuses_one_path_for_the_cad_file_and_command_report() {
     assert!(!output.exists());
 }
 
+#[cfg(feature = "step")]
 #[test]
 fn report_write_failure_does_not_replace_a_typed_refusal() {
+    use predicates::prelude::PredicateBooleanExt;
     let dir = tempdir().unwrap();
     let cube = fixture(
         dir.path(),
@@ -133,6 +141,7 @@ fn report_write_failure_does_not_replace_a_typed_refusal() {
         );
 }
 
+#[cfg(feature = "step")]
 #[test]
 fn report_write_failure_does_not_reclassify_a_completed_conversion() {
     let dir = tempdir().unwrap();
@@ -165,6 +174,7 @@ fn report_write_failure_does_not_reclassify_a_completed_conversion() {
     assert!(fs::read(output).unwrap().starts_with(b"ISO-10303-21"));
 }
 
+#[cfg(feature = "f3d")]
 #[test]
 fn f3d_export_report_identifies_regenerated_output() {
     let dir = tempdir().unwrap();
@@ -204,6 +214,7 @@ fn f3d_export_report_identifies_regenerated_output() {
             .is_some_and(|note| note.contains("regenerated"))));
 }
 
+#[cfg(feature = "creo")]
 #[test]
 fn reporting_commands_emit_json_only_on_stdout() {
     let dir = tempdir().unwrap();
@@ -250,6 +261,7 @@ fn reporting_commands_emit_json_only_on_stdout() {
     assert_eq!(value["command"], "inspect");
 }
 
+#[cfg(feature = "rhino")]
 #[test]
 fn inspect_report_writes_summary_to_file() {
     let dir = tempdir().unwrap();
@@ -304,6 +316,7 @@ fn validate_report_writes_result_to_file() {
     assert!(value["check_report"].is_object());
 }
 
+#[cfg(feature = "step")]
 #[test]
 fn check_classifies_and_reports_an_unsupported_dialect() {
     let dir = tempdir().unwrap();
@@ -340,6 +353,7 @@ fn check_classifies_and_reports_an_unsupported_dialect() {
     assert!(value["check_report"].is_null());
 }
 
+#[cfg(feature = "step")]
 #[test]
 fn inspect_classifies_and_reports_an_unsupported_dialect() {
     let dir = tempdir().unwrap();

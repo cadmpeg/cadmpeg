@@ -704,6 +704,24 @@ pub(super) struct NodeCarriers {
     pub(super) lane_refusals: Vec<LossNote>,
 }
 
+impl NodeCarriers {
+    /// Each offset, `SP_CURVE`, and intersection carrier and a surface
+    /// identity it names.
+    pub(super) fn reference_edges(&self) -> Vec<(u32, u32)> {
+        let mut out = Vec::new();
+        if let Some(offsets) = &self.offsets {
+            out.extend(offsets.iter().map(|(attr, offset)| (*attr, offset.support)));
+        }
+        if let Some(curves) = &self.sp_curves {
+            out.extend(curves.iter().map(|(attr, curve)| (*attr, curve.surface)));
+        }
+        if let Some(inputs) = &self.intersections {
+            out.extend(inputs.support_edges());
+        }
+        out
+    }
+}
+
 /// The source of the compact analytic and NURBS carriers of one stream body.
 enum Framing {
     /// Scan every `00 TT` offset; `Some(deltas)` selects one record framing.
@@ -770,6 +788,7 @@ fn scan_carriers_with_framing(
             }
         }
     }
+    let scanned_splines = node_splines.is_none();
     let (curves, surfaces) = match node_splines {
         Some(splines) => (splines.curves, splines.surfaces),
         None => (
@@ -834,7 +853,11 @@ fn scan_carriers_with_framing(
     // SP_CURVEs read on the supports indexed above.
     if body.windows(2).any(|tag| tag == [0x00, 0x89]) {
         out.sp_curves = node_sp_curves.unwrap_or_else(|| {
-            let mut pcurves = spline::scan_pcurve_carriers(body);
+            let mut pcurve_refusals = Vec::new();
+            let mut pcurves = spline::scan_pcurve_carriers(body, &mut pcurve_refusals);
+            if scanned_splines {
+                lane_refusals.append(&mut pcurve_refusals);
+            }
             pcurves.retain(|attr, _| !exclude.contains(attr));
             sp_curve::scan(body, &pcurves)
         });

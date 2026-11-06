@@ -3,7 +3,7 @@
 //! (`parasolid.md` §2).
 
 use super::{
-    merge_record_frame, parse_sense, Bridge, Coedge, EdgeReferences, EdgeUse, Loop, Point,
+    merge_record_frame, parse_sense, Bridge, EdgeReferences, EdgeUse, Fin, Loop, Point,
     RecordFrame, Tables, VertexUse,
 };
 use cadmpeg_parasolid::records::deltas::node::DeltasNode;
@@ -61,11 +61,19 @@ pub(in crate::brep) fn tables(
                 }
             }
             FIN => {
-                let record = coedge(&node, offset)?;
-                t.coedge_frames.insert(record.attr, frame());
+                let record = fin(&node, offset)?;
+                let attr = record.attr();
+                t.coedge_frames.insert(attr, frame());
                 t.coedge_owners
-                    .insert(record.attr, HashSet::from([record.refs[1]]));
-                t.coedges.insert(record.attr, record);
+                    .insert(attr, HashSet::from([record.owner()]));
+                match record {
+                    Fin::Edge(record) => {
+                        t.coedges.insert(attr, record);
+                    }
+                    Fin::Vertex(record) => {
+                        t.vertex_loop_fins.insert(attr, record);
+                    }
+                }
             }
             VERTEX => {
                 let record = vertex_use(&node, offset)?;
@@ -200,9 +208,9 @@ pub(in crate::brep) fn deltas_tables(
                 }
             }
             FIN => {
-                let record = coedge(&node, offset)?;
-                let owners = HashSet::from([record.refs[1]]);
-                t.merge_coedge_frame(record.attr, frame, Some(record), owners);
+                let record = fin(&node, offset)?;
+                let owners = HashSet::from([record.owner()]);
+                t.merge_fin_frame(record.attr(), frame, Some(record), owners);
             }
             VERTEX => {
                 let record = vertex_use(&node, offset)?;
@@ -291,23 +299,19 @@ fn edge_use(node: &impl NodeFields, offset: usize) -> Option<EdgeUse> {
     })
 }
 
-fn coedge(node: &impl NodeFields, offset: usize) -> Option<Coedge> {
-    Some(Coedge {
-        attr: node.index(),
-        refs: node.pointers([
-            "attributes_features",
-            "loop",
-            "forward",
-            "backward",
-            "vertex",
-            "other",
-            "edge",
-            "curve",
-            "next_at_vx",
-        ])?,
-        sense: parse_sense(node.char("sense")?)?,
-        offset,
-    })
+fn fin(node: &impl NodeFields, offset: usize) -> Option<Fin> {
+    let refs = node.pointers([
+        "attributes_features",
+        "loop",
+        "forward",
+        "backward",
+        "vertex",
+        "other",
+        "edge",
+        "curve",
+        "next_at_vx",
+    ])?;
+    Fin::read(node.index(), refs, node.char("sense")?, offset)
 }
 
 fn vertex_use(node: &impl NodeFields, offset: usize) -> Option<VertexUse> {

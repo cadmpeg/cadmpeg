@@ -3,7 +3,7 @@
 
 use cadmpeg_core::decode::unique_index;
 use std::cmp::Reverse;
-use std::collections::{BinaryHeap, HashMap, HashSet};
+use std::collections::{BTreeMap, BinaryHeap, HashMap, HashSet};
 
 use cadmpeg_core::decode::{DecodeContext, View};
 use cadmpeg_core::CodecError;
@@ -91,8 +91,8 @@ pub(crate) struct DesignInventory {
     pub(crate) issues: Vec<RecordIssue>,
     /// Records of an unrecognised type whose payload has the base-unit field
     /// layout with magnitude 1 and factor 1, keyed by segment token and
-    /// ordinal.
-    pub(crate) opaque_base_units: HashSet<(String, u32)>,
+    /// ordinal, with the record type.
+    pub(crate) opaque_base_units: HashMap<(String, u32), [u8; 16]>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -354,7 +354,7 @@ pub(crate) fn inventory(
         model_roots: Vec::new(),
         brep_segments: Vec::new(),
         issues: Vec::new(),
-        opaque_base_units: std::collections::HashSet::default(),
+        opaque_base_units: std::collections::HashMap::default(),
     };
     for segment in &document.segments {
         let role = match segment.kind {
@@ -510,12 +510,11 @@ pub(crate) fn inventory(
                     },
                 )
             } else {
-                if record.type_id == UNDEFINED_BASE_UNIT_TYPE
-                    && has_unscaled_base_unit_layout(record.payload)
-                {
-                    inventory
-                        .opaque_base_units
-                        .insert((segment.pair.token.key().to_string(), record.ordinal));
+                if has_unscaled_base_unit_layout(record.payload) {
+                    inventory.opaque_base_units.insert(
+                        (segment.pair.token.key().to_string(), record.ordinal),
+                        record.type_id,
+                    );
                 }
                 continue;
             };
@@ -547,11 +546,32 @@ pub(crate) struct ParameterProjection {
     pub(crate) bounded: usize,
     /// Records whose parameter table has no established owner.
     pub(crate) unresolved_scopes: usize,
-    /// Projected records whose root literal has an unrecognised unit type;
+    /// Projected records whose root literal has the undefined base-unit type;
     /// they carry their value and no expression text.
     pub(crate) value_only: usize,
+    /// Projected records whose root literal has another base-unit type
+    /// recognised by record layout only, counted by type; they carry their
+    /// value and no expression text.
+    pub(crate) layout_assumed: BTreeMap<[u8; 16], usize>,
 }
 
+/// The loss for parameter records whose root literal unit is a base-unit
+/// type read by record layout only, when there are any. Each type is named
+/// once, with its count.
+pub(crate) fn layout_assumed_loss(assumed: &BTreeMap<[u8; 16], usize>) -> Option<LossNote> {
+    if assumed.is_empty() {
+        return None;
+    }
+    let total: usize = assumed.values().sum();
+    let types = assumed
+        .iter()
+        .map(|(type_id, count)| format!("{} ({count})", crate::pmdc::type_id_string(*type_id)))
+        .collect::<Vec<_>>()
+        .join(", ");
+    Some(InventorLossCode::ParameterUnitLayoutAssumed.note(format!(
+        "Transferred {total} Inventor parameter(s) with their exact value and no expression text: the unit record of the root literal has base-unit type {types}, and the base-unit reading rests on the record layout only; its dimension and scale are not defined."
+    )))
+}
 /// The loss for parameter records whose expression renders past
 /// [`MAX_EXPRESSION_TEXT_BYTES`], when there are any.
 pub(crate) fn bounded_expression_loss(bounded: usize) -> Option<LossNote> {
@@ -610,6 +630,7 @@ pub(crate) fn project_parameters(
     let mut bounded = 0usize;
     let mut unresolved_scopes = 0usize;
     let mut value_only = 0usize;
+    let mut layout_assumed = BTreeMap::<[u8; 16], usize>::new();
     for parameter in &inventory.parameters {
         let token = parameter.identity.segment_token.as_str();
         if parameters
@@ -637,7 +658,7 @@ pub(crate) fn project_parameters(
             unresolved += 1;
             continue;
         };
-        let opaque_literal = opaque_literal_formula(
+        let opaque_unit = opaque_literal_formula(
             token,
             parameter.formula.index(),
             &expressions,
@@ -646,7 +667,7 @@ pub(crate) fn project_parameters(
         );
         let expression_length = match renderer.shape(token, parameter.formula.index())? {
             ExpressionShape::Text(length) => length,
-            ExpressionShape::Open if opaque_literal => 0,
+            ExpressionShape::Open if opaque_unit.is_some() => 0,
             ExpressionShape::Open => {
                 unresolved += 1;
                 continue;
@@ -675,12 +696,15 @@ pub(crate) fn project_parameters(
             "project Inventor parameter",
         )?;
         let id = parameter_id(parameter)?;
-        let (expression, dependencies) = if opaque_literal
-            && matches!(
-                renderer.shape(token, parameter.formula.index())?,
-                ExpressionShape::Open
-            ) {
-            value_only += 1;
+        let (expression, dependencies) = if let (Some(unit_type), ExpressionShape::Open) = (
+            opaque_unit,
+            renderer.shape(token, parameter.formula.index())?,
+        ) {
+            if unit_type == UNDEFINED_BASE_UNIT_TYPE {
+                value_only += 1;
+            } else {
+                *layout_assumed.entry(unit_type).or_insert(0) += 1;
+            }
             (String::new(), Vec::new())
         } else {
             renderer.emit(token, parameter.formula.index(), expression_length)?
@@ -710,35 +734,28 @@ pub(crate) fn project_parameters(
         bounded,
         unresolved_scopes,
         value_only,
+        layout_assumed,
     })
 }
 
-/// Whether a parameter formula is one value literal whose unit definition has
-/// one numerator naming a record of the base-unit layout and an unrecognised
-/// type. Such a literal has an exact internal value and no known display
-/// symbol.
+/// The record type of the base unit when a parameter formula is one value
+/// literal whose unit definition has one numerator naming a record of the
+/// base-unit layout and an unrecognised type. Such a literal has an exact
+/// internal value and no known display symbol.
 fn opaque_literal_formula(
     token: &str,
     formula: u32,
     expressions: &HashMap<(&str, u32), Option<&PmDcExpression>>,
     units: &HashMap<(&str, u32), Option<&PmDcUnit>>,
-    opaque: &HashSet<(String, u32)>,
-) -> bool {
-    let Some(ordinal) = formula.checked_sub(1) else {
-        return false;
-    };
-    let Some(expression) = expressions.get(&(token, ordinal)).copied().flatten() else {
-        return false;
-    };
+    opaque: &HashMap<(String, u32), [u8; 16]>,
+) -> Option<[u8; 16]> {
+    let ordinal = formula.checked_sub(1)?;
+    let expression = expressions.get(&(token, ordinal)).copied().flatten()?;
     if !matches!(expression.kind, PmDcExpressionKind::Value { .. }) {
-        return false;
+        return None;
     }
-    let Some(unit_ordinal) = expression.unit.index().checked_sub(1) else {
-        return false;
-    };
-    let Some(definition) = units.get(&(token, unit_ordinal)).copied().flatten() else {
-        return false;
-    };
+    let unit_ordinal = expression.unit.index().checked_sub(1)?;
+    let definition = units.get(&(token, unit_ordinal)).copied().flatten()?;
     let PmDcUnitKind::Definition {
         numerators,
         denominators,
@@ -746,17 +763,16 @@ fn opaque_literal_formula(
         ..
     } = &definition.kind
     else {
-        return false;
+        return None;
     };
     let [base] = numerators.references() else {
-        return false;
+        return None;
     };
     if !denominators.references().is_empty() || derived.index() != 0 {
-        return false;
+        return None;
     }
-    base.index()
-        .checked_sub(1)
-        .is_some_and(|base_ordinal| opaque.contains(&(token.to_owned(), base_ordinal)))
+    let base_ordinal = base.index().checked_sub(1)?;
+    opaque.get(&(token.to_owned(), base_ordinal)).copied()
 }
 
 /// Whether a payload has the 22-byte base-unit layout with magnitude 1 and
@@ -2169,7 +2185,7 @@ mod tests {
             model_roots: Vec::new(),
             brep_segments: Vec::new(),
             issues: Vec::new(),
-            opaque_base_units: std::collections::HashSet::default(),
+            opaque_base_units: std::collections::HashMap::default(),
         };
         let scopes = document_scopes(&[("width", 3), ("height", 5)]);
         let arena = DecodeArena::new();
@@ -2291,15 +2307,15 @@ mod tests {
             model_roots: Vec::new(),
             brep_segments: Vec::new(),
             issues: Vec::new(),
-            opaque_base_units: std::collections::HashSet::default(),
+            opaque_base_units: std::collections::HashMap::default(),
         }
     }
 
     /// The single-parameter fixture with a length parameter unit and a root
     /// literal whose unit definition names a record that no admitted unit
-    /// record covers. `opaque` lists that record among the unit-layout records
-    /// of unrecognised type.
-    fn opaque_literal_inventory(opaque: bool, numerators: usize) -> DesignInventory {
+    /// record covers. `opaque` is the type of that record when it is held among
+    /// the unit-layout records of unrecognised type.
+    fn opaque_literal_inventory(opaque: Option<[u8; 16]>, numerators: usize) -> DesignInventory {
         let mut inventory = single_parameter_inventory();
         inventory.units[0].edit(|unit| {
             if let PmDcUnitKind::Base { dimension, .. } = &mut unit.kind {
@@ -2323,10 +2339,10 @@ mod tests {
         });
         inventory.units.push(definition);
         inventory.expressions[0].edit(|expression| expression.unit = reference(5, false));
-        if opaque {
+        if let Some(type_id) = opaque {
             inventory
                 .opaque_base_units
-                .insert(("segment".to_owned(), 5));
+                .insert(("segment".to_owned(), 5), type_id);
         }
         inventory
     }
@@ -2347,7 +2363,10 @@ mod tests {
 
     #[test]
     fn literal_with_unrecognised_unit_type_keeps_value_without_expression() {
-        let projection = project_inventory(&opaque_literal_inventory(true, 1));
+        let projection = project_inventory(&opaque_literal_inventory(
+            Some(super::UNDEFINED_BASE_UNIT_TYPE),
+            1,
+        ));
         assert_eq!(
             (
                 projection.unresolved,
@@ -2380,30 +2399,72 @@ mod tests {
     }
 
     #[test]
-    fn only_the_undefined_base_unit_type_is_held_as_an_opaque_base_unit() {
+    fn layout_matched_base_unit_records_are_held_with_their_type() {
         let payload = unscaled_base_unit_payload();
-        let admitted = inventory_with_record(
-            super::UNDEFINED_BASE_UNIT_TYPE,
-            &payload,
-            DecodePolicy::service(),
-        )
-        .expect("undefined base unit is held");
-        assert_eq!(admitted.opaque_base_units.len(), 1);
-        let admitted = inventory_with_record([1; 16], &payload, DecodePolicy::service())
+        for type_id in [super::UNDEFINED_BASE_UNIT_TYPE, [1; 16]] {
+            let admitted = inventory_with_record(type_id, &payload, DecodePolicy::service())
+                .expect("layout-matched base unit is held");
+            assert_eq!(
+                admitted
+                    .opaque_base_units
+                    .values()
+                    .copied()
+                    .collect::<Vec<_>>(),
+                vec![type_id]
+            );
+        }
+        let mut scaled = payload.clone();
+        scaled[6..14].copy_from_slice(&2.0_f64.to_le_bytes());
+        let admitted = inventory_with_record([1; 16], &scaled, DecodePolicy::service())
             .expect("unknown record is skipped");
         assert!(admitted.opaque_base_units.is_empty());
     }
 
     #[test]
+    fn literal_with_other_layout_matched_unit_type_reports_layout_assumed() {
+        let other = [1; 16];
+        let projection = project_inventory(&opaque_literal_inventory(Some(other), 1));
+        assert_eq!(
+            (
+                projection.unresolved,
+                projection.bounded,
+                projection.value_only
+            ),
+            (0, 0, 0)
+        );
+        assert_eq!(projection.layout_assumed.get(&other), Some(&1));
+        let [parameter] = projection.parameters.as_slice() else {
+            panic!("one parameter");
+        };
+        assert_eq!(parameter.expression, "");
+        assert_eq!(
+            parameter.value,
+            Some(ParameterValue::Length(
+                Length::new(20.0).expect("finite length fixture")
+            ))
+        );
+        let note = super::layout_assumed_loss(&projection.layout_assumed).expect("loss");
+        assert_eq!(
+            note.code,
+            InventorLossCode::ParameterUnitLayoutAssumed.kind()
+        );
+        assert!(note.message.contains(&crate::pmdc::type_id_string(other)));
+        assert!(note.message.contains("record layout only"));
+    }
+
+    #[test]
     fn literal_unit_naming_an_unclassified_record_stays_unresolved() {
-        let projection = project_inventory(&opaque_literal_inventory(false, 1));
+        let projection = project_inventory(&opaque_literal_inventory(None, 1));
         assert!(projection.parameters.is_empty());
         assert_eq!((projection.unresolved, projection.value_only), (1, 0));
     }
 
     #[test]
     fn literal_unit_with_two_numerators_stays_unresolved() {
-        let projection = project_inventory(&opaque_literal_inventory(true, 2));
+        let projection = project_inventory(&opaque_literal_inventory(
+            Some(super::UNDEFINED_BASE_UNIT_TYPE),
+            2,
+        ));
         assert!(projection.parameters.is_empty());
         assert_eq!((projection.unresolved, projection.value_only), (1, 0));
     }
@@ -2982,7 +3043,7 @@ mod tests {
             model_roots: Vec::new(),
             brep_segments: Vec::new(),
             issues: Vec::new(),
-            opaque_base_units: std::collections::HashSet::default(),
+            opaque_base_units: std::collections::HashMap::default(),
         }
     }
 

@@ -6,7 +6,10 @@ use crate::design::decode::scopes::draft::exact_draft_operation_with_owners;
 use crate::design::decode::scopes::fixed_parameters::{
     exact_fixed_chamfer_parameters, exact_fixed_fillet_parameters,
 };
-use crate::design::decode::scopes::path_feature::exact_path_feature_construction;
+use crate::design::decode::scopes::parameter_scope::parameter_scope_payload_length;
+use crate::design::decode::scopes::path_feature::{
+    exact_path_feature_construction, marker_one_revolve_assumed_length,
+};
 use crate::records::feature::direct_face::DesignDraftOperation;
 use crate::records::feature::extrude::DesignExtrudeOperation;
 use crate::records::feature::fixed_parameters::{
@@ -787,25 +790,58 @@ fn fixed_kind_edge_and_revolve_operations(
         ))
     );
 
-    let class403_start = bytes.len();
-    let mut class403_revolve = vec![0; 387];
-    class403_revolve[21..25].copy_from_slice(&2u32.to_le_bytes());
-    class403_revolve[25..29].copy_from_slice(&2u32.to_le_bytes());
-    class403_revolve[29..31].copy_from_slice(&[0, 1]);
-    class403_revolve[34] = 1;
-    class403_revolve[35..39].copy_from_slice(&indexed_angle_record_index.to_le_bytes());
-    let mut class403_guid = Vec::new();
-    lp_utf16(&mut class403_guid, "00000000-0000-0000-0000-000000000000");
-    class403_revolve[107..183].copy_from_slice(&class403_guid);
-    bytes.extend_from_slice(&class403_revolve);
-    let mut class403_scope = revolve_scope.clone();
-    class403_scope.class_tag =
+    bytes[indexed_revolve_start + 11] = 1;
+    assert!(!matches!(
+        exact_path_feature_construction(
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &indexed_revolve_scope,
+            std::slice::from_ref(&indexed_angle),
+        ),
+        Some(DesignPathFeatureConstruction::Revolve(_))
+    ));
+    bytes[indexed_revolve_start + 11] = 0;
+
+    for (class_tag, paired_class_tag) in [("304", "258"), ("408", "259")] {
+        let mut scope = indexed_revolve_scope.clone();
+        scope.class_tag =
+            crate::records::references::DesignClassTag::try_from(class_tag.to_owned()).unwrap();
+        scope.paired_class_tag =
+            crate::records::references::DesignClassTag::try_from(paired_class_tag.to_owned())
+                .unwrap();
+        assert_eq!(
+            exact_path_feature_construction(
+                &bytes,
+                &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+                &scope,
+                std::slice::from_ref(&indexed_angle),
+            ),
+            indexed_revolve_construction
+        );
+    }
+
+    let direction_pair_start = bytes.len();
+    let mut direction_pair_revolve = vec![0; 387];
+    direction_pair_revolve[21..25].copy_from_slice(&2u32.to_le_bytes());
+    direction_pair_revolve[25..29].copy_from_slice(&2u32.to_le_bytes());
+    direction_pair_revolve[29..31].copy_from_slice(&[0, 1]);
+    direction_pair_revolve[34] = 1;
+    direction_pair_revolve[35..39].copy_from_slice(&indexed_angle_record_index.to_le_bytes());
+    let mut direction_pair_guid = Vec::new();
+    lp_utf16(
+        &mut direction_pair_guid,
+        "00000000-0000-0000-0000-000000000000",
+    );
+    direction_pair_revolve[107..183].copy_from_slice(&direction_pair_guid);
+    bytes.extend_from_slice(&direction_pair_revolve);
+    let mut direction_pair_scope = revolve_scope.clone();
+    direction_pair_scope.class_tag =
         crate::records::references::DesignClassTag::try_from("403".to_owned()).unwrap();
-    class403_scope.paired_class_tag =
+    direction_pair_scope.paired_class_tag =
         crate::records::references::DesignClassTag::try_from("258".to_owned()).unwrap();
-    class403_scope
+    direction_pair_scope
         .try_edit(|draft| {
-            draft.byte_offset = u64_from_index(class403_start);
+            draft.byte_offset = u64_from_index(direction_pair_start);
             draft.frame_length = 387;
             draft.reference_members = crate::records::identity::ReferenceRun::unlocated(vec![
                 200,
@@ -823,31 +859,34 @@ fn fixed_kind_edge_and_revolve_operations(
             draft.layout_fixture_tail();
         })
         .unwrap();
-    let mut class403_angle = indexed_angle.clone();
+    let mut direction_pair_angle = indexed_angle.clone();
     {
-        let mut wire =
-            crate::records::parameters::DesignParameterOwnerWire::from(class403_angle.clone());
-        wire.scope_record_index = class403_scope.record_index;
-        wire.byte_offset = u64_from_index(class403_start);
-        wire.evaluated_value_offset = u64_from_index(class403_start + 40);
-        class403_angle = crate::records::parameters::DesignParameterOwner::try_from(wire).unwrap();
+        let mut wire = crate::records::parameters::DesignParameterOwnerWire::from(
+            direction_pair_angle.clone(),
+        );
+        wire.scope_record_index = direction_pair_scope.record_index;
+        wire.byte_offset = u64_from_index(direction_pair_start);
+        wire.evaluated_value_offset = u64_from_index(direction_pair_start + 40);
+        direction_pair_angle =
+            crate::records::parameters::DesignParameterOwner::try_from(wire).unwrap();
     }
+    let direction_pair_construction = exact_path_feature_construction(
+        &bytes,
+        &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+        &direction_pair_scope,
+        std::slice::from_ref(&direction_pair_angle),
+    );
     assert_eq!(
-        exact_path_feature_construction(
-            &bytes,
-            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-            &class403_scope,
-            std::slice::from_ref(&class403_angle),
-        ),
+        direction_pair_construction,
         Some(DesignPathFeatureConstruction::Revolve(
             crate::records::feature::path_features::DesignRevolveConstruction {
                 operation: DesignExtrudeOperation::Cut,
-                operation_offset: u64_from_index(class403_start + 21),
+                operation_offset: u64_from_index(direction_pair_start + 21),
                 travel: crate::records::feature::path_features::DesignRevolveTravel::Angle(
                     cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::TAU).unwrap()
                 ),
                 angle_record_index: indexed_angle_record_index,
-                angle_offset: u64_from_index(class403_start + 40),
+                angle_offset: u64_from_index(direction_pair_start + 40),
                 second_side: None,
                 opposite_angle: None,
                 solid: None,
@@ -855,38 +894,68 @@ fn fixed_kind_edge_and_revolve_operations(
             }
         ))
     );
-    bytes[class403_start + 34] = 0;
+    for offset in [11, 32] {
+        bytes[direction_pair_start + offset] = 1;
+        assert!(!matches!(
+            exact_path_feature_construction(
+                &bytes,
+                &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+                &direction_pair_scope,
+                std::slice::from_ref(&direction_pair_angle),
+            ),
+            Some(DesignPathFeatureConstruction::Revolve(_))
+        ));
+        bytes[direction_pair_start + offset] = 0;
+    }
+    for (class_tag, paired_class_tag) in [("304", "258"), ("408", "259")] {
+        let mut scope = direction_pair_scope.clone();
+        scope.class_tag =
+            crate::records::references::DesignClassTag::try_from(class_tag.to_owned()).unwrap();
+        scope.paired_class_tag =
+            crate::records::references::DesignClassTag::try_from(paired_class_tag.to_owned())
+                .unwrap();
+        assert_eq!(
+            exact_path_feature_construction(
+                &bytes,
+                &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+                &scope,
+                std::slice::from_ref(&direction_pair_angle),
+            ),
+            direction_pair_construction
+        );
+    }
+    bytes[direction_pair_start + 34] = 0;
     assert_eq!(
         exact_path_feature_construction(
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
-            &class403_scope,
-            std::slice::from_ref(&class403_angle),
+            &direction_pair_scope,
+            std::slice::from_ref(&direction_pair_angle),
         ),
         None
     );
-    bytes[class403_start + 34] = 1;
-    let mut localized_class403_scope = class403_scope.clone();
-    localized_class403_scope
+    bytes[direction_pair_start + 34] = 1;
+    let mut localized_direction_pair_scope = direction_pair_scope.clone();
+    localized_direction_pair_scope
         .try_edit(|draft| {
             draft.frame_length = 393;
             draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
             draft.layout_fixture_tail();
         })
         .unwrap();
-    localized_class403_scope.source_kind = Some("R\u{e9}volution".to_owned());
-    let class403_construction = |scope| {
+    localized_direction_pair_scope.source_kind = Some("R\u{e9}volution".to_owned());
+    let direction_pair_construction = |scope| {
         exact_path_feature_construction(
             &bytes,
             &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
             scope,
-            std::slice::from_ref(&class403_angle),
+            std::slice::from_ref(&direction_pair_angle),
         )
     };
-    assert!(class403_construction(&class403_scope).is_some());
+    assert!(direction_pair_construction(&direction_pair_scope).is_some());
     assert_eq!(
-        class403_construction(&localized_class403_scope),
-        class403_construction(&class403_scope)
+        direction_pair_construction(&localized_direction_pair_scope),
+        direction_pair_construction(&direction_pair_scope)
     );
 
     {
@@ -930,7 +999,7 @@ fn fixed_kind_edge_and_revolve_operations(
                 bytes,
                 &crate::design::test_support::indexed_record_offsets_for_test(bytes),
                 &referenced_scope,
-                std::slice::from_ref(&class403_angle),
+                std::slice::from_ref(&direction_pair_angle),
             )
         };
         let expected = Some(DesignPathFeatureConstruction::Revolve(
@@ -941,7 +1010,7 @@ fn fixed_kind_edge_and_revolve_operations(
                     cadmpeg_ir::scalar::PositiveAngle::new(std::f64::consts::TAU).unwrap(),
                 ),
                 angle_record_index: indexed_angle_record_index,
-                angle_offset: u64_from_index(class403_start + 40),
+                angle_offset: u64_from_index(direction_pair_start + 40),
                 second_side: None,
                 opposite_angle: None,
                 solid: Some(true),
@@ -970,7 +1039,7 @@ fn fixed_kind_edge_and_revolve_operations(
                 &bytes,
                 &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
                 scope,
-                std::slice::from_ref(&class403_angle),
+                std::slice::from_ref(&direction_pair_angle),
             )
         };
         assert_eq!(localized(&localized_scope), None);
@@ -1026,12 +1095,11 @@ fn fixed_kind_edge_and_revolve_operations(
                 draft.layout_fixture_tail();
             })
             .unwrap();
-        // The owners reuse the class-403 owner frame; the second sits 200
-        // bytes later.
-        let along_offset = class403_angle.evaluated_value_offset();
+        let along_offset = direction_pair_angle.evaluated_value_offset();
         let owner = |record_index, local_ordinal, value: f64, shift: u64| {
-            let mut wire =
-                crate::records::parameters::DesignParameterOwnerWire::from(class403_angle.clone());
+            let mut wire = crate::records::parameters::DesignParameterOwnerWire::from(
+                direction_pair_angle.clone(),
+            );
             wire.record_index = record_index;
             wire.parameter_record_index = record_index + 1;
             wire.companion_record_index = record_index + 2;
@@ -1102,7 +1170,7 @@ fn fixed_kind_edge_and_revolve_operations(
 
     let legacy_revolve_start = bytes.len();
     let legacy_angle_record_index = 1_800u32;
-    let mut legacy_revolve = vec![0; 359];
+    let mut legacy_revolve = vec![0; 360];
     legacy_revolve[20] = 1;
     legacy_revolve[25..29].copy_from_slice(&4u32.to_le_bytes());
     legacy_revolve[29..33].copy_from_slice(&2u32.to_le_bytes());
@@ -1182,6 +1250,62 @@ fn fixed_kind_edge_and_revolve_operations(
             }
         ))
     );
+    assert_eq!(
+        marker_one_revolve_assumed_length(&bytes, &legacy_revolve_scope),
+        None
+    );
+    let mut undocumented_length_scope = legacy_revolve_scope.clone();
+    undocumented_length_scope
+        .try_edit(|draft| {
+            draft.frame_length = 360;
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    assert!(matches!(
+        exact_path_feature_construction(
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &undocumented_length_scope,
+            std::slice::from_ref(&legacy_angle),
+        ),
+        Some(DesignPathFeatureConstruction::Revolve(_))
+    ));
+    let assumed_length = marker_one_revolve_assumed_length(&bytes, &undocumented_length_scope);
+    assert!(assumed_length.is_some());
+    assert_eq!(
+        assumed_length,
+        parameter_scope_payload_length(&undocumented_length_scope)
+    );
+
+    let referenced_frame_length = legacy_revolve_scope.frame_length()
+        - parameter_scope_payload_length(&legacy_revolve_scope).unwrap()
+        + 351;
+    let mut referenced_length_scope = legacy_revolve_scope.clone();
+    referenced_length_scope
+        .try_edit(|draft| {
+            draft.frame_length = referenced_frame_length;
+            draft.paired_byte_offset = draft.byte_offset + draft.frame_length;
+            draft.layout_fixture_tail();
+        })
+        .unwrap();
+    bytes.resize(
+        legacy_revolve_start + usize::try_from(referenced_frame_length).unwrap(),
+        0,
+    );
+    assert_eq!(
+        parameter_scope_payload_length(&referenced_length_scope),
+        Some(351)
+    );
+    assert!(!matches!(
+        exact_path_feature_construction(
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &referenced_length_scope,
+            std::slice::from_ref(&legacy_angle),
+        ),
+        Some(DesignPathFeatureConstruction::Revolve(_))
+    ));
     legacy_revolve_scope.class_tag =
         crate::records::references::DesignClassTag::try_from("323".to_owned()).unwrap();
     legacy_revolve_scope.paired_class_tag =
@@ -1364,6 +1488,8 @@ fn fixed_kind_edge_and_revolve_operations(
                 )
                 .unwrap(),
                 context_id_offset: 0,
+                serialization_form:
+                    crate::records::topology::entity_selection::SelectionSerializationForm::Zero,
                 identity_record_index: 903,
                 identity_record_offset: 0,
                 primary_identity: 100,

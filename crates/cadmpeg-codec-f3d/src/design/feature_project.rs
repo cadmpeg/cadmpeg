@@ -54,6 +54,7 @@ use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 
 pub(crate) mod form_cages;
+mod paste_copy;
 
 /// Millimetres per Design length unit (the Design stream stores centimetres).
 const DESIGN_LENGTH_TO_MILLIMETRE: f64 = 10.0;
@@ -1347,7 +1348,18 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     } else if scope.kind()
                         == crate::records::feature::scope::DesignFeatureKind::BaseFeature
                     {
-                        if let Some(construction) = scope.base_feature_construction() {
+                        if let Some((definition, copies)) =
+                            scope.base_feature_construction().and_then(|construction| {
+                                paste_copy::same_component_paste_copy(
+                                    scope,
+                                    construction,
+                                    body_bindings,
+                                )
+                            })
+                        {
+                            inserted_bodies.extend(copies);
+                            definition
+                        } else if let Some(construction) = scope.base_feature_construction() {
                             FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                                 bodies: design_body_selection(
                                     scope,
@@ -3119,6 +3131,105 @@ pub(crate) fn bind_sketch_feature_geometry(
         }
     }
     Ok(())
+}
+
+/// Native and neutral records that solve a Loft point section.
+pub(crate) struct LoftPointSources<'a> {
+    pub(crate) groups: &'a [DesignConstructionOperandGroup],
+    pub(crate) entity_operands:
+        &'a [crate::records::topology::entity_selection::DesignEntitySelectionOperand],
+    pub(crate) sketch_points: &'a [crate::records::sketch_geometry::SketchPoint],
+    pub(crate) sketches: &'a [cadmpeg_ir::sketches::Sketch],
+    pub(crate) sketch_entities: &'a [cadmpeg_ir::sketches::SketchEntity],
+}
+
+/// Solve each Loft point section whose group's one entity-selection member
+/// names a planar sketch point by its Sketch record and persistent id.
+pub(crate) fn bind_loft_sketch_point_sections(
+    features: &mut [cadmpeg_ir::features::Feature],
+    sources: &LoftPointSources<'_>,
+) {
+    use cadmpeg_ir::features::{
+        FeatureDefinition, FeatureOperation, LoftPointSection, LoftSection,
+    };
+
+    for feature in features.iter_mut() {
+        feature.evaluation.edit(|definition, _| {
+            let FeatureDefinition::Operation(FeatureOperation::Loft { sections, .. }) = definition
+            else {
+                return;
+            };
+            for section in sections.iter_mut() {
+                let LoftSection::Point(LoftPointSection::Native(native)) = section else {
+                    continue;
+                };
+                if let Some(point) = loft_sketch_point(native.as_str(), sources) {
+                    *section = LoftSection::Point(LoftPointSection::Point(point));
+                }
+            }
+        });
+    }
+}
+
+fn loft_sketch_point(
+    group_id: &str,
+    sources: &LoftPointSources<'_>,
+) -> Option<cadmpeg_ir::features::FinitePoint3> {
+    fn only<T>(mut matches: impl Iterator<Item = T>) -> Option<T> {
+        let first = matches.next()?;
+        matches.next().is_none().then_some(first)
+    }
+
+    let group = only(sources.groups.iter().filter(|group| group.id == group_id))?;
+    let stream = native_stream(&group.id)?;
+    let (sketch_record, persistent_id) =
+        loft_point_operand(group, sources.entity_operands)?.sketch_point()?;
+    let sketch_record = u32::try_from(sketch_record).ok()?;
+    let point = only(sources.sketch_points.iter().filter(|point| {
+        native_stream(&point.id) == Some(stream)
+            && point.owner_reference == Some(sketch_record)
+            && point.persistent_id() == Some(persistent_id)
+    }))?;
+    let entity = only(
+        sources
+            .sketch_entities
+            .iter()
+            .filter(|entity| entity.native_ref.as_deref() == Some(point.id.as_str())),
+    )?;
+    let cadmpeg_ir::sketches::SketchGeometryDefinition::Point { position } =
+        entity.geometry.definition()
+    else {
+        return None;
+    };
+    let sketch = only(
+        sources
+            .sketches
+            .iter()
+            .filter(|sketch| sketch.id == entity.sketch),
+    )?;
+    crate::design::geometry::sketch_point_to_model(sketch, position.get())
+}
+
+/// The one entity-selection operand that forms the single member of a
+/// role-`0x21` Loft point group.
+fn loft_point_operand<'a>(
+    group: &DesignConstructionOperandGroup,
+    operands: &'a [crate::records::topology::entity_selection::DesignEntitySelectionOperand],
+) -> Option<&'a crate::records::topology::entity_selection::DesignEntitySelectionOperand> {
+    let stream = native_stream(&group.id)?;
+    let [member] = group.members() else {
+        return None;
+    };
+    let mut matches = operands.iter().filter(|operand| {
+        native_stream(&operand.id) == Some(stream)
+            && operand.group_record_index == group.record_index
+            && operand.group_member_ordinal == 0
+    });
+    let operand = matches.next()?;
+    (group.role() == DesignOperandRole::ROLE_0X21
+        && matches.next().is_none()
+        && operand.record_index() == member.value)
+        .then_some(operand)
 }
 
 /// Bind `WorkPoint` inputs that select a sketch point after the sketch arenas
@@ -5903,11 +6014,9 @@ pub(super) fn project_fixed_revolve_with_entities(
     let first = matching.next();
     let second = matching.next();
     let axis = if let (Some(axis_operand), None) = (first, second) {
-        Some(RevolutionAxis {
-            origin: axis_operand.resolved_axis?.origin,
-            direction: cadmpeg_ir::features::FeatureDirection3::from(
-                axis_operand.resolved_axis?.direction,
-            ),
+        axis_operand.resolved_axis.map(|axis| RevolutionAxis {
+            origin: axis.origin,
+            direction: cadmpeg_ir::features::FeatureDirection3::from(axis.direction),
             reference: None,
         })
     } else if first.is_none() {
@@ -6467,6 +6576,7 @@ pub(super) fn project_fixed_loft(
         legacy_loft_body_carriers: legacy_body_carriers,
         edge_operands,
         edge_identity_operands,
+        entity_selection_operands,
         face_operands,
         face_boundaries,
         ..
@@ -6671,6 +6781,25 @@ pub(super) fn project_fixed_loft(
                     LoftSection::Profile(ProfileRef::Planar(PlanarProfileRef::Native(id)))
                 };
                 sections.push(section);
+            }
+            (sections, Vec::new(), None)
+        } else if operands.len() == 2
+            && profile_groups.len() == 1
+            && profile_groups[0].role() == DesignOperandRole::PROFILE
+            && operands
+                .iter()
+                .any(|group| loft_point_operand(group, entity_selection_operands).is_some())
+        {
+            let mut sections = Vec::new();
+            for group in &operands {
+                let id = group.id.clone();
+                sections.push(if group.role() == DesignOperandRole::ROLE_0X21 {
+                    LoftSection::Point(LoftPointSection::Native(or_none!(
+                        cadmpeg_core::text::NonBlankString::new(id)
+                    )))
+                } else {
+                    LoftSection::Profile(ProfileRef::Planar(PlanarProfileRef::Native(id)))
+                });
             }
             (sections, Vec::new(), None)
         } else if profile_groups.is_empty() {
@@ -7567,6 +7696,128 @@ fn surface_patch_boundary_conditions(
     conditions
 }
 
+fn surface_patch_sketch_profiles(
+    scope: &DesignParameterScope,
+    groups: &[&DesignConstructionOperandGroup],
+) -> bool {
+    let references = scope.reference_members();
+    let Some(boundary_references) = references.len().checked_sub(1) else {
+        return false;
+    };
+    if boundary_references == 0
+        || boundary_references % 2 != 0
+        || groups.len() != boundary_references / 2
+        || !scope.surface_patch_boundaries().is_empty()
+    {
+        return false;
+    }
+    let Some(tool_body) = references.values().last() else {
+        return false;
+    };
+    groups.iter().enumerate().all(|(index, group)| {
+        let ordinal = index * 2;
+        usize::try_from(group.scope_reference_ordinal).ok() == Some(ordinal)
+            && group.role() == DesignOperandRole::PROFILE
+            && group.record_index != *tool_body
+            && group
+                .members()
+                .iter()
+                .all(|member| member.value != *tool_body)
+            && references.values().nth(ordinal) == Some(&group.record_index)
+            && group
+                .members()
+                .iter()
+                .map(|member| member.value)
+                .eq(references.values().nth(ordinal + 1).copied())
+    })
+}
+
+fn surface_patch_fixed_paths(
+    ctx: &DecodeContext<'_>,
+    scope: &DesignParameterScope,
+    groups: &[&DesignConstructionOperandGroup],
+) -> Result<bool, CodecError> {
+    let Some(reference_count) = scope.reference_members().len().checked_sub(1) else {
+        return Ok(false);
+    };
+    let boundary_count = reference_count / 3;
+    if boundary_count == 0
+        || reference_count % 3 != 0
+        || groups.len() != boundary_count
+        || scope.surface_patch_boundaries().len() != boundary_count
+    {
+        return Ok(false);
+    }
+    let mut occupied = ctx.alloc_filled(
+        scope.reference_members().len(),
+        false,
+        "f3d surface-patch reference occupancy",
+    )?;
+    for boundary in groups {
+        let Ok(group_ordinal) = usize::try_from(boundary.scope_reference_ordinal) else {
+            return Ok(false);
+        };
+        let Some(member_ordinal) = group_ordinal.checked_add(1) else {
+            return Ok(false);
+        };
+        let Some(settings_ordinal) = group_ordinal.checked_add(2) else {
+            return Ok(false);
+        };
+        let Some(group_reference) = scope.reference_members().values().nth(group_ordinal) else {
+            return Ok(false);
+        };
+        if settings_ordinal >= scope.reference_members().len()
+            || boundary.record_index != *group_reference
+            || boundary.role() != DesignOperandRole::BODIES_A
+            || !boundary
+                .members()
+                .iter()
+                .map(|member| member.value)
+                .eq(scope
+                    .reference_members()
+                    .values()
+                    .nth(member_ordinal)
+                    .into_iter()
+                    .copied())
+            || occupied[group_ordinal]
+            || occupied[member_ordinal]
+            || occupied[settings_ordinal]
+        {
+            return Ok(false);
+        }
+        let Some(settings) = scope.surface_patch_boundaries().iter().find(|settings| {
+            usize::try_from(settings.scope_reference_ordinal).ok() == Some(settings_ordinal)
+        }) else {
+            return Ok(false);
+        };
+        let Some(settings_reference) = scope.reference_members().values().nth(settings_ordinal)
+        else {
+            return Ok(false);
+        };
+        if settings.record_index != *settings_reference
+            || settings.model_reference != boundary.record_index
+        {
+            return Ok(false);
+        }
+        occupied[group_ordinal] = true;
+        occupied[member_ordinal] = true;
+        occupied[settings_ordinal] = true;
+    }
+    let mut unoccupied = Vec::new();
+    for (ordinal, occupied) in occupied.iter().enumerate() {
+        if !occupied {
+            unoccupied.push(ordinal);
+        }
+    }
+    let endpoint_unoccupied = unoccupied.as_slice() == [0]
+        || scope
+            .reference_members()
+            .len()
+            .checked_sub(1)
+            .is_some_and(|last| unoccupied.as_slice() == [last]);
+    Ok(endpoint_unoccupied)
+}
+
 fn project_surface_patch(
     ctx: &DecodeContext<'_>,
     scope: &DesignParameterScope,
@@ -7615,7 +7866,11 @@ fn project_surface_patch(
     else {
         return Ok(None);
     };
-    if scope.frame_length() == grouped_path_frame_length {
+    if scope.frame_length() == grouped_path_frame_length
+        && groups
+            .first()
+            .is_some_and(|group| group.role() == DesignOperandRole::BODIES_A)
+    {
         let [group] = groups.as_slice() else {
             return Ok(None);
         };
@@ -7663,96 +7918,18 @@ fn project_surface_patch(
         )));
     }
 
-    // The reference count separates the two settings-bearing forms: the
-    // fixed-path form has `3n + 1` references and the sketch-profile form has
-    // three. Frame length does not, because the Design scope envelope has two
-    // generations and the later one adds fourteen bytes to both forms.
-    let (boundary_count, boundary_role) = if scope.reference_members().len() == 3 {
-        (1, DesignOperandRole::PROFILE)
-    } else {
-        let Some(reference_count) = scope.reference_members().len().checked_sub(1) else {
-            return Ok(None);
-        };
-        let boundary_count = reference_count / 3;
-        if boundary_count == 0 || scope.reference_members().len() != boundary_count * 3 + 1 {
-            return Ok(None);
+    match groups.first().map(|group| group.role()) {
+        Some(DesignOperandRole::PROFILE) => {
+            if !surface_patch_sketch_profiles(scope, &groups) {
+                return Ok(None);
+            }
         }
-        (boundary_count, DesignOperandRole::BODIES_A)
-    };
-    if groups.len() != boundary_count || scope.surface_patch_boundaries().len() != boundary_count {
-        return Ok(None);
-    }
-    let mut occupied = ctx.alloc_filled(
-        scope.reference_members().len(),
-        false,
-        "f3d surface-patch reference occupancy",
-    )?;
-    for boundary in &groups {
-        let Ok(group_ordinal) = usize::try_from(boundary.scope_reference_ordinal) else {
-            return Ok(None);
-        };
-        let Some(member_ordinal) = group_ordinal.checked_add(1) else {
-            return Ok(None);
-        };
-        let Some(settings_ordinal) = group_ordinal.checked_add(2) else {
-            return Ok(None);
-        };
-        let Some(group_reference) = scope.reference_members().values().nth(group_ordinal) else {
-            return Ok(None);
-        };
-        if settings_ordinal >= scope.reference_members().len()
-            || boundary.record_index != *group_reference
-            || boundary.role() != boundary_role
-            || !boundary
-                .members()
-                .iter()
-                .map(|member| member.value)
-                .eq(scope
-                    .reference_members()
-                    .values()
-                    .nth(member_ordinal)
-                    .into_iter()
-                    .copied())
-            || occupied[group_ordinal]
-            || occupied[member_ordinal]
-            || occupied[settings_ordinal]
-        {
-            return Ok(None);
+        Some(DesignOperandRole::BODIES_A) => {
+            if !surface_patch_fixed_paths(ctx, scope, &groups)? {
+                return Ok(None);
+            }
         }
-        let Some(settings) = scope.surface_patch_boundaries().iter().find(|settings| {
-            usize::try_from(settings.scope_reference_ordinal).ok() == Some(settings_ordinal)
-        }) else {
-            return Ok(None);
-        };
-        let Some(settings_reference) = scope.reference_members().values().nth(settings_ordinal)
-        else {
-            return Ok(None);
-        };
-        if settings.record_index != *settings_reference
-            || settings.model_reference != boundary.record_index
-        {
-            return Ok(None);
-        }
-        occupied[group_ordinal] = true;
-        occupied[member_ordinal] = true;
-        occupied[settings_ordinal] = true;
-    }
-    let mut unoccupied = Vec::new();
-    for (ordinal, occupied) in occupied.iter().enumerate() {
-        if !occupied {
-            unoccupied.push(ordinal);
-        }
-    }
-    let endpoint_unoccupied = unoccupied.as_slice() == [0]
-        || scope
-            .reference_members()
-            .len()
-            .checked_sub(1)
-            .is_some_and(|last| unoccupied.as_slice() == [last]);
-    if (scope.reference_members().len() == 3 && !unoccupied.is_empty())
-        || (scope.reference_members().len() != 3 && !endpoint_unoccupied)
-    {
-        return Ok(None);
+        _ => return Ok(None),
     }
     let boundary = if let [boundary] = groups.as_slice() {
         resolved_loft_path(
@@ -8477,6 +8654,29 @@ pub(super) fn project_split(
     )))
 }
 
+fn face_scope_frame(scope: &DesignParameterScope) -> Option<(u64, u64)> {
+    let count_offset = scope
+        .reference_count_offset()
+        .checked_sub(scope.byte_offset())?;
+    let reference_bytes = u64::try_from(scope.reference_members().len())
+        .ok()?
+        .checked_mul(11)?;
+    let kind_offset = scope
+        .reference_count_offset()
+        .checked_add(12)?
+        .checked_add(reference_bytes)?;
+    if scope.kind_offset() != kind_offset {
+        return None;
+    }
+    let kind_bytes = u64::try_from(scope.source_kind_name().encode_utf16().count())
+        .ok()?
+        .checked_mul(2)?;
+    let tail_length = scope
+        .paired_byte_offset()
+        .checked_sub(kind_offset.checked_add(kind_bytes)?)?;
+    Some((count_offset, tail_length))
+}
+
 fn project_split_face(
     scope: &DesignParameterScope,
     scopes: &[DesignParameterScope],
@@ -8495,16 +8695,8 @@ fn project_split_face(
     {
         return Ok(None);
     }
-    let reference_tail_length = or_none!(11_u64.checked_mul(or_none!(u64::try_from(or_none!(
-        reference_count.checked_sub(1)
-    ))
-    .ok())));
-    let frame_base = or_none!(scope.frame_length().checked_sub(reference_tail_length));
-    let compact = matches!(
-        (scope.class_tag.as_str(), scope.paired_class_tag.as_str()),
-        ("418", "266") | ("277", "258")
-    );
-    if !(matches!(frame_base, 290 | 291) || compact && frame_base == 286) {
+    let (count_offset, tail_length) = or_none!(face_scope_frame(scope));
+    if !matches!(count_offset, 168 | 172 | 176) || !matches!(tail_length, 77 | 78 | 87) {
         return Ok(None);
     }
     let stream = or_none!(native_stream(&scope.id));
@@ -8636,49 +8828,15 @@ fn project_delete_face(
     use cadmpeg_ir::features::{FaceSelection, FeatureDefinition, FeatureOperation};
 
     let reference_count = scope.reference_members().len();
-    let reference_bytes =
-        or_none!(11_u64.checked_mul(or_none!(u64::try_from(reference_count).ok())));
-    let base_frame_length = or_none!(scope.frame_length().checked_sub(reference_bytes));
-    let base_kind_offset = or_none!(scope
-        .kind_offset()
-        .checked_sub(scope.byte_offset())
-        .and_then(|offset| offset.checked_sub(reference_bytes)));
+    let (count_offset, tail_length) = or_none!(face_scope_frame(scope));
     let heal = match scope.kind_name() {
-        // The compact frame's fixed scope tail is 77 or 78 bytes. The legacy
-        // frame is the compact frame without its four-byte marker-one field;
-        // its class tags vary between files and do not select it.
-        "DeleteFace" => match (base_frame_length, base_kind_offset) {
-            (236 | 237, 139) | (241, 143) | (232, 135) => true,
-            _ => return Ok(None),
-        },
-        "SurfaceDeleteFace" => {
-            let common_layout = matches!(
-                (base_frame_length, base_kind_offset),
-                (250, 140) | (251, 139)
-            );
-            let class_layout = matches!(
-                (
-                    scope.class_tag.as_str(),
-                    scope.paired_class_tag.as_str(),
-                    base_frame_length,
-                    base_kind_offset,
-                ),
-                ("287", "270", 245, 135)
-                    | ("287", "270", 256, 146)
-                    | ("327" | "545", "257", 250, 139)
-                    | ("414", "263", 250, 140)
-                    | ("497", "259", 257, 146)
-                    | ("545", "257", 246, 135)
-                    | ("545", "257", 257, 146)
-            );
-            if common_layout || class_layout {
-                false
-            } else {
-                return Ok(None);
-            }
-        }
+        "DeleteFace" if matches!(count_offset, 123 | 127 | 131) => true,
+        "SurfaceDeleteFace" if matches!(count_offset, 123 | 127 | 131 | 134 | 138 | 142) => false,
         _ => return Ok(None),
     };
+    if !matches!(tail_length, 77 | 78) {
+        return Ok(None);
+    }
     if reference_count < 2 {
         return Ok(None);
     }

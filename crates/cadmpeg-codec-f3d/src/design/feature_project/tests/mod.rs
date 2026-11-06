@@ -6,7 +6,7 @@
     clippy::uninlined_format_args
 )]
 
-mod body_selection;
+pub(super) mod body_selection;
 mod coil;
 mod direct_face;
 mod dispatcher;

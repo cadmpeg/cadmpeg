@@ -144,6 +144,17 @@ pub(crate) enum SldprtLossCode {
     GeometrySurfaceSolverWorkCapped,
     /// A spline carrier's pole and weight lanes do not pair.
     GeometrySplineLanesUnpaired,
+    /// A spline carrier stores a control-point weight that is zero or
+    /// negative.
+    GeometrySplineWeightNonpositive,
+    /// A spline carrier's dimension, counts, or multiplicities contradict
+    /// each other or its arrays.
+    GeometrySplineFieldsInconsistent,
+    /// A CONE node stores a negative sine or cosine of its half-angle, whose
+    /// surface is unresolved (`GC-49`).
+    GeometryConeHalfAngleSignUnresolved,
+    /// A CONE node's stored sine and cosine break the unit identity.
+    GeometryConeHalfAngleIdentityRefused,
     /// The stream's INTERSECTION declaration states no node layout that
     /// frames, so its intersection curves are not read.
     GeometryIntersectionLayoutUnknown,
@@ -180,6 +191,12 @@ pub(crate) enum SldprtLossCode {
     /// Vertexless ring FINs fail strict reciprocal-circle single-loop
     /// admission, so no vertex is invented for them.
     TopologyRingEdgeWithheld,
+    /// A vertex loop names no resolved vertex, so its face and surface are
+    /// withheld.
+    TopologyVertexLoopWithheld,
+    /// A loop of a face holds an ambiguous FIN, so the face and its surface
+    /// are withheld.
+    TopologyAmbiguousFinFaceWithheld,
     /// Referenced LOOP records have conflicting complete frames.
     TopologyLoopRecordAmbiguous,
     /// Referenced VERTEX records lack a complete owner-verified frame or IR-supported tolerance.
@@ -325,6 +342,10 @@ impl SldprtLossCode {
         Self::GeometryPcurveAmbiguous,
         Self::GeometrySurfaceSolverWorkCapped,
         Self::GeometrySplineLanesUnpaired,
+        Self::GeometrySplineWeightNonpositive,
+        Self::GeometrySplineFieldsInconsistent,
+        Self::GeometryConeHalfAngleSignUnresolved,
+        Self::GeometryConeHalfAngleIdentityRefused,
         Self::GeometryIntersectionLayoutUnknown,
         Self::AppearanceFaceColorUnresolved,
         Self::AppearanceAssignmentUnresolved,
@@ -340,6 +361,8 @@ impl SldprtLossCode {
         Self::TopologyFinPartnerUnresolved,
         Self::TopologyFinLinkUnresolved,
         Self::TopologyRingEdgeWithheld,
+        Self::TopologyVertexLoopWithheld,
+        Self::TopologyAmbiguousFinFaceWithheld,
         Self::TopologyLoopRecordAmbiguous,
         Self::TopologyVertexRecordUnresolved,
         Self::TopologyPcurveCarrierOffSurface,
@@ -426,6 +449,12 @@ impl SldprtLossCode {
             Self::GeometryPcurveAmbiguous => "geometry.pcurve-ambiguous",
             Self::GeometrySurfaceSolverWorkCapped => "geometry.surface-solver-work-capped",
             Self::GeometrySplineLanesUnpaired => "geometry.spline-lanes-unpaired",
+            Self::GeometrySplineWeightNonpositive => "geometry.spline-weight-nonpositive",
+            Self::GeometrySplineFieldsInconsistent => "geometry.spline-fields-inconsistent",
+            Self::GeometryConeHalfAngleSignUnresolved => "geometry.cone-half-angle-sign-unresolved",
+            Self::GeometryConeHalfAngleIdentityRefused => {
+                "geometry.cone-half-angle-identity-refused"
+            }
             Self::GeometryIntersectionLayoutUnknown => "geometry.intersection-layout-unknown",
             Self::AppearanceFaceColorUnresolved => "appearance.face-color-unresolved",
             Self::AppearanceAssignmentUnresolved => "appearance.assignment-unresolved",
@@ -441,6 +470,8 @@ impl SldprtLossCode {
             Self::TopologyFinPartnerUnresolved => "topology.fin-partner-unresolved",
             Self::TopologyFinLinkUnresolved => "topology.fin-link-unresolved",
             Self::TopologyRingEdgeWithheld => "topology.ring-edge-withheld",
+            Self::TopologyVertexLoopWithheld => "topology.vertex-loop-withheld",
+            Self::TopologyAmbiguousFinFaceWithheld => "topology.ambiguous-fin-face-withheld",
             Self::TopologyLoopRecordAmbiguous => "topology.loop-record-ambiguous",
             Self::TopologyVertexRecordUnresolved => "topology.vertex-record-unresolved",
             Self::TopologyPcurveCarrierOffSurface => "topology.pcurve-carrier-off-surface",
@@ -566,6 +597,10 @@ impl SldprtLossCode {
             | Self::GeometryPcurveAmbiguous
             | Self::GeometrySurfaceSolverWorkCapped
             | Self::GeometrySplineLanesUnpaired
+            | Self::GeometrySplineWeightNonpositive
+            | Self::GeometrySplineFieldsInconsistent
+            | Self::GeometryConeHalfAngleSignUnresolved
+            | Self::GeometryConeHalfAngleIdentityRefused
             | Self::GeometryIntersectionLayoutUnknown
             | Self::AppearanceFaceColorUnresolved
             | Self::AppearanceAssignmentUnresolved
@@ -581,6 +616,8 @@ impl SldprtLossCode {
             | Self::TopologyFinPartnerUnresolved
             | Self::TopologyFinLinkUnresolved
             | Self::TopologyRingEdgeWithheld
+            | Self::TopologyVertexLoopWithheld
+            | Self::TopologyAmbiguousFinFaceWithheld
             | Self::TopologyLoopRecordAmbiguous
             | Self::TopologyVertexRecordUnresolved
             | Self::TopologyPcurveCarrierOffSurface
@@ -662,6 +699,8 @@ impl SldprtLossCode {
             | Self::TopologyFinPartnerUnresolved
             | Self::TopologyFinLinkUnresolved
             | Self::TopologyRingEdgeWithheld
+            | Self::TopologyVertexLoopWithheld
+            | Self::TopologyAmbiguousFinFaceWithheld
             | Self::TopologyLoopRecordAmbiguous
             | Self::TopologyVertexRecordUnresolved => LossTaxonomy::TopologyNotTransferred,
             Self::TopologyPcurveCarrierOffSurface => LossTaxonomy::PcurveOmitted,
@@ -674,6 +713,10 @@ impl SldprtLossCode {
             | Self::GeometryPointRecordAmbiguous
             | Self::GeometryCurveMarkerConflict
             | Self::GeometrySplineLanesUnpaired
+            | Self::GeometrySplineWeightNonpositive
+            | Self::GeometrySplineFieldsInconsistent
+            | Self::GeometryConeHalfAngleSignUnresolved
+            | Self::GeometryConeHalfAngleIdentityRefused
             | Self::GeometryIntersectionLayoutUnknown
             | Self::GeometryParasolidNotTransferred
             | Self::ContainerAuxiliaryParasolidRefused
@@ -815,6 +858,30 @@ pub(crate) fn spline_lane_refusal(record: impl std::fmt::Display) -> LossNote {
     SldprtLossCode::GeometrySplineLanesUnpaired.note(message)
 }
 
+/// One refused spline carrier, named by `record`, with the loss code and
+/// message of its refusal.
+pub(crate) fn spline_refusal(
+    record: impl std::fmt::Display,
+    refusal: &cadmpeg_parasolid::geometry::nurbs::Refusal,
+) -> LossNote {
+    use cadmpeg_parasolid::geometry::nurbs::Refusal;
+    let (code, cause) = match refusal {
+        Refusal::Lanes(error) => return spline_lane_refusal(format_args!("{record}: {error}")),
+        Refusal::NonpositiveWeight => (
+            SldprtLossCode::GeometrySplineWeightNonpositive,
+            "stores a control-point weight that is zero or negative",
+        ),
+        Refusal::Fields => (
+            SldprtLossCode::GeometrySplineFieldsInconsistent,
+            "stores a dimension, count, or multiplicity that contradicts its fields or arrays",
+        ),
+    };
+    code.note(format!(
+        "{record} {cause}; the carrier is not emitted and the entities that reference it fall \
+         back to an untyped support."
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use cadmpeg_ir::report::loss::{LossTaxonomy, StrictConsequence};
@@ -927,6 +994,10 @@ mod tests {
                 "geometry.pcurve-ambiguous",
                 "geometry.surface-solver-work-capped",
                 "geometry.spline-lanes-unpaired",
+                "geometry.spline-weight-nonpositive",
+                "geometry.spline-fields-inconsistent",
+                "geometry.cone-half-angle-sign-unresolved",
+                "geometry.cone-half-angle-identity-refused",
                 "geometry.intersection-layout-unknown",
                 "appearance.face-color-unresolved",
                 "appearance.assignment-unresolved",
@@ -942,6 +1013,8 @@ mod tests {
                 "topology.fin-partner-unresolved",
                 "topology.fin-link-unresolved",
                 "topology.ring-edge-withheld",
+                "topology.vertex-loop-withheld",
+                "topology.ambiguous-fin-face-withheld",
                 "topology.loop-record-ambiguous",
                 "topology.vertex-record-unresolved",
                 "topology.pcurve-carrier-off-surface",

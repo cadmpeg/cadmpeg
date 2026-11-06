@@ -281,7 +281,7 @@ fn unresolved_chamfer_dimensions_remain_in_loss_count_after_ordinal_filtering() 
         model_roots: Vec::new(),
         brep_segments: Vec::new(),
         issues: Vec::new(),
-        opaque_base_units: std::collections::HashSet::default(),
+        opaque_base_units: std::collections::HashMap::default(),
     };
     let sketch = crate::sketch::SketchInventory {
         sketches: Vec::new(),

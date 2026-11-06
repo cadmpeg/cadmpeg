@@ -494,6 +494,20 @@ fn validate_parameter_scopes(
     }
 }
 
+/// The position of the point record that a point reference of `token` names.
+fn sketch_point(
+    entities: &HashMap<(&str, u32), &PmDcSketchEntity>,
+    token: &str,
+    reference: u32,
+) -> Option<[cadmpeg_ir::scalar::FiniteReal; 2]> {
+    let PmDcSketchEntityKind::Point { position, .. } =
+        entities.get(&(token, reference.checked_sub(1)?))?.kind
+    else {
+        return None;
+    };
+    Some(position)
+}
+
 fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>) {
     let raw = data
         .records
@@ -679,6 +693,12 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
                     add_list(list);
                 }
             }
+            PmDcSketchEntityKind::MemberCurve { data } => {
+                add_list(&data.points);
+                for list in &data.auxiliary {
+                    add_list(list);
+                }
+            }
             PmDcSketchEntityKind::Line {
                 points, auxiliary, ..
             } => {
@@ -838,6 +858,20 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
                 Some(entity.id().as_str().to_owned()),
             ));
         }
+        if entity.native_ref.as_deref().is_some_and(|reference| {
+            native_entities.get(reference).is_some_and(|source| {
+                crate::sketch::construction_carrier_conflict(source, |token, reference| {
+                    sketch_point(&entities, token, reference)
+                })
+            })
+        }) {
+            findings.push(finding(
+                Check::NativeLinks,
+                "Inventor sketch entity source is a construction line whose carrier and endpoints disagree"
+                    .into(),
+                Some(entity.id().as_str().to_owned()),
+            ));
+        }
         if entity
             .native_ref
             .as_deref()
@@ -920,7 +954,13 @@ fn validate_sketches(data: &NativeData, ir: &CadIr, findings: &mut Vec<Finding>)
                         .and_then(|ordinal| {
                             entities.get(&(source.identity.segment_token.as_str(), ordinal))
                         })
-                        .is_some_and(|entity| crate::sketch::curve::is_non_geometric(entity))
+                        .is_some_and(|entity| {
+                            crate::sketch::curve::is_non_geometric(entity)
+                                || crate::sketch::construction_carrier_conflict(
+                                    entity,
+                                    |token, reference| sketch_point(&entities, token, reference),
+                                )
+                        })
                 })
             })
         }) {

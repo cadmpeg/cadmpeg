@@ -1725,6 +1725,7 @@ fn a_written_report_carries_the_generator_and_summary_prints_it() {
 // --- envelope ---------------------------------------------------------------
 
 /// Runs one query view and returns its `--json` stdout.
+#[cfg(feature = "sldprt")]
 fn view_json(args: &[&str]) -> Vec<u8> {
     let output = cadmpeg().args(args).output().unwrap();
     assert!(
@@ -1736,6 +1737,7 @@ fn view_json(args: &[&str]) -> Vec<u8> {
 }
 
 /// First non-empty `model.<arena>` in the document, from `query counts`.
+#[cfg(feature = "sldprt")]
 fn first_model_arena(doc: &std::path::Path) -> String {
     let stdout = view_json(&["query", "counts", "--json", doc.to_str().unwrap()]);
     let value: serde_json::Value = serde_json::from_slice(&stdout).unwrap();
@@ -1748,6 +1750,7 @@ fn first_model_arena(doc: &std::path::Path) -> String {
         .expect("the fixture decodes into at least one model arena")
 }
 
+#[cfg(feature = "sldprt")]
 #[test]
 fn every_view_json_is_a_query_command_report() {
     let dir = tempdir().unwrap();
@@ -1870,6 +1873,7 @@ fn a_foreign_ir_version_is_refused() {
         );
 }
 
+#[cfg(feature = "iges")]
 #[test]
 fn query_projects_export_identity_and_losses_from_a_generated_report() {
     use cadmpeg_ir::{CodecFormat, SourceGeometryRole, SourceObjectAssociation};

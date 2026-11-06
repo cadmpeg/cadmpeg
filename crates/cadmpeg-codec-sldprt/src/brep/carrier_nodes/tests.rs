@@ -3,6 +3,7 @@
 use super::analytic;
 use crate::brep::topology::nodes::sequence;
 use crate::brep::Carrier;
+use crate::loss::SldprtLossCode;
 use crate::test_support::parasolid::sequence::{sequence_of, F};
 use cadmpeg_ir::geometry::{
     CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, SurfaceGeometry,
@@ -37,6 +38,19 @@ fn circle(radius: f64) -> Vec<F> {
     fields
 }
 
+fn cone(sine: f64, cosine: f64) -> Vec<F> {
+    let mut fields = prefix(13, b'+');
+    fields.extend([
+        F::V([0.0; 3]),
+        F::V([0.0, 0.0, 1.0]),
+        F::R(0.002),
+        F::R(sine),
+        F::R(cosine),
+        F::V([1.0, 0.0, 0.0]),
+    ]);
+    fields
+}
+
 #[test]
 fn analytic_nodes_decode_through_their_compact_form() {
     let (payload, body_offset) = sequence_of(&[
@@ -44,7 +58,7 @@ fn analytic_nodes_decode_through_their_compact_form() {
         (31, 4, circle(0.002)),
     ]);
     let records = sequence(&payload).unwrap();
-    let carriers = analytic(&records, body_offset).unwrap();
+    let carriers = analytic(&records, body_offset, &mut Vec::new()).unwrap();
     assert_eq!(carriers.len(), 2);
     let Carrier::Surface(plane) = &carriers[0] else {
         panic!("PLANE is a surface")
@@ -78,7 +92,7 @@ fn values_outside_the_compact_checks_omit_only_that_carrier() {
         (31, 5, circle(0.002)),
     ]);
     let records = sequence(&payload).unwrap();
-    let carriers = analytic(&records, body_offset).unwrap();
+    let carriers = analytic(&records, body_offset, &mut Vec::new()).unwrap();
     assert_eq!(carriers.len(), 1);
     assert!(matches!(carriers[0], Carrier::Curve(_)));
 }
@@ -87,5 +101,39 @@ fn values_outside_the_compact_checks_omit_only_that_carrier() {
 fn repeated_analytic_indices_leave_the_stream_to_the_scanners() {
     let (payload, body_offset) = sequence_of(&[(31, 4, circle(0.002)), (31, 4, circle(0.003))]);
     let records = sequence(&payload).unwrap();
-    assert!(analytic(&records, body_offset).is_none());
+    assert!(analytic(&records, body_offset, &mut Vec::new()).is_none());
+}
+
+#[test]
+fn a_cone_node_with_a_negative_half_angle_field_is_omitted_with_a_loss() {
+    let root_half = std::f64::consts::FRAC_1_SQRT_2;
+    let (payload, body_offset) = sequence_of(&[
+        (52, 3, cone(root_half, root_half)),
+        (52, 4, cone(-root_half, root_half)),
+    ]);
+    let records = sequence(&payload).unwrap();
+    let mut refusals = Vec::new();
+    let carriers = analytic(&records, body_offset, &mut refusals).unwrap();
+    assert_eq!(carriers.len(), 1);
+    assert_eq!(refusals.len(), 1);
+    assert_eq!(
+        refusals[0].code,
+        SldprtLossCode::GeometryConeHalfAngleSignUnresolved.kind()
+    );
+}
+
+#[test]
+fn a_cone_node_off_the_unit_identity_by_1e7_is_omitted_with_a_loss() {
+    let sine = 0.6_f64;
+    let cosine = (1.0 + 1.0e-7 - sine * sine).sqrt();
+    let (payload, body_offset) = sequence_of(&[(52, 3, cone(sine, cosine))]);
+    let records = sequence(&payload).unwrap();
+    let mut refusals = Vec::new();
+    let carriers = analytic(&records, body_offset, &mut refusals).unwrap();
+    assert!(carriers.is_empty());
+    assert_eq!(refusals.len(), 1);
+    assert_eq!(
+        refusals[0].code,
+        SldprtLossCode::GeometryConeHalfAngleIdentityRefused.kind()
+    );
 }
