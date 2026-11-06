@@ -245,6 +245,7 @@ fn extrude_parameters_project_blind_two_sided_and_reversed_extents() {
             )),
             feature_ordinal: std::num::NonZeroU32::MIN,
             feature_ordinal_offset: 0,
+            label: None,
             history_state_id: None,
 
             previous_history_state_id: None,

@@ -18,6 +18,7 @@ fn localized_chamfer_scope() -> DesignParameterScope {
             kind_offset: 210,
             feature_ordinal: std::num::NonZeroU32::MIN,
             feature_ordinal_offset: 0,
+            label: None,
             history_state_id: None,
             previous_history_state_id: None,
             previous_history_state_id_offset: None,

@@ -34,7 +34,7 @@ use super::fixed_parameters::exact_fixed_chamfer_parameters;
 use super::fixed_parameters::exact_fixed_extrude_parameters;
 use super::fixed_parameters::exact_fixed_fillet_parameters;
 use super::hole::exact_hole_construction;
-use super::path_feature::exact_path_feature_construction;
+use super::path_feature::{exact_path_feature_construction, marker_one_revolve_assumed_length};
 use super::pattern::exact_circular_pattern_construction_with_owners;
 use super::pattern::exact_rectangular_pattern_construction;
 use super::point_data::exact_work_point_construction;
@@ -436,7 +436,14 @@ pub(crate) fn decode_parameter_scopes(
                     (
                         scope::DesignScopePayloadMut::Revolve(slot),
                         crate::records::feature::path_features::DesignPathFeatureConstruction::Revolve(value),
-                    ) => *slot = Some(value),
+                    ) => {
+                        *slot = Some(value);
+                        if let Some(length) = marker_one_revolve_assumed_length(bytes, &scope) {
+                            losses.push(crate::loss::F3dLossCode::FeatureRevolveLayoutAssumed.note(
+                                format!("Revolve scope {} reads its {length}-byte token-independent frame with the marker-one field offsets (DR-269).", scope.id),
+                            ));
+                        }
+                    }
                     (
                         scope::DesignScopePayloadMut::Loft(slot),
                         crate::records::feature::path_features::DesignPathFeatureConstruction::Loft(value),
@@ -1326,6 +1333,20 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
         }
         let kind = scope_feature_kind(&kind_text, type_family.as_ref())?;
         let source_kind = (kind_text != kind.as_str()).then_some(kind_text);
+        let label = if tail_form == ScopeTailForm::Named {
+            let label_at = kind_end.checked_add(8)?;
+            let (value, _) = lp_utf16_bounded(bytes, label_at, 0..=256)?;
+            if value.is_empty() {
+                None
+            } else {
+                Some(crate::records::identity::Located {
+                    value,
+                    offset: u64::try_from(label_at.checked_add(4)?).ok()?,
+                })
+            }
+        } else {
+            None
+        };
         let reference_table_end = kind_at.checked_sub(4)?;
         let feature_ordinal = std::num::NonZeroU32::new(View::u32_le_at(bytes, kind_end)?)?;
         let history_state_id_offset = reference_table_end;
@@ -1619,6 +1640,7 @@ pub(in crate::design::decode) fn parse_parameter_scope_with_type_guid(
             kind_offset: u64::try_from(kind_at.checked_add(4)?).ok()?,
             feature_ordinal,
             feature_ordinal_offset: u64::try_from(kind_end).ok()?,
+            label,
             history_state_id,
 
             previous_history_state_id,
@@ -1894,7 +1916,18 @@ pub(crate) fn parameter_scope_payload_length(scope: &DesignParameterScope) -> Op
     let kind_bytes = u64::try_from(scope.source_kind_name().encode_utf16().count())
         .ok()?
         .checked_mul(2)?;
-    scope.frame_length().checked_sub(kind_bytes)
+    let label_bytes = u64::try_from(
+        scope
+            .label
+            .as_ref()
+            .map_or(0, |label| label.value.encode_utf16().count()),
+    )
+    .ok()?
+    .checked_mul(2)?;
+    scope
+        .frame_length()
+        .checked_sub(kind_bytes)?
+        .checked_sub(label_bytes)
 }
 
 fn extrude_extent_native_loss(
