@@ -67,6 +67,7 @@ fn fixture_with(
             id: format!("f3d:Design/BulkStream.dat:curve#{primary}"),
             record_index: primary,
             owner_reference: Some(42),
+            geometry_group: None,
             class_tag: "300".to_owned().try_into().unwrap(),
             byte_offset: 0,
             geometry_offset: 0,

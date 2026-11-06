@@ -492,6 +492,24 @@ travel.
 
 **Need.** Controlled saves of one `SplitFace` before and after an edit that creates the reference, with the record that carries the referenced index.
 
+### DR-263. Sketch Geometry member byte 34
+
+**Question.** What sketch state does byte 34 of the sketch container's Geometry member encode?
+
+**Known.** `f3d.md` §3.1 "The current sketch entity container has type GUID" gives the member layout. Byte 34 is `0` or `1` and lies between the u32 ordinal at member offset 30 and the visibility flag at offset 35. Its value is independent of the visibility flag, the ordinal collection, the placement orientation, and the planar or spatial form of the sketch geometry. Member type version 3 stores the same `0`/`1` byte between its ordinal and its visibility flag.
+
+**Need.** Saves of one sketch that change one per-sketch setting at a time (Slice, 3D Sketch, Show Profile, Show Points, Show Dimensions, Show Constraints, Show Projected Geometries), each recording the value of byte 34.
+
+**Note.** The decoder stores byte 34 in the native sketch visibility field `sketch_flag` and emits `sketch.geometry-flag-unprojected` when it is `1`.
+
+### DR-264. Sketch geometry group fields
+
+**Question.** What do byte `01` at offset 49 and the f32 values at offsets 62 and 66 of a sketch geometry group store, and which operations write a group?
+
+**Known.** `f3d.md` §3.1 "A sketch geometry group has type GUID" gives the layout and the ownership joins. Every group stores `01` at offset 49 and f32 `1.0` at offsets 62 and 66. The sketch that owns a group is named by the reference table of a `MeshSection` scope.
+
+**Need.** Groups written by another operation, or groups with other values in these fields.
+
 ### DR-280. Body-recipe serialization form above one
 
 **Question.** What tail layout does a body-recipe serialization form above `1` select?
@@ -503,6 +521,30 @@ travel.
 **Conflict.** None.
 
 **Note.** DR-257 records the serialization form of nested entity-selection members.
+
+### DR-288. Sketch geometry group ordinal
+
+**Question.** Does the u32 ordinal at offset 21 of a sketch geometry group equal the u32 ordinal at member offset 30 of its owning sketch container's Geometry member?
+
+**Known.** `f3d.md` §3.1 "A sketch geometry group has type GUID" gives the group layout. The final reference of the group names its owning sketch container. `f3d.md` §3.1 "The current sketch entity container has type GUID" gives the positive ordinal at member offset 30 of that container's Geometry member.
+
+**Need.** A group whose ordinal differs from the member ordinal of its owning sketch, or saves that renumber the sketches of one ordinal collection and record both values.
+
+**Conflict.** None.
+
+**Note.** The decoder keeps the group for each ordinal value and stores the ordinal in the `ordinal` field of the native `sketch_geometry_groups` record.
+
+### DR-289. Sketch geometry group membership
+
+**Question.** Which records does the member run of a sketch geometry group list, and does the counted member run of the owning sketch container name the group?
+
+**Known.** `f3d.md` §3.1 "A sketch geometry group has type GUID" gives the counted member run in strictly increasing record-index order and the final owning-sketch reference. `f3d.md` §3.1 "When the final eleven bytes of a sketch point or curve primary record" assigns a point or curve whose direct owner backlink names a group to the sketch container that the group names.
+
+**Need.** A group whose member run omits a record that backlinks to it, a group that lists a record with another backlink or a record of another type, and a sketch container whose counted member run omits its group.
+
+**Conflict.** None.
+
+**Note.** The decoder assigns a point or curve whose backlink names a group to the sketch that the group names, stores the group record index in `geometry_group`, and emits `sketch.geometry-group-member-unlisted` when the member run omits the record. The native `sketch_geometry_groups` record keeps the member run in `members` and the owning sketch reference in `sketch_reference`. A member reference that names a record without a decoded backlink to the group assigns no owner, and the decoder emits `sketch.geometry-group-member-unbacklinked`.
 
 ## 2. External references
 
@@ -639,7 +681,6 @@ The first closing reference run identifies a direct contained child by its local
 **Known.** `f3d.md` §1.4 "**Placement.**" requires primary-index type admission. The component-path carrier has its own CommonData type; it does not establish a Component placement envelope. The legacy placement's duplicate target references, source occurrence identity, metadata UUID and five-GUID tracking join are defined. The inline `GatedByParent` field belongs to a counted typed-property block.
 
 **Need.** A primary indexed record registered to `CE2913AA-CFE0-4F04-9102-24424ED3BCFA` must close under either proposed additional envelope before that envelope can define a placement or a tagged field.
-
 
 ### DR-114. Body-container Fusion owners
 
@@ -1315,7 +1356,6 @@ when the operation transition carries no candidate for the group members?
 **Conflict.** None.
 
 **Note.** These scopes keep their frames, facing, angle, and offsets natively and project no neutral joint until the binding is defined.
-
 
 ### DR-246. Additional version-five Assemble owners and extended spans
 
