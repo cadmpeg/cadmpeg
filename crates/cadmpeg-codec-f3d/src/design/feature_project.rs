@@ -7684,6 +7684,128 @@ fn surface_patch_boundary_conditions(
     conditions
 }
 
+fn surface_patch_sketch_profiles(
+    scope: &DesignParameterScope,
+    groups: &[&DesignConstructionOperandGroup],
+) -> bool {
+    let references = scope.reference_members();
+    let Some(boundary_references) = references.len().checked_sub(1) else {
+        return false;
+    };
+    if boundary_references == 0
+        || boundary_references % 2 != 0
+        || groups.len() != boundary_references / 2
+        || !scope.surface_patch_boundaries().is_empty()
+    {
+        return false;
+    }
+    let Some(tool_body) = references.values().last() else {
+        return false;
+    };
+    groups.iter().enumerate().all(|(index, group)| {
+        let ordinal = index * 2;
+        usize::try_from(group.scope_reference_ordinal).ok() == Some(ordinal)
+            && group.role() == DesignOperandRole::PROFILE
+            && group.record_index != *tool_body
+            && group
+                .members()
+                .iter()
+                .all(|member| member.value != *tool_body)
+            && references.values().nth(ordinal) == Some(&group.record_index)
+            && group
+                .members()
+                .iter()
+                .map(|member| member.value)
+                .eq(references.values().nth(ordinal + 1).copied())
+    })
+}
+
+fn surface_patch_fixed_paths(
+    ctx: &DecodeContext<'_>,
+    scope: &DesignParameterScope,
+    groups: &[&DesignConstructionOperandGroup],
+) -> Result<bool, CodecError> {
+    let Some(reference_count) = scope.reference_members().len().checked_sub(1) else {
+        return Ok(false);
+    };
+    let boundary_count = reference_count / 3;
+    if boundary_count == 0
+        || reference_count % 3 != 0
+        || groups.len() != boundary_count
+        || scope.surface_patch_boundaries().len() != boundary_count
+    {
+        return Ok(false);
+    }
+    let mut occupied = ctx.alloc_filled(
+        scope.reference_members().len(),
+        false,
+        "f3d surface-patch reference occupancy",
+    )?;
+    for boundary in groups {
+        let Ok(group_ordinal) = usize::try_from(boundary.scope_reference_ordinal) else {
+            return Ok(false);
+        };
+        let Some(member_ordinal) = group_ordinal.checked_add(1) else {
+            return Ok(false);
+        };
+        let Some(settings_ordinal) = group_ordinal.checked_add(2) else {
+            return Ok(false);
+        };
+        let Some(group_reference) = scope.reference_members().values().nth(group_ordinal) else {
+            return Ok(false);
+        };
+        if settings_ordinal >= scope.reference_members().len()
+            || boundary.record_index != *group_reference
+            || boundary.role() != DesignOperandRole::BODIES_A
+            || !boundary
+                .members()
+                .iter()
+                .map(|member| member.value)
+                .eq(scope
+                    .reference_members()
+                    .values()
+                    .nth(member_ordinal)
+                    .into_iter()
+                    .copied())
+            || occupied[group_ordinal]
+            || occupied[member_ordinal]
+            || occupied[settings_ordinal]
+        {
+            return Ok(false);
+        }
+        let Some(settings) = scope.surface_patch_boundaries().iter().find(|settings| {
+            usize::try_from(settings.scope_reference_ordinal).ok() == Some(settings_ordinal)
+        }) else {
+            return Ok(false);
+        };
+        let Some(settings_reference) = scope.reference_members().values().nth(settings_ordinal)
+        else {
+            return Ok(false);
+        };
+        if settings.record_index != *settings_reference
+            || settings.model_reference != boundary.record_index
+        {
+            return Ok(false);
+        }
+        occupied[group_ordinal] = true;
+        occupied[member_ordinal] = true;
+        occupied[settings_ordinal] = true;
+    }
+    let mut unoccupied = Vec::new();
+    for (ordinal, occupied) in occupied.iter().enumerate() {
+        if !occupied {
+            unoccupied.push(ordinal);
+        }
+    }
+    let endpoint_unoccupied = unoccupied.as_slice() == [0]
+        || scope
+            .reference_members()
+            .len()
+            .checked_sub(1)
+            .is_some_and(|last| unoccupied.as_slice() == [last]);
+    Ok(endpoint_unoccupied)
+}
+
 fn project_surface_patch(
     ctx: &DecodeContext<'_>,
     scope: &DesignParameterScope,
@@ -7732,7 +7854,11 @@ fn project_surface_patch(
     else {
         return Ok(None);
     };
-    if scope.frame_length() == grouped_path_frame_length {
+    if scope.frame_length() == grouped_path_frame_length
+        && groups
+            .first()
+            .is_some_and(|group| group.role() == DesignOperandRole::BODIES_A)
+    {
         let [group] = groups.as_slice() else {
             return Ok(None);
         };
@@ -7780,96 +7906,18 @@ fn project_surface_patch(
         )));
     }
 
-    // The reference count separates the two settings-bearing forms: the
-    // fixed-path form has `3n + 1` references and the sketch-profile form has
-    // three. Frame length does not, because the Design scope envelope has two
-    // generations and the later one adds fourteen bytes to both forms.
-    let (boundary_count, boundary_role) = if scope.reference_members().len() == 3 {
-        (1, DesignOperandRole::PROFILE)
-    } else {
-        let Some(reference_count) = scope.reference_members().len().checked_sub(1) else {
-            return Ok(None);
-        };
-        let boundary_count = reference_count / 3;
-        if boundary_count == 0 || scope.reference_members().len() != boundary_count * 3 + 1 {
-            return Ok(None);
+    match groups.first().map(|group| group.role()) {
+        Some(DesignOperandRole::PROFILE) => {
+            if !surface_patch_sketch_profiles(scope, &groups) {
+                return Ok(None);
+            }
         }
-        (boundary_count, DesignOperandRole::BODIES_A)
-    };
-    if groups.len() != boundary_count || scope.surface_patch_boundaries().len() != boundary_count {
-        return Ok(None);
-    }
-    let mut occupied = ctx.alloc_filled(
-        scope.reference_members().len(),
-        false,
-        "f3d surface-patch reference occupancy",
-    )?;
-    for boundary in &groups {
-        let Ok(group_ordinal) = usize::try_from(boundary.scope_reference_ordinal) else {
-            return Ok(None);
-        };
-        let Some(member_ordinal) = group_ordinal.checked_add(1) else {
-            return Ok(None);
-        };
-        let Some(settings_ordinal) = group_ordinal.checked_add(2) else {
-            return Ok(None);
-        };
-        let Some(group_reference) = scope.reference_members().values().nth(group_ordinal) else {
-            return Ok(None);
-        };
-        if settings_ordinal >= scope.reference_members().len()
-            || boundary.record_index != *group_reference
-            || boundary.role() != boundary_role
-            || !boundary
-                .members()
-                .iter()
-                .map(|member| member.value)
-                .eq(scope
-                    .reference_members()
-                    .values()
-                    .nth(member_ordinal)
-                    .into_iter()
-                    .copied())
-            || occupied[group_ordinal]
-            || occupied[member_ordinal]
-            || occupied[settings_ordinal]
-        {
-            return Ok(None);
+        Some(DesignOperandRole::BODIES_A) => {
+            if !surface_patch_fixed_paths(ctx, scope, &groups)? {
+                return Ok(None);
+            }
         }
-        let Some(settings) = scope.surface_patch_boundaries().iter().find(|settings| {
-            usize::try_from(settings.scope_reference_ordinal).ok() == Some(settings_ordinal)
-        }) else {
-            return Ok(None);
-        };
-        let Some(settings_reference) = scope.reference_members().values().nth(settings_ordinal)
-        else {
-            return Ok(None);
-        };
-        if settings.record_index != *settings_reference
-            || settings.model_reference != boundary.record_index
-        {
-            return Ok(None);
-        }
-        occupied[group_ordinal] = true;
-        occupied[member_ordinal] = true;
-        occupied[settings_ordinal] = true;
-    }
-    let mut unoccupied = Vec::new();
-    for (ordinal, occupied) in occupied.iter().enumerate() {
-        if !occupied {
-            unoccupied.push(ordinal);
-        }
-    }
-    let endpoint_unoccupied = unoccupied.as_slice() == [0]
-        || scope
-            .reference_members()
-            .len()
-            .checked_sub(1)
-            .is_some_and(|last| unoccupied.as_slice() == [last]);
-    if (scope.reference_members().len() == 3 && !unoccupied.is_empty())
-        || (scope.reference_members().len() != 3 && !endpoint_unoccupied)
-    {
-        return Ok(None);
+        _ => return Ok(None),
     }
     let boundary = if let [boundary] = groups.as_slice() {
         resolved_loft_path(
