@@ -1399,6 +1399,14 @@ impl Graph {
         references
     }
 
+    /// The fields and POINT xmt of a VERTEX whose POINT has a decoded position.
+    pub(crate) fn resolved_vertex(&self, vertex_xmt: u32) -> Option<(VertexFields, u32)> {
+        let fields = self.get(NodeKind::Vertex, vertex_xmt)?.vertex_fields()?;
+        let point = self.get_target(NodeKind::Point, fields.point)?;
+        point.point_position()?;
+        Some((fields, point.xmt()))
+    }
+
     /// Resolve the exact witnesses of the unique edge carrying a curve.
     pub(crate) fn unique_curve_edge_witness(&self, curve_xmt: u32) -> Option<CurveEdgeWitness> {
         let mut edges = self
