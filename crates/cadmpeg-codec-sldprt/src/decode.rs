@@ -5579,6 +5579,95 @@ fn give_up_truncated_blocks(
             }
         }
     }
+    give_up_xml_elements(ctx, scan, unknowns, losses, retention)?;
+    Ok(())
+}
+
+fn give_up_xml_elements(
+    ctx: &DecodeContext<'_>,
+    scan: &ContainerScan,
+    unknowns: &mut Vec<UnknownRecord>,
+    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
+    retention: &mut retention::Retention,
+) -> Result<(), CodecError> {
+    use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput, PartSpec};
+    for section in scan.sections() {
+        let Some(text) = crate::container::xml_text(section.payload()) else {
+            continue;
+        };
+        if !text
+            .trim_start()
+            .trim_start_matches('\u{feff}')
+            .starts_with('<')
+        {
+            continue;
+        }
+        let mut damaged = Vec::new();
+        match crate::container::recover_xml(
+            ctx,
+            &text,
+            "scan SolidWorks XML damage",
+            |start, end, name| {
+                damaged.push((start, end, String::from_utf8_lossy(name).into_owned()));
+                Ok(())
+            },
+        ) {
+            Ok(_) => {}
+            Err(error @ CodecError::ResourceLimit(_)) => return Err(error),
+            Err(_) => continue,
+        }
+        let Some(source) = scan.section_view(section) else {
+            continue;
+        };
+        let payload = source.window();
+        let marker = usize::from(payload.starts_with(&[0x86]));
+        let utf16 = payload
+            .get(marker..)
+            .is_some_and(|bytes| bytes.starts_with(&[0xff, 0xfe]));
+        let prefix = marker + if utf16 { 2 } else { 0 };
+        for (start, end, name) in damaged {
+            let to_source = |offset: usize| -> Option<usize> {
+                let offset = if utf16 {
+                    text.get(..offset)?.encode_utf16().count().checked_mul(2)?
+                } else {
+                    offset
+                };
+                source.start().checked_add(prefix)?.checked_add(offset)
+            };
+            let (Some(start), Some(end)) = (to_source(start), to_source(end)) else {
+                return Err(CodecError::malformed(
+                    "SolidWorks XML element offset overflows",
+                ));
+            };
+            let extent = source.child(start, end).ok_or_else(|| {
+                CodecError::malformed("SolidWorks XML element exceeds its section")
+            })?;
+            let mut part = PartOutput::new(cadmpeg_ir::CodecFormat::Sldprt, ctx);
+            let spec = PartSpec::new("sldprt.xml_element")
+                .holding([ArenaClass::Model, ArenaClass::Design])
+                .in_stream(section.source_stream().clone());
+            ctx.decode_part(&mut part, extent, spec, |_| {
+                Err::<(), _>(CodecError::malformed(format_args!(
+                    "damaged XML element <{name}>"
+                )))
+            })?;
+            let (_, _, fidelity, part_losses) = part.into_parts();
+            losses.extend(part_losses);
+            for (id, record) in fidelity.retained_records() {
+                if let Some(data) = record.data() {
+                    for class in record.untyped().iter().copied() {
+                        retention.record(id.as_str(), class);
+                    }
+                    unknowns.push(UnknownRecord::retained(
+                        id.clone(),
+                        u64_from_index(start),
+                        data.to_vec(),
+                        Vec::new(),
+                    ));
+                }
+            }
+        }
+    }
     Ok(())
 }
 
