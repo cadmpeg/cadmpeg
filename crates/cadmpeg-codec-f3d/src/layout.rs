@@ -5529,6 +5529,76 @@ pub(crate) mod local_component_occurrence_matrix_tail {
     pub(crate) const OWNER_ENTITY: usize = 138;
 }
 
+/// Byte offsets for the `local_component_occurrence_leading_flag_prefix` record.
+///
+/// Spec §3.1. Record length 51 B.
+///
+/// ```text
+/// Offsets are relative to the carrier's indexed header. A matrix frame stores the matrix at offset 51; the body follows the flag or the matrix.
+/// ```
+pub(crate) mod local_component_occurrence_leading_flag_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 51;
+    /// Offset of `empty_instance_name` (`bytes[8]`). Spec §3.1.
+    pub(crate) const EMPTY_INSTANCE_NAME: usize = 11;
+    /// Offset of `path_marker` (`u8`). Spec §3.1.
+    pub(crate) const PATH_MARKER: usize = 19;
+    /// Stated value of `path_marker` (`u8`). Spec §3.1.
+    pub(crate) const PATH_MARKER_VALUE: u8 = 1;
+    /// Offset of `path_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const PATH_COUNT: usize = 20;
+    /// Stated value of `path_count` (`u32`). Spec §3.1.
+    pub(crate) const PATH_COUNT_VALUE: u32 = 0x0000_0001;
+    /// Offset of `component_reference` (`bytes[9]`). Spec §3.1.
+    pub(crate) const COMPONENT_REFERENCE: usize = 24;
+    /// Offset of `path_discriminator` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const PATH_DISCRIMINATOR: usize = 35;
+    /// Offset of `attributes_marker` (`u8`). Spec §3.1.
+    pub(crate) const ATTRIBUTES_MARKER: usize = 39;
+    /// Stated value of `attributes_marker` (`u8`). Spec §3.1.
+    pub(crate) const ATTRIBUTES_MARKER_VALUE: u8 = 1;
+    /// Offset of `attribute_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const ATTRIBUTE_COUNT: usize = 40;
+    /// Stated value of `attribute_count` (`u32`). Spec §3.1.
+    pub(crate) const ATTRIBUTE_COUNT_VALUE: u32 = 0x0000_0000;
+    /// Offset of `ordinal_prefix` (`u16`, little-endian). Spec §3.1.
+    pub(crate) const ORDINAL_PREFIX: usize = 44;
+    /// Offset of `occurrence_ordinal` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const OCCURRENCE_ORDINAL: usize = 46;
+    /// Offset of `identity_flag` (`u8`). Spec §3.1.
+    pub(crate) const IDENTITY_FLAG: usize = 50;
+}
+
+/// Byte offsets for the `local_component_occurrence_leading_flag_body` record.
+///
+/// Spec §3.1. Record length 180 B.
+///
+/// ```text
+/// Offsets are relative to the end of the 51-byte prefix or of the first matrix. A matrix frame repeats the matrix after the body; the 20-byte identity tail closes the frame.
+/// ```
+pub(crate) mod local_component_occurrence_leading_flag_body {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 180;
+    /// Offset of `carrier_guid` (`bytes[76]`). Spec §3.1.
+    pub(crate) const CARRIER_GUID: usize = 0;
+    /// Offset of `occurrence_guid` (`bytes[76]`). Spec §3.1.
+    pub(crate) const OCCURRENCE_GUID: usize = 76;
+    /// Offset of `record_reference` (`bytes[9]`). Spec §3.1.
+    pub(crate) const RECORD_REFERENCE: usize = 152;
+    /// Offset of `path_marker` (`u8`). Spec §3.1.
+    pub(crate) const PATH_MARKER: usize = 162;
+    /// Stated value of `path_marker` (`u8`). Spec §3.1.
+    pub(crate) const PATH_MARKER_VALUE: u8 = 1;
+    /// Offset of `path_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const PATH_COUNT: usize = 163;
+    /// Stated value of `path_count` (`u32`). Spec §3.1.
+    pub(crate) const PATH_COUNT_VALUE: u32 = 0x0000_0001;
+    /// Offset of `component_reference_repeat` (`bytes[9]`). Spec §3.1.
+    pub(crate) const COMPONENT_REFERENCE_REPEAT: usize = 168;
+    /// Offset of `identity_flag_repeat` (`u8`). Spec §3.1.
+    pub(crate) const IDENTITY_FLAG_REPEAT: usize = 179;
+}
+
 /// Byte offsets for the `root_instance_prefix` record.
 ///
 /// Spec §3.1. Record length 45 B.

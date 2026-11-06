@@ -5661,6 +5661,58 @@ Unstated regions:
 - `128..137` (9 B): Nine zero bytes.
 - `146..148` (2 B): Two zero bytes close the frame.
 
+## `local_component_occurrence_leading_flag_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 51 B
+
+Offsets are relative to the carrier's indexed header. A matrix frame stores the matrix at offset 51; the body follows the flag or the matrix.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/components.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 11 | 8 | `empty_instance_name` | `bytes[8]` | little | spec | the frame stores u32 `0`, an empty LP-ASCII instance name |
+| 19 | 1 | `path_marker` | `u8` | little | spec | `u8 1` at offset 19 · value `1` |
+| 20 | 4 | `path_count` | `u32` | little | spec | u32 path count `1` at offset 20 · value `1` |
+| 24 | 9 | `component_reference` | `bytes[9]` | little | spec | the marked u64 component-record reference at offset 24 |
+| 35 | 4 | `path_discriminator` | `u32` | little | spec | the u32 path discriminator at offset 35 |
+| 39 | 1 | `attributes_marker` | `u8` | little | spec | `u8 1` at offset 39 and u32 count `0` at offset 40 · value `1` |
+| 40 | 4 | `attribute_count` | `u32` | little | spec | `u8 1` at offset 39 and u32 count `0` at offset 40 · value `0` |
+| 44 | 2 | `ordinal_prefix` | `u16` | little | spec | The u16 ordinal prefix is at offset 44 |
+| 46 | 4 | `occurrence_ordinal` | `u32` | little | spec | the u32 one-based occurrence ordinal is at offset 46 |
+| 50 | 1 | `identity_flag` | `u8` | little | spec | the identity flag is at offset 50 |
+
+Unstated regions:
+
+- `0..11` (11 B): Indexed header.
+- `33..35` (2 B): Two zero bytes after the component reference.
+
+## `local_component_occurrence_leading_flag_body`
+
+Spec §3.1 · layout: byte offsets · size: 180 B
+
+Offsets are relative to the end of the 51-byte prefix or of the first matrix. A matrix frame repeats the matrix after the body; the 20-byte identity tail closes the frame.
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/components.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 76 | `carrier_guid` | `bytes[76]` | little | spec | the LP-UTF16 carrier GUID |
+| 76 | 76 | `occurrence_guid` | `bytes[76]` | little | spec | the LP-UTF16 occurrence GUID |
+| 152 | 9 | `record_reference` | `bytes[9]` | little | spec | a marked same-segment record reference |
+| 162 | 1 | `path_marker` | `u8` | little | spec | one zero byte, `u8 1`, u32 path count `1` · value `1` |
+| 163 | 4 | `path_count` | `u32` | little | spec | one zero byte, `u8 1`, u32 path count `1` · value `1` |
+| 168 | 9 | `component_reference_repeat` | `bytes[9]` | little | spec | the repeated marked component-record reference |
+| 179 | 1 | `identity_flag_repeat` | `u8` | little | spec | a copy of the identity flag |
+
+Unstated regions:
+
+- `161..162` (1 B): Zero byte.
+- `167..168` (1 B): Zero byte.
+- `177..179` (2 B): Two zero bytes.
+
 ## `root_instance_prefix`
 
 Spec §3.1 · layout: byte offsets · size: 45 B
