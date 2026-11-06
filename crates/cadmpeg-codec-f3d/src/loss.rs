@@ -270,6 +270,10 @@ pub(crate) enum F3dLossCode {
     FeatureProfileSelectionNative,
     /// Multiple Sketch-profile operands retain an unresolved group composition.
     FeatureExtrudeProfileGroupNative,
+    /// An Extrude face profile's proven face set lists unresolved members in face-slot order.
+    FeatureExtrudeProfileFaceOrderAssumed,
+    /// An Extrude face profile's end-cap search stopped at a local cap.
+    FeatureExtrudeProfileFaceSearchCapped,
     /// Extrude profile selections skipped the sketch arrangement search at a local cap.
     FeatureProfileArrangementCapped,
     /// Extrude profile selections skipped a certified profile test at a local cap.
@@ -581,6 +585,8 @@ impl F3dLossCode {
         Self::DimensionUnprojected,
         Self::FeatureProfileSelectionNative,
         Self::FeatureExtrudeProfileGroupNative,
+        Self::FeatureExtrudeProfileFaceOrderAssumed,
+        Self::FeatureExtrudeProfileFaceSearchCapped,
         Self::FeatureProfileArrangementCapped,
         Self::FeatureProfileDensificationCapped,
         Self::FeaturePathSelectionNative,
@@ -800,6 +806,12 @@ impl F3dLossCode {
             Self::SketchCurveUnprofiledSelected => "sketch.curve-unprofiled-selected",
             Self::DimensionUnprojected => "dimension.unprojected",
             Self::FeatureExtrudeProfileGroupNative => "feature.extrude-profile-group-native",
+            Self::FeatureExtrudeProfileFaceOrderAssumed => {
+                "feature.extrude-profile-face-order-assumed"
+            }
+            Self::FeatureExtrudeProfileFaceSearchCapped => {
+                "feature.extrude-profile-face-search-capped"
+            }
             Self::FeatureProfileSelectionNative => "feature.profile-selection-native",
             Self::FeatureProfileArrangementCapped => "feature.profile-arrangement-capped",
             Self::FeatureProfileDensificationCapped => "feature.profile-densification-capped",
@@ -1044,6 +1056,8 @@ impl F3dLossCode {
             | Self::DimensionUnprojected
             | Self::FeatureProfileSelectionNative
             | Self::FeatureExtrudeProfileGroupNative
+            | Self::FeatureExtrudeProfileFaceOrderAssumed
+            | Self::FeatureExtrudeProfileFaceSearchCapped
             | Self::FeatureProfileArrangementCapped
             | Self::FeatureProfileDensificationCapped
             | Self::FeaturePathSelectionNative
@@ -1219,6 +1233,8 @@ impl F3dLossCode {
             | Self::DimensionUnprojected
             | Self::FeatureProfileSelectionNative
             | Self::FeatureExtrudeProfileGroupNative
+            | Self::FeatureExtrudeProfileFaceOrderAssumed
+            | Self::FeatureExtrudeProfileFaceSearchCapped
             | Self::FeatureProfileArrangementCapped
             | Self::FeatureProfileDensificationCapped
             | Self::FeaturePathSelectionNative
@@ -1478,6 +1494,8 @@ mod tests {
                 "dimension.unprojected",
                 "feature.profile-selection-native",
                 "feature.extrude-profile-group-native",
+                "feature.extrude-profile-face-order-assumed",
+                "feature.extrude-profile-face-search-capped",
                 "feature.profile-arrangement-capped",
                 "feature.profile-densification-capped",
                 "feature.path-selection-native",

@@ -20,12 +20,12 @@ use cadmpeg_core::decode::DecodeContext;
 use cadmpeg_core::CodecError;
 use std::f64::consts::TAU;
 
-use cadmpeg_ir::math::{Point2, Point3};
+use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
 use super::ResolvedProfileSelection;
 use crate::design::geometry::{
     atomic_sketch_regions, point_in_polygon, point_segment_distance, profile_loop_contains_points,
-    project_to_sketch, AtomicSketchRegion, ProfileGeometryWork,
+    AtomicSketchRegion, ProfileGeometryWork,
 };
 use crate::history_records::{AsmDeltaState, AsmHistoricalTopology, AsmHistory};
 
@@ -35,18 +35,73 @@ const ARC_SEGMENTS: u32 = 64;
 const SAMPLE_GRID: u32 = 24;
 /// Relative difference allowed between the cap area and the selected area.
 /// Both sides are polylines of the same circles and arcs.
-const AREA_AGREEMENT: f64 = 1e-3;
-/// How far from parallel, as a cosine, a cap's plane normal may be to the sketch normal.
-const PARALLEL_CAP: f64 = 1e-9;
+pub(super) const AREA_AGREEMENT: f64 = 1e-3;
+/// How far from parallel, as a cosine, a cap's plane normal may be to the frame normal.
+pub(super) const PARALLEL_CAP: f64 = 1e-9;
 /// Largest sine of the angle between a straight edge's carrier axis and its chord.
 const STRAIGHT_CARRIER: f64 = 1e-9;
-/// How many linear tolerances either side of a region boundary segment its
-/// two sides are sampled at.
-const SIDE_OFFSET: f64 = 4.0;
+/// How many linear tolerances either side of a boundary segment its two sides
+/// are sampled at.
+pub(super) const SIDE_OFFSET: f64 = 4.0;
 /// Most loops and loop edges one cap may have.
-const CAP_EDGES: usize = 4096;
+pub(super) const CAP_EDGES: usize = 4096;
 
-/// One proven piece of a cap loop, in sketch coordinates.
+/// An orthonormal frame on one plane.
+#[derive(Clone, Copy)]
+pub(super) struct PlaneFrame {
+    origin: Point3,
+    u: Vector3,
+    v: Vector3,
+    normal: Vector3,
+}
+
+impl PlaneFrame {
+    fn of_sketch(sketch: &cadmpeg_ir::sketches::Sketch) -> Option<Self> {
+        let (origin, normal, u) = sketch.resolved_placement()?;
+        let (normal, u) = (normal.get(), u.get());
+        Some(Self {
+            origin: origin.get(),
+            u,
+            v: normal.cross(u),
+            normal,
+        })
+    }
+
+    /// The frame through `origin` with unit normal along `normal` and its
+    /// first axis across the world axis least aligned with it.
+    pub(super) fn of_plane(origin: Point3, normal: Vector3) -> Option<Self> {
+        let normal = normal.unit()?;
+        let across = [
+            Vector3::new(1.0, 0.0, 0.0),
+            Vector3::new(0.0, 1.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+        ]
+        .into_iter()
+        .min_by(|a, b| a.dot(normal).abs().total_cmp(&b.dot(normal).abs()))?;
+        let u = across.cross(normal).unit()?;
+        Some(Self {
+            origin,
+            u,
+            v: normal.cross(u),
+            normal,
+        })
+    }
+
+    pub(super) fn normal(&self) -> Vector3 {
+        self.normal
+    }
+
+    pub(super) fn project(&self, point: Point3) -> Point2 {
+        let offset = point.vector_from(self.origin);
+        Point2::new(offset.dot(self.u), offset.dot(self.v))
+    }
+
+    pub(super) fn height(&self, point: Point3) -> f64 {
+        point.vector_from(self.origin).dot(self.normal)
+    }
+}
+
+/// One proven piece of a cap loop, in frame coordinates.
 enum Piece {
     Line(Point2, Point2),
     /// From `start` radians through `sweep` radians; a negative sweep turns
@@ -112,21 +167,21 @@ impl Piece {
     }
 }
 
-fn distance(a: Point2, b: Point2) -> f64 {
+pub(super) fn distance(a: Point2, b: Point2) -> f64 {
     (a.u - b.u).hypot(a.v - b.v)
 }
 
-/// One planar cap: its loops as closed sketch-plane polylines, the proven
+/// One planar cap: its loops as closed frame polylines, the proven
 /// pieces they are drawn from, and the loop vertices.
-struct Cap {
-    loops: Vec<Vec<Point2>>,
+pub(super) struct Cap {
+    pub(super) loops: Vec<Vec<Point2>>,
     pieces: Vec<Piece>,
-    corners: Vec<Point2>,
-    area: f64,
+    pub(super) corners: Vec<Point2>,
+    pub(super) area: f64,
 }
 
 impl Cap {
-    fn contains(&self, point: Point2) -> bool {
+    pub(super) fn contains(&self, point: Point2) -> bool {
         self.loops
             .iter()
             .filter(|ring| point_in_polygon(point, ring))
@@ -135,7 +190,7 @@ impl Cap {
             == 1
     }
 
-    fn boundary_distance(&self, point: Point2) -> f64 {
+    pub(super) fn boundary_distance(&self, point: Point2) -> f64 {
         self.pieces
             .iter()
             .map(|piece| piece.distance(point))
@@ -176,8 +231,11 @@ pub(super) fn cap_profile_selection(
     if transition.previous_state_id != Some(previous_state_id) {
         return Ok(None);
     }
+    let Some(frame) = PlaneFrame::of_sketch(sketch) else {
+        return Ok(None);
+    };
     let Some(caps) = far_caps(
-        sketch,
+        &frame,
         topology,
         &transition.topology.faces.inserted,
         tolerance,
@@ -323,17 +381,15 @@ fn unique_state(
     Some((history.topology(state)?, state))
 }
 
-/// The inserted planar faces parallel to the sketch at the offset farthest
+/// The inserted planar faces parallel to the frame at the offset farthest
 /// from its plane, each with every loop resolved.
 fn far_caps(
-    sketch: &cadmpeg_ir::sketches::Sketch,
+    frame: &PlaneFrame,
     topology: &AsmHistoricalTopology,
     inserted: &[i64],
     tolerance: f64,
 ) -> Option<Vec<Cap>> {
-    let (origin, normal, _) = sketch.resolved_placement()?;
-    let normal = normal.get();
-    let offset = |point: Point3| point.vector_from(origin.get()).dot(normal);
+    let normal = frame.normal;
     let surfaces: HashMap<i64, i64> = topology
         .face_surfaces
         .iter()
@@ -352,8 +408,8 @@ fn far_caps(
         if (plane.normal.dot(normal).abs() - 1.0).abs() > PARALLEL_CAP {
             continue;
         }
-        let height = offset(plane.origin);
-        let cap = face_cap(sketch, topology, *face, tolerance)?;
+        let height = frame.height(plane.origin);
+        let cap = face_cap(frame, topology, *face, tolerance)?;
         caps.push((height, cap));
     }
     let far = caps
@@ -368,17 +424,53 @@ fn far_caps(
     (!caps.is_empty()).then_some(caps)
 }
 
-/// Every loop of `face` as a sketch-plane polyline drawn from its proven
-/// pieces. `None` when a loop does not close or an edge has no proven
-/// carrier.
-fn face_cap(
-    sketch: &cadmpeg_ir::sketches::Sketch,
+/// Every loop of `face` as a frame polyline drawn from its proven pieces.
+/// `None` when a loop does not close or an edge has no proven carrier.
+pub(super) fn face_cap(
+    frame: &PlaneFrame,
     topology: &AsmHistoricalTopology,
     face: i64,
     tolerance: f64,
 ) -> Option<Cap> {
-    let (_, normal, _) = sketch.resolved_placement()?;
-    let normal = normal.get();
+    let mut loops = Vec::new();
+    let mut pieces = Vec::new();
+    let mut corners = Vec::new();
+    for steps in oriented_loops(topology, face)? {
+        let mut ring: Vec<Point2> = Vec::new();
+        for (edge, from, to) in steps {
+            let piece = edge_piece(frame, topology, face, edge, (from, to), tolerance)?;
+            corners.push(frame.project(from));
+            piece.push(&mut ring);
+            pieces.push(piece);
+        }
+        if ring.len() < 3 {
+            return None;
+        }
+        loops.push(ring);
+    }
+    let mut areas: Vec<f64> = loops.iter().map(|ring| polygon_area(ring).abs()).collect();
+    let outer = areas
+        .iter()
+        .enumerate()
+        .max_by(|a, b| a.1.total_cmp(b.1))
+        .map(|(index, _)| index)?;
+    let outer_area = areas.swap_remove(outer);
+    let area = outer_area - areas.iter().sum::<f64>();
+    (area > tolerance * tolerance).then_some(Cap {
+        loops,
+        pieces,
+        corners,
+        area,
+    })
+}
+
+/// Each loop of `face` as its edges in loop order, each with the positions
+/// it runs from and to. `None` when a loop does not close or a row is
+/// missing.
+pub(super) fn oriented_loops(
+    topology: &AsmHistoricalTopology,
+    face: i64,
+) -> Option<Vec<Vec<(i64, Point3, Point3)>>> {
     let position = |vertex: i64| -> Option<Point3> {
         let point = topology
             .vertex_points
@@ -394,8 +486,6 @@ fn face_cap(
         )
     };
     let mut loops = Vec::new();
-    let mut pieces = Vec::new();
-    let mut corners = Vec::new();
     let mut edges_seen = 0usize;
     for loop_ in relation(&topology.face_loops, face)? {
         let coedges = relation(&topology.loop_coedges, *loop_)?;
@@ -439,33 +529,14 @@ fn face_cap(
         if steps.first()?.1 != steps.last()?.2 {
             return None;
         }
-        let mut ring: Vec<Point2> = Vec::new();
-        for (edge, from, to) in steps {
-            let (from, to) = (position(from)?, position(to)?);
-            let piece = edge_piece(sketch, topology, face, edge, (from, to), normal, tolerance)?;
-            corners.push(project_to_sketch(sketch, from)?);
-            piece.push(&mut ring);
-            pieces.push(piece);
-        }
-        if ring.len() < 3 {
-            return None;
-        }
-        loops.push(ring);
+        loops.push(
+            steps
+                .into_iter()
+                .map(|(edge, from, to)| Some((edge, position(from)?, position(to)?)))
+                .collect::<Option<Vec<_>>>()?,
+        );
     }
-    let mut areas: Vec<f64> = loops.iter().map(|ring| polygon_area(ring).abs()).collect();
-    let outer = areas
-        .iter()
-        .enumerate()
-        .max_by(|a, b| a.1.total_cmp(b.1))
-        .map(|(index, _)| index)?;
-    let outer_area = areas.swap_remove(outer);
-    let area = outer_area - areas.iter().sum::<f64>();
-    (area > tolerance * tolerance).then_some(Cap {
-        loops,
-        pieces,
-        corners,
-        area,
-    })
+    Some(loops)
 }
 
 /// The proven piece of the cap `face`'s `edge` between its two ends: a line
@@ -473,16 +544,16 @@ fn face_cap(
 /// circle where the cap meets a cylinder about an axis parallel to the cap
 /// normal. `None` for any other carrier.
 fn edge_piece(
-    sketch: &cadmpeg_ir::sketches::Sketch,
+    frame: &PlaneFrame,
     topology: &AsmHistoricalTopology,
     face: i64,
     edge: i64,
     (from, to): (Point3, Point3),
-    normal: cadmpeg_ir::math::Vector3,
     tolerance: f64,
 ) -> Option<Piece> {
-    let start = project_to_sketch(sketch, from)?;
-    let end = project_to_sketch(sketch, to)?;
+    let normal = frame.normal;
+    let start = frame.project(from);
+    let end = frame.project(to);
     let interior = topology
         .edge_samples
         .iter()
@@ -507,13 +578,8 @@ fn edge_piece(
                 && off_line(from) <= tolerance
                 && off_line(to) <= tolerance
             {
-                return match interior.map(|point| project_to_sketch(sketch, point)) {
-                    Some(Some(point))
-                        if point_segment_distance(point, (start, end)) > tolerance =>
-                    {
-                        None
-                    }
-                    Some(None) => None,
+                return match interior.map(|point| frame.project(point)) {
+                    Some(point) if point_segment_distance(point, (start, end)) > tolerance => None,
                     _ => Some(Piece::Line(start, end)),
                 };
             }
@@ -544,11 +610,10 @@ fn edge_piece(
             && (cylinder.axis.dot(normal).abs() / cylinder.axis.norm() - 1.0).abs() <= PARALLEL_CAP
     });
     let cylinder = cylinders.next()?;
-    let center = project_to_sketch(sketch, cylinder.origin)?;
+    let center = frame.project(cylinder.origin);
     let radius = cylinder.radius;
     if cylinders.any(|other| {
-        project_to_sketch(sketch, other.origin)
-            .is_none_or(|other_center| distance(other_center, center) > tolerance)
+        distance(frame.project(other.origin), center) > tolerance
             || (other.radius - radius).abs() > tolerance
     }) {
         return None;
@@ -567,7 +632,7 @@ fn edge_piece(
             sweep: TAU,
         });
     }
-    let middle = project_to_sketch(sketch, interior?)?;
+    let middle = frame.project(interior?);
     if !on_circle(middle) {
         return None;
     }
@@ -585,7 +650,10 @@ fn edge_piece(
     })
 }
 
-fn relation(rows: &[crate::history_records::AsmHistoricalRelation], owner: i64) -> Option<&[i64]> {
+pub(super) fn relation(
+    rows: &[crate::history_records::AsmHistoricalRelation],
+    owner: i64,
+) -> Option<&[i64]> {
     let mut rows = rows.iter().filter(|row| row.owner_ref == owner);
     let row = rows.next()?;
     rows.next().is_none().then_some(row.member_refs.as_slice())

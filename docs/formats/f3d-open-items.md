@@ -1003,6 +1003,18 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** Such a group retains its native identity and reports `feature.face-selection-native`.
 
+### DR-262. Member order of transition-proven Extrude face profiles
+
+**Question.** Which proven face does each unresolved member of an Extrude face profile select?
+
+**Known.** `f3d.md` §3.1 "A one-root profile with a leaf that has neither historical face slots nor an active face" proves the root's face set from the end caps or the deleted faces of the scope's transition, and maps the unresolved members to the remaining faces in face-slot order. The unresolved members have recipe nodes outside the two-clause structure, or positive prefix references whose face lane is empty in the preceding topology (DR-170).
+
+**Need.** The node grammar and the empty-lane binding of DR-170, so that each member's recipe selects its face.
+
+**Conflict.** None.
+
+**Note.** A profile with two or more unresolved members reports `feature.extrude-profile-face-order-assumed`.
+
 ### DR-171. Sketch support identity
 
 **Question.** Which placement references join a Sketch to its supporting plane or historical face and the feature that produces that support?

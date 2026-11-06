@@ -33,6 +33,7 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 use std::collections::{HashMap, HashSet};
 
 mod cap_regions;
+pub(crate) mod face_profile_sets;
 mod region_members;
 
 /// Bind each Extrude's counted sketch selection to exact neutral profile loops
