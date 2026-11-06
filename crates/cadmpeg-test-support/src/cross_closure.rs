@@ -956,7 +956,7 @@ mod tests {
         let rows = [ReducedProbe {
             path: "model.procedural_curves[].definition",
             storage: ReducedStorage::Normalized {
-                loss: "step/geometry.procedural-cache-tolerance-omitted",
+                loss: "step/geometry.procedural-curve-cache-tolerance-omitted",
             },
             normalize: Some(crate::reduced::step_trimmed_curve_cache),
         }];

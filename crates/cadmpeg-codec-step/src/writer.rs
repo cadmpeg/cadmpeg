@@ -35,7 +35,7 @@ pub(crate) const REDUCED_FIELDS: &[cadmpeg_ir::codec::write::ReducedField] = &[
     cadmpeg_ir::codec::write::ReducedField {
         path: "model.procedural_curves[].definition",
         storage: cadmpeg_ir::codec::write::ReducedStorage::Normalized {
-            loss: "step/geometry.procedural-cache-tolerance-omitted",
+            loss: "step/geometry.procedural-curve-cache-tolerance-omitted",
         },
     },
 ];

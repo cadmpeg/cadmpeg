@@ -8625,7 +8625,12 @@ impl<'a> Builder<'a> {
                     .cache_fit_tolerance()
                     .is_some_and(|value| value.get() > 0.0)
             })
-            .map(|curve| curve.id.to_string())
+            .map(|curve| {
+                (
+                    StepLossCode::ProceduralCurveCacheToleranceOmitted,
+                    curve.id.to_string(),
+                )
+            })
             .chain(
                 self.ir
                     .model
@@ -8640,12 +8645,16 @@ impl<'a> Builder<'a> {
                             .cache_fit_tolerance()
                             .is_some_and(|value| value.get() > 0.0)
                     })
-                    .map(|surface| surface.id.to_string()),
+                    .map(|surface| {
+                        (
+                            StepLossCode::ProceduralSurfaceCacheToleranceOmitted,
+                            surface.id.to_string(),
+                        )
+                    }),
             )
             .collect::<Vec<_>>();
-        for id in cache_tolerances {
-            self.loss(StepLossCode::ProceduralCacheToleranceOmitted,
-                format!("procedural construction {id} has a solved-cache fit tolerance that STEP does not retain"));
+        for (code, id) in cache_tolerances {
+            self.loss(code, format!("procedural construction {id} has a solved-cache fit tolerance that STEP does not retain"));
         }
         let normalized_extrusions: Vec<_> = self
             .ir
