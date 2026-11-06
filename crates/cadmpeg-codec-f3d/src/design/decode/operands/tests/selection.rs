@@ -1066,6 +1066,8 @@ fn a_compact_sketch_point_identity_round_trips_through_the_operand_record() {
         scope_record_index: 12,
         group_record_index: 50,
         group_member_ordinal: 0,
+        serialization_form:
+            crate::records::topology::entity_selection::SelectionSerializationForm::Zero,
         record_index: frame.record_index,
         byte_offset: frame.byte_offset,
         class_tag: "369".to_owned().try_into().unwrap(),
@@ -1116,6 +1118,8 @@ fn a_sketch_point_frame_matches_no_curve_and_names_no_topology_identity() {
             scope_record_index: 12,
             group_record_index: 50,
             group_member_ordinal: 0,
+            serialization_form:
+                crate::records::topology::entity_selection::SelectionSerializationForm::Zero,
             record_index: 100,
             byte_offset: 0,
             class_tag: class_tag.to_owned().try_into().unwrap(),

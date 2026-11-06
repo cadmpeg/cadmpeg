@@ -61,6 +61,8 @@ fn sketch_point_selection() -> DesignEntitySelectionOperand {
         scope_record_index: 10,
         group_record_index: 100,
         group_member_ordinal: 0,
+        serialization_form:
+            crate::records::topology::entity_selection::SelectionSerializationForm::Zero,
         record_index: 200,
         byte_offset: 1_000,
         class_tag: DesignClassTag::try_from("369".to_owned()).unwrap(),
