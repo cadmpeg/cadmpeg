@@ -97,9 +97,10 @@ pub(super) fn regenerate(
                     Value::String(value) => value == text,
                     Value::Null => text == "null",
                     Value::Bool(value) => text.parse::<bool>() == Ok(*value),
-                    Value::Number(value) => text
-                        .parse::<serde_json::Number>()
-                        .is_ok_and(|parsed| &parsed == value),
+                    Value::Number(value) => {
+                        let original_text = value.to_string();
+                        original_text == text
+                    }
                     Value::Array(_) | Value::Object(_) => false,
                 })
                 .cloned()
