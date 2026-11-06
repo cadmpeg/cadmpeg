@@ -58,6 +58,7 @@ pub(super) fn exact_combine_operation(
     };
     let mut operand_list_refusal = None;
     let mut contradiction = None;
+    let mut new_component = false;
     for prologue in combine_prologues(bytes, start, scope) {
         let operand_lists = prologue.lists.is_some();
         match combine_operation_with(bytes, records, scope, stream_types, prologue)? {
@@ -78,11 +79,9 @@ pub(super) fn exact_combine_operation(
                 return Ok(Some(*operation));
             }
             PrologueReading::NewComponent => {
-                losses.push(F3dLossCode::FeatureCombineNewComponentNative.note(format!(
-                    "{}: the Combine places its result in a new component, which the IR cannot name; the Combine stays native",
-                    scope.id
-                )));
-                return Ok(None);
+                operand_list_refusal =
+                    Some("its new-component Boolean is one, which the IR cannot name");
+                new_component = true;
             }
             PrologueReading::Contradicted(reason) => {
                 operand_list_refusal = Some(reason);
@@ -96,7 +95,12 @@ pub(super) fn exact_combine_operation(
             }
         }
     }
-    if let Some(reason) = contradiction {
+    if new_component {
+        losses.push(F3dLossCode::FeatureCombineNewComponentNative.note(format!(
+            "{}: the Combine places its result in a new component, which the IR cannot name, and no other prologue reads it; the Combine stays native",
+            scope.id
+        )));
+    } else if let Some(reason) = contradiction {
         losses.push(F3dLossCode::FeatureCombineOperandListContradicted.note(format!(
             "{}: the lists of the Combine frame name its operands and {reason}; no prologue reads it, so the Combine stays native",
             scope.id
@@ -132,8 +136,8 @@ struct OperandLists {
 /// The result of reading a frame in one prologue.
 enum PrologueReading {
     Operation(Box<DesignCombineOperation>),
-    /// The lists name the scope's operands, so the frame stores this
-    /// prologue, and its fields place the result in a new component.
+    /// The lists name the scope's operands, its fields hold, and they place
+    /// the result in a new component.
     NewComponent,
     /// The lists name the scope's operands, and a field contradicts the
     /// prologue for the stated reason.
@@ -474,7 +478,8 @@ fn stored_operand_lists<'a>(
 /// new-component Boolean is one. A prologue with a companion can store two
 /// empty lists between the tool list and the target list in place of three.
 /// Each companion is a distinct `RemoveBody` scope that stores the counted
-/// GUID of the `Combine` scope and three zero bytes.
+/// GUID of the `Combine` scope and three zero bytes before its reference
+/// table.
 fn operand_list_fields_hold(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
@@ -518,21 +523,35 @@ fn operand_list_fields_hold(
             .get(&u64::from(*record_index))
             .is_some_and(|(type_guid, _)| type_guid.eq_ignore_ascii_case(REMOVE_BODY_TYPE_GUID))
         {
-            return Err("a companion is not a RemoveBody scope");
+            return Err("a companion is not registered as a RemoveBody scope");
         }
         let stores_guid = match records.offsets(*record_index) {
-            [at, end] => bytes.get(*at..*end).is_some_and(|record| {
-                record
-                    .windows(stored.guid.len().saturating_add(3))
-                    .any(|window| window.starts_with(stored.guid) && window.ends_with(&[0; 3]))
-            }),
+            [at, end] => bytes
+                .get(*at..*end)
+                .is_some_and(|record| guid_precedes_reference_table(record, stored.guid)),
             _ => false,
         };
         if !stores_guid {
-            return Err("a companion does not store the Combine's counted GUID");
+            return Err(
+                "a companion record does not store the Combine's counted GUID and three zero bytes before a reference table",
+            );
         }
     }
     Ok(())
+}
+
+/// Whether `record` stores `guid` and three zero bytes before a nonempty
+/// reference table of marked references.
+fn guid_precedes_reference_table(record: &[u8], guid: &[u8]) -> bool {
+    let tail = guid.len().saturating_add(3);
+    record.windows(tail).enumerate().any(|(at, window)| {
+        let mut cursor = at.saturating_add(tail);
+        let limit = record.len().saturating_sub(cursor) / MARKED_REFERENCE_LEN;
+        window.starts_with(guid)
+            && window.ends_with(&[0; 3])
+            && take_marked_records(record, &mut cursor, limit)
+                .is_some_and(|table| !table.is_empty())
+    })
 }
 
 fn selection_body_node(

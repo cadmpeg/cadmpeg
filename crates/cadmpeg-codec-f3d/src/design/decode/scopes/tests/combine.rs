@@ -594,6 +594,7 @@ struct OperandListFixture {
     companion_type: &'static str,
     companion_guid: &'static str,
     companion_guid_tail_zeros: usize,
+    companion_table: bool,
     new_component: u8,
     omit_consumed: bool,
 }
@@ -620,6 +621,7 @@ impl OperandListFixture {
             companion_type: crate::design::decode::body_consumers::REMOVE_BODY_TYPE_GUID,
             companion_guid: "00000000-0000-0000-0000-000000000000",
             companion_guid_tail_zeros: 3,
+            companion_table: true,
             new_component: 0,
             omit_consumed: false,
         }
@@ -762,6 +764,9 @@ impl OperandListFixture {
             bytes.extend_from_slice(&[0; 10]);
             lp_utf16(&mut bytes, self.companion_guid);
             bytes.resize(bytes.len() + self.companion_guid_tail_zeros, 0);
+            if self.companion_table {
+                marked_list(&mut bytes, &[self.tools[0].1]);
+            }
             indexed_header(&mut bytes, *b"258", companion);
         }
         bytes
@@ -1024,6 +1029,8 @@ fn operand_list_companions_remove_the_tools_of_a_consuming_combine() {
     other_guid.companion_guid = "00000000-0000-0000-0000-000000000001";
     let mut guid_without_zeros = companion(false, vec![500]);
     guid_without_zeros.companion_guid_tail_zeros = 0;
+    let mut guid_without_table = companion(false, vec![500]);
+    guid_without_table.companion_table = false;
     let repeated = companion(false, vec![500, 500]);
     for fixture in [
         other_type,
@@ -1033,6 +1040,7 @@ fn operand_list_companions_remove_the_tools_of_a_consuming_combine() {
         new_component,
         other_guid,
         guid_without_zeros,
+        guid_without_table,
         repeated,
     ] {
         assert_eq!(fixture.decode(), None);
@@ -1157,11 +1165,23 @@ fn a_frame_whose_lists_name_its_operands_keeps_main_reading_when_a_field_contrad
 }
 
 #[test]
-fn a_combine_that_places_its_result_in_a_new_component_stays_native_with_a_loss() {
+fn a_combine_that_places_its_result_in_a_new_component_keeps_main_reading() {
+    let codes =
+        |losses: Vec<LossNote>| losses.into_iter().map(|loss| loss.code).collect::<Vec<_>>();
     let mut kept_tools = OperandListFixture::new(1, 1);
     kept_tools.property_block = true;
     kept_tools.new_component = 1;
     kept_tools.middle_lists[1] = vec![194];
+    let (operation, losses) = kept_tools.decode_with_losses();
+    assert_eq!(
+        operation.map(|operation| operation.form),
+        Some(DesignCombineForm::Standard)
+    );
+    assert_eq!(
+        codes(losses),
+        [F3dLossCode::FeatureCombinePrologueAssumed.kind()]
+    );
+
     let mut companion = OperandListFixture::new(0, 0).two_tools();
     companion.property_block = true;
     companion.companions = vec![500];
@@ -1172,15 +1192,11 @@ fn a_combine_that_places_its_result_in_a_new_component_stays_native_with_a_loss(
     two_lists.companions = vec![500];
     two_lists.omit_consumed = true;
     two_lists.new_component = 1;
-    for (name, fixture) in [
-        ("kept tools", kept_tools),
-        ("companion", companion),
-        ("two lists", two_lists),
-    ] {
+    for (name, fixture) in [("companion", companion), ("two lists", two_lists)] {
         let (operation, losses) = fixture.decode_with_losses();
         assert_eq!(operation, None, "{name}");
         assert_eq!(
-            losses.into_iter().map(|loss| loss.code).collect::<Vec<_>>(),
+            codes(losses),
             [F3dLossCode::FeatureCombineNewComponentNative.kind()],
             "{name}"
         );
