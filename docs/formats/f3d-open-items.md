@@ -20,6 +20,30 @@ This document uses ASD-STE100 Simplified Technical English. Record names, field 
 
 ## 1. Container, header, and design records
 
+### DR-284. Compact sketch-profile tail flags
+
+**Question.** What do the two compact sketch-profile tail flags encode, and how do they affect profile selection?
+
+**Known.** `f3d.md` §3.1 "A sketch-driven `Extrude` scope" gives the position and admitted values of the flags. The construction-operand group tail in `f3d.md` §3.1 "Every `Extrude`, `Extrusion`, `Fillet`" ends its flag block with `variant` and the closing flag, and these two bytes also immediately precede the reference to `N+1`.
+
+**Need.** Controlled designs that vary each flag and establish the selected profile for each value.
+
+**Conflict.** None.
+
+**Note.** The decoder retains the flags with the sketch-profile operand, binds the profile as for flags `[0, 0]`, and emits `feature.sketch-profile-flags-assumed` when a flag is `1`.
+
+### DR-285. Compact sketch-profile tail word and final reference
+
+**Question.** What does the nonzero u32 of a compact sketch-profile tail encode, and which record does the final marked reference of a sketch-profile tail name?
+
+**Known.** `f3d.md` §3.1 "A sketch-driven `Extrude` scope" gives the 83-, 89-, and 93-byte tails, the nonzero u32, and the marked references to `N+2`, `N+1`, and a third record.
+
+**Need.** Controlled designs that vary the profile and its owning scope, with the record that carries the index of the final reference.
+
+**Conflict.** None.
+
+**Note.** The decoder checks that the u32 is nonzero, that the 93-byte tail repeats it, and that the final marked reference is present.
+
 ### DR-106. Hole extent leading word
 
 **Question.** What does the u32 word before the Hole extent controls in type versions 5 and 7 encode?

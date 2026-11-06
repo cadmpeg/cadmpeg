@@ -1758,6 +1758,7 @@ pub(crate) fn bind_sketch_profiles(
         let Some(profile) = profiles.pop() else {
             continue;
         };
+        losses.extend(profile.flags_assumption_loss());
         if scope.kind() == crate::records::feature::scope::DesignFeatureKind::BaseFlange {
             if let crate::records::feature::scope::DesignScopePayloadMut::BaseFlange(slot) =
                 scope.payload_mut()
@@ -5406,6 +5407,7 @@ pub(in crate::design) fn parse_sketch_profile(
             return None;
         }
     }
+    let mut compact_tail_flags = None;
     if matches!(tail_length, 89 | 93) {
         let tail = after_entity_suffix;
         let (nested_two_at, nested_one_at, scope_at) = if tail_length == 89 {
@@ -5417,7 +5419,10 @@ pub(in crate::design) fn parse_sketch_profile(
             || View::u32_le_at(bytes, tail + 8) != Some(1)
             || marked_record_reference(bytes, tail + nested_two_at)
                 != header.record_index.checked_add(2)
-            || bytes.get(tail + nested_one_at - 2..tail + nested_one_at) != Some(&[0; 2])
+            || !bytes
+                .get(tail + nested_one_at - 2..tail + nested_one_at)?
+                .iter()
+                .all(|&flag| flag <= 1)
             || marked_record_reference(bytes, tail + nested_one_at)
                 != header.record_index.checked_add(1)
             || bytes.get(tail + scope_at - 1) != Some(&0)
@@ -5428,6 +5433,10 @@ pub(in crate::design) fn parse_sketch_profile(
         {
             return None;
         }
+        compact_tail_flags = Some([
+            bytes[tail + nested_one_at - 2] != 0,
+            bytes[tail + nested_one_at - 1] != 0,
+        ]);
     }
     let mut matches = entities.iter().filter(|entity| {
         native_stream(&entity.id) == Some(stream)
@@ -5451,6 +5460,7 @@ pub(in crate::design) fn parse_sketch_profile(
             asset_id_offset: u64::try_from(start + 40).ok()?,
             entity_id: crate::records::identity::DesignEntityId::try_from(entity_id_text).ok()?,
             entity_reference_offset: u64::try_from(after_asset_id + 4).ok()?,
+            compact_tail_flags,
             region_selection,
             paired_class_tag: crate::design::decode::text::class_tag_from_view(paired_class_tag)
                 .ok()?,

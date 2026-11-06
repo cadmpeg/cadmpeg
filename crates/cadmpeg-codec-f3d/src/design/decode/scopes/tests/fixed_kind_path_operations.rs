@@ -649,6 +649,7 @@ pub(super) fn fixed_kind_path_operations(
                     )
                     .expect("valid entity identity"),
                     entity_reference_offset: 32_080,
+                    compact_tail_flags: None,
                     region_selection: None,
                     paired_class_tag: crate::records::references::DesignClassTag::try_from(
                         "258".to_owned(),
