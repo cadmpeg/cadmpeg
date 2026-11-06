@@ -384,6 +384,22 @@ pub(super) fn write(
         }
     }
     super::drawings::write(ir, &mut objects, &mut names, &mut losses);
+    for drawing in &ir.model.drawings {
+        if let Some(object) = names
+            .get(&drawing.object)
+            .and_then(|name| objects.iter_mut().find(|object| &object.name == name))
+        {
+            super::drawings::parameters(
+                object,
+                &drawing.object,
+                &drawing.parameters,
+                &native_properties,
+                &names,
+                &available,
+                &["X", "Y", "Scale", "Rotation", "Direction"],
+            )?;
+        }
+    }
     for (_, annotation) in annotations {
         use cadmpeg_ir::semantic_annotations::SemanticAnnotationKind;
         if !matches!(
@@ -402,43 +418,15 @@ pub(super) fn write(
             continue;
         };
         let object = &mut objects[index];
-        for (name, value) in &annotation.parameters {
-            let Some(source) = native_properties.iter().find(|property| {
-                property.owner == annotation.object && property.name == name.as_str()
-            }) else {
-                continue;
-            };
-            if crate::attributes::semantic_text(source).as_deref() == Some(value.as_str()) {
-                continue;
-            }
-            let mut property = source.clone();
-            let Some(crate::native::PropertyBody::Persisted { values, .. }) = &mut property.body
-            else {
-                continue;
-            };
-            let [entry] = values.as_mut_slice() else {
-                continue;
-            };
-            if !matches!(entry.tag.as_str(), "String" | "Integer" | "Float" | "Bool") {
-                continue;
-            }
-            let emitted = if entry.tag == "Bool" {
-                match value.as_str() {
-                    "true" => "1",
-                    "false" => "0",
-                    _ => continue,
-                }
-            } else {
-                value.as_str()
-            };
-            entry.attributes.insert("value".into(), emitted.to_owned());
-            if crate::attributes::semantic_text(&property).as_deref() != Some(value.as_str()) {
-                continue;
-            }
-            if let Some(xml) = xml::native_named(&property, &names, &available)? {
-                object.set(name.as_str(), xml);
-            }
-        }
+        super::drawings::parameters(
+            object,
+            &annotation.object,
+            &annotation.parameters,
+            &native_properties,
+            &names,
+            &available,
+            &[],
+        )?;
         if annotation.runtime_type.starts_with("TechDraw::") {
             if let Some(height) = annotation.text_style.height {
                 super::drawings::scalar(object, "TextSize", "App::PropertyLength", height.get());

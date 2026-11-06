@@ -29,6 +29,61 @@ pub(super) fn scalar(object: &mut Object, name: &str, kind: &str, value: f64) {
     }
 }
 
+pub(super) fn parameters(
+    object: &mut Object,
+    owner: &str,
+    parameters: &std::collections::BTreeMap<cadmpeg_core::text::NonBlankString, String>,
+    properties: &[crate::native::PropertyRecord],
+    names: &HashMap<String, String>,
+    available: &std::collections::HashSet<String>,
+    dedicated: &[&str],
+) -> Result<(), cadmpeg_core::CodecError> {
+    for (name, value) in parameters {
+        if dedicated.contains(&name.as_str()) {
+            continue;
+        }
+        let Some(source) = properties
+            .iter()
+            .find(|property| property.owner == owner && property.name == name.as_str())
+        else {
+            continue;
+        };
+        if crate::attributes::semantic_text(source).as_deref() == Some(value.as_str())
+            && object.properties.contains_key(name.as_str())
+        {
+            continue;
+        }
+        let mut property = source.clone();
+        let Some(crate::native::PropertyBody::Persisted { values, .. }) = &mut property.body else {
+            continue;
+        };
+        let mut roots = values.iter_mut().filter(|entry| entry.parent.is_none());
+        let Some(entry) = roots.next() else { continue };
+        if roots.next().is_some()
+            || !matches!(entry.tag.as_str(), "String" | "Integer" | "Float" | "Bool")
+        {
+            continue;
+        }
+        let emitted = if entry.tag == "Bool" {
+            match value.as_str() {
+                "true" => "1",
+                "false" => "0",
+                _ => continue,
+            }
+        } else {
+            value.as_str()
+        };
+        entry.attributes.insert("value".into(), emitted.to_owned());
+        if crate::attributes::semantic_text(&property).as_deref() != Some(value.as_str()) {
+            continue;
+        }
+        if let Some(xml) = xml::native_named(&property, names, available)? {
+            object.set(name.as_str(), xml);
+        }
+    }
+    Ok(())
+}
+
 pub(super) fn dimension_kind(
     annotation: &cadmpeg_ir::semantic_annotations::SemanticAnnotation,
     object: &mut Object,
@@ -785,6 +840,35 @@ mod tests {
         let view = &output.ir().model.drawings[0];
         assert_eq!(view.x_direction.unwrap().get(), [1.0, 0.0, 0.0]);
         assert!(view.relationships.contains_key("Source"));
+    }
+
+    #[test]
+    fn edited_view_parameters_redecode_from_their_native_properties() {
+        use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+        use cadmpeg_ir::{Codec, DecodeOptions};
+
+        let xml = r#"<Document SchemaVersion="4" FileVersion="1"><Objects Count="1"><Object type="TechDraw::DrawViewPart" name="View"/></Objects><ObjectData Count="1"><Object name="View"><Properties Count="3"><Property name="Caption" type="App::PropertyString"><String value="before"/></Property><Property name="ScaleType" type="App::PropertyEnumeration"><Integer value="0"/></Property><Property name="LockPosition" type="App::PropertyBool"><Bool value="0"/></Property></Properties></Object></ObjectData></Document>"#;
+        let source = crate::test_support::test_archive::archive(xml);
+        let input = crate::FcstdCodec
+            .decode(&mut std::io::Cursor::new(source), &DecodeOptions::default())
+            .unwrap();
+        let mut ir = input.ir().clone();
+        let view = &mut ir.model.drawings[0];
+        *view.parameters.get_mut("Caption").unwrap() = "after".into();
+        *view.parameters.get_mut("ScaleType").unwrap() = "1".into();
+        *view.parameters.get_mut("LockPosition").unwrap() = "true".into();
+        let plan = crate::FcstdCodec
+            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+            .unwrap();
+        let mut bytes = Vec::new();
+        plan.write_to(&mut bytes).unwrap();
+        let output = crate::FcstdCodec
+            .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+            .unwrap();
+        let parameters = &output.ir().model.drawings[0].parameters;
+        assert_eq!(parameters["Caption"], "after");
+        assert_eq!(parameters["ScaleType"], "1");
+        assert_eq!(parameters["LockPosition"], "true");
     }
 
     #[test]
