@@ -110,8 +110,9 @@ struct SketchArrangementEdge {
     nodes: [usize; 2],
     boundary: cadmpeg_ir::features::SketchProfileBoundaryUse,
     polyline: Vec<Point2>,
-    /// Entities of coincident edges merged into this edge.
-    coincident: Vec<cadmpeg_ir::sketches::SketchEntityId>,
+    /// Curves of coincident edges merged into this edge, each with its
+    /// direction along the edge from its first node to its second.
+    coincident: Vec<cadmpeg_ir::sketches::SketchEntityUse>,
 }
 
 /// One stored fragment of a ring: consecutive edges of one curve that meet
@@ -120,8 +121,9 @@ struct SketchArrangementEdge {
 struct ArrangementFragment {
     /// The fragment's curve and traversal direction.
     curve: cadmpeg_ir::sketches::SketchEntityUse,
-    /// Entities of coincident edges merged into the fragment's edges.
-    coincident: Vec<cadmpeg_ir::sketches::SketchEntityId>,
+    /// Curves of coincident edges merged into the fragment's edges, each
+    /// with its traversal direction.
+    coincident: Vec<cadmpeg_ir::sketches::SketchEntityUse>,
 }
 
 /// One closed boundary walk of an arrangement.
@@ -136,13 +138,14 @@ impl ArrangementRing {
     /// The fragment and coincident curves of the ring.
     fn curves(&self) -> impl Iterator<Item = &cadmpeg_ir::sketches::SketchEntityId> {
         self.fragments.iter().flat_map(|fragment| {
-            std::iter::once(&fragment.curve.entity).chain(&fragment.coincident)
+            std::iter::once(&fragment.curve.entity)
+                .chain(fragment.coincident.iter().map(|use_| &use_.entity))
         })
     }
 
     /// Whether `members` name the ring's fragment and coincident curves with
-    /// their multiplicities, and each fragment without a coincident curve
-    /// with its traversal direction.
+    /// their multiplicities, and each fragment has a distinct member that
+    /// names one of its curves with that curve's traversal direction.
     fn matches_members(&self, members: &[cadmpeg_ir::sketches::SketchEntityUse]) -> bool {
         let mut curves = self.curves().collect::<Vec<_>>();
         if curves.len() != members.len() {
@@ -155,16 +158,17 @@ impl ArrangementRing {
             return false;
         }
         let mut directed = members.iter().collect::<Vec<_>>();
-        self.fragments
-            .iter()
-            .filter(|fragment| fragment.coincident.is_empty())
-            .all(|fragment| {
-                directed
-                    .iter()
-                    .position(|member| **member == fragment.curve)
-                    .map(|index| directed.swap_remove(index))
-                    .is_some()
-            })
+        self.fragments.iter().all(|fragment| {
+            directed
+                .iter()
+                .position(|member| {
+                    std::iter::once(&fragment.curve)
+                        .chain(&fragment.coincident)
+                        .any(|curve| *member == curve)
+                })
+                .map(|index| directed.swap_remove(index))
+                .is_some()
+        })
     }
 }
 
@@ -702,9 +706,17 @@ fn sketch_arrangement_faces_with_nodes(
                 && arrangement_edges_coincident(candidate, &edge, entities, tolerance, ctx)?
             {
                 if candidate.boundary.entity != edge.boundary.entity
-                    && !candidate.coincident.contains(&edge.boundary.entity)
+                    && !candidate
+                        .coincident
+                        .iter()
+                        .any(|use_| use_.entity == edge.boundary.entity)
                 {
-                    candidate.coincident.push(edge.boundary.entity.clone());
+                    candidate
+                        .coincident
+                        .push(cadmpeg_ir::sketches::SketchEntityUse {
+                            entity: edge.boundary.entity.clone(),
+                            reversed: edge.boundary.reversed != (candidate.nodes != edge.nodes),
+                        });
                 }
                 coincident = true;
                 break;
@@ -852,13 +864,24 @@ fn sketch_arrangement_faces_with_nodes(
                     use_.reversed = !use_.reversed;
                 }
                 let joint = edge.nodes[usize::from(reverse)];
+                let coincident =
+                    edge.coincident
+                        .iter()
+                        .map(|other| cadmpeg_ir::sketches::SketchEntityUse {
+                            entity: other.entity.clone(),
+                            reversed: other.reversed != reverse,
+                        });
                 match runs.last_mut() {
                     Some(run)
                         if synthetic_nodes.contains(&joint) && run.curve.entity == use_.entity =>
                     {
-                        for other in &edge.coincident {
-                            if !run.coincident.contains(other) {
-                                run.coincident.push(other.clone());
+                        for other in coincident {
+                            if !run
+                                .coincident
+                                .iter()
+                                .any(|use_| use_.entity == other.entity)
+                            {
+                                run.coincident.push(other);
                             }
                         }
                     }
@@ -867,7 +890,7 @@ fn sketch_arrangement_faces_with_nodes(
                             entity: use_.entity.clone(),
                             reversed: use_.reversed,
                         },
-                        coincident: edge.coincident.clone(),
+                        coincident: coincident.collect(),
                     }),
                 }
                 boundary.push(use_);
@@ -895,7 +918,11 @@ fn sketch_arrangement_faces_with_nodes(
             {
                 if let Some(last) = runs.pop() {
                     for other in last.coincident {
-                        if !runs[0].coincident.contains(&other) {
+                        if !runs[0]
+                            .coincident
+                            .iter()
+                            .any(|use_| use_.entity == other.entity)
+                        {
                             runs[0].coincident.push(other);
                         }
                     }

@@ -516,7 +516,7 @@ fn counted_duplicate_members_select_the_region_around_a_circle_island() {
 }
 
 #[test]
-fn a_counted_member_of_a_coincident_edge_matches_in_either_direction() {
+fn a_coincident_edge_matches_when_one_of_its_curves_has_its_direction() {
     // A 10 x 5 rectangle drawn against its counterclockwise walk, whose
     // bottom side also lies on an earlier, longer line drawn the other way.
     // The longer line supplies the bottom edge.
@@ -533,34 +533,24 @@ fn a_counted_member_of_a_coincident_edge_matches_in_either_direction() {
         id,
         &[&[top.clone(), right.clone(), left.clone(), bottom.clone()]],
     );
+    let ring = |bottom_reversed: bool, long_reversed: bool| {
+        vec![
+            (top, true),
+            (right, true),
+            (left, true),
+            (bottom, bottom_reversed),
+            (long, long_reversed),
+        ]
+    };
 
-    for long_reversed in [true, false] {
-        let (exterior, holes) = single_region(
-            &sketch,
-            &entities,
-            &[vec![
-                (top, true),
-                (right, true),
-                (left, true),
-                (bottom, true),
-                (long, long_reversed),
-            ]],
-        );
+    for (bottom_reversed, long_reversed) in [(true, true), (true, false), (false, false)] {
+        let (exterior, holes) =
+            single_region(&sketch, &entities, &[ring(bottom_reversed, long_reversed)]);
         assert!(holes.is_empty());
         assert_eq!(exterior.len(), 4);
     }
     assert_eq!(
-        member_regions(
-            &sketch,
-            &entities,
-            &[vec![
-                (top, false),
-                (right, true),
-                (left, true),
-                (bottom, true),
-                (long, true),
-            ]],
-        ),
+        member_regions(&sketch, &entities, &[ring(false, true)]),
         None
     );
 }
@@ -677,36 +667,54 @@ fn counted_hole_rings_follow_list_order_and_name_each_island_once() {
 
 #[test]
 fn a_counted_ring_that_two_walks_match_selects_nothing() {
-    // Two coincident circles inside a rectangle: the disk and the outer walk
-    // of the island have the same coincident curves.
-    let id = SketchId::mint("synthetic:test:id#doubled-circle").unwrap();
+    // A triangle drawn twice in opposite directions inside a rectangle. With
+    // every member forward, the triangle face and the outer walk of the
+    // island each traverse one curve of every edge forward.
+    let id = SketchId::mint("synthetic:test:id#doubled-triangle").unwrap();
     let outer = rectangle(&id, "outer", (0.0, 0.0), (40.0, 30.0));
-    let circle = |name: &str| {
-        SketchEntity::new(
-            SketchEntityId::mint(format!("synthetic:test:id#{name}")).unwrap(),
-            id.clone(),
-            SketchGeometry::try_from(SketchGeometryDefinition::Circle {
-                center: Point2::new(20.0, 15.0),
-                radius: Length::new(4.0).unwrap(),
-            })
-            .unwrap(),
-        )
+    let corners = [(10.0, 10.0), (30.0, 10.0), (20.0, 20.0)];
+    let forward = (0..3)
+        .map(|index| {
+            line_entity(
+                &id,
+                &format!("forward-{index}"),
+                corners[index],
+                corners[(index + 1) % 3],
+            )
+        })
+        .collect::<Vec<_>>();
+    let backward = (0..3)
+        .map(|index| {
+            line_entity(
+                &id,
+                &format!("backward-{index}"),
+                corners[(index + 1) % 3],
+                corners[index],
+            )
+        })
+        .collect::<Vec<_>>();
+    let sketch = sketch_with_loops(id, &[&outer, &forward]);
+    let entities = [outer.clone(), forward.clone(), backward.clone()].concat();
+    let both = |forward_reversed: bool, backward_reversed: bool| {
+        [
+            ring(&forward, forward_reversed),
+            ring(&backward, backward_reversed),
+        ]
+        .concat()
     };
-    let circles = vec![circle("first-circle"), circle("second-circle")];
-    let sketch = sketch_with_loops(id, &[&outer, &circles[..1]]);
-    let entities = [outer.clone(), circles.clone()].concat();
     assert_eq!(
-        member_regions(&sketch, &entities, &[ring(&circles, false)]),
+        member_regions(&sketch, &entities, &[both(false, false)]),
         None
     );
-    assert_eq!(
-        member_regions(
-            &sketch,
-            &entities,
-            &[ring(&outer, false), ring(&circles, true)]
-        ),
-        None
+
+    let (_, holes) = single_region(&sketch, &entities, &[both(false, true)]);
+    assert!(holes.is_empty());
+    let (_, holes) = single_region(
+        &sketch,
+        &entities,
+        &[ring(&outer, false), both(true, false)],
     );
+    assert_eq!(holes.len(), 1);
 }
 
 #[test]
