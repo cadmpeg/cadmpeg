@@ -528,7 +528,7 @@ pub(super) fn inventory(
         return Ok(EdgeInventory::default());
     };
     let historical = if archive_complete {
-        historical::selected(&records, &stored_selectors, carrier.schema)
+        historical::selected(ctx, &records, &stored_selectors, carrier.schema)?
             .into_iter()
             .map(|(source, edge)| ((token.clone(), source), edge))
             .collect()
@@ -790,6 +790,7 @@ pub(crate) fn native_losses(
 ) -> Vec<cadmpeg_ir::report::loss::LossNote> {
     let mut losses = empty_item_losses(inventory, features);
     losses.extend(historical::native_losses(features));
+    losses.extend(historical::ambiguous_owner_losses(inventory, features));
     losses
 }
 
