@@ -164,6 +164,17 @@ fn encode(
         }
     }
     let mut result = match arena {
+        "directions" => {
+            if fields.value("has_transform").and_then(Value::as_bool) != Some(false)
+                || fields
+                    .value("physically_dependent")
+                    .and_then(Value::as_bool)
+                    != Some(true)
+            {
+                return Err("direction requires an untransformed dependent carrier".into());
+            }
+            entity(type_code, form, coordinates(fields.value("components"), 3)?)
+        }
         "text_fonts" | "line_fonts" | "text_templates" => {
             fonts::encode(arena, &mut fields, type_code, form)?
         }
@@ -431,6 +442,20 @@ pub(in crate::writer) fn append(
     version: crate::IgesVersion,
 ) -> NativeExport {
     let targets = attributes::targets(ir, entities);
+    let covered_directions = ir
+        .native
+        .namespace("iges")
+        .and_then(|ns| ns.arenas().get("directions"))
+        .into_iter()
+        .flatten()
+        .filter(|record| {
+            record
+                .field("source_entity")
+                .and_then(|value| value.as_str().map(str::to_owned))
+                .is_some_and(|source| targets.contains_key(&source))
+        })
+        .map(|record| record.id().to_owned())
+        .collect::<BTreeSet<_>>();
     let linked_primitives = ir
         .native
         .namespace("iges")
@@ -445,11 +470,12 @@ pub(in crate::writer) fn append(
         })
         .map(|record| record.id().to_owned())
         .collect::<BTreeSet<_>>();
-    let already_generated = linked_primitives
+    let mut already_generated: BTreeSet<String> = linked_primitives
         .iter()
         .filter(|id| targets.contains_key(*id))
         .cloned()
         .collect();
+    already_generated.extend(covered_directions.iter().cloned());
     let mut emitter = Emitter {
         ir,
         version,
@@ -475,6 +501,7 @@ pub(in crate::writer) fn append(
                 .flat_map(|(arena, records)| {
                     records
                         .iter()
+                        .filter(|record| !covered_directions.contains(record.id()))
                         .filter(move |record| !linked_primitives.contains(record.id()))
                         .map(move |record| (arena.as_str(), record))
                 })
@@ -644,7 +671,7 @@ impl Emitter<'_, '_> {
     ) {
         // A re-emitted boundary carrier keeps its source dependence: an
         // independent copy mints standalone topology on re-decode.
-        if matches!(arena, "associativities" | "groups") {
+        if matches!(arena, "associativities" | "groups" | "directions") {
             if let Some(status) = super::source_status(self.ir, record) {
                 entity.status = status;
             }
