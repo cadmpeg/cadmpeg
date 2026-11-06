@@ -250,6 +250,9 @@ pub(crate) enum F3dLossCode {
     HistoricalFilletEdgeInferred,
     /// A `Fillet` edge is the best-ranked deleted one of several geometric candidates.
     HistoricalFilletEdgeAmbiguous,
+    /// A `Fillet` edge is the one of several shared support edges along the
+    /// blend axis whose span covers the blend's axial extent.
+    HistoricalFilletEdgeCovering,
     /// Historical body bounding geometry could not be computed from point carriers.
     HistoricalBodyBoundsUnresolved,
     /// Sketch relations retain native operands; no unique neutral relation.
@@ -592,6 +595,7 @@ impl F3dLossCode {
         Self::HistoricalEdgeMidpointsUnresolved,
         Self::HistoricalFilletEdgeInferred,
         Self::HistoricalFilletEdgeAmbiguous,
+        Self::HistoricalFilletEdgeCovering,
         Self::HistoricalBodyBoundsUnresolved,
         Self::SketchRelationNativeRetained,
         Self::SketchDimensionNativeRetained,
@@ -822,6 +826,7 @@ impl F3dLossCode {
             Self::HistoricalEdgeMidpointsUnresolved => "history.edge-midpoints-unresolved",
             Self::HistoricalFilletEdgeInferred => "history.fillet-edge-inferred",
             Self::HistoricalFilletEdgeAmbiguous => "history.fillet-edge-ambiguous",
+            Self::HistoricalFilletEdgeCovering => "history.fillet-edge-covering",
             Self::HistoricalBodyBoundsUnresolved => "history.body-bounds-unresolved",
             Self::HistoryDependencyAmbiguous => "history.dependency-ambiguous",
             Self::SketchRelationNativeRetained => "sketch.relation-native",
@@ -1078,6 +1083,7 @@ impl F3dLossCode {
             | Self::HistoricalFilletEdgeInferred
             | Self::BodyRecipeSerializationFormAssumed
             | Self::HistoricalFilletEdgeAmbiguous
+            | Self::HistoricalFilletEdgeCovering
             | Self::HistoricalBodyBoundsUnresolved
             | Self::SketchRelationNativeRetained
             | Self::SketchDimensionNativeRetained
@@ -1264,6 +1270,7 @@ impl F3dLossCode {
             | Self::HistoricalFilletEdgeInferred
             | Self::BodyRecipeSerializationFormAssumed
             | Self::HistoricalFilletEdgeAmbiguous
+            | Self::HistoricalFilletEdgeCovering
             | Self::HistoricalBodyBoundsUnresolved
             | Self::SketchRelationNativeRetained
             | Self::SketchDimensionNativeRetained
@@ -1533,6 +1540,7 @@ mod tests {
                 "history.edge-midpoints-unresolved",
                 "history.fillet-edge-inferred",
                 "history.fillet-edge-ambiguous",
+                "history.fillet-edge-covering",
                 "history.body-bounds-unresolved",
                 "sketch.relation-native",
                 "sketch.dimension-native",

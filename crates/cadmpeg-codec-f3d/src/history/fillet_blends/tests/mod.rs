@@ -1089,24 +1089,6 @@ fn an_adjacent_face_that_maps_to_no_single_input_face_states_nothing() {
 }
 
 #[test]
-fn a_blend_with_two_deleted_edges_along_its_spine_states_nothing() {
-    let mut two = input(z());
-    two.edge_samples.retain(|sample| sample.edge != 18);
-    two.curve_axes.retain(|axis| axis.curve != 118);
-    two.edge_samples.push(AsmHistoricalEdgeSample {
-        edge: 18,
-        interior: Point3::new(0.0, 0.0, 0.0),
-        tangent: Some(z()),
-    });
-    two.curve_axes.push(AsmHistoricalCurveAxis {
-        curve: 118,
-        origin: Point3::new(0.0, 0.0, 0.0),
-        direction: z(),
-    });
-    assert_eq!(blends(&two, &output()), None);
-}
-
-#[test]
 fn a_new_carrier_without_a_spine_or_a_radius_states_nothing() {
     let mut no_spine = output();
     no_spine.surface_cylinders.clear();
@@ -1925,3 +1907,5 @@ fn a_fillet_binds_from_the_transition_of_its_scope() {
     assert_eq!(slots(&bind_feature(Some(SCOPE_ID))), ["17"]);
     assert_eq!(bind_feature(None), native());
 }
+
+mod covering;
