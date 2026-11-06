@@ -33,6 +33,7 @@ pub(crate) struct PipeSectionInputs<'a> {
 /// Project each native new-body Pipe whose unchanged result faces fit a
 /// circular section, and whose fractions both equal one, as a Sweep of that
 /// circular region along its whole path group.
+#[must_use]
 pub(crate) fn bind_circular_pipe_sections(
     features: &mut [Feature],
     inputs: &PipeSectionInputs<'_>,

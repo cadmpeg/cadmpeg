@@ -244,10 +244,21 @@ fn bound_with_losses(
             linear_tolerance: LINEAR_TOLERANCE,
         },
     );
-    (
-        features[0].evaluation.definition().clone(),
-        losses.into_iter().map(|loss| loss.code).collect(),
-    )
+    let definition = features[0].evaluation.definition().clone();
+    let losses = losses.into_iter().map(|loss| loss.code).collect::<Vec<_>>();
+    let projected = matches!(
+        definition,
+        FeatureDefinition::Operation(FeatureOperation::Sweep { .. })
+    );
+    let assumptions = [
+        F3dLossCode::FeaturePipeCircularSectionInferred.kind(),
+        F3dLossCode::FeaturePipeWholePathExtentAssumed.kind(),
+    ];
+    assert_eq!(
+        losses.as_slice(),
+        if projected { &assumptions[..] } else { &[] }
+    );
+    (definition, losses)
 }
 
 /// The outer radius and wall thickness of a bound circular section.

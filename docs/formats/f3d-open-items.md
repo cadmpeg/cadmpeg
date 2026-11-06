@@ -144,11 +144,11 @@ The class-290 primary paired with class-261 uses the same six-byte fields on its
 
 ### DR-31. Editable Pipe section-type carrier and path parameterization
 
-**Question.** Which native carrier stores the editable `Pipe` section type? What sets the origin and orientation of a partially consumed path?
+**Question.** Which native carrier stores the editable `Pipe` section type? What sets the origin and orientation of a partially consumed path, and does a `Pipe` whose forward and reverse fractions both equal one sweep its whole path group when its section lies inside the path?
 
-**Known.** `f3d.md` defines the compact and legacy operation prefixes, the independent `isHollow` Boolean, the four canonical scalar owners, the settings record, the complete construction groups, the optional point-selection pair, and the outside-size and inward-thickness conventions. The two bytes after the operation are opaque. Square hollow, circular hollow, and triangular solid sections can share that pair. Forward and reverse path fractions remain exact native values. The point-selection pair does not establish a path origin. The decoder infers a circular section from the planes, cylinders and tori of the result bodies, and reads a Pipe whose fractions both equal one as a sweep along its whole path group.
+**Known.** `f3d.md` defines the compact and legacy operation prefixes, the independent `isHollow` Boolean, the four canonical scalar owners, the settings record, the complete construction groups, the optional point-selection pair, and the outside-size and inward-thickness conventions. The two bytes after the operation are opaque. Square hollow, circular hollow, and triangular solid sections can share that pair. Forward and reverse path fractions remain exact native values. The point-selection pair does not establish a path origin. The decoder reads a new-body `Pipe` whose result faces fit a circle and whose fractions both equal one as a circular section swept along its whole path group.
 
-**Need.** Independently authored section-type changes must hold the path, fractions, hollow state, size, and thickness fixed and identify the changing semantic carrier through its type registration and owner links. Partial-path reconstruction needs the native path parameter origin and orientation.
+**Need.** Independently authored section-type changes must hold the path, fractions, hollow state, size, and thickness fixed and identify the changing semantic carrier through its type registration and owner links. Partial-path reconstruction needs the native path parameter origin and orientation. A `Pipe` with fractions of one whose section lies inside a multi-edge path, saved with its result body, shows which part of the path it sweeps.
 
 **Conflict.** None.
 

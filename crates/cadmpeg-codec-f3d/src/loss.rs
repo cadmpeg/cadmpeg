@@ -191,7 +191,7 @@ pub(crate) enum F3dLossCode {
     FeatureDerivedBaseUnresolved,
     /// A Pipe section is inferred as a circle from its result faces.
     FeaturePipeCircularSectionInferred,
-    /// A Pipe whose fractions both equal one is assumed to sweep its whole path.
+    /// A Pipe whose fractions both equal one is assumed to sweep its whole path group.
     FeaturePipeWholePathExtentAssumed,
     /// A box scope has no fully decoded dimensions and local frame.
     FeatureBoxPrimitiveUnresolved,
