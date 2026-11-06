@@ -253,7 +253,8 @@ pub(super) fn retain(ir: &CadIr, surface: &Surface, entities: &mut Vec<Entity>, 
         return;
     };
     retain_surface_numbers(&mut entities[3], surface, parameters);
-    for (entity, index) in entities.iter_mut().take(3).zip([1, 2, last]) {
+    let axis = if kind == 196 { 3 } else { 2 };
+    for (entity, index) in entities.iter_mut().take(3).zip([1, axis, last]) {
         let Some(record) = sequence_at(parameters, index).and_then(find) else {
             continue;
         };
