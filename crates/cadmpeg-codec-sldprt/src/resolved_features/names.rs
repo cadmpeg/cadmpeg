@@ -76,7 +76,7 @@ fn payload_name_candidates(
         .filter_map(move |(offset, marker)| (marker == name_marker).then_some(offset))
         .filter_map(move |offset| {
             let length = usize::from(*payload.get(offset + NAME_MARKER.len())?);
-            if !(1..=128).contains(&length) {
+            if length == 0 {
                 return None;
             }
             let start = offset + NAME_MARKER.len() + 1;
@@ -139,7 +139,7 @@ fn name_class_token(payload: &[u8]) -> Option<u16> {
                 return None;
             }
             let units = usize::from(*payload.get(token_offset + 5)?);
-            (1..=128).contains(&units).then_some(token)
+            (units != 0).then_some(token)
         })
 }
 
