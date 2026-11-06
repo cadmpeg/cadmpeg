@@ -45,7 +45,10 @@ fn tested_surface_offset_operation(
     records: &crate::design::decode::sketch::IndexedRecordOffsets,
     scope: &DesignParameterScope,
 ) -> Option<DesignSurfaceOffsetOperation> {
-    exact_surface_offset_operation(bytes, records, scope).unwrap()
+    let mut recipes = Vec::new();
+    crate::design::decode::body::decode_stream(bytes, "native/BulkStream.dat", &mut recipes)
+        .unwrap();
+    exact_surface_offset_operation(bytes, records, scope, &recipes).unwrap()
 }
 
 pub(super) fn fixed_kind_tail_operations(
@@ -1441,7 +1444,7 @@ pub(super) fn fixed_kind_tail_operations(
             }),) if native.ends_with(":design-record#500") && distance.get() == -4.0)));
 
     let grouped_record_index = 600u32;
-    let grouped_member_record_index = 601u32;
+    let grouped_member_record_index = 603u32;
     let mut grouped = Vec::new();
     grouped.extend_from_slice(&3u32.to_le_bytes());
     grouped.extend_from_slice(b"282");
@@ -1474,6 +1477,20 @@ pub(super) fn fixed_kind_tail_operations(
     grouped.extend_from_slice(&3u32.to_le_bytes());
     grouped.extend_from_slice(b"260");
     grouped.extend_from_slice(&grouped_record_index.to_le_bytes());
+    for record_index in grouped_member_record_index..grouped_member_record_index + 4 {
+        grouped.extend_from_slice(&3u32.to_le_bytes());
+        grouped.extend_from_slice(b"288");
+        grouped.extend_from_slice(&record_index.to_le_bytes());
+    }
+    grouped.extend_from_slice(&[0; 16]);
+    grouped.extend_from_slice(&24u32.to_le_bytes());
+    let recipe_name_at = grouped.len();
+    grouped.extend_from_slice(b"bounded_face_recipe_data");
+    grouped.extend_from_slice(&3u32.to_le_bytes());
+    grouped.extend_from_slice(b"288");
+    grouped.extend_from_slice(&(grouped_member_record_index + 4).to_le_bytes());
+    let grouped_at = bytes.len();
+    let recipe_name_at = grouped_at + recipe_name_at;
     bytes.extend_from_slice(&grouped);
     let mut grouped_scope = extend_scope.clone();
     grouped_scope
@@ -1505,6 +1522,27 @@ pub(super) fn fixed_kind_tail_operations(
                 group_record_indices: vec![grouped_record_index],
             },
         }
+    );
+    for ordinal_at in [grouped_at + 71, grouped_at + 83] {
+        bytes[ordinal_at..ordinal_at + 4].copy_from_slice(&227u32.to_le_bytes());
+    }
+    assert_eq!(
+        tested_surface_offset_operation(
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &grouped_scope,
+        ),
+        Some(grouped_operation)
+    );
+    bytes[recipe_name_at - 4..recipe_name_at].copy_from_slice(&16u32.to_le_bytes());
+    bytes[recipe_name_at..recipe_name_at + 24].copy_from_slice(b"edge_recipe_data\0\0\0\0\0\0\0\0");
+    assert_eq!(
+        tested_surface_offset_operation(
+            &bytes,
+            &crate::design::test_support::indexed_record_offsets_for_test(&bytes),
+            &grouped_scope,
+        ),
+        None
     );
 
     bytes[extend_boundary_at + 21..extend_boundary_at + 25]

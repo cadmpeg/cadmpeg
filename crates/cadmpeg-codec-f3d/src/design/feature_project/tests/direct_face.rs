@@ -43,7 +43,7 @@ fn scope(kind: DesignFeatureKind) -> DesignParameterScope {
     scope
 }
 
-fn group(role: DesignOperandRole) -> DesignConstructionOperandGroup {
+pub(super) fn group(role: DesignOperandRole) -> DesignConstructionOperandGroup {
     serde_json::from_value(serde_json::json!({
         "id": "f3d:test:group#100",
         "scope_record_index": 12,
@@ -408,7 +408,7 @@ fn move_transform_projects_signed_rotation_translation_and_unique_body_group() {
 }
 
 /// A bounded-face member of group 100 whose candidate lanes resolve face 27.
-fn resolved_member_operand() -> crate::records::topology::face::DesignFaceOperand {
+pub(super) fn resolved_member_operand() -> crate::records::topology::face::DesignFaceOperand {
     crate::records::topology::face::DesignFaceOperand::try_new(
         crate::records::topology::face::DesignFaceOperandDraft {
             id: "f3d:test:face-operand#200".into(),

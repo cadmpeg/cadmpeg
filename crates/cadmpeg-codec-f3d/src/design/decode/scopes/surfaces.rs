@@ -14,6 +14,7 @@ use crate::design::decode::sketch::IndexedRecordOffsets;
 use crate::design::decode::text::fixed_relaxed_guid_text;
 use crate::design::design_feature_family;
 use crate::design::DesignFeatureFamily;
+use crate::ids::native_stream;
 use crate::records::feature::scope::DesignParameterScope;
 use crate::records::feature::surface_ops::DesignRuledSurfaceCorner;
 use crate::records::feature::surface_ops::DesignRuledSurfaceMethod;
@@ -23,6 +24,8 @@ use crate::records::feature::surface_ops::DesignSurfaceExtendOperation;
 use crate::records::feature::surface_ops::DesignSurfaceOffsetOperation;
 use crate::records::feature::surface_ops::DesignSurfaceOffsetSupport;
 use crate::records::feature::surface_ops::DesignSurfaceStitchOperation;
+use crate::records::recipes::ConstructionRecipe;
+use crate::records::recipes::ConstructionRecipeKind;
 use crate::records::topology::extrude_selection::DesignOperandRole;
 use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
@@ -68,8 +71,9 @@ pub(super) fn exact_surface_offset_operation(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
+    recipes: &[ConstructionRecipe],
 ) -> Result<Option<DesignSurfaceOffsetOperation>, CodecError> {
-    if let Some(operation) = exact_surface_offset_face_groups(bytes, records, scope)? {
+    if let Some(operation) = exact_surface_offset_face_groups(bytes, records, scope, recipes)? {
         return Ok(Some(operation));
     }
     let Some(operation) = exact_surface_boundary_operation(
@@ -102,11 +106,13 @@ fn exact_surface_offset_face_groups(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
     scope: &DesignParameterScope,
+    recipes: &[ConstructionRecipe],
 ) -> Result<Option<DesignSurfaceOffsetOperation>, CodecError> {
     let parsed = (|| {
         if design_feature_family(&scope.kind()) != Some(DesignFeatureFamily::SurfaceOffset) {
             return None;
         }
+        let stream = native_stream(&scope.id)?;
         let distance_record_index = scope.reference_members().values().next()?;
         let support_reference_count = scope.reference_members().len() - 1;
         if support_reference_count == 0 {
@@ -141,7 +147,6 @@ fn exact_surface_offset_face_groups(
                 Err(error) => return Some(Err(error)),
             };
             if group.role() != DesignOperandRole::PROFILE
-                || group.frame.opaque_index.get() != 252
                 || group.members().is_empty()
                 || covered_references.contains(&group.record_index)
             {
@@ -157,6 +162,7 @@ fn exact_surface_offset_face_groups(
                         .skip(1)
                         .any(|value| value == member)
                     || covered_references.contains(member)
+                    || !bounded_face_member(records, recipes, stream, *member)
                 {
                     return None;
                 }
@@ -180,6 +186,30 @@ fn exact_surface_offset_face_groups(
         }))
     })();
     parsed.transpose()
+}
+
+fn bounded_face_member(
+    records: &IndexedRecordOffsets,
+    recipes: &[ConstructionRecipe],
+    stream: &str,
+    member: u32,
+) -> bool {
+    let recipe_record_offset = (0..4).try_fold(0, |position, delta| {
+        records
+            .first_at_or_after(position, member.checked_add(delta)?)
+            .and_then(|offset| offset.checked_add(11))
+    });
+    let Some(recipe_record_offset) = recipe_record_offset.and_then(|end| u64::try_from(end).ok())
+    else {
+        return false;
+    };
+    recipes
+        .iter()
+        .filter(|recipe| {
+            native_stream(&recipe.id) == Some(stream) && recipe.byte_offset >= recipe_record_offset
+        })
+        .min_by_key(|recipe| recipe.byte_offset)
+        .is_some_and(|recipe| recipe.kind == ConstructionRecipeKind::BoundedFace)
 }
 
 fn exact_construction_operand_group(
