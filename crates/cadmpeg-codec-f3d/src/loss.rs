@@ -84,6 +84,9 @@ pub(crate) enum F3dLossCode {
     FeatureOccurrencePathUnresolved,
     /// A sketch collection owner does not bind one component definition.
     SketchOwnerUnresolved,
+    /// Sketch geometry backlinks name a sketch geometry group whose member run omits the record.
+    SketchGeometryGroupMemberUnlisted,
+    SketchGeometryGroupMemberUnbacklinked,
     /// Unresolved `Component Insert` occurrences whose placement has no finite millimetre transform.
     ComponentInsertUnplaced,
     /// Unresolved `Component Insert` occurrences dropped because no authored timeline order tells
@@ -272,6 +275,8 @@ pub(crate) enum F3dLossCode {
     SketchRelationUnprojected,
     /// Sketch patterns retain unrepresented symmetry, suppression or flag state.
     SketchPatternStateUnprojected,
+    /// Sketch Geometry members set the byte-34 flag, which has no neutral sketch field.
+    SketchGeometryFlagUnprojected,
     /// A spatial sketch's closed-profile search stopped at a local cap.
     SketchProfileSearchCapped,
     /// Non-construction sketch curves form no closed profile loop.
@@ -517,6 +522,8 @@ impl F3dLossCode {
         Self::LocalOccurrenceExpansionLimit,
         Self::FeatureOccurrencePathUnresolved,
         Self::SketchOwnerUnresolved,
+        Self::SketchGeometryGroupMemberUnlisted,
+        Self::SketchGeometryGroupMemberUnbacklinked,
         Self::ComponentInsertUnplaced,
         Self::ComponentInsertOrderUnknown,
         Self::ComponentDefinitionRevised,
@@ -603,6 +610,7 @@ impl F3dLossCode {
         Self::SketchTextStyleUnprojected,
         Self::SketchRelationUnprojected,
         Self::SketchPatternStateUnprojected,
+        Self::SketchGeometryFlagUnprojected,
         Self::SketchProfileSearchCapped,
         Self::SketchCurveUnprofiled,
         Self::SketchCurveUnprofiledSelected,
@@ -738,6 +746,10 @@ impl F3dLossCode {
             Self::LocalOccurrenceExpansionLimit => "assembly.local-occurrence-expansion-limit",
             Self::FeatureOccurrencePathUnresolved => "feature.occurrence-path-unresolved",
             Self::SketchOwnerUnresolved => "sketch.component-owner-unresolved",
+            Self::SketchGeometryGroupMemberUnlisted => "sketch.geometry-group-member-unlisted",
+            Self::SketchGeometryGroupMemberUnbacklinked => {
+                "sketch.geometry-group-member-unbacklinked"
+            }
             Self::ComponentInsertUnplaced => "assembly.component-insert-unplaced",
             Self::ComponentInsertOrderUnknown => "assembly.component-insert-order-unknown",
             Self::ComponentDefinitionRevised => "assembly.component-definition-revised",
@@ -834,6 +846,7 @@ impl F3dLossCode {
             Self::SketchTextStyleUnprojected => "sketch.text-style-unprojected",
             Self::SketchRelationUnprojected => "sketch.relation-unprojected",
             Self::SketchPatternStateUnprojected => "sketch.pattern-state-unprojected",
+            Self::SketchGeometryFlagUnprojected => "sketch.geometry-flag-unprojected",
             Self::SketchProfileSearchCapped => "sketch.profile-search-capped",
             Self::SketchCurveUnprofiled => "sketch.curve-unprofiled",
             Self::SketchCurveUnprofiledSelected => "sketch.curve-unprofiled-selected",
@@ -1008,6 +1021,8 @@ impl F3dLossCode {
             | Self::FeatureOccurrencePathUnresolved
             | Self::LocalOccurrenceUnplaced
             | Self::SketchOwnerUnresolved
+            | Self::SketchGeometryGroupMemberUnlisted
+            | Self::SketchGeometryGroupMemberUnbacklinked
             | Self::ComponentInsertUnplaced
             | Self::ComponentInsertOrderUnknown
             | Self::SavedFreeEdgeBodyUnowned
@@ -1089,6 +1104,7 @@ impl F3dLossCode {
             | Self::SketchTextStyleUnprojected
             | Self::SketchRelationUnprojected
             | Self::SketchPatternStateUnprojected
+            | Self::SketchGeometryFlagUnprojected
             | Self::SketchProfileSearchCapped
             | Self::SketchCurveUnprofiled
             | Self::DimensionUnprojected
@@ -1275,6 +1291,7 @@ impl F3dLossCode {
             | Self::SketchTextStyleUnprojected
             | Self::SketchRelationUnprojected
             | Self::SketchPatternStateUnprojected
+            | Self::SketchGeometryFlagUnprojected
             | Self::SketchProfileSearchCapped
             | Self::SketchCurveUnprofiled
             | Self::DimensionUnprojected
@@ -1332,6 +1349,8 @@ impl F3dLossCode {
             | Self::ComponentDefinitionRevised
             | Self::ComponentNamingSpaceUnbound => LossTaxonomy::AssemblyPlacementsNotTransferred,
             Self::SketchOwnerUnresolved
+            | Self::SketchGeometryGroupMemberUnlisted
+            | Self::SketchGeometryGroupMemberUnbacklinked
             | Self::DesignBodyBindingUnresolved
             | Self::FaceSurfaceReferenceDangling
             | Self::PcurveUndecoded => LossTaxonomy::ReferenceGraphNotClosed,
@@ -1458,6 +1477,8 @@ mod tests {
                 "assembly.local-occurrence-expansion-limit",
                 "feature.occurrence-path-unresolved",
                 "sketch.component-owner-unresolved",
+                "sketch.geometry-group-member-unlisted",
+                "sketch.geometry-group-member-unbacklinked",
                 "assembly.component-insert-unplaced",
                 "assembly.component-insert-order-unknown",
                 "assembly.component-definition-revised",
@@ -1544,6 +1565,7 @@ mod tests {
                 "sketch.text-style-unprojected",
                 "sketch.relation-unprojected",
                 "sketch.pattern-state-unprojected",
+                "sketch.geometry-flag-unprojected",
                 "sketch.profile-search-capped",
                 "sketch.curve-unprofiled",
                 "sketch.curve-unprofiled-selected",
