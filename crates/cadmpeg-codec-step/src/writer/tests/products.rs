@@ -686,3 +686,87 @@ fn older_step_schema_reports_unwritten_product_boolean() {
         .iter()
         .any(|loss| loss.message.contains("test:model:attribute#flag")));
 }
+
+#[test]
+fn occurrence_scalar_properties_reference_the_assembly_usage() {
+    let mut ir = unit_cube().expect("cube");
+    ir.model.product_definitions = vec![
+        unnamed_definition("test:model:product-definition#assembly", Vec::new()),
+        unnamed_definition(
+            "test:model:product-definition#part",
+            vec![ir.model.bodies[0].id.clone()],
+        ),
+    ];
+    let root = unnamed_occurrence(
+        "test:model:occurrence#root",
+        "test:model:product-definition#assembly",
+        None,
+    );
+    let child = unnamed_occurrence(
+        "test:model:occurrence#child",
+        "test:model:product-definition#part",
+        Some("test:model:occurrence#root"),
+    );
+    ir.model.attributes.push(SourceAttribute {
+        id: "test:model:attribute#usage"
+            .try_into()
+            .expect("attribute id"),
+        native_ref: None,
+        target: AttributeTarget::Occurrence(child.id.clone()),
+        name: "Batch".into(),
+        values: vec![Some(AttributeValue::String("B42".into()))],
+    });
+    ir.model.occurrences = vec![root, child];
+    let mut bytes = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut bytes,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .expect("write assembly");
+    let text = String::from_utf8(bytes).expect("STEP text");
+    let usage = text
+        .lines()
+        .find(|line| line.contains("NEXT_ASSEMBLY_USAGE_OCCURRENCE('test:model:occurrence#child'"))
+        .expect("child usage")
+        .split_once(" = ")
+        .expect("instance")
+        .0;
+    let property = text
+        .lines()
+        .find(|line| line.contains(&format!("PROPERTY_DEFINITION('Batch','',{usage})")))
+        .expect("property owns child usage");
+    let property_id = property.split_once(" = ").expect("instance").0;
+    let link = text
+        .lines()
+        .find(|line| {
+            line.contains(&format!(
+                "PROPERTY_DEFINITION_REPRESENTATION({property_id},"
+            ))
+        })
+        .expect("property representation");
+    let representation = link
+        .split_once(',')
+        .expect("representation reference")
+        .1
+        .trim_end_matches(");");
+    let representation_line = text
+        .lines()
+        .find(|line| line.starts_with(&format!("{representation} = REPRESENTATION(")))
+        .expect("value representation");
+    let item = representation_line
+        .split_once("(#")
+        .expect("value item")
+        .1
+        .split(')')
+        .next()
+        .expect("item id");
+    assert!(text.contains(&format!(
+        "#{item} = DESCRIPTIVE_REPRESENTATION_ITEM('','B42')"
+    )));
+    assert!(!report
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains("test:model:attribute#usage")));
+}

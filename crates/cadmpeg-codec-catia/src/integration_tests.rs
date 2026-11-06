@@ -897,8 +897,14 @@ fn undecodable_object_record_gives_up_one_part_and_continues() {
         loss.message
     );
     let provenance = loss.provenance.as_ref().expect("give-up span");
-    assert_eq!(provenance.offset, bad_pos as u64);
-    assert_eq!(provenance.byte_len(), Some(bad.len() as u64));
+    assert_eq!(
+        provenance.offset,
+        cadmpeg_core::decode::u64_from_index(bad_pos)
+    );
+    assert_eq!(
+        provenance.byte_len(),
+        Some(cadmpeg_core::decode::u64_from_index(bad.len()))
+    );
     let stubs: Vec<_> = result
         .source_fidelity()
         .retained_records()
@@ -907,7 +913,10 @@ fn undecodable_object_record_gives_up_one_part_and_continues() {
         .map(|(_, record)| record)
         .collect();
     assert_eq!(stubs.len(), 1, "one part stub is retained");
-    assert_eq!(stubs[0].offset(), bad_pos as u64);
+    assert_eq!(
+        stubs[0].offset(),
+        cadmpeg_core::decode::u64_from_index(bad_pos)
+    );
     assert_eq!(stubs[0].data(), Some(bad.as_slice()));
     assert_eq!(loss.dropped.len(), 2, "give-up names its records");
     let namespace = result
@@ -919,7 +928,10 @@ fn undecodable_object_record_gives_up_one_part_and_continues() {
         .arena_as("object_graph_records")
         .expect("typed object records");
     assert_eq!(records.len(), 1, "the walk continues at the part end");
-    assert_eq!(records[0].byte_offset, good_pos as u64);
+    assert_eq!(
+        records[0].byte_offset,
+        cadmpeg_core::decode::u64_from_index(good_pos)
+    );
     assert_valid(&result);
 }
 

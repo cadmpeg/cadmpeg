@@ -73,6 +73,8 @@
           "gui_view_providers": 0,
           "joints": 0,
           "objects": 0,
+          "polygons3d": 0,
+          "polygons_on_triangulations": 0,
           "product_nodes": 0,
           "properties": 2,
           "shape_payloads": 0,
@@ -91,13 +93,15 @@
           "document": "6d3c667be65ca30ce267ba35a598092b1a63d48b48dd0566e325929a3b3ce484",
           "drawings": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "element_maps": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-          "entries": "b7b6fa4bd5d85917cd4bd42987b2eeaf102f5e4a76ade7116a2d8ee71678108a",
+          "entries": "0de2b534ba4e053533c26773ff76e244b7754d8a41ee396f1ef17462dd598280",
           "extensions": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "gui_documents": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "gui_properties": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "gui_view_providers": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "joints": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "objects": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "polygons3d": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "polygons_on_triangulations": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "product_nodes": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "properties": "0af27368e9b2cfdc23b729fca9016aba653a4ae3e5029da56a7b5fcc4b15ea50",
           "shape_payloads": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
@@ -211,11 +215,13 @@
         "offset": 115,
         "stream": "Document.xml",
         "untyped": [
+          "model",
           "design"
         ]
       }
     },
     "unrepresented": [
+      "model",
       "design"
     ]
   }

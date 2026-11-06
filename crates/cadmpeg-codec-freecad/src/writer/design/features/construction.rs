@@ -3,12 +3,12 @@
 
 use super::super::super::xml::{self, Object};
 use super::properties::{angle, boolean, enumeration, length, link, number, tag, unsupported};
-use cadmpeg_core::CodecError;
+use super::FeatureError;
 use cadmpeg_ir::transform::Transform;
 use serde_json::Value;
 use std::collections::HashMap;
 
-pub(super) fn coordinates(value: &Value) -> Result<cadmpeg_ir::math::Vector3, CodecError> {
+pub(super) fn coordinates(value: &Value) -> Result<cadmpeg_ir::math::Vector3, FeatureError> {
     Ok(cadmpeg_ir::math::Vector3::new(
         number(&value["x"], "x coordinate")?,
         number(&value["y"], "y coordinate")?,
@@ -17,12 +17,10 @@ pub(super) fn coordinates(value: &Value) -> Result<cadmpeg_ir::math::Vector3, Co
 }
 pub(super) fn unit(
     value: cadmpeg_ir::math::Vector3,
-) -> Result<cadmpeg_ir::math::Vector3, CodecError> {
+) -> Result<cadmpeg_ir::math::Vector3, FeatureError> {
     cadmpeg_ir::units::UnitVector3::normalized(value)
         .map(|value| *value.as_raw())
-        .ok_or_else(|| {
-            CodecError::UnsupportedContent("datum direction cannot be normalized".into())
-        })
+        .ok_or_else(|| FeatureError::Unsupported("datum direction cannot be normalized".into()))
 }
 pub(super) fn place(
     object: &mut Object,
@@ -30,13 +28,13 @@ pub(super) fn place(
     x: cadmpeg_ir::math::Vector3,
     y: cadmpeg_ir::math::Vector3,
     z: cadmpeg_ir::math::Vector3,
-) -> Result<(), CodecError> {
+) -> Result<(), FeatureError> {
     let transform = Transform::affine([
         [x.x, y.x, z.x, origin.x],
         [x.y, y.y, z.y, origin.y],
         [x.z, y.z, z.z, origin.z],
     ])
-    .ok_or_else(|| CodecError::malformed("feature frame is non-finite"))?;
+    .ok_or_else(|| FeatureError::Unsupported("feature frame is non-finite".into()))?;
     object.set("Placement", super::super::placement(transform)?);
     Ok(())
 }
@@ -44,7 +42,7 @@ pub(super) fn axis_placement(
     object: &mut Object,
     origin: &Value,
     direction: &Value,
-) -> Result<(), CodecError> {
+) -> Result<(), FeatureError> {
     let z = unit(coordinates(direction)?)?;
     let reference = if z.x.abs() < 0.8 {
         cadmpeg_ir::math::Vector3::new(1.0, 0.0, 0.0)
@@ -60,7 +58,7 @@ pub(super) fn axis_placement(
     let y = z.cross(x);
     place(object, coordinates(origin)?, x, y, z)
 }
-pub(super) fn frame_placement(object: &mut Object, value: &Value) -> Result<(), CodecError> {
+pub(super) fn frame_placement(object: &mut Object, value: &Value) -> Result<(), FeatureError> {
     let origin = coordinates(&value["origin"])?;
     if value["normal"].is_null() {
         place(
@@ -81,7 +79,7 @@ pub(super) fn construction(
     object: &mut Object,
     names: &HashMap<String, String>,
     entries: &mut Vec<(String, Vec<u8>)>,
-) -> Result<(), CodecError> {
+) -> Result<(), FeatureError> {
     match tag(value) {
         "line_segment" => {
             object.kind = "Part::Line".into();
@@ -131,9 +129,9 @@ pub(super) fn construction(
             object.kind = "Part::Polygon".into();
             let points = value["chain"]["points"]
                 .as_array()
-                .ok_or_else(|| CodecError::UnsupportedContent("polyline points absent".into()))?;
+                .ok_or_else(|| FeatureError::Unsupported("polyline points absent".into()))?;
             let count = u32::try_from(points.len()).map_err(|_| {
-                CodecError::InvalidInput("(O-capacity) polygon node count exceeds u32".into())
+                FeatureError::Unsupported("(O-capacity) polygon node count exceeds u32".into())
             })?;
             let mut bytes = count.to_le_bytes().to_vec();
             for point in points {
