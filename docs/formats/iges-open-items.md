@@ -59,14 +59,6 @@ from a conformant file.
 
 ## 3. Directory fields, the reference graph, and the native arenas
 
-### DIR-01. Unreadable Directory interpretation fields
-
-**Question.** What disposition applies when a Directory interpretation field is unreadable?
-
-**Known.** The decoder charges `iges/directory.metadata-unreadable` when line font, level, view, label display, line weight, color, or subscript is unreadable (`directory.rs:271`). Interpretation fields and exact source cards remain available for a specimen.
-
-**Need.** Producer documentation or controlled files must establish whether an unreadable field means a default, a null, or a refusal.
-
 ## 4. Geometry carriers and tolerances
 
 ## 5. Surfaces and topology

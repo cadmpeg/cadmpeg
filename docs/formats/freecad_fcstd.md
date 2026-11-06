@@ -23,9 +23,7 @@ Synthesis generates `Document.xml`, `GuiDocument.xml`, and exact-shape side entr
 from CADIR. Neutral arenas own every value with a neutral form. The writer's typed
 native records supply application values that have no neutral form; retained XML,
 archive bytes, and unreadable payloads never supply synthesized content. Vendor
-application objects with independently typed properties remain writable. An object
-with an unreadable property is omitted, and independent neutral geometry remains
-available for export. Unsupported arenas and entities produce export losses; only
+application objects with independently typed properties remain writable. A given-up property has one `unknowns` stub and a `record.unreadable` loss; independently read properties remain available. Unsupported arenas and entities produce export losses; only
 malformed input, capacity limits, and an unresolved target can refuse a write.
 
 Source-less construction and synthesis share the structured document writer.
@@ -1914,83 +1912,7 @@ linear dimensions must be finite and positive, and their angle must lie strictly
 operation rather than an unresolved neutral dress-up feature.
 
 
-## 11. Writing from CADIR
-
-Native property selectors may differ from canonical parameter names, for example
-when a name contains spaces or a diameter drives a radius control. Small typed
-selector records preserve those current names. For generic scalar and spreadsheet
-parameters they also encode the canonical `driving` flag, for which FreeCAD has no
-corresponding solver field; sketch constraints use native `isDriving` instead.
-These records are regenerated from current neutral parameters. Native UI
-read-only flags are not substitutes for solver-driving semantics.
-
-The synthesized application graph includes primitive solids, boolean operations,
-extrusions and revolutions, sweeps and lofts, holes and thread controls, patterns,
-dress-up operations, datum/construction objects, binders, body groups and tips.
-Planar sketches include decoded conics, rational B-splines, construction flags,
-constraints, dimensional values, and representable external references. A native
-sketch geometry or relation may use its independently typed native record when it
-has no neutral form. Unsupported relations and operations are omitted with losses.
-
-Operation dimensions bind to canonical parameters by identity. Parameters write
-their current evaluated values and token-rendered `ExpressionEngine` formulas on
-their owning object. Constraint expressions bind to `Constraints[n]`. A parameter
-whose semantic name differs from a built-in control drives that control through
-a live native expression; a diameter driving `Radius` uses a division by two.
-Small typed selector/measurement records are accepted on read only when the
-current expression and quantity agree. They carry no original definitions,
-parameter IDs, source hashes, or cached values.
-Ownerless parameters use a generated `App::VarSet` named `Parameters` (uniquified
-when needed), and decode back as ownerless parameters. This keeps globals separate
-from spreadsheet cells. Spreadsheets write expressions, aliases, retained cell
-styles, merged ranges, column widths, and row heights. Features use `Label` for
-neutral display names while stable declaration names carry references.
-XML 1.0-forbidden characters in emitted labels and scalar text are replaced with
-U+FFFD, with a Warning naming the affected output property and reported arena
-coverage. Legal tabs, newlines, and literal character-reference text are preserved.
-Independent names for multiple BRep roots use the typed `CadmpegBodyNames` string-list property;
-a plain `Part::Feature` remains a geometry carrier and creates no feature-history node.
-Typed hidden CADIR properties preserve neutral order, optional names, independent
-fallback body styles and fixed native parameter selectors without embedding a
-CADIR document. Product projection controls distinguish definitions and placed uses from
-objects used only to carry shapes. Occurrence effective placements are written
-physically while typed matrix properties preserve their local and optional linked
-prototype decomposition independently of the prototype object's placement.
-Removing neutral products or presentation state
-therefore does not resurrect their old typed native counterparts.
-
-Exact shapes use generated OCCT text BRep tables with subshape-first topology and
-independent roots. Analytic and NURBS carriers, supported procedural trim/offset/
-extrusion/revolution forms, pcurves, coedge senses, and placements come from the
-neutral model. The writer does not invoke a modeling kernel: feature or parameter
-edits retain the document's stored BRep. The canonical `needs_recompute` flag is
-read from and written to the object declaration's `Touched` attribute; it does
-not become a parallel application property.
-An unsupported required carrier omits its containing body with an Error loss while
-other bodies remain writable.
-
-Products, nested occurrences, supported joints, visibility, and neutral appearance
-bindings generate application/GUI records. Neutral presentation overrides conflicting
-typed native GUI values. Typed native attachments, element maps, string tables,
-application properties, and GUI records are rebuilt when their referents exist;
-opaque side payloads and dangling native referents are omitted and reported.
-Omitting an unreadable object also removes references to it from dependencies and
-properties, with an Error loss, so independent content still forms a valid archive.
-
-The current synthesized writer drops subds, assets, feature topology bindings,
-configurations, spatial sketches and their entities/constraints, drawings, semantic
-annotations, tessellations, PMI, and presentation layers. Unconsumed admitted
-scalar, vector, link, map, JSON, UUID, and integer-list properties project to
-neutral attributes and are written from those attributes. Identity-only Python
-payloads, object materials, and other admitted typed property forms without a
-neutral home remain native content and are re-emitted without an attribute or
-a loss. Opaque payloads stay
-in fidelity and mark their served classes unrepresented. Each populated
-dropped arena has an export loss. Geometry omissions use Error severity; unsupported
-nonstructural metadata uses Warning. Omitted native namespaces use the shared
-informational `export/native.records-omitted` loss.
-
-## 12. Semantic validation
+## 11. Semantic validation
 
 A restored object graph, a saved geometry cache, and a recomputed design are separate semantic
 states. A successful document open does not imply that each property-owned payload restored.
