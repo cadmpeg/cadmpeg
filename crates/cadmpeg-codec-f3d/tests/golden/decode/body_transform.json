@@ -408,6 +408,7 @@
           }
         ],
         "lost_edge_references": [],
+        "mesh_containers": [],
         "mesh_surface_sentinels": [],
         "persistent_design_links": [],
         "persistent_references": [],
@@ -431,6 +432,7 @@
             "shear": false
           }
         ],
+        "unknowns": [],
         "vertex_ownerships": [
           {
             "id": "f3d:asm:vertex-ownership#13",

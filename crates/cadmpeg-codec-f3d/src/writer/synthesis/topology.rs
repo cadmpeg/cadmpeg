@@ -13,6 +13,7 @@ use crate::loss::F3dLossCode;
 pub(super) fn repair_body_regions(
     target: &mut CadIr,
     losses: &mut Vec<LossNote>,
+    limits: cadmpeg_core::decode::ResourceLimits,
 ) -> Result<(), CodecError> {
     let regions = &target.model.regions;
     let mut dropped_body = false;
@@ -38,7 +39,7 @@ pub(super) fn repair_body_regions(
     }
     if dropped_body {
         let retained = target.model.bodies.iter().filter(|body| !body.regions.is_empty()).map(|body| body.id.clone()).collect();
-        *target = body_graph(target, &retained)?;
+        *target = body_graph(target, &retained, limits)?;
     }
     Ok(())
 }
@@ -130,17 +131,30 @@ pub(super) fn omit_ambiguous_points(
 pub(super) fn omit_unresolved_coedge_faces(
     target: &mut CadIr,
     losses: &mut Vec<LossNote>,
+    limits: cadmpeg_core::decode::ResourceLimits,
 ) -> Result<(), CodecError> {
     let edges: BTreeSet<_> = target.model.edges.iter().map(|edge| &edge.id).collect();
-    let loops: BTreeSet<_> = target.model.loops.iter().map(|boundary| &boundary.id).collect();
-    let coedges: BTreeSet<_> = target.model.coedges.iter().map(|coedge| &coedge.id).collect();
+    let loops: BTreeSet<_> = target
+        .model
+        .loops
+        .iter()
+        .map(|boundary| &boundary.id)
+        .collect();
+    let coedges: BTreeSet<_> = target
+        .model
+        .coedges
+        .iter()
+        .map(|coedge| &coedge.id)
+        .collect();
     let mut broken = BTreeSet::new();
     for coedge in &target.model.coedges {
-        if !edges.contains(&coedge.edge) || !loops.contains(&coedge.owner_loop)
+        if !edges.contains(&coedge.edge)
+            || !loops.contains(&coedge.owner_loop)
             || !coedges.contains(&coedge.radial_next)
         {
             losses.push(F3dLossCode::WriterGeometryOmitted.note(format!(
-                "coedge {} has an unresolved topology reference and is omitted", coedge.id
+                "coedge {} has an unresolved topology reference and is omitted",
+                coedge.id
             )));
             broken.insert(coedge.id.clone());
         }
@@ -148,18 +162,32 @@ pub(super) fn omit_unresolved_coedge_faces(
     if broken.is_empty() {
         return Ok(());
     }
-    let affected: BTreeSet<_> = target.model.loops.iter().filter(|boundary| {
-        boundary.coedges().iter().any(|id| broken.contains(id))
-    }).map(|boundary| boundary.face.clone()).collect();
-    let shells = target.model.shells.iter().map(|shell| shell.id.clone()).collect();
-    let faces = target.model.faces.iter().filter(|face| !affected.contains(&face.id))
-        .map(|face| face.id.clone()).collect();
+    let affected: BTreeSet<_> = target
+        .model
+        .loops
+        .iter()
+        .filter(|boundary| boundary.coedges().iter().any(|id| broken.contains(id)))
+        .map(|boundary| boundary.face.clone())
+        .collect();
+    let shells = target
+        .model
+        .shells
+        .iter()
+        .map(|shell| shell.id.clone())
+        .collect();
+    let faces = target
+        .model
+        .faces
+        .iter()
+        .filter(|face| !affected.contains(&face.id))
+        .map(|face| face.id.clone())
+        .collect();
     for id in affected {
         losses.push(F3dLossCode::WriterGeometryOmitted.note(format!(
             "face {id} requires an omitted coedge and is omitted"
         )));
     }
-    *target = face_graph(target, &shells, &faces)?;
+    *target = face_graph(target, &shells, &faces, limits)?;
     Ok(())
 }
 
@@ -172,7 +200,7 @@ pub(super) fn admit_bodies(
     for body in &source.model.bodies {
         let mut candidate_ids = admitted.clone();
         candidate_ids.insert(body.id.clone());
-        let candidate = body_graph(source, &candidate_ids)?;
+        let candidate = body_graph(source, &candidate_ids, limits)?;
         match super::super::generate::write_with_limits(&candidate, &mut Vec::new(), limits) {
             Ok(_) => admitted = candidate_ids,
             Err(error) if super::declines(&error) => {
@@ -208,7 +236,7 @@ pub(super) fn admit_bodies(
             Err(error) => return Err(error),
         }
     }
-    body_graph(source, &admitted)
+    body_graph(source, &admitted, limits)
 }
 
 fn admit_bodies_after_reduction(
@@ -225,7 +253,7 @@ fn admit_bodies_after_reduction(
         .filter(|body| !admitted.contains(&body.id))
         .map(|body| body.id.clone())
         .collect();
-    let tail = admit_bodies(&body_graph(source, &remaining)?, losses, limits)?;
+    let tail = admit_bodies(&body_graph(source, &remaining, limits)?, losses, limits)?;
     // Merge only geometry arenas: auxiliary and design content were already
     // prepared once and are shared by all admitted body candidates.
     macro_rules! append { ($($field:ident),*) => {$({
@@ -282,7 +310,7 @@ fn admit_faces(
     {
         let mut candidate_ids = admitted.clone();
         candidate_ids.insert(face.id.clone());
-        let candidate = face_graph(source, &shells, &candidate_ids)?;
+        let candidate = face_graph(source, &shells, &candidate_ids, limits)?;
         match super::super::generate::write_with_limits(&candidate, &mut Vec::new(), limits) {
             Ok(_) => admitted = candidate_ids,
             Err(error) if super::declines(&error) => {
@@ -294,13 +322,14 @@ fn admit_faces(
             Err(error) => return Err(error),
         }
     }
-    face_graph(source, &shells, &admitted)
+    face_graph(source, &shells, &admitted, limits)
 }
 
 fn face_graph(
     source: &CadIr,
     shells: &BTreeSet<cadmpeg_ir::ids::ShellId>,
     faces: &BTreeSet<cadmpeg_ir::ids::FaceId>,
+    limits: cadmpeg_core::decode::ResourceLimits,
 ) -> Result<CadIr, CodecError> {
     let mut result = source.clone();
     result
@@ -313,7 +342,7 @@ fn face_graph(
         .iter()
         .map(|body| body.id.clone())
         .collect();
-    let mut result = body_graph(&result, &bodies)?;
+    let mut result = body_graph(&result, &bodies, limits)?;
     let affected = source
         .model
         .regions
@@ -387,7 +416,11 @@ fn face_graph(
     Ok(result)
 }
 
-fn body_graph(source: &CadIr, bodies: &BTreeSet<BodyId>) -> Result<CadIr, CodecError> {
+fn body_graph(
+    source: &CadIr,
+    bodies: &BTreeSet<BodyId>,
+    limits: cadmpeg_core::decode::ResourceLimits,
+) -> Result<CadIr, CodecError> {
     let mut result = source.clone();
     let model = &mut result.model;
     model.bodies.retain(|body| bodies.contains(&body.id));
@@ -558,7 +591,7 @@ fn body_graph(source: &CadIr, bodies: &BTreeSet<BodyId>) -> Result<CadIr, CodecE
                 .map(|use_| use_.pcurve.as_str().to_owned()),
         )
         .collect();
-    geometry_closure(source, &mut seeds)?;
+    geometry_closure(source, &mut seeds, limits)?;
     model
         .points
         .retain(|record| seeds.contains(record.id.as_str()));
@@ -590,15 +623,19 @@ fn body_graph(source: &CadIr, bodies: &BTreeSet<BodyId>) -> Result<CadIr, CodecE
             _ => false,
         }
     });
-    super::native::prune(&mut result)?;
+    super::native::prune(&mut result, limits)?;
     Ok(result)
 }
 
 /// Include support geometry and child constructions that are not direct face
 /// or edge carriers. Filtering topology must not create a dangling reference.
-fn geometry_closure(source: &CadIr, ids: &mut BTreeSet<String>) -> Result<(), CodecError> {
+fn geometry_closure(
+    source: &CadIr,
+    ids: &mut BTreeSet<String>,
+    limits: cadmpeg_core::decode::ResourceLimits,
+) -> Result<(), CodecError> {
     use cadmpeg_ir::schema::rewrite::typed::RewriteIdentities;
-    super::design::with_context(|ctx| {
+    super::design::with_context(limits, |ctx| {
         let mut visited = BTreeSet::new();
         loop {
             let previous = visited.len();

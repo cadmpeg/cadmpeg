@@ -10,6 +10,54 @@ use crate::{StepSchema, StepWriteOptions};
 use super::round_trips::wire_body_ir;
 
 #[test]
+fn damaged_unbound_colours_survive_synthesis_without_bindings() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use std::io::Cursor;
+
+    let source = include_bytes!("../../../tests/fixtures/damaged/ap214_sheet_bad_real.p21");
+    let original = crate::StepCodec::default()
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode damaged STEP");
+    assert_eq!(original.ir().model.appearances.len(), 2);
+    assert!(original.ir().model.appearance_bindings.is_empty());
+    let mut bytes = Vec::new();
+    write_step(
+        original.ir(),
+        &mut bytes,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .expect("write STEP");
+    let decoded = crate::StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode written STEP");
+    for appearance in &original.ir().model.appearances {
+        assert!(
+            decoded.ir().model.appearances.iter().any(|written| {
+                written.name == appearance.name && written.base_color == appearance.base_color
+            }),
+            "missing appearance {:?}",
+            appearance.name
+        );
+    }
+    assert_eq!(
+        decoded.ir().model.appearance_bindings.len(),
+        original.ir().model.appearance_bindings.len()
+    );
+    for loss in &decoded.report().losses {
+        assert!(
+            original
+                .report()
+                .losses
+                .iter()
+                .any(|source| source.code == loss.code),
+            "new decode loss {}",
+            loss.code
+        );
+    }
+}
+
+#[test]
 fn one_appearance_is_shared_across_curve_surface_and_point_styles() {
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
     use std::io::Cursor;
