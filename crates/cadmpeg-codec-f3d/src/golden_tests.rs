@@ -926,8 +926,7 @@ fn source_less_synthesis_obeys_the_entity_limit() {
     encode_input.limits.max_entities = 0;
     let error = F3dCodec
         .plan(encode_input, TargetRequest::Inherit)
-        .err()
-        .expect("a zero entity ceiling rejects generated records");
+        .expect_err("a zero entity ceiling rejects generated records");
     assert!(matches!(
         error,
         cadmpeg_ir::codec::write::EncodeError::ResourceLimit(limit)
