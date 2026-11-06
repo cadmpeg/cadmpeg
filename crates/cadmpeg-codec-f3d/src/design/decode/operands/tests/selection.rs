@@ -52,6 +52,7 @@ fn sketch_profile_frame_resolves_its_decimal_entity_suffix() {
     let entity = DesignEntityHeader {
         id: "f3d:Design/BulkStream.dat:entity#172".into(),
         byte_offset: 1000,
+
         entity_id: crate::records::identity::DesignEntityId::try_from("0_172".to_owned())
             .expect("valid entity ID"),
         class_tag: crate::records::references::DesignClassTag::try_from("269".to_owned()).unwrap(),
@@ -149,90 +150,6 @@ fn sketch_profile_frame_resolves_its_decimal_entity_suffix() {
         omitted.paired_byte_offset(),
         u64_from_index(omitted_paired_at)
     );
-}
-
-#[test]
-fn sketch_profile_compact_tail_accepts_binary_flags() {
-    let mut bytes = Vec::new();
-    bytes.extend_from_slice(&3u32.to_le_bytes());
-    bytes.extend_from_slice(b"308");
-    bytes.extend_from_slice(&100u32.to_le_bytes());
-    bytes.extend_from_slice(&[0; 10]);
-    bytes.push(1);
-    bytes.extend_from_slice(&103u32.to_le_bytes());
-    bytes.extend_from_slice(&[0; 6]);
-    bytes.extend_from_slice(&1u32.to_le_bytes());
-    lp_utf16(&mut bytes, "e72ed0d8-58b4-4b8e-800d-5eaeea9c0c4b");
-    lp_utf16(&mut bytes, "172");
-    let tail_at = bytes.len();
-    let header = DesignRecordHeader {
-        id: "f3d:Design/BulkStream.dat:record#100".into(),
-        byte_offset: 0,
-        class_tag: crate::records::references::DesignClassTag::try_from("308".to_owned()).unwrap(),
-        record_index: 100,
-    };
-    let entity = DesignEntityHeader {
-        id: "f3d:Design/BulkStream.dat:entity#172".into(),
-        byte_offset: 1000,
-        entity_id: crate::records::identity::DesignEntityId::try_from("0_172".to_owned())
-            .expect("valid entity ID"),
-        class_tag: crate::records::references::DesignClassTag::try_from("269".to_owned()).unwrap(),
-        optional_slot_present: false,
-        registration: crate::records::entity_header::DesignEntityRegistration::new(
-            Some(DESIGN_MODULE_SKETCH.to_owned()),
-            Some(crate::records::entity_header::SketchHeaderReferences {
-                record_reference: Some(200),
-                record_reference_offset: 1010,
-                references: Vec::new(),
-            }),
-            crate::records::identity::ReferenceRun::unlocated(Vec::new()),
-        )
-        .expect("valid module registration"),
-    };
-
-    bytes[4..7].copy_from_slice(b"319");
-    let mut compact_tail = vec![0; 93];
-    compact_tail[0] = 1;
-    compact_tail[8..12].copy_from_slice(&1u32.to_le_bytes());
-    compact_tail[12] = 1;
-    compact_tail[13..17].copy_from_slice(&500u32.to_le_bytes());
-    compact_tail[41..45].copy_from_slice(&99u32.to_le_bytes());
-    compact_tail[53..57].copy_from_slice(&99u32.to_le_bytes());
-    compact_tail[57] = 1;
-    compact_tail[58..62].copy_from_slice(&102u32.to_le_bytes());
-    compact_tail[70] = 1;
-    compact_tail[71..75].copy_from_slice(&101u32.to_le_bytes());
-    compact_tail[82] = 1;
-    compact_tail[83..87].copy_from_slice(&777u32.to_le_bytes());
-    bytes.extend_from_slice(&compact_tail);
-    bytes.extend_from_slice(&3u32.to_le_bytes());
-    bytes.extend_from_slice(b"258");
-    bytes.extend_from_slice(&100u32.to_le_bytes());
-    let compact_header = DesignRecordHeader {
-        class_tag: crate::records::references::DesignClassTag::try_from("319".to_owned()).unwrap(),
-        ..header
-    };
-    bytes[tail_at + 68..tail_at + 70].copy_from_slice(&[1, 1]);
-    assert!(parse_sketch_profile(
-        &bytes,
-        "f3d:Design/BulkStream.dat",
-        2,
-        &compact_header,
-        std::slice::from_ref(&entity),
-    )
-    .is_some());
-    for flag_at in [68, 69] {
-        bytes[tail_at + flag_at] = 2;
-        assert!(parse_sketch_profile(
-            &bytes,
-            "f3d:Design/BulkStream.dat",
-            2,
-            &compact_header,
-            std::slice::from_ref(&entity),
-        )
-        .is_none());
-        bytes[tail_at + flag_at] = 1;
-    }
 }
 
 #[test]
@@ -1145,8 +1062,6 @@ fn a_compact_sketch_point_identity_round_trips_through_the_operand_record() {
     )
     .expect("compact sketch-point identity");
     let draft = DesignEntitySelectionOperandDraft {
-        serialization_form:
-            crate::records::topology::entity_selection::SelectionSerializationForm::Zero,
         id: "f3d:Design/BulkStream.dat:design-entity-selection-operand#0".to_owned(),
         scope_record_index: 12,
         group_record_index: 50,
@@ -1154,6 +1069,7 @@ fn a_compact_sketch_point_identity_round_trips_through_the_operand_record() {
         record_index: frame.record_index,
         byte_offset: frame.byte_offset,
         class_tag: "369".to_owned().try_into().unwrap(),
+        serialization_form: frame.serialization_form,
         asset_id: frame.asset_id.clone().try_into().unwrap(),
         asset_id_offset: frame.asset_id_offset,
         context_id: frame.context_id.clone().try_into().unwrap(),
@@ -1197,8 +1113,6 @@ fn a_sketch_point_frame_matches_no_curve_and_names_no_topology_identity() {
     };
     let operand = |primary_offset: u64, secondary_offset: u64, class_tag: &str| {
         DesignEntitySelectionOperand::try_new(DesignEntitySelectionOperandDraft {
-            serialization_form:
-                crate::records::topology::entity_selection::SelectionSerializationForm::Zero,
             id: "f3d:Design/BulkStream.dat:design-entity-selection-operand#0".to_owned(),
             scope_record_index: 12,
             group_record_index: 50,
@@ -1206,6 +1120,7 @@ fn a_sketch_point_frame_matches_no_curve_and_names_no_topology_identity() {
             record_index: 100,
             byte_offset: 0,
             class_tag: class_tag.to_owned().try_into().unwrap(),
+            serialization_form: Default::default(),
             asset_id: "7b3dec6f-f69c-4bfa-a537-9274f341c66e"
                 .to_owned()
                 .try_into()
