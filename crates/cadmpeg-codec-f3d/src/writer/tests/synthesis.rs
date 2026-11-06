@@ -374,6 +374,7 @@ fn a_document_parameter_is_authored_without_native_records_and_keeps_supported_s
     assert_eq!(parameters[0].value, ir.model.parameters[0].value);
     assert_eq!(parameters[1].name, "angle");
     assert_eq!(parameters[1].value, ir.model.parameters[2].value);
+    assert_eq!(parameters[1].ordinal, ir.model.parameters[2].ordinal);
 }
 
 #[test]
