@@ -164,6 +164,29 @@ fn entity_count(bytes: &[u8], name: &str) -> usize {
 }
 
 #[test]
+fn unstated_tolerance_does_not_prevent_a_reported_helix_fit() {
+    let mut ir = helix_edge_doc(false);
+    ir.tolerances.linear = None;
+    let mut bytes = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut bytes,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .expect("write a helix using the computational tolerance");
+    assert!(!String::from_utf8(bytes)
+        .unwrap()
+        .contains("UNCERTAINTY_MEASURE_WITH_UNIT"));
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == StepLossCode::HelixFittedToBspline.kind()
+            && loss
+                .message
+                .contains(&ir.tolerances.linear_or_default().get().to_string())
+    }));
+}
+
+#[test]
 fn an_edge_on_an_uncached_helix_is_written_on_a_fitted_bspline() {
     let ir = helix_edge_doc(false);
     let mut bytes = Vec::new();

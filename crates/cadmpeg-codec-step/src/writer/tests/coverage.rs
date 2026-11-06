@@ -540,6 +540,56 @@ fn drawing_context_is_written_from_document_units() {
 }
 
 #[test]
+fn drawing_context_does_not_claim_an_unwritten_uncertainty() {
+    let source = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/ap242_presentation_pmi.p21"))
+        .replace(
+            "#2=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1))",
+            "#20=UNCERTAINTY_MEASURE_WITH_UNIT(LENGTH_MEASURE(0.01),#1,'distance_accuracy_value','');\n#2=(GEOMETRIC_REPRESENTATION_CONTEXT(3) GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT((#20)) GLOBAL_UNIT_ASSIGNED_CONTEXT((#1))",
+        );
+    let source = StepCodec::default()
+        .decode(&mut std::io::Cursor::new(source), &DecodeOptions::default())
+        .expect("decode drawing context");
+    let mut document = source.ir().clone();
+    let drawing = document
+        .model
+        .drawings
+        .iter()
+        .find(|drawing| drawing.runtime_type == "DRAUGHTING_MODEL")
+        .unwrap();
+    let context = drawing.relationships["presentation_context"][0]
+        .local_target()
+        .unwrap()
+        .to_owned();
+    assert!(document.tolerances.linear.is_some());
+    document.tolerances.linear = None;
+    let plan = StepCodec::default()
+        .plan(
+            EncodeInput::new(&document, None),
+            TargetRequest::Explicit("step:ap242-e3"),
+        )
+        .expect("write drawing with unstated tolerance");
+    assert_eq!(
+        plan.report()
+            .native_dispositions
+            .record_disposition("step", "drawing_targets", &context),
+        cadmpeg_ir::codec::write::NativeDisposition::Dropped
+    );
+    assert!(plan
+        .report()
+        .losses
+        .iter()
+        .any(|loss| loss.message.contains(&context)));
+    let mut bytes = Vec::new();
+    plan.write_to(&mut bytes).unwrap();
+    assert!(!std::str::from_utf8(&bytes)
+        .unwrap()
+        .contains("GLOBAL_UNCERTAINTY_ASSIGNED_CONTEXT"));
+    StepCodec::default()
+        .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode drawing");
+}
+
+#[test]
 fn omitted_solid_face_keeps_remaining_geometry_as_an_open_surface_model() {
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
     use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, SurfaceGeometry};
