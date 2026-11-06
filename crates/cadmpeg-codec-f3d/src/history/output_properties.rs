@@ -123,7 +123,9 @@ pub(super) fn classify_inserted_face(
 }
 
 pub(super) struct StateSplitCandidates {
-    pub(super) all_classified: bool,
+    pub(super) all_faces_classified: bool,
+    pub(super) has_bodies: bool,
+    pub(super) all_bodies_complete: bool,
     pub(super) inserted_planar_faces: Vec<(i64, Point3, Vector3)>,
     pub(super) body_faces: BTreeMap<i64, BTreeSet<i64>>,
 }
@@ -244,10 +246,22 @@ pub(super) fn resolve_split_tool_plane(
 pub(super) fn resolve_split_result_plane(
     ctx: &SplitResultPlaneContext<'_>,
 ) -> Option<(Point3, Vector3)> {
-    if !ctx.candidates.all_classified
-        || ctx.candidates.inserted_planar_faces.is_empty()
-        || ctx.centers.len() < 2
+    if !ctx.candidates.all_faces_classified || ctx.candidates.inserted_planar_faces.is_empty() {
+        return None;
+    }
+    if !ctx.candidates.has_bodies
+        && ctx.after_solid.is_empty()
+        && ctx.before_solid.is_none_or(BTreeSet::is_empty)
     {
+        let &(_, first_o, first_n) = ctx.candidates.inserted_planar_faces.first()?;
+        return ctx
+            .candidates
+            .inserted_planar_faces
+            .iter()
+            .all(|&(_, o, n)| planes_are_equivalent(first_o, first_n, o, n))
+            .then_some((first_o, first_n));
+    }
+    if !ctx.candidates.all_bodies_complete || ctx.centers.len() < 2 {
         return None;
     }
     let target_slots = resolved_body_selection_slots(ctx.targets);

@@ -1062,6 +1062,52 @@ impl<'a> HistoricalBodyIndex<'a> {
         Some(positions)
     }
 
+    fn edge_bounds(
+        &self,
+        edges: &[i64],
+    ) -> Option<(cadmpeg_ir::math::Point3, cadmpeg_ir::math::Point3)> {
+        let mut vertices = edges
+            .iter()
+            .filter_map(|&edge| self.edges.get(edge))
+            .flat_map(|edge| [edge.start_vertex, edge.end_vertex])
+            .collect::<Vec<_>>();
+        vertices.sort_unstable();
+        vertices.dedup();
+        let mut min_x = f64::INFINITY;
+        let mut min_y = f64::INFINITY;
+        let mut min_z = f64::INFINITY;
+        let mut max_x = f64::NEG_INFINITY;
+        let mut max_y = f64::NEG_INFINITY;
+        let mut max_z = f64::NEG_INFINITY;
+        let mut found = false;
+        for vertex in vertices {
+            let Some(point) = self
+                .vertex_points
+                .get(vertex)
+                .and_then(|binding| self.point_positions.get(binding.carrier))
+            else {
+                continue;
+            };
+            let pos = point.position;
+            if !pos.x.is_finite() || !pos.y.is_finite() || !pos.z.is_finite() {
+                continue;
+            }
+            min_x = min_x.min(pos.x);
+            min_y = min_y.min(pos.y);
+            min_z = min_z.min(pos.z);
+            max_x = max_x.max(pos.x);
+            max_y = max_y.max(pos.y);
+            max_z = max_z.max(pos.z);
+            found = true;
+        }
+        found.then(|| {
+            (
+                cadmpeg_ir::math::Point3::new(min_x, min_y, min_z),
+                cadmpeg_ir::math::Point3::new(max_x, max_y, max_z),
+            )
+        })
+    }
+
     fn body_faces(&self, body: i64) -> Option<BTreeSet<i64>> {
         let regions = self.body_regions.members(body)?;
         let mut faces = BTreeSet::new();
@@ -1375,6 +1421,7 @@ pub(crate) fn bind_feature_outputs(
                     .filter_map(|&b| Some((b, body_index.solid_edges(b)?)))
                     .collect();
                 let mut bounds_list = Vec::new();
+                let mut center_bounds_list = Vec::new();
                 let mut vertices_map = BTreeMap::new();
                 let mut body_faces_map = BTreeMap::new();
                 for (&b, edges) in &solid_edges {
@@ -1390,7 +1437,15 @@ pub(crate) fn bind_feature_outputs(
                     {
                         vertices_map.insert(b, vpos);
                         bounds_list.push((b, bds));
+                        center_bounds_list.push((b, bds));
                         body_faces_map.insert(b, faces);
+                    } else if let Some(bds) = body_index.edge_bounds(edges) {
+                        center_bounds_list.push((b, bds));
+                        losses.push(
+                            crate::loss::F3dLossCode::HistoricalBodyCenterPartial.note(format!(
+                                "historical solid body {b} uses incomplete topology or vertex evidence for its center in state {cur_state_id}"
+                            )),
+                        );
                     } else {
                         losses.push(
                             crate::loss::F3dLossCode::HistoricalBodyBoundsUnresolved.note(
@@ -1405,7 +1460,7 @@ pub(crate) fn bind_feature_outputs(
                     state_body_vertices.insert(state_key, vertices_map);
                 }
                 if output_states.contains(&state_key) {
-                    let centers: Vec<(i64, cadmpeg_ir::math::Point3)> = bounds_list
+                    let centers: Vec<(i64, cadmpeg_ir::math::Point3)> = center_bounds_list
                         .iter()
                         .map(|&(b, (min_pt, max_pt))| {
                             let center = cadmpeg_ir::math::Point3::new(
@@ -1421,7 +1476,12 @@ pub(crate) fn bind_feature_outputs(
                     }
                     if let Some(transition) = history.states()[index].transition.as_ref() {
                         let mut inserted_planar_faces = Vec::new();
-                        let mut all_classified = !topology.bodies.is_empty()
+                        let mut all_faces_classified = true;
+                        let has_bodies = !topology.bodies.is_empty()
+                            || !transition.topology.bodies.inserted.is_empty()
+                            || !transition.topology.bodies.updated.is_empty()
+                            || !transition.topology.bodies.deleted.is_empty();
+                        let all_bodies_complete = !topology.bodies.is_empty()
                             && solid_edges.len() == topology.bodies.len()
                             && bounds_list.len() == topology.bodies.len()
                             && transition
@@ -1438,7 +1498,7 @@ pub(crate) fn bind_feature_outputs(
                                 }
                                 InsertedFaceClassification::NonPlanar => {}
                                 InsertedFaceClassification::Unclassifiable => {
-                                    all_classified = false;
+                                    all_faces_classified = false;
                                     break;
                                 }
                             }
@@ -1446,7 +1506,9 @@ pub(crate) fn bind_feature_outputs(
                         state_split_candidates.insert(
                             state_key,
                             StateSplitCandidates {
-                                all_classified,
+                                all_faces_classified,
+                                has_bodies,
+                                all_bodies_complete,
                                 inserted_planar_faces,
                                 body_faces: body_faces_map,
                             },
@@ -1682,8 +1744,11 @@ pub(crate) fn bind_feature_outputs(
                 let cur_key = cur_key?;
                 let prev_key = prev_key?;
                 let candidates = state_split_candidates.get(&cur_key)?;
-                let centers = state_body_centers.get(&cur_key)?;
-                let vertices = state_body_vertices.get(&cur_key)?;
+                let centers = state_body_centers
+                    .get(&cur_key)
+                    .map_or(&[][..], Vec::as_slice);
+                let empty_vertices = BTreeMap::new();
+                let vertices = state_body_vertices.get(&cur_key).unwrap_or(&empty_vertices);
                 let solid_outputs = state_solid_outputs.get(&cur_key).map(Vec::as_slice);
                 let after_solid = state_solid_bodies.get(&cur_key)?;
                 let before_solid = state_solid_bodies.get(&prev_key).or(prev_feat_solid);

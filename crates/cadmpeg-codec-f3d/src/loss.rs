@@ -265,6 +265,8 @@ pub(crate) enum F3dLossCode {
     HistoricalFilletEdgeAmbiguous,
     /// Historical body bounding geometry could not be computed from point carriers.
     HistoricalBodyBoundsUnresolved,
+    /// Historical body center geometry uses incomplete topology or vertex evidence.
+    HistoricalBodyCenterPartial,
     /// A `SplitBody` feature takes its split plane from result faces and body geometry.
     HistoricalSplitPlaneInferred,
     /// Sketch relations retain native operands; no unique neutral relation.
@@ -677,6 +679,7 @@ impl F3dLossCode {
         Self::HistoricalEdgeSelectionInferred,
         Self::HistoricalFilletEdgeAmbiguous,
         Self::HistoricalBodyBoundsUnresolved,
+        Self::HistoricalBodyCenterPartial,
         Self::HistoricalSplitPlaneInferred,
         Self::SketchRelationNativeRetained,
         Self::SketchDimensionNativeRetained,
@@ -945,6 +948,7 @@ impl F3dLossCode {
             Self::HistoricalEdgeSelectionInferred => "history.edge-selection-inferred",
             Self::HistoricalFilletEdgeAmbiguous => "history.fillet-edge-ambiguous",
             Self::HistoricalBodyBoundsUnresolved => "history.body-bounds-unresolved",
+            Self::HistoricalBodyCenterPartial => "history.body-center-partial",
             Self::HistoricalSplitPlaneInferred => "history.split-plane-inferred",
             Self::HistoryDependencyAmbiguous => "history.dependency-ambiguous",
             Self::SketchRelationNativeRetained => "sketch.relation-native",
@@ -1255,6 +1259,7 @@ impl F3dLossCode {
             | Self::BodyRecipeSerializationFormAssumed
             | Self::HistoricalFilletEdgeAmbiguous
             | Self::HistoricalBodyBoundsUnresolved
+            | Self::HistoricalBodyCenterPartial
             | Self::HistoricalSplitPlaneInferred
             | Self::SketchRelationNativeRetained
             | Self::SketchDimensionNativeRetained
@@ -1471,6 +1476,7 @@ impl F3dLossCode {
             | Self::BodyRecipeSerializationFormAssumed
             | Self::HistoricalFilletEdgeAmbiguous
             | Self::HistoricalBodyBoundsUnresolved
+            | Self::HistoricalBodyCenterPartial
             | Self::HistoricalSplitPlaneInferred
             | Self::SketchRelationNativeRetained
             | Self::SketchDimensionNativeRetained
@@ -1782,6 +1788,7 @@ mod tests {
                 "history.edge-selection-inferred",
                 "history.fillet-edge-ambiguous",
                 "history.body-bounds-unresolved",
+                "history.body-center-partial",
                 "history.split-plane-inferred",
                 "sketch.relation-native",
                 "sketch.dimension-native",

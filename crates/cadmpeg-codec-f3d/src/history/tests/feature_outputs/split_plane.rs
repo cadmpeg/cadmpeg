@@ -386,9 +386,10 @@ fn split_plane_only_emitted_for_split_body() {
         ],
     );
 
-    // Without split result bodies or a resolved tool, split_plane remains unresolved.
+    // Without resolved result-body evidence, an unresolved tool with one inserted planar face
+    // preserves the readable plane and emits an inference loss.
     let mut feature_unresolved = split_body_test_feature(&scope.id);
-    bind_feature_outputs(
+    let unresolved_losses = bind_feature_outputs(
         std::slice::from_mut(&mut feature_unresolved),
         std::slice::from_ref(&scope),
         &mut [history.clone()],
@@ -401,8 +402,11 @@ fn split_plane_only_emitted_for_split_body() {
         feature_unresolved
             .source_properties
             .get(&cadmpeg_core::nonblank_literal!("split_plane")),
-        None
+        Some(&"1,2,3;0,0,1".to_string())
     );
+    assert!(unresolved_losses.iter().any(|loss| {
+        loss.code == crate::loss::F3dLossCode::HistoricalSplitPlaneInferred.kind()
+    }));
 
     // With a resolved face tool, split_plane is emitted for SplitBody without inference loss.
     let mut feature_split = split_body_with_face_tool(&scope.id, &[10]);
@@ -1025,7 +1029,7 @@ fn split_plane_unresolved_when_output_body_has_incomplete_topology_or_vertices()
             ],
         );
         let mut feature_split = split_body_test_feature(&scope.id);
-        bind_feature_outputs(
+        let losses = bind_feature_outputs(
             std::slice::from_mut(&mut feature_split),
             std::slice::from_ref(&scope),
             &mut [history],
@@ -1041,6 +1045,28 @@ fn split_plane_unresolved_when_output_body_has_incomplete_topology_or_vertices()
             None,
             "case {i} must leave split_plane unresolved when body evidence is incomplete"
         );
+        assert_eq!(
+            feature_split
+                .source_properties
+                .get(&cadmpeg_core::nonblank_literal!("body_centers"))
+                .map(String::as_str),
+            Some("1:0,0,1;2:0,0,2"),
+            "case {i} must preserve readable body centers"
+        );
+        if i == 0 {
+            assert!(
+                losses.iter().any(|loss| {
+                    loss.code == crate::loss::F3dLossCode::HistoricalBodyCenterPartial.kind()
+                }),
+                "partial vertex evidence must emit HistoricalBodyCenterPartial"
+            );
+            assert!(
+                losses.iter().all(|loss| {
+                    loss.code != crate::loss::F3dLossCode::HistoricalBodyBoundsUnresolved.kind()
+                }),
+                "partial vertex evidence with readable bounds must not emit HistoricalBodyBoundsUnresolved"
+            );
+        }
     }
 }
 
