@@ -71,7 +71,7 @@ fn work_plane_refuses_nonzero_axis_states_and_direction_controls() {
             1 => candidate.fields.inferred_z_axis.value = 1,
             2 => candidate.fields.z_flip.value = 1,
             3 => candidate.fields.axis_flipped.as_mut().unwrap().value = 1,
-            4 => candidate.fields.use_u_direction.as_mut().unwrap().value = 1,
+            4 => candidate.fields.use_u_direction.as_mut().unwrap().value = 2,
             _ => unreachable!(),
         }
         let mut scope = scope(&placement);
@@ -140,10 +140,35 @@ fn work_plane_modern_join_uses_member_identity_independent_of_table_position_and
 }
 
 #[test]
-fn work_plane_modern_frames_admit_both_checked_direction_values() {
-    for placement in crate::test_support::placement_construction::modern_placements()
-        .into_iter()
-        .filter(|placement| placement.type_version == 16)
+fn work_plane_frames_check_direction_values() {
+    let legacy = crate::test_support::work_plane::placements().remove(0);
+    assert_eq!(legacy.type_version, 14);
+    let mut version_12 = legacy.clone();
+    version_12.type_version = 12;
+    for direction in [0, 1] {
+        let mut candidate = version_12.clone();
+        candidate.fields.use_u_direction.as_mut().unwrap().value = direction;
+        let mut scope = crate::test_support::work_plane::scope(&candidate);
+        let losses = super::bind(std::slice::from_mut(&mut scope), &[candidate]);
+        if direction == 0 {
+            assert!(losses.is_empty());
+            assert_eq!(
+                scope.work_plane_transform(),
+                Some(version_12.fields.matrix.as_ref().unwrap().value)
+            );
+        } else {
+            assert!(scope.work_plane_frame().is_none());
+            assert_eq!(losses.len(), 1);
+            assert_eq!(
+                losses[0].code,
+                crate::loss::F3dLossCode::WorkPlaneFrameUnbound
+                    .note("")
+                    .code
+            );
+        }
+    }
+    for placement in std::iter::once(legacy)
+        .chain(crate::test_support::placement_construction::modern_placements())
     {
         for direction in [0, 1] {
             let mut candidate = placement.clone();
@@ -158,5 +183,17 @@ fn work_plane_modern_frames_admit_both_checked_direction_values() {
                 ))
             );
         }
+        let mut candidate = placement.clone();
+        candidate.fields.use_u_direction.as_mut().unwrap().value = 2;
+        let mut scope = crate::test_support::work_plane::scope(&candidate);
+        let losses = super::bind(std::slice::from_mut(&mut scope), &[candidate]);
+        assert!(scope.work_plane_frame().is_none());
+        assert_eq!(losses.len(), 1);
+        assert_eq!(
+            losses[0].code,
+            crate::loss::F3dLossCode::WorkPlaneFrameUnbound
+                .note("")
+                .code
+        );
     }
 }

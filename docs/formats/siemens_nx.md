@@ -835,6 +835,13 @@ Parasolid XT node type.
 
 Types carrying `node_id:u32` place it at record offset `+4` (after shifts). Every `u32` value is valid; node admission has no smaller numerical bound. FIN has no `node_id`. EDGE and VERTEX candidates with denormal tolerance (`abs(tol) < 1e-100`) are payload coincidences, not records. Every POINT coordinate is finite and its converted millimeter value is finite; no normality or model-magnitude condition applies.
 
+In a terminated node sequence, a node keeps these field positions and roles
+when its effective field list begins with the base fields of its type. Each
+leading field has its base name, data type, extent, transmit flag, and
+pointer class. BODY `owner` also keeps its role with pointer class 1040; its
+base class is 101. Fields after the base fields do not move the base
+positions.
+
 A complete body-topology graph owns all of its fixed node frames. A typed XMT
 slot also owns one unique fixed node of the required family: SHELL owns BODY and
 REGION; FACE owns a surface carrier; EDGE and FIN own curve carriers; and
@@ -898,14 +905,12 @@ A PMARK section starts with one or more such nodes. A kind-4 head after its firs
 ordinary node is not a supported transition.
 
 A map prefix consists of zero or more pairs `(nonnull_XMT, kind:u16 BE)`, followed
-by `null_XMT, zero:u16 BE, terminal_word:u16 BE`. Each kind is from 2 through the
+by `null_XMT, terminal_bytes:4`. Each kind is from 2 through the
 declared maximum. The null XMT is `00 01`. Map XMT encoding is canonical: direct
 zero, an extended zero quotient, and an `80 00` remainder are invalid. This
-canonicality rule is local to map entries. The terminal word is below `0x8000`;
-a high bit leaves its encoded width unresolved. Its value does not count the
-section's nodes and does not select a state. The six-byte map tail places null
-XMT at `+0`, zero at `+2`, and terminal word at `+4`, relative to the end of the
-entry pairs.
+canonicality rule is local to map entries. The four terminal bytes take every
+byte value, and the map ends after them. The six-byte map tail places null XMT
+at `+0` and the terminal bytes at `+2`, relative to the end of the entry pairs.
 
 After a closed leading section, a map section is required. After a closed map
 section, a PMARK section or one exact final `T` is required. That final `T`
@@ -931,7 +936,7 @@ Generic native output uses `parasolid_deltas_schemas` and
 `parasolid_deltas_metadata`, one row for each map prefix, primary PMARK,
 section terminator, or final terminator. Each metadata row retains its stream
 ordinal, inflated offset, byte length, SHA-256, and tagged production. A map
-retains every ordered entry and its terminal word. A PMARK retains every field.
+retains every ordered entry and its four terminal bytes. A PMARK retains every field.
 A section terminator retains the closed section's kind and start offset.
 Metadata spans do not overlap. Each definition is shared in memory and serialized
 once, including custom type name and description. Instances join their schema
@@ -3117,7 +3122,7 @@ knot-type code.
 
 Parasolid type-79 attribute identifiers are `00 4f [ff], name_len:u32 BE, xmt, name[name_len]`. The name is non-empty printable ASCII. Type-79 records are independent nodes and need not be adjacent to the type-80 definition that references them.
 
-A type-80 attribute definition is `00 50 [ff], field_count:u32 BE, xmt, next_definition, identifier, type_id:u32 BE, action[8], field_names, legal_owner[field_owner_count], field_code[field_count]`. `field_owner_count` is 16 or 14. The 14-byte form is complete only when the field-code lane ends at the next tagged record; this rejects an ambiguous truncated 16-byte form. XMT and reference fields use the compact or extended XMT encoding. The definition XMT, identifier reference, and type ID are non-null. `identifier` must resolve uniquely to a type-79 record in the same stream; otherwise the definition remains untyped. `next_definition` and `field_names` may be null reference `1`. Each action code is in `0..=6`, and each legal-owner flag is binary. Each field code is in `0..=10`; zero is an ignored user-field extension, and codes 1 through 10 denote integer, real, character, point, vector, direction, axis, tag, pointer, and Unicode storage respectively. The definition identity is the type-80 XMT, not its type-79 identifier XMT. Definition order and physical adjacency do not participate in the join.
+A type-80 attribute definition is `00 50 [ff], field_count:u32 BE, xmt, next_definition, identifier, type_id:u32 BE, action[8], field_names, legal_owner[field_owner_count], field_code[field_count]`. `field_owner_count` is the extent of `legal_owners` in the stream's effective type-80 definition: 14 in base schema 13006, or 16 when an embedded schema edit declares it. Base schema 11004 has no `field_names` field. XMT and reference fields use the compact or extended XMT encoding. The definition XMT, identifier reference, and type ID are non-null. `identifier` must resolve uniquely to a type-79 record in the same stream; otherwise the definition remains untyped. `next_definition` and `field_names` may be null reference `1`. Each action code is in `0..=6`, and each legal-owner flag is binary. Each field code is in `0..=10`; zero is an ignored user-field extension, and codes 1 through 10 denote integer, real, character, point, vector, direction, axis, tag, pointer, and Unicode storage respectively. The definition identity is the type-80 XMT, not its type-79 identifier XMT. Definition order and physical adjacency do not participate in the join.
 
 A type-99 field-name list is `00 63 [ff], field_count:u32 BE, xmt, name[field_count]`. The count is nonzero, and the XMT and every name reference are non-null. A type-80 `field_names` reference resolves only when exactly one same-stream type-99 record has that XMT, its count equals the definition's field count, and every ordered name reference resolves uniquely to a same-stream type-84 character or type-98 Unicode value. The resulting names correspond positionally to the definition's field codes.
 
@@ -3126,10 +3131,14 @@ xmt, sequence:u32 BE, definition, references`. XMT fields use the
 compact or extended XMT encoding. `xmt` is non-null, `sequence` is nonzero, and
 `flags` is in `1..=0x20`. The reference count is seven for `flags = 02`, nine
 for `flags = 04`, and in general five plus `flags`. The definition reference does not
-affect framing. References are either consecutive XMT values or individually
-binary-status-prefixed XMT values followed by a binary terminal; the two forms
-are atomic. A
-topology attribute-list identity resolves only when exactly one type-81 record
+affect framing.
+
+In a terminated node sequence, type-81 references are consecutive XMT values.
+The first byte of a reference is the first byte of its XMT encoding, so an index
+cell can start with `01`. Open item PS-41 records the reference form in a stream
+without a terminated node sequence.
+
+A topology attribute-list identity resolves only when exactly one type-81 record
 in the same stream has that xmt. The head record must have the topology XMT in
 its first leading reference. Once the head is valid, every type-81 record in
 the same stream whose first leading reference is that topology XMT is owned by
@@ -3158,8 +3167,9 @@ suppression value. This Parasolid attribute class is distinct from the OM
 registry classes `UGS::OM::ObjectStateCollection` and `UGS::OM::ObjectState`.
 
 A printable type-84 value record is `00 54 [ff], length:u32 BE, xmt,
-text[length], 00`. The length is nonzero, xmt is non-null, and every text byte
-is printable ASCII. The terminator is outside the declared text length. A
+text[length]`. The length is nonzero, xmt is non-null, and every text byte
+is printable ASCII. The record ends after its final text byte; the zero byte
+that follows it is the first byte of the next node type. A
 type-81 reference slot addresses the value only when exactly one type-84 record
 in the same stream has the referenced xmt; reference order is retained.
 

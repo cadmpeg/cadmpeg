@@ -16,6 +16,11 @@ enum Value {
     Real(&'static str),
 }
 
+/// Whether a node type is an analytic carrier type.
+pub(super) fn is_analytic_kind(kind: u16) -> bool {
+    u8::try_from(kind).ok().and_then(value_fields).is_some()
+}
+
 /// The value fields of each analytic node type, in base-schema order after
 /// `sense`.
 fn value_fields(kind: u8) -> Option<&'static [Value]> {

@@ -560,6 +560,9 @@ pub(crate) struct Graph {
     /// FACE identities grouped by their SHELL reference, in physical order.
     faces_by_shell: BTreeMap<u32, Vec<u32>>,
     primary_edge_refusals: Vec<usize>,
+    /// Supported non-EDGE nodes of a terminated sequence that the graph
+    /// leaves out, by kind and start.
+    primary_node_refusals: Vec<(NodeKind, usize)>,
     primary_unread_from: Option<usize>,
     /// The node ranges of a terminated primary sequence.
     primary_records: Option<Vec<std::ops::Range<usize>>>,
@@ -1007,7 +1010,7 @@ impl Graph {
     ) -> FixedRecordSelection {
         let mut candidates = Vec::new();
         let mut ownership_candidates = Vec::new();
-        let mut admit = |pos: usize, node_end: Option<usize>| {
+        let mut admit = |pos: usize| {
             if stream.get(pos) != Some(&0) {
                 return;
             }
@@ -1021,12 +1024,6 @@ impl Graph {
                 .into_iter()
                 .flatten()
             {
-                // A node of a terminated sequence spans its framed bytes,
-                // whatever length the fixed layout of its kind states.
-                let candidate = NodeCandidate {
-                    end: node_end.unwrap_or(candidate.end),
-                    ..candidate
-                };
                 if frames.is_some_and(|frames| frames.exclude(&candidate)) {
                     continue;
                 }

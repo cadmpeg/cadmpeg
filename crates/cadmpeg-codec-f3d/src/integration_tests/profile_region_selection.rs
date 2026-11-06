@@ -21,6 +21,17 @@ use crate::records::topology::sketch_profile::DesignSketchProfileOperand;
 const REGION_TOLERANCE: f64 = 1.0e-7;
 const ANGULAR_TOLERANCE: f64 = 1.0e-9;
 
+fn square_and_circles() -> Vec<serde_json::Value> {
+    vec![
+        json!({"kind": "circle", "center": {"u": 0.0, "v": 0.0}, "radius": 2.0}),
+        json!({"kind": "circle", "center": {"u": 0.0, "v": 0.0}, "radius": 1.3}),
+        json!({"kind": "line", "start": {"u": -1.0, "v": -1.0}, "end": {"u": 1.0, "v": -1.0}}),
+        json!({"kind": "line", "start": {"u": 1.0, "v": -1.0}, "end": {"u": 1.0, "v": 1.0}}),
+        json!({"kind": "line", "start": {"u": 1.0, "v": 1.0}, "end": {"u": -1.0, "v": 1.0}}),
+        json!({"kind": "line", "start": {"u": -1.0, "v": 1.0}, "end": {"u": -1.0, "v": -1.0}}),
+    ]
+}
+
 fn fixture(
     members: &[u32],
 ) -> (
@@ -29,15 +40,20 @@ fn fixture(
     Vec<SketchCurveIdentity>,
     DesignParameterScope,
 ) {
+    fixture_with(square_and_circles(), &[&[0], &[1], &[2, 3, 4, 5]], members)
+}
+
+fn fixture_with(
+    geometry: Vec<serde_json::Value>,
+    profile_entities: &[&[usize]],
+    members: &[u32],
+) -> (
+    Sketch,
+    Vec<SketchEntity>,
+    Vec<SketchCurveIdentity>,
+    DesignParameterScope,
+) {
     let sketch_id = cadmpeg_ir::sketches::SketchId::mint("synthetic:test:sketch#42").unwrap();
-    let geometry = [
-        json!({"kind": "circle", "center": {"u": 0.0, "v": 0.0}, "radius": 2.0}),
-        json!({"kind": "circle", "center": {"u": 0.0, "v": 0.0}, "radius": 1.3}),
-        json!({"kind": "line", "start": {"u": -1.0, "v": -1.0}, "end": {"u": 1.0, "v": -1.0}}),
-        json!({"kind": "line", "start": {"u": 1.0, "v": -1.0}, "end": {"u": 1.0, "v": 1.0}}),
-        json!({"kind": "line", "start": {"u": 1.0, "v": 1.0}, "end": {"u": -1.0, "v": 1.0}}),
-        json!({"kind": "line", "start": {"u": -1.0, "v": 1.0}, "end": {"u": -1.0, "v": -1.0}}),
-    ];
     let mut entities = Vec::new();
     let mut curves = Vec::new();
     for (index, geometry) in geometry.into_iter().enumerate() {
@@ -61,14 +77,15 @@ fn fixture(
             planar_z_noise: None,
         });
     }
-    let profiles = vec![
-        vec![json!({"entity": entities[0].id(), "reversed": false})],
-        vec![json!({"entity": entities[1].id(), "reversed": false})],
-        entities[2..]
-            .iter()
-            .map(|entity| json!({"entity": entity.id(), "reversed": false}))
-            .collect(),
-    ];
+    let profiles = profile_entities
+        .iter()
+        .map(|indices| {
+            indices
+                .iter()
+                .map(|index| json!({"entity": entities[*index].id(), "reversed": false}))
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
     let sketch = Sketch {
         id: sketch_id,
         name: None,
@@ -117,7 +134,17 @@ fn fixture(
 }
 
 fn bound_profile(members: &[u32]) -> ProfileRef {
-    let (sketch, entities, curves, scope) = fixture(members);
+    bound_fixture(fixture(members))
+}
+
+fn bound_fixture(
+    (sketch, entities, curves, scope): (
+        Sketch,
+        Vec<SketchEntity>,
+        Vec<SketchCurveIdentity>,
+        DesignParameterScope,
+    ),
+) -> ProfileRef {
     let mut feature: Feature = serde_json::from_value(json!({
         "id": "synthetic:test:feature#cut", "ordinal": 0, "suppressed": false,
         "native_ref": scope.id,
@@ -229,6 +256,158 @@ fn incomplete_partial_curve_members_keep_the_native_selection() {
     ));
     assert!(matches!(
         bound_profile(&[2, 2, 2, 2, 3, 4, 5, 99]),
+        ProfileRef::Planar(PlanarProfileRef::SketchSelection { .. })
+    ));
+}
+
+#[test]
+fn counted_members_name_each_fragment_of_a_curve_split_on_the_region_boundary() {
+    let geometry = vec![
+        json!({"kind": "line", "start": {"u": -1.0, "v": -1.0}, "end": {"u": 1.0, "v": -1.0}}),
+        json!({"kind": "line", "start": {"u": 1.0, "v": -1.0}, "end": {"u": 1.0, "v": 1.0}}),
+        json!({"kind": "line", "start": {"u": 1.0, "v": 1.0}, "end": {"u": -1.0, "v": 1.0}}),
+        json!({"kind": "line", "start": {"u": -1.0, "v": 1.0}, "end": {"u": -1.0, "v": -1.0}}),
+        json!({"kind": "line", "start": {"u": 0.0, "v": -2.0}, "end": {"u": 0.0, "v": -1.0}}),
+    ];
+    let profile = bound_fixture(fixture_with(
+        geometry.clone(),
+        &[&[0, 1, 2, 3]],
+        &[1, 1, 2, 3, 4],
+    ));
+    let ProfileRef::Planar(PlanarProfileRef::SketchRegions { regions, .. }) = &profile else {
+        panic!("square region: {profile:?}");
+    };
+    let [SketchProfileRegion::Trimmed {
+        outer_boundary,
+        hole_boundaries,
+    }] = regions.as_slice()
+    else {
+        panic!("one atomic region");
+    };
+    assert!(hole_boundaries.is_empty());
+    assert_eq!(outer_boundary.len(), 5);
+    let (_, entities, _, _) = fixture_with(geometry.clone(), &[&[0, 1, 2, 3]], &[]);
+    assert_eq!(
+        outer_boundary
+            .iter()
+            .filter(|use_| use_.entity == *entities[0].id())
+            .count(),
+        2
+    );
+    assert!(matches!(
+        bound_fixture(fixture_with(geometry, &[&[0, 1, 2, 3]], &[1, 2, 3, 4])),
+        ProfileRef::Planar(PlanarProfileRef::SketchSelection { .. })
+    ));
+}
+
+#[test]
+fn counted_members_name_both_curves_of_a_coincident_boundary_stretch() {
+    let geometry = vec![
+        json!({"kind": "line", "start": {"u": -1.0, "v": -1.0}, "end": {"u": 1.0, "v": -1.0}}),
+        json!({"kind": "line", "start": {"u": 1.0, "v": -1.0}, "end": {"u": 1.0, "v": 1.0}}),
+        json!({"kind": "line", "start": {"u": 1.0, "v": 1.0}, "end": {"u": -1.0, "v": 1.0}}),
+        json!({"kind": "line", "start": {"u": -1.0, "v": 1.0}, "end": {"u": -1.0, "v": -1.0}}),
+        json!({"kind": "line", "start": {"u": 0.0, "v": 1.0}, "end": {"u": 2.0, "v": 1.0}}),
+        json!({"kind": "line", "start": {"u": 2.0, "v": 1.0}, "end": {"u": 2.0, "v": 2.0}}),
+        json!({"kind": "line", "start": {"u": 2.0, "v": 2.0}, "end": {"u": 0.0, "v": 2.0}}),
+        json!({"kind": "line", "start": {"u": 0.0, "v": 2.0}, "end": {"u": 0.0, "v": 1.0}}),
+    ];
+    let loops: &[&[usize]] = &[&[0, 1, 2, 3], &[4, 5, 6, 7]];
+    let profile = bound_fixture(fixture_with(geometry.clone(), loops, &[1, 2, 3, 3, 5, 4]));
+    let ProfileRef::Planar(PlanarProfileRef::SketchRegions { regions, .. }) = &profile else {
+        panic!("square region: {profile:?}");
+    };
+    let [SketchProfileRegion::Trimmed {
+        outer_boundary,
+        hole_boundaries,
+    }] = regions.as_slice()
+    else {
+        panic!("one atomic region");
+    };
+    assert!(hole_boundaries.is_empty());
+    assert_eq!(outer_boundary.len(), 5);
+    assert!(matches!(
+        bound_fixture(fixture_with(geometry, loops, &[1, 2, 3, 5, 4])),
+        ProfileRef::Planar(PlanarProfileRef::SketchSelection { .. })
+    ));
+}
+
+#[test]
+fn counted_members_match_a_region_whose_edge_two_profiles_share() {
+    let geometry = vec![
+        json!({"kind": "line", "start": {"u": -1.0, "v": -1.0}, "end": {"u": 0.0, "v": -1.0}}),
+        json!({"kind": "line", "start": {"u": 0.0, "v": -1.0}, "end": {"u": 0.0, "v": 1.0}}),
+        json!({"kind": "line", "start": {"u": 0.0, "v": 1.0}, "end": {"u": -1.0, "v": 1.0}}),
+        json!({"kind": "line", "start": {"u": -1.0, "v": 1.0}, "end": {"u": -1.0, "v": -1.0}}),
+        json!({"kind": "line", "start": {"u": 0.0, "v": -1.0}, "end": {"u": 1.0, "v": -1.0}}),
+        json!({"kind": "line", "start": {"u": 1.0, "v": -1.0}, "end": {"u": 1.0, "v": 1.0}}),
+        json!({"kind": "line", "start": {"u": 1.0, "v": 1.0}, "end": {"u": 0.0, "v": 1.0}}),
+    ];
+    let profile = bound_fixture(fixture_with(
+        geometry,
+        &[&[0, 1, 2, 3], &[1, 4, 5, 6]],
+        &[1, 2, 3, 4],
+    ));
+    let ProfileRef::Planar(PlanarProfileRef::SketchRegions { regions, .. }) = &profile else {
+        panic!("left square region: {profile:?}");
+    };
+    let [SketchProfileRegion::Trimmed { outer_boundary, .. }] = regions.as_slice() else {
+        panic!("one atomic region");
+    };
+    assert_eq!(outer_boundary.len(), 4);
+}
+
+#[test]
+fn counted_members_name_an_uncut_circle_once() {
+    let geometry = vec![
+        json!({"kind": "circle", "center": {"u": 0.0, "v": 0.0}, "radius": 1.0}),
+        json!({"kind": "line", "start": {"u": -2.0, "v": -2.0}, "end": {"u": 2.0, "v": -2.0}}),
+        json!({"kind": "line", "start": {"u": 2.0, "v": -2.0}, "end": {"u": 2.0, "v": 2.0}}),
+        json!({"kind": "line", "start": {"u": 2.0, "v": 2.0}, "end": {"u": -2.0, "v": 2.0}}),
+        json!({"kind": "line", "start": {"u": -2.0, "v": 2.0}, "end": {"u": -2.0, "v": -2.0}}),
+    ];
+    let loops: &[&[usize]] = &[&[0], &[1, 2, 3, 4]];
+    let profile = bound_fixture(fixture_with(geometry.clone(), loops, &[1]));
+    let ProfileRef::Planar(PlanarProfileRef::SketchRegions { regions, .. }) = &profile else {
+        panic!("disk region: {profile:?}");
+    };
+    let [SketchProfileRegion::Trimmed {
+        hole_boundaries, ..
+    }] = regions.as_slice()
+    else {
+        panic!("one atomic region");
+    };
+    assert!(hole_boundaries.is_empty());
+    assert!(matches!(
+        bound_fixture(fixture_with(geometry, loops, &[1, 1])),
+        ProfileRef::Planar(PlanarProfileRef::SketchSelection { .. })
+    ));
+}
+
+#[test]
+fn counted_members_name_each_coincident_uncut_circle_once() {
+    let geometry = vec![
+        json!({"kind": "circle", "center": {"u": 0.0, "v": 0.0}, "radius": 1.0}),
+        json!({"kind": "circle", "center": {"u": 0.0, "v": 0.0}, "radius": 1.0}),
+        json!({"kind": "line", "start": {"u": -2.0, "v": -2.0}, "end": {"u": 2.0, "v": -2.0}}),
+        json!({"kind": "line", "start": {"u": 2.0, "v": -2.0}, "end": {"u": 2.0, "v": 2.0}}),
+        json!({"kind": "line", "start": {"u": 2.0, "v": 2.0}, "end": {"u": -2.0, "v": 2.0}}),
+        json!({"kind": "line", "start": {"u": -2.0, "v": 2.0}, "end": {"u": -2.0, "v": -2.0}}),
+    ];
+    let loops: &[&[usize]] = &[&[0], &[1], &[2, 3, 4, 5]];
+    let profile = bound_fixture(fixture_with(geometry.clone(), loops, &[1, 2]));
+    let ProfileRef::Planar(PlanarProfileRef::SketchRegions { regions, .. }) = &profile else {
+        panic!("disk region: {profile:?}");
+    };
+    let [SketchProfileRegion::Trimmed {
+        hole_boundaries, ..
+    }] = regions.as_slice()
+    else {
+        panic!("one atomic region");
+    };
+    assert!(hole_boundaries.is_empty());
+    assert!(matches!(
+        bound_fixture(fixture_with(geometry, loops, &[1, 2, 2])),
         ProfileRef::Planar(PlanarProfileRef::SketchSelection { .. })
     ));
 }
