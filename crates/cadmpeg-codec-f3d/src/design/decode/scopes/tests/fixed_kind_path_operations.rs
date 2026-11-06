@@ -25,7 +25,9 @@ pub(super) fn fixed_kind_path_operations(
 ) {
     let loft_start = bytes.len();
     let mut loft = vec![0; 376];
+    loft[20] = 1;
     loft[29..33].copy_from_slice(&1u32.to_le_bytes());
+    loft[34..38].fill(0xff);
     bytes.extend_from_slice(&loft);
     let mut loft_scope = scope.clone();
     loft_scope
@@ -52,6 +54,7 @@ pub(super) fn fixed_kind_path_operations(
             crate::records::feature::path_features::DesignLoftConstruction {
                 operation: DesignExtrudeOperation::Join,
                 operation_offset: u64_from_index(loft_start + 29),
+                reference_target: None,
             }
         ))
     );
@@ -61,6 +64,7 @@ pub(super) fn fixed_kind_path_operations(
             crate::records::feature::path_features::DesignLoftConstruction {
                 operation: DesignExtrudeOperation::NewBody,
                 operation_offset: u64_from_index(loft_start + 29),
+                reference_target: None,
             },
         ));
         loft_scope
@@ -121,6 +125,7 @@ pub(super) fn fixed_kind_path_operations(
             crate::records::feature::path_features::DesignLoftConstruction {
                 operation: DesignExtrudeOperation::Cut,
                 operation_offset: u64_from_index(loft_start + 29),
+                reference_target: None,
             },
         ));
         loft_scope
@@ -340,6 +345,7 @@ pub(super) fn fixed_kind_path_operations(
             crate::records::feature::path_features::DesignLoftConstruction {
                 operation: DesignExtrudeOperation::NewBody,
                 operation_offset: u64_from_index(loft_start + 29),
+                reference_target: None,
             },
         ));
         loft_scope
