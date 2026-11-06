@@ -904,3 +904,44 @@ fn f3z_scopes_joined_mesh_native_references() {
         "{findings:#?}"
     );
 }
+
+#[test]
+fn f3z_keeps_textured_mesh_assets_in_each_occurrence() {
+    let component = crate::test_support::mesh_fixture::archive_with_textures(
+        &crate::test_support::paramesh::triangle(),
+        Some(&synthetic_geometry_smbh()),
+        true,
+    );
+    let root = f3d_without_brep(
+        "assembly-design",
+        "root.f3d",
+        &[("first.f3d", XREF_ROLE), ("second.f3d", XREF_ROLE)],
+    );
+    let archive = f3z_archive(
+        "root.f3d",
+        &[
+            ("root.f3d", &root),
+            ("first.f3d", &component),
+            ("second.f3d", &component),
+        ],
+    );
+    let decoded = crate::test_support::archive_session::decode(
+        &mut Cursor::new(archive),
+        &DecodeOptions::default(),
+    )
+    .unwrap();
+    assert_eq!(decoded.ir().model.tessellations.len(), 2);
+    assert_eq!(decoded.ir().model.assets.len(), 4);
+    cadmpeg_test_support::native_linkage::assert_native_linkage(decoded.ir());
+    let findings = crate::validate::validate_native(
+        &cadmpeg_test_support::service_decode_context(),
+        decoded.ir(),
+    )
+    .unwrap();
+    assert!(
+        findings
+            .iter()
+            .all(|finding| finding.severity < cadmpeg_ir::report::Severity::Error),
+        "{findings:#?}"
+    );
+}
