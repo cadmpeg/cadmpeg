@@ -2333,7 +2333,7 @@ pub(crate) fn decode(
     )
 }
 
-fn is_deltas_stream(header: &StreamHeader) -> bool {
+pub(super) fn is_deltas_stream(header: &StreamHeader) -> bool {
     header
         .description
         .as_bytes()
@@ -2364,13 +2364,50 @@ pub(crate) fn decode_bodies(
     bodies: &[(&[u8], &StreamHeader)],
     stream: &cadmpeg_ir::StreamName,
 ) -> Result<Brep, cadmpeg_core::CodecError> {
+    let mut site = scan_site(ctx, bodies, &mut |_| {})?;
+    decode_graph(
+        ctx,
+        &mut site.carriers,
+        &site.tables,
+        site.facts,
+        &site.typed_facts,
+        stream,
+    )
+}
+
+/// The merged record state of one site.
+struct SiteState {
+    carriers: CarrierIndex,
+    tables: topology::Tables,
+    facts: entity::Facts,
+    typed_facts: typed::Facts,
+}
+
+/// The topology tables the site scan reads from one stream, before they
+/// merge into the site tables.
+pub(super) struct StreamTopology<'a> {
+    /// The position of the stream in the site's `bodies`.
+    pub(super) index: usize,
+    pub(super) body: &'a [u8],
+    /// Whether the tables come from the stream's node sequence.
+    pub(super) from_nodes: bool,
+    pub(super) tables: &'a topology::Tables,
+}
+
+/// Read the streams of one site into one record state. `observe` receives
+/// the topology tables of each stream in scan order.
+fn scan_site(
+    ctx: &DecodeContext<'_>,
+    bodies: &[(&[u8], &StreamHeader)],
+    observe: &mut dyn FnMut(StreamTopology<'_>),
+) -> Result<SiteState, cadmpeg_core::CodecError> {
     let mut carriers = CarrierIndex::default();
     let mut tables = topology::Tables::default();
     let mut facts = entity::Facts::default();
     let mut initialized = false;
-    let mut ordered: Vec<&(&[u8], &StreamHeader)> = Vec::new();
-    ordered.extend(bodies.iter());
-    ordered.sort_by_key(|entry| is_deltas_stream(entry.1));
+    let mut order: Vec<usize> = (0..bodies.len()).collect();
+    order.sort_by_key(|index| is_deltas_stream(bodies[*index].1));
+    let ordered: Vec<&(&[u8], &StreamHeader)> = order.iter().map(|index| &bodies[*index]).collect();
     let mut entity_streams = Vec::new();
     for (payload, header) in &ordered {
         let body = header_body(payload, header)?;
@@ -2546,7 +2583,7 @@ pub(crate) fn decode_bodies(
         }
     }
     let evidence = SiteEvidence::of(&entity_streams, &typed_streams);
-    for (stream_order, ((((payload, header), stream_typed_facts), node_tables), attributes)) in
+    for (stream_order, (((((payload, header), stream_typed_facts), node_tables), attributes), index)) in
         ordered
             .into_iter()
             .zip(typed_streams)
@@ -2569,6 +2606,7 @@ pub(crate) fn decode_bodies(
             node_carriers.flatten(),
             exclude,
         )?);
+        let from_nodes = node_tables.is_some();
         let scanned_tables = stream_topology(
             (body, header),
             &stream_typed_facts,
@@ -2578,6 +2616,7 @@ pub(crate) fn decode_bodies(
             &tables,
             exclude,
         );
+        observe(StreamTopology { index, body, from_nodes, tables: &scanned_tables });
         let (attributes, entities) = attributes;
         let attributes = attributes.unwrap_or_else(|| attrib::Records::scan(body));
         let mut scanned_facts = entity::metadata(body, is_deltas, &attributes, entities);
@@ -2596,7 +2635,22 @@ pub(crate) fn decode_bodies(
             initialized = true;
         }
     }
-    decode_graph(ctx, &mut carriers, &tables, facts, &evidence.typed, stream)
+    Ok(SiteState {
+        carriers,
+        tables,
+        facts,
+        typed_facts: evidence.typed,
+    })
+}
+
+/// Read the streams of one site as [`decode_bodies`] does, without building
+/// the B-rep. `observe` receives the topology tables of each stream.
+pub(super) fn observe_site(
+    ctx: &DecodeContext<'_>,
+    bodies: &[(&[u8], &StreamHeader)],
+    observe: &mut dyn FnMut(StreamTopology<'_>),
+) -> Result<(), cadmpeg_core::CodecError> {
+    scan_site(ctx, bodies, observe).map(|_| ())
 }
 
 /// The site-level evidence that the topology scan of each stream reads.
