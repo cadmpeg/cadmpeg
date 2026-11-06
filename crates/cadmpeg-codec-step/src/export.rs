@@ -5880,6 +5880,13 @@ impl<'a> Builder<'a> {
                         format!("surface '{surface_id}' uses a positive radius and an adjusted parameter chart in STEP"),
                     );
                 }
+                if matches!(basis, SolvedSurfaceGeometry::Cone(cone) if cone.ratio().get() != 1.0 && cone.half_angle().get() != 0.0)
+                {
+                    self.loss(
+                        StepLossCode::EllipticalConeReduced,
+                        format!("surface '{surface_id}' elliptical cone was reduced to a circular STEP CONICAL_SURFACE"),
+                    );
+                }
                 self.written_analytic_surfaces
                     .push(WrittenAnalyticSurface::Carrier(basis));
                 let chart = geometry::WrittenChart::of(basis);
@@ -7588,25 +7595,6 @@ impl<'a> Builder<'a> {
                 format!(
                     "{nonstandard_analytic_surfaces} signed or self-intersecting analytic \
                      surface(s) were normalized to positive STEP radii"
-                ),
-            );
-        }
-        let elliptical_cones = self
-            .written_analytic_surfaces
-            .iter()
-            .filter(|written| {
-                matches!(written, WrittenAnalyticSurface::Carrier(SolvedSurfaceGeometry::Cone(cone_surface))
-                if {
-                    let ratio = cone_surface.ratio().get();
-                    ratio != 1.0 && cone_surface.half_angle().get() != 0.0
-                })
-            })
-            .count();
-        if elliptical_cones > 0 {
-            self.loss(
-                StepLossCode::EllipticalConeReduced,
-                format!(
-                    "{elliptical_cones} elliptical cone surface(s) were reduced to circular STEP CONICAL_SURFACE carriers"
                 ),
             );
         }
