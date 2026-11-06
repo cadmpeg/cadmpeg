@@ -61,13 +61,15 @@ pub(super) fn encode_smbh(
             if target.model.bodies.is_empty()
                 && target.model.surfaces.is_empty()
                 && target.model.curves.is_empty()
-                && target.model.points.is_empty()
+                && target.model.vertices.is_empty()
+                && target.model.edges.is_empty()
             {
                 let mut bytes = native_smbh_header(target)?;
                 output.charge_entities(1, "F3D BREP record")?;
                 native_ident(&mut bytes, "asmheader")?;
                 native_string(&mut bytes, "231.6.3.65535");
                 bytes.push(0x11);
+                encode_points(&mut bytes, &target.model, output)?;
                 native_history_tail(&mut bytes, native, output)?;
                 return Ok(bytes);
             }
@@ -1817,6 +1819,15 @@ fn encode_source_less_edges_vertices_points(
         native_tolerant_vertex_tail(records, topology, vertex);
         records.push(0x11);
     }
+    encode_points(records, model, output)?;
+    Ok(())
+}
+
+fn encode_points(
+    records: &mut Vec<u8>,
+    model: &cadmpeg_ir::document::Model,
+    output: &cadmpeg_core::decode::DecodeContext<'_>,
+) -> Result<(), CodecError> {
     for point in &model.points {
         output.charge_entities(1, "F3D BREP record")?;
         native_ident(records, "point")?;

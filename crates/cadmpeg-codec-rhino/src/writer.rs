@@ -2819,6 +2819,10 @@ fn native_i32_count(value: usize, message: String) -> Result<i32, CodecError> {
     i32::try_from(value).map_err(|_| CodecError::InvalidInput(message))
 }
 
+fn writable_i32_count(value: usize, message: String) -> Result<i32, WriteError> {
+    i32::try_from(value).map_err(|_| WriteError::Omit(message))
+}
+
 fn archive_body_len(value: u64) -> Result<i64, cadmpeg_ir::codec::write::EncodeError> {
     let field = &target::CAPACITY_FIELDS[0];
     if value > field.limit {
@@ -2939,14 +2943,14 @@ fn check_nurbs_surface(
     let u_count = surface.u_count();
     let v_count = surface.v_count();
     let count_error = || format!("surface {id} cannot be represented by Rhino NURBS counts");
-    let pole_count = native_i32_count(surface.poles().len(), count_error())?;
+    let pole_count = writable_i32_count(surface.poles().len(), count_error())?;
     if u_order < 2 || v_order < 2 {
         return Err(WriteError::Omit(count_error()));
     }
-    native_i32_count(u_order, count_error())?;
-    native_i32_count(v_order, count_error())?;
-    native_i32_count(u_count, count_error())?;
-    native_i32_count(v_count, count_error())?;
+    writable_i32_count(u_order, count_error())?;
+    writable_i32_count(v_order, count_error())?;
+    writable_i32_count(u_count, count_error())?;
+    writable_i32_count(v_count, count_error())?;
     check_knot_roundtrip(
         id,
         "surface U",
@@ -2978,8 +2982,8 @@ fn check_nurbs_curve(
     if order < 2 {
         return Err(WriteError::Omit(count_error()));
     }
-    native_i32_count(order, count_error())?;
-    native_i32_count(count, count_error())?;
+    writable_i32_count(order, count_error())?;
+    writable_i32_count(count, count_error())?;
     check_knot_roundtrip(id, "curve", curve.knots(), order, count, curve.periodic())?;
     Ok(())
 }

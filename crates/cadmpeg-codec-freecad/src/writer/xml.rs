@@ -127,9 +127,12 @@ pub(crate) fn retained_entry_names(
 ) -> std::collections::HashSet<String> {
     namespace
         .arena_as::<crate::native::EntryRecord>("entries")
-        .map(|records| {
+        .map(|mut records| {
+            records.sort_by_key(crate::native::EntryRecord::order);
+            let mut seen = std::collections::HashSet::new();
             records
-                .iter()
+                .into_iter()
+                .filter(|record| seen.insert(record.name().to_owned()))
                 .filter(|record| record.payload().is_some())
                 .map(|record| record.name().to_owned())
                 .collect()
