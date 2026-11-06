@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Bounded intersections of perpendicular cylinders.
+//! Bounded intersections of cylinders.
+
+pub(super) mod bounded;
 
 use cadmpeg_core::{decode::DecodeContext, CodecError};
 use cadmpeg_ir::geometry::{
@@ -228,16 +230,17 @@ fn equal_cylinder_curve(
     ((radius - second.radius().get()).abs() <= tolerance).then_some(())?;
     let first_axis: [f64; 3] = (*first.frame().axis().as_raw()).into();
     let second_axis: [f64; 3] = (*second.frame().axis().as_raw()).into();
-    (dot(first_axis, second_axis).abs() <= EPS_AXIS).then_some(())?;
+    let axis_dot = dot(first_axis, second_axis);
+    let denominator = 1.0 - axis_dot * axis_dot;
+    (denominator > EPS_AXIS).then_some(())?;
     let normal = normalize(cross(first_axis, second_axis))?;
     let first_origin: [f64; 3] = first.origin().get().into();
     let second_origin: [f64; 3] = second.origin().get().into();
     let displacement = subtract(second_origin, first_origin);
     (dot(displacement, normal).abs() <= tolerance).then_some(())?;
-    let center = add(
-        first_origin,
-        scale(first_axis, dot(displacement, first_axis)),
-    );
+    let along_first =
+        (dot(displacement, first_axis) - axis_dot * dot(displacement, second_axis)) / denominator;
+    let center = add(first_origin, scale(first_axis, along_first));
     let local = |point: [f64; 3]| {
         let displacement = subtract(point, center);
         [
@@ -253,11 +256,13 @@ fn equal_cylinder_curve(
         }),
         tolerance * tolerance,
     )?;
+    let radial_scale = (1.0 + branch * axis_dot) / denominator.sqrt();
     let mut angles = samples.iter().map(|point| {
         let [first, second, normal] = local(*point);
+        let radial = first / radial_scale;
         ((second - branch * first).abs() <= tolerance
-            && (first.hypot(normal) - radius).abs() <= tolerance)
-            .then_some(normal.atan2(first))
+            && (radial.hypot(normal) - radius).abs() <= tolerance)
+            .then_some(normal.atan2(radial))
     });
     let start = angles.next()??;
     let mut previous = start;
@@ -285,7 +290,10 @@ fn equal_cylinder_curve(
         [false, true] => (start + sweep, -sweep),
         _ => return None,
     };
-    let radial = add(first_axis, scale(second_axis, branch));
+    let radial = scale(
+        add(first_axis, scale(second_axis, branch)),
+        1.0 / denominator.sqrt(),
+    );
     let point = |angle: f64, weight: f64| {
         add(
             center,
@@ -338,18 +346,27 @@ pub(super) fn projected_pcurve(
             }
         })
         .collect();
-    let above = poles.iter().all(|pole| pole.radial.v >= 0.0);
-    let below = poles.iter().all(|pole| pole.radial.v <= 0.0);
-    (above || below).then_some(())?;
-    (!poles
-        .iter()
-        .any(|pole| pole.radial.v == 0.0 && pole.radial.u < 0.0))
-    .then_some(())?;
-    let weights = curve
+    let weights: Vec<_> = curve
         .weights()?
         .into_iter()
         .map(cadmpeg_ir::scalar::NonZeroReal::get)
         .collect();
+    weights.iter().all(|weight| *weight > 0.0).then_some(())?;
+    for pole in &poles {
+        if pole.radial.v == 0.0 && pole.radial.u <= 0.0 {
+            return None;
+        }
+    }
+    for lower in poles.iter().filter(|pole| pole.radial.v < 0.0) {
+        for upper in poles.iter().filter(|pole| pole.radial.v > 0.0) {
+            let denominator = upper.radial.v - lower.radial.v;
+            let fraction = -lower.radial.v / denominator;
+            let crossing = (upper.radial.u - lower.radial.u).mul_add(fraction, lower.radial.u);
+            if !denominator.is_finite() || !crossing.is_finite() || crossing <= 0.0 {
+                return None;
+            }
+        }
+    }
     let nurbs = PolarPcurveNurbs::from_lanes(
         curve.degree(),
         curve.knots().as_slice().to_vec(),
@@ -417,6 +434,144 @@ pub(super) fn carrier(
 mod tests {
     use super::*;
     use cadmpeg_ir::math::Vector3;
+
+    #[test]
+    fn projected_cylinder_pcurve_crosses_zero_angle_without_a_seam() {
+        let surface = SurfaceGeometry::Solved(SolvedSurfaceGeometry::Cylinder(
+            CylinderSurface::try_new(
+                Point3::new(0.0, 0.0, 0.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+                1.0,
+            )
+            .expect("cylinder"),
+        ));
+        let curve = NurbsCurve::from_lanes(
+            2,
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            vec![
+                Point3::new(1.0, -1.0e-14, 0.0),
+                Point3::new(1.0, 1.0, 0.0),
+                Point3::new(-1.0e-15, 1.0, 0.0),
+            ],
+            Some(vec![1.0, std::f64::consts::FRAC_1_SQRT_2, 1.0]),
+            false,
+        )
+        .expect("near-quarter circle");
+        let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve));
+        let pcurve = projected_pcurve(&surface, &geometry).expect("continuous angle chart");
+        for parameter in [0.0, 0.25, 0.5, 0.75, 1.0] {
+            let (point, mapped) = crate::decode::with_service_context(|ctx| {
+                let point =
+                    cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+                        cadmpeg_ir::eval::decode::curve_point(ctx, &geometry, parameter),
+                    )?)?
+                    .expect("point")
+                    .get();
+                let uv =
+                    cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+                        cadmpeg_ir::eval::decode::pcurve_uv(ctx, &pcurve, parameter),
+                    )?)?
+                    .expect("uv")
+                    .get();
+                let mapped =
+                    cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+                        cadmpeg_ir::eval::decode::surface_point(ctx, &surface, uv.u, uv.v),
+                    )?)?
+                    .expect("mapped point")
+                    .get();
+                Ok::<_, CodecError>((point, mapped))
+            })
+            .expect("evaluate pcurve");
+            assert!((point.vector_from(mapped)).norm() < 1.0e-12);
+        }
+        let negative_weight = NurbsCurve::from_lanes(
+            2,
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            vec![
+                Point3::new(1.0, -0.1, 0.0),
+                Point3::new(1.0, 0.5, 0.0),
+                Point3::new(0.0, 1.0, 0.0),
+            ],
+            Some(vec![1.0, -0.5, 1.0]),
+            false,
+        )
+        .expect("curve with negative weight");
+        let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(negative_weight));
+        assert!(projected_pcurve(&surface, &geometry).is_none());
+        let seam_crossing = NurbsCurve::from_lanes(
+            2,
+            vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+            vec![
+                Point3::new(-1.0, -1.0, 0.0),
+                Point3::new(-2.0, 0.5, 0.0),
+                Point3::new(-1.0, 1.0, 0.0),
+            ],
+            Some(vec![1.0, 1.0, 1.0]),
+            false,
+        )
+        .expect("seam-crossing curve");
+        let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(seam_crossing));
+        assert!(projected_pcurve(&surface, &geometry).is_none());
+    }
+
+    #[test]
+    fn equal_oblique_cylinders_retain_both_sampled_ellipse_branches() {
+        let sine = 3.0_f64.sqrt() / 2.0;
+        let first = CylinderSurface::try_new(
+            Point3::new(-7.0, 0.0, 0.0),
+            Vector3::new(1.0, 0.0, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            1.0,
+        )
+        .expect("first cylinder");
+        let second = CylinderSurface::try_new(
+            Point3::new(2.5, 5.0 * sine, 0.0),
+            Vector3::new(0.5, sine, 0.0),
+            Vector3::new(0.0, 0.0, 1.0),
+            1.0,
+        )
+        .expect("second cylinder");
+        for branch in [-1.0, 1.0] {
+            let radial = [(1.0 + branch * 0.5) / sine, branch, 0.0];
+            let point = |angle: f64| {
+                [
+                    radial[0] * angle.cos(),
+                    radial[1] * angle.cos(),
+                    angle.sin(),
+                ]
+            };
+            let samples = [
+                point(0.0),
+                point(std::f64::consts::FRAC_PI_4),
+                point(std::f64::consts::FRAC_PI_2),
+            ];
+            let curve = equal_cylinder_curve(&first, &second, &samples, [samples[0], samples[2]])
+                .expect("oblique ellipse");
+            let geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(curve));
+            for parameter in [0.0, 0.25, 0.5, 0.75, 1.0] {
+                let point = crate::decode::with_service_context(|ctx| {
+                    cadmpeg_ir::eval::finite_or_refusal(cadmpeg_ir::eval::decode::outer_refusal(
+                        cadmpeg_ir::eval::decode::curve_point(ctx, &geometry, parameter),
+                    )?)
+                })
+                .expect("evaluate curve")
+                .expect("finite point")
+                .get();
+                let first_radius = point.y.hypot(point.z);
+                let second_transverse = -sine * point.x + 0.5 * point.y;
+                let second_radius = second_transverse.hypot(point.z);
+                assert!((first_radius - 1.0).abs() < 1.0e-10);
+                assert!((second_radius - 1.0).abs() < 1.0e-10);
+                if parameter == 0.0 {
+                    assert!(agrees(point.into(), samples[0]));
+                }
+                if parameter == 1.0 {
+                    assert!(agrees(point.into(), samples[2]));
+                }
+            }
+        }
+    }
 
     #[test]
     fn equal_cylinder_intersection_follows_the_sampled_ellipse() {

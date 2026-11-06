@@ -435,8 +435,10 @@ carriers and wall charts outside the complete rotations and envelopes in
 `creo_prt.md` §3.2 and §3.4?
 
 **Known.** Signed-basis bend compounds define complete quarter-turn and
-positive-lower-bound envelopes. Complete angular-stream plane rotations
-supply row-major wall charts and finite signed origins. The frame, radius,
+positive-lower-bound envelopes. Bounded cylinder rotations include
+transverse-direction roundoff as defined in `creo_prt.md` §3.2. Complete
+angular-stream plane rotations supply row-major wall charts and finite signed
+origins. The frame, radius,
 parameter bounds, and XYZ extrema have separate stored fields. Other
 positional cylinder, plane-envelope, and local-system bodies retain their
 bounded scalar tokens and opaque spans.
@@ -445,6 +447,10 @@ bounded scalar tokens and opaque spans.
 productions, and independent paired chart witnesses for each additional
 carrier. Reconcile every stored parameter interval with its frame and XYZ
 extrema.
+
+**Conflict.** More than one sign assignment for an angular rotation can
+reproduce the same envelope. Those assignments need an independent chart
+witness to select a frame.
 
 ### GS-25. Post-frame linkage identity
 
@@ -558,12 +564,13 @@ before it supplies boundary geometry.
 ### GS-35. Other cylinder intersection carriers
 
 **Question.** Which source fields select and parameterize cylinder
-intersection branches outside the defined perpendicular cases?
+intersection branches outside the defined tangent and equal-radius cases?
 
 **Known.** `creo_prt.md` §3.4 defines the bounded rational quartic selected
 by paired chart samples and edge endpoints for perpendicular cylinders whose
 axis separation equals the difference of their radii. It also defines the
-selected elliptic arc for equal-radius cylinders with intersecting axes.
+elliptic arc for equal-radius cylinders with intersecting, nonparallel axes,
+selected by paired chart samples or bounded cylinder domains.
 
 **Need.** Establish complete carrier and branch selection for other axis
 angles, separations, and chart paths, with independent paired chart witnesses.

@@ -1164,8 +1164,12 @@ An `e3` closes a positional envelope. Twelve finite scalar slots follow in
 row-major order: a right-handed orthonormal rotation matrix and three origin
 coordinates. The matrix columns are the radial reference, transverse
 direction, and signed axis. The direction and origin slots share the compact
-scalar stream; repetition carries across their boundary. One positive radius
-and `e3` complete the body.
+scalar stream; repetition carries across their boundary. The finite stored
+components of the transverse direction can differ from exact orthogonality
+by floating-point roundoff. One positive radius
+and `e3` complete the body. In this radius slot, `2d <tail7>` reconstructs
+IEEE-754 bytes `40 <tail7>`. A second radius slot may repeat the same value
+before the closing `e3`.
 
 An active-datum first cylinder stores the envelope before its named cylinder
 prototype. The unique prototype between that row header and the next row
@@ -2655,13 +2659,19 @@ follow one monotone branch, and the first and last samples match the solved
 edge endpoints in one order. The corresponding cylindrical pcurves are polar
 projections of the quartic on each placed cylinder.
 
-Two equal-radius perpendicular cylinders with intersecting axes meet on two
+Two equal-radius cylinders with intersecting, nonparallel axes meet on two
 ellipses in planes through their common axis intersection. A complete
 two-chart path selects a bounded elliptic arc when both charts map each
 sample to the same point, the samples select one ellipse and progress
 monotonically through less than half a turn, and the first and last samples
 match the solved edge endpoints in one order. A rational quadratic represents
 the selected arc; its cylindrical pcurves are polar projections.
+
+The two cylinder parameter envelopes also select an elliptic arc when each
+angular interval spans less than half a turn, both solved edge endpoints lie
+on both bounded cylinders, and exactly one arc shorter than half a turn stays
+within both angular and axial intervals. The axial interval contains the arc's
+endpoints and every interior axial extremum.
 
 When a plane is parallel to a placed cylinder axis and cuts the cylinder
 strictly inside its radius, their intersection is two generator lines parallel
@@ -4098,9 +4108,10 @@ A directed ring follows same-face successors and returns to its first side.
 Each ring uses each of its sides once. Boundary ownership, a surface carrier,
 chart, endpoint geometry, and face-surface sense are separate bindings.
 
-A native planar face can have multiple disjoint outer cycles. Each inner cycle
-lies inside one outer cycle. A planar face region has one outer boundary and
-zero or more inner boundaries. A planar face with one closed loop, and a
+A native planar face can have multiple disjoint outer cycles. An outer cycle
+can contain lines and circular arcs, including arcs whose stored interval
+exceeds a half-turn. Each inner cycle lies inside one outer cycle. A planar face
+region has one outer boundary and zero or more inner boundaries. A planar face with one closed loop, and a
 non-planar face admitted under the one-loop rule, has one outer boundary.
 
 A generated-table identifier that occurs as a `crv_array` face side binds

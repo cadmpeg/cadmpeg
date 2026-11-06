@@ -8,6 +8,8 @@ use super::{
 use crate::scalar::revolution_frames;
 use crate::{psb, scalar};
 
+const EPS_ROTATION_DOT_ROUNDOFF: f64 = 8.0 * f64::EPSILON;
+
 #[derive(Clone, Copy)]
 struct Envelope {
     bounds: [[f64; 2]; 2],
@@ -83,15 +85,10 @@ fn bounded_frame(
 ) -> Option<PositionalCylinderFrame> {
     angular_interval_valid(envelope.bounds[0]).then_some(())?;
     let m = slots.get();
-    // A rotation stored in floating tokens is a rotation only when its
-    // columns are exactly orthogonal; a tilt that survives only the shared
-    // tolerance is refused.
     let columns = [[m[0], m[3], m[6]], [m[1], m[4], m[7]], [m[2], m[5], m[8]]];
-    for (i, a) in columns.iter().enumerate() {
-        for b in columns.iter().skip(i + 1) {
-            (a[0] * b[0] + a[1] * b[1] + a[2] * b[2] == 0.0).then_some(())?;
-        }
-    }
+    let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    (dot(columns[0], columns[1]) == 0.0 && dot(columns[0], columns[2]) == 0.0).then_some(())?;
+    (dot(columns[1], columns[2]).abs() <= EPS_ROTATION_DOT_ROUNDOFF).then_some(())?;
     let origin = [m[9], m[10], m[11]];
     let axis = [m[2], m[5], m[8]];
     let reference = [m[0], m[3], m[6]];
@@ -189,6 +186,17 @@ pub(super) fn has_inline_floating_rotation_prefix(
         .is_some_and(|matrix| revolution_frames::prefix(matrix, cache).is_some())
 }
 
+fn cylinder_radius(
+    body: &[u8],
+    offset: usize,
+    cache: &scalar::ScalarCache,
+) -> Option<(f64, usize)> {
+    match body.get(offset)? {
+        0x2d => scalar::ieee8(body, offset, 0x40),
+        _ => scalar::decode_inline_surface_suffix_scalar(body, offset, cache),
+    }
+}
+
 pub(super) fn inline_body(body: &[u8], cache: &scalar::ScalarCache) -> Option<InlineSurfaceBody> {
     let envelope = envelope(body, cache)?;
     (body.get(envelope.end) == Some(&psb::token::COMPOUND_CLOSE)).then_some(())?;
@@ -201,11 +209,9 @@ pub(super) fn inline_body(body: &[u8], cache: &scalar::ScalarCache) -> Option<In
             Some(frame) => frame.ok()?,
             None => scalar::sheet_frames::plane_prefix_with_envelope(matrix, cache)?,
         };
-    let (radius, mut close) =
-        scalar::decode_inline_surface_suffix_scalar(body, start + end, cache)?;
+    let (radius, mut close) = cylinder_radius(body, start + end, cache)?;
     if body.get(close) != Some(&psb::token::COMPOUND_CLOSE) {
-        let (repeated_radius, end) =
-            scalar::decode_inline_surface_suffix_scalar(body, close, cache)?;
+        let (repeated_radius, end) = cylinder_radius(body, close, cache)?;
         (radius == repeated_radius).then_some(())?;
         close = end;
     }
@@ -404,6 +410,52 @@ pub(super) fn named_frame(
 mod tests {
     use super::*;
 
+    #[test]
+    fn bounded_cylinder_accepts_roundoff_but_rejects_a_skewed_rotation() {
+        let sine = 3.0_f64.sqrt() / 2.0;
+        let envelope = Envelope {
+            bounds: [[0.0, std::f64::consts::FRAC_PI_2], [0.0, 1.0]],
+            corners: [[-sine, -sine - 0.5, -1.0], [0.5, 0.0, 0.0]],
+            end: 0,
+            parameter_literal: false,
+        };
+        let mut values = [
+            0.0,
+            0.5 + 3.0 * f64::EPSILON,
+            -sine,
+            0.0,
+            -sine,
+            -0.5,
+            -1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+        ];
+        assert!(bounded_frame(
+            envelope,
+            cadmpeg_ir::units::FiniteVector::new(values).expect("finite rotation"),
+            1.0
+        )
+        .is_some());
+        values[1] = 0.5 + 1.0e-10;
+        assert!(bounded_frame(
+            envelope,
+            cadmpeg_ir::units::FiniteVector::new(values).expect("finite rotation"),
+            1.0
+        )
+        .is_none());
+        values[1] = 0.5;
+        values[8] = 1.0e-17;
+        assert!(bounded_frame(
+            envelope,
+            cadmpeg_ir::units::FiniteVector::new(values).expect("finite rotation"),
+            1.0
+        )
+        .is_none());
+    }
+
     fn cone_body(z_high: f64) -> Vec<u8> {
         fn scalar(body: &mut Vec<u8>, value: f64) {
             let raw = value.to_be_bytes();
@@ -474,11 +526,23 @@ mod tests {
         body.extend_from_slice(&[0x18, 0xe3]);
         body.extend_from_slice(&[0x18, 0xe4, 0x0f, 0x18, 0x0f, 0x18, 0x10, 0x18, 0xe4]);
         body.extend_from_slice(&[0x18, 0x18, 0x18]);
-        body.extend_from_slice(&[0x2f, 0x14, 0x00]);
-        let repeated = body.len();
-        body.extend_from_slice(&[0x2f, 0x14, 0x00]);
-        body.push(0xe3);
+        let mut compact = body.clone();
+        compact.extend_from_slice(&[0x2f, 0x14, 0x00]);
+        let last_radius = compact.len();
+        compact.extend_from_slice(&[0x2f, 0x14, 0x00, 0xe3]);
         let cache = scalar::ScalarCache::default();
+        assert!(matches!(
+            inline_body(&compact, &cache).and_then(|layout| layout.carrier),
+            Some(InlineSurfaceCarrier::Cylinder { .. })
+        ));
+        compact[last_radius..last_radius + 3].copy_from_slice(&[0x2f, 0x18, 0x00]);
+        assert!(inline_body(&compact, &cache).is_none());
+        body.push(0x2d);
+        body.extend_from_slice(&5.0_f64.to_be_bytes()[1..]);
+        let repeated = body.len();
+        body.push(0x2d);
+        body.extend_from_slice(&5.0_f64.to_be_bytes()[1..]);
+        body.push(0xe3);
         let layout = inline_body(&body, &cache).expect("bounded cylinder");
         assert!(matches!(
             layout.carrier,
