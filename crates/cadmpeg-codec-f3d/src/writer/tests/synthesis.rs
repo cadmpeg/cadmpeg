@@ -68,8 +68,8 @@ fn source_less_primitive_feature_survives_synthesis() {
         name: None,
         suppressed: None,
         needs_recompute: false,
-        dependencies: Default::default(),
-        source_properties: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        source_properties: std::collections::BTreeMap::default(),
         source_tag: None,
         source_text: None,
         source_content: FeatureContent::default(),
@@ -107,6 +107,11 @@ fn source_less_primitive_feature_survives_synthesis() {
     let decoded = F3dCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode source-less feature");
+    let mut named = ir.clone();
+    named.model.features[0].name = Some("Mounting boss".into());
+    let (named_output, named_report) = super::source_less_analytic::synthesize_document(&named, None);
+    assert_eq!(named_output.ir().model.features.len(), 1);
+    assert!(named_report.losses.iter().any(|loss| loss.message.contains(named.model.features[0].id.as_str()) && loss.message.contains("name")));
     assert_eq!(decoded.ir().model.features.len(), 1);
     let FeatureDefinition::Operation(FeatureOperation::Primitive {
         solid,
@@ -277,8 +282,8 @@ fn source_less_block_feature_survives_synthesis() {
         name: Some("BoxPrimitive 1".into()),
         suppressed: Some(false),
         needs_recompute: false,
-        dependencies: Default::default(),
-        source_properties: Default::default(),
+        dependencies: cadmpeg_ir::features::DistinctMembers::default(),
+        source_properties: std::collections::BTreeMap::default(),
         source_tag: Some("BoxPrimitive".into()),
         source_text: None,
         source_content: FeatureContent::default(),
@@ -369,6 +374,18 @@ fn a_document_parameter_is_authored_without_native_records_and_keeps_supported_s
     assert_eq!(parameters[0].value, ir.model.parameters[0].value);
     assert_eq!(parameters[1].name, "angle");
     assert_eq!(parameters[1].value, ir.model.parameters[2].value);
+    assert_eq!(parameters[1].ordinal, ir.model.parameters[2].ordinal);
+}
+
+#[test]
+fn non_driving_document_parameter_reduction_is_named() {
+    let mut ir = cadmpeg_ir::examples::unit_cube().expect("cube");
+    let mut value = parameter("width", 0, ParameterValue::Length(cadmpeg_ir::scalar::Length::new(42.0).unwrap()));
+    value.driving = false;
+    ir.model.parameters.push(value);
+    let (output, report) = super::source_less_analytic::synthesize_document(&ir, None);
+    assert_eq!(output.ir().model.parameters[0].value, ir.model.parameters[0].value);
+    assert!(report.losses.iter().any(|loss| loss.message.contains(ir.model.parameters[0].id.as_str()) && loss.message.contains("non-driving")));
 }
 
 #[test]

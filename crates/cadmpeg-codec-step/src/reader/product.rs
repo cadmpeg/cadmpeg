@@ -182,6 +182,11 @@ fn join_product_references(ids: impl IntoIterator<Item = u64>) -> String {
         .join(", ")
 }
 
+enum ChildPrototype {
+    Local(ProductDefinitionId),
+    External(ExternalPrototype, UsedAsset),
+}
+
 pub(super) fn decode(
     exchange: &Exchange,
     geometry: &GeometryData,
@@ -579,10 +584,6 @@ pub(super) fn decode(
                 continue;
             }
             let usage = &usages[&usage_id];
-            enum ChildPrototype {
-                Local(ProductDefinitionId),
-                External(ExternalPrototype, UsedAsset),
-            }
             let child = match definition_prototypes.get(&usage.child_definition).cloned() {
                 Some(definition) => ChildPrototype::Local(definition),
                 None => match external_prototype(exchange, externals, usage.child_definition) {

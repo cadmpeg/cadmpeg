@@ -46,16 +46,8 @@ fn repoint_id_value(document: &mut Value, ids: &BTreeSet<String>) -> Option<Stri
                     return false;
                 }
                 for (key, child) in fields {
-                    if key != "id" {
-                        if let Value::String(text) = child {
-                            if ids.contains(text) {
-                                "injected:missing:record#0".clone_into(text);
-                                return true;
-                            }
-                        }
-                        if walk(child, ids, attribute_values) {
-                            return true;
-                        }
+                    if key != "id" && walk(child, ids, attribute_values) {
+                        return true;
                     }
                 }
                 false
@@ -68,6 +60,10 @@ fn repoint_id_value(document: &mut Value, ids: &BTreeSet<String>) -> Option<Stri
                 }
                 false
             }
+            Value::String(text) if ids.contains(text) => {
+                "injected:missing:record#0".clone_into(text);
+                true
+            }
             _ => false,
         }
     }
@@ -79,12 +75,6 @@ fn repoint_id_value(document: &mut Value, ids: &BTreeSet<String>) -> Option<Stri
             for (key, value) in fields {
                 if key == "id" {
                     continue;
-                }
-                if let Value::String(text) = &mut *value {
-                    if ids.contains(text) {
-                        "injected:missing:record#0".clone_into(text);
-                        return Some(id);
-                    }
                 }
                 if walk(value, ids, arena == "attributes" && key == "values") {
                     return Some(id);
@@ -424,6 +414,43 @@ mod tests {
         assert_eq!(
             document["model"]["edges"][0]["start"],
             "injected:missing:record#0"
+        );
+    }
+
+    #[test]
+    fn dangling_injection_repoints_array_references() {
+        let mut document = json!({"model": {
+            "bodies": [{"id": "body#0", "regions": ["region#0"]}],
+            "regions": [{"id": "region#0"}]
+        }});
+        let dangling = standard_injections()
+            .into_iter()
+            .find(|injection| injection.name == "dangling-reference")
+            .expect("dangling-reference injection exists");
+        assert_eq!((dangling.inject)(&mut document), Some("body#0".into()));
+        assert_eq!(
+            document["model"]["bodies"][0]["regions"][0],
+            "injected:missing:record#0"
+        );
+    }
+
+    #[test]
+    fn dangling_array_injection_remains_a_valid_document_with_a_validation_error() {
+        let seed = cadmpeg_ir::examples::unit_cube().expect("cube");
+        let mut document = serde_json::to_value(seed).expect("serialize cube");
+        let dangling = standard_injections()
+            .into_iter()
+            .find(|injection| injection.name == "dangling-reference")
+            .expect("dangling-reference injection exists");
+        let id = (dangling.inject)(&mut document).expect("cube has a reference");
+        assert_eq!(document["model"]["bodies"][0]["id"], id);
+        let edited = cadmpeg_ir::CadIr::from_json(&document.to_string())
+            .expect("the injected document parses");
+        assert!(
+            cadmpeg_ir::validate_neutral(&edited, Vec::new())
+                .expect("validate injected document")
+                .error_count()
+                > 0
         );
     }
 

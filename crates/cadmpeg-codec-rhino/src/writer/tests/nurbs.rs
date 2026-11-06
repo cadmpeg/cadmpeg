@@ -1074,18 +1074,18 @@ fn reversed_nurbs_trim_with_edge_convention_pcurve_is_admitted() {
         source: &pcurve,
         payload: ([0; 16], vec![]),
     };
-    validate_nurbs_trim(
+    assert!(validate_nurbs_trim(
         &surface,
         0.001,
         &edge,
         cadmpeg_ir::topology::Sense::Reversed,
         &explicit,
     )
-    .expect("edge-convention trim on a reversed coedge is admitted");
+    .expect("edge-convention trim on a reversed coedge is admitted"));
 }
 
 #[test]
-fn shared_pcurve_remains_one_native_curve_for_both_trims() {
+fn shared_pcurve_uses_directed_native_curves_for_opposite_trims() {
     use cadmpeg_ir::geometry::pcurve::{Pcurve, PcurveGeometry, PcurveMetadata, PcurveNurbs};
     use cadmpeg_ir::math::Point2;
     use cadmpeg_ir::topology::PcurveUse;
@@ -1138,10 +1138,21 @@ fn shared_pcurve_remains_one_native_curve_for_both_trims() {
         .iter()
         .find(|edge| edge.trims.len() == 2)
         .unwrap();
-    assert_eq!(
-        brep.resolved().trims[shared.trims[0]].curve,
-        brep.resolved().trims[shared.trims[1]].curve
-    );
+    let first = brep.resolved().trims[shared.trims[0]]
+        .curve
+        .expect("first trim curve");
+    let second = brep.resolved().trims[shared.trims[1]]
+        .curve
+        .expect("second trim curve");
+    assert_ne!(first, second);
+    assert!(model.edge_conversions.iter().any(|loss| {
+        loss.code == crate::loss::RhinoLossCode::WriterPcurveExpanded.kind()
+            && loss.message.contains(id.as_str())
+    }));
+    assert!(model.edge_conversions.iter().any(|loss| {
+        loss.code == crate::loss::RhinoLossCode::WriterPcurveDirectionReversed.kind()
+            && loss.message.contains(id.as_str())
+    }));
     let mut bytes = Vec::new();
     RhinoCodec
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
