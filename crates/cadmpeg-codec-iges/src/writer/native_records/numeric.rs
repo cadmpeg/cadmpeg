@@ -2,6 +2,7 @@
 //! Preserve native numeric token kinds when their current values agree.
 
 use super::{CadIr, Entity, NativeRecord};
+use cadmpeg_ir::ids::CurveId;
 use serde_json::Value;
 
 fn fields(body: &[u8]) -> Option<Vec<&[u8]>> {
@@ -47,6 +48,25 @@ pub(in crate::writer) fn retain(ir: &CadIr, source: &NativeRecord, entity: &mut 
     else {
         return;
     };
+    retain_directory(ir, &source_id, entity);
+}
+
+pub(in crate::writer) fn retain_line(ir: &CadIr, id: &CurveId, entity: &mut Entity) {
+    let sequence = ir
+        .model
+        .curves
+        .iter()
+        .find(|curve| &curve.id == id)
+        .and_then(|curve| curve.source_object.as_ref())
+        .filter(|source| source.format == cadmpeg_ir::CodecFormat::Iges)
+        .and_then(|source| source.object_id.as_str().strip_prefix('D'))
+        .filter(|_| entity.type_code == 110);
+    if let Some(sequence) = sequence {
+        retain_directory(ir, &format!("iges:entity:directory#{sequence}"), entity);
+    }
+}
+
+fn retain_directory(ir: &CadIr, source_id: &str, entity: &mut Entity) {
     let Some(native) = ir
         .native
         .namespace("iges")
