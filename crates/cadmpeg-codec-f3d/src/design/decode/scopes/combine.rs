@@ -56,14 +56,22 @@ pub(super) fn exact_combine_operation(
     let Ok(start) = usize::try_from(scope.byte_offset()) else {
         return Ok(None);
     };
-    let mut operand_lists_refused = false;
+    let mut operand_list_refusal = None;
+    let mut contradiction = None;
     for prologue in combine_prologues(bytes, start, scope) {
         let operand_lists = prologue.lists.is_some();
         match combine_operation_with(bytes, records, scope, stream_types, prologue)? {
             PrologueReading::Operation(operation) => {
-                if operand_lists_refused {
-                    losses.push(F3dLossCode::FeatureCombineStandardFormAssumed.note(format!(
-                        "{}: the Combine frame matches the fixed operand-list fields and its lists do not name its operands up to its reference table; it is read in the standard prologue",
+                if let Some(reason) = operand_list_refusal {
+                    losses.push(F3dLossCode::FeatureCombinePrologueAssumed.note(format!(
+                        "{}: the Combine frame matches the fixed operand-list fields and {reason}; it is read in the standard prologue",
+                        scope.id
+                    )));
+                } else if operation.form == DesignCombineForm::OperandLists
+                    && standard_fields_read(bytes, start)
+                {
+                    losses.push(F3dLossCode::FeatureCombinePrologueAssumed.note(format!(
+                        "{}: the standard prologue also reads the fixed fields of the Combine frame; its lists name its operands, so it is read in the operand-list prologue",
                         scope.id
                     )));
                 }
@@ -76,11 +84,33 @@ pub(super) fn exact_combine_operation(
                 )));
                 return Ok(None);
             }
-            PrologueReading::Native => return Ok(None),
-            PrologueReading::Refused => operand_lists_refused |= operand_lists,
+            PrologueReading::Contradicted(reason) => {
+                operand_list_refusal = Some(reason);
+                contradiction = Some(reason);
+            }
+            PrologueReading::Refused => {
+                if operand_lists {
+                    operand_list_refusal =
+                        Some("its lists do not name its operands up to its reference table");
+                }
+            }
         }
     }
+    if let Some(reason) = contradiction {
+        losses.push(F3dLossCode::FeatureCombineOperandListContradicted.note(format!(
+            "{}: the lists of the Combine frame name its operands and {reason}; no prologue reads it, so the Combine stays native",
+            scope.id
+        )));
+    }
     Ok(None)
+}
+
+/// Whether the standard prologue reads the fixed fields and the keep-tools
+/// Boolean of an operand-list frame at `start`. Its operation is then the
+/// presence byte, one.
+fn standard_fields_read(bytes: &[u8], start: usize) -> bool {
+    standard_prologue(bytes, start)
+        .is_some_and(|prologue| matches!(bytes.get(prologue.keep_tools_offset), Some(0 | 1)))
 }
 
 /// The fixed fields of one prologue reading.
@@ -105,9 +135,9 @@ enum PrologueReading {
     /// The lists name the scope's operands, so the frame stores this
     /// prologue, and its fields place the result in a new component.
     NewComponent,
-    /// The lists name the scope's operands, so the frame stores this
-    /// prologue, and a field contradicts it.
-    Native,
+    /// The lists name the scope's operands, and a field contradicts the
+    /// prologue for the stated reason.
+    Contradicted(&'static str),
     Refused,
 }
 
@@ -351,25 +381,31 @@ fn combine_operation_with(
                     &tool_operations,
                     target_operation?,
                 )?;
-                match (operation, keep_tools) {
-                    (Some(operation), Some(keep_tools))
-                        if operand_list_fields_hold(
-                            bytes,
-                            records,
-                            stream_types,
-                            lists,
-                            &stored,
-                            keep_tools,
-                            tool_operations.len(),
-                        ) =>
-                    {
-                        if lists.new_component == 1 {
-                            return Some(Ok(PrologueReading::NewComponent));
-                        }
-                        (operation, keep_tools)
-                    }
-                    _ => return Some(Ok(PrologueReading::Native)),
+                let Some(operation) = operation else {
+                    return Some(Ok(PrologueReading::Contradicted(
+                        "its operation is not 0, 1 or 2",
+                    )));
+                };
+                let Some(keep_tools) = keep_tools else {
+                    return Some(Ok(PrologueReading::Contradicted(
+                        "its keep-tools byte is not a Boolean",
+                    )));
+                };
+                if let Err(reason) = operand_list_fields_hold(
+                    bytes,
+                    records,
+                    stream_types,
+                    lists,
+                    &stored,
+                    keep_tools,
+                    tool_operations.len(),
+                ) {
+                    return Some(Ok(PrologueReading::Contradicted(reason)));
                 }
+                if lists.new_component == 1 {
+                    return Some(Ok(PrologueReading::NewComponent));
+                }
+                (operation, keep_tools)
             }
         };
         Some(Ok(PrologueReading::Operation(Box::new(
@@ -438,7 +474,7 @@ fn stored_operand_lists<'a>(
 /// new-component Boolean is one. A prologue with a companion can store two
 /// empty lists between the tool list and the target list in place of three.
 /// Each companion is a distinct `RemoveBody` scope that stores the counted
-/// GUID of the `Combine` scope.
+/// GUID of the `Combine` scope and three zero bytes.
 fn operand_list_fields_hold(
     bytes: &[u8],
     records: &IndexedRecordOffsets,
@@ -447,9 +483,9 @@ fn operand_list_fields_hold(
     stored: &StoredOperandLists<'_>,
     keep_tools: bool,
     tool_count: usize,
-) -> bool {
+) -> Result<(), &'static str> {
     if lists.new_component > 1 {
-        return false;
+        return Err("its new-component byte is not a Boolean");
     }
     let browser_nodes = usize::from(lists.new_component);
     let has_companion = !lists.companions.is_empty();
@@ -465,25 +501,38 @@ fn operand_list_fields_hold(
         [first, second] => has_companion && first.is_empty() && second.is_empty(),
         _ => false,
     };
+    if has_companion && keep_tools {
+        return Err("it keeps its tools beside a companion");
+    }
+    if !middle_holds {
+        return Err(
+            "its lists between the tool list and the target list do not match its keep-tools, companion and new-component fields",
+        );
+    }
     let mut companions = HashSet::new();
-    !(has_companion && keep_tools)
-        && middle_holds
-        && lists.companions.iter().all(|record_index| {
-            companions.insert(*record_index)
-                && stream_types
-                    .get(&u64::from(*record_index))
-                    .is_some_and(|(type_guid, _)| {
-                        type_guid.eq_ignore_ascii_case(REMOVE_BODY_TYPE_GUID)
-                    })
-                && match records.offsets(*record_index) {
-                    [at, end] => bytes.get(*at..*end).is_some_and(|record| {
-                        record
-                            .windows(stored.guid.len())
-                            .any(|window| window == stored.guid)
-                    }),
-                    _ => false,
-                }
-        })
+    for record_index in &lists.companions {
+        if !companions.insert(*record_index) {
+            return Err("a companion repeats");
+        }
+        if !stream_types
+            .get(&u64::from(*record_index))
+            .is_some_and(|(type_guid, _)| type_guid.eq_ignore_ascii_case(REMOVE_BODY_TYPE_GUID))
+        {
+            return Err("a companion is not a RemoveBody scope");
+        }
+        let stores_guid = match records.offsets(*record_index) {
+            [at, end] => bytes.get(*at..*end).is_some_and(|record| {
+                record
+                    .windows(stored.guid.len().saturating_add(3))
+                    .any(|window| window.starts_with(stored.guid) && window.ends_with(&[0; 3]))
+            }),
+            _ => false,
+        };
+        if !stores_guid {
+            return Err("a companion does not store the Combine's counted GUID");
+        }
+    }
+    Ok(())
 }
 
 fn selection_body_node(

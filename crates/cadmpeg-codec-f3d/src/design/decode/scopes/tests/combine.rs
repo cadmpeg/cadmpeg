@@ -593,6 +593,7 @@ struct OperandListFixture {
     companions: Vec<u32>,
     companion_type: &'static str,
     companion_guid: &'static str,
+    companion_guid_tail_zeros: usize,
     new_component: u8,
     omit_consumed: bool,
 }
@@ -618,6 +619,7 @@ impl OperandListFixture {
             companions: Vec::new(),
             companion_type: crate::design::decode::body_consumers::REMOVE_BODY_TYPE_GUID,
             companion_guid: "00000000-0000-0000-0000-000000000000",
+            companion_guid_tail_zeros: 3,
             new_component: 0,
             omit_consumed: false,
         }
@@ -759,7 +761,7 @@ impl OperandListFixture {
             indexed_header(&mut bytes, *b"412", companion);
             bytes.extend_from_slice(&[0; 10]);
             lp_utf16(&mut bytes, self.companion_guid);
-            bytes.extend_from_slice(&[0; 3]);
+            bytes.resize(bytes.len() + self.companion_guid_tail_zeros, 0);
             indexed_header(&mut bytes, *b"258", companion);
         }
         bytes
@@ -1020,6 +1022,8 @@ fn operand_list_companions_remove_the_tools_of_a_consuming_combine() {
     new_component.new_component = 1;
     let mut other_guid = companion(false, vec![500]);
     other_guid.companion_guid = "00000000-0000-0000-0000-000000000001";
+    let mut guid_without_zeros = companion(false, vec![500]);
+    guid_without_zeros.companion_guid_tail_zeros = 0;
     let repeated = companion(false, vec![500, 500]);
     for fixture in [
         other_type,
@@ -1028,6 +1032,7 @@ fn operand_list_companions_remove_the_tools_of_a_consuming_combine() {
         two_lists_without_companion,
         new_component,
         other_guid,
+        guid_without_zeros,
         repeated,
     ] {
         assert_eq!(fixture.decode(), None);
@@ -1059,7 +1064,9 @@ fn operand_list_middle_lists_are_empty() {
 }
 
 #[test]
-fn a_frame_with_operand_list_fields_and_other_lists_is_read_in_the_standard_prologue() {
+fn a_byte_twenty_frame_reports_the_prologue_it_assumes() {
+    let codes =
+        |losses: Vec<LossNote>| losses.into_iter().map(|loss| loss.code).collect::<Vec<_>>();
     let mut fixture = OperandListFixture::new(1, 0);
     fixture.property_block = true;
     let (operation, losses) = fixture.decode_with_losses();
@@ -1067,7 +1074,25 @@ fn a_frame_with_operand_list_fields_and_other_lists_is_read_in_the_standard_prol
         operation.map(|operation| operation.form),
         Some(DesignCombineForm::OperandLists)
     );
-    assert!(losses.is_empty());
+    assert_eq!(
+        codes(losses),
+        [F3dLossCode::FeatureCombinePrologueAssumed.kind()]
+    );
+
+    let mut intersect = OperandListFixture::new(2, 0);
+    intersect.property_block = true;
+    let mut companion = OperandListFixture::new(1, 0);
+    companion.property_block = true;
+    companion.companions = vec![500];
+    for (name, fixture) in [("intersect", intersect), ("companion", companion)] {
+        let (operation, losses) = fixture.decode_with_losses();
+        assert_eq!(
+            operation.map(|operation| operation.form),
+            Some(DesignCombineForm::OperandLists),
+            "{name}"
+        );
+        assert!(losses.is_empty(), "{name}");
+    }
 
     fixture.listed_target = Some(999);
     let (operation, losses) = fixture.decode_with_losses();
@@ -1076,34 +1101,58 @@ fn a_frame_with_operand_list_fields_and_other_lists_is_read_in_the_standard_prol
     assert_eq!(operation.operation, cadmpeg_ir::features::BooleanKind::Join);
     assert!(operation.keep_tools);
     assert_eq!(
-        losses.into_iter().map(|loss| loss.code).collect::<Vec<_>>(),
-        [F3dLossCode::FeatureCombineStandardFormAssumed.kind()]
+        codes(losses),
+        [F3dLossCode::FeatureCombinePrologueAssumed.kind()]
     );
 }
 
 #[test]
-fn a_frame_whose_lists_name_its_operands_stays_native_when_a_field_contradicts_it() {
-    let mut invalid_keep_tools = OperandListFixture::new(0, 2);
-    invalid_keep_tools.property_block = true;
-    let mut unconsumed_tools = OperandListFixture::new(0, 0);
-    unconsumed_tools.property_block = true;
-    unconsumed_tools.consumed = Some(Vec::new());
-    let mut new_component_without_node = OperandListFixture::new(1, 1);
-    new_component_without_node.property_block = true;
-    new_component_without_node.new_component = 1;
-    let mut new_component_two = OperandListFixture::new(1, 1);
-    new_component_two.property_block = true;
-    new_component_two.new_component = 2;
-    new_component_two.middle_lists[1] = vec![194, 194];
-    for (name, fixture) in [
-        ("keep-tools", invalid_keep_tools),
-        ("consumed", unconsumed_tools),
-        ("new component without a node", new_component_without_node),
-        ("new component two", new_component_two),
-    ] {
+fn a_frame_whose_lists_name_its_operands_keeps_main_reading_when_a_field_contradicts_it() {
+    let contradicting = |property_block: bool| {
+        let mut invalid_keep_tools = OperandListFixture::new(0, 2);
+        invalid_keep_tools.property_block = property_block;
+        let mut unconsumed_tools = OperandListFixture::new(0, 0);
+        unconsumed_tools.property_block = property_block;
+        unconsumed_tools.consumed = Some(Vec::new());
+        let mut new_component_without_node = OperandListFixture::new(1, 1);
+        new_component_without_node.property_block = property_block;
+        new_component_without_node.new_component = 1;
+        let mut new_component_two = OperandListFixture::new(1, 1);
+        new_component_two.property_block = property_block;
+        new_component_two.new_component = 2;
+        new_component_two.middle_lists[1] = vec![194, 194];
+        [
+            ("keep-tools", invalid_keep_tools),
+            ("consumed", unconsumed_tools),
+            ("new component without a node", new_component_without_node),
+            ("new component two", new_component_two),
+        ]
+    };
+    for (name, fixture) in contradicting(true) {
+        let (operation, losses) = fixture.decode_with_losses();
+        assert_eq!(
+            operation.map(|operation| operation.form),
+            Some(DesignCombineForm::Standard),
+            "{name}"
+        );
+        assert_eq!(
+            losses.into_iter().map(|loss| loss.code).collect::<Vec<_>>(),
+            [F3dLossCode::FeatureCombinePrologueAssumed.kind()],
+            "{name}"
+        );
+    }
+    let invalid_operation = OperandListFixture::new(5, 0);
+    for (name, fixture) in contradicting(false)
+        .into_iter()
+        .chain([("operation", invalid_operation)])
+    {
         let (operation, losses) = fixture.decode_with_losses();
         assert_eq!(operation, None, "{name}");
-        assert!(losses.is_empty(), "{name}");
+        assert_eq!(
+            losses.into_iter().map(|loss| loss.code).collect::<Vec<_>>(),
+            [F3dLossCode::FeatureCombineOperandListContradicted.kind()],
+            "{name}"
+        );
     }
 }
 

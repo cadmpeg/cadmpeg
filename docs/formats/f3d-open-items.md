@@ -1103,11 +1103,11 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** None.
 
-### DR-272. Combine frame with operand-list fixed fields and other lists
+### DR-272. Prologue of a Combine frame whose byte 20 is one
 
-**Question.** Which prologue does a `Combine` frame store when byte 20 is one, its fixed fields match the operand-list prologue, and its lists do not name its operation-identity records up to its reference table?
+**Question.** Which prologue does a `Combine` frame store when byte 20 is one and its fixed fields match both the standard and the operand-list prologue?
 
-**Known.** `f3d.md` §3.1 gives the standard and operand-list prologues. A standard join and an operand-list prologue with an empty property block both store `01 00 00 00 00` at offsets 20 through 24. The decoder reads such a frame in the standard prologue and reports `feature.combine-standard-form-assumed`.
+**Known.** `f3d.md` §3.1 gives the standard and operand-list prologues. A standard join and an operand-list prologue with an empty property block both store `01 00 00 00 00` at offsets 20 through 24, and an operand-list prologue without a companion stores zero at offsets 26 through 32, as the standard prologue does. The decoder reads such a frame in the operand-list prologue when its lists name the scope's operation-identity records, its counted GUID and three zero bytes end at its reference table, and its other fields hold; otherwise it reads the frame in the standard prologue when that prologue's fields hold. It reports `feature.combine-prologue-assumed` for a standard reading, and for an operand-list reading when the standard prologue also reads the operation and keep-tools fields. A frame whose lists name its operands and whose other fields contradict the operand-list prologue stays native when the standard prologue does not read it, and reports `feature.combine-operand-list-contradicted`.
 
 **Need.** A frame of this kind with its operation and keep-tools state shown by result volumes.
 

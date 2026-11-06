@@ -302,10 +302,12 @@ pub(crate) enum F3dLossCode {
     FeatureBodySelectionNative,
     /// Combine body refinement violates operand arity or disjoint membership.
     FeatureCombineSelectionNative,
-    /// A Combine frame that matches the fixed operand-list fields is read in the
-    /// standard prologue; its lists do not name its operands up to its
-    /// reference table.
-    FeatureCombineStandardFormAssumed,
+    /// A Combine frame that matches the fixed fields of the operand-list and
+    /// standard prologues is read in one of them.
+    FeatureCombinePrologueAssumed,
+    /// A Combine whose lists name its operands, whose fields contradict the
+    /// operand-list prologue, and which no prologue reads stays native.
+    FeatureCombineOperandListContradicted,
     /// A Combine that places its result in a new component stays native.
     FeatureCombineNewComponentNative,
     /// Fixed Fillet scalar lanes have no complete group assignment.
@@ -624,7 +626,8 @@ impl F3dLossCode {
         Self::FeatureFaceSelectionActiveSubstituted,
         Self::FeatureBodySelectionNative,
         Self::FeatureCombineSelectionNative,
-        Self::FeatureCombineStandardFormAssumed,
+        Self::FeatureCombinePrologueAssumed,
+        Self::FeatureCombineOperandListContradicted,
         Self::FeatureCombineNewComponentNative,
         Self::FeatureFixedFilletAssignmentNative,
         Self::FeatureExtrudeExtentNative,
@@ -859,7 +862,10 @@ impl F3dLossCode {
             }
             Self::FeatureBodySelectionNative => "feature.body-selection-native",
             Self::FeatureCombineSelectionNative => "feature.combine-selection-native",
-            Self::FeatureCombineStandardFormAssumed => "feature.combine-standard-form-assumed",
+            Self::FeatureCombinePrologueAssumed => "feature.combine-prologue-assumed",
+            Self::FeatureCombineOperandListContradicted => {
+                "feature.combine-operand-list-contradicted"
+            }
             Self::FeatureCombineNewComponentNative => "feature.combine-new-component-native",
             Self::FeatureFixedFilletAssignmentNative => "feature.fixed-fillet-assignment-native",
             Self::FeatureExtrudeExtentNative => "feature.extrude-extent-native",
@@ -1113,7 +1119,8 @@ impl F3dLossCode {
             | Self::FeatureFaceSelectionActiveSubstituted
             | Self::FeatureBodySelectionNative
             | Self::FeatureCombineSelectionNative
-            | Self::FeatureCombineStandardFormAssumed
+            | Self::FeatureCombinePrologueAssumed
+            | Self::FeatureCombineOperandListContradicted
             | Self::FeatureCombineNewComponentNative
             | Self::FeatureFixedFilletAssignmentNative
             | Self::FeatureExtrudeExtentNative
@@ -1301,7 +1308,8 @@ impl F3dLossCode {
             | Self::FeatureFaceSelectionActiveSubstituted
             | Self::FeatureBodySelectionNative
             | Self::FeatureCombineSelectionNative
-            | Self::FeatureCombineStandardFormAssumed
+            | Self::FeatureCombinePrologueAssumed
+            | Self::FeatureCombineOperandListContradicted
             | Self::FeatureCombineNewComponentNative
             | Self::FeatureFixedFilletAssignmentNative
             | Self::FeatureExtrudeExtentNative
@@ -1573,7 +1581,8 @@ mod tests {
                 "feature.face-selection-active-substituted",
                 "feature.body-selection-native",
                 "feature.combine-selection-native",
-                "feature.combine-standard-form-assumed",
+                "feature.combine-prologue-assumed",
+                "feature.combine-operand-list-contradicted",
                 "feature.combine-new-component-native",
                 "feature.fixed-fillet-assignment-native",
                 "feature.extrude-extent-native",
