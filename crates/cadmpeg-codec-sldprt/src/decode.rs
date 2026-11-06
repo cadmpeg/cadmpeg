@@ -1355,7 +1355,7 @@ fn append_design_losses(
                     .assets
                     .iter()
                     .any(|candidate| candidate.id == *asset),
-                FeatureOperation::StoredGeometry {} => state.outputs.is_empty(),
+                FeatureOperation::StoredGeometry {} => false,
                 FeatureOperation::ExtractBody { source } => incomplete_body_selection(source),
                 FeatureOperation::DerivedGeometry { source } => {
                     feature_positions
