@@ -27,6 +27,8 @@ pub(crate) struct DesignSketchProfileOperand {
     pub(crate) entity_id: DesignEntityId,
     /// Byte offset of the suffix's UTF-16LE code units.
     entity_reference_offset: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) compact_tail_flags: Option<[bool; 2]>,
     /// Exact nested profile-region selection, when its complete frame closes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) region_selection: Option<DesignSketchProfileRegionSelection>,
@@ -54,6 +56,7 @@ impl Clone for DesignSketchProfileOperand {
             asset_id_offset: self.asset_id_offset,
             entity_id: self.entity_id.clone(),
             entity_reference_offset: self.entity_reference_offset,
+            compact_tail_flags: self.compact_tail_flags,
             region_selection: self.region_selection.clone(),
             paired_class_tag: self.paired_class_tag.clone(),
             paired_byte_offset: self.paired_byte_offset,
@@ -80,6 +83,7 @@ impl DesignSketchProfileOperand {
             asset_id_offset: draft.asset_id_offset,
             entity_id: draft.entity_id,
             entity_reference_offset: draft.entity_reference_offset,
+            compact_tail_flags: draft.compact_tail_flags,
             region_selection: draft.region_selection,
             paired_class_tag: draft.paired_class_tag,
             paired_byte_offset: draft.paired_byte_offset,
@@ -97,10 +101,22 @@ impl DesignSketchProfileOperand {
             asset_id_offset: self.asset_id_offset,
             entity_id: self.entity_id,
             entity_reference_offset: self.entity_reference_offset,
+            compact_tail_flags: self.compact_tail_flags,
             region_selection: self.region_selection,
             paired_class_tag: self.paired_class_tag,
             paired_byte_offset: self.paired_byte_offset,
         }
+    }
+    pub(crate) fn flags_assumption_loss(&self) -> Option<cadmpeg_ir::report::loss::LossNote> {
+        let [first, second] = self
+            .compact_tail_flags
+            .filter(|flags| flags.iter().any(|flag| *flag))?;
+        Some(crate::loss::F3dLossCode::FeatureSketchProfileFlagsAssumed.note(format!(
+            "Sketch-profile operand record {} has compact tail flags [{}, {}]; the flags are assumed not to change the profile interpretation.",
+            self.record_index,
+            u8::from(first),
+            u8::from(second),
+        )))
     }
     pub(crate) fn byte_offset(&self) -> u64 {
         self.byte_offset
@@ -124,6 +140,8 @@ impl Serialize for DesignSketchProfileOperand {
             entity_suffix: u64,
             entity_reference_offset: u64,
             #[serde(skip_serializing_if = "Option::is_none")]
+            compact_tail_flags: Option<[bool; 2]>,
+            #[serde(skip_serializing_if = "Option::is_none")]
             region_selection: Option<&'a DesignSketchProfileRegionSelection>,
             paired_class_tag: &'a str,
             paired_byte_offset: u64,
@@ -138,6 +156,7 @@ impl Serialize for DesignSketchProfileOperand {
             entity_id: self.entity_id.as_str(),
             entity_suffix: self.entity_id.suffix(),
             entity_reference_offset: self.entity_reference_offset,
+            compact_tail_flags: self.compact_tail_flags,
             region_selection: self.region_selection.as_ref(),
             paired_class_tag: self.paired_class_tag.as_str(),
             paired_byte_offset: self.paired_byte_offset,
@@ -165,6 +184,7 @@ pub(crate) struct DesignSketchProfileOperandDraft {
     pub(crate) entity_id: DesignEntityId,
     /// Byte offset of the suffix's UTF-16LE code units.
     pub(crate) entity_reference_offset: u64,
+    pub(crate) compact_tail_flags: Option<[bool; 2]>,
     /// Exact nested profile-region selection, when its complete frame closes.
     pub(crate) region_selection: Option<DesignSketchProfileRegionSelection>,
     /// Source per-file dynamic three-digit ASCII paired class tag.
@@ -193,6 +213,8 @@ struct DesignSketchProfileOperandWire {
     entity_suffix: u64,
     /// Byte offset of the suffix's UTF-16LE code units.
     entity_reference_offset: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    compact_tail_flags: Option<[bool; 2]>,
     /// Exact nested profile-region selection, when its complete frame closes.
     #[serde(
         default,
@@ -223,6 +245,7 @@ impl TryFrom<DesignSketchProfileOperandWire> for DesignSketchProfileOperand {
             asset_id_offset: wire.asset_id_offset,
             entity_id,
             entity_reference_offset: wire.entity_reference_offset,
+            compact_tail_flags: wire.compact_tail_flags,
             region_selection: wire.region_selection,
             paired_class_tag: wire.paired_class_tag.try_into()?,
             paired_byte_offset: wire.paired_byte_offset,
@@ -245,6 +268,7 @@ impl From<DesignSketchProfileOperand> for DesignSketchProfileOperandWire {
             entity_id: value.entity_id.into_string(),
             entity_suffix,
             entity_reference_offset: value.entity_reference_offset,
+            compact_tail_flags: value.compact_tail_flags,
             region_selection: value.region_selection,
             paired_class_tag: value.paired_class_tag.into(),
             paired_byte_offset: value.paired_byte_offset,
