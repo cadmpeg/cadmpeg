@@ -1169,6 +1169,19 @@ fn prune_pass(
         .map(|row| (row.id.clone(), row.face.clone()))
         .collect::<std::collections::BTreeMap<_, _>>();
     scoped.model.faces.retain_mut(|row| {
+        if !scoped
+            .model
+            .shells
+            .iter()
+            .any(|shell| shell.id == row.shell && shell.faces().contains(&row.id))
+        {
+            pruned(
+                "face",
+                row.id.as_str(),
+                format!("shell {} does not own this face", row.shell),
+            );
+            return false;
+        }
         if !surfaces.contains(row.surface.as_str()) {
             pruned(
                 "face",
@@ -1207,11 +1220,17 @@ fn prune_pass(
         };
         true
     });
+    let face_owners = scoped
+        .model
+        .faces
+        .iter()
+        .map(|row| (row.id.clone(), row.shell.clone()))
+        .collect::<std::collections::BTreeMap<_, _>>();
     scoped.model.shells.retain_mut(|row| {
         let faces = row
             .faces()
             .iter()
-            .filter(|id| existing!(faces).contains(id.as_str()))
+            .filter(|id| face_owners.get(*id) == Some(&row.id))
             .cloned()
             .collect::<Vec<_>>();
         let wires = row
@@ -1227,8 +1246,12 @@ fn prune_pass(
             .cloned()
             .collect::<Vec<_>>();
         for id in row.faces() {
-            if !existing!(faces).contains(id.as_str()) {
-                pruned("shell", row.id.as_str(), format!("face {id} is missing"));
+            if face_owners.get(id) != Some(&row.id) {
+                pruned(
+                    "shell",
+                    row.id.as_str(),
+                    format!("face {id} is missing or belongs to another shell"),
+                );
             }
         }
         for id in row.wire_edges() {

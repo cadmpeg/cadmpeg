@@ -126,6 +126,32 @@ fn writer_names_loop_with_inconsistent_face() {
     assert!(!bytes.is_empty());
 }
 
+#[test]
+fn writer_names_shell_with_foreign_face() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    let mut ir = adjacent_quad_sheet();
+    let foreign = ir.model.faces[0].id.clone();
+    let shell_id = "cadir:model:shell#foreign".try_into().unwrap();
+    let shell = cadmpeg_ir::topology::Shell::with_face(
+        shell_id,
+        ir.model.regions[0].id.clone(),
+        foreign.clone(),
+    );
+    let id = shell.id.clone();
+    ir.model.regions[0].shells.push(id.clone());
+    ir.model.shells.push(shell);
+    let mut bytes = Vec::new();
+    let report = crate::RhinoCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut bytes))
+        .unwrap();
+    assert!(report.losses.iter().any(|loss| loss.code
+        == RhinoLossCode::WriterEntityOmitted.kind()
+        && loss.message.contains(id.as_str())
+        && loss.message.contains(foreign.as_str())));
+    assert!(!bytes.is_empty());
+}
+
 const UNREPRESENTABLE_NATIVE_TOLERANCE: f64 = 1.0e-12;
 
 fn admit(ir: &CadIr) -> Result<(), WriteError> {
