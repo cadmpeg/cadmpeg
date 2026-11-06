@@ -118,6 +118,20 @@ fn neutral_body_material_authors_design_registry() {
         visible: None,
         channels: Default::default(),
     });
+    let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
+    let decoded = F3dCodec.decode(&mut Cursor::new(source), &DecodeOptions::default()).unwrap();
+    let mut unrelated = f3d_native(decoded.ir()).design_types.iter().find(|kind| {
+        ![crate::design::presentation::BODY_PRESENTATION_TYPE_GUID,
+          crate::design::presentation::BODY_SCENE_NODE_TYPE_GUID,
+          crate::design::presentation::BREP_CONTAINER_TYPE_GUID]
+            .iter().any(|guid| kind.type_guid.as_str().eq_ignore_ascii_case(guid))
+    }).unwrap().clone();
+    unrelated.set_entities(crate::records::identity::ReferenceRun::unlocated(Vec::new()));
+    let mut mixed = ir.clone();
+    f3d_native_mut(&mut mixed).design_types.push(unrelated);
+    let (mixed_output, _) = super::source_less_analytic::synthesize_document(&mixed, None);
+    assert_eq!(mixed_output.ir().model.appearance_bindings.len(), 1);
+    assert_eq!(mixed_output.ir().model.appearances[0].physical_token.as_deref(), Some("PrismMaterial-019"));
     let mut without_guid = ir.clone();
     without_guid.model.appearances[0].asset_guid = None;
     without_guid.model.appearances[0].visual_guid = None;
@@ -202,6 +216,14 @@ fn neutral_body_material_authors_design_registry() {
     second_binding.appearance = second_appearance.id.clone();
     multiple.model.appearances.push(second_appearance);
     multiple.model.appearance_bindings.push(second_binding);
+    let mut mixed_assignments = multiple_written.ir().clone();
+    let mut added_binding = multiple.model.appearance_bindings[1].clone();
+    added_binding.target = AppearanceTarget::Body(mixed_assignments.model.bodies[1].id.clone());
+    mixed_assignments.model.appearances.push(multiple.model.appearances[1].clone());
+    mixed_assignments.model.appearance_bindings.push(added_binding);
+    let (mixed_written, _) = super::source_less_analytic::synthesize_document(&mixed_assignments, None);
+    assert_eq!(mixed_written.ir().model.appearance_bindings.len(), 2);
+    assert_eq!(mixed_written.ir().model.appearances.len(), 2);
     let (multiple_bound, _) = super::source_less_analytic::synthesize_document(&multiple, None);
     assert_eq!(multiple_bound.ir().model.bodies.len(), 2);
     assert_eq!(multiple_bound.ir().model.appearance_bindings.len(), 2);
