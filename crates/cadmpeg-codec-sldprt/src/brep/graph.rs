@@ -2333,7 +2333,7 @@ pub(crate) fn decode(
     )
 }
 
-fn is_deltas_stream(header: &StreamHeader) -> bool {
+pub(super) fn is_deltas_stream(header: &StreamHeader) -> bool {
     header
         .description
         .as_bytes()
@@ -2364,13 +2364,50 @@ pub(crate) fn decode_bodies(
     bodies: &[(&[u8], &StreamHeader)],
     stream: &cadmpeg_ir::StreamName,
 ) -> Result<Brep, cadmpeg_core::CodecError> {
+    let mut site = scan_site(ctx, bodies, &mut |_| {})?;
+    decode_graph(
+        ctx,
+        &mut site.carriers,
+        &site.tables,
+        site.facts,
+        &site.typed_facts,
+        stream,
+    )
+}
+
+/// The merged record state of one site.
+struct SiteState {
+    carriers: CarrierIndex,
+    tables: topology::Tables,
+    facts: entity::Facts,
+    typed_facts: typed::Facts,
+}
+
+/// The topology tables the site scan reads from one stream, before they
+/// merge into the site tables.
+pub(super) struct StreamTopology<'a> {
+    /// The position of the stream in the site's `bodies`.
+    pub(super) index: usize,
+    pub(super) body: &'a [u8],
+    /// Whether the tables come from the stream's node sequence.
+    pub(super) from_nodes: bool,
+    pub(super) tables: &'a topology::Tables,
+}
+
+/// Read the streams of one site into one record state. `observe` receives
+/// the topology tables of each stream in scan order.
+fn scan_site(
+    ctx: &DecodeContext<'_>,
+    bodies: &[(&[u8], &StreamHeader)],
+    observe: &mut dyn FnMut(StreamTopology<'_>),
+) -> Result<SiteState, cadmpeg_core::CodecError> {
     let mut carriers = CarrierIndex::default();
     let mut tables = topology::Tables::default();
     let mut facts = entity::Facts::default();
     let mut initialized = false;
-    let mut ordered: Vec<&(&[u8], &StreamHeader)> = Vec::new();
-    ordered.extend(bodies.iter());
-    ordered.sort_by_key(|entry| is_deltas_stream(entry.1));
+    let mut order: Vec<usize> = (0..bodies.len()).collect();
+    order.sort_by_key(|index| is_deltas_stream(bodies[*index].1));
+    let ordered: Vec<&(&[u8], &StreamHeader)> = order.iter().map(|index| &bodies[*index]).collect();
     let mut entity_streams = Vec::new();
     for (payload, header) in &ordered {
         let body = header_body(payload, header)?;
@@ -2403,6 +2440,7 @@ pub(crate) fn decode_bodies(
     let mut node_tables = Vec::new();
     let mut node_attributes = Vec::new();
     let mut deltas_typed = Vec::new();
+    let mut deltas_blends = Vec::new();
     for (((payload, header), (body, prefixed)), deltas) in
         ordered.iter().zip(&entity_streams).zip(&deltas_records)
     {
@@ -2411,7 +2449,6 @@ pub(crate) fn decode_bodies(
             .flatten()
             .and_then(|records| {
                 let tables = topology::nodes::tables(&records, payload, header.body_offset)?;
-                let analytic = super::carrier_nodes::analytic(&records, header.body_offset);
                 let mut lane_refusals = Vec::new();
                 let splines = super::spline::nodes::carriers(
                     &records,
@@ -2421,6 +2458,11 @@ pub(crate) fn decode_bodies(
                 if splines.is_none() {
                     lane_refusals.clear();
                 }
+                let analytic = super::carrier_nodes::analytic(
+                    &records,
+                    header.body_offset,
+                    &mut lane_refusals,
+                );
                 let sp_curves = splines.as_ref().and_then(|splines| {
                     super::sp_curve::from_nodes(&records, header.body_offset, &splines.pcurves)
                 });
@@ -2464,8 +2506,10 @@ pub(crate) fn decode_bodies(
                 let sp_curves = splines.as_ref().and_then(|splines| {
                     super::sp_curve::from_nodes_of(&nodes, offset, &splines.pcurves)
                 });
+                let analytic =
+                    super::carrier_nodes::analytic_of(&nodes, offset, &mut lane_refusals);
                 let carriers = NodeCarriers {
-                    analytic: super::carrier_nodes::analytic_of(&nodes, offset),
+                    analytic,
                     splines,
                     offsets: super::offset::from_nodes_of(&nodes, offset),
                     blends: None,
@@ -2475,14 +2519,17 @@ pub(crate) fn decode_bodies(
                     intersections: super::intersection::from_nodes_of(&nodes, offset),
                     lane_refusals,
                 };
-                Some((facts, tables, carriers))
+                let blends = super::blend::from_nodes_of(&nodes, offset);
+                Some((facts, tables, carriers, blends))
             });
         if let Some((facts, attributes, node_records)) = node_stream {
             typed_streams.push(facts);
             node_attributes.push(attributes);
             node_tables.push(Some(node_records));
             deltas_typed.push(None);
-        } else if let Some((facts, tables, carriers)) = deltas_stream {
+            deltas_blends.push(None);
+        } else if let Some((facts, tables, carriers, blends)) = deltas_stream {
+            deltas_blends.push(blends);
             typed_streams.push(typed::scan_with_payload_exclusions(body, *prefixed));
             deltas_typed.push(Some(facts));
             node_attributes.push((None, None));
@@ -2492,6 +2539,7 @@ pub(crate) fn decode_bodies(
             node_attributes.push((None, None));
             node_tables.push(None);
             deltas_typed.push(None);
+            deltas_blends.push(None);
         }
     }
     // Node-built and scanned Deltas frames start at different bytes, so one
@@ -2546,13 +2594,64 @@ pub(crate) fn decode_bodies(
         }
     }
     let evidence = SiteEvidence::of(&entity_streams, &typed_streams);
-    for (stream_order, ((((payload, header), stream_typed_facts), node_tables), attributes)) in
-        ordered
-            .into_iter()
-            .zip(typed_streams)
-            .zip(node_tables)
-            .zip(node_attributes)
-            .enumerate()
+    // A Deltas blend enters only when the current faces, edges, and carriers
+    // reach it, directly or through reached Deltas carriers.
+    let mut seeds: Vec<u32> = evidence
+        .typed
+        .faces
+        .iter()
+        .map(|face| face.refs[4])
+        .collect();
+    let mut deltas_edges = HashMap::<u32, Vec<u32>>::new();
+    let mut deltas_bridges = Vec::new();
+    let mut partition_bridges = 0;
+    for (entry, (_, prefixed)) in node_tables.iter().zip(&entity_streams) {
+        let Some((tables, carriers)) = entry else {
+            continue;
+        };
+        let references = carriers.iter().flat_map(NodeCarriers::reference_edges);
+        if *prefixed {
+            deltas_bridges.extend(tables.bridges().values().map(|bridge| bridge.refs[4]));
+            for (from, to) in references {
+                deltas_edges.entry(from).or_default().push(to);
+            }
+        } else {
+            partition_bridges += tables.bridges().len();
+            seeds.extend(tables.bridges().values().map(|bridge| bridge.refs[4]));
+            seeds.extend(
+                tables
+                    .edge_uses()
+                    .values()
+                    .map(|edge| edge.references.curve()),
+            );
+            seeds.extend(tables.coedges().values().map(|coedge| coedge.refs[7]));
+            seeds.extend(references.map(|(_, to)| to));
+        }
+    }
+    if partition_bridges == 0 && evidence.bridge_attrs.is_none() {
+        seeds.extend(deltas_bridges);
+    }
+    let mut referenced = HashSet::new();
+    while let Some(attr) = seeds.pop() {
+        if attr > 1 && referenced.insert(attr) {
+            seeds.extend(deltas_edges.get(&attr).into_iter().flatten().copied());
+        }
+    }
+    for (tables, blends) in node_tables.iter_mut().zip(deltas_blends) {
+        if let (Some((_, Some(carriers))), Some(blends)) = (tables, blends) {
+            carriers.blends = Some(blends.reached_from(&referenced));
+        }
+    }
+    for (
+        stream_order,
+        (((((payload, header), stream_typed_facts), node_tables), attributes), index),
+    ) in ordered
+        .into_iter()
+        .zip(typed_streams)
+        .zip(node_tables)
+        .zip(node_attributes)
+        .zip(order)
+        .enumerate()
     {
         let body = header_body(payload, header)?;
         let is_deltas = is_deltas_stream(header);
@@ -2569,6 +2668,7 @@ pub(crate) fn decode_bodies(
             node_carriers.flatten(),
             exclude,
         )?);
+        let from_nodes = node_tables.is_some();
         let scanned_tables = stream_topology(
             (body, header),
             &stream_typed_facts,
@@ -2578,6 +2678,12 @@ pub(crate) fn decode_bodies(
             &tables,
             exclude,
         );
+        observe(StreamTopology {
+            index,
+            body,
+            from_nodes,
+            tables: &scanned_tables,
+        });
         let (attributes, entities) = attributes;
         let attributes = attributes.unwrap_or_else(|| attrib::Records::scan(body));
         let mut scanned_facts = entity::metadata(body, is_deltas, &attributes, entities);
@@ -2596,7 +2702,22 @@ pub(crate) fn decode_bodies(
             initialized = true;
         }
     }
-    decode_graph(ctx, &mut carriers, &tables, facts, &evidence.typed, stream)
+    Ok(SiteState {
+        carriers,
+        tables,
+        facts,
+        typed_facts: evidence.typed,
+    })
+}
+
+/// Read the streams of one site as [`decode_bodies`] does, without building
+/// the B-rep. `observe` receives the topology tables of each stream.
+pub(super) fn observe_site(
+    ctx: &DecodeContext<'_>,
+    bodies: &[(&[u8], &StreamHeader)],
+    observe: &mut dyn FnMut(StreamTopology<'_>),
+) -> Result<(), cadmpeg_core::CodecError> {
+    scan_site(ctx, bodies, observe).map(|_| ())
 }
 
 /// The site-level evidence that the topology scan of each stream reads.

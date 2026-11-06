@@ -10,6 +10,9 @@ const BLEND_SPINE_POSITION_TOLERANCE: f64 = 1.0e-6;
 /// Cross or dot product of two unit directions that are parallel or
 /// perpendicular.
 const BLEND_SPINE_DIRECTION_TOLERANCE: f64 = 1.0e-9;
+/// Millimetres between a distance from a cylinder axis line and the cylinder
+/// radius that equals it.
+const BLEND_RADIUS_DISTANCE_TOLERANCE: f64 = 1.0e-6;
 
 /// The edge geometry that a blend carrier admits as its replaced edge.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -35,6 +38,73 @@ impl EdgeGeometry {
             .is_some_and(|(origin, direction)| finite(origin) && direction.unit().is_some())
             && self.tangent.is_some_and(|tangent| tangent.unit().is_some())
     }
+}
+
+/// The axis line of a cylinder blend carrier.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) struct CylinderAxis {
+    origin: Point3,
+    direction: Vector3,
+}
+
+impl CylinderAxis {
+    /// Whether `point` lies farther than `radius` from the axis line.
+    pub(super) fn clears(self, radius: f64, point: Point3) -> bool {
+        point.vector_from(self.origin).cross(self.direction).norm()
+            > radius + BLEND_RADIUS_DISTANCE_TOLERANCE
+    }
+
+    /// The position of `point` along the axis.
+    pub(super) fn position(self, point: Point3) -> f64 {
+        point.vector_from(self.origin).dot(self.direction)
+    }
+
+    /// Whether a plane touches the cylinder of `radius` about the axis: its
+    /// normal is perpendicular to the axis and its distance from the axis
+    /// line equals the radius. `None` when the plane has a non-finite origin
+    /// or a zero or non-finite normal.
+    pub(super) fn touches(self, radius: f64, (origin, normal): (Point3, Vector3)) -> Option<bool> {
+        let normal = normal.unit().filter(|_| finite(origin))?;
+        Some(
+            perpendicular(normal, self.direction)
+                && (self.origin.vector_from(origin).dot(normal).abs() - radius).abs()
+                    <= BLEND_RADIUS_DISTANCE_TOLERANCE,
+        )
+    }
+}
+
+/// The axis line of each surface with one cylinder row whose origin is
+/// finite and whose direction is finite and nonzero.
+pub(super) fn cylinder_axes(result: &AsmHistoricalTopology) -> HashMap<i64, CylinderAxis> {
+    unique_rows(&result.surface_cylinders, |row| {
+        (row.surface, (row.origin, row.axis))
+    })
+    .into_iter()
+    .filter_map(|(surface, row)| {
+        let (origin, axis) = row?;
+        let direction = axis.unit().filter(|_| finite(origin))?;
+        Some((surface, CylinderAxis { origin, direction }))
+    })
+    .collect()
+}
+
+/// The interior point of each sampled edge, or `None` for an edge with two
+/// samples or a non-finite point.
+pub(super) fn edge_points(topology: &AsmHistoricalTopology) -> HashMap<i64, Option<Point3>> {
+    unique_rows(&topology.edge_samples, |row| (row.edge, row.interior))
+        .into_iter()
+        .map(|(edge, point)| (edge, point.filter(|point| finite(*point))))
+        .collect()
+}
+
+/// The origin and normal of each plane carrier, or `None` for a carrier with
+/// two plane rows.
+pub(super) fn plane_rows(
+    topology: &AsmHistoricalTopology,
+) -> HashMap<i64, Option<(Point3, Vector3)>> {
+    unique_rows(&topology.surface_planes, |row| {
+        (row.surface, (row.origin, row.normal))
+    })
 }
 
 fn finite(point: Point3) -> bool {
@@ -119,6 +189,19 @@ fn perpendicular(left: Vector3, right: Vector3) -> bool {
 }
 
 impl BlendSpine {
+    /// Whether the edge's midpoint tangent shows that the blend cannot
+    /// replace it: a line spine needs a tangent along its axis, and a circle
+    /// spine a tangent perpendicular to its axis.
+    pub(super) fn rules_out(self, edge: EdgeGeometry) -> bool {
+        let Some(tangent) = edge.tangent.filter(|tangent| tangent.unit().is_some()) else {
+            return false;
+        };
+        match self {
+            Self::Line { direction } => !parallel(tangent, direction),
+            Self::Circle { direction, .. } => !perpendicular(tangent, direction),
+        }
+    }
+
     /// Whether the blend can replace an edge with this geometry. A line edge
     /// runs along its axis row; a circle edge has its tangent perpendicular
     /// to its axis row.

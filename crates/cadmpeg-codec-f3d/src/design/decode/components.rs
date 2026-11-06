@@ -19,6 +19,8 @@ use crate::records::feature::assembly_features::{
 use crate::layout::local_component_occurrence_attributed_prefix as attributed_prefix;
 use crate::layout::local_component_occurrence_empty_attributes_prefix as empty_prefix;
 use crate::layout::local_component_occurrence_identity_tail as identity_tail;
+use crate::layout::local_component_occurrence_leading_flag_body as leading_body;
+use crate::layout::local_component_occurrence_leading_flag_prefix as leading_prefix;
 use crate::layout::local_component_occurrence_matrix_tail as matrix_tail;
 use crate::layout::local_component_occurrence_prefix as prefix;
 use crate::layout::local_component_occurrence_typed_attributed_prefix as typed_attributed_prefix;
@@ -115,8 +117,9 @@ pub(crate) fn decode_component_occurrences(
             .iter()
             .map(|frame| (frame.start, frame.member_end))
             .collect::<std::collections::BTreeMap<_, _>>();
-        let mut stream_occurrences =
-            scan_stream_occurrences(bytes, &scope, &frame_ends, &source_entities, &mut losses);
+        let (mut stream_occurrences, stream_losses) =
+            discover_occurrences(bytes, &scope, &frame_ends, &typed_primary, &source_entities);
+        losses.extend(stream_losses);
         superseded += admit_occurrence_envelopes(&mut stream_occurrences, &primary, &typed_primary);
         ambiguous_current_poses += bind_current_poses(&mut stream_occurrences, &poses);
         paths.extend(component_paths(&scope, &stream_occurrences, path_carriers));
@@ -133,16 +136,25 @@ pub(crate) fn decode_component_occurrences(
     })
 }
 
-/// Every occurrence frame of one Design bulk stream that is admitted to
-/// projection; a refused frame adds a loss.
-fn scan_stream_occurrences(
+/// The occurrence frames of one Design stream, and the identity losses of the
+/// identity frames that state a later ordinal. A leading-flag frame is a
+/// carrier only where the occurrence-placement type row registers its record
+/// at its offset.
+fn discover_occurrences(
     bytes: &[u8],
     scope: &str,
     frame_ends: &std::collections::BTreeMap<usize, usize>,
+    typed_primary: &std::collections::BTreeSet<(u64, u64)>,
     source_entities: &std::collections::BTreeSet<u64>,
-    losses: &mut Vec<cadmpeg_ir::report::loss::LossNote>,
-) -> Vec<DesignComponentOccurrence> {
-    let mut stream_occurrences = Vec::new();
+) -> (
+    Vec<DesignComponentOccurrence>,
+    Vec<cadmpeg_ir::report::loss::LossNote>,
+) {
+    let registered = |occurrence: &DesignComponentOccurrence| {
+        typed_primary.contains(&(u64::from(occurrence.record_index), occurrence.byte_offset()))
+    };
+    let mut occurrences = Vec::new();
+    let mut losses = Vec::new();
     let mut at = 0;
     while let Some(start) = next_indexed_record_offset(bytes, at) {
         let end = frame_ends
@@ -152,14 +164,16 @@ fn scan_stream_occurrences(
         if let Some(occurrence) = end
             .and_then(|end| exact_component_occurrence_frame(bytes, start, end, scope))
             .or_else(|| attributed_component_occurrence(bytes, start, scope))
+            .or_else(|| {
+                end.and_then(|end| leading_flag_component_occurrence(bytes, start, end, scope))
+                    .filter(registered)
+            })
         {
             if let Some(loss) = unproven_identity_loss(&occurrence) {
                 losses.push(loss);
             } else {
-                // A readable frame projects even when its source registration
-                // disagrees; the loss names that assumption.
                 losses.extend(unregistered_source_loss(&occurrence, source_entities));
-                stream_occurrences.push(occurrence);
+                occurrences.push(occurrence);
             }
         }
         let Some(next_at) = start.checked_add(1) else {
@@ -167,7 +181,7 @@ fn scan_stream_occurrences(
         };
         at = next_at;
     }
-    stream_occurrences
+    (occurrences, losses)
 }
 
 /// The native component paths of one Design stream. An element is an
@@ -554,6 +568,123 @@ fn attributed_component_occurrence(
         .map(|guid| guid.to_owned().try_into())
         .transpose()
         .ok()?;
+    Some(occurrence)
+}
+
+/// One leading-flag carrier frame: its identity flag and matrix precede the
+/// GUIDs, and a matrix frame stores the matrix a second time after the body.
+fn leading_flag_component_occurrence(
+    bytes: &[u8],
+    start: usize,
+    end: usize,
+    stream: &str,
+) -> Option<DesignComponentOccurrence> {
+    use crate::records::feature::assembly_features::{
+        DesignComponentOccurrenceDraft, DesignComponentOccurrencePlacement,
+        DesignLeadingFlagOccurrenceFrame,
+    };
+    let frame = bytes.get(start..end)?;
+    let (class_tag, after_tag) = lp_ascii_filtered_view(frame, 0, 3..=3, u8::is_ascii_digit)?;
+    let record_index = View::u32_le_at(frame, after_tag)?;
+    let component_end = leading_prefix::COMPONENT_REFERENCE + MARKED_U64;
+    if after_tag + 4 != leading_prefix::EMPTY_INSTANCE_NAME
+        || frame.get(leading_prefix::EMPTY_INSTANCE_NAME..leading_prefix::PATH_MARKER)? != [0; 8]
+        || frame.get(leading_prefix::PATH_MARKER) != Some(&leading_prefix::PATH_MARKER_VALUE)
+        || View::u32_le_at(frame, leading_prefix::PATH_COUNT)? != leading_prefix::PATH_COUNT_VALUE
+        || frame.get(leading_prefix::COMPONENT_REFERENCE) != Some(&1)
+        || frame.get(component_end..leading_prefix::PATH_DISCRIMINATOR)? != [0; 2]
+        || frame.get(leading_prefix::ATTRIBUTES_MARKER)
+            != Some(&leading_prefix::ATTRIBUTES_MARKER_VALUE)
+        || View::u32_le_at(frame, leading_prefix::ATTRIBUTE_COUNT)?
+            != leading_prefix::ATTRIBUTE_COUNT_VALUE
+    {
+        return None;
+    }
+    let component_record_index = View::u64_le_at(frame, leading_prefix::COMPONENT_REFERENCE + 1)?;
+    let ordinal_prefix = View::u16_le_at(frame, leading_prefix::ORDINAL_PREFIX)?;
+    let ordinal =
+        std::num::NonZeroU32::new(View::u32_le_at(frame, leading_prefix::OCCURRENCE_ORDINAL)?)?;
+    let identity_flag = *frame.get(leading_prefix::IDENTITY_FLAG)?;
+    let (placement, matrix) = match identity_flag {
+        1 if ordinal.get() == 1 => (DesignComponentOccurrencePlacement::Base, None),
+        1 => (
+            DesignComponentOccurrencePlacement::Identity { ordinal },
+            None,
+        ),
+        0 => {
+            let transform =
+                super::scopes::shared_frames::rigid_transform_at(frame, leading_prefix::LEN)?;
+            let matrix = frame.get(leading_prefix::LEN..leading_prefix::LEN + MATRIX_BYTES)?;
+            (
+                DesignComponentOccurrencePlacement::Explicit { ordinal, transform },
+                Some(matrix),
+            )
+        }
+        _ => return None,
+    };
+    let body = leading_prefix::LEN + matrix.map_or(0, <[u8]>::len);
+    let at = |offset: usize| body + offset;
+    let (component_guid, after_component) =
+        lp_utf16_bounded(frame, at(leading_body::CARRIER_GUID), 36..=36)?;
+    let (occurrence_guid, after_occurrence) =
+        lp_utf16_bounded(frame, at(leading_body::OCCURRENCE_GUID), 36..=36)?;
+    let reference_end = at(leading_body::RECORD_REFERENCE) + MARKED_U64;
+    let repeat_end = at(leading_body::COMPONENT_REFERENCE_REPEAT) + MARKED_U64;
+    if after_component != at(leading_body::OCCURRENCE_GUID)
+        || after_occurrence != at(leading_body::RECORD_REFERENCE)
+        || frame.get(at(leading_body::RECORD_REFERENCE)) != Some(&1)
+        || frame.get(reference_end..at(leading_body::PATH_MARKER))? != [0]
+        || frame.get(at(leading_body::PATH_MARKER)) != Some(&leading_body::PATH_MARKER_VALUE)
+        || View::u32_le_at(frame, at(leading_body::PATH_COUNT))? != leading_body::PATH_COUNT_VALUE
+        || frame
+            .get(at(leading_body::PATH_COUNT) + 4..at(leading_body::COMPONENT_REFERENCE_REPEAT))?
+            != [0]
+        || frame.get(at(leading_body::COMPONENT_REFERENCE_REPEAT)) != Some(&1)
+        || View::u64_le_at(frame, at(leading_body::COMPONENT_REFERENCE_REPEAT) + 1)?
+            != component_record_index
+        || frame.get(repeat_end..at(leading_body::IDENTITY_FLAG_REPEAT))? != [0; 2]
+        || frame.get(at(leading_body::IDENTITY_FLAG_REPEAT)) != Some(&identity_flag)
+    {
+        return None;
+    }
+    let record_reference = View::u64_le_at(frame, at(leading_body::RECORD_REFERENCE) + 1)?;
+    let mut tail = at(leading_body::LEN);
+    if let Some(matrix) = matrix {
+        if frame.get(tail..tail + MATRIX_BYTES)? != matrix {
+            return None;
+        }
+        tail += MATRIX_BYTES;
+    }
+    if frame.get(tail..tail + identity_tail::OWNER_MARKER)? != [0; 9]
+        || frame.get(tail + identity_tail::OWNER_MARKER) != Some(&identity_tail::OWNER_MARKER_VALUE)
+        || frame.get(tail + identity_tail::OWNER_ENTITY + 8..)? != [0; 2]
+    {
+        return None;
+    }
+    let owner_entity = View::u64_le_at(frame, tail + identity_tail::OWNER_ENTITY)?;
+    let mut occurrence = DesignComponentOccurrence::try_new_leading_flag(
+        DesignComponentOccurrenceDraft {
+            id: format!("{stream}:design-component-occurrence#{start}"),
+            class_tag: crate::design::decode::text::class_tag_from_view(class_tag).ok()?,
+            record_index,
+            byte_offset: u64::try_from(start).ok()?,
+            component_record_index,
+            component_guid: crate::records::mesh::DesignRelaxedGuidText::try_from(component_guid)
+                .ok()?,
+            occurrence_guid: crate::records::mesh::DesignRelaxedGuidText::try_from(occurrence_guid)
+                .ok()?
+                .into(),
+            placement,
+            owner_entity,
+        },
+        DesignLeadingFlagOccurrenceFrame {
+            ordinal_prefix,
+            record_reference,
+        },
+    )
+    .ok()?;
+    occurrence.path_discriminator =
+        std::num::NonZeroU32::new(View::u32_le_at(frame, leading_prefix::PATH_DISCRIMINATOR)?);
     Some(occurrence)
 }
 
@@ -1129,6 +1260,7 @@ mod tests {
 
     mod component_path;
     mod current_pose;
+    mod leading_flag;
     mod original;
 
     use super::{attributed_component_occurrence, root_instance_component};
@@ -1585,13 +1717,12 @@ mod tests {
             secondary_records: Vec::new(),
         };
         let scan = |meta: &MetaStream| {
-            let mut losses = Vec::new();
-            let kept = super::scan_stream_occurrences(
+            let (kept, losses) = super::discover_occurrences(
                 &bytes,
                 "f3d:Design/BulkStream.dat",
                 &std::collections::BTreeMap::new(),
+                &std::collections::BTreeSet::new(),
                 &super::occurrence_source_entities(meta),
-                &mut losses,
             );
             (kept, losses)
         };

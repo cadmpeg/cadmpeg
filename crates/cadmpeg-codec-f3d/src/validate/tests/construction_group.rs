@@ -609,3 +609,35 @@ fn a_path_carried_seed_group_keeps_its_exact_shape() {
         assert_eq!(invalid_group_records(&native).len(), 1);
     }
 }
+
+#[test]
+fn a_loft_construction_group_admits_the_point_role() {
+    use crate::records::topology::construction::DesignConstructionOperandRole;
+    use crate::records::topology::extrude_selection::DesignOperandRole;
+    crate::test_support::with_decode_context(|decode| {
+        let ir = cadmpeg_ir::examples::unit_cube().unwrap();
+        let mut native = native(true, false);
+        native.design_parameter_scopes[0]
+            .try_edit(|draft| {
+                draft.payload = crate::records::feature::scope::DesignScopePayload::Loft(Some(
+                    crate::records::feature::path_features::DesignLoftConstruction {
+                        operation:
+                            crate::records::feature::extrude::DesignExtrudeOperation::NewBody,
+                        operation_offset: draft.byte_offset + 29,
+                    },
+                ));
+            })
+            .unwrap();
+        for (role, admitted) in [
+            (DesignOperandRole::ROLE_0X21, true),
+            (DesignOperandRole::ROLE_0X10, false),
+        ] {
+            native.design_construction_operand_groups[0].operand_role =
+                DesignConstructionOperandRole::Other(role);
+            let ctx = super::super::Ctx::new(&ir, &native, decode);
+            let mut findings = Vec::new();
+            super::super::validate_construction_operand_groups(&ctx, &mut findings);
+            assert_eq!(findings.is_empty(), admitted, "{role:?}: {findings:?}");
+        }
+    });
+}
