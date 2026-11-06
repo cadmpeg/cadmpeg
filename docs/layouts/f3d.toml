@@ -11987,18 +11987,95 @@ size = 147
 note = "The carrier tail is not assigned a semantic field."
 
 [[record]]
-name = "class_403_revolve_scope_frame"
+name = "unmarked_u32_one_revolve_scope_frame"
+parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes/path_feature.rs"
+kind = "byte"
+section = "3.1"
+anchor = "The unmarked u32-one form has a 363-byte token-independent frame and eight ordered references"
+size = 45
+note = "Offsets are relative to the primary indexed header through the trailing field of the marked angle-owner reference."
+
+[[record.gap]]
+offset = 0
+size = 11
+note = "The indexed header is outside this field run."
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "Offsets 11 through 20 are zero. Offset 21 stores the result operation, offset 25 stores extent kind `2`, and offset 29"
+
+[[record.field]]
+name = "operation"
+offset = 21
+type = "u32"
+source = "spec"
+anchor = "Offsets 11 through 20 are zero. Offset 21 stores the result operation, offset 25 stores extent kind `2`, and offset 29"
+
+[[record.field]]
+name = "extent_kind"
+offset = 25
+type = "u32"
+source = "spec"
+anchor = "Offsets 11 through 20 are zero. Offset 21 stores the result operation, offset 25 stores extent kind `2`, and offset 29"
+
+[[record.field]]
+name = "direction_kind"
+offset = 29
+type = "u8"
+source = "spec"
+anchor = "Offsets 11 through 20 are zero. Offset 21 stores the result operation, offset 25 stores extent kind `2`, and offset 29"
+
+[[record.field]]
+name = "u32_one"
+offset = 30
+type = "u32"
+source = "spec"
+anchor = "Offset 30 stores u32 one"
+
+[[record.field]]
+name = "angle_reference_marker"
+offset = 34
+type = "u8"
+source = "spec"
+anchor = "The marked u64 reference at offset 34 has a two-byte zero trailing field"
+
+[[record.field]]
+name = "angle_record_index"
+offset = 35
+type = "u64"
+source = "spec"
+anchor = "The marked u64 reference at offset 34 has a two-byte zero trailing field"
+
+[[record.field]]
+name = "trailing_zero"
+offset = 43
+type = "bytes[2]"
+source = "spec"
+anchor = "The marked u64 reference at offset 34 has a two-byte zero trailing field"
+
+[[record]]
+name = "direction_pair_revolve_scope_frame"
 parsed_by = "crates/cadmpeg-codec-f3d/src/design/decode/scopes.rs"
 kind = "byte"
 section = "3.1"
-anchor = "The class-403/258 one-sided fixed-angle `Revolve` form has a 387-byte frame"
+anchor = "The direction-pair one-sided fixed-angle `Revolve` form has a 387-byte frame"
 size = 387
 note = "Offsets are relative to the primary indexed header. The frame has eight ordered references; its fixed operation prefix and angle-owner reference are typed, and the remaining marked references retain their source envelope."
 
 [[record.gap]]
 offset = 0
-size = 21
-note = "The indexed header and the class-403/258 prefix before the operation are outside this field run."
+size = 11
+note = "The indexed header is outside this field run."
+
+[[record.field]]
+name = "zero_run_10"
+offset = 11
+type = "bytes[10]"
+source = "spec"
+anchor = "Offsets 11 through 20 are zero. Offset 21 stores the result operation, offset 25 stores extent kind `2`, offset 29"
 
 [[record.field]]
 name = "operation"
@@ -12028,10 +12105,12 @@ type = "u8"
 source = "spec"
 anchor = "offset 30 stores marker `1`"
 
-[[record.gap]]
+[[record.field]]
+name = "zero_run_3"
 offset = 31
-size = 3
-note = "Three zero bytes separate the fixed prefix from the angle-owner reference."
+type = "bytes[3]"
+source = "spec"
+anchor = "Offsets 31 through 33 are zero"
 
 [[record.field]]
 name = "angle_reference_marker"
@@ -12132,9 +12211,9 @@ note = "The remaining scope tail precedes the paired header at offset 387."
 name = "marker_one_revolve_prologue"
 kind = "byte"
 section = "3.1"
-anchor = "The marker-one form uses class 409 paired with class 257"
+anchor = "The marker-one form has a 345-, 355-, or 367-byte token-independent frame"
 size = 38
-note = "Offsets are relative to the Revolve primary indexed header. Every marker-one class pair uses the same fixed prologue."
+note = "Offsets are relative to the Revolve primary indexed header. Every marker-one frame length uses the same fixed prologue."
 
 [[record.gap]]
 offset = 0
