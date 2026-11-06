@@ -105,13 +105,35 @@ Offsets are relative to the typed Geometry member's indexed header.
 | 15 | 4 | `zero_run` | `bytes[4]` | little | spec | Four zero bytes and one same-segment marked owner reference follow |
 | 19 | 11 | `owner_reference` | `bytes[11]` | little | spec | one same-segment marked owner reference follow |
 | 30 | 4 | `stream_ordinal` | `u32` | little | spec | u32 at member offset 30 |
-| 34 | 1 | `reserved_zero` | `u8` | little | spec | Byte 34 is zero |
+| 34 | 1 | `sketch_flag` | `u8` | little | spec | Byte 34 is a one-byte flag |
 | 35 | 1 | `visible` | `u8` | little | spec | visibility flag is at member offset 35 |
 | 36 | 1 | `tail_marker` | `u8` | little | spec | byte 36 is `01` |
 
 Cross-checked against code:
 
 - `crates/cadmpeg-codec-f3d/src/design/decode/sketch.rs` — The decoder selects the member by this type GUID before reading this prefix.
+
+## `sketch_geometry_group_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 75 B
+
+Offsets are relative to the group's primary indexed header. The member reference run, four zero bytes and the owning sketch container reference follow.
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Its primary frame stores the indexed header |
+| 11 | 10 | `zero_run` | `bytes[10]` | little | spec | ten zero bytes, a u32 ordinal at offset 21 |
+| 21 | 4 | `ordinal` | `u32` | little | spec | a u32 ordinal at offset 21 |
+| 25 | 4 | `constant_one` | `u32` | little | spec | u32 `1` at offset 25 · value `1` |
+| 29 | 1 | `zero_byte` | `u8` | little | spec | a zero byte at offset 29 · value `0` |
+| 30 | 11 | `nested_header` | `bytes[11]` | little | spec | A nested indexed header with the same record index starts at offset 30 |
+| 41 | 8 | `nested_zero_run` | `bytes[8]` | little | spec | eight zero bytes at offsets 41 through 48 |
+| 49 | 1 | `marker` | `u8` | little | spec | `01` at offset 49 · value `1` |
+| 50 | 12 | `nested_zero_run_2` | `bytes[12]` | little | spec | twelve zero bytes at offsets 50 through 61 |
+| 62 | 4 | `scale_a` | `f32` | little | spec | f32 `1.0` at offsets 62 and 66 |
+| 66 | 4 | `scale_b` | `f32` | little | spec | f32 `1.0` at offsets 62 and 66 |
+| 70 | 1 | `zero_byte_2` | `u8` | little | spec | a zero byte at offset 70 · value `0` |
+| 71 | 4 | `member_count` | `u32` | little | spec | A u32 member count `N` at offset 71 |
 
 ## `design_decal_scope_prefix`
 
@@ -5072,7 +5094,7 @@ Unstated regions:
 
 Spec §3.1 · layout: byte offsets · size: 123 B
 
-Offsets are relative to the primary indexed header for the ordinary one-member, two-null-auxiliary, one-trailing-reference envelope. Primary/paired classes are 257/262, 323/262, 328/263, 338/261, 282/262, and 302/258; the tail discriminants are 01 01, 01 01, 01 01, 01 01, 00 01, and 00 01 respectively. The class-328 Move variant remains 123 bytes but uses a null auxiliary reference at +36, a present auxiliary reference to N+13 at +37, trailing count zero at +48, and a retained null trailing-slot byte at +52 before the role at +53; its tail has byte 0 at +98, discriminant 01 01 at +99, an unmarked N+1 reference at +101, and the owning-scope reference at +112. It has no counted trailing-reference run.
+Offsets are relative to the primary indexed header for the ordinary one-member, two-null-auxiliary, one-trailing-reference envelope. The class-328 Move variant remains 123 bytes but uses a null auxiliary reference at +36, a present auxiliary reference to N+13 at +37, trailing count zero at +48, and a retained null trailing-slot byte at +52 before the role at +53. It has no counted trailing-reference run.
 
 | Offset | Size | Field | Type | Endian | Src | Meaning |
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
@@ -5084,7 +5106,7 @@ Offsets are relative to the primary indexed header for the ordinary one-member, 
 | 75 | 8 | `opaque_scalar` | `f64` | little | spec | one finite f64 opaque scalar |
 | 83 | 4 | `repeated_ordinal` | `u32` | little | spec | a second copy of `opaque_ordinal` |
 | 87 | 11 | `n_plus_2_reference` | `bytes[11]` | little | spec | a reference to `N+2` |
-| 98 | 2 | `tail_discriminant` | `bytes[2]` | little | spec | a two-byte discriminant |
+| 98 | 2 | `tail_discriminant` | `bytes[2]` | little | spec | the two-byte construction-group flag block |
 | 100 | 11 | `n_plus_1_reference` | `bytes[11]` | little | spec | a reference to `N+1` |
 | 111 | 1 | `tail_zero` | `u8` | little | spec | byte `0` |
 | 112 | 11 | `owning_scope_reference` | `bytes[11]` | little | spec | a reference to the owning scope |

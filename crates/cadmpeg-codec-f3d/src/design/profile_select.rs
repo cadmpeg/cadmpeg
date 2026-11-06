@@ -3672,6 +3672,7 @@ fn resolve_profile_curve_arrangement_regions(
         return Ok(None);
     };
     let mut regions = Vec::new();
+    let mut assumed = false;
     let mut cursor = 0usize;
     for (ordinal, member) in group.members().iter().enumerate() {
         let Some(selection) = resolution.profile_curves.iter().find(|selection| {
@@ -3709,7 +3710,24 @@ fn resolve_profile_curve_arrangement_regions(
                 scoped.ctx,
             )?
             else {
-                return Ok(None);
+                let Some(split) = crate::design::geometry::arrangement_regions_of_crossing_loop(
+                    source,
+                    resolution.sketch_entities,
+                    program,
+                    scoped.linear_tolerance,
+                    scoped.profile_work,
+                    scoped.ctx,
+                )?
+                else {
+                    return Ok(None);
+                };
+                assumed = true;
+                for region in split {
+                    if !regions.contains(&region) {
+                        regions.push(region);
+                    }
+                }
+                continue;
             };
             if !regions.contains(&region) {
                 regions.push(region);
@@ -3719,9 +3737,13 @@ fn resolve_profile_curve_arrangement_regions(
     if cursor != curves.len() {
         return Ok(None);
     }
-    Ok(PlanarProfileRef::sketch_regions(sketch, regions)
+    let profile = PlanarProfileRef::sketch_regions(sketch, regions)
         .ok()
-        .map(ProfileRef::Planar))
+        .map(ProfileRef::Planar);
+    if assumed && profile.is_some() {
+        scoped.profile_work.note_crossing_loop_assumed();
+    }
+    Ok(profile)
 }
 
 fn resolve_profile_curve_path(

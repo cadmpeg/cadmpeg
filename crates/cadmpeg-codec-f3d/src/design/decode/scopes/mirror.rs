@@ -322,6 +322,14 @@ pub(crate) fn bind_mirror_constructions(
         );
         let face_recipe = {
             let records = cached_owned_record_offsets(&mut record_offset_index, &stream, bytes);
+            let next_byte_offset = scopes[index]
+                .reference_members()
+                .values()
+                .position(|candidate| candidate == plane_member)
+                .and_then(|ordinal| scopes[index].reference_members().values().nth(ordinal + 1))
+                .and_then(|record_index| headers_by_record.get(&(stream.as_str(), *record_index)))
+                .map(|next| next.byte_offset)
+                .filter(|next| *next > plane_header.byte_offset);
             parse_face_operand(
                 ctx,
                 bytes,
@@ -330,7 +338,7 @@ pub(crate) fn bind_mirror_constructions(
                     scope: &scopes[index],
                     scope_reference_ordinal: plane_group.scope_reference_ordinal,
                     group_ownership: Some((plane_group.record_index, 0)),
-                    next_byte_offset: None,
+                    next_byte_offset,
                     header: plane_header,
                 },
                 recipes,
