@@ -176,5 +176,7 @@ pub(super) fn with_context<T>(
         ..Default::default()
     };
     let ctx = DecodeContext::for_encode(&arena, &policy);
-    run(&ctx)
+    let result = run(&ctx);
+    ctx.finish_session()?;
+    result
 }
