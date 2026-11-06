@@ -118,6 +118,14 @@ fn neutral_body_material_authors_design_registry() {
         visible: None,
         channels: Default::default(),
     });
+    let mut assignment_only = ir.clone();
+    assignment_only.model.appearances[0].base_color = None;
+    assignment_only.model.appearances[0].schema = None;
+    let (assignment_output, _) = super::source_less_analytic::synthesize_document(&assignment_only, None);
+    assert_eq!(assignment_output.ir().model.appearance_bindings.len(), 1);
+    assert_eq!(assignment_output.ir().model.appearances.len(), 1);
+    assert_eq!(assignment_output.ir().model.appearances[0].base_color, None);
+    assert_eq!(assignment_output.ir().model.appearances[0].physical_token, assignment_only.model.appearances[0].physical_token);
     let source = f3d_with_smbh_and_protein(&synthetic_geometry_smbh());
     let decoded = F3dCodec.decode(&mut Cursor::new(source), &DecodeOptions::default()).unwrap();
     let mut unrelated = f3d_native(decoded.ir()).design_types.iter().find(|kind| {
