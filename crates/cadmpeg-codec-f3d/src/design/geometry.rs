@@ -524,6 +524,7 @@ pub(super) fn arrangement_regions_of_crossing_loop(
     // Boundary uses per entity of each candidate region, with consecutive
     // pieces of one carrier counted once, as the loop lists them.
     let mut candidates = Vec::new();
+    let mut candidate_regions = Vec::new();
     for region in &regions {
         let mut curves = Vec::<&cadmpeg_ir::sketches::SketchEntityId>::new();
         for use_ in &region.boundary {
@@ -538,6 +539,7 @@ pub(super) fn arrangement_regions_of_crossing_loop(
         // candidate; the other faces are still weighed.
         if !region.encloses_island && curves.iter().all(|curve| wanted.contains_key(curve)) {
             candidates.push(curves);
+            candidate_regions.push(region);
         }
     }
     if candidates.len() > MAX_CROSSING_LOOP_CANDIDATES {
@@ -578,22 +580,16 @@ pub(super) fn arrangement_regions_of_crossing_loop(
         }
     }
     let mask = geometric!(chosen);
-    // Candidates are the regions that pass the filter, in region order.
+    // The mask indexes the same filtered candidates the search weighed.
     let mut selected = Vec::new();
-    let mut candidate = 0usize;
-    for region in &regions {
-        let mut curves = region.boundary.iter().map(|use_| &use_.entity);
-        if !curves.all(|curve| wanted.contains_key(curve)) {
-            continue;
-        }
-        if mask >> candidate & 1 == 1 {
+    for (index, region) in candidate_regions.iter().enumerate() {
+        if mask >> index & 1 == 1 {
             selected.push(geometric!(SketchProfileRegion::trimmed(
                 region.boundary.clone(),
                 Vec::new()
             )
             .ok()));
         }
-        candidate += 1;
     }
     Ok(Some(selected))
 }

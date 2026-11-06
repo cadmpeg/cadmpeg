@@ -293,6 +293,67 @@ fn self_crossing_loop_selects_only_the_triangles_its_curves_count_out() {
 }
 
 #[test]
+fn self_crossing_loop_skips_an_island_face_and_keeps_the_candidates_it_weighed() {
+    // A 2 by 2 grid. The loop lists the curves of the lower-left and
+    // upper-right quarters; the upper-left quarter uses the same curves but
+    // encloses an island square, so it is no candidate. Without the island
+    // the upper-left and lower-right quarters would tie with the selection.
+    let id = SketchId::mint("synthetic:test:id#grid-island").unwrap();
+    let entities = vec![
+        test_line(&id, "bottom", (0.0, 0.0), (10.0, 0.0)),
+        test_line(&id, "right", (10.0, 0.0), (10.0, 10.0)),
+        test_line(&id, "top", (10.0, 10.0), (0.0, 10.0)),
+        test_line(&id, "left", (0.0, 10.0), (0.0, 0.0)),
+        test_line(&id, "mid", (0.0, 5.0), (10.0, 5.0)),
+        test_line(&id, "split", (5.0, 0.0), (5.0, 10.0)),
+        test_line(&id, "island-bottom", (1.0, 6.0), (2.0, 6.0)),
+        test_line(&id, "island-right", (2.0, 6.0), (2.0, 7.0)),
+        test_line(&id, "island-top", (2.0, 7.0), (1.0, 7.0)),
+        test_line(&id, "island-left", (1.0, 7.0), (1.0, 6.0)),
+    ];
+    let sketch = plain_sketch(id);
+    let program = curve_ids(
+        &entities,
+        &[
+            "bottom", "split", "mid", "left", "top", "split", "mid", "right",
+        ],
+    );
+    let regions = crossing_split(&sketch, &entities, &program).expect("two diagonal quarters");
+    assert_eq!(regions.len(), 2);
+    let names = |region: &SketchProfileRegion| {
+        let SketchProfileRegion::Trimmed {
+            outer_boundary,
+            hole_boundaries,
+        } = region
+        else {
+            panic!("a trimmed region");
+        };
+        assert!(hole_boundaries.is_empty());
+        let mut names = outer_boundary
+            .iter()
+            .map(|use_| {
+                use_.entity
+                    .as_str()
+                    .trim_start_matches("synthetic:test:id#")
+                    .to_owned()
+            })
+            .collect::<Vec<_>>();
+        names.sort();
+        names.dedup();
+        names
+    };
+    let mut quarters = regions.iter().map(names).collect::<Vec<_>>();
+    quarters.sort();
+    assert_eq!(
+        quarters,
+        [
+            vec!["bottom", "left", "mid", "split"],
+            vec!["mid", "right", "split", "top"],
+        ]
+    );
+}
+
+#[test]
 fn self_crossing_loop_refuses_counts_no_set_of_regions_reaches() {
     let (sketch, entities) = x_braced_window();
     let program = curve_ids(&entities, &["bottom", "fall", "rise", "rise", "fall"]);
