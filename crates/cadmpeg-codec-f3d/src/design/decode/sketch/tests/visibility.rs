@@ -45,6 +45,27 @@ fn sketch_visibility_member_decodes_both_boolean_values() {
 }
 
 #[test]
+fn sketch_visibility_member_accepts_sketch_flag_one() {
+    let mut hidden = member(1, 0);
+    hidden[34] = 1;
+    let hidden = decode_sketch_visibility_member(&hidden, 0, ENTITY_SUFFIX).expect("hidden member");
+    assert!(!hidden.visible);
+
+    let mut visible = member(1, 1);
+    visible[34] = 1;
+    let visible =
+        decode_sketch_visibility_member(&visible, 0, ENTITY_SUFFIX).expect("visible member");
+    assert!(visible.visible);
+}
+
+#[test]
+fn sketch_visibility_member_rejects_invalid_sketch_flag() {
+    let mut bytes = member(1, 0);
+    bytes[34] = 2;
+    assert!(decode_sketch_visibility_member(&bytes, 0, ENTITY_SUFFIX).is_none());
+}
+
+#[test]
 fn sketch_visibility_member_admits_a_null_ordinal_collection() {
     let mut bytes = member(1, 0);
     bytes.truncate(36);

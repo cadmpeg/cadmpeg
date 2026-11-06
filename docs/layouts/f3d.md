@@ -105,7 +105,7 @@ Offsets are relative to the typed Geometry member's indexed header.
 | 15 | 4 | `zero_run` | `bytes[4]` | little | spec | Four zero bytes and one same-segment marked owner reference follow |
 | 19 | 11 | `owner_reference` | `bytes[11]` | little | spec | one same-segment marked owner reference follow |
 | 30 | 4 | `stream_ordinal` | `u32` | little | spec | u32 at member offset 30 |
-| 34 | 1 | `reserved_zero` | `u8` | little | spec | Byte 34 is zero |
+| 34 | 1 | `sketch_flag` | `u8` | little | spec | Byte 34 is a one-byte flag |
 | 35 | 1 | `visible` | `u8` | little | spec | visibility flag is at member offset 35 |
 | 36 | 1 | `tail_marker` | `u8` | little | spec | byte 36 is `01` |
 
