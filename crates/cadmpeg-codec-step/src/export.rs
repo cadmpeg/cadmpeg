@@ -4393,14 +4393,33 @@ impl<'a> Builder<'a> {
         if pcurve.parameter_range.is_some() {
             return None;
         }
-        let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } = &pcurve.geometry else {
-            return None;
+        use cadmpeg_ir::geometry::pcurve::PcurveGeometry;
+        let range = match &pcurve.geometry {
+            PcurveGeometry::Nurbs { nurbs } => {
+                let degree = usize::try_from(nurbs.degree()).ok()?;
+                [
+                    *nurbs.knots().get(degree)?,
+                    *nurbs.knots().get(nurbs.pole_rows().count())?,
+                ]
+            }
+            PcurveGeometry::Circle(circle) => {
+                let x = circle.x_axis().get();
+                let y = circle.y_axis().get();
+                if x.u.hypot(x.v) != 1.0 || y.u != -x.v || y.v != x.u {
+                    return None;
+                }
+                [0.0, std::f64::consts::TAU]
+            }
+            PcurveGeometry::Ellipse(ellipse) => {
+                let x = ellipse.x_axis().get();
+                let y = ellipse.y_axis().get();
+                if x.u.hypot(x.v) != 1.0 || y.u != -x.v || y.v != x.u {
+                    return None;
+                }
+                [0.0, std::f64::consts::TAU]
+            }
+            _ => return None,
         };
-        let degree = usize::try_from(nurbs.degree()).ok()?;
-        let range = [
-            *nurbs.knots().get(degree)?,
-            *nurbs.knots().get(nurbs.pole_rows().count())?,
-        ];
         if range != context.parameter_range().endpoints() {
             return None;
         }
