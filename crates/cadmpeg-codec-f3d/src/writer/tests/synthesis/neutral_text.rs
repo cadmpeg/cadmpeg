@@ -54,6 +54,16 @@ fn neutral_sketch_text_survives_source_less_synthesis() {
         loss.message.contains(id.as_str())
             && loss.code.local_code() == "record.residual-unavailable"
     }));
+    let mut arbitrary_name = ir.clone();
+    arbitrary_name.model.sketches[0].name = Some("Bracket outline".into());
+    let (renamed, report) =
+        super::super::source_less_analytic::synthesize_document(&arbitrary_name, None);
+    assert_eq!(renamed.ir().model.sketch_entities.len(), 1);
+    assert_eq!(renamed.ir().model.sketch_entities[0].geometry, geometry);
+    assert!(report.losses.iter().any(|loss| loss
+        .message
+        .contains(arbitrary_name.model.sketches[0].id.as_str())
+        && loss.message.contains("name")));
     let rotated = SketchGeometry::try_from(SketchGeometryDefinition::Text {
         text: cadmpeg_core::text::NonBlankString::new("Rotated").unwrap(),
         font_family: cadmpeg_core::text::NonBlankString::new("Arial").unwrap(),
