@@ -5245,8 +5245,11 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                                 && group.role() == DesignOperandRole::ROLE_0X10)
                     }) && group.extrude_role().is_none()
                 }
-                None if scope.kind()
-                    == crate::records::feature::scope::DesignFeatureKind::RemoveBody =>
+                None if matches!(
+                    scope.kind(),
+                    crate::records::feature::scope::DesignFeatureKind::RemoveBody
+                        | crate::records::feature::scope::DesignFeatureKind::ReverseNormal
+                ) =>
                 {
                     group.role() == DesignOperandRole::BODIES_A && group.extrude_role().is_none()
                 }
@@ -5303,6 +5306,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                     scope.kind(),
                     crate::records::feature::scope::DesignFeatureKind::Emboss
                         | crate::records::feature::scope::DesignFeatureKind::RemoveBody
+                        | crate::records::feature::scope::DesignFeatureKind::ReverseNormal
                         | crate::records::feature::scope::DesignFeatureKind::SurfaceStitch
                         | crate::records::feature::scope::DesignFeatureKind::SplitFace
                         | crate::records::feature::scope::DesignFeatureKind::MoveFace

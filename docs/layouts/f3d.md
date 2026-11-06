@@ -8879,6 +8879,40 @@ Unstated regions:
 - `423..450` (27 B): Common scope-tail lanes before the preceding-history identity.
 - `454..496` (42 B): Common scope-tail lanes after the preceding-history identity.
 
+## `reverse_normal_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 115 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/reverse_normal.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The compact Reverse Normal prefix |
+| 11 | 10 | `zero_run` | `bytes[10]` | little | spec | The compact Reverse Normal prefix |
+| 21 | 4 | `group_count` | `u32` | little | spec | The compact Reverse Normal prefix · value `1` |
+| 25 | 11 | `group_reference` | `bytes[11]` | little | spec | The compact Reverse Normal prefix |
+| 36 | 76 | `null_guid` | `bytes[76]` | little | spec | The compact Reverse Normal prefix |
+| 112 | 3 | `zero_tail` | `bytes[3]` | little | spec | The compact Reverse Normal prefix |
+
+## `shifted_reverse_normal_prefix`
+
+Spec §3.1 · layout: byte offsets · size: 119 B
+
+Parsed by:
+- `crates/cadmpeg-codec-f3d/src/design/decode/scopes/reverse_normal.rs`
+
+| Offset | Size | Field | Type | Endian | Src | Meaning |
+| -----: | ---: | ----- | ---- | ------ | --- | ------- |
+| 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | The shifted Reverse Normal prefix |
+| 11 | 9 | `zero_run` | `bytes[9]` | little | spec | The shifted Reverse Normal prefix |
+| 20 | 1 | `shift_marker` | `u8` | little | spec | The shifted Reverse Normal prefix · value `1` |
+| 21 | 4 | `zero_run_after_marker` | `bytes[4]` | little | spec | The shifted Reverse Normal prefix |
+| 25 | 4 | `group_count` | `u32` | little | derived | Compact-prefix offset plus the four-byte forward shift that the specification states. · value `1` |
+| 29 | 11 | `group_reference` | `bytes[11]` | little | derived | Compact-prefix offset plus the four-byte forward shift that the specification states. |
+| 40 | 76 | `null_guid` | `bytes[76]` | little | derived | Compact-prefix offset plus the four-byte forward shift that the specification states. |
+| 116 | 3 | `zero_tail` | `bytes[3]` | little | derived | Compact-prefix offset plus the four-byte forward shift that the specification states. |
+
 ## Not tabulated
 
 | Area | Spec | Reason |

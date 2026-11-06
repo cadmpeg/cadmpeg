@@ -2202,8 +2202,10 @@ pub(crate) fn bind_feature_body_selections(
                 }
                 break 'feature_edit;
             }
-            if let FeatureDefinition::Operation(FeatureOperation::DeleteBody { bodies, .. }) =
-                definition
+            if let FeatureDefinition::Operation(
+                FeatureOperation::DeleteBody { bodies, .. }
+                | FeatureOperation::ReverseShape { source: bodies },
+            ) = definition
             {
                 if let Some(previous_state_id) = scope.previous_history_state_id() {
                     bind_body_recipe_body_selection(

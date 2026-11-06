@@ -8603,3 +8603,49 @@ pub(crate) mod class_349_two_sided_through_all_extrude_frame {
     #[cfg(test)]
     pub(crate) const PREVIOUS_HISTORY_STATE: usize = 450;
 }
+
+/// Byte offsets for the `reverse_normal_prefix` record.
+///
+/// Spec §3.1. Record length 115 B.
+pub(crate) mod reverse_normal_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 115;
+    /// Offset of `zero_run` (`bytes[10]`). Spec §3.1.
+    pub(crate) const ZERO_RUN: usize = 11;
+    /// Offset of `group_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const GROUP_COUNT: usize = 21;
+    /// Stated value of `group_count` (`u32`). Spec §3.1.
+    pub(crate) const GROUP_COUNT_VALUE: u32 = 0x0000_0001;
+    /// Offset of `group_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const GROUP_REFERENCE: usize = 25;
+    /// Offset of `null_guid` (`bytes[76]`). Spec §3.1.
+    pub(crate) const NULL_GUID: usize = 36;
+    /// Offset of `zero_tail` (`bytes[3]`). Spec §3.1.
+    pub(crate) const ZERO_TAIL: usize = 112;
+}
+
+/// Byte offsets for the `shifted_reverse_normal_prefix` record.
+///
+/// Spec §3.1. Record length 119 B.
+pub(crate) mod shifted_reverse_normal_prefix {
+    /// Record length in bytes. Spec §3.1.
+    pub(crate) const LEN: usize = 119;
+    /// Offset of `zero_run` (`bytes[9]`). Spec §3.1.
+    pub(crate) const ZERO_RUN: usize = 11;
+    /// Offset of `shift_marker` (`u8`). Spec §3.1.
+    pub(crate) const SHIFT_MARKER: usize = 20;
+    /// Stated value of `shift_marker` (`u8`). Spec §3.1.
+    pub(crate) const SHIFT_MARKER_VALUE: u8 = 1;
+    /// Offset of `zero_run_after_marker` (`bytes[4]`). Spec §3.1.
+    pub(crate) const ZERO_RUN_AFTER_MARKER: usize = 21;
+    /// Offset of `group_count` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const GROUP_COUNT: usize = 25;
+    /// Stated value of `group_count` (`u32`). Spec §3.1.
+    pub(crate) const GROUP_COUNT_VALUE: u32 = 0x0000_0001;
+    /// Offset of `group_reference` (`bytes[11]`). Spec §3.1.
+    pub(crate) const GROUP_REFERENCE: usize = 29;
+    /// Offset of `null_guid` (`bytes[76]`). Spec §3.1.
+    pub(crate) const NULL_GUID: usize = 40;
+    /// Offset of `zero_tail` (`bytes[3]`). Spec §3.1.
+    pub(crate) const ZERO_TAIL: usize = 116;
+}

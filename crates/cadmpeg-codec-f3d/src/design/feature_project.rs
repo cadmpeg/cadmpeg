@@ -55,6 +55,7 @@ use std::hash::Hash;
 
 pub(crate) mod form_cages;
 mod paste_copy;
+mod reverse_normal;
 
 /// Millimetres per Design length unit (the Design stream stores centimetres).
 const DESIGN_LENGTH_TO_MILLIMETRE: f64 = 10.0;
@@ -1251,6 +1252,16 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                                 parameters: BTreeMap::new(),
                             })
                         })
+                    } else if scope.kind()
+                        == crate::records::feature::scope::DesignFeatureKind::ReverseNormal
+                    {
+                        reverse_normal::project_reverse_normal(scope, construction_groups)
+                            .unwrap_or_else(|| {
+                                FeatureDefinition::Operation(FeatureOperation::Native {
+                                    kind: scope.kind_name().into(),
+                                    parameters: BTreeMap::new(),
+                                })
+                            })
                     } else if scope.kind()
                         == crate::records::feature::scope::DesignFeatureKind::SurfaceStitch
                     {

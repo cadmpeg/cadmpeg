@@ -141,6 +141,10 @@ const FAMILIES: &[(&str, DesignFeatureKind)] = &[
         DesignFeatureKind::RemoveBody,
     ),
     (
+        "693D6578-4BCE-44F8-B15A-2CE5162A23EE",
+        DesignFeatureKind::ReverseNormal,
+    ),
+    (
         "E3849A15-2FC6-42A0-AF3A-2F1D7273B406",
         DesignFeatureKind::Revolve,
     ),
