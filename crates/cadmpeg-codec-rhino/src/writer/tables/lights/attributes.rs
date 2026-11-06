@@ -137,6 +137,30 @@ fn material_index(
     }
 }
 
+fn group_index(ir: &cadmpeg_ir::CadIr, source: i32) -> Result<i32, WriteError> {
+    let records = super::records(ir, "groups");
+    let mut matching = records.iter().filter(|record| {
+        record
+            .field("archive_index")
+            .and_then(|value| value.as_i64())
+            == Some(i64::from(source))
+    });
+    let record = matching
+        .next()
+        .ok_or_else(|| WriteError::Omit(format!("light group index {source} is unresolved")))?;
+    if matching.next().is_some() {
+        return Err(WriteError::Omit(format!(
+            "light group index {source} is ambiguous"
+        )));
+    }
+    let index = records
+        .iter()
+        .filter(|record| super::super::native::group_resolves(ir, record))
+        .position(|candidate| candidate.id() == record.id())
+        .ok_or_else(|| WriteError::Omit(format!("light group index {source} is not emitted")))?;
+    Ok(super::wire_index(index)?)
+}
+
 pub(super) fn encode(
     value: &Value,
     ir: &cadmpeg_ir::CadIr,
@@ -196,7 +220,6 @@ pub(super) fn encode(
         )));
     }
     for name in [
-        "group_indexes",
         "rendering_materials",
         "rendering_mappings",
         "user_strings",
@@ -240,6 +263,21 @@ pub(super) fn encode(
     let written_material = material_index(ir, materials, source_material)?;
     let source_linetype = integer(fields, "linetype_index")?;
     let written_linetype = linetype_index(ir, source_linetype)?;
+    let source_groups = field(fields, "group_indexes")?
+        .as_array()
+        .ok_or_else(|| WriteError::Omit("light attribute group_indexes must be a list".into()))?
+        .iter()
+        .map(|value| {
+            value
+                .as_i64()
+                .and_then(|value| i32::try_from(value).ok())
+                .ok_or_else(|| WriteError::Omit("light group index must fit i32".into()))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let written_groups = source_groups
+        .iter()
+        .map(|index| group_index(ir, *index))
+        .collect::<Result<Vec<_>, _>>()?;
     let mut body = vec![0x2d];
     body.extend(id.to_wire());
     body.extend(written_layer.to_le_bytes());
@@ -275,10 +313,17 @@ pub(super) fn encode(
         (15, "plot_weight_source"),
         (16, "material_source"),
         (17, "linetype_source"),
-        (19, "active_space"),
     ] {
         body.extend([tag, byte(fields, name)?]);
     }
+    if !written_groups.is_empty() {
+        body.push(18);
+        body.extend(super::wire_index(written_groups.len())?.to_le_bytes());
+        for index in &written_groups {
+            body.extend(index.to_le_bytes());
+        }
+    }
+    body.extend([19, byte(fields, "active_space")?]);
     if let Some(value) = fields.get("viewport_uuid").filter(|value| !value.is_null()) {
         let id = value
             .as_str()
@@ -404,6 +449,11 @@ pub(super) fn encode(
         changes.push(format!(
             "linetype index {source_linetype} is written as {written_linetype}"
         ));
+    }
+    for (source, written) in source_groups.iter().zip(&written_groups) {
+        if source != written {
+            changes.push(format!("group index {source} is written as {written}"));
+        }
     }
     let change = (!changes.is_empty()).then(|| changes.join(", "));
     Ok((body, change))
