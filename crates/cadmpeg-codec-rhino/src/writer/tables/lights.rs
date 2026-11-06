@@ -58,7 +58,27 @@ pub(in crate::writer) fn lights(ir: &CadIr) -> Result<LightExport, WriteError> {
         match light(record, output.records.len()) {
             Ok((payload, reassigned)) => {
                 output.records.push(payload);
-                output.written.insert(record.id().to_owned());
+                let attributes = record
+                    .field("attributes")
+                    .is_some_and(|value| !value.is_null());
+                let links = record.field("links").is_some_and(|value| {
+                    !value.is_null() && value.as_array().is_none_or(|links| !links.is_empty())
+                });
+                if attributes || links {
+                    let omitted = if attributes && links {
+                        "attributes and links"
+                    } else if attributes {
+                        "attributes"
+                    } else {
+                        "links"
+                    };
+                    output.losses.push(
+                        RhinoLossCode::WriterAttributesOmitted
+                            .note(format!("light {} {omitted} omitted", record.id())),
+                    );
+                } else {
+                    output.written.insert(record.id().to_owned());
+                }
                 if let Some((source, written)) = reassigned {
                     output
                         .losses
@@ -205,7 +225,13 @@ mod tests {
                 .insert(name.to_owned(), value);
             records.push(record(&format!("rhino:test:light#invalid-{name}"), invalid));
         }
+        let mut partial = valid.clone();
+        partial["source_uuid"] = json!("22222222-2222-2222-2222-222222222222");
+        partial["name"] = json!("light with attributes");
+        partial["attributes"] = json!({"name": "held attribute"});
+        partial["links"] = json!(["rhino:document:layer#linked"]);
         records.push(record("rhino:test:light#valid", valid));
+        records.push(record("rhino:test:light#z-partial", partial));
         let mut ir = CadIr::empty();
         ir.native
             .namespace_mut("rhino")
@@ -253,6 +279,19 @@ mod tests {
             loss.code == crate::loss::RhinoLossCode::WriterLightIndexReassigned.kind()
                 && loss.message.contains("rhino:test:light#valid")
         }));
+        assert_eq!(
+            report.native_dispositions.record_disposition(
+                "rhino",
+                "lights",
+                "rhino:test:light#z-partial"
+            ),
+            cadmpeg_ir::codec::write::NativeDisposition::Dropped
+        );
+        assert!(report.losses.iter().any(|loss| {
+            loss.code == crate::loss::RhinoLossCode::WriterAttributesOmitted.kind()
+                && loss.message.contains("rhino:test:light#z-partial")
+                && loss.message.contains("attributes and links")
+        }));
         let decoded = crate::RhinoCodec
             .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
             .expect("decode surviving light");
@@ -262,7 +301,7 @@ mod tests {
             .namespace("rhino")
             .expect("rhino")
             .arenas()["lights"];
-        assert_eq!(lights.len(), 1);
+        assert_eq!(lights.len(), 2);
         assert_eq!(lights[0].field("name"), Some(json!("valid light")));
         assert_eq!(lights[0].field("archive_index"), Some(json!(0)));
     }
