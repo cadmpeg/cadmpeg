@@ -40,6 +40,88 @@ fn named_constraint_recipe_bindings() {
                     }
                 })
                 .expect("dependency parameter");
+            if recipe == "N10a" {
+                assert!(result.ir().model.spreadsheets.is_empty());
+                assert!(!parameters
+                    .iter()
+                    .any(|parameter| parameter.properties.contains_key("address")));
+            } else {
+                let (sheet_name, label, alias, width) = if recipe == "P12a" {
+                    ("Parameters", "plate_w", "plate_w", 20.0)
+                } else {
+                    ("Dimensions", "width", "w", 30.0)
+                };
+                let sheet_feature = result
+                    .ir()
+                    .model
+                    .features
+                    .iter()
+                    .find(|feature| feature.name.as_deref() == Some(sheet_name))
+                    .expect("authored parameter sheet feature");
+                let sheet = result
+                    .ir()
+                    .model
+                    .spreadsheets
+                    .iter()
+                    .find(|sheet| sheet.feature == sheet_feature.id)
+                    .expect("authored parameter sheet");
+                assert_eq!(sheet.cells().len(), 2, "{version} {recipe}");
+                assert_eq!(sheet.cells()[0].address.a1(), "A1", "{version} {recipe}");
+                assert_eq!(sheet.cells()[1].address.a1(), "B1", "{version} {recipe}");
+                assert_eq!(
+                    parameters
+                        .iter()
+                        .filter(|parameter| parameter.properties.contains_key("address"))
+                        .count(),
+                    2,
+                    "{version} {recipe}"
+                );
+
+                let label_cell = parameters
+                    .iter()
+                    .find(|parameter| {
+                        parameter.properties.get("address").map(String::as_str) == Some("A1")
+                    })
+                    .expect("authored label cell");
+                assert_eq!(label_cell.name, "A1", "{version} {recipe}");
+                assert_eq!(
+                    label_cell.expression,
+                    format!("'{label}"),
+                    "{version} {recipe}"
+                );
+                assert_eq!(
+                    label_cell.value,
+                    Some(cadmpeg_ir::features::ParameterValue::String(
+                        label.to_owned()
+                    )),
+                    "{version} {recipe}"
+                );
+                assert_eq!(
+                    sheet.cells()[0].parameter,
+                    label_cell.id,
+                    "{version} {recipe}"
+                );
+
+                assert_eq!(
+                    dependency.properties.get("address").map(String::as_str),
+                    Some("B1")
+                );
+                assert_eq!(
+                    dependency.properties.get("alias").map(String::as_str),
+                    Some(alias)
+                );
+                assert_eq!(dependency.expression, format!("={width} mm"));
+                let Some(cadmpeg_ir::features::ParameterValue::Length(value)) = &dependency.value
+                else {
+                    panic!("{version} {recipe}: authored spreadsheet value")
+                };
+                assert_eq!(value.get(), width, "{version} {recipe}");
+                assert_eq!(
+                    sheet.cells()[1].parameter,
+                    dependency.id,
+                    "{version} {recipe}"
+                );
+            }
             assert_eq!(
                 parameter.dependencies.iter().collect::<Vec<_>>(),
                 vec![&dependency.id],
@@ -181,7 +263,9 @@ fn named_constraint_recipe_profiles_constraints_and_body_measures() {
         BooleanOp, ExtrudeExtent, FeatureDefinition, FeatureOperation, LinearTermination,
         ParameterValue, PlanarProfileRef, ProfileRef,
     };
-    use cadmpeg_ir::sketches::{SketchConstraintDefinitionInput, SketchGeometryDefinition};
+    use cadmpeg_ir::sketches::{
+        SketchConstraintDefinitionInput, SketchGeometryDefinition, SketchLocus,
+    };
     use cadmpeg_measure::test_support::round_trip::measured;
 
     const LENGTH_TOLERANCE: f64 = 1.0e-12;
@@ -254,6 +338,98 @@ fn named_constraint_recipe_profiles_constraints_and_body_measures() {
                 .filter(|constraint| constraint.sketch == sketch.id)
                 .collect::<Vec<_>>();
             assert_eq!(constraints.len(), 11, "{label}");
+
+            let root_point = model
+                .sketch_entities
+                .iter()
+                .find(|entity| {
+                    entity.sketch == sketch.id
+                        && entity.id().as_str().ends_with(":reference-root-point")
+                })
+                .expect("native origin reference point");
+            let horizontal = constraints
+                .iter()
+                .filter_map(|constraint| match constraint.definition.kind() {
+                    SketchConstraintDefinitionInput::Horizontal { entity } => Some(entity.clone()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(
+                horizontal,
+                vec![lines[0].id().clone(), lines[2].id().clone()],
+                "{label}: horizontal line loci"
+            );
+            let vertical = constraints
+                .iter()
+                .filter_map(|constraint| match constraint.definition.kind() {
+                    SketchConstraintDefinitionInput::Vertical { entity } => Some(entity.clone()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(
+                vertical,
+                vec![lines[1].id().clone(), lines[3].id().clone()],
+                "{label}: vertical line loci"
+            );
+
+            let mut expected_coincidences = vec![
+                vec![
+                    SketchLocus::End(lines[0].id().clone()),
+                    SketchLocus::Start(lines[1].id().clone()),
+                ],
+                vec![
+                    SketchLocus::End(lines[1].id().clone()),
+                    SketchLocus::Start(lines[2].id().clone()),
+                ],
+                vec![
+                    SketchLocus::End(lines[2].id().clone()),
+                    SketchLocus::Start(lines[3].id().clone()),
+                ],
+                vec![
+                    SketchLocus::End(lines[3].id().clone()),
+                    SketchLocus::Start(lines[0].id().clone()),
+                ],
+            ];
+            if recipe != "P12a" {
+                expected_coincidences.push(vec![
+                    SketchLocus::Start(lines[0].id().clone()),
+                    SketchLocus::Entity(root_point.id().clone()),
+                ]);
+            }
+            let coincidences = constraints
+                .iter()
+                .filter_map(|constraint| match constraint.definition.kind() {
+                    SketchConstraintDefinitionInput::CoincidentLoci { loci } => Some(loci.clone()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(
+                coincidences, expected_coincidences,
+                "{label}: coincidence loci"
+            );
+
+            let symmetries = constraints
+                .iter()
+                .filter_map(|constraint| match constraint.definition.kind() {
+                    SketchConstraintDefinitionInput::PointSymmetric {
+                        first,
+                        second,
+                        center,
+                    } => Some((first.clone(), second.clone(), center.clone())),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            let expected_symmetries = if recipe == "P12a" {
+                vec![(
+                    SketchLocus::Start(lines[0].id().clone()),
+                    SketchLocus::Start(lines[2].id().clone()),
+                    SketchLocus::Entity(root_point.id().clone()),
+                )]
+            } else {
+                Vec::new()
+            };
+            assert_eq!(symmetries, expected_symmetries, "{label}: symmetry loci");
+
             for (kind, expected_count) in [
                 ("horizontal", 2),
                 ("vertical", 2),
