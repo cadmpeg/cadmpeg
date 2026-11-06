@@ -2780,8 +2780,9 @@ impl<'a> F3dDecodeSession<'a> {
         path: SessionPath,
         prereqs: &prereqs::ProductPrereqs,
     ) -> Result<FinalizePath, CodecError> {
-        let scan = self.scan;
         use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput, PartSpec};
+
+        let scan = self.scan;
 
         let mut parts = PartOutput::new(cadmpeg_ir::CodecFormat::F3d, self.ctx);
         let mut act = crate::act::DecodedAct::default();
