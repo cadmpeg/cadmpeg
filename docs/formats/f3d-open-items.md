@@ -146,13 +146,13 @@ The class-290 primary paired with class-261 uses the same six-byte fields on its
 
 **Question.** Which native carrier stores the editable `Pipe` section type? What sets the origin and orientation of a partially consumed path, and does a `Pipe` whose forward and reverse fractions both equal one sweep its whole path group when its section lies inside the path?
 
-**Known.** `f3d.md` defines the compact and legacy operation prefixes, the independent `isHollow` Boolean, the four canonical scalar owners, the settings record, the complete construction groups, the optional point-selection pair, and the outside-size and inward-thickness conventions. The two bytes after the operation are opaque. Square hollow, circular hollow, and triangular solid sections can share that pair. Forward and reverse path fractions remain exact native values. The point-selection pair does not establish a path origin. The decoder reads a new-body `Pipe` whose result faces fit a circle and whose fractions both equal one as a circular section swept along its whole path group.
+**Known.** `f3d.md` defines the compact and legacy operation prefixes, the independent `isHollow` Boolean, the four canonical scalar owners, the settings record, the complete construction groups, the optional point-selection pair, and the outside-size and inward-thickness conventions. The two bytes after the operation are opaque. Square hollow, circular hollow, and triangular solid sections can share that pair. Forward and reverse path fractions remain exact native values. The point-selection pair does not establish a path origin. The decoder reads a new-body `Pipe` as a circular section swept along its whole path group when its result bodies are solids that no later feature changes, every face of them lies on a plane, on a cylinder whose radius is the outside radius or, for a hollow section, the inner radius, or on a torus whose minor radius is one of those radii, the faces include at least one curved face of each radius, and the forward and reverse fractions both equal one. It reports `feature.pipe-circular-section-inferred` and `feature.pipe-whole-path-extent-assumed`.
 
 **Need.** Independently authored section-type changes must hold the path, fractions, hollow state, size, and thickness fixed and identify the changing semantic carrier through its type registration and owner links. Partial-path reconstruction needs the native path parameter origin and orientation. A `Pipe` with fractions of one whose section lies inside a multi-edge path, saved with its result body, shows which part of the path it sweeps.
 
 **Conflict.** None.
 
-**Note.** The decoder reports `feature.pipe-circular-section-inferred` and `feature.pipe-whole-path-extent-assumed`.
+**Note.** None.
 
 ### DR-61. Cross-document selection stamp and evaluation scalar
 
