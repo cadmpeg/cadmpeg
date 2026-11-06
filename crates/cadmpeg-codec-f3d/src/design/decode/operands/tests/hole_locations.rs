@@ -70,6 +70,7 @@ fn sketch_point(stream: &str, record_index: u32, owner: u32, persistent_id: u64)
         id: format!("{stream}:sketch-point#{record_index}"),
         record_index,
         owner_reference: Some(owner),
+        geometry_group: None,
         class_tag: crate::records::references::DesignClassTag::try_from("256".to_owned()).unwrap(),
         byte_offset: u64::from(record_index),
         coordinate_offset: 141,

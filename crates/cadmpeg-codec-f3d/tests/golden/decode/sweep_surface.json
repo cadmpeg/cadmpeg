@@ -716,6 +716,7 @@
         "persistent_subentity_tags": [],
         "sketch_curve_identities": [],
         "sketch_curve_links": [],
+        "sketch_geometry_groups": [],
         "sketch_points": [],
         "sketch_relations": [],
         "sketch_surfaces": [],
