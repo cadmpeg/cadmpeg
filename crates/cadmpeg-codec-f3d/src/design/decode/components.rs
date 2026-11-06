@@ -168,18 +168,9 @@ fn admitted_stream_occurrences(
         .iter()
         .filter_map(unproven_identity_loss)
         .collect::<Vec<_>>();
-    let decoded = occurrences
-        .iter()
-        .chain(&unproven)
-        .map(occurrence_key)
-        .collect::<std::collections::BTreeSet<_>>();
-    let unreadable_registered = typed_primary.difference(&decoded).count();
     let superseded = admit_occurrence_envelopes(&mut occurrences, primary, typed_primary);
-    losses.extend(yield_to_registered(
-        &mut occurrences,
-        &unproven,
-        typed_primary,
-    ));
+    losses.extend(drop_class_256_first_matrices(&mut occurrences));
+    losses.extend(yield_to_registered(&mut occurrences, typed_primary));
     losses.extend(drop_repeated_occurrence_keys(&mut occurrences));
     // A readable frame projects even when its source registration
     // disagrees; the loss names that assumption.
@@ -188,11 +179,7 @@ fn admitted_stream_occurrences(
             .iter()
             .filter_map(|occurrence| unregistered_source_loss(occurrence, source_entities)),
     );
-    losses.extend(unregistered_leading_flag_loss(
-        &occurrences,
-        typed_primary,
-        unreadable_registered,
-    ));
+    losses.extend(unregistered_leading_flag_loss(&occurrences, typed_primary));
     AdmittedOccurrences {
         occurrences,
         losses,
@@ -457,13 +444,33 @@ fn admit_occurrence_envelopes(
     before - occurrences.len()
 }
 
+/// Drop every frame that a class-256 carrier stores with a matrix at ordinal
+/// one.
+fn drop_class_256_first_matrices(
+    occurrences: &mut Vec<DesignComponentOccurrence>,
+) -> Option<cadmpeg_ir::report::loss::LossNote> {
+    let mut dropped = Vec::new();
+    occurrences.retain(|occurrence| {
+        let refused = occurrence.is_class_256_first_matrix();
+        if refused {
+            dropped.push(occurrence.id.clone());
+        }
+        !refused
+    });
+    (!dropped.is_empty()).then(|| {
+        crate::loss::F3dLossCode::LocalOccurrenceFirstMatrixRefused.note(format!(
+            "{} class-256 local component-occurrence frame(s) store a matrix at ordinal one, and a class-256 carrier places a matrix only after its first occurrence, so none of them is an occurrence: {}.",
+            dropped.len(),
+            dropped.join(", ")
+        ))
+    })
+}
+
 /// Drop the admitted frames that the occurrence-placement type row does not
-/// register when a registered frame states the same occurrence. A registered
-/// identity frame with an unresolved ordinal still states its occurrence.
+/// register when a registered admitted frame states the same occurrence.
 /// Occurrence GUIDs compare without case.
 fn yield_to_registered(
     occurrences: &mut Vec<DesignComponentOccurrence>,
-    unproven: &[DesignComponentOccurrence],
     typed_primary: &std::collections::BTreeSet<(u64, u64)>,
 ) -> Option<cadmpeg_ir::report::loss::LossNote> {
     let guid = |occurrence: &DesignComponentOccurrence| {
@@ -471,7 +478,6 @@ fn yield_to_registered(
     };
     let registered = occurrences
         .iter()
-        .chain(unproven)
         .filter(|occurrence| typed_primary.contains(&occurrence_key(occurrence)))
         .map(guid)
         .collect::<std::collections::BTreeSet<_>>();
@@ -527,7 +533,6 @@ fn drop_repeated_occurrence_keys(
 fn unregistered_leading_flag_loss(
     occurrences: &[DesignComponentOccurrence],
     typed_primary: &std::collections::BTreeSet<(u64, u64)>,
-    unreadable_registered: usize,
 ) -> Option<cadmpeg_ir::report::loss::LossNote> {
     let unregistered = occurrences
         .iter()
@@ -536,16 +541,9 @@ fn unregistered_leading_flag_loss(
         })
         .map(|occurrence| occurrence.id.as_str())
         .collect::<Vec<_>>();
-    let unreadable = if unreadable_registered == 0 {
-        String::new()
-    } else {
-        format!(
-            "; {unreadable_registered} record(s) that the row registers in this Design stream decode no occurrence"
-        )
-    };
     (!unregistered.is_empty()).then(|| {
         crate::loss::F3dLossCode::LocalOccurrenceTypeUnregistered.note(format!(
-            "{} leading-flag local component-occurrence frame(s) are read as occurrences although the occurrence-placement type row does not register their record{unreadable}: {}.",
+            "{} leading-flag local component-occurrence frame(s) are read as occurrences although the occurrence-placement type row does not register their record: {}.",
             unregistered.len(),
             unregistered.join(", ")
         ))
@@ -776,7 +774,7 @@ fn leading_flag_component_occurrence(
             DesignComponentOccurrencePlacement::Identity { ordinal },
             None,
         ),
-        0 if class_tag != "256" || ordinal.get() > 1 => {
+        0 => {
             let transform =
                 super::scopes::shared_frames::rigid_transform_at(frame, leading_prefix::LEN)?;
             let matrix = frame.get(leading_prefix::LEN..leading_prefix::LEN + MATRIX_BYTES)?;

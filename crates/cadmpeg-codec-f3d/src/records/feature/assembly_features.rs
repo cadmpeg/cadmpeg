@@ -449,6 +449,17 @@ impl DesignComponentOccurrence {
         })
     }
 
+    /// Whether a class-256 carrier stores this matrix frame at ordinal one. A
+    /// class-256 carrier places a matrix only after its first occurrence;
+    /// every other carrier class can place ordinal one.
+    pub(crate) fn is_class_256_first_matrix(&self) -> bool {
+        self.class_tag.as_str() == "256"
+            && matches!(
+                self.placement,
+                DesignComponentOccurrencePlacement::Explicit { ordinal, .. } if ordinal.get() == 1
+            )
+    }
+
     pub(crate) fn has_unresolved_identity_ordinal(&self) -> bool {
         matches!(
             self.frame,

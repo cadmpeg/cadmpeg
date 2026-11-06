@@ -257,6 +257,7 @@ fn codes(losses: &[cadmpeg_ir::report::loss::LossNote]) -> Vec<crate::loss::F3dL
         F3dLossCode::LocalOccurrenceTypeUnregistered,
         F3dLossCode::LocalOccurrenceYieldedToRegistered,
         F3dLossCode::LocalOccurrenceKeyRepeated,
+        F3dLossCode::LocalOccurrenceFirstMatrixRefused,
         F3dLossCode::LocalOccurrenceIdentityOrdinalUnresolved,
     ]
     .into_iter()
@@ -264,7 +265,7 @@ fn codes(losses: &[cadmpeg_ir::report::loss::LossNote]) -> Vec<crate::loss::F3dL
     .collect()
 }
 
-/// Two frames of one occurrence: entity 253 at offset 0 and entity 254 after it.
+/// `first` at offset 0 and `second` after it, with the offset of `second`.
 fn two_frames(first: Vec<u8>, second: &[u8]) -> (Vec<u8>, u64) {
     let mut bytes = first;
     let second_offset = u64::try_from(bytes.len()).unwrap();
@@ -313,11 +314,12 @@ fn an_occurrence_with_a_registered_and_an_unregistered_frame_takes_the_registere
     unproven[46..50].copy_from_slice(&2_u32.to_le_bytes());
     let (bytes, _) = two_frames(unproven, &unregistered);
     let (occurrences, losses, _) = discover(&bytes, &meta);
-    assert!(occurrences.is_empty());
+    assert_eq!(occurrences.len(), 1);
+    assert_eq!(occurrences[0].record_index, 254);
     assert_eq!(
         codes(&losses),
         [
-            F3dLossCode::LocalOccurrenceYieldedToRegistered,
+            F3dLossCode::LocalOccurrenceTypeUnregistered,
             F3dLossCode::LocalOccurrenceIdentityOrdinalUnresolved
         ]
     );
@@ -360,41 +362,40 @@ fn a_leading_flag_frame_is_read_only_at_a_primary_record_start() {
     header(&mut spanning, b"300", 300);
     let mut inside = frame(false);
     header(&mut inside, b"257", 253);
+    indexed_header(&mut inside, *b"300", 999);
     let (bytes, _) = two_frames(spanning, &inside);
-    let (occurrences, losses, _) = discover(&bytes, &registered(&[(OWNER_TYPE, 300, 0)]));
+    let (occurrences, losses, superseded) = discover(&bytes, &registered(&[(OWNER_TYPE, 300, 0)]));
     assert!(occurrences.is_empty());
     assert!(losses.is_empty());
+    assert_eq!(superseded, 0);
 }
 
 #[test]
 fn a_class_256_leading_flag_frame_stores_a_matrix_only_after_ordinal_one() {
+    use crate::loss::F3dLossCode;
+    let placement = registered(&[(super::super::OCCURRENCE_PLACEMENT_TYPE_GUID, 253, 0)]);
     let mut first = frame(true);
     header(&mut first, b"256", 253);
-    assert!(parse(&first).is_none());
+    let (occurrences, losses, superseded) = discover(&first, &placement);
+    assert!(occurrences.is_empty());
+    assert_eq!(superseded, 0);
+    assert_eq!(
+        codes(&losses),
+        [F3dLossCode::LocalOccurrenceFirstMatrixRefused]
+    );
+    assert!(losses[0].message.contains("#0."));
+
     let mut later = first.clone();
     later[46..50].copy_from_slice(&2_u32.to_le_bytes());
-    assert!(parse(&later).is_some());
+    let (occurrences, losses, _) = discover(&later, &placement);
+    assert_eq!(occurrences.len(), 1);
+    assert!(losses.is_empty());
+
     let mut identity = frame(false);
     header(&mut identity, b"256", 253);
-    assert!(parse(&identity).is_some());
-}
-
-#[test]
-fn the_registration_loss_counts_registered_records_that_decode_no_occurrence() {
-    let mut unreadable = vec![0_u8; 40];
-    unreadable[0..4].copy_from_slice(&3_u32.to_le_bytes());
-    header(&mut unreadable, b"256", 253);
-    let mut unregistered = frame(false);
-    header(&mut unregistered, b"257", 254);
-    let (bytes, second) = two_frames(unreadable, &unregistered);
-    let meta = registered(&[
-        (super::super::OCCURRENCE_PLACEMENT_TYPE_GUID, 253, 0),
-        (OWNER_TYPE, 254, second),
-    ]);
-    let (occurrences, losses, _) = discover(&bytes, &meta);
+    let (occurrences, losses, _) = discover(&identity, &placement);
     assert_eq!(occurrences.len(), 1);
-    assert_eq!(losses.len(), 1);
-    assert!(losses[0]
-        .message
-        .contains("1 record(s) that the row registers in this Design stream decode no occurrence"));
+    assert!(losses.is_empty());
+
+    assert!(!parse(&frame(true)).unwrap().is_class_256_first_matrix());
 }
