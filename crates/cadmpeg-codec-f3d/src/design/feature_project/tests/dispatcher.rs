@@ -456,7 +456,7 @@ fn dispatcher_projects_work_point_plane_construction_and_dependencies() {
 }
 
 #[test]
-fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
+fn dispatcher_projects_work_point_historical_vertex_without_inferred_dependency() {
     use crate::records::feature::work_geometry::{
         DesignVertexRecipe, DesignWorkPointConstruction, DesignWorkPointInput,
         DesignWorkPointInputCarrier,
@@ -596,7 +596,8 @@ fn dispatcher_projects_work_point_historical_vertex_and_dependency() {
     assert_eq!(state, &crate::ids::feature_input_topology_id(&point.id, 4));
     assert_eq!(vertex, &crate::ids::history_input_vertex_id(&prefix, 43));
     assert_eq!(native.as_str(), &recipe_id);
-    assert_eq!(point.dependencies.as_slice(), [predecessor.id.clone()]);
+    assert_ne!(point.id, predecessor.id);
+    assert!(point.dependencies.is_empty());
 }
 
 #[test]
