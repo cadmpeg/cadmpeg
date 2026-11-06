@@ -130,6 +130,36 @@ pub(crate) const REDUCED_FIELDS: &[cadmpeg_ir::codec::write::ReducedField] = &[
     },
 ];
 
+#[derive(Debug)]
+enum PatchError {
+    Declined(String),
+    Codec(CodecError),
+}
+
+impl From<CodecError> for PatchError {
+    fn from(error: CodecError) -> Self {
+        Self::Codec(error)
+    }
+}
+
+impl From<cadmpeg_ir::native::NativeConvertError> for PatchError {
+    fn from(error: cadmpeg_ir::native::NativeConvertError) -> Self {
+        Self::Codec(error.into())
+    }
+}
+
+impl From<cadmpeg_core::decode::ResourceLimit> for PatchError {
+    fn from(error: cadmpeg_core::decode::ResourceLimit) -> Self {
+        Self::Codec(error.into())
+    }
+}
+
+impl From<std::io::Error> for PatchError {
+    fn from(error: std::io::Error) -> Self {
+        Self::Codec(error.into())
+    }
+}
+
 trait WriteSeek: Write + Seek {}
 impl<T: Write + Seek> WriteSeek for T {}
 
@@ -143,7 +173,7 @@ fn write_seekable(
     output: &mut dyn WriteSeek,
     resolution: &Resolution<'_>,
     encode_context: &cadmpeg_core::decode::DecodeContext<'_>,
-) -> Result<WriteOutcome, CodecError> {
+) -> Result<WriteOutcome, PatchError> {
     let target = resolution.target();
     let ir = resolution.ir();
     let namespace = resolution.namespace();
@@ -169,7 +199,8 @@ fn write_seekable(
         if entry.id() != crate::native::native_id("entry", entry.name()) {
             return Err(CodecError::malformed(
                 "current entry identity differs from its original archive member",
-            ));
+            )
+            .into());
         }
         payloads.insert(
             entry.name().to_owned(),
@@ -190,9 +221,7 @@ fn write_seekable(
         })?;
     let document_xml = payloads
         .get(source_document.name())
-        .ok_or_else(|| {
-            CodecError::UnsupportedContent("the source document image is unavailable".into())
-        })?
+        .ok_or_else(|| PatchError::Declined("the source document image is unavailable".into()))?
         .window()
         .to_vec();
     let arena = cadmpeg_core::decode::DecodeArena::new();
@@ -228,7 +257,8 @@ fn write_seekable(
                 return Err(CodecError::malformed(format_args!(
                     "edited property {} references missing side entry {entry}",
                     property.id
-                )));
+                ))
+                .into());
             }
         }
     }
@@ -320,7 +350,7 @@ fn validate_declarations(
     expected_extensions: &[ExtensionRecord],
     written_objects: &[ObjectRecord],
     written_extensions: &[ExtensionRecord],
-) -> Result<(), CodecError> {
+) -> Result<(), PatchError> {
     if expected_objects.len() != written_objects.len()
         || !expected_objects.iter().all(|expected| {
             written_objects
@@ -339,7 +369,7 @@ fn validate_declarations(
                 })
         })
     {
-        return Err(CodecError::UnsupportedContent(
+        return Err(PatchError::Declined(
             "object declaration edits require source-less graph regeneration".into(),
         ));
     }
@@ -353,7 +383,7 @@ fn validate_declarations(
                 })
         })
     {
-        return Err(CodecError::UnsupportedContent(
+        return Err(PatchError::Declined(
             "extension declaration edits require a typed serializer".into(),
         ));
     }
@@ -363,7 +393,7 @@ fn validate_declarations(
 fn validate_properties(
     expected: &[PropertyRecord],
     written: &[PropertyRecord],
-) -> Result<(), CodecError> {
+) -> Result<(), PatchError> {
     let mut expected_by_id = HashMap::with_capacity(expected.len());
     for property in expected {
         if expected_by_id
@@ -373,7 +403,8 @@ fn validate_properties(
             return Err(CodecError::malformed(format_args!(
                 "edited FCStd property graph has duplicate property {}",
                 property.id
-            )));
+            ))
+            .into());
         }
     }
     let mut written_by_id = HashMap::with_capacity(written.len());
@@ -385,23 +416,24 @@ fn validate_properties(
             return Err(CodecError::malformed(format_args!(
                 "written FCStd property graph has duplicate property {}",
                 property.id
-            )));
+            ))
+            .into());
         }
     }
     if expected_by_id.len() != written_by_id.len() {
-        return Err(CodecError::UnsupportedContent(
+        return Err(PatchError::Declined(
             "edited FCStd property graph changes its record count".into(),
         ));
     }
     for (id, property) in expected_by_id {
         let Some(candidate) = written_by_id.get(id).copied() else {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(PatchError::Declined(format!(
                 "edited FCStd property {} is missing from the written graph",
                 property.id
             )));
         };
         if !same_property_semantics(property, candidate) {
-            return Err(CodecError::UnsupportedContent(format!(
+            return Err(PatchError::Declined(format!(
                 "edited FCStd property {} changes its admitted value or link graph",
                 property.id
             )));

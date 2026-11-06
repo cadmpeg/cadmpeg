@@ -249,6 +249,7 @@ fn body_appearance_keeps_its_owner_when_faces_inherit_its_color() {
     let decoded = crate::StepCodec::default()
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode styles");
+    assert_eq!(decoded.ir().model.appearance_bindings.len(), 1);
     let output_body = &decoded.ir().model.bodies[0].id;
     let output_binding = decoded
         .ir()
