@@ -1122,14 +1122,8 @@ fn parameter_companion_decode_emits_one_identified_companion() {
     let mut output =
         cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
     {
-        let decoded = super::decode_parameter_companions(
-            &ctx,
-            &scan,
-            &mut vec![owner],
-            &mut vec![],
-            &mut output,
-        )
-        .unwrap();
+        let decoded =
+            super::decode_parameter_companions(&ctx, &scan, &[owner], &mut output).unwrap();
         assert_eq!(decoded.len(), 1);
         assert_eq!(
             decoded[0].id(),
@@ -1155,7 +1149,7 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
         bulk: &[u8],
         primary: &[(u64, u64)],
         secondary: &[(u64, u64)],
-        mut parameters: Vec<crate::records::parameters::DesignParameter>,
+        parameters: Vec<crate::records::parameters::DesignParameter>,
     ) -> (
         Vec<DesignParameterOwner>,
         Vec<crate::records::parameters::DesignParameter>,
@@ -1189,7 +1183,7 @@ fn parameter_owner_uses_the_paired_same_index_header_as_its_boundary() {
         let mut output =
             cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
         let owners =
-            super::decode_parameter_owners(&ctx, &scan, &mut parameters, &mut output).unwrap();
+            super::decode_parameter_owners(&ctx, &scan, &parameters, &mut output).unwrap();
         let (_, _, _, losses) = output.into_parts();
         (owners, parameters, losses)
     }

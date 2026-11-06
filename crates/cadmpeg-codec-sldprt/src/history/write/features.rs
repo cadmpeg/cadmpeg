@@ -210,6 +210,12 @@ pub(crate) fn feature_record_ids(
         .collect::<HashMap<_, _>>()
 }
 
+type DependencyMismatch = (
+    usize,
+    Vec<FeatureId>,
+    Option<cadmpeg_ir::features::DistinctMembers<FeatureId>>,
+);
+
 /// Indexes of features whose dependency edges disagree with the canonical
 /// operation projection, with the expected edges and the canonical edges.
 ///
@@ -220,14 +226,7 @@ pub(crate) fn dependency_mismatches(
     features: &[cadmpeg_ir::features::Feature],
     record_ids: &HashMap<FeatureId, String>,
     projected: &[cadmpeg_ir::features::Feature],
-) -> Result<
-    Vec<(
-        usize,
-        Vec<FeatureId>,
-        Option<cadmpeg_ir::features::DistinctMembers<FeatureId>>,
-    )>,
-    CodecError,
-> {
+) -> Result<Vec<DependencyMismatch>, CodecError> {
     let projected = projected
         .iter()
         .map(|feature| (feature.id.clone(), feature))
@@ -497,10 +496,8 @@ fn synchronize_features(
     let feature_sources = features
         .iter()
         .filter_map(|feature| {
-            Some((
-                &feature.id,
-                record_sources.get(feature.native_ref.as_ref()?)?.as_str(),
-            ))
+            structural_parent_sources.get(&feature.id)?.as_ref()?;
+            Some((&feature.id, parent_sources.get(&feature.id)?.as_str()))
         })
         .collect::<HashMap<_, _>>();
     let sketch_sources = features
@@ -606,7 +603,7 @@ fn synchronize_features(
         } = NeutralFeatureEncoder {
             feature,
             canonical_parameters: parameters,
-            orphaned_parameters: &orphaned,
+            orphaned_parameters: orphaned,
             canonical_features: features,
             canonical_parameter_texts: &canonical_parameter_texts,
             existing: existing.as_deref(),

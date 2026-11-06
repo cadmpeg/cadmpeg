@@ -98,7 +98,7 @@ pub(super) fn single_curve(
         record.extend(
             vertex
                 .tolerance
-                .map_or(0.0, |value| value.get())
+                .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get)
                 .to_le_bytes(),
         );
         vertices.push(record);
@@ -119,7 +119,7 @@ pub(super) fn single_curve(
     edge_record.extend(super::indexes(&[])?);
     edge_record.extend(
         edge.tolerance
-            .map_or(0.0, |value| value.get())
+            .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get)
             .to_le_bytes(),
     );
     for value in [lo, hi] {
@@ -212,5 +212,80 @@ pub(super) fn single_curve(
         },
         curve_id.clone(),
         conversion,
+    )))
+}
+pub(super) fn vertex_body(
+    ir: &CadIr,
+    version: crate::RhinoArchiveVersion,
+) -> Result<Option<(BrepPayload, Vec<String>)>, WriteError> {
+    let mut vertices = Vec::new();
+    let mut carried = Vec::new();
+    let mut bounds: Option<([f64; 3], [f64; 3])> = None;
+    for vertex in &ir.model.vertices {
+        let Some(point) = ir
+            .model
+            .points
+            .iter()
+            .find(|point| point.id == vertex.point)
+        else {
+            continue;
+        };
+        let position = point.position().get();
+        let coordinates = [position.x, position.y, position.z];
+        let (minimum, maximum) = bounds.get_or_insert((coordinates, coordinates));
+        for i in 0..3 {
+            minimum[i] = minimum[i].min(coordinates[i]);
+            maximum[i] = maximum[i].max(coordinates[i]);
+        }
+        let mut record = super::wire_index(vertices.len())?.to_le_bytes().to_vec();
+        for value in coordinates {
+            record.extend(value.to_le_bytes());
+        }
+        record.extend(super::indexes(&[])?);
+        record.extend(
+            vertex
+                .tolerance
+                .map_or(0.0, cadmpeg_ir::scalar::PositiveReal::get)
+                .to_le_bytes(),
+        );
+        vertices.push(record);
+        carried.push(vertex.id.to_string());
+    }
+    let Some((minimum, maximum)) = bounds else {
+        return Ok(None);
+    };
+    let version_byte = if version.uses_extended_brep_layout() {
+        0x33
+    } else {
+        0x32
+    };
+    let mut payload = vec![version_byte];
+    let mut direct = vec![version_byte];
+    payload.extend(super::polymorphic_array(std::iter::empty())?);
+    payload.extend(super::polymorphic_array(std::iter::empty())?);
+    payload.extend(super::polymorphic_array(std::iter::empty())?);
+    payload.extend(super::raw_array(&vertices)?);
+    payload.extend(super::raw_array(&[])?);
+    payload.extend(super::raw_array(&[])?);
+    payload.extend(super::raw_array(&[])?);
+    payload.extend(super::face_array(&[], &[], version)?);
+    for value in minimum.into_iter().chain(maximum) {
+        payload.extend(value.to_le_bytes());
+        direct.extend(value.to_le_bytes());
+    }
+    payload.extend(super::crc_chunk(0x4000_8000, &[])?);
+    payload.extend(super::crc_chunk(0x4000_8000, &[])?);
+    payload.extend(0_i32.to_le_bytes());
+    direct.extend(0_i32.to_le_bytes());
+    if version.uses_extended_brep_layout() {
+        payload.extend(super::empty_region_wrapper()?);
+    }
+    Ok(Some((
+        BrepPayload {
+            body: payload,
+            direct,
+            record_count: 1 + cadmpeg_core::decode::u64_from_index(vertices.len()),
+        },
+        carried,
     )))
 }

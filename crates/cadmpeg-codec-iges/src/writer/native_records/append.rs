@@ -136,22 +136,29 @@ fn encode(
                     fields
                         .values
                         .insert("translation".into(), serde_json::json!([0.0, 0.0, 0.0]));
+                    let factored = factor_instance_frame(arena, affine);
+                    let (scales, frame) = match factored {
+                        Some(value) => value,
+                        None => {
+                            let mut rows = [[cadmpeg_ir::scalar::FiniteReal::ONE; 4]; 3];
+                            for (row, values) in rows.iter_mut().zip(affine) {
+                                for (slot, value) in row.iter_mut().zip(values) {
+                                    *slot = cadmpeg_ir::scalar::FiniteReal::new(value)
+                                        .ok_or("occurrence placement is not finite")?;
+                                }
+                            }
+                            ([1.0; 3], super::super::Placement { rows })
+                        }
+                    };
                     fields.values.insert(
                         "scale".into(),
                         if arena == "network_instances" {
-                            serde_json::json!([1.0, 1.0, 1.0])
+                            serde_json::json!(scales)
                         } else {
-                            serde_json::json!(1.0)
+                            serde_json::json!(scales[0])
                         },
                     );
-                    let mut rows = [[cadmpeg_ir::scalar::FiniteReal::ONE; 4]; 3];
-                    for (row, values) in rows.iter_mut().zip(transform.affine_rows()) {
-                        for (slot, value) in row.iter_mut().zip(values) {
-                            *slot = cadmpeg_ir::scalar::FiniteReal::new(value)
-                                .ok_or("occurrence placement is not finite")?;
-                        }
-                    }
-                    placement = Some(super::super::Placement { rows });
+                    placement = Some(frame);
                 }
             }
         }
@@ -262,7 +269,7 @@ fn encode(
         result.line_font = Some(DirectoryLineFont::Number(number));
     }
     result.status = match type_code {
-        304 | 308 | 310 | 312 | 316 | 320 => EntityStatus::Definition,
+        184 | 302 | 304 | 308 | 310 | 312 | 316 | 320 => EntityStatus::Definition,
         132 => EntityStatus::LogicalPositional,
         _ => result.status,
     };
@@ -369,6 +376,43 @@ fn neutral_labels(ir: &CadIr) -> BTreeMap<String, String> {
         }
     }
     labels
+}
+
+/// Factor an exactly reconstructible instance matrix into its IGES frame and
+/// positive scale fields. Shear and non-uniform Type 408 scale do not fit.
+fn factor_instance_frame(
+    arena: &str,
+    affine: [[f64; 4]; 3],
+) -> Option<([f64; 3], super::super::Placement)> {
+    if !matches!(arena, "network_instances" | "subfigure_instances") {
+        return None;
+    }
+    let scales = std::array::from_fn::<_, 3, _>(|column| {
+        affine[0][column]
+            .hypot(affine[1][column])
+            .hypot(affine[2][column])
+    });
+    if scales
+        .iter()
+        .any(|scale| !scale.is_finite() || *scale <= 0.0)
+        || (arena == "subfigure_instances" && (scales[0] != scales[1] || scales[1] != scales[2]))
+    {
+        return None;
+    }
+    let mut rows = [[cadmpeg_ir::scalar::FiniteReal::ONE; 4]; 3];
+    for row in 0..3 {
+        for column in 0..3 {
+            let value = affine[row][column] / scales[column];
+            if value * scales[column] != affine[row][column] {
+                return None;
+            }
+            rows[row][column] = cadmpeg_ir::scalar::FiniteReal::new(value)?;
+        }
+        rows[row][3] = cadmpeg_ir::scalar::FiniteReal::new(affine[row][3])?;
+    }
+    let frame = super::super::Placement { rows };
+    super::super::placement_entities::matrix_form(frame)?;
+    Some((scales, frame))
 }
 
 /// The Directory sequence of a native record's own entity, when it names one.
@@ -600,14 +644,21 @@ impl Emitter<'_, '_> {
     ) {
         // A re-emitted boundary carrier keeps its source dependence: an
         // independent copy mints standalone topology on re-decode.
-        if matches!(
+        if matches!(arena, "associativities" | "groups") {
+            if let Some(status) = super::source_status(self.ir, record) {
+                entity.status = status;
+            }
+        } else if matches!(
             arena,
             "annotations" | "drawings" | "views" | "view_visibility"
         ) {
-            entity.status =
-                super::source_status(self.ir, record).unwrap_or(EntityStatus::Annotation);
+            entity.status = super::source_status(self.ir, record)
+                .filter(|status| !matches!(status, EntityStatus::Definition))
+                .unwrap_or(EntityStatus::Annotation);
         } else if arena == "copious_data" {
-            if let Some(status) = super::source_status(self.ir, record) {
+            if let Some(status) = super::source_status(self.ir, record)
+                .filter(|status| !matches!(status, EntityStatus::Definition))
+            {
                 entity.status = status;
             }
         }

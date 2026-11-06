@@ -52,7 +52,7 @@ fn output_record_count(seed: &cadmpeg_ir::CadIr) -> u64 {
         .filter(|card| card.get(72) == Some(&b'D'))
         .count();
     assert_eq!(cards % 2, 0);
-    u64::try_from(cards / 2).unwrap()
+    u64::try_from(cards / 2).expect("valid test value")
 }
 
 #[test]
@@ -69,6 +69,7 @@ fn injected_errors_succeed_and_name_the_record() {
 
 #[test]
 fn capacity_helpers_follow_their_rows() {
+    use cadmpeg_ir::codec::write::EncodeError;
     assert_eq!(super::super::capacity::CAPACITY_FIELDS.len(), 2);
     assert_eq!(
         super::super::capacity::CAPACITY_FIELDS[0].field,
@@ -80,9 +81,8 @@ fn capacity_helpers_follow_their_rows() {
         "card.sequence"
     );
     assert_eq!(super::super::capacity::CAPACITY_FIELDS[1].limit, 9_999_999);
-    use cadmpeg_ir::codec::write::EncodeError;
     let fields = super::super::capacity::CAPACITY_FIELDS;
-    let payload = vec![b'A'; fields[0].limit as usize];
+    let payload = vec![b'A'; usize::try_from(fields[0].limit).expect("payload limit fits usize")];
     let sequence = u32::try_from(fields[1].limit).expect("seven-digit limit fits u32");
     let bytes = super::super::card(&payload, b'S', sequence).expect("limits write");
     let scan = crate::card::scan(&bytes).expect("written card scans");
@@ -167,7 +167,12 @@ fn max_entities_counts_generated_transformations() {
     let reread = IgesCodec
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode the placed surface");
-    let entities = &reread.ir().native.namespace("iges").unwrap().arenas()["entities"];
+    let entities = &reread
+        .ir()
+        .native
+        .namespace("iges")
+        .expect("valid test value")
+        .arenas()["entities"];
     assert!(entities
         .iter()
         .any(|record| record.field("entity_type").and_then(|value| value.as_i64()) == Some(124)));
@@ -193,7 +198,7 @@ fn reduced_rows_are_empty_for_iges() {
     // round-trips at full precision (#232 §5.2).
     assert!(super::super::REDUCED_FIELDS.is_empty());
     let seed = seed_golden();
-    let encoder = &IgesCodec as &dyn Encoder;
+    let encoder: &dyn Encoder = &IgesCodec;
     let redecode = |written: &[u8]| {
         let result = IgesCodec
             .decode(&mut Cursor::new(written), &DecodeOptions::default())

@@ -12,6 +12,11 @@ pub(super) fn prepare(
     native: &crate::native::F3dNative,
     losses: &mut Vec<LossNote>,
 ) {
+    for appearance in &mut target.model.appearances {
+        if appearance.visual_guid.is_none() && appearance.asset_guid.is_none() {
+            appearance.asset_guid = Some(asset_guid(appearance.id.as_str()));
+        }
+    }
     let appearances = &target.model.appearances;
     let bodies = &target.model.bodies;
     let mut entity_counts = std::collections::BTreeMap::new();
@@ -20,10 +25,9 @@ pub(super) fn prepare(
             *entity_counts.entry(entity.clone()).or_insert(0usize) += 1;
         }
     }
-    let neutral_single_body = native.design_types.is_empty()
-        && native.design_material_assignments.is_empty()
-        && bodies.len() == 1
-        && target.model.appearance_bindings.len() == 1;
+    let neutral_bindings =
+        native.design_types.is_empty() && native.design_material_assignments.is_empty();
+    let mut neutral_targets = std::collections::BTreeSet::new();
     target.model.appearance_bindings.retain(|binding| {
         let cadmpeg_ir::appearance::AppearanceTarget::Body(body_id) = &binding.target else {
             return false;
@@ -46,11 +50,12 @@ pub(super) fn prepare(
                 .as_deref()
                 .or(appearance.asset_guid.as_deref())
                 .is_some_and(|guid| crate::design::presentation::visual_token(guid).is_some());
-        if neutral_single_body && binding.source_entity_id.is_none() {
+        if neutral_bindings && binding.source_entity_id.is_none() {
             return body.visible.is_some()
                 && binding.visible.is_none()
                 && binding.channels.is_empty()
-                && valid_appearance;
+                && valid_appearance
+                && neutral_targets.insert(body_id.clone());
         }
         let Some(entity) = binding.source_entity_id.as_deref() else {
             return false;
@@ -162,10 +167,6 @@ pub(super) fn prepare(
             losses.push(F3dLossCode::WriterAppearancePropertiesOmitted.note(format!(
                 "appearance {} uses GenericSchema to retain its neutral color; the physical-only shader schema is omitted", appearance.id,
             )));
-        }
-        // A generated asset identity selects layout; it supplies no content.
-        if appearance.visual_guid.is_none() && appearance.asset_guid.is_none() {
-            appearance.asset_guid = Some(asset_guid(appearance.id.as_str()));
         }
         if !bound.contains(&appearance.id) && appearance.physical_token.take().is_some() {
             losses.push(F3dLossCode::WriterAppearancePropertiesOmitted.note(format!(

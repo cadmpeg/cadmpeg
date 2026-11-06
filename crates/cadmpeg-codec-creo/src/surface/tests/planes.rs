@@ -1817,7 +1817,7 @@ fn trailing_plane_chunk_distinguishes_cut_from_complete_and_padding() {
         &parameter_records(cut),
     ));
     // Bare padding after the envelope close is a complete trailer, not a cut.
-    let mut padded = payload[..envelope_close + 1].to_vec();
+    let mut padded = payload[..=envelope_close].to_vec();
     padded.extend_from_slice(&[0x0f, 0x0f]);
     assert!(!crate::surface::trailing_plane_chunk_truncated(
         &padded,

@@ -25,7 +25,7 @@ use cadmpeg_ir::units::FinitePoint2;
 pub(crate) const SPATIAL_OPERAND_CAPACITY: cadmpeg_ir::codec::write::CapacityField =
     cadmpeg_ir::codec::write::CapacityField {
         field: "spatial.relation.operand_address",
-        limit: u16::MAX as u64,
+        limit: 0xffff_u64,
         source: "docs/formats/sldprt.md §2: scalar operand addresses are u16",
         helper: "field_u16",
     };
@@ -1560,7 +1560,7 @@ fn source_less_lanes(
             let first = marker_id(points.len() + index * 2)?;
             let second = marker_id(points.len() + index * 2 + 1)?;
             let line = marker_id(points.len() + lines.len() * 2 + index)?;
-            append_spatial_line_handle(&mut payload, first, second, line);
+            append_spatial_line_handle(&mut payload, first, second, line, entity.construction);
             append_spatial_relation_marker(&mut payload, start.get(), 0, u32::from(first), false)?;
             append_spatial_relation_marker(&mut payload, end.get(), 0, u32::from(second), false)?;
             endpoint_points.push((*start, entity.endpoint_refs.first().map(String::as_str)));
@@ -1862,7 +1862,7 @@ pub(crate) fn validate_lane_against_payload(
         return Ok(());
     }
     let mut entities = lane.sketch_entities.clone();
-    entities.sort_by_key(|entity| entity.ordinal());
+    entities.sort_by_key(crate::records::SketchInputEntity::ordinal);
     for (position, entity) in entities.iter().enumerate() {
         if cadmpeg_core::decode::u64_from_index(position) != u64::from(entity.ordinal()) {
             return Err(format!(
@@ -1872,11 +1872,11 @@ pub(crate) fn validate_lane_against_payload(
         }
         entity
             .validate_against_payload(&lane.native_payload)
-            .map_err(|error| error.to_owned())?;
+            .map_err(std::borrow::ToOwned::to_owned)?;
     }
     let entity_ids = entities
         .iter()
-        .map(|entity| entity.id())
+        .map(crate::records::SketchInputEntity::id)
         .collect::<std::collections::HashSet<_>>();
     for scalar in &lane.scalars {
         for operand in &scalar.operands {
@@ -1979,7 +1979,7 @@ pub(crate) fn validate_lane_against_payload(
         // synthesis drops it. Authored bytes are rewritten from the records.
         if source_trust == crate::writer::SourceTrust::Trustworthy {
             let mut expected_entities = expected.sketch_entities.clone();
-            expected_entities.sort_by_key(|entity| entity.ordinal());
+            expected_entities.sort_by_key(crate::records::SketchInputEntity::ordinal);
             if !sketch_entities_match(&entities, &expected_entities) {
                 return Err(format!(
                     "feature-input lane {} sketch entities do not match their native payload",
@@ -2283,7 +2283,17 @@ fn append_spatial_relation_marker(
     Ok(())
 }
 
-fn append_spatial_line_handle(payload: &mut Vec<u8>, first: u16, second: u16, local_id: u16) {
+fn append_spatial_line_handle(
+    payload: &mut Vec<u8>,
+    first: u16,
+    second: u16,
+    local_id: u16,
+    construction: bool,
+) {
+    if !construction {
+        append_spatial_profile_line(payload, first, second, local_id);
+        return;
+    }
     use crate::layout::extended_geometry_locus_96_construction_line as layout;
     payload.extend_from_slice(&u32::from(local_id).to_le_bytes());
     let start = payload.len();
@@ -2308,6 +2318,38 @@ fn append_spatial_line_handle(payload: &mut Vec<u8>, first: u16, second: u16, lo
         .copy_from_slice(&[0x00, 0x00, 0x04, 0x00]);
     payload[start + layout::IDENTITY_FIRST..start + layout::IDENTITY_SECOND]
         .copy_from_slice(&u32::from(local_id).to_le_bytes());
+}
+
+fn append_spatial_profile_line(payload: &mut Vec<u8>, first: u16, second: u16, local_id: u16) {
+    use crate::layout::current_direct_92_profile_line as layout;
+    payload.extend_from_slice(&u32::from(local_id).to_le_bytes());
+    let start = payload.len();
+    payload.resize(start + layout::LEN - size_of::<u32>(), 0);
+    payload[start + layout::MARKER..start + layout::HEADER].copy_from_slice(&layout::MARKER_VALUE);
+    payload[start + layout::HEADER..start + layout::NATIVE_KIND]
+        .copy_from_slice(&layout::HEADER_VALUE);
+    payload[start + layout::NATIVE_KIND..start + layout::NATIVE_KIND + 4]
+        .copy_from_slice(&layout::NATIVE_KIND_VALUE.to_le_bytes());
+    payload[start + layout::PROFILE_LOCUS..start + layout::ROLE]
+        .copy_from_slice(&layout::PROFILE_LOCUS_VALUE);
+    payload[start + layout::ROLE..start + layout::STATE]
+        .copy_from_slice(&layout::ROLE_VALUE.to_le_bytes());
+    payload[start + layout::STATE..start + layout::SELECTOR]
+        .copy_from_slice(&layout::STATE_VALUE.to_le_bytes());
+    payload[start + layout::SELECTOR..start + layout::SELECTOR + layout::SELECTOR_VALUE.len()]
+        .copy_from_slice(&layout::SELECTOR_VALUE);
+    payload[start + layout::STATE_SCALAR..start + layout::STATE_SCALAR + 8]
+        .copy_from_slice(&layout::STATE_SCALAR_VALUE.to_le_bytes());
+    payload[start + layout::ENDPOINT_FIRST..start + layout::ENDPOINT_SECOND]
+        .copy_from_slice(&first.to_le_bytes());
+    payload[start + layout::ENDPOINT_SECOND..start + layout::ENDPOINT_SELECTOR]
+        .copy_from_slice(&second.to_le_bytes());
+    payload[start + layout::ENDPOINT_SELECTOR..start + layout::SIGNED_SELECTOR]
+        .copy_from_slice(&layout::ENDPOINT_SELECTOR_VALUE.to_le_bytes());
+    payload[start + layout::SIGNED_SELECTOR..start + layout::ZERO_TAIL]
+        .copy_from_slice(&layout::SIGNED_SELECTOR_VALUE.to_le_bytes());
+    payload[start + layout::IDENTITY_SELECTOR..start + layout::IDENTITY]
+        .copy_from_slice(&layout::IDENTITY_SELECTOR_VALUE.to_le_bytes());
 }
 
 fn spatial_point_native_coordinates(point: Point3) -> Result<[f64; 3], cadmpeg_core::CodecError> {

@@ -145,14 +145,16 @@ fn decode_asm_binary(
     let (matched, kernel) = layers(&evidence);
     let mut result = build_result(
         ctx,
-        root,
-        payload,
+        StreamInput {
+            root,
+            payload,
+            cut_tail: None,
+        },
         attributes,
         &header.metadata,
         None,
         matched,
         &kernel,
-        None,
     )?;
     if header.metadata.unreadable_product_fields().next().is_some() {
         retain_source(
@@ -230,14 +232,16 @@ fn decode_acis_binary(
     let (matched, kernel) = layers(&evidence);
     let mut result = build_result(
         ctx,
-        root,
-        payload,
+        StreamInput {
+            root,
+            payload,
+            cut_tail: None,
+        },
         attributes,
         &header.metadata,
         None,
         matched,
         &kernel,
-        None,
     )?;
     if header.metadata.unreadable_product_fields().next().is_some() {
         retain_source(
@@ -370,14 +374,16 @@ fn decode_text(
     let fold_tail = cut_tail.is_some();
     let mut result = build_result(
         ctx,
-        root,
-        payload,
+        StreamInput {
+            root,
+            payload,
+            cut_tail: cut_tail.as_ref(),
+        },
         attributes,
         &header,
         Some(branch),
         matched,
         &kernel,
-        cut_tail,
     )?;
     crate::loss::text_stream_losses(
         text_header.diagnostics.iter().chain(&framing),
@@ -504,17 +510,26 @@ fn unsupported_unframed(evidence: &StreamEvidence<'_>, message: impl Into<String
     }
 }
 
+struct StreamInput<'a> {
+    root: View<'a>,
+    payload: Option<FramedStream>,
+    cut_tail: Option<&'a std::ops::Range<usize>>,
+}
+
 fn build_result(
     ctx: &DecodeContext<'_>,
-    root: View<'_>,
-    payload: Option<FramedStream>,
+    input: StreamInput<'_>,
     attributes: BTreeMap<String, String>,
     header: &KernelHeader,
     text_dialect: Option<sat::Terminator>,
     matched: DialectMatch,
     kernel: &DialectMatch,
-    cut_tail: Option<std::ops::Range<usize>>,
 ) -> Result<Decoded, CodecError> {
+    let StreamInput {
+        root,
+        payload,
+        cut_tail,
+    } = input;
     let mut ir = CadIr::decoded(SourceMeta::classified(
         DialectLayers::of(matched)
             .with(kernel.clone())
@@ -574,7 +589,7 @@ fn build_result(
         });
     };
 
-    let extent = match &cut_tail {
+    let extent = match cut_tail {
         Some(tail) => root
             .child(record_span.0, tail.end)
             .ok_or_else(|| CodecError::malformed("SAT cut tail escapes its stream"))?,
@@ -589,7 +604,7 @@ fn build_result(
     // the stage would charge entity accounting twice. The stage carries the
     // give-up on the failure path.
     let part = match ctx.decode_part(&mut output, extent, spec, |_stage| {
-        if let Some(tail) = &cut_tail {
+        if let Some(tail) = cut_tail {
             // The framed prefix is not a complete part: its end cannot be
             // found, so the part fails atomically instead of decoding a
             // silent prefix whose missing records no loss names (§4.5).
@@ -604,9 +619,9 @@ fn build_result(
         decode_stream_part(ctx, root.window(), &records, header)
     })? {
         Some(part) => part,
-        None => stream_part_given_up(output)?,
+        None => stream_part_given_up(output),
     };
-    assemble_result(ctx, ir, losses, has_entities, text_dialect, &kernel, part)
+    assemble_result(ctx, ir, losses, has_entities, text_dialect, kernel, part)
 }
 
 /// Decode the framed records and transfer them into staged document pieces.
@@ -688,13 +703,13 @@ fn decode_stream_part(
 
 /// Assemble the staged give-up of a failed stream part: the helper's stub,
 /// retained bytes and `record.unreadable` loss with an empty model.
-fn stream_part_given_up(output: PartOutput) -> Result<StreamPart, CodecError> {
+fn stream_part_given_up(output: PartOutput) -> StreamPart {
     let (model, native, fidelity, prior_losses) = output.into_parts();
     let unknown_count = native
         .namespace("sat")
         .and_then(|namespace| namespace.arenas().get("unknowns"))
         .map_or(0, Vec::len);
-    Ok(StreamPart {
+    StreamPart {
         model,
         native,
         fidelity,
@@ -702,7 +717,7 @@ fn stream_part_given_up(output: PartOutput) -> Result<StreamPart, CodecError> {
         stats: Stats::default(),
         unknown_count,
         prior_losses,
-    })
+    }
 }
 
 fn assemble_result(

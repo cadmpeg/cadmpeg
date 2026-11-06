@@ -40,6 +40,7 @@ fn a_plane_whose_equation_constant_overflows_is_refused() {
             Point3::new(1.7e308, 1.7e308, 0.0),
             Vector3::new(0.6, 0.8, 0.0),
             Vector3::new(0.8, -0.6, 0.0),
+            [super::super::PLANE_PARAMETER_DOMAIN; 2],
         ),
         "plane equation constant",
     );

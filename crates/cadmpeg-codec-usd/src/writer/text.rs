@@ -22,15 +22,54 @@ pub(super) struct Emitter {
     names: Vec<Option<String>>,
     /// The prim name that the next opened block takes.
     pending: Option<String>,
+    session: Option<cadmpeg_core::encode::EncodeSession>,
+    refusal: Option<cadmpeg_core::decode::ResourceLimit>,
+    deferred_properties: usize,
 }
 
 impl Emitter {
+    pub(crate) fn with_session(session: cadmpeg_core::encode::EncodeSession) -> Self {
+        Self {
+            session: Some(session),
+            ..Self::default()
+        }
+    }
+
+    pub(crate) fn refusal(&self) -> Option<cadmpeg_core::decode::ResourceLimit> {
+        self.refusal
+    }
+
+    pub(crate) fn deferred_properties(&self) -> usize {
+        self.deferred_properties
+    }
+
+    fn admit(&mut self) {
+        if self.refusal.is_none() {
+            if let Some(session) = &self.session {
+                self.refusal = session.charge_entities(1, "USD written record").err();
+            }
+        }
+    }
+
+    pub(crate) fn property(&mut self, content: &str) {
+        self.admit();
+        self.line(content);
+    }
+
+    pub(crate) fn deferred_property(&mut self, content: &str) {
+        self.deferred_properties += 1;
+        self.line(content);
+    }
+
     pub(crate) fn finish(self) -> String {
         self.text
     }
 
     /// Writes one indented line.
     pub(crate) fn line(&mut self, content: &str) {
+        if self.refusal.is_some() {
+            return;
+        }
         for _ in 0..self.depth * INDENT {
             self.text.push(' ');
         }
@@ -39,6 +78,9 @@ impl Emitter {
     }
 
     pub(crate) fn blank(&mut self) {
+        if self.refusal.is_some() {
+            return;
+        }
         self.text.push('\n');
     }
 
@@ -49,6 +91,7 @@ impl Emitter {
     }
 
     pub(crate) fn open(&mut self) {
+        self.admit();
         self.line("{");
         self.depth += 1;
         let name = self.pending.take();
@@ -78,6 +121,10 @@ impl Emitter {
 
     /// Writes `head = [` then `items`, wrapped, then `]` and `tail`.
     pub(crate) fn array(&mut self, head: &str, items: &[String], tail: &str) {
+        self.admit();
+        if self.refusal.is_some() {
+            return;
+        }
         if items.len() <= VALUES_PER_LINE {
             self.line(&format!("{head} = [{}]{tail}", items.join(", ")));
             return;

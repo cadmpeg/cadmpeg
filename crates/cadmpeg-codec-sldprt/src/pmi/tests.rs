@@ -643,7 +643,7 @@ fn malformed_pmi_map_emits_attributed_loss() {
     let records = parse_payload(&payload, &mut losses);
     assert!(records.is_empty());
     assert_eq!(losses.len(), 1);
-    assert!(losses[0].code.local_code() == "record.unreadable");
+    assert_eq!(losses[0].code.local_code(), "record.unreadable");
     assert!(
         losses[0]
             .message
@@ -673,15 +673,15 @@ fn malformed_uppercase_pmi_guid_keeps_normalized_loss_text() {
     let records = parse_payload(&payload, &mut losses);
     assert!(records.is_empty());
     assert_eq!(losses.len(), 1);
-    assert!(losses[0].code.local_code() == "record.unreadable");
+    assert_eq!(losses[0].code.local_code(), "record.unreadable");
     assert!(losses[0]
         .message
         .contains("abcdef01-89ab-cdef-0123-456789abcdef"));
 }
 
-/// A damaged UnQLite page graph is not a part: its bytes stay retained and
+/// A damaged `UnQLite` page graph is not a part: its bytes stay retained and
 /// untyped (§1.3), named by a loss that gives their stream, offset and
-/// length, and the MessagePack scan recovers what it can.
+/// length, and the `MessagePack` scan recovers what it can.
 #[test]
 fn damaged_page_graph_is_untyped_not_a_part() {
     let mut payload = vec![0u8; 512];
@@ -694,7 +694,7 @@ fn damaged_page_graph_is_untyped_not_a_part() {
     let records = parse_payload(&payload, &mut losses);
     assert!(records.is_empty());
     assert_eq!(losses.len(), 1);
-    assert!(losses[0].code == crate::loss::SldprtLossCode::PmiSemanticRecordUntyped.kind());
+    assert_eq!(losses[0].code, crate::loss::SldprtLossCode::PmiSemanticRecordUntyped.kind());
     assert!(
         losses[0].message.contains("offset 0") && losses[0].message.contains("length 512"),
         "{}",
@@ -1544,7 +1544,7 @@ fn pmi_skipped_values_are_validated_but_not_kept() {
     let [loss] = losses.as_slice() else {
         panic!("one part give-up loss: {losses:?}");
     };
-    assert!(loss.code.local_code() == "record.unreadable");
+    assert_eq!(loss.code.local_code(), "record.unreadable");
     assert!(loss.message.contains("pmi_record"), "{loss:?}");
 }
 

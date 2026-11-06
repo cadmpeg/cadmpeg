@@ -52,8 +52,8 @@ impl<'a> NativeGenerationIndex<'a> {
                 .members
                 .edges()
                 .iter()
-                .map(|member| member.as_str())
-                .chain(wire.members.free_vertex().map(|vertex| vertex.as_str()))
+                .map(cadmpeg_asm::brep::records::identity::NativeRowId::as_str)
+                .chain(wire.members.free_vertex().map(cadmpeg_asm::brep::records::identity::NativeRowId::as_str))
                 .filter_map(|member| row_owner.get(member).copied())
                 .collect::<Vec<_>>();
             for shell in &target.model.shells {

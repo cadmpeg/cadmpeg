@@ -171,8 +171,9 @@ fn amend_dropped_records(
                 if let Some(marker) = loss.message.rfind("; dropped=[") {
                     loss.message.truncate(marker);
                 }
-                loss.message
-                    .push_str(&format!("; dropped=[{}]", loss.dropped.join(", ")));
+                loss.message.push_str("; dropped=[");
+                loss.message.push_str(&loss.dropped.join(", "));
+                loss.message.push(']');
             }
         }
     }
@@ -256,8 +257,9 @@ fn name_cut_absent_fields(
         if let Some(marker) = loss.message.rfind("; dropped=[") {
             loss.message.truncate(marker);
         }
-        loss.message
-            .push_str(&format!("; dropped=[{}]", loss.dropped.join(", ")));
+        loss.message.push_str("; dropped=[");
+        loss.message.push_str(&loss.dropped.join(", "));
+        loss.message.push(']');
     }
     let present: BTreeSet<u32> = parameters
         .iter()
@@ -274,7 +276,7 @@ fn name_cut_absent_fields(
     }
     let mut fields = Vec::new();
     if let Some(namespace) = ir.native.namespace("iges") {
-        for (arena, records) in namespace.arenas().iter() {
+        for (arena, records) in namespace.arenas() {
             // A property lists the entries that link it; entries whose
             // Parameter Data the cut removed contribute no links, so the
             // list may be incomplete whenever the cut removes any record.
@@ -793,7 +795,6 @@ impl<'a> PhysicalParse<'a> {
                     .map(|position| before + position);
             }
         }
-        let mut scan = scan;
         let mut framing_recoveries = std::mem::take(&mut scan.recoveries);
         framing_recoveries.merge(parameter_recoveries)?;
         Ok(Self {
@@ -857,8 +858,8 @@ impl<'a> PhysicalParse<'a> {
         losses
     }
 
-    fn record_losses(&self) -> Result<Vec<LossNote>, CodecError> {
-        Ok(self.framing_recoveries.notes())
+    fn record_losses(&self) -> Vec<LossNote> {
+        self.framing_recoveries.notes()
     }
 }
 
@@ -934,7 +935,7 @@ fn inspect_with_parsing(
     let primary = crate::dialect::classify(representation, &parse.global);
     let mut losses = parse.admission_losses();
     losses.append(&mut part_losses);
-    let record_losses = parse.record_losses()?;
+    let record_losses = parse.record_losses();
 
     losses.extend(record_losses);
     let mut summary = card::summarize(&parse.scan, primary)?;
@@ -1200,7 +1201,7 @@ fn decode_with_occurrence_limits(
     let graph_losses = graph::losses(&parse.references, &parse.scan, &parse.parameters);
 
     losses.extend(graph_losses);
-    let record_losses = parse.record_losses()?;
+    let record_losses = parse.record_losses();
 
     losses.extend(record_losses);
     if let Some(source_sequence) = product_occurrence_expansion.output_truncated_at {

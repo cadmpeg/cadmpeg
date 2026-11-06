@@ -919,7 +919,7 @@ fn encoder_writes_authored_with_retained_native_envelope_neutral_parameters() {
         .iter()
         .flat_map(|history| &history.features);
     assert!(records
-        .flat_map(|record| record.properties.get("EquationSet"))
+        .filter_map(|record| record.properties.get("EquationSet"))
         .any(|value| value.as_str() == "Global"));
 }
 
