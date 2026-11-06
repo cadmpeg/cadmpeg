@@ -74,6 +74,7 @@ fn sketch_point_selection() -> DesignEntitySelectionOperand {
             .try_into()
             .unwrap(),
         context_id_offset: 1_100,
+        serialization_form: Default::default(),
         identity_record_index: 203,
         identity_record_offset: 2_000,
         primary_identity: 265,

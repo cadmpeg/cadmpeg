@@ -1073,6 +1073,7 @@ fn a_compact_sketch_point_identity_round_trips_through_the_operand_record() {
         asset_id_offset: frame.asset_id_offset,
         context_id: frame.context_id.clone().try_into().unwrap(),
         context_id_offset: frame.context_id_offset,
+        serialization_form: frame.serialization_form,
         identity_record_index: frame.identity_record_index,
         identity_record_offset: frame.identity_record_offset,
         primary_identity: frame.primary_identity,
@@ -1129,6 +1130,7 @@ fn a_sketch_point_frame_matches_no_curve_and_names_no_topology_identity() {
                 .try_into()
                 .unwrap(),
             context_id_offset: 0,
+            serialization_form: Default::default(),
             identity_record_index: 103,
             identity_record_offset: 0,
             primary_identity: 265,

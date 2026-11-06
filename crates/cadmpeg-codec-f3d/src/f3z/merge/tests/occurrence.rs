@@ -9,6 +9,7 @@ use cadmpeg_ir::features::FeatureDefinition;
 use cadmpeg_ir::features::FeatureId;
 use cadmpeg_ir::ids::BodyId;
 use cadmpeg_ir::ids::RegionId;
+use cadmpeg_ir::schema::rewrite::typed::TextReplacements;
 use cadmpeg_ir::topology::Body;
 use cadmpeg_ir::topology::BodyKind;
 use cadmpeg_ir::topology::Region;
@@ -167,6 +168,8 @@ fn saved_edge_loss_counts_final_archive_ownership_once() {
             .extend_rewritten(
                 member,
                 &mut OccurrenceScope {
+                    native_text: &TextReplacements::build(std::iter::empty::<(&String, &String)>())
+                        .unwrap(),
                     ctx: &ctx,
                     occurrence: "member",
                 },
@@ -281,6 +284,8 @@ fn repeated_occurrence_merge_remaps_typed_graphs_disjointly() {
     for ordinal in 0..2 {
         let occurrence = format!("role/occurrence-{ordinal}");
         let mut scope = OccurrenceScope {
+            native_text: &TextReplacements::build(std::iter::empty::<(&String, &String)>())
+                .unwrap(),
             ctx: &ctx,
             occurrence: &occurrence,
         };
@@ -302,6 +307,44 @@ fn repeated_occurrence_merge_remaps_typed_graphs_disjointly() {
 }
 
 #[test]
+fn occurrence_merge_rewrites_only_member_native_record_text() {
+    use cadmpeg_ir::document::EntityRewrite;
+    use cadmpeg_ir::features::{PlanarProfileRef, ProfileRef};
+    use cadmpeg_ir::NativeRecord;
+
+    let ctx = cadmpeg_test_support::service_decode_context();
+    let id = "f3d:Design1/BulkStream.dat:design-construction-operand-group#7";
+    let mut native = Native::default();
+    native.namespace_mut("f3d").arenas_mut().insert(
+        "operands".into(),
+        vec![NativeRecord::new(id.try_into().unwrap(), serde_json::Map::new()).unwrap()],
+    );
+    let targets = super::super::native_record_targets(&native, "member");
+    let native_text = TextReplacements::build(targets.iter()).unwrap();
+    let mut scope = OccurrenceScope {
+        ctx: &ctx,
+        occurrence: "member",
+        native_text: &native_text,
+    };
+    for (source, expected) in [
+        (
+            id,
+            "f3d:xref/member/Design1/BulkStream.dat:design-construction-operand-group#7",
+        ),
+        (
+            "f3d:Design1/BulkStream.dat:design-construction-operand-group#8",
+            "f3d:Design1/BulkStream.dat:design-construction-operand-group#8",
+        ),
+    ] {
+        let profile = ProfileRef::Planar(PlanarProfileRef::Native(source.into()));
+        assert_eq!(
+            scope.rewrite(profile).unwrap(),
+            ProfileRef::Planar(PlanarProfileRef::Native(expected.into()))
+        );
+    }
+}
+
+#[test]
 fn occurrence_merge_preserves_a_body_name_that_spells_its_identity() {
     use cadmpeg_ir::document::EntityRewrite;
     let ctx = cadmpeg_test_support::service_decode_context();
@@ -316,6 +359,7 @@ fn occurrence_merge_preserves_a_body_name_that_spells_its_identity() {
         visible: None,
     };
     let scoped = OccurrenceScope {
+        native_text: &TextReplacements::build(std::iter::empty::<(&String, &String)>()).unwrap(),
         ctx: &ctx,
         occurrence: "component-0",
     }
@@ -593,6 +637,8 @@ fn merged_documents_keep_parameter_names_and_document_local_expression_dependenc
         .extend_rewritten(
             component,
             &mut OccurrenceScope {
+                native_text: &TextReplacements::build(std::iter::empty::<(&String, &String)>())
+                    .unwrap(),
                 ctx: &ctx,
                 occurrence: "component-0",
             },
@@ -1349,6 +1395,8 @@ fn merged_joint_descent_selects_unique_member_children_and_retains_ambiguous_pat
             .extend_rewritten(
                 component,
                 &mut OccurrenceScope {
+                    native_text: &TextReplacements::build(std::iter::empty::<(&String, &String)>())
+                        .unwrap(),
                     ctx: &ctx,
                     occurrence: "member",
                 },
@@ -1477,6 +1525,8 @@ fn product_history_owner_rescopes_feature_and_parameter_links() {
         .extend_rewritten(
             component,
             &mut OccurrenceScope {
+                native_text: &TextReplacements::build(std::iter::empty::<(&String, &String)>())
+                    .unwrap(),
                 ctx: &ctx,
                 occurrence: "left",
             },
