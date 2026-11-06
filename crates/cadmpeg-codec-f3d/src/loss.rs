@@ -255,6 +255,8 @@ pub(crate) enum F3dLossCode {
     HistoricalEdgeMidpointsUnresolved,
     /// A `Fillet` edge is inferred from blend geometry; no two supports share it.
     HistoricalFilletEdgeInferred,
+    /// An edge-treatment edge is read from the faces its recipe names; it bounds no candidate face.
+    HistoricalEdgeSelectionInferred,
     /// A `Fillet` edge is the best-ranked deleted one of several geometric candidates.
     HistoricalFilletEdgeAmbiguous,
     /// Historical body bounding geometry could not be computed from point carriers.
@@ -314,6 +316,10 @@ pub(crate) enum F3dLossCode {
     FeatureProfileCrossingLoopAssumed,
     /// Extrude profile selections took regions from the faces a cut changed, at one point per region.
     FeatureProfileCutRegionsAssumed,
+    /// Extrude profile selections compared part of a cap outline by samples alone.
+    FeatureProfileCapOutlineAssumed,
+    /// Extrude profile selections read a cap edge carrier from its samples alone.
+    FeatureProfileCapCarrierAssumed,
     /// Feature path selections retain native identities; no unique path.
     FeaturePathSelectionNative,
     /// Feature face selections retain native candidates; no unique face.
@@ -629,6 +635,7 @@ impl F3dLossCode {
         Self::HistoricalFaceSelectionUnbound,
         Self::HistoricalEdgeMidpointsUnresolved,
         Self::HistoricalFilletEdgeInferred,
+        Self::HistoricalEdgeSelectionInferred,
         Self::HistoricalFilletEdgeAmbiguous,
         Self::HistoricalBodyBoundsUnresolved,
         Self::SketchRelationNativeRetained,
@@ -659,6 +666,8 @@ impl F3dLossCode {
         Self::FeatureProfileCrossingLoopCapped,
         Self::FeatureProfileCrossingLoopAssumed,
         Self::FeatureProfileCutRegionsAssumed,
+        Self::FeatureProfileCapOutlineAssumed,
+        Self::FeatureProfileCapCarrierAssumed,
         Self::FeaturePathSelectionNative,
         Self::FeatureFaceSelectionNative,
         Self::FeatureFaceSelectionActiveSubstituted,
@@ -878,6 +887,7 @@ impl F3dLossCode {
             Self::HistoricalFaceSelectionUnbound => "history.face-selection-unbound",
             Self::HistoricalEdgeMidpointsUnresolved => "history.edge-midpoints-unresolved",
             Self::HistoricalFilletEdgeInferred => "history.fillet-edge-inferred",
+            Self::HistoricalEdgeSelectionInferred => "history.edge-selection-inferred",
             Self::HistoricalFilletEdgeAmbiguous => "history.fillet-edge-ambiguous",
             Self::HistoricalBodyBoundsUnresolved => "history.body-bounds-unresolved",
             Self::HistoryDependencyAmbiguous => "history.dependency-ambiguous",
@@ -919,6 +929,8 @@ impl F3dLossCode {
             Self::FeatureProfileCrossingLoopCapped => "feature.profile-crossing-loop-capped",
             Self::FeatureProfileCrossingLoopAssumed => "feature.profile-crossing-loop-assumed",
             Self::FeatureProfileCutRegionsAssumed => "feature.profile-cut-regions-assumed",
+            Self::FeatureProfileCapOutlineAssumed => "feature.profile-cap-outline-assumed",
+            Self::FeatureProfileCapCarrierAssumed => "feature.profile-cap-carrier-assumed",
             Self::FeaturePathSelectionNative => "feature.path-selection-native",
             Self::FeatureFaceSelectionNative => "feature.face-selection-native",
             Self::FeatureFaceSelectionActiveSubstituted => {
@@ -1164,6 +1176,7 @@ impl F3dLossCode {
             | Self::HistoricalFaceSelectionUnbound
             | Self::HistoricalEdgeMidpointsUnresolved
             | Self::HistoricalFilletEdgeInferred
+            | Self::HistoricalEdgeSelectionInferred
             | Self::BodyRecipeSerializationFormAssumed
             | Self::HistoricalFilletEdgeAmbiguous
             | Self::HistoricalBodyBoundsUnresolved
@@ -1194,6 +1207,8 @@ impl F3dLossCode {
             | Self::FeatureProfileCrossingLoopCapped
             | Self::FeatureProfileCrossingLoopAssumed
             | Self::FeatureProfileCutRegionsAssumed
+            | Self::FeatureProfileCapOutlineAssumed
+            | Self::FeatureProfileCapCarrierAssumed
             | Self::FeaturePathSelectionNative
             | Self::FeatureFaceSelectionNative
             | Self::FeatureFaceSelectionActiveSubstituted
@@ -1365,6 +1380,7 @@ impl F3dLossCode {
             | Self::HistoricalFaceSelectionUnbound
             | Self::HistoricalEdgeMidpointsUnresolved
             | Self::HistoricalFilletEdgeInferred
+            | Self::HistoricalEdgeSelectionInferred
             | Self::BodyRecipeSerializationFormAssumed
             | Self::HistoricalFilletEdgeAmbiguous
             | Self::HistoricalBodyBoundsUnresolved
@@ -1395,6 +1411,8 @@ impl F3dLossCode {
             | Self::FeatureProfileCrossingLoopCapped
             | Self::FeatureProfileCrossingLoopAssumed
             | Self::FeatureProfileCutRegionsAssumed
+            | Self::FeatureProfileCapOutlineAssumed
+            | Self::FeatureProfileCapCarrierAssumed
             | Self::FeaturePathSelectionNative
             | Self::FeatureFaceSelectionNative
             | Self::FeatureFaceSelectionActiveSubstituted
@@ -1654,6 +1672,7 @@ mod tests {
                 "history.face-selection-unbound",
                 "history.edge-midpoints-unresolved",
                 "history.fillet-edge-inferred",
+                "history.edge-selection-inferred",
                 "history.fillet-edge-ambiguous",
                 "history.body-bounds-unresolved",
                 "sketch.relation-native",
@@ -1684,6 +1703,8 @@ mod tests {
                 "feature.profile-crossing-loop-capped",
                 "feature.profile-crossing-loop-assumed",
                 "feature.profile-cut-regions-assumed",
+                "feature.profile-cap-outline-assumed",
+                "feature.profile-cap-carrier-assumed",
                 "feature.path-selection-native",
                 "feature.face-selection-native",
                 "feature.face-selection-active-substituted",

@@ -19,7 +19,10 @@ use crate::history_records::{
     AsmHistoricalTopology,
 };
 
-use super::{changed_planes, face_cap, outlines_agree, polygon_area, PlaneFrame, Sampled};
+use super::{
+    changed_planes, face_cap, face_cap_reading, outlines_agree, polygon_area, Agreement,
+    PlaneFrame, Sampled,
+};
 
 const TOLERANCE: f64 = 1e-6;
 /// The cap face every test topology draws.
@@ -157,18 +160,107 @@ fn a_loop_that_does_not_close_proves_no_cap() {
     assert!(face_cap(&xy_frame(), &topology, CAP, TOLERANCE).is_none());
 }
 
-#[test]
-fn an_edge_without_a_proven_carrier_proves_no_cap() {
-    // An edge with no curve axis may be a spline through the same points.
+/// The unit square cap with edge 2, from corner 2 to corner 3, stripped of
+/// its curve axis and, when `bulge` is given, sampled at `(0.5, 1 + bulge)`.
+fn square_with_unproven_edge(bulge: Option<f64>) -> AsmHistoricalTopology {
     let mut topology = loop_topology(&unit_square_corners(), &[(0, 1), (1, 2), (2, 3), (3, 0)]);
     straight_carriers(&mut topology);
     topology.curve_axes.remove(2);
-    assert!(face_cap(&xy_frame(), &topology, CAP, TOLERANCE).is_none());
+    if let Some(bulge) = bulge {
+        topology.edge_samples.push(AsmHistoricalEdgeSample {
+            edge: 402,
+            interior: Point3::new(0.5, 1.0 + bulge, 2.0),
+            tangent: None,
+        });
+    }
+    topology
+}
 
-    // A curve axis across the chord is a circle's or an ellipse's.
+#[test]
+fn an_edge_without_a_proven_carrier_is_read_from_its_samples() {
+    // The strict reader refuses what only samples support.
+    assert!(face_cap(
+        &xy_frame(),
+        &square_with_unproven_edge(None),
+        CAP,
+        TOLERANCE
+    )
+    .is_none());
+    // No axis and no sample off the chord: the chord.
+    for bulge in [None, Some(0.0)] {
+        let cap = face_cap_reading(
+            &xy_frame(),
+            &square_with_unproven_edge(bulge),
+            CAP,
+            TOLERANCE,
+        )
+        .unwrap();
+        assert!(cap.assumed());
+        assert_eq!(
+            cap.measured
+                .iter()
+                .filter(|points| points.is_some())
+                .count(),
+            1
+        );
+        assert!(matches!(cap.pieces[2], super::Piece::Line(..)));
+        assert!((polygon_area(&cap.loops[0]).abs() - 1.0).abs() < 1e-12);
+    }
+
+    // A sample off the chord: the arc through the ends and the sample.
+    let cap = face_cap_reading(
+        &xy_frame(),
+        &square_with_unproven_edge(Some(0.25)),
+        CAP,
+        TOLERANCE,
+    )
+    .unwrap();
+    let super::Piece::Arc { center, radius, .. } = cap.pieces[2] else {
+        panic!("an arc piece");
+    };
+    // The circle through (1, 1), (0.5, 1.25) and (0, 1).
+    assert!((center.u - 0.5).abs() < 1e-12 && (center.v - 0.625).abs() < 1e-12);
+    assert!((radius - 0.625).abs() < 1e-12);
+    let mut ring = Vec::new();
+    cap.pieces[2].push(&mut ring);
+    assert!(ring.iter().all(|point| point.v >= 1.0 - 1e-12));
+
+    // An edge whose carrier is proven is not reported.
+    let mut topology = loop_topology(&unit_square_corners(), &[(0, 1), (1, 2), (2, 3), (3, 0)]);
+    straight_carriers(&mut topology);
+    assert!(!face_cap_reading(&xy_frame(), &topology, CAP, TOLERANCE)
+        .unwrap()
+        .assumed());
+}
+
+#[test]
+fn rows_that_contradict_an_edge_reading_read_no_cap() {
+    // A curve axis across the chord is not a line's, and no sample shows the
+    // edge's curve.
     let mut topology = loop_topology(&unit_square_corners(), &[(0, 1), (1, 2), (2, 3), (3, 0)]);
     straight_carriers(&mut topology);
     topology.curve_axes[2].direction = Vector3::new(0.0, 0.0, 1.0);
+    assert!(face_cap(&xy_frame(), &topology, CAP, TOLERANCE).is_none());
+
+    // A curve axis along the chord with a sample off it.
+    let mut topology = loop_topology(&unit_square_corners(), &[(0, 1), (1, 2), (2, 3), (3, 0)]);
+    straight_carriers(&mut topology);
+    topology.edge_samples.push(AsmHistoricalEdgeSample {
+        edge: 402,
+        interior: Point3::new(0.5, 1.25, 2.0),
+        tangent: None,
+    });
+    assert!(face_cap(&xy_frame(), &topology, CAP, TOLERANCE).is_none());
+
+    // A curve axis in the cap plane with a sample off the chord is not a
+    // circular arc's in the cap.
+    // Edge 402 keeps its binding to curve 1402.
+    let mut topology = square_with_unproven_edge(Some(0.25));
+    topology.curve_axes.push(AsmHistoricalCurveAxis {
+        curve: 1402,
+        origin: Point3::new(0.5, 0.625, 2.0),
+        direction: Vector3::new(1.0, 0.0, 0.0),
+    });
     assert!(face_cap(&xy_frame(), &topology, CAP, TOLERANCE).is_none());
 }
 
@@ -269,6 +361,10 @@ fn a_closed_edge_is_a_circle_only_on_a_cylinder_about_the_cap_normal() {
     assert!(face_cap(&xy_frame(), &unbound, CAP, TOLERANCE).is_none());
 }
 
+fn ctx() -> cadmpeg_core::decode::DecodeContext<'static> {
+    cadmpeg_test_support::service_decode_context()
+}
+
 fn line(id: &str, start: (f64, f64), end: (f64, f64)) -> SketchEntity {
     SketchEntity::new(
         SketchEntityId::mint(format!("synthetic:test:id#{id}")).unwrap(),
@@ -343,13 +439,18 @@ fn regions_and_cap_must_cover_each_others_outline() {
 
     let same = polygon("same", &unit_square_corners());
     let same_region = region(&same, &whole_lines);
-    assert!(outlines_agree(
-        &cap,
-        &sampled(&same_region, (0.5, 0.5)),
-        &[0],
-        &same,
-        TOLERANCE
-    ));
+    assert_eq!(
+        outlines_agree(
+            &cap,
+            &sampled(&same_region, (0.5, 0.5)),
+            &[0],
+            &same,
+            TOLERANCE,
+            &ctx()
+        )
+        .unwrap(),
+        Agreement::Exact
+    );
 
     // Equal area and a shared interior point, but another outline.
     let shifted_corners: Vec<(f64, f64)> = unit_square_corners()
@@ -358,13 +459,18 @@ fn regions_and_cap_must_cover_each_others_outline() {
         .collect();
     let shifted = polygon("shifted", &shifted_corners);
     let shifted_region = region(&shifted, &whole_lines);
-    assert!(!outlines_agree(
-        &cap,
-        &sampled(&shifted_region, (0.5, 0.5)),
-        &[0],
-        &shifted,
-        TOLERANCE
-    ));
+    assert_eq!(
+        outlines_agree(
+            &cap,
+            &sampled(&shifted_region, (0.5, 0.5)),
+            &[0],
+            &shifted,
+            TOLERANCE,
+            &ctx()
+        )
+        .unwrap(),
+        Agreement::No
+    );
 }
 
 #[test]
@@ -385,25 +491,35 @@ fn a_polygon_inscribed_in_a_small_circular_cap_does_not_match_it() {
         &[(radius, 0.0), (0.0, radius), (-radius, 0.0), (0.0, -radius)],
     );
     let square_region = region(&square, &[[0.0, 1.0]; 4]);
-    assert!(!outlines_agree(
-        &cap,
-        &sampled(&square_region, (0.0, 0.0)),
-        &[0],
-        &square,
-        TOLERANCE
-    ));
+    assert_eq!(
+        outlines_agree(
+            &cap,
+            &sampled(&square_region, (0.0, 0.0)),
+            &[0],
+            &square,
+            TOLERANCE,
+            &ctx()
+        )
+        .unwrap(),
+        Agreement::No
+    );
 
     // The circle itself matches, whichever angle its own seam is at.
     let disc = [circle("disc", (0.0, 0.0), radius)];
     for start in [0.0, 1.0] {
         let disc_region = region(&disc, &[[start, start + TAU]]);
-        assert!(outlines_agree(
-            &cap,
-            &sampled(&disc_region, (0.0, 0.0)),
-            &[0],
-            &disc,
-            TOLERANCE
-        ));
+        assert_eq!(
+            outlines_agree(
+                &cap,
+                &sampled(&disc_region, (0.0, 0.0)),
+                &[0],
+                &disc,
+                TOLERANCE,
+                &ctx()
+            )
+            .unwrap(),
+            Agreement::Exact
+        );
     }
 }
 
@@ -749,4 +865,89 @@ fn a_cut_that_leaves_stored_profile_curves_unused_selects_no_regions() {
     assert!(cut_selection(&window, &[0, 2], &work).is_none());
     work.finish_selection();
     assert!(work.losses().is_empty());
+}
+
+fn ellipse(id: &str, major: f64, minor: f64) -> SketchEntity {
+    SketchEntity::new(
+        SketchEntityId::mint(format!("synthetic:test:id#{id}")).unwrap(),
+        xy_sketch().id,
+        SketchGeometry::try_from(SketchGeometryDefinition::Ellipse {
+            center: Point2::new(0.0, 0.0),
+            major_angle: cadmpeg_ir::scalar::Angle::new(0.0).unwrap(),
+            radii: cadmpeg_ir::sketches::EllipseRadii {
+                major_radius: Length::new(major).unwrap(),
+                minor_radius: Length::new(minor).unwrap(),
+            },
+            bounds: None,
+        })
+        .unwrap(),
+    )
+}
+
+#[test]
+fn a_curve_that_is_not_a_line_or_arc_agrees_with_its_cap_at_samples() {
+    // A half-ellipse cap over (-2, 0)..(2, 0): a proven straight edge back
+    // along the major axis, and an unproven edge sampled at the top.
+    let mut topology = loop_topology(&[(2.0, 0.0), (-2.0, 0.0)], &[(0, 1), (1, 0)]);
+    straight_carriers(&mut topology);
+    topology.curve_axes.remove(0);
+    topology.edge_curves.remove(0);
+    topology.edge_samples.push(AsmHistoricalEdgeSample {
+        edge: 400,
+        interior: Point3::new(0.0, 1.0, 2.0),
+        tangent: None,
+    });
+    let cap = face_cap_reading(&xy_frame(), &topology, CAP, TOLERANCE).unwrap();
+    assert!(cap.assumed());
+
+    let agreement = |minor: f64| {
+        let entities = [
+            ellipse("half", 2.0, minor),
+            line("chord", (-2.0, 0.0), (2.0, 0.0)),
+        ];
+        let half = region(&entities, &[[0.0, std::f64::consts::PI], [0.0, 1.0]]);
+        outlines_agree(
+            &cap,
+            &sampled(&half, (0.0, 0.5)),
+            &[0],
+            &entities,
+            TOLERANCE,
+            &ctx(),
+        )
+        .unwrap()
+    };
+    assert_eq!(agreement(1.0), Agreement::Sampled);
+    // The cap edge's top sample lies off a fuller ellipse.
+    assert_eq!(agreement(1.5), Agreement::No);
+}
+
+#[test]
+fn assumed_cap_readings_report_one_loss_per_kind_counting_selections() {
+    use crate::loss::F3dLossCode;
+    let work = crate::design::geometry::ProfileGeometryWork::new();
+    work.note_cap_outline_assumed();
+    work.note_cap_carrier_assumed();
+    work.note_cap_carrier_assumed();
+    work.finish_selection();
+    work.note_cap_carrier_assumed();
+    work.finish_selection();
+    work.finish_selection();
+    let losses = work.losses();
+    let [outline, carrier] = losses.as_slice() else {
+        panic!("expected two losses, got {losses:?}");
+    };
+    assert_eq!(
+        outline.code,
+        F3dLossCode::FeatureProfileCapOutlineAssumed.kind()
+    );
+    assert!(outline
+        .message
+        .starts_with("1 extrude profile selection(s)"));
+    assert_eq!(
+        carrier.code,
+        F3dLossCode::FeatureProfileCapCarrierAssumed.kind()
+    );
+    assert!(carrier
+        .message
+        .starts_with("2 extrude profile selection(s)"));
 }

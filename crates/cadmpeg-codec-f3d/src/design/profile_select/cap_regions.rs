@@ -17,10 +17,13 @@
 //! changed held the region's interior point before the transition and does
 //! not after it. Such a selection reports `feature.profile-cut-regions-assumed`.
 //!
-//! Each cap edge is drawn from a proven carrier: a straight edge whose curve
-//! axis runs along its chord, or a circle where the cap meets a cylinder whose
-//! axis is parallel to the cap normal. A cap with any other edge proves
-//! nothing.
+//! Each cap edge is drawn from a proven carrier where one exists: a straight
+//! edge whose curve axis runs along its chord, or a circle where the cap meets
+//! a cylinder whose axis is parallel to the cap normal. Any other edge is read
+//! from its ends and interior sample, and the selection reports
+//! `feature.profile-cap-carrier-assumed`. A sketch curve that is not a line or
+//! circular arc is compared with the cap at sample points, and the selection
+//! reports `feature.profile-cap-outline-assumed`.
 
 use std::collections::HashSet;
 
@@ -32,8 +35,9 @@ use cadmpeg_ir::math::{Point2, Point3, Vector3};
 
 use super::ResolvedProfileSelection;
 use crate::design::geometry::{
-    atomic_sketch_regions, boundary_use_carrier, point_in_polygon, point_segment_distance,
-    profile_loop_contains_points, AtomicSketchRegion, BoundaryCarrier, ProfileGeometryWork,
+    atomic_sketch_regions, boundary_use_carrier, boundary_use_samples, point_in_polygon,
+    point_segment_distance, profile_loop_contains_points, AtomicSketchRegion, BoundaryCarrier,
+    ProfileGeometryWork,
 };
 use crate::history_records::{AsmDeltaState, AsmHistoricalTopology, AsmHistory};
 
@@ -51,6 +55,11 @@ const STRAIGHT_CARRIER: f64 = 1e-9;
 /// How many linear tolerances either side of a boundary segment its two sides
 /// are sampled at.
 pub(super) const SIDE_OFFSET: f64 = 4.0;
+
+/// Sample intervals along one boundary use on a curve other than a line or
+/// circular arc.
+const CURVE_SAMPLES: u32 = 64;
+
 /// Most loops and loop edges one cap may have.
 pub(super) const CAP_EDGES: usize = 4096;
 
@@ -123,36 +132,6 @@ enum Piece {
 }
 
 impl Piece {
-    fn distance(&self, point: Point2) -> f64 {
-        match *self {
-            Piece::Line(start, end) => point_segment_distance(point, (start, end)),
-            Piece::Arc {
-                center,
-                radius,
-                start,
-                sweep,
-            } => {
-                let angle = (point.v - center.v).atan2(point.u - center.u);
-                let along = if sweep >= 0.0 {
-                    (angle - start).rem_euclid(TAU)
-                } else {
-                    (start - angle).rem_euclid(TAU)
-                };
-                if along <= sweep.abs() {
-                    ((point.u - center.u).hypot(point.v - center.v) - radius).abs()
-                } else {
-                    let at = |angle: f64| {
-                        Point2::new(
-                            center.u + radius * angle.cos(),
-                            center.v + radius * angle.sin(),
-                        )
-                    };
-                    distance(point, at(start)).min(distance(point, at(start + sweep)))
-                }
-            }
-        }
-    }
-
     /// The piece's start, middle and end points.
     fn points(&self) -> [Point2; 3] {
         match *self {
@@ -255,6 +234,33 @@ impl Piece {
         }
     }
 
+    /// The distance from `point` to the piece.
+    fn distance(&self, point: Point2) -> f64 {
+        match *self {
+            Piece::Line(start, end) => point_segment_distance(point, (start, end)),
+            Piece::Arc {
+                center,
+                radius,
+                start,
+                sweep,
+            } => {
+                let turned =
+                    ((point.v - center.v).atan2(point.u - center.u) - start).rem_euclid(TAU);
+                let within = if sweep >= 0.0 {
+                    turned <= sweep
+                } else {
+                    turned == 0.0 || turned >= TAU + sweep
+                };
+                if within {
+                    (distance(point, center) - radius).abs()
+                } else {
+                    let [first, _, last] = self.points();
+                    distance(point, first).min(distance(point, last))
+                }
+            }
+        }
+    }
+
     /// Appends the piece's polyline, without its end, to `ring`.
     fn push(&self, ring: &mut Vec<Point2>) {
         match *self {
@@ -288,6 +294,14 @@ pub(super) struct Cap {
     pieces: Vec<Piece>,
     pub(super) corners: Vec<Point2>,
     pub(super) area: f64,
+    pub(super) measured: Vec<Option<Vec<Point2>>>,
+}
+
+impl Cap {
+    /// Whether any piece was read from samples alone.
+    fn assumed(&self) -> bool {
+        self.measured.iter().any(Option::is_some)
+    }
 }
 
 impl Cap {
@@ -358,6 +372,7 @@ pub(super) fn cap_profile_selection(
         return Ok(None);
     };
     let mut selected = Vec::new();
+    let mut outline_assumed = false;
     for cap in &caps {
         let mut inside = Vec::new();
         for (index, region) in sampled.iter().enumerate() {
@@ -368,8 +383,10 @@ pub(super) fn cap_profile_selection(
                 }
             }
         }
-        if !outlines_agree(cap, &sampled, &inside, entities, tolerance) {
-            return Ok(None);
+        match outlines_agree(cap, &sampled, &inside, entities, tolerance, ctx)? {
+            Agreement::Exact => {}
+            Agreement::Sampled => outline_assumed = true,
+            Agreement::No => return Ok(None),
         }
     }
     if selected.is_empty() {
@@ -386,7 +403,16 @@ pub(super) fn cap_profile_selection(
             }
         }
     }
-    Ok(trimmed_selection(&sampled, &selected))
+    let selection = trimmed_selection(&sampled, &selected);
+    if selection.is_some() {
+        if outline_assumed {
+            work.note_cap_outline_assumed();
+        }
+        if caps.iter().any(Cap::assumed) {
+            work.note_cap_carrier_assumed();
+        }
+    }
+    Ok(selection)
 }
 
 /// The material a transition leaves on one plane parallel to the sketch:
@@ -603,30 +629,66 @@ fn trimmed_selection(
     Some(ResolvedProfileSelection::Regions(out))
 }
 
+/// How the outline of chosen regions agrees with a cap boundary.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Agreement {
+    /// Every outline piece and cap piece covers the other on its carrier.
+    Exact,
+    /// The lines and arcs agree exactly; a curve of another kind agrees with
+    /// the cap at sample points only.
+    Sampled,
+    /// The outline and the cap differ.
+    No,
+}
+
 /// Whether the outline of the union of the `chosen` regions and the cap's
-/// boundary cover each other exactly.
+/// boundary cover each other.
 ///
 /// Each boundary use of a chosen region counts once, and once more as a
 /// hole of that region for each region nested directly in it. A use counted
 /// an even number of times separates two chosen regions; the rest form the
 /// outline. Every outline line or arc must lie on cap pieces of the same
-/// carrier over its whole interval, and every cap piece on outline pieces.
-/// A boundary on any other curve proves nothing.
+/// carrier over its whole interval. When the outline holds only lines and
+/// arcs, every cap piece must lie on outline pieces, and the agreement is
+/// exact. A use on any other curve is sampled: its ends must lie on the cap
+/// boundary, and each cap edge the lines and arcs leave uncovered must run
+/// along the samples at the points it was measured or proven at.
 fn outlines_agree(
     cap: &Cap,
     sampled: &[Sampled<'_>],
     chosen: &[usize],
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     tolerance: f64,
-) -> bool {
+    ctx: &DecodeContext<'_>,
+) -> Result<Agreement, CodecError> {
+    type Curve<'a> = (
+        &'a cadmpeg_ir::sketches::SketchEntityId,
+        [f64; 2],
+        Vec<Point2>,
+        usize,
+    );
     let rings = chosen
         .iter()
         .flat_map(|index| std::iter::once(*index).chain(sampled[*index].nested.iter().copied()));
     let mut counted: Vec<(&cadmpeg_ir::sketches::SketchEntityId, Piece, usize)> = Vec::new();
+    let mut curves: Vec<Curve<'_>> = Vec::new();
     for ring in rings {
         for use_ in &sampled[ring].region.boundary {
             let Some(carrier) = boundary_use_carrier(use_, entities) else {
-                return false;
+                let [from, to] = use_.parameter_range.endpoints();
+                let range = [from.min(to), from.max(to)];
+                if let Some((_, _, _, count)) = curves
+                    .iter_mut()
+                    .find(|(entity, other, _, _)| *entity == &use_.entity && *other == range)
+                {
+                    *count += 1;
+                    continue;
+                }
+                let Some(points) = boundary_use_samples(use_, entities, CURVE_SAMPLES, ctx)? else {
+                    return Ok(Agreement::No);
+                };
+                curves.push((&use_.entity, range, points, 1));
+                continue;
             };
             let piece = match carrier {
                 BoundaryCarrier::Line { start, end } => Piece::Line(start, end),
@@ -656,15 +718,83 @@ fn outlines_agree(
         .filter(|(_, _, count)| count % 2 == 1)
         .map(|(_, piece, _)| piece)
         .collect();
+    let curves: Vec<&[Point2]> = curves
+        .iter()
+        .filter(|(_, _, _, count)| count % 2 == 1)
+        .map(|(_, _, points, _)| points.as_slice())
+        .collect();
     let cap_pieces: Vec<&Piece> = cap.pieces.iter().collect();
-    !outline.is_empty()
-        && outline
+    if outline.is_empty() && curves.is_empty()
+        || !outline
             .iter()
             .all(|piece| piece.covered_by(&cap_pieces, tolerance))
-        && cap
+    {
+        return Ok(Agreement::No);
+    }
+    if curves.is_empty() {
+        let covered = cap
             .pieces
             .iter()
-            .all(|piece| piece.covered_by(&outline, tolerance))
+            .all(|piece| piece.covered_by(&outline, tolerance));
+        return Ok(if covered {
+            Agreement::Exact
+        } else {
+            Agreement::No
+        });
+    }
+    // The curve meets the rest of the outline where the cap does.
+    let on_cap = |point: Option<&Point2>| {
+        point.is_some_and(|point| {
+            cap.pieces
+                .iter()
+                .any(|piece| piece.distance(*point) <= tolerance)
+        })
+    };
+    if !curves
+        .iter()
+        .all(|points| on_cap(points.first()) && on_cap(points.last()))
+    {
+        return Ok(Agreement::No);
+    }
+    // A cap edge the lines and arcs leave uncovered runs along a curve: its
+    // measured points, or its proven piece's points, lie on the samples.
+    let along_curve = |point: &Point2| {
+        curves
+            .iter()
+            .any(|points| polyline_distance(*point, points) <= tolerance + polyline_slack(points))
+    };
+    for (piece, measured) in cap.pieces.iter().zip(&cap.measured) {
+        if piece.covered_by(&outline, tolerance) {
+            continue;
+        }
+        let along = match measured {
+            Some(points) => points.iter().all(along_curve),
+            None => piece.points().iter().all(along_curve),
+        };
+        if !along {
+            return Ok(Agreement::No);
+        }
+    }
+    Ok(Agreement::Sampled)
+}
+
+/// The distance from `point` to the open polyline `points`.
+fn polyline_distance(point: Point2, points: &[Point2]) -> f64 {
+    points
+        .windows(2)
+        .map(|pair| point_segment_distance(point, (pair[0], pair[1])))
+        .fold(f64::INFINITY, f64::min)
+}
+
+/// How far a curve may bow away from its sample polyline: one eighth of the
+/// longest sample spacing, the sagitta of a chord of that length on a circle
+/// of the same diameter.
+fn polyline_slack(points: &[Point2]) -> f64 {
+    points
+        .windows(2)
+        .map(|pair| distance(pair[0], pair[1]))
+        .fold(0.0, f64::max)
+        / 8.0
 }
 
 /// Whether ordered intervals reach from `from` to `to` without a gap wider
@@ -716,7 +846,7 @@ fn far_caps(
             ParallelPlane::Unreadable => return None,
         };
         let height = frame.height(origin);
-        let cap = face_cap(frame, topology, *face, tolerance)?;
+        let cap = face_cap_reading(frame, topology, *face, tolerance)?;
         caps.push((height, cap));
     }
     let far = caps
@@ -778,13 +908,27 @@ pub(super) fn face_cap(
     face: i64,
     tolerance: f64,
 ) -> Option<Cap> {
+    face_cap_reading(frame, topology, face, tolerance).filter(|cap| !cap.assumed())
+}
+
+/// Every loop of `face` as a frame polyline drawn from its pieces, an edge
+/// without a proven carrier read from its ends and interior sample.
+/// `None` when a loop does not close or an edge has no readable carrier.
+pub(super) fn face_cap_reading(
+    frame: &PlaneFrame,
+    topology: &AsmHistoricalTopology,
+    face: i64,
+    tolerance: f64,
+) -> Option<Cap> {
     let mut loops = Vec::new();
     let mut pieces = Vec::new();
     let mut corners = Vec::new();
+    let mut measured = Vec::new();
     for steps in oriented_loops(topology, face)? {
         let mut ring: Vec<Point2> = Vec::new();
         for (edge, from, to) in steps {
-            let piece = edge_piece(frame, topology, face, edge, (from, to), tolerance)?;
+            let (piece, points) = edge_piece(frame, topology, face, edge, (from, to), tolerance)?;
+            measured.push(points);
             corners.push(frame.project(from));
             piece.push(&mut ring);
             pieces.push(piece);
@@ -807,6 +951,7 @@ pub(super) fn face_cap(
         pieces,
         corners,
         area,
+        measured,
     })
 }
 
@@ -894,10 +1039,15 @@ pub(super) fn oriented_loops(
     Some(loops)
 }
 
-/// The proven piece of the cap `face`'s `edge` between its two ends: a line
-/// when the edge's curve axis runs along its chord through both ends, or a
-/// circle where the cap meets a cylinder about an axis parallel to the cap
-/// normal. `None` for any other carrier.
+/// The piece of the cap `face`'s `edge` between its two ends, with the
+/// measured points it was read from when no carrier proves it.
+///
+/// A proven piece is a line when the edge's curve axis runs along its chord
+/// through both ends, or a circle where the cap meets a cylinder about an
+/// axis parallel to the cap normal. Without either proof, the edge is read
+/// from its ends and interior sample: the chord when the sample lies on it,
+/// otherwise the arc through the ends and the sample. `None` when the rows
+/// contradict the reading, or a closed edge has no cylinder.
 fn edge_piece(
     frame: &PlaneFrame,
     topology: &AsmHistoricalTopology,
@@ -905,13 +1055,13 @@ fn edge_piece(
     edge: i64,
     (from, to): (Point3, Point3),
     tolerance: f64,
-) -> Option<Piece> {
+) -> Option<(Piece, Option<Vec<Point2>>)> {
     let normal = frame.normal;
     let start = frame.project(from);
     let end = frame.project(to);
     let interior = sole(topology.edge_samples.iter().filter(|row| row.edge == edge))
         .ok()?
-        .map(|row| row.interior);
+        .map(|row| frame.project(row.interior));
     let closed = distance(start, end) <= tolerance;
     let curve = sole(
         topology
@@ -936,9 +1086,9 @@ fn edge_piece(
                 && off_line(from) <= tolerance
                 && off_line(to) <= tolerance
             {
-                return match interior.map(|point| frame.project(point)) {
+                return match interior {
                     Some(point) if point_segment_distance(point, (start, end)) > tolerance => None,
-                    _ => Some(Piece::Line(start, end)),
+                    _ => Some((Piece::Line(start, end), None)),
                 };
             }
         }
@@ -973,7 +1123,14 @@ fn edge_piece(
         surfaces.contains(&cylinder.surface)
             && (cylinder.axis.dot(normal).abs() / cylinder.axis.norm() - 1.0).abs() <= PARALLEL_CAP
     });
-    let cylinder = cylinders.next()?;
+    let Some(cylinder) = cylinders.next() else {
+        let piece = sampled_piece(start, end, interior, closed, axis, normal, tolerance)?;
+        let points = std::iter::once(start)
+            .chain(interior)
+            .chain([end])
+            .collect();
+        return Some((piece, Some(points)));
+    };
     let center = frame.project(cylinder.origin);
     let radius = cylinder.radius;
     if cylinders.any(|other| {
@@ -986,32 +1143,88 @@ fn edge_piece(
     if radius <= tolerance || !on_circle(start) || !on_circle(end) {
         return None;
     }
-    let angle = |point: Point2| (point.v - center.v).atan2(point.u - center.u);
-    let first = angle(start);
     if closed {
-        return Some(Piece::Arc {
-            center,
-            radius,
-            start: first,
-            sweep: TAU,
-        });
+        return Some((full_circle(center, radius, start), None));
     }
-    let middle = frame.project(interior?);
+    let middle = interior?;
     if !on_circle(middle) {
         return None;
     }
+    Some((arc_through(center, radius, start, middle, end), None))
+}
+
+/// The best reading of an edge with no proven carrier: the chord when the
+/// interior sample lies on it or is missing, otherwise the circular arc
+/// through the ends and the sample. `None` for a closed edge, three points
+/// on no circle, or a curve axis that contradicts the reading: a line's axis
+/// runs along it, and a circular arc's is normal to the cap.
+fn sampled_piece(
+    start: Point2,
+    end: Point2,
+    interior: Option<Point2>,
+    closed: bool,
+    axis: Option<&crate::history_records::AsmHistoricalCurveAxis>,
+    normal: cadmpeg_ir::math::Vector3,
+    tolerance: f64,
+) -> Option<Piece> {
+    if closed {
+        return None;
+    }
+    let Some(middle) =
+        interior.filter(|point| point_segment_distance(*point, (start, end)) > tolerance)
+    else {
+        // An axis that ran along the chord would have proven the line.
+        return axis.is_none().then_some(Piece::Line(start, end));
+    };
+    if axis.is_some_and(|axis| {
+        (axis.direction.dot(normal).abs() / axis.direction.norm() - 1.0).abs() > PARALLEL_CAP
+    }) {
+        return None;
+    }
+    let center = circumcenter(start, middle, end)?;
+    let radius = distance(center, start);
+    (radius > tolerance).then(|| arc_through(center, radius, start, middle, end))
+}
+
+/// The center of the circle through three points; `None` when they are
+/// collinear.
+fn circumcenter(a: Point2, b: Point2, c: Point2) -> Option<Point2> {
+    let (bu, bv, cu, cv) = (b.u - a.u, b.v - a.v, c.u - a.u, c.v - a.v);
+    let d = 2.0 * (bu * cv - bv * cu);
+    if d.abs() <= f64::EPSILON * (bu.hypot(bv) * cu.hypot(cv)).max(f64::MIN_POSITIVE) {
+        return None;
+    }
+    let (b2, c2) = (bu * bu + bv * bv, cu * cu + cv * cv);
+    let center = Point2::new(a.u + (cv * b2 - bv * c2) / d, a.v + (bu * c2 - cu * b2) / d);
+    (center.u.is_finite() && center.v.is_finite()).then_some(center)
+}
+
+/// The whole circle about `center` from the angle of `start`.
+fn full_circle(center: Point2, radius: f64, start: Point2) -> Piece {
+    Piece::Arc {
+        center,
+        radius,
+        start: (start.v - center.v).atan2(start.u - center.u),
+        sweep: TAU,
+    }
+}
+
+/// The arc about `center` from `start` to `end` that passes `middle`.
+fn arc_through(center: Point2, radius: f64, start: Point2, middle: Point2, end: Point2) -> Piece {
+    let angle = |point: Point2| (point.v - center.v).atan2(point.u - center.u);
+    let first = angle(start);
     let counterclockwise = (angle(end) - first).rem_euclid(TAU);
     let sweep = if (angle(middle) - first).rem_euclid(TAU) < counterclockwise {
         counterclockwise
     } else {
         counterclockwise - TAU
     };
-    Some(Piece::Arc {
+    Piece::Arc {
         center,
         radius,
         start: first,
         sweep,
-    })
+    }
 }
 
 /// Several rows where at most one may occur.

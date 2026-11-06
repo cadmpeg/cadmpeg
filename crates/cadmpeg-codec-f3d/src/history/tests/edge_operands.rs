@@ -489,7 +489,7 @@ fn revolve_axis_edge_is_shared_by_the_first_recipe_side_faces() {
 }
 
 #[test]
-fn side_one_support_faces_select_an_edge_only_on_the_candidate_face_boundaries() {
+fn side_one_support_faces_prove_an_edge_on_the_candidate_face_boundaries_and_infer_one_off_them() {
     use crate::history_records::{
         AsmHistoricalCoedge, AsmHistoricalRelation, AsmHistoricalTopology,
     };
@@ -559,12 +559,14 @@ fn side_one_support_faces_select_an_edge_only_on_the_candidate_face_boundaries()
             &topology,
             &mut queries,
         )
+        .map(|edge| (edge.slot, edge.inferred))
     };
     let both = [reference(1, Some(10)), reference(2, Some(20))];
-    assert_eq!(resolve(&both, &[31, 32]), Some(31));
-    // The candidate faces do not bound the support faces' common edge.
-    assert_eq!(resolve(&both, &[30, 32]), None);
-    assert_eq!(resolve(&both, &[]), None);
+    assert_eq!(resolve(&both, &[31, 32]), Some((31, false)));
+    // The candidate faces do not bound the support faces' common edge: the
+    // support faces alone still read it, as an inference.
+    assert_eq!(resolve(&both, &[30, 32]), Some((31, true)));
+    assert_eq!(resolve(&both, &[]), Some((31, true)));
     // An operand whose names supply two faces names no single face; one
     // whose first name supplies none takes its face from a later name.
     let lane = [
@@ -578,5 +580,5 @@ fn side_one_support_faces_select_an_edge_only_on_the_candidate_face_boundaries()
         reference(2, None),
         reference(2, Some(20)),
     ];
-    assert_eq!(resolve(&lane, &[31]), Some(31));
+    assert_eq!(resolve(&lane, &[31]), Some((31, false)));
 }
