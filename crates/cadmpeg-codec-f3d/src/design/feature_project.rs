@@ -6002,11 +6002,9 @@ pub(super) fn project_fixed_revolve_with_entities(
     let first = matching.next();
     let second = matching.next();
     let axis = if let (Some(axis_operand), None) = (first, second) {
-        Some(RevolutionAxis {
-            origin: axis_operand.resolved_axis?.origin,
-            direction: cadmpeg_ir::features::FeatureDirection3::from(
-                axis_operand.resolved_axis?.direction,
-            ),
+        axis_operand.resolved_axis.map(|axis| RevolutionAxis {
+            origin: axis.origin,
+            direction: cadmpeg_ir::features::FeatureDirection3::from(axis.direction),
             reference: None,
         })
     } else if first.is_none() {

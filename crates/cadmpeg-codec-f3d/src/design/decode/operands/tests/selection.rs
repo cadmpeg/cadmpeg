@@ -658,6 +658,7 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
     lp_utf16(&mut bytes, "53aa8ab4-194a-434b-bd52-8c6d761dc147");
     lp_utf16(&mut bytes, "8e685642-4d68-4909-96d0-0dd4437491b6");
     bytes.extend_from_slice(&2u32.to_le_bytes());
+    let serialization_form_at = bytes.len();
     bytes.extend_from_slice(&[0; 4]);
     bytes.extend_from_slice(&[1, 0, 0]);
     indexed_header(&mut bytes, *b"265", 100);
@@ -673,6 +674,18 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
 
     let operand = parse_entity_selection_operand(&bytes, &group, 0, &record)
         .expect("nested entity-selection frame");
+    let wire = serde_json::to_value(&operand).unwrap();
+    assert!(wire.get("serialization_form").is_none());
+    let mut form_one = bytes.clone();
+    form_one[serialization_form_at..serialization_form_at + 4].copy_from_slice(&1u32.to_le_bytes());
+    let form_one_operand = parse_entity_selection_operand(&form_one, &group, 0, &record).unwrap();
+    let wire = serde_json::to_value(&form_one_operand).unwrap();
+    assert_eq!(wire["serialization_form"], 1);
+    let restored: crate::records::topology::entity_selection::DesignEntitySelectionOperand =
+        serde_json::from_value(wire).unwrap();
+    assert_eq!(restored, form_one_operand);
+    form_one[serialization_form_at..serialization_form_at + 4].copy_from_slice(&2u32.to_le_bytes());
+    assert!(parse_entity_selection_operand(&form_one, &group, 0, &record).is_none());
     assert_eq!(operand.primary_identity, 1331);
     assert_eq!(
         operand
@@ -685,6 +698,43 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
         u64_from_index(identity_at)
     );
     assert_eq!(operand.next_byte_offset(), u64_from_index(next_at));
+
+    let mut later_recipe = bytes.clone();
+    let recipe_name_at = later_recipe.len() + 4;
+    later_recipe.extend_from_slice(&16u32.to_le_bytes());
+    later_recipe.extend_from_slice(b"edge_recipe_data");
+    for value in [-1i32, -1, 2, 0, -1, 1, -1, 7] {
+        later_recipe.extend_from_slice(&value.to_le_bytes());
+    }
+    indexed_header(&mut later_recipe, *b"311", 105);
+    let recipe = crate::records::recipes::ConstructionRecipe {
+        id: "f3d:Design/BulkStream.dat:construction-recipe#1".into(),
+        byte_offset: u64_from_index(recipe_name_at),
+        kind: crate::records::recipes::ConstructionRecipeKind::Edge,
+        design: None,
+        recipe_index: 7,
+        record_index: None,
+    };
+    assert!(parse_entity_selection_operand(&later_recipe, &group, 0, &record).is_some());
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, _) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&[], &arena, &policy).unwrap();
+    let scope = crate::records::feature::scope::DesignParameterScope::empty(
+        "f3d:Design/BulkStream.dat:scope#80",
+        crate::records::feature::scope::DesignFeatureKind::Fillet,
+        80,
+    );
+    assert!(crate::design::decode::operands::parse_edge_operand(
+        &ctx,
+        &later_recipe,
+        &crate::design::test_support::indexed_record_offsets_for_test(&later_recipe),
+        &scope,
+        (0, &record),
+        &[recipe],
+        Some(u64_from_index(later_recipe.len())),
+    )
+    .is_none());
 
     for successor in [99u32, 114, u32::MAX] {
         let mut independent_successor = bytes[..next_at].to_vec();
@@ -762,59 +812,57 @@ fn nested_entity_selection_member_retains_compact_and_expanded_identities() {
         u64_from_index(curve_next_at)
     );
 
-    let mut class_338_curve_identity = bytes[..identity_at].to_vec();
-    class_338_curve_identity[4..7].copy_from_slice(b"338");
-    indexed_header(&mut class_338_curve_identity, *b"361", 103);
-    class_338_curve_identity.extend_from_slice(&[0; 9]);
-    class_338_curve_identity.push(1);
-    class_338_curve_identity.extend_from_slice(&[0; 12]);
-    class_338_curve_identity.extend_from_slice(&949u32.to_le_bytes());
-    class_338_curve_identity.extend_from_slice(&0u32.to_le_bytes());
-    class_338_curve_identity.extend_from_slice(&249u32.to_le_bytes());
-    class_338_curve_identity.extend_from_slice(&0u32.to_le_bytes());
-    let class_338_next_at = class_338_curve_identity.len();
-    indexed_header(&mut class_338_curve_identity, *b"268", 104);
-    let class_338_record = DesignRecordHeader {
-        class_tag: crate::records::references::DesignClassTag::try_from("338".to_owned()).unwrap(),
+    let mut marked_curve_identity = bytes[..identity_at].to_vec();
+    marked_curve_identity[4..7].copy_from_slice(b"288");
+    indexed_header(&mut marked_curve_identity, *b"383", 103);
+    marked_curve_identity.extend_from_slice(&[0; 9]);
+    marked_curve_identity.push(1);
+    marked_curve_identity.extend_from_slice(&[0; 12]);
+    marked_curve_identity.extend_from_slice(&949u32.to_le_bytes());
+    marked_curve_identity.extend_from_slice(&0u32.to_le_bytes());
+    marked_curve_identity.extend_from_slice(&249u32.to_le_bytes());
+    marked_curve_identity.extend_from_slice(&0u32.to_le_bytes());
+    let marked_next_at = marked_curve_identity.len();
+    indexed_header(&mut marked_curve_identity, *b"268", 104);
+    let marked_record = DesignRecordHeader {
+        class_tag: crate::records::references::DesignClassTag::try_from("288".to_owned()).unwrap(),
         ..record
     };
-    let class_338_operand =
-        parse_entity_selection_operand(&class_338_curve_identity, &group, 0, &class_338_record)
-            .expect("class-338 Sketch-curve entity-selection frame");
-    assert_eq!(class_338_operand.primary_identity, 949);
+    let marked_operand =
+        parse_entity_selection_operand(&marked_curve_identity, &group, 0, &marked_record)
+            .expect("marked Sketch-curve entity-selection frame");
+    assert_eq!(marked_operand.primary_identity, 949);
     assert_eq!(
-        class_338_operand
+        marked_operand
             .secondary()
             .map(|secondary| secondary.identity.value),
         Some(249)
     );
     assert_eq!(
-        class_338_operand
+        marked_operand
             .secondary()
             .and_then(|secondary| secondary.curve_identity)
             .map(|identity| identity.value),
         None
     );
     assert_eq!(
-        class_338_operand.primary_identity_offset(),
+        marked_operand.primary_identity_offset(),
         u64_from_index(identity_at) + 33
     );
     assert_eq!(
-        class_338_operand
+        marked_operand
             .secondary()
             .map(|secondary| secondary.identity.offset),
         Some(u64_from_index(identity_at) + 41)
     );
     assert_eq!(
-        class_338_operand.next_byte_offset(),
-        u64_from_index(class_338_next_at)
+        marked_operand.next_byte_offset(),
+        u64_from_index(marked_next_at)
     );
 
-    let mut invalid_class_338 = class_338_curve_identity.clone();
-    invalid_class_338[identity_at + 20] = 0;
-    assert!(
-        parse_entity_selection_operand(&invalid_class_338, &group, 0, &class_338_record).is_none()
-    );
+    let mut invalid_marked = marked_curve_identity.clone();
+    invalid_marked[identity_at + 20] = 0;
+    assert!(parse_entity_selection_operand(&invalid_marked, &group, 0, &marked_record).is_none());
 }
 
 fn region_member(bytes: &mut Vec<u8>, curve_primary_id: u32, incidence: [u32; 3]) {

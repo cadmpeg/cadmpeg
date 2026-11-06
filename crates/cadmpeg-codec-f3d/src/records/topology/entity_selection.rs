@@ -15,6 +15,35 @@ use crate::records::references::DesignClassTag;
 use serde::Deserialize;
 use serde::Serialize;
 
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "u32", into = "u32")]
+pub(crate) enum SelectionSerializationForm {
+    #[default]
+    Zero,
+    One,
+}
+
+impl TryFrom<u32> for SelectionSerializationForm {
+    type Error = &'static str;
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Self::Zero),
+            1 => Ok(Self::One),
+            _ => Err("selection serialization form must be 0 or 1"),
+        }
+    }
+}
+
+impl From<SelectionSerializationForm> for u32 {
+    fn from(value: SelectionSerializationForm) -> Self {
+        match value {
+            SelectionSerializationForm::Zero => 0,
+            SelectionSerializationForm::One => 1,
+        }
+    }
+}
+
 /// Persistent Design entity selected through a nested indexed-record frame.
 #[derive(Debug, PartialEq, Deserialize)]
 #[serde(try_from = "DesignEntitySelectionOperandWire")]
@@ -39,6 +68,7 @@ pub(crate) struct DesignEntitySelectionOperand {
     pub(crate) context_id: DesignRelaxedGuidText,
     /// Byte offset of the context UUID's UTF-16LE code units.
     context_id_offset: u64,
+    serialization_form: SelectionSerializationForm,
     /// Byte offset of the nested identity record.
     identity_record_offset: u64,
     /// Primary entity identity in the nested identity pair; for a Sketch
@@ -76,6 +106,7 @@ impl Clone for DesignEntitySelectionOperand {
             asset_id_offset: self.asset_id_offset,
             context_id: self.context_id.clone(),
             context_id_offset: self.context_id_offset,
+            serialization_form: self.serialization_form,
             identity_record_offset: self.identity_record_offset,
             primary_identity: self.primary_identity,
             historical_edge_candidates: self.historical_edge_candidates.clone(),
@@ -100,6 +131,8 @@ impl Serialize for DesignEntitySelectionOperand {
             asset_id_offset: u64,
             context_id: &'a str,
             context_id_offset: u64,
+            #[serde(skip_serializing_if = "crate::history_records::is_default")]
+            serialization_form: SelectionSerializationForm,
             identity_record_index: u32,
             identity_record_offset: u64,
             primary_identity: u64,
@@ -134,6 +167,7 @@ impl Serialize for DesignEntitySelectionOperand {
             asset_id_offset: self.asset_id_offset,
             context_id: self.context_id.as_str(),
             context_id_offset: self.context_id_offset,
+            serialization_form: self.serialization_form,
             identity_record_index: self.identity_record_index(),
             identity_record_offset: self.identity_record_offset,
             primary_identity: self.primary_identity,
@@ -182,12 +216,11 @@ impl DesignEntitySelectionOperand {
                 }
             }
             Some(secondary)
-                if draft.class_tag.as_str() == "338"
+                if draft.identity_record_offset.checked_add(u64_from_index(
+                    crate::layout::marked_sketch_curve_identity::OWNER_RECORD_INDEX,
+                )) == Some(draft.primary_identity_offset)
                     && draft.identity_record_offset.checked_add(u64_from_index(
-                        crate::layout::class_338_sketch_curve_identity::OWNER_RECORD_INDEX,
-                    )) == Some(draft.primary_identity_offset)
-                    && draft.identity_record_offset.checked_add(u64_from_index(
-                        crate::layout::class_338_sketch_curve_identity::CURVE_PERSISTENT_ID,
+                        crate::layout::marked_sketch_curve_identity::CURVE_PERSISTENT_ID,
                     )) == Some(secondary.identity.offset)
                     && secondary.curve_identity.is_none() =>
             {
@@ -240,6 +273,7 @@ impl DesignEntitySelectionOperand {
             asset_id_offset: draft.asset_id_offset,
             context_id: draft.context_id,
             context_id_offset: draft.context_id_offset,
+            serialization_form: draft.serialization_form,
             identity_record_offset: draft.identity_record_offset,
             primary_identity: draft.primary_identity,
             historical_edge_candidates: draft.historical_edge_candidates,
@@ -284,6 +318,7 @@ impl DesignEntitySelectionOperand {
             asset_id_offset: self.asset_id_offset,
             context_id: self.context_id,
             context_id_offset: self.context_id_offset,
+            serialization_form: self.serialization_form,
             identity_record_index,
             identity_record_offset: self.identity_record_offset,
             primary_identity: self.primary_identity,
@@ -383,6 +418,7 @@ pub(crate) struct DesignEntitySelectionOperandDraft {
     pub(crate) context_id: DesignRelaxedGuidText,
     /// Byte offset of the context UUID's UTF-16LE code units.
     pub(crate) context_id_offset: u64,
+    pub(crate) serialization_form: SelectionSerializationForm,
     /// Nested indexed record that carries the persistent entity identity.
     pub(crate) identity_record_index: u32,
     /// Byte offset of the nested identity record.
@@ -430,6 +466,8 @@ struct DesignEntitySelectionOperandWire {
     context_id: String,
     /// Byte offset of the context UUID's UTF-16LE code units.
     context_id_offset: u64,
+    #[serde(default, skip_serializing_if = "crate::history_records::is_default")]
+    serialization_form: SelectionSerializationForm,
     /// Nested indexed record that carries the persistent entity identity.
     identity_record_index: u32,
     /// Byte offset of the nested identity record.
@@ -502,6 +540,7 @@ impl TryFrom<DesignEntitySelectionOperandWire> for DesignEntitySelectionOperand 
             asset_id_offset: wire.asset_id_offset,
             context_id: wire.context_id.try_into()?,
             context_id_offset: wire.context_id_offset,
+            serialization_form: wire.serialization_form,
             identity_record_index: wire.identity_record_index,
             identity_record_offset: wire.identity_record_offset,
             primary_identity: wire.primary_identity,
@@ -543,6 +582,7 @@ impl From<DesignEntitySelectionOperand> for DesignEntitySelectionOperandWire {
             asset_id_offset: record.asset_id_offset,
             context_id: record.context_id.into(),
             context_id_offset: record.context_id_offset,
+            serialization_form: record.serialization_form,
             identity_record_index: record.identity_record_index,
             identity_record_offset: record.identity_record_offset,
             primary_identity: record.primary_identity,
@@ -927,7 +967,7 @@ impl EntitySelectionFrame {
                 crate::layout::work_point_sketch_point_compact_identity::SKETCH_RECORD_INDEX,
             ),
             Self::SketchCurve { .. } => {
-                u64_from_index(crate::layout::class_338_sketch_curve_identity::OWNER_RECORD_INDEX)
+                u64_from_index(crate::layout::marked_sketch_curve_identity::OWNER_RECORD_INDEX)
             }
         }
     }
@@ -939,7 +979,7 @@ impl EntitySelectionFrame {
                 u64_from_index(crate::layout::work_point_sketch_point_compact_identity::LEN)
             }
             Self::SketchCurve { .. } => {
-                u64_from_index(crate::layout::class_338_sketch_curve_identity::LEN)
+                u64_from_index(crate::layout::marked_sketch_curve_identity::LEN)
             }
         }
     }
@@ -963,7 +1003,7 @@ impl EntitySelectionFrame {
                     value: secondary,
                     offset: offset
                         + u64_from_index(
-                            crate::layout::class_338_sketch_curve_identity::CURVE_PERSISTENT_ID,
+                            crate::layout::marked_sketch_curve_identity::CURVE_PERSISTENT_ID,
                         ),
                 },
                 curve_identity: None,

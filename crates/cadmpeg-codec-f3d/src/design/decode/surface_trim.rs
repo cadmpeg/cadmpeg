@@ -175,6 +175,7 @@ fn exact_surface_trim_operation(
                 scope_record_index: scope.record_index,
                 selection_record_index,
                 selection_byte_offset: u64::try_from(selection_byte_offset).ok()?,
+                serialization_form: selection.serialization_form,
                 selection_next_record_index: selection.next_record_index,
                 selection_next_byte_offset: selection.next_byte_offset,
                 chain_records,
