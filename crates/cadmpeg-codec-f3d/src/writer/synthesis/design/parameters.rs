@@ -96,7 +96,7 @@ pub(super) fn regenerate(
             id: format!("f3d:design:design-parameter#{record_index}"),
             class_tag: "256".to_owned().try_into().map_err(CodecError::Malformed)?,
             record_index,
-            source_ordinal: index,
+            source_ordinal: parameter.ordinal,
             source: DesignParameterSource::authored(
                 "User Parameter".into(),
                 None,
