@@ -93,7 +93,7 @@ pub(in crate::writer) fn retain_record(native: &NativeRecord, entity: &mut Entit
     let Some(tokens) = fields(&entity.parameter_body) else {
         return;
     };
-    if parameters.len() != tokens.len() + 1 {
+    if parameters.len() < tokens.len() + 1 {
         return;
     }
     let mut output = Vec::new();
