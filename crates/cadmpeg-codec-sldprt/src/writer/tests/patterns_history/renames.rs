@@ -8,6 +8,42 @@ use cadmpeg_ir::codec::{Codec, DecodeOptions};
 use std::io::Cursor;
 
 #[test]
+fn feature_input_rename_preserves_a_declared_name_class() {
+    let mut payload = vec![0xff, 0xff, 1, 0, 12, 0];
+    payload.extend_from_slice(b"moNodeName_c");
+    payload.extend_from_slice(&[0xff, 0xfe, 0xff, 3]);
+    for unit in "Use".encode_utf16() {
+        payload.extend_from_slice(&unit.to_le_bytes());
+    }
+    payload.extend_from_slice(&[0; 8]);
+    payload.extend_from_slice(&102_u32.to_le_bytes());
+    payload.extend_from_slice(&[0; 4]);
+    let lane = crate::resolved_features::write_prepare::generated_native_lane(
+        &[], "sldprt:feature-input:resolved-features#0", None, payload,
+    )
+    .unwrap();
+    let rename = crate::history::write::features::FeatureInputRename {
+        lane: lane.id.clone(),
+        name_index: 0,
+        value: cadmpeg_core::nonblank_literal!("Renamed"),
+    };
+    let output = crate::writer::resolved_feature_payload(
+        &lane,
+        &[],
+        &[rename],
+        crate::writer::ClassLayouts::Authored,
+        &std::collections::BTreeSet::new(),
+        crate::writer::SourceTrust::Trustworthy,
+    )
+    .unwrap()
+    .0;
+    assert!(output.starts_with(&[0xff, 0xff, 1, 0, 12, 0]));
+    let names = decoded_object_names(&output, &lane.id);
+    assert_eq!(names[0].value, "Renamed");
+    assert_eq!(names[0].object_id, lane.names[0].object_id);
+}
+
+#[test]
 fn feature_input_rename_reports_utf16_capacity() {
     let source = sldprt_with_body_and_resolved_features(&triangle_body(), &[0]);
     let decoded = SldprtCodec

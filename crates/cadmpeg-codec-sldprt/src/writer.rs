@@ -2811,18 +2811,18 @@ fn resolved_feature_payload(
             crate::resolved_features::names::name_span(&payload, start).ok_or_else(|| {
                 CodecError::UnsupportedContent("feature-input name range is invalid".into())
             })?;
-        if payload.get(start..start + 5) != Some(&[0x04, 0x80, 0xff, 0xfe, 0xff]) {
-            return Err(CodecError::UnsupportedContent(
-                "feature-input name marker does not match retained payload".into(),
-            )
-            .into());
-        }
-        let mut replacement = vec![0x04, 0x80, 0xff, 0xfe, 0xff];
+        let length_at = crate::resolved_features::names::name_length_at(&payload, start)
+            .ok_or_else(|| {
+                CodecError::UnsupportedContent(
+                    "feature-input name marker does not match retained payload".into(),
+                )
+            })?;
+        let mut replacement = Vec::new();
         crate::resolved_features::names::append_name_length(&mut replacement, length);
         for unit in utf16 {
             replacement.extend_from_slice(&unit.to_le_bytes());
         }
-        payload.splice(start..end, replacement);
+        payload.splice(length_at..end, replacement);
     }
     Ok((payload.into_inner(), consumed_source_layout))
 }

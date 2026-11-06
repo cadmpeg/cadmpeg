@@ -122,6 +122,18 @@ fn declared_name_length_at(payload: &[u8], offset: usize) -> Option<usize> {
     Some(end + 5 + CLASS.len())
 }
 
+pub(crate) fn name_length_at(payload: &[u8], offset: usize) -> Option<usize> {
+    if let Some(length_at) = declared_name_length_at(payload, offset) {
+        return Some(length_at);
+    }
+    let token = View::u16_le_at(payload, offset)?;
+    let marker = offset.checked_add(2)?;
+    if !is_class_token(token) || payload.get(marker..marker.checked_add(3)?)? != &NAME_MARKER[2..] {
+        return None;
+    }
+    marker.checked_add(3)
+}
+
 pub(crate) fn record_name_end(payload: &[u8], name: &FeatureInputName) -> Option<usize> {
     let offset = usize::try_from(name.offset).ok()?;
     if let Some((start, end)) = name_span(payload, offset) {
