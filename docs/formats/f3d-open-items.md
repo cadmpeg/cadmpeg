@@ -1063,11 +1063,11 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** The body-visibility join in `f3d.md` admits only the `0x01 0x01` member form.
 
-### DR-262. List that a two-list Combine prologue omits
+### DR-271. List that a two-list Combine prologue omits
 
 **Question.** Which of the three lists between the tool list and the target list does an operand-list `Combine` prologue omit when it stores only two?
 
-**Known.** `f3d.md` §3.1 gives the operand-list prologue: after the tool list, an empty list, a list that names the new component's browser node, the consumed-body list, and the target list. A prologue with a companion `RemoveBody` can store two empty lists between the tool list and the target list. A `Combine` with a companion consumes no tool in its own scope, so the reading of every stored field is the same for each omitted list.
+**Known.** `f3d.md` §3.1 gives the operand-list prologue: after the tool list, an empty list, a list that names the new component's browser node, the consumed-body list, and the target list. A prologue with a companion `RemoveBody` can store two empty lists between the tool list and the target list. A `Combine` with a companion consumes no tool in its own scope, so the reading of every stored field is the same for each omitted list. The decoder reads a two-list prologue when it has a companion.
 
 **Need.** A two-list prologue whose `Combine` places its result in a new component or consumes a tool in its own scope, or the Fusion version that adds the third list.
 
@@ -1075,17 +1075,17 @@ The first closing reference run identifies a direct contained child by its local
 
 **Note.** None.
 
-### DR-263. Combine frame with operand-list fixed fields and other lists
+### DR-272. Combine frame with operand-list fixed fields and other lists
 
 **Question.** Which prologue does a `Combine` frame store when byte 20 is one, its fixed fields match the operand-list prologue, and its lists do not name its operation-identity records?
 
-**Known.** `f3d.md` §3.1 gives the standard and operand-list prologues. A standard join and an operand-list prologue with an empty property block both store `01 00 00 00 00` at offsets 20 through 24. The decoder reads such a frame in the standard prologue.
+**Known.** `f3d.md` §3.1 gives the standard and operand-list prologues. A standard join and an operand-list prologue with an empty property block both store `01 00 00 00 00` at offsets 20 through 24. The decoder reads such a frame in the standard prologue and reports `feature.combine-standard-form-assumed`.
 
-**Need.** A frame of this kind with its operation and keep-tools state proved by result volumes.
+**Need.** A frame of this kind with its operation and keep-tools state shown by result volumes.
 
 **Conflict.** None.
 
-**Note.** The decoder reports `feature.combine-standard-form-assumed`.
+**Note.** None.
 
 ### DR-202. Fields of the older Shell frames
 
