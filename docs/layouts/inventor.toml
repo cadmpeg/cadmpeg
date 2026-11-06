@@ -6,6 +6,252 @@ endianness = "little"
 note = "Fixed prefixes and descriptors in the supported RSe schema-31, Meta Stream v8, Protein stream envelope, UFRxDoc, and kernel-carrier envelope. The Protein page format is tabulated in `docs/layouts/protein.toml`."
 
 [[record]]
+name = "rse_a5c24506_prefix"
+kind = "byte"
+section = "4"
+anchor = "records with type identifier `a5c245062846bbe61da9eda12072ce35` start with this payload prefix"
+size = 54
+
+[[record.field]]
+name = "header_value"
+offset = 0
+type = "u32"
+source = "spec"
+anchor = "header_value u32"
+
+[[record.field]]
+name = "header_id"
+offset = 4
+type = "u16"
+source = "spec"
+anchor = "header_id u16"
+
+[[record.field]]
+name = "word_a"
+offset = 6
+type = "u32"
+source = "spec"
+anchor = "word_a u32 = 5"
+value = 5
+
+[[record.field]]
+name = "word_b"
+offset = 10
+type = "u32"
+source = "spec"
+anchor = "word_b u32 = 0x30000002"
+value = 805306370
+
+[[record.field]]
+name = "word_c"
+offset = 14
+type = "u32"
+source = "spec"
+anchor = "word_c u32 = 0"
+value = 0
+
+[[record.field]]
+name = "zero_values"
+offset = 18
+type = "u32[5]"
+source = "spec"
+anchor = "zero_values u32[5] = [0, 0, 0, 0, 0]"
+
+[[record.field]]
+name = "word_d"
+offset = 38
+type = "u32"
+source = "spec"
+anchor = "word_d u32"
+
+[[record.field]]
+name = "zero_value"
+offset = 42
+type = "u32"
+source = "spec"
+anchor = "zero_value u32 = 0"
+value = 0
+
+[[record.field]]
+name = "list_marker"
+offset = 46
+type = "u16"
+source = "spec"
+anchor = "list_marker u16 = 2"
+value = 2
+
+[[record.field]]
+name = "list_signature"
+offset = 48
+type = "u16"
+source = "spec"
+anchor = "list_signature u16 = 0x3000"
+value = 12288
+
+[[record.field]]
+name = "list_count"
+offset = 50
+type = "u32"
+source = "spec"
+anchor = "list_count u32"
+
+[[record]]
+name = "pm_dc_751ade_label_owner_body_v25"
+kind = "byte"
+section = "13"
+anchor = "a feature-label owner of type `751ade16744fe94fc498a8a8e89f29dd`"
+size = 36
+note = "Offsets start after the versioned state content header in segment major version 25."
+
+[[record.field]]
+name = "state"
+offset = 0
+type = "i32"
+source = "spec"
+anchor = "state i32 = -1 first_reference u32"
+value = -1
+
+[[record.field]]
+name = "first_reference"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "first_reference u32"
+
+[[record.field]]
+name = "work_plane"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "work_plane u32"
+
+[[record.field]]
+name = "value"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "work_plane u32 value u32"
+
+[[record.field]]
+name = "references"
+offset = 16
+type = "u32[5]"
+source = "spec"
+anchor = "references u32[5]"
+
+[[record]]
+name = "pm_dc_751ade_label_owner_body_v28"
+kind = "byte"
+section = "13"
+anchor = "a feature-label owner of type `751ade16744fe94fc498a8a8e89f29dd`"
+size = 44
+note = "Offsets start after the versioned state content header in segment major version 28."
+
+[[record.field]]
+name = "state"
+offset = 0
+type = "i32"
+source = "spec"
+anchor = "state i32 = -1 first_reference u32"
+value = -1
+
+[[record.field]]
+name = "first_reference"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "first_reference u32"
+
+[[record.field]]
+name = "work_plane"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "work_plane u32"
+
+[[record.field]]
+name = "value"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "work_plane u32 value u32"
+
+[[record.field]]
+name = "empty_list_marker"
+offset = 16
+type = "u32"
+source = "spec"
+anchor = "empty_list_marker u32 = 0x30000002"
+value = 805306370
+
+[[record.field]]
+name = "empty_list_count"
+offset = 20
+type = "u32"
+source = "spec"
+anchor = "empty_list_count u32 = 0"
+value = 0
+
+[[record.field]]
+name = "references"
+offset = 24
+type = "u32[5]"
+source = "spec"
+anchor = "references u32[5]"
+
+[[record]]
+name = "pm_dc_cf2b17_state"
+kind = "byte"
+section = "13"
+anchor = "type `cf2b17de9c46a894e06459a70546aa94` has a state content header"
+size = 4
+note = "Offset starts after the versioned state content header in segment major versions 25 and 28."
+
+[[record.field]]
+name = "state"
+offset = 0
+type = "i32"
+source = "spec"
+anchor = "`state:i32 = -1` and a sequence of u32 values"
+value = -1
+
+[[record]]
+name = "pm_dc_c6b25a_body"
+kind = "byte"
+section = "13"
+anchor = "type `c6b25a40954bd1c3e7ca9ca365917af4` has a state content header"
+size = 16
+note = "Offsets start after the versioned state content header in segment major versions 25 and 28."
+
+[[record.field]]
+name = "state"
+offset = 0
+type = "i32"
+source = "spec"
+anchor = "state i32 sketch u32 second_reference u32"
+
+[[record.field]]
+name = "sketch"
+offset = 4
+type = "u32"
+source = "spec"
+anchor = "sketch u32"
+
+[[record.field]]
+name = "second_reference"
+offset = 8
+type = "u32"
+source = "spec"
+anchor = "second_reference u32"
+
+[[record.field]]
+name = "third_reference"
+offset = 12
+type = "u32"
+source = "spec"
+anchor = "third_reference u32"
+
+[[record]]
 name = "pm_dc_derived_source_field"
 kind = "byte"
 section = "13.4"
