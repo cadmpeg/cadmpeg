@@ -388,7 +388,9 @@ fn generated_source_less_planar_triangle_writes_native_f3d() {
     assert_eq!(
         ownerships
             .iter()
-            .map(|metadata| metadata.endpoint_index.map(cadmpeg_asm::brep::records::EndpointSlot::code))
+            .map(|metadata| metadata
+                .endpoint_index
+                .map(cadmpeg_asm::brep::records::EndpointSlot::code))
             .collect::<Vec<_>>(),
         [Some(0), Some(1), Some(0)]
     );
@@ -1947,6 +1949,18 @@ fn generated_f3d_rewrites_cone_ratio_and_half_angle() {
             let half_angle = cone_surface.half_angle().get();
             (cone_surface.ratio().get() == 0.4) && ((half_angle - 0.35).abs() < EPS_CONE_ANGLE)
         })
+    );
+}
+
+#[test]
+fn source_less_body_name_exceeds_the_short_string_width() {
+    let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
+    let name = "part".repeat(100);
+    ir.model.bodies[0].name = Some(name.clone());
+    let (decoded, _) = synthesize_document(&ir, None);
+    assert_eq!(
+        decoded.ir().model.bodies[0].name.as_deref(),
+        Some(name.as_str())
     );
 }
 
