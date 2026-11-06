@@ -60,7 +60,7 @@ fn source_less_formula_without_marker_keeps_its_parameter_binding() {
         display: None,
         value: Some(ParameterValue::Real(FiniteReal::new(value).unwrap())),
         driving: true,
-        properties: Default::default(),
+        properties: std::collections::BTreeMap::default(),
         pmi: None,
         native_ref: None,
     };
