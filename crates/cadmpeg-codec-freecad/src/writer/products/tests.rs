@@ -33,6 +33,57 @@ fn missing_link_component_keeps_other_link_state() {
 }
 
 #[test]
+fn overflowing_linked_placement_keeps_occurrence_placement() {
+    let definition = definition("Prototype");
+    let large = cadmpeg_ir::transform::Transform::affine([
+        [1.0, 0.0, 0.0, f64::MAX],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+    ])
+    .unwrap();
+    let mut first = occurrence("First", &definition, None);
+    first.transform = Some(large);
+    first.linked_prototype = Some(large);
+    let mut second = occurrence("Second", &definition, None);
+    second.linked_prototype = Some(cadmpeg_ir::transform::Transform::identity());
+    let mut ir = CadIr::empty();
+    ir.model.occurrences.extend([first.clone(), second.clone()]);
+    let uses = vec![
+        (
+            "Prototype".into(),
+            "First".into(),
+            first.id.to_string(),
+            large,
+        ),
+        (
+            "Prototype".into(),
+            "Second".into(),
+            second.id.to_string(),
+            cadmpeg_ir::transform::Transform::identity(),
+        ),
+    ];
+    let mut objects = vec![
+        Object::new("First".into(), "App::Link", "First"),
+        Object::new("Second".into(), "App::Link", "Second"),
+    ];
+    let mut losses = Vec::new();
+    resolve_linked_transforms(&ir, &mut objects, &uses, &mut losses).unwrap();
+    let xml = roxmltree::Document::parse(&objects[0].properties["Placement"]).unwrap();
+    let placement = xml
+        .descendants()
+        .find(|node| node.has_tag_name("PropertyPlacement"))
+        .unwrap();
+    assert_eq!(
+        placement.attribute("Px").unwrap().parse::<f64>().unwrap(),
+        f64::MAX
+    );
+    assert!(losses
+        .iter()
+        .any(|loss| loss.message.contains(first.id.as_str())
+            && loss.message.contains("cannot be composed")));
+}
+
+#[test]
 fn nested_membership_accumulates_siblings_in_neutral_order() {
     let mut ir = CadIr::empty();
     let definition = definition("Prototype");
