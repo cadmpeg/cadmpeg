@@ -506,7 +506,7 @@ pub(super) fn sense_at(rec: &Record, i: usize) -> Sense {
 /// marks geometry as the reverse of its cached definition. A reversed intcurve
 /// negates the cache parameterization (`C(t) = cache(-t)`), and a reversed
 /// spline surface flips the cache normal.
-pub(crate) fn record_reversed(rec: &Record) -> bool {
+pub fn record_reversed(rec: &Record) -> bool {
     // Adjacency in chunk space: a freestanding payload identifier (e.g. the
     // embedded curve's type name) can sit between value tokens without
     // separating the sense bit from the scope it precedes.

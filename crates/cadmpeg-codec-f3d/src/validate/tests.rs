@@ -1540,6 +1540,7 @@ fn validation_accepts_grouped_and_direct_extrude_profiles() {
             )),
             feature_ordinal: std::num::NonZeroU32::MIN,
             feature_ordinal_offset: 220,
+            label: None,
             history_state_id: None,
 
             previous_history_state_id: None,

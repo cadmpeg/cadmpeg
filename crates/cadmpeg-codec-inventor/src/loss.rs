@@ -58,12 +58,17 @@ pub(crate) enum InventorLossCode {
     /// A distance dimension measured to an axis line stores twice the distance
     /// between its operands; the dimension stays native.
     SketchAxisDistanceNative,
+    /// A construction line stores a carrier that its endpoints do not lie on;
+    /// the line stays native.
+    SketchConstructionCarrierConflict,
     /// A sketch-point paired association has no neutral relation semantics.
     SketchPairedAssociationUnprojected,
     /// A sketch entity retains unresolved curve construction operands.
     SketchCurveNative,
     /// A listed sketch member has unresolved record and curve semantics.
     SketchMemberNative,
+    /// A planar curve member has no resolved curve rule; it stays native.
+    SketchMemberCurveNative,
     /// A polygon control relation names two different vertex references; the
     /// repeated-vertex reading does not apply and both references stay native.
     SketchPolygonControlVerticesDiffer,
@@ -87,6 +92,8 @@ pub(crate) enum InventorLossCode {
     FeatureEdgeSelectionEmptyItemsNative,
     /// An edge treatment retains an unresolved input-edge selection.
     FeatureEdgeSelectionNative,
+    /// An edge-treatment input edge has several matched owners of identical geometry.
+    FeatureEdgeOwnerIdenticalGeometry,
     /// Extrusion construction operands remain native.
     FeatureExtrusionOperandsNative,
     /// An extrusion retains its exact profile selection without a neutral sketch graph.
@@ -262,9 +269,11 @@ impl InventorLossCode {
         Self::FeatureLabelUnusable,
         Self::SketchConstructionUnresolved,
         Self::SketchAxisDistanceNative,
+        Self::SketchConstructionCarrierConflict,
         Self::SketchPairedAssociationUnprojected,
         Self::SketchCurveNative,
         Self::SketchMemberNative,
+        Self::SketchMemberCurveNative,
         Self::SketchPolygonControlVerticesDiffer,
         Self::SketchSplinePointNative,
         Self::SketchSplineCurveNative,
@@ -275,6 +284,7 @@ impl InventorLossCode {
         Self::FeatureOperationGraphOpen,
         Self::FeatureEdgeSelectionEmptyItemsNative,
         Self::FeatureEdgeSelectionNative,
+        Self::FeatureEdgeOwnerIdenticalGeometry,
         Self::FeatureExtrusionOperandsNative,
         Self::FeatureExtrusionProfileNative,
         Self::FeatureExtrusionTargetFaceNative,
@@ -374,9 +384,11 @@ impl InventorLossCode {
             Self::FeatureLabelUnusable => "feature.label-unusable",
             Self::SketchConstructionUnresolved => "sketch.construction-unresolved",
             Self::SketchAxisDistanceNative => "sketch.axis-distance-native",
+            Self::SketchConstructionCarrierConflict => "sketch.construction-carrier-conflict",
             Self::SketchPairedAssociationUnprojected => "sketch.paired-association-unprojected",
             Self::SketchCurveNative => "sketch.curve-native",
             Self::SketchMemberNative => "sketch.member-native",
+            Self::SketchMemberCurveNative => "sketch.member-curve-native",
             Self::SketchPolygonControlVerticesDiffer => "sketch.polygon-control-vertices-differ",
             Self::SketchSplinePointNative => "sketch.spline-point-native",
             Self::SketchSplineCurveNative => "sketch.spline-curve-native",
@@ -395,6 +407,7 @@ impl InventorLossCode {
                 "feature.edge-selection-empty-items-native"
             }
             Self::FeatureEdgeSelectionNative => "feature.edge-selection-native",
+            Self::FeatureEdgeOwnerIdenticalGeometry => "feature.edge-owner-identical-geometry",
             Self::FeatureThreadDefinitionPartial => "feature.thread-definition-partial",
             Self::FeatureThickenOperandsNative => "feature.thicken-operands-native",
             Self::FeatureThickenConstructionNative => "feature.thicken-construction-native",
@@ -519,6 +532,7 @@ impl InventorLossCode {
             Self::FeatureOperationGraphOpen
             | Self::FeatureEdgeSelectionEmptyItemsNative
             | Self::FeatureEdgeSelectionNative
+            | Self::FeatureEdgeOwnerIdenticalGeometry
             | Self::FeatureExtrusionOperandsNative
             | Self::FeatureExtrusionProfileNative
             | Self::FeatureExtrusionTargetFaceNative
@@ -562,9 +576,11 @@ impl InventorLossCode {
             | Self::FeatureProfileBodyUndecoded
             | Self::SketchConstructionUnresolved
             | Self::SketchAxisDistanceNative
+            | Self::SketchConstructionCarrierConflict
             | Self::SketchPairedAssociationUnprojected
             | Self::SketchCurveNative
             | Self::SketchMemberNative
+            | Self::SketchMemberCurveNative
             | Self::SketchPolygonControlVerticesDiffer
             | Self::SketchSplinePointNative
             | Self::SketchSplineCurveNative
@@ -653,9 +669,11 @@ mod tests {
                 "feature.label-unusable",
                 "sketch.construction-unresolved",
                 "sketch.axis-distance-native",
+                "sketch.construction-carrier-conflict",
                 "sketch.paired-association-unprojected",
                 "sketch.curve-native",
                 "sketch.member-native",
+                "sketch.member-curve-native",
                 "sketch.polygon-control-vertices-differ",
                 "sketch.spline-point-native",
                 "sketch.spline-curve-native",
@@ -666,6 +684,7 @@ mod tests {
                 "feature.operation-graph-open",
                 "feature.edge-selection-empty-items-native",
                 "feature.edge-selection-native",
+                "feature.edge-owner-identical-geometry",
                 "feature.extrusion-operands-native",
                 "feature.extrusion-profile-native",
                 "feature.extrusion-target-face-native",

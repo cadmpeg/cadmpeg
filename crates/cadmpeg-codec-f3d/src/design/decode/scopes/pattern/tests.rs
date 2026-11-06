@@ -314,6 +314,7 @@ fn run_pattern_constructions_fixture() {
             kind_offset: 0,
             feature_ordinal: std::num::NonZeroU32::MIN,
             feature_ordinal_offset: 0,
+            label: None,
             history_state_id: Some(2),
 
             previous_history_state_id: Some(1),
@@ -1238,6 +1239,7 @@ fn numerical_ranges_rectangular_pattern_accepts_finite_large_extent() {
             kind_offset: 0,
             feature_ordinal: std::num::NonZeroU32::MIN,
             feature_ordinal_offset: 0,
+            label: None,
             history_state_id: Some(2),
 
             previous_history_state_id: Some(1),
@@ -1316,6 +1318,7 @@ fn circular_pattern_historical_wrappers_resolve_an_edge_axis() {
             kind_offset: 0,
             feature_ordinal: std::num::NonZeroU32::MIN,
             feature_ordinal_offset: 0,
+            label: None,
             history_state_id: None,
             previous_history_state_id: None,
             previous_history_state_id_offset: None,

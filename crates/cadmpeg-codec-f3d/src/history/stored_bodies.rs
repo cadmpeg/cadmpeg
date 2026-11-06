@@ -103,6 +103,19 @@ pub(super) fn bound_result_bodies(
     }
 }
 
+/// A Base Feature scope projected as a copying move, whose outputs are the
+/// copies its projection bound.
+pub(super) fn is_base_feature_copy(feature: &Feature, scopes: &[DesignParameterScope]) -> bool {
+    matches!(
+        feature.evaluation.definition(),
+        FeatureDefinition::Operation(FeatureOperation::MoveBody { .. })
+    ) && feature
+        .native_ref
+        .as_deref()
+        .and_then(|id| scopes.iter().find(|scope| scope.id == id))
+        .is_some_and(|scope| scope.kind() == DesignFeatureKind::BaseFeature)
+}
+
 pub(super) fn bind_history_outputs(
     feature: &mut Feature,
     scope: &DesignParameterScope,
@@ -172,12 +185,19 @@ pub(crate) fn losses(
             .find(|feature| feature.native_ref.as_deref() == Some(scope.id.as_str()));
         match scope.kind_name() {
             "Base Feature" => {
-                let selection = feature.and_then(|feature| match feature.evaluation.definition() {
-                    FeatureDefinition::Operation(FeatureOperation::BaseFeature { bodies }) => {
-                        Some(bodies)
+                let selection = match feature.map(|feature| feature.evaluation.definition()) {
+                    Some(FeatureDefinition::Operation(FeatureOperation::MoveBody { .. })) => {
+                        losses.push(F3dLossCode::FeaturePasteCopyPlacementAssumed.note(format!(
+                            "{} pastes copies with zero translation and no rotation; the paste stores no placement.",
+                            scope.id
+                        )));
+                        continue;
                     }
+                    Some(FeatureDefinition::Operation(FeatureOperation::BaseFeature {
+                        bodies,
+                    })) => Some(bodies),
                     _ => None,
-                });
+                };
                 if let Some(BodySelection::Resolved { bodies, .. }) = selection {
                     if bodies.is_empty() {
                         losses.push(F3dLossCode::FeatureStoredBodiesEmpty.note(format!(

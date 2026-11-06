@@ -54,6 +54,7 @@ use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 
 pub(crate) mod form_cages;
+mod paste_copy;
 
 /// Millimetres per Design length unit (the Design stream stores centimetres).
 const DESIGN_LENGTH_TO_MILLIMETRE: f64 = 10.0;
@@ -1347,7 +1348,18 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                     } else if scope.kind()
                         == crate::records::feature::scope::DesignFeatureKind::BaseFeature
                     {
-                        if let Some(construction) = scope.base_feature_construction() {
+                        if let Some((definition, copies)) =
+                            scope.base_feature_construction().and_then(|construction| {
+                                paste_copy::same_component_paste_copy(
+                                    scope,
+                                    construction,
+                                    body_bindings,
+                                )
+                            })
+                        {
+                            inserted_bodies.extend(copies);
+                            definition
+                        } else if let Some(construction) = scope.base_feature_construction() {
                             FeatureDefinition::Operation(FeatureOperation::BaseFeature {
                                 bodies: design_body_selection(
                                     scope,

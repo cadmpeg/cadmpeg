@@ -3,9 +3,22 @@
 
 use std::collections::HashMap;
 
-use cadmpeg_asm::sab::{Record, Token};
+use cadmpeg_asm::{
+    brep::geometry::record_reversed,
+    nurbs::{
+        proc_curve::{procedural_curve_resolving_refs, ProceduralCurveConstruction},
+        toks::SubtypeTable,
+    },
+    sab::{Record, Token},
+};
+use cadmpeg_core::{decode::DecodeContext, CodecError};
 use cadmpeg_ir::{
+    eval::{
+        decode::{curve_tangent, nurbs_curve_point_at},
+        finite_or_refusal, nurbs_curve_parameter_domain,
+    },
     features::FinitePoint3,
+    geometry::{CurveGeometry, SolvedCurveGeometry},
     math::{Point3, Vector3},
     units::UnitVector3,
 };
@@ -16,6 +29,13 @@ const CM_TO_MM: f64 = 10.0;
 const EPS_EDGE_REVISION_POINT_MM: f64 = 1.0e-5;
 /// Unit length of the ellipse axis and its orthogonality to the major axis.
 const EPS_ELLIPSE_FRAME: f64 = 1.0e-6;
+/// Slack in radians when an edge interval is tested against the stored
+/// parameter bounds of its ellipse.
+const EPS_ELLIPSE_RANGE: f64 = 1.0e-9;
+
+/// Largest difference between the components of two unit tangents that are
+/// the same direction.
+const EPS_SAME_TANGENT: f64 = 1.0e-6;
 
 #[derive(Debug, Clone, PartialEq)]
 pub(in crate::feature) struct EdgeGeometry {
@@ -23,6 +43,24 @@ pub(in crate::feature) struct EdgeGeometry {
     pub(in crate::feature) end: FinitePoint3,
     pub(in crate::feature) interior: FinitePoint3,
     pub(in crate::feature) tangent: UnitVector3,
+}
+
+impl EdgeGeometry {
+    /// Whether both edges have the same start, end, interior point, and
+    /// tangent: the points within the kernel linear tolerance of the vertex
+    /// proof and the tangents within `EPS_SAME_TANGENT`.
+    pub(super) fn same_as(&self, other: &Self) -> bool {
+        let near = |a: FinitePoint3, b: FinitePoint3| {
+            a.as_raw().distance(*b.as_raw()) <= EPS_EDGE_REVISION_POINT_MM
+        };
+        let (a, b) = (self.tangent.as_raw(), other.tangent.as_raw());
+        near(self.start, other.start)
+            && near(self.end, other.end)
+            && near(self.interior, other.interior)
+            && (a.x - b.x).abs() <= EPS_SAME_TANGENT
+            && (a.y - b.y).abs() <= EPS_SAME_TANGENT
+            && (a.z - b.z).abs() <= EPS_SAME_TANGENT
+    }
 }
 
 fn position(record: &Record) -> Option<FinitePoint3> {
@@ -52,19 +90,177 @@ fn endpoints(
     Some((endpoint(3)?, endpoint(5)?))
 }
 
-/// Geometry of a stored edge revision on a straight or elliptical carrier.
-pub(super) fn revision(edge: &Record, records: &HashMap<i64, &Record>) -> Option<EdgeGeometry> {
-    match records.get(&edge.ref_at(8)?)?.head() {
-        "straight" => line(edge, records),
-        "ellipse" => ellipse(edge, records),
-        _ => None,
+/// Distance in millimetres within which a carrier endpoint equals the vertex
+/// at edge slot `slot`: the kernel linear tolerance, widened to the stored
+/// tolerance of a tolerant vertex. That tolerance is the vertex's last
+/// tolerance slot, in centimetres, when it is set (positive).
+fn vertex_tolerance(edge: &Record, records: &HashMap<i64, &Record>, slot: usize) -> f64 {
+    let stored = (|| {
+        let vertex = records.get(&edge.ref_at(slot)?)?;
+        if vertex.head() != "tvertex" {
+            return None;
+        }
+        let Token::Double(tolerance) = vertex.chunk(8)? else {
+            return None;
+        };
+        (tolerance.is_finite() && *tolerance > 0.0).then_some(tolerance * CM_TO_MM)
+    })();
+    stored.map_or(EPS_EDGE_REVISION_POINT_MM, |tolerance| {
+        tolerance.max(EPS_EDGE_REVISION_POINT_MM)
+    })
+}
+
+/// Geometry of a stored edge revision on a straight, elliptical, or spline
+/// carrier. Only a decode-session resource refusal is an error.
+pub(super) fn revision(
+    ctx: &DecodeContext<'_>,
+    edge: &Record,
+    records: &HashMap<i64, &Record>,
+    subtypes: &SubtypeTable,
+) -> Result<Option<EdgeGeometry>, CodecError> {
+    let Some(carrier) = edge.ref_at(8).and_then(|index| records.get(&index)) else {
+        return Ok(None);
+    };
+    match carrier.head() {
+        "straight" => Ok(line(edge, records)),
+        "ellipse" => Ok(ellipse(edge, records)),
+        "intcurve" => spline(ctx, edge, records, subtypes),
+        _ => Ok(None),
     }
+}
+
+/// The optional parameter bounds of an `ellipse` carrier. After the ratio the
+/// carrier stores two optional range endpoints, each a false Boolean (absent)
+/// or a true Boolean followed by a double. A carrier that stores nothing after
+/// the ratio has no bounds. Stored bounds are ordered.
+fn ellipse_range(curve: &Record) -> Option<(Option<f64>, Option<f64>)> {
+    let mut slot = 7;
+    let mut ends = [None, None];
+    if curve.chunk_len() == slot {
+        return Some((None, None));
+    }
+    for end in &mut ends {
+        match curve.chunk(slot)? {
+            Token::False => slot += 1,
+            Token::True => {
+                let Token::Double(value) = curve.chunk(slot + 1)? else {
+                    return None;
+                };
+                if !value.is_finite() {
+                    return None;
+                }
+                *end = Some(*value);
+                slot += 2;
+            }
+            _ => return None,
+        }
+    }
+    if slot != curve.chunk_len() || matches!(ends, [Some(low), Some(high)] if low > high) {
+        return None;
+    }
+    Some((ends[0], ends[1]))
+}
+
+/// Geometry of an edge revision on an `intcurve` carrier whose stored
+/// B-spline is exact. The carrier point at edge parameter `t` is the stored
+/// B-spline (polynomial or rational) at `s * t`, where `s` is -1 when exactly
+/// one of the carrier sense and the edge sense is reversed and +1 otherwise.
+/// The scaled first and last parameters must lie in the knot domain, and each
+/// carrier point must equal its stored vertex. A carrier with a procedural
+/// construction other than the exact cache, a nonzero fit tolerance, a
+/// periodic spline, and an edge whose vertices coincide are refused: the
+/// vertices of a closed edge do not fix the sense of its parameters.
+fn spline(
+    ctx: &DecodeContext<'_>,
+    edge: &Record,
+    records: &HashMap<i64, &Record>,
+    subtypes: &SubtypeTable,
+) -> Result<Option<EdgeGeometry>, CodecError> {
+    let Some(((start, end), carrier)) =
+        endpoints(edge, records).zip(edge.ref_at(8).and_then(|index| records.get(&index)))
+    else {
+        return Ok(None);
+    };
+    let near = |a: FinitePoint3, b: FinitePoint3, tolerance: f64| {
+        a.as_raw().distance(*b.as_raw()) <= tolerance
+    };
+    if near(start, end, EPS_EDGE_REVISION_POINT_MM) || carrier.head() != "intcurve" {
+        return Ok(None);
+    }
+    let decoded = match procedural_curve_resolving_refs(ctx, &carrier.tokens, subtypes) {
+        Some(Ok(decoded)) => decoded,
+        Some(Err(error @ CodecError::ResourceLimit(_))) => return Err(error),
+        Some(Err(_)) | None => return Ok(None),
+    };
+    if !matches!(decoded.construction, ProceduralCurveConstruction::Exact)
+        || decoded.cache_fit_tolerance != Some(0.0)
+        || decoded.curve.periodic()
+    {
+        return Ok(None);
+    }
+    let edge_reversed = match edge.chunk(9) {
+        Some(Token::False) => false,
+        Some(Token::True) => true,
+        _ => return Ok(None),
+    };
+    let sign = if record_reversed(carrier) == edge_reversed {
+        1.0
+    } else {
+        -1.0
+    };
+    let (Some(Token::Double(first)), Some(Token::Double(last))) = (edge.chunk(4), edge.chunk(6))
+    else {
+        return Ok(None);
+    };
+    if !(first.is_finite() && last.is_finite() && first < last) {
+        return Ok(None);
+    }
+    let Some([low, high]) = nurbs_curve_parameter_domain(&decoded.curve)
+        .map(cadmpeg_ir::topology::IncreasingParameterInterval::endpoints)
+    else {
+        return Ok(None);
+    };
+    let within = |u: f64| (low..=high).contains(&u);
+    let (u_first, u_last) = (sign * first, sign * last);
+    if !(within(u_first) && within(u_last)) {
+        return Ok(None);
+    }
+    let at = |u: f64| finite_or_refusal(nurbs_curve_point_at(ctx, &decoded.curve, u));
+    let (Some(first_point), Some(last_point)) = (at(u_first)?, at(u_last)?) else {
+        return Ok(None);
+    };
+    if !near(start, first_point, vertex_tolerance(edge, records, 3))
+        || !near(end, last_point, vertex_tolerance(edge, records, 5))
+    {
+        return Ok(None);
+    }
+    let u_middle = sign * first.midpoint(*last);
+    let carrier_geometry = CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(decoded.curve.clone()));
+    let (Some(interior), Some(tangent)) = (
+        at(u_middle)?,
+        finite_or_refusal(curve_tangent(ctx, &carrier_geometry, u_middle))?,
+    ) else {
+        return Ok(None);
+    };
+    let direction = tangent.as_raw();
+    Ok(UnitVector3::normalized(Vector3::new(
+        sign * direction.x,
+        sign * direction.y,
+        sign * direction.z,
+    ))
+    .map(|tangent| EdgeGeometry {
+        start,
+        end,
+        interior,
+        tangent,
+    }))
 }
 
 /// Geometry of an edge revision on an ellipse carrier. The carrier point at
 /// parameter `u` is `center + major * cos(u) + ratio * (normal x major) * sin(u)`;
 /// the edge sense negates the stored edge parameters. Each parameter endpoint
-/// must equal its stored vertex. A closed edge on a reversed carrier is
+/// must equal its stored vertex. The edge interval, on the carrier
+/// parameter, lies within the carrier bounds. A closed edge on a reversed carrier is
 /// refused: its vertices do not fix the sense of its parameters.
 fn ellipse(edge: &Record, records: &HashMap<i64, &Record>) -> Option<EdgeGeometry> {
     let (start, end) = endpoints(edge, records)?;
@@ -77,10 +273,7 @@ fn ellipse(edge: &Record, records: &HashMap<i64, &Record>) -> Option<EdgeGeometr
     let Token::Double(ratio) = curve.chunk(6)? else {
         return None;
     };
-    match (curve.chunk(7), curve.chunk(8), curve.chunk_len()) {
-        (None, None, 7) | (Some(Token::False), Some(Token::False), 9) => {}
-        _ => return None,
-    }
+    let (low, high) = ellipse_range(curve)?;
     let center = Vector3::new(*cx, *cy, *cz);
     let normal = Vector3::new(*nx, *ny, *nz);
     let major = Vector3::new(*ax, *ay, *az);
@@ -113,6 +306,16 @@ fn ellipse(edge: &Record, records: &HashMap<i64, &Record>) -> Option<EdgeGeometr
     if closed && sign < 0.0 {
         return None;
     }
+    let (u_low, u_high) = if sign < 0.0 {
+        (-last, -first)
+    } else {
+        (*first, *last)
+    };
+    if low.is_some_and(|low| u_low < low - EPS_ELLIPSE_RANGE)
+        || high.is_some_and(|high| u_high > high + EPS_ELLIPSE_RANGE)
+    {
+        return None;
+    }
     let at = |t: f64| {
         let u = sign * t;
         let offset = major.scale(u.cos()) + minor.scale(u.sin());
@@ -122,10 +325,12 @@ fn ellipse(edge: &Record, records: &HashMap<i64, &Record>) -> Option<EdgeGeometr
             (center.z + offset.z) * CM_TO_MM,
         ))
     };
-    let near = |a: FinitePoint3, b: FinitePoint3| {
-        a.as_raw().distance(*b.as_raw()) <= EPS_EDGE_REVISION_POINT_MM
+    let near = |a: FinitePoint3, b: FinitePoint3, tolerance: f64| {
+        a.as_raw().distance(*b.as_raw()) <= tolerance
     };
-    if !near(start, at(*first)?) || !near(end, at(*last)?) {
+    if !near(start, at(*first)?, vertex_tolerance(edge, records, 3))
+        || !near(end, at(*last)?, vertex_tolerance(edge, records, 5))
+    {
         return None;
     }
     let middle = first.midpoint(*last);
@@ -170,10 +375,12 @@ pub(super) fn line(edge: &Record, records: &HashMap<i64, &Record>) -> Option<Edg
             (z + sign * t * dz) * CM_TO_MM,
         ))
     };
-    let near = |a: FinitePoint3, b: FinitePoint3| {
-        a.as_raw().distance(*b.as_raw()) <= EPS_EDGE_REVISION_POINT_MM
+    let near = |a: FinitePoint3, b: FinitePoint3, tolerance: f64| {
+        a.as_raw().distance(*b.as_raw()) <= tolerance
     };
-    if !near(start, at(*first)?) || !near(end, at(*last)?) {
+    if !near(start, at(*first)?, vertex_tolerance(edge, records, 3))
+        || !near(end, at(*last)?, vertex_tolerance(edge, records, 5))
+    {
         return None;
     }
     Some(EdgeGeometry {
