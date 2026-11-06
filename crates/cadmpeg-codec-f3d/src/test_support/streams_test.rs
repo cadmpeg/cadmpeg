@@ -519,6 +519,27 @@ pub(super) fn generated_design_types(
             "Dimension",
             companion_entity_ids,
         ));
+        types.push((
+            "00000000-0000-0000-0000-000000001303",
+            base,
+            1,
+            "Dimension",
+            &[],
+        ));
+        types.push((
+            "00000000-0000-0000-0000-000000001304",
+            base,
+            1,
+            "Dimension",
+            &[1304],
+        ));
+        types.push((
+            "00000000-0000-0000-0000-000000001305",
+            base,
+            1,
+            "Dimension",
+            &[1305],
+        ));
     }
     if include_feature_types {
         types.push((
@@ -1452,6 +1473,10 @@ pub(super) fn generated_design_sketch_dimension_bulkstream() -> (Vec<u8>, Vec<(u
     out.extend_from_slice(&1304_u32.to_le_bytes());
 
     let recipe_prefix = [0_u8; 9];
+    records.push((
+        1305,
+        u64::try_from(out.len()).expect("synthetic recipe offset"),
+    ));
     out.extend_from_slice(&3_u32.to_le_bytes());
     out.extend_from_slice(b"275");
     out.extend_from_slice(&1305_u32.to_le_bytes());
@@ -1545,9 +1570,6 @@ pub(crate) fn generated_design_canvas_bulkstream() -> (Vec<u8>, Vec<(u64, u64)>)
     let asset_tag = tag(base_rows, 2);
     let scope_tag = tag(base_rows, 3);
     let paired_scope_tag = tag(base_rows, 4);
-
-
-
 
     let (mut out, mut records) = generated_design_bulkstream();
     let run_at = u64::try_from(out.len()).expect("synthetic Canvas run offset");
