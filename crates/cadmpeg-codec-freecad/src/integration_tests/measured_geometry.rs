@@ -52,6 +52,36 @@ fn authored_box_and_cylinder_have_their_scripted_measures() {
         let report = measured(name, decoded.ir()).unwrap();
         assert_eq!(report.bodies().len(), 1, "{name}");
         let body = &report.bodies()[0];
+        if name == "external_component" {
+            let [feature] = decoded.ir().model.features.as_slice() else {
+                panic!("one external prototype feature")
+            };
+            assert_eq!(feature.name.as_deref(), Some("ExternalPrototype"));
+            let owner = crate::native::native_id("object", "ExternalPrototype");
+            assert_eq!(feature.native_ref.as_deref(), Some(owner.as_str()));
+            let [output] = feature.evaluation.outputs().as_slice() else {
+                panic!("one external prototype body")
+            };
+            assert_eq!(output.as_str(), body.body());
+            let properties = decoded
+                .ir()
+                .native
+                .namespace("fcstd")
+                .unwrap()
+                .arena_as::<crate::native::PropertyRecord>("properties")
+                .unwrap();
+            let label = properties
+                .iter()
+                .find(|property| property.owner == owner && property.name == "Label")
+                .unwrap();
+            let [value] = label.values() else {
+                panic!("one external prototype label")
+            };
+            assert_eq!(
+                value.attributes.get("value").map(String::as_str),
+                Some("External spacer")
+            );
+        }
         let actual_volume = body
             .volume()
             .as_ref()
