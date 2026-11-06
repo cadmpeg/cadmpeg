@@ -267,12 +267,14 @@ pub(super) fn complete(ir: &CadIr, losses: &mut Vec<LossNote>) -> ArenaDispositi
             cadmpeg_ir::drawings::DrawingKind::Page
                 | cadmpeg_ir::drawings::DrawingKind::View
                 | cadmpeg_ir::drawings::DrawingKind::Annotation
+                | cadmpeg_ir::drawings::DrawingKind::Dimension
                 | cadmpeg_ir::drawings::DrawingKind::Balloon
                 | cadmpeg_ir::drawings::DrawingKind::Symbol
         ) || drawing.visible.is_some()
             || (matches!(
                 drawing.kind,
                 cadmpeg_ir::drawings::DrawingKind::Annotation
+                    | cadmpeg_ir::drawings::DrawingKind::Dimension
                     | cadmpeg_ir::drawings::DrawingKind::Balloon
                     | cadmpeg_ir::drawings::DrawingKind::Symbol
             ) && (drawing.position.is_some()
@@ -283,13 +285,19 @@ pub(super) fn complete(ir: &CadIr, losses: &mut Vec<LossNote>) -> ArenaDispositi
             || drawing.sheet.is_some()
             || !drawing.curves.is_empty()
             || drawing.template_geometry.is_some()
-            || drawing.x_direction.is_some()
+            || (drawing.x_direction.is_some()
+                && drawing.kind != cadmpeg_ir::drawings::DrawingKind::View)
             || !drawing.parameters.is_empty()
             || !drawing.assets.is_empty()
-            || drawing
-                .relationships
-                .keys()
-                .any(|name| !matches!(name.as_str(), "Views" | "Template"))
+            || drawing.relationships.keys().any(|name| match drawing.kind {
+                cadmpeg_ir::drawings::DrawingKind::Page => {
+                    !matches!(name.as_str(), "Views" | "Template")
+                }
+                cadmpeg_ir::drawings::DrawingKind::View => {
+                    !matches!(name.as_str(), "Source" | "Sources" | "XSource")
+                }
+                _ => true,
+            })
         {
             losses.push(FreecadLossCode::ExportArenaNotTransferred.note(format!(
                 "drawing {} contains fields the FCStd writer cannot regenerate",
