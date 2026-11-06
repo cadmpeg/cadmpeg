@@ -148,6 +148,23 @@ pub(crate) fn decode_recipes(
             Err(error @ (CodecError::ResourceLimit(_) | CodecError::Io(_))) => return Err(error),
             Err(_) => continue,
         };
+        let frames: Vec<_> = frames
+            .into_iter()
+            .filter(|frame| {
+                ![companion_prefix::LEN, typed_companion::LEN]
+                    .into_iter()
+                    .filter_map(|length| {
+                        let end = frame.start.checked_add(length)?;
+                        if end > frame.member_end {
+                            return None;
+                        }
+                        let start = source.start().checked_add(frame.start)?;
+                        let end = source.start().checked_add(end)?;
+                        parse_parameter_companion_frame(ParameterFrame::new(source.child(start, end)?))
+                    })
+                    .any(|companion| u64::from(companion.record_index) == frame.entity_id)
+            })
+            .collect();
         let frames = super::meta::primary_frame_extents(&frames);
         decode_stream(ctx, output, source, &entry.name, &frames, &mut out)?;
     }
