@@ -505,29 +505,20 @@ pub(super) fn write(
                 continue;
             }
         };
-        let owner = parameter
-            .owner
-            .as_ref()
-            .and_then(|owner| names.get(owner.as_str()))
-            .cloned();
-        let name = match owner {
-            Some(name) if objects.iter().any(|object| object.name == name) => name,
-            Some(_) => {
-                losses.push(
-                    FreecadLossCode::ExportFeatureNotTransferred
-                        .note(format!("parameter {} has an omitted owner", parameter.id)),
-                );
-                continue;
-            }
-            None => names
-                .get(&format!("parameter-owner:{}", parameter.id))
-                .cloned()
-                .ok_or_else(|| CodecError::malformed("global parameter owner was not prepared"))?,
+        let owner = match &parameter.owner {
+            Some(owner) => names.get(owner.as_str()),
+            None => names.get(&format!("parameter-owner:{}", parameter.id)),
         };
-        let object = objects
-            .iter_mut()
-            .find(|object| object.name == name)
-            .ok_or_else(|| CodecError::malformed("parameter owner is absent"))?;
+        let Some(object) =
+            owner.and_then(|name| objects.iter_mut().find(|object| object.name == *name))
+        else {
+            losses.push(
+                FreecadLossCode::ExportFeatureNotTransferred
+                    .note(format!("parameter {} has an omitted owner", parameter.id)),
+            );
+            continue;
+        };
+        let name = object.name.clone();
         // Dynamic metadata distinguishes authored scalar parameters from
         // application controls. A literal restates its value lane, so only a
         // formula needs an explicit binding.
