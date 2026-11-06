@@ -118,10 +118,15 @@ pub(crate) fn transfer(
         }
     }
     let expression_objects = ExpressionObjects::new(objects, &properties_by_owner);
+    let feature_objects: HashSet<&str> = objects
+        .iter()
+        .filter(|object| should_project_feature(object, &ir.model))
+        .map(|object| object.id().as_str())
+        .collect();
     let mut feature_ids = HashMap::new();
     for object in objects
         .iter()
-        .filter(|object| is_design_object(&object.type_name))
+        .filter(|object| feature_objects.contains(object.id().as_str()))
     {
         feature_ids.insert(object.id().as_str(), feature_id(object)?);
     }
@@ -157,6 +162,7 @@ pub(crate) fn transfer(
         &properties_by_owner,
         &parent_by_member,
         &attachment_owners,
+        &feature_objects,
     )?;
 
     for object in objects {
@@ -167,7 +173,7 @@ pub(crate) fn transfer(
             append_custom_parameters(&mut ir.model.parameters, object, owned, None)?;
             continue;
         }
-        if !is_design_object(&object.type_name) {
+        if !feature_objects.contains(object.id().as_str()) {
             continue;
         }
         let source = properties_by_owner
@@ -609,12 +615,13 @@ fn feature_ordinals<'a>(
     properties_by_owner: &HashMap<&'a str, Vec<&'a PropertyRecord>>,
     parent_by_member: &HashMap<&'a str, FeatureId>,
     attachment_owners: &HashSet<&str>,
+    feature_objects: &HashSet<&str>,
 ) -> Result<(HashMap<&'a str, u64>, BTreeSet<String>), CodecError> {
     let mut design_objects = Vec::new();
     design_objects.extend(
         objects
             .iter()
-            .filter(|object| is_design_object(&object.type_name)),
+            .filter(|object| feature_objects.contains(object.id().as_str())),
     );
     let expression_objects = ExpressionObjects::new(objects, properties_by_owner);
     let mut object_by_feature = HashMap::new();
@@ -8820,8 +8827,35 @@ pub(crate) fn is_design_object(kind: &str) -> bool {
         // Unknown construction types retain an attributable Native operation;
         // this does not dispatch them as any recognized built-in family.
         || (is_design_kind(kind)
+            && !matches!(kind, "Mesh::Feature" | "Points::Feature")
             && !crate::drawing::is_registered_drawing_type(kind)
-            && !crate::annotation::is_annotation_type(kind))
+            && !crate::annotation::is_annotation_type(kind)
+            && !crate::product::is_product_type(kind))
+}
+
+fn should_project_feature(object: &ObjectRecord, model: &cadmpeg_ir::document::Model) -> bool {
+    if !is_design_object(&object.type_name)
+        && !matches!(
+            object.type_name.as_str(),
+            "Mesh::Feature" | "Points::Feature"
+        )
+    {
+        return false;
+    }
+    if has_typed_projection(&object.type_name) {
+        return true;
+    }
+    let owner = object.id().as_str();
+    !model.tessellations.iter().any(|mesh| {
+        mesh.source_object
+            .as_ref()
+            .is_some_and(|source| source.object_id == owner)
+    }) && !model.points.iter().any(|point| {
+        point
+            .source_object
+            .as_ref()
+            .is_some_and(|source| source.object_id == owner)
+    })
 }
 
 /// Whether the design dispatch claims this object type for a typed neutral
@@ -8866,10 +8900,10 @@ pub(crate) fn has_typed_projection(kind: &str) -> bool {
 
 pub(crate) fn census(
     objects: &[ObjectRecord],
-    features: &[Feature],
+    model: &cadmpeg_ir::document::Model,
 ) -> Result<Vec<crate::native::DesignCensusRecord>, CodecError> {
     let mut features_by_native = HashMap::new();
-    for feature in features {
+    for feature in &model.features {
         if let Some(native_ref) = feature.native_ref.as_deref() {
             features_by_native.insert(native_ref, feature);
         }
@@ -8877,7 +8911,7 @@ pub(crate) fn census(
     let mut census = Vec::new();
     for object in objects
         .iter()
-        .filter(|object| is_design_object(&object.type_name))
+        .filter(|object| should_project_feature(object, model))
     {
         let feature = features_by_native
             .get(object.id().as_str())

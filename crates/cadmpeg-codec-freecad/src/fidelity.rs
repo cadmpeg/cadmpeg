@@ -88,7 +88,7 @@ pub(crate) fn property(
     } else if property.owner == crate::native::native_id("document", "0")
         || objects.iter().any(|object| {
             object.id().as_str() == property.owner
-                && crate::design::is_design_kind(&object.type_name)
+                && crate::design::is_design_object(&object.type_name)
         })
     {
         cadmpeg_ir::ArenaClass::Design
@@ -149,7 +149,7 @@ pub(crate) fn property_value_classes(
         .iter()
         .find(|object| object.id().as_str() == owner)
         .map(|object| {
-            if crate::design::is_design_kind(&object.type_name) {
+            if crate::design::is_design_object(&object.type_name) {
                 ArenaClasses::from([ArenaClass::Design])
             } else if object.type_name == "App::VarSet" {
                 ArenaClasses::from([ArenaClass::Model, ArenaClass::Design])
@@ -171,7 +171,7 @@ pub(crate) fn property_class(
     } else if property.owner == crate::native::native_id("document", "0")
         || objects.iter().any(|object| {
             object.id().as_str() == property.owner
-                && crate::design::is_design_kind(&object.type_name)
+                && crate::design::is_design_object(&object.type_name)
         })
     {
         ArenaClass::Design
