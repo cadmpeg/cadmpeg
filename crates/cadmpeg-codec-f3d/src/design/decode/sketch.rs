@@ -553,7 +553,10 @@ fn decode_sketch_visibility_member(
         return None;
     }
     let stream_ordinal = std::num::NonZeroU32::new(View::u32_le_at(bytes, cursor)?)?;
-    if bytes.get(member_at + visibility_member::RESERVED_ZERO) != Some(&0) {
+    if !matches!(
+        bytes.get(member_at + visibility_member::SKETCH_FLAG),
+        Some(0 | 1)
+    ) {
         return None;
     }
     let stream_ordinal_offset = cursor;

@@ -106,8 +106,8 @@ pub(crate) mod sketch_container_visibility_member_prefix {
     pub(crate) const OWNER_REFERENCE: usize = 19;
     /// Offset of `stream_ordinal` (`u32`, little-endian). Spec §3.1.
     pub(crate) const STREAM_ORDINAL: usize = 30;
-    /// Offset of `reserved_zero` (`u8`). Spec §3.1.
-    pub(crate) const RESERVED_ZERO: usize = 34;
+    /// Offset of `sketch_flag` (`u8`). Spec §3.1.
+    pub(crate) const SKETCH_FLAG: usize = 34;
     /// Offset of `visible` (`u8`). Spec §3.1.
     pub(crate) const VISIBLE: usize = 35;
     /// Offset of `tail_marker` (`u8`). Spec §3.1.

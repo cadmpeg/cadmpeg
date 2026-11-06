@@ -452,6 +452,14 @@ travel.
 
 **Need.** Controlled saves of one `SplitFace` before and after an edit that creates the reference, with the record that carries the referenced index.
 
+### DR-263. Sketch Geometry member byte 34
+
+**Question.** What sketch state does byte 34 of the sketch container's Geometry member encode?
+
+**Known.** `f3d.md` §3.1 "The current sketch entity container has type GUID" gives the member layout. Byte 34 is `0` or `1` and lies between the u32 ordinal at member offset 30 and the visibility flag at offset 35. Its value is independent of the visibility flag, the ordinal collection, the placement orientation, and the planar or spatial form of the sketch geometry. Member type version 3 stores the same `0`/`1` byte between its ordinal and its visibility flag.
+
+**Need.** Saves of one sketch that change one per-sketch setting at a time (Slice, 3D Sketch, Show Profile, Show Points, Show Dimensions, Show Constraints, Show Projected Geometries), each recording the value of byte 34.
+
 ## 2. External references
 
 ### DR-111. Component-path poses of nested occurrences
@@ -587,7 +595,6 @@ The first closing reference run identifies a direct contained child by its local
 **Known.** `f3d.md` §1.4 "**Placement.**" requires primary-index type admission. The component-path carrier has its own CommonData type; it does not establish a Component placement envelope. The legacy placement's duplicate target references, source occurrence identity, metadata UUID and five-GUID tracking join are defined. The inline `GatedByParent` field belongs to a counted typed-property block.
 
 **Need.** A primary indexed record registered to `CE2913AA-CFE0-4F04-9102-24424ED3BCFA` must close under either proposed additional envelope before that envelope can define a placement or a tagged field.
-
 
 ### DR-114. Body-container Fusion owners
 
@@ -1239,7 +1246,6 @@ when the operation transition carries no candidate for the group members?
 **Conflict.** None.
 
 **Note.** These scopes keep their frames, facing, angle, and offsets natively and project no neutral joint until the binding is defined.
-
 
 ### DR-246. Additional version-five Assemble owners and extended spans
 
