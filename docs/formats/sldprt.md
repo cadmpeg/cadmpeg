@@ -1346,6 +1346,12 @@ A `GdtPattern` owns its ordered members through the `SubFeatures`
 the pattern applies to these member feature identities in collection order.
 Nested patterns apply the same rule recursively.
 
+A `GdtPosition` that references a `GdtCompoundHole` selects the non-empty
+`CadIdentifier` values owned by its applied `GdtCylinder` children in
+`SubFeatures`. The compound's `CadReferences` collection aggregates child
+identifiers. Each child feature's class determines its role. Repeated paths to
+one child identify the same feature.
+
 GDT-analysis double fields use millimetres for lengths and radians for angles.
 `Tolerance` is the geometric-tolerance magnitude. `Nominal`, `LowerLimit`,
 `UpperLimit`, `MinusTolerance`, and `PlusTolerance` are dimension values. A
@@ -1385,16 +1391,8 @@ the unrounded evaluated geometry. A compound stack containing different
 diameters remains unresolved; the decoder does not select one contributor by
 position or magnitude. An empty `SubFeatures` collection contributes no
 geometry. A `CadRef` whose `CadIdentifier` string is empty contributes no
-topology identity or nominal geometry. A rendered literal cannot bind without
-applied nominal geometry or a resolved native-history nominal.
-
-An empty `GdtPattern` applied-feature graph may recover a diameter through the
-native feature history only when its object name is `Hole PatternN`, the history
-contains exactly one native `LPatternN` with one feature seed, and exactly one
-later native Hole feature consumes that seed and carries a positive diameter.
-The Hole diameter is the evaluated nominal and remains subject to the rendered
-literal precedence rule. A missing, multiply named, multiply seeded, or
-multiply consuming join leaves the nominal absent.
+topology identity or nominal geometry. A rendered literal binds to applied
+nominal geometry.
 
 The non-empty `CadIdentifier` form is `<lane>:<suffix>`. The lane prefix is
 local to the SWIFT schema lane. The active partition contributes one sequence
@@ -1510,6 +1508,10 @@ The geometric-tolerance classes map by their suffix: `GdtStraightness`,
 and `GdtCounterSinkDiameter` state diameters.
 
 `GdtPosition.ZoneType` value `2` defines a spherical tolerance zone.
+
+`GdtParallelism.IsTangentPlane` stores the tangent-plane modifier state: `0`
+clears it, and `1` sets it. `GdtParallelism.IsFreeState` stores the free-state
+modifier with the same encoding for values `0` and `1`.
 
 The integer field `Modifier` uses `0` for no material requirement, `1` for
 maximum material requirement, and `2` for least material requirement. The same
