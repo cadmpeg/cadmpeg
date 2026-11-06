@@ -232,7 +232,7 @@ fn synthetic_block_instance_archive_has_a_declared_placement() {
         }
     }
     fn named(bytes: &mut Vec<u8>, name: &str, id: u32) {
-        bytes.extend_from_slice(&0x8001_u16.to_le_bytes());
+        class(bytes, "moNodeName_c");
         string(bytes, name);
         bytes.extend_from_slice(&[0; 8]);
         bytes.extend_from_slice(&id.to_le_bytes());
@@ -286,10 +286,14 @@ fn synthetic_block_instance_archive_has_a_declared_placement() {
     let policy = cadmpeg_core::decode::DecodePolicy::desktop();
     let (ctx, _) =
         cadmpeg_core::decode::DecodeContext::from_root_bytes(&payload, &arena, &policy).unwrap();
-    let known = [(1, std::sync::Arc::<str>::from("moNodeName_c"))]
-        .into_iter()
-        .collect();
-    let mut reader = crate::carchive::reader::Reader::new(&ctx, &payload, 0, known, 2, None);
+    let mut reader = crate::carchive::reader::Reader::new(
+        &ctx,
+        &payload,
+        0,
+        std::collections::HashMap::new(),
+        1,
+        None,
+    );
     reader.ptr(None).unwrap();
     assert_eq!(reader.p, payload.len());
     let point = sketch_block_record_origin(&payload, 0, payload.len()).unwrap();
