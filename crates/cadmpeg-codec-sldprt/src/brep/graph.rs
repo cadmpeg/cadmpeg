@@ -52,6 +52,8 @@ use super::typed::RegionKind;
 use super::{CurveCarrier, LEN_TO_MM};
 use crate::parasolid::StreamHeader;
 
+mod standalone;
+
 const EPS_NORMAL_NONZERO: f64 = 1.0e-12;
 const EPS_PLANAR_DISTANCE: f64 = 1.0e-6;
 const EPS_GEOMETRY_RESIDUAL: f64 = 1.0e-9;
@@ -2335,6 +2337,14 @@ pub(crate) fn decode_bodies(
     bodies: &[(&[u8], &StreamHeader)],
     stream: &cadmpeg_ir::StreamName,
 ) -> Result<Brep, cadmpeg_core::CodecError> {
+    let standalone = if let [(payload, header)] = bodies {
+        standalone::decode(ctx, header_body(payload, header)?, stream)?
+    } else {
+        None
+    };
+    if let Some(brep) = standalone {
+        return Ok(brep);
+    }
     let mut carriers = CarrierIndex::default();
     let mut tables = topology::Tables::default();
     let mut facts = entity::Facts::default();
@@ -2419,6 +2429,9 @@ fn decode_body(
     body: &[u8],
     stream: &cadmpeg_ir::StreamName,
 ) -> Result<Brep, cadmpeg_core::CodecError> {
+    if let Some(brep) = standalone::decode(ctx, body, stream)? {
+        return Ok(brep);
+    }
     let mut carriers = scan_carriers(ctx, body)?;
     let curve_attrs = carriers.curve_attrs();
     let typed_facts = typed::scan(body);

@@ -119,6 +119,7 @@ fn detached_plane_is_authored_in_the_partition() {
 #[test]
 fn detached_carriers_are_authored_without_a_body() {
     use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
     let mut ir = cadmpeg_ir::examples::unit_cube().unwrap();
     let surface = ir.model.surfaces[0].clone();
     let curve = ir.model.curves[0].clone();
@@ -146,6 +147,21 @@ fn detached_carriers_are_authored_without_a_body() {
         .payload();
     assert!((0..partition.len()).any(|offset| matches!(crate::brep::parse_carrier(partition, offset), Some(crate::brep::Carrier::Surface(carrier)) if carrier.geometry == surface.geometry)));
     assert!((0..partition.len()).any(|offset| matches!(crate::brep::parse_carrier(partition, offset), Some(crate::brep::Carrier::Curve(carrier)) if carrier.geometry == curve.geometry)));
+    let decoded = crate::SldprtCodec
+        .decode(&mut std::io::Cursor::new(bytes), &DecodeOptions::default())
+        .unwrap();
+    assert!(decoded
+        .ir()
+        .model
+        .surfaces
+        .iter()
+        .any(|item| item.geometry == surface.geometry));
+    assert!(decoded
+        .ir()
+        .model
+        .curves
+        .iter()
+        .any(|item| item.geometry == curve.geometry));
 }
 
 #[test]
