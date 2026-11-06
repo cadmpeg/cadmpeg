@@ -243,6 +243,10 @@ pub(crate) enum RhinoLossCode {
     WriterMaterialOmitted,
     /// Attribute records have no writer encoding.
     WriterAttributesOmitted,
+    /// A native light has incomplete or unrepresentable fields.
+    WriterLightOmitted,
+    /// A light's stored archive index changes to its emitted table position.
+    WriterLightIndexReassigned,
     /// Layer membership cannot be assigned to an individual non-object record.
     WriterLayerMembershipOmitted,
     /// An unspecified layer visibility is written as the native default.
@@ -376,6 +380,8 @@ impl RhinoLossCode {
         Self::WriterCarrierResolved,
         Self::WriterMaterialOmitted,
         Self::WriterAttributesOmitted,
+        Self::WriterLightOmitted,
+        Self::WriterLightIndexReassigned,
         Self::WriterLayerMembershipOmitted,
         Self::WriterLayerVisibilityDefaulted,
         Self::WriterLayerDescriptionNormalized,
@@ -462,6 +468,8 @@ impl RhinoLossCode {
             Self::WriterCarrierResolved => "writer.carrier-resolved",
             Self::WriterMaterialOmitted => "writer.materials-omitted",
             Self::WriterAttributesOmitted => "writer.attributes-omitted",
+            Self::WriterLightOmitted => "writer.light-omitted",
+            Self::WriterLightIndexReassigned => "writer.light-index-reassigned",
             Self::WriterLayerMembershipOmitted => "writer.layer-membership-omitted",
             Self::WriterLayerVisibilityDefaulted => "writer.layer-visibility-defaulted",
             Self::WriterLayerDescriptionNormalized => "writer.layer-description-normalized",
@@ -503,7 +511,7 @@ impl RhinoLossCode {
             | Self::WriterEntityOmitted
             | Self::WriterBodyReduced
             | Self::WriterBodyOmitted => Severity::Error,
-            Self::WriterAnnotationOmitted => Severity::Error,
+            Self::WriterAnnotationOmitted | Self::WriterLightOmitted => Severity::Error,
             _ => Severity::Warning,
         }
     }
@@ -592,7 +600,9 @@ impl RhinoLossCode {
             | Self::WriterPointCloudAppearanceReduced => LossTaxonomy::AppearanceReduced,
             Self::WriterBodyColorReduced => LossTaxonomy::AppearanceReduced,
             Self::WriterAngularToleranceReduced => LossTaxonomy::MetadataNotTransferred,
-            Self::WriterAttributesOmitted => LossTaxonomy::AttributesNotTransferred,
+            Self::WriterAttributesOmitted
+            | Self::WriterLightOmitted
+            | Self::WriterLightIndexReassigned => LossTaxonomy::AttributesNotTransferred,
             Self::WriterColorPrecisionReduced => LossTaxonomy::AppearanceReduced,
             Self::NoExportableSolids => LossTaxonomy::NoExportableSolids,
             Self::EdgePcurveAgreementSampled | Self::EdgePcurveSampledToBspline => {
