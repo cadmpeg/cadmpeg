@@ -282,7 +282,7 @@ source = "spec"
 anchor = "ten zero bytes, a u32 ordinal at offset 21"
 
 [[record.field]]
-name = "sketch_ordinal"
+name = "ordinal"
 offset = 21
 type = "u32"
 source = "spec"

@@ -123,7 +123,7 @@ Offsets are relative to the group's primary indexed header. The member reference
 | -----: | ---: | ----- | ---- | ------ | --- | ------- |
 | 0 | 11 | `indexed_header` | `bytes[11]` | little | spec | Its primary frame stores the indexed header |
 | 11 | 10 | `zero_run` | `bytes[10]` | little | spec | ten zero bytes, a u32 ordinal at offset 21 |
-| 21 | 4 | `sketch_ordinal` | `u32` | little | spec | a u32 ordinal at offset 21 |
+| 21 | 4 | `ordinal` | `u32` | little | spec | a u32 ordinal at offset 21 |
 | 25 | 4 | `constant_one` | `u32` | little | spec | u32 `1` at offset 25 · value `1` |
 | 29 | 1 | `zero_byte` | `u8` | little | spec | a zero byte at offset 29 · value `0` |
 | 30 | 11 | `nested_header` | `bytes[11]` | little | spec | A nested indexed header with the same record index starts at offset 30 |

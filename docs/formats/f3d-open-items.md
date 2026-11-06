@@ -492,6 +492,30 @@ travel.
 
 **Need.** Groups written by another operation, or groups with other values in these fields.
 
+### DR-288. Sketch geometry group ordinal
+
+**Question.** Does the u32 ordinal at offset 21 of a sketch geometry group equal the u32 ordinal at member offset 30 of its owning sketch container's Geometry member?
+
+**Known.** `f3d.md` §3.1 "A sketch geometry group has type GUID" gives the group layout. The final reference of the group names its owning sketch container. `f3d.md` §3.1 "The current sketch entity container has type GUID" gives the positive ordinal at member offset 30 of that container's Geometry member.
+
+**Need.** A group whose ordinal differs from the member ordinal of its owning sketch, or saves that renumber the sketches of one ordinal collection and record both values.
+
+**Conflict.** None.
+
+**Note.** The decoder reads the group ordinal as a u32 and keeps the group for each value.
+
+### DR-289. Sketch geometry group membership
+
+**Question.** Which records does the member run of a sketch geometry group list, and does the counted member run of the owning sketch container name the group?
+
+**Known.** `f3d.md` §3.1 "A sketch geometry group has type GUID" gives the counted member run in strictly increasing record-index order and the final owning-sketch reference. `f3d.md` §3.1 "When the final eleven bytes of a sketch point or curve primary record" assigns a point or curve whose direct owner backlink names a group to the sketch container that the group names.
+
+**Need.** A group whose member run omits a record that backlinks to it, a group that lists a record with another backlink or a record of another type, and a sketch container whose counted member run omits its group.
+
+**Conflict.** None.
+
+**Note.** The decoder assigns a point or curve whose backlink names a group to the sketch that the group names, stores the group record index in `geometry_group`, and emits `sketch.geometry-group-member-unlisted` when the member run omits the record.
+
 ## 2. External references
 
 ### DR-111. Component-path poses of nested occurrences
