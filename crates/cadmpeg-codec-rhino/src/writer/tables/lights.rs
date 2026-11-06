@@ -302,6 +302,8 @@ mod tests {
         reindexed["attributes"]["linetype_index"] = json!(4);
         reindexed["attributes"]["layer_index"] = json!(7);
         reindexed["attributes"]["material_index"] = json!(9);
+        reindexed["attributes"]["group_indexes"] = json!([11]);
+        reindexed["attributes"]["hatch_pattern_index"] = json!(12);
         let mut unresolved = attributed.clone();
         unresolved["source_uuid"] = json!("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
         unresolved["name"] = json!("unresolved linetype");
@@ -342,6 +344,16 @@ mod tests {
                 "rhino:test:material#source",
                 json!({"archive_index": 9}),
             )],
+        );
+        ir.native.namespace_mut("rhino").arenas_mut().insert(
+            "groups".into(),
+            vec![record(
+                "rhino:test:group#source",
+                json!({"archive_index": 11, "name": "group", "links": []}),
+            )],
+        );
+        ir.native.namespace_mut("rhino").arenas_mut().insert(
+            "hatch_patterns".into(), vec![record("rhino:test:hatch#source", json!({"archive_index": 12, "name": "hatch", "description": "", "fill_type": 0, "lines": []}))],
         );
         ir.model
             .appearances
@@ -446,6 +458,10 @@ mod tests {
                     && loss.message.contains("linetype index 4 is written as 0")
                     && loss.message.contains("layer index 7 is written as 0")
                     && loss.message.contains("material index 9 is written as 0")
+                    && loss.message.contains("group index 11 is written as 0")
+                    && loss
+                        .message
+                        .contains("hatch pattern index 12 is written as 0")
             }));
             assert_eq!(
                 report.native_dispositions.record_disposition(
@@ -491,6 +507,14 @@ mod tests {
             );
             assert_eq!(
                 lights[3].field("attributes").unwrap()["material_index"],
+                json!(0)
+            );
+            assert_eq!(
+                lights[3].field("attributes").unwrap()["group_indexes"],
+                json!([0])
+            );
+            assert_eq!(
+                lights[3].field("attributes").unwrap()["hatch_pattern_index"],
                 json!(0)
             );
         }
