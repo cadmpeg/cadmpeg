@@ -633,9 +633,12 @@ impl FileNameFields {
             &organization,
             &organizations.clone().unwrap_or_default(),
         ));
-        consumed_ids.extend(stamps.iter().filter_map(|(id, value)| {
-            (file_name_timestamp(value).as_ref() == timestamp.as_ref()).then(|| id.clone())
-        }));
+        consumed_ids.extend(
+            stamps
+                .iter()
+                .filter(|(_, value)| file_name_timestamp(value).as_ref() == timestamp.as_ref())
+                .map(|(id, _)| id.clone()),
+        );
         consumed_ids.extend(consumed(
             &sys,
             &system.clone().into_iter().collect::<Vec<_>>(),
