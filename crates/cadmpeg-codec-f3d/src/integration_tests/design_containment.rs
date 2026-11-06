@@ -489,3 +489,55 @@ fn one_damaged_primary_index_gives_up_only_its_stream() {
     );
     assert_valid(&damaged);
 }
+
+#[test]
+fn unreadable_index_is_given_up_before_recipe_and_timeline_selection() {
+    use std::io::Write;
+
+    use zip::CompressionMethod;
+
+    use crate::design::decode::{meta, parameters};
+    use crate::test_support::manifest_test::write_synthetic_manifests;
+    use crate::test_support::streams_test::design_metastream_with_records;
+    use crate::test_support::zip_test::with_scan;
+
+    let bulk = b"unreadable Design records";
+    let meta = design_metastream_with_records(
+        &[(
+            meta::FEATURE_TIMELINE_TYPE_GUID,
+            meta::FEATURE_TIMELINE_BASE_TYPE_GUID,
+            2,
+            "Fusion",
+            &[35],
+        )],
+        &[(35, u64::try_from(bulk.len()).unwrap() + 1)],
+    );
+    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    let stored = crate::zip_write::file_options(CompressionMethod::Stored);
+    write_synthetic_manifests(&mut zip, stored);
+    zip.start_file("FusionAssetName[Active]/Design1/BulkStream.dat", stored)
+        .unwrap();
+    zip.write_all(bulk).unwrap();
+    zip.start_file("FusionAssetName[Active]/Design1/MetaStream.dat", stored)
+        .unwrap();
+    zip.write_all(&meta).unwrap();
+    let archive = zip.finish().unwrap().into_inner();
+    with_scan(&archive, |scan| {
+        let ctx = cadmpeg_test_support::service_decode_context();
+        let give_ups = meta::admit_damaged_bulk_records(&ctx, scan).unwrap();
+        assert_eq!(give_ups.stubs.len(), 1);
+        assert_eq!(give_ups.losses.len(), 1);
+        assert_eq!(give_ups.losses[0].code.local_code(), "record.unreadable");
+        let mut parts = cadmpeg_ir::source_fidelity::parts::PartOutput::new(
+            cadmpeg_ir::CodecFormat::F3d,
+            &ctx,
+        );
+        assert!(meta::decode_feature_timeline_parts(&ctx, &mut parts, scan)
+            .unwrap()
+            .is_empty());
+        assert!(parameters::decode_recipes(&ctx, &mut parts, scan)
+            .unwrap()
+            .is_empty());
+        assert!(parts.into_parts().3.is_empty());
+    });
+}

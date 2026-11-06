@@ -143,7 +143,11 @@ pub(crate) fn decode_recipes(
         let source = scan
             .entry_view(&entry.name)
             .ok_or_else(|| CodecError::malformed("recipe stream has no source view"))?;
-        let (frames, _) = super::meta::partition_primary_frames(source.window(), &meta)?;
+        let (frames, _) = match super::meta::partition_primary_frames(source.window(), &meta) {
+            Ok(frames) => frames,
+            Err(error @ (CodecError::ResourceLimit(_) | CodecError::Io(_))) => return Err(error),
+            Err(_) => continue,
+        };
         let frames = super::meta::primary_frame_extents(&frames);
         decode_stream(ctx, output, source, &entry.name, &frames, &mut out)?;
     }
