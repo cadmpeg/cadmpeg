@@ -866,6 +866,19 @@
           ]
         },
         {
+          "id": "fcstd:model:attribute#Occurrence:VisibilityList:property",
+          "name": "VisibilityList",
+          "native_ref": "fcstd:native:property#Occurrence:VisibilityList",
+          "target": {
+            "id": {
+              "arena": "occurrences",
+              "id": "fcstd:model:occurrence#Occurrence:instance"
+            },
+            "kind": "record"
+          },
+          "values": []
+        },
+        {
           "id": "fcstd:model:attribute#Occurrence:_LinkOwner:property",
           "name": "_LinkOwner",
           "native_ref": "fcstd:native:property#Occurrence:_LinkOwner",
@@ -9486,7 +9499,7 @@
       "__arena_sha256": {
         "fcstd": {
           "annotations": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-          "applications": "8c685812726f4f88d0bb4e28522e7157a4d62377a88951ed08173e60db4467ff",
+          "applications": "0acdb002983360d13cda0184d159ba1b5c3c47efbed3e9a96c22713265bac3da",
           "carrier_census": "3837ce033bae56f805e07c2de34d28e1872221a70faa65f9f2ef8501a1ce29d2",
           "design_census": "47317d8f3e03432ca5fc8b626ccf4eafacc1fb4c7222526af343f2a0392f431b",
           "document": "d671abfaf20571f2882fb809aa48fac69e620d89bfd32c5afd50f495a5f44738",
@@ -9501,7 +9514,7 @@
           "objects": "0278a990c8df041f18854332092c769f30beee91adecb4f6c7cbf62f7a47898a",
           "polygons3d": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
           "polygons_on_triangulations": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-          "properties": "96a2c21d3c36a99a619227486ece64ad3069ef3af610e27ee500f18b7be7a37c",
+          "properties": "63616f6fda427b8a7e8369bf7bafb783a06ebf9ef11b9c6b8e693842a27c23c1",
           "shape_payloads": "c9c7e9b3a94127ca2e8f72dbccb97a3e4173c2793ca04cd87fc3cd531f4b5433",
           "string_tables": "4f6f6cceca6ea119f3668ff3a172117f84c610a3266dc4414d3070969caa5c4f",
           "topology_uses": "37beb92e511b79774870aa2a2979bc3a16b5c4145ac39197e765cbcddbfc456b"
@@ -10636,18 +10649,7 @@
         }
       }
     },
-    "losses": [
-      {
-        "code": {
-          "code": "attribute.property-unprojected",
-          "kind": "metadata_not_transferred",
-          "namespace": "fcstd",
-          "scope": "namespaced"
-        },
-        "message": "property fcstd:native:property#Occurrence:VisibilityList (App::PropertyBoolList) has no neutral attribute encoding; its admitted typed native values remain held",
-        "severity": "warning"
-      }
-    ],
+    "losses": [],
     "notes": [
       "SchemaVersion=4",
       "FileVersion=1",

@@ -323,6 +323,9 @@
                 "fcstd:native:object#SecondTemplate": "written"
               }
             },
+            "orphan_object_data": {
+              "disposition": "dropped"
+            },
             "polygons3d": {
               "disposition": "dropped"
             },
@@ -366,7 +369,7 @@
                 "fcstd:native:property#First:Views": "regenerated",
                 "fcstd:native:property#First:Visibility": "written",
                 "fcstd:native:property#FirstNote:Caption": "regenerated",
-                "fcstd:native:property#FirstNote:ExpressionEngine": "written",
+                "fcstd:native:property#FirstNote:ExpressionEngine": "regenerated",
                 "fcstd:native:property#FirstNote:Font": "regenerated",
                 "fcstd:native:property#FirstNote:Label": "regenerated",
                 "fcstd:native:property#FirstNote:Label2": "regenerated",
@@ -405,7 +408,7 @@
                 "fcstd:native:property#Second:Views": "regenerated",
                 "fcstd:native:property#Second:Visibility": "written",
                 "fcstd:native:property#SecondNote:Caption": "regenerated",
-                "fcstd:native:property#SecondNote:ExpressionEngine": "written",
+                "fcstd:native:property#SecondNote:ExpressionEngine": "regenerated",
                 "fcstd:native:property#SecondNote:Font": "regenerated",
                 "fcstd:native:property#SecondNote:Label": "regenerated",
                 "fcstd:native:property#SecondNote:Label2": "regenerated",

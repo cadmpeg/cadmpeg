@@ -70,7 +70,7 @@
         "articulations": 0,
         "assembly_joints": 0,
         "assets": 0,
-        "attributes": 80,
+        "attributes": 81,
         "bodies": 5,
         "coedges": 84,
         "colliders": 0,
@@ -186,6 +186,9 @@
               "disposition": "written"
             },
             "objects": {
+              "disposition": "written"
+            },
+            "orphan_object_data": {
               "disposition": "written"
             },
             "polygons3d": {
