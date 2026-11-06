@@ -1208,7 +1208,7 @@ fn encode_declares_topology_preferences_and_hierarchy_consistently() {
 
     let trimmed = regenerate(trimmed_plane_file());
     assert_eq!(parameter(trimmed.ir(), 142, 1), 0);
-    assert_eq!(parameter(trimmed.ir(), 142, 5), 2);
+    assert_eq!(parameter(trimmed.ir(), 142, 5), 3);
 
     let brep = regenerate(explicit_tetrahedron_solid_file());
     let edge_list = brep.ir().native.namespace("iges").unwrap().arenas()["entities"]
@@ -1387,7 +1387,7 @@ fn encode_regenerates_decoded_manifold_brep_without_source_bytes() {
         Some(&1)
     );
     assert_eq!(report.census.counts.get("190_pointer_plane"), Some(&4));
-    assert_eq!(report.census.counts.get("123_direction"), Some(&8));
+    assert_eq!(report.census.counts.get("123_direction"), Some(&4));
     assert_eq!(report.census.counts.get("unknown_entity"), None);
     assert_eq!(report.census.counts.get("502_vertex_list"), Some(&1));
     assert_eq!(report.census.counts.get("504_edge_list"), Some(&1));

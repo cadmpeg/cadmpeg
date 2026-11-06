@@ -184,6 +184,34 @@ fn general_free_vertices_keep_local_geometry_when_nonrigid_placement_drops() {
 }
 
 #[test]
+fn overflowing_rigid_placement_keeps_local_vertices_and_names_the_body() {
+    let transform = Transform::affine([
+        [1.0, 0.0, 0.0, 1.0e308],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+    ])
+    .unwrap();
+    let mut ir = free_vertices(transform);
+    let identity = ir.model.points[0].id.clone();
+    ir.model.points[0] = Point::new(
+        identity,
+        FinitePoint3::new(Point3::new(1.0e308, 2.0, 3.0)).unwrap(),
+        None,
+    );
+    let (written, report) = write_read(&ir);
+    assert_eq!(written.model.vertices.len(), 2);
+    assert!(written
+        .model
+        .points
+        .iter()
+        .any(|point| { point.position().get() == ir.model.points[0].position().get() }));
+    assert!(report.losses.iter().any(|loss| {
+        loss.code == RhinoLossCode::WriterBodyPlacementOmitted.kind()
+            && loss.message.contains(ir.model.bodies[0].id.as_str())
+    }));
+}
+
+#[test]
 fn body_bound_mesh_applies_rigid_rotation_translation_and_rotates_normals() {
     let ir = mesh(rigid());
     let (written, report) = write_read(&ir);

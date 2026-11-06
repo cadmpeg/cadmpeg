@@ -83,6 +83,45 @@ fn native(ir: &CadIr) -> &NativeRecord {
 }
 
 #[test]
+fn malformed_construction_plane_and_view_do_not_discard_siblings() {
+    let mut ir = CadIr::empty();
+    let invalid_plane = "rhino:document:plane#invalid";
+    let valid_plane = "rhino:document:plane#valid";
+    let invalid_view = "rhino:document:view#invalid";
+    let valid_view = "rhino:document:view#valid";
+    let make = |id: &str, fields| NativeRecord::new(id.try_into().unwrap(), fields).unwrap();
+    let plane = fields()["construction_plane"].clone();
+    let mut bad_view = fields();
+    bad_view.insert("list_kind".into(), json!("unknown"));
+    ir.native.namespace_mut("rhino").arenas_mut().insert(
+        "construction_planes".into(),
+        vec![
+            make(invalid_plane, serde_json::from_value(json!({})).unwrap()),
+            make(
+                valid_plane,
+                serde_json::from_value(json!({"value": plane})).unwrap(),
+            ),
+        ],
+    );
+    ir.native.namespace_mut("rhino").arenas_mut().insert(
+        "views".into(),
+        vec![make(invalid_view, bad_view), make(valid_view, fields())],
+    );
+    let output = settings(&ir).unwrap();
+    for id in [invalid_plane, invalid_view] {
+        assert!(output.losses.iter().any(|loss| loss.message.contains(id)));
+        assert!(!output.written.contains(id));
+        assert!(!output.regenerated.contains(id));
+    }
+    assert!(output.regenerated.contains(valid_plane));
+    assert!(output.written.contains(valid_view));
+    let decoded = read(&output.settings, false);
+    let arenas = decoded.native.namespace("rhino").unwrap().arenas();
+    assert_eq!(arenas["construction_planes"].len(), 1);
+    assert_eq!(arenas["views"].len(), 1);
+}
+
+#[test]
 fn projection_preserves_all_view_and_camera_fields_without_native_backlinks() {
     let ir = source();
     let record = native(&ir);
