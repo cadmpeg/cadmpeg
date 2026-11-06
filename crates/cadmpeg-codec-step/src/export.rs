@@ -4294,7 +4294,7 @@ impl<'a> Builder<'a> {
             .collect::<Vec<_>>();
         for curve_id in curve_ids {
             if let Some(reference) = self
-                .emit_standalone_intersection_pcurve(&curve_id)
+                .emit_standalone_support_pcurve(&curve_id)
                 .or_else(|| self.emit_curve(&curve_id))
             {
                 let name = Self::carrier_name(&self.carrier_names, &curve_id).to_owned();
@@ -4339,17 +4339,48 @@ impl<'a> Builder<'a> {
         (members, standalone_pcurves, has_surfaces)
     }
 
-    fn emit_standalone_intersection_pcurve(&mut self, curve_id: &str) -> Option<Ref> {
-        let procedural = self.procedural_curves.get(curve_id)?;
-        let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
-        else {
-            return None;
-        };
-        let [first, second] = context.sides();
-        if first != second {
+    fn emit_standalone_support_pcurve(&mut self, curve_id: &str) -> Option<Ref> {
+        if self
+            .curves
+            .get(curve_id)?
+            .geometry
+            .solved()
+            .is_some_and(|geometry| !matches!(geometry, SolvedCurveGeometry::Unknown { .. }))
+        {
             return None;
         }
-        let surface_id = first.surface.as_ref()?.to_string();
+        let procedural = self.procedural_curves.get(curve_id)?;
+        let (context, exact_construction) = match procedural.definition() {
+            ProceduralCurveDefinition::Intersection { context, .. } => (context, false),
+            ProceduralCurveDefinition::SurfaceCurve {
+                family:
+                    cadmpeg_ir::geometry::SurfaceCurveFamily::Parametric {
+                        context,
+                        tail: None,
+                    },
+            } => (context, true),
+            _ => return None,
+        };
+        let [first, second] = context.sides();
+        if exact_construction
+            && context
+                .discontinuities()
+                .iter()
+                .any(|items| !items.is_empty())
+        {
+            return None;
+        }
+        let side = if !exact_construction && first == second {
+            first
+        } else if exact_construction && second.surface.is_none() && second.pcurve.is_none() {
+            first
+        } else if exact_construction && first.surface.is_none() && first.pcurve.is_none() {
+            second
+        } else {
+            return None;
+        };
+        let construction_id = procedural.id.to_string();
+        let surface_id = side.surface.as_ref()?.to_string();
         if self.procedural_surfaces.contains_key(surface_id.as_str())
             || !matches!(
                 self.surfaces.get(surface_id.as_str())?.geometry.solved(),
@@ -4358,7 +4389,7 @@ impl<'a> Builder<'a> {
         {
             return None;
         }
-        let pcurve = first.pcurve.as_ref()?;
+        let pcurve = side.pcurve.as_ref()?;
         if pcurve.parameter_range.is_some() {
             return None;
         }
@@ -4390,6 +4421,9 @@ impl<'a> Builder<'a> {
             &format!("{},{surface},{representation}", string(name)),
         );
         self.curve_refs.insert(curve_id.to_owned(), reference);
+        if exact_construction {
+            self.written_procedural_curves.insert(construction_id);
+        }
         Some(reference)
     }
 
