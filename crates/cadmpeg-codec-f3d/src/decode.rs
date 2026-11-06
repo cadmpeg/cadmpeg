@@ -2918,7 +2918,6 @@ impl<'a> F3dDecodeSession<'a> {
                     &mut self.report,
                     materials.untyped_distance_properties,
                 );
-                self.report.notes.extend(materials.notes);
                 self.report.losses.extend(materials.part_losses);
                 self.protein_part_fidelity.append(materials.part_fidelity)?;
                 self.protein_part_stubs.extend(materials.part_stubs);
@@ -2964,7 +2963,6 @@ impl<'a> F3dDecodeSession<'a> {
                     &mut self.report,
                     decoded_materials.untyped_distance_properties,
                 );
-                self.report.notes.extend(decoded_materials.notes);
                 self.report.losses.extend(decoded_materials.part_losses);
                 self.protein_part_fidelity
                     .append(decoded_materials.part_fidelity)?;
