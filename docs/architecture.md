@@ -1,6 +1,6 @@
 # cadmpeg architecture
 
-cadmpeg routes native CAD through format codecs into `CadIr` version 10. Source fidelity rides beside the product document as a sidecar. Codecs may validate and encode afterward. [cad-ir.md](cad-ir.md) defines the IR. Crate docs and `cadmpeg --help` define APIs and CLI options. [dialects.toml](dialects.toml) owns dialect identity, [dialect-support.toml](../crates/cadmpeg-registry/docs/dialect-support.toml) owns per-dialect capability, and [format-support.md](format-support.md) renders aggregate format capability.
+cadmpeg routes native CAD through format codecs into `CadIr` version 11. Source fidelity rides beside the product document as a sidecar. Codecs may validate and encode afterward. [cad-ir.md](cad-ir.md) defines the IR. Crate docs and `cadmpeg --help` define APIs and CLI options. [dialects.toml](dialects.toml) owns dialect identity, [dialect-support.toml](../crates/cadmpeg-registry/docs/dialect-support.toml) owns per-dialect capability, and [format-support.md](format-support.md) renders aggregate format capability.
 
 ## Pipeline
 
@@ -21,7 +21,7 @@ native CAD or CADIR ── load + decode/parse ──> CadIr
 - `dump` runs the selected codec and serializes `CadIr` as CADIR JSON.
 - `measure` reads or decodes an input at `geometry` depth and measures its bodies, faces, and edges in model space: carrier parameters, areas, lengths, boxes, volumes, and orientation readings. Each value is measured within its reported error or unavailable with a pinned reason. [measurement.md](measurement.md) states the contract. `diff --geometry` measures both inputs and compares their bodies without entity IDs.
 
-CADIR input parses directly into `CadIr`. The parser accepts exactly IR version 10, including its required `subds` arena. Source annotations and retained records stay in the source-fidelity sidecar. Empty geometry output is written with an `export:output.empty` Warning; `--reject-empty` refuses it. A stale sidecar binding is ignored and reported as a current `sidecar.stale` Warning; sidecar read and parse failures remain errors.
+CADIR input parses directly into `CadIr`. The parser accepts exactly IR version 11, including its required `subds` arena. Source annotations and retained records stay in the source-fidelity sidecar. Empty geometry output is written with an `export:output.empty` Warning; `--reject-empty` refuses it. A stale sidecar binding is ignored and reported as a current `sidecar.stale` Warning; sidecar read and parse failures remain errors.
 
 `convert` requests `geometry` for STEP, IGES, and Rhino and `full` for other encoders through `Encoder::request`. `--full-decode` requests full independently of the target, as does `--reject-lossy`. `--container-only` requests container scope and conflicts with `--full-decode`; its restriction to CADIR output is caller policy. `dump`, `check`, and `diff` request full; `measure` requests `geometry`; for a document whose scope does not hold the model class it prints the scope note and measures the empty model. Stderr reports delivered content scope, not an ordered decode depth.
 
@@ -35,17 +35,14 @@ Absent, reordered, or invalid descriptive metadata produces a diagnostic.
 Retain nonconforming source content through the existing fidelity path. Do not
 invent a replacement author, date, or producer version.
 
-Distinguish descriptive metadata from fields used to interpret bytes or model
-values. A recovery must state which grammar, unit, or value it uses. If a field
-cannot be interpreted, omit the smallest dependent record or component whose
-boundary is known and continue with independent content. Stop when the parser
-cannot establish boundaries or identities needed for further decoding, or a
-resource limit is reached. Do not convert every parse error into a warning.
-
-Use codec-local diagnostics and loss codes. Keep conformance checks that provide
-useful diagnostics, but run them outside the fatal admission path when they do
-not control interpretation. No per-format strictness feature is needed. Existing
-explicit loss policies remain separate from default recovery.
+A decoder reads each independently framed part inside a boundary. When it
+cannot read a part, it retains the part's bytes for an `unknowns` stub,
+charges `record.unreadable`, and continues with independent content. A field
+inside a given-up part is absent; a positional list keeps a null slot. A part
+whose end cannot be located extends to the end of its stream. Session resource
+exhaustion and input-output errors refuse the decode. The
+[document contract](document-contract.md#partial-decode) states the remaining
+whole-file refusals.
 
 Header recovery uses this distinction in STEP, IGES, Rhino, and FreeCAD. STEP
 reads header records by name and retains nonconforming metadata; its schema
@@ -75,7 +72,7 @@ Source decoders return `DecodeReport`, including `DecodeTransfer { scope, geomet
 
 Each codec owns a `*LossCode` enum in `src/loss.rs`. Every reported drop goes through `code.note(message)`, which pins the namespaced local code, `LossTaxonomy`, severity, and strict floor. Shared taxonomy is the category used for subsystem reporting; the stable machine-readable identifier is the codec-local `family.detail` string.
 
-Every encoder returns an `ExportReport` with target, census, losses, notes, neutral and native coverage, write path, and optional synthesis cause. Unsupported content is reduced or omitted with loss. Only malformed input, format capacity, or target preconditions can refuse. The CLI retains the decode report independently of the export report.
+Every encoder returns an `ExportReport` with target, census, losses, notes, neutral and native coverage, write path, and optional synthesis cause. Unsupported content is reduced or omitted with loss. Writer errors are `InvalidInput`, `TargetCapacity`, `UnsupportedTarget`, `ResourceLimit`, or `Io`. The CLI retains the decode report independently of the export report.
 
 `write_path` records the selected mechanism: `verbatim_replay` copies eligible retained bytes unchanged; `patched` uses retained layout; `synthesized` authors content from the document, including the writer's own typed native namespace. Patch and replay cannot supply content beyond the document. Nonempty `unrepresented` forbids either retained-byte path. A declined patch selects synthesis with `PatchDeclined { reason }`. F3D and SLDPRT support all three paths, IGES replay and synthesis, FreeCAD patch and synthesis, and CADIR, STEP, and Rhino synthesis.
 
@@ -119,7 +116,7 @@ These hold across every codec, every dialect, and every release. A change that b
 | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
 | `cadmpeg`                | CLI orchestration, conversion workflow, native validators, and output dispatch.                                                        |
 | `cadmpeg-registry`       | Codec registration, prefix detection, `identify`, the output-format vocabulary, and the embedded dialect registries.                   |
-| `cadmpeg-ir`             | `CadIr` version 10, validation, diff, codec traits, reports, and source-fidelity sidecars.                                             |
+| `cadmpeg-ir`             | `CadIr` version 11, validation, diff, codec traits, reports, and source-fidelity sidecars.                                             |
 | `cadmpeg-measure`        | Geometric measurement of decoded models and ID-free comparison of measured bodies; an oracle that no codec consumes.                   |
 | `cadmpeg-tessellate`     | Display meshes and parameter-space boundary traces of B-rep faces, for writers that need a proxy mesh or a pcurve.                     |
 | `cadmpeg-core`           | Shared decode budgets, arenas, views, container summaries, and I/O helpers.                                                            |
