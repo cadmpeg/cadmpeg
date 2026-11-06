@@ -133,7 +133,7 @@ impl std::fmt::Display for StreamFailure {
             Self::Parse(error) | Self::Malformed(error) | Self::NotImplemented(error) => {
                 error.fmt(f)
             }
-            Self::Resource(error) => cadmpeg_core::CodecError::ResourceLimit(*error).fmt(f),
+            Self::Resource(error) => error.fmt(f),
             Self::Operation(error) => error.fmt(f),
         }
     }

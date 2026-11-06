@@ -4293,7 +4293,10 @@ impl<'a> Builder<'a> {
             .map(|curve| curve.id.as_str().to_owned())
             .collect::<Vec<_>>();
         for curve_id in curve_ids {
-            if let Some(reference) = self.emit_curve(&curve_id) {
+            if let Some(reference) = self
+                .emit_standalone_intersection_pcurve(&curve_id)
+                .or_else(|| self.emit_curve(&curve_id))
+            {
                 let name = Self::carrier_name(&self.carrier_names, &curve_id).to_owned();
                 let reference = if let Some(range) = self
                     .curves
@@ -4334,6 +4337,60 @@ impl<'a> Builder<'a> {
             members.push(reference);
         }
         (members, standalone_pcurves, has_surfaces)
+    }
+
+    fn emit_standalone_intersection_pcurve(&mut self, curve_id: &str) -> Option<Ref> {
+        let procedural = self.procedural_curves.get(curve_id)?;
+        let ProceduralCurveDefinition::Intersection { context, .. } = procedural.definition()
+        else {
+            return None;
+        };
+        let [first, second] = context.sides();
+        if first != second {
+            return None;
+        }
+        let surface_id = first.surface.as_ref()?.to_string();
+        if self.procedural_surfaces.contains_key(surface_id.as_str())
+            || !matches!(
+                self.surfaces.get(surface_id.as_str())?.geometry.solved(),
+                Some(SolvedSurfaceGeometry::Plane(_) | SolvedSurfaceGeometry::Cylinder(_))
+            )
+        {
+            return None;
+        }
+        let pcurve = first.pcurve.as_ref()?;
+        if pcurve.parameter_range.is_some() {
+            return None;
+        }
+        let cadmpeg_ir::geometry::pcurve::PcurveGeometry::Nurbs { nurbs } = &pcurve.geometry else {
+            return None;
+        };
+        let degree = usize::try_from(nurbs.degree()).ok()?;
+        let range = [
+            *nurbs.knots().get(degree)?,
+            *nurbs.knots().get(nurbs.pole_rows().count())?,
+        ];
+        if range != context.parameter_range().endpoints() {
+            return None;
+        }
+        let geometry = pcurve.geometry.clone();
+        let surface = self.emit_surface(&surface_id)?;
+        let curve = match self.surface_chart(&surface_id) {
+            Some(chart) => geometry::pcurve_in_chart(&mut self.emitter, chart, &geometry),
+            None => geometry::pcurve(&mut self.emitter, &geometry),
+        }?;
+        let context = self.pcurve_context();
+        let representation = self.emitter.emit(
+            "DEFINITIONAL_REPRESENTATION",
+            &format!("'',({curve}),{context}"),
+        );
+        let name = Self::carrier_name(&self.carrier_names, curve_id);
+        let reference = self.emitter.emit(
+            "PCURVE",
+            &format!("{},{surface},{representation}", string(name)),
+        );
+        self.curve_refs.insert(curve_id.to_owned(), reference);
+        Some(reference)
     }
 
     /// Unowned carriers wrapped for a bound representation: surfaces need a
@@ -5878,6 +5935,13 @@ impl<'a> Builder<'a> {
                     self.loss(
                         StepLossCode::AnalyticSurfaceNormalized,
                         format!("surface '{surface_id}' uses a positive radius and an adjusted parameter chart in STEP"),
+                    );
+                }
+                if matches!(basis, SolvedSurfaceGeometry::Cone(cone) if cone.ratio().get() != 1.0 && cone.half_angle().get() != 0.0)
+                {
+                    self.loss(
+                        StepLossCode::EllipticalConeReduced,
+                        format!("surface '{surface_id}' elliptical cone was reduced to a circular STEP CONICAL_SURFACE"),
                     );
                 }
                 self.written_analytic_surfaces
@@ -7591,25 +7655,6 @@ impl<'a> Builder<'a> {
                 ),
             );
         }
-        let elliptical_cones = self
-            .written_analytic_surfaces
-            .iter()
-            .filter(|written| {
-                matches!(written, WrittenAnalyticSurface::Carrier(SolvedSurfaceGeometry::Cone(cone_surface))
-                if {
-                    let ratio = cone_surface.ratio().get();
-                    ratio != 1.0 && cone_surface.half_angle().get() != 0.0
-                })
-            })
-            .count();
-        if elliptical_cones > 0 {
-            self.loss(
-                StepLossCode::EllipticalConeReduced,
-                format!(
-                    "{elliptical_cones} elliptical cone surface(s) were reduced to circular STEP CONICAL_SURFACE carriers"
-                ),
-            );
-        }
         if !self.curveless_edges.is_empty() {
             let edges = self
                 .curveless_edges
@@ -8824,7 +8869,7 @@ impl<'a> Builder<'a> {
             self.loss(
                 StepLossCode::ProceduralReducedToCarrier,
                 format!(
-                    "{procedural_surface_count} procedural surface definition(s) and {procedural_curve_count} procedural curve definition(s) were reduced to their solved STEP carriers: {reduced}"
+                    "{procedural_surface_count} procedural surface definition(s) and {procedural_curve_count} procedural curve definition(s) were reduced to their STEP carriers: {reduced}"
                 ),
             );
         }

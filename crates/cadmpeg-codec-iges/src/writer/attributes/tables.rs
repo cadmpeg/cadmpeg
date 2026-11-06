@@ -9,7 +9,11 @@ use super::{
 use cadmpeg_ir::native::NativeNamespace;
 use serde_json::Value;
 
-fn directory_metadata(namespace: &NativeNamespace, record: &NativeRecord, entity: &mut Entity) {
+pub(super) fn directory_metadata(
+    namespace: &NativeNamespace,
+    record: &NativeRecord,
+    entity: &mut Entity,
+) {
     let Some(source) = string_field(record, "source_entity") else {
         return;
     };
