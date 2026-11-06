@@ -109,7 +109,7 @@ fn definitions(
     losses: &mut Vec<LossNote>,
 ) -> Result<BTreeMap<String, Vec<String>>, CodecError> {
     let mut groups = BTreeMap::new();
-    let native_properties = ir
+    let mut native_properties = ir
         .native
         .namespace("fcstd")
         .map(|namespace| namespace.arena_as::<crate::native::PropertyRecord>("properties"))
@@ -126,6 +126,7 @@ fn definitions(
         .namespace("fcstd")
         .map(super::xml::retained_entry_names)
         .unwrap_or_default();
+    native_properties.retain(|property| xml::validate(property, &available).is_ok());
     for definition in &ir.model.product_definitions {
         let name = names
             .get(definition.id.as_str())
@@ -414,6 +415,7 @@ fn replay_list_properties(
                 "ElementList" | "PlacementList" | "ScaleList"
             )
         })
+        .filter(|property| xml::validate(property, &available).is_ok())
     {
         if object.properties.contains_key(&property.name) {
             continue;
