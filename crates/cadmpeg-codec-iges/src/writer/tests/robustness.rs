@@ -266,3 +266,38 @@ fn residual_specs(seed: &cadmpeg_ir::CadIr) -> Vec<ResidualSpec> {
     let _ = seed;
     Vec::new()
 }
+
+#[test]
+fn injected_errors_across_fixtures_name_the_record() {
+    let harness = cadmpeg_test_support::golden::Harness::new(
+        env!("CARGO_MANIFEST_DIR"),
+        "igs",
+        "UPDATE_GOLDEN=1 cargo test -p cadmpeg-codec-iges golden",
+    );
+    let injections = standard_injections();
+    let mut findings = Vec::new();
+    for (name, bytes) in harness.fixture_inputs() {
+        let options = DecodeOptions {
+            depth: IgesCodec.request(),
+            ..DecodeOptions::default()
+        };
+        let decoded = IgesCodec
+            .decode(&mut Cursor::new(bytes), &options)
+            .expect("fixture decodes");
+        findings.extend(
+            injected_error_findings(
+                decoded.ir(),
+                &IgesCodec,
+                cadmpeg_test_support::cross_closure::cross_request(&IgesCodec),
+                &injections,
+            )
+            .into_iter()
+            .map(|finding| format!("{name}: {finding}")),
+        );
+    }
+    assert!(
+        findings.is_empty(),
+        "injected-error findings:\n{}",
+        findings.join("\n")
+    );
+}
