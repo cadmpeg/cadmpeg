@@ -437,51 +437,84 @@ fn group_stream(members: &[u32], group_owner: u32) -> (Vec<u8>, crate::metastrea
     (bytes, meta)
 }
 
-#[test]
-fn sketch_group_resolves_point_and_curve_owners() {
+type GroupDecode = (
+    Vec<crate::records::sketch_geometry::SketchPoint>,
+    Vec<crate::records::sketch_geometry::SketchCurveIdentity>,
+    Vec<cadmpeg_ir::report::loss::LossNote>,
+);
+
+fn decode_group_stream(bytes: &[u8], meta: &crate::metastream::MetaStream) -> GroupDecode {
     use crate::design::decode::sketch::{
         decode_sketch_curve_identities_from_stream, decode_sketch_points_from_stream,
     };
+    let mut losses = Vec::new();
+    let points =
+        decode_sketch_points_from_stream(bytes, meta, "Design/BulkStream.dat", &mut losses)
+            .unwrap();
+    let curves = decode_sketch_curve_identities_from_stream(
+        bytes,
+        meta,
+        "Design/BulkStream.dat",
+        &mut losses,
+    )
+    .unwrap();
+    (points, curves, losses)
+}
+
+fn group_stream_error(bytes: &[u8], meta: &crate::metastream::MetaStream) -> String {
+    crate::design::decode::sketch::decode_sketch_points_from_stream(
+        bytes,
+        meta,
+        "Design/BulkStream.dat",
+        &mut Vec::new(),
+    )
+    .unwrap_err()
+    .to_string()
+}
+
+#[test]
+fn sketch_group_resolves_point_and_curve_owners() {
     let (bytes, meta) = group_stream(&[41, 60], OWNER);
-    let points = decode_sketch_points_from_stream(&bytes, &meta, "Design/BulkStream.dat").unwrap();
+    let (points, curves, losses) = decode_group_stream(&bytes, &meta);
     assert_eq!(points[0].owner_reference, Some(OWNER));
-    let curves =
-        decode_sketch_curve_identities_from_stream(&bytes, &meta, "Design/BulkStream.dat").unwrap();
+    assert_eq!(points[0].geometry_group, Some(50));
     assert_eq!(curves[0].owner_reference, Some(OWNER));
-    let (bytes, meta) = group_stream(&[60], OWNER);
-    assert!(
-        decode_sketch_points_from_stream(&bytes, &meta, "Design/BulkStream.dat")
-            .unwrap_err()
-            .to_string()
-            .contains("invalid trailing container reference")
-    );
+    assert_eq!(curves[0].geometry_group, Some(50));
+    assert!(losses.is_empty());
     let (bytes, meta) = group_stream(&[41, 60], 43);
-    assert!(
-        decode_sketch_points_from_stream(&bytes, &meta, "Design/BulkStream.dat")
-            .unwrap_err()
-            .to_string()
-            .contains("invalid member sequence")
-    );
+    assert!(group_stream_error(&bytes, &meta).contains("invalid member sequence"));
     for nested in [b"256".as_slice(), b"260".as_slice()] {
         let (mut bytes, meta) = group_stream(&[41, 60], OWNER);
         let group_start = usize::try_from(meta.records[2].bulk_offset).unwrap();
         bytes[group_start + 34..group_start + 37].copy_from_slice(nested);
-        assert!(
-            decode_sketch_points_from_stream(&bytes, &meta, "Design/BulkStream.dat")
-                .unwrap_err()
-                .to_string()
-                .contains("invalid member sequence")
-        );
+        assert!(group_stream_error(&bytes, &meta).contains("invalid member sequence"));
     }
     let (mut bytes, meta) = group_stream(&[41, 60], OWNER);
     let group_start = usize::try_from(meta.records[2].bulk_offset).unwrap();
     bytes[group_start + 37..group_start + 41].copy_from_slice(&51u32.to_le_bytes());
-    assert!(
-        decode_sketch_points_from_stream(&bytes, &meta, "Design/BulkStream.dat")
-            .unwrap_err()
-            .to_string()
-            .contains("invalid member sequence")
-    );
+    assert!(group_stream_error(&bytes, &meta).contains("invalid member sequence"));
+}
+
+#[test]
+fn sketch_group_assigns_an_unlisted_backlink_to_the_group_sketch() {
+    for (members, kind, record) in [([60], "point", 41), ([41], "curve", 60)] {
+        let (bytes, meta) = group_stream(&members, OWNER);
+        let (points, curves, losses) = decode_group_stream(&bytes, &meta);
+        assert_eq!(points[0].owner_reference, Some(OWNER));
+        assert_eq!(points[0].geometry_group, Some(50));
+        assert_eq!(curves[0].owner_reference, Some(OWNER));
+        assert_eq!(curves[0].geometry_group, Some(50));
+        let [loss] = losses.as_slice() else {
+            panic!("one membership loss for the {kind}");
+        };
+        assert_eq!(
+            loss.code,
+            crate::loss::F3dLossCode::SketchGeometryGroupMemberUnlisted.kind()
+        );
+        assert!(loss.message.starts_with(&format!(
+            "1 sketch {kind} record(s) in Design/BulkStream.dat, first record {record},"
+        )));
+    }
 }
 
 #[test]

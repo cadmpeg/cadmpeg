@@ -126,8 +126,8 @@ pub(crate) mod sketch_geometry_group_prefix {
     pub(crate) const LEN: usize = 75;
     /// Offset of `zero_run` (`bytes[10]`). Spec §3.1.
     pub(crate) const ZERO_RUN: usize = 11;
-    /// Offset of `sketch_ordinal` (`u32`, little-endian). Spec §3.1.
-    pub(crate) const SKETCH_ORDINAL: usize = 21;
+    /// Offset of `ordinal` (`u32`, little-endian). Spec §3.1.
+    pub(crate) const ORDINAL: usize = 21;
     /// Offset of `constant_one` (`u32`, little-endian). Spec §3.1.
     pub(crate) const CONSTANT_ONE: usize = 25;
     /// Stated value of `constant_one` (`u32`). Spec §3.1.

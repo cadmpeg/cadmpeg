@@ -19,6 +19,7 @@ use crate::design::decode::text::design_record_id;
 use crate::design::{design_feature_family, DesignFeatureFamily};
 use crate::ids::{self, native_stream};
 use crate::layout::sketch_container_visibility_member_prefix as visibility_member;
+use crate::loss::F3dLossCode;
 use crate::records::{
     decal::DesignRecordHeader,
     entity_header::{DesignEntityHeader, DESIGN_MODULE_SKETCH},
@@ -37,6 +38,7 @@ use cadmpeg_core::decode::View;
 use cadmpeg_core::CodecError;
 use cadmpeg_ir::features::{FinitePoint3, FiniteVector3};
 use cadmpeg_ir::math::{Point2, Point3, Vector3};
+use cadmpeg_ir::report::loss::LossNote;
 use cadmpeg_ir::scalar::{Angle, FiniteReal, NonNegativeLength, NonNegativeReal, PositiveLength};
 use cadmpeg_ir::sketches::TextPlacement;
 use cadmpeg_ir::topology::Color;
@@ -1956,6 +1958,7 @@ fn decode_sketch_points_from_stream(
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
     stream: &str,
+    losses: &mut Vec<LossNote>,
 ) -> Result<Vec<SketchPoint>, CodecError> {
     let frames = design_primary_frames(bytes, meta)?;
     let mut frames_by_entity = HashMap::new();
@@ -1975,6 +1978,7 @@ fn decode_sketch_points_from_stream(
         );
     }
     let groups = collect_sketch_geometry_groups(bytes, meta, &frames)?;
+    let mut unlisted = Vec::new();
     let mut out = Vec::new();
     for frame in &frames {
         let derived = is_derived_sketch_point_type(frame.design_type);
@@ -2004,17 +2008,23 @@ fn decode_sketch_points_from_stream(
             ))
         })?;
         let (u, v) = (decoded.coordinates[0] * 10.0, decoded.coordinates[1] * 10.0);
-        let owner = direct_sketch_owner(
-            &types_by_entity,
-            &groups,
-            record_index,
-            decoded.trailing_reference(),
-        )
-        .ok_or_else(|| {
-            crate::design::text::malformed_design(format_args!(
+        let backlink = decoded
+            .owner_reference
+            .map(|target| SketchBacklink::resolve(&groups, record_index, target));
+        if backlink.is_none_or(|backlink| backlink.geometry_group.is_none())
+            && !point_target_has_guid(
+                &types_by_entity,
+                decoded.trailing_reference(),
+                SKETCH_CONTAINER_TYPE_GUID,
+            )
+        {
+            return Err(crate::design::text::malformed_design(format_args!(
                 "F3D sketch point {record_index} has an invalid trailing container reference"
-            ))
-        })?;
+            )));
+        }
+        if backlink.is_some_and(|backlink| backlink.unlisted) {
+            unlisted.push(record_index);
+        }
         let (record_form, companion) = frames_by_entity
             .get(&decoded.paired_reference)
             .filter(|companion_frame| {
@@ -2044,7 +2054,8 @@ fn decode_sketch_points_from_stream(
             SketchPoint::try_from(crate::records::sketch_geometry::SketchPointDraft {
                 id: design_record_id(stream, ":sketch-point#", u64_from_index(frame.start)),
                 record_index,
-                owner_reference: decoded.owner_reference.map(|_| owner),
+                owner_reference: backlink.map(|backlink| backlink.owner),
+                geometry_group: backlink.and_then(|backlink| backlink.geometry_group),
                 class_tag: frame.class_tag.clone(),
                 byte_offset: u64_from_index(frame.start),
                 coordinate_offset: decoded.coordinate_offset,
@@ -2056,6 +2067,7 @@ fn decode_sketch_points_from_stream(
             .map_err(CodecError::Malformed)?,
         );
     }
+    push_unlisted_group_member_loss(losses, stream, "point", &unlisted);
     Ok(out)
 }
 
@@ -2066,8 +2078,13 @@ fn decode_sketch_points_from_stream(
 /// persistent identity; later forms supply `(u,v,w)` and `pt_tag`. A known
 /// point record with a malformed or non-finite member sequence makes the
 /// stream malformed.
-pub(crate) fn decode_sketch_points(scan: &ContainerScan) -> Result<Vec<SketchPoint>, CodecError> {
-    decode_sketch_streams(scan, decode_sketch_points_from_stream)
+pub(crate) fn decode_sketch_points(
+    scan: &ContainerScan,
+    losses: &mut Vec<LossNote>,
+) -> Result<Vec<SketchPoint>, CodecError> {
+    decode_sketch_streams(scan, |bytes, meta, stream| {
+        decode_sketch_points_from_stream(bytes, meta, stream, losses)
+    })
 }
 
 struct SketchProperty<'a> {
@@ -3408,8 +3425,8 @@ fn parse_sketch_geometry_group(payload: &[u8]) -> Option<SketchGeometryGroup> {
         view.take(len)
     };
     if indexed_record_header_at(payload, 0).is_none()
-        || field(group::ZERO_RUN, group::SKETCH_ORDINAL - group::ZERO_RUN)? != [0; 10]
-        || View::u32_le_at(payload, group::SKETCH_ORDINAL).is_none()
+        || field(group::ZERO_RUN, group::ORDINAL - group::ZERO_RUN)? != [0; 10]
+        || View::u32_le_at(payload, group::ORDINAL).is_none()
         || View::u32_le_at(payload, group::CONSTANT_ONE) != Some(group::CONSTANT_ONE_VALUE)
         || field(group::ZERO_BYTE, 1)? != [group::ZERO_BYTE_VALUE]
         || indexed_record_header_at(payload, group::NESTED_HEADER).is_none()
@@ -3502,19 +3519,43 @@ fn collect_sketch_geometry_groups(
     Ok(groups)
 }
 
-fn direct_sketch_owner(
-    types: &HashMap<u32, (&str, u32, &str)>,
-    groups: &HashMap<u32, SketchGeometryGroup>,
-    record: u32,
-    target: Option<u32>,
-) -> Option<u32> {
-    let target = target?;
-    if point_target_has_guid(types, Some(target), SKETCH_CONTAINER_TYPE_GUID) {
-        Some(target)
-    } else {
-        let group = groups.get(&target)?;
-        group.members.contains(&record).then_some(group.sketch)
+#[derive(Debug, Clone, Copy)]
+struct SketchBacklink {
+    owner: u32,
+    geometry_group: Option<u32>,
+    unlisted: bool,
+}
+
+impl SketchBacklink {
+    fn resolve(groups: &HashMap<u32, SketchGeometryGroup>, record: u32, target: u32) -> Self {
+        match groups.get(&target) {
+            Some(group) => Self {
+                owner: group.sketch,
+                geometry_group: Some(target),
+                unlisted: !group.members.contains(&record),
+            },
+            None => Self {
+                owner: target,
+                geometry_group: None,
+                unlisted: false,
+            },
+        }
     }
+}
+
+fn push_unlisted_group_member_loss(
+    losses: &mut Vec<LossNote>,
+    stream: &str,
+    kind: &str,
+    unlisted: &[u32],
+) {
+    let Some(first) = unlisted.first() else {
+        return;
+    };
+    losses.push(F3dLossCode::SketchGeometryGroupMemberUnlisted.note(format!(
+        "{} sketch {kind} record(s) in {stream}, first record {first}, backlink to a sketch geometry group whose member run omits the record; each record is assigned to the sketch that the group names.",
+        unlisted.len()
+    )));
 }
 
 const SKETCH_POINT_TYPE_GUID: &str = "C2CEDAE7-1716-47C1-B7B1-07B70081D0FB";
@@ -3592,9 +3633,11 @@ fn decode_sketch_curve_identities_from_stream(
     bytes: &[u8],
     meta: &crate::metastream::MetaStream,
     stream: &str,
+    losses: &mut Vec<LossNote>,
 ) -> Result<Vec<SketchCurveIdentity>, CodecError> {
     let frames = design_primary_frames(bytes, meta)?;
     let groups = collect_sketch_geometry_groups(bytes, meta, &frames)?;
+    let mut unlisted = Vec::new();
     let mut out = Vec::new();
     for frame in frames {
         let payload = &bytes[frame.start..frame.end];
@@ -3633,6 +3676,11 @@ fn decode_sketch_curve_identities_from_stream(
                 )
             });
 
+        let backlink = trailing_sketch_owner_reference(payload)
+            .map(|target| SketchBacklink::resolve(&groups, record_index, target));
+        if backlink.is_some_and(|backlink| backlink.unlisted) {
+            unlisted.push(record_index);
+        }
         out.push(SketchCurveIdentity {
             id: design_record_id(
                 stream,
@@ -3640,14 +3688,8 @@ fn decode_sketch_curve_identities_from_stream(
                 u64_from_index(frame.start),
             ),
             record_index,
-            owner_reference: trailing_sketch_owner_reference(payload).and_then(|target| {
-                groups.get(&target).map_or(Some(target), |group| {
-                    group
-                        .members
-                        .contains(&record_index)
-                        .then_some(group.sketch)
-                })
-            }),
+            owner_reference: backlink.map(|backlink| backlink.owner),
+            geometry_group: backlink.and_then(|backlink| backlink.geometry_group),
             class_tag: frame.class_tag,
             byte_offset: u64_from_index(frame.start),
             geometry_offset: u32::try_from(geometry_offset).map_err(|_| {
@@ -3660,6 +3702,7 @@ fn decode_sketch_curve_identities_from_stream(
             planar_z_noise,
         });
     }
+    push_unlisted_group_member_loss(losses, stream, "curve", &unlisted);
     Ok(out)
 }
 
@@ -3669,8 +3712,11 @@ fn decode_sketch_curve_identities_from_stream(
 /// arc, line, or referenced analytic geometry.
 pub(crate) fn decode_sketch_curve_identities(
     scan: &ContainerScan,
+    losses: &mut Vec<LossNote>,
 ) -> Result<Vec<SketchCurveIdentity>, CodecError> {
-    decode_sketch_streams(scan, decode_sketch_curve_identities_from_stream)
+    decode_sketch_streams(scan, |bytes, meta, stream| {
+        decode_sketch_curve_identities_from_stream(bytes, meta, stream, losses)
+    })
 }
 
 #[derive(Debug)]
@@ -5273,7 +5319,7 @@ fn decode_reference_list(bytes: &[u8], position: usize) -> Option<SketchReferenc
 
 fn decode_sketch_streams<T>(
     scan: &ContainerScan,
-    decode: impl Fn(&[u8], &crate::metastream::MetaStream, &str) -> Result<Vec<T>, CodecError>,
+    mut decode: impl FnMut(&[u8], &crate::metastream::MetaStream, &str) -> Result<Vec<T>, CodecError>,
 ) -> Result<Vec<T>, CodecError> {
     let mut out = Vec::new();
     for entry in scan

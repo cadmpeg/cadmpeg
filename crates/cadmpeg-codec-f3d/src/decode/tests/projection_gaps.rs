@@ -308,6 +308,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
             id: "native:sketch-point".into(),
             record_index: 11,
             owner_reference: Some(1),
+            geometry_group: None,
             class_tag: crate::records::references::DesignClassTag::try_from("000".to_owned())
                 .unwrap(),
             byte_offset: 0,
@@ -330,6 +331,7 @@ fn design_projection_gaps_count_each_retained_selection_family() {
         id: "native:sketch-curve".into(),
         record_index: 12,
         owner_reference: Some(1),
+        geometry_group: None,
         class_tag: crate::records::references::DesignClassTag::try_from("000".to_owned()).unwrap(),
         byte_offset: 0,
         geometry_offset: 0,
