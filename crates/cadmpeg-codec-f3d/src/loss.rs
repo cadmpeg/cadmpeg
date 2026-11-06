@@ -308,6 +308,10 @@ pub(crate) enum F3dLossCode {
     FeatureExtrudeExtentNative,
     /// A marker-one `Revolve` scope has a token-independent frame length outside its documented set.
     FeatureRevolveLayoutAssumed,
+    /// A `PathPattern` distance owner is read as the arc-length spacing between instances.
+    FeaturePathPatternSpacingAssumed,
+    /// A `PathPattern` local-ordinal 0 owner is read as the instance count.
+    FeaturePathPatternCountAssumed,
     /// Feature face operands stay unresolved inside historical selections.
     FeatureFaceOperandUnresolved,
     /// Edge-treatment selections retain native recipes; no historical edge.
@@ -621,6 +625,8 @@ impl F3dLossCode {
         Self::FeatureFixedFilletAssignmentNative,
         Self::FeatureExtrudeExtentNative,
         Self::FeatureRevolveLayoutAssumed,
+        Self::FeaturePathPatternSpacingAssumed,
+        Self::FeaturePathPatternCountAssumed,
         Self::FeatureFaceOperandUnresolved,
         Self::FeatureEdgeSelectionNative,
         Self::FeatureEdgeOperandUnresolved,
@@ -854,6 +860,8 @@ impl F3dLossCode {
             Self::FeatureFixedFilletAssignmentNative => "feature.fixed-fillet-assignment-native",
             Self::FeatureExtrudeExtentNative => "feature.extrude-extent-native",
             Self::FeatureRevolveLayoutAssumed => "feature.revolve-layout-assumed",
+            Self::FeaturePathPatternSpacingAssumed => "feature.path-pattern-spacing-assumed",
+            Self::FeaturePathPatternCountAssumed => "feature.path-pattern-count-assumed",
             Self::FeatureFaceOperandUnresolved => "feature.face-operand-unresolved",
             Self::FeatureEdgeSelectionNative => "feature.edge-selection-native",
             Self::FeatureEdgeOperandUnresolved => "feature.edge-operand-unresolved",
@@ -1106,6 +1114,8 @@ impl F3dLossCode {
             | Self::FeatureFixedFilletAssignmentNative
             | Self::FeatureExtrudeExtentNative
             | Self::FeatureRevolveLayoutAssumed
+            | Self::FeaturePathPatternSpacingAssumed
+            | Self::FeaturePathPatternCountAssumed
             | Self::FeatureFaceOperandUnresolved
             | Self::FeatureEdgeSelectionNative
             | Self::FeatureEdgeOperandUnresolved
@@ -1292,6 +1302,8 @@ impl F3dLossCode {
             | Self::FeatureFixedFilletAssignmentNative
             | Self::FeatureExtrudeExtentNative
             | Self::FeatureRevolveLayoutAssumed
+            | Self::FeaturePathPatternSpacingAssumed
+            | Self::FeaturePathPatternCountAssumed
             | Self::FeatureFaceOperandUnresolved
             | Self::FeatureEdgeSelectionNative
             | Self::FeatureEdgeOperandUnresolved
@@ -1562,6 +1574,8 @@ mod tests {
                 "feature.fixed-fillet-assignment-native",
                 "feature.extrude-extent-native",
                 "feature.revolve-layout-assumed",
+                "feature.path-pattern-spacing-assumed",
+                "feature.path-pattern-count-assumed",
                 "feature.face-operand-unresolved",
                 "feature.edge-selection-native",
                 "feature.edge-operand-unresolved",

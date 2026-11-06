@@ -1386,3 +1386,15 @@ when the operation transition carries no candidate for the group members?
 **Conflict.** None.
 
 **Note.** The decoder reports `feature.profile-crossing-loop-assumed` for each selection that takes regions from this rule.
+
+### DR-290. PathPattern scalar owners and path settings
+
+**Question.** Which fields of a `PathPattern` scope give its instance count, its distance type (adjacent spacing or total extent), its start position on the path, its orientation, and its flip direction?
+
+**Known.** `f3d.md` §3.1 gives the seed group, the path group, and the two parameter owners at owner-local ordinals zero and one. The decoder reads the ordinal-zero owner as the instance count, including the seed, and the ordinal-one owner, in centimetres, as the arc-length spacing between adjacent instances. It records `feature.path-pattern-count-assumed` and `feature.path-pattern-spacing-assumed` for each scope it projects with these readings. When either owner is missing, repeated, or out of range, the pattern keeps its seeds and an unresolved curve-driven form. The settings record at scope-reference ordinal zero, the record of type `69EE2FA7-BCC7-449E-9CA9-976CEFDFED44` (two f64 values, a u32, and three f64 values of `-1.0`), and the trailing persistent selection are not read.
+
+**Need.** Controlled saves that pattern one 10 mm cube three times on a sketch path: (a) a straight line path, distance type Extent, 60 mm; (b) a circular-arc path of radius 50 mm and 90 degrees, distance type Spacing, 20 mm, start point at the middle of the path, orientation Path direction; (c) save (a) with Flip direction. Compare the owner values, the settings record, and the `69EE2FA7` record across the saves.
+
+**Conflict.** None.
+
+**Note.** The decoder reports `feature.path-pattern-count-assumed` and `feature.path-pattern-spacing-assumed`.

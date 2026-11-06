@@ -5273,6 +5273,16 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                     group.role() == DesignOperandRole::ROLE_0X10 && group.extrude_role().is_none()
                 }
                 None if scope.kind()
+                    == crate::records::feature::scope::DesignFeatureKind::PathPattern =>
+                {
+                    matches!(
+                        group.role(),
+                        DesignOperandRole::BODIES_B
+                            | DesignOperandRole::ROLE_0X10
+                            | DesignOperandRole::ROLE_0X5
+                    ) && group.extrude_role().is_none()
+                }
+                None if scope.kind()
                     == crate::records::feature::scope::DesignFeatureKind::Decal =>
                 {
                     group.role() == DesignOperandRole::BODIES_A && group.extrude_role().is_none()
@@ -5305,6 +5315,7 @@ fn validate_construction_operand_groups(ctx: &Ctx, findings: &mut Vec<Finding>) 
                         | crate::records::feature::scope::DesignFeatureKind::RemoveBody
                         | crate::records::feature::scope::DesignFeatureKind::SurfaceStitch
                         | crate::records::feature::scope::DesignFeatureKind::SplitFace
+                        | crate::records::feature::scope::DesignFeatureKind::PathPattern
                         | crate::records::feature::scope::DesignFeatureKind::MoveFace
                         | crate::records::feature::scope::DesignFeatureKind::DeleteFace
                         | crate::records::feature::scope::DesignFeatureKind::SurfaceDeleteFace

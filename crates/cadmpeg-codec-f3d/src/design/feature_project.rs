@@ -609,6 +609,7 @@ pub(crate) struct ProjectedParameterDesign {
     /// their sheet-metal rule states no thickness.
     pub(crate) unruled_flange_thicknesses: usize,
     pub(crate) hole_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
+    pub(crate) pattern_losses: Vec<cadmpeg_ir::report::loss::LossNote>,
 }
 
 impl ProjectedParameterDesign {
@@ -661,6 +662,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
         ..
     } = inputs;
     let mut hole_losses = Vec::new();
+    let mut pattern_losses = Vec::new();
     let unruled_flange_thicknesses = std::cell::Cell::new(0_usize);
 
     let source_ordinals = authored_scope_ordinals(scopes, timelines)?;
@@ -1278,6 +1280,31 @@ pub(crate) fn project_parameter_design_with_edge_identities(
                             })
                         })
                     } else if scope.kind()
+                        == crate::records::feature::scope::DesignFeatureKind::PathPattern
+                    {
+                        match project_path_pattern(scope, construction_groups, owners) {
+                            Some(projected) => {
+                                if projected.scalars_assumed {
+                                    pattern_losses.push(
+                                        crate::loss::F3dLossCode::FeaturePathPatternCountAssumed
+                                            .note(format!(
+                                                "PathPattern scope {} reads its local-ordinal 0 owner as the instance count (DR-290).",
+                                                scope.id
+                                            )),
+                                    );
+                                    pattern_losses.push(
+                                        crate::loss::F3dLossCode::FeaturePathPatternSpacingAssumed
+                                            .note(format!(
+                                                "PathPattern scope {} reads its local-ordinal 1 owner as the arc-length spacing between instances, not the total extent (DR-290).",
+                                                scope.id
+                                            )),
+                                    );
+                                }
+                                projected.definition
+                            }
+                            None => native_scope_definition(scope, &parameters)?,
+                        }
+                    } else if scope.kind()
                         == crate::records::feature::scope::DesignFeatureKind::MoveFace
                     {
                         project_move_face(scope, construction_groups)?.unwrap_or_else(|| {
@@ -1823,6 +1850,7 @@ pub(crate) fn project_parameter_design_with_edge_identities(
         unordered_parameter_scopes,
         unruled_flange_thicknesses: unruled_flange_thicknesses.get(),
         hole_losses,
+        pattern_losses,
     })
 }
 
@@ -7042,6 +7070,101 @@ fn project_circular_pattern(
         seeds,
         pattern,
     }))
+}
+
+/// Construction of a `PathPattern` scope: its seeds, path group, and the
+/// count and distance scalars of its local-ordinal 0 and 1 owners.
+struct ProjectedPathPattern {
+    definition: cadmpeg_ir::features::FeatureDefinition,
+    /// The definition reads the local-ordinal 0 owner as the instance count
+    /// and the local-ordinal 1 owner as the arc-length spacing.
+    scalars_assumed: bool,
+}
+
+fn project_path_pattern(
+    scope: &DesignParameterScope,
+    groups: &[DesignConstructionOperandGroup],
+    owners: &[DesignParameterOwner],
+) -> Option<ProjectedPathPattern> {
+    use cadmpeg_ir::features::{
+        patterns::{PatternKind, PatternSeed, PatternTransform},
+        BodySelection, FaceSelection, FeatureDefinition, FeatureOperation, PathRef,
+    };
+
+    let stream = native_stream(&scope.id)?;
+    let scope_groups = groups
+        .iter()
+        .filter(|group| {
+            native_stream(&group.id) == Some(stream)
+                && group.scope_record_index == scope.record_index
+        })
+        .collect::<Vec<_>>();
+    let [seed_group, path_group] = scope_groups.as_slice() else {
+        return None;
+    };
+    let (seed_group, path_group) =
+        if seed_group.scope_reference_ordinal < path_group.scope_reference_ordinal {
+            (*seed_group, *path_group)
+        } else {
+            (*path_group, *seed_group)
+        };
+    let seed_members = seed_group.members().len();
+    let seed_ordinal = usize::try_from(seed_group.scope_reference_ordinal).ok()?;
+    if seed_ordinal != 1
+        || seed_members == 0
+        || path_group.role() != DesignOperandRole::ROLE_0X5
+        || path_group.members().is_empty()
+        || !seed_group
+            .members()
+            .iter()
+            .map(|member| member.value)
+            .eq(scope
+                .reference_members()
+                .values_in(seed_ordinal + 1..seed_ordinal + 1 + seed_members)?
+                .copied())
+    {
+        return None;
+    }
+    let seed = match seed_group.role() {
+        DesignOperandRole::BODIES_B => {
+            PatternSeed::Bodies(BodySelection::Native(seed_group.id.clone()))
+        }
+        DesignOperandRole::ROLE_0X10 => {
+            PatternSeed::Faces(FaceSelection::Native(seed_group.id.clone()))
+        }
+        _ => return None,
+    };
+    let scope_owner = |local_ordinal: u32| {
+        unique_feature_match(owners.iter().filter(|owner| {
+            native_stream(owner.id()) == Some(stream)
+                && owner.scope_record_index() == scope.record_index
+                && owner.local_ordinal() == local_ordinal
+        }))
+    };
+    let curve_driven = scope_owner(0)
+        .zip(scope_owner(1))
+        .and_then(|(count, spacing)| {
+            let count = count.evaluated_value().get();
+            if count < 1.0 || count > f64::from(u32::MAX) || count.fract() != 0.0 {
+                return None;
+            }
+            let spacing =
+                cadmpeg_ir::scalar::PositiveLength::new(spacing.evaluated_value().get() * 10.0)?;
+            PatternKind::new(PatternTransform::CurveDriven {
+                path: Some(PathRef::Native(path_group.id.clone())),
+                spacing,
+                count: cadmpeg_core::convert::truncate_f64_to_u32(count)?,
+            })
+            .ok()
+        });
+    let scalars_assumed = curve_driven.is_some();
+    Some(ProjectedPathPattern {
+        definition: FeatureDefinition::Operation(FeatureOperation::Pattern {
+            seeds: vec![seed],
+            pattern: curve_driven.unwrap_or(PatternKind::UNRESOLVED_CURVE_DRIVEN),
+        }),
+        scalars_assumed,
+    })
 }
 
 /// Seeds of a pattern's seed group. A body-role group selects its bodies. A

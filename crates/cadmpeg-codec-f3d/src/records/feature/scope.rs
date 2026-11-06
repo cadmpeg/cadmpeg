@@ -360,6 +360,13 @@ impl From<DesignFaceRecipeKind> for ConstructionRecipeKind {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct DesignNativeFeatureName(std::sync::Arc<str>);
 
+impl DesignFeatureKind {
+    /// Native kind carrying a stored family name.
+    pub(crate) fn native(name: &str) -> Self {
+        Self::Native(DesignNativeFeatureName(name.into()))
+    }
+}
+
 /// Optional payloads can be uninterpreted; a counted collection is decoded even when empty.
 trait ScopePayloadCompleteness {
     fn is_uninterpreted(&self) -> bool;
@@ -632,6 +639,7 @@ design_feature_kinds! {
         CustomFeature => "CustomFeature",
         Form => "Form",
         SplitFace => "SplitFace",
+        PathPattern => "PathPattern",
         DeleteFace => "DeleteFace",
         SurfaceDeleteFace => "SurfaceDeleteFace",
         RemoveBody => "RemoveBody",
@@ -1924,6 +1932,7 @@ impl TryFrom<DesignParameterScopeSerde> for DesignParameterScope {
                 DesignScopePayload::CopyPasteBodies(wire.copy_paste_bodies_operation.take())
             }
             DesignFeatureKind::SplitFace => DesignScopePayload::SplitFace,
+            DesignFeatureKind::PathPattern => DesignScopePayload::PathPattern,
             DesignFeatureKind::DeleteFace => DesignScopePayload::DeleteFace,
             DesignFeatureKind::SurfaceDeleteFace => DesignScopePayload::SurfaceDeleteFace,
             DesignFeatureKind::RemoveBody => DesignScopePayload::RemoveBody,
@@ -2264,6 +2273,7 @@ impl From<DesignParameterScope> for DesignParameterScopeSerde {
             | DesignScopePayload::CustomFeature
             | DesignScopePayload::Form
             | DesignScopePayload::SplitFace
+            | DesignScopePayload::PathPattern
             | DesignScopePayload::DeleteFace
             | DesignScopePayload::SurfaceDeleteFace
             | DesignScopePayload::RemoveBody

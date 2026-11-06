@@ -609,6 +609,7 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
     );
     losses.extend(projected.unruled_flange_thickness_loss());
     losses.extend(projected.hole_losses);
+    losses.extend(projected.pattern_losses);
     losses.extend(
         crate::design::decode::operands::fixed_fillet_assignment_losses(
             &design.design_parameter_scopes,
@@ -847,6 +848,21 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         },
     )?;
     crate::design::profile_select::bind_split_face_sketch_selections(
+        &mut model.features,
+        &crate::design::profile_select::SketchCurveSelectionResolution {
+            scopes: &design.design_parameter_scopes,
+            profile_curves: &design.design_profile_curve_selections,
+            groups: &design.design_construction_operand_groups,
+            operands: &design.design_entity_selection_operands,
+            placements: &design.design_sketch_placements,
+            curve_identities: &design.sketch_curve_identities,
+            sketches: &model.sketches,
+            sketch_entities: &model.sketch_entities,
+            spatial_sketches: &model.spatial_sketches,
+            spatial_sketch_entities: &model.spatial_sketch_entities,
+        },
+    );
+    crate::design::profile_select::bind_path_pattern_sketch_selections(
         &mut model.features,
         &crate::design::profile_select::SketchCurveSelectionResolution {
             scopes: &design.design_parameter_scopes,

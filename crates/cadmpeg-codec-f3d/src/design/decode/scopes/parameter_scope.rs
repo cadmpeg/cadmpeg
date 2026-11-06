@@ -1900,7 +1900,8 @@ fn named_parameter_scope_tail_is_valid(
     })()
 }
 
-/// Type a scope from its class type GUID when that GUID is listed.
+/// Type a scope from its class type GUID when that GUID is listed. A
+/// `PathPattern` scope is selected only by its class GUID.
 fn scope_feature_kind(
     stored: &str,
     type_family: Option<&scope::DesignFeatureKind>,
@@ -1908,6 +1909,7 @@ fn scope_feature_kind(
     let literal = scope::DesignFeatureKind::try_from(stored.to_owned()).ok()?;
     Some(match (literal, type_family) {
         (_, Some(family)) => family.clone(),
+        (scope::DesignFeatureKind::PathPattern, None) => scope::DesignFeatureKind::native(stored),
         (literal, None) => literal,
     })
 }
