@@ -570,7 +570,7 @@ unrelated preceding feature as the pattern seed.
 
 **Known.** `sldprt.md` reads it as a little-endian i32. Across the 1 040 integer cells of the 1 581-part dataset, values are 0 through 1327, so no value distinguishes i32 from u32.
 
-**Need.** We must know the sign before a writer can store a negative value. Without it, the writer refuses one.
+**Need.** The sign determines how a writer stores a negative value.
 
 ### DI-45. Relation-table row flag
 
@@ -595,7 +595,7 @@ unrelated preceding feature as the pattern seed.
 
 **Known.** `sldprt.md` §2 "The relation table of a sketch block follows the last record of the block" gives the row header, the handle cells, and the trailer forms of the typed codes. The u32 thirty bytes before a table's first row is not always its row count. The handle cells are new archive objects, so a row added or removed changes the archive's object indices after it.
 
-**Need.** We must know the framing to add or remove a relation row. Without it, the writer refuses both.
+**Need.** The framing determines how to add or remove a relation row.
 
 ### DI-48. Class of a repeated class token
 

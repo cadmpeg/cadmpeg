@@ -691,6 +691,9 @@ attribute keeps the writer option. An attribute whose value the header does
 not carry back keeps its `attribute.source-record-not-written` loss. A
 document attribute whose value is not one string keeps that loss too.
 
+`FILE_DESCRIPTION` description strings transfer in order as document
+attributes named `start`. Each string occupies one attribute.
+
 CADIR decision: the reader locates header records by name. Missing, duplicate,
 reordered, or invalid descriptive metadata produces a loss and does not prevent
 DATA admission. In Part 21, a unique `FILE_SCHEMA` record must contain at least one
@@ -2123,26 +2126,7 @@ position therefore selects one independent unscoped style over another.
 precedence over its `over_ridden_style` when both are included in one
 presentation.
 
-CADIR export decision: the STEP writer projects one body or face appearance
-target to one `STYLED_ITEM` style only when every eligible binding for that
-target has the same write projection: base RGBA color, `COLOUR_RGB` name, and
-binding visibility. Equivalent duplicate bindings coalesce and all of their
-binding identities count as written. Distinct projections have no format
-precedence. Report-mode export omits every style selected from the conflicting
-bindings for that target and records `appearance.binding-target-conflict`
-with the target and binding identities. An unconflicted body style may still
-transfer through the normal body-to-face projection. Strict export rejects the
-non-empty loss report. The writer does not select a binding from model order,
-aggregate order, or first occurrence. An appearance no binding references
-would vanish with its dead targets: the writer binds it to the recovery
-shape item (the emitted geometric set, or the first standalone carrier) so
-the appearance record reappears. The binding is an addition the comparison
-allows.
-
-Visibility remains binding-level and does not change visibility on a shared
-geometry carrier. The writer emits binding-specific `INVISIBILITY` records for
-emitted hidden styled items on schemas that support visibility; unsupported
-schemas report `presentation.hidden-appearance-visibility-unsupported`. ISO
+ISO
 10303-46 assigns a `PRESENTATION_STYLE_BY_CONTEXT` to a representation item
 and applies it only in its `style_context`. `style_context` can be a `group`,
 `CONTEXT_DEPENDENT_SHAPE_REPRESENTATION`, `PRESENTATION_LAYER_ASSIGNMENT`,
