@@ -442,6 +442,14 @@ fn a_counted_hole_ring_names_only_an_island_that_no_smaller_face_holds() {
     );
     let (_, holes) = single_region(&sketch, &entities, &[ring(&inner, false)]);
     assert!(holes.is_empty());
+    assert_eq!(
+        member_regions(
+            &sketch,
+            &entities,
+            &[ring(&inner, false), ring(&inner, false)]
+        ),
+        None
+    );
 
     let regions = member_regions(
         &sketch,
@@ -513,6 +521,16 @@ fn counted_duplicate_members_select_the_region_around_a_circle_island() {
         ),
         None
     );
+    let renamed = [
+        ring(&first, false),
+        ring(&second[..3], false),
+        vec![(&circle, false)],
+    ]
+    .concat();
+    assert_eq!(
+        member_regions(&sketch, &entities, &[renamed, vec![(&circle, true)]]),
+        None
+    );
 }
 
 #[test]
@@ -556,7 +574,7 @@ fn a_coincident_edge_matches_when_one_of_its_curves_has_its_direction() {
 }
 
 #[test]
-fn a_full_ellipse_leaves_counted_members_and_curve_programs_without_a_region() {
+fn a_full_ellipse_leaves_counted_members_without_a_region() {
     let id = SketchId::mint("synthetic:test:id#ellipse-island").unwrap();
     let outer = rectangle(&id, "outer", (0.0, 0.0), (40.0, 30.0));
     let sketch = sketch_with_loops(id.clone(), &[&outer]);
@@ -579,51 +597,6 @@ fn a_full_ellipse_leaves_counted_members_and_curve_programs_without_a_region() {
         member_regions(&sketch, &entities, &[ring(&outer, false)]),
         None
     );
-    let program = outer
-        .iter()
-        .map(|entity| entity.id().clone())
-        .collect::<Vec<_>>();
-    let ordered = crate::test_support::with_decode_context(|ctx| {
-        super::super::arrangement_region_matching_curve_program(
-            &sketch,
-            &entities,
-            &program,
-            PROFILE_PROGRAM_TOLERANCE,
-            &ProfileGeometryWork::new(),
-            ctx,
-        )
-    })
-    .unwrap();
-    assert_eq!(ordered, None);
-}
-
-#[test]
-fn a_curve_program_selects_a_t_junction_face_with_a_curve_outside_the_profile_loops() {
-    let id = SketchId::mint("synthetic:test:id#t-junction-program").unwrap();
-    let mut entities = rectangle(&id, "side", (0.0, 0.0), (40.0, 30.0));
-    let sketch = sketch_with_loops(id.clone(), &[&entities]);
-    entities.push(line_entity(&id, "diagonal", (0.0, 0.0), (20.0, 30.0)));
-    let program = [1, 2, 4, 0].map(|index| entities[index].id().clone());
-    let region = crate::test_support::with_decode_context(|ctx| {
-        super::super::arrangement_region_matching_curve_program(
-            &sketch,
-            &entities,
-            &program,
-            PROFILE_PROGRAM_TOLERANCE,
-            &ProfileGeometryWork::new(),
-            ctx,
-        )
-    })
-    .unwrap();
-    let Some(SketchProfileRegion::Trimmed {
-        outer_boundary,
-        hole_boundaries,
-    }) = region
-    else {
-        panic!("the face right of the diagonal");
-    };
-    assert!(hole_boundaries.is_empty());
-    assert_eq!(outer_boundary.len(), 4);
 }
 
 #[test]
@@ -706,6 +679,14 @@ fn a_counted_ring_that_two_walks_match_selects_nothing() {
         member_regions(&sketch, &entities, &[both(false, false)]),
         None
     );
+    assert_eq!(
+        member_regions(
+            &sketch,
+            &entities,
+            &[ring(&outer, false), both(false, false)]
+        ),
+        None
+    );
 
     let (_, holes) = single_region(&sketch, &entities, &[both(false, true)]);
     assert!(holes.is_empty());
@@ -752,4 +733,87 @@ fn each_counted_member_states_the_direction_of_one_fragment() {
         ),
         None
     );
+}
+
+#[test]
+fn coincident_fragments_take_distinct_members_in_any_member_order() {
+    // The bottom line runs under two shorter lines drawn the other way, so
+    // each of its two fragments can take the bottom member or the member of
+    // its own shorter line.
+    let id = SketchId::mint("synthetic:test:id#two-shared-fragments").unwrap();
+    let entities = vec![
+        line_entity(&id, "bottom", (0.0, 0.0), (20.0, 0.0)),
+        line_entity(&id, "right", (20.0, 0.0), (20.0, 5.0)),
+        line_entity(&id, "top", (20.0, 5.0), (0.0, 5.0)),
+        line_entity(&id, "left", (0.0, 5.0), (0.0, 0.0)),
+        line_entity(&id, "first-half", (10.0, 0.0), (0.0, 0.0)),
+        line_entity(&id, "second-half", (20.0, 0.0), (10.0, 0.0)),
+    ];
+    let [bottom, right, top, left, first_half, second_half] =
+        [0, 1, 2, 3, 4, 5].map(|index| &entities[index]);
+    let sketch = sketch_with_loops(id, &[&entities[..4]]);
+    let sides = [(right, false), (top, false), (left, false)];
+    for (first, second) in [
+        ((first_half, true), (second_half, false)),
+        ((first_half, false), (second_half, true)),
+    ] {
+        for members in [
+            [(bottom, false), (bottom, true), first, second],
+            [first, second, (bottom, true), (bottom, false)],
+        ] {
+            let ring = [members.as_slice(), sides.as_slice()].concat();
+            let (exterior, holes) = single_region(&sketch, &entities, &[ring]);
+            assert!(holes.is_empty());
+            assert_eq!(exterior.len(), 5);
+        }
+    }
+    let ring = [
+        [
+            (bottom, true),
+            (bottom, true),
+            (first_half, false),
+            (second_half, false),
+        ]
+        .as_slice(),
+        sides.as_slice(),
+    ]
+    .concat();
+    assert_eq!(member_regions(&sketch, &entities, &[ring]), None);
+}
+
+#[test]
+fn a_curve_program_resolves_in_the_arrangement_of_the_profile_loops() {
+    // The diagonal ends on the top side and lies in no profile loop, so the
+    // profile-loop arrangement has one face: the whole rectangle.
+    let id = SketchId::mint("synthetic:test:id#t-junction-program").unwrap();
+    let mut entities = rectangle(&id, "side", (0.0, 0.0), (40.0, 30.0));
+    let sketch = sketch_with_loops(id.clone(), &[&entities]);
+    entities.push(line_entity(&id, "diagonal", (0.0, 0.0), (20.0, 30.0)));
+    let program = |indices: &[usize]| {
+        let program = indices
+            .iter()
+            .map(|index| entities[*index].id().clone())
+            .collect::<Vec<_>>();
+        crate::test_support::with_decode_context(|ctx| {
+            super::super::arrangement_region_matching_curve_program(
+                &sketch,
+                &entities,
+                &program,
+                PROFILE_PROGRAM_TOLERANCE,
+                &ProfileGeometryWork::new(),
+                ctx,
+            )
+        })
+        .unwrap()
+    };
+    assert_eq!(program(&[1, 2, 4, 0]), None);
+    let Some(SketchProfileRegion::Trimmed {
+        outer_boundary,
+        hole_boundaries,
+    }) = program(&[0, 1, 2, 3])
+    else {
+        panic!("the whole rectangle");
+    };
+    assert!(hole_boundaries.is_empty());
+    assert_eq!(outer_boundary.len(), 5);
 }

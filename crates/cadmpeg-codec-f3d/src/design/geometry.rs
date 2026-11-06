@@ -126,6 +126,16 @@ struct ArrangementFragment {
     coincident: Vec<cadmpeg_ir::sketches::SketchEntityUse>,
 }
 
+impl ArrangementFragment {
+    /// Whether `member` names one of the fragment's curves with that curve's
+    /// traversal direction.
+    fn names(&self, member: &cadmpeg_ir::sketches::SketchEntityUse) -> bool {
+        std::iter::once(&self.curve)
+            .chain(&self.coincident)
+            .any(|curve| curve == member)
+    }
+}
+
 /// One closed boundary walk of an arrangement.
 #[derive(Clone)]
 struct ArrangementRing {
@@ -157,19 +167,56 @@ impl ArrangementRing {
         if curves != named {
             return false;
         }
-        let mut directed = members.iter().collect::<Vec<_>>();
-        self.fragments.iter().all(|fragment| {
-            directed
-                .iter()
-                .position(|member| {
-                    std::iter::once(&fragment.curve)
-                        .chain(&fragment.coincident)
-                        .any(|curve| *member == curve)
-                })
-                .map(|index| directed.swap_remove(index))
-                .is_some()
+        let mut free = members.iter().collect::<Vec<_>>();
+        let mut shared = Vec::new();
+        for fragment in &self.fragments {
+            if !fragment.coincident.is_empty() {
+                shared.push(fragment);
+                continue;
+            }
+            let Some(index) = free.iter().position(|member| **member == fragment.curve) else {
+                return false;
+            };
+            free.swap_remove(index);
+        }
+        let mut owners = vec![None; free.len()];
+        (0..shared.len()).all(|fragment| {
+            let mut seen = vec![false; free.len()];
+            assign_fragment(fragment, &shared, &free, &mut owners, &mut seen)
         })
     }
+
+    /// The number of fragments with a coincident curve.
+    fn shared_fragments(&self) -> usize {
+        self.fragments
+            .iter()
+            .filter(|fragment| !fragment.coincident.is_empty())
+            .count()
+    }
+}
+
+/// Whether `shared[fragment]` takes a member of `free` that no other fragment
+/// of `shared` holds, moving earlier assignments in `owners` along an
+/// augmenting path.
+fn assign_fragment(
+    fragment: usize,
+    shared: &[&ArrangementFragment],
+    free: &[&cadmpeg_ir::sketches::SketchEntityUse],
+    owners: &mut [Option<usize>],
+    seen: &mut [bool],
+) -> bool {
+    for (index, member) in free.iter().enumerate() {
+        if seen[index] || !shared[fragment].names(member) {
+            continue;
+        }
+        seen[index] = true;
+        let owner = owners[index];
+        if owner.is_none_or(|owner| assign_fragment(owner, shared, free, owners, seen)) {
+            owners[index] = Some(fragment);
+            return true;
+        }
+    }
+    false
 }
 
 struct SketchArrangementFace {
@@ -263,7 +310,7 @@ pub(super) fn arrangement_region_matching_curve_program(
         return Ok(None);
     }
     let faces = geometric!(curve_arrangement_faces(
-        sketch, entities, tolerance, work, ctx
+        sketch, entities, tolerance, work, ctx, false
     )?);
     let mut selected = None;
     for face in &faces {
@@ -321,41 +368,42 @@ pub(super) fn arrangement_regions_matching_member_rings(
         return Ok(None);
     }
     let faces = geometric!(curve_arrangement_faces(
-        sketch, entities, tolerance, work, ctx
+        sketch, entities, tolerance, work, ctx, true
     )?);
+    if faces.iter().any(|face| face.holes.is_none()) {
+        return Ok(None);
+    }
+    let mut candidates = Vec::new();
+    for (index, face) in faces.iter().enumerate() {
+        candidates.push((index, None, &face.ring, face.ring.curves().count()));
+        for (hole, ring) in face.holes.iter().flatten().enumerate() {
+            candidates.push((index, Some(hole), ring, ring.curves().count()));
+        }
+    }
     let mut outers = Vec::new();
     let mut holes = Vec::new();
     for members in rings {
         let mut found = None;
-        for (index, face) in faces.iter().enumerate() {
-            let candidates = std::iter::once((None, &face.ring)).chain(
-                face.holes
-                    .iter()
-                    .flatten()
-                    .enumerate()
-                    .map(|(hole, ring)| (Some(hole), ring)),
-            );
-            for (hole, ring) in candidates {
-                if ring.curves().count() != members.len() {
-                    continue;
-                }
-                let charged = members
-                    .len()
-                    .checked_mul(members.len())
-                    .and_then(|count| count.checked_mul(2))
-                    .is_some_and(|count| work.arrangement.charge_by(count));
-                if !charged {
-                    work.arrangement_skipped.set(true);
-                    return Ok(None);
-                }
-                if !ring.matches_members(members) {
-                    continue;
-                }
-                if found.is_some() {
-                    return Ok(None);
-                }
-                found = Some((index, hole));
+        for (index, hole, ring, curves) in &candidates {
+            if *curves != members.len() {
+                continue;
             }
+            let charged = members
+                .len()
+                .checked_mul(members.len())
+                .and_then(|count| count.checked_mul(ring.shared_fragments().checked_add(2)?))
+                .is_some_and(|count| work.arrangement.charge_by(count));
+            if !charged {
+                work.arrangement_skipped.set(true);
+                return Ok(None);
+            }
+            if !ring.matches_members(members) {
+                continue;
+            }
+            if found.is_some() {
+                return Ok(None);
+            }
+            found = Some((*index, *hole));
         }
         match geometric!(found) {
             (face, None) if !outers.contains(&face) => outers.push(face),
@@ -386,29 +434,34 @@ pub(super) fn arrangement_regions_matching_member_rings(
     Ok(Some(regions))
 }
 
-/// The bounded faces of the arrangement of every non-construction curve of
-/// `sketch`, split at every intersection of curves that are not collinear,
-/// or `None` when one of those curves is outside the arrangement's families.
+/// The bounded faces of the arrangement of the non-construction curves of
+/// `sketch` split at every intersection of those that are not collinear:
+/// every such curve when `all_curves` holds, and otherwise the curves of its
+/// profile loops. `None` when the arrangement is undefined, which includes an
+/// `all_curves` arrangement with a curve outside the arrangement's families.
 fn curve_arrangement_faces(
     sketch: &cadmpeg_ir::sketches::Sketch,
     entities: &[cadmpeg_ir::sketches::SketchEntity],
     tolerance: f64,
     work: &ProfileGeometryWork,
     ctx: &DecodeContext<'_>,
+    all_curves: bool,
 ) -> Result<Option<Vec<SketchArrangementFace>>, CodecError> {
     use cadmpeg_ir::sketches::SketchGeometryDefinition;
 
-    if entities.iter().any(|entity| {
-        entity.sketch == sketch.id
-            && !entity.construction
-            && !matches!(
-                entity.geometry.definition(),
-                SketchGeometryDefinition::Point { .. }
-                    | SketchGeometryDefinition::Text { .. }
-                    | SketchGeometryDefinition::Circle { .. }
-            )
-            && sketch_geometry_parameter_range(&entity.geometry).is_none()
-    }) {
+    if all_curves
+        && entities.iter().any(|entity| {
+            entity.sketch == sketch.id
+                && !entity.construction
+                && !matches!(
+                    entity.geometry.definition(),
+                    SketchGeometryDefinition::Point { .. }
+                        | SketchGeometryDefinition::Text { .. }
+                        | SketchGeometryDefinition::Circle { .. }
+                )
+                && sketch_geometry_parameter_range(&entity.geometry).is_none()
+        })
+    {
         return Ok(None);
     }
     let segments = entities
@@ -450,7 +503,7 @@ fn curve_arrangement_faces(
             }
         }
     }
-    sketch_arrangement_faces_with_nodes(sketch, entities, tolerance, work, ctx, nodes, true)
+    sketch_arrangement_faces_with_nodes(sketch, entities, tolerance, work, ctx, nodes, all_curves)
 }
 
 /// The region `face` bounds when no arrangement component lies inside it.

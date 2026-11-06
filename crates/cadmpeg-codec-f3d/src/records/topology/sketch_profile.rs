@@ -261,9 +261,9 @@ pub(crate) struct DesignSketchProfileRegionSelection {
     pub(crate) byte_offset: u64,
     /// Source per-file dynamic three-digit ASCII region-selection class tag.
     pub(crate) class_tag: DesignClassTag,
-    /// Byte offset of the selected-region count.
+    /// Byte offset of the member-list count.
     pub(crate) region_count_offset: u64,
-    /// Selected regions in source order.
+    /// Member lists in source order.
     pub(crate) regions: Vec<DesignSketchProfileRegion>,
     /// Source per-file dynamic three-digit ASCII companion class tag.
     pub(crate) companion_class_tag: DesignClassTag,
@@ -271,10 +271,11 @@ pub(crate) struct DesignSketchProfileRegionSelection {
     pub(crate) companion_byte_offset: u64,
 }
 
-/// One selected region in a nested sketch-profile selection.
+/// One member list of a nested sketch-profile selection: the boundary ring
+/// of a selected face or of one of its holes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct DesignSketchProfileRegion {
-    /// Byte offset of this region's member count.
+    /// Byte offset of this list's member count.
     pub(crate) member_count_offset: u64,
     /// Persistent curve members in source order.
     pub(crate) members: Vec<DesignSketchProfileRegionMember>,
@@ -307,7 +308,8 @@ pub(crate) struct DesignSketchProfileRegionMember {
     pub(crate) curve_primary_id: std::num::NonZeroU32,
     /// Byte offset of the persistent curve identity.
     pub(crate) curve_primary_id_offset: u64,
-    /// First incidence value, encoded as zero or one.
+    /// First incidence value, encoded as zero or one. On an edge of one curve,
+    /// one when the ring traverses the curve against its stored direction.
     pub(crate) incidence_flag: bool,
     /// Second and third nonzero incidence words, in source order.
     pub(crate) incidence_values: [DesignRegionIncidence; 2],
