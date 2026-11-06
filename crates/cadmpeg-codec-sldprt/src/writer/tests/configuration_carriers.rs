@@ -1329,6 +1329,8 @@ fn semantic_writer_applies_neutral_parameter_edits() {
 
 mod parameter_attributes;
 
+mod operations;
+
 mod section_names;
 
 pub(crate) mod geometry;
