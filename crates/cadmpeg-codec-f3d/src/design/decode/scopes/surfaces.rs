@@ -204,8 +204,7 @@ fn bounded_face_member(
     let recipe_end = member
         .checked_add(4)
         .and_then(|next| records.first_at_or_after(recipe_start, next))
-        .and_then(|offset| u64::try_from(offset).ok())
-        .unwrap_or(u64::MAX);
+        .map(u64::try_from);
     let Ok(recipe_start) = u64::try_from(recipe_start) else {
         return false;
     };
@@ -216,7 +215,8 @@ fn bounded_face_member(
         })
         .min_by_key(|recipe| recipe.byte_offset)
         .is_some_and(|recipe| {
-            recipe.kind == ConstructionRecipeKind::BoundedFace && recipe.byte_offset < recipe_end
+            recipe.kind == ConstructionRecipeKind::BoundedFace
+                && recipe_end.is_none_or(|end| end.is_ok_and(|end| recipe.byte_offset < end))
         })
 }
 
