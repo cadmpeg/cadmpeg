@@ -25,7 +25,23 @@ fn inactive_literal_expression_override_reaches_the_output() {
     angular.expression = Expression::text("0.5rad");
     angular.value = Some(ParameterValue::Angle(Angle::new(0.5).unwrap()));
     let angular_id = angular.id.clone();
-    ir.model.parameters.push(angular);
+    let mut ratio = angular.clone();
+    ratio.id = cadmpeg_ir::features::ParameterId::mint("synthetic:test:parameter#ratio").unwrap();
+    ratio.name = "Ratio".into();
+    ratio.ordinal = 2;
+    ratio.expression = Expression::text("0.5");
+    ratio.value = Some(ParameterValue::Real(
+        cadmpeg_ir::scalar::FiniteReal::new(0.5).unwrap(),
+    ));
+    let ratio_id = ratio.id.clone();
+    let mut count = ratio.clone();
+    count.id = cadmpeg_ir::features::ParameterId::mint("synthetic:test:parameter#count").unwrap();
+    count.name = "Count".into();
+    count.ordinal = 3;
+    count.expression = Expression::text("2");
+    count.value = Some(ParameterValue::Integer(2));
+    let count_id = count.id.clone();
+    ir.model.parameters.extend([angular, ratio, count]);
     let bodies = cadmpeg_ir::features::DistinctMembers::try_from(
         ir.model
             .bodies
@@ -58,6 +74,14 @@ fn inactive_literal_expression_override_reaches_the_output() {
     ir.model.configurations[1]
         .parameter_overrides
         .insert(angular_id.clone(), angular_expression.clone());
+    let ratio_expression = Expression::text("1.5");
+    let count_expression = Expression::text("3");
+    ir.model.configurations[1]
+        .parameter_overrides
+        .insert(ratio_id.clone(), ratio_expression.clone());
+    ir.model.configurations[1]
+        .parameter_overrides
+        .insert(count_id.clone(), count_expression.clone());
     ir.model.finalize();
     let plan = SldprtCodec
         .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
@@ -74,6 +98,12 @@ fn inactive_literal_expression_override_reaches_the_output() {
         .iter()
         .any(|loss| loss.message.contains(angular_id.as_str())
             && loss.message.contains("expression override omitted")));
+    for id in [&ratio_id, &count_id] {
+        assert!(!plan.report().losses.iter().any(|loss| {
+            loss.message.contains(id.as_str())
+                && loss.message.contains("expression override omitted")
+        }));
+    }
     let mut bytes = Vec::new();
     plan.write_to(&mut bytes).unwrap();
     let result = SldprtCodec
@@ -115,6 +145,38 @@ fn inactive_literal_expression_override_reaches_the_output() {
     assert_eq!(
         configuration.parameter_values.get(&angular.id),
         Some(&ParameterValue::Angle(Angle::new(1.0).unwrap()))
+    );
+    let ratio = result
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "Ratio")
+        .unwrap();
+    assert_eq!(
+        configuration.parameter_overrides.get(&ratio.id),
+        Some(&ratio_expression)
+    );
+    assert_eq!(
+        configuration.parameter_values.get(&ratio.id),
+        Some(&ParameterValue::Real(
+            cadmpeg_ir::scalar::FiniteReal::new(1.5).unwrap()
+        ))
+    );
+    let count = result
+        .ir()
+        .model
+        .parameters
+        .iter()
+        .find(|parameter| parameter.name == "Count")
+        .unwrap();
+    assert_eq!(
+        configuration.parameter_overrides.get(&count.id),
+        Some(&count_expression)
+    );
+    assert_eq!(
+        configuration.parameter_values.get(&count.id),
+        Some(&ParameterValue::Integer(3))
     );
 }
 

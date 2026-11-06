@@ -177,6 +177,10 @@ pub(super) fn prepare(
                 cadmpeg_ir::features::ParameterValue::Angle(value) => {
                     Some(crate::history::literals::format_angle_rad(*value))
                 }
+                cadmpeg_ir::features::ParameterValue::Real(value) => Some(value.get().to_string()),
+                cadmpeg_ir::features::ParameterValue::Integer(value) => {
+                    cadmpeg_core::convert::f64_from_i64(*value).map(|value| value.to_string())
+                }
                 _ => None,
             });
             if let Some(value) = value.filter(|value| {
