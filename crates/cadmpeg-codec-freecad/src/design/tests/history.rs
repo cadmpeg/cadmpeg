@@ -55,7 +55,10 @@ fn distinguishes_stored_base_and_application_owned_features() {
     assert!(
         matches!(base.evaluation.definition(), FeatureDefinition::Operation(FeatureOperation::DerivedGeometry { source }) if *source == source_id)
     );
-    assert_eq!(base.dependencies.as_slice(), &[source_id.clone()]);
+    assert_eq!(
+        base.dependencies.as_slice(),
+        std::slice::from_ref(&source_id)
+    );
     for (name, kind) in [
         ("PartExtension", "Part::FeaturePython"),
         ("DesignExtension", "PartDesign::FeaturePython"),
