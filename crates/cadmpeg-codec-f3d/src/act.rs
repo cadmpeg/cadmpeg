@@ -26,7 +26,7 @@ use crate::records::{
 pub(crate) struct DecodedAct {
     #[cfg(test)]
     pub(crate) untyped_records: usize,
-    pub(crate) untyped_spans: Vec<(String, usize, usize, u32)>,
+    pub(crate) untyped_spans: Vec<UnreadableActFrame>,
     pub(crate) tables: Vec<crate::records::act_table::ActTable>,
     pub(crate) types: Vec<crate::records::entity_header::SegmentType>,
     pub(crate) entities: Vec<ActEntity>,
@@ -34,6 +34,13 @@ pub(crate) struct DecodedAct {
     pub(crate) registry_channels: Vec<ActRegistryChannel>,
     pub(crate) component_links: Vec<ActComponentLink>,
     pub(crate) table_references: Vec<ActTableReference>,
+}
+
+pub(crate) struct UnreadableActFrame {
+    pub(crate) stream: String,
+    pub(crate) extent: std::ops::Range<usize>,
+    pub(crate) record_index: u64,
+    pub(crate) reason: String,
 }
 
 struct RecordFrame {
@@ -49,98 +56,70 @@ fn decode_record_frames(
     bytes: &[u8],
     meta: &MetaStream,
     stream: &str,
-) -> Result<Vec<RecordFrame>, CodecError> {
+) -> Result<(Vec<RecordFrame>, Vec<UnreadableActFrame>), CodecError> {
     if meta.records.is_empty() {
         return Err(CodecError::malformed(format_args!(
             "F3D ACT MetaStream has no primary record index: {stream}"
         )));
     }
-    if meta
-        .records
-        .windows(2)
-        .any(|pair| pair[0].bulk_offset >= pair[1].bulk_offset)
-    {
+    if meta.records.windows(2).any(|pair| pair[0].bulk_offset >= pair[1].bulk_offset) {
         return Err(CodecError::malformed(format_args!(
             "F3D ACT primary record offsets are not strictly increasing: {stream}"
         )));
     }
-
-    let mut record_indices = BTreeSet::new();
-    meta.records
-        .iter()
-        .enumerate()
-        .map(|(ordinal, record)| {
-            let start = usize::try_from(record.bulk_offset).map_err(|_| {
-                CodecError::malformed(format_args!(
-                    "F3D ACT record offset exceeds usize: {stream}"
-                ))
-            })?;
-            let end = if let Some(next) = meta.records.get(ordinal + 1) {
-                usize::try_from(next.bulk_offset).map_err(|_| {
-                    CodecError::malformed(format_args!(
-                        "F3D ACT record offset exceeds usize: {stream}"
-                    ))
-                })?
-            } else {
-                bytes.len()
-            };
-            if start >= end || end > bytes.len() {
-                return Err(CodecError::malformed(format_args!(
-                    "F3D ACT record extent is outside its BulkStream: {stream}"
-                )));
+    let mut indices = BTreeSet::new();
+    let mut frames = Vec::new();
+    let mut unreadable = Vec::new();
+    for (ordinal, record) in meta.records.iter().enumerate() {
+        let start = usize::try_from(record.bulk_offset)
+            .map_err(|_| CodecError::malformed("F3D ACT record offset exceeds usize"))?;
+        let end = meta.records.get(ordinal + 1)
+            .map(|next| usize::try_from(next.bulk_offset))
+            .transpose()
+            .map_err(|_| CodecError::malformed("F3D ACT record offset exceeds usize"))?
+            .unwrap_or(bytes.len());
+        if start >= end || end > bytes.len() {
+            return Err(CodecError::malformed(format_args!(
+                "F3D ACT record extent is outside its BulkStream: {stream}"
+            )));
+        }
+        if !indices.insert(record.entity_id) {
+            return Err(CodecError::malformed(format_args!(
+                "duplicate F3D ACT primary record index {}: {stream}", record.entity_id
+            )));
+        }
+        let parsed = (|| -> Result<RecordFrame, CodecError> {
+            let expected = u32::try_from(record.entity_id)
+                .map_err(|_| CodecError::malformed("F3D ACT record index exceeds u32"))?;
+            let (tag, after_tag) = lp_ascii_strict(bytes, start, 3..=3)
+                .and_then(|(tag, after)| DesignClassTag::try_from(tag.to_owned()).ok().map(|tag| (tag, after)))
+                .ok_or_else(|| CodecError::malformed("F3D ACT record lacks a dynamic class tag"))?;
+            let payload_offset = after_tag.checked_add(4)
+                .ok_or_else(|| CodecError::malformed("F3D ACT record header overflows"))?;
+            if payload_offset > end || View::u32_le_at(bytes, after_tag) != Some(expected) {
+                return Err(CodecError::malformed("F3D ACT record header conflicts with its MetaStream index"));
             }
-            let expected_index = u32::try_from(record.entity_id).map_err(|_| {
-                CodecError::malformed(format_args!("F3D ACT record index exceeds u32: {stream}"))
-            })?;
-            if !record_indices.insert(expected_index) {
-                return Err(CodecError::malformed(format_args!(
-                    "duplicate F3D ACT primary record index {expected_index}: {stream}"
-                )));
-            }
-            let (class_tag, after_tag) = lp_ascii_strict(bytes, start, 3..=3)
-                .and_then(|(tag, after)| {
-                    DesignClassTag::try_from(tag.to_owned())
-                        .ok()
-                        .map(|tag| (tag, after))
-                })
-                .ok_or_else(|| {
-                    CodecError::malformed(format_args!(
-                        "F3D ACT record lacks a dynamic class tag: {stream}@{start}"
-                    ))
-                })?;
-            let payload_offset = after_tag.checked_add(4).ok_or_else(|| {
-                CodecError::malformed(format_args!("F3D ACT record header overflows: {stream}"))
-            })?;
-            if payload_offset > end || View::u32_le_at(bytes, after_tag) != Some(expected_index) {
-                return Err(CodecError::malformed(format_args!(
-                    "F3D ACT record header conflicts with its MetaStream index: {stream}@{start}"
-                )));
-            }
-            let class_index = class_tag.dynamic_ordinal().ok_or_else(|| {
-                CodecError::malformed(format_args!(
-                    "F3D ACT class tag is outside the dynamic registry: {stream}@{start}"
-                ))
-            })?;
+            let class_index = tag.dynamic_ordinal()
+                .ok_or_else(|| CodecError::malformed("F3D ACT class tag is outside the dynamic registry"))?;
             if !meta.types.get(class_index).is_some_and(|record_type| {
-                record_type
-                    .entities
-                    .values()
-                    .any(|registered| *registered == record.entity_id)
+                record_type.entities.values().any(|registered| *registered == record.entity_id)
             }) {
-                return Err(CodecError::malformed(format_args!(
-                    "F3D ACT class tag conflicts with its MetaStream type: {stream}@{start}"
-                )));
+                return Err(CodecError::malformed("F3D ACT class tag conflicts with its MetaStream type"));
             }
             Ok(RecordFrame {
-                start,
-                end,
-                record_index: expected_index,
-                record_index_offset: after_tag,
-                payload_offset,
-                class_tag,
+                start, end, record_index: expected, record_index_offset: after_tag,
+                payload_offset, class_tag: tag,
             })
-        })
-        .collect::<Result<Vec<_>, _>>()
+        })();
+        match parsed {
+            Ok(frame) => frames.push(frame),
+            Err(error) => unreadable.push(UnreadableActFrame {
+                stream: stream.to_owned(), extent: start..end,
+                record_index: record.entity_id, reason: error.to_string(),
+            }),
+        }
+    }
+    Ok((frames, unreadable))
 }
 
 fn sibling_meta_name(stream: &str) -> Option<String> {
@@ -195,7 +174,8 @@ pub(crate) fn decode(scan: &ContainerScan<'_>) -> Result<DecodedAct, CodecError>
                     .map_err(CodecError::Malformed)?,
             );
         }
-        let frames = decode_record_frames(bytes, &meta, &entry.name)?;
+        let (frames, damaged) = decode_record_frames(bytes, &meta, &entry.name)?;
+        untyped_records.extend(damaged);
         let table_frames = frames
             .iter()
             .filter_map(|frame| table_payload_offset(bytes, frame).map(|payload| (frame, payload)))
@@ -259,7 +239,12 @@ pub(crate) fn decode(scan: &ContainerScan<'_>) -> Result<DecodedAct, CodecError>
             frames
                 .iter()
                 .filter(|frame| !represented.contains(&frame.record_index))
-                .map(|frame| (entry.name.clone(), frame.start, frame.end, frame.record_index)),
+                .map(|frame| UnreadableActFrame {
+                    stream: entry.name.clone(),
+                    extent: frame.start..frame.end,
+                    record_index: u64::from(frame.record_index),
+                    reason: "no supported ACT payload grammar".to_owned(),
+                }),
         );
         entities.extend(stream_entities);
         for guid in stream_guids {

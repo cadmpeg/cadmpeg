@@ -2800,13 +2800,13 @@ impl<'a> F3dDecodeSession<'a> {
             use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput, PartSpec};
 
             let mut parts = PartOutput::new(cadmpeg_ir::CodecFormat::F3d, self.ctx);
-            for (stream, start, end, record_index) in &act.untyped_spans {
-                let source = scan.entry_view(stream).ok_or_else(|| {
+            for frame in &act.untyped_spans {
+                let source = scan.entry_view(&frame.stream).ok_or_else(|| {
                     CodecError::malformed("ACT record stream has no source view")
                 })?;
-                let start = source.start().checked_add(*start)
+                let start = source.start().checked_add(frame.extent.start)
                     .ok_or_else(|| CodecError::malformed("ACT record start overflows"))?;
-                let end = source.start().checked_add(*end)
+                let end = source.start().checked_add(frame.extent.end)
                     .ok_or_else(|| CodecError::malformed("ACT record end overflows"))?;
                 let extent = source.child(start, end)
                     .ok_or_else(|| CodecError::malformed("ACT record extent exceeds its stream"))?;
@@ -2815,11 +2815,11 @@ impl<'a> F3dDecodeSession<'a> {
                         cadmpeg_ir::document::ArenaClass::Model,
                         cadmpeg_ir::document::ArenaClass::Design,
                     ])
-                    .in_stream(cadmpeg_ir::StreamName::try_from(stream.clone())
+                    .in_stream(cadmpeg_ir::StreamName::try_from(frame.stream.clone())
                         .map_err(CodecError::malformed)?);
                 self.ctx.decode_part(&mut parts, extent, spec, |_| {
                     Err::<(), _>(CodecError::malformed(format_args!(
-                        "ACT record {record_index} has no supported payload grammar"
+                        "ACT record {}: {}", frame.record_index, frame.reason
                     )))
                 })?;
             }
