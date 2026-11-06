@@ -229,9 +229,9 @@ pub(crate) fn regenerate(
                 append_scalar_fields(&mut bytes, &name.value, value, scalar.object_id, &operands)?;
                 // The typed class is a separate event. No guessed quantity
                 // or family is introduced when a scalar has no declaration.
-                let trailer = super::NAME_MARKER.len()
-                    + 1
-                    + name.value.encode_utf16().count() * 2
+                let units = name.value.encode_utf16().count();
+                let trailer = super::names::name_prefix_len(units)
+                    + units * 2
                     + super::SCALAR_HEADER.len()
                     + 8;
                 bytes[trailer + 29] = match scalar.role {

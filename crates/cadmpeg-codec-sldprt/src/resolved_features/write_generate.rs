@@ -682,7 +682,7 @@ pub(super) fn append_scalar_fields(
         .into());
     }
     payload.extend_from_slice(NAME_MARKER);
-    payload.push(length);
+    super::names::append_name_length(payload, length);
     for unit in units {
         payload.extend_from_slice(&unit.to_le_bytes());
     }
@@ -929,7 +929,7 @@ pub(crate) fn append_generated_object_name(
         .into());
     }
     payload.extend_from_slice(NAME_MARKER);
-    payload.push(length);
+    super::names::append_name_length(payload, length);
     for unit in units {
         payload.extend_from_slice(&unit.to_le_bytes());
     }
@@ -957,8 +957,12 @@ mod writer_rule_tests {
             for bytes in [&feature, &scalar] {
                 assert_eq!(&bytes[..5], NAME_MARKER);
                 assert_eq!(usize::from(bytes[5]), length);
+                let start = super::super::names::name_prefix_len(length);
+                if length == usize::from(u8::MAX) {
+                    assert_eq!(&bytes[6..8], &u16::from(u8::MAX).to_le_bytes());
+                }
                 assert_eq!(
-                    &bytes[6..6 + length * 2],
+                    &bytes[start..start + length * 2],
                     &name
                         .encode_utf16()
                         .flat_map(u16::to_le_bytes)
@@ -966,6 +970,24 @@ mod writer_rule_tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn extended_scalar_name_keeps_its_value() {
+        let name = "A".repeat(255);
+        let mut payload = Vec::new();
+        append_generated_scalar(&mut payload, "moLengthParameter_c", &name, 1.25, 2, &[]).unwrap();
+        let lane = super::super::write_prepare::generated_native_lane(
+            &[],
+            "sldprt:feature-input#long-scalar",
+            None,
+            payload,
+        )
+        .unwrap();
+        assert_eq!(lane.names.len(), 1);
+        assert_eq!(lane.names[0].value, name);
+        assert_eq!(lane.scalars.len(), 1);
+        assert!((lane.scalars[0].value.get() - 1.25).abs() < 1e-12);
     }
 
     #[test]

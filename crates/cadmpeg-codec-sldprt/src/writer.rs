@@ -2807,10 +2807,9 @@ fn resolved_feature_payload(
         let start = usize::try_from(name.offset).map_err(|_| {
             CodecError::UnsupportedContent("feature-input name offset exceeds address space".into())
         })?;
-        let end = start
-            .checked_add(6 + name.value.encode_utf16().count() * 2)
-            .ok_or_else(|| {
-                CodecError::UnsupportedContent("feature-input name range overflow".into())
+        let (_, end) =
+            crate::resolved_features::names::name_span(&payload, start).ok_or_else(|| {
+                CodecError::UnsupportedContent("feature-input name range is invalid".into())
             })?;
         if payload.get(start..start + 5) != Some(&[0x04, 0x80, 0xff, 0xfe, 0xff]) {
             return Err(CodecError::UnsupportedContent(
@@ -2818,7 +2817,8 @@ fn resolved_feature_payload(
             )
             .into());
         }
-        let mut replacement = vec![0x04, 0x80, 0xff, 0xfe, 0xff, length];
+        let mut replacement = vec![0x04, 0x80, 0xff, 0xfe, 0xff];
+        crate::resolved_features::names::append_name_length(&mut replacement, length);
         for unit in utf16 {
             replacement.extend_from_slice(&unit.to_le_bytes());
         }
