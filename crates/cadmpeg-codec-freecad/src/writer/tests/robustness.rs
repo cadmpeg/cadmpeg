@@ -123,6 +123,24 @@ fn body_color_quantization_reports_each_reduced_channel() {
 
 #[test]
 fn reduced_rows_hold_their_normalizations() {
+    fn write(ir: &cadmpeg_ir::CadIr) -> (Vec<LossNote>, cadmpeg_ir::CadIr) {
+        let plan = FcstdCodec
+            .plan(EncodeInput::new(ir, None), request())
+            .expect("normalization probe plans");
+        let report = plan.report().clone();
+        let mut bytes = Vec::new();
+        plan.write_to(&mut bytes)
+            .expect("normalization probe writes");
+        let output = FcstdCodec
+            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+            .expect("normalization probe re-decodes");
+        (report.losses.clone(), output.ir().clone())
+    }
+    fn has_loss(losses: &[LossNote], code: &str, record: &str) -> bool {
+        losses
+            .iter()
+            .any(|loss| loss.code.to_string() == code && loss.message.contains(record))
+    }
     // Each §5.5 normalization row lands here with its loss; each probe
     // exercises the normalization and asserts the loss and the stored
     // value (#238, #232 §5.2).
@@ -162,24 +180,6 @@ fn reduced_rows_hold_their_normalizations() {
             ReducedStorage::Decimal(2) => assert_eq!(row.path, "model.bodies[].color.a"),
             other => panic!("unexpected storage {other:?} for {}", row.path),
         }
-    }
-    fn write(ir: &cadmpeg_ir::CadIr) -> (Vec<LossNote>, cadmpeg_ir::CadIr) {
-        let plan = FcstdCodec
-            .plan(EncodeInput::new(ir, None), request())
-            .expect("normalization probe plans");
-        let report = plan.report().clone();
-        let mut bytes = Vec::new();
-        plan.write_to(&mut bytes)
-            .expect("normalization probe writes");
-        let output = FcstdCodec
-            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-            .expect("normalization probe re-decodes");
-        (report.losses.clone(), output.ir().clone())
-    }
-    fn has_loss(losses: &[LossNote], code: &str, record: &str) -> bool {
-        losses
-            .iter()
-            .any(|loss| loss.code.to_string() == code && loss.message.contains(record))
     }
     {
         use cadmpeg_ir::features::{Expression, ParameterValue};
