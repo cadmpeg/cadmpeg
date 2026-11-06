@@ -256,9 +256,9 @@ travel.
 
 ### DR-85. Flagged empty mesh-collection word
 
-**Question.** What do the flag byte at offset 20 and the u32 at offset 25 of a flagged empty mesh collection store, and can a flagged collection have bodies?
+**Question.** What does the u32 at offset 25 of a flagged mesh collection store, and what does the u32 of each flagged body entry store?
 
-**Known.** `f3d.md` §3.1 "The mesh-collection class" gives the flagged layout. Every flagged collection is empty, and its u32 is `1`.
+**Known.** `f3d.md` §3.1 "The mesh-collection class" gives the flagged layout. The u32 at offset 25 is `1` in every empty flagged collection, and in collections with bodies it takes values from 1 through 6 that differ from the body count. Every body entry stores `1`.
 
 **Need.** The value can count mesh bodies removed from the feature. A design in which mesh bodies are inserted and removed one at a time, saved after each step, fixes the value and shows whether a flagged collection keeps bodies.
 

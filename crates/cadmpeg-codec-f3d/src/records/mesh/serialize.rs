@@ -50,7 +50,7 @@ impl<'a> RecordRef<'a> {
     }
 
     fn collection_base(collection: &'a DesignMeshCollection) -> Self {
-        let prefix = u64_from_index(crate::layout::paramesh_mesh_collection_prefix::LEN);
+        let prefix = collection.prefix_len();
         Self {
             class_tag: collection.base_class_tag.as_str(),
             record_index: collection.record.record_index.get(),
@@ -254,7 +254,7 @@ impl Serialize for DesignMeshFeature {
         let scope_start = self.scope.record().byte_offset()
             + u64_from_index(crate::layout::paramesh_feature_scope_prefix::LEN);
         let collection_start = self.collection.record().byte_offset()
-            + u64_from_index(crate::layout::paramesh_mesh_collection_prefix::LEN)
+            + self.collection.prefix_len()
             + u64_from_index(crate::layout::paramesh_mesh_collection_base_prefix::LEN);
         let body_count = u32::try_from(self.bodies.len())
             .map_err(|_| serde::ser::Error::custom("mesh body count exceeds u32"))?;

@@ -57,6 +57,7 @@ fn group(role: DesignOperandRole) -> DesignConstructionOperandGroup {
 /// The compact sketch-point selection of group 100's member.
 fn sketch_point_selection() -> DesignEntitySelectionOperand {
     DesignEntitySelectionOperand::try_new(DesignEntitySelectionOperandDraft {
+        serialization_form: Default::default(),
         id: format!("{STREAM}:design-entity-selection-operand#1000"),
         scope_record_index: 10,
         group_record_index: 100,
