@@ -44,13 +44,14 @@ pub(super) fn encode_document_parameter(
             }
             None => out.push(0),
         }
-    } else {
-        let owner = owner.ok_or_else(|| CodecError::malformed("compact parameter has no owner"))?;
+    } else if let Some(owner) = owner {
         out.extend_from_slice(&[0; 4]);
         out.extend_from_slice(&parameter.source_ordinal.to_le_bytes());
         out.push(1);
         out.extend_from_slice(&owner.to_le_bytes());
         out.extend_from_slice(&[0; 6]);
+    } else {
+        debug_assert!(owner.is_some(), "compact parameters have an owner");
     }
     native_lp_utf16(out, parameter.expression())?;
     if discriminator.is_some() {

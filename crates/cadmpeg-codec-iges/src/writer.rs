@@ -6098,13 +6098,6 @@ fn construction_carrier_interval(
     }
 }
 
-fn report_unowned_support(losses: &mut Vec<LossNote>, id: &str) {
-    let code = IgesLossCode::WriterSupportGeometryNotRepresented;
-    let message =
-        format!("1 support geometry record ({id}) has no exported owner and was withheld");
-    losses.push(code.note(message));
-}
-
 fn append_free_point_entity(
     entities: &mut Vec<Entity>,
     ir: &CadIr,
@@ -6113,10 +6106,13 @@ fn append_free_point_entity(
     presentations: &mut BTreeMap<usize, BodyPresentation>,
     losses: &mut Vec<LossNote>,
 ) {
+    if native_records::copious::contains_point(ir, point.id.as_str()) {
+        return;
+    }
     let status = ownership.status(point.source_object.as_ref());
     let owned = ownership.is_owned(point.source_object.as_ref());
     if status.is_physically_dependent() && !owned {
-        report_unowned_support(losses, point.id.as_str());
+        ownership::report_unowned_support(losses, point.id.as_str());
         return;
     }
     // A carrier owned by annotation geometry writes as annotation-use
@@ -6266,7 +6262,7 @@ fn append_surface_entities(
         if offset_surface::consumed_support(ir, surface, version) {
             return Ok(None);
         }
-        report_unowned_support(losses, surface.id.as_str());
+        ownership::report_unowned_support(losses, surface.id.as_str());
         return Ok(None);
     };
     let base_index = entities.len();
@@ -8175,7 +8171,7 @@ fn append_unowned_curves(
                 curve.id
             )));
         } else {
-            report_unowned_support(losses, curve.id.as_str());
+            ownership::report_unowned_support(losses, curve.id.as_str());
         }
     }
     Ok(ignored_curves)
