@@ -541,7 +541,8 @@ fn mesh_placement_layout_requires_prefix_and_terminal_reference() {
     };
     for length in [575, 800] {
         let placement =
-            crate::records::mesh::DesignMeshPlacement::new(identity(length), transform).unwrap();
+            crate::records::mesh::DesignMeshPlacement::new(identity(length), transform, false)
+                .unwrap();
         assert_eq!(placement.transform_offsets(), [142, 271]);
         assert_eq!(placement.scope_reference_offset(), 608);
         assert_eq!(placement.wrapper_reference_offset(), 619);
@@ -550,7 +551,24 @@ fn mesh_placement_layout_requires_prefix_and_terminal_reference() {
         assert_eq!(placement.scene_node_reference_offset(), 653);
         assert_eq!(placement.collection_reference_offset(), 100 + length - 11);
     }
-    assert!(crate::records::mesh::DesignMeshPlacement::new(identity(574), transform).is_err());
+    assert!(
+        crate::records::mesh::DesignMeshPlacement::new(identity(574), transform, false).is_err()
+    );
+    for length in [579, 800] {
+        let placement =
+            crate::records::mesh::DesignMeshPlacement::new(identity(length), transform, true)
+                .unwrap();
+        assert_eq!(placement.transform_offsets(), [146, 275]);
+        assert_eq!(placement.scope_reference_offset(), 612);
+        assert_eq!(placement.wrapper_reference_offset(), 623);
+        assert_eq!(placement.owner_reference_offset(), 634);
+        assert_eq!(placement.guid_reference_offset(), 645);
+        assert_eq!(placement.scene_node_reference_offset(), 657);
+        assert_eq!(placement.collection_reference_offset(), 100 + length - 11);
+    }
+    assert!(
+        crate::records::mesh::DesignMeshPlacement::new(identity(578), transform, true).is_err()
+    );
 }
 
 #[test]

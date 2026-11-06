@@ -812,24 +812,70 @@ impl DesignMeshEntryName {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct MeshBodyLayout {
+    pub(crate) len: usize,
+    pub(crate) first_transform: usize,
+    pub(crate) second_transform: usize,
+    pub(crate) feature_scope_reference: usize,
+    pub(crate) wrapper_reference: usize,
+    pub(crate) body_owner_reference: usize,
+    pub(crate) container_guid_reference: usize,
+    pub(crate) scene_node_reference: usize,
+}
+
+impl MeshBodyLayout {
+    pub(crate) const fn of(flagged: bool) -> Self {
+        if flagged {
+            use crate::layout::paramesh_flagged_mesh_body_join_prefix as body;
+            Self {
+                len: body::LEN,
+                first_transform: body::FIRST_TRANSFORM,
+                second_transform: body::SECOND_TRANSFORM,
+                feature_scope_reference: body::FEATURE_SCOPE_REFERENCE,
+                wrapper_reference: body::WRAPPER_REFERENCE,
+                body_owner_reference: body::BODY_OWNER_REFERENCE,
+                container_guid_reference: body::CONTAINER_GUID_REFERENCE,
+                scene_node_reference: body::SCENE_NODE_REFERENCE,
+            }
+        } else {
+            use crate::layout::paramesh_mesh_body_join_prefix as body;
+            Self {
+                len: body::LEN,
+                first_transform: body::FIRST_TRANSFORM,
+                second_transform: body::SECOND_TRANSFORM,
+                feature_scope_reference: body::FEATURE_SCOPE_REFERENCE,
+                wrapper_reference: body::WRAPPER_REFERENCE,
+                body_owner_reference: body::BODY_OWNER_REFERENCE,
+                container_guid_reference: body::CONTAINER_GUID_REFERENCE,
+                scene_node_reference: body::SCENE_NODE_REFERENCE,
+            }
+        }
+    }
+}
+
 /// Mesh-body placement and the complete prefix plus terminal collection reference.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct DesignMeshPlacement {
     record: DesignMeshRecordIdentity,
     transform: MeshAffineTransform,
+    flagged: bool,
 }
 
 impl DesignMeshPlacement {
     pub(crate) fn new(
         record: DesignMeshRecordIdentity,
         transform: MeshAffineTransform,
+        flagged: bool,
     ) -> Result<Self, String> {
-        if record.frame_length()
-            < u64_from_index(crate::layout::paramesh_mesh_body_join_prefix::LEN) + 11
-        {
+        if record.frame_length() < u64_from_index(MeshBodyLayout::of(flagged).len) + 11 {
             return Err("body_record.frame_length must contain the join prefix and final collection reference".into());
         }
-        Ok(Self { record, transform })
+        Ok(Self {
+            record,
+            transform,
+            flagged,
+        })
     }
     pub(crate) fn record(&self) -> &DesignMeshRecordIdentity {
         &self.record
@@ -837,35 +883,29 @@ impl DesignMeshPlacement {
     pub(crate) fn transform(&self) -> MeshAffineTransform {
         self.transform
     }
+    fn offset(&self, field: impl Fn(MeshBodyLayout) -> usize) -> u64 {
+        self.record.byte_offset() + u64_from_index(field(MeshBodyLayout::of(self.flagged)))
+    }
     fn transform_offsets(&self) -> [u64; 2] {
         [
-            self.record.byte_offset()
-                + u64_from_index(crate::layout::paramesh_mesh_body_join_prefix::FIRST_TRANSFORM),
-            self.record.byte_offset()
-                + u64_from_index(crate::layout::paramesh_mesh_body_join_prefix::SECOND_TRANSFORM),
+            self.offset(|layout| layout.first_transform),
+            self.offset(|layout| layout.second_transform),
         ]
     }
     fn scope_reference_offset(&self) -> u64 {
-        self.record.byte_offset()
-            + u64_from_index(crate::layout::paramesh_mesh_body_join_prefix::FEATURE_SCOPE_REFERENCE)
+        self.offset(|layout| layout.feature_scope_reference)
     }
     fn wrapper_reference_offset(&self) -> u64 {
-        self.record.byte_offset()
-            + u64_from_index(crate::layout::paramesh_mesh_body_join_prefix::WRAPPER_REFERENCE)
+        self.offset(|layout| layout.wrapper_reference)
     }
     fn owner_reference_offset(&self) -> u64 {
-        self.record.byte_offset()
-            + u64_from_index(crate::layout::paramesh_mesh_body_join_prefix::BODY_OWNER_REFERENCE)
+        self.offset(|layout| layout.body_owner_reference)
     }
     fn guid_reference_offset(&self) -> u64 {
-        self.record.byte_offset()
-            + u64_from_index(
-                crate::layout::paramesh_mesh_body_join_prefix::CONTAINER_GUID_REFERENCE,
-            )
+        self.offset(|layout| layout.container_guid_reference)
     }
     fn scene_node_reference_offset(&self) -> u64 {
-        self.record.byte_offset()
-            + u64_from_index(crate::layout::paramesh_mesh_body_join_prefix::SCENE_NODE_REFERENCE)
+        self.offset(|layout| layout.scene_node_reference)
     }
     fn collection_reference_offset(&self) -> u64 {
         self.record.byte_offset() + self.record.frame_length() - 11
@@ -1106,7 +1146,10 @@ impl DesignMeshBody {
                     .into(),
             );
         }
-        let placement = DesignMeshPlacement::new(value.body_record, value.transform)?;
+        let flagged = value.transform_offsets[0]
+            == value.body_record.byte_offset()
+                + u64_from_index(MeshBodyLayout::of(true).first_transform);
+        let placement = DesignMeshPlacement::new(value.body_record, value.transform, flagged)?;
         if placement.transform_offsets() != value.transform_offsets {
             return Err("transform_offsets must match body_record layout".into());
         }
