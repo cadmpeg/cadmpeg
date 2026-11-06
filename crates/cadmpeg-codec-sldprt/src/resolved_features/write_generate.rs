@@ -947,8 +947,8 @@ mod writer_rule_tests {
     use crate::records::SketchRelationKind;
 
     #[test]
-    fn generated_names_use_the_full_u8_length_field() {
-        for length in [129, 255] {
+    fn generated_names_use_the_full_length_field() {
+        for length in [129, 255, 256, 65_535] {
             let name = "A".repeat(length);
             let mut feature = Vec::new();
             append_generated_object_name(&mut feature, &name, 1).unwrap();
@@ -956,10 +956,10 @@ mod writer_rule_tests {
             append_scalar_fields(&mut scalar, &name, 1.0, 2, &[]).unwrap();
             for bytes in [&feature, &scalar] {
                 assert_eq!(&bytes[..5], NAME_MARKER);
-                assert_eq!(usize::from(bytes[5]), length);
+                assert_eq!(usize::from(bytes[5]), length.min(usize::from(u8::MAX)));
                 let start = super::super::names::name_prefix_len(length);
-                if length == usize::from(u8::MAX) {
-                    assert_eq!(&bytes[6..8], &u16::from(u8::MAX).to_le_bytes());
+                if length >= usize::from(u8::MAX) {
+                    assert_eq!(&bytes[6..8], &u16::try_from(length).unwrap().to_le_bytes());
                 }
                 assert_eq!(
                     &bytes[start..start + length * 2],
@@ -993,10 +993,10 @@ mod writer_rule_tests {
     #[test]
     fn generated_feature_name_reports_capacity() {
         let error =
-            append_generated_object_name(&mut Vec::new(), &"😀".repeat(128), 1).unwrap_err();
+            append_generated_object_name(&mut Vec::new(), &"😀".repeat(32_768), 1).unwrap_err();
         let error = cadmpeg_ir::codec::write::EncodeError::from(error);
         assert!(matches!(error,
-            cadmpeg_ir::codec::write::EncodeError::TargetCapacity { field, limit: 255, value: 256 }
+            cadmpeg_ir::codec::write::EncodeError::TargetCapacity { field, limit: 65_535, value: 65_536 }
                 if field.field == "feature_input.name_length"
         ));
     }
@@ -1006,7 +1006,7 @@ mod writer_rule_tests {
         let error = append_generated_scalar(
             &mut Vec::new(),
             "moScalerParameter_c",
-            &"😀".repeat(128),
+            &"😀".repeat(32_768),
             1.0,
             2,
             &[],
@@ -1014,7 +1014,7 @@ mod writer_rule_tests {
         .unwrap_err();
         let error = cadmpeg_ir::codec::write::EncodeError::from(error);
         assert!(matches!(error,
-            cadmpeg_ir::codec::write::EncodeError::TargetCapacity { field, limit: 255, value: 256 }
+            cadmpeg_ir::codec::write::EncodeError::TargetCapacity { field, limit: 65_535, value: 65_536 }
                 if field.field == "feature_input.name_length"
         ));
     }

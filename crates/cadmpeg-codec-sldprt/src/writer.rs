@@ -1160,8 +1160,8 @@ pub(crate) const CAPACITY_FIELDS: &[cadmpeg_ir::codec::write::CapacityField] = &
     },
     cadmpeg_ir::codec::write::CapacityField {
         field: "feature_input.name_length",
-        limit: 0xff_u64,
-        source: "docs/formats/sldprt.md §2: object name UTF-16 code-unit count u8",
+        limit: 0xffff_u64,
+        source: "docs/formats/sldprt.md §2.2: extended UTF-16 code-unit count u16",
         helper: "feature_input_name_len",
     },
     cadmpeg_ir::codec::write::CapacityField {
@@ -2827,8 +2827,8 @@ fn resolved_feature_payload(
     Ok((payload.into_inner(), consumed_source_layout))
 }
 
-pub(crate) fn feature_input_name_len(units: usize) -> Result<u8, write_error::WriteError> {
-    u8::try_from(units).map_err(|_| write_error::WriteError::Capacity {
+pub(crate) fn feature_input_name_len(units: usize) -> Result<u16, write_error::WriteError> {
+    u16::try_from(units).map_err(|_| write_error::WriteError::Capacity {
         field: &CAPACITY_FIELDS[11],
         value: cadmpeg_core::decode::u64_from_index(units),
     })

@@ -18,7 +18,7 @@ fn feature_input_rename_reports_utf16_capacity() {
     let rename = crate::history::write::features::FeatureInputRename {
         lane: lane.id.clone(),
         name_index: 0,
-        value: cadmpeg_core::text::NonBlankString::new("\u{1f600}".repeat(128)).unwrap(),
+        value: cadmpeg_core::text::NonBlankString::new("\u{1f600}".repeat(32_768)).unwrap(),
     };
     let error: cadmpeg_ir::codec::write::EncodeError = crate::writer::resolved_feature_payload(
         lane,
@@ -31,7 +31,7 @@ fn feature_input_rename_reports_utf16_capacity() {
     .unwrap_err()
     .into();
     assert!(matches!(error, cadmpeg_ir::codec::write::EncodeError::TargetCapacity {
-        field, limit: 255, value: 256
+        field, limit: 65_535, value: 65_536
     } if field.field == "feature_input.name_length"));
 }
 
