@@ -29,6 +29,7 @@ mod hole_support;
 mod loop_index;
 mod move_face;
 mod output_chain;
+pub(crate) mod pipe_section;
 mod recipe_index;
 mod reference_edge;
 pub(crate) mod selection;

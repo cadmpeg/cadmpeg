@@ -720,6 +720,19 @@ pub(super) fn decode(inputs: &DesignInputs<'_>) -> Result<DesignOutputs, CodecEr
         geometry.primary_brep,
     )?);
     crate::history::bind_sweep_result_modes(&mut model.features, geometry.bodies);
+    crate::history::pipe_section::bind_circular_pipe_sections(
+        &mut model.features,
+        &crate::history::pipe_section::PipeSectionInputs {
+            scopes: &design.design_parameter_scopes,
+            groups: &design.design_construction_operand_groups,
+            owners: &prereqs.design_parameter_owners,
+            bodies: geometry.bodies,
+            regions: geometry.regions,
+            faces: geometry.faces,
+            surfaces: geometry.surfaces,
+            linear_tolerance: geometry.tolerances.linear.get(),
+        },
+    );
     losses.extend(crate::history::bind_feature_body_selections(
         &mut model.features,
         &crate::history::FeatureBodySelectionInputs {
