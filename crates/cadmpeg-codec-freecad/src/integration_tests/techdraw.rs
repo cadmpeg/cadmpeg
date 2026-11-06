@@ -5,6 +5,68 @@ use crate::test_support::test_archive::assert_valid_document;
 use cadmpeg_ir::drawings::DrawingKind;
 use cadmpeg_ir::semantic_annotations::{DimensionKind, SemanticAnnotationKind};
 
+const BOX_VOLUME_TOLERANCE: f64 = 1.0e-5;
+const BOX_AREA_TOLERANCE: f64 = 1.0e-5;
+const BOX_BOUNDS_TOLERANCE: f64 = 1.0e-6;
+
+fn assert_authored_box_measures(ir: &cadmpeg_ir::document::CadIr, label: &str) {
+    let feature = ir
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Box"))
+        .unwrap();
+    let [body_id] = feature.evaluation.outputs().as_slice() else {
+        panic!("Box feature must produce one body")
+    };
+    let report = cadmpeg_measure::test_support::round_trip::measured(label, ir).unwrap();
+    let body = report
+        .bodies()
+        .iter()
+        .find(|body| body.body() == body_id.as_str())
+        .unwrap();
+    let volume = body
+        .volume()
+        .as_ref()
+        .unwrap()
+        .measured()
+        .unwrap()
+        .value()
+        .value
+        .get();
+    assert!(
+        (volume - 6000.0).abs() < BOX_VOLUME_TOLERANCE,
+        "{label}: {volume}"
+    );
+    let area = body
+        .area()
+        .as_ref()
+        .unwrap()
+        .measured()
+        .unwrap()
+        .value()
+        .value
+        .get();
+    assert!(
+        (area - 2200.0).abs() < BOX_AREA_TOLERANCE,
+        "{label}: {area}"
+    );
+    let bounds = body.bbox().measured().unwrap().value();
+    for (actual, expected) in bounds
+        .min
+        .coordinates()
+        .into_iter()
+        .chain(bounds.max.coordinates())
+        .zip([0.0, 0.0, 0.0, 30.0, 20.0, 10.0])
+    {
+        assert!(
+            (actual.get() - expected).abs() < BOX_BOUNDS_TOLERANCE,
+            "{label}: bound {} expected {expected}",
+            actual.get()
+        );
+    }
+}
+
 #[test]
 fn physical_page_template_and_saved_dimension_are_exact() {
     let result =
@@ -17,6 +79,13 @@ fn physical_page_template_and_saved_dimension_are_exact() {
         .iter()
         .find(|drawing| drawing.kind == DrawingKind::Page)
         .unwrap();
+    let drawing = |name: &str| {
+        ir.model
+            .drawings
+            .iter()
+            .find(|drawing| drawing.object.ends_with(&format!("#{name}")))
+            .unwrap()
+    };
     let size = ir
         .model
         .drawings
@@ -57,6 +126,35 @@ fn physical_page_template_and_saved_dimension_are_exact() {
             .collect::<Vec<_>>(),
         [[35.0, 190.0], [95.0, 190.0]]
     );
+    let page_views = &page.relationships["Views"];
+    assert_eq!(page_views.len(), 4);
+    for (reference, name) in page_views.iter().zip(["Front", "Top", "Length", "Note"]) {
+        assert_eq!(reference.local_target(), Some(drawing(name).id.as_str()));
+    }
+    for (name, position, scale, direction) in [
+        ("Front", [65.0, 180.0], 2.0, [0.0, -1.0, 0.0]),
+        ("Top", [65.0, 230.0], 1.0, [0.0, 0.0, 1.0]),
+    ] {
+        let view = drawing(name);
+        assert_eq!(view.kind, DrawingKind::View);
+        assert_eq!(view.position.unwrap().get(), position);
+        assert_eq!(view.scale.unwrap().get(), scale);
+        assert_eq!(view.direction.unwrap().as_raw(), &direction);
+        assert_eq!(
+            view.relationships["Source"][0].local_target(),
+            Some(crate::native::native_id("object", "Box").as_str())
+        );
+    }
+    let note = ir
+        .model
+        .semantic_annotations
+        .iter()
+        .find(|annotation| annotation.object.ends_with("#Note"))
+        .unwrap();
+    assert_eq!(note.kind, SemanticAnnotationKind::Text);
+    assert_eq!(note.text, ["Synthetic box", "30 x 20 x 10 mm"]);
+    assert_eq!(note.position.unwrap().get(), [120.0, 100.0, 0.0]);
+    assert_authored_box_measures(ir, "techdraw");
     assert_eq!(
         result
             .report()
@@ -68,6 +166,106 @@ fn physical_page_template_and_saved_dimension_are_exact() {
             .count(),
         2
     );
+}
+
+#[test]
+fn authored_techdraw_views_keep_page_ownership_and_saved_parameters() {
+    let result = decode(
+        include_bytes!("../../../../corpus/freecad_fcstd/fixtures/techdraw-views.FCStd").to_vec(),
+    );
+    let ir = result.ir();
+    assert_valid_document(ir);
+    let drawing = |name: &str| {
+        ir.model
+            .drawings
+            .iter()
+            .find(|drawing| drawing.object.ends_with(&format!("#{name}")))
+            .unwrap()
+    };
+    let page = drawing("Page");
+    let page_views = &page.relationships["Views"];
+    for name in [
+        "Front",
+        "Top",
+        "Length",
+        "Note",
+        "Projection",
+        "Section",
+        "Detail",
+        "Euclidean",
+        "Vertical",
+        "TriangleView",
+    ] {
+        assert!(
+            page_views
+                .iter()
+                .any(|reference| reference.local_target() == Some(drawing(name).id.as_str())),
+            "Page.Views owns {name}"
+        );
+    }
+    let note = ir
+        .model
+        .semantic_annotations
+        .iter()
+        .find(|annotation| annotation.object.ends_with("#Note"))
+        .unwrap();
+    assert_eq!(note.kind, SemanticAnnotationKind::Text);
+    assert_eq!(note.text, ["Synthetic box", "30 x 20 x 10 mm"]);
+    assert_eq!(note.position.unwrap().get(), [120.0, 100.0, 0.0]);
+
+    let triangle_view = drawing("TriangleView");
+    assert_eq!(triangle_view.kind, DrawingKind::View);
+    assert_eq!(triangle_view.position.unwrap().get(), [105.0, 148.5]);
+    assert_eq!(triangle_view.scale.unwrap().get(), 2.0);
+    assert_eq!(triangle_view.direction.unwrap().as_raw(), &[0.0, 0.0, 1.0]);
+    assert_eq!(
+        triangle_view.x_direction.unwrap().as_raw(),
+        &[1.0, 0.0, 0.0]
+    );
+    assert_eq!(triangle_view.rotation_degrees.unwrap().get(), 30.0);
+    assert_eq!(
+        triangle_view.relationships["Source"][0].local_target(),
+        Some(crate::native::native_id("object", "Triangle").as_str())
+    );
+
+    let projection = drawing("Projection");
+    assert_eq!(
+        projection.relationships["Source"][0].local_target(),
+        Some(crate::native::native_id("object", "Box").as_str())
+    );
+
+    let front = drawing("Front");
+    assert_eq!(front.position.unwrap().get(), [65.0, 180.0]);
+    assert_eq!(front.scale.unwrap().get(), 2.0);
+    assert_eq!(front.direction.unwrap().as_raw(), &[0.0, -1.0, 0.0]);
+    assert_eq!(
+        front.relationships["Source"][0].local_target(),
+        Some(crate::native::native_id("object", "Box").as_str())
+    );
+    let top = drawing("Top");
+    assert_eq!(top.position.unwrap().get(), [65.0, 230.0]);
+    assert_eq!(top.scale.unwrap().get(), 1.0);
+    assert_eq!(top.direction.unwrap().as_raw(), &[0.0, 0.0, 1.0]);
+    assert_eq!(
+        top.relationships["Source"][0].local_target(),
+        Some(crate::native::native_id("object", "Box").as_str())
+    );
+
+    let section = drawing("Section");
+    assert_eq!(
+        section.relationships["Source"][0].local_target(),
+        Some(crate::native::native_id("object", "Box").as_str())
+    );
+    assert_eq!(
+        section.relationships["BaseView"][0].local_target(),
+        Some(front.id.as_str())
+    );
+    let detail = drawing("Detail");
+    assert_eq!(
+        detail.relationships["BaseView"][0].local_target(),
+        Some(front.id.as_str())
+    );
+    assert_authored_box_measures(ir, "techdraw-views");
 }
 
 #[test]
