@@ -258,9 +258,9 @@ mod tests {
             "material_source":0, "plot_color_source":1, "plot_weight_source":1, "plot_color":"05060708",
             "plot_weight_mm":0.25, "group_indexes":[], "display_materials":[], "active_space":0,
             "viewport_uuid":null, "display_order":7, "clipping_proof":false, "clipping_plane_uuids":[],
-            "hatch_pattern_index":-1, "section_hatch_scale":1.0, "section_hatch_rotation":0.0,
-            "linetype_pattern_scale":1.0, "hatch_background":"00000000", "hatch_boundary_visible":false,
-            "section_fill_rule":0, "clipping_plane_label_style":0, "rendering_materials":[]
+            "hatch_pattern_index":-1, "section_hatch_scale":2.0, "section_hatch_rotation":0.5,
+            "linetype_pattern_scale":1.5, "hatch_background":"090a0b0c", "hatch_boundary_visible":true,
+            "section_fill_rule":1, "clipping_plane_label_style":2, "detail_background_visible":true, "rendering_materials":[]
         });
         let expected_attributes = attributed["attributes"].clone();
         records.push(record("rhino:test:light#valid", valid));
@@ -272,86 +272,96 @@ mod tests {
             .arenas_mut()
             .insert("lights".into(), records);
         ir.finalize();
-        let mut bytes = Vec::new();
-        let report = crate::RhinoCodec
-            .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
-            .and_then(|plan| plan.write_to(&mut bytes))
-            .expect("write surviving light");
-        for name in [
-            "intensity",
-            "enabled",
-            "style",
-            "archive_index",
-            "ambient",
-            "name",
-            "source_uuid",
+        for target in [
+            "rhino:archive-50",
+            "rhino:archive-60",
+            "rhino:archive-70",
+            "rhino:archive-80",
         ] {
+            let mut bytes = Vec::new();
+            let report = crate::RhinoCodec
+                .plan(EncodeInput::new(&ir, None), TargetRequest::Explicit(target))
+                .and_then(|plan| plan.write_to(&mut bytes))
+                .expect("write surviving light");
+            for name in [
+                "intensity",
+                "enabled",
+                "style",
+                "archive_index",
+                "ambient",
+                "name",
+                "source_uuid",
+            ] {
+                assert!(report.losses.iter().any(|loss| {
+                    loss.code == crate::loss::RhinoLossCode::WriterLightOmitted.kind()
+                        && loss
+                            .message
+                            .contains(&format!("rhino:test:light#invalid-{name}"))
+                }));
+                assert_eq!(
+                    report.native_dispositions.record_disposition(
+                        "rhino",
+                        "lights",
+                        &format!("rhino:test:light#invalid-{name}")
+                    ),
+                    cadmpeg_ir::codec::write::NativeDisposition::Dropped
+                );
+            }
+            assert_eq!(
+                report.native_dispositions.record_disposition(
+                    "rhino",
+                    "lights",
+                    "rhino:test:light#valid"
+                ),
+                cadmpeg_ir::codec::write::NativeDisposition::Written
+            );
             assert!(report.losses.iter().any(|loss| {
-                loss.code == crate::loss::RhinoLossCode::WriterLightOmitted.kind()
-                    && loss
-                        .message
-                        .contains(&format!("rhino:test:light#invalid-{name}"))
+                loss.code == crate::loss::RhinoLossCode::WriterLightIndexReassigned.kind()
+                    && loss.message.contains("rhino:test:light#z-partial")
             }));
             assert_eq!(
                 report.native_dispositions.record_disposition(
                     "rhino",
                     "lights",
-                    &format!("rhino:test:light#invalid-{name}")
+                    "rhino:test:light#zz-attributed"
+                ),
+                cadmpeg_ir::codec::write::NativeDisposition::Written
+            );
+            assert_eq!(
+                report.native_dispositions.record_disposition(
+                    "rhino",
+                    "lights",
+                    "rhino:test:light#z-partial"
                 ),
                 cadmpeg_ir::codec::write::NativeDisposition::Dropped
             );
+            assert!(report.losses.iter().any(|loss| {
+                loss.code == crate::loss::RhinoLossCode::WriterAttributesOmitted.kind()
+                    && loss.message.contains("rhino:test:light#z-partial")
+                    && loss.message.contains("attributes:")
+                    && loss.message.contains("links")
+            }));
+            let decoded = crate::RhinoCodec
+                .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+                .expect("decode surviving light");
+            assert!(decoded
+                .report()
+                .losses
+                .iter()
+                .all(|loss| { loss.code != crate::loss::RhinoLossCode::IntegrityFailure.kind() }));
+            let lights = &decoded
+                .ir()
+                .native
+                .namespace("rhino")
+                .expect("rhino")
+                .arenas()["lights"];
+            assert_eq!(lights.len(), 3);
+            assert_eq!(lights[0].field("name"), Some(json!("valid light")));
+            assert_eq!(lights[0].field("archive_index"), Some(json!(0)));
+            assert_eq!(
+                lights[2].field("attributes"),
+                Some(expected_attributes.clone())
+            );
         }
-        assert_eq!(
-            report.native_dispositions.record_disposition(
-                "rhino",
-                "lights",
-                "rhino:test:light#valid"
-            ),
-            cadmpeg_ir::codec::write::NativeDisposition::Written
-        );
-        assert!(report.losses.iter().any(|loss| {
-            loss.code == crate::loss::RhinoLossCode::WriterLightIndexReassigned.kind()
-                && loss.message.contains("rhino:test:light#z-partial")
-        }));
-        assert_eq!(
-            report.native_dispositions.record_disposition(
-                "rhino",
-                "lights",
-                "rhino:test:light#zz-attributed"
-            ),
-            cadmpeg_ir::codec::write::NativeDisposition::Written
-        );
-        assert_eq!(
-            report.native_dispositions.record_disposition(
-                "rhino",
-                "lights",
-                "rhino:test:light#z-partial"
-            ),
-            cadmpeg_ir::codec::write::NativeDisposition::Dropped
-        );
-        assert!(report.losses.iter().any(|loss| {
-            loss.code == crate::loss::RhinoLossCode::WriterAttributesOmitted.kind()
-                && loss.message.contains("rhino:test:light#z-partial")
-                && loss.message.contains("attributes:")
-                && loss.message.contains("links")
-        }));
-        let decoded = crate::RhinoCodec
-            .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
-            .expect("decode surviving light");
-        assert!(decoded
-            .report()
-            .losses
-            .iter()
-            .all(|loss| { loss.code != crate::loss::RhinoLossCode::IntegrityFailure.kind() }));
-        let lights = &decoded
-            .ir()
-            .native
-            .namespace("rhino")
-            .expect("rhino")
-            .arenas()["lights"];
-        assert_eq!(lights.len(), 3);
-        assert_eq!(lights[0].field("name"), Some(json!("valid light")));
-        assert_eq!(lights[0].field("archive_index"), Some(json!(0)));
-        assert_eq!(lights[2].field("attributes"), Some(expected_attributes));
     }
 }
