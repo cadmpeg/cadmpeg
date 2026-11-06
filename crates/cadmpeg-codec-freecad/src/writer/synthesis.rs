@@ -223,14 +223,14 @@ pub(super) fn write(
                 objects.extend(output.objects);
                 entries.extend(output.entries);
             }
-            Err(CodecError::UnsupportedContent(reason)) => {
+            Err(design::features::FeatureError::Unsupported(reason)) => {
                 losses.push(FreecadLossCode::ExportFeatureNotTransferred.note(format!(
                     "feature {} construction is omitted: {reason}",
                     feature.id
                 )));
                 continue;
             }
-            Err(error) => return Err(error),
+            Err(design::features::FeatureError::Codec(error)) => return Err(error),
         }
         if let Some(suppressed) = feature.suppressed {
             object.set_boolean("Suppressed", suppressed);

@@ -26,6 +26,18 @@ use properties::{
     unsupported, vector,
 };
 
+#[derive(Debug)]
+pub(in crate::writer) enum FeatureError {
+    Unsupported(String),
+    Codec(CodecError),
+}
+
+impl From<CodecError> for FeatureError {
+    fn from(error: CodecError) -> Self {
+        Self::Codec(error)
+    }
+}
+
 /// Generated construction objects accompany their consuming feature.
 pub(in crate::writer) struct FeatureOutput {
     pub(in crate::writer) losses: Vec<LossNote>,
@@ -41,7 +53,7 @@ pub(in crate::writer) fn write(
     object: &mut Object,
     names: &HashMap<String, String>,
     schema: &str,
-) -> Result<FeatureOutput, CodecError> {
+) -> Result<FeatureOutput, FeatureError> {
     let definition = match ir.resolved_feature_definition(feature.evaluation.definition()) {
         Ok(definition) => definition,
         Err(cadmpeg_ir::features::DimensionResolutionError::UnevaluatedParameter { parameter })
@@ -49,7 +61,7 @@ pub(in crate::writer) fn write(
         {
             resolve_without_blind_length(ir, feature, &parameter)?
         }
-        Err(error) => return Err(CodecError::UnsupportedContent(error.to_string())),
+        Err(error) => return Err(FeatureError::Unsupported(error.to_string())),
     };
     let value = if definition["definition"] == "post_process" {
         definition["operation"].clone()
@@ -118,7 +130,7 @@ pub(in crate::writer) fn write(
                     .as_array()
                     .filter(|values| values.len() == 3)
                     .ok_or_else(|| {
-                        CodecError::UnsupportedContent("block dimensions are unresolved".into())
+                        FeatureError::Unsupported("block dimensions are unresolved".into())
                     })?;
                 object.kind = "Part::Box".into();
                 for (dimension, field) in dimensions.iter().zip(["Length", "Width", "Height"]) {
@@ -130,7 +142,7 @@ pub(in crate::writer) fn write(
             if !value["placement"].is_null() {
                 let transform: cadmpeg_ir::transform::Transform =
                     serde_json::from_value(value["placement"].clone())
-                        .map_err(CodecError::malformed)?;
+                        .map_err(|error| FeatureError::Unsupported(error.to_string()))?;
                 object.set("Placement", super::placement(transform)?);
             }
             if value["op"] == "join" {
@@ -347,7 +359,7 @@ pub(in crate::writer) fn write(
             cadmpeg_ir::features::FuzzyTolerance::Explicit(value) => ir
                 .dimension_value(value)
                 .ok_or_else(|| {
-                    CodecError::UnsupportedContent(
+                    FeatureError::Unsupported(
                         "fuzzy tolerance parameter has no evaluated positive length".into(),
                     )
                 })?
@@ -435,10 +447,10 @@ fn resolve_without_blind_length(
     ir: &cadmpeg_ir::CadIr,
     feature: &Feature,
     parameter: &cadmpeg_ir::features::ParameterId,
-) -> Result<serde_json::Value, CodecError> {
+) -> Result<serde_json::Value, FeatureError> {
     let sides = blind_length_sides(feature, parameter);
     if sides.is_empty() {
-        return Err(CodecError::UnsupportedContent(format!(
+        return Err(FeatureError::Unsupported(format!(
             "blind length parameter {parameter} has no resolved home"
         )));
     }
@@ -449,17 +461,18 @@ fn resolve_without_blind_length(
         .iter_mut()
         .find(|record| record.id == *parameter)
     else {
-        return Err(CodecError::UnsupportedContent(format!(
+        return Err(FeatureError::Unsupported(format!(
             "blind length parameter {parameter} has no resolved home"
         )));
     };
     record.value = Some(cadmpeg_ir::features::ParameterValue::Length(
-        cadmpeg_ir::scalar::Length::new(1.0)
-            .ok_or_else(|| CodecError::malformed("placeholder blind length is inadmissible"))?,
+        cadmpeg_ir::scalar::Length::new(1.0).ok_or_else(|| {
+            FeatureError::Unsupported("placeholder blind length is inadmissible".into())
+        })?,
     ));
     let mut value = projection
         .resolved_feature_definition(feature.evaluation.definition())
-        .map_err(|error| CodecError::UnsupportedContent(error.to_string()))?;
+        .map_err(|error| FeatureError::Unsupported(error.to_string()))?;
     for side in sides {
         let path = format!("/extent/{side}/termination/length");
         if value.pointer(&path).is_some() {
