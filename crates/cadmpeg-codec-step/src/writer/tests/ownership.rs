@@ -462,8 +462,10 @@ fn standalone_subset_curve_does_not_export_its_untrimmed_basis_as_a_root() {
 
 #[test]
 fn subset_curve_reports_its_unwritten_cache_fit_tolerance() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, ArenaDisposition, EncodeInput, Encoder};
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
     use cadmpeg_ir::geometry::{LegacyCache, ProceduralCurve};
+    use cadmpeg_ir::schema::EntityKind;
     use std::io::Cursor;
 
     let mut ir = standalone_subset_curve(Some(LegacyCache::try_new(0.01).unwrap()));
@@ -475,6 +477,15 @@ fn subset_curve_reports_its_unwritten_cache_fit_tolerance() {
     let normalized = cadmpeg_test_support::reduced::step_trimmed_curve_cache(&original);
     assert_ne!(original, normalized);
     assert_eq!(normalized["cache"]["fit_tolerance"], 0.0);
+    let plan = crate::StepCodec::default()
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap();
+    assert_eq!(
+        plan.report()
+            .coverage
+            .disposition(EntityKind::ProceduralCurve),
+        ArenaDisposition::Reported
+    );
     let mut bytes = Vec::new();
     let report = write_step(
         &ir,
