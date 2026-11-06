@@ -2858,17 +2858,41 @@ impl<'a> F3dDecodeSession<'a> {
                 crate::act::DecodedAct::default()
             }
         };
-        if act.untyped_records != 0 {
-            self.untyped.extend([
-                cadmpeg_ir::document::ArenaClass::Model,
-                cadmpeg_ir::document::ArenaClass::Design,
-            ]);
-            self.report
-                .losses
-                .push(F3dLossCode::ActRecordUntyped.note(format!(
-                    "{} ACT source records have no typed semantic payload",
-                    act.untyped_records
-                )));
+        if !act.untyped_spans.is_empty() {
+            use cadmpeg_ir::source_fidelity::parts::{DecodeParts, PartOutput, PartSpec};
+
+            let mut parts = PartOutput::new(cadmpeg_ir::CodecFormat::F3d, self.ctx);
+            for (stream, start, end, record_index) in &act.untyped_spans {
+                let source = scan.entry_view(stream).ok_or_else(|| {
+                    CodecError::malformed("ACT record stream has no source view")
+                })?;
+                let start = source.start().checked_add(*start)
+                    .ok_or_else(|| CodecError::malformed("ACT record start overflows"))?;
+                let end = source.start().checked_add(*end)
+                    .ok_or_else(|| CodecError::malformed("ACT record end overflows"))?;
+                let extent = source.child(start, end)
+                    .ok_or_else(|| CodecError::malformed("ACT record extent exceeds its stream"))?;
+                let spec = PartSpec::new("f3d.bulk_record")
+                    .holding([
+                        cadmpeg_ir::document::ArenaClass::Model,
+                        cadmpeg_ir::document::ArenaClass::Design,
+                    ])
+                    .in_stream(cadmpeg_ir::StreamName::try_from(stream.clone())
+                        .map_err(CodecError::malformed)?);
+                self.ctx.decode_part(&mut parts, extent, spec, |_| {
+                    Err::<(), _>(CodecError::malformed(format_args!(
+                        "ACT record {record_index} has no supported payload grammar"
+                    )))
+                })?;
+            }
+            let (_, native, fidelity, losses) = parts.into_parts();
+            let stubs = native.namespace("f3d")
+                .map(|namespace| namespace.arena_as_for_decode(self.ctx, "unknowns"))
+                .transpose()?
+                .unwrap_or_default();
+            self.design_part_fidelity.append(fidelity)?;
+            self.design_part_stubs.extend(stubs);
+            self.report.losses.extend(losses);
         }
         let unresolved_links = act
             .component_links

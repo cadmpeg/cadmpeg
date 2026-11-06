@@ -24,7 +24,9 @@ use crate::records::{
 
 #[derive(Default)]
 pub(crate) struct DecodedAct {
+    #[cfg(test)]
     pub(crate) untyped_records: usize,
+    pub(crate) untyped_spans: Vec<(String, usize, usize, u32)>,
     pub(crate) tables: Vec<crate::records::act_table::ActTable>,
     pub(crate) types: Vec<crate::records::entity_header::SegmentType>,
     pub(crate) entities: Vec<ActEntity>,
@@ -147,7 +149,7 @@ fn sibling_meta_name(stream: &str) -> Option<String> {
 }
 
 pub(crate) fn decode(scan: &ContainerScan<'_>) -> Result<DecodedAct, CodecError> {
-    let mut untyped_records = 0_usize;
+    let mut untyped_records = Vec::new();
     let mut tables = Vec::new();
     let mut types = Vec::new();
     let mut entities = Vec::new();
@@ -253,10 +255,12 @@ pub(crate) fn decode(scan: &ContainerScan<'_>) -> Result<DecodedAct, CodecError>
                 .filter(|record| record.stream() == scope)
                 .map(|record| record.record_index),
         );
-        untyped_records += frames
-            .iter()
-            .filter(|frame| !represented.contains(&frame.record_index))
-            .count();
+        untyped_records.extend(
+            frames
+                .iter()
+                .filter(|frame| !represented.contains(&frame.record_index))
+                .map(|frame| (entry.name.clone(), frame.start, frame.end, frame.record_index)),
+        );
         entities.extend(stream_entities);
         for guid in stream_guids {
             guids.push(guid);
@@ -269,7 +273,9 @@ pub(crate) fn decode(scan: &ContainerScan<'_>) -> Result<DecodedAct, CodecError>
         }
     }
     Ok(DecodedAct {
-        untyped_records,
+        #[cfg(test)]
+        untyped_records: untyped_records.len(),
+        untyped_spans: untyped_records,
         tables,
         types,
         entities,
