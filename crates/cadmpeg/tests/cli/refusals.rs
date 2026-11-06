@@ -873,28 +873,44 @@ fn decode_loss_floor_applies_to_native_input_and_never_to_history() {
 fn reject_empty_refuses_geometry_all_omitted_by_target() {
     use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
     use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use cadmpeg_ir::geometry::{nurbs::NurbsCurve, Curve, CurveGeometry, SolvedCurveGeometry};
+    use cadmpeg_ir::math::Point3;
     use std::io::Cursor;
-    const FINER_THAN_RHINO_WRITE_TOLERANCE: f64 = 1e-12;
     let dir = tempdir().unwrap();
-    let mut document = unit_cube().unwrap();
-    document.tolerances = cadmpeg_ir::units::Tolerances::new(
-        FINER_THAN_RHINO_WRITE_TOLERANCE,
-        document.tolerances.angular.get(),
-    )
-    .unwrap();
+    let mut document = cadmpeg_ir::CadIr::empty();
+    document.model.curves.push(Curve {
+        id: "test:model:curve#periodic".try_into().unwrap(),
+        native_ref: None,
+        parameter_range: None,
+        source_object: None,
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Nurbs(
+            NurbsCurve::from_lanes(
+                2,
+                vec![0.0, 0.0, 0.0, 1.0, 1.0, 1.0],
+                vec![
+                    Point3::new(0.0, 0.0, 0.0),
+                    Point3::new(1.0, 1.0, 0.0),
+                    Point3::new(2.0, 0.0, 0.0),
+                ],
+                None,
+                true,
+            )
+            .unwrap(),
+        )),
+    });
     let mut source = Vec::new();
     cadmpeg_codec_step::StepCodec::default()
         .plan(EncodeInput::new(&document, None), TargetRequest::Inherit)
         .and_then(|plan| plan.write_to(&mut source))
-        .expect("STEP carries the exact cube and fine stated tolerance");
+        .expect("STEP carries the periodic curve");
     let decoded = cadmpeg_codec_step::StepCodec::default()
         .decode(&mut Cursor::new(&source), &DecodeOptions::default())
         .unwrap();
     assert!(
         decoded.report().geometry_transferred(),
-        "the source decode delivers BRep, so this exercises completed-target emptiness"
+        "the source decode delivers geometry, so this exercises completed-target emptiness"
     );
-    let input = dir.path().join("fine.step");
+    let input = dir.path().join("periodic.step");
     let output = dir.path().join("empty.3dm");
     let report = dir.path().join("refusal.json");
     fs::write(&input, source).unwrap();
@@ -950,6 +966,52 @@ fn reject_empty_refuses_geometry_all_omitted_by_target() {
     assert!(empty.ir().model.points.is_empty());
     assert!(empty.ir().model.curves.is_empty());
     assert!(empty.ir().model.surfaces.is_empty());
+}
+
+#[cfg(all(feature = "step", feature = "rhino"))]
+#[test]
+fn reject_empty_allows_recovered_geometry_from_fine_tolerance_step_body() {
+    use cadmpeg_ir::codec::write::{target::TargetRequest, EncodeInput, Encoder};
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    use std::io::Cursor;
+
+    let dir = tempdir().unwrap();
+    let mut document = unit_cube().unwrap();
+    document.tolerances =
+        cadmpeg_ir::units::Tolerances::new(1e-12, document.tolerances.angular.get()).unwrap();
+    let mut source = Vec::new();
+    cadmpeg_codec_step::StepCodec::default()
+        .plan(EncodeInput::new(&document, None), TargetRequest::Inherit)
+        .and_then(|plan| plan.write_to(&mut source))
+        .expect("STEP carries the cube");
+    let input = dir.path().join("fine.step");
+    let output = dir.path().join("recovered.3dm");
+    fs::write(&input, source).unwrap();
+    Command::cargo_bin("cadmpeg")
+        .unwrap()
+        .args([
+            "convert",
+            input.to_str().unwrap(),
+            "-o",
+            output.to_str().unwrap(),
+            "--to",
+            "rhino:archive-80",
+            "--reject-empty",
+        ])
+        .assert()
+        .success();
+    let decoded = cadmpeg_codec_rhino::RhinoCodec
+        .decode(
+            &mut Cursor::new(fs::read(output).unwrap()),
+            &DecodeOptions::default(),
+        )
+        .unwrap();
+    assert!(
+        !decoded.ir().model.bodies.is_empty()
+            || !decoded.ir().model.points.is_empty()
+            || !decoded.ir().model.curves.is_empty()
+            || !decoded.ir().model.surfaces.is_empty()
+    );
 }
 
 #[cfg(feature = "rhino")]
