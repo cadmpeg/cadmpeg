@@ -38,16 +38,6 @@ pub(crate) fn edit_timestamp_attribute(
     value: cadmpeg_ir::scalar::FiniteReal,
 ) {
     use cadmpeg_ir::attributes::{AttributeTarget, AttributeValue};
-    let neutral = crate::brep::link_neutral_id(
-        &ir.model.bodies,
-        &ir.model.faces,
-        &ir.model.edges,
-        &ir.model.vertices,
-        &ir.model.coedges,
-        row,
-        target_coedge,
-    )
-    .expect("linked timestamp target");
     fn target_id(target: &AttributeTarget) -> Option<&str> {
         match target {
             AttributeTarget::Body(id) => Some(id.as_str()),
@@ -59,6 +49,17 @@ pub(crate) fn edit_timestamp_attribute(
             _ => None,
         }
     }
+
+    let neutral = crate::brep::link_neutral_id(
+        &ir.model.bodies,
+        &ir.model.faces,
+        &ir.model.edges,
+        &ir.model.vertices,
+        &ir.model.coedges,
+        row,
+        target_coedge,
+    )
+    .expect("linked timestamp target");
     let mut attributes = ir.model.attributes.iter_mut().filter(|attribute| {
         target_id(&attribute.target) == Some(neutral.as_str())
             && crate::brep::creation_timestamp_value(attribute).is_some()
