@@ -574,7 +574,7 @@ pub(super) fn give_up_cut_tails(
         }
     }
     let xml_spans = crate::native::om::damaged_config_xml_spans(ctx, &scan.container)?;
-    for (kind, offset, size) in xml_spans {
+    for (kind, offset, size, element) in xml_spans {
         let Some(end) = offset.checked_add(size) else {
             continue;
         };
@@ -585,9 +585,12 @@ pub(super) fn give_up_cut_tails(
             continue;
         };
         ctx.decode_part(parts, extent, PartSpec::new(kind).holding(holding), |_| {
-            Err::<(), CodecError>(CodecError::malformed(format_args!(
-                "{kind} entry at offset {start} is present but unreadable"
-            )))
+            let detail = if element.is_empty() {
+                format!("{kind} entry at offset {start} is present but unreadable")
+            } else {
+                format!("{kind} <{element}> at offset {start} is present but unreadable")
+            };
+            Err::<(), CodecError>(CodecError::malformed(detail))
         })?;
     }
     for (start, end) in scan.container.damaged_om_section_spans()? {
