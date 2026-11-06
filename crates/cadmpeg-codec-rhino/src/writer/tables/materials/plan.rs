@@ -2,8 +2,8 @@
 //! Current material records have one shared authoring identity allocation.
 
 use super::{
-    bound_appearance, encode_material, native_complete, own_material, records, wire_index, CadIr,
-    CodecError, Value,
+    bound_appearance, encode_material, native_base_complete, own_material, records, wire_index,
+    CadIr, CodecError, Value,
 };
 use crate::loss::RhinoLossCode;
 use cadmpeg_ir::report::loss::LossNote;
@@ -124,7 +124,7 @@ impl MaterialPlan {
         let unlinked = records(ir, "materials")
             .iter()
             .filter(|record| {
-                native_complete(record)
+                native_base_complete(record)
                     && !ir
                         .model
                         .appearances
@@ -306,7 +306,10 @@ impl MaterialPlan {
         Ok(plan)
     }
 
-    pub(in crate::writer) fn encode(&self, ir: &CadIr) -> Result<Vec<Vec<u8>>, CodecError> {
+    pub(in crate::writer) fn encode(
+        &self,
+        ir: &CadIr,
+    ) -> Result<Vec<Vec<u8>>, crate::writer::WriteError> {
         self.entries
             .iter()
             .enumerate()

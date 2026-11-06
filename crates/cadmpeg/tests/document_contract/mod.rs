@@ -5,7 +5,10 @@
     feature = "fcstd",
     feature = "rhino",
     feature = "sldprt",
-    feature = "f3d"
+    feature = "f3d",
+    feature = "iges",
+    feature = "inventor",
+    feature = "catia"
 ))]
 
 #[cfg(feature = "fcstd")]
@@ -16,6 +19,12 @@ mod mixed_design;
 mod one_fact;
 #[cfg(feature = "rhino")]
 mod rhino;
+#[cfg(any(
+    feature = "iges",
+    feature = "inventor",
+    feature = "catia"
+))]
+mod structure;
 
 use std::io::Cursor;
 use std::path::{Path, PathBuf};

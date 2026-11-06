@@ -205,11 +205,17 @@ fn write_header(
     let implementation = if edition_three_sections { "4;2" } else { "2;1" };
     writeln!(w, "ISO-10303-21;")?;
     writeln!(w, "HEADER;")?;
-    writeln!(
-        w,
-        "FILE_DESCRIPTION(({}),'{implementation}');",
-        string("CAD model exported by cadmpeg")
-    )?;
+    let descriptions = fields.descriptions.as_deref().map_or_else(
+        || string("CAD model exported by cadmpeg"),
+        |items| {
+            items
+                .iter()
+                .map(|item| string(item))
+                .collect::<Vec<_>>()
+                .join(",")
+        },
+    );
+    writeln!(w, "FILE_DESCRIPTION(({descriptions}),'{implementation}');")?;
     let name = fields.name.as_deref().unwrap_or(&opts.product_name);
     let authors = fields
         .authors
@@ -505,6 +511,7 @@ pub(crate) struct Builder<'a> {
 /// attributes writes byte-identical output to before.
 #[derive(Clone, Default)]
 struct FileNameFields {
+    descriptions: Option<Vec<String>>,
     name: Option<String>,
     authors: Option<Vec<String>>,
     organizations: Option<Vec<String>>,
@@ -587,6 +594,10 @@ impl FileNameFields {
                 .map(|(id, _)| id.clone())
                 .collect()
         }
+        let descriptions: Vec<_> = Self::held(ir, &["start"])
+            .into_iter()
+            .filter(|(_, value)| value.chars().count() <= 256)
+            .collect();
         let label = Self::held(ir, Self::LABEL);
         let author = Self::held(ir, Self::AUTHOR);
         let organization = Self::held(ir, Self::ORGANIZATION);
@@ -622,7 +633,11 @@ impl FileNameFields {
         // empty fold still writes one empty entry, which carries every held
         // empty alias back.
         let empty_entry = vec![String::new()];
-        let mut consumed_ids = consumed(&label, &name.clone().into_iter().collect::<Vec<_>>());
+        let mut consumed_ids: Vec<_> = descriptions.iter().map(|(id, _)| id.clone()).collect();
+        consumed_ids.extend(consumed(
+            &label,
+            &name.clone().into_iter().collect::<Vec<_>>(),
+        ));
         consumed_ids.extend(consumed(
             &author,
             if authors.is_empty() {
@@ -646,6 +661,8 @@ impl FileNameFields {
             &system.clone().into_iter().collect::<Vec<_>>(),
         ));
         Self {
+            descriptions: (!descriptions.is_empty())
+                .then(|| descriptions.into_iter().map(|(_, value)| value).collect()),
             name,
             authors: (!author.is_empty()).then_some(authors),
             organizations,
