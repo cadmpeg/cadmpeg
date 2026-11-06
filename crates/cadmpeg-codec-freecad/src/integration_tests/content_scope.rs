@@ -51,6 +51,22 @@ fn vendor_workbench_objects_without_neutral_owners_project_as_native_features() 
         .any(|drawing| drawing.runtime_type == "TechDraw::DrawPage"));
 }
 
+#[test]
+fn product_type_with_an_unreadable_group_keeps_a_native_feature() {
+    let document = r#"<Document SchemaVersion="4"><Objects Count="1"><Object name="Assembly" type="Assembly::AssemblyObject"/></Objects><ObjectData Count="1"><Object name="Assembly"><Properties Count="1"><Property name="Group" type="App::PropertyLinkList"><LinkList count="invalid"/></Property></Properties></Object></ObjectData></Document>"#;
+    let decoded = decode(document, DecodeDepth::Full);
+    let feature = decoded
+        .ir()
+        .model
+        .features
+        .iter()
+        .find(|feature| feature.name.as_deref() == Some("Assembly"))
+        .expect("unowned product projects as a feature");
+    assert!(
+        matches!(feature.definition().operation(), FeatureOperation::Native { kind, .. } if kind.as_str() == "Assembly::AssemblyObject")
+    );
+}
+
 fn decode(document: &str, depth: DecodeDepth) -> cadmpeg_ir::codec::DecodeResult {
     FcstdCodec
         .decode(
