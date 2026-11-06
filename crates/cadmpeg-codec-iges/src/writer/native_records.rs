@@ -2,8 +2,8 @@
 //! Reconstruct typed native records without reading retained source bytes.
 
 use super::{
-    attributes, number, reference_marker, CadIr, DirectoryLineFont, Entity, EntityStatus,
-    FiniteReal, LossNote,
+    attributes, map_parameter_references, number, reference_marker, CadIr, CodecError,
+    DirectoryLineFont, Entity, EntityStatus, FiniteReal, LossNote,
 };
 use cadmpeg_ir::native::NativeRecord;
 use serde_json::{Map, Value};
@@ -313,6 +313,34 @@ fn count(fields: &Map<String, Value>, name: &str, length: usize) -> Result<Strin
     }
     Ok(length.to_string())
 }
+pub(super) fn attach_unowned_directions(entities: &mut Vec<Entity>) -> Result<(), CodecError> {
+    let mut referenced = BTreeSet::new();
+    for record in entities.iter() {
+        map_parameter_references(&record.parameter_body, |index| {
+            referenced.insert(index);
+            Ok(reference_marker(index))
+        })?;
+        referenced.extend(record.association_links.iter().copied());
+        referenced.extend(record.property_links.iter().copied());
+    }
+    let directions = entities
+        .iter()
+        .enumerate()
+        .filter(|(index, record)| {
+            record.type_code == 123
+                && record.status.is_physically_dependent()
+                && !referenced.contains(index)
+        })
+        .map(|(index, _)| reference_marker(index))
+        .collect::<Vec<_>>();
+    if !directions.is_empty() {
+        let mut parameters = vec![directions.len().to_string()];
+        parameters.extend(directions);
+        entities.push(entity(402, 7, parameters));
+    }
+    Ok(())
+}
+
 fn entity(type_code: u32, form: i64, parameters: Vec<String>) -> Entity {
     let mut parameter_body = String::new();
     for (index, value) in parameters.into_iter().enumerate() {
