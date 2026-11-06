@@ -46,6 +46,7 @@ fn overflowing_linked_placement_keeps_occurrence_placement() {
     first.linked_prototype = Some(large);
     let mut second = occurrence("Second", &definition, None);
     second.linked_prototype = Some(cadmpeg_ir::transform::Transform::identity());
+    second.transform = None;
     let mut ir = CadIr::empty();
     ir.model.occurrences.extend([first.clone(), second.clone()]);
     let uses = vec![
@@ -66,8 +67,13 @@ fn overflowing_linked_placement_keeps_occurrence_placement() {
         Object::new("First".into(), "App::Link", "First"),
         Object::new("Second".into(), "App::Link", "Second"),
     ];
+    objects[1].set("Placement", "stale".into());
+    objects[1].set("ScaleVector", "stale".into());
     let mut losses = Vec::new();
     resolve_linked_transforms(&ir, &mut objects, &uses, &mut losses).unwrap();
+    assert!(!objects[1].properties.contains_key("Placement"));
+    assert!(!objects[1].properties.contains_key("ScaleVector"));
+    assert!(objects[1].properties["LinkTransform"].contains("value=\"0\""));
     let xml = roxmltree::Document::parse(&objects[0].properties["Placement"]).unwrap();
     let placement = xml
         .descendants()

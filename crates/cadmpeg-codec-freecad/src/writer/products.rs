@@ -890,14 +890,16 @@ fn resolve_linked_transforms(
                     current.transform
                 }
             };
-            let Some(effective) = effective else {
-                continue;
-            };
             let object = objects
                 .iter_mut()
                 .find(|object| object.name == *link)
                 .ok_or_else(|| CodecError::malformed("linked instance output is absent"))?;
             bool_property(object, "LinkTransform", false);
+            object.properties.shift_remove("ScaleVector");
+            let Some(effective) = effective else {
+                object.properties.shift_remove("Placement");
+                continue;
+            };
             let (rigid, scale) = split_scale(effective).unwrap_or((effective, [1.0; 3]));
             object.set("Placement", placement(rigid, occurrence.as_str(), losses)?);
             if scale != [1.0; 3] {
