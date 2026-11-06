@@ -593,9 +593,10 @@ pub(super) fn reconcile(
         .filter(|header| header.in_sketch_module())
         .flat_map(|header| header.reference_values().copied())
         .collect::<std::collections::BTreeSet<_>>();
-    native
-        .design_record_headers
-        .retain(|header| reachable.contains(&header.record_index));
+    native.design_record_headers.retain(|header| {
+        !omitted_sketch_records.contains(&header.record_index)
+            || reachable.contains(&header.record_index)
+    });
     // These native lanes select identities or add native-only display facts.
     // Geometry and visibility values are always authored from the neutral model.
     super::design::reconcile_body_tags(target, &mut native);
@@ -952,6 +953,7 @@ pub(super) fn coverage(
     written: &CadIr,
     invalidated_timestamps: &std::collections::BTreeSet<String>,
     regenerated_parameters: &std::collections::BTreeSet<String>,
+    written_recipes: &std::collections::BTreeSet<String>,
 ) -> NativeDispositions {
     let mut result = NativeDispositions::for_namespace(
         "f3d",
@@ -968,6 +970,12 @@ pub(super) fn coverage(
                 .namespace("f3d")
                 .and_then(|namespace| namespace.arenas().get(arena));
             for record in before {
+                if arena.as_str() == "construction_recipes"
+                    && !written_recipes.contains(record.id())
+                {
+                    result.set_record("f3d", arena, record.id(), NativeDisposition::Dropped);
+                    continue;
+                }
                 let regenerated_document_parameter = arena.as_str() == "design_parameters"
                     && original.model.parameters.iter().any(|parameter| {
                         parameter.owner.is_none()

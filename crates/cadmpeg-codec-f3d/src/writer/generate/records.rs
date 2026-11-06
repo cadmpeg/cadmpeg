@@ -28,6 +28,7 @@ pub(in crate::writer::generate) struct EncodedDesignBulkStream {
     pub(super) primary_records: Vec<crate::metastream::RecordIndexEntry>,
     pub(super) losses: Vec<cadmpeg_ir::report::loss::LossNote>,
     pub(super) written_materials: std::collections::BTreeSet<String>,
+    pub(super) written_recipes: std::collections::BTreeSet<String>,
 }
 
 pub(super) fn tolerant_coedge_range(
@@ -223,6 +224,7 @@ pub(super) fn encode_design_bulkstream(
     let mut primary_records = Vec::new();
     let mut losses = Vec::new();
     let mut written_materials = std::collections::BTreeSet::new();
+    let mut written_recipes = std::collections::BTreeSet::new();
     if let Some(body_map) = &registry.body_map {
         let class_tag = body_map.class_tag.as_str();
         let record_index = body_map.record_index;
@@ -243,13 +245,8 @@ pub(super) fn encode_design_bulkstream(
     }
     encode_browser_nodes(&mut out, &mut primary_records, registry)?;
     for assignment in &native.design_material_assignments {
-        if encode_material_assignment(
-            &mut out,
-            &mut primary_records,
-            registry,
-            target,
-            assignment,
-        )? {
+        if encode_material_assignment(&mut out, &mut primary_records, registry, target, assignment)?
+        {
             if let Some(binding) = target.model.appearance_bindings.iter().find(|binding| {
                 binding.source_entity_id.as_deref() == Some(assignment.entity_id.as_str())
             }) {
@@ -268,41 +265,6 @@ pub(super) fn encode_design_bulkstream(
                     assignment.id
                 )),
             );
-        }
-    }
-    for recipe in &native.construction_recipes {
-        let name = construction_recipe_name(recipe.kind);
-        let mut prefix = [0u8; 27];
-        if let Some(design) = &recipe.design {
-            let design_id = &design.id.value;
-            if design_id.len() != 3 || !design_id.bytes().all(|byte| byte.is_ascii_digit()) {
-                return Err(CodecError::UnsupportedContent(format!(
-                    "source-less Design recipe id must be three ASCII digits: {design_id}"
-                )));
-            }
-            prefix[0..4].copy_from_slice(&3u32.to_le_bytes());
-            prefix[4..7].copy_from_slice(design_id.as_bytes());
-        }
-        // A generated Design recipe states its own record index; a native
-        // recipe that states none has no index word to regenerate.
-        let Some(record_index) = recipe.record_index else {
-            return Err(CodecError::UnsupportedContent(
-                "source-less F3D construction recipe states no record index".into(),
-            ));
-        };
-        prefix[11..15].copy_from_slice(&record_index.value.to_le_bytes());
-        prefix[23..27].copy_from_slice(
-            &u32::try_from(name.len())
-                .map_err(|_| {
-                    CodecError::InvalidInput("Design recipe name exceeds u32::MAX".into())
-                })?
-                .to_le_bytes(),
-        );
-        out.extend_from_slice(&prefix);
-        out.extend_from_slice(name);
-        out.extend_from_slice(&(-1i64).to_le_bytes());
-        for value in [2i32, 0, -1, 1, -1] {
-            out.extend_from_slice(&value.to_le_bytes());
         }
     }
     if !native.design_body_members.is_empty() {
@@ -525,6 +487,51 @@ pub(super) fn encode_design_bulkstream(
         native_lp_ascii(&mut out, reference.next_class_tag.as_str())?;
         out.extend_from_slice(&reference.next_record_index.to_le_bytes());
     }
+    for recipe in &native.construction_recipes {
+        if primary_records.is_empty() {
+            losses.push(
+                crate::loss::F3dLossCode::WriterNativeRecordsOmitted.note(format!(
+                    "construction recipe {} has no indexed Design frame",
+                    recipe.id
+                )),
+            );
+            continue;
+        }
+        let name = construction_recipe_name(recipe.kind);
+        let mut prefix = [0u8; 27];
+        if let Some(design) = &recipe.design {
+            let design_id = &design.id.value;
+            if design_id.len() != 3 || !design_id.bytes().all(|byte| byte.is_ascii_digit()) {
+                return Err(CodecError::UnsupportedContent(format!(
+                    "source-less Design recipe id must be three ASCII digits: {design_id}"
+                )));
+            }
+            prefix[0..4].copy_from_slice(&3u32.to_le_bytes());
+            prefix[4..7].copy_from_slice(design_id.as_bytes());
+        }
+        // A generated Design recipe states its own record index; a native
+        // recipe that states none has no index word to regenerate.
+        let Some(record_index) = recipe.record_index else {
+            return Err(CodecError::UnsupportedContent(
+                "source-less F3D construction recipe states no record index".into(),
+            ));
+        };
+        prefix[11..15].copy_from_slice(&record_index.value.to_le_bytes());
+        prefix[23..27].copy_from_slice(
+            &u32::try_from(name.len())
+                .map_err(|_| {
+                    CodecError::InvalidInput("Design recipe name exceeds u32::MAX".into())
+                })?
+                .to_le_bytes(),
+        );
+        out.extend_from_slice(&prefix);
+        out.extend_from_slice(name);
+        out.extend_from_slice(&(-1i64).to_le_bytes());
+        for value in [2i32, 0, -1, 1, -1] {
+            out.extend_from_slice(&value.to_le_bytes());
+        }
+        written_recipes.insert(recipe.id.clone());
+    }
     for reference in &native.persistent_references {
         if primary_records.is_empty() {
             losses.push(
@@ -548,6 +555,7 @@ pub(super) fn encode_design_bulkstream(
         primary_records,
         losses,
         written_materials,
+        written_recipes,
     }))
 }
 
