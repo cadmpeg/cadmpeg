@@ -1085,8 +1085,7 @@ fn serialize_geometry_inner(
                     if let Some((curve, [start, end], _, _)) = rows.first() {
                         write!(
                             representation,
-                            " 2 {curve} {surface} {location} {} {}",
-                            start, end
+                            " 2 {curve} {surface} {location} {start} {end}"
                         )
                         .expect("write to string");
                     }
