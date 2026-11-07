@@ -169,6 +169,8 @@ pub struct StateRecordView<'a> {
 /// One `delta_state`, as the history walks read it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeltaStateView<'a> {
+    /// State identifier of the `delta_state` header.
+    pub state_id: i64,
     /// Node index of the state.
     pub node_index: i64,
     /// Node index of the previous state; `None` for the head.
@@ -426,6 +428,334 @@ pub fn decode_record_archive(
         active: framed,
         archived: archived_frames,
     }))
+}
+
+/// Marker that opens a `delta_state` record: terminator, identifier tag, and the
+/// 11-byte class name.
+const DELTA_STATE_MARKER: &[u8] = b"\x11\x0d\x0bdelta_state";
+
+/// Byte offsets of every `delta_state` marker of a history stream, in stream order.
+pub fn delta_state_offsets(bytes: &[u8]) -> Vec<usize> {
+    let mut offsets = Vec::new();
+    let mut search = 0usize;
+    while let Some(relative) = bytes[search..]
+        .windows(DELTA_STATE_MARKER.len())
+        .position(|window| window == DELTA_STATE_MARKER)
+    {
+        let offset = search + relative;
+        offsets.push(offset);
+        search = offset + DELTA_STATE_MARKER.len();
+    }
+    offsets
+}
+
+/// Fixed integer header of one `delta_state` record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DeltaStateHeader {
+    /// Byte offset of the record marker.
+    pub offset: usize,
+    /// State identifier.
+    pub state_id: i64,
+    /// Version flag.
+    pub version_flag: i64,
+    /// State flag.
+    pub state_flag: i64,
+    /// Node index of the previous state; negative for the head.
+    pub previous: i64,
+    /// Node index of the next state; negative for the last state.
+    pub next: i64,
+    /// Node index of the state.
+    pub node_index: i64,
+    /// Partner reference.
+    pub partner: i64,
+    /// Owner reference.
+    pub owner_ref: i64,
+    /// First byte after the `0x0b` marker that opens the state body.
+    pub body_start: usize,
+}
+
+/// Result of reading the header of a `delta_state` record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeltaStateHeaderRead {
+    /// The header is complete and the state body opens with `0x0b`.
+    Framed(DeltaStateHeader),
+    /// The header is complete and no state body follows it.
+    Unframed,
+    /// A header integer is missing or mistagged.
+    Invalid,
+}
+
+/// Read the header of the `delta_state` record whose marker is at `offset`.
+pub fn read_delta_state_header(
+    bytes: &[u8],
+    offset: usize,
+    width: RefWidth,
+) -> DeltaStateHeaderRead {
+    let mut position = offset + DELTA_STATE_MARKER.len();
+    let Some([state_id, version_flag, state_flag, previous, next, node_index, partner, owner_ref]) =
+        (|| {
+            Some([
+                take_int(bytes, &mut position, 0x04, width)?,
+                take_int(bytes, &mut position, 0x04, width)?,
+                take_int(bytes, &mut position, 0x04, width)?,
+                take_int(bytes, &mut position, 0x0c, width)?,
+                take_int(bytes, &mut position, 0x0c, width)?,
+                take_int(bytes, &mut position, 0x0c, width)?,
+                take_int(bytes, &mut position, 0x0c, width)?,
+                take_int(bytes, &mut position, 0x0c, width)?,
+            ])
+        })()
+    else {
+        return DeltaStateHeaderRead::Invalid;
+    };
+    if bytes.get(position) != Some(&0x0b) {
+        return DeltaStateHeaderRead::Unframed;
+    }
+    DeltaStateHeaderRead::Framed(DeltaStateHeader {
+        offset,
+        state_id,
+        version_flag,
+        state_flag,
+        previous,
+        next,
+        node_index,
+        partner,
+        owner_ref,
+        body_start: position + 1,
+    })
+}
+
+/// Records framed between the end of one state's bulletin boards and the next
+/// `delta_state` marker.
+#[derive(Debug)]
+pub enum StateRecords {
+    /// The span holds no record.
+    Empty,
+    /// The span frames to these records.
+    Framed(Vec<Record>),
+    /// The span does not frame; `start..limit` is the span.
+    Unframed {
+        /// First byte of the span.
+        start: usize,
+        /// End of the span.
+        limit: usize,
+        /// Framing diagnostic.
+        error: String,
+    },
+}
+
+/// Frame the records of the state whose bulletin boards end at `state_end`;
+/// `next_delta` is the marker offset of the next state. A resource or
+/// operation failure is an error; any other framing failure is
+/// [`StateRecords::Unframed`].
+pub fn frame_state_records(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    state_end: usize,
+    next_delta: Option<usize>,
+    width: RefWidth,
+) -> Result<StateRecords, CodecError> {
+    let mut start = state_end + usize::from(bytes.get(state_end) == Some(&0x11));
+    if bytes.get(start) == Some(&0x04)
+        && int_at(bytes, start + 1, width) == Some(0)
+        && bytes.get(start + 1 + width.bytes()) == Some(&0x11)
+    {
+        start += 2 + width.bytes();
+    }
+    let limit = next_delta.map_or(bytes.len(), |offset| offset + 1);
+    if start >= limit {
+        return Ok(StateRecords::Empty);
+    }
+    match crate::sab::frame_history(ctx, bytes, start, limit, width, None) {
+        Ok(records) => Ok(StateRecords::Framed(records)),
+        Err(StreamFailure::Resource(error)) => Err(error.into()),
+        Err(StreamFailure::Operation(error)) => Err(error.into_codec_error()),
+        Err(error) => Ok(StateRecords::Unframed {
+            start,
+            limit,
+            error: format!("{error}"),
+        }),
+    }
+}
+
+fn int_at(bytes: &[u8], offset: usize, width: RefWidth) -> Option<i64> {
+    match width {
+        RefWidth::Four => Some(i64::from(View::i32_le_at(bytes, offset)?)),
+        RefWidth::Eight => View::i64_le_at(bytes, offset),
+    }
+}
+
+/// Revision identifiers of the snapshot records of a history. The old
+/// references of all changes, sorted, form a run `first..first + n`; the run
+/// is the identifier list when `snapshot_record_count` equals `n`, and the
+/// i-th snapshot record in stream order takes the i-th identifier.
+pub fn snapshot_revision_ids(
+    changes: impl Iterator<Item = EntityChange>,
+    snapshot_record_count: usize,
+) -> Option<std::ops::Range<i64>> {
+    let mut old_references: Vec<i64> = changes.filter_map(EntityChange::old_ref).collect();
+    old_references.sort_unstable_by(Ord::cmp);
+    let &first = old_references.first()?;
+    let count = i64::try_from(old_references.len()).ok()?;
+    let end = first.checked_add(count)?;
+    if old_references.iter().copied().ne(first..end)
+        || snapshot_record_count != old_references.len()
+    {
+        return None;
+    }
+    Some(first..end)
+}
+
+/// One record framed in a `delta_state` span.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChainRecord {
+    /// Revision identifier of an archived record; `None` for a boundary record.
+    pub revision_id: Option<i64>,
+    /// Byte offset of the record in the stream.
+    pub offset: usize,
+    /// Stored length of the record in bytes.
+    pub len: usize,
+    /// Record name.
+    pub name: String,
+}
+
+/// One framed `delta_state`: its header, bulletin-board changes in stream
+/// order, and records.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChainState {
+    /// Header of the state.
+    pub header: DeltaStateHeader,
+    /// Changes of all boards of the state, in stream order.
+    pub changes: Vec<EntityChange>,
+    /// Records of the state, in stream order.
+    pub records: Vec<ChainRecord>,
+}
+
+/// The framed `delta_state` chain of a history stream, in stream order.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HistoryChain {
+    /// Framed states.
+    pub states: Vec<ChainState>,
+}
+
+/// Outcome of framing the `delta_state` chain of a stream.
+#[derive(Debug)]
+pub enum ChainFraming {
+    /// The stream holds no `delta_state` record.
+    Absent,
+    /// A header, bulletin-board chain, or record span does not frame.
+    Unframed,
+    /// Every state frames.
+    Framed(HistoryChain),
+}
+
+impl HistoryChain {
+    /// Views of the states for the shared history walks; record bytes borrow
+    /// from `bytes`, the stream the chain was framed from.
+    #[must_use]
+    pub fn views<'a>(&'a self, bytes: &'a [u8]) -> Vec<DeltaStateView<'a>> {
+        self.states
+            .iter()
+            .map(|state| DeltaStateView {
+                state_id: state.header.state_id,
+                node_index: state.header.node_index,
+                previous_ref: (state.header.previous >= 0).then_some(state.header.previous),
+                next_ref: (state.header.next >= 0).then_some(state.header.next),
+                changes: state.changes.clone(),
+                records: state
+                    .records
+                    .iter()
+                    .map(|record| StateRecordView {
+                        revision_id: record.revision_id,
+                        byte_offset: cadmpeg_core::decode::u64_from_index(record.offset),
+                        raw_bytes: record
+                            .offset
+                            .checked_add(record.len)
+                            .and_then(|end| bytes.get(record.offset..end))
+                            .unwrap_or_default(),
+                        name: record.name.as_str(),
+                    })
+                    .collect(),
+            })
+            .collect()
+    }
+}
+
+/// Frame the `delta_state` chain of a history stream: every state header, its
+/// bulletin boards, and the records framed up to the next state, with the
+/// snapshot revision identifiers bound. A state whose header opens no body is
+/// skipped. A resource or operation failure is an error.
+pub fn frame_history_chain(
+    ctx: &DecodeContext<'_>,
+    bytes: &[u8],
+    width: RefWidth,
+) -> Result<ChainFraming, CodecError> {
+    let offsets = delta_state_offsets(bytes);
+    if offsets.is_empty() {
+        return Ok(ChainFraming::Absent);
+    }
+    let mut states = Vec::new();
+    for (ordinal, &offset) in offsets.iter().enumerate() {
+        let header = match read_delta_state_header(bytes, offset, width) {
+            DeltaStateHeaderRead::Framed(header) => header,
+            DeltaStateHeaderRead::Unframed => continue,
+            DeltaStateHeaderRead::Invalid => return Ok(ChainFraming::Unframed),
+        };
+        let mut changes = Vec::new();
+        let Some(body_end) = walk_bulletin_boards(bytes, header.body_start, width, |item| {
+            if let BulletinBoardItem::Change { kind, .. } = item {
+                changes.push(kind);
+            }
+        }) else {
+            return Ok(ChainFraming::Unframed);
+        };
+        let framed = match frame_state_records(
+            ctx,
+            bytes,
+            body_end,
+            offsets.get(ordinal + 1).copied(),
+            width,
+        )? {
+            StateRecords::Empty => Vec::new(),
+            StateRecords::Framed(records) => records,
+            StateRecords::Unframed { .. } => return Ok(ChainFraming::Unframed),
+        };
+        states.push(ChainState {
+            header,
+            changes,
+            records: framed
+                .into_iter()
+                .map(|record| ChainRecord {
+                    revision_id: None,
+                    offset: record.offset,
+                    len: record.len,
+                    name: record.name,
+                })
+                .collect(),
+        });
+    }
+    if states.is_empty() {
+        return Ok(ChainFraming::Absent);
+    }
+    let snapshot_count = states
+        .iter()
+        .flat_map(|state| &state.records)
+        .filter(|record| record.name != ACTIVE_DATA_END)
+        .count();
+    let changes = states
+        .iter()
+        .flat_map(|state| state.changes.iter().copied());
+    if let Some(ids) = snapshot_revision_ids(changes, snapshot_count) {
+        for (record, id) in states
+            .iter_mut()
+            .flat_map(|state| &mut state.records)
+            .filter(|record| record.name != ACTIVE_DATA_END)
+            .zip(ids)
+        {
+            record.revision_id = Some(id);
+        }
+    }
+    Ok(ChainFraming::Framed(HistoryChain { states }))
 }
 
 #[cfg(test)]

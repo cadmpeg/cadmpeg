@@ -331,6 +331,15 @@ Record 3610 has type `cf2b17de9c46a894e06459a70546aa94` and qualified `next=0x80
 In CTC-01 FBAttribute record 3, the `Surface` header at expanded offset `0x270c` has length 160 and ends at `0x27b8`; a 32-byte descriptor starts there and stores u16 value 23 at offset 22. The later matrix headers include IDs 6 and 22. The second `Surface` header at `0x3356` has length 192 and ends at `0x3422`; a descriptor at `0x3402` stores value 29, and later matrix headers include IDs 6, 22 and 28. In CTC-02, corresponding descriptors store values 25 and 184; the same record contains no matrix headers 24 or 183. The descriptor-minus-one interpretation fits the two CTC-01 pairs and fails for both CTC-02 pairs.
 
 The outstanding witness is a typed reference path from each diameter owner (records 3575 and 3592) to a signed lower and upper tolerance operand and a native kernel face key. The face keys must resolve to the separate STEP face pairs #854/#853 and #839/#840.
+
+### DE-16. Features without a history state
+
+**Question.** Which records date a Split or Base feature whose source index no naming tag lists, or whose body key does not change between `state_before` and `state_after`?
+
+**Known.** Section 13.10 defines `state_after` as the oldest state in which a live naming tag lists the feature's source index, and `state_before` as the next older state. Split and Base features need a body key that leaves or appears between those states. A feature without a tag, a feature whose tag appears in the oldest state, and a feature whose key does not change stay unbound. Sketches, work planes, and other features without generated names have no naming tag. A naming tag whose stored `schema` differs from the carrier schema still lists its source indices. A feature that retains a state from it reports `source.kernel-history-tag-schema-assumed`, whether the body check binds the feature or leaves it unbound.
+
+**Need.** The record that dates an unbound Split or Base feature must be found before a history state can be assigned. A state must not be assigned from a body key that appears or disappears without a tag.
+
 ## 5. Adjacent envelopes
 
 ### EN-01. Other CFB and RSe versions
