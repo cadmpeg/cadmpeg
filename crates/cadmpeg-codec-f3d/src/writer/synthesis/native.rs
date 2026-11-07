@@ -176,6 +176,9 @@ pub(super) fn reconcile(
                                 cadmpeg_ir::features::FeatureOperation::InsertBodies { .. },
                             ) => scope.copy_paste_bodies_operation().is_some(),
                             cadmpeg_ir::features::FeatureDefinition::Operation(
+                                cadmpeg_ir::features::FeatureOperation::InsertComponent { .. },
+                            ) => scope.copy_paste_component_operation().is_some(),
+                            cadmpeg_ir::features::FeatureDefinition::Operation(
                                 cadmpeg_ir::features::FeatureOperation::Extrude { .. },
                             ) => {
                                 scope.kind()
@@ -191,9 +194,18 @@ pub(super) fn reconcile(
                                     == crate::records::feature::scope::DesignFeatureKind::RemoveBody
                             }
                             cadmpeg_ir::features::FeatureDefinition::Operation(
+                                cadmpeg_ir::features::FeatureOperation::KnitSurface { .. },
+                            ) => scope.surface_stitch_operation().is_some(),
+                            cadmpeg_ir::features::FeatureDefinition::Operation(
                                 cadmpeg_ir::features::FeatureOperation::Native { kind, .. },
                             ) if kind.as_str() == "BaseFlange" => {
                                 scope.base_flange_operation().is_some()
+                            }
+                            cadmpeg_ir::features::FeatureDefinition::Operation(
+                                cadmpeg_ir::features::FeatureOperation::Native { kind, .. },
+                            ) if kind.as_str() == "Form" => {
+                                scope.kind()
+                                    == crate::records::feature::scope::DesignFeatureKind::Form
                             }
                             _ => false,
                         }
@@ -215,6 +227,20 @@ pub(super) fn reconcile(
                             }
                         ) if selection == &group.id
                     )
+                }) || target.model.feature_input_topologies.iter().any(|input| {
+                    input
+                        .operands
+                        .iter()
+                        .any(|operand| operand.native_ref.as_str() == group.id)
+                        && target.model.features.iter().any(|feature| {
+                            feature.id == input.input_of
+                                && matches!(
+                                    feature.evaluation.definition(),
+                                    cadmpeg_ir::features::FeatureDefinition::Operation(
+                                        cadmpeg_ir::features::FeatureOperation::KnitSurface { .. }
+                                    )
+                                )
+                        })
                 })
             })
             .cloned()

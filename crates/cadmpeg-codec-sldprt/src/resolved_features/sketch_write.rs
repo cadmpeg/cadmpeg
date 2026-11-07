@@ -1,6 +1,7 @@
 //! Sketch B-rep synthesis from the current neutral geometry.
 
 use super::SKETCH_POINT_TOLERANCE;
+use crate::writer::write_error::WriteError;
 use cadmpeg_ir::geometry::{
     Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
 };
@@ -23,12 +24,12 @@ fn sketch_namespace() -> cadmpeg_ir::ids::IdentityNamespace {
 pub(super) fn sketch_brep(
     source: &cadmpeg_ir::CadIr,
     sketch: &Sketch,
-) -> Result<cadmpeg_ir::CadIr, cadmpeg_core::CodecError> {
+) -> Result<cadmpeg_ir::CadIr, WriteError> {
     let (origin, normal, u_axis) = sketch
         .resolved_placement()
         .map(|(origin, normal, u_axis)| (origin.get(), normal.get(), u_axis.get()))
         .ok_or_else(|| {
-            cadmpeg_core::CodecError::UnsupportedContent(format!(
+            WriteError::Decline(format!(
                 "source-less SLDPRT sketch {} requires resolved model-space placement",
                 sketch.id.as_str()
             ))
@@ -98,7 +99,7 @@ pub(super) fn sketch_brep(
                 SketchGeometryDefinition::Point { .. }
             )
     }) {
-        return Err(cadmpeg_core::CodecError::UnsupportedContent(format!(
+        return Err(WriteError::Decline(format!(
             "source-less SLDPRT sketch writing cannot encode unprofiled curve {}",
             entity.id()
         )));
@@ -124,12 +125,12 @@ pub(super) fn sketch_brep(
                     (generated.start, generated.end)
                 })
             })
-            .collect::<Result<Vec<_>, cadmpeg_core::CodecError>>()?;
+            .collect::<Result<Vec<_>, WriteError>>()?;
         if endpoints.iter().enumerate().any(|(index, (_, end))| {
             let (next_start, _) = endpoints[(index + 1) % endpoints.len()];
             !same_sketch_point(*end, next_start)
         }) {
-            return Err(cadmpeg_core::CodecError::UnsupportedContent(format!(
+            return Err(WriteError::Decline(format!(
                 "source-less SLDPRT sketch profile {profile_index} is not a closed endpoint chain"
             )));
         }
@@ -186,7 +187,8 @@ pub(super) fn sketch_brep(
                 return Err(cadmpeg_core::CodecError::malformed(format_args!(
                     "sketch entity {} has zero length",
                     entity.id()
-                )));
+                ))
+                .into());
             }
             let curve_id = CurveId::compose(
                 &sketch_namespace(),
@@ -346,7 +348,7 @@ pub(super) fn sketch_brep(
         face_loops.push(loop_id);
     }
     if face_loops.is_empty() {
-        return Err(cadmpeg_core::CodecError::UnsupportedContent(format!(
+        return Err(WriteError::Decline(format!(
             "source-less SLDPRT sketch {} has no profiles",
             sketch.id.as_str()
         )));
@@ -398,12 +400,12 @@ fn generated_sketch_curve(
     geometry: &SketchGeometry,
     sketch: &Sketch,
     v_axis: Vector3,
-) -> Result<GeneratedSketchCurve, cadmpeg_core::CodecError> {
+) -> Result<GeneratedSketchCurve, WriteError> {
     let (origin, normal, u_axis) = sketch
         .resolved_placement()
         .map(|(origin, normal, u_axis)| (origin.get(), normal.get(), u_axis.get()))
         .ok_or_else(|| {
-            cadmpeg_core::CodecError::UnsupportedContent(format!(
+            WriteError::Decline(format!(
                 "source-less SLDPRT sketch {} requires resolved model-space placement",
                 sketch.id.as_str()
             ))
@@ -429,7 +431,7 @@ fn generated_sketch_curve(
             if length == 0.0 {
                 return Err(cadmpeg_core::CodecError::Malformed(
                     "source-less SLDPRT sketch contains a zero-length line".into(),
-                ));
+                ).into());
             }
             Ok(GeneratedSketchCurve {
                 curve: CurveGeometry::Solved(SolvedCurveGeometry::Line(cadmpeg_ir::geometry::analytic::LineCurve::try_new(origin, Vector3::new(
@@ -513,7 +515,7 @@ fn generated_sketch_curve(
         }
         SketchGeometryDefinition::Nurbs { curve } => {
             if curve.periodic() {
-                return Err(cadmpeg_core::CodecError::UnsupportedContent(
+                return Err(WriteError::Decline(
                     "source-less SLDPRT sketch writing requires a non-periodic NURBS with at least two poles".into(),
                 ));
             }
@@ -539,7 +541,7 @@ fn generated_sketch_curve(
         | SketchGeometryDefinition::Parabola { .. }
         | SketchGeometryDefinition::ExternalReference { .. }
         | SketchGeometryDefinition::Native { .. } => Err(
-            cadmpeg_core::CodecError::UnsupportedContent(
+            WriteError::Decline(
                 "source-less SLDPRT sketch writing does not support point or native-only profile entities".into(),
             ),
         ),

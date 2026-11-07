@@ -967,7 +967,7 @@ fn native_partition_patch_refuses_changed_face_colours_and_pcurves() {
     let limited = cadmpeg_core::decode::DecodeContext::for_encode(&limited_arena, &limited_policy);
     assert!(matches!(
         super::patch_partition(&limited, &scan, decoded.ir(), annotations, 0.001),
-        Err(cadmpeg_core::CodecError::ResourceLimit(limit))
+        Err(crate::writer::write_error::WriteError::Fatal(cadmpeg_core::CodecError::ResourceLimit(limit)))
             if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities
     ));
     let mut changed = decoded.ir().clone();

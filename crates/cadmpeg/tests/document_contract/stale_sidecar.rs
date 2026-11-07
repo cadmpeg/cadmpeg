@@ -130,4 +130,30 @@ fn edited_freecad_with_stale_sidecar_synthesizes_like_no_sidecar() {
         .features
         .iter()
         .any(|feature| feature.name.as_deref() == Some("EditedPad")));
+
+    let export: cadmpeg_ir::report::export::ExportReport =
+        serde_json::from_value(restored_report["export"].clone()).unwrap();
+    for (floor, severity) in [
+        ("info", cadmpeg_ir::report::Severity::Info),
+        ("error", cadmpeg_ir::report::Severity::Error),
+    ] {
+        let output = dir.path().join(format!("{floor}.FCStd"));
+        let result = Command::cargo_bin("cadmpeg")
+            .unwrap()
+            .args([
+                "convert",
+                cadir.to_str().unwrap(),
+                "-o",
+                output.to_str().unwrap(),
+                "--reject-lossy",
+                "--reject-lossy-floor",
+                floor,
+            ])
+            .assert();
+        if export.losses.iter().any(|loss| loss.severity >= severity) {
+            result.code(1);
+        } else {
+            result.success();
+        }
+    }
 }

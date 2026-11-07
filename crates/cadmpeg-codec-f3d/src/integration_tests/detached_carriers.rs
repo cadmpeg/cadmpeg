@@ -56,7 +56,12 @@ fn detached_point_records_survive_in_a_bodyless_document() {
         for (actual, expected) in [actual.x, actual.y, actual.z].into_iter().zip(expected) {
             assert!((actual - expected).abs() < 1e-10);
         }
-        assert!(point.source_object.is_some());
+        let association = point
+            .source_object
+            .as_ref()
+            .expect("detached source identity");
+        let (_, index) = point.id.as_str().rsplit_once('#').expect("record index");
+        assert_eq!(association.object_id.as_str(), format!("ASM:{index}"));
     }
     assert!(decoded.ir().model.bodies.is_empty());
     assert!(decoded
@@ -101,5 +106,29 @@ fn detached_plane_survives_alongside_a_face_surface() {
     let decoded = super::decode(f3d_with_smbh(&bytes));
     assert_eq!(decoded.ir().model.faces.len(), 1);
     assert_eq!(decoded.ir().model.surfaces.len(), 2);
+    super::assert_valid(&decoded);
+}
+
+#[test]
+fn detached_spline_surface_survives_in_a_bodyless_document() {
+    let source = crate::test_support::smbh_surfaces_test::synthetic_cyl_spl_sur_smbh();
+    let start = cadmpeg_asm::asm_header::record_stream_start(&source).unwrap();
+    let limit = cadmpeg_asm::asm_header::solved_record_limit(&source).unwrap();
+    let records = cadmpeg_asm::test_support::sab::frame(
+        &source,
+        start,
+        limit,
+        cadmpeg_asm::kernel_header::RefWidth::Eight,
+    )
+    .unwrap();
+    let record = &records[9];
+    let input = bodyless(|bytes| {
+        bytes.extend_from_slice(&source[record.offset..record.offset + record.len]);
+    });
+    let decoded = super::decode(input);
+    assert_eq!(decoded.ir().model.surfaces.len(), 1);
+    assert!(decoded.ir().model.faces.is_empty());
+    assert!(decoded.ir().model.surfaces[0].source_object.is_some());
+    assert!(!decoded.ir().model.procedural_surfaces.is_empty());
     super::assert_valid(&decoded);
 }
