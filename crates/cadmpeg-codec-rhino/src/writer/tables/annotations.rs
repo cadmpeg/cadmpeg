@@ -597,7 +597,7 @@ pub(in crate::writer) fn records(
             .and_then(|fields| fields.get("source_uuid"))
             .and_then(Value::as_str)
             .and_then(crate::presentation::parse_uuid_text)
-            .is_some_and(|uuid| uuid.is_nil())
+            .is_some_and(crate::wire::Uuid::is_nil)
         {
             attributes[1..17].fill(0);
         }
