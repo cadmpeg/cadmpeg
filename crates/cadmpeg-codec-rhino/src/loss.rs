@@ -820,6 +820,7 @@ mod tests {
                 "writer.material-texture-omitted",
                 "writer.material-uuid-reassigned",
                 "writer.attributes-omitted",
+                "writer.setting-color-reduced",
                 "writer.dimension-style-index-reassigned",
                 "writer.text-style-omitted",
                 "writer.text-style-reference-reduced",

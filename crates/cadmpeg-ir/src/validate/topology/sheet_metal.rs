@@ -213,7 +213,7 @@ mod tests {
             faces: DistinctMembers::default(),
         };
         let state = |id, input_of| FeatureInputTopology {
-            operands: Default::default(),
+            operands: DistinctMembers::default(),
             id,
             input_of,
             bodies: DistinctMembers::default(),

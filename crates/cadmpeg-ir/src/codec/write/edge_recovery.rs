@@ -5,7 +5,7 @@ use std::borrow::Cow;
 use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 
-use cadmpeg_core::decode::{ResourceLimit, WorkBudget};
+use cadmpeg_core::decode::{DecodeContext, ResourceLimit, WorkBudget};
 
 use super::approximation::Approximator;
 use crate::document::CadIr;
@@ -31,12 +31,13 @@ use crate::topology::{Coedge, Edge, EdgeCarrier, PcurveUse};
 const MAX_RECOVERY_WORK: usize = 1 << 26;
 const AGREEMENT_PARAMETERS: [f64; 5] = [0.0, 0.25, 0.5, 0.75, 1.0];
 
-struct RecoveryEvaluation {
+struct RecoveryEvaluation<'ctx, 'arena> {
+    context: &'ctx DecodeContext<'arena>,
     work: WorkBudget,
     refusal: Cell<Option<ResourceLimit>>,
 }
 
-impl RecoveryEvaluation {
+impl RecoveryEvaluation<'_, '_> {
     fn evaluate<T, R>(
         &self,
         run: impl for<'slice> FnOnce(
@@ -46,7 +47,9 @@ impl RecoveryEvaluation {
         if self.refusal.get().is_some() {
             return None;
         }
-        match finite_or_refusal(EvaluationAdmission::Standard.within_work_slice(&self.work, run)) {
+        match finite_or_refusal(
+            EvaluationAdmission::Decode(self.context).within_work_slice(&self.work, run),
+        ) {
             Ok(value) => value,
             Err(limit) => {
                 self.refusal.set(Some(limit));
@@ -96,7 +99,10 @@ enum Recovery {
 /// working document with carriers derived from its coedge geometry.
 ///
 /// The source document and its retained bytes are not changed.
-pub fn recover_edge_curves(ir: &CadIr) -> Result<EdgeRecovery<'_>, ResourceLimit> {
+pub fn recover_edge_curves<'ir>(
+    context: &DecodeContext<'_>,
+    ir: &'ir CadIr,
+) -> Result<EdgeRecovery<'ir>, ResourceLimit> {
     let residual_limit = Approximator::new(ir).residual_limit();
     if !ir
         .model
@@ -114,6 +120,7 @@ pub fn recover_edge_curves(ir: &CadIr) -> Result<EdgeRecovery<'_>, ResourceLimit
     }
     let index = ModelIndex::build(ir);
     let work = RecoveryEvaluation {
+        context,
         work: WorkBudget::new(MAX_RECOVERY_WORK),
         refusal: Cell::new(None),
     };
