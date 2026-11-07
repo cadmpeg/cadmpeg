@@ -68,6 +68,11 @@ fn parametric_spline_synthesis_preserves_held_records() {
 }
 
 #[test]
+fn parameter_domain_synthesis_preserves_held_records() {
+    assert_synthesis_closure(fixture("parameter_domain_trimmed_surface"));
+}
+
+#[test]
 fn edited_parametric_spline_uses_current_control_points() {
     let decoded = IgesCodec
         .decode(
