@@ -6281,7 +6281,7 @@ fn append_surface_entities(
     entities.extend(additions);
     let wrapped = domain_bounded_wrap(ctx, ir, surface, version, surface_index, entities)?;
     if wrapped.is_some() {
-        entities[surface_index].status = EntityStatus::PhysicallyDependent;
+        entities[surface_index].status = ownership::wrapped_surface_status(surface, status);
     }
     {
         let color = carrier_display_color(
@@ -7476,9 +7476,7 @@ impl CurveEntityEmitter<'_> {
             )));
         }
         if sense == Sense::Forward {
-            if let Some(index) =
-                self.append_uniform_circle_offset(curve_id, geometry, span, status)?
-            {
+            if let Some(index) = self.append_offset(curve_id, geometry, span, status)? {
                 self.active.remove(curve_id);
                 self.entities[index]
                     .source_targets

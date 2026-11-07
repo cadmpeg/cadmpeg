@@ -770,7 +770,9 @@ fn native_registry_equals_dispositions() {
 }
 #[test]
 fn layer_without_writable_items_is_named_in_the_loss() {
-    use cadmpeg_ir::geometry::{SolvedSurfaceGeometry, Surface, SurfaceGeometry};
+    use cadmpeg_ir::geometry::{
+        sampled::PolygonalSurface, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    };
     use cadmpeg_ir::ids::{LayerId, SurfaceId};
     use cadmpeg_ir::presentation::{PresentationItem, PresentationLayer};
 
@@ -779,7 +781,18 @@ fn layer_without_writable_items_is_named_in_the_loss() {
     ir.model.surfaces.push(Surface {
         native_ref: None,
         id: surface.clone(),
-        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Unknown { record: None }),
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Polygonal(
+            PolygonalSurface::new(
+                vec![
+                    cadmpeg_ir::math::Point3::new(0.0, 0.0, 0.0),
+                    cadmpeg_ir::math::Point3::new(1.0, 0.0, 0.0),
+                    cadmpeg_ir::math::Point3::new(0.0, 1.0, 0.0),
+                ],
+                vec![[0, 1, 2]],
+                0.1,
+            )
+            .expect("polygonal surface"),
+        )),
         source_object: None,
     });
     ir.model.presentation_layers.push(PresentationLayer {

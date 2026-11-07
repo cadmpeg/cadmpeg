@@ -5,6 +5,7 @@
 #![allow(clippy::default_trait_access)]
 
 mod assembly_bodies;
+mod occurrence_definitions;
 mod occurrence_limits;
 
 use cadmpeg_test_support::EditableDecodeResult;

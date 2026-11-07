@@ -17,6 +17,7 @@ use crate::writer::primitives::{
 mod act;
 pub(super) mod attributes;
 pub(in crate::writer) mod canvas;
+pub(in crate::writer) mod decal;
 pub(super) mod features;
 mod index;
 pub(in crate::writer) mod native_bytes;
@@ -80,10 +81,12 @@ pub(super) fn write_with_limits(
     validate_source_less_face_keys(&native)?;
     let attributes = attributes::AttributeIndex::new(target, &native);
     let canvas = canvas::select(target, &native);
+    let decal = decal::select(target, &native);
     if target.model.assets.iter().any(|asset| {
         canvas
             .as_ref()
             .is_none_or(|canvas| canvas.asset != asset.id)
+            && decal.as_ref().is_none_or(|decal| decal.asset != asset.id)
     }) {
         return Err(CodecError::UnsupportedContent(
             "source-less F3D generation does not support document assets".into(),
@@ -199,6 +202,9 @@ pub(super) fn write_with_limits(
     let encoded_canvas = canvas
         .map(|canvas| canvas::encode(canvas, &output_ctx))
         .transpose()?;
+    let encoded_decal = decal
+        .map(|decal| decal::encode(decal, &output_ctx))
+        .transpose()?;
     if !records::needs_design_bulk(target, &native) {
         if let Some((_, meta)) = generated_features
             .as_ref()
@@ -241,6 +247,24 @@ pub(super) fn write_with_limits(
                 canvas.meta.as_slice(),
             ),
             (canvas.path.clone(), canvas.data),
+        ] {
+            archive
+                .start_file(name, options)
+                .map_err(|error| CodecError::malformed(error.to_string()))?;
+            archive.write_all(data)?;
+        }
+    }
+    if let Some(decal) = &encoded_decal {
+        for (name, data) in [
+            (
+                format!("{DESIGN_FOLDER}/FusionDesignSegmentType6/BulkStream.dat"),
+                decal.bulk.as_slice(),
+            ),
+            (
+                format!("{DESIGN_FOLDER}/FusionDesignSegmentType6/MetaStream.dat"),
+                decal.meta.as_slice(),
+            ),
+            (decal.path.clone(), decal.data),
         ] {
             archive
                 .start_file(name, options)
@@ -475,6 +499,13 @@ pub(super) fn write_with_limits(
             canvas.feature
         )));
     }
+    if let Some(decal) = &encoded_decal {
+        written_features.push(decal.feature.clone());
+        residual_losses.push(ExportLossCode::RecordResidualUnavailable.note(format!(
+            "decal {} uses regenerated scope and target records",
+            decal.feature
+        )));
+    }
     for text in &native.sketch_texts {
         residual_losses.push(ExportLossCode::RecordResidualUnavailable.note(format!(
             "sketch text {}: generated formatting state uses unspecified defaults",
@@ -574,6 +605,28 @@ pub(super) fn write_with_limits(
             .assets
             .iter()
             .all(|asset| asset.id == canvas.asset)
+        {
+            ArenaDisposition::Written
+        } else {
+            ArenaDisposition::Reported
+        };
+    }
+    if let Some(decal) = &encoded_decal {
+        dispositions.assets = if target.model.assets.iter().all(|asset| {
+            asset.id == decal.asset
+                || encoded_canvas
+                    .as_ref()
+                    .is_some_and(|canvas| canvas.asset == asset.id)
+        }) {
+            ArenaDisposition::Written
+        } else {
+            ArenaDisposition::Reported
+        };
+        dispositions.feature_input_topologies = if target
+            .model
+            .feature_input_topologies
+            .iter()
+            .all(|input| input.input_of == decal.feature)
         {
             ArenaDisposition::Written
         } else {
@@ -729,6 +782,9 @@ pub(super) fn write_with_limits(
             cadmpeg_ir::features::FeatureDefinition::Operation(
                 cadmpeg_ir::features::FeatureOperation::Native { kind, .. },
             ) if kind.as_str() == "Form" => Some("Form"),
+            cadmpeg_ir::features::FeatureDefinition::Operation(
+                cadmpeg_ir::features::FeatureOperation::Native { kind, .. },
+            ) if kind.as_str() == "Decal" => Some("Decal"),
             _ => None,
         };
         let written = written_features

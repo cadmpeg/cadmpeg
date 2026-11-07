@@ -11,6 +11,48 @@ use cadmpeg_ir::CadIr;
 use crate::export::write_step;
 use crate::{StepCodec, StepSchema, StepWriteOptions};
 
+#[test]
+fn document_attributes_write_as_named_root_properties() {
+    let mut ir = unit_cube().expect("cube");
+    for (name, value) in [
+        ("Remark", AttributeValue::String("sample".into())),
+        ("Count", AttributeValue::Integer(7)),
+        ("Enabled", AttributeValue::Boolean(true)),
+    ] {
+        ir.model.attributes.push(SourceAttribute {
+            id: format!("test:model:attribute#{name}").try_into().unwrap(),
+            native_ref: None,
+            target: AttributeTarget::Document,
+            name: name.into(),
+            values: vec![Some(value)],
+        });
+    }
+    let mut output = Vec::new();
+    write_step(
+        &ir,
+        &mut output,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .unwrap();
+    let written = std::str::from_utf8(&output).unwrap();
+    assert!(written.contains("DESCRIPTIVE_REPRESENTATION_ITEM('Remark','sample')"));
+    assert!(written.contains("VALUE_REPRESENTATION_ITEM('Count',COUNT_MEASURE(7))"));
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .unwrap();
+    for expected in &ir.model.attributes {
+        assert!(decoded
+            .ir()
+            .model
+            .attributes
+            .iter()
+            .any(|actual| actual.target == AttributeTarget::Document
+                && actual.name == expected.name
+                && actual.values == expected.values));
+    }
+}
+
 fn unnamed_definition(
     id: &str,
     bodies: Vec<cadmpeg_ir::ids::BodyId>,
@@ -225,6 +267,191 @@ fn unplaced_occurrences_round_trip_as_product_usages_without_placements() {
     assert!(
         matches!(&grandchild.parent, OccurrenceParent::Occurrence { occurrence } if occurrence == &child.id)
     );
+}
+
+#[test]
+fn scaled_root_and_child_occurrences_round_trip_as_mapped_items() {
+    use cadmpeg_ir::products::OccurrenceParent;
+    use cadmpeg_ir::transform::Transform;
+
+    let mut ir = unit_cube().expect("cube");
+    ir.model.product_definitions = vec![
+        unnamed_definition("test:model:product#assembly", Vec::new()),
+        unnamed_definition(
+            "test:model:product#part",
+            vec![ir.model.bodies[0].id.clone()],
+        ),
+    ];
+    let mut root = unnamed_occurrence(
+        "test:model:occurrence#root",
+        "test:model:product#assembly",
+        None,
+    );
+    root.name = Some("Scaled root".into());
+    root.transform = Transform::affine([
+        [2.0, 0.0, 0.0, 10.0],
+        [0.0, 2.0, 0.0, 20.0],
+        [0.0, 0.0, 2.0, 30.0],
+    ]);
+    let mut child = unnamed_occurrence(
+        "test:model:occurrence#child",
+        "test:model:product#part",
+        Some("test:model:occurrence#root"),
+    );
+    child.name = Some("Scaled child".into());
+    child.transform = Transform::affine([
+        [0.5, 0.0, 0.0, 1.0],
+        [0.0, 0.5, 0.0, 2.0],
+        [0.0, 0.0, 0.5, 3.0],
+    ]);
+    ir.model.occurrences = vec![root, child];
+    let mut bytes = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut bytes,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .expect("write assembly");
+    assert!(!report.losses.iter().any(|loss| loss.code
+        == crate::loss::StepLossCode::OccurrencePlacementNotRigid.kind()
+        || loss.code == crate::loss::StepLossCode::RootOccurrencePlacementNotRepresentable.kind()));
+    let text = std::str::from_utf8(&bytes).expect("STEP text");
+    assert_eq!(text.matches(" = MAPPED_ITEM(").count(), 2);
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode assembly");
+    let root = decoded
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .find(|item| item.name.as_deref() == Some("Scaled root"))
+        .expect("root");
+    let child = decoded
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .find(|item| item.name.as_deref() == Some("Scaled child"))
+        .expect("child");
+    assert!(
+        matches!(&child.parent, OccurrenceParent::Occurrence { occurrence } if occurrence == &root.id)
+    );
+    for (occurrence, scale, translation) in [
+        (root, 2.0, [10.0, 20.0, 30.0]),
+        (child, 0.5, [1.0, 2.0, 3.0]),
+    ] {
+        let rows = occurrence.transform.expect("placement").rows();
+        for axis in 0..3 {
+            assert!((rows[axis][axis] - scale).abs() < 1.0e-12);
+            assert!((rows[axis][3] - translation[axis]).abs() < 1.0e-12);
+        }
+    }
+    let validation =
+        cadmpeg_ir::validate_neutral(decoded.ir(), Vec::new()).expect("validate assembly");
+    assert!(validation.is_ok(), "{:#?}", validation.findings);
+}
+
+#[test]
+fn scaled_mapped_assembly_rewrites_without_new_decode_losses() {
+    let source = String::from_utf8(
+        include_bytes!("../../../tests/fixtures/ap242_mapped_assembly.p21").to_vec(),
+    )
+    .expect("fixture is UTF-8")
+    .replace(
+        "#33=DIRECTION('',(1.,0.,0.));",
+        "#33=DIRECTION('',(1.,0.,0.));\n#36=DIRECTION('',(0.,1.,0.));",
+    )
+    .replace(
+        "#35=AXIS2_PLACEMENT_3D('',#31,#32,#33);",
+        "#35=CARTESIAN_TRANSFORMATION_OPERATOR_3D('','','',#33,#36,#31,2.,#32);",
+    );
+    let codec = StepCodec::default();
+    let first = codec
+        .decode(&mut Cursor::new(source), &DecodeOptions::default())
+        .expect("decode mapped assembly");
+    let mut bytes = Vec::new();
+    write_step(
+        first.ir(),
+        &mut bytes,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .expect("write mapped assembly");
+    let after = codec
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode written assembly");
+    assert!(
+        after.report().losses.iter().all(|loss| first
+            .report()
+            .losses
+            .iter()
+            .any(|before| before.code == loss.code)),
+        "{:#?}",
+        after.report().losses
+    );
+    let child = after
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .find(|item| item.name.as_deref() == Some("Mapped child"))
+        .expect("mapped child");
+    let rows = child.transform.expect("placement").rows();
+    for (axis, row) in rows.iter().take(3).enumerate() {
+        assert!((row[axis] - 2.0).abs() < 1.0e-12);
+    }
+}
+
+#[test]
+fn reflected_occurrence_preserves_its_orientation() {
+    use cadmpeg_ir::transform::Transform;
+    let mut ir = unit_cube().expect("cube");
+    ir.model.product_definitions = vec![unnamed_definition(
+        "test:model:product#part",
+        vec![ir.model.bodies[0].id.clone()],
+    )];
+    let mut occurrence = unnamed_occurrence(
+        "test:model:occurrence#reflected",
+        "test:model:product#part",
+        None,
+    );
+    occurrence.name = Some("Reflected".into());
+    occurrence.transform = Transform::affine([
+        [-1.0, 0.0, 0.0, 4.0],
+        [0.0, 1.0, 0.0, 5.0],
+        [0.0, 0.0, 1.0, 6.0],
+    ]);
+    ir.model.occurrences.push(occurrence);
+    let mut bytes = Vec::new();
+    let report = write_step(
+        &ir,
+        &mut bytes,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .expect("write assembly");
+    assert!(!report.losses.iter().any(|loss| loss.code
+        == crate::loss::StepLossCode::OccurrencePlacementNotRigid.kind()
+        || loss.code == crate::loss::StepLossCode::RootOccurrencePlacementNotRepresentable.kind()));
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
+        .expect("decode assembly");
+    let rows = decoded
+        .ir()
+        .model
+        .occurrences
+        .iter()
+        .find(|item| item.name.as_deref() == Some("Reflected"))
+        .expect("reflected occurrence")
+        .transform
+        .expect("placement")
+        .rows();
+    for (axis, expected) in [-1.0, 1.0, 1.0].into_iter().enumerate() {
+        assert!((rows[axis][axis] - expected).abs() < 1.0e-12);
+        assert!((rows[axis][3] - [4.0, 5.0, 6.0][axis]).abs() < 1.0e-12);
+    }
 }
 
 #[test]
@@ -616,9 +843,8 @@ fn writer_folds_document_attributes_into_file_name() {
         report
             .losses
             .iter()
-            .filter(|loss| loss.code == crate::loss::StepLossCode::SourceAttributeNotWritten.kind())
-            .any(|loss| loss.message.contains("test:model:attribute#comment")),
-        "unmapped document attribute keeps its loss: {report:?}"
+            .all(|loss| !loss.message.contains("test:model:attribute#comment")),
+        "document property is written: {report:?}"
     );
     assert!(
         report
@@ -653,10 +879,11 @@ fn writer_folds_document_attributes_into_file_name() {
     assert_eq!(held("CreatedBy"), ["anne"]);
     assert_eq!(held("LastModifiedBy"), ["beth"]);
     assert_eq!(held("Company"), ["acme"]);
+    assert_eq!(held("Comment"), ["kept as a loss"]);
 }
 
 #[test]
-fn document_author_losses_name_values_not_projected_back() {
+fn document_author_values_not_in_header_are_written_as_properties() {
     let mut ir = unit_cube().expect("unit cube");
     ir.model.attributes.extend([
         document_attribute("test:model:attribute#first", "author", "anne"),
@@ -678,13 +905,22 @@ fn document_author_losses_name_values_not_projected_back() {
         .collect();
     assert!(losses
         .iter()
-        .any(|loss| loss.message.contains("test:model:attribute#second")));
-    assert!(losses
-        .iter()
-        .any(|loss| loss.message.contains("test:model:attribute#third")));
-    assert!(losses
-        .iter()
-        .all(|loss| !loss.message.contains("test:model:attribute#first")));
+        .all(|loss| !loss.message.contains("test:model:attribute#first")
+            && !loss.message.contains("test:model:attribute#second")
+            && !loss.message.contains("test:model:attribute#third")));
+    let decoded = StepCodec::default()
+        .decode(&mut Cursor::new(output), &DecodeOptions::default())
+        .unwrap();
+    for expected in &ir.model.attributes {
+        assert!(decoded
+            .ir()
+            .model
+            .attributes
+            .iter()
+            .any(|actual| actual.target == AttributeTarget::Document
+                && actual.name == expected.name
+                && actual.values == expected.values));
+    }
 }
 
 #[test]
