@@ -23,11 +23,6 @@ pub fn parse_xml_recovering<'s>(
         Err((error, position)) => Err((error, position)),
     };
     let scan = ctx.scan_xml_elements(view, XmlEncoding::Utf8, operation)?;
-    let text = std::str::from_utf8(view.window())
-        .map_err(|_| CodecError::malformed(format_args!("{member} is not UTF-8")))?;
-    if let Ok(xml) = parse(text) {
-        return Ok((view, xml));
-    }
     let mut blanked: Vec<(usize, usize)> = Vec::new();
     loop {
         let current = reassemble(ctx, view, &blanked, operation)?;
