@@ -96,6 +96,92 @@ fn source_less_points_are_written_as_brep_carriers() {
 }
 
 #[test]
+fn source_less_surfaces_and_curves_are_written_as_brep_carriers() {
+    use cadmpeg_asm::{kernel_header::RefWidth, sab::Token};
+    use cadmpeg_ir::geometry::{
+        analytic::{LineCurve, PlaneSurface},
+        Curve, CurveGeometry, SolvedCurveGeometry, SolvedSurfaceGeometry, Surface, SurfaceGeometry,
+    };
+    use cadmpeg_ir::math::{Point3, Vector3};
+    use std::io::Read;
+
+    let mut ir = cadmpeg_ir::CadIr::empty();
+    ir.model.surfaces.push(Surface {
+        id: "authored:model:surface#1".try_into().unwrap(),
+        native_ref: None,
+        geometry: SurfaceGeometry::Solved(SolvedSurfaceGeometry::Plane(
+            PlaneSurface::try_new(
+                Point3::new(3.0, 0.0, 1.0),
+                Vector3::new(0.0, 0.0, 1.0),
+                Vector3::new(1.0, 0.0, 0.0),
+            )
+            .unwrap(),
+        )),
+        source_object: None,
+    });
+    ir.model.curves.push(Curve {
+        id: "authored:model:curve#1".try_into().unwrap(),
+        native_ref: None,
+        geometry: CurveGeometry::Solved(SolvedCurveGeometry::Line(
+            LineCurve::try_new(Point3::new(10.0, 20.0, 30.0), Vector3::new(1.0, 0.0, 0.0)).unwrap(),
+        )),
+        parameter_range: None,
+        source_object: None,
+    });
+    let mut limited = EncodeInput::new(&ir, None);
+    limited.limits.max_entities = 3;
+    assert!(matches!(F3dCodec.plan(limited, TargetRequest::Inherit),
+        Err(cadmpeg_ir::codec::write::EncodeError::ResourceLimit(limit))
+        if limit.dimension == cadmpeg_core::decode::ResourceDimension::Entities));
+    let mut exact = EncodeInput::new(&ir, None);
+    exact.limits.max_entities = 4;
+    F3dCodec.plan(exact, TargetRequest::Inherit).unwrap();
+    let mut bytes = Vec::new();
+    F3dCodec
+        .plan(EncodeInput::new(&ir, None), TargetRequest::Inherit)
+        .unwrap()
+        .write_to(&mut bytes)
+        .unwrap();
+    let mut archive = zip::ZipArchive::new(Cursor::new(bytes)).unwrap();
+    let name = archive
+        .file_names()
+        .map(|name| name.unwrap())
+        .find(|name| name.ends_with(".smbh"))
+        .unwrap()
+        .into_owned();
+    let mut smbh = Vec::new();
+    archive
+        .by_name(&name)
+        .unwrap()
+        .read_to_end(&mut smbh)
+        .unwrap();
+    let start = cadmpeg_asm::asm_header::record_stream_start(&smbh).unwrap();
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let ctx = cadmpeg_core::decode::DecodeContext::for_encode(&arena, &policy);
+    let records =
+        cadmpeg_asm::sab::frame(&ctx, &smbh, start, smbh.len(), RefWidth::Eight, None).unwrap();
+    let plane = records
+        .iter()
+        .find(|record| record.head() == "plane")
+        .unwrap();
+    assert!(plane
+        .tokens
+        .iter()
+        .any(|token| matches!(token, Token::Position([x, y, z])
+        if (x - 0.3).abs() < 1e-12 && y.abs() < 1e-12 && (z - 0.1).abs() < 1e-12)));
+    let line = records
+        .iter()
+        .find(|record| record.head() == "straight")
+        .unwrap();
+    assert!(line
+        .tokens
+        .iter()
+        .any(|token| matches!(token, Token::Position([x, y, z])
+        if (x - 1.0).abs() < 1e-12 && (y - 2.0).abs() < 1e-12 && (z - 3.0).abs() < 1e-12)));
+}
+
+#[test]
 fn source_less_brep_budget_matches_framed_records() {
     use cadmpeg_asm::kernel_header::RefWidth;
     use std::io::Read;
