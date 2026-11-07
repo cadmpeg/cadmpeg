@@ -18,6 +18,23 @@ pub(crate) fn plan(
     input: EncodeInput<'_>,
     target: &ResolvedWrite<'_>,
 ) -> Result<ExportBody, EncodeError> {
+    let mut input_records = 0_u64;
+    for count in input.ir.census().values() {
+        let count = cadmpeg_core::decode::u64_from_index(*count);
+        if count > input.limits.max_entities - input_records {
+            return Err(cadmpeg_core::decode::ResourceLimit {
+                scope: cadmpeg_core::decode::LimitScope::Session,
+                dimension: cadmpeg_core::decode::ResourceDimension::Entities,
+                reason: cadmpeg_core::decode::ResourceFailure::BudgetExceeded,
+                limit: input.limits.max_entities,
+                used: input.limits.max_entities,
+                additional: 1,
+                operation: "inspect Rhino input records",
+            }
+            .into());
+        }
+        input_records += count;
+    }
     let synthesis = target.for_synthesis()?;
     let target = synthesis.resolution();
     let index = synthesis.index();
@@ -43,10 +60,15 @@ pub(crate) fn plan(
     for binding in &input.ir.model.appearance_bindings {
         if !binding.channels.is_empty() {
             losses.push(RhinoLossCode::WriterAppearanceChannelsOmitted.note(format!(
-                "appearance binding {} change-version channels are omitted: {}",
-                binding.id,
-                binding.channels.keys().map(cadmpeg_core::text::NonBlankString::as_str).collect::<Vec<_>>().join(", ")
-            )));
+                    "appearance binding {} change-version channels are omitted: {}",
+                    binding.id,
+                    binding
+                        .channels
+                        .keys()
+                        .map(cadmpeg_core::text::NonBlankString::as_str)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )));
         }
         let target = binding.target.typed_record_target(&input.ir.model);
         if let cadmpeg_ir::appearance::AppearanceTarget::Face(face) =
