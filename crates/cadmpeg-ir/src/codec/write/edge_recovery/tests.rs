@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::unwrap_used)]
 
-use super::recover_edge_curves;
 use crate::eval::{admission::EvaluationAdmission, decode};
 use crate::examples::unit_cube;
 use crate::geometry::pcurve::{
@@ -12,6 +11,15 @@ use crate::ids::PcurveId;
 use crate::math::{Point2, Point3, Vector3};
 use crate::topology::{CoedgeUseCurve, EdgeCarrier, ParameterInterval, PcurveUse};
 use crate::CadIr;
+
+fn recover_edge_curves(
+    ir: &CadIr,
+) -> Result<super::EdgeRecovery<'_>, cadmpeg_core::decode::ResourceLimit> {
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let ctx = cadmpeg_core::decode::DecodeContext::for_encode(&arena, &policy);
+    super::recover_edge_curves(&ctx, ir)
+}
 
 fn attach_pcurve(ir: &mut CadIr, coedge_index: usize, reverse: bool, bow: f64) {
     let coedge = &ir.model.coedges[coedge_index];
@@ -111,6 +119,33 @@ fn coedges_for_first_edge(ir: &CadIr) -> Vec<usize> {
         .enumerate()
         .filter_map(|(i, coedge)| (coedge.edge == ir.model.edges[0].id).then_some(i))
         .collect()
+}
+
+#[test]
+fn recovery_propagates_the_existing_encode_session_refusal() {
+    use cadmpeg_core::decode::{DecodeArena, DecodeContext, DecodePolicy, ResourceLimits};
+
+    let mut ir = unit_cube().unwrap();
+    let curve = ir.model.edges[0].curve().unwrap().clone();
+    let coedge = coedges_for_first_edge(&ir)[0];
+    ir.model.edges[0].carrier = EdgeCarrier::Free;
+    ir.model.coedges[coedge].use_curve = Some(CoedgeUseCurve {
+        curve,
+        parameter_range: ParameterInterval::new([0.0, 10.0]).unwrap(),
+    });
+    let arena = DecodeArena::new();
+    let policy = DecodePolicy {
+        limits: ResourceLimits {
+            max_entities: 0,
+            ..Default::default()
+        },
+        ..DecodePolicy::default()
+    };
+    let ctx = DecodeContext::for_encode(&arena, &policy);
+    let session = cadmpeg_core::encode::EncodeSession::from_context(&ctx).unwrap();
+    let refusal = session.charge_entities(1, "test prior record").unwrap_err();
+    let result = super::recover_edge_curves(&ctx, &ir);
+    assert!(matches!(result, Err(limit) if limit == refusal));
 }
 
 #[test]

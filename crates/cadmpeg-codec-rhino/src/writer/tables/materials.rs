@@ -42,6 +42,40 @@ fn scalar(appearance: &Appearance, name: &str, default: f64) -> f64 {
         .unwrap_or(default)
 }
 
+const COLOR_FIELDS: [&str; 6] = [
+    "ambient",
+    "diffuse",
+    "emission",
+    "specular",
+    "reflection",
+    "transparent",
+];
+
+fn material_color(fields: Option<&Map<String, Value>>, name: &str) -> Result<[u8; 4], CodecError> {
+    match color(fields, name) {
+        Ok(color) => Ok(color),
+        Err(CodecError::Malformed(_) | CodecError::InvalidInput(_)) => Ok([0, 0, 0, 0]),
+        Err(error) => Err(error),
+    }
+}
+
+fn invalid_color_fields(fields: &Map<String, Value>) -> Vec<&'static str> {
+    COLOR_FIELDS
+        .into_iter()
+        .filter(|name| {
+            fields
+                .get(*name)
+                .is_some_and(|value| !value.is_null() && crate::wire::native_color(value).is_err())
+        })
+        .collect()
+}
+
+pub(in crate::writer) fn native_colors_complete(record: &cadmpeg_ir::NativeRecord) -> bool {
+    record
+        .fields()
+        .is_ok_and(|fields| invalid_color_fields(&fields).is_empty())
+}
+
 fn encode_material(
     identity: &str,
     index: i32,
@@ -100,10 +134,10 @@ fn encode_material(
             } else if appearance.is_some() {
                 [0, 0, 0, 0]
             } else {
-                color(fields, name)?
+                material_color(fields, name)?
             }
         } else {
-            color(fields, name)?
+            material_color(fields, name)?
         };
         payload.extend(packed);
     }
@@ -191,34 +225,45 @@ pub(in crate::writer) fn bound_appearance<'a>(
     ir: &'a CadIr,
     identity: &str,
 ) -> Option<&'a Appearance> {
-    let binding = ir.model.appearance_bindings.iter().find(|binding| {
-        use cadmpeg_ir::appearance::AppearanceTarget;
-        let target = match &binding.target {
-            AppearanceTarget::Body(id) => id.as_str(),
-            AppearanceTarget::Face(id) => id.as_str(),
-            AppearanceTarget::Edge(id) => id.as_str(),
-            AppearanceTarget::Vertex(id) => id.as_str(),
-            AppearanceTarget::Point(id) => id.as_str(),
-            AppearanceTarget::Curve(id) => id.as_str(),
-            AppearanceTarget::Surface(id) => id.as_str(),
-            AppearanceTarget::Occurrence(id) => id.as_str(),
-            AppearanceTarget::Tessellation(id) => id.as_str(),
-            AppearanceTarget::TriangleGroup { tessellation, .. } => tessellation.as_str(),
-            AppearanceTarget::Record { arena, id } if ir.model.contains_record(*arena, id) => {
-                id.as_str()
-            }
-            AppearanceTarget::Record { .. } => return false,
-        };
-        target == identity
-    })?;
+    let binding = ir
+        .model
+        .appearance_bindings
+        .iter()
+        .find(|binding| binding_targets(ir, binding, identity))?;
     ir.model
         .appearances
         .iter()
         .find(|appearance| appearance.id == binding.appearance)
 }
 
+fn binding_targets(
+    ir: &CadIr,
+    binding: &cadmpeg_ir::appearance::AppearanceBinding,
+    identity: &str,
+) -> bool {
+    use cadmpeg_ir::appearance::AppearanceTarget;
+    let target = match &binding.target {
+        AppearanceTarget::Body(id) => id.as_str(),
+        AppearanceTarget::Face(id) => id.as_str(),
+        AppearanceTarget::Edge(id) => id.as_str(),
+        AppearanceTarget::Vertex(id) => id.as_str(),
+        AppearanceTarget::Point(id) => id.as_str(),
+        AppearanceTarget::Curve(id) => id.as_str(),
+        AppearanceTarget::Surface(id) => id.as_str(),
+        AppearanceTarget::Occurrence(id) => id.as_str(),
+        AppearanceTarget::Tessellation(id) => id.as_str(),
+        AppearanceTarget::TriangleGroup { tessellation, .. } => tessellation.as_str(),
+        AppearanceTarget::Record { arena, id } if ir.model.contains_record(*arena, id) => {
+            id.as_str()
+        }
+        AppearanceTarget::Record { .. } => return false,
+    };
+    target == identity
+}
+
 pub(in crate::writer) fn native_complete(record: &cadmpeg_ir::NativeRecord) -> bool {
     native_base_complete(record)
+        && native_colors_complete(record)
         && record
             .fields()
             .is_ok_and(|fields| textures_complete(&fields))
@@ -234,20 +279,9 @@ fn native_base_complete(record: &cadmpeg_ir::NativeRecord) -> bool {
             .and_then(Value::as_str)
             .and_then(crate::presentation::parse_uuid_text)
             .is_some()
-        && [
-            "ambient",
-            "diffuse",
-            "emission",
-            "specular",
-            "reflection",
-            "transparent",
-        ]
-        .iter()
-        .all(|name| {
-            fields
-                .get(*name)
-                .is_some_and(|value| crate::wire::native_color(value).is_ok())
-        })
+        && COLOR_FIELDS
+            .iter()
+            .all(|name| fields.get(*name).is_some_and(|value| !value.is_null()))
         && [
             "index_of_refraction",
             "reflectivity",

@@ -2,6 +2,7 @@
 #![allow(clippy::unwrap_used)]
 
 mod integer;
+mod surface_closure;
 mod wire;
 
 use cadmpeg_test_support::{edit, EditableDecodeResult};

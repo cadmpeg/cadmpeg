@@ -67,6 +67,13 @@ pub(crate) fn plan(
     let attempt = write(input, true);
     let (written, bytes) = match attempt {
         Ok(written) => written,
+        Err(
+            error @ super::write_error::WriteError::Fatal(cadmpeg_core::CodecError::ResourceLimit(
+                limit,
+            )),
+        ) if caller_ceiling(limit, input.limits) => {
+            return Err(error);
+        }
         Err(error) => {
             return super::synthesis::plan(
                 input,
@@ -107,6 +114,23 @@ pub(crate) fn plan(
     ))
 }
 
+fn caller_ceiling(
+    limit: cadmpeg_core::decode::ResourceLimit,
+    limits: cadmpeg_core::decode::ResourceLimits,
+) -> bool {
+    use cadmpeg_core::decode::ResourceDimension;
+    let ceiling = match limit.dimension {
+        ResourceDimension::InputBytes => limits.max_input_bytes,
+        ResourceDimension::DecompressedBytes => limits.max_decompressed_bytes_total,
+        ResourceDimension::RetainedBytes => limits.max_retained_bytes,
+        ResourceDimension::Entities => limits.max_entities,
+        ResourceDimension::RecursionDepth => return false,
+    };
+    limit.scope == cadmpeg_core::decode::LimitScope::Session
+        && limit.reason == cadmpeg_core::decode::ResourceFailure::BudgetExceeded
+        && limit.limit == ceiling
+}
+
 /// Run replay when the target equals the source row; otherwise run the
 /// semantic writer and let its emitted envelope state the resulting row.
 fn write(
@@ -137,6 +161,7 @@ fn write(
             &[],
             None,
             SemanticFidelity::NotConsumed,
+            input.limits,
             &mut bytes,
         )?,
         None => SldprtCodec::write_semantic(
@@ -149,6 +174,7 @@ fn write(
             } else {
                 SemanticFidelity::NotConsumed
             },
+            input.limits,
             &mut bytes,
         )?,
     };

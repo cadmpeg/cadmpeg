@@ -38,6 +38,19 @@
           ]
         },
         {
+          "id": "step:data:file-description#00000000000000000000",
+          "name": "start",
+          "target": {
+            "kind": "document"
+          },
+          "values": [
+            {
+              "kind": "string",
+              "value": "external document dependencies"
+            }
+          ]
+        },
+        {
           "id": "step:data:file-name#author",
           "name": "author",
           "target": {

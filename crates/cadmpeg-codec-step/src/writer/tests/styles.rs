@@ -20,6 +20,12 @@ fn damaged_unbound_colours_survive_synthesis_without_bindings() {
         .expect("decode damaged STEP");
     assert_eq!(original.ir().model.appearances.len(), 2);
     assert!(original.ir().model.appearance_bindings.is_empty());
+    assert!(original
+        .ir()
+        .model
+        .appearances
+        .iter()
+        .all(|appearance| appearance.schema.is_none()));
     let mut bytes = Vec::new();
     write_step(
         original.ir(),
@@ -66,6 +72,12 @@ fn one_appearance_is_shared_across_curve_surface_and_point_styles() {
     let original = crate::StepCodec::default()
         .decode(&mut Cursor::new(source), &DecodeOptions::default())
         .expect("decode styled geometry");
+    assert!(original
+        .ir()
+        .model
+        .appearances
+        .iter()
+        .all(|appearance| appearance.schema.is_none()));
     let mut bytes = Vec::new();
     write_step(
         original.ir(),
@@ -78,6 +90,7 @@ fn one_appearance_is_shared_across_curve_surface_and_point_styles() {
         .decode(&mut Cursor::new(bytes), &DecodeOptions::default())
         .expect("decode written styles");
     assert_eq!(decoded.ir().model.appearances.len(), 1);
+    assert!(decoded.ir().model.appearances[0].schema.is_none());
     assert_eq!(
         decoded.ir().model.appearance_bindings.len(),
         original.ir().model.appearance_bindings.len()
@@ -89,6 +102,29 @@ fn one_appearance_is_shared_across_curve_surface_and_point_styles() {
         .appearance_bindings
         .iter()
         .all(|binding| &binding.appearance == appearance));
+}
+
+#[test]
+fn a_stated_material_schema_is_reported_as_unrepresented() {
+    use cadmpeg_ir::codec::{Codec, DecodeOptions};
+    let source = include_bytes!("../../../tests/fixtures/ap242_geometry.p21");
+    let original = crate::StepCodec::default()
+        .decode(&mut std::io::Cursor::new(source), &DecodeOptions::default())
+        .expect("decode styled geometry");
+    let mut document = original.ir().clone();
+    document.model.appearances[0].schema = Some("step_surface_style".into());
+    let id = document.model.appearances[0].id.to_string();
+    let mut bytes = Vec::new();
+    let report = write_step(
+        &document,
+        &mut bytes,
+        StepSchema::Ap242Edition3,
+        &StepWriteOptions::default(),
+    )
+    .expect("write styled geometry");
+    assert!(report.losses.iter().any(|loss| loss.code
+        == crate::loss::StepLossCode::AppearanceReducedToBaseColor.kind()
+        && loss.message.contains(&id)));
 }
 
 #[test]

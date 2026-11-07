@@ -117,6 +117,60 @@ fn work_point_stream(
 }
 
 #[test]
+fn damaged_typed_point_data_keeps_valid_sibling() {
+    let (sample, _, position_at) = work_point_stream("282", 2, false, None, [4.0, 5.0, 6.0], 5, 1);
+    let frames = crate::design::test_support::test_primary_frames(&sample);
+    let point = frames.iter().find(|frame| frame.entity_id == 55).unwrap();
+    let mut damaged = sample[point.start..point.end].to_vec();
+    let position = position_at - point.start;
+    damaged[position..position + std::mem::size_of::<f64>()]
+        .copy_from_slice(&f64::NAN.to_le_bytes());
+    let mut good = sample[point.start..point.end].to_vec();
+    let id_at = std::mem::size_of::<u32>() + "282".len();
+    good[id_at..id_at + std::mem::size_of::<u32>()].copy_from_slice(&56u32.to_le_bytes());
+    let paired_id = point.member_end - point.start + id_at;
+    good[paired_id..paired_id + std::mem::size_of::<u32>()].copy_from_slice(&56u32.to_le_bytes());
+    damaged.extend_from_slice(&good);
+    let records = crate::design::test_support::test_primary_frames(&damaged);
+    let types = HashMap::from([
+        (55, (POINT_DATA_TYPE_GUID, 2)),
+        (56, (POINT_DATA_TYPE_GUID, 2)),
+    ]);
+    let arena = cadmpeg_core::decode::DecodeArena::new();
+    let policy = cadmpeg_core::decode::DecodePolicy::default();
+    let (ctx, source) =
+        cadmpeg_core::decode::DecodeContext::from_root_bytes(&damaged, &arena, &policy).unwrap();
+    let mut parts =
+        cadmpeg_ir::source_fidelity::parts::PartOutput::new(cadmpeg_ir::CodecFormat::F3d, &ctx);
+    super::contain_point_data(
+        &ctx,
+        &mut parts,
+        source,
+        "Design/BulkStream.dat",
+        &records,
+        &[55, 56],
+        &types,
+    )
+    .unwrap();
+    assert_eq!(
+        super::exact_point_data_construction(&damaged, &records, &[56], &types)
+            .unwrap()
+            .point_record_index,
+        56
+    );
+    let (_, native, fidelity, losses) = parts.into_parts();
+    assert_eq!(
+        native.namespace("f3d").unwrap().arenas()["unknowns"].len(),
+        1
+    );
+    assert!(fidelity
+        .unrepresented()
+        .contains(&cadmpeg_ir::document::ArenaClass::Design));
+    assert_eq!(losses.len(), 1);
+    assert_eq!(losses[0].code.local_code(), "record.unreadable");
+}
+
+#[test]
 fn work_point_reads_the_class_version_its_type_table_stores() {
     let (bytes, scope, position_at) =
         work_point_stream("282", 2, false, None, [4.0, 5.0, 6.0], 5, 1);

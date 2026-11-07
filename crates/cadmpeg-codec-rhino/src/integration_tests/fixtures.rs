@@ -5,20 +5,6 @@ use cadmpeg_test_support::EditableDecodeResult;
 
 use crate::chunks::ArchiveVersion;
 
-/// The world plane an annotation userdata payload carries.
-pub(super) fn plane() -> Vec<u8> {
-    [
-        0.0, 0.0, 0.0, // origin
-        1.0, 0.0, 0.0, // x axis
-        0.0, 1.0, 0.0, // y axis
-        0.0, 0.0, 1.0, // z axis
-        0.0, 0.0, 1.0, 0.0, // equation
-    ]
-    .into_iter()
-    .flat_map(f64::to_le_bytes)
-    .collect()
-}
-
 /// Wrap `body` in an anonymous chunk carrying a major and a minor version.
 pub(super) fn anonymous_major(
     archive: ArchiveVersion,

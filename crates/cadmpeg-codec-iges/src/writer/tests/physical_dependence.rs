@@ -419,7 +419,8 @@ fn pointers(entity: &WrittenEntity) -> Vec<u32> {
                 indices.push(5);
             }
         }
-        100 | 104 | 110 | 116 | 123 | 124 | 126 | 128 | 502 => {}
+        0 => assert_eq!(entity.tokens, ["0"]),
+        100 | 104 | 110 | 112 | 116 | 123 | 124 | 126 | 128 | 502 => {}
         _ => panic!(
             "the written file has entity type {} this check does not read",
             entity.entity_type
