@@ -1880,9 +1880,9 @@ pub(crate) fn decode_mesh_bodies(
         }
         let name = &entry.name;
         let base = name.rsplit('/').next().unwrap_or(name);
-        let Some(decoded) = ctx.decode_part(&mut parts, source, spec, |_| {
-            let container =
-                decode_mesh_container(ctx, source.window()).map_err(|error| match error {
+        let Some(decoded) = ctx.decode_part(&mut parts, source, spec, |stage| {
+            let container = decode_mesh_container(ctx, stage, &entry.name, source.window())
+                .map_err(|error| match error {
                     CodecError::Malformed(message) => {
                         CodecError::malformed(format_args!("entry {}: {message}", entry.name))
                     }
